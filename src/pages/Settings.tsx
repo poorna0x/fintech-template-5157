@@ -367,40 +367,11 @@ const Settings = () => {
     setEditTechnicianDialogOpen(true);
   };
 
-  // Helper function to hash password using serverless function
-  const hashPassword = async (password: string): Promise<string> => {
-    const apiUrl = '/.netlify/functions/hash-technician-password';
-
-    try {
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ password }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Password hashing API error:', response.status, errorText);
-        throw new Error('Failed to hash password. Please try again.');
-      }
-
-      const result = await response.json();
-      return result.hashedPassword;
-    } catch (error) {
-      console.error('Password hashing error:', error);
-      throw new Error('Password hashing service unavailable. Please ensure the development server is running.');
-    }
-  };
-
   const handleSaveTechnician = async () => {
     try {
-      // Hash password if provided (for new technicians or password updates)
-      let hashedPassword: string | undefined = undefined;
-      if (technicianFormData.password && technicianFormData.password.trim() !== '') {
-        hashedPassword = await hashPassword(technicianFormData.password);
-      }
+      // Password (if provided) is forwarded as plaintext to sync-technician-auth-user,
+      // which writes it to Supabase Auth via admin.updateUserById. The DB no longer
+      // stores a password hash (column dropped 2026-05-24).
 
       const previousBaseSalary =
         selectedTechnician?.salary?.baseSalary !== undefined
@@ -475,24 +446,22 @@ const Settings = () => {
           ? technicianFormData.accountStatus || 'ACTIVE'
           : 'ACTIVE';
 
-      // Password hash is written only via sync-technician-auth-user (service role), not client INSERT/UPDATE
+      const password = technicianFormData.password?.trim() || '';
       let savedTechnicianId: string | null = null;
 
       if (editTechnicianDialogOpen && selectedTechnician) {
-        // Update existing technician - only update password if provided
-        const updateData = { ...technicianData };
-        delete updateData.password;
-        const { error } = await db.technicians.update(selectedTechnician.id, updateData);
+        const { error } = await db.technicians.update(selectedTechnician.id, technicianData);
         if (error) throw error;
         savedTechnicianId = selectedTechnician.id;
         toast.success('Technician updated successfully');
       } else {
-        // Create new technician - password is required
-        if (!hashedPassword) {
+        // Create new technician — password (for Supabase Auth) is required.
+        if (!password) {
           toast.error('Password is required when creating a new technician');
           return;
         }
-        
+
+
         // Check for duplicate employee_id or phone before creating
         // OPTIMIZATION: Limit check to recent technicians (duplicates are usually recent)
         const { data: existingTechnicians } = await db.technicians.getAll(500, { activeRosterOnly: false });
@@ -548,7 +517,7 @@ const Settings = () => {
         toast.success('Technician created successfully');
       }
 
-      if (technicianFormData.password?.trim() && savedTechnicianId) {
+      if (password && savedTechnicianId) {
         const techId = savedTechnicianId;
         const sessionReady = await ensureAdminSupabaseSession();
         const { data: sessionData } = await supabase.auth.getSession();
@@ -556,7 +525,7 @@ const Settings = () => {
 
         if (!sessionReady || !accessToken) {
           toast.warning(
-            'Technician saved. Log in to Supabase as admin (admin login page), then edit and re-save the password to link login immediately — or the technician can log in once to link automatically.',
+            'Technician saved, but admin session is missing. Log in to admin and re-save the password to set it in Supabase Auth.',
             { duration: 10000 }
           );
         } else {
@@ -567,31 +536,30 @@ const Settings = () => {
               body: JSON.stringify({
                 technicianId: techId,
                 email: technicianFormData.email,
-                password: technicianFormData.password,
-                hashedPassword: hashedPassword || undefined,
+                password,
                 accessToken,
                 fullName: technicianFormData.fullName,
               }),
             });
             if (syncRes.ok) {
-              toast.success('Technician login linked to Supabase Auth');
+              toast.success('Technician login set in Supabase Auth');
             } else {
               const errBody = (await syncRes.json().catch(() => ({}))) as {
                 error?: string;
                 hint?: string;
               };
               console.warn('Technician auth sync failed:', errBody);
-              toast.warning(
-                errBody.hint ||
-                  'Technician saved. First login will link Supabase Auth automatically (no action needed).',
-                { duration: 9000 }
+              toast.error(
+                errBody.error ||
+                  'Failed to set technician password. They will not be able to log in until this is retried.',
+                { duration: 10000 }
               );
             }
           } catch (syncErr) {
             console.warn('Technician auth sync error:', syncErr);
-            toast.warning(
-              'Technician saved. They can log in normally — Supabase Auth links on first login.',
-              { duration: 8000 }
+            toast.error(
+              'Network error while setting technician password. Retry from Settings → Edit Technician.',
+              { duration: 10000 }
             );
           }
         }
@@ -1250,10 +1218,8 @@ const Settings = () => {
           toast.error(`Failed to fetch ${name}: ${error.message}`);
           continue;
         }
-        const rows =
-          name === 'technicians'
-            ? data.map(({ password: _password, ...rest }) => rest)
-            : data;
+        // `technicians.password` column was dropped 2026-05-24; nothing to strip from the row anymore.
+        const rows = data;
         tables.push({ name, data: rows });
       }
 
@@ -2238,7 +2204,7 @@ const Settings = () => {
                 <p className="text-xs text-blue-700 dark:text-blue-400 mt-3">
                   Up to {DATABASE_EXPORT_TABLES.length} tables as CSV in one ZIP. Optional tables (
                   {DATABASE_EXPORT_TABLES.filter((t) => t.optional).map((t) => t.label).join(', ')}
-                  ) are skipped if not created in Supabase. Technician password hashes are never included.
+                  ) are skipped if not created in Supabase. Technician passwords are stored in Supabase Auth (not exported).
                 </p>
               </div>
             </CardContent>

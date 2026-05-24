@@ -7,8 +7,6 @@ const url = require('url');
 
 // Import function handlers
 const altchaVerify = require('./altcha-verify');
-const verifyTechnicianPassword = require('./verify-technician-password');
-const hashTechnicianPassword = require('./hash-technician-password');
 const distanceMatrix = require('./distance-matrix');
 
 const PORT = 8888;
@@ -30,10 +28,6 @@ const server = http.createServer(async (req, res) => {
   let handler = null;
   if (req.url.startsWith('/.netlify/functions/altcha-verify')) {
     handler = altchaVerify;
-  } else if (req.url.startsWith('/.netlify/functions/verify-technician-password')) {
-    handler = verifyTechnicianPassword;
-  } else if (req.url.startsWith('/.netlify/functions/hash-technician-password')) {
-    handler = hashTechnicianPassword;
   } else if (req.url.startsWith('/.netlify/functions/distance-matrix')) {
     handler = distanceMatrix;
   }
@@ -88,8 +82,6 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   console.log(`🚀 Netlify Functions Dev Server running on http://localhost:${PORT}`);
   console.log(`📡 ALTCHA function: http://localhost:${PORT}/.netlify/functions/altcha-verify`);
-  console.log(`🔐 Password verification: http://localhost:${PORT}/.netlify/functions/verify-technician-password`);
-  console.log(`🔒 Password hashing: http://localhost:${PORT}/.netlify/functions/hash-technician-password`);
   console.log(`📍 Distance Matrix: http://localhost:${PORT}/.netlify/functions/distance-matrix`);
   console.log(`\n✅ Keep this running and use 'npm run dev:vite' in another terminal\n`);
 });

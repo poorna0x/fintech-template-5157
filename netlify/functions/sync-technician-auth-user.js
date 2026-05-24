@@ -51,7 +51,7 @@ exports.handler = async (event) => {
     };
   }
 
-  const { technicianId, email, password, accessToken, fullName, hashedPassword } = body;
+  const { technicianId, email, password, accessToken, fullName } = body;
   if (!technicianId || !email || !password || !accessToken) {
     return {
       statusCode: 400,
@@ -97,23 +97,6 @@ exports.handler = async (event) => {
     password,
     fullName,
   });
-
-  if (hashedPassword && typeof hashedPassword === 'string') {
-    const { error: hashErr } = await admin
-      .from('technicians')
-      .update({ password: hashedPassword })
-      .eq('id', technicianId);
-    if (hashErr) {
-      return {
-        statusCode: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          error: hashErr.message,
-          hint: 'Auth user updated but DB password hash could not be saved.',
-        }),
-      };
-    }
-  }
 
   if (!result.ok) {
     return {

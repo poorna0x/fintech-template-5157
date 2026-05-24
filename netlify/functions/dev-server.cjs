@@ -31,10 +31,7 @@ loadEnvLocal();
 
 // Import function handlers
 const altchaVerify = require('./altcha-verify');
-const verifyTechnicianPassword = require('./verify-technician-password');
-const hashTechnicianPassword = require('./hash-technician-password');
 const distanceMatrix = require('./distance-matrix');
-const provisionTechnicianAuthOnLogin = require('./provision-technician-auth-on-login');
 const secureAuthLogin = require('./secure-auth-login');
 const syncPortalSession = require('./sync-portal-session');
 const clearPortalSession = require('./clear-portal-session');
@@ -71,14 +68,8 @@ const server = http.createServer((req, res) => {
   let handler = null;
   if (req.url.startsWith('/.netlify/functions/altcha-verify')) {
     handler = altchaVerify;
-  } else if (req.url.startsWith('/.netlify/functions/verify-technician-password')) {
-    handler = verifyTechnicianPassword;
-  } else if (req.url.startsWith('/.netlify/functions/hash-technician-password')) {
-    handler = hashTechnicianPassword;
   } else if (req.url.startsWith('/.netlify/functions/distance-matrix')) {
     handler = distanceMatrix;
-  } else if (req.url.startsWith('/.netlify/functions/provision-technician-auth-on-login')) {
-    handler = provisionTechnicianAuthOnLogin;
   } else if (req.url.startsWith('/.netlify/functions/secure-auth-login')) {
     handler = secureAuthLogin;
   } else if (req.url.startsWith('/.netlify/functions/sync-portal-session')) {
@@ -232,12 +223,7 @@ server.listen(PORT, '0.0.0.0', () => {
     });
   }
   console.log(`📡 ALTCHA function: http://localhost:${PORT}/.netlify/functions/altcha-verify`);
-  console.log(`🔐 Password verification: http://localhost:${PORT}/.netlify/functions/verify-technician-password`);
-  console.log(`🔒 Password hashing: http://localhost:${PORT}/.netlify/functions/hash-technician-password`);
   console.log(`📍 Distance Matrix: http://localhost:${PORT}/.netlify/functions/distance-matrix`);
-  console.log(
-    `👤 Provision technician Auth: http://localhost:${PORT}/.netlify/functions/provision-technician-auth-on-login`
-  );
   console.log(
     `🔐 Secure auth login: http://localhost:${PORT}/.netlify/functions/secure-auth-login`
   );

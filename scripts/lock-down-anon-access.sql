@@ -15,7 +15,8 @@
 -- 10. scripts/lock-down-anon-access.sql    (this file — defense in depth)
 -- 11. scripts/add-auth-login-attempts.sql  (login lockout table)
 -- 12. scripts/migrate-auth-login-escalating-lockout.sql (if lockout already exists)
--- 13. scripts/verify-all-rls.sql          (review output — should be empty / minimal)
+-- 13. scripts/secure-technicians-drop-password-and-restrict-salary.sql (drops `technicians.password`, restricts `salary` SELECT to admin RPC)
+-- 14. scripts/verify-all-rls.sql          (review output — should be empty / minimal)
 --
 -- App requirements: admin + technician login via Supabase Auth; booking via RPCs only.
 

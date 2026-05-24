@@ -207,7 +207,15 @@ export const CUSTOMER_ROW_COLUMNS = [
 const TECHNICIAN_ROSTER_ACTIVE_OR =
   'account_status.is.null,account_status.eq.ACTIVE,account_status.eq.SUSPENDED';
 
-/** Technician list/detail without password / push_subscription. */
+/**
+ * Direct-select columns for the public.technicians table.
+ *
+ * Excludes:
+ *   - `password` — column dropped 2026-05-24 (Supabase Auth is the sole source of truth).
+ *   - `push_subscription` — SELECT revoked from authenticated; service_role only.
+ *   - `salary` — SELECT revoked from authenticated; admin reads via the
+ *     `get_technicians_for_admin` / `get_technician_for_admin` SECURITY DEFINER RPCs.
+ */
 const TECHNICIAN_ROW_COLUMNS = [
   'id',
   'full_name',
@@ -221,7 +229,6 @@ const TECHNICIAN_ROW_COLUMNS = [
   'work_schedule',
   'performance',
   'vehicle',
-  'salary',
   'qr_code',
   'photo',
   'visible_qr_codes',
@@ -244,7 +251,6 @@ const TECHNICIAN_DASHBOARD_COLUMNS = [
   'work_schedule',
   'performance',
   'vehicle',
-  'salary',
   'qr_code',
   'photo',
   'visible_qr_codes',
@@ -2253,60 +2259,94 @@ export const db = {
   // Technician operations
   technicians: {
     async create(technician: Database['public']['Tables']['technicians']['Insert']) {
-      const { password: _password, ...row } = technician as Record<string, unknown>;
       const { data, error } = await supabase
         .from('technicians')
-        .insert(row)
+        .insert(technician as Record<string, unknown>)
         .select(TECHNICIAN_ROW_COLUMNS)
         .single();
-      
+
       return { data, error };
     },
-    
+
     async getById(id: string) {
       const { data, error } = await supabase
         .from('technicians')
         .select(TECHNICIAN_ROW_COLUMNS)
         .eq('id', id)
         .single();
-      
+
       return { data, error };
     },
-    
+
     /**
-     * @param activeRosterOnly When true, excludes INACTIVE (map / assignment lists). When false or omitted, returns everyone (Settings, analytics, salary name lookup, duplicate checks).
+     * Admin-only single-row fetch including `salary` (returned via SECURITY DEFINER RPC).
+     * For tech self lookup or non-salary admin paths, use `getById` instead.
+     */
+    async getByIdForAdmin(id: string) {
+      const { data, error } = await supabase.rpc('get_technician_for_admin', { p_id: id } as any);
+      if (error) return { data: null, error };
+      const rows = (data ?? []) as unknown[];
+      const row = Array.isArray(rows) ? (rows[0] ?? null) : (rows as unknown);
+      return { data: row, error: null };
+    },
+
+    /**
+     * Admin list including `salary` — uses `get_technicians_for_admin` SECURITY DEFINER RPC.
+     * @param activeRosterOnly When true, excludes INACTIVE. When false or omitted, returns everyone (Settings, analytics, salary name lookup, duplicate checks).
      */
     async getAll(limit?: number, options?: { activeRosterOnly?: boolean }) {
       const activeOnly = options?.activeRosterOnly === true;
-      let query = supabase
-        .from('technicians')
-        .select(TECHNICIAN_ROW_COLUMNS)
-        .order('created_at', { ascending: false });
+      const { data, error } = await supabase.rpc('get_technicians_for_admin');
+      if (error) return { data: null, error };
+
+      const raw = (data ?? []) as unknown[];
+      let rows: any[] = Array.isArray(raw) ? raw.slice() : [];
       if (activeOnly) {
-        query = query.or(TECHNICIAN_ROSTER_ACTIVE_OR);
+        rows = rows.filter((t: any) => {
+          const status = t?.account_status;
+          return status == null || status === 'ACTIVE' || status === 'SUSPENDED';
+        });
       }
+      rows.sort((a: any, b: any) => {
+        const aTime = a?.created_at ? new Date(a.created_at).getTime() : 0;
+        const bTime = b?.created_at ? new Date(b.created_at).getTime() : 0;
+        return bTime - aTime;
+      });
       if (limit && limit > 0) {
-        query = query.limit(limit);
+        rows = rows.slice(0, limit);
       }
-      const { data, error } = await query;
-      return { data, error };
+      return { data: rows, error: null };
     },
 
     /** Admin list without live GPS blob — use `getById` / `reload` / measure-distance refresh for `current_location`. */
     async getAllForDashboard(limit?: number, options?: { activeRosterOnly?: boolean }) {
       const activeOnly = options?.activeRosterOnly !== false;
-      let query = supabase
-        .from('technicians')
-        .select(TECHNICIAN_DASHBOARD_COLUMNS)
-        .order('created_at', { ascending: false });
+      const { data, error } = await supabase.rpc('get_technicians_for_admin');
+      if (error) return { data: null, error };
+
+      const raw = (data ?? []) as unknown[];
+      let rows: any[] = Array.isArray(raw) ? raw.slice() : [];
       if (activeOnly) {
-        query = query.or(TECHNICIAN_ROSTER_ACTIVE_OR);
+        rows = rows.filter((t: any) => {
+          const status = t?.account_status;
+          return status == null || status === 'ACTIVE' || status === 'SUSPENDED';
+        });
       }
+      rows.sort((a: any, b: any) => {
+        const aTime = a?.created_at ? new Date(a.created_at).getTime() : 0;
+        const bTime = b?.created_at ? new Date(b.created_at).getTime() : 0;
+        return bTime - aTime;
+      });
       if (limit && limit > 0) {
-        query = query.limit(limit);
+        rows = rows.slice(0, limit);
       }
-      const { data, error } = await query;
-      return { data, error };
+      // Strip live GPS blob to mirror previous TECHNICIAN_DASHBOARD_COLUMNS shape.
+      rows = rows.map((t: any) => {
+        if (!t || typeof t !== 'object') return t;
+        const { current_location: _ignore, ...rest } = t;
+        return rest;
+      });
+      return { data: rows, error: null };
     },
 
     /**
@@ -2344,29 +2384,35 @@ export const db = {
     },
     
     async getAvailable() {
-      const { data, error } = await supabase
-        .from('technicians')
-        .select(TECHNICIAN_ROW_COLUMNS)
-        .eq('status', 'AVAILABLE')
-        .or(TECHNICIAN_ROSTER_ACTIVE_OR)
-        .order('created_at', { ascending: false });
-      
-      return { data, error };
+      const { data, error } = await supabase.rpc('get_technicians_for_admin');
+      if (error) return { data: null, error };
+
+      const raw = (data ?? []) as unknown[];
+      const rows: any[] = Array.isArray(raw) ? raw.slice() : [];
+      const filtered = rows.filter((t: any) => {
+        if (t?.status !== 'AVAILABLE') return false;
+        const status = t?.account_status;
+        return status == null || status === 'ACTIVE' || status === 'SUSPENDED';
+      });
+      filtered.sort((a: any, b: any) => {
+        const aTime = a?.created_at ? new Date(a.created_at).getTime() : 0;
+        const bTime = b?.created_at ? new Date(b.created_at).getTime() : 0;
+        return bTime - aTime;
+      });
+      return { data: filtered, error: null };
     },
-    
+
     async update(id: string, updates: Database['public']['Tables']['technicians']['Update']) {
-      const { password: _password, ...row } = updates as Record<string, unknown>;
       const { data, error } = await supabase
         .from('technicians')
-        .update(row)
+        .update(updates as Record<string, unknown>)
         .eq('id', id)
         .select(TECHNICIAN_ROW_COLUMNS);
-      
+
       if (error) {
         return { data: null, error };
       }
-      
-      // Return the first (and should be only) updated row
+
       return { data: data?.[0] || null, error: null };
     },
     

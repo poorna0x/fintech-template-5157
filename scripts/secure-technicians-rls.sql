@@ -102,9 +102,22 @@ GRANT SELECT (
   status
 ) ON TABLE public.technicians TO anon;
 
-REVOKE SELECT (password) ON TABLE public.technicians FROM authenticated;
-REVOKE INSERT (password) ON TABLE public.technicians FROM authenticated;
-REVOKE UPDATE (password) ON TABLE public.technicians FROM authenticated;
+-- Legacy `password` column (dropped 2026-05-24 by
+-- scripts/secure-technicians-drop-password-and-restrict-salary.sql). Keep the
+-- REVOKEs guarded so this script remains safe to re-run after the column drop.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'technicians'
+      AND column_name = 'password'
+  ) THEN
+    EXECUTE 'REVOKE SELECT (password) ON TABLE public.technicians FROM authenticated';
+    EXECUTE 'REVOKE INSERT (password) ON TABLE public.technicians FROM authenticated';
+    EXECUTE 'REVOKE UPDATE (password) ON TABLE public.technicians FROM authenticated';
+  END IF;
+END $$;
 
 -- ---------------------------------------------------------------------------
 -- Login routing helper (no password exposure)
