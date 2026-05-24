@@ -10,7 +10,10 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Wrench, Eye, EyeOff, Droplets } from 'lucide-react';
 import { toast } from 'sonner';
 import AltchaWidget from '@/components/AltchaWidget';
-import TurnstileWidget, { isTurnstileEnabled } from '@/components/TurnstileWidget';
+import TurnstileWidget, {
+  isTurnstileEnabled,
+  type TurnstileWidgetHandle,
+} from '@/components/TurnstileWidget';
 import { registerTechnicianPWA, disablePWA, isPWAMode } from '@/lib/pwa';
 import { clearWrongPortalSession } from '@/lib/authPortal';
 import { formatLoginError } from '@/lib/loginResult';
@@ -32,6 +35,8 @@ const TechnicianLogin = () => {
   /** Prevents the auto-submit effect from firing twice for the same token combo
    *  (e.g. on failure → don't loop). A fresh Turnstile token resets it. */
   const autoSubmitTokenRef = useRef<string | null>(null);
+  const loginInFlightRef = useRef(false);
+  const turnstileRef = useRef<TurnstileWidgetHandle>(null);
 
   const { login, loading: authLoading, user, authInitializing } = useAuth();
   const navigate = useNavigate();
@@ -99,17 +104,29 @@ const TechnicianLogin = () => {
 
 
 
+  useEffect(() => {
+    autoSubmitTokenRef.current = null;
+  }, [password]);
+
+  const resetTurnstileAfterFailure = () => {
+    if (!turnstileRequired) return;
+    setTurnstileToken('');
+    turnstileRef.current?.reset();
+  };
+
+  const devLog = (...args: unknown[]) => {
+    if (import.meta.env.DEV) console.log(...args);
+  };
+
   // Extract login logic to be called automatically after verification
   const performLogin = async () => {
-    console.log('[TechnicianLogin] 🔐 Starting login process...');
-    console.log('[TechnicianLogin] Email:', email);
-    console.log('[TechnicianLogin] Password length:', password.length);
-    console.log('[TechnicianLogin] CAPTCHA verified:', isCaptchaVerified);
-    
     if (!email || !password) {
-      console.warn('[TechnicianLogin] ⚠️ Missing email or password');
-      return; // Don't auto-login if fields are empty
+      return;
     }
+    if (loginInFlightRef.current) {
+      return;
+    }
+    loginInFlightRef.current = true;
 
     setIsLoading(true);
     setError('');
@@ -119,26 +136,20 @@ const TechnicianLogin = () => {
     if (configError) {
       setError(configError);
       toast.error('Server configuration error — contact admin');
+      loginInFlightRef.current = false;
       setIsLoading(false);
       return;
     }
 
     try {
-      // Detect Chrome mobile for timeout handling
-      const isChromeMobile = typeof window !== 'undefined' && 
-        /Chrome/i.test(navigator.userAgent) && 
+      const isChromeMobile =
+        typeof window !== 'undefined' &&
+        /Chrome/i.test(navigator.userAgent) &&
         /Mobile|Android/i.test(navigator.userAgent);
-      
-      const loginTimeoutMs = isPWAMode()
-        ? 70_000
-        : isChromeMobile
-          ? 35_000
-          : 50_000;
-      console.log('[TechnicianLogin] Browser:', isChromeMobile ? 'Chrome Mobile' : 'Other');
-      console.log('[TechnicianLogin] Timeout:', `${loginTimeoutMs / 1000}s`);
-      
-      // Add timeout wrapper for Chrome mobile
-      console.log('[TechnicianLogin] Calling login() from AuthContext...');
+
+      const loginTimeoutMs = isPWAMode() ? 70_000 : isChromeMobile ? 35_000 : 50_000;
+      devLog('[TechnicianLogin] timeout', `${loginTimeoutMs / 1000}s`);
+
       const loginPromise = login(
         email,
         password,
@@ -150,41 +161,36 @@ const TechnicianLogin = () => {
         setTimeout(() => reject(new Error('Login timeout')), loginTimeoutMs)
       );
 
-      console.log('[TechnicianLogin] Waiting for login response...');
       const result = await Promise.race([loginPromise, timeoutPromise]);
-      console.log('[TechnicianLogin] Login response received. Success:', result.ok);
 
       if (result.ok) {
-        console.log('[TechnicianLogin] ✅ Login successful, navigating to dashboard');
         navigate('/technician', { replace: true });
       } else {
-        console.error('[TechnicianLogin] ❌ Login failed:', result.error);
+        autoSubmitTokenRef.current = null;
+        resetTurnstileAfterFailure();
         setError(
           formatLoginError(result, 'Login failed. Please check your credentials.')
         );
       }
-    } catch (err: any) {
-      console.error('[TechnicianLogin] ❌ Login exception caught:', err);
-      console.error('[TechnicianLogin] Error name:', err?.name);
-      console.error('[TechnicianLogin] Error message:', err?.message);
-      console.error('[TechnicianLogin] Error stack:', err?.stack);
-      if (err?.message?.includes('timeout')) {
-        console.error('[TechnicianLogin] ⏱️ Login timeout detected');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : '';
+      if (import.meta.env.DEV) console.error('[TechnicianLogin]', err);
+      if (message.includes('timeout')) {
         setError('Connection timeout. Please check your internet connection and try again.');
         toast.error('Connection timeout. Please check your network.');
       } else {
-        console.error('[TechnicianLogin] ❌ Generic login error');
         setError('Login failed. Please try again.');
         toast.error('Login failed. Please try again.');
       }
     } finally {
-      console.log('[TechnicianLogin] Login process finished, setting isLoading to false');
+      loginInFlightRef.current = false;
       setIsLoading(false);
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loginInFlightRef.current) return;
     setError('');
 
     // Check if CAPTCHA is verified before proceeding
@@ -210,7 +216,9 @@ const TechnicianLogin = () => {
     if (!isCaptchaVerified) {
       // Set timeout to show security step if verification doesn't complete in 5 seconds
       const timeout = setTimeout(() => {
-        console.log('[Login] ALTCHA verification timeout - showing security step');
+        if (import.meta.env.DEV) {
+          console.log('[Login] ALTCHA verification timeout - showing security step');
+        }
         setShowSecurityStep(true);
       }, 5000); // 5 seconds timeout for PWA
       
@@ -233,7 +241,7 @@ const TechnicianLogin = () => {
   // prevents a second attempt for the same Turnstile token (avoid loop on bad
   // password). A fresh Turnstile token (re-challenge / expiry) resets the ref.
   useEffect(() => {
-    if (isLoading) return;
+    if (isLoading || loginInFlightRef.current) return;
     if (!email || !password) return;
     if (!isCaptchaVerified || !altchaLoginToken) return;
     if (turnstileRequired && !turnstileToken) return;
@@ -256,7 +264,9 @@ const TechnicianLogin = () => {
 
   // Track verification status
   const handleVerify = (isValid: boolean, payload?: string, loginToken?: string) => {
-    console.log('[Login] ALTCHA verification result:', isValid);
+    if (import.meta.env.DEV) {
+      console.log('[Login] ALTCHA verification result:', isValid);
+    }
     setIsCaptchaVerified(isValid);
     if (payload) setAltchaPayload(payload);
     if (loginToken) setAltchaLoginToken(loginToken);
@@ -376,6 +386,7 @@ const TechnicianLogin = () => {
               {turnstileRequired && (
                 <div className="pt-2">
                   <TurnstileWidget
+                    ref={turnstileRef}
                     onToken={setTurnstileToken}
                     action="technician-login"
                     size="flexible"

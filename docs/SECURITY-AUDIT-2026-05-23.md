@@ -903,7 +903,7 @@ These could not be verified from static review alone — please confirm against 
 
 ### Root cause
 
-`secure-auth-login` proxy defenses (ALTCHA, 5/IP/hr, 5/email/15 min, escalating
+`secure-auth-login` proxy defenses (ALTCHA, 10 failed/IP/hr, 5 failed/email/15 min, escalating
 15→30→60 min lockout) are not on the path when an attacker calls
 `https://cgpjfmbyxjetmzehkumo.supabase.co/auth/v1/token?grant_type=password`
 directly with the public `VITE_SUPABASE_ANON_KEY` (which has to ship in the
@@ -918,9 +918,9 @@ brute force.
 | Cloudflare Turnstile widget on admin + technician login forms | `src/components/TurnstileWidget.tsx`, `src/components/AdminLogin.tsx`, `src/pages/TechnicianLogin.tsx` | Captures `captcha_token` to forward to Supabase |
 | `captchaToken` plumbed through entire auth chain | `src/contexts/AuthContext.tsx`, `src/lib/secureAuthLogin.ts`, `src/lib/auth.ts` | Token reaches the proxy unchanged |
 | Proxy forwards token to Supabase via `gotrue_meta_security.captcha_token` | `netlify/functions/secure-auth-login.js` | Supabase verifies Turnstile server-side BEFORE password check |
-| Proxy IP rate limit tightened **10/hr → 5/hr** | `netlify/functions/auth-rate-limits.js` | Lifts proxy floor to match per-account limit |
+| Proxy rate limits count **failed** attempts only (10 failed/IP/hr, 5 failed/email/15 min) | `netlify/functions/auth-rate-limits.js` | Correct passwords no longer burn IP budget |
 | Lockout RPC now **fails closed** instead of falling back to per-Lambda memory (addresses §3 F-08) | `netlify/functions/auth-lockout.js`, `netlify/functions/secure-auth-login.js` | Removes ~20× multi-instance bypass; returns 503 (not 429) when degraded so UI doesn't claim "locked" |
-| CSP allows `https://challenges.cloudflare.com` in `script-src` + `frame-src` | `scripts/csp-config.mjs`, `netlify.toml` | Turnstile script/iframe loads in production |
+| CSP allows `https://challenges.cloudflare.com` in `script-src`, `frame-src`, `connect-src` | `scripts/csp-config.mjs`, `netlify.toml` | Turnstile script/iframe/API calls load in production |
 
 The Turnstile path is **soft-deployable**: when `VITE_TURNSTILE_SITE_KEY` is
 not set the widget renders nothing and login is unchanged. Once the key is

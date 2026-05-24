@@ -29,11 +29,18 @@ const HMAC_KEY = process.env.ALTCHA_HMAC_KEY || 'PLACEHOLDER-DO-NOT-USE-IN-PRODU
 const LOGIN_TOKEN_TTL_MS = 5 * 60 * 1000;
 const BOOKING_LOGIN_TOKEN_TTL_MS = 30 * 60 * 1000;
 const usedLoginTokens = new Map();
+/** Blocks parallel login requests reusing the same ALTCHA login token. */
+const inFlightLoginTokens = new Map();
+
+const IN_FLIGHT_TTL_MS = 2 * 60 * 1000;
 
 setInterval(() => {
   const now = Date.now();
   for (const [key, exp] of usedLoginTokens.entries()) {
     if (exp < now) usedLoginTokens.delete(key);
+  }
+  for (const [key, startedAt] of inFlightLoginTokens.entries()) {
+    if (now - startedAt > IN_FLIGHT_TTL_MS) inFlightLoginTokens.delete(key);
   }
 }, 60_000);
 
@@ -102,9 +109,33 @@ function verifyLoginToken(loginToken, payload) {
   return { ok: true, consumeKey, exp: payloadMeta.exp };
 }
 
+/**
+ * Reserve token before password check — prevents two parallel requests from
+ * reusing the same ALTCHA login token. Released on failure; consumed on success.
+ */
+function tryReserveLoginToken(consumeKey) {
+  if (!consumeKey) {
+    return { ok: false, error: 'Missing login token' };
+  }
+  if (usedLoginTokens.has(consumeKey)) {
+    return { ok: false, error: 'Login token already used' };
+  }
+  const startedAt = inFlightLoginTokens.get(consumeKey);
+  if (startedAt != null && Date.now() - startedAt < IN_FLIGHT_TTL_MS) {
+    return { ok: false, error: 'Login already in progress' };
+  }
+  inFlightLoginTokens.set(consumeKey, Date.now());
+  return { ok: true };
+}
+
+function releaseLoginTokenReservation(consumeKey) {
+  if (consumeKey) inFlightLoginTokens.delete(consumeKey);
+}
+
 /** Mark login token used after successful authentication. */
 function consumeLoginToken(consumeKey, exp) {
   if (consumeKey) {
+    inFlightLoginTokens.delete(consumeKey);
     usedLoginTokens.set(consumeKey, exp || Date.now() + LOGIN_TOKEN_TTL_MS);
   }
 }
@@ -137,5 +168,7 @@ module.exports = {
   verifyAltchaPayload,
   createLoginToken,
   verifyLoginToken,
+  tryReserveLoginToken,
+  releaseLoginTokenReservation,
   consumeLoginToken,
 };

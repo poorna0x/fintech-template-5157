@@ -10,7 +10,10 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Shield, Eye, EyeOff, Droplets } from 'lucide-react';
 import { toast } from 'sonner';
 import AltchaWidget from '@/components/AltchaWidget';
-import TurnstileWidget, { isTurnstileEnabled } from '@/components/TurnstileWidget';
+import TurnstileWidget, {
+  isTurnstileEnabled,
+  type TurnstileWidgetHandle,
+} from '@/components/TurnstileWidget';
 import { registerAdminPWA } from '@/lib/pwa';
 import { formatLoginError } from '@/lib/loginResult';
 
@@ -32,6 +35,8 @@ const AdminLogin = () => {
    *  (e.g. on failure → don't loop). Reset when the user types or a new Turnstile
    *  token arrives. */
   const autoSubmitTokenRef = useRef<string | null>(null);
+  const loginInFlightRef = useRef(false);
+  const turnstileRef = useRef<TurnstileWidgetHandle>(null);
 
   const navigate = useNavigate();
   const { user, authInitializing, login } = useAuth();
@@ -99,11 +104,25 @@ const AdminLogin = () => {
   }, []);
 
 
+  useEffect(() => {
+    autoSubmitTokenRef.current = null;
+  }, [password]);
+
+  const resetTurnstileAfterFailure = () => {
+    if (!turnstileRequired) return;
+    setTurnstileToken('');
+    turnstileRef.current?.reset();
+  };
+
   // Extract login logic to be called automatically after verification
   const performLogin = async () => {
     if (!email || !password) {
-      return; // Don't auto-login if fields are empty
+      return;
     }
+    if (loginInFlightRef.current) {
+      return;
+    }
+    loginInFlightRef.current = true;
 
     setIsLoading(true);
     setError('');
@@ -113,6 +132,7 @@ const AdminLogin = () => {
     if (configError) {
       setError(configError);
       toast.error('Server configuration error — contact admin');
+      loginInFlightRef.current = false;
       setIsLoading(false);
       return;
     }
@@ -128,6 +148,8 @@ const AdminLogin = () => {
       if (result.ok) {
         navigate('/admin', { replace: true });
       } else {
+        autoSubmitTokenRef.current = null;
+        resetTurnstileAfterFailure();
         setError(
           formatLoginError(
             result,
@@ -144,12 +166,14 @@ const AdminLogin = () => {
         setError('Login failed. Please try again.');
       }
     } finally {
+      loginInFlightRef.current = false;
       setIsLoading(false);
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loginInFlightRef.current) return;
     setError('');
 
     // Check if CAPTCHA is verified before proceeding
@@ -177,7 +201,9 @@ const AdminLogin = () => {
     if (!isCaptchaVerified) {
       // Set timeout to show security step if verification doesn't complete in 5 seconds
       const timeout = setTimeout(() => {
-        console.log('[Login] ALTCHA verification timeout - showing security step');
+        if (import.meta.env.DEV) {
+          console.log('[Login] ALTCHA verification timeout - showing security step');
+        }
         setShowSecurityStep(true);
       }, 5000); // 5 seconds timeout for PWA
       
@@ -200,7 +226,7 @@ const AdminLogin = () => {
   // prevents a second attempt for the same Turnstile token (avoid loop on bad
   // password). A fresh Turnstile token (re-challenge / expiry) resets the ref.
   useEffect(() => {
-    if (isLoading) return;
+    if (isLoading || loginInFlightRef.current) return;
     if (!email || !password) return;
     if (!isCaptchaVerified || !altchaLoginToken) return;
     if (turnstileRequired && !turnstileToken) return;
@@ -223,7 +249,9 @@ const AdminLogin = () => {
 
   // Track verification status
   const handleVerify = (isValid: boolean, payload?: string, loginToken?: string) => {
-    console.log('[Login] ALTCHA verification result:', isValid);
+    if (import.meta.env.DEV) {
+      console.log('[Login] ALTCHA verification result:', isValid);
+    }
     setIsCaptchaVerified(isValid);
     if (payload) setAltchaPayload(payload);
     if (loginToken) setAltchaLoginToken(loginToken);
@@ -338,6 +366,7 @@ const AdminLogin = () => {
               {turnstileRequired && (
                 <div className="pt-2">
                   <TurnstileWidget
+                    ref={turnstileRef}
                     onToken={setTurnstileToken}
                     action="admin-login"
                     size="flexible"

@@ -1,4 +1,11 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, {
+  useEffect,
+  useRef,
+  useState,
+  useCallback,
+  forwardRef,
+  useImperativeHandle,
+} from 'react';
 
 /**
  * Cloudflare Turnstile widget — captures a token Supabase will verify server-side
@@ -51,6 +58,19 @@ function loadTurnstileScript(): Promise<void> {
       `script[src^="${TURNSTILE_SCRIPT_URL.split('?')[0]}"]`
     );
     if (existing) {
+      // Script tag may already be loaded (e.g. remount) — don't wait forever on 'load'.
+      if (window.turnstile) {
+        resolve();
+        return;
+      }
+      const ready =
+        existing.complete ||
+        existing.readyState === 'complete' ||
+        existing.readyState === 'loaded';
+      if (ready) {
+        resolve();
+        return;
+      }
       existing.addEventListener('load', () => resolve(), { once: true });
       existing.addEventListener('error', () => reject(new Error('Turnstile load failed')), {
         once: true,
@@ -81,112 +101,125 @@ interface TurnstileWidgetProps {
   theme?: 'light' | 'dark' | 'auto';
 }
 
+export interface TurnstileWidgetHandle {
+  /** Clear token and re-challenge (e.g. after failed login). */
+  reset: () => void;
+}
+
 function readSiteKey(): string {
   const key = (import.meta as ImportMeta & { env: { VITE_TURNSTILE_SITE_KEY?: string } })
     .env.VITE_TURNSTILE_SITE_KEY;
   return typeof key === 'string' ? key.trim() : '';
 }
 
-const TurnstileWidget: React.FC<TurnstileWidgetProps> = ({
-  onToken,
-  action,
-  className = '',
-  size = 'flexible',
-  theme = 'light',
-}) => {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const widgetIdRef = useRef<string | null>(null);
-  const onTokenRef = useRef(onToken);
-  const siteKey = readSiteKey();
-  const [error, setError] = useState<string | null>(null);
+const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidgetProps>(
+  function TurnstileWidget(
+    { onToken, action, className = '', size = 'flexible', theme = 'light' },
+    ref
+  ) {
+    const containerRef = useRef<HTMLDivElement | null>(null);
+    const widgetIdRef = useRef<string | null>(null);
+    const onTokenRef = useRef(onToken);
+    const siteKey = readSiteKey();
+    const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    onTokenRef.current = onToken;
-  }, [onToken]);
+    useEffect(() => {
+      onTokenRef.current = onToken;
+    }, [onToken]);
 
-  // Soft-off when not configured: emit a sentinel token so the login form is not blocked.
-  // (Supabase will still reject the request if dashboard CAPTCHA is enabled — that's the
-  // signal to set VITE_TURNSTILE_SITE_KEY and redeploy.)
-  useEffect(() => {
-    if (!siteKey) {
-      onTokenRef.current('');
-    }
-  }, [siteKey]);
-
-  const renderWidget = useCallback(async () => {
-    if (!siteKey || !containerRef.current) return;
-    try {
-      await loadTurnstileScript();
-      if (!window.turnstile || !containerRef.current) return;
-
-      if (widgetIdRef.current) {
-        window.turnstile.remove(widgetIdRef.current);
-        widgetIdRef.current = null;
+    useEffect(() => {
+      if (!siteKey) {
+        onTokenRef.current('');
       }
+    }, [siteKey]);
 
-      widgetIdRef.current = window.turnstile.render(containerRef.current, {
-        sitekey: siteKey,
-        action,
-        theme,
-        size,
-        // 'always' = render the checkbox even when Cloudflare auto-passes the user
-        // (interaction-only would auto-token invisibly for low-risk traffic, which
-        // is great UX but hides that the protection is there — visibility helps
-        // both users and auditors confirm the gate is in place).
-        appearance: 'always',
-        callback: (token: string) => {
-          setError(null);
-          onTokenRef.current(token);
-        },
-        'error-callback': () => {
-          setError('Security check failed. Please try again.');
-          onTokenRef.current('');
-        },
-        'expired-callback': () => {
-          setError('Security check expired. Please verify again.');
-          onTokenRef.current('');
-        },
-        'timeout-callback': () => {
-          setError('Security check timed out. Please try again.');
-          onTokenRef.current('');
-        },
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to load security check';
-      setError(msg);
+    const renderWidget = useCallback(async () => {
+      if (!siteKey || !containerRef.current) return;
+      try {
+        await loadTurnstileScript();
+        if (!window.turnstile || !containerRef.current) return;
+
+        if (widgetIdRef.current) {
+          window.turnstile.remove(widgetIdRef.current);
+          widgetIdRef.current = null;
+        }
+
+        widgetIdRef.current = window.turnstile.render(containerRef.current, {
+          sitekey: siteKey,
+          action,
+          theme,
+          size,
+          appearance: 'always',
+          callback: (token: string) => {
+            setError(null);
+            onTokenRef.current(token);
+          },
+          'error-callback': () => {
+            setError('Security check failed. Please try again.');
+            onTokenRef.current('');
+          },
+          'expired-callback': () => {
+            setError('Security check expired. Please verify again.');
+            onTokenRef.current('');
+          },
+          'timeout-callback': () => {
+            setError('Security check timed out. Please try again.');
+            onTokenRef.current('');
+          },
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Failed to load security check';
+        setError(msg);
+        onTokenRef.current('');
+      }
+    }, [siteKey, action, theme, size]);
+
+    const resetWidget = useCallback(() => {
       onTokenRef.current('');
-    }
-  }, [siteKey, action, theme, size]);
-
-  useEffect(() => {
-    void renderWidget();
-    return () => {
+      setError(null);
       if (widgetIdRef.current && window.turnstile) {
         try {
-          window.turnstile.remove(widgetIdRef.current);
+          window.turnstile.reset(widgetIdRef.current);
         } catch {
-          /* widget already gone */
+          void renderWidget();
         }
-        widgetIdRef.current = null;
+      } else if (siteKey) {
+        void renderWidget();
       }
-    };
-  }, [renderWidget]);
+    }, [renderWidget, siteKey]);
 
-  if (!siteKey) {
-    return null;
+    useImperativeHandle(ref, () => ({ reset: resetWidget }), [resetWidget]);
+
+    useEffect(() => {
+      void renderWidget();
+      return () => {
+        if (widgetIdRef.current && window.turnstile) {
+          try {
+            window.turnstile.remove(widgetIdRef.current);
+          } catch {
+            /* widget already gone */
+          }
+          widgetIdRef.current = null;
+        }
+      };
+    }, [renderWidget]);
+
+    if (!siteKey) {
+      return null;
+    }
+
+    return (
+      <div className={`flex flex-col items-center w-full ${className}`}>
+        <div ref={containerRef} className="cf-turnstile-container" />
+        {error && (
+          <p className="mt-2 text-xs text-destructive text-center" role="alert">
+            {error}
+          </p>
+        )}
+      </div>
+    );
   }
-
-  return (
-    <div className={`flex flex-col items-center w-full ${className}`}>
-      <div ref={containerRef} className="cf-turnstile-container" />
-      {error && (
-        <p className="mt-2 text-xs text-destructive text-center" role="alert">
-          {error}
-        </p>
-      )}
-    </div>
-  );
-};
+);
 
 /** True when Turnstile is enabled for this build (site key present). */
 export function isTurnstileEnabled(): boolean {

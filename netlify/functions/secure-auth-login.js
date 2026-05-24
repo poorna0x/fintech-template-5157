@@ -7,7 +7,13 @@ const {
   recordLoginRateLimitFailure,
 } = require('./auth-rate-limits');
 const { addSecurityHeaders } = require('./security-headers');
-const { verifyLoginToken, consumeLoginToken, isPlaceholderKey } = require('./altcha-guard');
+const {
+  verifyLoginToken,
+  tryReserveLoginToken,
+  releaseLoginTokenReservation,
+  consumeLoginToken,
+  isPlaceholderKey,
+} = require('./altcha-guard');
 const {
   checkLoginAllowed,
   recordLoginFailure,
@@ -16,6 +22,16 @@ const {
 const { signPortalCookie, cookieHeader } = require('./portal-session');
 
 const GENERIC_AUTH_ERROR = 'Invalid email or password';
+
+/** Only failed password / invalid-grant style responses count toward proxy rate limits. */
+function shouldRecordCredentialFailure(authResult) {
+  if (authResult.ok) return false;
+  if (authResult.status >= 500) return false;
+  if (authResult.status === 429) return false;
+  const code = authResult.body?.error_code || authResult.body?.code;
+  if (code === 'captcha_failed' || code === 'captcha_required') return false;
+  return true;
+}
 
 async function signInWithPasswordServer(supabaseUrl, anonKey, email, password, captchaToken) {
   const payload = { email, password };
@@ -147,6 +163,17 @@ exports.handler = async (event) => {
     };
   }
 
+  const reserve = tryReserveLoginToken(tokenCheck.consumeKey);
+  if (!reserve.ok) {
+    return {
+      statusCode: 403,
+      headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ error: reserve.error || 'Security verification required' }),
+    };
+  }
+
+  let loginTokenConsumed = false;
+  try {
   const admin = createClient(supabaseUrl, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
@@ -200,7 +227,9 @@ exports.handler = async (event) => {
   );
 
   if (!authResult.ok) {
-    recordLoginRateLimitFailure(event, normalizedEmail);
+    if (shouldRecordCredentialFailure(authResult)) {
+      recordLoginRateLimitFailure(event, normalizedEmail);
+    }
 
     if (authResult.status === 429) {
       const retrySec = parseInt(authResult.headers?.get?.('retry-after') || '300', 10);
@@ -223,7 +252,9 @@ exports.handler = async (event) => {
       };
     }
 
-    const failureMeta = await recordLoginFailure(admin, normalizedEmail);
+    const failureMeta = shouldRecordCredentialFailure(authResult)
+      ? await recordLoginFailure(admin, normalizedEmail)
+      : null;
     const remaining = failureMeta?.remaining_attempts;
     const locked = failureMeta?.locked === true;
 
@@ -320,6 +351,7 @@ exports.handler = async (event) => {
 
   await recordLoginSuccess(admin, normalizedEmail);
   consumeLoginToken(tokenCheck.consumeKey, tokenCheck.exp);
+  loginTokenConsumed = true;
 
   const portalRole = isTechnician ? 'technician' : 'admin';
   const cookieMaxAge = Math.min(Math.max(Number(session.expires_in) || 43200, 300), 60 * 60 * 24 * 7);
@@ -341,4 +373,9 @@ exports.handler = async (event) => {
       user,
     }),
   };
+  } finally {
+    if (!loginTokenConsumed) {
+      releaseLoginTokenReservation(tokenCheck.consumeKey);
+    }
+  }
 };
