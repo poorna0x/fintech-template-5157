@@ -158,6 +158,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="preconnect" href="https://www.googletagmanager.com">
+    <!-- Login-critical origins: warm TLS+DNS so the first Turnstile/Supabase request is fast on mobile -->
+    <link rel="preconnect" href="https://challenges.cloudflare.com" crossorigin>
+    <link rel="preconnect" href="https://cgpjfmbyxjetmzehkumo.supabase.co" crossorigin>
+    <link rel="dns-prefetch" href="//challenges.cloudflare.com">
+    <link rel="dns-prefetch" href="//cgpjfmbyxjetmzehkumo.supabase.co">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"></noscript>
     

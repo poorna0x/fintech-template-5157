@@ -55,12 +55,13 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
   const onAutoSubmitRef = useRef(onAutoSubmit); // Store latest onAutoSubmit callback
   const verifyingTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Track verifying timeout
 
-  // Calculate complexity based on difficulty (similar to our custom implementation)
-  // Lower base complexity for faster verification (1-2 seconds typical)
+  // Proof-of-work complexity. Lower = faster login on slow phones; Turnstile + per-account
+  // lockout + IP rate limits are the primary anti-bot gates, so ALTCHA only needs to dampen
+  // burst traffic. Each +1 to complexity ~doubles solve time on mobile.
   const getComplexity = () => {
-    const baseComplexity = 12; // Reduced from 14 for faster verification
-    const additionalComplexity = (difficultyLevel - 1) * 0.5; // Smaller increments
-    return Math.min(Math.floor(baseComplexity + additionalComplexity), 14); // Max 14 instead of 18
+    const baseComplexity = 10;
+    const additionalComplexity = Math.max(0, difficultyLevel - 1) * 0.5;
+    return Math.min(Math.floor(baseComplexity + additionalComplexity), 13);
   };
 
   // Update refs when callbacks change (without triggering re-configuration)

@@ -58,6 +58,9 @@ const TechnicianLogin = () => {
       clearTimeout(captchaTimeout);
       setCaptchaTimeout(null);
     }
+    // Warm up the dashboard chunk while the user is solving CAPTCHA so post-login
+    // navigation is instant (no extra round trip after Sign In).
+    void import('@/pages/TechnicianDashboard').catch(() => undefined);
     return () => {
       disablePWA();
     };
