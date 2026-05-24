@@ -2242,7 +2242,11 @@ const AdminDashboard = () => {
 
   const handleDeleteCustomer = async () => {
     if (!customerToDelete) return;
-    
+    if (isManager) {
+      toast.error(managerRestrictedTitle);
+      return;
+    }
+
     try {
       const { error, data } = await db.customers.delete(customerToDelete.id);
       
@@ -3653,6 +3657,10 @@ const AdminDashboard = () => {
   }, [customers]);
 
   const confirmDelete = (customer: Customer) => {
+    if (isManager) {
+      toast.error(managerRestrictedTitle);
+      return;
+    }
     setCustomerToDelete(customer);
     setDeleteDialogOpen(true);
   };

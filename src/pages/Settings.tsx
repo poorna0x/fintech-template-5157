@@ -292,6 +292,10 @@ const Settings = () => {
   };
 
   const handleStartDeleteTechnician = (technician: Technician) => {
+    if (isManager) {
+      toast.error(managerRestrictedTitle);
+      return;
+    }
     setTechnicianToDelete(technician);
     setDeleteTechnicianStep(1);
     setEditTechnicianDialogOpen(false);
@@ -301,6 +305,10 @@ const Settings = () => {
 
   const handleExecuteDeleteTechnician = async () => {
     if (!technicianToDelete) return;
+    if (isManager) {
+      toast.error(managerRestrictedTitle);
+      return;
+    }
 
     setIsDeletingTechnician(true);
     try {
@@ -333,6 +341,10 @@ const Settings = () => {
 
   // Technician management functions
   const handleAddTechnician = () => {
+    if (isManager) {
+      toast.error(managerRestrictedTitle);
+      return;
+    }
     setTechnicianFormData({
       fullName: '',
       phone: '',
@@ -352,6 +364,10 @@ const Settings = () => {
   };
 
   const handleEditTechnician = (technician: Technician) => {
+    if (isManager) {
+      toast.error(managerRestrictedTitle);
+      return;
+    }
     setSelectedTechnician(technician);
     setTechnicianFormData({
       fullName: technician.fullName,
@@ -372,6 +388,10 @@ const Settings = () => {
   };
 
   const handleSaveTechnician = async () => {
+    if (isManager) {
+      toast.error(managerRestrictedTitle);
+      return;
+    }
     try {
       // Password (if provided) is forwarded as plaintext to sync-technician-auth-user,
       // which writes it to Supabase Auth via admin.updateUserById. The DB no longer
@@ -1371,10 +1391,16 @@ const Settings = () => {
           variant="outline"
           size="sm"
           onClick={() => handleEditTechnician(technician)}
+          disabled={isManager}
+          title={isManager ? managerRestrictedTitle : undefined}
           className="w-full text-xs sm:text-sm"
         >
-          <Edit className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
-          Edit
+          {isManager ? (
+            <Lock className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
+          ) : (
+            <Edit className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
+          )}
+          {isManager ? 'Restricted' : 'Edit'}
         </Button>
       </CardContent>
     </Card>
@@ -2111,12 +2137,18 @@ const Settings = () => {
                     </CardDescription>
                   </div>
                 <Button 
-                  onClick={handleAddTechnician} 
-                  className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
+                  onClick={handleAddTechnician}
+                  disabled={isManager}
+                  title={isManager ? managerRestrictedTitle : undefined}
+                  className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto disabled:opacity-50"
                   size="sm"
                 >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add Technician
+                    {isManager ? (
+                      <Lock className="w-4 h-4 mr-2" />
+                    ) : (
+                      <Plus className="w-4 h-4 mr-2" />
+                    )}
+                    {isManager ? 'Restricted' : 'Add Technician'}
                   </Button>
                 </div>
               </CardHeader>
@@ -2652,10 +2684,16 @@ const Settings = () => {
                 variant="outline"
                 size="sm"
                 onClick={() => handleStartDeleteTechnician(selectedTechnician)}
-                className="w-full sm:w-auto text-red-600 border-red-300 hover:bg-red-100 hover:text-red-700 dark:border-red-800 dark:hover:bg-red-950"
+                disabled={isManager}
+                title={isManager ? managerRestrictedTitle : undefined}
+                className="w-full sm:w-auto text-red-600 border-red-300 hover:bg-red-100 hover:text-red-700 dark:border-red-800 dark:hover:bg-red-950 disabled:opacity-50"
               >
-                <Trash2 className="w-4 h-4 mr-2" />
-                Delete technician…
+                {isManager ? (
+                  <Lock className="w-4 h-4 mr-2" />
+                ) : (
+                  <Trash2 className="w-4 h-4 mr-2" />
+                )}
+                {isManager ? 'Restricted' : 'Delete technician…'}
               </Button>
             </div>
           )}
@@ -2674,10 +2712,23 @@ const Settings = () => {
             </Button>
             <Button
               onClick={handleSaveTechnician}
-              disabled={!technicianFormData.fullName || !technicianFormData.phone || !technicianFormData.email || !technicianFormData.employeeId || (!editTechnicianDialogOpen && !technicianFormData.password) || technicianFormData.baseSalary < 0}
+              disabled={
+                isManager ||
+                !technicianFormData.fullName ||
+                !technicianFormData.phone ||
+                !technicianFormData.email ||
+                !technicianFormData.employeeId ||
+                (!editTechnicianDialogOpen && !technicianFormData.password) ||
+                technicianFormData.baseSalary < 0
+              }
+              title={isManager ? managerRestrictedTitle : undefined}
               className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
             >
-              {editTechnicianDialogOpen ? 'Update Technician' : 'Create Technician'}
+              {isManager
+                ? 'Restricted'
+                : editTechnicianDialogOpen
+                  ? 'Update Technician'
+                  : 'Create Technician'}
             </Button>
             {newlyCreatedTechnicianId && (
               <Button
