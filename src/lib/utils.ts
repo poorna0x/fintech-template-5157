@@ -50,6 +50,13 @@ export function normalizePhoneForSearch(input: string | undefined | null): strin
 }
 
 /**
+ * Normalize pasted/typed Indian mobile for form inputs (+91, spaces, leading 0 → 10 digits).
+ */
+export function normalizeIndianMobileInput(input: string): string {
+  return normalizePhoneForSearch(input).slice(0, 10);
+}
+
+/**
  * Escape a string for safe use inside PostgreSQL LIKE patterns (% and _ are wildcards, \ is escape).
  */
 export function escapeForLike(value: string): string {

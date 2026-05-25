@@ -12,6 +12,7 @@ import { customerNameClassName } from '@/lib/customerDisplay';
 import { MapPin, Download, ExternalLink, Trash2, Lock } from 'lucide-react';
 import { useAdminRole } from '@/lib/useAdminRole';
 import { mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas } from '@/lib/adminUtils';
+import { normalizeIndianMobileInput } from '@/lib/utils';
 
 // Brand and model data - RO and Softener brands including local (Aqua Grand, Aqua Smart, Dolphin, etc.)
 const brandData = {
@@ -362,6 +363,10 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
       ...prev,
       [field]: value
     }));
+  };
+
+  const handleEditPhoneFieldChange = (field: 'phone' | 'alternate_phone', value: string) => {
+    handleEditFormChange(field, normalizeIndianMobileInput(value));
   };
 
   const handleAddressFieldChange = (field: string, value: string) => {
@@ -1135,8 +1140,9 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
                 <Input
                   id="edit_phone"
                   value={editFormData?.phone ?? ''}
-                  onChange={(e) => handleEditFormChange('phone', e.target.value)}
-                  placeholder="Enter primary phone number"
+                  onChange={(e) => handleEditPhoneFieldChange('phone', e.target.value)}
+                  placeholder="Enter 10-digit phone number"
+                  inputMode="numeric"
                 />
               </div>
 
@@ -1145,8 +1151,9 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
                 <Input
                   id="edit_alternate_phone"
                   value={editFormData?.alternate_phone ?? ''}
-                  onChange={(e) => handleEditFormChange('alternate_phone', e.target.value)}
-                  placeholder="Enter alternate phone number (optional)"
+                  onChange={(e) => handleEditPhoneFieldChange('alternate_phone', e.target.value)}
+                  placeholder="Enter 10-digit phone number (optional)"
+                  inputMode="numeric"
                 />
               </div>
 
