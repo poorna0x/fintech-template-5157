@@ -47,9 +47,15 @@ export function DatePicker({
         <Button
           type="button"
           variant="outline"
-          size="sm"
           disabled={disabled}
-          className={cn("min-w-[120px] justify-start font-normal h-10 px-3 py-2 border border-input rounded-md", !value && "text-muted-foreground", className)}
+          className={cn(
+            // Match the shape of <Input>/<Select> so DatePicker fills its column
+            // and lines up with neighboring fields. Callsites in flex rows can
+            // opt out with `w-auto` (and add their own min-width) via className.
+            "h-10 w-full justify-start font-normal px-3 py-2 text-sm",
+            !value && "text-muted-foreground",
+            className,
+          )}
           aria-label={placeholder}
         >
           {displayText}

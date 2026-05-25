@@ -1623,12 +1623,14 @@ const Analytics = () => {
                 value={customStartDate}
                 onChange={(v) => v && setCustomStartDate(v)}
                 placeholder="Start date"
+                className="w-auto min-w-[140px]"
               />
               <span className="text-gray-500">to</span>
               <DatePicker
                 value={customEndDate}
                 onChange={(v) => v && setCustomEndDate(v)}
                 placeholder="End date"
+                className="w-auto min-w-[140px]"
               />
             </div>
           )}

@@ -9249,7 +9249,7 @@ const AdminDashboard = () => {
                 value={deniedDateFilter}
                 onChange={(v) => setDeniedDateFilter(v ?? getTodayLocalDate())}
                 placeholder="Pick date"
-                className="shrink-0"
+                className="w-auto min-w-[140px] shrink-0"
               />
               <Button
                 variant="outline"
@@ -9285,7 +9285,7 @@ const AdminDashboard = () => {
                           setCompletedByFilter('all');
                         }}
                         placeholder="Pick date"
-                        className="h-10"
+                        className="w-auto min-w-[140px]"
                       />
                     </div>
                     <Button

@@ -367,6 +367,7 @@ const BillingStats = () => {
                 value={selectedDate}
                 onChange={(v) => v && setSelectedDate(v)}
                 placeholder="Pick date"
+                className="w-auto min-w-[140px]"
               />
             </div>
           )}
@@ -378,12 +379,14 @@ const BillingStats = () => {
                   value={startDate}
                   onChange={(v) => v && setStartDate(v)}
                   placeholder="Start date"
+                  className="w-auto min-w-[140px]"
                 />
                 <span className="text-gray-500">to</span>
                 <DatePicker
                   value={endDate}
                   onChange={(v) => v && setEndDate(v)}
                   placeholder="End date"
+                  className="w-auto min-w-[140px]"
                 />
               </div>
             </div>
