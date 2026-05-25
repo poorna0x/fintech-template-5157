@@ -190,6 +190,9 @@ const TechnicianPayments = () => {
   const [selectedTechFilterIds, setSelectedTechFilterIds] = useState<string[]>([]);
   const [techFilterPopoverOpen, setTechFilterPopoverOpen] = useState(false);
   const [showDailyDetails, setShowDailyDetails] = useState<Record<string, boolean>>({});
+  const [showExpensesTable, setShowExpensesTable] = useState<Record<string, boolean>>({});
+  const [showAdvancesTable, setShowAdvancesTable] = useState<Record<string, boolean>>({});
+  const [showExtraCommissionsTable, setShowExtraCommissionsTable] = useState<Record<string, boolean>>({});
   const [dailyBreakdownPage, setDailyBreakdownPage] = useState<Record<string, number>>({}); // technicianId -> page number
   const itemsPerPage = 10; // Show 10 days per page
   
@@ -1961,7 +1964,9 @@ const TechnicianPayments = () => {
               </PopoverTrigger>
               <PopoverContent
                 align="end"
-                className="w-[calc(100vw-2rem)] sm:w-[280px] p-0"
+                sideOffset={6}
+                collisionPadding={12}
+                className="w-[min(calc(100vw-1.5rem),20rem)] sm:w-[280px] p-0"
               >
                 <div className="flex items-center justify-between gap-2 px-3 py-2 border-b">
                   <span className="text-xs font-medium text-gray-500">
@@ -2375,11 +2380,31 @@ const TechnicianPayments = () => {
                 </Button>
               </div>
 
-              {/* Expenses Table */}
+              {/* Expenses Table — collapsed by default */}
               {selectedPeriod !== 'rangeToCurrent' && breakdown.expenses.length > 0 && (
                 <div className="mb-6">
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3">Expenses</h3>
-                  <div className="overflow-x-auto">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() =>
+                      setShowExpensesTable((prev) => ({
+                        ...prev,
+                        [breakdown.technicianId]: !prev[breakdown.technicianId],
+                      }))
+                    }
+                    className="w-full flex items-center justify-between"
+                  >
+                    <span className="font-semibold">
+                      Expenses ({breakdown.expenses.length})
+                    </span>
+                    {showExpensesTable[breakdown.technicianId] ? (
+                      <ChevronUp className="w-4 h-4" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4" />
+                    )}
+                  </Button>
+                  {showExpensesTable[breakdown.technicianId] && (
+                  <div className="mt-3 overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -2431,14 +2456,35 @@ const TechnicianPayments = () => {
                       </TableBody>
                     </Table>
                   </div>
+                  )}
                 </div>
               )}
 
-              {/* Advances Table */}
+              {/* Advances Table — collapsed by default */}
               {selectedPeriod !== 'rangeToCurrent' && breakdown.advances.length > 0 && (
                 <div className="mb-6">
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3">Advances</h3>
-                  <div className="overflow-x-auto">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() =>
+                      setShowAdvancesTable((prev) => ({
+                        ...prev,
+                        [breakdown.technicianId]: !prev[breakdown.technicianId],
+                      }))
+                    }
+                    className="w-full flex items-center justify-between"
+                  >
+                    <span className="font-semibold">
+                      Advances ({breakdown.advances.length})
+                    </span>
+                    {showAdvancesTable[breakdown.technicianId] ? (
+                      <ChevronUp className="w-4 h-4" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4" />
+                    )}
+                  </Button>
+                  {showAdvancesTable[breakdown.technicianId] && (
+                  <div className="mt-3 overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -2490,14 +2536,35 @@ const TechnicianPayments = () => {
                       </TableBody>
                     </Table>
                   </div>
+                  )}
                 </div>
               )}
 
-              {/* Extra Commissions Table */}
+              {/* Extra Commissions Table — collapsed by default */}
               {selectedPeriod !== 'rangeToCurrent' && breakdown.extraCommissions.length > 0 && (
                 <div className="mb-6">
-                  <h3 className="text-sm font-semibold text-gray-700 mb-3">Extra Commissions</h3>
-                  <div className="overflow-x-auto">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() =>
+                      setShowExtraCommissionsTable((prev) => ({
+                        ...prev,
+                        [breakdown.technicianId]: !prev[breakdown.technicianId],
+                      }))
+                    }
+                    className="w-full flex items-center justify-between"
+                  >
+                    <span className="font-semibold">
+                      Extra Commissions ({breakdown.extraCommissions.length})
+                    </span>
+                    {showExtraCommissionsTable[breakdown.technicianId] ? (
+                      <ChevronUp className="w-4 h-4" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4" />
+                    )}
+                  </Button>
+                  {showExtraCommissionsTable[breakdown.technicianId] && (
+                  <div className="mt-3 overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -2549,6 +2616,7 @@ const TechnicianPayments = () => {
                       </TableBody>
                     </Table>
                   </div>
+                  )}
                 </div>
               )}
 
