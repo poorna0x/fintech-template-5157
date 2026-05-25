@@ -470,9 +470,18 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
       handleClose();
 
       if (assignedTechIdToNotify && onJobAssignedToTechnician && customer) {
+        // The Customer type stores the one-word location inside `address.visible_address`
+        // (transformCustomerData in AdminDashboard moves it there). Fall back through
+        // both shapes so we don't end up sending the city name ("Bangalore") in the
+        // WhatsApp notify dialog.
+        const customerAddress = customer.address as
+          | { visible_address?: string; visibleAddress?: string }
+          | undefined;
         const customerVisible =
           (customer as { visible_address?: string }).visible_address ||
-          (customer as { visibleAddress?: string }).visibleAddress;
+          (customer as { visibleAddress?: string }).visibleAddress ||
+          customerAddress?.visible_address ||
+          customerAddress?.visibleAddress;
         const customerName =
           (customer as { fullName?: string }).fullName ||
           (customer as { full_name?: string }).full_name ||
