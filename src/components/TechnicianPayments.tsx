@@ -186,13 +186,26 @@ const TechnicianPayments = () => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   });
-  // Technician filter for the salary breakdown cards. Empty array = "all".
+  // Technician filter for the salary breakdown cards.
+  //   `selectedTechFilterIds`  – exact technician IDs to show.
+  //     • length === 0 && !techFilterShowNone  → "all technicians" (default).
+  //     • length === 0 && techFilterShowNone   → "no technicians" (explicit empty).
+  //     • length > 0                            → only those IDs.
   const [selectedTechFilterIds, setSelectedTechFilterIds] = useState<string[]>([]);
+  const [techFilterShowNone, setTechFilterShowNone] = useState(false);
   const [techFilterPopoverOpen, setTechFilterPopoverOpen] = useState(false);
   const [showDailyDetails, setShowDailyDetails] = useState<Record<string, boolean>>({});
   const [showExpensesTable, setShowExpensesTable] = useState<Record<string, boolean>>({});
   const [showAdvancesTable, setShowAdvancesTable] = useState<Record<string, boolean>>({});
   const [showExtraCommissionsTable, setShowExtraCommissionsTable] = useState<Record<string, boolean>>({});
+  // Mobile-only single-card carousel state. Desktop ignores this and stacks cards.
+  const [mobileTechIndex, setMobileTechIndex] = useState(0);
+  const [isMobileViewport, setIsMobileViewport] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(max-width: 639px)').matches;
+  });
+  const techSwipeStartXRef = useRef<number | null>(null);
+  const techSwipeStartYRef = useRef<number | null>(null);
   const [dailyBreakdownPage, setDailyBreakdownPage] = useState<Record<string, number>>({}); // technicianId -> page number
   const itemsPerPage = 10; // Show 10 days per page
   
@@ -913,6 +926,36 @@ const TechnicianPayments = () => {
     if (same) return;
     loadSalaryBreakdownData(false);
   }, [selectedPeriod, selectedPastMonth, selectedRangeEndMonth, salaryDataLoaded, loadSalaryBreakdownData]);
+
+  // Keep `isMobileViewport` in sync with the viewport so the swipe carousel
+  // engages on phones and disengages on larger screens.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(max-width: 639px)');
+    const handler = (event: MediaQueryListEvent) => setIsMobileViewport(event.matches);
+    setIsMobileViewport(mq.matches);
+    if (typeof mq.addEventListener === 'function') {
+      mq.addEventListener('change', handler);
+      return () => mq.removeEventListener('change', handler);
+    }
+    // Safari < 14 fallback
+    mq.addListener(handler);
+    return () => mq.removeListener(handler);
+  }, []);
+
+  // Keep the mobile carousel index in range whenever the filter or data shrinks.
+  // NOTE: must live above the `if (loading) return` early-return so the hook
+  // order stays stable across renders.
+  const filteredTechCount = techFilterShowNone
+    ? 0
+    : selectedTechFilterIds.length === 0
+      ? salaryBreakdowns.length
+      : salaryBreakdowns.filter((b) => selectedTechFilterIds.includes(b.technicianId)).length;
+  useEffect(() => {
+    if (mobileTechIndex > 0 && mobileTechIndex >= filteredTechCount) {
+      setMobileTechIndex(Math.max(0, filteredTechCount - 1));
+    }
+  }, [filteredTechCount, mobileTechIndex]);
 
 
   /** Full refresh: technicians + period; salary/business only if user had viewed them. */
@@ -1793,12 +1836,16 @@ const TechnicianPayments = () => {
     );
   }
 
-  const displayedSalaryBreakdowns =
-    selectedTechFilterIds.length === 0
+  const displayedSalaryBreakdowns = techFilterShowNone
+    ? []
+    : selectedTechFilterIds.length === 0
       ? salaryBreakdowns
-      : salaryBreakdowns.filter((breakdown) => selectedTechFilterIds.includes(breakdown.technicianId));
+      : salaryBreakdowns.filter((breakdown) =>
+          selectedTechFilterIds.includes(breakdown.technicianId),
+        );
 
   const techFilterLabel = (() => {
+    if (techFilterShowNone) return 'No technicians';
     if (selectedTechFilterIds.length === 0) return 'All technicians';
     if (selectedTechFilterIds.length === 1) {
       const t = technicians.find((tech: any) => tech.id === selectedTechFilterIds[0]);
@@ -1808,9 +1855,69 @@ const TechnicianPayments = () => {
   })();
 
   const toggleTechFilter = (id: string) => {
+    // Any single-item toggle implicitly leaves the "show none" state.
+    setTechFilterShowNone(false);
     setSelectedTechFilterIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
+  };
+
+  const selectAllTechFilter = () => {
+    setTechFilterShowNone(false);
+    setSelectedTechFilterIds([]);
+  };
+
+  const selectNoneTechFilter = () => {
+    setTechFilterShowNone(true);
+    setSelectedTechFilterIds([]);
+  };
+
+  const triggerHapticPulse = (pattern: number | number[] = 18) => {
+    if (typeof navigator === 'undefined') return;
+    const vibrate = (navigator as Navigator & {
+      vibrate?: (pattern: number | number[]) => boolean;
+    }).vibrate;
+    if (typeof vibrate === 'function') {
+      try {
+        vibrate.call(navigator, pattern);
+      } catch {
+        // Some browsers throw on cross-origin iframes — silently ignore.
+      }
+    }
+  };
+
+  const advanceTechIndex = (direction: 1 | -1) => {
+    const len = displayedSalaryBreakdowns.length;
+    if (len < 2) return;
+    setMobileTechIndex((prev) => {
+      const next = ((prev + direction) % len + len) % len;
+      // Wrap-around (last→first or first→last): double-tap to make the loop feel distinct.
+      const wrapped =
+        (direction === 1 && prev === len - 1 && next === 0) ||
+        (direction === -1 && prev === 0 && next === len - 1);
+      triggerHapticPulse(wrapped ? [12, 60, 18] : 18);
+      return next;
+    });
+  };
+
+  const handleTechCardTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!isMobileViewport || displayedSalaryBreakdowns.length < 2) return;
+    techSwipeStartXRef.current = e.touches[0].clientX;
+    techSwipeStartYRef.current = e.touches[0].clientY;
+  };
+
+  const handleTechCardTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!isMobileViewport || displayedSalaryBreakdowns.length < 2) return;
+    const startX = techSwipeStartXRef.current;
+    const startY = techSwipeStartYRef.current;
+    techSwipeStartXRef.current = null;
+    techSwipeStartYRef.current = null;
+    if (startX == null || startY == null) return;
+    const dx = e.changedTouches[0].clientX - startX;
+    const dy = e.changedTouches[0].clientY - startY;
+    // Need a clearly horizontal gesture; ignore vertical scrolls and stray taps.
+    if (Math.abs(dx) < 60 || Math.abs(dx) <= Math.abs(dy)) return;
+    advanceTechIndex(dx < 0 ? 1 : -1);
   };
 
   return (
@@ -1972,19 +2079,30 @@ const TechnicianPayments = () => {
                   <span className="text-xs font-medium text-gray-500">
                     Select technicians
                   </span>
-                  <button
-                    type="button"
-                    className="text-xs font-medium text-blue-600 hover:text-blue-700"
-                    onClick={() => setSelectedTechFilterIds([])}
-                  >
-                    Show all
-                  </button>
+                  <div className="flex items-center gap-2 text-xs font-medium">
+                    <button
+                      type="button"
+                      className="text-blue-600 hover:text-blue-700"
+                      onClick={selectAllTechFilter}
+                    >
+                      Select all
+                    </button>
+                    <span className="text-gray-300">·</span>
+                    <button
+                      type="button"
+                      className="text-blue-600 hover:text-blue-700"
+                      onClick={selectNoneTechFilter}
+                    >
+                      Select none
+                    </button>
+                  </div>
                 </div>
                 <div className="max-h-72 overflow-y-auto py-1">
                   {technicians.map((tech: any) => {
-                    const checked =
-                      selectedTechFilterIds.length === 0 ||
-                      selectedTechFilterIds.includes(tech.id);
+                    const checked = techFilterShowNone
+                      ? false
+                      : selectedTechFilterIds.length === 0 ||
+                        selectedTechFilterIds.includes(tech.id);
                     return (
                       <label
                         key={tech.id}
@@ -1993,6 +2111,12 @@ const TechnicianPayments = () => {
                         <Checkbox
                           checked={checked}
                           onCheckedChange={() => {
+                            if (techFilterShowNone) {
+                              // Coming from "none selected" — start fresh with this one.
+                              setTechFilterShowNone(false);
+                              setSelectedTechFilterIds([tech.id]);
+                              return;
+                            }
                             if (selectedTechFilterIds.length === 0) {
                               // Currently "all selected" — switch to only the others.
                               setSelectedTechFilterIds(
@@ -2020,14 +2144,6 @@ const TechnicianPayments = () => {
                   })}
                 </div>
                 <div className="flex items-center justify-end gap-2 px-3 py-2 border-t">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8"
-                    onClick={() => setSelectedTechFilterIds([])}
-                  >
-                    Reset
-                  </Button>
                   <Button
                     size="sm"
                     className="h-8"
@@ -2087,8 +2203,52 @@ const TechnicianPayments = () => {
             </CardContent>
           </Card>
         )}
-        {!loadingSalaryBreakdowns && salaryDataLoaded && displayedSalaryBreakdowns.map((breakdown) => (
-          <Card key={breakdown.technicianId} className="overflow-hidden">
+        {/* Mobile-only pager: swipe or use arrows to move between technicians */}
+        {!loadingSalaryBreakdowns &&
+          salaryDataLoaded &&
+          isMobileViewport &&
+          displayedSalaryBreakdowns.length > 1 && (
+            <div className="sm:hidden flex items-center justify-between gap-2 p-2 bg-white border rounded-lg">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 px-3"
+                onClick={() => advanceTechIndex(-1)}
+                aria-label="Previous technician"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+              <div className="min-w-0 flex-1 text-center">
+                <div className="text-sm font-medium text-gray-900 truncate">
+                  {displayedSalaryBreakdowns[mobileTechIndex]?.technicianName}
+                </div>
+                <div className="text-[11px] text-gray-500">
+                  {mobileTechIndex + 1} of {displayedSalaryBreakdowns.length} · swipe to switch
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 px-3"
+                onClick={() => advanceTechIndex(1)}
+                aria-label="Next technician"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+          )}
+        {!loadingSalaryBreakdowns && salaryDataLoaded && displayedSalaryBreakdowns.map((breakdown, breakdownIdx) => (
+          <div
+            key={breakdown.technicianId}
+            className={
+              isMobileViewport && breakdownIdx !== mobileTechIndex ? 'hidden' : ''
+            }
+            onTouchStart={handleTechCardTouchStart}
+            onTouchEnd={handleTechCardTouchEnd}
+          >
+          <Card className="overflow-hidden">
             <CardHeader className="bg-gray-50 border-b p-4 sm:p-6 space-y-3">
               <div>
                 <CardTitle className="text-base sm:text-lg">{breakdown.technicianName}</CardTitle>
@@ -2822,6 +2982,7 @@ const TechnicianPayments = () => {
               )}
             </CardContent>
           </Card>
+          </div>
         ))}
       </div>
 
