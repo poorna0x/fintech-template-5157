@@ -2331,8 +2331,8 @@ const TechnicianPayments = () => {
               </div>
               )}
 
-              {/* Actions */}
-              <div className="flex gap-2 mb-6 flex-wrap">
+              {/* Actions — uniform sizing, 2-col grid on mobile, flex row on sm+ */}
+              <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 mb-6">
                 <Button
                   size="sm"
                   onClick={() => {
@@ -2344,34 +2344,34 @@ const TechnicianPayments = () => {
                       toast.error('Period information not available');
                     }
                   }}
-                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                  className="bg-blue-600 hover:bg-blue-700 text-white h-10 sm:h-9 w-full sm:w-auto justify-center text-xs sm:text-sm whitespace-nowrap"
                 >
-                  <Download className="w-4 h-4 mr-2" />
-                  Download Salary Slip
+                  <Download className="w-4 h-4 mr-2 shrink-0" />
+                  <span className="truncate">Download Salary Slip</span>
                 </Button>
                 <Button
                   size="sm"
                   onClick={() => handleAddExpense(breakdown.technicianId)}
-                  className="bg-red-600 hover:bg-red-700 text-white"
+                  className="bg-red-600 hover:bg-red-700 text-white h-10 sm:h-9 w-full sm:w-auto justify-center text-xs sm:text-sm whitespace-nowrap"
                 >
-                  <TrendingDown className="w-4 h-4 mr-2" />
-                  Add Expense
+                  <TrendingDown className="w-4 h-4 mr-2 shrink-0" />
+                  <span className="truncate">Add Expense</span>
                 </Button>
                 <Button
                   size="sm"
                   onClick={() => handleAddExtraCommission(breakdown.technicianId)}
-                  className="bg-purple-600 hover:bg-purple-700 text-white"
+                  className="bg-purple-600 hover:bg-purple-700 text-white h-10 sm:h-9 w-full sm:w-auto justify-center text-xs sm:text-sm whitespace-nowrap"
                 >
-                  <DollarSign className="w-4 h-4 mr-2" />
-                  Add Extra Commission
+                  <DollarSign className="w-4 h-4 mr-2 shrink-0" />
+                  <span className="truncate">Add Extra Commission</span>
                 </Button>
                 <Button
                   size="sm"
                   onClick={() => handleAddAdvance(breakdown.technicianId)}
-                  className="bg-orange-600 hover:bg-orange-700 text-white"
+                  className="bg-orange-600 hover:bg-orange-700 text-white h-10 sm:h-9 w-full sm:w-auto justify-center text-xs sm:text-sm whitespace-nowrap"
                 >
-                  <TrendingUp className="w-4 h-4 mr-2" />
-                  Add Advance
+                  <TrendingUp className="w-4 h-4 mr-2 shrink-0" />
+                  <span className="truncate">Add Advance</span>
                 </Button>
               </div>
 
