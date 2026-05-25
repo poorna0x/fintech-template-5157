@@ -2305,13 +2305,15 @@ const TechnicianPayments = () => {
             className={
               isMobileViewport && breakdownIdx !== mobileTechIndex ? 'hidden' : ''
             }
-            onTouchStart={handleTechCardTouchStart}
-            onTouchMove={handleTechCardTouchMove}
-            onTouchEnd={handleTechCardTouchEnd}
-            onTouchCancel={resetTechSwipeTracking}
           >
           <Card className="overflow-hidden">
-            <CardHeader className="bg-gray-50 border-b p-4 sm:p-6 space-y-3">
+            <CardHeader
+              className="bg-gray-50 border-b p-4 sm:p-6 space-y-3 sm:touch-auto touch-pan-y select-none"
+              onTouchStart={handleTechCardTouchStart}
+              onTouchMove={handleTechCardTouchMove}
+              onTouchEnd={handleTechCardTouchEnd}
+              onTouchCancel={resetTechSwipeTracking}
+            >
               <div>
                 <CardTitle className="text-base sm:text-lg">{breakdown.technicianName}</CardTitle>
                 <p className="text-xs sm:text-sm text-gray-600 mt-0.5">Employee ID: {breakdown.employeeId}</p>
@@ -2873,166 +2875,133 @@ const TechnicianPayments = () => {
                   const paginatedDays = breakdown.dailyBreakdown.slice(startIndex, endIndex);
 
                   return (
-                    <div className="mt-4">
-                      <div className="overflow-x-auto">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Date</TableHead>
-                              <TableHead className="text-right">Bill Amount</TableHead>
-                              <TableHead className="text-center">Status</TableHead>
-                              <TableHead className="text-center">Actions</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {paginatedDays.map((day) => (
-                              <TableRow key={day.date}>
-                                <TableCell>
-                                  {(() => {
-                                    // Parse date string (YYYY-MM-DD) correctly to avoid timezone issues
-                                    const [year, month, dayNum] = day.date.split('-').map(Number);
-                                    const dateObj = new Date(year, month - 1, dayNum);
-                                    const getDaySuffix = (day: number) => {
-                                      if (day === 1 || day === 21 || day === 31) return 'st';
-                                      if (day === 2 || day === 22) return 'nd';
-                                      if (day === 3 || day === 23) return 'rd';
-                                      return 'th';
-                                    };
-                                    const weekday = dateObj.toLocaleDateString('en-IN', { weekday: 'short' });
-                                    const monthName = dateObj.toLocaleDateString('en-IN', { month: 'short' });
-                                    const yearNum = dateObj.getFullYear();
-                                    return `${weekday}, ${dayNum}${getDaySuffix(dayNum)} ${monthName}, ${yearNum}`;
-                                  })()}
-                                </TableCell>
-                                <TableCell className="text-right font-semibold">
-                                  {day.billAmount > 0 ? `₹ ${formatCurrency(day.billAmount)}` : '-'}
-                                </TableCell>
-                                <TableCell className="text-center">
-                                  {day.status === 'absent' ? (
-                                    <Badge variant="destructive">Absent</Badge>
-                                  ) : day.status === 'halfDay' ? (
-                                    <Badge className="bg-amber-500 text-white">Half Day</Badge>
-                                  ) : day.billAmount > 0 ? (
-                                    <Badge variant="default" className="bg-green-600">Worked</Badge>
+                    <div className="mt-3">
+                      <ul className="divide-y divide-gray-100 rounded-lg border border-gray-100 bg-white overflow-hidden">
+                        {paginatedDays.map((day) => {
+                          // Parse date string (YYYY-MM-DD) without timezone drift.
+                          const [year, month, dayNum] = day.date.split('-').map(Number);
+                          const dateObj = new Date(year, month - 1, dayNum);
+                          const weekday = dateObj.toLocaleDateString('en-IN', { weekday: 'short' });
+                          const monthName = dateObj.toLocaleDateString('en-IN', { month: 'short' });
+
+                          const statusConfig =
+                            day.status === 'absent'
+                              ? { label: 'Absent', text: 'text-red-600', accent: 'bg-red-500' }
+                              : day.status === 'halfDay'
+                                ? { label: 'Half day', text: 'text-amber-600', accent: 'bg-amber-500' }
+                                : day.billAmount > 0
+                                  ? { label: 'Worked', text: 'text-emerald-600', accent: 'bg-emerald-500' }
+                                  : { label: 'No jobs', text: 'text-gray-500', accent: 'bg-gray-300' };
+
+                          return (
+                            <li
+                              key={day.date}
+                              className="relative flex items-center gap-3 px-3 sm:px-4 py-2.5 hover:bg-gray-50/60 transition-colors"
+                            >
+                              <span
+                                aria-hidden
+                                className={`absolute left-0 top-2 bottom-2 w-0.5 rounded-r ${statusConfig.accent}`}
+                              />
+                              <div className="min-w-0 flex-1">
+                                <div className="text-sm font-medium text-gray-900">
+                                  {weekday}, {dayNum} {monthName}
+                                </div>
+                                <div className={`text-[11px] font-medium ${statusConfig.text}`}>
+                                  {statusConfig.label}
+                                </div>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <div className="text-sm font-semibold text-gray-900 tabular-nums">
+                                  {day.billAmount > 0 ? (
+                                    `₹ ${formatCurrency(day.billAmount)}`
                                   ) : (
-                                    <Badge variant="secondary">No Jobs</Badge>
+                                    <span className="text-gray-300">—</span>
                                   )}
-                                </TableCell>
-                                <TableCell className="text-center">
-                                  <div className="flex items-center justify-center gap-1">
-                                    {day.billAmount > 0 && (
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={async () => {
-                                          setSelectedDateForJobs({
-                                            technicianId: breakdown.technicianId,
-                                            date: day.date
-                                          });
-                                          setJobDetailsDialogOpen(true);
-                                          await loadJobsForDate(breakdown.technicianId, day.date);
-                                        }}
-                                        className="h-8 px-2 text-xs"
-                                        title="View jobs"
-                                      >
-                                        <Eye className="w-3 h-3 mr-1" />
-                                        Jobs
-                                      </Button>
-                                    )}
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => {
-                                        setEditingDailyBreakdown({
-                                          technicianId: breakdown.technicianId,
-                                          date: day.date,
-                                          isAbsent: day.isAbsent,
-                                          status: day.status
-                                        });
-                                        setDailyBreakdownFormData({
-                                          status: day.status
-                                        });
-                                        setDailyBreakdownEditDialogOpen(true);
-                                      }}
-                                      className="h-8 w-8 p-0"
-                                      title="Edit day"
-                                    >
-                                      <Pencil className="w-4 h-4" />
-                                    </Button>
-                                  </div>
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </div>
-                      
-                      {/* Pagination Controls */}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-0.5 shrink-0">
+                                {day.billAmount > 0 && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-8 w-8 p-0 text-gray-500 hover:text-gray-900"
+                                    onClick={async () => {
+                                      setSelectedDateForJobs({
+                                        technicianId: breakdown.technicianId,
+                                        date: day.date,
+                                      });
+                                      setJobDetailsDialogOpen(true);
+                                      await loadJobsForDate(breakdown.technicianId, day.date);
+                                    }}
+                                    title="View jobs"
+                                    aria-label="View jobs"
+                                  >
+                                    <Eye className="w-4 h-4" />
+                                  </Button>
+                                )}
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-8 w-8 p-0 text-gray-500 hover:text-gray-900"
+                                  onClick={() => {
+                                    setEditingDailyBreakdown({
+                                      technicianId: breakdown.technicianId,
+                                      date: day.date,
+                                      isAbsent: day.isAbsent,
+                                      status: day.status,
+                                    });
+                                    setDailyBreakdownFormData({ status: day.status });
+                                    setDailyBreakdownEditDialogOpen(true);
+                                  }}
+                                  title="Edit day"
+                                  aria-label="Edit day"
+                                >
+                                  <Pencil className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+
                       {totalPages > 1 && (
-                        <div className="flex items-center justify-between mt-4 px-2">
-                          <div className="text-sm text-gray-600">
-                            Showing {startIndex + 1} to {Math.min(endIndex, totalDays)} of {totalDays} days
-                          </div>
-                          <div className="flex items-center gap-2">
+                        <div className="flex items-center justify-between gap-3 mt-3 px-1">
+                          <span className="text-[11px] text-gray-500 tabular-nums">
+                            {startIndex + 1}–{Math.min(endIndex, totalDays)} of {totalDays}
+                          </span>
+                          <div className="flex items-center gap-1">
                             <Button
                               size="sm"
-                              variant="outline"
+                              variant="ghost"
+                              className="h-8 w-8 p-0"
                               onClick={() => {
-                                setDailyBreakdownPage(prev => ({
+                                setDailyBreakdownPage((prev) => ({
                                   ...prev,
-                                  [breakdown.technicianId]: Math.max(1, currentPage - 1)
+                                  [breakdown.technicianId]: Math.max(1, currentPage - 1),
                                 }));
                               }}
                               disabled={currentPage === 1}
-                              className="h-8"
+                              aria-label="Previous page"
                             >
-                              <ChevronLeft className="w-4 h-4 mr-1" />
-                              Previous
+                              <ChevronLeft className="w-4 h-4" />
                             </Button>
-                            <div className="flex items-center gap-1">
-                              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                                let pageNum;
-                                if (totalPages <= 5) {
-                                  pageNum = i + 1;
-                                } else if (currentPage <= 3) {
-                                  pageNum = i + 1;
-                                } else if (currentPage >= totalPages - 2) {
-                                  pageNum = totalPages - 4 + i;
-                                } else {
-                                  pageNum = currentPage - 2 + i;
-                                }
-                                return (
-                                  <Button
-                                    key={pageNum}
-                                    size="sm"
-                                    variant={currentPage === pageNum ? "default" : "outline"}
-                                    onClick={() => {
-                                      setDailyBreakdownPage(prev => ({
-                                        ...prev,
-                                        [breakdown.technicianId]: pageNum
-                                      }));
-                                    }}
-                                    className="h-8 w-8 p-0"
-                                  >
-                                    {pageNum}
-                                  </Button>
-                                );
-                              })}
-                            </div>
+                            <span className="text-xs font-medium text-gray-700 tabular-nums px-2 min-w-[60px] text-center">
+                              {currentPage} / {totalPages}
+                            </span>
                             <Button
                               size="sm"
-                              variant="outline"
+                              variant="ghost"
+                              className="h-8 w-8 p-0"
                               onClick={() => {
-                                setDailyBreakdownPage(prev => ({
+                                setDailyBreakdownPage((prev) => ({
                                   ...prev,
-                                  [breakdown.technicianId]: Math.min(totalPages, currentPage + 1)
+                                  [breakdown.technicianId]: Math.min(totalPages, currentPage + 1),
                                 }));
                               }}
                               disabled={currentPage === totalPages}
-                              className="h-8"
+                              aria-label="Next page"
                             >
-                              Next
-                              <ChevronRight className="w-4 h-4 ml-1" />
+                              <ChevronRight className="w-4 h-4" />
                             </Button>
                           </div>
                         </div>
