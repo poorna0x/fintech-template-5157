@@ -2331,8 +2331,8 @@ const TechnicianPayments = () => {
               </div>
               )}
 
-              {/* Actions — uniform sizing, 2-col grid on mobile, flex row on sm+ */}
-              <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 mb-6">
+              {/* Actions — equal-width grid on every breakpoint */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-6">
                 <Button
                   size="sm"
                   onClick={() => {
@@ -2344,7 +2344,7 @@ const TechnicianPayments = () => {
                       toast.error('Period information not available');
                     }
                   }}
-                  className="bg-blue-600 hover:bg-blue-700 text-white h-10 sm:h-9 w-full sm:w-auto justify-center text-xs sm:text-sm whitespace-nowrap"
+                  className="bg-blue-600 hover:bg-blue-700 text-white h-10 w-full justify-center text-xs sm:text-sm whitespace-nowrap min-w-0"
                 >
                   <Download className="w-4 h-4 mr-2 shrink-0" />
                   <span className="truncate">Download Salary Slip</span>
@@ -2352,7 +2352,7 @@ const TechnicianPayments = () => {
                 <Button
                   size="sm"
                   onClick={() => handleAddExpense(breakdown.technicianId)}
-                  className="bg-red-600 hover:bg-red-700 text-white h-10 sm:h-9 w-full sm:w-auto justify-center text-xs sm:text-sm whitespace-nowrap"
+                  className="bg-red-600 hover:bg-red-700 text-white h-10 w-full justify-center text-xs sm:text-sm whitespace-nowrap min-w-0"
                 >
                   <TrendingDown className="w-4 h-4 mr-2 shrink-0" />
                   <span className="truncate">Add Expense</span>
@@ -2360,7 +2360,7 @@ const TechnicianPayments = () => {
                 <Button
                   size="sm"
                   onClick={() => handleAddExtraCommission(breakdown.technicianId)}
-                  className="bg-purple-600 hover:bg-purple-700 text-white h-10 sm:h-9 w-full sm:w-auto justify-center text-xs sm:text-sm whitespace-nowrap"
+                  className="bg-purple-600 hover:bg-purple-700 text-white h-10 w-full justify-center text-xs sm:text-sm whitespace-nowrap min-w-0"
                 >
                   <DollarSign className="w-4 h-4 mr-2 shrink-0" />
                   <span className="truncate">Add Extra Commission</span>
@@ -2368,7 +2368,7 @@ const TechnicianPayments = () => {
                 <Button
                   size="sm"
                   onClick={() => handleAddAdvance(breakdown.technicianId)}
-                  className="bg-orange-600 hover:bg-orange-700 text-white h-10 sm:h-9 w-full sm:w-auto justify-center text-xs sm:text-sm whitespace-nowrap"
+                  className="bg-orange-600 hover:bg-orange-700 text-white h-10 w-full justify-center text-xs sm:text-sm whitespace-nowrap min-w-0"
                 >
                   <TrendingUp className="w-4 h-4 mr-2 shrink-0" />
                   <span className="truncate">Add Advance</span>
