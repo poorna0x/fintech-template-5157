@@ -8,10 +8,12 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { DollarSign, User, Plus, Trash2, Edit, TrendingDown, TrendingUp, RefreshCw, ChevronDown, ChevronUp, Pencil, Check, X, ChevronLeft, ChevronRight, Eye, TrendingUp as TrendingUpIcon, Download } from 'lucide-react';
+import { DollarSign, User, Plus, Trash2, Edit, TrendingDown, TrendingUp, RefreshCw, ChevronDown, ChevronUp, Pencil, Check, X, ChevronLeft, ChevronRight, Eye, TrendingUp as TrendingUpIcon, Download, Users as UsersIcon, Filter } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { generateSalarySlipPDF } from '@/lib/salary-slip-pdf-generator';
 import {
@@ -184,7 +186,9 @@ const TechnicianPayments = () => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   });
-  const [selectedRangeTechnician, setSelectedRangeTechnician] = useState<string>('ALL');
+  // Technician filter for the salary breakdown cards. Empty array = "all".
+  const [selectedTechFilterIds, setSelectedTechFilterIds] = useState<string[]>([]);
+  const [techFilterPopoverOpen, setTechFilterPopoverOpen] = useState(false);
   const [showDailyDetails, setShowDailyDetails] = useState<Record<string, boolean>>({});
   const [dailyBreakdownPage, setDailyBreakdownPage] = useState<Record<string, number>>({}); // technicianId -> page number
   const itemsPerPage = 10; // Show 10 days per page
@@ -1787,9 +1791,24 @@ const TechnicianPayments = () => {
   }
 
   const displayedSalaryBreakdowns =
-    selectedPeriod === 'rangeToCurrent' && selectedRangeTechnician !== 'ALL'
-      ? salaryBreakdowns.filter((breakdown) => breakdown.technicianId === selectedRangeTechnician)
-      : salaryBreakdowns;
+    selectedTechFilterIds.length === 0
+      ? salaryBreakdowns
+      : salaryBreakdowns.filter((breakdown) => selectedTechFilterIds.includes(breakdown.technicianId));
+
+  const techFilterLabel = (() => {
+    if (selectedTechFilterIds.length === 0) return 'All technicians';
+    if (selectedTechFilterIds.length === 1) {
+      const t = technicians.find((tech: any) => tech.id === selectedTechFilterIds[0]);
+      return t?.full_name || '1 technician';
+    }
+    return `${selectedTechFilterIds.length} technicians selected`;
+  })();
+
+  const toggleTechFilter = (id: string) => {
+    setSelectedTechFilterIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -1799,12 +1818,12 @@ const TechnicianPayments = () => {
           Manage technician salaries, commissions (10% per job), expenses, and advances
         </p>
         
-        {/* Period Selector */}
-        <div className="mt-4 flex flex-col sm:flex-row flex-wrap gap-3 sm:gap-4 items-stretch sm:items-end">
-          <div className="flex-1 min-w-0 sm:min-w-[200px]">
-            <Label htmlFor="period-select">View Period</Label>
+        {/* Period Selector — uniform mobile-friendly grid */}
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="min-w-0">
+            <Label htmlFor="period-select" className="text-xs sm:text-sm">View Period</Label>
             <Select value={selectedPeriod} onValueChange={(value: any) => setSelectedPeriod(value)}>
-              <SelectTrigger id="period-select" className="w-full">
+              <SelectTrigger id="period-select" className="w-full h-10">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1814,63 +1833,49 @@ const TechnicianPayments = () => {
               </SelectContent>
             </Select>
           </div>
-          
+
           {selectedPeriod === 'pastMonth' && (
-            <div className="flex-1 min-w-0 sm:min-w-[200px]">
-              <Label htmlFor="month-select">Select Month</Label>
+            <div className="min-w-0">
+              <Label htmlFor="month-select" className="text-xs sm:text-sm">Select Month</Label>
               <Input
                 id="month-select"
                 type="month"
                 value={selectedPastMonth}
                 onChange={(e) => setSelectedPastMonth(e.target.value)}
-                className="w-full"
+                className="w-full h-10"
               />
             </div>
           )}
 
           {selectedPeriod === 'rangeToCurrent' && (
-            <div className="flex-1 min-w-0 sm:min-w-[400px] grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <>
               <div className="min-w-0">
-                <Label htmlFor="from-month-select">From Month</Label>
+                <Label htmlFor="from-month-select" className="text-xs sm:text-sm">From Month</Label>
                 <Input
                   id="from-month-select"
                   type="month"
                   value={selectedPastMonth}
                   onChange={(e) => setSelectedPastMonth(e.target.value)}
-                  className="w-full"
+                  className="w-full h-10"
                 />
               </div>
               <div className="min-w-0">
-                <Label htmlFor="to-month-select">To Month</Label>
+                <Label htmlFor="to-month-select" className="text-xs sm:text-sm">To Month</Label>
                 <Input
                   id="to-month-select"
                   type="month"
                   value={selectedRangeEndMonth}
                   onChange={(e) => setSelectedRangeEndMonth(e.target.value)}
-                  className="w-full"
+                  className="w-full h-10"
                 />
               </div>
-              <div className="min-w-0 sm:col-span-2">
-                <Label htmlFor="range-technician-select">Technician</Label>
-                <Select value={selectedRangeTechnician} onValueChange={setSelectedRangeTechnician}>
-                  <SelectTrigger id="range-technician-select" className="w-full">
-                    <SelectValue placeholder="Select technician" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ALL">All technicians</SelectItem>
-                    {technicians.map((tech: any) => (
-                      <SelectItem key={tech.id} value={tech.id}>
-                        {tech.full_name || 'Unknown'}{tech.employee_id ? ` (${tech.employee_id})` : ''}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+            </>
           )}
-          
+        </div>
+
+        <div className="mt-3 space-y-2">
           {commissionPeriod && (
-            <div className="text-xs sm:text-sm text-gray-500 flex items-center px-2 py-1 sm:px-0 sm:py-0">
+            <div className="text-xs sm:text-sm text-gray-500">
               Period: {(() => {
                 // Calculate payment date: 10th of next month after the selected period end
                 const nextMonth = new Date(commissionPeriod.end);
@@ -1899,10 +1904,11 @@ const TechnicianPayments = () => {
               })()}
             </div>
           )}
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:flex sm:flex-wrap">
             <Button
               variant="outline"
               size="sm"
+              className="h-10 sm:h-9 w-full sm:w-auto justify-center"
               onClick={() => {
                 setEditingExpense(null);
                 setExpenseFormData({ technician_id: '', amount: '', description: '', expense_date: new Date().toISOString().split('T')[0], category: 'OTHER', notes: '' });
@@ -1913,7 +1919,13 @@ const TechnicianPayments = () => {
               <Plus className="w-4 h-4 mr-2" />
               Add technician expense
             </Button>
-            <Button variant="outline" size="sm" onClick={handleAddBusinessExpense} disabled={loading}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-10 sm:h-9 w-full sm:w-auto justify-center"
+              onClick={handleAddBusinessExpense}
+              disabled={loading}
+            >
               <Plus className="w-4 h-4 mr-2" />
               Add business expense
             </Button>
@@ -1922,7 +1934,108 @@ const TechnicianPayments = () => {
       </div>
 
       {/* Technician Salary Breakdowns - load only when user clicks View */}
-      <div ref={salarySectionRef} className="space-y-6">
+      <div ref={salarySectionRef} className="space-y-4 sm:space-y-6">
+        {/* Multi-select technician filter (visible only after data loads) */}
+        {salaryDataLoaded && !loadingSalaryBreakdowns && technicians.length > 0 && (
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-3 sm:p-4 bg-white border rounded-lg">
+            <div className="flex items-center gap-2 text-sm text-gray-700">
+              <Filter className="w-4 h-4 text-gray-500" />
+              <span className="font-medium">Filter:</span>
+              <span className="text-gray-600">
+                Showing {displayedSalaryBreakdowns.length} of {salaryBreakdowns.length} technicians
+              </span>
+            </div>
+            <Popover open={techFilterPopoverOpen} onOpenChange={setTechFilterPopoverOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-10 sm:h-9 w-full sm:w-[260px] justify-between"
+                >
+                  <span className="flex items-center gap-2 min-w-0">
+                    <UsersIcon className="w-4 h-4 text-gray-500 shrink-0" />
+                    <span className="truncate text-left">{techFilterLabel}</span>
+                  </span>
+                  <ChevronDown className="w-4 h-4 opacity-60 shrink-0" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent
+                align="end"
+                className="w-[calc(100vw-2rem)] sm:w-[280px] p-0"
+              >
+                <div className="flex items-center justify-between gap-2 px-3 py-2 border-b">
+                  <span className="text-xs font-medium text-gray-500">
+                    Select technicians
+                  </span>
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-blue-600 hover:text-blue-700"
+                    onClick={() => setSelectedTechFilterIds([])}
+                  >
+                    Show all
+                  </button>
+                </div>
+                <div className="max-h-72 overflow-y-auto py-1">
+                  {technicians.map((tech: any) => {
+                    const checked =
+                      selectedTechFilterIds.length === 0 ||
+                      selectedTechFilterIds.includes(tech.id);
+                    return (
+                      <label
+                        key={tech.id}
+                        className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50 cursor-pointer"
+                      >
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={() => {
+                            if (selectedTechFilterIds.length === 0) {
+                              // Currently "all selected" — switch to only the others.
+                              setSelectedTechFilterIds(
+                                technicians
+                                  .filter((t: any) => t.id !== tech.id)
+                                  .map((t: any) => t.id)
+                              );
+                              return;
+                            }
+                            toggleTechFilter(tech.id);
+                          }}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm text-gray-900 truncate">
+                            {tech.full_name || 'Unknown'}
+                          </div>
+                          {tech.employee_id && (
+                            <div className="text-xs text-gray-500 truncate">
+                              {tech.employee_id}
+                            </div>
+                          )}
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+                <div className="flex items-center justify-end gap-2 px-3 py-2 border-t">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8"
+                    onClick={() => setSelectedTechFilterIds([])}
+                  >
+                    Reset
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="h-8"
+                    onClick={() => setTechFilterPopoverOpen(false)}
+                  >
+                    Done
+                  </Button>
+                </div>
+              </PopoverContent>
+            </Popover>
+          </div>
+        )}
+
         {loadingSalaryBreakdowns && (
           <div className="flex items-center justify-center py-12">
             <RefreshCw className="w-8 h-8 animate-spin text-gray-400" />
@@ -1971,38 +2084,36 @@ const TechnicianPayments = () => {
         )}
         {!loadingSalaryBreakdowns && salaryDataLoaded && displayedSalaryBreakdowns.map((breakdown) => (
           <Card key={breakdown.technicianId} className="overflow-hidden">
-            <CardHeader className="bg-gray-50 border-b">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div className="flex-1">
-                  <CardTitle className="text-lg">{breakdown.technicianName}</CardTitle>
-                  <p className="text-sm text-gray-600 mt-1">Employee ID: {breakdown.employeeId}</p>
+            <CardHeader className="bg-gray-50 border-b p-4 sm:p-6 space-y-3">
+              <div>
+                <CardTitle className="text-base sm:text-lg">{breakdown.technicianName}</CardTitle>
+                <p className="text-xs sm:text-sm text-gray-600 mt-0.5">Employee ID: {breakdown.employeeId}</p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4">
+                <div className="rounded-md bg-white border p-3 sm:text-right">
+                  <div className="text-lg sm:text-xl font-bold text-blue-600 leading-tight">
+                    ₹ {formatCurrency(breakdown.totalBillAmount)}
+                  </div>
+                  <p className="text-[11px] sm:text-xs text-gray-500 mt-1">Total Billing</p>
                 </div>
-                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-6 flex-wrap">
-                  <div className="flex-1 sm:flex-initial sm:text-right">
-                    <div className="text-2xl font-bold text-blue-600">
-                      ₹ {formatCurrency(breakdown.totalBillAmount)}
-                    </div>
-                    <p className="text-xs text-gray-500">Total Billing</p>
+                <div className="rounded-md bg-white border p-3 sm:text-right">
+                  <div className={`text-lg sm:text-xl font-bold leading-tight ${selectedPeriod === 'rangeToCurrent' ? 'text-orange-600' : 'text-cyan-700'}`}>
+                    ₹ {formatCurrency(selectedPeriod === 'rangeToCurrent' ? breakdown.totalAdvances : breakdown.salaryBeforeAdvance)}
                   </div>
-                  <div className="flex-1 sm:flex-initial sm:text-right">
-                    <div className={`text-2xl font-bold ${selectedPeriod === 'rangeToCurrent' ? 'text-orange-600' : 'text-cyan-700'}`}>
-                      ₹ {formatCurrency(selectedPeriod === 'rangeToCurrent' ? breakdown.totalAdvances : breakdown.salaryBeforeAdvance)}
-                    </div>
-                    <p className="text-xs font-medium text-gray-700">
-                      {selectedPeriod === 'rangeToCurrent' ? 'Total Advance' : 'Salary before advance'}
-                    </p>
+                  <p className="text-[11px] sm:text-xs font-medium text-gray-700 mt-1">
+                    {selectedPeriod === 'rangeToCurrent' ? 'Total Advance' : 'Salary before advance'}
+                  </p>
+                </div>
+                <div className="rounded-md bg-white border p-3 sm:text-right">
+                  <div className={`text-lg sm:text-xl font-bold leading-tight ${breakdown.totalSalary < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                    ₹ {formatCurrency(breakdown.totalSalary)}
                   </div>
-                  <div className="flex-1 sm:flex-initial sm:text-right">
-                    <div className={`text-2xl font-bold ${breakdown.totalSalary < 0 ? 'text-red-600' : 'text-green-600'}`}>
-                      ₹ {formatCurrency(breakdown.totalSalary)}
-                    </div>
-                    <p className="text-xs font-medium text-gray-700">
-                      {selectedPeriod === 'rangeToCurrent' ? 'Final Net Salary' : 'Net Salary'}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {selectedPeriod === 'rangeToCurrent' ? 'Month-wise below' : 'After advances'}
-                    </p>
-                  </div>
+                  <p className="text-[11px] sm:text-xs font-medium text-gray-700 mt-1">
+                    {selectedPeriod === 'rangeToCurrent' ? 'Final Net Salary' : 'Net Salary'}
+                  </p>
+                  <p className="text-[11px] sm:text-xs text-gray-500">
+                    {selectedPeriod === 'rangeToCurrent' ? 'Month-wise below' : 'After advances'}
+                  </p>
                 </div>
               </div>
             </CardHeader>
