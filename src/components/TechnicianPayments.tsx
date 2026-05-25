@@ -166,6 +166,30 @@ const isPresentOverride = (holiday: TechnicianHoliday): boolean => holiday.reaso
 const isHalfDayHoliday = (holiday: TechnicianHoliday): boolean => holiday.reason === HALF_DAY_REASON;
 const getHolidayAttendanceWeight = (holiday: TechnicianHoliday): number => (isHalfDayHoliday(holiday) ? 0.5 : 1);
 
+/** Nearest ancestor that can scroll horizontally (expense/daily-breakdown tables, etc.). */
+const getHorizontalScrollParent = (el: Element): HTMLElement | null => {
+  let node: Element | null = el;
+  while (node && node instanceof HTMLElement && node !== document.body) {
+    const { overflowX } = window.getComputedStyle(node);
+    if (
+      (overflowX === 'auto' || overflowX === 'scroll' || overflowX === 'overlay') &&
+      node.scrollWidth > node.clientWidth + 2
+    ) {
+      return node;
+    }
+    node = node.parentElement;
+  }
+  return null;
+};
+
+/** Don't treat touches on tables, buttons, or inputs as technician carousel swipes. */
+const shouldBlockTechCardSwipe = (target: EventTarget | null): boolean => {
+  if (!target || !(target instanceof Element)) return false;
+  if (target.closest('[data-no-tech-swipe]')) return true;
+  if (target.closest('button, a, input, textarea, select, label, [role="button"]')) return true;
+  return getHorizontalScrollParent(target) !== null;
+};
+
 const TechnicianPayments = () => {
   const [technicians, setTechnicians] = useState<any[]>([]);
   const [salaryBreakdowns, setSalaryBreakdowns] = useState<TechnicianSalaryBreakdown[]>([]);
@@ -206,6 +230,8 @@ const TechnicianPayments = () => {
   });
   const techSwipeStartXRef = useRef<number | null>(null);
   const techSwipeStartYRef = useRef<number | null>(null);
+  const techSwipeBlockedRef = useRef(false);
+  const techSwipeScrollLeftStartRef = useRef<number | null>(null);
   const [dailyBreakdownPage, setDailyBreakdownPage] = useState<Record<string, number>>({}); // technicianId -> page number
   const itemsPerPage = 10; // Show 10 days per page
   
@@ -1900,18 +1926,52 @@ const TechnicianPayments = () => {
     });
   };
 
+  const resetTechSwipeTracking = () => {
+    techSwipeStartXRef.current = null;
+    techSwipeStartYRef.current = null;
+    techSwipeScrollLeftStartRef.current = null;
+    techSwipeBlockedRef.current = false;
+  };
+
   const handleTechCardTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
     if (!isMobileViewport || displayedSalaryBreakdowns.length < 2) return;
+    resetTechSwipeTracking();
+    if (shouldBlockTechCardSwipe(e.target)) {
+      techSwipeBlockedRef.current = true;
+      return;
+    }
     techSwipeStartXRef.current = e.touches[0].clientX;
     techSwipeStartYRef.current = e.touches[0].clientY;
   };
 
+  const handleTechCardTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!isMobileViewport || techSwipeBlockedRef.current || techSwipeStartXRef.current == null) return;
+    const touch = e.touches[0];
+    const underFinger = document.elementFromPoint(touch.clientX, touch.clientY);
+    const scrollParent = underFinger ? getHorizontalScrollParent(underFinger) : null;
+    if (!scrollParent) return;
+    if (techSwipeScrollLeftStartRef.current == null) {
+      techSwipeScrollLeftStartRef.current = scrollParent.scrollLeft;
+    }
+    if (Math.abs(scrollParent.scrollLeft - techSwipeScrollLeftStartRef.current) > 8) {
+      techSwipeBlockedRef.current = true;
+      techSwipeStartXRef.current = null;
+      techSwipeStartYRef.current = null;
+    }
+  };
+
   const handleTechCardTouchEnd = (e: React.TouchEvent<HTMLDivElement>) => {
-    if (!isMobileViewport || displayedSalaryBreakdowns.length < 2) return;
+    if (!isMobileViewport || displayedSalaryBreakdowns.length < 2) {
+      resetTechSwipeTracking();
+      return;
+    }
+    if (techSwipeBlockedRef.current) {
+      resetTechSwipeTracking();
+      return;
+    }
     const startX = techSwipeStartXRef.current;
     const startY = techSwipeStartYRef.current;
-    techSwipeStartXRef.current = null;
-    techSwipeStartYRef.current = null;
+    resetTechSwipeTracking();
     if (startX == null || startY == null) return;
     const dx = e.changedTouches[0].clientX - startX;
     const dy = e.changedTouches[0].clientY - startY;
@@ -2246,7 +2306,9 @@ const TechnicianPayments = () => {
               isMobileViewport && breakdownIdx !== mobileTechIndex ? 'hidden' : ''
             }
             onTouchStart={handleTechCardTouchStart}
+            onTouchMove={handleTechCardTouchMove}
             onTouchEnd={handleTechCardTouchEnd}
+            onTouchCancel={resetTechSwipeTracking}
           >
           <Card className="overflow-hidden">
             <CardHeader className="bg-gray-50 border-b p-4 sm:p-6 space-y-3">
