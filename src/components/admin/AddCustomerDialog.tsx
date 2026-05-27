@@ -139,6 +139,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     lead_source: '', // Not selected by default; compulsory
     lead_source_custom: '',
     lead_cost: '0',
+    cost_agreed: '',
     priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
     assigned_technician_id: '', // Add technician assignment field
     require_otp: false
@@ -938,6 +939,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
           const requirements: any[] = [{ 
             lead_source: step5JobData.lead_source === 'Other' ? (step5JobData.lead_source_custom || 'Other') : step5JobData.lead_source,
+            cost_range: step5JobData.cost_agreed || '',
             custom_time: customTimeInRequirements,
             flexible_time: isFlexible
           }];
@@ -972,7 +974,9 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
             priority: step5JobData.priority,
             description: step5JobData.description.trim() || '',
             requirements: requirements,
-            estimated_cost: 0,
+            estimated_cost: step5JobData.cost_agreed
+              ? (parseFloat(step5JobData.cost_agreed.toString().split('-')[0].trim()) || 0)
+              : 0,
             lead_cost: leadCostNum,
             payment_status: 'PENDING' as const,
             before_photos: allPhotos.length > 0 ? allPhotos : [], // Add photos from Step 3 to job's before_photos
@@ -1115,6 +1119,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         lead_source: '', // Not selected by default
         lead_source_custom: '',
         lead_cost: '0',
+        cost_agreed: '',
         priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
         assigned_technician_id: '', // Reset technician assignment
         require_otp: false
@@ -1797,6 +1802,23 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                         />
                       </div>
                     )}
+
+                    <div className="space-y-2">
+                      <Label htmlFor="step5_cost_agreed">Cost Already Agreed (₹)</Label>
+                      <Input
+                        id="step5_cost_agreed"
+                        type="text"
+                        value={step5JobData.cost_agreed}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          if (value === '' || /^[\d\s-]+$/.test(value)) {
+                            setStep5JobData(prev => ({ ...prev, cost_agreed: value }));
+                          }
+                        }}
+                        placeholder="e.g., 400 or 400-500"
+                      />
+                      <p className="text-xs text-gray-500">Enter a single amount or a range (e.g., 400-500)</p>
+                    </div>
 
                     <div className="space-y-2 sm:col-span-2">
                       <Label htmlFor="step5_technician">Assign to Technician (Optional)</Label>
