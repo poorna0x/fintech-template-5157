@@ -77,7 +77,16 @@ else
 fi
 
 echo ""
-echo "=== 6) Portal route guard ==="
+echo "=== 6) ALTCHA fast-token removed (no IP in ?fast= response) ==="
+if bash "$ROOT/scripts/verify-altcha-fast-token-removed.sh" "$SITE"; then
+  echo "  OK — ?fast=admin|technician returns 410 with no loginToken/payload/IP"
+else
+  echo "  FAIL: ALTCHA fast-login bypass may be active — see verify-altcha-fast-token-removed.sh"
+  FAIL=1
+fi
+
+echo ""
+echo "=== 7) Portal route guard ==="
 bash "$ROOT/scripts/test-portal-route-guard.sh" "$SITE" || FAIL=1
 
 echo ""

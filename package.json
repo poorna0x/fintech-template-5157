@@ -12,6 +12,7 @@
     "check:public-bundle": "bash scripts/check-public-bundle-leaks.sh",
     "check:portal-routes": "bash scripts/test-portal-route-guard.sh",
     "check:production-security": "bash scripts/check-production-security.sh",
+    "check:altcha-fast-token": "bash scripts/verify-altcha-fast-token-removed.sh",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
