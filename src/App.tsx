@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, useLocation, Navigate } from "react-router-dom";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { SecurityProvider } from "./contexts/SecurityContext";
-import { AuthProvider } from "./contexts/AuthContext";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { AuthPortalCoordinator } from "./components/AuthPortalCoordinator";
 import { Suspense, lazy, useEffect } from "react";
 import Index from "./pages/Index";
@@ -64,6 +64,7 @@ const queryClient = new QueryClient({
 // Component to handle PWA enable/disable based on route
 const PWARouteHandler = () => {
   const location = useLocation();
+  const { user, isAdmin } = useAuth();
 
   useEffect(() => {
     // Admin app routes (must match admin-manifest scope / install — do not disablePWA here)
@@ -79,13 +80,18 @@ const PWARouteHandler = () => {
     // Note: PWA is enabled by registerTechnicianPWA() or registerAdminPWA() 
     // when those components mount, so we don't need to enable it here
 
+    // Security: only warm the admin/data chunks AFTER we know the visitor is
+    // actually an authenticated admin. Otherwise an anonymous visitor to /admin
+    // would download `admin-data-*.js` (which contains all RPC + table names).
     if (location.pathname.startsWith('/admin')) {
-      void import('./components/AdminDashboard');
-      void import('./lib/supabase');
+      if (user && isAdmin) {
+        void import('./components/AdminDashboard');
+        void import('./lib/supabase');
+      }
     } else if (location.pathname.startsWith('/technician')) {
       void import('./pages/TechnicianDashboard');
     }
-  }, [location.pathname]);
+  }, [location.pathname, user, isAdmin]);
 
   return null;
 };

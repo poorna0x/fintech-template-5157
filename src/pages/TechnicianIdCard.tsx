@@ -3,7 +3,9 @@ import { useParams } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, User, Phone, Mail, Briefcase, Building2, MapPin, Globe } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+// Use the lightweight auth client — this public page does a single technicians
+// SELECT and must not pull in the admin/technician data layer (admin-data chunk).
+import { supabase } from '@/lib/supabaseClient';
 import { CompanyInfo } from '@/types';
 import Logo from '@/components/Logo';
 import Header from '@/components/Header';

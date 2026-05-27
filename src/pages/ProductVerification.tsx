@@ -3,7 +3,9 @@ import { useParams } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, Package, CheckCircle, XCircle } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
+// Use the lightweight auth client — this public page does a single qr_codes
+// SELECT and must not pull in the admin/technician data layer (admin-data chunk).
+import { supabase } from '@/lib/supabaseClient';
 import Header from '@/components/Header';
 import { useTheme } from '@/contexts/ThemeContext';
 

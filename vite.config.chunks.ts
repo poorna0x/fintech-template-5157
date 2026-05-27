@@ -1,5 +1,42 @@
 /** Rollup manualChunks — only split admin DB layer; keep React + UI in one chunk to avoid circular deps. */
 export function manualChunks(id: string): string | undefined {
+  // ──────────────────────────────────────────────────────────────────
+  // SECURITY: keep shared "shell" utilities (cn, chromeStorage, pwa
+  // helpers, supabase auth client, etc.) OUT of the admin-data chunk.
+  //
+  // Why this exists: src/lib/supabase.ts is the admin/technician data
+  // layer (contains every RPC name + table name). The eager app shell
+  // also needs the lightweight utilities below. When Rollup sees a
+  // module used by both the entry AND admin-data, it merges that
+  // module into admin-data — which forces the entry chunk to statically
+  // import from admin-data, which forces Vite to put `admin-data` in
+  // the public <link rel=modulepreload> list. That's how anonymous
+  // visitors end up downloading the file documented in the
+  // "Sensitive Business Logic Exposed" finding.
+  //
+  // Routing these files into a dedicated `shell-utils` chunk breaks
+  // that merge: the entry imports from shell-utils, admin-data also
+  // imports from shell-utils, and admin-data is no longer in the
+  // entry's static dep graph.
+  // ──────────────────────────────────────────────────────────────────
+  if (
+    id.includes('/src/lib/utils.ts') ||
+    id.includes('/src/lib/storage.ts') ||
+    id.includes('/src/lib/storage/') ||
+    id.includes('/src/lib/pwa.ts') ||
+    id.includes('/src/lib/supabaseClient.ts') ||
+    id.includes('/src/lib/supabaseConfig.ts') ||
+    id.includes('/src/lib/sanitizePostgrestError.ts') ||
+    // Vite's `__vitePreload` runtime helper is a virtual module shared
+    // between the entry (for lazy page imports) and supabase.ts (for
+    // its many `await import(...)` calls). Without this pin, Rollup
+    // tends to bundle it into `admin-data`, which puts that chunk
+    // back into the entry's static dep graph (and into modulepreload).
+    id.includes('vite/preload-helper')
+  ) {
+    return 'shell-utils';
+  }
+
   if (id.includes('/src/lib/supabase.ts')) {
     return 'admin-data';
   }

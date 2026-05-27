@@ -64,7 +64,20 @@ if [[ -n "${INDEX_PATH:-}" ]]; then
 fi
 
 echo ""
-echo "=== 5) Portal route guard ==="
+echo "=== 5) PostgREST error hints (Supabase — run secure-postgrest-error-verbosity.sql) ==="
+if [[ -f "$ROOT/.env.local" ]]; then
+  if bash "$ROOT/scripts/verify-postgrest-error-verbosity.sh" 2>/dev/null; then
+    echo "  OK — no schema hints in anon REST errors"
+  else
+    echo "  FAIL: PostgREST still returns hint/details — apply scripts/secure-postgrest-error-verbosity.sql"
+    FAIL=1
+  fi
+else
+  echo "  SKIP: no .env.local (set SUPABASE_URL + ANON_KEY to test)"
+fi
+
+echo ""
+echo "=== 6) Portal route guard ==="
 bash "$ROOT/scripts/test-portal-route-guard.sh" "$SITE" || FAIL=1
 
 echo ""

@@ -1,4 +1,7 @@
-import { supabase } from './supabase';
+// Use the lightweight auth/realtime client (supabaseClient) — this module only needs
+// Realtime channels, never the `db` helper. Avoid dragging the admin-data chunk into
+// any caller's static dep graph.
+import { supabase } from './supabaseClient';
 
 /** Shared Supabase Broadcast channel — instant job-list refresh when admin assigns/unassigns. */
 export const TECHNICIAN_JOB_LIST_BROADCAST_CHANNEL = 'technician-job-list-sync';

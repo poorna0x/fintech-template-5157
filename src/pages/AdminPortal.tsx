@@ -29,12 +29,25 @@ function AdminPortalLoader({ message }: { message: string }) {
   );
 }
 
-/** /admin entry — one loader: auth + dashboard chunk in parallel (no Suspense flash). */
+/**
+ * /admin entry. Security note: the dashboard chunk (and the admin-data chunk it
+ * pulls in) MUST stay behind the auth gate. Anonymous visitors hitting /admin
+ * should only ever download AdminLogin — never the chunk that contains RPC names
+ * like `delete_job_admin`, `backfill_technician_payments`, or table names like
+ * `tax_invoices` / `technician_payments`.
+ */
 export default function AdminPortal() {
   const { user, isAdmin, authInitializing } = useAuth();
   const [Dashboard, setDashboard] = useState<React.ComponentType | null>(null);
 
+  // Only load the dashboard chunk after we've confirmed the user is an admin.
+  // Previously this ran on every /admin visit (incl. anonymous), which is what
+  // pulled `admin-data-*.js` over the wire for unauthenticated visitors.
   useEffect(() => {
+    if (authInitializing) return;
+    if (!user || !isAdmin) return;
+    if (Dashboard) return;
+
     let cancelled = false;
     void adminDashboardImport().then((mod) => {
       if (!cancelled) setDashboard(() => mod.default);
@@ -42,9 +55,8 @@ export default function AdminPortal() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authInitializing, user, isAdmin, Dashboard]);
 
-  // Fetch jobs/roster/counts while the dashboard JS chunk downloads.
   useEffect(() => {
     if (user && isAdmin) {
       void startAdminDashboardPrefetch();

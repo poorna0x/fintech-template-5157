@@ -6,7 +6,10 @@
  * ONE jobs query; the resulting customer-id set is then intersected via
  * `customers.id IN (...)` to keep egress tight.
  */
-import { supabase } from './supabase';
+// Use the lightweight auth client — this module talks to PostgREST directly via
+// `supabase.from(...)` and never touches the `db` helper. Avoid pulling in the
+// admin-data chunk just to type the client.
+import { supabase } from './supabaseClient';
 import { escapeForLike, normalizePhoneForSearch } from './utils';
 
 /**
