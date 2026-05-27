@@ -1798,24 +1798,6 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                       </div>
                     )}
 
-                    <div className="space-y-2">
-                      <Label htmlFor="step5_priority">Priority</Label>
-                      <Select
-                        value={step5JobData.priority}
-                        onValueChange={(value) => setStep5JobData(prev => ({ ...prev, priority: value as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT' }))}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="LOW">Low</SelectItem>
-                          <SelectItem value="MEDIUM">Medium</SelectItem>
-                          <SelectItem value="HIGH">High</SelectItem>
-                          <SelectItem value="URGENT">Urgent</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
                     <div className="space-y-2 sm:col-span-2">
                       <Label htmlFor="step5_technician">Assign to Technician (Optional)</Label>
                       <Select
