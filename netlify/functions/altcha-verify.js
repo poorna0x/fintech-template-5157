@@ -52,35 +52,23 @@ const { rateLimiters } = require('./rate-limiter');
 const { addSecurityHeaders } = require('./security-headers');
 const {
   createLoginToken,
-  createFastLoginToken,
   isPlaceholderKey: altchaIsPlaceholder,
 } = require('./altcha-guard');
-const { getClientIdentifier } = require('./rate-limiter');
-
-// GET ?fast=technician|admin — instant login token when Turnstile guards /auth/v1/token
-async function handleFastLoginToken(event, corsHeaders, portal) {
-  if (isPlaceholderKey || altchaIsPlaceholder()) {
-    return {
-      statusCode: 503,
-      headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ error: 'Security verification unavailable' }),
-    };
-  }
-  const clientKey = getClientIdentifier(event);
-  const { loginToken, payload } = createFastLoginToken(portal, clientKey);
-  return {
-    statusCode: 200,
-    headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ loginToken, payload, fast: true }),
-  };
-}
 
 // GET request: Generate challenge using official altcha-lib
 async function handleGet(event, corsHeaders) {
   try {
+    // SECURITY: ?fast=admin|technician was a CRITICAL bypass — it minted a valid
+    // ALTCHA login token without any proof-of-work, letting attackers brute-force
+    // /secure-auth-login at machine speed. Removed entirely (CVSS 8.8).
+    // Reject the legacy param explicitly so monitoring catches old clients/scanners.
     const fastPortal = event.queryStringParameters?.fast;
-    if (fastPortal === 'technician' || fastPortal === 'admin') {
-      return handleFastLoginToken(event, corsHeaders, fastPortal);
+    if (fastPortal) {
+      return {
+        statusCode: 410,
+        headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ error: 'Endpoint removed. Solve the ALTCHA challenge.' }),
+      };
     }
 
     // SECURITY: Validate and limit complexity to prevent DoS attacks

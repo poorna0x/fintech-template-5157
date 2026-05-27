@@ -17,7 +17,7 @@ import TurnstileWidget, {
 import { registerTechnicianPWA, disablePWA, isPWAMode } from '@/lib/pwa';
 import { clearWrongPortalSession } from '@/lib/authPortal';
 import { formatLoginError } from '@/lib/loginResult';
-import { warmNetlifyFunctions, fetchFastLoginCaptcha } from '@/lib/loginWarmup';
+import { warmNetlifyFunctions } from '@/lib/loginWarmup';
 
 const TechnicianLogin = () => {
   const [email, setEmail] = useState('');
@@ -33,8 +33,10 @@ const TechnicianLogin = () => {
   const [captchaStartTime] = useState(Date.now());
   const [captchaTimeout, setCaptchaTimeout] = useState<NodeJS.Timeout | null>(null);
   const turnstileRequired = isTurnstileEnabled();
-  /** When Turnstile is on, skip client PoW and use server-issued ALTCHA token instead. */
-  const [usePoWCaptcha, setUsePoWCaptcha] = useState(!isTurnstileEnabled());
+  /** ALTCHA PoW is always required. The previous server-issued "fast" token path
+   *  was removed (CVSS 8.8 — let attackers bypass anti-automation). Turnstile +
+   *  ALTCHA PoW + rate limits + lockout now layer correctly. */
+  const usePoWCaptcha = true;
   /** Prevents the auto-submit effect from firing twice for the same token combo
    *  (e.g. on failure → don't loop). A fresh Turnstile token resets it. */
   const autoSubmitTokenRef = useRef<string | null>(null);
@@ -69,25 +71,6 @@ const TechnicianLogin = () => {
       disablePWA();
     };
   }, []);
-
-  useEffect(() => {
-    if (!turnstileRequired) return;
-    let cancelled = false;
-    void fetchFastLoginCaptcha('technician').then((result) => {
-      if (cancelled) return;
-      if (!result) {
-        setUsePoWCaptcha(true);
-        return;
-      }
-      setAltchaPayload(result.payload);
-      setAltchaLoginToken(result.loginToken);
-      setIsCaptchaVerified(true);
-      setShowSecurityStep(false);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [turnstileRequired]);
 
   // Already logged in as technician — go to dashboard (avoids stuck spinner loop)
   useEffect(() => {

@@ -146,6 +146,22 @@ exports.handler = async (event) => {
       ? captchaToken
       : '';
 
+  // Defense in depth: when this deployment is wired up with Turnstile (server-side
+  // secret present), every login MUST carry a Turnstile token. Belt-and-braces in
+  // case the Supabase Dashboard CAPTCHA switch is ever toggled off — otherwise an
+  // attacker could brute-force /auth/v1/token via this proxy with no bot gate.
+  // Also closes the "fast login bypass" class of issues at the auth boundary.
+  const turnstileServerConfigured =
+    typeof process.env.TURNSTILE_SECRET_KEY === 'string' &&
+    process.env.TURNSTILE_SECRET_KEY.trim().length > 0;
+  if (turnstileServerConfigured && !normalizedCaptchaToken) {
+    return {
+      statusCode: 403,
+      headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ error: 'Security verification required' }),
+    };
+  }
+
   const normalizedEmail = email.toLowerCase().trim();
   const expectedPortal = portal === 'technician' ? 'technician' : 'admin';
 

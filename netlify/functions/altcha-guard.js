@@ -52,20 +52,6 @@ function hashPayload(payload) {
   return crypto.createHash('sha256').update(String(payload)).digest('hex');
 }
 
-/** Server-issued login gate when Turnstile is the primary bot check (skips client PoW). */
-const FAST_LOGIN_PREFIX = 'hro-fast-login-v1:';
-
-function buildFastLoginPayload(portal, clientKey) {
-  const p = portal === 'technician' ? 'technician' : 'admin';
-  const key = String(clientKey || 'unknown').slice(0, 128);
-  return `${FAST_LOGIN_PREFIX}${p}:${key}`;
-}
-
-function createFastLoginToken(portal, clientKey) {
-  const payload = buildFastLoginPayload(portal, clientKey);
-  return { loginToken: createLoginToken(payload), payload };
-}
-
 /** Issue a one-time login token after ALTCHA payload is verified. */
 function createLoginToken(payload, options = {}) {
   const ttlMs =
@@ -181,7 +167,6 @@ module.exports = {
   isPlaceholderKey,
   verifyAltchaPayload,
   createLoginToken,
-  createFastLoginToken,
   verifyLoginToken,
   tryReserveLoginToken,
   releaseLoginTokenReservation,

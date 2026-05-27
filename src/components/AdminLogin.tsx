@@ -16,7 +16,7 @@ import TurnstileWidget, {
 } from '@/components/TurnstileWidget';
 import { registerAdminPWA } from '@/lib/pwa';
 import { formatLoginError } from '@/lib/loginResult';
-import { warmNetlifyFunctions, fetchFastLoginCaptcha } from '@/lib/loginWarmup';
+import { warmNetlifyFunctions } from '@/lib/loginWarmup';
 
 const AdminLogin = () => {
   const [email, setEmail] = useState('');
@@ -32,7 +32,10 @@ const AdminLogin = () => {
   const [captchaStartTime] = useState(Date.now());
   const [captchaTimeout, setCaptchaTimeout] = useState<NodeJS.Timeout | null>(null);
   const turnstileRequired = isTurnstileEnabled();
-  const [usePoWCaptcha, setUsePoWCaptcha] = useState(!isTurnstileEnabled());
+  /** ALTCHA PoW is always required. The previous server-issued "fast" token path
+   *  was removed (CVSS 8.8 — let attackers bypass anti-automation). Turnstile +
+   *  ALTCHA PoW + rate limits + lockout now layer correctly. */
+  const usePoWCaptcha = true;
   /** Prevents the auto-submit effect from firing twice for the same token combo
    *  (e.g. on failure → don't loop). Reset when the user types or a new Turnstile
    *  token arrives. */
@@ -64,25 +67,6 @@ const AdminLogin = () => {
     }
     warmNetlifyFunctions();
   }, []);
-
-  useEffect(() => {
-    if (!turnstileRequired) return;
-    let cancelled = false;
-    void fetchFastLoginCaptcha('admin').then((result) => {
-      if (cancelled) return;
-      if (!result) {
-        setUsePoWCaptcha(true);
-        return;
-      }
-      setAltchaPayload(result.payload);
-      setAltchaLoginToken(result.loginToken);
-      setIsCaptchaVerified(true);
-      setShowSecurityStep(false);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [turnstileRequired]);
 
   useEffect(() => {
     if (authInitializing) return;
