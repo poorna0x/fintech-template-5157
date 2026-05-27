@@ -82,13 +82,14 @@ const STRICT_HEADERS = 'Content-Type, Authorization';
 function getCorsHeaders(requestOrigin) {
   const allowedOrigin = getAllowedOrigin(requestOrigin);
 
+  // SECURITY: previously returned `Access-Control-Allow-Origin: null` for any
+  // origin not in the allowlist, which **matched** the literal `Origin: null`
+  // header that sandboxed iframes send. That let a malicious site embed an
+  // iframe with `sandbox="allow-scripts"` and call our functions cross-origin.
+  // Now we emit no CORS headers at all for disallowed origins → browser blocks
+  // the response. Functions that need to actively reject still return 403.
   if (!allowedOrigin) {
-    return {
-      'Access-Control-Allow-Origin': 'null',
-      'Access-Control-Allow-Methods': STRICT_METHODS,
-      'Access-Control-Allow-Headers': STRICT_HEADERS,
-      'Access-Control-Allow-Credentials': 'false',
-    };
+    return {};
   }
 
   return {
@@ -96,6 +97,7 @@ function getCorsHeaders(requestOrigin) {
     'Access-Control-Allow-Methods': STRICT_METHODS,
     'Access-Control-Allow-Headers': STRICT_HEADERS,
     'Access-Control-Allow-Credentials': 'false',
+    Vary: 'Origin',
   };
 }
 
