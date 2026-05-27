@@ -150,12 +150,33 @@ export function getTechnicianDailyBaseSalary(tech: any, date: Date): number {
   return getTechnicianMonthlyBaseSalary(tech, 8000, date) / 30;
 }
 
+/**
+ * Billing-slab commission tiers:
+ *
+ *   1,70,001 – 1,99,999  →  ₹2,000                  (entry tier, unchanged)
+ *   2,00,000 – 2,74,999  →  ₹5,000
+ *   2,75,000 – 2,99,999  →  ₹5,000 + ₹2,000 = ₹7,000
+ *   3,00,000 – 3,74,999  →  ₹10,000
+ *   3,75,000 – 3,99,999  →  ₹10,000 + ₹2,000 = ₹12,000
+ *   4,00,000 – 4,74,999  →  ₹15,000
+ *   4,75,000 – 4,99,999  →  ₹15,000 + ₹2,000 = ₹17,000
+ *   … and so on (₹5,000 per completed lakh above ₹2L; +₹2,000 once the lakh
+ *     offset reaches ₹75,000, resets at the next lakh boundary).
+ */
 export function calculateBillingSlabCommission(monthlyBilling: number): number {
   if (monthlyBilling > 170000 && monthlyBilling < 200000) return 2000;
-  if (monthlyBilling >= 200000) {
-    return (Math.floor((monthlyBilling - 200000) / 100000) + 1) * 5000;
-  }
-  return 0;
+  if (monthlyBilling < 200000) return 0;
+
+  const base = (Math.floor((monthlyBilling - 200000) / 100000) + 1) * 5000;
+
+  // +₹2,000 add-on when billing crosses +75K within the current lakh slab
+  // (2,75,000 / 3,75,000 / 4,75,000 / …). At an exact lakh boundary (offset 0)
+  // the add-on does not apply, so 2,00,000 / 3,00,000 / 4,00,000 stay on the
+  // base ladder.
+  const offsetWithinLakh = monthlyBilling % 100000;
+  const extra = offsetWithinLakh >= 75000 ? 2000 : 0;
+
+  return base + extra;
 }
 
 export function calculateTechnicianBillingSlabCommission(
