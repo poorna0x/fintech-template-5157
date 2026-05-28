@@ -46,7 +46,10 @@ import {
   Star,
   Receipt,
   QrCode,
-  Package
+  Package,
+  ChevronLeft,
+  ChevronRight,
+  IndianRupee
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getAmcDocumentBrandLabel } from '@/lib/amc-brand';
@@ -703,6 +706,14 @@ const TechnicianDashboard = () => {
   // Technician ID Card QR Code Dialog
   const [technicianIdCardDialogOpen, setTechnicianIdCardDialogOpen] = useState(false);
   const [inventoryDialogOpen, setInventoryDialogOpen] = useState(false);
+  // Monthly Billing Dialog
+  const [billingDialogOpen, setBillingDialogOpen] = useState(false);
+  const [billingMonth, setBillingMonth] = useState<Date>(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+  const [billingLoading, setBillingLoading] = useState(false);
+  const [billingJobs, setBillingJobs] = useState<any[]>([]);
   // Common QRs (assigned by admin, shown below payment QR) - multiple allowed
   const [commonQrCodesForTechnician, setCommonQrCodesForTechnician] = useState<CommonQrCode[]>([]);
   const [commonQrDialogOpen, setCommonQrDialogOpen] = useState(false);
@@ -1005,6 +1016,71 @@ const TechnicianDashboard = () => {
     if (dashboardHistoryLoadedRef.current) return;
     void loadAssignedJobs(0, { activeOnly: false });
   }, [statusFilter, user?.technicianId, loadAssignedJobs]);
+
+  /**
+   * Fetch the technician's own completed jobs for a given month so they can
+   * see the total billing they generated. Only counts jobs assigned to them
+   * (matches admin-side billing total in TechnicianPayments).
+   */
+  const loadBillingForMonth = useCallback(async (monthDate: Date) => {
+    const technicianId = user?.technicianId;
+    if (!technicianId) {
+      setBillingJobs([]);
+      return;
+    }
+    setBillingLoading(true);
+    try {
+      const monthStart = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
+      const monthEnd = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 1);
+      const { data, error } = await supabase
+        .from('jobs')
+        .select('id,actual_cost,payment_amount')
+        .eq('assigned_technician_id', technicianId)
+        .eq('status', 'COMPLETED')
+        .gte('completed_at', monthStart.toISOString())
+        .lt('completed_at', monthEnd.toISOString())
+        .limit(500);
+
+      if (error) {
+        console.error('Error loading billing for month:', error);
+        setBillingJobs([]);
+      } else {
+        setBillingJobs(data || []);
+      }
+    } catch (e) {
+      console.error('Error loading billing for month:', e);
+      setBillingJobs([]);
+    } finally {
+      setBillingLoading(false);
+    }
+  }, [user?.technicianId]);
+
+  useEffect(() => {
+    if (!billingDialogOpen) return;
+    void loadBillingForMonth(billingMonth);
+  }, [billingDialogOpen, billingMonth, loadBillingForMonth]);
+
+  const billingTotalAmount = useMemo(() => {
+    return billingJobs.reduce((sum: number, j: any) => {
+      const raw = j.actual_cost ?? j.payment_amount ?? 0;
+      const num = typeof raw === 'number' ? raw : parseFloat(raw);
+      return sum + (Number.isFinite(num) ? num : 0);
+    }, 0);
+  }, [billingJobs]);
+
+  const billingMonthLabel = useMemo(
+    () =>
+      billingMonth.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }),
+    [billingMonth]
+  );
+
+  const isBillingCurrentMonth = useMemo(() => {
+    const now = new Date();
+    return (
+      billingMonth.getFullYear() === now.getFullYear() &&
+      billingMonth.getMonth() === now.getMonth()
+    );
+  }, [billingMonth]);
 
   useEffect(() => {
     if (statusFilter !== 'COMPLETED') {
@@ -5312,6 +5388,19 @@ const TechnicianDashboard = () => {
             >
               <QrCode className="w-5 h-5 mr-3" />
               Common QR
+            </Button>
+            <Button
+              variant="ghost"
+              className="justify-start h-12 px-4 text-base"
+              onClick={() => {
+                setHeaderOptionsDialogOpen(false);
+                const now = new Date();
+                setBillingMonth(new Date(now.getFullYear(), now.getMonth(), 1));
+                setBillingDialogOpen(true);
+              }}
+            >
+              <Receipt className="w-5 h-5 mr-3" />
+              View Billing
             </Button>
             <Button
               variant="ghost"
@@ -9933,6 +10022,73 @@ const TechnicianDashboard = () => {
               </DialogFooter>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Monthly Billing Dialog */}
+      <Dialog open={billingDialogOpen} onOpenChange={setBillingDialogOpen}>
+        <DialogContent className="w-[95vw] max-w-sm p-0 overflow-hidden">
+          <DialogHeader className="px-4 pt-4 pb-2">
+            <DialogTitle className="flex items-center gap-2">
+              <Receipt className="w-5 h-5" />
+              My Billing
+            </DialogTitle>
+          </DialogHeader>
+
+          {/* Month navigation */}
+          <div className="flex items-center justify-between px-4 py-2 border-y bg-gray-50">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 w-9 p-0"
+              onClick={() =>
+                setBillingMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))
+              }
+              aria-label="Previous month"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </Button>
+            <div className="text-sm font-semibold text-gray-900">
+              {billingMonthLabel}
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-9 w-9 p-0"
+              onClick={() =>
+                setBillingMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))
+              }
+              disabled={isBillingCurrentMonth}
+              aria-label="Next month"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          </div>
+
+          {/* Total only */}
+          <div className="px-4 py-6">
+            <div className="rounded-lg bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 p-5 text-center">
+              <div className="text-xs font-medium text-blue-700 uppercase tracking-wide">
+                Total Billing
+              </div>
+              {billingLoading ? (
+                <div className="mt-3 flex items-center justify-center h-10">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-700"></div>
+                </div>
+              ) : (
+                <div className="mt-2 flex items-center justify-center gap-1 text-blue-900">
+                  <IndianRupee className="w-6 h-6" />
+                  <span className="text-3xl font-bold">
+                    {billingTotalAmount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter className="px-4 py-3 border-t bg-white">
+            <Button onClick={() => setBillingDialogOpen(false)}>Close</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
