@@ -187,8 +187,13 @@ exports.handler = async (event) => {
     Number.isFinite(newLng) &&
     (newLat !== 0 || newLng !== 0);
 
-  if (hasExisting && hasNew && haversineKm(existingLat, existingLng, newLat, newLng) <= 2) {
-    keepPreviousLocation = true;
+  if (hasExisting) {
+    if (!hasNew) {
+      // No usable pin on this booking — do not overwrite stored location
+      keepPreviousLocation = true;
+    } else if (haversineKm(existingLat, existingLng, newLat, newLng) <= 2) {
+      keepPreviousLocation = true;
+    }
   }
 
   return {

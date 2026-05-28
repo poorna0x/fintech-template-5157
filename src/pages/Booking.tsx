@@ -35,7 +35,7 @@ import BehavioralTracker from '@/components/BehavioralTracker';
 import SecurityStatus from '@/components/SecurityStatus';
 import { useSecurity } from '@/contexts/SecurityContext';
 import DraggableMap from '@/components/DraggableMap';
-import { removePlusCode } from '@/lib/maps';
+import { hasValidMapCoordinates, readLocationLatLng, removePlusCode } from '@/lib/maps';
 
 const WEBSITE_BOOKING_SITE_KEY: 'hydrogenro' | 'elevenro' =
   (import.meta.env.VITE_WEBSITE_BOOKING_SITE_KEY as 'hydrogenro' | 'elevenro') ?? 'hydrogenro';
@@ -1417,7 +1417,11 @@ const Booking: React.FC = () => {
         const keepPreviousLocationValue =
           (existingCustomer as { keepPreviousLocation?: boolean }).keepPreviousLocation ===
           true;
-        keepPreviousLocation = keepPreviousLocationValue;
+        const hasValidNewCoords = hasValidMapCoordinates(formData.coordinates);
+        // Server sets keepPreviousLocation when within 2 km or when new pin is missing.
+        // Also skip location overwrite when the form has no valid coordinates.
+        const shouldUpdateLocation = !keepPreviousLocationValue && hasValidNewCoords;
+        keepPreviousLocation = keepPreviousLocationValue || !hasValidNewCoords;
 
         const updateData: Record<string, unknown> = {
           full_name: formData.fullName,
@@ -1428,7 +1432,7 @@ const Booking: React.FC = () => {
           updated_at: new Date().toISOString(),
         };
 
-        if (!keepPreviousLocationValue) {
+        if (shouldUpdateLocation) {
           updateData.address = {
             street: formData.address,
             area: 'Bangalore',
@@ -1454,9 +1458,7 @@ const Booking: React.FC = () => {
               }
               return cleanAddress;
             })(),
-            googleLocation: formData.coordinates.lat !== 0 && formData.coordinates.lng !== 0
-              ? `https://www.google.com/maps/place/${formData.coordinates.lat},${formData.coordinates.lng}`
-              : null
+            googleLocation: `https://www.google.com/maps/place/${formData.coordinates.lat},${formData.coordinates.lng}`,
           };
         }
 
@@ -1595,9 +1597,15 @@ const Booking: React.FC = () => {
         customer = newCustomer;
       }
 
-      // Create job record (use existing customer address/location when same or within 2 km)
-      const custAddr = keepPreviousLocation && customer ? (customer as any).address : null;
-      const custLoc = keepPreviousLocation && customer ? (customer as any).location : null;
+      // Create job record (use stored customer address/location when within 2 km or pin missing)
+      const customerStoredLoc =
+        customer && readLocationLatLng((customer as any).location);
+      const useStoredCustomerLocation =
+        Boolean(customer) &&
+        (keepPreviousLocation || !hasValidMapCoordinates(formData.coordinates)) &&
+        Boolean(customerStoredLoc);
+      const custAddr = useStoredCustomerLocation ? (customer as any).address : null;
+      const custLoc = useStoredCustomerLocation ? (customer as any).location : null;
       const jobServiceAddress = custAddr
         ? {
             street: removePlusCode(custAddr.street || custAddr.visible_address || ''),

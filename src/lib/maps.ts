@@ -50,6 +50,37 @@ export const generateGoogleMapsDirections = (destination: LocationData, address?
  * Distance between two points in km (Haversine formula).
  * Used to compare booking location with existing customer location.
  */
+/** True when lat/lng are finite and not the default 0,0 placeholder. */
+export function hasValidMapCoordinates(
+  coords: { lat?: number; lng?: number } | null | undefined
+): boolean {
+  const lat = coords?.lat;
+  const lng = coords?.lng;
+  return (
+    typeof lat === 'number' &&
+    typeof lng === 'number' &&
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    (lat !== 0 || lng !== 0)
+  );
+}
+
+/** Read latitude/longitude from a customer/job location JSON blob. */
+export function readLocationLatLng(
+  location: unknown
+): { lat: number; lng: number } | null {
+  if (!location || typeof location !== 'object') return null;
+  const loc = location as Record<string, unknown>;
+  const latRaw = loc.latitude ?? loc.lat;
+  const lngRaw = loc.longitude ?? loc.lng;
+  const lat = typeof latRaw === 'number' ? latRaw : parseFloat(String(latRaw ?? ''));
+  const lng = typeof lngRaw === 'number' ? lngRaw : parseFloat(String(lngRaw ?? ''));
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) {
+    return null;
+  }
+  return { lat, lng };
+}
+
 export function haversineKm(
   lat1: number,
   lng1: number,
