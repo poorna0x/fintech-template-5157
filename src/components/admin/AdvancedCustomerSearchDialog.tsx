@@ -45,6 +45,7 @@ import { db } from '@/lib/supabase';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import CustomerReportDialog from '@/components/admin/CustomerReportDialog';
+import PhotoViewerDialog from '@/components/admin/PhotoViewerDialog';
 import type { Customer, Technician } from '@/types';
 
 interface AdvancedCustomerSearchDialogProps {
@@ -176,6 +177,14 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
   const [reportDialogOpen, setReportDialogOpen] = useState(false);
   const [reportCustomer, setReportCustomer] = useState<Customer | null>(null);
   const [reportTechniciansLoading, setReportTechniciansLoading] = useState(false);
+  // Photo viewer state for clicking bill/payment images inside the Report dialog.
+  const [reportPhotoViewerOpen, setReportPhotoViewerOpen] = useState(false);
+  const [reportSelectedPhoto, setReportSelectedPhoto] = useState<{
+    url: string;
+    index: number;
+    total: number;
+  } | null>(null);
+  const [reportSelectedBillPhotos, setReportSelectedBillPhotos] = useState<string[] | null>(null);
   // Client-side pagination over the already-fetched result set. Avoids
   // re-querying Supabase per page and respects the user's "less egress" ask.
   const [page, setPage] = useState(1);
@@ -826,6 +835,76 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
           }}
           customer={reportCustomer}
           technicians={technicianRows as unknown as Technician[]}
+          onPhotoClick={(url, index, total) => {
+            setReportSelectedBillPhotos(null);
+            setReportSelectedPhoto({ url, index, total });
+            setReportPhotoViewerOpen(true);
+          }}
+          onBillPhotosClick={(photos, index) => {
+            setReportSelectedBillPhotos(photos);
+            setReportSelectedPhoto({
+              url: photos[index],
+              index,
+              total: photos.length,
+            });
+            setReportPhotoViewerOpen(true);
+          }}
+        />
+      )}
+
+      {/* Photo viewer for bill/payment images opened from the Report dialog. */}
+      {reportPhotoViewerOpen && (
+        <PhotoViewerDialog
+          open={reportPhotoViewerOpen}
+          onOpenChange={setReportPhotoViewerOpen}
+          selectedPhoto={reportSelectedPhoto}
+          selectedBillPhotos={reportSelectedBillPhotos}
+          selectedJobPhotos={null}
+          onPrevious={() => {
+            if (
+              !reportSelectedPhoto ||
+              !reportSelectedBillPhotos ||
+              reportSelectedBillPhotos.length <= 1
+            ) {
+              return;
+            }
+            const newIndex =
+              reportSelectedPhoto.index > 0
+                ? reportSelectedPhoto.index - 1
+                : reportSelectedBillPhotos.length - 1;
+            setReportSelectedPhoto({
+              url: reportSelectedBillPhotos[newIndex],
+              index: newIndex,
+              total: reportSelectedBillPhotos.length,
+            });
+          }}
+          onNext={() => {
+            if (
+              !reportSelectedPhoto ||
+              !reportSelectedBillPhotos ||
+              reportSelectedBillPhotos.length <= 1
+            ) {
+              return;
+            }
+            const newIndex =
+              reportSelectedPhoto.index < reportSelectedBillPhotos.length - 1
+                ? reportSelectedPhoto.index + 1
+                : 0;
+            setReportSelectedPhoto({
+              url: reportSelectedBillPhotos[newIndex],
+              index: newIndex,
+              total: reportSelectedBillPhotos.length,
+            });
+          }}
+          onDownload={(photoUrl) => {
+            const link = document.createElement('a');
+            link.href = photoUrl;
+            link.download = `photo-${Date.now()}.jpg`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+          }}
+          onClose={() => setReportPhotoViewerOpen(false)}
         />
       )}
     </Dialog>
