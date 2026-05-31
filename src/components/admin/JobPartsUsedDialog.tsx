@@ -293,6 +293,16 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     return rpcErr ? (rpcErr as { message?: string }).message || 'Failed to update main inventory' : null;
   };
 
+  const restoreMainInventory = async (
+    inventoryId: string,
+    quantity: number
+  ): Promise<string | null> => {
+    const { error: rpcErr } = await db.inventory.incrementForJob(inventoryId, quantity);
+    return rpcErr
+      ? (rpcErr as { message?: string }).message || 'Failed to restore main inventory'
+      : null;
+  };
+
   // Handle add part - opens dialog with search
   const handleAddPart = () => {
     setInventorySearchQuery('');
@@ -479,33 +489,65 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     }
   };
 
-  // Handle delete part — optimistic update, no refetch
+  // Remove part from job: if qty > 1, reduce by 1 only; if qty is 1, remove the row entirely.
   const handleDeletePart = async (partId: string, inventoryId: string, quantityUsed: number) => {
     if (!technician?.id) return;
 
     const techItem = technicianInventory.find(i => i.inventory_id === inventoryId);
+    const qtyToRestore = quantityUsed > 1 ? 1 : quantityUsed;
 
     try {
-      const { error: deleteError } = await db.jobPartsUsed.delete(partId);
-      if (deleteError) throw deleteError;
+      const mainErr = await restoreMainInventory(inventoryId, qtyToRestore);
+      if (mainErr) {
+        toast.error(`Main inventory: ${mainErr}`);
+        return;
+      }
 
-      if (techItem) {
-        const newQuantity = techItem.quantity + quantityUsed;
-        const { error: updateError } = await db.technicianInventory.update(techItem.id, {
-          quantity: newQuantity
+      if (quantityUsed > 1) {
+        const newQuantityUsed = quantityUsed - 1;
+        const { data: updatedPart, error: updateError } = await db.jobPartsUsed.update(partId, {
+          quantity_used: newQuantityUsed,
         });
         if (updateError) throw updateError;
-      }
 
-      setPartsUsed(prev => prev.filter(p => p.id !== partId));
-      if (techItem) {
-        setTechnicianInventory(prev => prev.map(i => i.id === techItem.id ? { ...i, quantity: techItem.quantity + quantityUsed } : i));
+        if (techItem) {
+          const newTechQuantity = techItem.quantity + 1;
+          const { error: updateTechError } = await db.technicianInventory.update(techItem.id, {
+            quantity: newTechQuantity,
+          });
+          if (updateTechError) throw updateTechError;
+          setTechnicianInventory(prev =>
+            prev.map(i => (i.id === techItem.id ? { ...i, quantity: newTechQuantity } : i))
+          );
+        }
+
+        setPartsUsed(prev =>
+          prev.map(p => (p.id === partId ? (updatedPart || { ...p, quantity_used: newQuantityUsed }) : p))
+        );
+        if (job?.id) scheduleRecalcJobPartsCost(job.id);
+        toast.success('Removed 1 qty from job; stock returned to technician and main inventory.');
+      } else {
+        const { error: deleteError } = await db.jobPartsUsed.delete(partId);
+        if (deleteError) throw deleteError;
+
+        if (techItem) {
+          const newQuantity = techItem.quantity + quantityUsed;
+          const { error: updateTechError } = await db.technicianInventory.update(techItem.id, {
+            quantity: newQuantity,
+          });
+          if (updateTechError) throw updateTechError;
+          setTechnicianInventory(prev =>
+            prev.map(i => (i.id === techItem.id ? { ...i, quantity: newQuantity } : i))
+          );
+        }
+
+        setPartsUsed(prev => prev.filter(p => p.id !== partId));
+        if (job?.id) scheduleRecalcJobPartsCost(job.id);
+        toast.success('Part removed; stock returned to technician and main inventory.');
       }
-      if (job?.id) scheduleRecalcJobPartsCost(job.id);
-      toast.success('Part removed and added back to technician inventory');
     } catch (error: any) {
       console.error('Error deleting part:', error);
-      toast.error(error?.message || 'Failed to delete part');
+      toast.error(error?.message || 'Failed to remove part');
     }
   };
 
@@ -591,9 +633,13 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
                             </AlertDialogTrigger>
                             <AlertDialogContent>
                               <AlertDialogHeader>
-                                <AlertDialogTitle>Remove Part?</AlertDialogTitle>
+                                <AlertDialogTitle>
+                                  {part.quantity_used > 1 ? 'Remove 1 quantity?' : 'Remove part?'}
+                                </AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  Are you sure you want to remove this part? The quantity will be added back to the technician's inventory.
+                                  {part.quantity_used > 1
+                                    ? `This will reduce quantity used from ${part.quantity_used} to ${part.quantity_used - 1}. One unit returns to the technician and main inventory.`
+                                    : "Remove this part from the job? The quantity will return to the technician and main inventory."}
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
@@ -602,7 +648,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
                                   onClick={() => handleDeletePart(part.id, part.inventory_id, part.quantity_used)}
                                   className="bg-red-600 hover:bg-red-700"
                                 >
-                                  Remove
+                                  {part.quantity_used > 1 ? 'Remove 1' : 'Remove'}
                                 </AlertDialogAction>
                               </AlertDialogFooter>
                             </AlertDialogContent>

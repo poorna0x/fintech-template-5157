@@ -55,6 +55,51 @@ REVOKE ALL ON FUNCTION public.decrement_main_inventory_for_job(uuid, integer) FR
 REVOKE EXECUTE ON FUNCTION public.decrement_main_inventory_for_job(uuid, integer) FROM anon;
 GRANT EXECUTE ON FUNCTION public.decrement_main_inventory_for_job(uuid, integer) TO authenticated;
 
+-- Restore main inventory when removing part(s) from a job (reverse of decrement_main_inventory_for_job).
+CREATE OR REPLACE FUNCTION public.increment_main_inventory_for_job(
+  p_inventory_id uuid,
+  p_qty integer
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_uid uuid := auth.uid();
+  v_current integer;
+BEGIN
+  IF v_uid IS NULL THEN
+    RAISE EXCEPTION 'not authenticated';
+  END IF;
+  IF p_qty IS NULL OR p_qty <= 0 THEN
+    RAISE EXCEPTION 'invalid qty';
+  END IF;
+
+  SELECT quantity INTO v_current
+  FROM public.inventory
+  WHERE id = p_inventory_id
+  FOR UPDATE;
+
+  IF v_current IS NULL THEN
+    RAISE EXCEPTION 'inventory item not found';
+  END IF;
+
+  UPDATE public.inventory
+  SET quantity = quantity + p_qty
+  WHERE id = p_inventory_id;
+
+  RETURN jsonb_build_object(
+    'inventory_id', p_inventory_id,
+    'quantity_after', v_current + p_qty
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.increment_main_inventory_for_job(uuid, integer) FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.increment_main_inventory_for_job(uuid, integer) FROM anon;
+GRANT EXECUTE ON FUNCTION public.increment_main_inventory_for_job(uuid, integer) TO authenticated;
+
 -- Top Up: move p_qty from main inventory to a technician's inventory.
 -- Technicians: omit p_technician_id (uses auth.uid()). Admins: pass selected technician id.
 -- Used by TechnicianTopUpDialog ("Add to Inventory" button).

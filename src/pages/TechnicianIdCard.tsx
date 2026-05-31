@@ -1,29 +1,21 @@
-import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, User, Phone, Mail, Briefcase, Building2, MapPin, Globe } from 'lucide-react';
 // Use the lightweight auth client — this public page does a single technicians
 // SELECT and must not pull in the admin/technician data layer (admin-data chunk).
 import { supabase } from '@/lib/supabaseClient';
-import { CompanyInfo } from '@/types';
 import Logo from '@/components/Logo';
 import Header from '@/components/Header';
 import { useTheme } from '@/contexts/ThemeContext';
-
-// Company information (same as in BillGenerator)
-const companyInfo: CompanyInfo = {
-  name: "Authorised Service Franchise",
-  address: "Ground Floor, 13, 4th Main Road, Next To Jain Temple,Seshadripuram, Kumara Park West",
-  city: "Bengaluru",
-  state: "Karnataka",
-  pincode: "560020",
-  phone: "9886944288 & 8884944288",
-  email: "mail@hydrogenro.com",
-  gstNumber: "29LIJPS5140P1Z6",
-  panNumber: "LIJPS5140P",
-  website: "hydrogenro.com"
-};
+import {
+  BRAND_SEAL_SRC,
+  getCompanyInfoForBrand,
+  getDocumentBrandLabel,
+  normalizeDocumentBrand,
+  type DocumentBrand,
+} from '@/lib/service-brands';
 
 interface TechnicianData {
   id: string;
@@ -37,10 +29,19 @@ interface TechnicianData {
 
 const TechnicianIdCard: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
   const { isDarkMode } = useTheme();
   const [technician, setTechnician] = useState<TechnicianData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Read the brand from `?brand=elevenro` (defaults to hydrogenro). Same
+  // technician record can be shown under either brand without duplicating rows.
+  const brand: DocumentBrand = useMemo(() => {
+    return normalizeDocumentBrand(searchParams.get('brand')) ?? 'hydrogenro';
+  }, [searchParams]);
+  const companyInfo = useMemo(() => getCompanyInfoForBrand(brand), [brand]);
+  const brandLabel = useMemo(() => getDocumentBrandLabel(brand), [brand]);
 
   useEffect(() => {
     const loadTechnician = async () => {
@@ -77,6 +78,21 @@ const TechnicianIdCard: React.FC = () => {
     loadTechnician();
   }, [id]);
 
+  // Keep the browser tab title in sync with the brand so the technician (and the
+  // customer scanning the QR) can see which brand's ID card they are viewing.
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const previous = document.title;
+    if (technician) {
+      document.title = `${brandLabel} — ${technician.full_name} ID Card`;
+    } else {
+      document.title = `${brandLabel} Technician ID Card`;
+    }
+    return () => {
+      document.title = previous;
+    };
+  }, [brandLabel, technician]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -111,11 +127,31 @@ const TechnicianIdCard: React.FC = () => {
       <Header />
       <div className="p-4">
         <div className="max-w-sm mx-auto">
+        {/* Brand banner above the card — makes it obvious which brand this card belongs to. */}
+        <div className="flex items-center justify-center gap-2 sm:gap-3 mb-3">
+          <img
+            src={BRAND_SEAL_SRC[brand]}
+            alt={`${brandLabel} seal`}
+            className="w-8 h-8 sm:w-9 sm:h-9 object-contain"
+            onError={(e) => {
+              (e.target as HTMLImageElement).style.display = 'none';
+            }}
+          />
+          <div className="text-center">
+            <p className="text-base sm:text-lg font-bold text-foreground leading-tight">{brandLabel}</p>
+            <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wide">
+              Technician ID Card
+            </p>
+          </div>
+        </div>
         {/* ID Card */}
         <Card className="bg-card border-2 border-primary/20 dark:border-primary/30 shadow-xl overflow-hidden rounded-xl">
           <CardContent className="p-0">
             {/* Header Banner */}
             <div className="bg-gradient-to-r from-primary to-primary/90 text-primary-foreground px-4 py-4 sm:py-5">
+              <p className="text-xs sm:text-sm font-semibold text-primary-foreground text-center mb-2 uppercase tracking-wider">
+                {brandLabel}
+              </p>
               <h1 className="text-base sm:text-lg font-bold text-primary-foreground text-center mb-1">{technician.full_name}</h1>
               <p className="text-xs sm:text-sm text-primary-foreground/90 text-center">Employee ID: {technician.employee_id}</p>
               <p className="text-xs text-primary-foreground/80 text-center mt-1">Service Technician</p>
@@ -197,12 +233,14 @@ const TechnicianIdCard: React.FC = () => {
                     <span className="text-muted-foreground">{companyInfo.website}</span>
                   </div>
                 )}
-                <div className="flex items-start gap-2 pt-2 border-t border-border">
-                  <MapPin className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-                  <div className="flex-1">
-                    <span className="text-muted-foreground block">GST: {companyInfo.gstNumber}</span>
+                {companyInfo.gstNumber && (
+                  <div className="flex items-start gap-2 pt-2 border-t border-border">
+                    <MapPin className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <span className="text-muted-foreground block">GST: {companyInfo.gstNumber}</span>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
 

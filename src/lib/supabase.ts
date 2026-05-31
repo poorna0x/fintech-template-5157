@@ -4345,6 +4345,15 @@ export const db = {
       return { data, error };
     },
 
+    /** Restore main inventory when removing part(s) from a job. */
+    async incrementForJob(inventoryId: string, qty: number) {
+      const { data, error } = await supabase.rpc('increment_main_inventory_for_job', {
+        p_inventory_id: inventoryId,
+        p_qty: qty,
+      });
+      return { data, error };
+    },
+
     /** Batch update main stock quantities — no returning rows (low egress). */
     async bulkUpdateQuantities(updates: Array<{ id: string; quantity: number }>) {
       if (updates.length === 0) return { error: null };
