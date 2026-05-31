@@ -3282,18 +3282,29 @@ const TechnicianDashboard = () => {
           setIsLoadingServiceBrand(false);
           if (error) {
             console.warn('[TechnicianDashboard] Failed to load last service brand:', error);
+            setServiceBrand((prev) => prev ?? 'elevenro');
             return;
           }
           const normalized = normalizeServiceBrand(brandByCustomer?.[customerId]);
           if (normalized) {
             setLastServiceBrand(normalized);
             setServiceBrand(normalized);
+          } else {
+            // No previous brand on file (new customer / first service):
+            // default the "Served As" selector to Eleven RO. Tech can still
+            // toggle to Hydrogen RO before completing the job.
+            setServiceBrand((prev) => prev ?? 'elevenro');
           }
         } catch (err) {
           console.warn('[TechnicianDashboard] Error loading service brand:', err);
           setIsLoadingServiceBrand(false);
+          setServiceBrand((prev) => prev ?? 'elevenro');
         }
       })();
+    } else {
+      // No customer id (defensive — first service or missing relation):
+      // start the selector at Eleven RO.
+      setServiceBrand((prev) => prev ?? 'elevenro');
     }
 
     const customerPrefilter = jobWithCustomer.customer
