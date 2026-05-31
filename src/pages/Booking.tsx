@@ -446,6 +446,7 @@ const Booking: React.FC = () => {
       'Installation',
       'Reinstallation',
       'Return Complaint',
+      'Return Service',
       'AMC Service',
       'New Purifier Installation',
       'Un-Installation',

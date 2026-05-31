@@ -95,6 +95,7 @@ const SERVICE_SUB_TYPES = [
   'Installation',
   'Reinstallation',
   'Return Complaint',
+  'Return Service',
   'AMC Service',
   'New Purifier Installation',
   'Un-Installation',

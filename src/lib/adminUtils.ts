@@ -523,6 +523,8 @@ const SERVICE_SUB_TYPE_NORMALIZE_MAP: Record<string, string> = {
   installation: 'Installation',
   reinstallation: 'Reinstallation',
   'return complaint': 'Return Complaint',
+  'return service': 'Return Service',
+  returnservice: 'Return Service',
   amcservice: 'AMC Service',
   'amc service': 'AMC Service',
   'new purifier installation': 'New Purifier Installation',

@@ -1649,6 +1649,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                           <SelectItem value="Installation">Installation</SelectItem>
                           <SelectItem value="Reinstallation">Reinstallation</SelectItem>
                           <SelectItem value="Return Complaint">Return Complaint</SelectItem>
+                          <SelectItem value="Return Service">Return Service</SelectItem>
                           <SelectItem value="AMC Service">AMC Service</SelectItem>
                           <SelectItem value="New Purifier Installation">New Purifier Installation</SelectItem>
                           <SelectItem value="Un-Installation">Un-Installation</SelectItem>
