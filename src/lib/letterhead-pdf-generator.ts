@@ -481,12 +481,8 @@ export function buildLetterheadInnerHtml(data: LetterheadDocumentData): string {
     ? ''
     : renderPdfFooterHtml(data.brand, company);
 
-  const containerClass = data.showPageBorder === false
-    ? 'lh-container'
-    : 'lh-container lh-container-bordered';
-
   return `
-    <div class="${containerClass}">
+    <div class="lh-container">
       <div class="lh-header">
         <div class="lh-logo">${renderPdfLogoHtml(data.brand)}</div>
         <div class="lh-company">${renderPdfCompanyDetailsHtml(company, data.brand)}</div>
@@ -515,32 +511,78 @@ export function buildLetterheadInnerHtml(data: LetterheadDocumentData): string {
   `;
 }
 
+/** Body class for preview/print — enables per-page frame padding. */
+export function getLetterheadBodyClass(
+  data: Pick<LetterheadDocumentData, 'showPageBorder'>
+): string {
+  return data.showPageBorder !== false ? 'lh-with-frame' : '';
+}
+
 const LETTERHEAD_BASE_CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
-  body {
-    font-family: 'Poppins', sans-serif;
-    color: #1f2937;
-    background: #ffffff;
-    line-height: 1.5;
-    font-size: 12px;
-    padding: 8mm 8mm; /* slim outer padding — the frame supplies visual breathing room */
-  }
-
-  .lh-container { width: 100%; }
-
-  /* Decorative page frame. We use a double border with a thin inner accent
-     line so it looks crisp at print time without being heavy. */
-  .lh-container-bordered {
-    border: 2px solid #0f172a;
-    outline: 1px solid #0f172a;
-    outline-offset: 4px;
-    padding: 10mm 8mm;
-    box-shadow: inset 0 0 0 4px #ffffff, inset 0 0 0 5px #cbd5e1;
+  /* Explicit fallback chain prevents macOS Safari/Chrome from falling back to
+     system San Francisco (which renders visibly heavier at 12px and made the
+     letterhead look "bold by default" before Poppins finished loading). */
+  html {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+  }
+
+  /*
+   * The body itself owns the page border (same approach as amc-pdf-generator).
+   * Browsers automatically repeat the body's own border on each printed page
+   * — no position:fixed, no pseudo-elements, no overlap with content.
+   */
+  body {
+    font-family: 'Poppins', system-ui, -apple-system, BlinkMacSystemFont,
+      'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    font-weight: 400;
+    color: #1f2937;
+    background: #ffffff;
+    line-height: 1.55;
+    font-size: 12px;
+    margin: 0 auto;
+    padding: 14mm 12mm;
+    width: 210mm;          /* A4 width */
+    max-width: 210mm;
+    min-height: 297mm;     /* A4 height — keeps the preview sheet tall */
+    box-sizing: border-box;
+  }
+
+  /* Border-on-body only when the user has the frame turned on */
+  body.lh-with-frame {
+    border: 1px solid #0f172a;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
+
+  /* Defensive default weight (some browsers bump weight on contenteditable) */
+  body, p, div, span, td, th, li { font-weight: 400; }
+
+  .lh-container {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  /* Keep long content inside the page bounds */
+  .lh-body,
+  .lh-text-block,
+  .lh-company,
+  .lh-meta-grid {
+    overflow-wrap: break-word;
+    word-wrap: break-word;
+  }
+  .lh-container img {
+    max-width: 100%;
+    height: auto;
+  }
+  .lh-meta-col {
+    min-width: 0;
+    overflow-wrap: break-word;
   }
 
   .lh-header {
@@ -629,8 +671,15 @@ const LETTERHEAD_BASE_CSS = `
   }
   .lh-table {
     width: 100%;
+    max-width: 100%;
     border-collapse: collapse;
+    table-layout: fixed;
     font-size: 11px;
+  }
+  .lh-table td,
+  .lh-table th {
+    overflow-wrap: break-word;
+    word-wrap: break-word;
   }
   .lh-table th {
     background: #f1f5f9;
@@ -734,10 +783,42 @@ const LETTERHEAD_BASE_CSS = `
   }
 
   @media print {
-    body { padding: 12mm 10mm; }
+    /* @page sets a generous margin around each physical page so the body
+       border has space and content never touches the edge. */
+    @page {
+      size: A4;
+      margin: 8mm;
+    }
+
+    /* Body now becomes the printable rectangle the browser repeats per page.
+       Mirrors amc-pdf-generator's approach — single border, browser handles
+       the per-page repetition automatically. */
+    body {
+      width: auto !important;
+      max-width: none !important;
+      min-height: 0 !important;
+      margin: 0 !important;
+      padding: 10mm 12mm !important;
+      box-decoration-break: clone;
+      -webkit-box-decoration-break: clone;
+    }
+    body.lh-with-frame {
+      border: 1px solid #0f172a !important;
+    }
+
     .lh-table th { background: #f1f5f9 !important; -webkit-print-color-adjust: exact; }
     .lh-table tr:nth-child(even) td { background: #f8fafc !important; -webkit-print-color-adjust: exact; }
     .lh-subject { -webkit-print-color-adjust: exact; }
+    .lh-page-break {
+      page-break-after: always;
+      break-after: page;
+    }
+    /* Don't split tables or signatures across pages mid-row */
+    .lh-table tr,
+    .lh-signatures {
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
   }
 `;
 
@@ -763,6 +844,8 @@ export function generateLetterheadPDF(
       LETTERHEAD_DOCUMENT_TYPE_LABEL[data.documentType] ||
       'Document';
 
+    const bodyClass = getLetterheadBodyClass(data);
+
     printWindow.document.write(`<!DOCTYPE html>
 <html>
 <head>
@@ -770,7 +853,7 @@ export function generateLetterheadPDF(
   <title>${sanitizeForTemplate(title)}</title>
   <style>${LETTERHEAD_BASE_CSS}</style>
 </head>
-<body>
+<body class="${bodyClass}">
 ${inner}
 </body>
 </html>`);

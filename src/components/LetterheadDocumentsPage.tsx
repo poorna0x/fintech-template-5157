@@ -63,6 +63,7 @@ import {
   createEmptyLetterhead,
   createStarterBlocks,
   generateLetterheadPDF,
+  getLetterheadBodyClass,
   getLetterheadCss,
   newBlockId,
   normalizeLetterheadData,
@@ -262,7 +263,8 @@ export default function LetterheadDocumentsPage({
 
   // Render the live preview by writing into the iframe whenever data changes.
   const previewHtml = useMemo(() => {
-    return `<!DOCTYPE html><html><head><meta charset="utf-8" /><style>${getLetterheadCss()}</style></head><body>${buildLetterheadInnerHtml(data)}</body></html>`;
+    const bodyClass = getLetterheadBodyClass(data);
+    return `<!DOCTYPE html><html><head><meta charset="utf-8" /><style>${getLetterheadCss()}</style></head><body class="${bodyClass}">${buildLetterheadInnerHtml(data)}</body></html>`;
   }, [data]);
 
   useEffect(() => {
@@ -462,7 +464,7 @@ export default function LetterheadDocumentsPage({
       {/* Sticky header — title on the left, badges + primary actions on the right.
           On mobile we collapse button labels to icons to keep one tidy row. */}
       <div className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/75 shadow-sm">
-        <div className="mx-auto max-w-7xl px-3 sm:px-6 lg:px-8">
+        <div className="mx-auto w-full max-w-[1600px] px-3 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between gap-2 py-2.5 md:py-3">
             <div className="flex items-center gap-2 min-w-0">
               <Button
@@ -544,7 +546,7 @@ export default function LetterheadDocumentsPage({
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 lg:py-6 grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
+      <div className="w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-4 lg:py-6 grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
         {/* Sidebar */}
         <aside className="space-y-4 lg:col-span-1">
           <Card className="border-slate-200 shadow-sm">
@@ -1161,7 +1163,7 @@ export default function LetterheadDocumentsPage({
           without scrolling on phones. Hidden on lg+ where the top header bar
           already exposes Save / PDF / Print. */}
       <div className="lg:hidden fixed bottom-0 inset-x-0 z-30 border-t border-slate-200 bg-white/95 backdrop-blur shadow-[0_-2px_6px_rgba(15,23,42,0.05)]">
-        <div className="mx-auto max-w-7xl grid grid-cols-4 gap-1 px-2 py-2">
+        <div className="mx-auto w-full max-w-[1600px] grid grid-cols-4 gap-1 px-2 py-2">
           <Button
             variant="ghost"
             size="sm"

@@ -173,7 +173,8 @@ export default function RichTextEditor({
           color: #9ca3af;
           pointer-events: none;
         }
-        .lh-rte-content { line-height: 1.5; }
+        .lh-rte-content { line-height: 1.5; font-weight: 400; }
+        .lh-rte-content p, .lh-rte-content div, .lh-rte-content span, .lh-rte-content li { font-weight: 400; }
         .lh-rte-content h1 { font-size: 1.15rem; font-weight: 700; margin: 0.4rem 0; }
         .lh-rte-content h2 { font-size: 1.05rem; font-weight: 700; margin: 0.4rem 0; }
         .lh-rte-content h3 { font-size: 0.98rem; font-weight: 600; margin: 0.35rem 0; }
