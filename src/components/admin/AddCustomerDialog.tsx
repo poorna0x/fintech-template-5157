@@ -505,15 +505,93 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     }
   };
 
+  /**
+   * Pull the first Google Maps URL out of arbitrary clipboard text.
+   * Tolerates: pure URL, URL with surrounding whitespace/newlines, a paragraph
+   * containing a URL, or multiple URLs (first match wins).
+   */
+  const extractMapsUrlFromText = (text: string): string | null => {
+    const trimmed = (text || '').trim();
+    if (!trimmed) return null;
+    const MAPS_URL_REGEX =
+      /https?:\/\/(?:www\.)?(?:google\.[^/\s]+\/maps\S*|maps\.app\.goo\.gl\/\S+|goo\.gl\/maps\/\S+)/i;
+    const match = trimmed.match(MAPS_URL_REGEX);
+    if (match) return match[0].replace(/[)>\].,;'"]+$/g, '');
+    return null;
+  };
+
+  /**
+   * Read the OS clipboard and return a Google Maps URL if one is in there.
+   * Returns null and surfaces a user-facing toast on every failure mode so the
+   * caller doesn't need to know why it failed.
+   */
+  const readMapsLinkFromClipboard = async (): Promise<string | null> => {
+    if (
+      typeof navigator === 'undefined' ||
+      !navigator.clipboard ||
+      typeof navigator.clipboard.readText !== 'function'
+    ) {
+      toast.error(
+        'Your browser blocks reading the clipboard. Paste the link into the field, then click Fetch Address.'
+      );
+      return null;
+    }
+    let text = '';
+    try {
+      text = await navigator.clipboard.readText();
+    } catch {
+      // Permission denied, document not focused, Safari/iOS restrictions, etc.
+      toast.error(
+        'Clipboard access was denied. Paste the link into the field, then click Fetch Address.'
+      );
+      return null;
+    }
+    if (!text || !text.trim()) {
+      toast.error('Clipboard is empty. Copy a Google Maps share link first.');
+      return null;
+    }
+    const link = extractMapsUrlFromText(text);
+    if (!link) {
+      toast.error("Clipboard doesn't contain a Google Maps link.");
+      return null;
+    }
+    return link;
+  };
+
   const fetchAddressFromGoogleLocation = async () => {
-    const googleLocation = addFormData.google_location || '';
-    
-    if (!googleLocation.trim()) {
-      toast.error('Please enter a Google Maps link first');
-      return;
+    let googleLocation = (addFormData.google_location || '').trim();
+
+    if (!googleLocation) {
+      // No link in the field — try the clipboard so the user can skip a paste step.
+      const clipboardLink = await readMapsLinkFromClipboard();
+      if (!clipboardLink) return;
+
+      // Race-safe: between the empty-check above and now, the user may have
+      // started typing. Use the updater form to inspect the latest value, and
+      // only auto-fill if the field is still empty. Otherwise prefer what the
+      // user is typing.
+      let resolvedLink = clipboardLink;
+      let didAutoFill = false;
+      setAddFormData((prev) => {
+        const current = (prev.google_location || '').trim();
+        if (current) {
+          resolvedLink = current;
+          return prev;
+        }
+        didAutoFill = true;
+        return { ...prev, google_location: clipboardLink };
+      });
+      googleLocation = resolvedLink;
+      if (didAutoFill) {
+        toast.info('Pasted link from clipboard');
+      }
     }
 
-    if (!googleLocation.includes('google.com/maps') && !googleLocation.includes('maps.app.goo.gl') && !googleLocation.includes('goo.gl/maps')) {
+    if (
+      !googleLocation.includes('google.com/maps') &&
+      !googleLocation.includes('maps.app.goo.gl') &&
+      !googleLocation.includes('goo.gl/maps')
+    ) {
       toast.error('Please enter a valid Google Maps link');
       return;
     }
@@ -1317,43 +1395,48 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                 <Label htmlFor="add_google_location" className="text-sm font-medium text-gray-900">
                   Google Maps Location
                 </Label>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Input
                     id="add_google_location"
                     value={addFormData.google_location}
                     onChange={(e) => handleAddFormChange('google_location', e.target.value)}
                     placeholder="Paste Google Maps share link here..."
-                    className="text-sm flex-1"
+                    className="text-sm flex-1 min-w-[180px]"
                   />
-                  {addFormData.google_location && (
-                    <>
                   <Button
                     type="button"
                     variant="outline"
-                        size="sm"
-                        onClick={fetchAddressFromGoogleLocation}
-                        className="whitespace-nowrap"
-                        title="Fetch address from Google Maps link"
-                      >
-                        <Download className="w-3 h-3 mr-1" />
-                        Fetch Address
+                    size="sm"
+                    onClick={fetchAddressFromGoogleLocation}
+                    className="whitespace-nowrap"
+                    title={
+                      addFormData.google_location
+                        ? 'Fetch address from Google Maps link'
+                        : 'Paste from clipboard and fetch address'
+                    }
+                  >
+                    <Download className="w-3 h-3 mr-1" />
+                    Fetch Address
                   </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          window.open(addFormData.google_location, '_blank', 'noopener,noreferrer');
-                        }}
-                        className="whitespace-nowrap"
-                        title="Open in Google Maps"
-                      >
-                        <ExternalLink className="w-3 h-3 mr-1" />
-                        Test
-                      </Button>
-                    </>
+                  {addFormData.google_location && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        window.open(addFormData.google_location, '_blank', 'noopener,noreferrer');
+                      }}
+                      className="whitespace-nowrap"
+                      title="Open in Google Maps"
+                    >
+                      <ExternalLink className="w-3 h-3 mr-1" />
+                      Test
+                    </Button>
                   )}
                 </div>
+                <p className="text-xs text-gray-500">
+                  Tip: copy the share link from Google Maps, then click <strong>Fetch Address</strong> — we'll paste it for you.
+                </p>
               </div>
             </div>
           )}
