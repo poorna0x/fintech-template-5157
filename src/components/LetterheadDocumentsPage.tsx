@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
   FileText,
+  ClipboardCheck,
+  FileSignature,
+  Stamp,
   Printer,
   Save,
   Trash2,
@@ -18,6 +21,8 @@ import {
   Search,
   UserCheck,
   X,
+  ChevronRight,
+  Loader2,
 } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -79,6 +84,55 @@ const DOCUMENT_TYPES: LetterheadDocumentType[] = [
   'custom_document',
   'letterhead',
 ];
+
+/** Visual metadata for each document type — used for the type picker chips
+ *  and the badge in the sticky header. Tailwind-only so it stays cohesive
+ *  with the rest of the admin UI. */
+const TYPE_META: Record<
+  LetterheadDocumentType,
+  {
+    icon: React.ComponentType<{ className?: string }>;
+    accent: string;
+    softBg: string;
+    softText: string;
+    softBorder: string;
+    /** Fully-qualified Tailwind ring class (Tailwind's JIT can't see dynamic strings). */
+    ring: string;
+  }
+> = {
+  service_report: {
+    icon: ClipboardCheck,
+    accent: 'bg-blue-600 hover:bg-blue-700 text-white',
+    softBg: 'bg-blue-50',
+    softText: 'text-blue-700',
+    softBorder: 'border-blue-200',
+    ring: 'ring-blue-200',
+  },
+  amc_report: {
+    icon: FileSignature,
+    accent: 'bg-emerald-600 hover:bg-emerald-700 text-white',
+    softBg: 'bg-emerald-50',
+    softText: 'text-emerald-700',
+    softBorder: 'border-emerald-200',
+    ring: 'ring-emerald-200',
+  },
+  custom_document: {
+    icon: FileText,
+    accent: 'bg-violet-600 hover:bg-violet-700 text-white',
+    softBg: 'bg-violet-50',
+    softText: 'text-violet-700',
+    softBorder: 'border-violet-200',
+    ring: 'ring-violet-200',
+  },
+  letterhead: {
+    icon: Stamp,
+    accent: 'bg-amber-600 hover:bg-amber-700 text-white',
+    softBg: 'bg-amber-50',
+    softText: 'text-amber-700',
+    softBorder: 'border-amber-200',
+    ring: 'ring-amber-200',
+  },
+};
 
 const DRAFT_INDEX_KEY = 'letterhead_drafts_v1';
 const ACTIVE_DRAFT_KEY = 'letterhead_active_v1';
@@ -400,37 +454,54 @@ export default function LetterheadDocumentsPage({
     else navigate('/admin');
   };
 
+  const activeMeta = TYPE_META[data.documentType];
+  const ActiveIcon = activeMeta.icon;
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="sticky top-0 z-10 bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 py-3 md:py-0 md:h-16">
-            <div className="flex items-center gap-2">
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 pb-24 lg:pb-6">
+      {/* Sticky header — title on the left, badges + primary actions on the right.
+          On mobile we collapse button labels to icons to keep one tidy row. */}
+      <div className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/75 shadow-sm">
+        <div className="mx-auto max-w-7xl px-3 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between gap-2 py-2.5 md:py-3">
+            <div className="flex items-center gap-2 min-w-0">
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={handleBack}
-                className="text-gray-600 hover:text-gray-900 -ml-2"
+                className="text-slate-600 hover:text-slate-900 -ml-2 shrink-0"
+                aria-label="Back"
               >
-                <ArrowLeft className="w-4 h-4 mr-1" /> Back
+                <ArrowLeft className="w-4 h-4 sm:mr-1" />
+                <span className="hidden sm:inline">Back</span>
               </Button>
-              <div className="hidden sm:flex items-center gap-2 ml-2">
-                <FileText className="w-5 h-5 text-blue-600" />
-                <div>
-                  <h1 className="text-lg font-semibold text-gray-900">
+              <div className="flex items-center gap-2 min-w-0">
+                <span
+                  className={`hidden xs:inline-flex h-9 w-9 items-center justify-center rounded-lg ${activeMeta.softBg} ${activeMeta.softText}`}
+                >
+                  <ActiveIcon className="w-5 h-5" />
+                </span>
+                <div className="min-w-0">
+                  <h1 className="truncate text-sm sm:text-base font-semibold text-slate-900">
                     Letterhead Documents
                   </h1>
-                  <p className="text-xs text-gray-500">
-                    Service reports, AMC reports, custom letterheads
+                  <p className="hidden sm:block text-[11px] text-slate-500 truncate">
+                    Service reports, AMC reports & custom documents
                   </p>
                 </div>
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline">
+            <div className="flex items-center gap-1.5 shrink-0">
+              <Badge
+                variant="outline"
+                className="hidden md:inline-flex border-slate-300 text-slate-700 bg-white"
+              >
                 {getDocumentBrandLabel(data.brand)}
               </Badge>
-              <Badge variant="secondary">
+              <Badge
+                variant="outline"
+                className={`hidden md:inline-flex ${activeMeta.softBg} ${activeMeta.softText} ${activeMeta.softBorder}`}
+              >
                 {LETTERHEAD_DOCUMENT_TYPE_LABEL[data.documentType]}
               </Badge>
               <Button
@@ -438,18 +509,35 @@ export default function LetterheadDocumentsPage({
                 size="sm"
                 onClick={() => setShowMobilePreview((v) => !v)}
                 className="lg:hidden"
+                aria-label={showMobilePreview ? 'Hide preview' : 'Show preview'}
               >
-                <Eye className="w-4 h-4 mr-1" />
-                {showMobilePreview ? 'Hide preview' : 'Preview'}
+                <Eye className="w-4 h-4" />
               </Button>
-              <Button variant="outline" size="sm" onClick={handleSaveDraft}>
-                <Save className="w-4 h-4 mr-1" /> Save draft
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSaveDraft}
+                className="hidden sm:inline-flex border-slate-300"
+              >
+                <Save className="w-4 h-4 mr-1" /> Save
               </Button>
-              <Button variant="outline" size="sm" onClick={handleDownload}>
-                <FileDown className="w-4 h-4 mr-1" /> PDF
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleDownload}
+                className="border-slate-300"
+                aria-label="Save as PDF"
+              >
+                <FileDown className="w-4 h-4 sm:mr-1" />
+                <span className="hidden sm:inline">PDF</span>
               </Button>
-              <Button size="sm" onClick={handlePrint}>
-                <Printer className="w-4 h-4 mr-1" /> Print
+              <Button
+                size="sm"
+                onClick={handlePrint}
+                className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+              >
+                <Printer className="w-4 h-4 sm:mr-1" />
+                <span className="hidden sm:inline">Print</span>
               </Button>
             </div>
           </div>
@@ -459,59 +547,91 @@ export default function LetterheadDocumentsPage({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 lg:py-6 grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
         {/* Sidebar */}
         <aside className="space-y-4 lg:col-span-1">
-          <Card>
-            <CardHeader className="py-3">
-              <CardTitle className="text-base">Document Type</CardTitle>
-              <CardDescription className="text-xs">
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader className="py-3 px-4">
+              <CardTitle className="text-sm font-semibold text-slate-900">Document Type</CardTitle>
+              <CardDescription className="text-[11px] text-slate-500">
                 Switch templates anytime — your current content stays.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-1">
-              {DOCUMENT_TYPES.map((t) => (
-                <Button
-                  key={t}
-                  variant={data.documentType === t ? 'default' : 'outline'}
-                  className="w-full justify-start"
-                  size="sm"
-                  onClick={() => switchDocumentType(t)}
-                >
-                  <FileText className="w-4 h-4 mr-2" />
-                  {LETTERHEAD_DOCUMENT_TYPE_LABEL[t]}
-                </Button>
-              ))}
+            <CardContent className="grid grid-cols-2 gap-2 px-3 pb-3">
+              {DOCUMENT_TYPES.map((t) => {
+                const meta = TYPE_META[t];
+                const Icon = meta.icon;
+                const active = data.documentType === t;
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => switchDocumentType(t)}
+                    className={
+                      'group flex flex-col items-start gap-1.5 rounded-lg border p-2.5 text-left transition ' +
+                      (active
+                        ? `${meta.softBg} ${meta.softBorder} ring-2 ring-offset-1 ring-offset-white ${meta.ring} shadow-sm`
+                        : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50')
+                    }
+                  >
+                    <span
+                      className={`flex h-8 w-8 items-center justify-center rounded-md ${meta.softBg} ${meta.softText}`}
+                    >
+                      <Icon className="w-4 h-4" />
+                    </span>
+                    <span
+                      className={
+                        'text-[12px] font-medium leading-tight ' +
+                        (active ? meta.softText : 'text-slate-800')
+                      }
+                    >
+                      {LETTERHEAD_DOCUMENT_TYPE_LABEL[t]}
+                    </span>
+                  </button>
+                );
+              })}
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="py-3">
-              <CardTitle className="text-base">Brand</CardTitle>
-              <CardDescription className="text-xs">
-                Auto-loads logo, address & footer.
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader className="py-3 px-4">
+              <CardTitle className="text-sm font-semibold text-slate-900">Brand</CardTitle>
+              <CardDescription className="text-[11px] text-slate-500">
+                Auto-loads logo, address &amp; footer.
               </CardDescription>
             </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-2">
-              <Button
-                variant={data.brand === 'hydrogenro' ? 'default' : 'outline'}
-                size="sm"
+            <CardContent className="grid grid-cols-2 gap-2 px-3 pb-3">
+              <button
+                type="button"
                 onClick={() => switchBrand('hydrogenro')}
+                className={
+                  'flex flex-col items-center justify-center gap-1 rounded-lg border px-3 py-2.5 transition ' +
+                  (data.brand === 'hydrogenro'
+                    ? 'bg-sky-50 border-sky-300 text-sky-700 ring-2 ring-sky-200 shadow-sm'
+                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50')
+                }
               >
-                Hydrogen RO
-              </Button>
-              <Button
-                variant={data.brand === 'elevenro' ? 'default' : 'outline'}
-                size="sm"
+                <span className="text-[13px] font-semibold">Hydrogen RO</span>
+                <span className="text-[10px] text-slate-500">GST · India</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => switchBrand('elevenro')}
+                className={
+                  'flex flex-col items-center justify-center gap-1 rounded-lg border px-3 py-2.5 transition ' +
+                  (data.brand === 'elevenro'
+                    ? 'bg-indigo-50 border-indigo-300 text-indigo-700 ring-2 ring-indigo-200 shadow-sm'
+                    : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50')
+                }
               >
-                Eleven RO
-              </Button>
+                <span className="text-[13px] font-semibold">Eleven RO</span>
+                <span className="text-[10px] text-slate-500">No GST</span>
+              </button>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="py-3 flex flex-row items-center justify-between">
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader className="py-3 px-4 flex flex-row items-start justify-between gap-2">
               <div>
-                <CardTitle className="text-base">Drafts</CardTitle>
-                <CardDescription className="text-xs">
+                <CardTitle className="text-sm font-semibold text-slate-900">Drafts</CardTitle>
+                <CardDescription className="text-[11px] text-slate-500">
                   Stored on this device.
                 </CardDescription>
               </div>
@@ -520,6 +640,7 @@ export default function LetterheadDocumentsPage({
                 size="sm"
                 onClick={() => setResetDialogOpen(true)}
                 title="Reset current document"
+                className="h-7 w-7 p-0"
               >
                 <Trash2 className="w-4 h-4 text-red-600" />
               </Button>
@@ -569,16 +690,19 @@ export default function LetterheadDocumentsPage({
 
         {/* Builder */}
         <section className="lg:col-span-2 space-y-4">
-          <Card>
-            <CardHeader className="py-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <UserCheck className="w-4 h-4 text-blue-600" /> Customer
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader className="py-3 px-4 sm:px-6">
+              <CardTitle className="text-sm sm:text-base font-semibold text-slate-900 flex items-center gap-2">
+                <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-blue-50 text-blue-600">
+                  <UserCheck className="w-4 h-4" />
+                </span>
+                Customer
               </CardTitle>
-              <CardDescription className="text-xs">
+              <CardDescription className="text-xs text-slate-500">
                 Search a saved customer to auto-fill name, site, phone &amp; email.
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="px-4 sm:px-6 pb-4">
               <CustomerPicker
                 selectedSummary={
                   data.customerId
@@ -599,10 +723,10 @@ export default function LetterheadDocumentsPage({
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="py-3">
-              <CardTitle className="text-base">Header</CardTitle>
-              <CardDescription className="text-xs">
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader className="py-3 px-4 sm:px-6">
+              <CardTitle className="text-sm sm:text-base font-semibold text-slate-900">Header</CardTitle>
+              <CardDescription className="text-xs text-slate-500">
                 These fields print under the company letterhead.
               </CardDescription>
             </CardHeader>
@@ -687,27 +811,23 @@ export default function LetterheadDocumentsPage({
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="py-3 flex flex-row items-start justify-between gap-2">
-              <div>
-                <CardTitle className="text-base">Body</CardTitle>
-                <CardDescription className="text-xs">
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader className="py-3 px-4 sm:px-6 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <CardTitle className="text-sm sm:text-base font-semibold text-slate-900">Body</CardTitle>
+                <CardDescription className="text-xs text-slate-500">
                   Mix and match text, tables, images and page breaks.
                 </CardDescription>
               </div>
-              <div className="flex flex-wrap gap-1">
-                <Button size="sm" variant="outline" onClick={() => addBlock('text')}>
-                  <TypeIcon className="w-4 h-4 mr-1" /> Text
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => addBlock('table')}>
-                  <TableProperties className="w-4 h-4 mr-1" /> Table
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => addBlock('image')}>
-                  <ImageIcon className="w-4 h-4 mr-1" /> Image
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => addBlock('pagebreak')}>
-                  <SeparatorHorizontal className="w-4 h-4 mr-1" /> Page break
-                </Button>
+              <div className="grid grid-cols-4 gap-1 sm:flex sm:flex-wrap sm:gap-1.5">
+                <ToolbarPill onClick={() => addBlock('text')} icon={TypeIcon} label="Text" />
+                <ToolbarPill onClick={() => addBlock('table')} icon={TableProperties} label="Table" />
+                <ToolbarPill onClick={() => addBlock('image')} icon={ImageIcon} label="Image" />
+                <ToolbarPill
+                  onClick={() => addBlock('pagebreak')}
+                  icon={SeparatorHorizontal}
+                  label="Break"
+                />
               </div>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -853,27 +973,19 @@ export default function LetterheadDocumentsPage({
                 </div>
               )}
 
-              <div className="flex flex-wrap gap-1 pt-1">
-                <Button size="sm" variant="outline" onClick={() => addBlock('text')}>
-                  <Plus className="w-4 h-4 mr-1" /> Text
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => addBlock('table')}>
-                  <Plus className="w-4 h-4 mr-1" /> Table
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => addBlock('image')}>
-                  <Plus className="w-4 h-4 mr-1" /> Image
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => addBlock('pagebreak')}>
-                  <Plus className="w-4 h-4 mr-1" /> Page break
-                </Button>
+              <div className="grid grid-cols-4 gap-1 sm:flex sm:flex-wrap sm:gap-1.5 pt-1">
+                <ToolbarPill onClick={() => addBlock('text')} icon={Plus} label="Text" />
+                <ToolbarPill onClick={() => addBlock('table')} icon={Plus} label="Table" />
+                <ToolbarPill onClick={() => addBlock('image')} icon={Plus} label="Image" />
+                <ToolbarPill onClick={() => addBlock('pagebreak')} icon={Plus} label="Break" />
               </div>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="py-3">
-              <CardTitle className="text-base">Signatures & Stamp</CardTitle>
-              <CardDescription className="text-xs">
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader className="py-3 px-4 sm:px-6">
+              <CardTitle className="text-sm sm:text-base font-semibold text-slate-900">Signatures &amp; Stamp</CardTitle>
+              <CardDescription className="text-xs text-slate-500">
                 Brand seal is auto-attached on the left; you can replace either side.
               </CardDescription>
             </CardHeader>
@@ -944,9 +1056,9 @@ export default function LetterheadDocumentsPage({
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="py-3">
-              <CardTitle className="text-base">Notes & Terms</CardTitle>
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader className="py-3 px-4 sm:px-6">
+              <CardTitle className="text-sm sm:text-base font-semibold text-slate-900">Notes &amp; Terms</CardTitle>
             </CardHeader>
             <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
@@ -1008,11 +1120,16 @@ export default function LetterheadDocumentsPage({
                 : ''
             }
           >
-            <Card>
-              <CardHeader className="py-3 flex flex-row items-center justify-between">
+            <Card className="border-slate-200 shadow-sm">
+              <CardHeader className="py-3 px-4 sm:px-6 flex flex-row items-center justify-between">
                 <div>
-                  <CardTitle className="text-base">Live Preview</CardTitle>
-                  <CardDescription className="text-xs">
+                  <CardTitle className="text-sm sm:text-base font-semibold text-slate-900 flex items-center gap-2">
+                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-slate-100 text-slate-700">
+                      <Eye className="w-4 h-4" />
+                    </span>
+                    Live Preview
+                  </CardTitle>
+                  <CardDescription className="text-xs text-slate-500">
                     Final PDF will look exactly like this.
                   </CardDescription>
                 </div>
@@ -1026,7 +1143,7 @@ export default function LetterheadDocumentsPage({
                   </Button>
                 )}
               </CardHeader>
-              <CardContent>
+              <CardContent className="px-3 sm:px-6 pb-4">
                 <iframe
                   ref={previewIframeRef}
                   title="Letterhead preview"
@@ -1038,6 +1155,49 @@ export default function LetterheadDocumentsPage({
             </Card>
           </div>
         </aside>
+      </div>
+
+      {/* Mobile bottom action bar — keeps the most-used actions reachable
+          without scrolling on phones. Hidden on lg+ where the top header bar
+          already exposes Save / PDF / Print. */}
+      <div className="lg:hidden fixed bottom-0 inset-x-0 z-30 border-t border-slate-200 bg-white/95 backdrop-blur shadow-[0_-2px_6px_rgba(15,23,42,0.05)]">
+        <div className="mx-auto max-w-7xl grid grid-cols-4 gap-1 px-2 py-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowMobilePreview((v) => !v)}
+            className="flex flex-col items-center justify-center h-12 gap-0.5 text-[11px]"
+          >
+            <Eye className="w-4 h-4" />
+            {showMobilePreview ? 'Hide' : 'Preview'}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleSaveDraft}
+            className="flex flex-col items-center justify-center h-12 gap-0.5 text-[11px]"
+          >
+            <Save className="w-4 h-4" />
+            Save
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleDownload}
+            className="flex flex-col items-center justify-center h-12 gap-0.5 text-[11px]"
+          >
+            <FileDown className="w-4 h-4" />
+            PDF
+          </Button>
+          <Button
+            size="sm"
+            onClick={handlePrint}
+            className="flex flex-col items-center justify-center h-12 gap-0.5 text-[11px] bg-blue-600 hover:bg-blue-700 text-white"
+          >
+            <Printer className="w-4 h-4" />
+            Print
+          </Button>
+        </div>
       </div>
 
       <AlertDialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
@@ -1058,6 +1218,29 @@ export default function LetterheadDocumentsPage({
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+/** Compact icon+label button used by the Body toolbar — keeps each button the
+ *  same width on mobile (grid-cols-4) and aligned in a row on larger screens. */
+function ToolbarPill({
+  onClick,
+  icon: Icon,
+  label,
+}: {
+  onClick: () => void;
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex h-9 items-center justify-center gap-1 rounded-md border border-slate-200 bg-white px-2 text-[12px] font-medium text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 active:bg-blue-100"
+    >
+      <Icon className="w-3.5 h-3.5" />
+      <span className="truncate">{label}</span>
+    </button>
   );
 }
 
@@ -1109,58 +1292,59 @@ function CustomerPicker({ selectedSummary, onPick, onClear }: CustomerPickerProp
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [openList, setOpenList] = useState(false);
-  const debounceRef = useRef<number | null>(null);
+  /** True once the user has actually run a search — drives the "No matches" state. */
+  const [hasSearched, setHasSearched] = useState(false);
+  /** Tracks the most recent search so we never apply stale results when the user
+   *  hits Search again before the previous call finishes. */
+  const requestIdRef = useRef(0);
 
-  // Debounced search. We re-trigger 220ms after the user stops typing.
-  useEffect(() => {
-    if (debounceRef.current) {
-      window.clearTimeout(debounceRef.current);
-    }
+  const runSearch = useCallback(async () => {
     const trimmed = query.trim();
     if (trimmed.length < 2) {
-      setResults([]);
-      setLoading(false);
+      toast.info('Type at least 2 characters to search');
       return;
     }
+    const myId = ++requestIdRef.current;
     setLoading(true);
-    debounceRef.current = window.setTimeout(async () => {
-      try {
-        const { data: rows, error } = await db.customers.searchSlim(trimmed, 10, {
-          includeAddressAndLocation: true,
-        });
-        if (error) {
-          console.warn('[letterhead] customer search error', error);
-          setResults([]);
-        } else {
-          setResults(Array.isArray(rows) ? rows : []);
-        }
-      } catch (err) {
-        console.warn('[letterhead] customer search exception', err);
+    setHasSearched(true);
+    try {
+      const { data: rows, error } = await db.customers.searchSlim(trimmed, 10, {
+        includeAddressAndLocation: true,
+      });
+      if (myId !== requestIdRef.current) return; // stale response
+      if (error) {
+        console.warn('[letterhead] customer search error', error);
         setResults([]);
-      } finally {
-        setLoading(false);
+        toast.error('Customer search failed');
+      } else {
+        setResults(Array.isArray(rows) ? rows : []);
       }
-    }, 220);
-
-    return () => {
-      if (debounceRef.current) window.clearTimeout(debounceRef.current);
-    };
+    } catch (err) {
+      if (myId !== requestIdRef.current) return;
+      console.warn('[letterhead] customer search exception', err);
+      setResults([]);
+    } finally {
+      if (myId === requestIdRef.current) setLoading(false);
+    }
   }, [query]);
 
   const handlePick = (row: any) => {
     onPick(customerRowToDocPatch(row));
     setQuery('');
     setResults([]);
-    setOpenList(false);
+    setHasSearched(false);
+    toast.success('Customer linked');
   };
 
   return (
     <div className="space-y-2">
       {selectedSummary && (
-        <div className="flex items-center justify-between rounded-md border border-green-200 bg-green-50 px-3 py-2">
-          <div className="text-sm text-green-900">
-            <span className="font-medium">Linked customer:</span> {selectedSummary}
+        <div className="flex items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+          <div className="flex items-center gap-2 text-sm text-emerald-900 min-w-0">
+            <UserCheck className="w-4 h-4 shrink-0 text-emerald-700" />
+            <span className="truncate">
+              <span className="font-semibold">Linked:</span> {selectedSummary}
+            </span>
           </div>
           <Button
             type="button"
@@ -1174,68 +1358,86 @@ function CustomerPicker({ selectedSummary, onPick, onClear }: CustomerPickerProp
           </Button>
         </div>
       )}
-      <div className="relative">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+      <div className="flex flex-col sm:flex-row gap-2">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <Input
             value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setOpenList(true);
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                void runSearch();
+              }
             }}
-            onFocus={() => setOpenList(true)}
-            placeholder="Search by name, phone, customer ID or email…"
+            placeholder="Name, phone, customer ID or email…"
             className="pl-8"
+            aria-label="Search customers"
           />
         </div>
-        {openList && query.trim().length >= 2 && (
-          <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-md border bg-white shadow-lg">
-            {loading && (
-              <div className="px-3 py-2 text-sm text-gray-500">Searching…</div>
-            )}
-            {!loading && results.length === 0 && (
-              <div className="px-3 py-2 text-sm text-gray-500">
-                No matches. Customer details below can still be filled manually.
-              </div>
-            )}
-            {!loading &&
-              results.map((row) => {
-                const id = row?.customer_id || row?.id;
-                const label = row?.full_name || 'Unnamed';
-                const meta = [
-                  row?.phone,
-                  row?.visible_address,
-                  row?.address?.area || row?.address?.city,
-                ]
-                  .filter(Boolean)
-                  .join(' · ');
-                return (
-                  <button
-                    key={row?.id || id}
-                    type="button"
-                    onClick={() => handlePick(row)}
-                    className="block w-full px-3 py-2 text-left hover:bg-blue-50"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-medium text-gray-900 truncate">
-                        {label}
-                      </span>
-                      {id && (
-                        <span className="text-[10px] uppercase tracking-wide text-blue-600">
-                          {id}
-                        </span>
-                      )}
-                    </div>
-                    {meta && (
-                      <div className="text-xs text-gray-500 truncate">{meta}</div>
-                    )}
-                  </button>
-                );
-              })}
-          </div>
-        )}
+        <Button
+          type="button"
+          onClick={() => void runSearch()}
+          disabled={loading || query.trim().length < 2}
+          className="bg-blue-600 hover:bg-blue-700 text-white sm:w-auto w-full"
+        >
+          {loading ? (
+            <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+          ) : (
+            <Search className="w-4 h-4 mr-1" />
+          )}
+          Search
+        </Button>
       </div>
-      <p className="text-[11px] text-gray-500">
+
+      {hasSearched && !loading && results.length === 0 && (
+        <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+          No customers matched. You can still fill the header fields manually.
+        </div>
+      )}
+
+      {results.length > 0 && (
+        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm divide-y divide-slate-100">
+          {results.map((row) => {
+            const id = row?.customer_id || row?.id;
+            const label = row?.full_name || 'Unnamed';
+            const meta = [
+              row?.phone,
+              row?.visible_address,
+              row?.address?.area || row?.address?.city,
+            ]
+              .filter(Boolean)
+              .join(' · ');
+            return (
+              <button
+                key={row?.id || id}
+                type="button"
+                onClick={() => handlePick(row)}
+                className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left hover:bg-blue-50 active:bg-blue-100"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-sm font-medium text-slate-900 truncate">
+                      {label}
+                    </span>
+                    {id && (
+                      <span className="text-[10px] font-medium uppercase tracking-wide text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
+                        {id}
+                      </span>
+                    )}
+                  </div>
+                  {meta && (
+                    <div className="text-xs text-slate-500 truncate">{meta}</div>
+                  )}
+                </div>
+                <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <p className="text-[11px] text-slate-500">
         Selecting a customer fills name, company, site, phone &amp; email — you can still edit the fields below.
       </p>
     </div>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef, startTransition } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, startTransition, lazy as lazyDefault, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { ensureAdminSupabaseSession } from '@/lib/auth';
@@ -88,8 +88,14 @@ import QuotationModal from './QuotationModal';
 import TaxInvoiceModal from './TaxInvoiceModal';
 import GSTInvoicesPage from './GSTInvoicesPage';
 import AMCViewPage from './AMCViewPage';
-import LetterheadDocumentsPage from './LetterheadDocumentsPage';
-import type { LetterheadDocumentType } from '@/lib/letterhead-pdf-generator';
+// Letterhead builder is heavy (rich text + sanitizer + preview iframe) and only
+// used on demand. Code-split it so the main admin bundle stays lean.
+const LetterheadDocumentsPage = lazyDefault(() => import('./LetterheadDocumentsPage'));
+type LetterheadDocumentType =
+  | 'service_report'
+  | 'amc_report'
+  | 'custom_document'
+  | 'letterhead';
 import { getAmcDocumentBrandLabel } from '@/lib/amc-brand';
 import ImageUpload from '@/components/ImageUpload';
 import TechnicianPayments from './TechnicianPayments';
@@ -8913,13 +8919,15 @@ const AdminDashboard = () => {
   // Show Letterhead Documents / Service Reports builder if requested
   if (showLetterheadDocsPage) {
     return (
-      <LetterheadDocumentsPage
-        initialType={letterheadInitialType}
-        onBack={() => {
-          setShowLetterheadDocsPage(false);
-          setLetterheadInitialType(undefined);
-        }}
-      />
+      <Suspense fallback={<AdminScreenLoader message="Loading documents builder..." />}>
+        <LetterheadDocumentsPage
+          initialType={letterheadInitialType}
+          onBack={() => {
+            setShowLetterheadDocsPage(false);
+            setLetterheadInitialType(undefined);
+          }}
+        />
+      </Suspense>
     );
   }
 
