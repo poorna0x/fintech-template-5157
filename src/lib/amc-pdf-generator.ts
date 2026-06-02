@@ -191,6 +191,17 @@ function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): string {
             -webkit-box-decoration-break: clone;
           }
 
+          /*
+           * "SERVICES COVERED BY THE AGREEMENT" always starts on a fresh page
+           * in a normal full agreement so the agreement details / customer
+           * block aren't crammed beside it. Skipped in terms-only output
+           * because that document has no preceding content to push down.
+           */
+          body:not(.terms-only) .services-section {
+            page-break-before: always !important;
+            break-before: page !important;
+          }
+
           /* Keep heading + its first item together (no orphan titles). */
           .services-title,
           .terms-title {
