@@ -1199,8 +1199,10 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
                     <Input
                       type="number"
                       value={item.quantity}
-                      onChange={(e) => updateItem(item.id, 'quantity', parseInt(e.target.value) || 0)}
-                      min="1"
+                      onChange={(e) => updateItem(item.id, 'quantity', parseFloat(e.target.value) || 0)}
+                      min="0"
+                      step="0.01"
+                      inputMode="decimal"
                     />
                   </div>
                   <div>
