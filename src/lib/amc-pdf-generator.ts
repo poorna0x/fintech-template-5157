@@ -168,16 +168,47 @@ function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): string {
           .terms-section {
             margin-top: 8mm !important;
             margin-bottom: 8mm !important;
+          }
+
+          /* Small sections that look bad when split: keep together. */
+          .detail-card {
             page-break-inside: avoid;
             break-inside: avoid;
           }
-          
-          body.terms-only .terms-section {
-            margin-top: 4mm !important;
+
+          /*
+           * Services / Terms can grow arbitrarily as users add bullets. Allow
+           * page breaks inside them so an extra-long item doesn't get pushed
+           * to a fresh page, leaving a big empty gap on the previous one.
+           * The section background/border still repeats per page thanks to
+           * box-decoration-break: clone below.
+           */
+          .services-section,
+          .terms-section {
             page-break-inside: auto !important;
             break-inside: auto !important;
+            box-decoration-break: clone;
+            -webkit-box-decoration-break: clone;
           }
-          
+
+          /* Keep heading + its first item together (no orphan titles). */
+          .services-title,
+          .terms-title {
+            page-break-after: avoid;
+            break-after: avoid;
+          }
+
+          /* Never split a single bullet across pages. */
+          .services-list li,
+          .terms-list li {
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
+
+          body.terms-only .terms-section {
+            margin-top: 4mm !important;
+          }
+
           /* Ensure header has proper spacing */
           .header {
             margin-top: 0 !important;
