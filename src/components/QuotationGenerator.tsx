@@ -31,6 +31,8 @@ import {
   brandHasGst,
   getCompanyInfoForBrand,
 } from '@/lib/service-brands';
+import DraftToolbar from '@/components/document-drafts/DraftToolbar';
+import { mergeEditableCustomer } from '@/lib/document-drafts';
 
 interface QuotationGeneratorProps {
   customer?: Customer;
@@ -502,11 +504,73 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
     setBrandPickerOpen(true);
   };
 
+  // ---- Draft snapshot / restore -------------------------------------------------
+  // We serialize only the local form state. The customer prop is restored as-is
+  // through the editableCustomer fields the user may have edited.
+  const getDraftSnapshot = () => ({
+    v: 1,
+    quotationNumber,
+    quotationDate,
+    validUntilDate,
+    isValidUntilManuallySet,
+    items,
+    serviceCharge,
+    notes,
+    validityNote,
+    showValidityNote,
+    termsConditions,
+    gstOption,
+    addGSTNoteToNotes,
+    showBankDetails,
+    bankDetails,
+    placeOfSupply,
+    placeOfSupplyCode,
+    editableCustomer,
+  });
+
+  const applyDraftSnapshot = (snap: ReturnType<typeof getDraftSnapshot>) => {
+    if (!snap || typeof snap !== 'object') return;
+    if (typeof snap.quotationNumber === 'string') setQuotationNumber(snap.quotationNumber);
+    if (typeof snap.quotationDate === 'string') setQuotationDate(snap.quotationDate);
+    if (typeof snap.validUntilDate === 'string') setValidUntilDate(snap.validUntilDate);
+    if (typeof snap.isValidUntilManuallySet === 'boolean')
+      setIsValidUntilManuallySet(snap.isValidUntilManuallySet);
+    if (Array.isArray(snap.items)) setItems(snap.items as BillItem[]);
+    if (typeof snap.serviceCharge === 'number') setServiceCharge(snap.serviceCharge);
+    if (Array.isArray(snap.notes)) setNotes(snap.notes as string[]);
+    if (typeof snap.validityNote === 'string') setValidityNote(snap.validityNote);
+    if (typeof snap.showValidityNote === 'boolean') setShowValidityNote(snap.showValidityNote);
+    if (typeof snap.termsConditions === 'string') setTermsConditions(snap.termsConditions);
+    if (snap.gstOption === 'normal' || snap.gstOption === 'exclude' || snap.gstOption === 'include')
+      setGstOption(snap.gstOption);
+    if (typeof snap.addGSTNoteToNotes === 'boolean') setAddGSTNoteToNotes(snap.addGSTNoteToNotes);
+    if (typeof snap.showBankDetails === 'boolean') setShowBankDetails(snap.showBankDetails);
+    if (snap.bankDetails && typeof snap.bankDetails === 'object')
+      setBankDetails({ ...defaultBankDetails, ...snap.bankDetails });
+    if (typeof snap.placeOfSupply === 'string') setPlaceOfSupply(snap.placeOfSupply);
+    if (typeof snap.placeOfSupplyCode === 'string') setPlaceOfSupplyCode(snap.placeOfSupplyCode);
+    if (snap.editableCustomer && typeof snap.editableCustomer === 'object')
+      setEditableCustomer((prev) => mergeEditableCustomer(prev, snap.editableCustomer));
+  };
+
+  const buildDraftLabel = (snap: ReturnType<typeof getDraftSnapshot>) => {
+    const num = snap.quotationNumber || 'Draft';
+    const who = snap.editableCustomer?.name || 'Customer';
+    return `${num} — ${who}`;
+  };
+
   return (
     <div className="max-w-4xl mx-auto p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4 md:space-y-6">
       <div className="flex flex-col gap-3 sm:gap-4">
         <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 text-center sm:text-left">Generate Quotation</h1>
-        <div className="flex justify-center sm:justify-end">
+        <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2">
+          <DraftToolbar
+            kind="quotation"
+            documentNoun="quotation"
+            getSnapshot={getDraftSnapshot}
+            onLoad={applyDraftSnapshot}
+            buildLabel={buildDraftLabel}
+          />
           <Button onClick={() => handlePrint('print')} className="bg-green-600 hover:bg-green-700 w-full sm:w-auto min-w-[140px]">
             <Download className="w-4 h-4 mr-2" />
             Download Quotation

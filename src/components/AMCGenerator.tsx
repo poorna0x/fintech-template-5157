@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import DOMPurify from 'dompurify';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -22,6 +22,8 @@ import {
   getDefaultAgreementIntro,
   getDocumentBrandLabel,
 } from '@/lib/service-brands';
+import DraftToolbar from '@/components/document-drafts/DraftToolbar';
+import { mergeEditableCustomer } from '@/lib/document-drafts';
 
 interface AMCGeneratorProps {
   customer: Customer;
@@ -174,9 +176,15 @@ ${notCoveredWithPreFilter}`;
     { type: 'save' } | { type: 'print'; options?: { termsOnly?: boolean } }
   | null>(null);
   const [documentBrand, setDocumentBrand] = useState<DocumentBrand>('hydrogenro');
+  /** Skip one terms auto-regen after loading a draft (preserves custom/edited terms). */
+  const skipTermsAutoGenRef = useRef(0);
 
   // Update terms when pre-sediment filtration or AMC service period (auto job creation) changes
   React.useEffect(() => {
+    if (skipTermsAutoGenRef.current > 0) {
+      skipTermsAutoGenRef.current -= 1;
+      return;
+    }
     setTerms(generateTerms(includesPreSedimentFiltration, servicePeriodKind, servicePeriodCustomMonths));
   }, [includesPreSedimentFiltration, servicePeriodKind, servicePeriodCustomMonths]);
 
@@ -517,6 +525,76 @@ ${notCoveredWithPreFilter}`;
     setBrandPickerOpen(true);
   };
 
+  // ---- Draft snapshot / restore -----------------------------------------------
+  const getDraftSnapshot = () => ({
+    v: 1,
+    billNumber,
+    billDate,
+    notes,
+    validity,
+    customFromDate,
+    customToDate,
+    roModel,
+    includesPreSedimentFiltration,
+    showComputerGeneratedText,
+    servicePeriodKind,
+    servicePeriodCustomMonths,
+    terms,
+    amcCost,
+    serviceCharge,
+    agreementIntro,
+    description,
+    documentBrand,
+    editableCustomer,
+  });
+
+  const applyDraftSnapshot = (snap: ReturnType<typeof getDraftSnapshot>) => {
+    if (!snap || typeof snap !== 'object') return;
+    if (typeof snap.billNumber === 'string') setBillNumber(snap.billNumber);
+    if (typeof snap.billDate === 'string') setBillDate(snap.billDate);
+    if (typeof snap.notes === 'string') setNotes(snap.notes);
+    if (typeof snap.validity === 'string') setValidity(snap.validity);
+    if (typeof snap.customFromDate === 'string') setCustomFromDate(snap.customFromDate);
+    if (typeof snap.customToDate === 'string') setCustomToDate(snap.customToDate);
+    if (typeof snap.roModel === 'string') setRoModel(snap.roModel);
+    if (typeof snap.includesPreSedimentFiltration === 'boolean')
+      setIncludesPreSedimentFiltration(snap.includesPreSedimentFiltration);
+    if (typeof snap.showComputerGeneratedText === 'boolean')
+      setShowComputerGeneratedText(snap.showComputerGeneratedText);
+    if (
+      snap.servicePeriodKind === '4' ||
+      snap.servicePeriodKind === '6' ||
+      snap.servicePeriodKind === 'custom' ||
+      snap.servicePeriodKind === 'no_auto'
+    )
+      setServicePeriodKind(snap.servicePeriodKind);
+    if (typeof snap.servicePeriodCustomMonths === 'number')
+      setServicePeriodCustomMonths(snap.servicePeriodCustomMonths);
+    if (typeof snap.terms === 'string') setTerms(snap.terms);
+    if (typeof snap.amcCost === 'number') setAmcCost(snap.amcCost);
+    if (typeof snap.serviceCharge === 'number') setServiceCharge(snap.serviceCharge);
+    if (typeof snap.agreementIntro === 'string') setAgreementIntro(snap.agreementIntro);
+    if (typeof snap.description === 'string') setDescription(snap.description);
+    if (snap.documentBrand === 'hydrogenro' || snap.documentBrand === 'elevenro') {
+      setDocumentBrand(snap.documentBrand);
+      // Keep company info in sync so the preview/PDF picks up the right brand.
+      try {
+        setCompany(getCompanyInfoForBrand(snap.documentBrand));
+      } catch {
+        /* ignore */
+      }
+    }
+    if (snap.editableCustomer && typeof snap.editableCustomer === 'object')
+      setEditableCustomer((prev) => mergeEditableCustomer(prev, snap.editableCustomer));
+    skipTermsAutoGenRef.current = 1;
+  };
+
+  const buildDraftLabel = (snap: ReturnType<typeof getDraftSnapshot>) => {
+    const num = snap.billNumber || 'Draft';
+    const who = snap.editableCustomer?.name || 'Customer';
+    return `${num} — ${who}`;
+  };
+
   return (
     <div className="max-w-4xl mx-auto p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4 md:space-y-6">
       {/* Header */}
@@ -524,6 +602,15 @@ ${notCoveredWithPreFilter}`;
         <div className="flex flex-col items-center justify-center mb-3 sm:mb-4 gap-2">
           <DocumentBrandLogo brand={documentBrand} />
           <p className="text-xs sm:text-sm text-gray-600 mt-0">AMC Agreement Generator</p>
+        </div>
+        <div className="flex justify-center mt-2">
+          <DraftToolbar
+            kind="amc"
+            documentNoun="AMC agreement"
+            getSnapshot={getDraftSnapshot}
+            onLoad={applyDraftSnapshot}
+            buildLabel={buildDraftLabel}
+          />
         </div>
       </div>
 

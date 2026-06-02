@@ -21,6 +21,8 @@ import {
   resolvePlaceOfSupply,
 } from '@/lib/indian-state-codes';
 import { Checkbox } from '@/components/ui/checkbox';
+import DraftToolbar from '@/components/document-drafts/DraftToolbar';
+import { mergeEditableCustomer } from '@/lib/document-drafts';
 
 // Helper function to convert number to words
 function numberToWords(num: number): string {
@@ -294,9 +296,9 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
   useEffect(() => {
     let isMounted = true;
     getPreviewInvoiceNumber().then((invoiceNumber) => {
-      if (isMounted) {
-        setBillNumber(invoiceNumber);
-      }
+      if (!isMounted) return;
+      // Don't overwrite a number the user typed or restored from a draft.
+      setBillNumber((prev) => (prev.trim() ? prev : invoiceNumber));
     });
     return () => {
       isMounted = false;
@@ -773,11 +775,114 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
     onPrint?.(bill, action);
   };
 
+  // ---- Draft snapshot / restore -----------------------------------------------
+  // Snapshot ONLY the locally-edited fields. Networked state (e.g. nextInvoice
+  // number reservation, "isSaving" flag) is intentionally excluded.
+  const getDraftSnapshot = () => ({
+    v: 1,
+    billNumber,
+    billDate,
+    signatureDate,
+    items,
+    notes,
+    validityNote,
+    showValidityNote,
+    terms,
+    serviceCharge,
+    placeOfSupply,
+    placeOfSupplyCode,
+    reverseCharge,
+    eWayBillNo,
+    transportMode,
+    vehicleNo,
+    roundOff,
+    customerGstRequired,
+    invoiceType,
+    bankDetails,
+    showBankDetails,
+    showComputerGeneratedText,
+    showFooterText,
+    showDigitallySignedText,
+    useDSC,
+    dscAuthorizedSignatory,
+    dscNameDesignation,
+    dscCompanyName,
+    dscBoxWidth,
+    dscBoxHeight,
+    poNumber,
+    showPONumber,
+    poNumberRequired,
+    paymentDueDate,
+    deliveryAddress,
+    showDeliveryAddress,
+    editableCustomer,
+  });
+
+  const applyDraftSnapshot = (snap: ReturnType<typeof getDraftSnapshot>) => {
+    if (!snap || typeof snap !== 'object') return;
+    if (typeof snap.billNumber === 'string') setBillNumber(snap.billNumber);
+    if (typeof snap.billDate === 'string') setBillDate(snap.billDate);
+    if (typeof snap.signatureDate === 'string') setSignatureDate(snap.signatureDate);
+    if (Array.isArray(snap.items)) setItems(snap.items as BillItem[]);
+    if (Array.isArray(snap.notes)) setNotes(snap.notes as string[]);
+    if (typeof snap.validityNote === 'string') setValidityNote(snap.validityNote);
+    if (typeof snap.showValidityNote === 'boolean') setShowValidityNote(snap.showValidityNote);
+    if (typeof snap.terms === 'string') setTerms(snap.terms);
+    if (typeof snap.serviceCharge === 'number') setServiceCharge(snap.serviceCharge);
+    if (typeof snap.placeOfSupply === 'string') setPlaceOfSupply(snap.placeOfSupply);
+    if (typeof snap.placeOfSupplyCode === 'string') setPlaceOfSupplyCode(snap.placeOfSupplyCode);
+    if (typeof snap.reverseCharge === 'boolean') setReverseCharge(snap.reverseCharge);
+    if (typeof snap.eWayBillNo === 'string') setEWayBillNo(snap.eWayBillNo);
+    if (typeof snap.transportMode === 'string') setTransportMode(snap.transportMode);
+    if (typeof snap.vehicleNo === 'string') setVehicleNo(snap.vehicleNo);
+    if (typeof snap.roundOff === 'boolean') setRoundOff(snap.roundOff);
+    if (typeof snap.customerGstRequired === 'boolean') setCustomerGstRequired(snap.customerGstRequired);
+    if (snap.invoiceType === 'B2B' || snap.invoiceType === 'B2C') setInvoiceType(snap.invoiceType);
+    if (snap.bankDetails && typeof snap.bankDetails === 'object')
+      setBankDetails({ ...defaultBankDetails, ...snap.bankDetails });
+    if (typeof snap.showBankDetails === 'boolean') setShowBankDetails(snap.showBankDetails);
+    if (typeof snap.showComputerGeneratedText === 'boolean')
+      setShowComputerGeneratedText(snap.showComputerGeneratedText);
+    if (typeof snap.showFooterText === 'boolean') setShowFooterText(snap.showFooterText);
+    if (typeof snap.showDigitallySignedText === 'boolean')
+      setShowDigitallySignedText(snap.showDigitallySignedText);
+    if (typeof snap.useDSC === 'boolean') setUseDSC(snap.useDSC);
+    if (typeof snap.dscAuthorizedSignatory === 'string')
+      setDscAuthorizedSignatory(snap.dscAuthorizedSignatory);
+    if (typeof snap.dscNameDesignation === 'string') setDscNameDesignation(snap.dscNameDesignation);
+    if (typeof snap.dscCompanyName === 'string') setDscCompanyName(snap.dscCompanyName);
+    if (typeof snap.dscBoxWidth === 'number') setDscBoxWidth(snap.dscBoxWidth);
+    if (typeof snap.dscBoxHeight === 'number') setDscBoxHeight(snap.dscBoxHeight);
+    if (typeof snap.poNumber === 'string') setPONumber(snap.poNumber);
+    if (typeof snap.showPONumber === 'boolean') setShowPONumber(snap.showPONumber);
+    if (typeof snap.poNumberRequired === 'boolean') setPONumberRequired(snap.poNumberRequired);
+    if (typeof snap.paymentDueDate === 'string') setPaymentDueDate(snap.paymentDueDate);
+    if (snap.deliveryAddress && typeof snap.deliveryAddress === 'object')
+      setDeliveryAddress((prev) => ({ ...prev, ...snap.deliveryAddress }));
+    if (typeof snap.showDeliveryAddress === 'boolean')
+      setShowDeliveryAddress(snap.showDeliveryAddress);
+    if (snap.editableCustomer && typeof snap.editableCustomer === 'object')
+      setEditableCustomer((prev) => mergeEditableCustomer(prev, snap.editableCustomer));
+  };
+
+  const buildDraftLabel = (snap: ReturnType<typeof getDraftSnapshot>) => {
+    const num = snap.billNumber || 'Draft';
+    const who = snap.editableCustomer?.name || 'Customer';
+    return `${num} — ${who}`;
+  };
+
   return (
     <div className="max-w-4xl mx-auto p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4 md:space-y-6">
       <div className="flex flex-col gap-3 sm:gap-4">
         <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 text-center sm:text-left">Generate Tax Invoice</h1>
-        <div className="flex flex-col sm:flex-row gap-2 justify-center sm:justify-end">
+        <div className="flex flex-col sm:flex-row flex-wrap gap-2 justify-center sm:justify-end">
+          <DraftToolbar
+            kind="tax_invoice"
+            documentNoun="tax invoice"
+            getSnapshot={getDraftSnapshot}
+            onLoad={applyDraftSnapshot}
+            buildLabel={buildDraftLabel}
+          />
           <Button 
             onClick={handleSaveToDatabase}
             className="w-full sm:w-auto bg-green-600 hover:bg-green-700 min-w-[140px]"

@@ -14,6 +14,8 @@ import {
   brandHasGst,
   getCompanyInfoForBrand,
 } from '@/lib/service-brands';
+import DraftToolbar from '@/components/document-drafts/DraftToolbar';
+import { mergeEditableCustomer } from '@/lib/document-drafts';
 
 interface BillGeneratorProps {
   customer?: Customer;
@@ -99,12 +101,15 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
   const subtotal = items.reduce((sum, item) => sum + item.total, 0);
   const totalAmount = subtotal + serviceCharge;
 
-  // Generate bill number
+  // Generate bill number only when empty (preserve restored drafts / manual entry)
   useEffect(() => {
-    const year = new Date().getFullYear();
-    const month = String(new Date().getMonth() + 1).padStart(2, '0');
-    const randomNum = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-    setBillNumber(`BILL-${year}-${month}-${randomNum}`);
+    setBillNumber((prev) => {
+      if (prev.trim()) return prev;
+      const year = new Date().getFullYear();
+      const month = String(new Date().getMonth() + 1).padStart(2, '0');
+      const randomNum = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+      return `BILL-${year}-${month}-${randomNum}`;
+    });
   }, []);
 
   const addItem = () => {
@@ -253,11 +258,54 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
     setBrandPickerOpen(true);
   };
 
+  // ---- Draft snapshot / restore -----------------------------------------------
+  const getDraftSnapshot = () => ({
+    v: 1,
+    billNumber,
+    billDate,
+    items,
+    notes,
+    validityNote,
+    showValidityNote,
+    terms,
+    serviceCharge,
+    hideGstInHeader,
+    editableCustomer,
+  });
+
+  const applyDraftSnapshot = (snap: ReturnType<typeof getDraftSnapshot>) => {
+    if (!snap || typeof snap !== 'object') return;
+    if (typeof snap.billNumber === 'string') setBillNumber(snap.billNumber);
+    if (typeof snap.billDate === 'string') setBillDate(snap.billDate);
+    if (Array.isArray(snap.items)) setItems(snap.items as BillItem[]);
+    if (Array.isArray(snap.notes)) setNotes(snap.notes as string[]);
+    if (typeof snap.validityNote === 'string') setValidityNote(snap.validityNote);
+    if (typeof snap.showValidityNote === 'boolean') setShowValidityNote(snap.showValidityNote);
+    if (typeof snap.terms === 'string') setTerms(snap.terms);
+    if (typeof snap.serviceCharge === 'number') setServiceCharge(snap.serviceCharge);
+    if (typeof snap.hideGstInHeader === 'boolean') setHideGstInHeader(snap.hideGstInHeader);
+    if (snap.editableCustomer && typeof snap.editableCustomer === 'object')
+      setEditableCustomer((prev) => mergeEditableCustomer(prev, snap.editableCustomer));
+  };
+
+  const buildDraftLabel = (snap: ReturnType<typeof getDraftSnapshot>) => {
+    const num = snap.billNumber || 'Draft';
+    const who = snap.editableCustomer?.name || 'Customer';
+    return `${num} — ${who}`;
+  };
+
   return (
     <div className="max-w-4xl mx-auto p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4 md:space-y-6">
       <div className="flex flex-col gap-3 sm:gap-4">
         <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 text-center sm:text-left">Generate Bill</h1>
-        <div className="flex justify-center sm:justify-end">
+        <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2">
+          <DraftToolbar
+            kind="bill"
+            documentNoun="bill"
+            getSnapshot={getDraftSnapshot}
+            onLoad={applyDraftSnapshot}
+            buildLabel={buildDraftLabel}
+          />
           <Button onClick={() => handlePrint('print')} className="bg-green-600 hover:bg-green-700 w-full sm:w-auto min-w-[140px]">
             <Download className="w-4 h-4 mr-2" />
             Download Bill
