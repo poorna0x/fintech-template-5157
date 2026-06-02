@@ -88,6 +88,8 @@ import QuotationModal from './QuotationModal';
 import TaxInvoiceModal from './TaxInvoiceModal';
 import GSTInvoicesPage from './GSTInvoicesPage';
 import AMCViewPage from './AMCViewPage';
+import LetterheadDocumentsPage from './LetterheadDocumentsPage';
+import type { LetterheadDocumentType } from '@/lib/letterhead-pdf-generator';
 import { getAmcDocumentBrandLabel } from '@/lib/amc-brand';
 import ImageUpload from '@/components/ImageUpload';
 import TechnicianPayments from './TechnicianPayments';
@@ -215,6 +217,10 @@ const AdminDashboard = () => {
   const [selectedCustomerForTaxInvoice, setSelectedCustomerForTaxInvoice] = useState<Customer | null>(null);
   const [showGSTInvoicesPage, setShowGSTInvoicesPage] = useState(false);
   const [showAMCViewPage, setShowAMCViewPage] = useState(false);
+  const [showLetterheadDocsPage, setShowLetterheadDocsPage] = useState(false);
+  const [letterheadInitialType, setLetterheadInitialType] = useState<LetterheadDocumentType | undefined>(
+    undefined
+  );
   const [currentView, setCurrentView] = useState<'dashboard' | 'payments' | 'billing' | 'analytics' | 'inventory'>('dashboard');
   const [moreOptionsDialogOpen, setMoreOptionsDialogOpen] = useState<Record<string, boolean>>({});
   const [editFormData, setEditFormData] = useState({
@@ -1686,6 +1692,19 @@ const AdminDashboard = () => {
     } else if (view === 'amc-view') {
       setShowAMCViewPage(true);
       // Clean up URL
+      window.history.replaceState({}, '', '/admin');
+    } else if (view === 'letterhead-documents') {
+      const typeParam = searchParams.get('type') as LetterheadDocumentType | null;
+      const allowed: LetterheadDocumentType[] = [
+        'service_report',
+        'amc_report',
+        'custom_document',
+        'letterhead',
+      ];
+      if (typeParam && allowed.includes(typeParam)) {
+        setLetterheadInitialType(typeParam);
+      }
+      setShowLetterheadDocsPage(true);
       window.history.replaceState({}, '', '/admin');
     } else if (searchPrefill && searchPrefill.trim()) {
       // Pre-fill the admin search box and trigger a search so deep-links from
@@ -8889,6 +8908,19 @@ const AdminDashboard = () => {
   // Show AMC View page if requested
   if (showAMCViewPage) {
     return <AMCViewPage onBack={handleHideAMCView} onAMCDeleted={reloadAMCStatus} />;
+  }
+
+  // Show Letterhead Documents / Service Reports builder if requested
+  if (showLetterheadDocsPage) {
+    return (
+      <LetterheadDocumentsPage
+        initialType={letterheadInitialType}
+        onBack={() => {
+          setShowLetterheadDocsPage(false);
+          setLetterheadInitialType(undefined);
+        }}
+      />
+    );
   }
 
   // Show different views based on currentView state

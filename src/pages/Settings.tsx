@@ -1765,6 +1765,68 @@ const Settings = () => {
             </CardContent>
           </Card>
 
+          {/* Letterhead Documents / Service Reports */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+                <FileText className="w-5 h-5" />
+                Letterhead Documents
+              </CardTitle>
+              <CardDescription className="text-sm mt-1">
+                Build service reports, AMC reports and custom letterhead
+                documents on Hydrogen RO or Eleven RO letterhead.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={() =>
+                    navigate(
+                      '/admin?view=letterhead-documents&type=service_report'
+                    )
+                  }
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  Service Report
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={() =>
+                    navigate('/admin?view=letterhead-documents&type=amc_report')
+                  }
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  AMC Report
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={() =>
+                    navigate(
+                      '/admin?view=letterhead-documents&type=custom_document'
+                    )
+                  }
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  Custom Document
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={() =>
+                    navigate('/admin?view=letterhead-documents&type=letterhead')
+                  }
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  Create Letterhead
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Calling */}
           <Card>
             <CardHeader>
