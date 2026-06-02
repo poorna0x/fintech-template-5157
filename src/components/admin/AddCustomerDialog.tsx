@@ -10,7 +10,7 @@ import { Customer } from '@/types';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
-import { MapPin, Download, ExternalLink } from 'lucide-react';
+import { MapPin, Download, ExternalLink, Loader2 } from 'lucide-react';
 import { generateJobNumber, extractLocationFromAddressString, bangaloreAreas } from '@/lib/adminUtils';
 import ImageUpload from '@/components/ImageUpload';
 import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmentTimeSelect';
@@ -128,6 +128,11 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   const [showModelSuggestions, setShowModelSuggestions] = useState(false);
   const [duplicateFoundOnBlur, setDuplicateFoundOnBlur] = useState<Customer | null>(null);
   const locationManuallyEditedRef = useRef(false);
+  // Mirrors addFormData.google_location for race-safe reads across async awaits
+  // (e.g. while clipboard.readText is in flight, the user might start typing).
+  const googleLocationRef = useRef('');
+  // Guards against double-clicks and other re-entrancy on the Fetch Address button.
+  const [isFetchingAddress, setIsFetchingAddress] = useState(false);
   const [step5JobData, setStep5JobData] = useState({
     service_type: 'RO' as 'RO' | 'SOFTENER',
     service_sub_type: '', // Not selected by default; compulsory
@@ -152,6 +157,12 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   useEffect(() => {
     if (open) setDuplicateFoundOnBlur(null);
   }, [open]);
+
+  // Keep ref synced with the latest google_location so async handlers can read
+  // the current value without re-running themselves on every keystroke.
+  useEffect(() => {
+    googleLocationRef.current = addFormData.google_location || '';
+  }, [addFormData.google_location]);
 
   useEffect(() => {
     const loadTechnicians = async () => {
@@ -559,51 +570,48 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   };
 
   const fetchAddressFromGoogleLocation = async () => {
-    let googleLocation = (addFormData.google_location || '').trim();
+    // Prevent overlapping runs (double-clicks, accidental Enter while busy).
+    if (isFetchingAddress) return;
+    setIsFetchingAddress(true);
 
-    if (!googleLocation) {
-      // No link in the field — try the clipboard so the user can skip a paste step.
-      const clipboardLink = await readMapsLinkFromClipboard();
-      if (!clipboardLink) return;
-
-      // Race-safe: between the empty-check above and now, the user may have
-      // started typing. Use the updater form to inspect the latest value, and
-      // only auto-fill if the field is still empty. Otherwise prefer what the
-      // user is typing.
-      let resolvedLink = clipboardLink;
-      let didAutoFill = false;
-      setAddFormData((prev) => {
-        const current = (prev.google_location || '').trim();
-        if (current) {
-          resolvedLink = current;
-          return prev;
-        }
-        didAutoFill = true;
-        return { ...prev, google_location: clipboardLink };
-      });
-      googleLocation = resolvedLink;
-      if (didAutoFill) {
-        toast.info('Pasted link from clipboard');
-      }
-    }
-
-    if (
-      !googleLocation.includes('google.com/maps') &&
-      !googleLocation.includes('maps.app.goo.gl') &&
-      !googleLocation.includes('goo.gl/maps')
-    ) {
-      toast.error('Please enter a valid Google Maps link');
-      return;
-    }
-
-    const coords = extractCoordinatesFromGoogleMapsLink(googleLocation);
-    if (!coords) {
-      toast.error('Could not extract coordinates from this link. Short links may not work.');
-      return;
-    }
-
+    let loadingToast: string | number | undefined;
     try {
-      const loadingToast = toast.loading('Fetching address from Google Maps...');
+      let googleLocation = (googleLocationRef.current || '').trim();
+
+      if (!googleLocation) {
+        // No link in the field — try the clipboard so the user can skip pasting.
+        const clipboardLink = await readMapsLinkFromClipboard();
+        if (!clipboardLink) return;
+
+        // Race-safe: the user may have started typing during the clipboard read.
+        // Re-read the latest value via the ref, NOT the captured closure.
+        const latestTyped = (googleLocationRef.current || '').trim();
+        if (latestTyped) {
+          googleLocation = latestTyped;
+        } else {
+          googleLocation = clipboardLink;
+          setAddFormData((prev) => ({ ...prev, google_location: clipboardLink }));
+          googleLocationRef.current = clipboardLink;
+          toast.info('Pasted link from clipboard');
+        }
+      }
+
+      if (
+        !googleLocation.includes('google.com/maps') &&
+        !googleLocation.includes('maps.app.goo.gl') &&
+        !googleLocation.includes('goo.gl/maps')
+      ) {
+        toast.error('Please enter a valid Google Maps link');
+        return;
+      }
+
+      const coords = extractCoordinatesFromGoogleMapsLink(googleLocation);
+      if (!coords) {
+        toast.error('Could not extract coordinates from this link. Short links may not work.');
+        return;
+      }
+
+      loadingToast = toast.loading('Fetching address from Google Maps...');
 
       const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
       if (apiKey && (!window.google || !window.google.maps || !window.google.maps.Geocoder)) {
@@ -611,7 +619,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       }
 
       const address = await reverseGeocode(coords.latitude, coords.longitude);
-      
+
       let extractedLocation = null;
       if (address) {
         extractedLocation = extractLocationFromAddressString(address);
@@ -619,21 +627,19 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       if (!extractedLocation && addFormData.address) {
         extractedLocation = extractLocationFromAddressString(addFormData.address);
       }
-      
-      setAddFormData(prev => ({
+
+      setAddFormData((prev) => ({
         ...prev,
         address: address ? capitalizeFirstLetter(address) : prev.address,
-        visible_address: extractedLocation 
-          ? capitalizeFirstLetter(extractedLocation).substring(0, 20) 
-          : prev.visible_address
+        visible_address: extractedLocation
+          ? capitalizeFirstLetter(extractedLocation).substring(0, 20)
+          : prev.visible_address,
       }));
-      
+
       if (extractedLocation) {
         locationManuallyEditedRef.current = false;
       }
-      
-      toast.dismiss(loadingToast);
-      
+
       if (address) {
         toast.success(`Address fetched: ${address.substring(0, 50)}${address.length > 50 ? '...' : ''}`);
         if (extractedLocation) {
@@ -649,6 +655,11 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     } catch (error) {
       console.error('Error fetching address:', error);
       toast.error('Failed to fetch address. Please try again.');
+    } finally {
+      // Always dismiss the spinner toast and release the busy lock, no matter
+      // which branch we exited through.
+      if (loadingToast !== undefined) toast.dismiss(loadingToast);
+      setIsFetchingAddress(false);
     }
   };
 
@@ -1408,6 +1419,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                     variant="outline"
                     size="sm"
                     onClick={fetchAddressFromGoogleLocation}
+                    disabled={isFetchingAddress}
+                    aria-busy={isFetchingAddress}
                     className="whitespace-nowrap"
                     title={
                       addFormData.google_location
@@ -1415,8 +1428,12 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                         : 'Paste from clipboard and fetch address'
                     }
                   >
-                    <Download className="w-3 h-3 mr-1" />
-                    Fetch Address
+                    {isFetchingAddress ? (
+                      <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                    ) : (
+                      <Download className="w-3 h-3 mr-1" />
+                    )}
+                    {isFetchingAddress ? 'Fetching…' : 'Fetch Address'}
                   </Button>
                   {addFormData.google_location && (
                     <Button
