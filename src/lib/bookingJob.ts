@@ -5,7 +5,7 @@ export async function createBookingJob(
   phone: string,
   row: Record<string, unknown>,
   ctx: BookingAltchaContext,
-  options?: { consumeToken?: boolean }
+  options?: { consumeToken?: boolean; phoneToken?: string }
 ) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30_000);
@@ -20,6 +20,8 @@ export async function createBookingJob(
         altchaLoginToken: ctx.altchaLoginToken,
         altchaPayload: ctx.altchaPayload,
         consumeToken: options?.consumeToken !== false,
+        // Firebase ID token from Phone Auth; verified server-side when OTP is enforced.
+        phoneToken: options?.phoneToken,
       }),
       signal: controller.signal,
     });

@@ -607,6 +607,11 @@ _::-webkit-full-page-media, _:future, :root input[type="date"] {
   text-align-last: left !important;
 }
 
+/* Firebase Phone Auth uses invisible reCAPTCHA; hide the floating badge */
+.grecaptcha-badge {
+  visibility: hidden !important;
+}
+
 /* Prevent date picker from causing zoom on iOS */
 @supports (-webkit-touch-callout: none) {
   input[type="date"],

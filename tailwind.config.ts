@@ -111,6 +111,10 @@ export default {
 					'0%, 40%': { transform: 'translateY(0)' },
 					'20%, 60%': { transform: 'translateY(-10px)' },
 					'70%, 100%': { transform: 'translateY(0)' }
+				},
+				'caret-blink': {
+					'0%, 70%, 100%': { opacity: '1' },
+					'20%, 50%': { opacity: '0' }
 				}
 			},
 			animation: {
@@ -121,7 +125,8 @@ export default {
 				'gradient-shift': 'gradient-shift 8s ease infinite',
 				'bounce-delay-1': 'bounce-delay-1 1s ease-in-out infinite',
 				'bounce-delay-2': 'bounce-delay-2 1s ease-in-out infinite',
-				'bounce-delay-3': 'bounce-delay-3 1s ease-in-out infinite'
+				'bounce-delay-3': 'bounce-delay-3 1s ease-in-out infinite',
+				'caret-blink': 'caret-blink 1.25s ease-out infinite'
 			},
 			fontFamily: {
 				'inter': ['Inter', 'sans-serif']
