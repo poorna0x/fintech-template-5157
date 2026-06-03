@@ -3,7 +3,7 @@
 
 // geolocation/camera=(self): booking + technician flows; omit deprecated/unrecognized features
 const PERMISSIONS_POLICY =
-  'accelerometer=(), autoplay=(), bluetooth=(), camera=(self), clipboard-read=(), ' +
+  'accelerometer=(), autoplay=(), bluetooth=(), camera=(self), clipboard-read=(self), ' +
   'clipboard-write=(self), display-capture=(), encrypted-media=(), fullscreen=(self), ' +
   'geolocation=(self), gyroscope=(), microphone=(), midi=(), payment=(), picture-in-picture=(), ' +
   'publickey-credentials-create=(), publickey-credentials-get=(), usb=(), web-share=()';
