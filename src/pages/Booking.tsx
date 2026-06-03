@@ -2190,6 +2190,14 @@ const Booking: React.FC = () => {
                       </>
                     )}
                   </Button>
+                  {showValidation && !formData.address && (
+                    <p className="text-sm text-red-600 dark:text-red-400 flex items-start gap-1.5">
+                      <span aria-hidden>⚠️</span>
+                      <span>
+                        Please search your address or tap <strong>Use Current Location</strong> so we can map where to come. A flat/house number alone isn&apos;t enough.
+                      </span>
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -2204,9 +2212,18 @@ const Booking: React.FC = () => {
                   className="mt-1"
                   maxLength={150}
                 />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Add your flat / house number, floor and any nearby landmark so the technician reaches the exact door.
-                </p>
+                {formData.addressDetails.trim() && !formData.address ? (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-start gap-1.5">
+                    <span aria-hidden>💡</span>
+                    <span>
+                      Got your flat details. Now search your location or tap <strong>Use Current Location</strong> above so we can pin it on the map.
+                    </span>
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Add your flat / house number, floor and any nearby landmark so the technician reaches the exact door.
+                  </p>
+                )}
               </div>
 
               {/* Draggable Map */}
