@@ -10,6 +10,11 @@ export const PRODUCTION_CSP = [
     'https://*.gstatic.com',
     'https://cdn.jsdelivr.net',
     'https://challenges.cloudflare.com',
+    // Firebase Phone Auth (reCAPTCHA + auth iframe loader)
+    'https://www.google.com',
+    'https://www.gstatic.com',
+    'https://www.recaptcha.net',
+    'https://apis.google.com',
   ].join(' '),
   [
     "style-src 'self' 'unsafe-inline'",
@@ -41,8 +46,11 @@ export const PRODUCTION_CSP = [
     'https://hydrogenro.com',
     'https://www.hydrogenro.com',
     'https://challenges.cloudflare.com',
+    // Firebase Auth identity endpoints (token mint/verify, secure token refresh)
+    'https://identitytoolkit.googleapis.com',
+    'https://securetoken.googleapis.com',
   ].join(' '),
-  "frame-src 'self' https://www.google.com https://maps.google.com https://challenges.cloudflare.com",
+  "frame-src 'self' https://www.google.com https://www.recaptcha.net https://maps.google.com https://challenges.cloudflare.com https://*.firebaseapp.com",
   "frame-ancestors 'none'",
   "base-uri 'self'",
   "form-action 'self'",
@@ -62,6 +70,11 @@ export const DEVELOPMENT_CSP = [
     'https://*.gstatic.com',
     'https://cdn.jsdelivr.net',
     'https://challenges.cloudflare.com',
+    // Firebase Phone Auth (reCAPTCHA + auth iframe loader)
+    'https://www.google.com',
+    'https://www.gstatic.com',
+    'https://www.recaptcha.net',
+    'https://apis.google.com',
   ].join(' '),
   [
     "style-src 'self' 'unsafe-inline'",
@@ -94,8 +107,11 @@ export const DEVELOPMENT_CSP = [
     'https://www.google.com',
     'https://*.google.com',
     'https://challenges.cloudflare.com',
+    // Firebase Auth identity endpoints
+    'https://identitytoolkit.googleapis.com',
+    'https://securetoken.googleapis.com',
   ].join(' '),
-  "frame-src 'self' https://www.google.com https://maps.google.com https://challenges.cloudflare.com",
+  "frame-src 'self' https://www.google.com https://www.recaptcha.net https://maps.google.com https://challenges.cloudflare.com https://*.firebaseapp.com",
   "base-uri 'self'",
   "form-action 'self'",
   "object-src 'none'",

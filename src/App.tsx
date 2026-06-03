@@ -37,6 +37,7 @@ const BlogArticle = lazy(() => import("./pages/BlogArticle"));
 const TechnicianIdCard = lazy(() => import("./pages/TechnicianIdCard"));
 const ProductVerification = lazy(() => import("./pages/ProductVerification"));
 const SpareParts = lazy(() => import("./pages/SpareParts"));
+const OtpTest = lazy(() => import("./pages/OtpTest"));
 
 // Loading component for lazy-loaded routes
 const LoadingSpinner = () => (
@@ -135,6 +136,7 @@ const App = () => (
                   <Route path="/blog" element={<Blog />} />
                   <Route path="/blog/:slug" element={<BlogArticle />} />
                   <Route path="/spare-parts" element={<SpareParts />} />
+                  <Route path="/otp-test" element={<OtpTest />} />
                   
                   {/* Search route - return 404 */}
                   <Route path="/search" element={<NotFound />} />
