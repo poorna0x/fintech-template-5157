@@ -63,6 +63,7 @@ interface FormData {
   
   // Location Information
   address: string;
+  addressDetails: string; // House / Flat / Apartment no., floor, landmark
   coordinates: { lat: number; lng: number };
   googleMapsLink: string;
   
@@ -148,6 +149,7 @@ const Booking: React.FC = () => {
       brandName: '',
       modelName: '',
       address: '',
+      addressDetails: '',
       coordinates: { lat: 0, lng: 0 },
       googleMapsLink: '',
       serviceDate: getTomorrowDate(),
@@ -173,6 +175,7 @@ const Booking: React.FC = () => {
     brandName: '',
     modelName: '',
     address: '',
+    addressDetails: '',
     coordinates: { lat: 0, lng: 0 },
     googleMapsLink: '',
     serviceDate: getTomorrowDate(),
@@ -1382,7 +1385,14 @@ const Booking: React.FC = () => {
         altchaLoginToken,
         altchaPayload: altchaPayload || undefined,
       };
-      
+
+      // House/flat/apartment detail entered manually on the location step.
+      // Prepended to the address everywhere so the exact unit is never lost
+      // (GPS pin + Google autocomplete only resolve the building/road).
+      const addressDetail = (formData.addressDetails || '').trim();
+      const composeStreet = (base: string) =>
+        [addressDetail, base].filter((p) => p && p.trim()).join(', ');
+
       try {
         const result = await getBookingCustomerByPhone(formData.phone, {
           ...altchaCtx,
@@ -1435,7 +1445,7 @@ const Booking: React.FC = () => {
 
         if (shouldUpdateLocation) {
           updateData.address = {
-            street: formData.address,
+            street: composeStreet(formData.address),
             area: 'Bangalore',
             city: 'Bangalore',
             state: 'Karnataka',
@@ -1455,9 +1465,9 @@ const Booking: React.FC = () => {
                 }
               }
               if (cleanAddress.startsWith('http://') || cleanAddress.startsWith('https://')) {
-                return '';
+                cleanAddress = '';
               }
-              return cleanAddress;
+              return composeStreet(cleanAddress);
             })(),
             googleLocation: `https://www.google.com/maps/place/${formData.coordinates.lat},${formData.coordinates.lng}`,
           };
@@ -1514,7 +1524,7 @@ const Booking: React.FC = () => {
           email: formData.email,
           alternate_phone: formData.alternatePhone,
           address: {
-            street: removePlusCode(formData.address),
+            street: composeStreet(removePlusCode(formData.address)),
             area: 'Bangalore',
             city: 'Bangalore',
             state: 'Karnataka',
@@ -1538,9 +1548,9 @@ const Booking: React.FC = () => {
               }
               // Remove any http/https URLs
               if (cleanAddress.startsWith('http://') || cleanAddress.startsWith('https://')) {
-                return '';
+                cleanAddress = '';
               }
-              return cleanAddress;
+              return composeStreet(cleanAddress);
             })(),
             googleLocation: formData.coordinates.lat !== 0 && formData.coordinates.lng !== 0
               ? `https://www.google.com/maps/place/${formData.coordinates.lat},${formData.coordinates.lng}`
@@ -1609,14 +1619,14 @@ const Booking: React.FC = () => {
       const custLoc = useStoredCustomerLocation ? (customer as any).location : null;
       const jobServiceAddress = custAddr
         ? {
-            street: removePlusCode(custAddr.street || custAddr.visible_address || ''),
+            street: composeStreet(removePlusCode(custAddr.street || custAddr.visible_address || '')),
             area: custAddr.area || 'Bangalore',
             city: custAddr.city || 'Bangalore',
             state: custAddr.state || 'Karnataka',
             pincode: custAddr.pincode || '560001',
           }
         : {
-            street: removePlusCode(formData.address),
+            street: composeStreet(removePlusCode(formData.address)),
             area: 'Bangalore',
             city: 'Bangalore',
             state: 'Karnataka',
@@ -1646,9 +1656,9 @@ const Booking: React.FC = () => {
                 }
               }
               if (cleanAddress.startsWith('http://') || cleanAddress.startsWith('https://')) {
-                return '';
+                cleanAddress = '';
               }
-              return cleanAddress;
+              return composeStreet(cleanAddress);
             })(),
             googleLocation: formData.coordinates.lat !== 0 && formData.coordinates.lng !== 0
               ? `https://www.google.com/maps/place/${formData.coordinates.lat},${formData.coordinates.lng}`
@@ -1750,7 +1760,7 @@ const Booking: React.FC = () => {
 
       const displayAddress = keepPreviousLocation && customer
         ? (jobServiceLocation?.formattedAddress || jobServiceAddress.street || (customer as any).address?.street || formData.address)
-        : formData.address;
+        : composeStreet(formData.address);
       const displayMapsLink = keepPreviousLocation && customer && jobServiceLocation
         ? (jobServiceLocation.googleLocation || formData.googleMapsLink)
         : formData.googleMapsLink;
@@ -2181,6 +2191,22 @@ const Booking: React.FC = () => {
                     )}
                   </Button>
                 </div>
+              </div>
+
+              {/* House / Flat / Apartment details — the map pin can't capture this */}
+              <div>
+                <Label htmlFor="addressDetails">House / Flat / Apartment No. &amp; Floor</Label>
+                <Input
+                  id="addressDetails"
+                  value={formData.addressDetails}
+                  onChange={(e) => handleInputChange('addressDetails', e.target.value)}
+                  placeholder="e.g. Flat 302, 3rd Floor, Sai Apartments (near…)"
+                  className="mt-1"
+                  maxLength={150}
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Add your flat / house number, floor and any nearby landmark so the technician reaches the exact door.
+                </p>
               </div>
 
               {/* Draggable Map */}
