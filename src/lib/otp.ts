@@ -57,6 +57,14 @@ function mapFirebaseError(err: unknown): string {
       return 'Security check failed. Refresh the page and try again.';
     case 'auth/quota-exceeded':
       return 'SMS limit reached. Please try again later.';
+    case 'auth/internal-error':
+      return [
+        'Firebase internal error (usually config). Check:',
+        '1) This domain is in Firebase → Auth → Authorized domains',
+        '2) Google Cloud → Browser API key allows this site in HTTP referrers',
+        '3) Netlify VITE_FIREBASE_* set + redeploy after adding',
+        '4) SMS region India (IN) enabled',
+      ].join(' ');
     case 'auth/invalid-app-credential':
       // Firebase blocks real SMS on localhost; test numbers still work.
       if (
@@ -111,6 +119,7 @@ export async function sendBookingOtp(
     confirmationResult = await signInWithPhoneNumber(auth, toE164Indian(phone), verifier);
     return { ok: true };
   } catch (e) {
+    console.error('[otp] sendBookingOtp failed', e);
     confirmationResult = null;
     // A failed/expired verifier can't be reused — drop it so the next attempt
     // renders a fresh one.
