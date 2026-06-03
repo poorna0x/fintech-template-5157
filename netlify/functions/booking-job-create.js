@@ -10,6 +10,46 @@ const {
   consumeLoginToken,
   getClientIdentifier,
 } = require('./booking-guard');
+const { sendBookingAdminNotification } = require('./booking-notify');
+
+// Best-effort internal "new booking" email to the business owner. Never allowed
+// to throw or meaningfully delay the booking response.
+async function notifyOwnerOfBooking(client, row, phoneNorm, job) {
+  try {
+    let customerName = '';
+    const customerId =
+      (job && (job.customer_id || job.customerId)) || row.customer_id || null;
+    if (customerId) {
+      try {
+        const { data: cust } = await client.admin
+          .from('customers')
+          .select('full_name')
+          .eq('id', customerId)
+          .maybeSingle();
+        customerName = (cust && cust.full_name) || '';
+      } catch {
+        // name is best-effort; fall through with empty
+      }
+    }
+
+    const requirements = Array.isArray(row.requirements) ? row.requirements[0] : null;
+
+    await sendBookingAdminNotification({
+      customerName,
+      phone: phoneNorm,
+      brandSource: row.booking_source,
+      bookingDomain: row.booking_domain,
+      serviceType: row.service_type,
+      serviceSubType: row.service_sub_type,
+      scheduledDate: row.scheduled_date,
+      scheduledTimeSlot: row.scheduled_time_slot,
+      customTime: requirements ? requirements.custom_time : null,
+      jobNumber: (job && (job.job_number || job.jobNumber)) || row.job_number,
+    });
+  } catch (err) {
+    console.error('[booking-job-create] owner notification failed:', err && err.message);
+  }
+}
 
 exports.handler = async (event) => {
   const pre = preflightOrReject(event);
@@ -57,6 +97,10 @@ exports.handler = async (event) => {
   if (body.consumeToken !== false && altcha.tokenCheck?.consumeKey) {
     consumeLoginToken(altcha.tokenCheck.consumeKey, altcha.tokenCheck.exp);
   }
+
+  // Booking succeeded — notify the owner (HydrogenRO / ElevenRO). Awaited so it
+  // runs before the serverless function freezes, but fully fault-tolerant.
+  await notifyOwnerOfBooking(client, row, phoneNorm, data);
 
   return jsonResponse(200, corsHeaders, { data });
 };
