@@ -1542,6 +1542,21 @@ const Booking: React.FC = () => {
     bookingPerf.start = tVerifyStart;
     await handleSubmit({ skipOtpCheck: true });
     bookingPerf.log('TOTAL verify → confirmation', tVerifyStart);
+    // Diagnostic: when the page is opened with ?perf=1, show the timing
+    // breakdown on screen so it can be read without the console (prod strips
+    // console.log). Real customers (no ?perf=1) never see this.
+    try {
+      const perfOn = new URLSearchParams(window.location.search).get('perf') === '1';
+      if (perfOn) {
+        const p = (window as unknown as { __bookingPerf?: Record<string, number> }).__bookingPerf || {};
+        const lines = Object.entries(p)
+          .map(([k, v]) => `${k}: ${v}ms`)
+          .join('\n');
+        toast.message('Booking timing', { description: lines || 'no data', duration: 120000 });
+      }
+    } catch {
+      /* ignore */
+    }
     setOtpVerifying(false);
   };
 
