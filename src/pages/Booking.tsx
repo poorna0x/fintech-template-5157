@@ -153,6 +153,7 @@ const Booking: React.FC = () => {
     setOtpVerifying(false);
     setOtpError('');
     setOtpResendAt(0);
+    customerLookupRef.current = null;
     resetBookingOtpSession();
   };
 
@@ -212,6 +213,8 @@ const Booking: React.FC = () => {
     setBookingDetails(null);
     bookingSucceededRef.current = false;
     websiteIntentLastSentRef.current = null;
+    imageUploadCacheRef.current.clear();
+    setImageUploadInfo({ uploading: 0, failed: 0 });
     resetOtpState();
   };
 
@@ -237,6 +240,44 @@ const Booking: React.FC = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bookingSucceededRef = useRef(false);
+
+  // Eagerly upload images to Cloudinary as soon as they're added so that by the
+  // time the user submits, the URLs are already ready (keeps confirmation fast).
+  // Maps each (compressed) File -> its in-flight/completed upload promise.
+  const imageUploadCacheRef = useRef<Map<File, Promise<string>>>(new Map());
+  const [imageUploadInfo, setImageUploadInfo] = useState<{ uploading: number; failed: number }>({
+    uploading: 0,
+    failed: 0,
+  });
+
+  // Prefetch the customer lookup (read-only, only needs the ALTCHA token, not the
+  // OTP) while the user is reading the SMS / typing the code. This takes a full
+  // network round-trip off the critical path so the booking confirms faster once
+  // the code is verified.
+  const customerLookupRef = useRef<{
+    phone: string;
+    lat?: number;
+    lng?: number;
+    promise: Promise<{ data: any; error: any }>;
+  } | null>(null);
+
+  const startImageUpload = useCallback((file: File) => {
+    if (imageUploadCacheRef.current.has(file)) return;
+    setImageUploadInfo((prev) => ({ ...prev, uploading: prev.uploading + 1 }));
+    const promise = cloudinaryService.uploadImage(file);
+    // Track UI status + clean up cache on failure so submit can retry.
+    promise.then(
+      () => setImageUploadInfo((prev) => ({ ...prev, uploading: Math.max(0, prev.uploading - 1) })),
+      () => {
+        imageUploadCacheRef.current.delete(file);
+        setImageUploadInfo((prev) => ({
+          uploading: Math.max(0, prev.uploading - 1),
+          failed: prev.failed + 1,
+        }));
+      }
+    );
+    imageUploadCacheRef.current.set(file, promise);
+  }, []);
 
   // Helper function to format time slot
   const formatTimeSlot = (timeSlot: string, customTime?: string) => {
@@ -1335,6 +1376,9 @@ const Booking: React.FC = () => {
         images: [...prev.images, ...processedFiles]
       }));
 
+      // Begin uploading immediately, in the background, while the user keeps filling the form.
+      processedFiles.forEach(startImageUpload);
+
       toast.success(`${validFiles.length} image(s) added successfully!`);
     } catch (error) {
       toast.error('Failed to process images. Please try again.');
@@ -1367,10 +1411,14 @@ const Booking: React.FC = () => {
   };
 
   const removeImage = (index: number) => {
-    setFormData(prev => ({
-      ...prev,
-      images: prev.images.filter((_, i) => i !== index)
-    }));
+    setFormData(prev => {
+      const removed = prev.images[index];
+      if (removed) imageUploadCacheRef.current.delete(removed);
+      return {
+        ...prev,
+        images: prev.images.filter((_, i) => i !== index),
+      };
+    });
   };
 
   const nudgeLegalConsent = useCallback(() => {
@@ -1421,6 +1469,24 @@ const Booking: React.FC = () => {
     setOtpSent(true);
     setOtpResendAt(Date.now() + 60_000);
     toast.success('Verification code sent to your phone.');
+
+    // Prefetch the customer record now (read-only, ALTCHA-gated) so it's ready by
+    // the time the code is verified — shaves a round-trip off the confirm path.
+    if (altchaLoginToken) {
+      const lat = formData.coordinates?.lat;
+      const lng = formData.coordinates?.lng;
+      customerLookupRef.current = {
+        phone: formData.phone,
+        lat,
+        lng,
+        promise: getBookingCustomerByPhone(formData.phone, {
+          altchaLoginToken,
+          altchaPayload: altchaPayload || undefined,
+          lat,
+          lng,
+        }).catch((err) => ({ data: null, error: err })),
+      };
+    }
   };
 
   const handleVerifyOtp = async () => {
@@ -1484,10 +1550,22 @@ const Booking: React.FC = () => {
     setShowSuccessLoader(true);
     
     try {
-      // Upload images to Cloudinary (non-blocking, continue even if upload fails)
-      const imageUrls = formData.images.length > 0 
+      // Images are uploaded eagerly as they're added, so this usually resolves
+      // instantly with the already-uploaded URLs. Falls back to uploading now
+      // for any image whose background upload hasn't finished or failed.
+      const imageUrls = formData.images.length > 0
         ? await Promise.all(
-        formData.images.map(file => cloudinaryService.uploadImage(file))
+            formData.images.map(async (file) => {
+              const cached = imageUploadCacheRef.current.get(file);
+              if (cached) {
+                try {
+                  return await cached;
+                } catch {
+                  /* fall through to retry below */
+                }
+              }
+              return cloudinaryService.uploadImage(file);
+            })
           )
         : [];
 
@@ -1516,11 +1594,21 @@ const Booking: React.FC = () => {
         [addressDetail, base].filter((p) => p && p.trim()).join(', ');
 
       try {
-        const result = await getBookingCustomerByPhone(formData.phone, {
-          ...altchaCtx,
-          lat: formData.coordinates?.lat,
-          lng: formData.coordinates?.lng,
-        });
+        // Reuse the lookup prefetched when the OTP was sent (if it's for the same
+        // phone + location); otherwise look up now.
+        const prefetch = customerLookupRef.current;
+        const canUsePrefetch =
+          prefetch &&
+          prefetch.phone === formData.phone &&
+          prefetch.lat === formData.coordinates?.lat &&
+          prefetch.lng === formData.coordinates?.lng;
+        const result = canUsePrefetch
+          ? await prefetch.promise
+          : await getBookingCustomerByPhone(formData.phone, {
+              ...altchaCtx,
+              lat: formData.coordinates?.lat,
+              lng: formData.coordinates?.lng,
+            });
         existingCustomer = result.data;
         findError = result.error;
       } catch (networkError: any) {
@@ -1936,11 +2024,9 @@ const Booking: React.FC = () => {
         images: formData.images,
       });
       
-      // Show confirmation page after 2 seconds
-      setTimeout(() => {
-        setShowSuccessLoader(false);
-        setShowConfirmation(true);
-      }, 2000);
+      // Show the confirmation page immediately — the booking is already saved.
+      setShowSuccessLoader(false);
+      setShowConfirmation(true);
       
       // Show toast notification immediately
       toast.success('Booking confirmed successfully!', {
@@ -2648,6 +2734,25 @@ const Booking: React.FC = () => {
                         </div>
                       ))}
                     </div>
+                  )}
+
+                  {formData.images.length > 0 && (
+                    <p className="text-xs mt-1">
+                      {imageUploadInfo.uploading > 0 ? (
+                        <span className="text-muted-foreground inline-flex items-center gap-1">
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          Uploading {imageUploadInfo.uploading} image{imageUploadInfo.uploading > 1 ? 's' : ''}…
+                        </span>
+                      ) : imageUploadInfo.failed > 0 ? (
+                        <span className="text-amber-600 dark:text-amber-500">
+                          Some images will finish uploading when you submit.
+                        </span>
+                      ) : (
+                        <span className="text-green-600 dark:text-green-500">
+                          ✓ All images uploaded — ready to submit.
+                        </span>
+                      )}
+                    </p>
                   )}
                 </div>
               </div>
