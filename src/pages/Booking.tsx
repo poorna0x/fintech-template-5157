@@ -241,15 +241,22 @@ const Booking: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bookingSucceededRef = useRef(false);
 
-  // Lightweight timing for the post-verify booking path. Logs to the browser
-  // console so we can see exactly which step is slow. Remove once perf is dialed in.
+  // Lightweight timing for the post-verify booking path. Production strips
+  // console.* (vite drop_console), so we record onto window.__bookingPerf — read
+  // it by typing `__bookingPerf` in the browser console after a booking. Remove
+  // once perf is dialed in.
   const bookingPerf = useRef<{ start: number; log: (label: string, since?: number) => void }>({
     start: 0,
     log(label: string, since?: number) {
       const base = since ?? this.start;
       const ms = Math.round(performance.now() - base);
-      // eslint-disable-next-line no-console
-      console.log(`[booking-perf] ${label}: ${ms}ms`);
+      try {
+        const w = window as unknown as { __bookingPerf?: Record<string, number> };
+        if (!w.__bookingPerf) w.__bookingPerf = {};
+        w.__bookingPerf[label] = ms;
+      } catch {
+        /* ignore */
+      }
     },
   }).current;
 
