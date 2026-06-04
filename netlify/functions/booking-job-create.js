@@ -13,6 +13,70 @@ const {
 const { sendBookingAdminNotification } = require('./booking-notify');
 const { isOtpEnforced, verifyFirebasePhoneToken } = require('./otp-guard');
 
+// Trigger the owner notification as a Netlify background function so the booking
+// response returns immediately — the (slow) SMTP send no longer blocks the
+// customer's confirmation. Netlify returns 202 the instant the background
+// invocation is accepted, well before the email actually sends.
+//
+// Falls back to an inline send only on a fast, definitive failure (e.g. the
+// background function isn't available / secret mismatch), so the owner is always
+// notified without ever meaningfully delaying the customer.
+async function triggerOwnerNotification(event, client, row, phoneNorm, job) {
+  const base =
+    process.env.URL ||
+    process.env.DEPLOY_PRIME_URL ||
+    process.env.DEPLOY_URL ||
+    (event.headers && event.headers.host ? `https://${event.headers.host}` : '');
+
+  if (!base || typeof fetch !== 'function') {
+    // No way to reach the background function — send inline as a fallback.
+    await notifyOwnerOfBooking(client, row, phoneNorm, job);
+    return;
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 2000);
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (process.env.BOOKING_NOTIFY_SECRET) {
+      headers['X-Notify-Secret'] = process.env.BOOKING_NOTIFY_SECRET;
+    }
+    const res = await fetch(`${base}/.netlify/functions/booking-notify-background`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ row, phoneNorm, job }),
+      signal: controller.signal,
+    });
+    // 202 = background invocation accepted (normal, fast path). Any other 2xx
+    // means it ran inline and already sent. A 4xx/5xx is a real failure.
+    if (!res.ok && res.status !== 202) {
+      throw new Error(`background notify HTTP ${res.status}`);
+    }
+  } catch (err) {
+    // AbortError means we hit the 2s cap waiting for the 202. The request was
+    // already sent, so the background work is in flight — do NOT inline-send
+    // (that would double-notify and re-add the delay we just removed).
+    if (err && err.name === 'AbortError') {
+      console.warn('[booking-job-create] owner notify trigger slow; left to run in background');
+    } else {
+      console.error(
+        '[booking-job-create] owner notify trigger failed, sending inline:',
+        err && err.message
+      );
+      try {
+        await notifyOwnerOfBooking(client, row, phoneNorm, job);
+      } catch (inlineErr) {
+        console.error(
+          '[booking-job-create] inline notify fallback failed:',
+          inlineErr && inlineErr.message
+        );
+      }
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Best-effort internal "new booking" email to the business owner. Never allowed
 // to throw or meaningfully delay the booking response.
 async function notifyOwnerOfBooking(client, row, phoneNorm, job) {
@@ -119,9 +183,10 @@ exports.handler = async (event) => {
     consumeLoginToken(altcha.tokenCheck.consumeKey, altcha.tokenCheck.exp);
   }
 
-  // Booking succeeded — notify the owner (HydrogenRO / ElevenRO). Awaited so it
-  // runs before the serverless function freezes, but fully fault-tolerant.
-  await notifyOwnerOfBooking(client, row, phoneNorm, data);
+  // Booking succeeded — notify the owner (HydrogenRO / ElevenRO) out-of-band so
+  // the slow SMTP send never delays the customer's confirmation. Fully
+  // fault-tolerant: any failure here can never break the booking.
+  await triggerOwnerNotification(event, client, row, phoneNorm, data);
 
   return jsonResponse(200, corsHeaders, { data });
 };
