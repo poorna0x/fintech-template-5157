@@ -241,6 +241,18 @@ const Booking: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bookingSucceededRef = useRef(false);
 
+  // Lightweight timing for the post-verify booking path. Logs to the browser
+  // console so we can see exactly which step is slow. Remove once perf is dialed in.
+  const bookingPerf = useRef<{ start: number; log: (label: string, since?: number) => void }>({
+    start: 0,
+    log(label: string, since?: number) {
+      const base = since ?? this.start;
+      const ms = Math.round(performance.now() - base);
+      // eslint-disable-next-line no-console
+      console.log(`[booking-perf] ${label}: ${ms}ms`);
+    },
+  }).current;
+
   // Eagerly upload images to Cloudinary as soon as they're added so that by the
   // time the user submits, the URLs are already ready (keeps confirmation fast).
   // Maps each (compressed) File -> its in-flight/completed upload promise.
@@ -1508,7 +1520,9 @@ const Booking: React.FC = () => {
   const handleVerifyOtp = async () => {
     setOtpVerifying(true);
     setOtpError('');
+    const tVerifyStart = performance.now();
     const res = await verifyBookingOtp(otpCode);
+    bookingPerf.log('firebase verify+token', tVerifyStart);
     if (!res.verified || !res.phoneToken) {
       setOtpVerifying(false);
       setOtpError(res.error || 'Invalid code. Please try again.');
@@ -1518,7 +1532,9 @@ const Booking: React.FC = () => {
     setPhoneToken(res.phoneToken);
     phoneTokenRef.current = res.phoneToken;
     toast.success('Phone verified — confirming your booking…');
+    bookingPerf.start = tVerifyStart;
     await handleSubmit({ skipOtpCheck: true });
+    bookingPerf.log('TOTAL verify → confirmation', tVerifyStart);
     setOtpVerifying(false);
   };
 
@@ -1566,6 +1582,7 @@ const Booking: React.FC = () => {
     setShowSuccessLoader(true);
     
     try {
+      const tImg = performance.now();
       // Images are uploaded eagerly as they're added, so this usually resolves
       // instantly with the already-uploaded URLs. Falls back to uploading now
       // for any image whose background upload hasn't finished or failed.
@@ -1584,6 +1601,7 @@ const Booking: React.FC = () => {
             })
           )
         : [];
+      bookingPerf.log('images ready', tImg);
 
       // Check if customer already exists by phone number
       let customer;
@@ -1609,6 +1627,7 @@ const Booking: React.FC = () => {
       const composeStreet = (base: string) =>
         [addressDetail, base].filter((p) => p && p.trim()).join(', ');
 
+      const tLookup = performance.now();
       try {
         // Reuse the lookup prefetched when the OTP was sent (if it's for the same
         // phone + location); otherwise look up now.
@@ -1625,6 +1644,7 @@ const Booking: React.FC = () => {
               lat: formData.coordinates?.lat,
               lng: formData.coordinates?.lng,
             });
+        bookingPerf.log(`customer lookup (${canUsePrefetch ? 'prefetched' : 'live'})`, tLookup);
         existingCustomer = result.data;
         findError = result.error;
       } catch (networkError: any) {
@@ -1702,6 +1722,7 @@ const Booking: React.FC = () => {
         let updatedCustomer = null;
         let updateError = null;
 
+        const tUpd = performance.now();
         try {
           const result = await updateBookingCustomer(
             (existingCustomer as any).id,
@@ -1709,6 +1730,7 @@ const Booking: React.FC = () => {
             updateData,
             altchaCtx
           );
+          bookingPerf.log('customer update', tUpd);
           updatedCustomer = result.data;
           updateError = result.error;
         } catch (networkError: any) {
@@ -1797,8 +1819,10 @@ const Booking: React.FC = () => {
         let newCustomer = null;
         let customerError = null;
         
+        const tCreate = performance.now();
         try {
           const result = await createBookingCustomer(customerData, altchaCtx);
+          bookingPerf.log('customer create', tCreate);
           newCustomer = result.data;
           customerError = result.error;
         } catch (networkError: any) {
@@ -1940,6 +1964,7 @@ const Booking: React.FC = () => {
       };
       let job: any = null;
       let jobError: any = null;
+      const tJob = performance.now();
       for (let attempt = 0; attempt < 2; attempt++) {
         const result = await createBookingJob(
           formData.phone,
@@ -1959,6 +1984,7 @@ const Booking: React.FC = () => {
         }
         break;
       }
+      bookingPerf.log('job create', tJob);
       if (jobError) {
         throw new Error(jobError.message);
       }
