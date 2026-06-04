@@ -11,7 +11,7 @@ const {
   getClientIdentifier,
 } = require('./booking-guard');
 const { sendBookingAdminNotification } = require('./booking-notify');
-const { isOtpEnforced, verifyFirebasePhoneToken } = require('./otp-guard');
+const { isOtpEnforced, verifyFirebasePhoneToken, warmFirebaseAdmin } = require('./otp-guard');
 
 // Trigger the owner notification as a Netlify background function so the booking
 // response returns immediately — the (slow) SMTP send no longer blocks the
@@ -126,6 +126,19 @@ exports.handler = async (event) => {
     body = JSON.parse(event.body || '{}');
   } catch {
     return jsonResponse(400, corsHeaders, { error: 'Invalid JSON' });
+  }
+
+  // Warmup ping (sent when the OTP is dispatched). Spins up the container and
+  // preloads heavy deps (Supabase client + firebase-admin) so the real booking
+  // hits a warm function. Does no DB/email work and exposes nothing.
+  if (body && body.warmup === true) {
+    try {
+      getServiceClient();
+    } catch {
+      /* ignore */
+    }
+    warmFirebaseAdmin();
+    return jsonResponse(200, corsHeaders, { warmed: true });
   }
 
   const phoneNorm = normalizePhoneDigits(body.phone);

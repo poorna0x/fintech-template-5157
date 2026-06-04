@@ -24,6 +24,17 @@ exports.handler = async (event) => {
     return jsonResponse(400, corsHeaders, { error: 'Invalid JSON' });
   }
 
+  // Warmup ping (sent when the OTP is dispatched) so the real booking write hits
+  // a warm container. Does no DB work and exposes nothing.
+  if (body && body.warmup === true) {
+    try {
+      getServiceClient();
+    } catch {
+      /* ignore */
+    }
+    return jsonResponse(200, corsHeaders, { warmed: true });
+  }
+
   const action = body.action;
   if (action !== 'create' && action !== 'update') {
     return jsonResponse(400, corsHeaders, { error: 'Invalid action' });

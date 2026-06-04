@@ -91,8 +91,22 @@ async function verifyFirebasePhoneToken(idToken, phoneNorm) {
   }
 }
 
+/**
+ * Eagerly load + initialize firebase-admin so the (heavy) module and credential
+ * parsing happen during a warmup ping rather than on the first real booking.
+ * Best-effort: never throws.
+ */
+function warmFirebaseAdmin() {
+  try {
+    getFirebaseAdmin();
+  } catch {
+    /* ignore */
+  }
+}
+
 module.exports = {
   isOtpEnforced,
   isFirebaseAdminConfigured,
   verifyFirebasePhoneToken,
+  warmFirebaseAdmin,
 };

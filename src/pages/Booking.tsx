@@ -1470,6 +1470,22 @@ const Booking: React.FC = () => {
     setOtpResendAt(Date.now() + 60_000);
     toast.success('Verification code sent to your phone.');
 
+    // Warm the booking serverless functions while the user reads the SMS and
+    // types the code, so the post-verify writes hit warm containers (avoids
+    // cold-start + firebase-admin load on the critical path). Fire-and-forget.
+    try {
+      const warmInit: RequestInit = {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ warmup: true }),
+        keepalive: true,
+      };
+      void fetch('/.netlify/functions/booking-job-create', warmInit).catch(() => {});
+      void fetch('/.netlify/functions/booking-customer-mutate', warmInit).catch(() => {});
+    } catch {
+      /* ignore */
+    }
+
     // Prefetch the customer record now (read-only, ALTCHA-gated) so it's ready by
     // the time the code is verified — shaves a round-trip off the confirm path.
     if (altchaLoginToken) {
