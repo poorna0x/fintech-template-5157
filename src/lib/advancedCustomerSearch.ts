@@ -61,7 +61,7 @@ export type AdvancedSearchFilters = {
   serviceSubType?: string;
   /** Job-side: only customers who have a job with this lead_source (exact). */
   leadSource?: string;
-  /** Job-side: only customers whose past job was completed by this technician (admin user id). */
+  /** Job-side: only customers with a COMPLETED job whose completed_by is this technician id. */
   completedByTechnicianId?: string;
   /** Job-side: only customers whose past job's payment_amount is >= this. */
   billMin?: number | '';
@@ -103,35 +103,66 @@ function tokenize(input: string): string[] {
     .filter((t) => t.length >= 2);
 }
 
+function billBounds(filters: AdvancedSearchFilters) {
+  return {
+    min: typeof filters.billMin === 'number' ? filters.billMin : null,
+    max: typeof filters.billMax === 'number' ? filters.billMax : null,
+  };
+}
+
+/** Technician / lead / sub-type / bill — must not be bypassed by brand "either" OR logic. */
+function hasRestrictiveJobFilter(filters: AdvancedSearchFilters): boolean {
+  const { min, max } = billBounds(filters);
+  return !!(
+    filters.serviceSubType ||
+    filters.leadSource ||
+    filters.completedByTechnicianId ||
+    min != null ||
+    max != null
+  );
+}
+
+function unionSets(...sets: Array<Set<string> | null | undefined>): Set<string> {
+  const out = new Set<string>();
+  for (const s of sets) {
+    if (!s) continue;
+    for (const id of s) out.add(id);
+  }
+  return out;
+}
+
 /**
  * Fetch customer ids that match ALL provided job-side filters (single query).
  * Returns null if no job-side filter is active (caller skips the constraint).
  */
 async function fetchCustomerIdsForJobFilters(
   filters: AdvancedSearchFilters,
-  jobBrandIfAny: string | null
+  jobBrandIfAny: string | null,
+  options?: { applyJobBrand?: boolean }
 ): Promise<Set<string> | null> {
-  const billMin = typeof filters.billMin === 'number' ? filters.billMin : null;
-  const billMax = typeof filters.billMax === 'number' ? filters.billMax : null;
+  const { min: billMin, max: billMax } = billBounds(filters);
+  const applyJobBrand = options?.applyJobBrand !== false && !!jobBrandIfAny;
   const hasJobFilter =
     !!filters.serviceSubType ||
     !!filters.leadSource ||
     !!filters.completedByTechnicianId ||
     billMin != null ||
     billMax != null ||
-    !!jobBrandIfAny;
+    applyJobBrand;
   if (!hasJobFilter) return null;
 
   let q = supabase.from('jobs').select('customer_id').limit(MAX_JOB_LOOKUP_ROWS);
   if (filters.serviceSubType) q = q.eq('service_sub_type', filters.serviceSubType);
-  if (filters.completedByTechnicianId)
-    q = q.eq('completed_by', filters.completedByTechnicianId);
+  if (filters.completedByTechnicianId) {
+    q = q.eq('completed_by', filters.completedByTechnicianId).eq('status', 'COMPLETED');
+  }
   if (filters.leadSource) {
     q = q.contains('requirements', JSON.stringify([{ lead_source: filters.leadSource }]));
   }
   if (billMin != null) q = q.gte('payment_amount', billMin);
   if (billMax != null) q = q.lte('payment_amount', billMax);
-  if (jobBrandIfAny) q = q.ilike('brand', `%${escapeForLike(jobBrandIfAny)}%`);
+  if (applyJobBrand && jobBrandIfAny)
+    q = q.ilike('brand', `%${escapeForLike(jobBrandIfAny)}%`);
 
   const { data, error } = await q;
   if (error) {
@@ -144,6 +175,32 @@ async function fetchCustomerIdsForJobFilters(
     if (cid) ids.add(cid);
   }
   return ids;
+}
+
+/** Customers (within base job set) whose profile brand matches — for brand "either" + technician, etc. */
+async function fetchCustomerIdsWithProfileBrand(
+  baseJobIds: Set<string>,
+  brand: string
+): Promise<Set<string>> {
+  const ids = Array.from(baseJobIds).slice(0, MAX_ID_FILTER);
+  if (ids.length === 0) return new Set();
+  const e = escapeForLike(brand);
+  const { data, error } = await supabase
+    .from('customers')
+    .select('id')
+    .in('id', ids)
+    .ilike('brand', `%${e}%`)
+    .limit(MAX_ID_FILTER);
+  if (error) {
+    console.warn('[advancedCustomerSearch] customer-brand fetch failed', error);
+    return new Set();
+  }
+  const out = new Set<string>();
+  for (const row of data ?? []) {
+    const id = (row as { id?: string | null }).id;
+    if (id) out.add(id);
+  }
+  return out;
 }
 
 /**
@@ -223,17 +280,37 @@ export async function advancedCustomerSearch(
 
     // For 'jobs' / 'either' brand source, the brand match is folded into the
     // single combined jobs query so we don't fire two extra fetches.
+    const brand = (filters.brandContains ?? '').trim();
     const jobBrandValue =
-      filters.brandContains && (brandSource === 'jobs' || brandSource === 'either')
-        ? filters.brandContains.trim()
-        : null;
+      brand && (brandSource === 'jobs' || brandSource === 'either') ? brand : null;
+    const restrictive = hasRestrictiveJobFilter(filters);
 
-    const [jobIdSet, activeAMCIds] = await Promise.all([
-      fetchCustomerIdsForJobFilters(filters, jobBrandValue),
-      filters.hasAMC === 'yes' || filters.hasAMC === 'no'
-        ? fetchActiveAMCCustomerIds()
-        : Promise.resolve<Set<string>>(new Set()),
-    ]);
+    const needsAmcSet = filters.hasAMC === 'yes' || filters.hasAMC === 'no';
+
+    // Brand "either" + technician (etc.): union job-brand matches with profile-brand
+    // matches, but only within customers that satisfy the restrictive job filters.
+    let jobIdSet: Set<string> | null;
+    let activeAMCIds: Set<string>;
+    if (brand && brandSource === 'either' && restrictive) {
+      const [baseJobIds, jobBrandIds, amcIds] = await Promise.all([
+        fetchCustomerIdsForJobFilters(filters, jobBrandValue, { applyJobBrand: false }),
+        fetchCustomerIdsForJobFilters(filters, jobBrandValue),
+        needsAmcSet ? fetchActiveAMCCustomerIds() : Promise.resolve(new Set<string>()),
+      ]);
+      const profileBrandIds =
+        baseJobIds && baseJobIds.size > 0
+          ? await fetchCustomerIdsWithProfileBrand(baseJobIds, brand)
+          : new Set<string>();
+      jobIdSet = unionSets(jobBrandIds, profileBrandIds);
+      activeAMCIds = amcIds;
+    } else {
+      const [fetchedJobIds, amcIds] = await Promise.all([
+        fetchCustomerIdsForJobFilters(filters, jobBrandValue),
+        needsAmcSet ? fetchActiveAMCCustomerIds() : Promise.resolve(new Set<string>()),
+      ]);
+      jobIdSet = fetchedJobIds;
+      activeAMCIds = amcIds;
+    }
 
     let q = supabase.from('customers').select(SLIM_COLS);
 
@@ -271,26 +348,24 @@ export async function advancedCustomerSearch(
       q = q.or(orParts.join(','));
     }
 
-    // Brand on customer record
-    const brand = (filters.brandContains ?? '').trim();
+    // Brand on customer record (profile); job-side brand is handled via jobIdSet.
     if (brand) {
       const e = escapeForLike(brand);
       if (brandSource === 'customer') {
         q = q.ilike('brand', `%${e}%`);
-      } else if (brandSource === 'either') {
-        // either: brand on customer OR id ∈ jobs-brand-set (already merged into jobIdSet)
+      } else if (brandSource === 'either' && !restrictive) {
+        // either without technician/etc.: brand on customer OR id ∈ job-brand set
         const ids = jobIdSet ? Array.from(jobIdSet).slice(0, MAX_ID_FILTER) : [];
         const orParts: string[] = [`brand.ilike.%${e}%`];
         if (ids.length > 0) orParts.push(`id.in.(${ids.join(',')})`);
         q = q.or(orParts.join(','));
       }
-      // 'jobs' brand mode is enforced via the jobIdSet `.in('id', …)` constraint
-      // applied below alongside the other job-side filters.
+      // 'jobs' / either+restrictive: enforced via jobIdSet `.in('id', …)` below.
     }
 
-    // Job-side filter set (non-brand) — intersect customer query with the id set
-    // EXCEPT when brandSource is 'either' (already used inside the .or() above).
-    if (jobIdSet && brandSource !== 'either') {
+    // Intersect with job-side customer ids (technician, lead source, bills, job brand, …).
+    const brandFoldedIntoOr = brandSource === 'either' && !!brand && !restrictive;
+    if (jobIdSet && !brandFoldedIntoOr) {
       const ids = Array.from(jobIdSet).slice(0, MAX_ID_FILTER);
       if (ids.length === 0) return { data: [], error: null };
       q = q.in('id', ids);
