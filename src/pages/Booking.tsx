@@ -1111,6 +1111,7 @@ const Booking: React.FC = () => {
             break;
           case 3:
             if (!formData.address) { firstMissingField = 'address'; }
+            else if (!formData.addressDetails.trim()) { firstMissingField = 'addressDetails'; }
             break;
           case 4:
             if (!formData.serviceDate) { firstMissingField = 'serviceDate'; }
@@ -2430,16 +2431,28 @@ const Booking: React.FC = () => {
 
               {/* House / Flat / Apartment details — the map pin can't capture this */}
               <div>
-                <Label htmlFor="addressDetails">House / Flat / Apartment No. &amp; Floor</Label>
+                <Label htmlFor="addressDetails">House / Flat / Apartment No. &amp; Floor *</Label>
                 <Input
                   id="addressDetails"
                   value={formData.addressDetails}
                   onChange={(e) => handleInputChange('addressDetails', e.target.value)}
                   placeholder="e.g. Flat 302, 3rd Floor, Sai Apartments (near…)"
-                  className="mt-1"
+                  className={`mt-1 ${
+                    showValidation && !formData.addressDetails.trim()
+                      ? 'border-red-500 focus-visible:ring-red-500'
+                      : ''
+                  }`}
+                  aria-invalid={showValidation && !formData.addressDetails.trim()}
                   maxLength={150}
                 />
-                {formData.addressDetails.trim() && !formData.address ? (
+                {showValidation && !formData.addressDetails.trim() ? (
+                  <p className="text-sm text-red-600 dark:text-red-400 mt-1 flex items-start gap-1.5">
+                    <span aria-hidden>⚠️</span>
+                    <span>
+                      Please enter your house / flat / apartment number and floor so the technician reaches the exact door.
+                    </span>
+                  </p>
+                ) : formData.addressDetails.trim() && !formData.address ? (
                   <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-start gap-1.5">
                     <span aria-hidden>💡</span>
                     <span>
@@ -3212,7 +3225,7 @@ const Booking: React.FC = () => {
         return serviceValid; // Brand name and model name are now optional
       }
       case 3:
-        return formData.address;
+        return formData.address && formData.addressDetails.trim();
       case 4:
         return formData.serviceDate && formData.preferredTime;
       case 5:
