@@ -1204,6 +1204,22 @@ const Settings = () => {
 
   // Paginate through a table (Supabase default max is 1000 per request) so we get ALL rows.
   const fetchAllFromTable = async (tableName: string, orderBy = 'id'): Promise<{ data: any[]; error: any }> => {
+    // technicians: direct `select('*')` fails after column lockdown (salary, push_subscription).
+    // Use the same admin RPC as the rest of the app.
+    if (tableName === 'technicians') {
+      const { data, error } = await db.technicians.getAll(undefined, { activeRosterOnly: false });
+      if (error) return { data: [], error };
+      const rows = [...(data ?? [])].sort((a, b) => {
+        const aVal = a?.[orderBy];
+        const bVal = b?.[orderBy];
+        if (aVal == null && bVal == null) return 0;
+        if (aVal == null) return -1;
+        if (bVal == null) return 1;
+        return String(aVal).localeCompare(String(bVal));
+      });
+      return { data: rows, error: null };
+    }
+
     const PAGE = 1000;
     let from = 0;
     const all: any[] = [];
