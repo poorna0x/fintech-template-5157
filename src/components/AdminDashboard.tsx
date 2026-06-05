@@ -209,6 +209,8 @@ const AdminDashboard = () => {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [phonePopupOpen, setPhonePopupOpen] = useState(false);
   const [selectedCustomerPhone, setSelectedCustomerPhone] = useState<Customer | null>(null);
+  const [whatsappPopupOpen, setWhatsappPopupOpen] = useState(false);
+  const [selectedCustomerWhatsApp, setSelectedCustomerWhatsApp] = useState<Customer | null>(null);
   const [billModalOpen, setBillModalOpen] = useState(false);
   const [selectedCustomerForBill, setSelectedCustomerForBill] = useState<Customer | null>(null);
   const [quotationModalOpen, setQuotationModalOpen] = useState(false);
@@ -5426,6 +5428,22 @@ const AdminDashboard = () => {
     setPhonePopupOpen(true);
   };
 
+  const handleWhatsAppClick = (customer: Customer) => {
+    const phone = customer?.phone || '';
+    const altPhone = (customer as any)?.alternate_phone || (customer as any)?.alternatePhone;
+    if (altPhone && String(altPhone).trim()) {
+      setSelectedCustomerWhatsApp(customer);
+      setWhatsappPopupOpen(true);
+      return;
+    }
+    if (!phone) {
+      toast.error('Phone number not available');
+      return;
+    }
+    const whatsappUrl = `https://wa.me/${formatPhoneForWhatsApp(phone)}`;
+    window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+  };
+
   const handleGenerateBill = async (customer: Customer) => {
     const c = await loadFullCustomerForAction(customer);
     setSelectedCustomerForBill(c);
@@ -9846,6 +9864,7 @@ const AdminDashboard = () => {
                 <ContactSection
                   customer={customer}
                   handlePhoneClick={handlePhoneClick}
+                  handleWhatsAppClick={handleWhatsAppClick}
                   currentLocation={currentLocation}
                   isGettingLocation={isGettingLocation}
                   customerDistances={customerDistances}
@@ -11441,6 +11460,14 @@ const AdminDashboard = () => {
         open={phonePopupOpen}
         onOpenChange={setPhonePopupOpen}
         customer={selectedCustomerPhone}
+      />
+
+      {/* WhatsApp Numbers Popup */}
+      <PhoneNumbersDialog
+        open={whatsappPopupOpen}
+        onOpenChange={setWhatsappPopupOpen}
+        customer={selectedCustomerWhatsApp}
+        mode="whatsapp"
       />
 
       {/* Reassign Job Dialog */}

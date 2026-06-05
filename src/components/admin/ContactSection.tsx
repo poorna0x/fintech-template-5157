@@ -9,6 +9,7 @@ import { formatPhoneForWhatsApp } from '@/lib/utils';
 interface ContactSectionProps {
   customer: Customer;
   handlePhoneClick: (customer: Customer) => void;
+  handleWhatsAppClick?: (customer: Customer) => void;
   currentLocation: { lat: number; lng: number } | null;
   isGettingLocation: boolean;
   customerDistances: Record<string, { distance: string; duration: string; isCalculating: boolean }>;
@@ -22,6 +23,7 @@ interface ContactSectionProps {
 export const ContactSection: React.FC<ContactSectionProps> = ({
   customer,
   handlePhoneClick,
+  handleWhatsAppClick,
   currentLocation,
   isGettingLocation,
   customerDistances,
@@ -39,7 +41,8 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
             <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
               <button 
                 onClick={() => {
-                  if (customer.alternate_phone) {
+                  const altPhone = (customer as any).alternate_phone || (customer as any).alternatePhone;
+                  if (altPhone) {
                     handlePhoneClick(customer);
                   } else {
                     window.open(`tel:${customer.phone}`, '_self');
@@ -86,13 +89,18 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
             <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
               <button
                 onClick={() => {
+                  if (handleWhatsAppClick) {
+                    handleWhatsAppClick(customer);
+                    return;
+                  }
+
                   const phoneToUse = customer.phone || '';
-                  
+
                   if (!phoneToUse) {
                     toast.error('Phone number not available');
                     return;
                   }
-                  
+
                   const formattedPhone = formatPhoneForWhatsApp(phoneToUse);
                   const whatsappUrl = `https://wa.me/${formattedPhone}`;
                   window.open(whatsappUrl, '_blank', 'noopener,noreferrer');

@@ -4,25 +4,80 @@ import { Button } from '@/components/ui/button';
 import { Phone } from 'lucide-react';
 import { Customer } from '@/types';
 import { customerNameClassName } from '@/lib/customerDisplay';
+import { WhatsAppIcon } from '../WhatsAppIcon';
+import { formatPhoneForWhatsApp } from '@/lib/utils';
+import { toast } from 'sonner';
+
+type ContactMode = 'call' | 'whatsapp';
 
 interface PhoneNumbersDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   customer: Customer | null;
+  /** 'call' shows tel: links, 'whatsapp' opens wa.me. Defaults to 'call'. */
+  mode?: ContactMode;
 }
 
-const PhoneNumbersDialog: React.FC<PhoneNumbersDialogProps> = ({ open, onOpenChange, customer }) => {
+const openWhatsApp = (phone?: string | null) => {
+  const raw = (phone || '').trim();
+  if (!raw) {
+    toast.error('Phone number not available');
+    return;
+  }
+  const formatted = formatPhoneForWhatsApp(raw);
+  window.open(`https://wa.me/${formatted}`, '_blank', 'noopener,noreferrer');
+};
+
+const PhoneNumbersDialog: React.FC<PhoneNumbersDialogProps> = ({ open, onOpenChange, customer, mode = 'call' }) => {
+  const isWhatsApp = mode === 'whatsapp';
+  const alternatePhone = (customer as any)?.alternate_phone || (customer as any)?.alternatePhone;
+
+  const renderAction = (phone?: string | null, variant: 'primary' | 'secondary' = 'primary') => {
+    const primaryClasses = 'bg-blue-600 hover:bg-blue-700';
+    const secondaryClasses = 'bg-gray-600 hover:bg-gray-700';
+    const waClasses = 'bg-green-600 hover:bg-green-700';
+    const colorClasses = isWhatsApp ? waClasses : variant === 'primary' ? primaryClasses : secondaryClasses;
+
+    if (isWhatsApp) {
+      return (
+        <button
+          onClick={() => {
+            openWhatsApp(phone);
+            onOpenChange(false);
+          }}
+          className={`${colorClasses} text-white px-4 py-2 rounded-lg font-medium transition-colors inline-flex items-center gap-2`}
+        >
+          <WhatsAppIcon className="w-4 h-4" />
+          Message
+        </button>
+      );
+    }
+
+    return (
+      <a
+        href={`tel:${phone}`}
+        className={`${colorClasses} text-white px-4 py-2 rounded-lg font-medium transition-colors`}
+      >
+        Call
+      </a>
+    );
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Phone className="w-5 h-5 text-blue-600" />
-            Contact Numbers
+            {isWhatsApp ? (
+              <WhatsAppIcon className="w-5 h-5 text-green-600" />
+            ) : (
+              <Phone className="w-5 h-5 text-blue-600" />
+            )}
+            {isWhatsApp ? 'Send WhatsApp Message' : 'Contact Numbers'}
           </DialogTitle>
           <DialogDescription asChild>
             <span>
-              Choose a phone number to call for{' '}
+              {isWhatsApp ? 'Choose a number to message ' : 'Choose a phone number to call for '}
               <span className={customerNameClassName(customer)}>
                 {(customer as any)?.full_name || customer?.fullName || 'customer'}
               </span>
@@ -36,27 +91,17 @@ const PhoneNumbersDialog: React.FC<PhoneNumbersDialogProps> = ({ open, onOpenCha
               <div className="font-semibold text-gray-900">{customer?.phone}</div>
               <div className="text-sm text-blue-600 font-medium">Primary Number</div>
             </div>
-            <a 
-              href={`tel:${customer?.phone}`}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
-            >
-              Call
-            </a>
+            {renderAction(customer?.phone, 'primary')}
           </div>
-          
+
           {/* Secondary Phone */}
-          {(customer as any)?.alternate_phone && (
+          {alternatePhone && (
             <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
               <div>
-                <div className="font-semibold text-gray-900">{(customer as any).alternate_phone}</div>
+                <div className="font-semibold text-gray-900">{alternatePhone}</div>
                 <div className="text-sm text-gray-600 font-medium">Secondary Number</div>
               </div>
-              <a 
-                href={`tel:${(customer as any).alternate_phone}`}
-                className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
-              >
-                Call
-              </a>
+              {renderAction(alternatePhone, 'secondary')}
             </div>
           )}
         </div>
@@ -75,4 +120,3 @@ const PhoneNumbersDialog: React.FC<PhoneNumbersDialogProps> = ({ open, onOpenCha
 };
 
 export default PhoneNumbersDialog;
-
