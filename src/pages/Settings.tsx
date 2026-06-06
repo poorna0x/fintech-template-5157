@@ -35,7 +35,8 @@ import {
   RefreshCw,
   DollarSign,
   Bell,
-  Lock
+  Lock,
+  GitMerge
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
@@ -53,6 +54,7 @@ import { SettingsRemindersDialog } from '@/components/reminders/SettingsReminder
 import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
 import { SettingsPendingPaymentsDialogV2 } from '@/components/reminders/PendingPaymentsDialogV2';
 import AdvancedCustomerSearchDialog from '@/components/admin/AdvancedCustomerSearchDialog';
+import MergeCustomersDialog from '@/components/admin/MergeCustomersDialog';
 import QRCodeStyling from 'qr-code-styling';
 
 /** PostgREST error when a table was never created or was dropped (e.g. booking_abandonments). */
@@ -198,6 +200,8 @@ const Settings = () => {
 
   // Download data state
   const [isDownloading, setIsDownloading] = useState(false);
+
+  const [mergeCustomersOpen, setMergeCustomersOpen] = useState(false);
 
   // Todo management states
   const [todos, setTodos] = useState<Array<{ id: string; text: string; created_at: string }>>([]);
@@ -2285,6 +2289,45 @@ const Settings = () => {
             </CardContent>
           </Card>
 
+          {/* Merge duplicate customers */}
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+                    <GitMerge className="w-5 h-5" />
+                    Merge Customers
+                  </CardTitle>
+                  <CardDescription className="text-sm mt-1">
+                    Combine two customer records when the same person booked with a different number
+                  </CardDescription>
+                </div>
+                <Button
+                  onClick={() => setMergeCustomersOpen(true)}
+                  disabled={isManager}
+                  title={isManager ? managerRestrictedTitle : undefined}
+                  variant="outline"
+                  className="w-full sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                  size="sm"
+                >
+                  {isManager ? (
+                    <Lock className="w-4 h-4 mr-2" />
+                  ) : (
+                    <GitMerge className="w-4 h-4 mr-2" />
+                  )}
+                  {isManager ? 'Restricted' : 'Merge duplicate customers'}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-6 pt-0">
+              <p className="text-sm text-muted-foreground">
+                Moves all jobs, AMC, invoices, and call history to the keeper record. The duplicate
+                phone is saved as alternate phone. Requires{' '}
+                <code className="text-xs">merge-customers-admin-rpc.sql</code> in Supabase.
+              </p>
+            </CardContent>
+          </Card>
+
           {/* Data Export Section - At Bottom */}
           <Card>
             <CardHeader>
@@ -2338,6 +2381,13 @@ const Settings = () => {
           </Card>
                 </div>
       </div>
+
+      <MergeCustomersDialog
+        open={mergeCustomersOpen}
+        onOpenChange={setMergeCustomersOpen}
+        disabled={isManager}
+        disabledTitle={managerRestrictedTitle}
+      />
 
       {/* Add/Edit Technician Dialog */}
       <Dialog open={addTechnicianDialogOpen || editTechnicianDialogOpen} onOpenChange={(open) => {

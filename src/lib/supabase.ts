@@ -711,7 +711,25 @@ export const db = {
         .select(); // Select to verify deletion
       
       return { data, error };
-    }
+    },
+
+    /** Admin: preview what merge_customers_admin will move (requires SQL migration). */
+    async previewMerge(primaryId: string, secondaryId: string) {
+      const { data, error } = await supabase.rpc('preview_merge_customers_admin', {
+        p_primary: primaryId,
+        p_secondary: secondaryId,
+      } as never);
+      return { data: data as CustomerMergePreview | null, error };
+    },
+
+    /** Admin: merge duplicate customer into keeper (atomic RPC). */
+    async merge(primaryId: string, secondaryId: string) {
+      const { data, error } = await supabase.rpc('merge_customers_admin', {
+        p_primary: primaryId,
+        p_secondary: secondaryId,
+      } as never);
+      return { data: data as CustomerMergeResult | null, error };
+    },
   },
 
   // Job operations
@@ -5102,6 +5120,44 @@ export const validatePincode = async (pincode: string): Promise<boolean> => {
   // You can implement actual pincode validation here
   return pincode.length === 6 && /^\d+$/.test(pincode);
 };
+
+export interface CustomerMergePreview {
+  primary: {
+    id: string;
+    customer_id: string;
+    full_name: string;
+    phone: string;
+    alternate_phone?: string | null;
+    customer_since?: string | null;
+    jobs_count: number;
+  };
+  secondary: {
+    id: string;
+    customer_id: string;
+    full_name: string;
+    phone: string;
+    alternate_phone?: string | null;
+    customer_since?: string | null;
+    jobs_count: number;
+  };
+  counts: {
+    jobs: number;
+    amc_contracts: number;
+    call_history: number;
+    tax_invoices: number;
+    reminders: number;
+  };
+}
+
+export interface CustomerMergeResult {
+  primary_customer_id: string;
+  deleted_customer_id: string;
+  jobs_moved: number;
+  amc_contracts_moved: number;
+  call_history_moved: number;
+  tax_invoices_moved: number;
+  reminders_moved: number;
+}
 
 function isRpcNotFoundError(error: unknown): boolean {
   const e = error as { code?: string; message?: string };
