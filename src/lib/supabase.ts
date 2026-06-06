@@ -2053,6 +2053,71 @@ export const db = {
     },
 
     /**
+     * Slim per-job rows for repeat-vs-new customer analysis within a date range.
+     * Only the columns needed to bucket customers by month and sum revenue (minimal egress).
+     */
+    async getCustomerActivityInRange(startDate: Date, endDate: Date) {
+      const cols = 'customer_id, created_at, status, payment_amount, actual_cost';
+      const startISO = startDate.toISOString();
+      const endISO = endDate.toISOString();
+      const { data, error } = await supabase
+        .from('jobs')
+        .select(cols)
+        .gte('created_at', startISO)
+        .lte('created_at', endISO)
+        .not('customer_id', 'is', null)
+        .order('created_at', { ascending: true });
+      return { data: data || [], error };
+    },
+
+    /**
+     * Returns the subset of `customerIds` that had at least one job strictly before `beforeDate`.
+     * Selects only customer_id (chunked) for minimal egress.
+     */
+    async getReturningCustomerIds(
+      customerIds: string[],
+      beforeDate: Date
+    ): Promise<{ data: string[]; error: any }> {
+      const unique = [...new Set((customerIds || []).filter(Boolean))];
+      if (unique.length === 0) return { data: [], error: null };
+
+      const beforeISO = beforeDate.toISOString();
+      const chunkSize = 100;
+      const chunks: string[][] = [];
+      for (let i = 0; i < unique.length; i += chunkSize) {
+        chunks.push(unique.slice(i, i + chunkSize));
+      }
+      const returning = new Set<string>();
+      const chunkResults = await Promise.all(
+        chunks.map((chunk) =>
+          supabase.from('jobs').select('customer_id').in('customer_id', chunk).lt('created_at', beforeISO)
+        )
+      );
+      for (const { data, error } of chunkResults) {
+        if (error) return { data: [], error };
+        for (const row of data || []) {
+          const cid = (row as Record<string, unknown>).customer_id as string | undefined;
+          if (cid) returning.add(cid);
+        }
+      }
+      return { data: [...returning], error: null };
+    },
+
+    /**
+     * All-time slim customer activity (recent N jobs) for repeat-vs-new trends. Minimal columns.
+     */
+    async getCustomerActivitySlimRecent(limit: number = 8000) {
+      const cols = 'customer_id, created_at, status, payment_amount, actual_cost';
+      const { data, error } = await supabase
+        .from('jobs')
+        .select(cols)
+        .not('customer_id', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(Math.min(Math.max(1, limit), 15000));
+      return { data: data || [], error };
+    },
+
+    /**
      * Jobs created in range only (minimal columns). Used for return-complaints so we don't need full getForAnalytics.
      */
     async getJobsCreatedInRange(startDate: Date, endDate: Date) {

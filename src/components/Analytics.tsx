@@ -45,6 +45,8 @@ interface AnalyticsData {
     completedJobs: number;
     periodEarnings: number;
     returnComplaints?: number; // Return complaints allocated to this technician
+    // Per service sub-type breakdown for this technician's completed jobs (for avg bill view).
+    serviceTypeBreakdown?: Array<{ serviceType: string; count: number; amount: number }>;
   }>;
   completionRate: number;
   denialRate: number;
@@ -143,6 +145,23 @@ interface AnalyticsData {
     byOriginalSource: Array<{ leadType: string; count: number; revenue: number }>;
     byTechnician: Array<{ technicianId: string; technicianName: string; count: number; revenue: number }>;
   };
+  /** Loaded on demand: repeat vs new customer mix for the selected period (slim queries — minimal egress). */
+  repeatVsNew?: {
+    activeCustomers: number;
+    newCustomers: number;
+    repeatCustomers: number;
+    repeatRate: number; // %
+    newRevenue: number;
+    repeatRevenue: number;
+    isAllTime: boolean;
+    monthly: Array<{
+      month: string; // YYYY-MM
+      label: string; // e.g. "Jan 2026"
+      newCustomers: number;
+      returningCustomers: number;
+      revenue: number;
+    }>;
+  };
 }
 
 type PeriodOption = '7d' | '30d' | 'thisWeek' | 'thisMonth' | 'previousMonth' | 'customMonth' | '3m' | '6m' | '1y' | 'all' | 'custom';
@@ -230,6 +249,8 @@ const Analytics = () => {
   const [loadingLocationStats, setLoadingLocationStats] = useState(false);
   const [loadingBrandStats, setLoadingBrandStats] = useState(false);
   const [loadingDirectConversion, setLoadingDirectConversion] = useState(false);
+  const [loadingRepeatVsNew, setLoadingRepeatVsNew] = useState(false);
+  const [selectedTechForAvg, setSelectedTechForAvg] = useState<string>('');
 
   useEffect(() => {
     loadAnalytics();
@@ -732,6 +753,7 @@ const Analytics = () => {
         completedJobs: number;
         periodEarnings: number;
         returnComplaints: number;
+        serviceTypes: Record<string, { count: number; amount: number }>;
       }> = {};
       
       // Get all technicians
@@ -757,7 +779,8 @@ const Analytics = () => {
             totalJobs: 0,
             completedJobs: 0,
             periodEarnings: 0,
-            returnComplaints: 0
+            returnComplaints: 0,
+            serviceTypes: {}
           };
         }
         
@@ -770,6 +793,14 @@ const Analytics = () => {
           // Use payment_amount from completed jobs as earnings metric
           const jobAmount = Number(job.payment_amount || job.actual_cost || 0);
           technicianStatsMap[techId].periodEarnings += jobAmount;
+
+          // Per service sub-type breakdown (for avg bill view) — reuses already-fetched jobs.
+          const subType = job.service_sub_type || job.serviceSubType || 'Unknown';
+          if (!technicianStatsMap[techId].serviceTypes[subType]) {
+            technicianStatsMap[techId].serviceTypes[subType] = { count: 0, amount: 0 };
+          }
+          technicianStatsMap[techId].serviceTypes[subType].count += 1;
+          technicianStatsMap[techId].serviceTypes[subType].amount += jobAmount;
         }
       });
       
@@ -1042,6 +1073,12 @@ const Analytics = () => {
         denialRate: jobs.length > 0 ? (jobs.filter((j: any) => j && (j.status === 'DENIED' || j.status === 'CANCELLED')).length / jobs.length) * 100 : 0,
         returnComplaints: undefined, // Loaded on demand when user clicks "Return Complaints" header
         technicianStats: Object.values(technicianStatsMap)
+          .map((t) => ({
+            ...t,
+            serviceTypeBreakdown: Object.entries(t.serviceTypes)
+              .map(([serviceType, s]) => ({ serviceType, count: s.count, amount: s.amount }))
+              .sort((a, b) => b.amount - a.amount),
+          }))
           .sort((a, b) => b.completedJobs - a.completedJobs),
         leadSourceBreakdown: Object.entries(leadSourceMap)
           .map(([_, stats]) => ({ 
@@ -1544,6 +1581,144 @@ const Analytics = () => {
     }
   };
 
+  const loadRepeatVsNew = async () => {
+    if (loadingRepeatVsNew) return;
+    setLoadingRepeatVsNew(true);
+    try {
+      const { startDate, endDate } = getDateRange();
+      const isAllTime = !(startDate && endDate);
+
+      let rows: any[] = [];
+      const returningSet = new Set<string>();
+
+      if (startDate && endDate) {
+        // Ranged: jobs created within the period (slim) + which of those customers existed before the period.
+        const { data, error } = await db.jobs.getCustomerActivityInRange(startDate, endDate);
+        if (error) throw error;
+        rows = Array.isArray(data) ? data : [];
+        const customerIds = [...new Set(rows.map((r: any) => r?.customer_id).filter(Boolean))] as string[];
+        if (customerIds.length > 0) {
+          const { data: ret, error: retErr } = await db.jobs.getReturningCustomerIds(customerIds, startDate);
+          if (retErr) throw retErr;
+          for (const cid of ret || []) returningSet.add(cid);
+        }
+      } else {
+        // All-time: recent slim jobs; "returning" = customers with more than one job overall.
+        const { data, error } = await db.jobs.getCustomerActivitySlimRecent(8000);
+        if (error) throw error;
+        rows = Array.isArray(data) ? data : [];
+        const counts = new Map<string, number>();
+        for (const r of rows) {
+          const cid = r?.customer_id;
+          if (!cid) continue;
+          counts.set(cid, (counts.get(cid) || 0) + 1);
+        }
+        for (const [cid, c] of counts) if (c > 1) returningSet.add(cid);
+      }
+
+      const monthKey = (iso: string): string => {
+        const d = new Date(iso);
+        if (isNaN(d.getTime())) return '';
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      };
+      const jobAmount = (r: any): number =>
+        r?.status === 'COMPLETED' ? Number(r.payment_amount || r.actual_cost || 0) : 0;
+
+      // Aggregate per customer (active months, earliest month, revenue).
+      const byCustomer = new Map<string, { months: Set<string>; firstMonth: string; revenue: number }>();
+      for (const r of rows) {
+        const cid = r?.customer_id;
+        const m = r?.created_at ? monthKey(r.created_at) : '';
+        if (!cid || !m) continue;
+        let agg = byCustomer.get(cid);
+        if (!agg) {
+          agg = { months: new Set(), firstMonth: m, revenue: 0 };
+          byCustomer.set(cid, agg);
+        }
+        agg.months.add(m);
+        if (m < agg.firstMonth) agg.firstMonth = m;
+        agg.revenue += jobAmount(r);
+      }
+
+      let newCustomers = 0;
+      let repeatCustomers = 0;
+      let newRevenue = 0;
+      let repeatRevenue = 0;
+      const monthlyMap = new Map<string, { newCustomers: number; returningCustomers: number; revenue: number }>();
+      const ensureMonth = (m: string) => {
+        let bucket = monthlyMap.get(m);
+        if (!bucket) {
+          bucket = { newCustomers: 0, returningCustomers: 0, revenue: 0 };
+          monthlyMap.set(m, bucket);
+        }
+        return bucket;
+      };
+
+      for (const [cid, agg] of byCustomer) {
+        const isNew = !returningSet.has(cid);
+        if (isNew) {
+          newCustomers += 1;
+          newRevenue += agg.revenue;
+        } else {
+          repeatCustomers += 1;
+          repeatRevenue += agg.revenue;
+        }
+        for (const m of agg.months) {
+          const bucket = ensureMonth(m);
+          if (isNew && m === agg.firstMonth) bucket.newCustomers += 1;
+          else bucket.returningCustomers += 1;
+        }
+      }
+
+      // Per-month revenue (job level) so the trend revenue matches the period revenue.
+      for (const r of rows) {
+        const m = r?.created_at ? monthKey(r.created_at) : '';
+        if (!m) continue;
+        ensureMonth(m).revenue += jobAmount(r);
+      }
+
+      const monthly = [...monthlyMap.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([month, v]) => {
+          const [y, mm] = month.split('-').map(Number);
+          const label = new Date(y, (mm || 1) - 1, 1).toLocaleDateString('en-US', {
+            month: 'short',
+            year: 'numeric',
+          });
+          return { month, label, ...v };
+        });
+
+      const activeCustomers = byCustomer.size;
+      const repeatRate = activeCustomers > 0 ? (repeatCustomers / activeCustomers) * 100 : 0;
+
+      setAnalytics((prev) =>
+        prev
+          ? {
+              ...prev,
+              repeatVsNew: {
+                activeCustomers,
+                newCustomers,
+                repeatCustomers,
+                repeatRate,
+                newRevenue,
+                repeatRevenue,
+                isAllTime,
+                monthly,
+              },
+            }
+          : prev
+      );
+
+      if (activeCustomers === 0) {
+        toast.info('No customer activity found for this period.');
+      }
+    } catch (e: any) {
+      toast.error('Failed to load repeat vs new customers: ' + (e?.message || 'Unknown error'));
+    } finally {
+      setLoadingRepeatVsNew(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -1816,6 +1991,89 @@ const Analytics = () => {
         </CardContent>
       </Card>
 
+      {/* Technician avg bill by service type (derived from already-loaded technicianStats — no extra egress) */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <CardTitle className="flex items-center gap-2">
+              <DollarSign className="w-5 h-5" />
+              Technician avg bill by service type
+            </CardTitle>
+            <div className="w-full sm:w-64">
+              <Select
+                value={selectedTechForAvg}
+                onValueChange={(v) => setSelectedTechForAvg(v)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a technician" />
+                </SelectTrigger>
+                <SelectContent>
+                  {analytics.technicianStats
+                    .filter((t) => (t.serviceTypeBreakdown?.length ?? 0) > 0)
+                    .map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        {t.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <CardDescription>Avg bill per service sub-type for {getPeriodLabel()}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {!selectedTechForAvg ? (
+            <p className="text-sm text-gray-500 py-4">Select a technician to see their average bill per service type.</p>
+          ) : (() => {
+            const tech = analytics.technicianStats.find((t) => t.id === selectedTechForAvg);
+            const rows = tech?.serviceTypeBreakdown ?? [];
+            if (!tech || rows.length === 0) {
+              return <p className="text-sm text-gray-500 py-4">No completed jobs for this technician in the selected period.</p>;
+            }
+            const totalCount = rows.reduce((s, r) => s + r.count, 0);
+            const totalAmount = rows.reduce((s, r) => s + r.amount, 0);
+            return (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Service Type</TableHead>
+                      <TableHead className="text-right">Completed Jobs</TableHead>
+                      <TableHead className="text-right">Total Billing</TableHead>
+                      <TableHead className="text-right">Avg Bill</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {rows.map((r) => (
+                      <TableRow key={r.serviceType}>
+                        <TableCell className="font-medium">{r.serviceType}</TableCell>
+                        <TableCell className="text-right">{r.count}</TableCell>
+                        <TableCell className="text-right font-semibold text-green-600">
+                          ₹ {formatCurrency(r.amount)}
+                        </TableCell>
+                        <TableCell className="text-right font-semibold text-emerald-600">
+                          ₹ {formatCurrency(r.count > 0 ? r.amount / r.count : 0)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow className="border-t-2 border-gray-200">
+                      <TableCell className="font-semibold">All service types</TableCell>
+                      <TableCell className="text-right font-semibold">{totalCount}</TableCell>
+                      <TableCell className="text-right font-semibold text-green-600">
+                        ₹ {formatCurrency(totalAmount)}
+                      </TableCell>
+                      <TableCell className="text-right font-semibold text-emerald-600">
+                        ₹ {formatCurrency(totalCount > 0 ? totalAmount / totalCount : 0)}
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+            );
+          })()}
+        </CardContent>
+      </Card>
+
       {/* Performance Summary */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card>
@@ -1898,7 +2156,7 @@ const Analytics = () => {
                   className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900/50 p-4 sm:p-5 shadow-sm"
                 >
                   <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-3">{leadSource.leadType}</h3>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-4">
                     <div className="rounded-lg bg-gray-50 dark:bg-gray-800/50 px-3 py-2 border border-gray-100 dark:border-gray-700/50">
                       <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Jobs</div>
                       <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">{leadSource.count}</div>
@@ -1906,6 +2164,10 @@ const Analytics = () => {
                     <div className="rounded-lg bg-gray-50 dark:bg-gray-800/50 px-3 py-2 border border-gray-100 dark:border-gray-700/50">
                       <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Billing</div>
                       <div className="text-lg font-semibold text-green-600 dark:text-green-500">₹ {formatCurrency(leadSource.amount)}</div>
+                    </div>
+                    <div className="rounded-lg bg-gray-50 dark:bg-gray-800/50 px-3 py-2 border border-gray-100 dark:border-gray-700/50">
+                      <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Avg Bill</div>
+                      <div className="text-lg font-semibold text-emerald-600 dark:text-emerald-500">₹ {formatCurrency(leadSource.count > 0 ? leadSource.amount / leadSource.count : 0)}</div>
                     </div>
                     <div className="rounded-lg bg-gray-50 dark:bg-gray-800/50 px-3 py-2 border border-gray-100 dark:border-gray-700/50">
                       <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Lead Cost</div>
@@ -1927,6 +2189,7 @@ const Analytics = () => {
                               <TableHead>Service Type</TableHead>
                               <TableHead className="text-right">Jobs</TableHead>
                               <TableHead className="text-right">Amount</TableHead>
+                              <TableHead className="text-right">Avg Bill</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -1936,6 +2199,9 @@ const Analytics = () => {
                                 <TableCell className="text-right">{serviceType.count}</TableCell>
                                 <TableCell className="text-right font-semibold text-green-600">
                                   ₹ {formatCurrency(serviceType.amount)}
+                                </TableCell>
+                                <TableCell className="text-right font-semibold text-emerald-600">
+                                  ₹ {formatCurrency(serviceType.count > 0 ? serviceType.amount / serviceType.count : 0)}
                                 </TableCell>
                               </TableRow>
                             ))}
@@ -1968,6 +2234,7 @@ const Analytics = () => {
                     <TableHead>Service Type</TableHead>
                     <TableHead className="text-right">Number of Calls</TableHead>
                     <TableHead className="text-right">Total Revenue</TableHead>
+                    <TableHead className="text-right">Avg Bill</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1977,6 +2244,9 @@ const Analytics = () => {
                       <TableCell className="text-right">{item.count}</TableCell>
                       <TableCell className="text-right font-semibold text-green-600">
                         ₹ {formatCurrency(item.amount)}
+                      </TableCell>
+                      <TableCell className="text-right font-semibold text-emerald-600">
+                        ₹ {formatCurrency(item.count > 0 ? item.amount / item.count : 0)}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -2333,6 +2603,138 @@ const Analytics = () => {
           {analytics.directWebsiteConversions && analytics.directWebsiteConversions.totalJobs === 0 && (
             <p className="text-sm text-gray-500">None for this period.</p>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Repeat vs new customers - load on demand */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="w-5 h-5" />
+            Repeat vs new customers
+          </CardTitle>
+          <CardDescription>Customer mix for {getPeriodLabel()}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {!analytics.repeatVsNew && (
+            <Button onClick={loadRepeatVsNew} disabled={loadingRepeatVsNew} variant="outline">
+              {loadingRepeatVsNew ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Loading...
+                </>
+              ) : (
+                'Load'
+              )}
+            </Button>
+          )}
+
+          {analytics.repeatVsNew && analytics.repeatVsNew.activeCustomers === 0 && (
+            <p className="text-sm text-gray-500">No customer activity for this period.</p>
+          )}
+
+          {analytics.repeatVsNew && analytics.repeatVsNew.activeCustomers > 0 && (() => {
+            const rv = analytics.repeatVsNew!;
+            const split = rv.newCustomers + rv.repeatCustomers;
+            const newPct = split > 0 ? (rv.newCustomers / split) * 100 : 0;
+            const repeatPct = split > 0 ? (rv.repeatCustomers / split) * 100 : 0;
+            const maxMonthly = Math.max(
+              1,
+              ...rv.monthly.map((m) => m.newCustomers + m.returningCustomers)
+            );
+            return (
+              <div className="space-y-5">
+                {rv.isAllTime && (
+                  <p className="text-xs text-gray-500">
+                    All-time view: "new" = customers with a single job; "returning" = customers with
+                    repeat jobs. Pick a date range for true period-over-period cohorts.
+                  </p>
+                )}
+
+                {/* Summary cards */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="rounded-lg border border-gray-200 p-3">
+                    <div className="text-xs text-gray-500">Active customers</div>
+                    <div className="text-2xl font-bold text-black">{rv.activeCustomers}</div>
+                  </div>
+                  <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+                    <div className="text-xs text-blue-700">New customers</div>
+                    <div className="text-2xl font-bold text-blue-700">{rv.newCustomers}</div>
+                  </div>
+                  <div className="rounded-lg border border-green-200 bg-green-50 p-3">
+                    <div className="text-xs text-green-700">Returning customers</div>
+                    <div className="text-2xl font-bold text-green-700">{rv.repeatCustomers}</div>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 p-3">
+                    <div className="text-xs text-gray-500">Repeat rate</div>
+                    <div className="text-2xl font-bold text-black">{rv.repeatRate.toFixed(1)}%</div>
+                  </div>
+                </div>
+
+                {/* New vs returning split bar */}
+                <div className="space-y-1.5">
+                  <div className="flex h-3 w-full overflow-hidden rounded-full bg-gray-100">
+                    <div className="h-3 bg-blue-500" style={{ width: `${newPct}%` }} />
+                    <div className="h-3 bg-green-500" style={{ width: `${repeatPct}%` }} />
+                  </div>
+                  <div className="flex flex-wrap gap-4 text-xs text-gray-600">
+                    <span className="flex items-center gap-1">
+                      <span className="inline-block h-2.5 w-2.5 rounded-sm bg-blue-500" />
+                      New · {newPct.toFixed(0)}% · ₹ {formatCurrency(rv.newRevenue)}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="inline-block h-2.5 w-2.5 rounded-sm bg-green-500" />
+                      Returning · {repeatPct.toFixed(0)}% · ₹ {formatCurrency(rv.repeatRevenue)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Monthly trend */}
+                {rv.monthly.length > 0 && (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Month</TableHead>
+                          <TableHead>Trend</TableHead>
+                          <TableHead className="text-right">New</TableHead>
+                          <TableHead className="text-right">Returning</TableHead>
+                          <TableHead className="text-right">Revenue</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {rv.monthly.map((m) => {
+                          const total = m.newCustomers + m.returningCustomers;
+                          const nW = (m.newCustomers / maxMonthly) * 100;
+                          const rW = (m.returningCustomers / maxMonthly) * 100;
+                          return (
+                            <TableRow key={m.month}>
+                              <TableCell className="font-medium whitespace-nowrap">{m.label}</TableCell>
+                              <TableCell className="min-w-[140px]">
+                                <div className="flex h-3 w-full overflow-hidden rounded-full bg-gray-100">
+                                  <div className="h-3 bg-blue-500" style={{ width: `${nW}%` }} />
+                                  <div className="h-3 bg-green-500" style={{ width: `${rW}%` }} />
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-right text-blue-700 font-medium">
+                                {m.newCustomers}
+                              </TableCell>
+                              <TableCell className="text-right text-green-700 font-medium">
+                                {m.returningCustomers}
+                              </TableCell>
+                              <TableCell className="text-right font-medium text-green-600">
+                                ₹ {formatCurrency(m.revenue)}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </CardContent>
       </Card>
 
