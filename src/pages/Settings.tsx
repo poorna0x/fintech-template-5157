@@ -1872,6 +1872,82 @@ const Settings = () => {
             </CardContent>
           </Card>
 
+          {/* Merge duplicate customers */}
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+                    <GitMerge className="w-5 h-5" />
+                    Merge Customers
+                  </CardTitle>
+                  <CardDescription className="text-sm mt-1">
+                    Combine two customer records when the same person booked with a different number
+                  </CardDescription>
+                </div>
+                <Button
+                  onClick={() => setMergeCustomersOpen(true)}
+                  disabled={isManager}
+                  title={isManager ? managerRestrictedTitle : undefined}
+                  variant="outline"
+                  className="w-full sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                  size="sm"
+                >
+                  {isManager ? (
+                    <Lock className="w-4 h-4 mr-2" />
+                  ) : (
+                    <GitMerge className="w-4 h-4 mr-2" />
+                  )}
+                  {isManager ? 'Restricted' : 'Merge duplicate customers'}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-6 pt-0">
+              <p className="text-sm text-muted-foreground">
+                Moves all jobs, AMC, invoices, and call history to the keeper record. The duplicate
+                phone is saved as alternate phone. Requires{' '}
+                <code className="text-xs">merge-customers-admin-rpc.sql</code> in Supabase.
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Direct / Office Sales */}
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+                    <DollarSign className="w-5 h-5" />
+                    Direct / Office Sales
+                  </CardTitle>
+                  <CardDescription className="text-sm mt-1">
+                    Record a counter sale with no customer or technician (e.g. selling a part over the counter)
+                  </CardDescription>
+                </div>
+                <Button
+                  onClick={() => setDirectSaleOpen(true)}
+                  disabled={isManager}
+                  title={isManager ? managerRestrictedTitle : undefined}
+                  className="bg-green-600 hover:bg-green-700 w-full sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                  size="sm"
+                >
+                  {isManager ? (
+                    <Lock className="w-4 h-4 mr-2" />
+                  ) : (
+                    <DollarSign className="w-4 h-4 mr-2" />
+                  )}
+                  {isManager ? 'Restricted' : 'Record direct sale'}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-6 pt-0">
+              <p className="text-sm text-muted-foreground">
+                Saved as a completed, paid sale that counts toward revenue for the chosen date.
+                Optionally pick an inventory item to deduct stock and track cost for profit.
+              </p>
+            </CardContent>
+          </Card>
+
           {/* Styled QR Image Generator */}
           <Card>
             <CardHeader>
@@ -2288,82 +2364,6 @@ const Settings = () => {
                   className="ml-6 border-2 border-gray-300 dark:border-gray-600 data-[state=unchecked]:bg-white dark:data-[state=unchecked]:bg-gray-700"
                 />
               </div>
-            </CardContent>
-          </Card>
-
-          {/* Merge duplicate customers */}
-          <Card>
-            <CardHeader>
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                  <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
-                    <GitMerge className="w-5 h-5" />
-                    Merge Customers
-                  </CardTitle>
-                  <CardDescription className="text-sm mt-1">
-                    Combine two customer records when the same person booked with a different number
-                  </CardDescription>
-                </div>
-                <Button
-                  onClick={() => setMergeCustomersOpen(true)}
-                  disabled={isManager}
-                  title={isManager ? managerRestrictedTitle : undefined}
-                  variant="outline"
-                  className="w-full sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
-                  size="sm"
-                >
-                  {isManager ? (
-                    <Lock className="w-4 h-4 mr-2" />
-                  ) : (
-                    <GitMerge className="w-4 h-4 mr-2" />
-                  )}
-                  {isManager ? 'Restricted' : 'Merge duplicate customers'}
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="p-4 sm:p-6 pt-0">
-              <p className="text-sm text-muted-foreground">
-                Moves all jobs, AMC, invoices, and call history to the keeper record. The duplicate
-                phone is saved as alternate phone. Requires{' '}
-                <code className="text-xs">merge-customers-admin-rpc.sql</code> in Supabase.
-              </p>
-            </CardContent>
-          </Card>
-
-          {/* Direct / Office Sales */}
-          <Card>
-            <CardHeader>
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <div>
-                  <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
-                    <DollarSign className="w-5 h-5" />
-                    Direct / Office Sales
-                  </CardTitle>
-                  <CardDescription className="text-sm mt-1">
-                    Record a counter sale with no customer or technician (e.g. selling a part over the counter)
-                  </CardDescription>
-                </div>
-                <Button
-                  onClick={() => setDirectSaleOpen(true)}
-                  disabled={isManager}
-                  title={isManager ? managerRestrictedTitle : undefined}
-                  className="bg-green-600 hover:bg-green-700 w-full sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
-                  size="sm"
-                >
-                  {isManager ? (
-                    <Lock className="w-4 h-4 mr-2" />
-                  ) : (
-                    <DollarSign className="w-4 h-4 mr-2" />
-                  )}
-                  {isManager ? 'Restricted' : 'Record direct sale'}
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="p-4 sm:p-6 pt-0">
-              <p className="text-sm text-muted-foreground">
-                Saved as a completed, paid sale that counts toward revenue for the chosen date.
-                Optionally pick an inventory item to deduct stock and track cost for profit.
-              </p>
             </CardContent>
           </Card>
 
