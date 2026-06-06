@@ -55,6 +55,7 @@ import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
 import { SettingsPendingPaymentsDialogV2 } from '@/components/reminders/PendingPaymentsDialogV2';
 import AdvancedCustomerSearchDialog from '@/components/admin/AdvancedCustomerSearchDialog';
 import MergeCustomersDialog from '@/components/admin/MergeCustomersDialog';
+import DirectSaleDialog from '@/components/admin/DirectSaleDialog';
 import QRCodeStyling from 'qr-code-styling';
 
 /** PostgREST error when a table was never created or was dropped (e.g. booking_abandonments). */
@@ -202,6 +203,7 @@ const Settings = () => {
   const [isDownloading, setIsDownloading] = useState(false);
 
   const [mergeCustomersOpen, setMergeCustomersOpen] = useState(false);
+  const [directSaleOpen, setDirectSaleOpen] = useState(false);
 
   // Todo management states
   const [todos, setTodos] = useState<Array<{ id: string; text: string; created_at: string }>>([]);
@@ -2328,6 +2330,43 @@ const Settings = () => {
             </CardContent>
           </Card>
 
+          {/* Direct / Office Sales */}
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+                    <DollarSign className="w-5 h-5" />
+                    Direct / Office Sales
+                  </CardTitle>
+                  <CardDescription className="text-sm mt-1">
+                    Record a counter sale with no customer or technician (e.g. selling a part over the counter)
+                  </CardDescription>
+                </div>
+                <Button
+                  onClick={() => setDirectSaleOpen(true)}
+                  disabled={isManager}
+                  title={isManager ? managerRestrictedTitle : undefined}
+                  className="bg-green-600 hover:bg-green-700 w-full sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
+                  size="sm"
+                >
+                  {isManager ? (
+                    <Lock className="w-4 h-4 mr-2" />
+                  ) : (
+                    <DollarSign className="w-4 h-4 mr-2" />
+                  )}
+                  {isManager ? 'Restricted' : 'Record direct sale'}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-6 pt-0">
+              <p className="text-sm text-muted-foreground">
+                Saved as a completed, paid sale that counts toward revenue for the chosen date.
+                Optionally pick an inventory item to deduct stock and track cost for profit.
+              </p>
+            </CardContent>
+          </Card>
+
           {/* Data Export Section - At Bottom */}
           <Card>
             <CardHeader>
@@ -2388,6 +2427,8 @@ const Settings = () => {
         disabled={isManager}
         disabledTitle={managerRestrictedTitle}
       />
+
+      <DirectSaleDialog open={directSaleOpen} onOpenChange={setDirectSaleOpen} />
 
       {/* Add/Edit Technician Dialog */}
       <Dialog open={addTechnicianDialogOpen || editTechnicianDialogOpen} onOpenChange={(open) => {

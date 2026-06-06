@@ -431,6 +431,50 @@ export const db = {
       
       return { data, error };
     },
+
+    /**
+     * Find (or lazily create) the shared placeholder customer used for direct/office sales
+     * that aren't tied to a real customer or technician. One row is reused for all such sales.
+     */
+    async getOrCreateWalkIn() {
+      const WALK_IN_NAME = 'Walk-in / Office Sale';
+      const WALK_IN_PHONE = 'WALK-IN';
+
+      const { data: existing, error: findError } = await supabase
+        .from('customers')
+        .select('*')
+        .eq('full_name', WALK_IN_NAME)
+        .limit(1)
+        .maybeSingle();
+
+      if (findError) return { data: null, error: findError };
+      if (existing) return { data: existing, error: null };
+
+      const walkInPayload = {
+        full_name: WALK_IN_NAME,
+        phone: WALK_IN_PHONE,
+        alternate_phone: '',
+        email: '',
+        address: { street: '', area: 'Office', city: 'Bangalore', state: 'Karnataka', pincode: '' },
+        location: {
+          latitude: 0,
+          longitude: 0,
+          formattedAddress: 'Office',
+          googleLocation: '',
+        },
+        visible_address: 'Office',
+        service_type: 'RO',
+        brand: '',
+        model: '',
+        status: 'ACTIVE',
+        notes: 'Auto-created placeholder for direct/office sales (no customer or technician).',
+        customer_since: new Date().toISOString(),
+        preferred_time_slot: 'MORNING',
+        preferred_language: 'ENGLISH',
+      } as unknown as Database['public']['Tables']['customers']['Insert'];
+
+      return db.customers.create(walkInPayload);
+    },
     
     async getById(id: string) {
       const { data, error } = await supabase
@@ -1088,6 +1132,98 @@ export const db = {
       
       const { data, error } = await query;
       return { data, error };
+    },
+
+    /**
+     * Record a direct/office sale that has no real customer and no technician.
+     * Stored as a COMPLETED, fully-paid job against the shared walk-in customer so it
+     * flows into revenue, service-type and payment-method analytics for the sale date.
+     *
+     * When an inventory item is provided, the part cost (item price × qty) is stored in
+     * `parts_cost_total` so profit = sale amount − cost, and main stock is decremented.
+     */
+    async createDirectSale(params: {
+      amount: number;
+      item?: string;
+      saleDate: Date;
+      inventoryId?: string | null;
+      quantity?: number;
+      partsCost?: number;
+    }) {
+      const { amount, item, saleDate, inventoryId, quantity, partsCost } = params;
+      const qty = Math.max(0, Math.floor(Number(quantity) || 0));
+      const cost = Math.max(0, Number(partsCost) || 0);
+      const useInventory = !!inventoryId && qty > 0;
+
+      const { data: walkIn, error: customerError } = await db.customers.getOrCreateWalkIn();
+      if (customerError || !walkIn) {
+        return { data: null, error: customerError || { message: 'Could not resolve walk-in customer' } as any };
+      }
+
+      // Reserve stock first so an out-of-stock sale fails before any job row is created.
+      if (useInventory) {
+        const { error: decErr } = await db.inventory.decrementForJob(inventoryId as string, qty);
+        if (decErr) {
+          return { data: null, error: decErr };
+        }
+      }
+
+      // Anchor the sale to noon of the selected day so it lands inside the day's local range.
+      const completion = new Date(
+        saleDate.getFullYear(),
+        saleDate.getMonth(),
+        saleDate.getDate(),
+        12, 0, 0, 0
+      );
+      const completionISO = completion.toISOString();
+
+      const prefix = 'RO';
+      const timestamp = Date.now().toString().slice(-6);
+      const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+      const jobNumber = `${prefix}${timestamp}${random}`;
+
+      const baseItem = (item && item.trim()) ? item.trim() : 'Direct office sale';
+      const description = useInventory ? `${baseItem} × ${qty}` : baseItem;
+
+      const requirements: any[] = [{ lead_source: 'Office Sale' }];
+      if (useInventory) {
+        requirements.push({ direct_sale_inventory_id: inventoryId, direct_sale_quantity: qty, direct_sale_parts_cost: cost });
+      }
+
+      const jobData = {
+        job_number: jobNumber,
+        customer_id: (walkIn as any).id,
+        service_type: 'RO',
+        service_sub_type: 'Direct Sale',
+        brand: '',
+        model: '',
+        scheduled_date: completionISO,
+        scheduled_time_slot: 'MORNING',
+        service_address: (walkIn as any).address ?? {},
+        service_location: (walkIn as any).location ?? {},
+        status: 'COMPLETED',
+        priority: 'LOW',
+        description,
+        requirements,
+        estimated_cost: amount,
+        actual_cost: amount,
+        lead_cost: 0,
+        parts_cost_total: useInventory ? cost : 0,
+        payment_status: 'PAID',
+        payment_amount: amount,
+        assigned_technician_id: null,
+        end_time: completionISO,
+        completed_at: completionISO,
+      } as unknown as Database['public']['Tables']['jobs']['Insert'];
+
+      const result = await db.jobs.create(jobData);
+
+      // If the job failed to save after we reserved stock, put it back.
+      if ((result.error || !result.data) && useInventory) {
+        await db.inventory.incrementForJob(inventoryId as string, qty).catch(() => {});
+      }
+
+      return result;
     },
     
     async update(id: string, updates: Database['public']['Tables']['jobs']['Update']) {
