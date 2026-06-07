@@ -70,7 +70,16 @@ export type LetterheadBlock =
       columns: string[];
       rows: string[][];
     }
-  | { id: string; kind: 'image'; src: string; caption?: string; widthPercent?: number }
+  | {
+      id: string;
+      kind: 'image';
+      src: string;
+      caption?: string;
+      widthPercent?: number;
+      align?: 'left' | 'center' | 'right';
+      /** When true, the image floats and following text flows beside it. */
+      wrapText?: boolean;
+    }
   | { id: string; kind: 'pagebreak' };
 
 export interface LetterheadSignatory {
@@ -329,18 +338,36 @@ function renderBlockHtml(block: LetterheadBlock): string {
     }
     case 'image': {
       const width = Math.min(Math.max(block.widthPercent ?? 80, 10), 100);
+      const align = block.align === 'left' || block.align === 'right' ? block.align : 'center';
       const captionHtml = block.caption
         ? `<div class="lh-image-caption">${sanitizeForTemplate(block.caption)}</div>`
         : '';
-      return `
-        <div class="lh-image-block" style="text-align: center;">
-          <img src="${block.src}" alt="${sanitizeForTemplate(block.caption || '')}" style="max-width: ${width}%; height: auto; border: 1px solid #e5e7eb; padding: 4px; background: #fff;" />
+      const imgHtml = `<img src="${block.src}" alt="${sanitizeForTemplate(block.caption || '')}" style="width: 100%; height: auto; border: 1px solid #e5e7eb; padding: 4px; background: #fff; box-sizing: border-box;" />`;
+
+      // Wrap mode: float the image so the following text flows beside it.
+      // Center has no meaningful wrap direction, so it floats left.
+      if (block.wrapText) {
+        const floatSide = align === 'right' ? 'right' : 'left';
+        const margin = floatSide === 'left' ? '0 14px 6px 0' : '0 0 6px 14px';
+        return `
+        <div class="lh-image-block lh-image-wrap" style="float: ${floatSide}; width: ${width}%; margin: ${margin};">
+          ${imgHtml}
           ${captionHtml}
+        </div>
+      `;
+      }
+
+      return `
+        <div class="lh-image-block" style="text-align: ${align};">
+          <span style="display: inline-block; width: ${width}%;">
+            ${imgHtml}
+            ${captionHtml}
+          </span>
         </div>
       `;
     }
     case 'pagebreak':
-      return '<div class="lh-page-break" style="page-break-after: always; break-after: page;"></div>';
+      return '<div class="lh-page-break" style="clear: both; page-break-after: always; break-after: page;"></div>';
     default:
       return '';
   }
@@ -499,6 +526,7 @@ export function buildLetterheadInnerHtml(data: LetterheadDocumentData): string {
 
       <div class="lh-body">
         ${bodyBlocks}
+        <div style="clear: both;"></div>
       </div>
 
       ${signaturesHtml}
@@ -697,6 +725,8 @@ const LETTERHEAD_BASE_CSS = `
   .lh-table tr:nth-child(even) td { background: #f8fafc; }
 
   .lh-image-block { margin: 10px 0; }
+  /* Floated image that text wraps around; caption sits under the image. */
+  .lh-image-wrap { margin: 10px 0; }
   .lh-image-caption {
     margin-top: 4px;
     font-size: 11px;
@@ -708,6 +738,8 @@ const LETTERHEAD_BASE_CSS = `
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
+    /* Clear any wrapped (floated) image so signatures never overlap it. */
+    clear: both;
     /* Plenty of breathing room from the previous block (tables/text) so the
        seal can never bleed into the content above. */
     margin-top: 48px;
@@ -761,6 +793,7 @@ const LETTERHEAD_BASE_CSS = `
 
   .lh-notes {
     margin-top: 16px;
+    clear: both;
     border: 1px dashed #cbd5e1;
     padding: 10px 12px;
     border-radius: 6px;
@@ -769,7 +802,7 @@ const LETTERHEAD_BASE_CSS = `
   .lh-notes-title { font-weight: 600; color: #0f172a; margin-bottom: 4px; }
   .lh-notes-body { white-space: pre-wrap; font-size: 12px; color: #374151; }
 
-  .lh-terms { margin-top: 14px; }
+  .lh-terms { margin-top: 14px; clear: both; }
   .lh-terms-title { font-weight: 600; color: #0f172a; margin-bottom: 4px; }
   .lh-terms-list { margin-left: 22px; font-size: 11px; color: #374151; }
 

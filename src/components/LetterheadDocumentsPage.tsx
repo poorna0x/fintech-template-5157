@@ -910,7 +910,14 @@ export default function LetterheadDocumentsPage({
                           <img
                             src={block.src}
                             alt={block.caption || 'Document image'}
-                            className="mx-auto max-h-56"
+                            className="max-h-56"
+                            style={{
+                              maxWidth: `${Math.min(Math.max(block.widthPercent ?? 80, 10), 100)}%`,
+                              marginLeft: block.align === 'left' ? 0 : 'auto',
+                              marginRight: block.align === 'right' ? 0 : 'auto',
+                              display: 'block',
+                              objectFit: 'contain',
+                            }}
                           />
                         </div>
                       ) : (
@@ -918,7 +925,7 @@ export default function LetterheadDocumentsPage({
                           No image selected
                         </div>
                       )}
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
                         <div className="sm:col-span-1">
                           <Label className="text-xs">Upload image</Label>
                           <input
@@ -961,7 +968,40 @@ export default function LetterheadDocumentsPage({
                             className="h-8"
                           />
                         </div>
+                        <div className="sm:col-span-1">
+                          <Label className="text-xs">Align</Label>
+                          <Select
+                            value={block.align || 'center'}
+                            onValueChange={(value) =>
+                              updateBlock(block.id, {
+                                align: value as 'left' | 'center' | 'right',
+                              } as Partial<LetterheadBlock>)
+                            }
+                          >
+                            <SelectTrigger className="h-8">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="left">Left</SelectItem>
+                              <SelectItem value="center">Center</SelectItem>
+                              <SelectItem value="right">Right</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
                       </div>
+                      <label className="flex items-center gap-2 text-xs cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4"
+                          checked={!!block.wrapText}
+                          onChange={(e) =>
+                            updateBlock(block.id, {
+                              wrapText: e.target.checked,
+                            } as Partial<LetterheadBlock>)
+                          }
+                        />
+                        Wrap text around image (text from the next block flows beside it)
+                      </label>
                     </div>
                   )}
 

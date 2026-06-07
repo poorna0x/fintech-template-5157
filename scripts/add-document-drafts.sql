@@ -21,22 +21,40 @@ CREATE INDEX IF NOT EXISTS idx_document_drafts_kind_updated
 
 ALTER TABLE public.document_drafts ENABLE ROW LEVEL SECURITY;
 
--- Admins operate through the authenticated role (same model as other admin tables).
+-- Admin-only CRUD (no anon, no technician) — same pattern as tax_invoices / admin_todos.
 DROP POLICY IF EXISTS "document_drafts select admin" ON public.document_drafts;
-CREATE POLICY "document_drafts select admin"
-  ON public.document_drafts FOR SELECT TO authenticated USING (true);
-
 DROP POLICY IF EXISTS "document_drafts insert admin" ON public.document_drafts;
-CREATE POLICY "document_drafts insert admin"
-  ON public.document_drafts FOR INSERT TO authenticated WITH CHECK (true);
-
 DROP POLICY IF EXISTS "document_drafts update admin" ON public.document_drafts;
-CREATE POLICY "document_drafts update admin"
-  ON public.document_drafts FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
-
 DROP POLICY IF EXISTS "document_drafts delete admin" ON public.document_drafts;
-CREATE POLICY "document_drafts delete admin"
-  ON public.document_drafts FOR DELETE TO authenticated USING (true);
+DROP POLICY IF EXISTS document_drafts_admin_select ON public.document_drafts;
+DROP POLICY IF EXISTS document_drafts_admin_insert ON public.document_drafts;
+DROP POLICY IF EXISTS document_drafts_admin_update ON public.document_drafts;
+DROP POLICY IF EXISTS document_drafts_admin_delete ON public.document_drafts;
+
+CREATE POLICY document_drafts_admin_select
+  ON public.document_drafts
+  FOR SELECT
+  TO authenticated
+  USING (public.is_admin_user());
+
+CREATE POLICY document_drafts_admin_insert
+  ON public.document_drafts
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (public.is_admin_user());
+
+CREATE POLICY document_drafts_admin_update
+  ON public.document_drafts
+  FOR UPDATE
+  TO authenticated
+  USING (public.is_admin_user())
+  WITH CHECK (public.is_admin_user());
+
+CREATE POLICY document_drafts_admin_delete
+  ON public.document_drafts
+  FOR DELETE
+  TO authenticated
+  USING (public.is_admin_user());
 
 -- Keep updated_at fresh on every save.
 CREATE OR REPLACE FUNCTION public.touch_document_drafts_updated_at()
