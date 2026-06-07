@@ -9332,21 +9332,22 @@ const AdminDashboard = () => {
 
         {/* Date Filter for Denied Jobs */}
         {statusFilter === 'CANCELLED' && (
-          <div className="mb-4">
-            <div className="inline-flex flex-nowrap items-center gap-1.5 rounded-lg border border-border bg-muted/30 px-2 py-1.5 overflow-x-auto min-w-0 max-w-full">
-              <Label className="text-sm font-medium text-muted-foreground shrink-0 whitespace-nowrap">
-                Show denied jobs for
+          <div className="mb-4 rounded-lg border border-input bg-muted/20 px-2 py-1.5 sm:px-3 sm:py-2">
+            <div className="flex flex-nowrap items-center gap-1.5 sm:gap-2 min-w-0 w-full">
+              <Label className="text-xs sm:text-sm font-medium text-muted-foreground shrink-0 whitespace-nowrap">
+                <span className="sm:hidden">Denied for</span>
+                <span className="hidden sm:inline">Show denied jobs for</span>
               </Label>
               <DatePicker
                 value={deniedDateFilter}
                 onChange={(v) => setDeniedDateFilter(v ?? getTodayLocalDate())}
                 placeholder="Pick date"
-                className="w-auto min-w-[140px] shrink-0"
+                className="h-9 w-auto shrink-0 px-2 text-xs min-w-[6.75rem] sm:h-10 sm:min-w-[140px] sm:px-3 sm:text-sm"
               />
               <Button
                 variant="outline"
                 size="sm"
-                className="shrink-0 whitespace-nowrap"
+                className="h-9 shrink-0 whitespace-nowrap px-2.5 text-xs sm:h-10 sm:px-4 sm:text-sm"
                 onClick={() => setDeniedDateFilter(getTodayLocalDate())}
               >
                 Today
