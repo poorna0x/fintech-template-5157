@@ -3649,8 +3649,11 @@ export const db = {
       return { data, error };
     },
 
-    async createAMCServiceJobs(options?: { dryRun?: boolean }) {
+    async createAMCServiceJobs(options?: { dryRun?: boolean; force?: boolean }) {
       const dryRun = options?.dryRun === true;
+      // force: manual "Run now" button bypasses the 6-hour throttle WITHOUT touching the
+      // shared throttle timer, so automatic background runs keep their own 6-hour schedule.
+      const force = options?.force === true;
       const isDev = typeof import.meta !== 'undefined' && import.meta.env?.DEV;
       if (dryRun) console.log('🔵 [DRY RUN] AMC service job creation preview...');
       else if (isDev) console.log('🔵 Starting AMC service job creation...');
@@ -3666,12 +3669,11 @@ export const db = {
         withAmcJobCreationLock,
       } = await import('@/lib/amcAutoJobSchedule');
 
-      if (!dryRun) {
+      if (!dryRun && !force) {
         if (!shouldRunAmcJobCreationNow()) {
           if (isDev) console.log('ℹ️ AMC job creation skipped (throttled, last run < 6h ago)');
           return { data: [], error: null, created: 0 };
         }
-        markAmcJobCreationRun();
       }
 
       const runCreation = async () => {
@@ -4003,7 +4005,24 @@ export const db = {
       if (dryRun) {
         return runCreation();
       }
-      return withAmcJobCreationLock(runCreation);
+
+      return withAmcJobCreationLock(async () => {
+        // Re-check inside lock so parallel dashboard loads don't both pass the throttle.
+        if (!force && !shouldRunAmcJobCreationNow()) {
+          if (isDev) console.log('ℹ️ AMC job creation skipped (throttled, last run < 6h ago)');
+          return { data: [], error: null, created: 0 };
+        }
+        if (!force) {
+          markAmcJobCreationRun();
+        }
+        const result = await runCreation();
+        // Manual button bypasses the throttle check but still updates the timer so a
+        // refresh right after doesn't immediately re-run background auto-generation.
+        if (force) {
+          markAmcJobCreationRun();
+        }
+        return result;
+      });
     }
   },
 

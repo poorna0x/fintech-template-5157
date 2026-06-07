@@ -81,6 +81,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
   const [amcRecords, setAmcRecords] = useState<AMCRecord[]>([]);
   const [technicians, setTechnicians] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [runningAutoGen, setRunningAutoGen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'EXPIRED'>('ALL');
   const [selectedAMC, setSelectedAMC] = useState<AMCRecord | null>(null);
@@ -233,6 +234,54 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
       autoGenerationLabel: formatDate(reminderStart),
       autoGenerationStatus: regularDue ? 'DUE' : 'SCHEDULED',
     };
+  };
+
+  const handleRunAutoGeneration = async () => {
+    if (runningAutoGen) return;
+    setRunningAutoGen(true);
+    try {
+      // force: bypass the 6-hour throttle for this manual run without resetting the shared
+      // timer, so automatic background runs keep their own 6-hour schedule intact.
+      const result = await db.amcContracts.createAMCServiceJobs({ force: true });
+      if (result.error) {
+        console.error('Error running AMC auto-generation:', result.error);
+        toast.error('Failed to run AMC auto-generation');
+        return;
+      }
+
+      if (result.created > 0) {
+        toast.success(`Created ${result.created} AMC service job${result.created > 1 ? 's' : ''}`);
+        await loadAMCRecords();
+        return;
+      }
+
+      // Nothing created — run a dry-run to log the per-contract breakdown to the console.
+      // (Dry-run never checks/touches the throttle, so the auto-gen schedule is unaffected.)
+      const diag: any = await db.amcContracts.createAMCServiceJobs({ dryRun: true });
+      const preview: any[] = Array.isArray(diag?.preview) ? diag.preview : [];
+
+      console.group('AMC auto-generation diagnostic');
+      console.log(`Contracts checked (active only): ${preview.length}`);
+      console.table(
+        preview.map((p) => ({
+          customer: p.customer_name,
+          customer_id: p.customer_id,
+          reference_date: p.reference_date,
+          period_months: p.period_months,
+          next_due: p.next_due,
+          would_create: p.would_create,
+          reason: p.skip_reason || (p.would_create ? 'Due — will create' : ''),
+        }))
+      );
+      console.groupEnd();
+
+      toast.info('No AMC service jobs are due right now');
+    } catch (error) {
+      console.error('Error running AMC auto-generation:', error);
+      toast.error('Failed to run AMC auto-generation');
+    } finally {
+      setRunningAutoGen(false);
+    }
   };
 
   const loadAMCRecords = async () => {
@@ -661,8 +710,19 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
                 View and manage all Annual Maintenance Contracts
               </p>
             </div>
-            <div className="text-sm text-gray-600">
-              Total: {filteredAMCs.length} AMC{filteredAMCs.length !== 1 ? 's' : ''}
+            <div className="flex items-center gap-3">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRunAutoGeneration}
+                disabled={runningAutoGen}
+              >
+                <RefreshCw className={`w-4 h-4 mr-2 ${runningAutoGen ? 'animate-spin' : ''}`} />
+                {runningAutoGen ? 'Running…' : 'Run AMC generation now'}
+              </Button>
+              <div className="text-sm text-gray-600 whitespace-nowrap">
+                Total: {filteredAMCs.length} AMC{filteredAMCs.length !== 1 ? 's' : ''}
+              </div>
             </div>
           </div>
         </div>
