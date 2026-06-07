@@ -4,6 +4,7 @@ import Header from '@/components/Header';
 import HeroSection from '@/components/HeroSection';
 import AboutSection from '@/components/AboutSection';
 import ServicesSection from '@/components/ServicesSection';
+import HowItWorks from '@/components/HowItWorks';
 import ServiceAreasSection from '@/components/ServiceAreasSection';
 import PincodeServiceSection from '@/components/PincodeServiceSection';
 import BookingRedirect from '@/components/BookingRedirect';
@@ -37,15 +38,16 @@ const Index = () => {
       <Header />
       <main>
         <HeroSection />
-        <AboutSection />
         <ServicesSection />
+        <HowItWorks />
+        <WhyChooseSection />
+        <AboutSection />
         <ServiceAreasSection />
         <PincodeServiceSection />
-        <BookingRedirect />
-        <WhyChooseSection />
         <Suspense fallback={<TestimonialsLoading />}>
           <Testimonials />
         </Suspense>
+        <BookingRedirect />
         <ContactSection />
         
         {/* Comprehensive SEO Content - Hidden but accessible to search engines */}

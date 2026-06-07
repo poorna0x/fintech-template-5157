@@ -2087,7 +2087,7 @@ const Booking: React.FC = () => {
         return (
           <div className="space-y-6">
             <div className="text-center mb-6">
-              <User className="w-12 h-12 mx-auto mb-3 text-primary" />
+              <User className="w-12 h-12 mx-auto mb-3 text-sky-600 dark:text-sky-400" />
               <h3 className="text-xl font-semibold text-foreground">Personal Information</h3>
               <p className="text-muted-foreground">Tell us about yourself</p>
             </div>
@@ -2193,7 +2193,7 @@ const Booking: React.FC = () => {
         return (
           <div className="space-y-6">
             <div className="text-center mb-6">
-              <Wrench className="w-12 h-12 mx-auto mb-3 text-primary" />
+              <Wrench className="w-12 h-12 mx-auto mb-3 text-sky-600 dark:text-sky-400" />
               <h3 className="text-xl font-semibold text-foreground">Service Details</h3>
               <p className="text-muted-foreground">What service do you need?</p>
             </div>
@@ -2340,7 +2340,7 @@ const Booking: React.FC = () => {
         return (
           <div className="space-y-6">
             <div className="text-center mb-6">
-              <MapPin className="w-12 h-12 mx-auto mb-3 text-primary" />
+              <MapPin className="w-12 h-12 mx-auto mb-3 text-sky-600 dark:text-sky-400" />
               <h3 className="text-xl font-semibold text-foreground">Service Location</h3>
               <p className="text-muted-foreground">Where should we come?</p>
             </div>
@@ -2354,7 +2354,7 @@ const Booking: React.FC = () => {
                   <DialogDescription asChild>
                     <div className="text-foreground/90 leading-relaxed pt-1 space-y-2">
                       <p>Can&apos;t find your exact spot? Search for a nearby landmark or tap &quot;Use Current Location&quot;. That&apos;s okay — we&apos;ll confirm the location with you before we come.</p>
-                      <p className="text-sm font-medium text-primary">At the bottom, please share your purifier photo too.</p>
+                      <p className="text-sm font-medium text-sky-600 dark:text-sky-400">At the bottom, please share your purifier photo too.</p>
                     </div>
                   </DialogDescription>
                 </DialogHeader>
@@ -2518,7 +2518,7 @@ const Booking: React.FC = () => {
                   <div
                     className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
                       isDragOver 
-                        ? 'border-primary bg-primary/5' 
+                        ? 'border-sky-500 bg-sky-500/5' 
                         : 'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500'
                     }`}
                     onDragOver={handleDragOver}
@@ -2793,7 +2793,7 @@ const Booking: React.FC = () => {
         return (
           <div className="space-y-6">
             <div className="text-center mb-6">
-              <Clock className="w-12 h-12 mx-auto mb-3 text-primary" />
+              <Clock className="w-12 h-12 mx-auto mb-3 text-sky-600 dark:text-sky-400" />
               <h3 className="text-xl font-semibold text-foreground">Schedule Service</h3>
               <p className="text-muted-foreground">When would you like us to come?</p>
             </div>
@@ -2963,7 +2963,7 @@ const Booking: React.FC = () => {
         return (
           <div className="space-y-6">
             <div className="text-center mb-6">
-              <Check className="w-12 h-12 mx-auto mb-3 text-primary" />
+              <Check className="w-12 h-12 mx-auto mb-3 text-sky-600 dark:text-sky-400" />
               <h3 className="text-xl font-semibold text-foreground">Review Your Booking</h3>
               <p className="text-muted-foreground">Please review your booking details</p>
             </div>
@@ -3032,7 +3032,7 @@ const Booking: React.FC = () => {
             <div
               ref={legalConsentRef}
               className={`rounded-lg border border-border p-4 space-y-2 transition-colors ${
-                Date.now() - consentNudgeAt < 1500 ? 'ring-2 ring-primary/40 bg-primary/5' : ''
+                Date.now() - consentNudgeAt < 1500 ? 'ring-2 ring-sky-400/40 bg-sky-500/5' : ''
               }`}
             >
               <div className="flex items-start gap-3">
@@ -3044,15 +3044,15 @@ const Booking: React.FC = () => {
                 />
                 <label htmlFor="booking-legal-consent" className="text-sm text-muted-foreground leading-snug cursor-pointer">
                   I agree to the{' '}
-                  <Link to="/terms-of-service" className="text-primary underline hover:no-underline" target="_blank" rel="noopener noreferrer">
+                  <Link to="/terms-of-service" className="text-sky-600 dark:text-sky-400 underline hover:no-underline" target="_blank" rel="noopener noreferrer">
                     Terms of Service
                   </Link>
                   ,{' '}
-                  <Link to="/privacy-policy" className="text-primary underline hover:no-underline" target="_blank" rel="noopener noreferrer">
+                  <Link to="/privacy-policy" className="text-sky-600 dark:text-sky-400 underline hover:no-underline" target="_blank" rel="noopener noreferrer">
                     Privacy Policy
                   </Link>
                   , and{' '}
-                  <Link to="/disclaimer" className="text-primary underline hover:no-underline" target="_blank" rel="noopener noreferrer">
+                  <Link to="/disclaimer" className="text-sky-600 dark:text-sky-400 underline hover:no-underline" target="_blank" rel="noopener noreferrer">
                     Disclaimer
                   </Link>
                   . I consent to Hydrogen RO using my contact details to arrange and perform this service, including
@@ -3066,12 +3066,12 @@ const Booking: React.FC = () => {
                 <div id={FIREBASE_RECAPTCHA_CONTAINER_ID} className="sr-only" aria-hidden="true" />
                 <div className="flex items-start gap-3">
                   <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
-                    otpVerified ? 'bg-green-100 dark:bg-green-900/40' : 'bg-primary/10'
+                    otpVerified ? 'bg-green-100 dark:bg-green-900/40' : 'bg-sky-100 dark:bg-sky-500/15'
                   }`}>
                     {otpVerified ? (
                       <Check className="h-5 w-5 text-green-600 dark:text-green-400" />
                     ) : (
-                      <Phone className="h-5 w-5 text-primary" />
+                      <Phone className="h-5 w-5 text-sky-600 dark:text-sky-400" />
                     )}
                   </div>
                   <div className="min-w-0">
@@ -3127,7 +3127,7 @@ const Booking: React.FC = () => {
                         type="button"
                         disabled={otpSending || otpResendRemaining > 0}
                         onClick={handleSendOtp}
-                        className="font-medium text-primary underline-offset-2 hover:underline disabled:opacity-50 disabled:no-underline"
+                        className="font-medium text-sky-600 dark:text-sky-400 underline-offset-2 hover:underline disabled:opacity-50 disabled:no-underline"
                       >
                         {otpResendRemaining > 0
                           ? `Resend in ${otpResendRemaining}s`
@@ -3281,7 +3281,7 @@ const Booking: React.FC = () => {
               {/* Email Confirmation Alert */}
               <Alert className="mb-6 border-2 border-gray-200 dark:border-gray-700 bg-transparent relative overflow-hidden">
                 <div className="absolute inset-0 running-border pointer-events-none"></div>
-                <Mail className="h-4 w-4 text-primary relative z-10" />
+                <Mail className="h-4 w-4 text-sky-600 dark:text-sky-400 relative z-10" />
                 <AlertDescription className="text-foreground relative z-10">
                   You will receive a confirmation email shortly at <strong>{bookingDetails.email}</strong>. Please check your spam folder if you don't see it.
                 </AlertDescription>
@@ -3579,7 +3579,7 @@ const Booking: React.FC = () => {
                   return (
                     <div key={step.id} className="flex flex-col items-center">
                       <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-2 ${
-                        isActive ? 'bg-primary text-primary-foreground' :
+                        isActive ? 'bg-sky-600 text-white' :
                         isCompleted ? 'bg-green-500 text-white' :
                         'bg-gray-200 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
                       }`}>
@@ -3588,7 +3588,7 @@ const Booking: React.FC = () => {
                       </div>
                       {/* Show text only on desktop */}
                       <span className={`hidden md:block text-xs text-center ${
-                        isActive ? 'text-primary font-medium' :
+                        isActive ? 'text-sky-600 dark:text-sky-400 font-medium' :
                         isCompleted ? 'text-green-600 dark:text-green-400 font-medium' :
                         'text-gray-500 dark:text-gray-400'
                       }`}>

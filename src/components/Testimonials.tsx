@@ -94,12 +94,15 @@ const Testimonials = () => {
       <div className="absolute inset-0 cosmic-grid opacity-20"></div>
       
       <div className="max-w-7xl mx-auto space-y-16 relative z-10">
-        <div className="text-center space-y-4 max-w-3xl mx-auto">
-          <h2 className="text-3xl md:text-4xl font-medium tracking-tighter text-foreground">
-            What our customers say
+        <div className="text-center space-y-3 max-w-3xl mx-auto">
+          <span className="inline-block text-sm font-semibold text-sky-600 dark:text-sky-400">
+            Reviews
+          </span>
+          <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-foreground">
+            Loved by 3000+ customers
           </h2>
           <p className="text-muted-foreground text-lg">
-            Join hundreds of satisfied customers who trust Hydrogen RO for their water treatment needs
+            Real reviews from homes and offices across Bengaluru.
           </p>
         </div>
         
@@ -138,7 +141,7 @@ const Testimonials = () => {
               >
                 <div className="mb-6">
                   {[...Array(5)].map((_, i) => (
-                    <span key={i} className="text-primary inline-block mr-1">★</span>
+                    <span key={i} className="text-amber-400 inline-block mr-1">★</span>
                   ))}
                 </div>
                 <p className="text-lg mb-8 text-foreground/90 italic">"{testimonial.quote}"</p>
@@ -163,7 +166,7 @@ const Testimonials = () => {
               >
                 <div className="mb-6">
                   {[...Array(5)].map((_, i) => (
-                    <span key={i} className="text-primary inline-block mr-1">★</span>
+                    <span key={i} className="text-amber-400 inline-block mr-1">★</span>
                   ))}
                 </div>
                 <p className="text-lg mb-8 text-foreground/90 italic">"{testimonial.quote}"</p>
@@ -188,7 +191,7 @@ const Testimonials = () => {
               >
                 <div className="mb-6">
                   {[...Array(5)].map((_, i) => (
-                    <span key={i} className="text-primary inline-block mr-1">★</span>
+                    <span key={i} className="text-amber-400 inline-block mr-1">★</span>
                   ))}
                 </div>
                 <p className="text-lg mb-8 text-foreground/90 italic">"{testimonial.quote}"</p>

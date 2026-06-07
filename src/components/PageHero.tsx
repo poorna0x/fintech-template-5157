@@ -42,18 +42,18 @@ const PageHero: React.FC<PageHeroProps> = ({
 
   return (
     <section 
-      className="relative w-full py-12 md:py-20 px-2 md:px-12 flex flex-col items-center justify-center overflow-hidden bg-background/95 backdrop-blur-md"
+      className="water-hero relative w-full py-12 md:py-20 px-2 md:px-12 flex flex-col items-center justify-center overflow-hidden"
       style={darkBgStyle}
     >
       <div className="relative z-10 max-w-4xl text-center space-y-6">
         <div className="flex justify-center">
-          <span className="inline-flex items-center gap-2 px-3 py-1 text-xs font-medium rounded-full bg-muted text-primary">
-            <span className="flex h-2 w-2 rounded-full bg-primary"></span>
+          <span className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300 border border-sky-200/60 dark:border-sky-500/20">
+            <span className="flex h-2 w-2 rounded-full bg-sky-500"></span>
             {badge}
           </span>
         </div>
         
-        <h1 className="text-4xl md:text-5xl lg:text-6xl font-medium tracking-tighter text-balance text-foreground">
+        <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-balance text-foreground">
           {typeof title === 'string' && title.startsWith('About Hydrogen') ? (
             <>
               <span className="whitespace-nowrap">About Hydrogen RO</span>
@@ -73,14 +73,14 @@ const PageHero: React.FC<PageHeroProps> = ({
             <div className="flex flex-col sm:flex-row gap-4 justify-center pt-6 items-center">
               <Button 
                 onClick={handleBookService}
-                className="bg-primary text-primary-foreground hover:bg-primary/90 text-sm sm:text-base h-12 w-full max-w-[280px] sm:w-auto sm:min-w-[200px] px-6 sm:px-8 transition-all duration-200 min-h-[48px] shadow-lg"
+                className="bg-sky-600 text-white hover:bg-sky-700 text-sm sm:text-base h-12 w-full max-w-[280px] sm:w-auto sm:min-w-[200px] px-6 sm:px-8 transition-all duration-200 min-h-[48px] shadow-lg shadow-sky-600/20"
               >
                 Book Service Now
               </Button>
               <Button 
                 onClick={handleCall}
                 variant="outline" 
-                className="border-border text-foreground hover:bg-accent hover:text-accent-foreground text-sm sm:text-base h-12 w-full max-w-[280px] sm:w-auto sm:min-w-[200px] px-6 sm:px-8 transition-all duration-200 min-h-[48px]"
+                className="border-sky-200 dark:border-sky-500/30 text-foreground hover:bg-sky-50 dark:hover:bg-sky-500/10 text-sm sm:text-base h-12 w-full max-w-[280px] sm:w-auto sm:min-w-[200px] px-6 sm:px-8 transition-all duration-200 min-h-[48px]"
               >
                 Call: +91-8884944288
               </Button>

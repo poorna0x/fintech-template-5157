@@ -1,125 +1,160 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import TaskBoard from './TaskBoard';
-import { Loader } from 'lucide-react';
+import { Star, ShieldCheck, Clock, Phone, Droplets, CheckCircle2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+
 const HeroSection = () => {
   const [isVisible, setIsVisible] = useState(false);
   const navigate = useNavigate();
-  
+
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsVisible(true);
-    }, 300);
+    const timer = setTimeout(() => setIsVisible(true), 150);
     return () => clearTimeout(timer);
   }, []);
 
-  const handleBookService = () => {
-    navigate('/book');
-  };
+  const handleBookService = () => navigate('/book');
+  const handleCall = () => window.open('tel:+918884944288', '_self');
 
-  const handleCall = () => {
-    window.open('tel:+918884944288', '_self');
-  };
-  return <section id="home" className="relative w-full py-12 md:py-20 px-2 md:px-12 flex flex-col items-center justify-center overflow-hidden bg-background">
-      {/* Cosmic particle effect (background dots) */}
-      <div className="absolute inset-0 cosmic-grid opacity-30"></div>
-      
-      {/* Gradient glow effect */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full">
-        <div className="w-full h-full opacity-10 bg-primary blur-[120px]"></div>
-      </div>
-      
-      <div className={`relative z-10 max-w-4xl text-center space-y-6 transition-all duration-700 transform ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'}`}>
-        <div className="flex justify-center">
-          <span className="inline-flex items-center gap-2 px-3 py-1 text-xs font-medium rounded-full bg-muted text-primary">
-            <span className="flex h-2 w-2 rounded-full bg-primary"></span>
-            Trusted by 3000+ customers
-          </span>
-        </div>
-        
-        <h1 className="text-4xl md:text-6xl lg:text-7xl font-medium tracking-tighter text-balance text-foreground">
-          Best RO Water Purifier Services in <span className="text-foreground">Bengaluru</span>
-        </h1>
-        
-        <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto text-balance">
-          Professional RO installation, repair & maintenance services in Bengaluru. Same-day service with certified technicians.
-        </p>
-        
-        <div className="flex flex-col sm:flex-row gap-4 justify-center pt-6 items-center">
-          <Button 
-            onClick={handleBookService}
-            className="bg-primary text-primary-foreground hover:bg-primary/90 text-sm sm:text-base h-12 w-full max-w-[280px] sm:w-auto sm:min-w-[200px] px-6 sm:px-8 transition-all duration-200 min-h-[48px] shadow-lg"
+  const trustPoints = [
+    'Same-day service',
+    'All RO brands',
+    'Genuine spare parts',
+    'Service from ₹399',
+  ];
+
+  return (
+    <section id="home" className="water-hero relative w-full overflow-hidden">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-20">
+        <div className="grid lg:grid-cols-2 gap-10 lg:gap-14 items-center">
+          {/* Left: copy */}
+          <div
+            className={`space-y-6 text-center lg:text-left transition-all duration-700 ${
+              isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'
+            }`}
           >
-            Book Service Now
-          </Button>
-          <Button 
-            onClick={handleCall}
-            variant="outline" 
-            className="border-border text-foreground hover:bg-accent hover:text-accent-foreground text-sm sm:text-base h-12 w-full max-w-[280px] sm:w-auto sm:min-w-[200px] px-6 sm:px-8 transition-all duration-200 min-h-[48px]"
+            <div className="flex justify-center lg:justify-start">
+              <span className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-full bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300 border border-sky-200/60 dark:border-sky-500/20">
+                <Droplets className="w-3.5 h-3.5" />
+                Trusted by 3000+ homes in Bengaluru
+              </span>
+            </div>
+
+            <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-balance text-foreground leading-[1.05]">
+              Best RO Water Purifier <br className="hidden md:block" />
+              Services in <span className="water-text">Bengaluru</span>
+            </h1>
+
+            <p className="text-base md:text-lg text-muted-foreground max-w-xl mx-auto lg:mx-0">
+              Installation, repair &amp; maintenance at your doorstep by certified
+              technicians. Book in 60 seconds.
+            </p>
+
+            {/* Rating row */}
+            <div className="flex items-center justify-center lg:justify-start gap-2 text-sm">
+              <div className="flex items-center gap-1">
+                {[...Array(5)].map((_, i) => (
+                  <Star key={i} className="w-5 h-5 fill-amber-400 text-amber-400" />
+                ))}
+              </div>
+              <span className="font-semibold text-foreground">5-star rated service</span>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3 justify-center lg:justify-start pt-2">
+              <Button
+                onClick={handleBookService}
+                className="h-12 px-8 text-base font-semibold bg-sky-600 hover:bg-sky-700 text-white shadow-lg shadow-sky-600/20 transition-all"
+              >
+                Book Service Now
+              </Button>
+              <Button
+                onClick={handleCall}
+                variant="outline"
+                className="h-12 px-8 text-base font-semibold border-sky-200 dark:border-sky-500/30 text-foreground hover:bg-sky-50 dark:hover:bg-sky-500/10 flex items-center gap-2"
+              >
+                <Phone className="w-4 h-4 text-sky-600" />
+                +91-8884944288
+              </Button>
+            </div>
+
+            {/* Trust points */}
+            <div className="flex flex-wrap justify-center lg:justify-start gap-x-5 gap-y-2 pt-4">
+              {trustPoints.map((point) => (
+                <span key={point} className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+                  <CheckCircle2 className="w-4 h-4 text-sky-500" />
+                  {point}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* Right: photo */}
+          <div
+            className={`relative transition-all duration-1000 delay-200 ${
+              isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'
+            }`}
           >
-            Call: +91-8884944288
-          </Button>
-        </div>
-        
-        <div className="pt-6 text-sm text-muted-foreground space-y-1">
-          <div>Same-day service available</div>
-          <div>All brands service supported</div>
-          <div>Genuine spare parts</div>
-        </div>
-      </div>
-      
-      {/* Service showcase with glassmorphic effect */}
-      <div className={`w-full max-w-6xl mt-12 z-10 transition-all duration-1000 delay-500 ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-20'}`}>
-        <div className="cosmic-glow relative rounded-xl overflow-hidden border border-border backdrop-blur-sm bg-card shadow-lg p-8">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {/* RO Services */}
-            <div className="text-center space-y-4">
-              <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mx-auto">
-                <svg className="w-8 h-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-                </svg>
-              </div>
-              <h3 className="font-semibold text-foreground">RO Installation Bengaluru</h3>
-              <p className="text-sm text-muted-foreground">Professional RO system setup with quality components across Bangalore</p>
+            <div className="relative rounded-3xl overflow-hidden shadow-2xl shadow-sky-900/10 border border-white/60 dark:border-white/10">
+              <img
+                src="/hero-ro-purifier.webp"
+                alt="RO water purifier installed in a modern Bengaluru kitchen with clean drinking water"
+                width={1100}
+                height={733}
+                loading="eager"
+                fetchPriority="high"
+                decoding="async"
+                className="w-full h-full object-cover"
+              />
             </div>
 
-            {/* Water Softener */}
-            <div className="text-center space-y-4">
-              <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mx-auto">
-                <svg className="w-8 h-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                </svg>
+            {/* Floating rating chip */}
+            <div className="water-float absolute -top-4 -left-2 md:-left-5 bg-white dark:bg-card rounded-2xl shadow-xl border border-border px-4 py-3 flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-amber-100 dark:bg-amber-500/15 flex items-center justify-center">
+                <Star className="w-5 h-5 fill-amber-400 text-amber-400" />
               </div>
-              <h3 className="font-semibold text-foreground">Softener Service</h3>
-              <p className="text-sm text-muted-foreground">Eliminate hard water issues for your home in Bengaluru</p>
+              <div className="text-left leading-tight">
+                <div className="flex items-center gap-0.5">
+                  {[...Array(5)].map((_, i) => (
+                    <Star key={i} className="w-3 h-3 fill-amber-400 text-amber-400" />
+                  ))}
+                </div>
+                <div className="text-xs text-muted-foreground">5-star rated</div>
+              </div>
             </div>
 
-            {/* Maintenance */}
-            <div className="text-center space-y-4">
-              <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mx-auto">
-                <svg className="w-8 h-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
+            {/* Floating same-day chip */}
+            <div className="water-float absolute -bottom-4 -right-2 md:-right-5 bg-white dark:bg-card rounded-2xl shadow-xl border border-border px-4 py-3 flex items-center gap-3" style={{ animationDelay: '1.2s' }}>
+              <div className="w-9 h-9 rounded-xl bg-sky-100 dark:bg-sky-500/15 flex items-center justify-center">
+                <Clock className="w-5 h-5 text-sky-600 dark:text-sky-400" />
               </div>
-              <h3 className="font-semibold text-foreground">RO Filter Replacement</h3>
-              <p className="text-sm text-muted-foreground">Regular filter replacement and system maintenance in Karnataka</p>
-            </div>
-
-            {/* Emergency */}
-            <div className="text-center space-y-4">
-              <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mx-auto">
-                <svg className="w-8 h-8 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
+              <div className="text-left leading-tight">
+                <div className="text-sm font-bold text-foreground">Same-day</div>
+                <div className="text-xs text-muted-foreground">service available</div>
               </div>
-              <h3 className="font-semibold text-foreground">Emergency RO Repair</h3>
-              <p className="text-sm text-muted-foreground">24/7 emergency water system repair services in Bengaluru</p>
             </div>
           </div>
         </div>
+
+        {/* Stat strip */}
+        <div className="mt-16 grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[
+            { icon: Droplets, value: '3000+', label: 'Homes served' },
+            { icon: ShieldCheck, value: 'Certified', label: 'Technicians' },
+            { icon: Clock, value: '24/7', label: 'Emergency support' },
+            { icon: CheckCircle2, value: '100%', label: 'Bengaluru coverage' },
+          ].map((stat) => (
+            <div
+              key={stat.label}
+              className="rounded-2xl bg-white/70 dark:bg-card/60 backdrop-blur-sm border border-sky-100 dark:border-sky-500/15 p-5 text-center"
+            >
+              <stat.icon className="w-6 h-6 text-sky-600 dark:text-sky-400 mx-auto mb-2" />
+              <div className="text-xl font-bold text-foreground">{stat.value}</div>
+              <div className="text-xs text-muted-foreground">{stat.label}</div>
+            </div>
+          ))}
+        </div>
       </div>
-    </section>;
+    </section>
+  );
 };
+
 export default HeroSection;

@@ -164,6 +164,24 @@ const App = () => (
                   <Route path="/ro-service-jayanagar" element={<ServiceAreas />} />
                   <Route path="/ro-service-malleshwaram" element={<ServiceAreas />} />
                   <Route path="/ro-service-rajajinagar" element={<ServiceAreas />} />
+                  <Route path="/ro-service-hebbal" element={<ServiceAreas />} />
+                  <Route path="/ro-service-yelahanka" element={<ServiceAreas />} />
+                  <Route path="/ro-service-sarjapur" element={<ServiceAreas />} />
+                  <Route path="/ro-service-bellandur" element={<ServiceAreas />} />
+                  <Route path="/ro-service-jp-nagar" element={<ServiceAreas />} />
+                  <Route path="/ro-service-banashankari" element={<ServiceAreas />} />
+                  <Route path="/ro-service-bommanahalli" element={<ServiceAreas />} />
+                  <Route path="/ro-service-bannerghatta" element={<ServiceAreas />} />
+
+                  {/* Nearby city pages */}
+                  <Route path="/ro-service-tumakuru" element={<ServiceAreas />} />
+                  <Route path="/ro-service-hosur" element={<ServiceAreas />} />
+                  <Route path="/ro-service-kolar" element={<ServiceAreas />} />
+                  <Route path="/ro-service-ramanagara" element={<ServiceAreas />} />
+                  <Route path="/ro-service-nelamangala" element={<ServiceAreas />} />
+                  <Route path="/ro-service-doddaballapur" element={<ServiceAreas />} />
+                  <Route path="/ro-service-devanahalli" element={<ServiceAreas />} />
+                  <Route path="/ro-service-anekal" element={<ServiceAreas />} />
                   
                   {/* Technician ID Card - Public route */}
                   <Route path="/technician-id/:id" element={<TechnicianIdCard />} />

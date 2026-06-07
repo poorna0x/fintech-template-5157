@@ -16,7 +16,7 @@ const ServicesSection = () => {
     {
       icon: Filter,
       title: "RO Installation & Repair",
-      description: "Complete RO water purifier installation, re-installation, and expert repair services across Bangalore, Karnataka.",
+      description: "New installation, re-installation and expert repair for all RO brands.",
       features: ["New RO installation", "RO re-installation", "Complete system repair", "Performance optimization"],
       pricing: "Installation: ₹499 | Service: ₹399",
       details: {
@@ -48,7 +48,7 @@ const ServicesSection = () => {
     {
       icon: Wrench,
       title: "Water Softener Service",
-      description: "Complete water softener installation, re-installation, resin level management, and maintenance services in Bengaluru.",
+      description: "Beat hard water — installation, resin and salt level management.",
       features: ["Softener installation", "Re-installation", "Resin level management", "Salt level monitoring"],
       pricing: "Starting from ₹499",
       details: {
@@ -79,7 +79,7 @@ const ServicesSection = () => {
     {
       icon: RefreshCw,
       title: "RO Filter Replacement",
-      description: "Complete filter replacement service for all RO water purifier filters - pre-filters, membranes, carbon filters, and more.",
+      description: "Genuine pre-filters, membranes, carbon and post-filters for every brand.",
       features: ["All filter types", "Pre-filter replacement", "RO membrane changing", "Carbon & post-filters"],
       pricing: "Starting from ₹1799",
       details: {
@@ -110,7 +110,7 @@ const ServicesSection = () => {
     {
       icon: Settings,
       title: "RO Maintenance Packages",
-      description: "Comprehensive maintenance packages with different service levels - basic, premium, and full filter service packages.",
+      description: "Flexible plans — basic, premium and annual AMC contracts.",
       features: ["Basic maintenance", "Premium packages", "Full filter service", "Annual contracts"],
       details: {
         includes: [
@@ -137,26 +137,29 @@ const ServicesSection = () => {
   ];
 
   return (
-    <section id="services" className="py-16 px-2 md:px-12 bg-muted/30">
+    <section id="services" className="py-16 px-4 md:px-12 bg-background">
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-12">
-          <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-6">
+          <span className="inline-block text-sm font-semibold text-sky-600 dark:text-sky-400 mb-3">
+            Our services
+          </span>
+          <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
             RO Water Purifier Services in Bengaluru
           </h2>
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-4">
-            Comprehensive water treatment solutions for homes and offices across Bangalore, Karnataka. Expert RO installation, repair, and maintenance services.
+          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+            Everything your water purifier needs — at your doorstep.
           </p>
         </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {services.map((service, index) => (
-            <Card key={index} className="cosmic-card hover:shadow-lg transition-all duration-300">
-              <CardContent className="p-6">
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <service.icon className="w-6 h-6 text-primary" />
+            <Card key={index} className="h-full flex flex-col border-sky-100 dark:border-sky-500/15 hover:border-sky-300 dark:hover:border-sky-500/40 hover:shadow-lg hover:shadow-sky-900/5 transition-all duration-300">
+              <CardContent className="p-6 flex-1 flex">
+                <div className="flex items-stretch gap-4 w-full">
+                  <div className="w-12 h-12 bg-sky-100 dark:bg-sky-500/15 rounded-xl flex items-center justify-center flex-shrink-0 self-start">
+                    <service.icon className="w-6 h-6 text-sky-600 dark:text-sky-400" />
                   </div>
-                  <div className="flex-1">
+                  <div className="flex-1 flex flex-col">
                     <div className="mb-3">
                       <div className="flex items-center justify-between mb-2">
                         <h3 className="text-xl font-semibold text-foreground">
@@ -165,7 +168,7 @@ const ServicesSection = () => {
                       </div>
                       {service.pricing && (
                         <div className="mb-3">
-                          <p className="text-primary font-bold text-lg">
+                          <p className="text-sky-600 dark:text-sky-400 font-bold text-lg">
                             {service.pricing}
                           </p>
                         </div>
@@ -177,7 +180,7 @@ const ServicesSection = () => {
                     <ul className="space-y-2 mb-4">
                       {service.features.map((feature, featureIndex) => (
                         <li key={featureIndex} className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <div className="w-1.5 h-1.5 bg-primary rounded-full"></div>
+                          <div className="w-1.5 h-1.5 bg-sky-500 rounded-full"></div>
                           {feature}
                         </li>
                       ))}
@@ -185,7 +188,7 @@ const ServicesSection = () => {
                     
                     <Dialog>
                       <DialogTrigger asChild>
-                        <Button variant="outline" className="w-full">
+                        <Button variant="outline" className="w-full mt-auto border-sky-200 dark:border-sky-500/30 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-500/10">
                           Learn More
                         </Button>
                       </DialogTrigger>
@@ -274,7 +277,7 @@ const ServicesSection = () => {
                             <div className="flex flex-col sm:flex-row gap-3 justify-center">
                               <Button 
                                 onClick={handleBookService}
-                                className="bg-primary text-primary-foreground hover:bg-primary/90"
+                                className="bg-sky-600 text-white hover:bg-sky-700"
                               >
                                 Book Now
                               </Button>

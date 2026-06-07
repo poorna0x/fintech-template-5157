@@ -3,7 +3,7 @@ import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import PageHero from '@/components/PageHero';
 import { Card, CardContent } from '@/components/ui/card';
-import { Filter, Wrench, RefreshCw, CheckCircle, DollarSign, Clock, Shield, MapPin, Settings } from 'lucide-react';
+import { Filter, Wrench, RefreshCw, CheckCircle, DollarSign, Clock, Shield, Settings } from 'lucide-react';
 
 const Services = () => {
   return (
@@ -106,10 +106,10 @@ const Services = () => {
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <Card className="cosmic-card text-center hover:shadow-lg transition-all duration-300">
+              <Card className="border-sky-100 dark:border-sky-500/15 text-center hover:shadow-lg transition-all duration-300">
                 <CardContent className="p-6">
-                  <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mx-auto mb-4">
-                    <Shield className="w-8 h-8 text-primary" />
+                  <div className="w-16 h-16 bg-sky-100 dark:bg-sky-500/15 rounded-xl flex items-center justify-center mx-auto mb-4">
+                    <Shield className="w-8 h-8 text-sky-600 dark:text-sky-400" />
                   </div>
                   <h3 className="text-lg font-semibold text-foreground mb-3">
                     Certified Technicians
@@ -120,10 +120,10 @@ const Services = () => {
                 </CardContent>
               </Card>
 
-              <Card className="cosmic-card text-center hover:shadow-lg transition-all duration-300">
+              <Card className="border-sky-100 dark:border-sky-500/15 text-center hover:shadow-lg transition-all duration-300">
                 <CardContent className="p-6">
-                  <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mx-auto mb-4">
-                    <Clock className="w-8 h-8 text-primary" />
+                  <div className="w-16 h-16 bg-sky-100 dark:bg-sky-500/15 rounded-xl flex items-center justify-center mx-auto mb-4">
+                    <Clock className="w-8 h-8 text-sky-600 dark:text-sky-400" />
                   </div>
                   <h3 className="text-lg font-semibold text-foreground mb-3">
                     Same Day Service
@@ -134,10 +134,10 @@ const Services = () => {
                 </CardContent>
               </Card>
 
-              <Card className="cosmic-card text-center hover:shadow-lg transition-all duration-300">
+              <Card className="border-sky-100 dark:border-sky-500/15 text-center hover:shadow-lg transition-all duration-300">
                 <CardContent className="p-6">
-                  <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mx-auto mb-4">
-                    <CheckCircle className="w-8 h-8 text-primary" />
+                  <div className="w-16 h-16 bg-sky-100 dark:bg-sky-500/15 rounded-xl flex items-center justify-center mx-auto mb-4">
+                    <CheckCircle className="w-8 h-8 text-sky-600 dark:text-sky-400" />
                   </div>
                   <h3 className="text-lg font-semibold text-foreground mb-3">
                     All Brands Supported
@@ -148,10 +148,10 @@ const Services = () => {
                 </CardContent>
               </Card>
 
-              <Card className="cosmic-card text-center hover:shadow-lg transition-all duration-300">
+              <Card className="border-sky-100 dark:border-sky-500/15 text-center hover:shadow-lg transition-all duration-300">
                 <CardContent className="p-6">
-                  <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mx-auto mb-4">
-                    <DollarSign className="w-8 h-8 text-primary" />
+                  <div className="w-16 h-16 bg-sky-100 dark:bg-sky-500/15 rounded-xl flex items-center justify-center mx-auto mb-4">
+                    <DollarSign className="w-8 h-8 text-sky-600 dark:text-sky-400" />
                   </div>
                   <h3 className="text-lg font-semibold text-foreground mb-3">
                     Competitive Pricing
@@ -175,14 +175,14 @@ const Services = () => {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-              <Card className="cosmic-card hover:shadow-lg transition-all duration-300">
+              <Card className="border-sky-100 dark:border-sky-500/15 hover:shadow-lg transition-all duration-300">
                 <CardContent className="p-8">
-                  <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mb-6">
-                    <Filter className="w-8 h-8 text-primary" />
+                  <div className="w-16 h-16 bg-sky-100 dark:bg-sky-500/15 rounded-xl flex items-center justify-center mb-6">
+                    <Filter className="w-8 h-8 text-sky-600 dark:text-sky-400" />
                   </div>
                   <h3 className="text-2xl font-semibold mb-3 text-foreground">RO Installation</h3>
                   <div className="mb-4">
-                    <p className="text-primary font-bold text-lg">
+                    <p className="text-sky-600 dark:text-sky-400 font-bold text-lg">
                       Installation: ₹499 | Service: ₹399
                     </p>
                   </div>
@@ -194,10 +194,10 @@ const Services = () => {
                 </CardContent>
               </Card>
 
-              <Card className="cosmic-card hover:shadow-lg transition-all duration-300">
+              <Card className="border-sky-100 dark:border-sky-500/15 hover:shadow-lg transition-all duration-300">
                 <CardContent className="p-8">
-                  <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mb-6">
-                    <Wrench className="w-8 h-8 text-primary" />
+                  <div className="w-16 h-16 bg-sky-100 dark:bg-sky-500/15 rounded-xl flex items-center justify-center mb-6">
+                    <Wrench className="w-8 h-8 text-sky-600 dark:text-sky-400" />
                   </div>
                   <h3 className="text-2xl font-semibold mb-4 text-foreground">RO Repair & Maintenance</h3>
                   <ul className="space-y-2 text-muted-foreground">
@@ -209,14 +209,14 @@ const Services = () => {
                 </CardContent>
               </Card>
 
-              <Card className="cosmic-card hover:shadow-lg transition-all duration-300">
+              <Card className="border-sky-100 dark:border-sky-500/15 hover:shadow-lg transition-all duration-300">
                 <CardContent className="p-8">
-                  <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mb-6">
-                    <RefreshCw className="w-8 h-8 text-primary" />
+                  <div className="w-16 h-16 bg-sky-100 dark:bg-sky-500/15 rounded-xl flex items-center justify-center mb-6">
+                    <RefreshCw className="w-8 h-8 text-sky-600 dark:text-sky-400" />
                   </div>
                   <h3 className="text-2xl font-semibold mb-3 text-foreground">Filter Replacement</h3>
                   <div className="mb-4">
-                    <p className="text-primary font-bold text-lg">
+                    <p className="text-sky-600 dark:text-sky-400 font-bold text-lg">
                       Starting from ₹1799
                     </p>
                   </div>
@@ -229,14 +229,14 @@ const Services = () => {
                 </CardContent>
               </Card>
 
-              <Card className="cosmic-card hover:shadow-lg transition-all duration-300">
+              <Card className="border-sky-100 dark:border-sky-500/15 hover:shadow-lg transition-all duration-300">
                 <CardContent className="p-8">
-                  <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mb-6">
-                    <Settings className="w-8 h-8 text-primary" />
+                  <div className="w-16 h-16 bg-sky-100 dark:bg-sky-500/15 rounded-xl flex items-center justify-center mb-6">
+                    <Settings className="w-8 h-8 text-sky-600 dark:text-sky-400" />
                   </div>
                   <h3 className="text-2xl font-semibold mb-3 text-foreground">Water Softener</h3>
                   <div className="mb-4">
-                    <p className="text-primary font-bold text-lg">
+                    <p className="text-sky-600 dark:text-sky-400 font-bold text-lg">
                       Starting from ₹499
                     </p>
                   </div>
@@ -255,7 +255,7 @@ const Services = () => {
         {/* Contact Section */}
         <section className="py-16 px-2 md:px-12 bg-background">
           <div className="max-w-4xl mx-auto">
-            <Card className="cosmic-card">
+            <Card className="border-sky-100 dark:border-sky-500/15">
               <CardContent className="p-8">
                 <div className="text-center">
                   <h3 className="text-2xl font-semibold mb-6 text-foreground">Contact Us</h3>

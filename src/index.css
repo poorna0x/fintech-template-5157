@@ -179,6 +179,52 @@
   .text-balance {
     text-wrap: balance;
   }
+
+  /* ===== Water brand (Hydrogen RO) homepage styling ===== */
+  /* Soft aqua hero backdrop */
+  .water-hero {
+    background:
+      radial-gradient(60% 80% at 80% 0%, rgba(56, 189, 248, 0.22) 0%, transparent 60%),
+      radial-gradient(50% 70% at 0% 100%, rgba(14, 165, 233, 0.18) 0%, transparent 55%),
+      linear-gradient(180deg, #f0f9ff 0%, #ffffff 70%);
+  }
+
+  .dark .water-hero,
+  .dark-mode .water-hero {
+    background:
+      radial-gradient(60% 80% at 80% 0%, rgba(14, 165, 233, 0.22) 0%, transparent 60%),
+      radial-gradient(50% 70% at 0% 100%, rgba(56, 189, 248, 0.12) 0%, transparent 55%),
+      linear-gradient(180deg, hsl(var(--background)) 0%, hsl(var(--background)) 100%);
+  }
+
+  /* Subtle aqua tint for alternating sections */
+  .water-soft {
+    background: linear-gradient(180deg, rgba(240, 249, 255, 0.7) 0%, rgba(255, 255, 255, 0) 100%);
+  }
+
+  .dark .water-soft,
+  .dark-mode .water-soft {
+    background: linear-gradient(180deg, rgba(14, 165, 233, 0.06) 0%, rgba(0, 0, 0, 0) 100%);
+  }
+
+  /* Aqua gradient text for headlines */
+  .water-text {
+    background: linear-gradient(90deg, #0ea5e9 0%, #06b6d4 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+
+  /* Floating bob animation for hero stat chips */
+  @keyframes water-float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+  }
+
+  .water-float {
+    animation: water-float 5s ease-in-out infinite;
+  }
   
   .cosmic-glass {
     @apply backdrop-blur-sm bg-card border border-white/10 shadow-[0_0_15px_rgba(255,255,255,0.1)];

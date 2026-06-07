@@ -88,7 +88,7 @@ const About = () => {
         <section className="py-16 px-2 md:px-12 bg-background">
           <div className="max-w-6xl mx-auto">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
-              <Card className="cosmic-card">
+              <Card className="border-sky-100 dark:border-sky-500/15">
                 <CardContent className="p-8">
                   <h2 className="text-2xl font-semibold mb-4 text-foreground">Our Mission</h2>
                   <p className="text-muted-foreground">
@@ -98,7 +98,7 @@ const About = () => {
                 </CardContent>
               </Card>
 
-              <Card className="cosmic-card">
+              <Card className="border-sky-100 dark:border-sky-500/15">
                 <CardContent className="p-8">
                   <h2 className="text-2xl font-semibold mb-4 text-foreground">Our Story</h2>
                   <p className="text-muted-foreground">
@@ -122,10 +122,10 @@ const About = () => {
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <Card className="cosmic-card text-center hover:shadow-lg transition-all duration-300">
+              <Card className="border-sky-100 dark:border-sky-500/15 text-center hover:shadow-lg transition-all duration-300">
                 <CardContent className="p-6">
-                  <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mx-auto mb-4">
-                    <Heart className="w-8 h-8 text-primary" />
+                  <div className="w-16 h-16 bg-sky-100 dark:bg-sky-500/15 rounded-xl flex items-center justify-center mx-auto mb-4">
+                    <Heart className="w-8 h-8 text-sky-600 dark:text-sky-400" />
                   </div>
                   <h3 className="text-lg font-semibold text-foreground mb-3">
                     Customer First
@@ -136,10 +136,10 @@ const About = () => {
                 </CardContent>
               </Card>
 
-              <Card className="cosmic-card text-center hover:shadow-lg transition-all duration-300">
+              <Card className="border-sky-100 dark:border-sky-500/15 text-center hover:shadow-lg transition-all duration-300">
                 <CardContent className="p-6">
-                  <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mx-auto mb-4">
-                    <Shield className="w-8 h-8 text-primary" />
+                  <div className="w-16 h-16 bg-sky-100 dark:bg-sky-500/15 rounded-xl flex items-center justify-center mx-auto mb-4">
+                    <Shield className="w-8 h-8 text-sky-600 dark:text-sky-400" />
                   </div>
                   <h3 className="text-lg font-semibold text-foreground mb-3">
                     Quality Assurance
@@ -150,10 +150,10 @@ const About = () => {
                 </CardContent>
               </Card>
 
-              <Card className="cosmic-card text-center hover:shadow-lg transition-all duration-300">
+              <Card className="border-sky-100 dark:border-sky-500/15 text-center hover:shadow-lg transition-all duration-300">
                 <CardContent className="p-6">
-                  <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mx-auto mb-4">
-                    <Clock className="w-8 h-8 text-primary" />
+                  <div className="w-16 h-16 bg-sky-100 dark:bg-sky-500/15 rounded-xl flex items-center justify-center mx-auto mb-4">
+                    <Clock className="w-8 h-8 text-sky-600 dark:text-sky-400" />
                   </div>
                   <h3 className="text-lg font-semibold text-foreground mb-3">
                     Timely Service
@@ -164,10 +164,10 @@ const About = () => {
                 </CardContent>
               </Card>
 
-              <Card className="cosmic-card text-center hover:shadow-lg transition-all duration-300">
+              <Card className="border-sky-100 dark:border-sky-500/15 text-center hover:shadow-lg transition-all duration-300">
                 <CardContent className="p-6">
-                  <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mx-auto mb-4">
-                    <Award className="w-8 h-8 text-primary" />
+                  <div className="w-16 h-16 bg-sky-100 dark:bg-sky-500/15 rounded-xl flex items-center justify-center mx-auto mb-4">
+                    <Award className="w-8 h-8 text-sky-600 dark:text-sky-400" />
                   </div>
                   <h3 className="text-lg font-semibold text-foreground mb-3">
                     Excellence
@@ -185,10 +185,10 @@ const About = () => {
         <section className="py-16 px-2 md:px-12 bg-background">
           <div className="max-w-6xl mx-auto">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
-              <Card className="cosmic-card">
+              <Card className="border-sky-100 dark:border-sky-500/15">
                 <CardContent className="p-8">
-                  <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mb-6">
-                    <Users className="w-8 h-8 text-primary" />
+                  <div className="w-16 h-16 bg-sky-100 dark:bg-sky-500/15 rounded-xl flex items-center justify-center mb-6">
+                    <Users className="w-8 h-8 text-sky-600 dark:text-sky-400" />
                   </div>
                   <h2 className="text-2xl font-semibold mb-4 text-foreground">Our Team</h2>
                   <p className="text-muted-foreground">
@@ -199,10 +199,10 @@ const About = () => {
                 </CardContent>
               </Card>
 
-              <Card className="cosmic-card">
+              <Card className="border-sky-100 dark:border-sky-500/15">
                 <CardContent className="p-8">
-                  <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mb-6">
-                    <Award className="w-8 h-8 text-primary" />
+                  <div className="w-16 h-16 bg-sky-100 dark:bg-sky-500/15 rounded-xl flex items-center justify-center mb-6">
+                    <Award className="w-8 h-8 text-sky-600 dark:text-sky-400" />
                   </div>
                   <h2 className="text-2xl font-semibold mb-4 text-foreground">Certifications & Awards</h2>
                   <div className="space-y-2 text-muted-foreground">
@@ -218,7 +218,7 @@ const About = () => {
         {/* Contact Section */}
         <section className="py-16 px-2 md:px-12 bg-background">
           <div className="max-w-4xl mx-auto">
-            <Card className="cosmic-card">
+            <Card className="border-sky-100 dark:border-sky-500/15">
               <CardContent className="p-8">
                 <div className="text-center">
                   <h3 className="text-2xl font-semibold mb-6 text-foreground">Contact Us</h3>

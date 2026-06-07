@@ -26,15 +26,17 @@ const ServiceAreasSection = () => {
   }, {} as Record<string, typeof bengaluruAreas>);
 
   return (
-    <section id="service-areas" className="py-8 px-2 md:px-12 bg-muted/30">
+    <section id="service-areas" className="py-12 px-4 md:px-12 bg-background">
       <div className="max-w-7xl mx-auto">
-        <div className="text-center mb-12">
-          <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-6">
-            RO Service Areas in Bengaluru - All Pincodes Covered
+        <div className="text-center mb-10">
+          <span className="inline-block text-sm font-semibold text-sky-600 dark:text-sky-400 mb-3">
+            Service areas
+          </span>
+          <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
+            We cover all of Bengaluru
           </h2>
-          <p className="text-lg text-muted-foreground max-w-3xl mx-auto">
-            We provide comprehensive RO water purifier services across all areas of Bengaluru, Karnataka. 
-            Find your area and pincode below for instant RO service booking.
+          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+            Every area, every pincode — find yours and book in seconds.
           </p>
         </div>
 
@@ -134,31 +136,20 @@ const ServiceAreasSection = () => {
         </div>
 
         {/* Quick Stats - Visible to users */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-          <Card className="text-center">
-            <CardContent className="p-4">
-              <div className="text-2xl font-bold text-primary">{bengaluruAreas.length}</div>
-              <div className="text-sm text-muted-foreground">Areas Covered</div>
-            </CardContent>
-          </Card>
-          <Card className="text-center">
-            <CardContent className="p-4">
-              <div className="text-2xl font-bold text-primary">{uniquePincodes.length}</div>
-              <div className="text-sm text-muted-foreground">Pincodes Served</div>
-            </CardContent>
-          </Card>
-          <Card className="text-center">
-            <CardContent className="p-4">
-              <div className="text-2xl font-bold text-primary">24/7</div>
-              <div className="text-sm text-muted-foreground">Emergency Service</div>
-            </CardContent>
-          </Card>
-          <Card className="text-center">
-            <CardContent className="p-4">
-              <div className="text-2xl font-bold text-primary">100%</div>
-              <div className="text-sm text-muted-foreground">Bengaluru Coverage</div>
-            </CardContent>
-          </Card>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-4 max-w-4xl mx-auto">
+          {[
+            { value: bengaluruAreas.length, label: 'Areas Covered' },
+            { value: uniquePincodes.length, label: 'Pincodes Served' },
+            { value: '24/7', label: 'Emergency Service' },
+            { value: '100%', label: 'Bengaluru Coverage' },
+          ].map((stat) => (
+            <Card key={stat.label} className="text-center border-sky-100 dark:border-sky-500/15 bg-white/60 dark:bg-card/50">
+              <CardContent className="p-4">
+                <div className="text-2xl font-bold text-sky-600 dark:text-sky-400">{stat.value}</div>
+                <div className="text-sm text-muted-foreground">{stat.label}</div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
 
         {/* SEO Content - Hidden from users but available for SEO */}

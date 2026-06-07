@@ -194,10 +194,10 @@ const SpareParts = () => {
         {/* Service Charge Note */}
         <section className="py-8 px-2 md:px-12 bg-background">
           <div className="max-w-6xl mx-auto">
-            <Card className="cosmic-card border-primary/20 bg-primary/5">
+            <Card className="border-sky-200 dark:border-sky-500/30 bg-sky-50 dark:bg-sky-500/10">
               <CardContent className="p-6">
                 <div className="flex items-start gap-3">
-                  <div className="w-2 h-2 rounded-full bg-primary mt-2 flex-shrink-0"></div>
+                  <div className="w-2 h-2 rounded-full bg-sky-500 mt-2 flex-shrink-0"></div>
                   <div>
                     <p className="text-sm text-foreground font-medium mb-1">
                       Important Note:
@@ -225,11 +225,11 @@ const SpareParts = () => {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {SPARE_PARTS.map((part) => (
-                    <Card key={part.id} className="cosmic-card hover:shadow-lg transition-all duration-300">
+                    <Card key={part.id} className="border-sky-100 dark:border-sky-500/15 hover:shadow-lg transition-all duration-300">
                       <CardContent className="p-6">
                         <div className="flex items-center gap-2 mb-4">
-                          <Filter className="w-5 h-5 text-primary" />
-                          <span className="text-xs font-semibold text-primary bg-primary/10 px-2 py-1 rounded">
+                          <Filter className="w-5 h-5 text-sky-600 dark:text-sky-400" />
+                          <span className="text-xs font-semibold text-sky-600 dark:text-sky-400 bg-sky-100 dark:bg-sky-500/15 px-2 py-1 rounded">
                             {part.id.startsWith('service-') ? 'Service Charge' : 'RO Filter'}
                           </span>
                         </div>
@@ -239,7 +239,7 @@ const SpareParts = () => {
                         <div className="border-t pt-4">
                           <div className="flex items-center justify-between">
                             <span className="text-sm text-muted-foreground">MRP</span>
-                            <span className="text-2xl font-bold text-primary">
+                            <span className="text-2xl font-bold text-sky-600 dark:text-sky-400">
                               {formatPrice(part.price)}
                             </span>
                           </div>
@@ -256,13 +256,13 @@ const SpareParts = () => {
         {/* Contact Section */}
         <section className="py-16 px-2 md:px-12 bg-background">
           <div className="max-w-4xl mx-auto">
-            <Card className="cosmic-card">
+            <Card className="border-sky-100 dark:border-sky-500/15">
               <CardContent className="p-8">
                 <div className="text-center">
                   <h3 className="text-2xl font-semibold mb-6 text-foreground">Need Help?</h3>
                   <div className="space-y-3 text-foreground">
                     <p>Call us to order spare parts or get assistance:</p>
-                    <p className="text-lg font-semibold text-primary">
+                    <p className="text-lg font-semibold text-sky-600 dark:text-sky-400">
                       +91-8884944288, +91-9886944288
                     </p>
                     <p>Email: info@hydrogenro.com</p>

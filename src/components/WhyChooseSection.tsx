@@ -27,25 +27,28 @@ const WhyChooseSection = () => {
   ];
 
   return (
-    <section className="hidden md:block py-16 px-2 md:px-12 bg-muted/30">
+    <section id="why-choose" className="py-16 px-4 md:px-12 bg-background">
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-12">
-          <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-6">
-            Why Choose Hydrogen RO?
+          <span className="inline-block text-sm font-semibold text-sky-600 dark:text-sky-400 mb-3">
+            Why Hydrogen RO
+          </span>
+          <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
+            Why 3000+ homes trust us
           </h2>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-            Trusted by 3000+ customers for reliable water treatment solutions
+            Reliable water care, done right the first time.
           </p>
         </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
           {reasons.map((reason, index) => (
-            <Card key={index} className="cosmic-card text-center hover:shadow-lg transition-all duration-300">
-              <CardContent className="p-6">
-                <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mx-auto mb-4">
-                  <reason.icon className="w-8 h-8 text-primary" />
+            <Card key={index} className="text-center border-sky-100 dark:border-sky-500/15 hover:border-sky-300 dark:hover:border-sky-500/40 hover:shadow-lg hover:shadow-sky-900/5 transition-all duration-300">
+              <CardContent className="p-5 md:p-6">
+                <div className="w-14 h-14 md:w-16 md:h-16 bg-sky-100 dark:bg-sky-500/15 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <reason.icon className="w-7 h-7 md:w-8 md:h-8 text-sky-600 dark:text-sky-400" />
                 </div>
-                <h3 className="text-lg font-semibold text-foreground mb-3">
+                <h3 className="text-base md:text-lg font-semibold text-foreground mb-2">
                   {reason.title}
                 </h3>
                 <p className="text-muted-foreground text-sm">

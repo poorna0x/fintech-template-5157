@@ -1,19 +1,59 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import PageHero from '@/components/PageHero';
 import { Card, CardContent } from '@/components/ui/card';
 import { MapPin, Clock, Check } from 'lucide-react';
+import {
+  getLocationSeo,
+  buildLocationTitle,
+  buildLocationDescription,
+  buildLocationIntro,
+} from '@/data/locationSeo';
 
 const ServiceAreas = () => {
+  const { pathname } = useLocation();
+  const loc = getLocationSeo(pathname);
+
+  const placeLabel = loc
+    ? loc.region === 'Bengaluru'
+      ? `${loc.name}, Bengaluru`
+      : `${loc.name}, ${loc.region}`
+    : 'Bengaluru';
+
+  const heroTitle = loc ? `RO Service in ${loc.name}` : 'Service Areas in Bengaluru';
+  const heroDescription = loc
+    ? buildLocationDescription(loc)
+    : 'We provide professional RO water purifier services across all areas of Bengaluru. Find your area and book service today!';
+
+  // Set a UNIQUE document title + meta description per location route so each
+  // /ro-service-* page is a distinct, indexable landing page (not duplicate).
+  useEffect(() => {
+    if (!loc) return;
+    const prevTitle = document.title;
+    document.title = buildLocationTitle(loc);
+
+    const metaDesc = document.querySelector('meta[name="description"]');
+    const prevDesc = metaDesc?.getAttribute('content') ?? null;
+    if (metaDesc) metaDesc.setAttribute('content', buildLocationDescription(loc));
+
+    return () => {
+      document.title = prevTitle;
+      if (metaDesc && prevDesc !== null) metaDesc.setAttribute('content', prevDesc);
+    };
+  }, [loc]);
+
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground">
       <script type="application/ld+json">
         {JSON.stringify({
           "@context": "https://schema.org",
           "@type": "Service",
-          "name": "RO Service Areas in Bengaluru",
-          "description": "Professional RO water purifier services across all areas of Bengaluru, Karnataka",
+          "name": loc ? `RO Service in ${loc.name}` : "RO Service Areas in Bengaluru",
+          "description": loc
+            ? buildLocationDescription(loc)
+            : "Professional RO water purifier services across all areas of Bengaluru, Karnataka",
           "image": "https://hydrogenro.com/og-image.jpg",
           "provider": {
             "@type": "LocalBusiness",
@@ -30,8 +70,8 @@ const ServiceAreas = () => {
             "email": "info@hydrogenro.com",
             "url": "https://hydrogenro.com",
             "areaServed": {
-              "@type": "City",
-              "name": "Bengaluru"
+              "@type": loc && loc.region !== 'Bengaluru' ? "City" : "Place",
+              "name": loc ? loc.name : "Bengaluru"
             },
             "serviceArea": {
               "@type": "GeoCircle",
@@ -142,10 +182,35 @@ const ServiceAreas = () => {
 
       <main className="flex-1">
         <PageHero 
-          title="Service Areas in Bengaluru"
-          description="We provide professional RO water purifier services across all areas of Bengaluru. Find your area and book service today!"
+          badge={loc ? `RO service in ${placeLabel}` : 'Trusted by 3000+ customers'}
+          title={heroTitle}
+          description={heroDescription}
           showButtons={true}
         />
+
+        {loc && (
+          <section className="py-12 px-4 md:px-12 water-soft">
+            <div className="max-w-4xl mx-auto text-center">
+              <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-4">
+                RO Water Purifier Service in {loc.name}
+              </h2>
+              <p className="text-muted-foreground leading-relaxed mb-6">
+                {buildLocationIntro(loc)}
+              </p>
+              <div className="flex flex-wrap justify-center gap-2">
+                {loc.nearby.map((n) => (
+                  <span
+                    key={n}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300 border border-sky-200/60 dark:border-sky-500/20"
+                  >
+                    <MapPin className="w-3.5 h-3.5" />
+                    RO service {n}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
 
         <section className="py-16 px-2 md:px-12 bg-background">
           <div className="max-w-6xl mx-auto">
@@ -171,11 +236,11 @@ const ServiceAreas = () => {
                 { area: 'Bannerghatta', pincode: '560076', time: '50 minutes' },
                 { area: 'Hebbal', pincode: '560024', time: '45 minutes' }
               ].map((location, index) => (
-                <Card key={index} className="cosmic-card hover:shadow-lg transition-all duration-300">
+                <Card key={index} className="border-sky-100 dark:border-sky-500/15 hover:shadow-lg transition-all duration-300">
                   <CardContent className="p-6">
                     <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <MapPin className="w-5 h-5 text-primary" />
+                      <div className="w-10 h-10 bg-sky-100 dark:bg-sky-500/15 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <MapPin className="w-5 h-5 text-sky-600 dark:text-sky-400" />
             </div>
                       <div className="flex-1">
                         <h3 className="font-semibold text-foreground mb-1">{location.area}</h3>
@@ -191,7 +256,7 @@ const ServiceAreas = () => {
               ))}
             </div>
 
-            <Card className="cosmic-card">
+            <Card className="border-sky-100 dark:border-sky-500/15">
               <CardContent className="p-8">
                 <h3 className="text-2xl font-bold mb-6 text-center text-foreground">
                   All Bengaluru Areas Covered
@@ -202,48 +267,48 @@ const ServiceAreas = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <h4 className="font-semibold text-foreground mb-3 flex items-center gap-2">
-                      <Check className="w-5 h-5 text-primary" />
+                      <Check className="w-5 h-5 text-sky-600 dark:text-sky-400" />
                       Why Choose Us?
                     </h4>
                     <ul className="space-y-2 text-muted-foreground">
                       <li className="flex items-center gap-2">
-                        <Check className="w-4 h-4 text-primary flex-shrink-0" />
+                        <Check className="w-4 h-4 text-sky-600 dark:text-sky-400 flex-shrink-0" />
                         Quick Response - Average response time of 30 minutes
                       </li>
                       <li className="flex items-center gap-2">
-                        <Check className="w-4 h-4 text-primary flex-shrink-0" />
+                        <Check className="w-4 h-4 text-sky-600 dark:text-sky-400 flex-shrink-0" />
                         Certified Technicians
                       </li>
                       <li className="flex items-center gap-2">
-                        <Check className="w-4 h-4 text-primary flex-shrink-0" />
+                        <Check className="w-4 h-4 text-sky-600 dark:text-sky-400 flex-shrink-0" />
                         Quality Guarantee
                       </li>
                       <li className="flex items-center gap-2">
-                        <Check className="w-4 h-4 text-primary flex-shrink-0" />
+                        <Check className="w-4 h-4 text-sky-600 dark:text-sky-400 flex-shrink-0" />
                         Local Expertise
                       </li>
                     </ul>
             </div>
                   <div>
                     <h4 className="font-semibold text-foreground mb-3 flex items-center gap-2">
-                      <Check className="w-5 h-5 text-primary" />
+                      <Check className="w-5 h-5 text-sky-600 dark:text-sky-400" />
                       Services Offered
                     </h4>
                     <ul className="space-y-2 text-muted-foreground">
                       <li className="flex items-center gap-2">
-                        <Check className="w-4 h-4 text-primary flex-shrink-0" />
+                        <Check className="w-4 h-4 text-sky-600 dark:text-sky-400 flex-shrink-0" />
                         RO Installation
                       </li>
                       <li className="flex items-center gap-2">
-                        <Check className="w-4 h-4 text-primary flex-shrink-0" />
+                        <Check className="w-4 h-4 text-sky-600 dark:text-sky-400 flex-shrink-0" />
                         RO Repair & Maintenance
                       </li>
                       <li className="flex items-center gap-2">
-                        <Check className="w-4 h-4 text-primary flex-shrink-0" />
+                        <Check className="w-4 h-4 text-sky-600 dark:text-sky-400 flex-shrink-0" />
                         Filter Replacement
                       </li>
                       <li className="flex items-center gap-2">
-                        <Check className="w-4 h-4 text-primary flex-shrink-0" />
+                        <Check className="w-4 h-4 text-sky-600 dark:text-sky-400 flex-shrink-0" />
                         Emergency Repair
                       </li>
                     </ul>

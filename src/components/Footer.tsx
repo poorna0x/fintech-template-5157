@@ -3,6 +3,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { Mail, Phone } from 'lucide-react';
 import Logo from './Logo';
+import { locationSeoList } from '@/data/locationSeo';
 
 const Footer = () => {
   return (
@@ -142,6 +143,12 @@ const Footer = () => {
             <a href="#booking">Book RO Service</a>
             <a href="#about">RO Maintenance Tips</a>
             <a href="#contact">Service Support</a>
+            {/* Location landing pages for local SEO */}
+            {locationSeoList.map((loc) => (
+              <Link key={loc.slug} to={`/${loc.slug}`}>
+                RO Service in {loc.name}
+              </Link>
+            ))}
           </div>
         </div>
       </div>

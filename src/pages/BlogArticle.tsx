@@ -187,7 +187,7 @@ const BlogArticle = () => {
           </p>
         </div>
 
-        <Card className="cosmic-card mt-12">
+        <Card className="border-sky-100 dark:border-sky-500/15 mt-12">
           <CardContent className="p-8">
             <h3 className="text-2xl font-semibold mb-6 text-center text-foreground">Need Professional Help?</h3>
             <p className="text-center text-muted-foreground mb-8">
@@ -276,7 +276,7 @@ const BlogArticle = () => {
         <div className="mt-8 text-center">
           <button 
             onClick={() => navigate('/blog')}
-            className="text-primary hover:underline font-medium"
+            className="text-sky-600 dark:text-sky-400 hover:underline font-medium"
           >
             ← Back to Blog
           </button>

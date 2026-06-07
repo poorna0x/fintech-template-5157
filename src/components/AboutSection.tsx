@@ -3,50 +3,34 @@ import { Shield, Clock, DollarSign } from 'lucide-react';
 
 const AboutSection = () => {
   return (
-    <section id="about" className="py-16 px-2 md:px-12 bg-background">
+    <section id="about" className="py-16 px-4 md:px-12 water-soft">
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-12">
-          <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-6">
-            About Hydrogen RO - Leading RO Service Provider in Bengaluru
+          <span className="inline-block text-sm font-semibold text-sky-600 dark:text-sky-400 mb-3">
+            About us
+          </span>
+          <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
+            Bengaluru's trusted RO experts
           </h2>
-          <p className="text-lg text-muted-foreground max-w-3xl mx-auto">
-            Hydrogen RO is Bengaluru's most trusted water purifier service company, committed to providing clean, safe water through expert RO installation, repair, and water softener services across Bangalore, Karnataka. Our certified technicians deliver fast service with guaranteed customer satisfaction.
+          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+            Clean, safe drinking water for every home and office — backed by certified technicians and honest pricing.
           </p>
         </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {/* Certified Technicians */}
-          <div className="text-center space-y-4">
-            <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mx-auto">
-              <Shield className="w-8 h-8 text-primary" />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {[
+            { icon: Shield, title: 'Certified technicians', desc: 'Trained, verified experts for all RO brands.' },
+            { icon: Clock, title: 'Same-day service', desc: 'Quick response across all of Bengaluru.' },
+            { icon: DollarSign, title: 'Transparent pricing', desc: 'No hidden fees. Pay only for what you need.' },
+          ].map((item) => (
+            <div key={item.title} className="text-center space-y-3 rounded-2xl bg-white/60 dark:bg-card/50 border border-sky-100 dark:border-sky-500/15 p-6">
+              <div className="w-16 h-16 bg-sky-100 dark:bg-sky-500/15 rounded-2xl flex items-center justify-center mx-auto">
+                <item.icon className="w-8 h-8 text-sky-600 dark:text-sky-400" />
+              </div>
+              <h3 className="text-xl font-semibold text-foreground">{item.title}</h3>
+              <p className="text-muted-foreground">{item.desc}</p>
             </div>
-            <h3 className="text-xl font-semibold text-foreground">Certified RO Technicians in Bengaluru</h3>
-            <p className="text-muted-foreground">
-              Our experienced and certified professionals ensure quality RO installation and repair services for all water systems across Bangalore, Karnataka.
-            </p>
-          </div>
-          
-          {/* Fast Service */}
-          <div className="text-center space-y-4">
-            <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mx-auto">
-              <Clock className="w-8 h-8 text-primary" />
-            </div>
-            <h3 className="text-xl font-semibold text-foreground">Same-Day RO Service in Bengaluru</h3>
-            <p className="text-muted-foreground">
-              Same-day RO service available with quick response times across Bangalore. We understand the importance of clean water in your daily life in Karnataka.
-            </p>
-          </div>
-          
-          {/* Affordable Pricing */}
-          <div className="text-center space-y-4">
-            <div className="w-16 h-16 bg-primary/10 rounded-xl flex items-center justify-center mx-auto">
-              <DollarSign className="w-8 h-8 text-primary" />
-            </div>
-            <h3 className="text-xl font-semibold text-foreground">Affordable RO Service Pricing in Bengaluru</h3>
-            <p className="text-muted-foreground">
-              Transparent and competitive RO service pricing with no hidden fees across Bangalore, Karnataka. Quality RO service that fits your budget.
-            </p>
-          </div>
+          ))}
         </div>
       </div>
     </section>
