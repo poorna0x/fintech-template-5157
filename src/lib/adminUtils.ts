@@ -392,6 +392,17 @@ export const parseJobRequirements = (reqData: any): any[] => {
   return requirements;
 };
 
+/**
+ * True when a job was completed by the office (no field technician). Marked via a
+ * `{ completed_by_office: true }` entry in the job's requirements JSON, since the
+ * `completed_by` column is a uuid and can't hold a sentinel string.
+ */
+export const isOfficeCompletedJob = (job: any): boolean => {
+  if (!job) return false;
+  const reqs = parseJobRequirements((job as any).requirements ?? job.requirements);
+  return reqs.some((r: any) => r?.completed_by_office === true);
+};
+
 // Format time string to 12-hour format
 export const formatTimeTo12Hour = (timeString: string | null): string | null => {
   if (!timeString) return null;

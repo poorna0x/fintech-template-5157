@@ -55,7 +55,7 @@ import { toast } from 'sonner';
 import { getAmcDocumentBrandLabel } from '@/lib/amc-brand';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { formatCompletedWhen } from '@/lib/relativeTime';
-import { getJobEquipmentDisplay, parseJobRequirements } from '@/lib/adminUtils';
+import { getJobEquipmentDisplay, parseJobRequirements, isOfficeCompletedJob } from '@/lib/adminUtils';
 import { canVibrate, hapticConfirm, hapticTap } from '@/lib/haptics';
 import { db, supabase, fetchCustomerIdsWithCompletedJobsMap } from '@/lib/supabase';
 import {
@@ -9398,7 +9398,7 @@ const TechnicianDashboard = () => {
                         // Get technician name who completed the job
                         const isDirectSale = ((job as any).service_sub_type || job.serviceSubType) === 'Direct Sale';
                         let completedByName = 'Unknown';
-                        if (isDirectSale) {
+                        if (isDirectSale || isOfficeCompletedJob(job)) {
                           completedByName = 'Office';
                         } else if (completedBy) {
                           if (completedBy === 'admin' || completedBy === 'Admin') {

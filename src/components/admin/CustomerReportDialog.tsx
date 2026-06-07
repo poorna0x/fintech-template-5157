@@ -6,7 +6,7 @@ import { Customer, Job, Technician } from '@/types';
 import { db } from '@/lib/supabase';
 import { CheckCircle } from 'lucide-react';
 import { customerNameClassName } from '@/lib/customerDisplay';
-import { getJobEquipmentDisplay } from '@/lib/adminUtils';
+import { getJobEquipmentDisplay, isOfficeCompletedJob } from '@/lib/adminUtils';
 import { formatCompletedWhen } from '@/lib/relativeTime';
 import { getDocumentBrandLabel, normalizeDocumentBrand } from '@/lib/service-brands';
 
@@ -144,7 +144,7 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                   
                   const isDirectSale = ((job as any).service_sub_type || job.serviceSubType) === 'Direct Sale';
                   let completedByName = 'Unknown';
-                  if (isDirectSale) {
+                  if (isDirectSale || isOfficeCompletedJob(job)) {
                     completedByName = 'Office';
                   } else if (completedBy) {
                     if (completedBy === 'admin' || completedBy === 'Admin') {

@@ -102,7 +102,7 @@ import TechnicianPayments from './TechnicianPayments';
 import BillingStats from './BillingStats';
 import Analytics from './Analytics';
 import InventoryManagement from './InventoryManagement';
-import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, levenshteinDistance, calculateSimilarity, extractPhotoUrls, normalizePhotoUrl, parseJobRequirements, getFormattedTimeSlot, findLeadSource, normalizeLeadType, normalizeServiceSubType, completedJobMatchesDashboardClientFilters } from '@/lib/adminUtils';
+import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, levenshteinDistance, calculateSimilarity, extractPhotoUrls, normalizePhotoUrl, parseJobRequirements, getFormattedTimeSlot, findLeadSource, normalizeLeadType, normalizeServiceSubType, completedJobMatchesDashboardClientFilters, isOfficeCompletedJob } from '@/lib/adminUtils';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { getLocationLinkFromObject } from '@/lib/jobLocationHelpers';
 import { enrichJobsWithAfterPhotosIfNeeded } from '@/lib/jobReportPhotos';
@@ -7462,24 +7462,28 @@ const AdminDashboard = () => {
   // Handle technician selection for job completion
   const handleTechnicianSelectedForComplete = async () => {
     if (!selectedTechnicianForComplete || !selectedJobForComplete) {
-      toast.error('Please select a technician');
+      toast.error('Please select who completed the job');
       return;
     }
 
-    // Validate technician ID format (should be a valid UUID)
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(selectedTechnicianForComplete)) {
-      console.error('Invalid technician ID format:', selectedTechnicianForComplete);
-      toast.error('Invalid technician selected. Please try again.');
-      return;
-    }
+    const isOfficeCompletion = selectedTechnicianForComplete === 'office';
 
-    // Verify technician exists in the technicians list
-    const selectedTechnician = technicians.find(t => t.id === selectedTechnicianForComplete);
-    if (!selectedTechnician) {
-      console.error('Technician not found in list:', selectedTechnicianForComplete);
-      toast.error('Selected technician not found. Please refresh and try again.');
-      return;
+    if (!isOfficeCompletion) {
+      // Validate technician ID format (should be a valid UUID)
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(selectedTechnicianForComplete)) {
+        console.error('Invalid technician ID format:', selectedTechnicianForComplete);
+        toast.error('Invalid technician selected. Please try again.');
+        return;
+      }
+
+      // Verify technician exists in the technicians list
+      const selectedTechnician = technicians.find(t => t.id === selectedTechnicianForComplete);
+      if (!selectedTechnician) {
+        console.error('Technician not found in list:', selectedTechnicianForComplete);
+        toast.error('Selected technician not found. Please refresh and try again.');
+        return;
+      }
     }
 
     // OPTIMIZATION: Load QR codes only when completing a job (deferred loading)
@@ -7496,8 +7500,8 @@ const AdminDashboard = () => {
     // Note: We don't update the job assignment here anymore
     // The CompleteJobDialog will handle assigning the technician when completing the job
     // This avoids the 400 error that can occur with the select query
-    // Just update local state for UI consistency
-    if (selectedJobForComplete.assigned_technician_id !== selectedTechnicianForComplete) {
+    // Just update local state for UI consistency (office completions keep no technician)
+    if (!isOfficeCompletion && selectedJobForComplete.assigned_technician_id !== selectedTechnicianForComplete) {
       setJobs(prev => prev.map(job => 
         job.id === selectedJobForComplete.id 
           ? { ...job, assigned_technician_id: selectedTechnicianForComplete }
@@ -10106,7 +10110,7 @@ const AdminDashboard = () => {
                         // Get technician name who completed the job
                         const isDirectSale = ((fullJob as any).service_sub_type || (fullJob as any).serviceSubType) === 'Direct Sale';
                         let completedByName = 'Unknown';
-                        if (isDirectSale) {
+                        if (isDirectSale || isOfficeCompletedJob(fullJob)) {
                           completedByName = 'Office';
                         } else if (completedBy) {
                           if (completedBy === 'admin' || completedBy === 'Admin') {
@@ -11890,7 +11894,7 @@ const AdminDashboard = () => {
           <DialogHeader>
             <DialogTitle>Select Technician</DialogTitle>
             <DialogDescription>
-              Select the technician who completed this job
+              Select the technician who completed this job, or choose Office if no technician was involved
             </DialogDescription>
           </DialogHeader>
           
@@ -11905,7 +11909,7 @@ const AdminDashboard = () => {
             )}
             
             <div>
-              <Label htmlFor="technician-select-complete">Select Technician *</Label>
+              <Label htmlFor="technician-select-complete">Completed By *</Label>
               <Select 
                 value={selectedTechnicianForComplete} 
                 onValueChange={setSelectedTechnicianForComplete}
@@ -11914,19 +11918,14 @@ const AdminDashboard = () => {
                   <SelectValue placeholder="Choose a technician" />
                 </SelectTrigger>
                 <SelectContent>
-                  {technicians.length === 0 ? (
-                    <SelectItem value="no-technicians" disabled>
-                      No technicians available
-                    </SelectItem>
-                  ) : (
-                    technicians
-                      .filter(tech => !(tech as any).account_status || (tech as any).account_status === 'ACTIVE')
-                      .map((technician) => (
-                        <SelectItem key={technician.id} value={technician.id}>
-                          {technician.fullName || 'Unknown'} ({technician.employeeId || 'No ID'})
-                        </SelectItem>
-                      ))
-                  )}
+                  <SelectItem value="office">Office (no technician)</SelectItem>
+                  {technicians
+                    .filter(tech => !(tech as any).account_status || (tech as any).account_status === 'ACTIVE')
+                    .map((technician) => (
+                      <SelectItem key={technician.id} value={technician.id}>
+                        {technician.fullName || 'Unknown'} ({technician.employeeId || 'No ID'})
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>
@@ -12256,9 +12255,20 @@ const AdminDashboard = () => {
                     completedAt = dateOnly.toISOString();
                   }
                   
-                  // If completed_by is changed to a technician, also update assigned_technician_id
-                  const newCompletedBy = completedJobEditData.completedBy || 'admin';
+                  // If completed_by is changed to a technician, also update assigned_technician_id.
+                  // "office" (and legacy "admin") means no technician — completed_by is a uuid
+                  // column, so we store null and tag requirements with completed_by_office instead.
+                  const rawCompletedBy = completedJobEditData.completedBy || 'office';
+                  const isOfficeCompletion = rawCompletedBy === 'office' || rawCompletedBy === 'admin' || rawCompletedBy === 'Admin';
                   const oldAssignedTechnicianId = (selectedCompletedJob as any).assigned_technician_id;
+
+                  // Tag/untag office completion in requirements
+                  const reqsWithoutOfficeFlag = requirements.filter((r: any) => !r?.completed_by_office);
+                  requirements.length = 0;
+                  requirements.push(...reqsWithoutOfficeFlag);
+                  if (isOfficeCompletion) {
+                    requirements.push({ completed_by_office: true });
+                  }
 
                   // UI: CASH | ONLINE | PARTIAL → DB: CASH | UPI | PARTIAL
                   const uiPaymentMethod = completedJobEditData.paymentMethod || 'CASH';
@@ -12275,7 +12285,7 @@ const AdminDashboard = () => {
                     payment_method: jobsPaymentMethod,
                     payment_status: amount > 0 ? 'PAID' : 'PENDING',
                     completion_notes: completedJobEditData.completionNotes || '',
-                    completed_by: newCompletedBy,
+                    completed_by: isOfficeCompletion ? null : rawCompletedBy,
                     lead_cost: leadCost,
                     requirements: JSON.stringify(requirements),
                     service_brand:
@@ -12291,10 +12301,13 @@ const AdminDashboard = () => {
                     updateData.after_photos = [...paymentScreenshotsUrls, ...billPhotosList].filter(Boolean);
                   }
                   
-                  // If completed_by is a technician ID (not 'admin'), update assigned_technician_id
-                  // This ensures salary, payment, and attendance records are linked to the correct technician
-                  if (newCompletedBy && newCompletedBy !== 'admin' && newCompletedBy !== 'Admin') {
-                    updateData.assigned_technician_id = newCompletedBy;
+                  // If completed_by is a technician ID, update assigned_technician_id so salary,
+                  // payment, and attendance records link to the correct technician. Office
+                  // completions clear the technician so no one is credited in analytics/payments.
+                  if (!isOfficeCompletion) {
+                    updateData.assigned_technician_id = rawCompletedBy;
+                  } else {
+                    updateData.assigned_technician_id = null;
                   }
                   
                   // Only update completed_at and end_time if it's been explicitly set/changed
@@ -12312,8 +12325,21 @@ const AdminDashboard = () => {
                   if (error) {
                     toast.error('Failed to update job: ' + error.message);
                   } else {
+                    // Office completion: remove any technician payment/commission for this job so
+                    // the previously-assigned technician is no longer credited.
+                    if (isOfficeCompletion && oldAssignedTechnicianId) {
+                      try {
+                        await supabase
+                          .from('technician_payments')
+                          .delete()
+                          .eq('job_id', selectedCompletedJob.id);
+                      } catch (e) {
+                        console.error('Error removing technician payment for office completion:', e);
+                      }
+                    }
+
                     // Handle technician_payments updates when completed_by or assigned_technician_id changes
-                    const newTechnicianId = updateData.assigned_technician_id || oldAssignedTechnicianId;
+                    const newTechnicianId = isOfficeCompletion ? null : (updateData.assigned_technician_id || oldAssignedTechnicianId);
                     const technicianChanged = newTechnicianId !== oldAssignedTechnicianId;
                     
                     // Update technician_payments if job has an assigned technician or if technician changed

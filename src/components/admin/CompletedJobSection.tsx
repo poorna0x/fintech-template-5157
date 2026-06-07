@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Job, Technician } from '@/types';
 import { WhatsAppIcon } from '../WhatsAppIcon';
-import { extractPhotoUrls, findLeadSource, normalizePhotoUrl } from '@/lib/adminUtils';
+import { extractPhotoUrls, findLeadSource, normalizePhotoUrl, isOfficeCompletedJob } from '@/lib/adminUtils';
 import { toast } from 'sonner';
 import JobPartsUsedDialog from './JobPartsUsedDialog';
 import { db } from '@/lib/supabase';
@@ -541,7 +541,7 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
                 qrCodeName: qrPhotos?.selected_qr_code_name || '',
                 amcInfo: amcInfo || null,
                 completionNotes: completionNotes || '',
-                completedBy: (job as any).completed_by || job.completedBy || '',
+                completedBy: (job as any).completed_by || job.completedBy || (isOfficeCompletedJob(job) ? 'office' : ''),
                 completedAt: completedAt || null,
                 completedDate: completedDate,
                 completedTime: completedTime,

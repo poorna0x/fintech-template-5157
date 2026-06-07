@@ -348,8 +348,12 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
         }
       }
       
-      // Determine who completed the job
-      const completedByTechnicianId = selectedTechnicianId || user?.technicianId || user?.id || null;
+      // Determine who completed the job. "office" means no technician — keep
+      // completed_by null (uuid column) and tag requirements with completed_by_office.
+      const isOfficeCompletion = selectedTechnicianId === 'office';
+      const completedByTechnicianId = isOfficeCompletion
+        ? null
+        : (selectedTechnicianId || user?.technicianId || user?.id || null);
       
       // Debug logging
       console.log('🔍 [CompleteJobDialog] Submitting job completion:', {
@@ -377,7 +381,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
       };
 
       // If completing from admin page with selected technician, ensure job is assigned to that technician
-      if (selectedTechnicianId) {
+      if (selectedTechnicianId && !isOfficeCompletion) {
         // Validate technician ID format before adding to update
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         if (uuidRegex.test(selectedTechnicianId)) {
@@ -389,6 +393,11 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
           setIsSubmittingJobCompletion(false);
           return;
         }
+      } else if (isOfficeCompletion) {
+        // Office completion: no technician is credited. Clear any prior assignment so
+        // analytics (which attribute by assigned_technician_id) don't count it for a tech.
+        updateData.assigned_technician_id = null;
+        console.log('🏢 [CompleteJobDialog] Office completion — clearing assigned_technician_id');
       }
       
       console.log('📤 [CompleteJobDialog] Update payload:', updateData);
@@ -422,6 +431,12 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
       }
 
       requirements = requirements.filter((req: any) => !req.bill_photos && !req.payment_photos && !req.qr_photos && !req.amc_info);
+
+      // Tag office completions (no field technician) so reports can show "Office".
+      requirements = requirements.filter((req: any) => !req.completed_by_office);
+      if (isOfficeCompletion) {
+        requirements.push({ completed_by_office: true });
+      }
 
       if (billPhotos.length > 0) {
         requirements.push({ bill_photos: billPhotos });
@@ -484,7 +499,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
         });
       }
 
-      if (billPhotos.length > 0 || (!isBillAmountZero() && (finalPaymentMode === 'ONLINE' || finalPaymentMode === 'PARTIAL') && finalSelectedQrCodeId) || finalPaymentMode === 'PARTIAL' || (effectiveHasAMC && amcDateGiven && amcEndDate)) {
+      if (billPhotos.length > 0 || (!isBillAmountZero() && (finalPaymentMode === 'ONLINE' || finalPaymentMode === 'PARTIAL') && finalSelectedQrCodeId) || finalPaymentMode === 'PARTIAL' || (effectiveHasAMC && amcDateGiven && amcEndDate) || isOfficeCompletion) {
         updateData.requirements = JSON.stringify(requirements);
       }
 

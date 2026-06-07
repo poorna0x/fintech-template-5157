@@ -598,7 +598,7 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
                 <SelectValue placeholder="Select who completed" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="admin">Admin</SelectItem>
+                <SelectItem value="office">Office (no technician)</SelectItem>
                 {technicians.map((tech) => (
                   <SelectItem key={tech.id} value={tech.id}>
                     {tech.fullName}
