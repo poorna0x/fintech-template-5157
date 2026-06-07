@@ -135,7 +135,6 @@ const TYPE_META: Record<
   },
 };
 
-const DRAFT_INDEX_KEY = 'letterhead_drafts_v1';
 const ACTIVE_DRAFT_KEY = 'letterhead_active_v1';
 
 interface DraftIndexEntry {
@@ -146,49 +145,48 @@ interface DraftIndexEntry {
   updatedAt: string;
 }
 
-function readDrafts(): DraftIndexEntry[] {
+/** Saved letterhead drafts live in the `document_drafts` table (kind = 'letterhead'). */
+async function readDrafts(): Promise<DraftIndexEntry[]> {
   try {
-    const raw = window.localStorage.getItem(DRAFT_INDEX_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (d: any) => d && typeof d.id === 'string' && typeof d.title === 'string'
-    );
+    const { data, error } = await db.documentDrafts.listLetterhead();
+    if (error || !data) return [];
+    return data.map((row: any) => ({
+      id: row.id as string,
+      title: (row.label as string) || 'Untitled',
+      type: (row.documentType as LetterheadDocumentType) || 'custom_document',
+      brand: (row.brand as DocumentBrand) || 'hydrogenro',
+      updatedAt: (row.updated_at as string) || new Date().toISOString(),
+    }));
   } catch {
     return [];
   }
 }
 
-function writeDrafts(list: DraftIndexEntry[]) {
+async function readDraftById(id: string): Promise<LetterheadDocumentData | null> {
   try {
-    window.localStorage.setItem(DRAFT_INDEX_KEY, JSON.stringify(list));
-  } catch {
-    /* localStorage full or disabled */
-  }
-}
-
-function readDraftById(id: string): LetterheadDocumentData | null {
-  try {
-    const raw = window.localStorage.getItem(`letterhead_draft_${id}`);
-    if (!raw) return null;
-    return normalizeLetterheadData(JSON.parse(raw));
+    const { data, error } = await db.documentDrafts.load('letterhead', id);
+    const row = data as { snapshot?: unknown } | null;
+    if (error || !row?.snapshot) return null;
+    return normalizeLetterheadData(row.snapshot);
   } catch {
     return null;
   }
 }
 
-function writeDraftById(id: string, data: LetterheadDocumentData) {
+async function writeDraftById(data: LetterheadDocumentData, label: string): Promise<string | null> {
   try {
-    window.localStorage.setItem(`letterhead_draft_${id}`, JSON.stringify(data));
+    const { data: saved, error } = await db.documentDrafts.save('letterhead', data, { label });
+    const row = saved as { id?: string } | null;
+    if (error || !row?.id) return null;
+    return row.id;
   } catch {
-    /* localStorage full or disabled */
+    return null;
   }
 }
 
-function deleteDraftById(id: string) {
+async function deleteDraftById(id: string) {
   try {
-    window.localStorage.removeItem(`letterhead_draft_${id}`);
+    await db.documentDrafts.remove('letterhead', id);
   } catch {
     /* ignore */
   }
@@ -240,7 +238,16 @@ export default function LetterheadDocumentsPage({
     if (restored) return restored;
     return createEmptyLetterhead(initialType || 'service_report');
   });
-  const [drafts, setDrafts] = useState<DraftIndexEntry[]>(() => readDrafts());
+  const [drafts, setDrafts] = useState<DraftIndexEntry[]>([]);
+  const [savingDraft, setSavingDraft] = useState(false);
+
+  const refreshDrafts = useCallback(async () => {
+    setDrafts(await readDrafts());
+  }, []);
+
+  useEffect(() => {
+    void refreshDrafts();
+  }, [refreshDrafts]);
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [showMobilePreview, setShowMobilePreview] = useState(false);
   const previewIframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -400,27 +407,26 @@ export default function LetterheadDocumentsPage({
     reader.readAsDataURL(file);
   };
 
-  // --- Drafts ---
-  const handleSaveDraft = () => {
-    const id = `${data.documentType}_${Date.now().toString(36)}_${Math.random()
-      .toString(36)
-      .slice(2, 6)}`;
-    writeDraftById(id, data);
-    const entry: DraftIndexEntry = {
-      id,
-      title: data.title || data.documentNumber || 'Untitled',
-      type: data.documentType,
-      brand: data.brand,
-      updatedAt: new Date().toISOString(),
-    };
-    const next = [entry, ...drafts].slice(0, 25);
-    setDrafts(next);
-    writeDrafts(next);
-    toast.success('Draft saved');
+  // --- Drafts (saved server-side in document_drafts) ---
+  const handleSaveDraft = async () => {
+    if (savingDraft) return;
+    setSavingDraft(true);
+    try {
+      const label = data.title || data.documentNumber || 'Untitled';
+      const id = await writeDraftById(data, label);
+      if (!id) {
+        toast.error('Could not save draft — please check your connection and try again.');
+        return;
+      }
+      await refreshDrafts();
+      toast.success('Draft saved');
+    } finally {
+      setSavingDraft(false);
+    }
   };
 
-  const handleLoadDraft = (id: string) => {
-    const loaded = readDraftById(id);
+  const handleLoadDraft = async (id: string) => {
+    const loaded = await readDraftById(id);
     if (!loaded) {
       toast.error('Could not load this draft');
       return;
@@ -429,11 +435,9 @@ export default function LetterheadDocumentsPage({
     toast.success('Draft loaded');
   };
 
-  const handleDeleteDraft = (id: string) => {
-    deleteDraftById(id);
-    const next = drafts.filter((d) => d.id !== id);
-    setDrafts(next);
-    writeDrafts(next);
+  const handleDeleteDraft = async (id: string) => {
+    await deleteDraftById(id);
+    setDrafts((prev) => prev.filter((d) => d.id !== id));
     toast.success('Draft deleted');
   };
 
@@ -518,10 +522,11 @@ export default function LetterheadDocumentsPage({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleSaveDraft}
+                onClick={() => void handleSaveDraft()}
+                disabled={savingDraft}
                 className="hidden sm:inline-flex border-slate-300"
               >
-                <Save className="w-4 h-4 mr-1" /> Save
+                <Save className="w-4 h-4 mr-1" /> {savingDraft ? 'Saving…' : 'Save'}
               </Button>
               <Button
                 variant="outline"
@@ -661,7 +666,7 @@ export default function LetterheadDocumentsPage({
                 >
                   <button
                     type="button"
-                    onClick={() => handleLoadDraft(d.id)}
+                    onClick={() => void handleLoadDraft(d.id)}
                     className="flex-1 text-left text-sm font-medium text-gray-900 truncate hover:underline"
                     title={`Load ${d.title}`}
                   >
@@ -678,7 +683,7 @@ export default function LetterheadDocumentsPage({
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => handleDeleteDraft(d.id)}
+                    onClick={() => void handleDeleteDraft(d.id)}
                     className="h-7 w-7 p-0 text-red-600 hover:bg-red-50"
                     title="Delete draft"
                   >
@@ -1176,11 +1181,12 @@ export default function LetterheadDocumentsPage({
           <Button
             variant="ghost"
             size="sm"
-            onClick={handleSaveDraft}
+            onClick={() => void handleSaveDraft()}
+            disabled={savingDraft}
             className="flex flex-col items-center justify-center h-12 gap-0.5 text-[11px]"
           >
             <Save className="w-4 h-4" />
-            Save
+            {savingDraft ? 'Saving…' : 'Save'}
           </Button>
           <Button
             variant="ghost"

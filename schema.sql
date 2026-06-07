@@ -779,6 +779,22 @@ COMMENT ON COLUMN public.customers.photos IS 'Array of photo URLs attached to th
 
 
 --
+-- Name: document_drafts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.document_drafts (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    kind text NOT NULL,
+    label text DEFAULT 'Untitled'::text NOT NULL,
+    snapshot jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT document_drafts_kind_check CHECK ((kind = ANY (ARRAY['quotation'::text, 'tax_invoice'::text, 'bill'::text, 'amc'::text, 'letterhead'::text]))),
+    CONSTRAINT document_drafts_label_len CHECK ((char_length(label) <= 200))
+);
+
+
+--
 -- Name: follow_ups; Type: TABLE; Schema: public; Owner: -
 --
 

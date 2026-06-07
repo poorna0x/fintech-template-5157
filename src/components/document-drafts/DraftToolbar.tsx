@@ -50,49 +50,52 @@ export default function DraftToolbar<TSnapshot extends object>({
   const [drafts, setDrafts] = useState<DraftIndexEntry[]>([]);
   const [open, setOpen] = useState(false);
   const [currentDraftId, setCurrentDraftId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  const refresh = useCallback(() => {
-    setDrafts(listDrafts(kind));
+  const refresh = useCallback(async () => {
+    setDrafts(await listDrafts(kind));
   }, [kind]);
 
   useEffect(() => {
-    refresh();
+    void refresh();
   }, [refresh]);
 
   // Keep the drafts list fresh whenever the dropdown reopens so the timestamps
-  // shown match what's actually in storage (e.g. saves done in another tab).
+  // shown match what's actually saved (e.g. saves done from another device).
   useEffect(() => {
-    if (open) refresh();
+    if (open) void refresh();
   }, [open, refresh]);
 
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
+    if (saving) return;
+    setSaving(true);
     try {
       const snap = getSnapshot();
       const label = (buildLabel ? buildLabel(snap) : 'Untitled').trim() || 'Untitled';
-      const id = saveDraft(kind, snap, { id: currentDraftId || undefined, label });
+      const id = await saveDraft(kind, snap, { id: currentDraftId || undefined, label });
       if (!id) {
-        toast.error(
-          'Could not save draft — storage is full or unavailable. Try deleting old drafts.'
-        );
+        toast.error('Could not save draft — please check your connection and try again.');
         return;
       }
       setCurrentDraftId(id);
-      refresh();
-      toast.success(currentDraftId ? 'Draft updated' : 'Draft saved locally');
+      await refresh();
+      toast.success(currentDraftId ? 'Draft updated' : 'Draft saved');
     } catch (err) {
       console.error('Failed to save draft', err);
       toast.error('Could not save draft.');
+    } finally {
+      setSaving(false);
     }
-  }, [buildLabel, currentDraftId, getSnapshot, kind, refresh]);
+  }, [buildLabel, currentDraftId, getSnapshot, kind, refresh, saving]);
 
   const handleLoad = useCallback(
-    (id: string) => {
-      const snap = loadDraft<TSnapshot>(kind, id);
+    async (id: string) => {
+      const snap = await loadDraft<TSnapshot>(kind, id);
       if (!snap) {
-        // Index entry without payload (cleared storage, corrupt data).
-        deleteDraft(kind, id);
-        refresh();
-        toast.error('Draft was missing or expired and has been removed.');
+        // Row no longer exists (deleted elsewhere) — drop it from the list.
+        await deleteDraft(kind, id);
+        await refresh();
+        toast.error('Draft was missing and has been removed.');
         return;
       }
       try {
@@ -104,16 +107,16 @@ export default function DraftToolbar<TSnapshot extends object>({
         toast.error('Draft is from an older version and could not be applied.');
       }
     },
-    [kind, onLoad]
+    [kind, onLoad, refresh]
   );
 
   const handleDelete = useCallback(
-    (id: string, evt: React.MouseEvent) => {
+    async (id: string, evt: React.MouseEvent) => {
       evt.preventDefault();
       evt.stopPropagation();
-      deleteDraft(kind, id);
+      await deleteDraft(kind, id);
       if (currentDraftId === id) setCurrentDraftId(null);
-      refresh();
+      await refresh();
       toast.success('Draft removed');
     },
     [currentDraftId, kind, refresh]
@@ -131,11 +134,12 @@ export default function DraftToolbar<TSnapshot extends object>({
         type="button"
         size="sm"
         variant="outline"
-        onClick={handleSave}
-        title={currentDraftId ? 'Update this draft' : 'Save a local draft'}
+        onClick={() => void handleSave()}
+        disabled={saving}
+        title={currentDraftId ? 'Update this draft' : 'Save a draft'}
       >
         <Save className="w-4 h-4 mr-1.5" />
-        {currentDraftId ? 'Update Draft' : 'Save Draft'}
+        {saving ? 'Saving…' : currentDraftId ? 'Update Draft' : 'Save Draft'}
       </Button>
 
       <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -147,13 +151,13 @@ export default function DraftToolbar<TSnapshot extends object>({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-[320px]">
-          <DropdownMenuLabel>Local drafts</DropdownMenuLabel>
+          <DropdownMenuLabel>Saved drafts</DropdownMenuLabel>
           <DropdownMenuSeparator />
           {!hasDrafts ? (
             <div className="px-3 py-3 text-sm text-slate-500">
               No saved drafts. Use{' '}
               <span className="font-medium text-slate-700">Save Draft</span> to keep
-              a working copy of this {documentNoun} on this device.
+              a working copy of this {documentNoun}.
             </div>
           ) : (
             drafts.map((d) => (
@@ -162,7 +166,7 @@ export default function DraftToolbar<TSnapshot extends object>({
                 className="flex items-start gap-2 py-2 cursor-pointer"
                 onSelect={(evt) => {
                   evt.preventDefault();
-                  handleLoad(d.id);
+                  void handleLoad(d.id);
                   setOpen(false);
                 }}
               >
@@ -176,7 +180,7 @@ export default function DraftToolbar<TSnapshot extends object>({
                 </div>
                 <button
                   type="button"
-                  onClick={(evt) => handleDelete(d.id, evt)}
+                  onClick={(evt) => void handleDelete(d.id, evt)}
                   className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-600 transition-colors"
                   aria-label="Delete draft"
                   title="Delete draft"

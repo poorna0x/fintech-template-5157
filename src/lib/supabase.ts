@@ -4672,6 +4672,79 @@ export const db = {
     }
   },
 
+  // Document drafts (Quotation / Tax Invoice / Bill / AMC / Letterhead generators).
+  // Server-side so saved drafts follow the admin across devices. Shared across admins,
+  // matching the permissive RLS used by the rest of the admin data layer.
+  documentDrafts: {
+    // Freeform jsonb table — use an untyped builder so the loose snapshot payload
+    // doesn't fight the generated row types.
+    _table() {
+      return (supabase as any).from('document_drafts');
+    },
+
+    /** List drafts of a kind, newest-first. Returns metadata only (no snapshot) to keep egress low. */
+    async list(kind: string, limit: number = 50) {
+      const { data, error } = await this._table()
+        .select('id, label, updated_at')
+        .eq('kind', kind)
+        .order('updated_at', { ascending: false })
+        .limit(limit);
+      return { data, error };
+    },
+
+    /**
+     * Letterhead list with the document type + brand pulled from JSON subfields
+     * (so the dropdown can show its badges without fetching full snapshots,
+     * which may embed base64 images).
+     */
+    async listLetterhead(limit: number = 50) {
+      const { data, error } = await this._table()
+        .select('id, label, updated_at, documentType:snapshot->>documentType, brand:snapshot->>brand')
+        .eq('kind', 'letterhead')
+        .order('updated_at', { ascending: false })
+        .limit(limit);
+      return { data, error };
+    },
+
+    /** Load the full snapshot for a single draft. */
+    async load(kind: string, id: string) {
+      const { data, error } = await this._table()
+        .select('id, label, snapshot, updated_at')
+        .eq('kind', kind)
+        .eq('id', id)
+        .maybeSingle();
+      return { data, error };
+    },
+
+    /** Create a new draft (id generated server-side) or update an existing one when `id` is passed. */
+    async save(kind: string, snapshot: unknown, options?: { id?: string; label?: string }) {
+      const label = (options?.label || 'Untitled').slice(0, 200);
+      if (options?.id) {
+        const { data, error } = await this._table()
+          .update({ label, snapshot })
+          .eq('kind', kind)
+          .eq('id', options.id)
+          .select('id')
+          .maybeSingle();
+        // Row may have been deleted elsewhere; fall back to insert so the save still succeeds.
+        if (!error && data?.id) return { data, error: null };
+      }
+      const { data, error } = await this._table()
+        .insert({ kind, label, snapshot })
+        .select('id')
+        .single();
+      return { data, error };
+    },
+
+    async remove(kind: string, id: string) {
+      const { error } = await this._table()
+        .delete()
+        .eq('kind', kind)
+        .eq('id', id);
+      return { error };
+    },
+  },
+
   // Inventory operations
   inventory: {
     async getAll() {

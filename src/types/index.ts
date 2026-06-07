@@ -503,6 +503,30 @@ export interface Database {
           text: string;
         }>;
       };
+      document_drafts: {
+        Row: {
+          id: string;
+          kind: string;
+          label: string;
+          snapshot: any;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          kind: string;
+          label?: string;
+          snapshot: any;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<{
+          kind: string;
+          label: string;
+          snapshot: any;
+          updated_at: string;
+        }>;
+      };
       booking_abandonments: {
         Row: {
           id: string;
