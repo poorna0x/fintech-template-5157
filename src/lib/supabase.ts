@@ -5348,6 +5348,32 @@ export const db = {
       return { data: (data || []) as unknown as Reminder[], error };
     },
 
+    /**
+     * Reminder tracker "Done today" view: reminders whose `completed_at` falls on
+     * the local calendar today (e.g. cleared via the admin "Got it" popup). Lets
+     * the user still call / create a job / reopen them. Pending-payment reminders
+     * are excluded. Server-side paginated.
+     */
+    async getCompletedTodayPaginated(opts: { page?: number; pageSize?: number } = {}) {
+      const page = Math.max(1, opts.page ?? 1);
+      const pageSize = Math.min(Math.max(opts.pageSize ?? 15, 1), 50);
+      const from = (page - 1) * pageSize;
+      const to = from + pageSize - 1;
+      const now = new Date();
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+      const startOfTomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).toISOString();
+      const { data, error, count } = await supabase
+        .from('reminders')
+        .select(REMINDER_TRACKER_COLUMNS, { count: 'exact' })
+        .neq('title', PENDING_PAYMENT_REMINDER_TITLE)
+        .not('completed_at', 'is', null)
+        .gte('completed_at', startOfToday)
+        .lt('completed_at', startOfTomorrow)
+        .order('completed_at', { ascending: false })
+        .range(from, to);
+      return { data: (data || []) as unknown as Reminder[], error, count: count ?? 0 };
+    },
+
     /** Update the contact outcome for a recurring-service reminder (stamps last_contacted_at). */
     async updateServiceStatus(id: string, status: ServiceReminderStatus, statusNote?: string | null) {
       const updates: {

@@ -25,6 +25,8 @@ import {
   X,
   AlertTriangle,
   Repeat,
+  RotateCcw,
+  StickyNote,
 } from 'lucide-react';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import { addDays, addMonths, format } from 'date-fns';
@@ -55,7 +57,7 @@ type CustomerLabel = {
   altPhone: string | null;
 };
 
-type FilterKey = 'all' | 'week' | 'due' | ServiceReminderStatus;
+type FilterKey = 'all' | 'week' | 'due' | 'done_today' | ServiceReminderStatus;
 
 /** Default window: reminders due up to this many days ahead (includes overdue). */
 const WEEK_WINDOW_DAYS = 7;
@@ -85,6 +87,7 @@ const SETTABLE_STATUSES: ServiceReminderStatus[] = [
 const FILTERS: { key: FilterKey; label: string }[] = [
   { key: 'week', label: 'This week' },
   { key: 'due', label: 'Due now' },
+  { key: 'done_today', label: 'Done today' },
   { key: 'all', label: 'All' },
   { key: 'not_called', label: 'Not called' },
   { key: 'no_response', label: 'No response' },
@@ -205,6 +208,16 @@ export function RecurringServiceTracker({ open, onOpenChange }: RecurringService
   const [doneTarget, setDoneTarget] = useState<Reminder | null>(null);
   const [doneSaving, setDoneSaving] = useState(false);
 
+  // Reopen dialog (undo a done / pick a new due date)
+  const [reopenTarget, setReopenTarget] = useState<Reminder | null>(null);
+  const [reopenDate, setReopenDate] = useState<string>('');
+  const [reopenSaving, setReopenSaving] = useState(false);
+
+  // Edit-note dialog (the reminder's own description/notes field)
+  const [noteTarget, setNoteTarget] = useState<Reminder | null>(null);
+  const [noteText, setNoteText] = useState('');
+  const [noteSaving, setNoteSaving] = useState(false);
+
   // Create job / reports (reuse existing dialogs)
   const [activeCustomer, setActiveCustomer] = useState<Customer | null>(null);
   const [newJobOpen, setNewJobOpen] = useState(false);
@@ -221,11 +234,42 @@ export function RecurringServiceTracker({ open, onOpenChange }: RecurringService
   const isSearching = search.trim().length > 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
+  /** Fetch + merge labels only for customer ids we haven't cached yet (low egress). */
+  const loadMissingLabels = useCallback(async (rows: Reminder[]) => {
+    const ids = [
+      ...new Set(
+        rows.filter((r) => r.entity_type === 'customer' && r.entity_id).map((r) => r.entity_id as string)
+      ),
+    ];
+    const missing = ids.filter((id) => !labelsRef.current[id]);
+    if (!missing.length) return;
+    const { data: custRows, error } = await supabase
+      .from('customers')
+      .select('id, full_name, customer_id, phone, alternate_phone')
+      .in('id', missing);
+    if (error) throw new Error(error.message);
+    const additions: Record<string, CustomerLabel> = {};
+    (custRows || []).forEach((c: any) => {
+      if (c?.id) additions[c.id] = labelFromRow(c);
+    });
+    setLabels((prev) => ({ ...prev, ...additions }));
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const q = search.trim();
-      if (q) {
+      if (filter === 'done_today') {
+        // Reminders cleared today (e.g. via the admin "Got it" popup). Paginated, search ignored.
+        const { data, error, count } = await db.reminders.getCompletedTodayPaginated({
+          page,
+          pageSize: PAGE_SIZE,
+        });
+        if (error) throw new Error(error.message);
+        setReminders(data);
+        setTotalCount(count);
+        await loadMissingLabels(data);
+      } else if (q) {
         const { data: custs, error: custErr } = await db.customers.searchSlim(q, 40);
         if (custErr) throw new Error(custErr.message);
         const labelMap: Record<string, CustomerLabel> = {};
@@ -262,21 +306,7 @@ export function RecurringServiceTracker({ open, onOpenChange }: RecurringService
         if (error) throw new Error(error.message);
         setReminders(data);
         setTotalCount(count);
-        // Only fetch labels for customers we haven't already cached (saves egress on paging).
-        const ids = [...new Set((data || []).filter((r) => r.entity_id).map((r) => r.entity_id as string))];
-        const missing = ids.filter((id) => !labelsRef.current[id]);
-        if (missing.length) {
-          const { data: custRows, error: custErr } = await supabase
-            .from('customers')
-            .select('id, full_name, customer_id, phone, alternate_phone')
-            .in('id', missing);
-          if (custErr) throw new Error(custErr.message);
-          const additions: Record<string, CustomerLabel> = {};
-          (custRows || []).forEach((c: any) => {
-            if (c?.id) additions[c.id] = labelFromRow(c);
-          });
-          setLabels((prev) => ({ ...prev, ...additions }));
-        }
+        await loadMissingLabels(data);
       }
     } catch (err: any) {
       toast.error(err?.message || 'Failed to load recurring services');
@@ -285,7 +315,7 @@ export function RecurringServiceTracker({ open, onOpenChange }: RecurringService
     } finally {
       setLoading(false);
     }
-  }, [search, filter, page, todayYmd, weekEndYmd]);
+  }, [search, filter, page, todayYmd, weekEndYmd, loadMissingLabels]);
 
   useEffect(() => {
     if (open) load();
@@ -315,6 +345,8 @@ export function RecurringServiceTracker({ open, onOpenChange }: RecurringService
   const matchesFilter = useCallback(
     (r: Reminder): boolean => {
       if (filter === 'all') return true;
+      // Done-today membership is about completed_at, not status; keep the row on status edits.
+      if (filter === 'done_today') return !!r.completed_at;
       if (filter === 'due') return r.reminder_at <= todayYmd;
       if (filter === 'week') return r.reminder_at <= weekEndYmd;
       return statusOf(r) === filter;
@@ -425,6 +457,60 @@ Thanks & regards 🙏`;
       toast.error(err?.message || 'Failed to update status');
     } finally {
       setStatusSaving(false);
+    }
+  };
+
+  // ---- Reopen (undo a "done" / "Got it"), optionally for a new due date ----
+  const openReopenDialog = (r: Reminder) => {
+    setReopenTarget(r);
+    // Default to today; user can keep it or pick a future date.
+    setReopenDate(todayYmd);
+  };
+
+  const quickReopen = (months: number) => {
+    setReopenDate(format(addMonths(new Date(), months), 'yyyy-MM-dd'));
+  };
+
+  const saveReopen = async () => {
+    if (!reopenTarget || !reopenDate) return;
+    setReopenSaving(true);
+    try {
+      const { error } = await db.reminders.update(reopenTarget.id, {
+        completed_at: null,
+        reminder_at: reopenDate,
+      });
+      if (error) throw new Error(error.message);
+      toast.success(`Reopened for ${format(parseReminderAtLocalDate(reopenDate), 'd MMM yyyy')}`);
+      // In the Done-today view it should drop out of the list once reactivated.
+      removeLocal(reopenTarget.id);
+      setReopenTarget(null);
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to reopen');
+    } finally {
+      setReopenSaving(false);
+    }
+  };
+
+  // ---- Edit note (reminder's own description/notes) ----
+  const openNoteDialog = (r: Reminder) => {
+    setNoteTarget(r);
+    setNoteText(r.notes || '');
+  };
+
+  const saveNote = async () => {
+    if (!noteTarget) return;
+    setNoteSaving(true);
+    try {
+      const next = noteText.trim() || null;
+      const { error } = await db.reminders.update(noteTarget.id, { notes: next });
+      if (error) throw new Error(error.message);
+      toast.success('Note saved');
+      commitUpdate(noteTarget, { notes: next });
+      setNoteTarget(null);
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to save note');
+    } finally {
+      setNoteSaving(false);
     }
   };
 
@@ -547,6 +633,7 @@ Thanks & regards 🙏`;
     const noun = `${totalCount} reminder${totalCount === 1 ? '' : 's'}`;
     if (filter === 'week') return `${noun} due within ${WEEK_WINDOW_DAYS} days (incl. overdue)`;
     if (filter === 'due') return `${noun} due now`;
+    if (filter === 'done_today') return `${noun} marked done today`;
     return noun;
   }, [isSearching, reminders.length, totalCount, filter]);
 
@@ -561,8 +648,8 @@ Thanks & regards 🙏`;
             </DialogTitle>
             <DialogDescription className="text-xs sm:text-sm">
               Shows reminders due within a week by default (overdue first). Switch to “All” for later
-              ones, or page through. Call the customer, track the outcome, snooze, create a job, or
-              mark it done to clear it.
+              ones, or “Done today” to see what was cleared today (incl. the “Got it” popup) and still
+              call, create a job, or reopen it.
             </DialogDescription>
           </DialogHeader>
 
@@ -578,11 +665,12 @@ Thanks & regards 🙏`;
                     submitSearch();
                   }
                 }}
-                placeholder="Search customer by name, phone, or ID"
+                placeholder={filter === 'done_today' ? 'Search not available in Done today' : 'Search customer by name, phone, or ID'}
                 className="min-h-9 flex-1"
                 autoComplete="off"
+                disabled={filter === 'done_today'}
               />
-              <Button type="button" variant="secondary" size="icon" className="h-9 w-9 shrink-0" onClick={submitSearch} title="Search">
+              <Button type="button" variant="secondary" size="icon" className="h-9 w-9 shrink-0" onClick={submitSearch} title="Search" disabled={filter === 'done_today'}>
                 <Search className="h-4 w-4" />
               </Button>
               {isSearching && (
@@ -618,9 +706,11 @@ Thanks & regards 🙏`;
           <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-3 space-y-2">
             {!loading && reminders.length === 0 && (
               <div className="text-center text-sm text-muted-foreground py-10">
-                No reminders here.
+                {filter === 'done_today' ? 'Nothing marked done today yet.' : 'No reminders here.'}
                 <div className="mt-1 text-xs">
-                  Add reminders from Settings or a customer. They’ll show up here, due ones first.
+                  {filter === 'done_today'
+                    ? 'Reminders you clear here or via the “Got it” popup will appear here for today.'
+                    : 'Add reminders from Settings or a customer. They’ll show up here, due ones first.'}
                 </div>
               </div>
             )}
@@ -630,7 +720,8 @@ Thanks & regards 🙏`;
               const c = isCustomer && r.entity_id ? labels[r.entity_id] : undefined;
               const st = statusOf(r);
               const meta = STATUS_META[st];
-              const overdue = r.reminder_at <= todayYmd;
+              const isDone = !!r.completed_at;
+              const overdue = !isDone && r.reminder_at <= todayYmd;
               const recurring = !!r.interval_value && r.interval_value > 0;
               return (
                 <div key={r.id} className="rounded-lg border border-border bg-card p-3 shadow-sm">
@@ -654,11 +745,18 @@ Thanks & regards 🙏`;
                   </div>
 
                   <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                    <span className={cn('inline-flex items-center gap-1', overdue ? 'text-red-600 font-medium' : 'text-muted-foreground')}>
-                      {overdue && <AlertTriangle className="w-3 h-3" />}
-                      <CalendarClock className="w-3 h-3" />
-                      {overdue ? 'Due' : 'Next'}: {format(parseReminderAtLocalDate(r.reminder_at), 'd MMM yyyy')}
-                    </span>
+                    {isDone ? (
+                      <span className="inline-flex items-center gap-1 text-green-700 font-medium">
+                        <CheckCircle2 className="w-3 h-3" />
+                        Marked done {relativeFromNow(r.completed_at)}
+                      </span>
+                    ) : (
+                      <span className={cn('inline-flex items-center gap-1', overdue ? 'text-red-600 font-medium' : 'text-muted-foreground')}>
+                        {overdue && <AlertTriangle className="w-3 h-3" />}
+                        <CalendarClock className="w-3 h-3" />
+                        {overdue ? 'Due' : 'Next'}: {format(parseReminderAtLocalDate(r.reminder_at), 'd MMM yyyy')}
+                      </span>
+                    )}
                     {r.last_contacted_at && (
                       <span className="text-muted-foreground">Last contacted {relativeFromNow(r.last_contacted_at)}</span>
                     )}
@@ -685,9 +783,14 @@ Thanks & regards 🙏`;
                     <Button size="sm" variant="outline" className="h-8 px-2.5 text-xs" onClick={() => openStatusDialog(r)}>
                       Set status
                     </Button>
-                    <Button size="sm" variant="outline" className="h-8 px-2.5 text-xs" onClick={() => openSnoozeDialog(r)}>
-                      <CalendarClock className="w-3.5 h-3.5 mr-1" /> Snooze
+                    <Button size="sm" variant="outline" className="h-8 px-2.5 text-xs" onClick={() => openNoteDialog(r)}>
+                      <StickyNote className="w-3.5 h-3.5 mr-1" /> {r.notes ? 'Edit note' : 'Add note'}
                     </Button>
+                    {!isDone && (
+                      <Button size="sm" variant="outline" className="h-8 px-2.5 text-xs" onClick={() => openSnoozeDialog(r)}>
+                        <CalendarClock className="w-3.5 h-3.5 mr-1" /> Snooze
+                      </Button>
+                    )}
                     {isCustomer && (
                       <>
                         <Button size="sm" variant="outline" className="h-8 px-2.5 text-xs" onClick={() => startReports(r)}>
@@ -698,17 +801,23 @@ Thanks & regards 🙏`;
                         </Button>
                       </>
                     )}
-                    <Button size="sm" className="h-8 px-2.5 text-xs" onClick={() => setDoneTarget(r)}>
-                      <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Mark done
-                    </Button>
+                    {isDone ? (
+                      <Button size="sm" variant="outline" className="h-8 px-2.5 text-xs" onClick={() => openReopenDialog(r)}>
+                        <RotateCcw className="w-3.5 h-3.5 mr-1" /> Reopen
+                      </Button>
+                    ) : (
+                      <Button size="sm" className="h-8 px-2.5 text-xs" onClick={() => setDoneTarget(r)}>
+                        <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Mark done
+                      </Button>
+                    )}
                   </div>
                 </div>
               );
             })}
           </div>
 
-          {/* Pagination (hidden while searching) */}
-          {!isSearching && totalPages > 1 && (
+          {/* Pagination (hidden while searching, except the paginated Done-today view) */}
+          {(filter === 'done_today' || !isSearching) && totalPages > 1 && (
             <div className="flex items-center justify-between gap-2 border-t border-border px-4 sm:px-6 py-2.5">
               <Button
                 size="sm"
@@ -820,6 +929,81 @@ Thanks & regards 🙏`;
             </Button>
             <Button onClick={saveSnooze} disabled={snoozeSaving || !snoozeDate} className="w-full sm:w-auto">
               {snoozeSaving ? 'Saving…' : 'Snooze'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reopen dialog */}
+      <Dialog open={!!reopenTarget} onOpenChange={(o) => !o && setReopenTarget(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-base">Reopen reminder</DialogTitle>
+            <DialogDescription className="text-xs">
+              Bring this reminder back into the active list. Keep today or pick when it should be due.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-1.5">
+              <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setReopenDate(todayYmd)}>
+                Today
+              </Button>
+              <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => quickReopen(1)}>
+                +1 month
+              </Button>
+              <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => quickReopen(2)}>
+                +2 months
+              </Button>
+              <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => quickReopen(3)}>
+                +3 months
+              </Button>
+            </div>
+            <div>
+              <Label className="text-sm">Due on</Label>
+              <DatePicker
+                value={reopenDate}
+                onChange={(v) => setReopenDate(v ?? '')}
+                placeholder="Pick date"
+                className="mt-1 w-full"
+              />
+            </div>
+          </div>
+          <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-1">
+            <Button variant="outline" onClick={() => setReopenTarget(null)} className="w-full sm:w-auto">
+              Cancel
+            </Button>
+            <Button onClick={saveReopen} disabled={reopenSaving || !reopenDate} className="w-full sm:w-auto">
+              {reopenSaving ? 'Saving…' : 'Reopen'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit-note dialog */}
+      <Dialog open={!!noteTarget} onOpenChange={(o) => !o && setNoteTarget(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-base">Reminder note</DialogTitle>
+            <DialogDescription className="text-xs">
+              This note is saved on the reminder and shown wherever the reminder appears.
+            </DialogDescription>
+          </DialogHeader>
+          <div>
+            <Label className="text-sm">Note</Label>
+            <Textarea
+              value={noteText}
+              onChange={(e) => setNoteText(e.target.value)}
+              placeholder="e.g. Prefers a call after 6pm; wants only outside filter changed"
+              className="mt-1"
+              rows={3}
+            />
+          </div>
+          <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-1">
+            <Button variant="outline" onClick={() => setNoteTarget(null)} className="w-full sm:w-auto">
+              Cancel
+            </Button>
+            <Button onClick={saveNote} disabled={noteSaving} className="w-full sm:w-auto">
+              {noteSaving ? 'Saving…' : 'Save note'}
             </Button>
           </div>
         </DialogContent>
