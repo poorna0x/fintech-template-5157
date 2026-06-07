@@ -541,6 +541,9 @@ export interface Database {
           completed_at: string | null;
           interval_type: 'days' | 'months' | null;
           interval_value: number | null;
+          service_status: ServiceReminderStatus | null;
+          last_contacted_at: string | null;
+          status_note: string | null;
         };
         Insert: {
           entity_type?: 'customer' | 'job' | 'general';
@@ -552,6 +555,9 @@ export interface Database {
           completed_at?: string | null;
           interval_type?: 'days' | 'months' | null;
           interval_value?: number | null;
+          service_status?: ServiceReminderStatus | null;
+          last_contacted_at?: string | null;
+          status_note?: string | null;
         };
         Update: Partial<{
           entity_type: string;
@@ -562,6 +568,9 @@ export interface Database {
           completed_at: string | null;
           interval_type: 'days' | 'months' | null;
           interval_value: number | null;
+          service_status: ServiceReminderStatus | null;
+          last_contacted_at: string | null;
+          status_note: string | null;
         }>;
       };
       website_booking_intent: {
@@ -625,6 +634,16 @@ export interface Database {
   };
 }
 
+/** Recurring-service contact outcome tracked on monthly customer reminders. */
+export type ServiceReminderStatus =
+  | 'pending'
+  | 'not_called'
+  | 'no_response'
+  | 'waiting'
+  | 'will_return'
+  | 'confirmed'
+  | 'job_created';
+
 export interface Reminder {
   id: string;
   entity_type: 'customer' | 'job' | 'general';
@@ -637,4 +656,7 @@ export interface Reminder {
   completed_at: string | null;
   interval_type: 'days' | 'months' | null;
   interval_value: number | null;
+  service_status?: ServiceReminderStatus | null;
+  last_contacted_at?: string | null;
+  status_note?: string | null;
 }

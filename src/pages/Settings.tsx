@@ -36,7 +36,8 @@ import {
   DollarSign,
   Bell,
   Lock,
-  GitMerge
+  GitMerge,
+  Repeat
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
@@ -52,6 +53,7 @@ import CallingPage from '@/pages/CallingPage';
 import { registerAdminPWA } from '@/lib/pwa';
 import { SettingsRemindersDialog } from '@/components/reminders/SettingsRemindersDialog';
 import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
+import { RecurringServiceTracker } from '@/components/reminders/RecurringServiceTracker';
 import { SettingsPendingPaymentsDialogV2 } from '@/components/reminders/PendingPaymentsDialogV2';
 import AdvancedCustomerSearchDialog from '@/components/admin/AdvancedCustomerSearchDialog';
 import MergeCustomersDialog from '@/components/admin/MergeCustomersDialog';
@@ -215,6 +217,7 @@ const Settings = () => {
   const [showCallingPage, setShowCallingPage] = useState(false);
 
   const [remindersDialogOpen, setRemindersDialogOpen] = useState(false);
+  const [recurringServiceOpen, setRecurringServiceOpen] = useState(false);
   const [advancedSearchDialogOpen, setAdvancedSearchDialogOpen] = useState(false);
   const [addGeneralReminderOpen, setAddGeneralReminderOpen] = useState(false);
   const [addCustomerReminderOpen, setAddCustomerReminderOpen] = useState(false);
@@ -1695,6 +1698,35 @@ const Settings = () => {
           <SettingsRemindersDialog
             open={remindersDialogOpen}
             onOpenChange={setRemindersDialogOpen}
+          />
+
+          {/* Recurring service tracking */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+                <Repeat className="w-5 h-5" />
+                Reminder Tracking
+              </CardTitle>
+              <CardDescription className="text-sm mt-1">
+                All active reminders in one worklist, due ones first (one-time or recurring). Call the
+                customer, log the outcome (no response / waiting / will return / confirmed), snooze,
+                view reports, or create a job. Mark done to clear it.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-6">
+              <Button
+                type="button"
+                className="w-full min-h-10 justify-center sm:w-auto"
+                onClick={() => setRecurringServiceOpen(true)}
+              >
+                <Repeat className="w-4 h-4 mr-2 shrink-0" />
+                Open reminder tracker
+              </Button>
+            </CardContent>
+          </Card>
+          <RecurringServiceTracker
+            open={recurringServiceOpen}
+            onOpenChange={setRecurringServiceOpen}
           />
 
           {/* Pending payments */}

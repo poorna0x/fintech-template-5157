@@ -1173,8 +1173,12 @@ CREATE TABLE public.reminders (
     completed_at timestamp with time zone,
     interval_type character varying(10),
     interval_value integer,
+    service_status character varying(20) DEFAULT 'pending'::character varying,
+    last_contacted_at timestamp with time zone,
+    status_note text,
     CONSTRAINT reminders_entity_type_check CHECK (((entity_type)::text = ANY ((ARRAY['customer'::character varying, 'job'::character varying, 'general'::character varying])::text[]))),
-    CONSTRAINT reminders_interval_type_check CHECK (((interval_type IS NULL) OR ((interval_type)::text = ANY ((ARRAY['days'::character varying, 'months'::character varying])::text[]))))
+    CONSTRAINT reminders_interval_type_check CHECK (((interval_type IS NULL) OR ((interval_type)::text = ANY ((ARRAY['days'::character varying, 'months'::character varying])::text[])))),
+    CONSTRAINT reminders_service_status_check CHECK (((service_status IS NULL) OR ((service_status)::text = ANY ((ARRAY['pending'::character varying, 'not_called'::character varying, 'no_response'::character varying, 'waiting'::character varying, 'will_return'::character varying, 'confirmed'::character varying, 'job_created'::character varying])::text[]))))
 );
 
 

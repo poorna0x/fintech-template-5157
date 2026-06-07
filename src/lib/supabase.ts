@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { Database } from '@/types';
+import { Database, ServiceReminderStatus, Reminder } from '@/types';
 import { supabase as supabaseAuthClient } from './supabaseClient';
 import { escapeForLike, normalizePhoneForSearch } from './utils';
 import { PENDING_PAYMENT_REMINDER_TITLE } from './pendingPaymentReminder';
@@ -272,6 +272,19 @@ export const REMINDER_ROW_COLUMNS = [
   'completed_at',
   'interval_type',
   'interval_value',
+].join(',');
+
+/**
+ * Column list for the Reminder Tracking worklist only. Adds the contact-tracking
+ * columns from the `add-recurring-service-tracking` migration. Kept separate from
+ * REMINDER_ROW_COLUMNS so the existing reminder/pending-payment screens never
+ * depend on those columns (they keep working even if the migration hasn't run).
+ */
+export const REMINDER_TRACKER_COLUMNS = [
+  REMINDER_ROW_COLUMNS,
+  'service_status',
+  'last_contacted_at',
+  'status_note',
 ].join(',');
 
 export const FOLLOW_UP_ROW_COLUMNS = [
@@ -5179,6 +5192,9 @@ export const db = {
       created_by?: string | null;
       interval_type?: 'days' | 'months' | null;
       interval_value?: number | null;
+      service_status?: ServiceReminderStatus | null;
+      last_contacted_at?: string | null;
+      status_note?: string | null;
     }) {
       const { data, error } = await supabase
         .from('reminders')
@@ -5191,6 +5207,9 @@ export const db = {
           created_by: row.created_by ?? null,
           interval_type: row.interval_type ?? null,
           interval_value: row.interval_value ?? null,
+          ...(row.service_status !== undefined ? { service_status: row.service_status } : {}),
+          ...(row.last_contacted_at !== undefined ? { last_contacted_at: row.last_contacted_at } : {}),
+          ...(row.status_note !== undefined ? { status_note: row.status_note } : {}),
         })
         .select()
         .single();
@@ -5247,6 +5266,9 @@ export const db = {
       completed_at?: string | null;
       interval_type?: 'days' | 'months' | null;
       interval_value?: number | null;
+      service_status?: ServiceReminderStatus | null;
+      last_contacted_at?: string | null;
+      status_note?: string | null;
     }) {
       const { data, error } = await supabase
         .from('reminders')
@@ -5259,6 +5281,91 @@ export const db = {
     async delete(id: string) {
       const { error } = await supabase.from('reminders').delete().eq('id', id);
       return { error };
+    },
+
+    /**
+     * Reminder tracker: all active (incomplete) reminders — one-time or recurring,
+     * general or customer-linked — ordered due/overdue first. Server-side paginated
+     * and status-filtered so egress stays flat as the list grows. Pending-payment
+     * reminders are excluded (they are managed in their own section).
+     *
+     * Customer name/phone are NOT joined here (entity_id has no FK); the caller
+     * batches a `customers` lookup for the returned page's customer reminders only.
+     */
+    async getActiveRemindersPaginated(opts: {
+      page?: number;
+      pageSize?: number;
+      status?: ServiceReminderStatus | 'all';
+      dueOnly?: boolean;
+      /** Upper bound (inclusive) on reminder_at, e.g. today+7 for a "this week" window. YYYY-MM-DD. */
+      untilDate?: string;
+    } = {}) {
+      const page = Math.max(1, opts.page ?? 1);
+      const pageSize = Math.min(Math.max(opts.pageSize ?? 15, 1), 50);
+      const from = (page - 1) * pageSize;
+      const to = from + pageSize - 1;
+      let query = supabase
+        .from('reminders')
+        .select(REMINDER_TRACKER_COLUMNS, { count: 'exact' })
+        .neq('title', PENDING_PAYMENT_REMINDER_TITLE)
+        .is('completed_at', null);
+      if (opts.status && opts.status !== 'all') {
+        query = query.eq('service_status', opts.status);
+      }
+      // `dueOnly` (<= today) and `untilDate` (<= given date) are both upper bounds; apply the tighter one.
+      let upperBound: string | undefined = opts.untilDate;
+      if (opts.dueOnly) {
+        const now = new Date();
+        const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        upperBound = upperBound && upperBound < today ? upperBound : today;
+      }
+      if (upperBound) {
+        query = query.lte('reminder_at', upperBound);
+      }
+      const { data, error, count } = await query
+        .order('reminder_at', { ascending: true })
+        .order('created_at', { ascending: true })
+        .range(from, to);
+      return { data: (data || []) as unknown as Reminder[], error, count: count ?? 0 };
+    },
+
+    /**
+     * Reminder tracker search: find active customer reminders for a set of customer
+     * ids (resolved by the caller via `customers.searchSlim`). Capped – search
+     * result sets are small, so no pagination needed.
+     */
+    async getActiveByCustomerIds(customerIds: string[]) {
+      if (!customerIds?.length) return { data: [] as Reminder[], error: null };
+      const { data, error } = await supabase
+        .from('reminders')
+        .select(REMINDER_TRACKER_COLUMNS)
+        .eq('entity_type', 'customer')
+        .neq('title', PENDING_PAYMENT_REMINDER_TITLE)
+        .is('completed_at', null)
+        .in('entity_id', customerIds.slice(0, 200))
+        .order('reminder_at', { ascending: true })
+        .limit(200);
+      return { data: (data || []) as unknown as Reminder[], error };
+    },
+
+    /** Update the contact outcome for a recurring-service reminder (stamps last_contacted_at). */
+    async updateServiceStatus(id: string, status: ServiceReminderStatus, statusNote?: string | null) {
+      const updates: {
+        service_status: ServiceReminderStatus;
+        last_contacted_at: string;
+        status_note?: string | null;
+      } = {
+        service_status: status,
+        last_contacted_at: new Date().toISOString(),
+      };
+      if (statusNote !== undefined) updates.status_note = statusNote;
+      const { data, error } = await supabase
+        .from('reminders')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+      return { data, error };
     },
   },
 
