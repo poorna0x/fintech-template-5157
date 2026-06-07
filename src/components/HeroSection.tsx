@@ -106,17 +106,6 @@ const HeroSection = () => {
               />
             </div>
 
-            {/* Floating same-day chip */}
-            <div className="water-float absolute -top-4 -left-2 md:-left-5 bg-white dark:bg-card rounded-2xl shadow-xl border border-border px-4 py-3 flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-sky-100 dark:bg-sky-500/15 flex items-center justify-center">
-                <Clock className="w-5 h-5 text-sky-600 dark:text-sky-400" />
-              </div>
-              <div className="text-left leading-tight">
-                <div className="text-sm font-bold text-foreground">Same-day</div>
-                <div className="text-xs text-muted-foreground">service available</div>
-              </div>
-            </div>
-
             {/* Floating rating chip */}
             <div className="water-float absolute -bottom-4 -right-2 md:-right-5 bg-white dark:bg-card rounded-2xl shadow-xl border border-border px-4 py-3 flex items-center gap-3" style={{ animationDelay: '1.2s' }}>
               <div className="w-9 h-9 rounded-xl bg-amber-100 dark:bg-amber-500/15 flex items-center justify-center">
