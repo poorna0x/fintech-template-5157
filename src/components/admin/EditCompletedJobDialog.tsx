@@ -5,6 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Job, Technician } from '@/types';
 import { db } from '@/lib/supabase';
@@ -606,6 +607,26 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          {/* Hide spare parts from technician top-up */}
+          <div className="flex items-start justify-between gap-3 rounded-lg border p-3">
+            <div className="min-w-0">
+              <Label htmlFor="edit-hide-parts-topup" className="text-sm font-medium">
+                Hide spare parts from top-up
+              </Label>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                When on, the parts used in this job won&apos;t appear in the technician&apos;s
+                &quot;Top Up&quot; used-items list.
+              </p>
+            </div>
+            <Switch
+              id="edit-hide-parts-topup"
+              checked={!!editData.hidePartsFromTopup}
+              onCheckedChange={(checked) =>
+                onEditDataChange({ ...editData, hidePartsFromTopup: checked })
+              }
+            />
           </div>
 
           {/* Completion Date */}

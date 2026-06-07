@@ -403,6 +403,53 @@ export const isOfficeCompletedJob = (job: any): boolean => {
   return reqs.some((r: any) => r?.completed_by_office === true);
 };
 
+export interface OfficeJobPart {
+  inventory_id: string;
+  product_name: string;
+  code: string | null;
+  quantity: number;
+  unit_price: number;
+}
+
+/**
+ * Spare parts attached to an office / walk-in job. Reads the new `office_parts` array and
+ * falls back to the legacy single-item `direct_sale_*` shape so older sales still show.
+ */
+export const getOfficeJobParts = (job: any): OfficeJobPart[] => {
+  if (!job) return [];
+  const reqs = parseJobRequirements((job as any).requirements ?? job.requirements);
+
+  const arrEntry = reqs.find((r: any) => Array.isArray(r?.office_parts));
+  if (arrEntry && Array.isArray(arrEntry.office_parts)) {
+    return arrEntry.office_parts
+      .filter((p: any) => p && p.inventory_id)
+      .map((p: any) => ({
+        inventory_id: String(p.inventory_id),
+        product_name: p.product_name || '',
+        code: p.code ?? null,
+        quantity: Math.max(0, Math.floor(Number(p.quantity) || 0)),
+        unit_price: Math.max(0, Number(p.unit_price) || 0),
+      }));
+  }
+
+  const legacy = reqs.find((r: any) => r?.direct_sale_inventory_id);
+  if (legacy) {
+    const qty = Math.max(0, Math.floor(Number(legacy.direct_sale_quantity) || 0));
+    const cost = Math.max(0, Number(legacy.direct_sale_parts_cost) || 0);
+    return [
+      {
+        inventory_id: String(legacy.direct_sale_inventory_id),
+        product_name: '',
+        code: null,
+        quantity: qty || 1,
+        unit_price: qty > 0 ? cost / qty : cost,
+      },
+    ];
+  }
+
+  return [];
+};
+
 // Format time string to 12-hour format
 export const formatTimeTo12Hour = (timeString: string | null): string | null => {
   if (!timeString) return null;

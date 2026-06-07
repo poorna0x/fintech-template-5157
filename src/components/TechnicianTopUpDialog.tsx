@@ -113,7 +113,28 @@ const TechnicianTopUpDialog: React.FC<TechnicianTopUpDialogProps> = ({
           return part.created_at || '';
         };
 
-        const partsOnLastDay = allPartsUsed.filter((part: any) => getPartJobDayKey(part) === lastWorkingDayKey);
+        // Jobs flagged "hide spare parts from top-up" should not contribute used items.
+        const jobHidesParts = (part: any): boolean => {
+          const job = getJob(part);
+          const raw = job?.requirements;
+          let reqs: any[] = [];
+          if (typeof raw === 'string') {
+            try {
+              reqs = JSON.parse(raw);
+            } catch {
+              reqs = [];
+            }
+          } else if (Array.isArray(raw)) {
+            reqs = raw;
+          } else if (raw && typeof raw === 'object') {
+            reqs = [raw];
+          }
+          return Array.isArray(reqs) && reqs.some((r: any) => r?.hide_parts_from_topup === true);
+        };
+
+        const partsOnLastDay = allPartsUsed.filter(
+          (part: any) => getPartJobDayKey(part) === lastWorkingDayKey && !jobHidesParts(part)
+        );
         const byJobAndInv = new Map<string, { quantity_used: number; last_used_at: string; part: any }>();
         partsOnLastDay.forEach((part: any) => {
           const key = `${part.job_id}_${part.inventory_id}`;

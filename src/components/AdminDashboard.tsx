@@ -12270,6 +12270,14 @@ const AdminDashboard = () => {
                     requirements.push({ completed_by_office: true });
                   }
 
+                  // Tag/untag "hide spare parts from technician top-up"
+                  const reqsWithoutHidePartsFlag = requirements.filter((r: any) => !r?.hide_parts_from_topup);
+                  requirements.length = 0;
+                  requirements.push(...reqsWithoutHidePartsFlag);
+                  if (completedJobEditData.hidePartsFromTopup) {
+                    requirements.push({ hide_parts_from_topup: true });
+                  }
+
                   // UI: CASH | ONLINE | PARTIAL → DB: CASH | UPI | PARTIAL
                   const uiPaymentMethod = completedJobEditData.paymentMethod || 'CASH';
                   const jobsPaymentMethod =

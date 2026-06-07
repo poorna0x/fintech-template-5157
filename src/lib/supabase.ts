@@ -1173,8 +1173,31 @@ export const db = {
       inventoryId?: string | null;
       quantity?: number;
       partsCost?: number;
+      paymentMode?: 'CASH' | 'ONLINE' | 'PARTIAL';
+      partialCashAmount?: number;
+      partialOnlineAmount?: number;
+      qrPhotos?: {
+        qr_code_type?: string;
+        selected_qr_code_id?: string;
+        selected_qr_code_url?: string;
+        selected_qr_code_name?: string;
+      } | null;
     }) {
-      const { amount, item, saleDate, inventoryId, quantity, partsCost } = params;
+      const {
+        amount,
+        item,
+        saleDate,
+        inventoryId,
+        quantity,
+        partsCost,
+        paymentMode,
+        partialCashAmount,
+        partialOnlineAmount,
+        qrPhotos,
+      } = params;
+      // Map the sale's payment mode to the jobs.payment_method enum used across analytics.
+      const dbPaymentMethod =
+        paymentMode === 'ONLINE' ? 'UPI' : paymentMode === 'PARTIAL' ? 'PARTIAL' : 'CASH';
       const qty = Math.max(0, Math.floor(Number(quantity) || 0));
       const cost = Math.max(0, Number(partsCost) || 0);
       const useInventory = !!inventoryId && qty > 0;
@@ -1213,6 +1236,16 @@ export const db = {
       if (useInventory) {
         requirements.push({ direct_sale_inventory_id: inventoryId, direct_sale_quantity: qty, direct_sale_parts_cost: cost });
       }
+      // Mirror the job-completion flow: store partial split and the QR used (for reports).
+      if (paymentMode === 'PARTIAL') {
+        requirements.push({
+          partial_cash_amount: Math.max(0, Number(partialCashAmount) || 0),
+          partial_online_amount: Math.max(0, Number(partialOnlineAmount) || 0),
+        });
+      }
+      if ((paymentMode === 'ONLINE' || paymentMode === 'PARTIAL') && qrPhotos?.selected_qr_code_id) {
+        requirements.push({ qr_photos: qrPhotos });
+      }
 
       const jobData = {
         job_number: jobNumber,
@@ -1235,6 +1268,7 @@ export const db = {
         parts_cost_total: useInventory ? cost : 0,
         payment_status: 'PAID',
         payment_amount: amount,
+        payment_method: dbPaymentMethod,
         assigned_technician_id: null,
         end_time: completionISO,
         completed_at: completionISO,
@@ -1248,6 +1282,81 @@ export const db = {
       }
 
       return result;
+    },
+
+    /**
+     * Replace the spare-parts list for an office / walk-in job (no technician). Parts are
+     * stored in requirements under `office_parts` and `parts_cost_total` is recomputed so
+     * profit and analytics stay accurate. Legacy single-item `direct_sale_*` entries are
+     * folded into the new array. Main-inventory stock adjustments are handled by the caller.
+     */
+    async setOfficeJobParts(
+      jobId: string,
+      parts: Array<{
+        inventory_id: string;
+        product_name?: string;
+        code?: string | null;
+        quantity: number;
+        unit_price: number;
+      }>
+    ) {
+      const { data: jobRow, error: fetchErr } = await supabase
+        .from('jobs')
+        .select('requirements')
+        .eq('id', jobId)
+        .maybeSingle();
+      if (fetchErr) return { data: null, error: fetchErr };
+
+      let reqs: any[] = [];
+      const raw = (jobRow as any)?.requirements;
+      if (typeof raw === 'string') {
+        try {
+          reqs = JSON.parse(raw);
+        } catch {
+          reqs = [];
+        }
+      } else if (Array.isArray(raw)) {
+        reqs = raw;
+      } else if (raw && typeof raw === 'object') {
+        reqs = [raw];
+      }
+      if (!Array.isArray(reqs)) reqs = [];
+
+      // Remove any prior parts entries (new array form + legacy single-item form).
+      reqs = reqs.filter(
+        (r: any) => !r?.office_parts && !r?.direct_sale_inventory_id
+      );
+
+      const cleanParts = (parts || [])
+        .filter((p) => p && p.inventory_id && Number(p.quantity) > 0)
+        .map((p) => ({
+          inventory_id: p.inventory_id,
+          product_name: p.product_name || '',
+          code: p.code ?? null,
+          quantity: Math.max(0, Math.floor(Number(p.quantity) || 0)),
+          unit_price: Math.max(0, Number(p.unit_price) || 0),
+        }));
+
+      if (cleanParts.length > 0) {
+        reqs.push({ office_parts: cleanParts });
+      }
+
+      const partsCostTotal = cleanParts.reduce(
+        (s, p) => s + p.quantity * p.unit_price,
+        0
+      );
+
+      const { data, error } = await supabase
+        .from('jobs')
+        .update({
+          requirements: JSON.stringify(reqs),
+          parts_cost_total: partsCostTotal,
+        } as Database['public']['Tables']['jobs']['Update'])
+        .eq('id', jobId)
+        .select()
+        .maybeSingle();
+
+      return { data, error };
     },
     
     async update(id: string, updates: Database['public']['Tables']['jobs']['Update']) {
@@ -4938,7 +5047,7 @@ export const db = {
           quantity_used,
           created_at,
           inventory:inventory(id, product_name, code),
-          job:jobs(completed_at, end_time)
+          job:jobs(completed_at, end_time, requirements)
         `)
         .eq('technician_id', technicianId)
         .order('created_at', { ascending: false });

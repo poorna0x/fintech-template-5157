@@ -10,6 +10,13 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Loader2, ShoppingBag, Search, Check, X } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -28,6 +35,14 @@ interface InventoryItem {
   price: number;
   quantity: number;
 }
+
+interface QrOption {
+  id: string;
+  name: string;
+  url: string;
+}
+
+type PaymentMode = 'CASH' | 'ONLINE' | 'PARTIAL';
 
 const todayInputValue = (): string => {
   const d = new Date();
@@ -49,6 +64,14 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
   const [item, setItem] = useState('');
   const [saleDate, setSaleDate] = useState<string>(todayInputValue());
   const [isSaving, setIsSaving] = useState(false);
+
+  // Payment selection (mirrors the job-completion flow: Cash / Online / Partial + QR).
+  const [paymentMode, setPaymentMode] = useState<PaymentMode>('CASH');
+  const [partialCashAmount, setPartialCashAmount] = useState('');
+  const [partialOnlineAmount, setPartialOnlineAmount] = useState('');
+  const [selectedQrId, setSelectedQrId] = useState('');
+  const [qrOptions, setQrOptions] = useState<QrOption[]>([]);
+  const [loadingQr, setLoadingQr] = useState(false);
 
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [loadingInventory, setLoadingInventory] = useState(false);
@@ -80,6 +103,43 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
     };
   }, [open]);
 
+  // Load QR codes (common + technician) for online/partial payments when the dialog opens.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    setLoadingQr(true);
+    Promise.all([db.commonQrCodes.getAll(), db.technicians.getAll(100)])
+      .then(([qrRes, techRes]) => {
+        if (cancelled) return;
+        const options: QrOption[] = [];
+        (qrRes?.data || []).forEach((qr: any) => {
+          if (qr?.qr_code_url) {
+            options.push({ id: `common_${qr.id}`, name: qr.name || 'Common QR', url: qr.qr_code_url });
+          }
+        });
+        (techRes?.data || []).forEach((t: any) => {
+          const url = t?.qr_code || t?.qrCode;
+          if (url && String(url).trim()) {
+            options.push({
+              id: `technician_${t.id}`,
+              name: `${t.full_name || t.fullName || 'Technician'}'s QR Code`,
+              url,
+            });
+          }
+        });
+        setQrOptions(options);
+      })
+      .catch(() => {
+        if (!cancelled) setQrOptions([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingQr(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
   // Debounce inventory search
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(inventorySearch), 250);
@@ -90,6 +150,10 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
     setAmount('');
     setItem('');
     setSaleDate(todayInputValue());
+    setPaymentMode('CASH');
+    setPartialCashAmount('');
+    setPartialOnlineAmount('');
+    setSelectedQrId('');
     setSelectedInventoryId('');
     setQuantity('1');
     setInventorySearch('');
@@ -122,6 +186,9 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
   const partsCost = selectedItem ? selectedItem.price * qtyNum : 0;
   const profit = (isNaN(amountNum) ? 0 : amountNum) - partsCost;
 
+  const selectedQr = qrOptions.find((q) => q.id === selectedQrId) || null;
+  const needsQr = paymentMode === 'ONLINE' || paymentMode === 'PARTIAL';
+
   const handleSubmit = async () => {
     if (!amount || isNaN(amountNum) || amountNum <= 0) {
       toast.error('Enter a valid sale amount.');
@@ -142,11 +209,37 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
       }
     }
 
+    const partialCash = parseFloat(partialCashAmount) || 0;
+    const partialOnline = parseFloat(partialOnlineAmount) || 0;
+    if (paymentMode === 'PARTIAL') {
+      if (partialCash + partialOnline <= 0) {
+        toast.error('Enter the cash and online split.');
+        return;
+      }
+      if (partialOnline > 0 && !selectedQr) {
+        toast.error('Select a QR code for the online portion.');
+        return;
+      }
+    }
+    if (paymentMode === 'ONLINE' && !selectedQr) {
+      toast.error('Select a QR code for the online payment.');
+      return;
+    }
+
     // Parse YYYY-MM-DD as a local date (avoid timezone shifting the day).
     const [y, m, d] = saleDate.split('-').map(Number);
     const parsedDate = new Date(y, (m || 1) - 1, d || 1);
 
     const resolvedItem = selectedItem ? selectedItem.product_name : item.trim();
+
+    const qrPhotos = needsQr && selectedQr
+      ? {
+          qr_code_type: selectedQr.id.startsWith('common_') ? 'common' : 'technician',
+          selected_qr_code_id: selectedQr.id,
+          selected_qr_code_url: selectedQr.url,
+          selected_qr_code_name: selectedQr.name,
+        }
+      : null;
 
     setIsSaving(true);
     try {
@@ -157,6 +250,10 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
         inventoryId: selectedItem ? selectedItem.id : null,
         quantity: selectedItem ? qtyNum : 0,
         partsCost,
+        paymentMode,
+        partialCashAmount: partialCash,
+        partialOnlineAmount: partialOnline,
+        qrPhotos,
       });
       if (error || !data) {
         throw new Error(error?.message || 'Failed to record sale');
@@ -329,6 +426,119 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
               onChange={(e) => setSaleDate(e.target.value)}
             />
           </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="direct-sale-payment-mode">Payment mode *</Label>
+            <Select
+              value={paymentMode}
+              onValueChange={(value: PaymentMode) => {
+                setPaymentMode(value);
+                if (value === 'CASH') {
+                  setSelectedQrId('');
+                  setPartialCashAmount('');
+                  setPartialOnlineAmount('');
+                } else if (value === 'ONLINE') {
+                  setPartialCashAmount('');
+                  setPartialOnlineAmount('');
+                } else if (value === 'PARTIAL') {
+                  // Prefill online with full amount, cash 0, so the split is obvious.
+                  const bill = parseFloat(amount) || 0;
+                  setPartialCashAmount('0');
+                  setPartialOnlineAmount(bill > 0 ? String(bill) : '');
+                }
+              }}
+            >
+              <SelectTrigger id="direct-sale-payment-mode" className="mt-1">
+                <SelectValue placeholder="Select payment mode" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="CASH">Cash</SelectItem>
+                <SelectItem value="ONLINE">Online</SelectItem>
+                <SelectItem value="PARTIAL">Partial (Cash + Online)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {paymentMode === 'PARTIAL' && (
+            <div className="space-y-3 pl-3 border-l-2 border-gray-200">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="direct-sale-partial-cash">Cash amount (₹)</Label>
+                  <Input
+                    id="direct-sale-partial-cash"
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="0"
+                    value={partialCashAmount}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setPartialCashAmount(v);
+                      const bill = parseFloat(amount) || 0;
+                      if (v !== '' && !/^\s*$/.test(v)) {
+                        const cash = parseFloat(v.replace(/,/g, '')) || 0;
+                        if (!Number.isNaN(cash) && bill >= 0) {
+                          const online = Math.max(0, Math.round((bill - cash) * 100) / 100);
+                          setPartialOnlineAmount(
+                            online === Math.floor(online) ? String(Math.floor(online)) : online.toFixed(2)
+                          );
+                        }
+                      }
+                    }}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="direct-sale-partial-online">Online amount (₹)</Label>
+                  <Input
+                    id="direct-sale-partial-online"
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="0"
+                    value={partialOnlineAmount}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setPartialOnlineAmount(v);
+                      const bill = parseFloat(amount) || 0;
+                      if (v !== '' && !/^\s*$/.test(v)) {
+                        const online = parseFloat(v.replace(/,/g, '')) || 0;
+                        if (!Number.isNaN(online) && bill >= 0) {
+                          const cash = Math.max(0, Math.round((bill - online) * 100) / 100);
+                          setPartialCashAmount(
+                            cash === Math.floor(cash) ? String(Math.floor(cash)) : cash.toFixed(2)
+                          );
+                        }
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {needsQr && (
+            <div className="space-y-3 pl-3 border-l-2 border-gray-200">
+              <div className="space-y-1.5">
+                <Label htmlFor="direct-sale-qr">Select QR code {paymentMode === 'ONLINE' ? '*' : '(for online part)'}</Label>
+                <Select value={selectedQrId} onValueChange={setSelectedQrId}>
+                  <SelectTrigger id="direct-sale-qr" className="mt-1">
+                    <SelectValue placeholder={loadingQr ? 'Loading QR codes...' : 'Select QR code'} />
+                  </SelectTrigger>
+                  <SelectContent className="!z-[100]">
+                    {qrOptions.length === 0 ? (
+                      <SelectItem value="no-qr" disabled>
+                        {loadingQr ? 'Loading...' : 'No QR codes available'}
+                      </SelectItem>
+                    ) : (
+                      qrOptions.map((qr) => (
+                        <SelectItem key={qr.id} value={qr.id}>
+                          {qr.name}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
 
           {selectedItem && qtyNum > 0 && (
             <div className="rounded-lg border border-gray-200 bg-gray-50 dark:bg-gray-800/50 p-3 text-sm space-y-1">

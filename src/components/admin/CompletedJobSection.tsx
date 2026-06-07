@@ -16,6 +16,7 @@ import { WhatsAppIcon } from '../WhatsAppIcon';
 import { extractPhotoUrls, findLeadSource, normalizePhotoUrl, isOfficeCompletedJob } from '@/lib/adminUtils';
 import { toast } from 'sonner';
 import JobPartsUsedDialog from './JobPartsUsedDialog';
+import OfficeJobPartsDialog from './OfficeJobPartsDialog';
 import { db } from '@/lib/supabase';
 import { customerNameClassName } from '@/lib/customerDisplay';
 
@@ -77,6 +78,8 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
   onLoadDetails,
 }) => {
   const [partsUsedDialogOpen, setPartsUsedDialogOpen] = useState(false);
+  const [officePartsDialogOpen, setOfficePartsDialogOpen] = useState(false);
+  const [officePartsOverride, setOfficePartsOverride] = useState<number | null>(null);
   const [sparePartsCost, setSparePartsCost] = useState<number>(0);
   const [sendMessageConfirmOpen, setSendMessageConfirmOpen] = useState(false);
 
@@ -137,7 +140,12 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
     completedBy === ZERO_COMMISSION_EMPLOYEE_ID ||
     Boolean(zeroCommissionTechnician);
   const commission10 = hasZeroCommission ? 0 : billAmount * 0.1;
-  const sparePartsCostDisplay = hasPartsCostTotal ? partsTotalParsed : sparePartsCost;
+  const sparePartsCostDisplay =
+    officePartsOverride != null
+      ? officePartsOverride
+      : hasPartsCostTotal
+        ? partsTotalParsed
+        : sparePartsCost;
   const profit = billAmount - sparePartsCostDisplay - leadCost - commission10;
   // Show profit when there is bill revenue or spare parts cost (₹0 bill jobs can still have parts / negative net)
   const showProfit = billAmount > 0 || sparePartsCostDisplay > 0;
@@ -542,6 +550,7 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
                 amcInfo: amcInfo || null,
                 completionNotes: completionNotes || '',
                 completedBy: (job as any).completed_by || job.completedBy || (isOfficeCompletedJob(job) ? 'office' : ''),
+                hidePartsFromTopup: requirements.some((r: any) => r?.hide_parts_from_topup === true),
                 completedAt: completedAt || null,
                 completedDate: completedDate,
                 completedTime: completedTime,
@@ -572,7 +581,7 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
           >
             <WhatsAppIcon className="w-4 h-4 shrink-0" />
           </Button>
-          {assignedTechnician && (
+          {assignedTechnician ? (
             <Button
               size="sm"
               variant="outline"
@@ -581,6 +590,16 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
                 setPartsUsedDialogOpen(true);
               }}
               title="Add Parts"
+              className="text-xs flex-1 min-w-0 justify-center py-2 px-2"
+            >
+              <ShoppingCart className="w-4 h-4 shrink-0" />
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setOfficePartsDialogOpen(true)}
+              title="Spare Parts"
               className="text-xs flex-1 min-w-0 justify-center py-2 px-2"
             >
               <ShoppingCart className="w-4 h-4 shrink-0" />
@@ -623,6 +642,16 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
           }}
           job={job}
           technician={assignedTechnician}
+        />
+      )}
+
+      {/* Office / walk-in parts dialog (no technician) */}
+      {!assignedTechnician && (
+        <OfficeJobPartsDialog
+          open={officePartsDialogOpen}
+          onOpenChange={setOfficePartsDialogOpen}
+          job={job}
+          onPartsChanged={(total) => setOfficePartsOverride(total)}
         />
       )}
     </div>
