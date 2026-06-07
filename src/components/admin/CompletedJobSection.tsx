@@ -551,6 +551,10 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
                 completionNotes: completionNotes || '',
                 completedBy: (job as any).completed_by || job.completedBy || (isOfficeCompletedJob(job) ? 'office' : ''),
                 hidePartsFromTopup: requirements.some((r: any) => r?.hide_parts_from_topup === true),
+                topupHiddenInventoryIds: (() => {
+                  const entry = requirements.find((r: any) => Array.isArray(r?.topup_hidden_inventory_ids));
+                  return entry ? entry.topup_hidden_inventory_ids.map((id: any) => String(id)) : [];
+                })(),
                 completedAt: completedAt || null,
                 completedDate: completedDate,
                 completedTime: completedTime,

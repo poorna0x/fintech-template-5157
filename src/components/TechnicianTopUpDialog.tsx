@@ -113,8 +113,9 @@ const TechnicianTopUpDialog: React.FC<TechnicianTopUpDialogProps> = ({
           return part.created_at || '';
         };
 
-        // Jobs flagged "hide spare parts from top-up" should not contribute used items.
-        const jobHidesParts = (part: any): boolean => {
+        // A part row is hidden from top-up if its job hides all parts, or this specific
+        // inventory item is in the job's per-item hidden list.
+        const partHiddenFromTopup = (part: any): boolean => {
           const job = getJob(part);
           const raw = job?.requirements;
           let reqs: any[] = [];
@@ -129,11 +130,18 @@ const TechnicianTopUpDialog: React.FC<TechnicianTopUpDialogProps> = ({
           } else if (raw && typeof raw === 'object') {
             reqs = [raw];
           }
-          return Array.isArray(reqs) && reqs.some((r: any) => r?.hide_parts_from_topup === true);
+          if (!Array.isArray(reqs)) return false;
+          if (reqs.some((r: any) => r?.hide_parts_from_topup === true)) return true;
+          const hiddenEntry = reqs.find((r: any) => Array.isArray(r?.topup_hidden_inventory_ids));
+          if (hiddenEntry) {
+            const ids = hiddenEntry.topup_hidden_inventory_ids.map((id: any) => String(id));
+            return ids.includes(String(part.inventory_id));
+          }
+          return false;
         };
 
         const partsOnLastDay = allPartsUsed.filter(
-          (part: any) => getPartJobDayKey(part) === lastWorkingDayKey && !jobHidesParts(part)
+          (part: any) => getPartJobDayKey(part) === lastWorkingDayKey && !partHiddenFromTopup(part)
         );
         const byJobAndInv = new Map<string, { quantity_used: number; last_used_at: string; part: any }>();
         partsOnLastDay.forEach((part: any) => {

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Job, Technician } from '@/types';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { ImagePlus, X } from 'lucide-react';
+import { ImagePlus, X, ChevronDown } from 'lucide-react';
 import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
 import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmentTimeSelect';
 
@@ -38,6 +38,9 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
   const [qrCodeNames, setQrCodeNames] = useState<string[]>([]);
   const [qrCodesFetched, setQrCodesFetched] = useState(false);
   const [qrCodesLoading, setQrCodesLoading] = useState(false);
+  const [jobParts, setJobParts] = useState<Array<{ inventory_id: string; product_name: string; code: string | null; quantity_used: number }>>([]);
+  const [loadingJobParts, setLoadingJobParts] = useState(false);
+  const [showPerItemHide, setShowPerItemHide] = useState(false);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [uploadingPaymentPhoto, setUploadingPaymentPhoto] = useState(false);
   const [dragOverPayment, setDragOverPayment] = useState(false);
@@ -110,6 +113,63 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
       setQrCodesLoading(false);
     }
   }, [qrCodesFetched]);
+
+  // Load this job's used parts (for the per-item "hide from top-up" list). Technician jobs
+  // store parts in job_parts_used; office jobs have none here (no technician top-up).
+  useEffect(() => {
+    if (!open || !job?.id) {
+      setJobParts([]);
+      return;
+    }
+    let cancelled = false;
+    setLoadingJobParts(true);
+    db.jobPartsUsed
+      .getByJob(job.id)
+      .then(({ data }) => {
+        if (cancelled) return;
+        const grouped = new Map<string, { inventory_id: string; product_name: string; code: string | null; quantity_used: number }>();
+        (data || []).forEach((row: any) => {
+          const inv = Array.isArray(row.inventory) ? row.inventory[0] : row.inventory;
+          const key = row.inventory_id;
+          const existing = grouped.get(key);
+          if (existing) {
+            existing.quantity_used += Number(row.quantity_used) || 0;
+          } else {
+            grouped.set(key, {
+              inventory_id: row.inventory_id,
+              product_name: inv?.product_name || 'Unknown item',
+              code: inv?.code ?? null,
+              quantity_used: Number(row.quantity_used) || 0,
+            });
+          }
+        });
+        setJobParts(Array.from(grouped.values()));
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingJobParts(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, job?.id]);
+
+  // Reveal the per-item list automatically when the job already has some parts hidden.
+  useEffect(() => {
+    if (open && Array.isArray(editData.topupHiddenInventoryIds) && editData.topupHiddenInventoryIds.length > 0) {
+      setShowPerItemHide(true);
+    }
+  }, [open]);
+
+  const hiddenPartIds: string[] = Array.isArray(editData.topupHiddenInventoryIds)
+    ? editData.topupHiddenInventoryIds
+    : [];
+
+  const togglePartHidden = (inventoryId: string, hide: boolean) => {
+    const set = new Set(hiddenPartIds);
+    if (hide) set.add(inventoryId);
+    else set.delete(inventoryId);
+    onEditDataChange({ ...editData, topupHiddenInventoryIds: Array.from(set) });
+  };
 
   /** Partial: when cash/online change, total amount follows their sum; if both cleared, keep current total. */
   const amountFromPartialStrings = (cashStr: string, onlineStr: string): string => {
@@ -610,23 +670,75 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
           </div>
 
           {/* Hide spare parts from technician top-up */}
-          <div className="flex items-start justify-between gap-3 rounded-lg border p-3">
-            <div className="min-w-0">
-              <Label htmlFor="edit-hide-parts-topup" className="text-sm font-medium">
-                Hide spare parts from top-up
-              </Label>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                When on, the parts used in this job won&apos;t appear in the technician&apos;s
-                &quot;Top Up&quot; used-items list.
-              </p>
+          <div className="rounded-lg border p-3 space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <Label htmlFor="edit-hide-parts-topup" className="text-sm font-medium">
+                  Hide all spare parts from top-up
+                </Label>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  When on, none of this job&apos;s parts appear in the technician&apos;s
+                  &quot;Top Up&quot; used-items list.
+                </p>
+              </div>
+              <Switch
+                id="edit-hide-parts-topup"
+                checked={!!editData.hidePartsFromTopup}
+                onCheckedChange={(checked) =>
+                  onEditDataChange({ ...editData, hidePartsFromTopup: checked })
+                }
+              />
             </div>
-            <Switch
-              id="edit-hide-parts-topup"
-              checked={!!editData.hidePartsFromTopup}
-              onCheckedChange={(checked) =>
-                onEditDataChange({ ...editData, hidePartsFromTopup: checked })
-              }
-            />
+
+            {/* Per-item hide (only relevant when not hiding all), collapsed by default. */}
+            {!editData.hidePartsFromTopup && (
+              <div className="border-t pt-3">
+                <button
+                  type="button"
+                  onClick={() => setShowPerItemHide((v) => !v)}
+                  className="flex w-full items-center justify-between gap-2 text-left"
+                >
+                  <span className="text-xs text-muted-foreground">
+                    Or hide only specific parts from top-up
+                    {hiddenPartIds.length > 0 ? ` (${hiddenPartIds.length} hidden)` : ''}
+                  </span>
+                  <ChevronDown
+                    className={`h-4 w-4 text-muted-foreground transition-transform ${showPerItemHide ? 'rotate-180' : ''}`}
+                  />
+                </button>
+
+                {showPerItemHide && (
+                  <div className="mt-3">
+                    {loadingJobParts ? (
+                      <p className="text-xs text-muted-foreground">Loading parts…</p>
+                    ) : jobParts.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">No parts recorded for this job.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {jobParts.map((part) => (
+                          <div key={part.inventory_id} className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <span className="block truncate text-sm">
+                                {part.product_name}
+                                {part.code ? ` (${part.code})` : ''}
+                              </span>
+                              <span className="block text-xs text-muted-foreground">
+                                Qty used: {part.quantity_used}
+                              </span>
+                            </div>
+                            <Switch
+                              checked={hiddenPartIds.includes(part.inventory_id)}
+                              onCheckedChange={(checked) => togglePartHidden(part.inventory_id, checked)}
+                              aria-label={`Hide ${part.product_name} from top-up`}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Completion Date */}

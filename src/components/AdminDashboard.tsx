@@ -12270,12 +12270,22 @@ const AdminDashboard = () => {
                     requirements.push({ completed_by_office: true });
                   }
 
-                  // Tag/untag "hide spare parts from technician top-up"
-                  const reqsWithoutHidePartsFlag = requirements.filter((r: any) => !r?.hide_parts_from_topup);
+                  // Tag/untag "hide spare parts from technician top-up" (all + per-item)
+                  const reqsWithoutHidePartsFlag = requirements.filter(
+                    (r: any) => !r?.hide_parts_from_topup && !r?.topup_hidden_inventory_ids
+                  );
                   requirements.length = 0;
                   requirements.push(...reqsWithoutHidePartsFlag);
                   if (completedJobEditData.hidePartsFromTopup) {
                     requirements.push({ hide_parts_from_topup: true });
+                  } else if (
+                    Array.isArray(completedJobEditData.topupHiddenInventoryIds) &&
+                    completedJobEditData.topupHiddenInventoryIds.length > 0
+                  ) {
+                    // Per-item hide only applies when not hiding all.
+                    requirements.push({
+                      topup_hidden_inventory_ids: completedJobEditData.topupHiddenInventoryIds.map((id: any) => String(id)),
+                    });
                   }
 
                   // UI: CASH | ONLINE | PARTIAL → DB: CASH | UPI | PARTIAL
