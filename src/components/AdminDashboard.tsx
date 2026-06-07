@@ -351,6 +351,9 @@ const AdminDashboard = () => {
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
   const [selectedCustomerForHistory, setSelectedCustomerForHistory] = useState<Customer | null>(null);
   const [customerHistory, setCustomerHistory] = useState<{[customerId: string]: Job[]}>({});
+  const [historyHasMore, setHistoryHasMore] = useState(false);
+  const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
+  const SERVICE_HISTORY_PAGE_SIZE = 50;
   const [selectedPhoto, setSelectedPhoto] = useState<{url: string, index: number, total: number} | null>(null);
   const [selectedBillPhotos, setSelectedBillPhotos] = useState<string[] | null>(null); // Track bill photos array for navigation
   const [selectedCustomerPhotos, setSelectedCustomerPhotos] = useState<string[] | null>(null); // Track customer photos array for navigation
@@ -1936,8 +1939,10 @@ const AdminDashboard = () => {
     }
   }, [whatsappDialogOpen]);
 
-  // Load customer history function - defined early for use in useEffect
-  const loadCustomerHistory = useCallback(async (customerId: string) => {
+  // Load customer history function - defined early for use in useEffect.
+  // Paginated to keep egress bounded for customers with many jobs (e.g. the shared
+  // walk-in / office-sale customer). `append` loads the next page and adds to the list.
+  const loadCustomerHistory = useCallback(async (customerId: string, append: boolean = false) => {
     try {
       // Get customer by customer_id to get UUID
       const { data: customer, error: customerError } = await db.customers.getByCustomerId(customerId);
@@ -1947,7 +1952,12 @@ const AdminDashboard = () => {
         return;
       }
 
-      const { data: customerJobs, error: jobsError } = await db.jobs.getByCustomerIdSlim(customer.id);
+      const offset = append ? (customerHistory[customerId]?.length || 0) : 0;
+      const { data: customerJobs, hasMore, error: jobsError } = await db.jobs.getByCustomerIdSlimPaged(
+        customer.id,
+        SERVICE_HISTORY_PAGE_SIZE,
+        offset
+      );
       
       if (jobsError) {
         toast.error('Failed to load service history');
@@ -1977,22 +1987,38 @@ const AdminDashboard = () => {
         };
       }) || [];
 
-      // Sort by date (newest first)
-      enrichedJobs.sort((a, b) => {
-        const dateA = new Date(a.completedAt || a.scheduledDate || a.createdAt || 0).getTime();
-        const dateB = new Date(b.completedAt || b.scheduledDate || b.createdAt || 0).getTime();
-        return dateB - dateA;
+      setHistoryHasMore(hasMore);
+      setCustomerHistory(prev => {
+        const combined = append ? [...(prev[customerId] || []), ...enrichedJobs] : enrichedJobs;
+        // De-dupe by id (in case of overlap) and sort by date (newest first)
+        const byId = new Map<string, Job>();
+        for (const j of combined) {
+          if (j?.id) byId.set(j.id, j);
+        }
+        const deduped = [...byId.values()].sort((a, b) => {
+          const dateA = new Date(a.completedAt || a.scheduledDate || a.createdAt || 0).getTime();
+          const dateB = new Date(b.completedAt || b.scheduledDate || b.createdAt || 0).getTime();
+          return dateB - dateA;
+        });
+        return { ...prev, [customerId]: deduped };
       });
-
-      setCustomerHistory(prev => ({
-        ...prev,
-        [customerId]: enrichedJobs
-      }));
     } catch (error) {
       console.error('Error loading customer history:', error);
       toast.error('Failed to load service history');
     }
-  }, [technicians]);
+  }, [technicians, customerHistory]);
+
+  const loadMoreCustomerHistory = useCallback(async () => {
+    if (!selectedCustomerForHistory || historyLoadingMore) return;
+    const customerId = selectedCustomerForHistory.customer_id || selectedCustomerForHistory.customerId;
+    if (!customerId) return;
+    setHistoryLoadingMore(true);
+    try {
+      await loadCustomerHistory(customerId, true);
+    } finally {
+      setHistoryLoadingMore(false);
+    }
+  }, [selectedCustomerForHistory, historyLoadingMore, loadCustomerHistory]);
 
   // Egress optimization: do NOT prefetch full customer history for every customer in COMPLETED view.
   // Service history is fetched on-demand when the user clicks "View History" (see handleViewHistory).
@@ -5122,7 +5148,9 @@ const AdminDashboard = () => {
   const handleViewHistory = async (customer: Customer) => {
     setSelectedCustomerForHistory(customer);
     setHistoryDialogOpen(true);
-    // Always reload customer history to get the latest data
+    setHistoryHasMore(false);
+    setHistoryLoadingMore(false);
+    // Always reload first page of customer history to get the latest data
     const customerId = customer.customer_id || customer.customerId;
     await loadCustomerHistory(customerId);
   };
@@ -10076,8 +10104,11 @@ const AdminDashboard = () => {
                         const paymentMethod = (fullJob as any).payment_method || (fullJob as any).paymentMethod || null;
                         
                         // Get technician name who completed the job
+                        const isDirectSale = ((fullJob as any).service_sub_type || (fullJob as any).serviceSubType) === 'Direct Sale';
                         let completedByName = 'Unknown';
-                        if (completedBy) {
+                        if (isDirectSale) {
+                          completedByName = 'Office';
+                        } else if (completedBy) {
                           if (completedBy === 'admin' || completedBy === 'Admin') {
                             completedByName = 'Admin';
                           } else {
@@ -11451,6 +11482,9 @@ const AdminDashboard = () => {
         onOpenChange={setHistoryDialogOpen}
         customer={selectedCustomerForHistory}
         history={selectedCustomerForHistory ? (customerHistory[selectedCustomerForHistory.customer_id || selectedCustomerForHistory.customerId || ''] || []) : []}
+        hasMore={historyHasMore}
+        loadingMore={historyLoadingMore}
+        onLoadMore={loadMoreCustomerHistory}
       />
 
       {/* Legacy Service History Dialog - REMOVED - Now using ServiceHistoryDialog component */}

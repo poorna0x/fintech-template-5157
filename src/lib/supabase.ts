@@ -952,6 +952,30 @@ export const db = {
     },
 
     /**
+     * Paginated slim jobs-by-customer list. Keeps egress bounded for customers with
+     * very many jobs (e.g. the shared walk-in / office-sale customer). Fetches one
+     * extra row to detect whether more pages exist without a separate count query.
+     */
+    async getByCustomerIdSlimPaged(customerId: string, limit: number = 50, offset: number = 0) {
+      const cols = JOB_BY_CUSTOMER_SLIM_COLS.join(', ');
+      const safeLimit = Math.min(Math.max(1, limit), 200);
+      const safeOffset = Math.max(0, offset);
+
+      const { data, error } = await supabase
+        .from('jobs')
+        .select(cols)
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: false })
+        .range(safeOffset, safeOffset + safeLimit); // fetch limit + 1 to detect more
+
+      if (error) return { data: [], hasMore: false, error };
+
+      const rows = data || [];
+      const hasMore = rows.length > safeLimit;
+      return { data: hasMore ? rows.slice(0, safeLimit) : rows, hasMore, error: null };
+    },
+
+    /**
      * Customer / technician “report” UI: completed jobs only; no photo arrays (use enrichJobsWithAfterPhotosIfNeeded).
      */
     async getByCustomerIdForReport(customerId: string) {

@@ -4,20 +4,27 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Customer, Job } from '@/types';
-import { Wrench, User, Calendar, History } from 'lucide-react';
+import { Wrench, User, Calendar, History, Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 interface ServiceHistoryDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   customer: Customer | null;
   history: Job[];
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  onLoadMore?: () => void;
 }
 
 const ServiceHistoryDialog: React.FC<ServiceHistoryDialogProps> = ({
   open,
   onOpenChange,
   customer,
-  history
+  history,
+  hasMore = false,
+  loadingMore = false,
+  onLoadMore
 }) => {
   if (!customer) return null;
 
@@ -204,6 +211,29 @@ const ServiceHistoryDialog: React.FC<ServiceHistoryDialogProps> = ({
                   </Card>
                 );
               })}
+
+              {hasMore && (
+                <div className="flex flex-col items-center gap-2 pt-2">
+                  <Button
+                    variant="outline"
+                    onClick={onLoadMore}
+                    disabled={loadingMore}
+                    className="w-full sm:w-auto"
+                  >
+                    {loadingMore ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Loading...
+                      </>
+                    ) : (
+                      'Load more'
+                    )}
+                  </Button>
+                  <div className="text-xs text-gray-500">
+                    Showing {history.length} jobs
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="text-center py-8 text-gray-500">

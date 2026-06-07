@@ -9396,8 +9396,11 @@ const TechnicianDashboard = () => {
                         const paymentMethod = (job as any).payment_method || job.payment_method || null;
                         
                         // Get technician name who completed the job
+                        const isDirectSale = ((job as any).service_sub_type || job.serviceSubType) === 'Direct Sale';
                         let completedByName = 'Unknown';
-                        if (completedBy) {
+                        if (isDirectSale) {
+                          completedByName = 'Office';
+                        } else if (completedBy) {
                           if (completedBy === 'admin' || completedBy === 'Admin') {
                             completedByName = 'Admin';
                           } else {
