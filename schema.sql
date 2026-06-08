@@ -795,6 +795,20 @@ CREATE TABLE public.document_drafts (
 
 
 --
+-- Name: amount_trackers; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.amount_trackers (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    name text DEFAULT 'Untitled'::text NOT NULL,
+    amount numeric(14,2) DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT amount_trackers_name_len CHECK ((char_length(name) <= 100))
+);
+
+
+--
 -- Name: follow_ups; Type: TABLE; Schema: public; Owner: -
 --
 

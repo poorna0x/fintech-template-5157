@@ -527,6 +527,27 @@ export interface Database {
           updated_at: string;
         }>;
       };
+      amount_trackers: {
+        Row: {
+          id: string;
+          name: string;
+          amount: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          name?: string;
+          amount?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<{
+          name: string;
+          amount: number;
+          updated_at: string;
+        }>;
+      };
       booking_abandonments: {
         Row: {
           id: string;

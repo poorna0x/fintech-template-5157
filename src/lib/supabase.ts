@@ -4672,6 +4672,59 @@ export const db = {
     }
   },
 
+  // Named running-total trackers (e.g. "Cash flow"): set a starting amount, then add/subtract.
+  amountTrackers: {
+    async getAll() {
+      const { data, error } = await supabase
+        .from('amount_trackers')
+        .select('id, name, amount, created_at, updated_at')
+        .order('created_at', { ascending: false })
+        .limit(200);
+
+      return { data, error };
+    },
+
+    async create(input: { name: string; amount?: number }) {
+      const { data, error } = await supabase
+        .from('amount_trackers')
+        .insert({ name: input.name, amount: input.amount ?? 0 })
+        .select('id, name, amount, created_at, updated_at')
+        .single();
+
+      return { data, error };
+    },
+
+    async rename(id: string, name: string) {
+      const { data, error } = await supabase
+        .from('amount_trackers')
+        .update({ name })
+        .eq('id', id)
+        .select('id, name, amount, created_at, updated_at')
+        .single();
+
+      return { data, error };
+    },
+
+    // Atomic add/subtract via RPC so concurrent edits never lose an update.
+    async adjust(id: string, delta: number) {
+      const { data, error } = await supabase.rpc('adjust_amount_tracker', {
+        p_id: id,
+        p_delta: delta,
+      } as any);
+
+      return { data, error };
+    },
+
+    async delete(id: string) {
+      const { error } = await supabase
+        .from('amount_trackers')
+        .delete()
+        .eq('id', id);
+
+      return { error };
+    }
+  },
+
   // Document drafts (Quotation / Tax Invoice / Bill / AMC / Letterhead generators).
   // Server-side so saved drafts follow the admin across devices. Shared across admins,
   // matching the permissive RLS used by the rest of the admin data layer.
