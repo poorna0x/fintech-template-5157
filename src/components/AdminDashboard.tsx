@@ -389,6 +389,7 @@ const AdminDashboard = () => {
     hasLocation: boolean;
     isCalculating: boolean;
     isAssigned?: boolean; // Whether this technician is assigned to the job
+    isApproximate?: boolean; // True when distance is straight-line fallback (Google route unavailable)
   }>>([]);
   const [isCalculatingDistances, setIsCalculatingDistances] = useState(false);
   /** Manual pair: technician (`__tech__`) or job id — driving distance only when user clicks Calculate */
@@ -399,6 +400,7 @@ const AdminDashboard = () => {
     toLabel: string;
     distance: string;
     duration: string;
+    isApproximate?: boolean; // True when distance is straight-line fallback (Google route unavailable)
   } | null>(null);
   const [isLoadingCustomDistance, setIsLoadingCustomDistance] = useState(false);
   
@@ -6412,6 +6414,7 @@ const AdminDashboard = () => {
             toLabel: toL,
             distance: formatDistanceKm(m) || '',
             duration: '',
+            isApproximate: true,
           });
           toast.warning('Showing approximate distance (route unavailable)');
         }
@@ -6710,6 +6713,7 @@ const AdminDashboard = () => {
               hasLocation: true,
               isCalculating: false,
               isAssigned: true,
+              isApproximate: true,
             } as any]);
             toast.warning('Showing approximate distance (route unavailable)');
             return;
@@ -12715,6 +12719,11 @@ const AdminDashboard = () => {
                                         }`}>
                                           {item.distance}
                                         </span>
+                                        {item.isApproximate && (
+                                          <span className="text-[11px] text-gray-400 italic">
+                                            approximate (straight-line)
+                                          </span>
+                                        )}
                                       </div>
                                       {item.duration && (
                                         <div className={`flex items-center gap-2 text-sm ${
@@ -12843,8 +12852,13 @@ const AdminDashboard = () => {
                   <span className="text-gray-400 mx-1">→</span>
                   {customDistanceResult.toLabel}
                 </div>
-                <div className="mt-2 flex flex-wrap gap-3 text-gray-800">
+                <div className="mt-2 flex flex-wrap items-center gap-3 text-gray-800">
                   <span className="font-medium">{customDistanceResult.distance}</span>
+                  {customDistanceResult.isApproximate && (
+                    <span className="text-[11px] text-gray-400 italic">
+                      approximate (straight-line)
+                    </span>
+                  )}
                   {customDistanceResult.duration ? (
                     <span className="flex items-center gap-1">
                       <Clock className="h-4 w-4 shrink-0" />
