@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -77,6 +78,84 @@ export interface JobAssignedToTechnicianPayload {
   address?: { area?: string; city?: string };
 }
 
+// Keep unsaved Add Customer input in localStorage so closing the dialog (or a refresh)
+// doesn't lose what was typed. Cleared once the customer is created.
+const ADD_CUSTOMER_DRAFT_KEY = 'add_customer_draft_v1';
+
+const createDefaultAddFormData = () => ({
+  full_name: '',
+  phone: '',
+  alternate_phone: '',
+  email: '',
+  service_types: [] as string[],
+  equipment: {} as { [serviceType: string]: { brand: string; model: string } },
+  photos: {} as { [serviceType: string]: string[] },
+  behavior: '',
+  native_language: '',
+  status: 'ACTIVE' as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
+  notes: '',
+  address: '',
+  visible_address: '',
+  google_location: '',
+  service_cost: 0,
+  cost_agreed: false,
+});
+
+const createDefaultStep5JobData = () => ({
+  service_type: 'RO' as 'RO' | 'SOFTENER',
+  service_sub_type: '',
+  service_sub_type_custom: '',
+  scheduled_date: '',
+  scheduled_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'FLEXIBLE' | 'CUSTOM',
+  scheduled_time_custom: '',
+  description: '',
+  lead_source: '',
+  lead_source_custom: '',
+  lead_cost: '0',
+  cost_agreed: '',
+  priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
+  assigned_technician_id: '',
+  require_otp: false,
+});
+
+const loadAddCustomerDraft = (): {
+  addFormData?: Partial<ReturnType<typeof createDefaultAddFormData>>;
+  step5JobData?: Partial<ReturnType<typeof createDefaultStep5JobData>>;
+  currentStep?: number;
+  shouldCreateJob?: boolean;
+} | null => {
+  try {
+    const raw = localStorage.getItem(ADD_CUSTOMER_DRAFT_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
+const clearAddCustomerDraft = () => {
+  try {
+    localStorage.removeItem(ADD_CUSTOMER_DRAFT_KEY);
+  } catch {
+    /* ignore */
+  }
+};
+
+// Whether a saved draft holds enough typed info to be worth resuming.
+const draftHasData = (draft: ReturnType<typeof loadAddCustomerDraft>): boolean => {
+  const f = draft?.addFormData;
+  if (!f) return false;
+  return Boolean(
+    f.full_name ||
+      f.phone ||
+      f.alternate_phone ||
+      f.email ||
+      f.address ||
+      f.visible_address ||
+      f.notes ||
+      (Array.isArray(f.service_types) && f.service_types.length > 0)
+  );
+};
+
 interface AddCustomerDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -99,56 +178,40 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   onCheckExistingCustomer,
   onJobAssignedToTechnician,
 }) => {
-  const [currentStep, setCurrentStep] = useState(1);
+  const initialDraftRef = useRef(loadAddCustomerDraft());
+  const [currentStep, setCurrentStep] = useState(() =>
+    typeof initialDraftRef.current?.currentStep === 'number' ? initialDraftRef.current.currentStep : 1
+  );
   const [formErrors, setFormErrors] = useState<{[key: string]: string}>({});
   const [isCreating, setIsCreating] = useState(false);
-  const [shouldCreateJob, setShouldCreateJob] = useState(true); // Default to true
-  const [addFormData, setAddFormData] = useState({
-    full_name: '',
-    phone: '',
-    alternate_phone: '',
-    email: '',
-    service_types: [] as string[],
-    equipment: {} as {[serviceType: string]: {brand: string, model: string}},
-    photos: {} as {[serviceType: string]: string[]}, // Photos for each service type
-    behavior: '',
-    native_language: '',
-    status: 'ACTIVE' as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
-    notes: '',
-    address: '',
-    visible_address: '',
-    google_location: '',
-    service_cost: 0,
-    cost_agreed: false
-  });
+  const [shouldCreateJob, setShouldCreateJob] = useState(
+    typeof initialDraftRef.current?.shouldCreateJob === 'boolean'
+      ? initialDraftRef.current.shouldCreateJob
+      : true
+  ); // Default to true
+  const [addFormData, setAddFormData] = useState(() => ({
+    ...createDefaultAddFormData(),
+    ...(initialDraftRef.current?.addFormData || {}),
+  }));
   const [visibleAddressSuggestions, setVisibleAddressSuggestions] = useState(false);
   const [brandSuggestions, setBrandSuggestions] = useState<string[]>([]);
   const [modelSuggestions, setModelSuggestions] = useState<string[]>([]);
   const [showBrandSuggestions, setShowBrandSuggestions] = useState(false);
   const [showModelSuggestions, setShowModelSuggestions] = useState(false);
   const [duplicateFoundOnBlur, setDuplicateFoundOnBlur] = useState<Customer | null>(null);
+  // When the dialog opens with a saved (uncreated) draft, ask whether to resume or start fresh.
+  const [showResumePrompt, setShowResumePrompt] = useState(false);
+  const wasOpenRef = useRef(false);
   const locationManuallyEditedRef = useRef(false);
   // Mirrors addFormData.google_location for race-safe reads across async awaits
   // (e.g. while clipboard.readText is in flight, the user might start typing).
   const googleLocationRef = useRef('');
   // Guards against double-clicks and other re-entrancy on the Fetch Address button.
   const [isFetchingAddress, setIsFetchingAddress] = useState(false);
-  const [step5JobData, setStep5JobData] = useState({
-    service_type: 'RO' as 'RO' | 'SOFTENER',
-    service_sub_type: '', // Not selected by default; compulsory
-    service_sub_type_custom: '',
-    scheduled_date: '',
-    scheduled_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'FLEXIBLE' | 'CUSTOM',
-    scheduled_time_custom: '',
-    description: '',
-    lead_source: '', // Not selected by default; compulsory
-    lead_source_custom: '',
-    lead_cost: '0',
-    cost_agreed: '',
-    priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
-    assigned_technician_id: '', // Add technician assignment field
-    require_otp: false
-  });
+  const [step5JobData, setStep5JobData] = useState(() => ({
+    ...createDefaultStep5JobData(),
+    ...(initialDraftRef.current?.step5JobData || {}),
+  }));
 
   // Load technicians for assignment
   const [technicians, setTechnicians] = useState<any[]>([]);
@@ -157,6 +220,31 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   useEffect(() => {
     if (open) setDuplicateFoundOnBlur(null);
   }, [open]);
+
+  // On open, if there's an uncreated draft, ask the admin to resume or start new.
+  useEffect(() => {
+    if (open && !wasOpenRef.current) {
+      setShowResumePrompt(draftHasData(loadAddCustomerDraft()));
+    }
+    if (!open) {
+      setShowResumePrompt(false);
+    }
+    wasOpenRef.current = open;
+  }, [open]);
+
+  // Persist in-progress input so closing the dialog (or a refresh) doesn't lose it.
+  // Only while open, so the post-submit reset doesn't re-write an empty draft.
+  useEffect(() => {
+    if (!open) return;
+    try {
+      localStorage.setItem(
+        ADD_CUSTOMER_DRAFT_KEY,
+        JSON.stringify({ addFormData, step5JobData, currentStep, shouldCreateJob })
+      );
+    } catch {
+      /* ignore quota/serialization errors */
+    }
+  }, [open, addFormData, step5JobData, currentStep, shouldCreateJob]);
 
   // Keep ref synced with the latest google_location so async handlers can read
   // the current value without re-running themselves on every keystroke.
@@ -201,6 +289,28 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       }));
     }
   }, [open, shouldCreateJob, step5JobData.scheduled_date, addFormData.service_types]);
+
+  const handleResumeDraft = () => {
+    const draft = loadAddCustomerDraft();
+    if (draft) {
+      setAddFormData({ ...createDefaultAddFormData(), ...(draft.addFormData || {}) });
+      setStep5JobData({ ...createDefaultStep5JobData(), ...(draft.step5JobData || {}) });
+      if (typeof draft.currentStep === 'number') setCurrentStep(draft.currentStep);
+      if (typeof draft.shouldCreateJob === 'boolean') setShouldCreateJob(draft.shouldCreateJob);
+    }
+    setShowResumePrompt(false);
+  };
+
+  const handleStartNewEntry = () => {
+    clearAddCustomerDraft();
+    setAddFormData(createDefaultAddFormData());
+    setStep5JobData(createDefaultStep5JobData());
+    setCurrentStep(1);
+    setFormErrors({});
+    setDuplicateFoundOnBlur(null);
+    setShouldCreateJob(true);
+    setShowResumePrompt(false);
+  };
 
   const cleanPhoneNumber = (phone: string): string => {
     return phone.replace(/\D/g, '');
@@ -1174,45 +1284,14 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         });
       }
 
-      // Reset form after dialog is closed
-      setAddFormData({
-        full_name: '',
-        phone: '',
-        alternate_phone: '',
-        email: '',
-        service_types: [],
-        equipment: {},
-        photos: {},
-        behavior: '',
-        native_language: '',
-        status: 'ACTIVE',
-        notes: '',
-        address: '',
-        visible_address: '',
-        google_location: '',
-        service_cost: 0,
-        cost_agreed: false
-      });
+      // Customer created — discard the saved draft and reset the form.
+      clearAddCustomerDraft();
+      setAddFormData(createDefaultAddFormData());
       setCurrentStep(1);
       setFormErrors({});
       setDuplicateFoundOnBlur(null);
       setShouldCreateJob(true); // Reset to true (default)
-      setStep5JobData({
-        service_type: 'RO' as 'RO' | 'SOFTENER',
-        service_sub_type: '', // Not selected by default
-        service_sub_type_custom: '',
-        scheduled_date: '',
-        scheduled_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'FLEXIBLE' | 'CUSTOM',
-        scheduled_time_custom: '',
-        description: '',
-        lead_source: '', // Not selected by default
-        lead_source_custom: '',
-        lead_cost: '0',
-        cost_agreed: '',
-        priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
-        assigned_technician_id: '', // Reset technician assignment
-        require_otp: false
-      });
+      setStep5JobData(createDefaultStep5JobData());
 
       // Call onCustomerCreated with the new customer so parent can append to list (e.g. when no job created)
       await onCustomerCreated(newCustomer ?? undefined);
@@ -1224,6 +1303,30 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   };
 
   return (
+    <>
+    <AlertDialog open={showResumePrompt} onOpenChange={(o) => { if (!o) setShowResumePrompt(false); }}>
+      <AlertDialogContent className="!w-[calc(100vw-2rem)] !max-w-[calc(100vw-2rem)] sm:!w-full sm:!max-w-md p-5 sm:p-6">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Resume previous entry?</AlertDialogTitle>
+          <AlertDialogDescription>
+            You have unsaved customer details from before that weren't created yet.
+            {addFormData.full_name || addFormData.phone ? (
+              <span className="block mt-2 font-medium text-foreground">
+                {[addFormData.full_name, addFormData.phone].filter(Boolean).join(' · ')}
+              </span>
+            ) : null}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter className="flex-col-reverse sm:flex-row gap-2">
+          <AlertDialogCancel onClick={handleStartNewEntry} className="w-full sm:w-auto mt-0">
+            Start new
+          </AlertDialogCancel>
+          <AlertDialogAction onClick={handleResumeDraft} className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700">
+            Resume
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[95vw] sm:w-[90vw] md:w-[80vw] lg:w-[60vw] xl:w-[50vw] max-w-2xl h-[90vh] max-h-[90vh] overflow-hidden flex flex-col">
         <DialogHeader className="flex-shrink-0">
@@ -1993,14 +2096,6 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                 Previous
               </Button>
             )}
-            <Button 
-              variant="outline" 
-              onClick={() => onOpenChange(false)}
-              disabled={isCreating}
-              className="flex-1 sm:flex-none text-sm"
-            >
-              Cancel
-            </Button>
           </div>
           
           <div className="order-1 sm:order-2">
@@ -2032,6 +2127,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    </>
   );
 };
 
