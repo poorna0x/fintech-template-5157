@@ -892,14 +892,14 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
             }}
           >
             {job && (
-            <div className="p-3 bg-gray-50 rounded-lg mb-4">
-              <div className="text-sm font-medium text-gray-900">
+            <div className="p-3 bg-muted/40 rounded-lg mb-4">
+              <div className="text-sm font-medium text-foreground">
                 Job: {(job as any).job_number || job.jobNumber}
               </div>
-              <div className="text-sm text-gray-600">
+              <div className="text-sm text-muted-foreground">
                 {(job.serviceType || (job as any).service_type || 'N/A')} - {(job.serviceSubType || (job as any).service_sub_type || 'N/A')}
               </div>
-              <div className="text-sm text-gray-600">
+              <div className="text-sm text-muted-foreground">
                 Customer:{' '}
                 <span className={customerNameClassName(job.customer as any)}>
                   {job.customer?.fullName ||
@@ -918,7 +918,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                 <div className={`flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full text-xs font-medium flex-shrink-0 relative ${
                   completeJobStep === 1 ? 'bg-black text-white' : 
                   completeJobStep > 1 ? 'bg-black text-white' : 
-                  'bg-gray-200 text-gray-600'
+                  'bg-gray-200 text-muted-foreground'
                 }`}>
                   {completeJobStep === 1 && (
                     <div className="absolute inset-0 rounded-full border-2 border-black" style={{ margin: '-2px' }}></div>
@@ -933,7 +933,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                 <div className={`flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full text-xs font-medium flex-shrink-0 relative ${
                   completeJobStep === 2 ? 'bg-black text-white' : 
                   completeJobStep > 2 ? 'bg-black text-white' : 
-                  'bg-gray-200 text-gray-600'
+                  'bg-gray-200 text-muted-foreground'
                 }`}>
                   {completeJobStep === 2 && (
                     <div className="absolute inset-0 rounded-full border-2 border-black" style={{ margin: '-2px' }}></div>
@@ -948,7 +948,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                 <div className={`flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full text-xs font-medium flex-shrink-0 relative ${
                   completeJobStep === 3 ? 'bg-black text-white' : 
                   completeJobStep > 3 ? 'bg-black text-white' : 
-                  'bg-gray-200 text-gray-600'
+                  'bg-gray-200 text-muted-foreground'
                 }`}>
                   {completeJobStep === 3 && (
                     <div className="absolute inset-0 rounded-full border-2 border-black" style={{ margin: '-2px' }}></div>
@@ -963,7 +963,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                 <div className={`flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full text-xs font-medium flex-shrink-0 relative ${
                   completeJobStep === 4 ? 'bg-black text-white' : 
                   completeJobStep > 4 ? 'bg-black text-white' : 
-                  'bg-gray-200 text-gray-600'
+                  'bg-gray-200 text-muted-foreground'
                 }`}>
                   {completeJobStep === 4 && (
                     <div className="absolute inset-0 rounded-full border-2 border-black" style={{ margin: '-2px' }}></div>
@@ -978,7 +978,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                 <div className={`flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full text-xs font-medium flex-shrink-0 relative ${
                   completeJobStep === 5 ? 'bg-black text-white' : 
                   completeJobStep > 5 ? 'bg-black text-white' : 
-                  'bg-gray-200 text-gray-600'
+                  'bg-gray-200 text-muted-foreground'
                 }`}>
                   {completeJobStep === 5 && (
                     <div className="absolute inset-0 rounded-full border-2 border-black" style={{ margin: '-2px' }}></div>
@@ -996,7 +996,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                     <div className={`flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full text-xs font-medium flex-shrink-0 relative ${
                       completeJobStep === 7 ? 'bg-black text-white' : 
                       completeJobStep > 7 ? 'bg-black text-white' : 
-                      'bg-gray-200 text-gray-600'
+                      'bg-gray-200 text-muted-foreground'
                     }`}>
                       {completeJobStep === 7 && (
                         <div className="absolute inset-0 rounded-full border-2 border-black" style={{ margin: '-2px' }}></div>
@@ -1010,7 +1010,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                     {/* Step 6 - Prefilter */}
                     <div className={`flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full text-xs font-medium flex-shrink-0 relative ${
                       completeJobStep === 6 ? 'bg-black text-white' : 
-                      'bg-gray-200 text-gray-600'
+                      'bg-gray-200 text-muted-foreground'
                     }`}>
                       {completeJobStep === 6 && (
                         <div className="absolute inset-0 rounded-full border-2 border-black" style={{ margin: '-2px' }}></div>
@@ -1021,7 +1021,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                 ) : (
                   <div className={`flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full text-xs font-medium flex-shrink-0 relative ${
                     completeJobStep === 6 ? 'bg-black text-white' : 
-                    'bg-gray-200 text-gray-600'
+                    'bg-gray-200 text-muted-foreground'
                   }`}>
                     {completeJobStep === 6 && (
                       <div className="absolute inset-0 rounded-full border-2 border-black" style={{ margin: '-2px' }}></div>
@@ -1037,7 +1037,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
               <div className="space-y-4">
                 <div className="space-y-3">
                   <Label className="text-base font-semibold">Service brand for this visit *</Label>
-                  <p className="text-sm text-gray-600">
+                  <p className="text-sm text-muted-foreground">
                     {isLoadingServiceBrand
                       ? 'Checking last completed job...'
                       : lastServiceBrand
@@ -1051,7 +1051,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                       className={`p-4 rounded-lg border-2 transition-all duration-200 ${
                         serviceBrand === 'elevenro'
                           ? 'border-black bg-black text-white shadow-md'
-                          : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
+                          : 'border-border bg-card text-foreground/90 hover:border-primary/30 hover:bg-muted/40'
                       }`}
                     >
                       <span className="font-medium text-sm">ElevenRO</span>
@@ -1062,7 +1062,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                       className={`p-4 rounded-lg border-2 transition-all duration-200 ${
                         serviceBrand === 'hydrogenro'
                           ? 'border-black bg-black text-white shadow-md'
-                          : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
+                          : 'border-border bg-card text-foreground/90 hover:border-primary/30 hover:bg-muted/40'
                       }`}
                     >
                       <span className="font-medium text-sm">HydrogenRO</span>
@@ -1084,7 +1084,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                     step="0.01"
                   />
                   {billAmount && parseFloat(billAmount) > 0 && (
-                    <p className="text-sm text-gray-600 mt-2">
+                    <p className="text-sm text-muted-foreground mt-2">
                       Bill Amount: ₹{(() => {
                         const amount = parseFloat(billAmount || '0');
                         const formatted = amount.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
@@ -1147,7 +1147,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                             setAmcYears(1);
                             calculateAMCEndDate(today, 1);
                           }}
-                          className="p-4 rounded-lg border-2 transition-all duration-200 border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50"
+                          className="p-4 rounded-lg border-2 transition-all duration-200 border-border bg-card text-foreground/90 hover:border-primary/30 hover:bg-muted/40"
                         >
                           <div className="flex flex-col items-center gap-2">
                             <div className="w-5 h-5 rounded-full border-2 flex items-center justify-center border-gray-400">
@@ -1167,7 +1167,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                             // Auto-advance to next step if No
                             setCompleteJobStep(4);
                           }}
-                          className="p-4 rounded-lg border-2 transition-all duration-200 border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50"
+                          className="p-4 rounded-lg border-2 transition-all duration-200 border-border bg-card text-foreground/90 hover:border-primary/30 hover:bg-muted/40"
                         >
                           <div className="flex flex-col items-center gap-2">
                             <div className="w-5 h-5 rounded-full border-2 flex items-center justify-center border-gray-400">
@@ -1312,7 +1312,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                 </div>
 
                 {paymentMode === 'PARTIAL' && (
-                  <div className="space-y-3 pl-4 border-l-2 border-gray-200">
+                  <div className="space-y-3 pl-4 border-l-2 border-border">
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <Label htmlFor="partial-cash">Cash amount (₹)</Label>
@@ -1365,7 +1365,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                 )}
                 
                 {(paymentMode === 'ONLINE' || paymentMode === 'PARTIAL') && (
-                  <div className="space-y-4 pl-4 border-l-2 border-gray-200">
+                  <div className="space-y-4 pl-4 border-l-2 border-border">
                     <div>
                       <Label htmlFor="qr-code-type">Select QR Code *</Label>
                       <Select 
@@ -1429,11 +1429,11 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                             }
                             return (
                               <div className="text-center">
-                                <p className="text-sm font-medium mb-3 text-gray-700">{selectedQr.name}</p>
+                                <p className="text-sm font-medium mb-3 text-foreground/90">{selectedQr.name}</p>
                                 <img 
                                   src={selectedQr.qrCodeUrl} 
                                   alt={selectedQr.name}
-                                  className="w-64 h-64 object-contain mx-auto border-2 border-primary rounded-lg shadow-lg bg-white p-3"
+                                  className="w-64 h-64 object-contain mx-auto border-2 border-primary rounded-lg shadow-lg bg-card p-3"
                                   onError={(e) => {
                                     console.error('Failed to load QR code:', selectedQr.qrCodeUrl);
                                   }}
@@ -1447,19 +1447,19 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                               return (
                                 <div className="text-center p-4">
                                   <p className="text-sm text-red-500">QR code not found</p>
-                                  <p className="text-xs text-gray-500 mt-1">Technician QR code not available</p>
+                                  <p className="text-xs text-muted-foreground mt-1">Technician QR code not available</p>
                                 </div>
                               );
                             }
                             return (
                               <div className="text-center">
-                                <p className="text-sm font-medium mb-3 text-gray-700">
+                                <p className="text-sm font-medium mb-3 text-foreground/90">
                                   {selectedTech.fullName}'s QR Code
                                 </p>
                                 <img 
                                   src={(selectedTech as any).qrCode} 
                                   alt={`${selectedTech.fullName}'s QR Code`}
-                                  className="w-64 h-64 object-contain mx-auto border-2 border-primary rounded-lg shadow-lg bg-white p-3"
+                                  className="w-64 h-64 object-contain mx-auto border-2 border-primary rounded-lg shadow-lg bg-card p-3"
                                   onError={(e) => {
                                     console.error('Failed to load technician QR code:', (selectedTech as any).qrCode);
                                   }}
@@ -1480,7 +1480,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
               <div className="space-y-4">
                 <div>
                   <Label>Payment Screenshot (Optional)</Label>
-                  <p className="text-sm text-gray-500 mb-2">
+                  <p className="text-sm text-muted-foreground mb-2">
                     {paymentMode === 'ONLINE' || paymentMode === 'PARTIAL'
                       ? 'Upload payment confirmation screenshot (optional)' 
                       : 'Upload payment receipt (optional)'}
@@ -1509,7 +1509,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
               <div className="space-y-4">
                 <div>
                   <Label>Enter 4-Digit OTP *</Label>
-                  <p className="text-sm text-gray-500 mb-4">
+                  <p className="text-sm text-muted-foreground mb-4">
                     Please enter the 4-digit OTP to verify job completion
                   </p>
                   <div className="flex justify-center gap-3">
@@ -1566,7 +1566,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                   {otpError && (
                     <p className="text-sm text-red-500 mt-2 text-center">{otpError}</p>
                   )}
-                  <p className="text-xs text-gray-500 mt-2 text-center">
+                  <p className="text-xs text-muted-foreground mt-2 text-center">
                     The OTP was generated when this job was created
                   </p>
                 </div>
@@ -1577,7 +1577,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
             {completeJobStep === 6 && isSoftenerService() && (
               <div className="space-y-4">
                 <div className="text-center py-8">
-                  <p className="text-gray-600">Completing job...</p>
+                  <p className="text-muted-foreground">Completing job...</p>
                 </div>
               </div>
             )}
@@ -1593,13 +1593,13 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                       className={`p-4 rounded-lg border-2 transition-all duration-200 ${
                         customerHasPrefilter === true
                           ? 'border-black bg-black text-white shadow-md'
-                          : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
+                          : 'border-border bg-card text-foreground/90 hover:border-primary/30 hover:bg-muted/40'
                       }`}
                     >
                       <div className="flex flex-col items-center gap-2">
                         <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
                           customerHasPrefilter === true
-                            ? 'border-white bg-white'
+                            ? 'border-white bg-card'
                             : 'border-gray-400'
                         }`}>
                           {customerHasPrefilter === true && (
@@ -1615,13 +1615,13 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                       className={`p-4 rounded-lg border-2 transition-all duration-200 ${
                         customerHasPrefilter === false
                           ? 'border-black bg-black text-white shadow-md'
-                          : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
+                          : 'border-border bg-card text-foreground/90 hover:border-primary/30 hover:bg-muted/40'
                       }`}
                     >
                       <div className="flex flex-col items-center gap-2">
                         <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
                           customerHasPrefilter === false
-                            ? 'border-white bg-white'
+                            ? 'border-white bg-card'
                             : 'border-gray-400'
                         }`}>
                           {customerHasPrefilter === false && (
@@ -1772,14 +1772,14 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
           </AlertDialogHeader>
           <div className="py-4">
             <div className="text-center">
-              <div className="text-3xl font-bold text-gray-900 mb-2">
+              <div className="text-3xl font-bold text-foreground mb-2">
                 ₹{(() => {
                   const amount = parseFloat(billAmount || '0');
                   const formatted = amount.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
                   return formatted.replace(/\.00$/, '');
                 })()}
               </div>
-              <div className="text-sm text-gray-500">
+              <div className="text-sm text-muted-foreground">
                 Job: {(job as any).job_number || job.jobNumber}
               </div>
             </div>

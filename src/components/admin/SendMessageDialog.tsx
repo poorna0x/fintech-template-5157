@@ -107,10 +107,10 @@ ${amountLine}For any queries or support, please contact us:
         
         {!brandConfirmed ? (
           <div className="space-y-3 py-2">
-            <div className="rounded-lg border border-gray-300 bg-gray-50 p-4 text-center">
-              <div className="text-xs sm:text-sm text-gray-600 mb-1.5">You are about to send this message as</div>
-              <div className="text-xl sm:text-2xl font-bold text-gray-900">{brandContact.label}</div>
-              <div className="text-xs text-gray-500 mt-1.5">
+            <div className="rounded-lg border border-border bg-muted/40 p-4 text-center">
+              <div className="text-xs sm:text-sm text-muted-foreground mb-1.5">You are about to send this message as</div>
+              <div className="text-xl sm:text-2xl font-bold text-foreground">{brandContact.label}</div>
+              <div className="text-xs text-muted-foreground mt-1.5">
                 Phone: {brandContact.phone} | Email: {brandContact.email}
               </div>
             </div>
@@ -125,22 +125,22 @@ ${amountLine}For any queries or support, please contact us:
           </div>
         ) : (
           <div className="space-y-4 py-4">
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <div className="text-sm text-gray-600 mb-2">
+            <div className="bg-muted/40 p-4 rounded-lg">
+              <div className="text-sm text-muted-foreground mb-2">
                 Sending as:{' '}
                 <span className="font-medium">{brandContact.label}</span>
               </div>
-              <div className="text-sm text-gray-600 mb-2">Customer: <span className="font-medium">{customerName}</span></div>
-              <div className="text-sm text-gray-600">Phone: <span className="font-medium">{customerPhone}</span></div>
+              <div className="text-sm text-muted-foreground mb-2">Customer: <span className="font-medium">{customerName}</span></div>
+              <div className="text-sm text-muted-foreground">Phone: <span className="font-medium">{customerPhone}</span></div>
               {hasAlternate && (
-                <div className="text-sm text-gray-600 mt-1">Alternate: <span className="font-medium">{alternatePhone}</span></div>
+                <div className="text-sm text-muted-foreground mt-1">Alternate: <span className="font-medium">{alternatePhone}</span></div>
               )}
             </div>
 
             <div className="space-y-3">
               <div>
                 <Label>Message Preview</Label>
-                <div className="mt-2 p-3 bg-gray-50 rounded-md text-sm text-gray-700 whitespace-pre-wrap max-h-40 overflow-y-auto">
+                <div className="mt-2 p-3 bg-muted/40 rounded-md text-sm text-foreground/90 whitespace-pre-wrap max-h-40 overflow-y-auto">
                   {whatsappMessage}
                 </div>
               </div>

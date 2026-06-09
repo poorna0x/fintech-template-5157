@@ -49,7 +49,7 @@ const AddressDialog: React.FC<AddressDialogProps> = ({
               </DialogDescription>
             </DialogHeader>
             <div className="py-4 space-y-4">
-              <div className="text-sm text-gray-900 whitespace-pre-wrap break-words space-y-2">
+              <div className="text-sm text-foreground whitespace-pre-wrap break-words space-y-2">
                 {(() => {
                   const fullAddr = formatAddressForDisplay(customer.address)?.trim();
                   const vis = String(
@@ -76,14 +76,14 @@ const AddressDialog: React.FC<AddressDialogProps> = ({
                       </a>
                     );
                   }
-                  return <span className="text-gray-500">No address available</span>;
+                  return <span className="text-muted-foreground">No address available</span>;
                 })()}
               </div>
               
               {/* Distance and Time */}
-              <div className="pt-3 border-t border-gray-200">
+              <div className="pt-3 border-t border-border">
                 <div className="flex items-center justify-between mb-2">
-                  <div className="text-sm font-semibold text-gray-900">Distance & Time</div>
+                  <div className="text-sm font-semibold text-foreground">Distance & Time</div>
                   <Button
                     type="button"
                     variant="default"
@@ -139,13 +139,13 @@ const AddressDialog: React.FC<AddressDialogProps> = ({
                 {customerDistances[customer.id] ? (
                   <div className="text-sm">
                     {customerDistances[customer.id].isCalculating ? (
-                      <span className="text-gray-500">Calculating...</span>
+                      <span className="text-muted-foreground">Calculating...</span>
                     ) : (
                       <div className="flex items-center gap-2 text-black font-medium">
                         <span>{customerDistances[customer.id].distance}</span>
                         {customerDistances[customer.id].duration && (
                           <>
-                            <span className="text-gray-400">•</span>
+                            <span className="text-muted-foreground/70">•</span>
                             <span>{customerDistances[customer.id].duration}</span>
                           </>
                         )}
@@ -153,7 +153,7 @@ const AddressDialog: React.FC<AddressDialogProps> = ({
                     )}
                   </div>
                 ) : (
-                  <div className="text-xs text-gray-500">Click "Calculate" button to get distance and time</div>
+                  <div className="text-xs text-muted-foreground">Click "Calculate" button to get distance and time</div>
                 )}
               </div>
             </div>

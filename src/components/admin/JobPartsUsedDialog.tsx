@@ -591,15 +591,15 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
 
             {/* Parts List */}
             {loading ? (
-              <div className="text-center py-8 text-gray-500">Loading...</div>
+              <div className="text-center py-8 text-muted-foreground">Loading...</div>
             ) : !hasLoadedParts ? (
-              <div className="text-center py-8 text-gray-500">
-                <Package className="w-12 h-12 mx-auto mb-2 text-gray-400" />
+              <div className="text-center py-8 text-muted-foreground">
+                <Package className="w-12 h-12 mx-auto mb-2 text-muted-foreground/70" />
                 <p>Unable to load parts used.</p>
               </div>
             ) : partsUsed.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                <Package className="w-12 h-12 mx-auto mb-2 text-gray-400" />
+              <div className="text-center py-8 text-muted-foreground">
+                <Package className="w-12 h-12 mx-auto mb-2 text-muted-foreground/70" />
                 <p>No parts added yet.</p>
                 <p className="text-sm mt-2">Click "Add Part" to add parts used for this job.</p>
               </div>
@@ -691,11 +691,11 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
             </div>
             <div className="rounded-lg border flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden w-full">
               {addPartInventoryLoading ? (
-                <div className="py-8 px-4 text-center text-sm text-gray-500">
+                <div className="py-8 px-4 text-center text-sm text-muted-foreground">
                   Loading parts...
                 </div>
               ) : filteredInventoryItems.length === 0 ? (
-                <div className="py-8 px-4 text-center text-sm text-gray-500">
+                <div className="py-8 px-4 text-center text-sm text-muted-foreground">
                   {technicianInventory.length === 0
                     ? 'No parts in technician inventory.'
                     : debouncedSearchQuery.trim()
@@ -717,7 +717,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
                             {productName}
                           </span>
                           {code && (
-                            <span className="text-xs text-gray-500 truncate block">
+                            <span className="text-xs text-muted-foreground truncate block">
                               Code: {code}
                             </span>
                           )}
@@ -725,7 +725,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
                         <Button
                           size="sm"
                           variant="outline"
-                          className="h-8 w-8 min-w-[2rem] shrink-0 bg-white text-gray-900 transition-colors hover:!bg-gray-800 hover:!text-white hover:!border-gray-800"
+                          className="h-8 w-8 min-w-[2rem] shrink-0 bg-card text-foreground transition-colors hover:!bg-gray-800 hover:!text-white hover:!border-gray-800"
                           onClick={() => {
                             hapticTap();
                             handleQuickAddPart(item.inventory_id);
@@ -769,9 +769,9 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
           </DialogHeader>
           <div className="py-2">
             {addPartInventoryLoading ? (
-              <p className="text-sm text-gray-500 py-4 text-center">Loading technician inventory...</p>
+              <p className="text-sm text-muted-foreground py-4 text-center">Loading technician inventory...</p>
             ) : bundles.length === 0 ? (
-              <p className="text-sm text-gray-500 py-4 text-center">No bundles defined. Create bundles in Inventory → Bundles.</p>
+              <p className="text-sm text-muted-foreground py-4 text-center">No bundles defined. Create bundles in Inventory → Bundles.</p>
             ) : (
               <ul className="space-y-2">
                 {bundles.map((b) => (

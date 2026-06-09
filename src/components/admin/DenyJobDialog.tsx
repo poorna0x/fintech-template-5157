@@ -64,14 +64,14 @@ const DenyJobDialog: React.FC<DenyJobDialogProps> = ({
         </DialogHeader>
         
         {job && (
-          <div className="p-3 bg-gray-50 rounded-lg mb-4">
-            <div className="text-sm font-medium text-gray-900">
+          <div className="p-3 bg-muted/40 rounded-lg mb-4">
+            <div className="text-sm font-medium text-foreground">
               Job: {(job as any).job_number || job.jobNumber}
             </div>
-            <div className="text-sm text-gray-600">
+            <div className="text-sm text-muted-foreground">
               {((job as any).service_type || job.serviceType || 'N/A')} - {((job as any).service_sub_type || job.serviceSubType || 'N/A')}
             </div>
-            <div className="text-sm text-gray-600">
+            <div className="text-sm text-muted-foreground">
               Customer:{' '}
               <span className={customerNameClassName(job.customer as any)}>
                 {(job.customer as any)?.full_name || job.customer?.fullName || 'Unknown'}
@@ -102,7 +102,7 @@ const DenyJobDialog: React.FC<DenyJobDialogProps> = ({
                 required
               />
               {showDenySuggestions && filteredDenialSuggestions.length > 0 && (
-                <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-48 overflow-y-auto">
+                <div className="absolute z-50 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-48 overflow-y-auto">
                   {filteredDenialSuggestions.map((suggestion, idx) => (
                     <button
                       key={idx}
@@ -122,7 +122,7 @@ const DenyJobDialog: React.FC<DenyJobDialogProps> = ({
               )}
             </div>
             {!showDenySuggestions && denyReason.length === 0 && (
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Start typing to see suggested reasons
               </p>
             )}

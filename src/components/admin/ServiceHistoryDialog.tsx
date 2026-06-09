@@ -77,10 +77,10 @@ const ServiceHistoryDialog: React.FC<ServiceHistoryDialogProps> = ({
                         </div>
                         {serviceDate && (
                           <div className="text-right">
-                            <div className="text-sm font-semibold text-gray-900">
+                            <div className="text-sm font-semibold text-foreground">
                               {job.completedAt ? 'Completed' : job.status === 'IN_PROGRESS' ? 'In Progress' : 'Scheduled'}
                             </div>
-                            <div className="text-xs text-gray-500">
+                            <div className="text-xs text-muted-foreground">
                               {serviceDate.toLocaleDateString('en-IN', { 
                                 day: 'numeric', 
                                 month: 'short', 
@@ -88,7 +88,7 @@ const ServiceHistoryDialog: React.FC<ServiceHistoryDialogProps> = ({
                               })}
                             </div>
                             {job.completedAt && (
-                              <div className="text-xs text-gray-500">
+                              <div className="text-xs text-muted-foreground">
                                 {new Date(job.completedAt).toLocaleTimeString('en-IN', { 
                                   hour: '2-digit', 
                                   minute: '2-digit' 
@@ -102,9 +102,9 @@ const ServiceHistoryDialog: React.FC<ServiceHistoryDialogProps> = ({
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <div className="flex items-center gap-2">
-                            <Wrench className="w-4 h-4 text-gray-500" />
+                            <Wrench className="w-4 h-4 text-muted-foreground" />
                             <div>
-                              <div className="text-sm font-semibold text-gray-900">
+                              <div className="text-sm font-semibold text-foreground">
                                 {job.serviceType || job.service_type || 'N/A'} - {job.serviceSubType || job.service_sub_type || 'N/A'}
                               </div>
                               {(job.brand && job.model && 
@@ -112,7 +112,7 @@ const ServiceHistoryDialog: React.FC<ServiceHistoryDialogProps> = ({
                                 !job.brand.toLowerCase().includes('n/a') &&
                                 !job.model.toLowerCase().includes('not specified') && 
                                 !job.model.toLowerCase().includes('n/a')) && (
-                                <div className="text-xs text-gray-600">
+                                <div className="text-xs text-muted-foreground">
                                   {job.brand} {job.model}
                                 </div>
                               )}
@@ -123,20 +123,20 @@ const ServiceHistoryDialog: React.FC<ServiceHistoryDialogProps> = ({
                         <div className="space-y-2">
                           {job.assignedTechnician ? (
                             <div className="flex items-center gap-2">
-                              <User className="w-4 h-4 text-gray-500" />
+                              <User className="w-4 h-4 text-muted-foreground" />
                               <div>
-                                <div className="text-sm font-semibold text-gray-900">
+                                <div className="text-sm font-semibold text-foreground">
                                   {job.assignedTechnician.fullName}
                                 </div>
                                 {job.assignedTechnician.phone && (
-                                  <div className="text-xs text-gray-600">
+                                  <div className="text-xs text-muted-foreground">
                                     {job.assignedTechnician.phone}
                                   </div>
                                 )}
                               </div>
                             </div>
                           ) : (
-                            <div className="flex items-center gap-2 text-sm text-gray-500">
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
                               <User className="w-4 h-4" />
                               <span>No technician assigned</span>
                             </div>
@@ -145,7 +145,7 @@ const ServiceHistoryDialog: React.FC<ServiceHistoryDialogProps> = ({
                       </div>
 
                       {job.scheduledDate && (
-                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
                           <Calendar className="w-4 h-4" />
                           <span>
                             Scheduled: {new Date(job.scheduledDate).toLocaleDateString('en-IN', { 
@@ -163,7 +163,7 @@ const ServiceHistoryDialog: React.FC<ServiceHistoryDialogProps> = ({
                       )}
 
                       {job.description && (
-                        <div className="text-sm text-gray-700 bg-gray-50 p-3 rounded-md">
+                        <div className="text-sm text-foreground/90 bg-muted/40 p-3 rounded-md">
                           <div className="font-medium mb-1">Description:</div>
                           <div className="break-words">{job.description}</div>
                         </div>
@@ -172,19 +172,19 @@ const ServiceHistoryDialog: React.FC<ServiceHistoryDialogProps> = ({
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2 border-t">
                         {job.estimated_cost !== undefined && job.estimated_cost > 0 && (
                           <div>
-                            <div className="text-xs text-gray-500">Estimated Cost</div>
+                            <div className="text-xs text-muted-foreground">Estimated Cost</div>
                             <div className="text-sm font-semibold">₹{job.estimated_cost}</div>
                           </div>
                         )}
                         {job.actual_cost !== undefined && job.actual_cost > 0 && (
                           <div>
-                            <div className="text-xs text-gray-500">Actual Cost</div>
+                            <div className="text-xs text-muted-foreground">Actual Cost</div>
                             <div className="text-sm font-semibold">₹{job.actual_cost}</div>
                           </div>
                         )}
                         {job.payment_status && (
                           <div>
-                            <div className="text-xs text-gray-500">Payment Status</div>
+                            <div className="text-xs text-muted-foreground">Payment Status</div>
                             <Badge 
                               variant={job.payment_status === 'PAID' ? 'default' : 'outline'}
                               className="text-xs mt-1"
@@ -195,14 +195,14 @@ const ServiceHistoryDialog: React.FC<ServiceHistoryDialogProps> = ({
                         )}
                         {job.estimatedDuration && (
                           <div>
-                            <div className="text-xs text-gray-500">Duration</div>
+                            <div className="text-xs text-muted-foreground">Duration</div>
                             <div className="text-sm font-semibold">{job.estimatedDuration} min</div>
                           </div>
                         )}
                       </div>
 
                       {job.completionNotes && (
-                        <div className="text-sm text-gray-700 bg-green-50 p-3 rounded-md border border-green-200">
+                        <div className="text-sm text-foreground/90 bg-green-50 p-3 rounded-md border border-green-200">
                           <div className="font-medium mb-1 text-green-800">Completion Notes:</div>
                           <div className="break-words text-green-900">{job.completionNotes}</div>
                         </div>
@@ -229,14 +229,14 @@ const ServiceHistoryDialog: React.FC<ServiceHistoryDialogProps> = ({
                       'Load more'
                     )}
                   </Button>
-                  <div className="text-xs text-gray-500">
+                  <div className="text-xs text-muted-foreground">
                     Showing {history.length} jobs
                   </div>
                 </div>
               )}
             </div>
           ) : (
-            <div className="text-center py-8 text-gray-500">
+            <div className="text-center py-8 text-muted-foreground">
               <History className="w-12 h-12 mx-auto mb-4 text-gray-300" />
               <div className="text-lg font-medium">No service history yet</div>
               <div className="text-sm">Create a new job to start building service history</div>

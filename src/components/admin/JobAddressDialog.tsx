@@ -44,7 +44,7 @@ const JobAddressDialog: React.FC<JobAddressDialogProps> = ({ open, onOpenChange,
                 </DialogDescription>
               </DialogHeader>
               <div className="py-4">
-                <div className="text-sm text-gray-900 whitespace-pre-wrap break-words">
+                <div className="text-sm text-foreground whitespace-pre-wrap break-words">
                   {(() => {
                     const address = serviceAddress;
                     if (!address || (!address.street && !address.area)) {
@@ -66,9 +66,9 @@ const JobAddressDialog: React.FC<JobAddressDialogProps> = ({ open, onOpenChange,
                   })()}
                 </div>
                 {locationDisplay && (
-                  <div className="mt-4 pt-4 border-t border-gray-200">
-                    <div className="text-xs text-gray-500 mb-2">Google Maps Location:</div>
-                    <div className="text-xs text-gray-700 break-all">
+                  <div className="mt-4 pt-4 border-t border-border">
+                    <div className="text-xs text-muted-foreground mb-2">Google Maps Location:</div>
+                    <div className="text-xs text-foreground/90 break-all">
                       {locationDisplay}
                     </div>
                     {googleMapsLink && (

@@ -58,23 +58,23 @@ const AddTeamDialog: React.FC<AddTeamDialogProps> = ({
         
         <div className="space-y-4 py-4">
           {/* Job Information */}
-          <div className="space-y-2 p-3 bg-gray-50 rounded-lg">
+          <div className="space-y-2 p-3 bg-muted/40 rounded-lg">
             <div className="font-semibold text-sm sm:text-base">
               {(job as any).job_number || job.jobNumber}
             </div>
-            <div className="text-xs sm:text-sm text-gray-600">
+            <div className="text-xs sm:text-sm text-muted-foreground">
               {customer?.full_name || customer?.fullName || 'Customer'}
             </div>
             {assignedTechnicianId && (() => {
               const assignedTech = technicians.find(t => t.id === assignedTechnicianId);
               return assignedTech ? (
-                <div className="text-xs sm:text-sm text-gray-600">
+                <div className="text-xs sm:text-sm text-muted-foreground">
                   <strong>Assigned to:</strong> {assignedTech.fullName}
                 </div>
               ) : null;
             })()}
             {teamMembersArray.length > 0 && (
-              <div className="text-xs sm:text-sm text-gray-600">
+              <div className="text-xs sm:text-sm text-muted-foreground">
                 <strong>Team members:</strong> {teamMembersArray.length}
               </div>
             )}
@@ -84,7 +84,7 @@ const AddTeamDialog: React.FC<AddTeamDialogProps> = ({
           <div className="space-y-2">
             <Label htmlFor="team-member-select" className="text-sm sm:text-base">Select Team Member</Label>
             <Select value={selectedTeamMemberId} onValueChange={onTeamMemberSelect}>
-              <SelectTrigger className="w-full border border-gray-300 focus:border-blue-500 focus:ring-0 focus:ring-offset-0">
+              <SelectTrigger className="w-full border border-border focus:border-blue-500 focus:ring-0 focus:ring-offset-0">
                 <SelectValue placeholder="Choose a technician" />
               </SelectTrigger>
               <SelectContent className="max-h-[300px] overflow-y-auto">
@@ -105,7 +105,7 @@ const AddTeamDialog: React.FC<AddTeamDialogProps> = ({
               </SelectContent>
             </Select>
             {availableTechnicians.length === 0 && (
-              <div className="text-xs text-gray-500 mt-1">
+              <div className="text-xs text-muted-foreground mt-1">
                 All technicians are already assigned to this job or are team members
               </div>
             )}
@@ -123,7 +123,7 @@ const AddTeamDialog: React.FC<AddTeamDialogProps> = ({
           <Button
             onClick={onSave}
             disabled={!selectedTeamMemberId}
-            className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
+            className=" w-full sm:w-auto"
           >
             Add Team Member
           </Button>

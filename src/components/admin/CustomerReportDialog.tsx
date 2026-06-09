@@ -88,27 +88,27 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
         
         <div className="space-y-6 py-4">
           {/* Customer Info */}
-          <div className="bg-gray-50 p-4 rounded-lg">
+          <div className="bg-muted/40 p-4 rounded-lg">
             <h3 className="font-semibold text-lg mb-3">Customer Information</h3>
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div>
-                <span className="text-gray-500">Name:</span>{' '}
+                <span className="text-muted-foreground">Name:</span>{' '}
                 <span className={customerNameClassName(customer)}>{customer.fullName}</span>
               </div>
               <div>
-                <span className="text-gray-500">Customer ID:</span> {customer.customerId}
+                <span className="text-muted-foreground">Customer ID:</span> {customer.customerId}
               </div>
               <div>
-                <span className="text-gray-500">Phone:</span> {customer.phone}
+                <span className="text-muted-foreground">Phone:</span> {customer.phone}
               </div>
               <div>
-                <span className="text-gray-500">Email:</span> {customer.email && customer.email.trim() && !customer.email.toLowerCase().includes('nomail') && !customer.email.toLowerCase().includes('no@mail')
+                <span className="text-muted-foreground">Email:</span> {customer.email && customer.email.trim() && !customer.email.toLowerCase().includes('nomail') && !customer.email.toLowerCase().includes('no@mail')
                   ? customer.email
                   : 'nomail@mail'}
               </div>
               {((customer as any).raw_water_tds != null && (customer as any).raw_water_tds > 0) && (
                 <div>
-                  <span className="text-gray-500">Raw Water TDS:</span> {(customer as any).raw_water_tds} ppm
+                  <span className="text-muted-foreground">Raw Water TDS:</span> {(customer as any).raw_water_tds} ppm
                 </div>
               )}
             </div>
@@ -118,13 +118,13 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
           <div>
             <h3 className="font-semibold text-lg mb-3">Completed Jobs ({completedJobs.length})</h3>
             {loadingCustomerReportJobs ? (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-muted-foreground">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-3"></div>
                 <p className="text-sm">Loading completed jobs...</p>
               </div>
             ) : completedJobs.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                <CheckCircle className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+              <div className="text-center py-8 text-muted-foreground">
+                <CheckCircle className="w-12 h-12 mx-auto mb-3 text-muted-foreground/70" />
                 <p className="text-sm">No completed jobs found</p>
               </div>
             ) : (
@@ -226,17 +226,17 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                   }
 
                   return (
-                    <div key={job.id} className="border border-gray-200 rounded-lg p-4 bg-white">
+                    <div key={job.id} className="border border-border rounded-lg p-4 bg-card">
                       <div className="flex items-start justify-between mb-3">
                         <div>
                           <div className="font-semibold text-lg">
                             {(job as any).job_number || job.jobNumber}
                           </div>
-                          <div className="text-sm text-gray-600">
+                          <div className="text-sm text-muted-foreground">
                             {(job as any).service_type || job.serviceType} - {(job as any).service_sub_type || job.serviceSubType}
                           </div>
                           {completedWhenLabel && (
-                            <div className="text-xs text-gray-500 mt-1">
+                            <div className="text-xs text-muted-foreground mt-1">
                               Completed {completedWhenLabel}
                             </div>
                           )}
@@ -244,18 +244,18 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                         <Badge className="bg-green-100 text-green-800">Completed</Badge>
                       </div>
                       
-                      <div className="space-y-3 mt-4 pt-4 border-t border-gray-200">
+                      <div className="space-y-3 mt-4 pt-4 border-t border-border">
                         {(actualCost || paymentAmount) && (
                           <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium text-gray-700 w-32">Amount:</span>
-                            <span className="text-sm text-gray-900">₹{actualCost || paymentAmount}</span>
+                            <span className="text-sm font-medium text-foreground/90 w-32">Amount:</span>
+                            <span className="text-sm text-foreground">₹{actualCost || paymentAmount}</span>
                           </div>
                         )}
                         
                         {paymentMethod && (
                           <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium text-gray-700 w-32">Payment Mode:</span>
-                            <span className="text-sm text-gray-900">{
+                            <span className="text-sm font-medium text-foreground/90 w-32">Payment Mode:</span>
+                            <span className="text-sm text-foreground">{
                               paymentMethod === 'CASH' ? 'Cash' : 
                               paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER' ? 'Online' : 
                               paymentMethod
@@ -269,8 +269,8 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                           if (!brand) return null;
                           return (
                             <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium text-gray-700 w-32">Service Brand:</span>
-                              <span className="text-sm text-gray-900">{getDocumentBrandLabel(brand)}</span>
+                              <span className="text-sm font-medium text-foreground/90 w-32">Service Brand:</span>
+                              <span className="text-sm text-foreground">{getDocumentBrandLabel(brand)}</span>
                             </div>
                           );
                         })()}
@@ -298,8 +298,8 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                           if (leadSource) {
                             return (
                               <div className="flex items-center gap-2">
-                                <span className="text-sm font-medium text-gray-700 w-32">Lead Source:</span>
-                                <span className="text-sm text-gray-900">{leadSource}</span>
+                                <span className="text-sm font-medium text-foreground/90 w-32">Lead Source:</span>
+                                <span className="text-sm text-foreground">{leadSource}</span>
                               </div>
                             );
                           }
@@ -310,29 +310,29 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                           const tds = (customer as any).raw_water_tds ?? (customer as any).rawWaterTds;
                           return tds != null && tds > 0 ? (
                             <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium text-gray-700 w-32">Raw Water TDS:</span>
-                              <span className="text-sm text-gray-900">{tds} ppm</span>
+                              <span className="text-sm font-medium text-foreground/90 w-32">Raw Water TDS:</span>
+                              <span className="text-sm text-foreground">{tds} ppm</span>
                             </div>
                           ) : null;
                         })()}
                         
                         {(paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && qrPhotos?.selected_qr_code_name && (
                           <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium text-gray-700 w-32">QR Code:</span>
-                            <span className="text-sm text-gray-900">{qrPhotos.selected_qr_code_name}</span>
+                            <span className="text-sm font-medium text-foreground/90 w-32">QR Code:</span>
+                            <span className="text-sm text-foreground">{qrPhotos.selected_qr_code_name}</span>
                           </div>
                         )}
 
                         {equipmentDisplay && (
                           <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium text-gray-700 w-32">{equipmentDisplay.label}:</span>
-                            <span className="text-sm text-gray-900">{equipmentDisplay.value}</span>
+                            <span className="text-sm font-medium text-foreground/90 w-32">{equipmentDisplay.label}:</span>
+                            <span className="text-sm text-foreground">{equipmentDisplay.value}</span>
                           </div>
                         )}
                         
                         {paymentScreenshots.length > 0 || (billPhotosOnly && billPhotosOnly.length > 0) ? (
-                          <div className="mt-3 pt-3 border-t border-gray-200">
-                            <div className="font-medium text-gray-900 mb-3">Payment & Bill Documents</div>
+                          <div className="mt-3 pt-3 border-t border-border">
+                            <div className="font-medium text-foreground mb-3">Payment & Bill Documents</div>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                               {paymentScreenshots.map((paymentUrl, idx) => (
                                 <div 
@@ -395,25 +395,25 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                           <div className="mt-3 pt-3 border-t border-green-300 bg-green-50 rounded-lg p-3">
                             <div className="flex items-center gap-2 mb-2">
                               <Badge className="bg-green-600 text-white">AMC Active</Badge>
-                              <div className="font-semibold text-gray-900">AMC Details</div>
+                              <div className="font-semibold text-foreground">AMC Details</div>
                             </div>
                             <div className="space-y-2 text-sm">
                               <div className="flex items-center gap-2">
-                                <span className="text-gray-600 font-medium w-32">Start Date:</span>
-                                <span className="text-gray-900 font-semibold">{amcInfo.date_given ? new Date(amcInfo.date_given).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}</span>
+                                <span className="text-muted-foreground font-medium w-32">Start Date:</span>
+                                <span className="text-foreground font-semibold">{amcInfo.date_given ? new Date(amcInfo.date_given).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}</span>
                               </div>
                               <div className="flex items-center gap-2">
-                                <span className="text-gray-600 font-medium w-32">End Date:</span>
-                                <span className="text-gray-900 font-semibold">{amcInfo.end_date ? new Date(amcInfo.end_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}</span>
+                                <span className="text-muted-foreground font-medium w-32">End Date:</span>
+                                <span className="text-foreground font-semibold">{amcInfo.end_date ? new Date(amcInfo.end_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}</span>
                               </div>
                               <div className="flex items-center gap-2">
-                                <span className="text-gray-600 font-medium w-32">Duration:</span>
-                                <span className="text-gray-900 font-semibold">{amcInfo.years || 1} {amcInfo.years === 1 ? 'year' : 'years'}</span>
+                                <span className="text-muted-foreground font-medium w-32">Duration:</span>
+                                <span className="text-foreground font-semibold">{amcInfo.years || 1} {amcInfo.years === 1 ? 'year' : 'years'}</span>
                               </div>
                               {amcInfo.includes_prefilter !== undefined && (
                                 <div className="flex items-center gap-2">
-                                  <span className="text-gray-600 font-medium w-32">Includes Prefilter:</span>
-                                  <span className="text-gray-900 font-semibold">{amcInfo.includes_prefilter ? 'Yes' : 'No'}</span>
+                                  <span className="text-muted-foreground font-medium w-32">Includes Prefilter:</span>
+                                  <span className="text-foreground font-semibold">{amcInfo.includes_prefilter ? 'Yes' : 'No'}</span>
                                 </div>
                               )}
                               {(() => {
@@ -440,14 +440,14 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                                   <>
                                     {description && (
                                       <div className="mt-3 pt-3 border-t border-green-200">
-                                        <div className="text-gray-600 font-medium mb-2">Description / Summary:</div>
-                                        <div className="text-gray-900 whitespace-pre-wrap bg-white p-2 rounded border border-green-200">{description}</div>
+                                        <div className="text-muted-foreground font-medium mb-2">Description / Summary:</div>
+                                        <div className="text-foreground whitespace-pre-wrap bg-card p-2 rounded border border-green-200">{description}</div>
                                       </div>
                                     )}
                                     {additionalInfo && !description && (
                                 <div className="mt-3 pt-3 border-t border-green-200">
-                                  <div className="text-gray-600 font-medium mb-2">Additional Info:</div>
-                                        <div className="text-gray-900 whitespace-pre-wrap bg-white p-2 rounded border border-green-200">{additionalInfo}</div>
+                                  <div className="text-muted-foreground font-medium mb-2">Additional Info:</div>
+                                        <div className="text-foreground whitespace-pre-wrap bg-card p-2 rounded border border-green-200">{additionalInfo}</div>
                                 </div>
                               )}
                                   </>
@@ -458,25 +458,25 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                         )}
                         
                         {completionNotes && (
-                          <div className="mt-3 pt-3 border-t border-gray-200">
-                            <div className="font-medium text-gray-900 mb-1">Notes:</div>
-                            <div className="text-sm text-gray-700 whitespace-pre-wrap">{completionNotes}</div>
+                          <div className="mt-3 pt-3 border-t border-border">
+                            <div className="font-medium text-foreground mb-1">Notes:</div>
+                            <div className="text-sm text-foreground/90 whitespace-pre-wrap">{completionNotes}</div>
                           </div>
                         )}
                         
                         {completedByName && (
-                          <div className="mt-3 pt-3 border-t border-gray-200">
+                          <div className="mt-3 pt-3 border-t border-border">
                             <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium text-gray-700 w-32">Completed By:</span>
-                              <span className="text-sm text-gray-900">{completedByName}</span>
+                              <span className="text-sm font-medium text-foreground/90 w-32">Completed By:</span>
+                              <span className="text-sm text-foreground">{completedByName}</span>
                             </div>
                           </div>
                         )}
                         
                         {job.description && (
-                          <div className="mt-3 pt-3 border-t border-gray-200">
-                            <div className="font-medium text-gray-900 mb-1">Description:</div>
-                            <div className="text-sm text-gray-700 whitespace-pre-wrap">{job.description}</div>
+                          <div className="mt-3 pt-3 border-t border-border">
+                            <div className="font-medium text-foreground mb-1">Description:</div>
+                            <div className="text-sm text-foreground/90 whitespace-pre-wrap">{job.description}</div>
                           </div>
                         )}
                       </div>

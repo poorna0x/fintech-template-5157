@@ -68,7 +68,7 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
               className={`border-2 border-dashed rounded-lg p-6 sm:p-12 text-center transition-all duration-200 ${
                 isDragOverPhotos 
                   ? 'border-blue-500 bg-blue-100 scale-105' 
-                  : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50'
+                  : 'border-border hover:border-blue-400 hover:bg-blue-50'
               } ${isUploadingPhoto ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
               onDragOver={onDragOver}
               onDragLeave={onDragLeave}
@@ -88,7 +88,7 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
             >
               <div className="space-y-4 sm:space-y-6">
                 <div className="relative">
-                  <Camera className={`w-12 h-12 sm:w-16 sm:h-16 mx-auto ${isDragOverPhotos ? 'text-blue-500' : 'text-gray-400'}`} />
+                  <Camera className={`w-12 h-12 sm:w-16 sm:h-16 mx-auto ${isDragOverPhotos ? 'text-blue-500' : 'text-muted-foreground/70'}`} />
                   {isCompressingImage && (
                     <div className="absolute inset-0 flex items-center justify-center">
                       <div className="flex items-center gap-1">
@@ -100,10 +100,10 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
                   )}
                 </div>
                 <div className="space-y-2 sm:space-y-3">
-                  <div className="text-lg sm:text-xl font-medium text-gray-600">
+                  <div className="text-lg sm:text-xl font-medium text-muted-foreground">
                     {isUploadingPhoto ? 'Uploading photos...' : isDragOverPhotos ? 'Drop photos here' : 'No photos found'}
                   </div>
-                  <div className="text-xs sm:text-sm text-gray-500 px-2">
+                  <div className="text-xs sm:text-sm text-muted-foreground px-2">
                     Drag & drop photos here, click to browse, or use camera capture
                   </div>
                   <div className="flex flex-col sm:flex-row gap-3 justify-center items-center pt-2">
@@ -142,7 +142,7 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
                       Capture Photo
                     </Button>
                   </div>
-                  <div className="text-xs text-gray-400 pt-2 px-2">
+                  <div className="text-xs text-muted-foreground/70 pt-2 px-2">
                     Supports JPG, PNG, GIF up to 10MB • All photos stored in Cloudinary
                   </div>
                 </div>
@@ -159,7 +159,7 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
                   <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
                   <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
                 </div>
-                <p className="text-sm text-gray-600">Loading photos...</p>
+                <p className="text-sm text-muted-foreground">Loading photos...</p>
               </div>
             </div>
           )}
@@ -231,9 +231,9 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
                       <div className="absolute inset-0 flex items-center justify-center bg-black/20">
                         <div className="flex flex-col items-center gap-1 sm:gap-2">
                           <div className="flex items-center gap-1">
-                            <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                            <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                            <div className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                            <div className="w-2 h-2 bg-card rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                            <div className="w-2 h-2 bg-card rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                            <div className="w-2 h-2 bg-card rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
                           </div>
                           <span className="text-xs text-white font-medium">Uploading...</span>
                         </div>
@@ -245,7 +245,7 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
                 {/* Show uploaded photos */}
                 {photos.map((photo, index) => (
                   <div key={`${customer.id}-${index}`} className="relative group">
-                    <div className="w-full aspect-square bg-gray-100 rounded-lg border border-gray-200 overflow-hidden cursor-pointer">
+                    <div className="w-full aspect-square bg-gray-100 rounded-lg border border-border overflow-hidden cursor-pointer">
                       <img
                         src={photo}
                         alt={`Photo ${index + 1}`}
@@ -261,7 +261,7 @@ const CustomerPhotoGalleryDialog: React.FC<CustomerPhotoGalleryDialogProps> = ({
                         onClick={() => onPhotoClick(photo, index, photos.length)}
                       />
                       <div 
-                        className="w-full h-full flex items-center justify-center text-gray-400"
+                        className="w-full h-full flex items-center justify-center text-muted-foreground/70"
                         style={{ display: 'none' }}
                       >
                         <div className="text-center">

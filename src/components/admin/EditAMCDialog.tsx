@@ -245,7 +245,7 @@ const EditAMCDialog: React.FC<EditAMCDialogProps> = ({
                   placeholder="Pick date"
                   className="mt-1"
                 />
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   Auto-calculated from start date and duration. You can override it manually.
                 </p>
               </div>
@@ -281,7 +281,7 @@ const EditAMCDialog: React.FC<EditAMCDialogProps> = ({
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   Use this for manually created AMCs. Job-linked AMCs can also be corrected here.
                 </p>
               </div>

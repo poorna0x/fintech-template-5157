@@ -647,7 +647,7 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
                 onChange={(e) => setEditJobFormData(prev => ({ ...prev, lead_cost: e.target.value }))}
                 placeholder="0 if none"
               />
-              <p className="text-xs text-gray-500 mt-1">Edit if you need to update lead cost for this job</p>
+              <p className="text-xs text-muted-foreground mt-1">Edit if you need to update lead cost for this job</p>
             </div>
             {editJobFormData.lead_source === 'Other' && (
               <div>
@@ -676,7 +676,7 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
               }}
               placeholder="e.g., 400 or 400-500"
             />
-            <p className="text-xs text-gray-500 mt-1">Enter a single amount or a range (e.g., 400-500)</p>
+            <p className="text-xs text-muted-foreground mt-1">Enter a single amount or a range (e.g., 400-500)</p>
           </div>
         </form>
 

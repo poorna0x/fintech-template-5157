@@ -104,15 +104,15 @@ We'll reach you soon. For any queries, contact the technician directly.`;
         </DialogHeader>
 
         <div className="space-y-4 py-4">
-          <div className="rounded-lg bg-gray-50 p-4">
-            <div className="text-sm text-gray-600">
+          <div className="rounded-lg bg-muted/40 p-4">
+            <div className="text-sm text-muted-foreground">
               Customer: <span className="font-medium">{customerName}</span>
             </div>
-            <div className="text-sm text-gray-600">
+            <div className="text-sm text-muted-foreground">
               Phone: <span className="font-medium">{customerPhone}</span>
             </div>
             {hasAlternate && (
-              <div className="text-sm text-gray-600 mt-1">
+              <div className="text-sm text-muted-foreground mt-1">
                 Alternate: <span className="font-medium">{alternatePhone}</span>
               </div>
             )}
@@ -120,7 +120,7 @@ We'll reach you soon. For any queries, contact the technician directly.`;
 
           <div className="space-y-3">
             <Label>Message preview</Label>
-            <div className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-md bg-gray-50 p-3 text-sm text-gray-700">
+            <div className="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-md bg-muted/40 p-3 text-sm text-foreground/90">
               {whatsappMessage}
             </div>
 

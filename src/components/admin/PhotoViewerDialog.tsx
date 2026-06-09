@@ -118,7 +118,7 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
                 variant="secondary"
                 size="sm"
                 onClick={() => onDownload(selectedPhoto.url, selectedPhoto.index)}
-                className="bg-white/90 text-black hover:bg-white"
+                className="bg-card/90 text-black hover:bg-card"
               >
                 <Calendar className="w-4 h-4 mr-2" />
                 Download

@@ -70,14 +70,14 @@ const RemoveTeamDialog: React.FC<RemoveTeamDialogProps> = ({
         
         <div className="space-y-4 py-4">
           {/* Job Information */}
-          <div className="space-y-2 p-3 bg-gray-50 rounded-lg">
+          <div className="space-y-2 p-3 bg-muted/40 rounded-lg">
             <div className="font-semibold text-sm sm:text-base">
               {(job as any).job_number || job.jobNumber}
             </div>
-            <div className="text-xs sm:text-sm text-gray-600">
+            <div className="text-xs sm:text-sm text-muted-foreground">
               {customer?.full_name || customer?.fullName || 'Customer'}
             </div>
-            <div className="text-xs sm:text-sm text-gray-600">
+            <div className="text-xs sm:text-sm text-muted-foreground">
               <strong>Team members:</strong> {teamMembersArray.length}
             </div>
           </div>
@@ -86,7 +86,7 @@ const RemoveTeamDialog: React.FC<RemoveTeamDialogProps> = ({
           <div className="space-y-2">
             <Label htmlFor="team-member-remove-select" className="text-sm sm:text-base">Select Team Member to Remove</Label>
             <Select value={selectedTeamMemberId} onValueChange={onTeamMemberSelect}>
-              <SelectTrigger className="w-full border border-gray-300 focus:border-red-500 focus:ring-0 focus:ring-offset-0">
+              <SelectTrigger className="w-full border border-border focus:border-red-500 focus:ring-0 focus:ring-offset-0">
                 <SelectValue placeholder="Choose a team member" />
               </SelectTrigger>
               <SelectContent className="max-h-[300px] overflow-y-auto">

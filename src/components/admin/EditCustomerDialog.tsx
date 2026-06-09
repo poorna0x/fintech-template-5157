@@ -1123,7 +1123,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
         <div className="py-4 space-y-6">
           {/* Personal Information */}
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-gray-900">Personal Information</h3>
+            <h3 className="text-lg font-semibold text-foreground">Personal Information</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="edit_full_name">Full Name</Label>
@@ -1172,7 +1172,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
 
           {/* Address Information */}
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-gray-900">Address Information</h3>
+            <h3 className="text-lg font-semibold text-foreground">Address Information</h3>
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="edit_visible_address">Location</Label>
@@ -1194,7 +1194,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
                     className="text-sm"
                   />
                   {visibleAddressSuggestions && filteredAddressSuggestions.length > 0 && (
-                    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-48 overflow-y-auto">
+                    <div className="absolute z-50 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-48 overflow-y-auto">
                       {filteredAddressSuggestions.map((suggestion, idx) => (
                         <button
                           key={idx}
@@ -1213,7 +1213,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
                     </div>
                   )}
                 </div>
-                <p className="text-xs text-gray-500">Enter a one-word location identifier for quick recognition. Start typing to see suggestions.</p>
+                <p className="text-xs text-muted-foreground">Enter a one-word location identifier for quick recognition. Start typing to see suggestions.</p>
               </div>
 
               <div className="space-y-2">
@@ -1247,7 +1247,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
 
             {/* Google Maps Location Section */}
             <div className="space-y-2">
-              <Label htmlFor="edit_google_location" className="text-sm font-medium text-gray-900">
+              <Label htmlFor="edit_google_location" className="text-sm font-medium text-foreground">
                 Google Maps Location
               </Label>
               <div className="flex gap-2">
@@ -1292,7 +1292,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
 
           {/* Service Information */}
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-gray-900">Service Information</h3>
+            <h3 className="text-lg font-semibold text-foreground">Service Information</h3>
             
             <div className="space-y-3">
               <Label>Service Types</Label>
@@ -1307,7 +1307,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
                     className={`p-3 border-2 rounded-lg cursor-pointer transition-all ${
                       editFormData?.service_types?.includes(service.value)
                         ? 'border-blue-500 bg-blue-50 text-blue-700'
-                        : 'border-gray-200 hover:border-gray-300'
+                        : 'border-border hover:border-border'
                     }`}
                   >
                     <div className="flex items-center gap-2">
@@ -1331,9 +1331,9 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
                   const equipment = editFormData?.equipment?.[serviceType] || { brand: '', model: '' };
                   
                   return (
-                    <div key={serviceType} className="bg-gray-50 p-4 rounded-lg space-y-3">
+                    <div key={serviceType} className="bg-muted/40 p-4 rounded-lg space-y-3">
                       <div className="flex items-center gap-2">
-                        <span className="font-medium text-gray-900">{serviceInfo?.label}</span>
+                        <span className="font-medium text-foreground">{serviceInfo?.label}</span>
                       </div>
                       
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1398,7 +1398,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
 
           {/* Additional Information */}
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-gray-900">Additional Information</h3>
+            <h3 className="text-lg font-semibold text-foreground">Additional Information</h3>
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label>Does the customer have a prefilter?</Label>

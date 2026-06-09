@@ -716,7 +716,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   };
 
   const getServiceBadgeColor = (days?: number | null) => {
-    if (!days) return 'bg-gray-500';
+    if (!days) return 'bg-muted/400';
     if (days < 90) return 'bg-green-500';
     if (days < 180) return 'bg-yellow-500';
     if (days < 365) return 'bg-orange-500';
@@ -736,7 +736,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
       'COMPLETED': { label: 'Completed', className: 'bg-blue-100 text-blue-800', icon: <CheckCircle2 className="w-3 h-3 mr-1" /> },
     };
 
-    const config = statusConfig[status] || { label: status, className: 'bg-gray-100 text-gray-800', icon: null };
+    const config = statusConfig[status] || { label: status, className: 'bg-gray-100 text-foreground', icon: null };
     
     return (
       <Badge className={config.className}>
@@ -768,10 +768,10 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   // Show loading while checking auth or loading data
   if (authInitializing || loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-muted/40 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-3"></div>
-          <p className="text-gray-600">{authInitializing ? 'Checking authentication...' : 'Loading customers...'}</p>
+          <p className="text-muted-foreground">{authInitializing ? 'Checking authentication...' : 'Loading customers...'}</p>
         </div>
       </div>
     );
@@ -780,14 +780,14 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   // Show access denied if not admin (only if standalone page)
   if (!hideHeader && (!user || !isAdmin)) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-muted/40 flex items-center justify-center">
         <div className="text-center max-w-md mx-auto p-6">
           <Lock className="w-16 h-16 text-red-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Access Denied</h2>
-          <p className="text-gray-600 mb-4">
+          <h2 className="text-2xl font-bold text-foreground mb-2">Access Denied</h2>
+          <p className="text-muted-foreground mb-4">
             This page is restricted to administrators only. Please log in with an admin account to access this feature.
           </p>
-          <Button onClick={() => navigate('/admin')} className="bg-blue-600 hover:bg-blue-700">
+          <Button onClick={() => navigate('/admin')} className="">
             Go to Admin Login
           </Button>
         </div>
@@ -796,17 +796,17 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-muted/40">
       {/* Header - only show if not embedded */}
       {!hideHeader && (
-        <div className="bg-white border-b border-gray-200">
+        <div className="bg-card border-b border-border">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 py-4 sm:py-0 sm:h-16">
               <div className="flex items-center">
                 <Phone className="w-6 h-6 sm:w-8 sm:h-8 text-blue-600 mr-2 sm:mr-3 shrink-0" />
                 <div>
-                  <h1 className="text-lg sm:text-xl font-bold text-gray-900">Customer Calling & Messaging</h1>
-                  <p className="text-xs sm:text-sm text-gray-600">Contact customers for service reminders</p>
+                  <h1 className="text-lg sm:text-xl font-bold text-foreground">Customer Calling & Messaging</h1>
+                  <p className="text-xs sm:text-sm text-muted-foreground">Contact customers for service reminders</p>
                 </div>
               </div>
               
@@ -815,7 +815,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                   variant="ghost"
                   size="sm"
                   onClick={onBack || (() => navigate('/settings'))}
-                  className="text-gray-600 hover:text-gray-900"
+                  className="text-muted-foreground hover:text-foreground"
                 >
                   <ArrowLeft className="w-4 h-4 mr-1" />
                   Back
@@ -840,7 +840,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
               <div>
                 <Label htmlFor="search">Search</Label>
                 <div className="relative">
-                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
+                  <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground/70" />
                   <Input
                     id="search"
                     placeholder="Search by name, phone, ID..."
@@ -976,8 +976,8 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <Card>
             <CardContent className="p-4">
-              <div className="text-2xl font-bold text-gray-900">{filteredCustomers.length}</div>
-              <div className="text-sm text-gray-600">Customers to Contact</div>
+              <div className="text-2xl font-bold text-foreground">{filteredCustomers.length}</div>
+              <div className="text-sm text-muted-foreground">Customers to Contact</div>
             </CardContent>
           </Card>
           <Card>
@@ -985,7 +985,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
               <div className="text-2xl font-bold text-green-600">
                 {filteredCustomers.filter(c => c.daysSinceService && c.daysSinceService >= 365).length}
               </div>
-              <div className="text-sm text-gray-600">Over 1 Year Since Service</div>
+              <div className="text-sm text-muted-foreground">Over 1 Year Since Service</div>
             </CardContent>
           </Card>
           <Card>
@@ -993,7 +993,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
               <div className="text-2xl font-bold text-orange-600">
                 {filteredCustomers.filter(c => c.daysSinceService && c.daysSinceService >= 180 && c.daysSinceService < 365).length}
               </div>
-              <div className="text-sm text-gray-600">6-12 Months Since Service</div>
+              <div className="text-sm text-muted-foreground">6-12 Months Since Service</div>
             </CardContent>
           </Card>
         </div>
@@ -1003,15 +1003,15 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
           {filteredCustomers.length === 0 ? (
             <Card>
               <CardContent className="p-8 text-center">
-                <p className="text-gray-500">No customers found matching your filters.</p>
-                <p className="text-sm text-gray-400 mt-2">Try setting Service History to &quot;All Customers&quot;.</p>
+                <p className="text-muted-foreground">No customers found matching your filters.</p>
+                <p className="text-sm text-muted-foreground/70 mt-2">Try setting Service History to &quot;All Customers&quot;.</p>
               </CardContent>
             </Card>
           ) : (
             <>
               {/* Results count and items per page selector */}
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
-                <div className="text-sm text-gray-600">
+                <div className="text-sm text-muted-foreground">
                   Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredCustomers.length)} of {filteredCustomers.length} customers
                 </div>
                 <div className="flex items-center gap-2">
@@ -1044,7 +1044,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
-                            <h3 className={`font-semibold text-base sm:text-lg ${customerNameClassName(customer) || 'text-gray-900'}`}>
+                            <h3 className={`font-semibold text-base sm:text-lg ${customerNameClassName(customer) || 'text-foreground'}`}>
                               {customer.fullName}
                             </h3>
                             <Badge variant="outline">{customer.customerId}</Badge>
@@ -1056,12 +1056,12 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                             )}
                           </div>
                           
-                          <div className="space-y-1 text-sm text-gray-600">
+                          <div className="space-y-1 text-sm text-muted-foreground">
                             <div className="flex items-center gap-2">
                               <Phone className="w-4 h-4" />
                               <span>{customer.phone}</span>
                               {customer.alternatePhone && (
-                                <span className="text-gray-400">/ {customer.alternatePhone}</span>
+                                <span className="text-muted-foreground/70">/ {customer.alternatePhone}</span>
                               )}
                             </div>
                             {customer.email && (
@@ -1072,7 +1072,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                             )}
                             {(customer.rawWaterTds != null && customer.rawWaterTds > 0) && (
                               <div className="flex items-center gap-2">
-                                <span className="text-gray-500">Raw water TDS:</span>
+                                <span className="text-muted-foreground">Raw water TDS:</span>
                                 <span className="font-medium">{customer.rawWaterTds} ppm</span>
                               </div>
                             )}
@@ -1090,7 +1090,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                             {customer.lastContacted && (
                               <div className="flex items-center gap-2 flex-wrap">
                                 <Clock className="w-4 h-4" />
-                                <span className="text-gray-500">
+                                <span className="text-muted-foreground">
                                   Last Contacted: {formatDate(customer.lastContacted)}
                                   {customer.daysSinceContact !== null && customer.daysSinceContact !== undefined && (
                                     <span className="ml-2">({formatDaysAgo(customer.daysSinceContact)} ago)</span>
@@ -1176,7 +1176,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                         <ArrowLeft className="h-4 w-4 sm:mr-1" />
                         <span className="hidden sm:inline">Previous</span>
                       </Button>
-                      <span className="text-sm text-gray-700 dark:text-gray-300 tabular-nums px-2 text-center min-w-[5.5rem]">
+                      <span className="text-sm text-foreground/90 dark:text-gray-300 tabular-nums px-2 text-center min-w-[5.5rem]">
                         {currentPage} / {callingTotalPages}
                       </span>
                       <Button
@@ -1237,7 +1237,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                 >
                   <div className="flex flex-col items-start">
                     <div className="font-semibold">Service Due Reminder</div>
-                    <div className="text-xs text-gray-500 mt-1">Remind about upcoming service</div>
+                    <div className="text-xs text-muted-foreground mt-1">Remind about upcoming service</div>
                   </div>
                 </Button>
 
@@ -1248,7 +1248,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                 >
                   <div className="flex flex-col items-start">
                     <div className="font-semibold">Contact Message</div>
-                    <div className="text-xs text-gray-500 mt-1">General contact and support</div>
+                    <div className="text-xs text-muted-foreground mt-1">General contact and support</div>
                   </div>
                 </Button>
 
@@ -1259,7 +1259,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                 >
                   <div className="flex flex-col items-start">
                     <div className="font-semibold">Website Information</div>
-                    <div className="text-xs text-gray-500 mt-1">Share website and contact details</div>
+                    <div className="text-xs text-muted-foreground mt-1">Share website and contact details</div>
                   </div>
                 </Button>
 
@@ -1270,7 +1270,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                 >
                   <div className="flex flex-col items-start">
                     <div className="font-semibold">Maintenance Reminder</div>
-                    <div className="text-xs text-gray-500 mt-1">Benefits of regular maintenance</div>
+                    <div className="text-xs text-muted-foreground mt-1">Benefits of regular maintenance</div>
                   </div>
                 </Button>
 
@@ -1281,7 +1281,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                 >
                   <div className="flex flex-col items-start">
                     <div className="font-semibold">Follow Up</div>
-                    <div className="text-xs text-gray-500 mt-1">Check satisfaction after service</div>
+                    <div className="text-xs text-muted-foreground mt-1">Check satisfaction after service</div>
                   </div>
                 </Button>
 
@@ -1292,7 +1292,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                 >
                   <div className="flex flex-col items-start">
                     <div className="font-semibold">Custom Message</div>
-                    <div className="text-xs text-gray-500 mt-1">Simple greeting and contact info</div>
+                    <div className="text-xs text-muted-foreground mt-1">Simple greeting and contact info</div>
                   </div>
                 </Button>
               </>
@@ -1325,7 +1325,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
               <>
                 <div>
                   <Label>Contact Type</Label>
-                  <p className="text-sm text-gray-600 capitalize">{pendingContact.contactType.toLowerCase()}</p>
+                  <p className="text-sm text-muted-foreground capitalize">{pendingContact.contactType.toLowerCase()}</p>
                 </div>
 
                 <div>
@@ -1362,7 +1362,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
             <Button variant="outline" onClick={handleStatusDialogClose}>
               Cancel
             </Button>
-            <Button onClick={handleStatusSubmit} className="bg-blue-600 hover:bg-blue-700">
+            <Button onClick={handleStatusSubmit} className="">
               Save Status
             </Button>
           </DialogFooter>

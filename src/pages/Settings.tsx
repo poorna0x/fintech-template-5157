@@ -1470,22 +1470,22 @@ const Settings = () => {
   // Show calling page if requested
   if (showCallingPage) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="bg-white border-b border-gray-200">
+      <div className="admin-page">
+        <div className="bg-card border-b border-border">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 py-4 sm:py-0 sm:h-16">
               <div className="flex items-center">
                 <SettingsIcon className="w-6 h-6 sm:w-8 sm:h-8 text-blue-600 mr-2 sm:mr-3 shrink-0" />
                 <div>
-                  <h1 className="text-lg sm:text-xl font-bold text-gray-900">Calling</h1>
-                  <p className="text-xs sm:text-sm text-gray-600">Manage customer calls</p>
+                  <h1 className="text-lg sm:text-xl font-bold text-foreground">Calling</h1>
+                  <p className="text-xs sm:text-sm text-muted-foreground">Manage customer calls</p>
                 </div>
               </div>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => setShowCallingPage(false)}
-                className="text-gray-600 hover:text-gray-900 -ml-2"
+                className="text-muted-foreground hover:text-foreground -ml-2"
               >
                 <ArrowLeft className="w-4 h-4 mr-1" />
                 Back to Settings
@@ -1508,8 +1508,8 @@ const Settings = () => {
       <CardContent className="p-4">
         <div className="flex items-start justify-between mb-3 gap-2">
           <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-gray-900 text-sm sm:text-base truncate">{technician.fullName}</h3>
-            <p className="text-xs sm:text-sm text-gray-600 truncate">{technician.employeeId}</p>
+            <h3 className="font-semibold text-foreground text-sm sm:text-base truncate">{technician.fullName}</h3>
+            <p className="text-xs sm:text-sm text-muted-foreground truncate">{technician.employeeId}</p>
           </div>
           <Badge
             variant={technician.account_status === 'ACTIVE' ? 'default' : 'secondary'}
@@ -1519,7 +1519,7 @@ const Settings = () => {
           </Badge>
         </div>
 
-        <div className="space-y-1.5 sm:space-y-2 text-xs sm:text-sm text-gray-600 mb-4">
+        <div className="space-y-1.5 sm:space-y-2 text-xs sm:text-sm text-muted-foreground mb-4">
           <div className="flex items-start gap-2">
             <span className="font-medium shrink-0">Email:</span>
             <span className="truncate">{technician.email}</span>
@@ -1572,15 +1572,15 @@ const Settings = () => {
   );
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="admin-page">
       {/* Header - sticky so Back stays visible when scrolling */}
-      <div className="sticky top-0 z-10 bg-white border-b border-gray-200">
+      <div className="sticky top-0 z-10 bg-card border-b border-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 py-4 sm:py-0 sm:h-16">
             <div className="flex items-center">
               <SettingsIcon className="w-6 h-6 sm:w-8 sm:h-8 text-blue-600 mr-2 sm:mr-3 shrink-0" />
               <div>
-                <h1 className="text-lg sm:text-xl font-bold text-gray-900">Settings</h1>
+                <h1 className="text-lg sm:text-xl font-bold text-foreground">Settings</h1>
               </div>
             </div>
             
@@ -1589,7 +1589,7 @@ const Settings = () => {
                 variant="ghost"
                 size="sm"
                 onClick={() => navigate('/admin')}
-                className="text-gray-600 hover:text-gray-900 -ml-2"
+                className="text-muted-foreground hover:text-foreground -ml-2"
               >
                 <ArrowLeft className="w-4 h-4 mr-1" />
                 Back
@@ -1648,10 +1648,10 @@ const Settings = () => {
                       <CardContent className="p-4">
                         <div className="flex items-start justify-between mb-3 gap-2">
                           <div className="flex-1 min-w-0">
-                            <h3 className="font-semibold text-gray-900 text-sm sm:text-base truncate">
+                            <h3 className="font-semibold text-foreground text-sm sm:text-base truncate">
                               {technician.fullName}
                             </h3>
-                            <p className="text-xs text-gray-600 truncate">{technician.employeeId}</p>
+                            <p className="text-xs text-muted-foreground truncate">{technician.employeeId}</p>
                           </div>
                         </div>
 
@@ -1667,19 +1667,19 @@ const Settings = () => {
                             >
                               <MapPin className="w-5 h-5 text-blue-600 group-hover:text-blue-700 shrink-0" />
                               <div className="flex-1 min-w-0 text-left">
-                                <div className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                                <div className="text-xs font-medium text-foreground/90 dark:text-gray-300">
                                   View Location
                                 </div>
                               </div>
                             </button>
                             {lastUpdated && (
-                              <div className="text-xs text-gray-500 dark:text-gray-400">
+                              <div className="text-xs text-muted-foreground dark:text-muted-foreground/70">
                                 Last updated: {lastUpdated}
                               </div>
                             )}
                           </div>
                         ) : (
-                          <div className="flex items-center gap-2 text-gray-400 p-2">
+                          <div className="flex items-center gap-2 text-muted-foreground/70 p-2">
                             <MapPin className="w-5 h-5 shrink-0" />
                             <span className="text-xs">No location data available</span>
                           </div>
@@ -1689,7 +1689,7 @@ const Settings = () => {
                   );
                 })}
                 {technicians.length === 0 && (
-                  <div className="col-span-full text-center py-8 text-gray-500">
+                  <div className="col-span-full text-center py-8 text-muted-foreground">
                     No technicians found.
                   </div>
                 )}
@@ -1712,7 +1712,7 @@ const Settings = () => {
                 </div>
                 <Button 
                   onClick={handleAddTodo} 
-                  className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
+                  className=" w-full sm:w-auto"
                   size="sm"
                 >
                   <Plus className="w-4 h-4 mr-2" />
@@ -1725,7 +1725,7 @@ const Settings = () => {
                 {todos.map((todo) => (
                   <div
                     key={todo.id}
-                    className="flex items-start gap-3 p-3 rounded-lg border border-gray-200 hover:border-gray-300 hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800 transition-colors"
+                    className="flex items-start gap-3 p-3 rounded-lg border border-border hover:border-border hover:bg-muted/40 dark:border-gray-700 dark:hover:bg-gray-800 transition-colors"
                   >
                     <Checkbox
                       id={`todo-${todo.id}`}
@@ -1735,17 +1735,17 @@ const Settings = () => {
                     />
                     <label
                       htmlFor={`todo-${todo.id}`}
-                      className="flex-1 text-sm sm:text-base text-gray-900 dark:text-gray-100 cursor-pointer"
+                      className="flex-1 text-sm sm:text-base text-foreground dark:text-gray-100 cursor-pointer"
                     >
                       {todo.text}
                     </label>
-                    <span className="text-xs text-gray-500 dark:text-gray-400 shrink-0">
+                    <span className="text-xs text-muted-foreground dark:text-muted-foreground/70 shrink-0">
                       {new Date(todo.created_at).toLocaleDateString()}
                     </span>
                   </div>
                 ))}
                 {todos.length === 0 && (
-                  <div className="text-center py-8 text-gray-500">
+                  <div className="text-center py-8 text-muted-foreground">
                     No tasks yet. Click "Add Task" to create one.
                   </div>
                 )}
@@ -1768,7 +1768,7 @@ const Settings = () => {
                 </div>
                 <Button
                   onClick={handleAddTracker}
-                  className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
+                  className=" w-full sm:w-auto"
                   size="sm"
                 >
                   <Plus className="w-4 h-4 mr-2" />
@@ -1781,14 +1781,14 @@ const Settings = () => {
                 {amountTrackers.map((tracker) => (
                   <div
                     key={tracker.id}
-                    className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:bg-gray-800/50 transition-colors"
+                    className="p-4 rounded-lg border border-border dark:border-gray-700 hover:border-border dark:hover:bg-gray-800/50 transition-colors"
                   >
                     <div className="flex items-start justify-between gap-3 mb-3">
                       <div className="min-w-0">
-                        <h3 className="font-semibold text-base sm:text-lg text-gray-900 dark:text-gray-100 truncate">
+                        <h3 className="font-semibold text-base sm:text-lg text-foreground dark:text-gray-100 truncate">
                           {tracker.name}
                         </h3>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                        <p className="text-xs text-muted-foreground dark:text-muted-foreground/70 mt-0.5">
                           Updated {new Date(tracker.updated_at).toLocaleDateString()}
                         </p>
                       </div>
@@ -1849,7 +1849,7 @@ const Settings = () => {
                   </div>
                 ))}
                 {amountTrackers.length === 0 && (
-                  <div className="text-center py-8 text-gray-500">
+                  <div className="text-center py-8 text-muted-foreground">
                     No trackers yet. Click &quot;New Tracker&quot; to create one (e.g. Cash flow).
                   </div>
                 )}
@@ -1999,7 +1999,7 @@ const Settings = () => {
                 </Button>
                 <Button
                   variant="default"
-                  className="bg-blue-600 hover:bg-blue-700 w-full"
+                  className=" w-full"
                   onClick={() => {
                     setPendingPaymentsInitialAction('add');
                     setPendingPaymentsDialogOpen(true);
@@ -2260,7 +2260,7 @@ const Settings = () => {
                 <Button
                   onClick={handleGenerateStyledQrImage}
                   disabled={isGeneratingQrImage}
-                  className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
+                  className=" w-full sm:w-auto"
                 >
                   {isGeneratingQrImage ? (
                     <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
@@ -2288,7 +2288,7 @@ const Settings = () => {
                 </div>
                 <Button 
                   onClick={handleAddQrCode} 
-                  className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
+                  className=" w-full sm:w-auto"
                   size="sm"
                 >
                   <Plus className="w-4 h-4 mr-2" />
@@ -2303,7 +2303,7 @@ const Settings = () => {
                     <CardContent className="p-4">
                       <div className="flex items-start justify-between mb-3 gap-2">
                         <div className="flex-1 min-w-0">
-                          <h3 className="font-semibold text-gray-900 text-sm sm:text-base truncate">{qrCode.name}</h3>
+                          <h3 className="font-semibold text-foreground text-sm sm:text-base truncate">{qrCode.name}</h3>
                         </div>
                       </div>
 
@@ -2350,7 +2350,7 @@ const Settings = () => {
                   </Card>
                 ))}
                 {commonQrCodes.length === 0 && (
-                  <div className="col-span-full text-center py-8 text-gray-500">
+                  <div className="col-span-full text-center py-8 text-muted-foreground">
                     No QR codes added yet. Click "Add QR Code" to create one.
                   </div>
                 )}
@@ -2373,7 +2373,7 @@ const Settings = () => {
                 </div>
                 <Button
                   onClick={handleAddTechnicianCommonQr}
-                  className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
+                  className=" w-full sm:w-auto"
                   size="sm"
                 >
                   <Plus className="w-4 h-4 mr-2" />
@@ -2388,7 +2388,7 @@ const Settings = () => {
                     <CardContent className="p-4">
                       <div className="flex items-start justify-between mb-3 gap-2">
                         <div className="flex-1 min-w-0">
-                          <h3 className="font-semibold text-gray-900 text-sm sm:text-base truncate">{qrCode.name}</h3>
+                          <h3 className="font-semibold text-foreground text-sm sm:text-base truncate">{qrCode.name}</h3>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -2430,7 +2430,7 @@ const Settings = () => {
                   </Card>
                 ))}
                 {technicianCommonQrCodes.length === 0 && (
-                  <div className="col-span-full text-center py-8 text-gray-500">
+                  <div className="col-span-full text-center py-8 text-muted-foreground">
                     No Common QR added yet. Click "Add Common QR" to create one.
                   </div>
                 )}
@@ -2468,9 +2468,9 @@ const Settings = () => {
                     <CardContent className="p-4">
                       <div className="flex items-start justify-between mb-3 gap-2">
                         <div className="flex-1 min-w-0">
-                          <h3 className="font-semibold text-gray-900 text-sm sm:text-base truncate">{qrCode.name}</h3>
+                          <h3 className="font-semibold text-foreground text-sm sm:text-base truncate">{qrCode.name}</h3>
                           {qrCode.productName && (
-                            <p className="text-xs text-gray-600 mt-1 truncate">Product: {qrCode.productName}</p>
+                            <p className="text-xs text-muted-foreground mt-1 truncate">Product: {qrCode.productName}</p>
                           )}
                         </div>
                       </div>
@@ -2480,7 +2480,7 @@ const Settings = () => {
                           <img 
                             src={qrCode.qrCodeUrl} 
                             alt={qrCode.name} 
-                            className="w-32 h-32 object-contain border border-gray-200 rounded"
+                            className="w-32 h-32 object-contain border border-border rounded"
                           />
                         </div>
                       )}
@@ -2551,7 +2551,7 @@ const Settings = () => {
                   </Card>
                 ))}
                 {productQrCodes.length === 0 && (
-                  <div className="col-span-full text-center py-8 text-gray-500">
+                  <div className="col-span-full text-center py-8 text-muted-foreground">
                     No product QR codes added yet. Click "Add Product QR Code" to create one.
                   </div>
                 )}
@@ -2576,7 +2576,7 @@ const Settings = () => {
                   onClick={handleAddTechnician}
                   disabled={isManager}
                   title={isManager ? managerRestrictedTitle : undefined}
-                  className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto disabled:opacity-50"
+                  className=" w-full sm:w-auto disabled:opacity-50"
                   size="sm"
                 >
                     {isManager ? (
@@ -2590,18 +2590,18 @@ const Settings = () => {
               </CardHeader>
             <CardContent className="p-4 sm:p-6 space-y-8">
               <div>
-                <h3 className="text-sm font-semibold text-gray-800 mb-3">Active team</h3>
+                <h3 className="text-sm font-semibold text-foreground mb-3">Active team</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {activeTechniciansList.map((technician) => renderTechnicianCard(technician))}
                 </div>
                 {activeTechniciansList.length === 0 && (
-                  <p className="text-sm text-gray-500 py-4">No active technicians yet. Add one above.</p>
+                  <p className="text-sm text-muted-foreground py-4">No active technicians yet. Add one above.</p>
                 )}
               </div>
               {inactiveTechniciansList.length > 0 && (
                 <div>
-                  <h3 className="text-sm font-semibold text-gray-800 mb-1">Inactive</h3>
-                  <p className="text-xs text-gray-500 mb-3">
+                  <h3 className="text-sm font-semibold text-foreground mb-1">Inactive</h3>
+                  <p className="text-xs text-muted-foreground mb-3">
                     Hidden from assignments and maps. Historical jobs and payments are unchanged.
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -2624,12 +2624,12 @@ const Settings = () => {
               </CardDescription>
             </CardHeader>
             <CardContent className="p-4 sm:p-6">
-              <div className="flex items-center justify-between p-6 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+              <div className="flex items-center justify-between p-6 bg-muted/40 dark:bg-gray-800 rounded-lg border border-border dark:border-gray-700">
                 <div className="flex-1">
-                  <h3 className="font-semibold text-gray-900 dark:text-white text-base sm:text-lg mb-2">
+                  <h3 className="font-semibold text-foreground dark:text-white text-base sm:text-lg mb-2">
                     Enable Location Tracking
                   </h3>
-                  <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400">
+                  <p className="text-sm sm:text-base text-muted-foreground dark:text-muted-foreground/70">
                     When enabled, technicians' location will be automatically updated when they open the app or refresh the page. 
                     This helps calculate distances to customer locations.
                   </p>
@@ -2637,7 +2637,7 @@ const Settings = () => {
                 <Switch
                   checked={locationTrackingEnabled}
                   onCheckedChange={handleLocationTrackingToggle}
-                  className="ml-6 border-2 border-gray-300 dark:border-gray-600 data-[state=unchecked]:bg-white dark:data-[state=unchecked]:bg-gray-700"
+                  className="ml-6 border-2 border-border dark:border-gray-600 data-[state=unchecked]:bg-card dark:data-[state=unchecked]:bg-gray-700"
                 />
               </div>
             </CardContent>
@@ -2734,7 +2734,7 @@ const Settings = () => {
           
           <div className="space-y-4 sm:space-y-6">
             <div className="space-y-3 sm:space-y-4">
-              <h3 className="text-base sm:text-lg font-semibold text-gray-900">Basic Information</h3>
+              <h3 className="text-base sm:text-lg font-semibold text-foreground">Basic Information</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div>
                   <Label htmlFor="fullName">Full Name *</Label>
@@ -2752,11 +2752,11 @@ const Settings = () => {
                     value={technicianFormData.employeeId}
                     onChange={(e) => setTechnicianFormData(prev => ({ ...prev, employeeId: e.target.value }))}
                     placeholder="Auto-generated"
-                    className="bg-gray-50"
+                    className="bg-muted/40"
                     readOnly={!editTechnicianDialogOpen}
                   />
                   {!editTechnicianDialogOpen && (
-                    <p className="text-xs text-gray-500 mt-1">Employee ID is auto-generated</p>
+                    <p className="text-xs text-muted-foreground mt-1">Employee ID is auto-generated</p>
                   )}
                 </div>
                 <div>
@@ -2803,7 +2803,7 @@ const Settings = () => {
                     onChange={(e) => setTechnicianFormData(prev => ({ ...prev, baseSalary: parseFloat(e.target.value) || 0 }))}
                     placeholder="Enter basic salary"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Monthly basic salary for this technician</p>
+                  <p className="text-xs text-muted-foreground mt-1">Monthly basic salary for this technician</p>
                 </div>
                 <div>
                   <Label htmlFor="salaryEffectiveFromMonth">Salary Effective From</Label>
@@ -2818,13 +2818,13 @@ const Settings = () => {
                       }))
                     }
                   />
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-muted-foreground mt-1">
                     If basic salary changes, old months keep the old amount.
                   </p>
                 </div>
               </div>
               {editTechnicianDialogOpen && (
-                <div className="rounded-lg border border-gray-200 bg-gray-50/80 p-3 sm:p-4 space-y-2">
+                <div className="rounded-lg border border-border bg-muted/40/80 p-3 sm:p-4 space-y-2">
                   <Label htmlFor="accountStatus">Account status</Label>
                   <Select
                     value={technicianFormData.accountStatus}
@@ -2835,7 +2835,7 @@ const Settings = () => {
                       }))
                     }
                   >
-                    <SelectTrigger id="accountStatus" className="bg-white">
+                    <SelectTrigger id="accountStatus" className="bg-card">
                       <SelectValue placeholder="Select status" />
                     </SelectTrigger>
                     <SelectContent>
@@ -2844,7 +2844,7 @@ const Settings = () => {
                       <SelectItem value="SUSPENDED">Suspended — cannot log in; adjust in roster filters as needed</SelectItem>
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-gray-600">
+                  <p className="text-xs text-muted-foreground">
                     Inactive keeps all job and payment history; change back to Active to show them in Technician Payments again.
                   </p>
                 </div>
@@ -2852,10 +2852,10 @@ const Settings = () => {
             </div>
             
             <div className="space-y-3 sm:space-y-4">
-              <h3 className="text-base sm:text-lg font-semibold text-gray-900">Technician Photo</h3>
+              <h3 className="text-base sm:text-lg font-semibold text-foreground">Technician Photo</h3>
               <div>
                 <Label className="text-sm sm:text-base">Upload Technician Photo (Optional)</Label>
-                <p className="text-xs sm:text-sm text-gray-500 mb-2">Upload photo for ID card display</p>
+                <p className="text-xs sm:text-sm text-muted-foreground mb-2">Upload photo for ID card display</p>
                 <ImageUpload
                   onImagesChange={(images) => setTechnicianFormData(prev => ({ ...prev, photo: images[0] || '' }))}
                   maxImages={1}
@@ -2872,7 +2872,7 @@ const Settings = () => {
                     <img 
                       src={technicianFormData.photo} 
                       alt="Technician Photo" 
-                      className="w-32 h-32 object-cover border border-gray-200 rounded-full"
+                      className="w-32 h-32 object-cover border border-border rounded-full"
                     />
                   </div>
                 )}
@@ -2880,10 +2880,10 @@ const Settings = () => {
             </div>
             
             <div className="space-y-3 sm:space-y-4">
-              <h3 className="text-base sm:text-lg font-semibold text-gray-900">Payment QR Code</h3>
+              <h3 className="text-base sm:text-lg font-semibold text-foreground">Payment QR Code</h3>
               <div>
                 <Label className="text-sm sm:text-base">Upload Payment QR Code (Optional)</Label>
-                <p className="text-xs sm:text-sm text-gray-500 mb-2">Upload QR code for payment scanning</p>
+                <p className="text-xs sm:text-sm text-muted-foreground mb-2">Upload QR code for payment scanning</p>
                 <ImageUpload
                   onImagesChange={(images) => setTechnicianFormData(prev => ({ ...prev, qrCode: images[0] || '' }))}
                   maxImages={1}
@@ -2900,7 +2900,7 @@ const Settings = () => {
                     <img 
                       src={technicianFormData.qrCode} 
                       alt="QR Code" 
-                      className="w-32 h-32 object-contain border border-gray-200 rounded"
+                      className="w-32 h-32 object-contain border border-border rounded"
                     />
                   </div>
                 )}
@@ -2909,10 +2909,10 @@ const Settings = () => {
             
             {/* QR Code Visibility Settings */}
             <div className="space-y-3 sm:space-y-4">
-              <h3 className="text-base sm:text-lg font-semibold text-gray-900">QR Code Visibility</h3>
+              <h3 className="text-base sm:text-lg font-semibold text-foreground">QR Code Visibility</h3>
               <div>
                 <Label className="text-sm sm:text-base">Select which QR codes this technician can see</Label>
-                <p className="text-xs sm:text-sm text-gray-500 mb-3">Control which payment QR codes are available to this technician</p>
+                <p className="text-xs sm:text-sm text-muted-foreground mb-3">Control which payment QR codes are available to this technician</p>
                 
                 <div className="space-y-2 sm:space-y-3">
                   {/* Show All Option */}
@@ -2936,7 +2936,7 @@ const Settings = () => {
                   {/* Common QR Codes */}
                   {commonQrCodes.length > 0 && (
                     <div className="space-y-2">
-                      <Label className="text-xs sm:text-sm font-medium text-gray-700">Common QR Codes:</Label>
+                      <Label className="text-xs sm:text-sm font-medium text-foreground/90">Common QR Codes:</Label>
                       {commonQrCodes.map((qr) => {
                         const qrId = `common_${qr.id}`;
                         const isChecked = technicianFormData.visibleQrCodes.includes(qrId);
@@ -2976,7 +2976,7 @@ const Settings = () => {
                   {/* Technician QR Codes */}
                   {technicians.filter(t => (t as any).qrCode && (t as any).qrCode.trim() !== '').length > 0 && (
                     <div className="space-y-2">
-                      <Label className="text-xs sm:text-sm font-medium text-gray-700">Technician QR Codes:</Label>
+                      <Label className="text-xs sm:text-sm font-medium text-foreground/90">Technician QR Codes:</Label>
                       {technicians
                         .filter(t => (t as any).qrCode && (t as any).qrCode.trim() !== '')
                         .map((tech) => {
@@ -3016,7 +3016,7 @@ const Settings = () => {
                   )}
                   
                   {commonQrCodes.length === 0 && technicians.filter(t => (t as any).qrCode && (t as any).qrCode.trim() !== '').length === 0 && (
-                    <p className="text-xs sm:text-sm text-gray-500 italic">No QR codes available. Add common QR codes or upload QR codes for technicians.</p>
+                    <p className="text-xs sm:text-sm text-muted-foreground italic">No QR codes available. Add common QR codes or upload QR codes for technicians.</p>
                   )}
                 </div>
               </div>
@@ -3024,13 +3024,13 @@ const Settings = () => {
 
             {/* Common QR (non-payment) - multiple allowed, shown below payment QR */}
             <div className="space-y-3 sm:space-y-4">
-              <h3 className="text-base sm:text-lg font-semibold text-gray-900">Common QR</h3>
+              <h3 className="text-base sm:text-lg font-semibold text-foreground">Common QR</h3>
               <div>
                 <Label className="text-sm sm:text-base">Common QRs to show to this technician</Label>
-                <p className="text-xs sm:text-sm text-gray-500 mb-2">Select one or more. They are shown below the payment QR on the technician app. Add options in the &quot;Common QR&quot; card above.</p>
+                <p className="text-xs sm:text-sm text-muted-foreground mb-2">Select one or more. They are shown below the payment QR on the technician app. Add options in the &quot;Common QR&quot; card above.</p>
                 <div className="space-y-2 max-h-48 overflow-y-auto border rounded-lg p-3">
                   {technicianCommonQrCodes.length === 0 ? (
-                    <p className="text-xs text-gray-500 italic">No Common QRs added yet. Add some in the Common QR card above.</p>
+                    <p className="text-xs text-muted-foreground italic">No Common QRs added yet. Add some in the Common QR card above.</p>
                   ) : (
                     technicianCommonQrCodes.map((qr) => {
                       const isChecked = technicianFormData.commonQrCodeIds.includes(qr.id);
@@ -3073,9 +3073,9 @@ const Settings = () => {
                     <p className="text-sm text-green-700 dark:text-green-300 mb-3">
                       Copy the ID Card link below and use any QR code generator to create a QR code for this technician.
                     </p>
-                    <div className="bg-white dark:bg-gray-800 p-3 rounded border border-green-200 dark:border-green-700">
+                    <div className="bg-card dark:bg-gray-800 p-3 rounded border border-green-200 dark:border-green-700">
                       <div className="flex items-center justify-between gap-2 mb-2">
-                        <Label className="text-xs font-medium text-gray-700 dark:text-gray-300">ID Card Link:</Label>
+                        <Label className="text-xs font-medium text-foreground/90 dark:text-gray-300">ID Card Link:</Label>
                         <div className="flex items-center gap-2">
                           <Button
                             variant="ghost"
@@ -3102,7 +3102,7 @@ const Settings = () => {
                           </Button>
                         </div>
                       </div>
-                      <p className="text-xs font-mono text-gray-600 dark:text-gray-400 break-all">
+                      <p className="text-xs font-mono text-muted-foreground dark:text-muted-foreground/70 break-all">
                         {generateIdCardLink(newlyCreatedTechnicianId)}
                       </p>
                     </div>
@@ -3167,7 +3167,7 @@ const Settings = () => {
                 technicianFormData.baseSalary < 0
               }
               title={isManager ? managerRestrictedTitle : undefined}
-              className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
+              className=" w-full sm:w-auto"
             >
               {isManager
                 ? 'Restricted'
@@ -3241,7 +3241,7 @@ const Settings = () => {
               
               <div>
                 <Label>Upload QR Code Image *</Label>
-                <p className="text-sm text-gray-500 mb-2">Upload QR code image for payment scanning</p>
+                <p className="text-sm text-muted-foreground mb-2">Upload QR code image for payment scanning</p>
                 <ImageUpload
                   onImagesChange={(images) => {
                     console.log('ImageUpload callback called with images:', images);
@@ -3267,9 +3267,9 @@ const Settings = () => {
                     <img 
                       src={qrCodeFormData.qrCodeUrl} 
                       alt="QR Code" 
-                      className="w-32 h-32 object-contain border border-gray-200 rounded"
+                      className="w-32 h-32 object-contain border border-border rounded"
                     />
-                    <p className="text-xs text-gray-500 mt-1">URL: {qrCodeFormData.qrCodeUrl.substring(0, 50)}...</p>
+                    <p className="text-xs text-muted-foreground mt-1">URL: {qrCodeFormData.qrCodeUrl.substring(0, 50)}...</p>
                   </div>
                 )}
                 {!qrCodeFormData.qrCodeUrl && (
@@ -3305,7 +3305,7 @@ const Settings = () => {
                 handleSaveQrCode();
               }}
               disabled={!qrCodeFormData.name || !qrCodeFormData.qrCodeUrl}
-              className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
+              className=" w-full sm:w-auto"
             >
               {editQrCodeDialogOpen ? 'Update QR Code' : 'Create QR Code'}
             </Button>
@@ -3342,7 +3342,7 @@ const Settings = () => {
               </div>
               <div>
                 <Label>Upload QR Code Image *</Label>
-                <p className="text-sm text-gray-500 mb-2">Upload the QR image (non-payment)</p>
+                <p className="text-sm text-muted-foreground mb-2">Upload the QR image (non-payment)</p>
                 <ImageUpload
                   onImagesChange={(images) => setTechnicianCommonQrFormData(prev => ({ ...prev, qrCodeUrl: images[0] || '' }))}
                   maxImages={1}
@@ -3356,7 +3356,7 @@ const Settings = () => {
                 />
                 {technicianCommonQrFormData.qrCodeUrl && (
                   <div className="mt-2">
-                    <img src={technicianCommonQrFormData.qrCodeUrl} alt="Common QR" className="w-32 h-32 object-contain border border-gray-200 rounded" />
+                    <img src={technicianCommonQrFormData.qrCodeUrl} alt="Common QR" className="w-32 h-32 object-contain border border-border rounded" />
                   </div>
                 )}
               </div>
@@ -3378,7 +3378,7 @@ const Settings = () => {
             <Button
               onClick={handleSaveTechnicianCommonQr}
               disabled={!technicianCommonQrFormData.name?.trim() || !technicianCommonQrFormData.qrCodeUrl?.trim()}
-              className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
+              className=" w-full sm:w-auto"
             >
               {editTechnicianCommonQrDialogOpen ? 'Update Common QR' : 'Create Common QR'}
             </Button>
@@ -3420,7 +3420,7 @@ const Settings = () => {
                   }}
                   placeholder="e.g., Product Model XYZ, Batch 2024"
                 />
-                <p className="text-xs text-gray-500 mt-1">This will be displayed on the verification page</p>
+                <p className="text-xs text-muted-foreground mt-1">This will be displayed on the verification page</p>
               </div>
 
               <div>
@@ -3433,7 +3433,7 @@ const Settings = () => {
                   }}
                   placeholder="e.g., RO Filter Cartridge"
                 />
-                <p className="text-xs text-gray-500 mt-1">Leave empty if you don't want to show product name</p>
+                <p className="text-xs text-muted-foreground mt-1">Leave empty if you don't want to show product name</p>
               </div>
 
               <div>
@@ -3582,7 +3582,7 @@ const Settings = () => {
             <Button
               onClick={handleSaveTodo}
               disabled={!newTodoText || !newTodoText.trim()}
-              className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
+              className=" w-full sm:w-auto"
             >
               Add Task
             </Button>
@@ -3618,7 +3618,7 @@ const Settings = () => {
                   handleDeleteTodo(todoToDelete);
                 }
               }}
-              className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto order-1 sm:order-2 h-10 sm:h-9 text-sm sm:text-sm font-medium"
+              className=" w-full sm:w-auto order-1 sm:order-2 h-10 sm:h-9 text-sm sm:text-sm font-medium"
             >
               Complete Task
             </AlertDialogAction>
@@ -3688,7 +3688,7 @@ const Settings = () => {
             <Button
               onClick={handleSaveTracker}
               disabled={!newTrackerName.trim()}
-              className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
+              className=" w-full sm:w-auto"
             >
               Create Tracker
             </Button>
@@ -3814,8 +3814,8 @@ const Settings = () => {
           <CardContent className="p-4 sm:p-6">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
-                <h3 className="font-semibold text-gray-900 mb-1">Logout</h3>
-                <p className="text-sm text-gray-600">Sign out of your account</p>
+                <h3 className="font-semibold text-foreground mb-1">Logout</h3>
+                <p className="text-sm text-muted-foreground">Sign out of your account</p>
               </div>
               <Button
                 variant="outline"

@@ -226,10 +226,10 @@ const OfficeJobPartsDialog: React.FC<OfficeJobPartsDialogProps> = ({
             </div>
 
             {loading ? (
-              <div className="text-center py-8 text-gray-500">Loading...</div>
+              <div className="text-center py-8 text-muted-foreground">Loading...</div>
             ) : parts.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                <Package className="w-12 h-12 mx-auto mb-2 text-gray-400" />
+              <div className="text-center py-8 text-muted-foreground">
+                <Package className="w-12 h-12 mx-auto mb-2 text-muted-foreground/70" />
                 <p>No parts added yet.</p>
                 <p className="text-sm mt-1">Click &quot;Add Part&quot; to track spare parts for this sale.</p>
               </div>
@@ -315,9 +315,9 @@ const OfficeJobPartsDialog: React.FC<OfficeJobPartsDialogProps> = ({
             </div>
             <div className="rounded-lg border flex-1 min-h-0 overflow-hidden">
               {loading ? (
-                <div className="py-8 px-4 text-center text-sm text-gray-500">Loading...</div>
+                <div className="py-8 px-4 text-center text-sm text-muted-foreground">Loading...</div>
               ) : filteredInventory.length === 0 ? (
-                <div className="py-8 px-4 text-center text-sm text-gray-500">
+                <div className="py-8 px-4 text-center text-sm text-muted-foreground">
                   {inventory.length === 0
                     ? 'No inventory items.'
                     : debouncedSearch.trim()

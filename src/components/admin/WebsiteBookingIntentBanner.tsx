@@ -283,7 +283,7 @@ export function WebsiteBookingIntentBanner({ playAlert, stopAlert }: Props) {
           type="button"
           variant="outline"
           size="sm"
-          className="h-8 border-emerald-300 bg-white shrink-0"
+          className="h-8 border-emerald-300 bg-card shrink-0"
           onClick={toggleMute}
           title={muted ? 'Unmute' : 'Mute'}
         >
@@ -294,7 +294,7 @@ export function WebsiteBookingIntentBanner({ playAlert, stopAlert }: Props) {
         {rows.map((r) => (
           <li
             key={r.id}
-            className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-white/90 border border-emerald-200/90 px-2 py-2 text-sm"
+            className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-card/90 border border-emerald-200/90 px-2 py-2 text-sm"
           >
             <div className="min-w-0 flex flex-wrap items-center gap-x-3 gap-y-1">
               <span
@@ -303,7 +303,7 @@ export function WebsiteBookingIntentBanner({ playAlert, stopAlert }: Props) {
               >
                 {SITE_LABEL[r.site_key] ?? r.site_key}
               </span>
-              <span className="font-medium text-gray-900 truncate">{r.full_name}</span>
+              <span className="font-medium text-foreground truncate">{r.full_name}</span>
               <a
                 href={`tel:${r.phone.replace(/\D/g, '')}`}
                 className="inline-flex items-center gap-1 text-blue-700 font-mono tabular-nums hover:underline"
@@ -311,7 +311,7 @@ export function WebsiteBookingIntentBanner({ playAlert, stopAlert }: Props) {
                 <Phone className="w-3.5 h-3.5 shrink-0" />
                 {r.phone}
               </a>
-              <span className="text-xs text-gray-600">
+              <span className="text-xs text-muted-foreground">
                 Step {r.current_step}: {STEP_LABEL[r.current_step] ?? '—'}
               </span>
               {r.booked_at ? (
@@ -322,7 +322,7 @@ export function WebsiteBookingIntentBanner({ playAlert, stopAlert }: Props) {
                   Booked
                 </span>
               ) : null}
-              <span className="text-xs text-gray-600">
+              <span className="text-xs text-muted-foreground">
                 Started: {formatStartedAt(r.created_at)}
               </span>
             </div>
@@ -330,7 +330,7 @@ export function WebsiteBookingIntentBanner({ playAlert, stopAlert }: Props) {
               type="button"
               variant="ghost"
               size="sm"
-              className="h-7 px-2 text-xs text-gray-500 hover:text-gray-900 shrink-0"
+              className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground shrink-0"
               disabled={dismissingId === r.id}
               onClick={() => void onDismiss(r.id)}
             >

@@ -514,8 +514,8 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
         {customer && (
           <div className="py-4 px-2 sm:px-4 space-y-6 flex-1 overflow-y-auto">
             {/* Service Information */}
-            <div className="space-y-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
-              <h3 className="text-lg font-semibold text-gray-900">Service Information</h3>
+            <div className="space-y-4 p-4 border border-border rounded-lg bg-muted/40">
+              <h3 className="text-lg font-semibold text-foreground">Service Information</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="job_service_type">Service Type</Label>
@@ -523,7 +523,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                     id="job_service_type"
                     value={newJobFormData.service_type || 'RO'}
                     onChange={(e) => handleFormChange('service_type', e.target.value)}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none bg-white"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none bg-card"
                     style={{
                       backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e")`,
                       backgroundPosition: 'right 0.5rem center',
@@ -543,7 +543,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                     id="job_service_sub_type"
                     value={newJobFormData.service_sub_type || 'Service'}
                     onChange={(e) => handleFormChange('service_sub_type', e.target.value)}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none bg-white"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none bg-card"
                   >
                     <option value="Service">Service</option>
                     <option value="Installation">Installation</option>
@@ -573,8 +573,8 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
             </div>
 
             {/* Scheduling */}
-            <div className="space-y-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
-              <h3 className="text-lg font-semibold text-gray-900">Scheduling</h3>
+            <div className="space-y-4 p-4 border border-border rounded-lg bg-muted/40">
+              <h3 className="text-lg font-semibold text-foreground">Scheduling</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="job_scheduled_date">Scheduled Date</Label>
@@ -614,14 +614,14 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
             </div>
 
             {/* Photo Upload */}
-            <div className="space-y-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
-              <h3 className="text-lg font-semibold text-gray-900">Photos</h3>
+            <div className="space-y-4 p-4 border border-border rounded-lg bg-muted/40">
+              <h3 className="text-lg font-semibold text-foreground">Photos</h3>
               <div className="space-y-4">
                 <div 
                   className={`border-2 border-dashed rounded-lg p-6 text-center transition-all duration-200 cursor-pointer ${
                     isDragOverNewJob 
                       ? 'border-blue-500 bg-blue-50 scale-105' 
-                      : 'border-gray-300 hover:border-gray-400'
+                      : 'border-border hover:border-primary/30'
                   }`}
                   onDragOver={(e) => {
                     e.preventDefault();
@@ -650,11 +650,11 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                     {isDragOverNewJob ? (
                       <Upload className="w-8 h-8 text-blue-500" />
                     ) : (
-                      <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-8 h-8 text-muted-foreground/70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                       </svg>
                     )}
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-muted-foreground">
                       {isDragOverNewJob ? (
                         <span className="font-medium text-blue-600">Drop photos here</span>
                       ) : (
@@ -663,7 +663,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                         </>
                       )}
                     </p>
-                    <p className="text-xs text-gray-500">PNG, JPG, WEBP up to 10MB each</p>
+                    <p className="text-xs text-muted-foreground">PNG, JPG, WEBP up to 10MB each</p>
                   </div>
                 </div>
                 
@@ -748,8 +748,8 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
             </div>
 
             {/* Job Details */}
-            <div className="space-y-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
-              <h3 className="text-lg font-semibold text-gray-900">Job Details</h3>
+            <div className="space-y-4 p-4 border border-border rounded-lg bg-muted/40">
+              <h3 className="text-lg font-semibold text-foreground">Job Details</h3>
               <div className="space-y-2">
                 <Label htmlFor="job_description">Description (Optional)</Label>
                 <Textarea
@@ -775,7 +775,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                   }}
                   placeholder="e.g., 400 or 400-500"
                 />
-                <p className="text-xs text-gray-500">Enter a single amount or a range (e.g., 400-500)</p>
+                <p className="text-xs text-muted-foreground">Enter a single amount or a range (e.g., 400-500)</p>
               </div>
 
               <div className="space-y-2">
@@ -801,7 +801,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                     }
                   }}
                   required
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none bg-white"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 appearance-none bg-card"
                 >
                   <option value="">Select lead source</option>
                   <option value="Website">Website</option>
@@ -839,14 +839,14 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                     placeholder="Enter lead cost"
                     required
                   />
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-muted-foreground">
                     Default: ₹{getDefaultLeadCost(newJobFormData.lead_source)} (can be changed)
                   </p>
                 </div>
               )}
 
               {/* Assign to Technician (Optional) */}
-              <div className="space-y-2 pt-2 border-t border-gray-200">
+              <div className="space-y-2 pt-2 border-t border-border">
                 <Label htmlFor="job_technician">Assign to Technician (Optional)</Label>
                 <Select
                   value={newJobFormData.assigned_technician_id || 'none'}
@@ -874,27 +874,27 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                   </SelectContent>
                 </Select>
                 {newJobFormData.assigned_technician_id && (
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-muted-foreground">
                     Job will be assigned immediately and a WhatsApp notification can be sent.
                   </p>
                 )}
               </div>
 
               {/* OTP Verification Toggle */}
-              <div className="space-y-2 pt-2 border-t border-gray-200">
+              <div className="space-y-2 pt-2 border-t border-border">
                 <div className="flex items-center space-x-2">
                   <input
                     type="checkbox"
                     id="job_require_otp"
                     checked={newJobFormData.require_otp}
                     onChange={(e) => handleFormChange('require_otp', e.target.checked)}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-border rounded"
                   />
                   <Label htmlFor="job_require_otp" className="cursor-pointer">
                     Require OTP Verification
                   </Label>
                 </div>
-                <p className="text-xs text-gray-500 ml-6">
+                <p className="text-xs text-muted-foreground ml-6">
                   If enabled, technician will need to enter a 4-digit OTP to complete this job
                 </p>
               </div>
@@ -912,7 +912,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
           <Button
             onClick={handleCreateJob}
             disabled={isCreatingJob}
-            className="bg-blue-600 hover:bg-blue-700"
+            className=""
           >
             {isCreatingJob ? 'Creating...' : 'Create Job'}
           </Button>

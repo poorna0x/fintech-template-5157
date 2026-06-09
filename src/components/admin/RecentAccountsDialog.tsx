@@ -47,7 +47,7 @@ const RecentAccountsDialog: React.FC<RecentAccountsDialogProps> = ({
         
         <div className="space-y-4">
           {todayCustomers.length === 0 ? (
-            <div className="text-center py-8 text-gray-500">
+            <div className="text-center py-8 text-muted-foreground">
               <p>No accounts created today.</p>
             </div>
           ) : (
@@ -55,19 +55,19 @@ const RecentAccountsDialog: React.FC<RecentAccountsDialogProps> = ({
               {todayCustomers.map((customer) => (
                 <div
                   key={customer.id}
-                  className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors"
+                  className="border border-border rounded-lg p-4 hover:bg-muted/40 transition-colors"
                 >
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="font-semibold text-gray-900">
+                        <span className="font-semibold text-foreground">
                           {customer.customer_id || (customer as any).customerId}
                         </span>
                         <Badge variant="outline" className={`text-xs ${customerNameClassName(customer)}`}>
                           {customer.fullName || customer.full_name}
                         </Badge>
                       </div>
-                      <div className="text-sm text-gray-600 space-y-1">
+                      <div className="text-sm text-muted-foreground space-y-1">
                         <p>
                           <span className="font-medium">Phone:</span> {customer.phone}
                           {customer.alternate_phone && ` / ${customer.alternate_phone}`}
@@ -80,7 +80,7 @@ const RecentAccountsDialog: React.FC<RecentAccountsDialogProps> = ({
                         <p>
                           <span className="font-medium">Service:</span> {customer.service_type || 'N/A'}
                         </p>
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-muted-foreground">
                           Created: {new Date(customer.customer_since || (customer as any).customerSince || '').toLocaleString()}
                         </p>
                       </div>

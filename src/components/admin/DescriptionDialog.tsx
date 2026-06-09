@@ -30,7 +30,7 @@ const DescriptionDialog: React.FC<DescriptionDialogProps> = ({
         </DialogHeader>
         <div className="py-4">
           <div className="prose max-w-none">
-            <p className="text-gray-900 whitespace-pre-wrap break-words">
+            <p className="text-foreground whitespace-pre-wrap break-words">
               {selectedJobDescription?.description || 'No description available'}
             </p>
           </div>

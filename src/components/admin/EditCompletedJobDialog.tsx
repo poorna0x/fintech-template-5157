@@ -200,7 +200,7 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
           {/* Service brand */}
           <div className="space-y-3">
             <Label className="text-base font-semibold">Serviced as brand</Label>
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-muted-foreground">
               This will be used for this job’s customer message and booking details next time.
             </p>
             <div className="grid grid-cols-2 gap-4">
@@ -210,7 +210,7 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
                 className={`p-4 rounded-lg border-2 transition-all duration-200 ${
                   editData.serviceBrand === 'elevenro'
                     ? 'border-black bg-black text-white shadow-md'
-                    : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
+                    : 'border-border bg-card text-foreground/90 hover:border-primary/30 hover:bg-muted/40'
                 }`}
               >
                 <span className="font-medium text-sm">ElevenRO</span>
@@ -221,7 +221,7 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
                 className={`p-4 rounded-lg border-2 transition-all duration-200 ${
                   editData.serviceBrand === 'hydrogenro'
                     ? 'border-black bg-black text-white shadow-md'
-                    : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
+                    : 'border-border bg-card text-foreground/90 hover:border-primary/30 hover:bg-muted/40'
                 }`}
               >
                 <span className="font-medium text-sm">HydrogenRO</span>
@@ -244,7 +244,7 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
               placeholder="Enter amount"
             />
             {editData.paymentMethod === 'PARTIAL' && (
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Changing cash or online below updates this total automatically; you can adjust the total here too.
               </p>
             )}
@@ -336,7 +336,7 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
                 const o = parseFloat(String(editData.partialOnlineAmount ?? '').trim()) || 0;
                 if (c <= 0 && o <= 0) return null;
                 return (
-                  <p className="text-sm text-gray-700 col-span-2">
+                  <p className="text-sm text-foreground/90 col-span-2">
                     Total (cash + online): <span className="font-semibold">₹{(c + o).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}</span>
                   </p>
                 );
@@ -419,7 +419,7 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
               onChange={(e) => onEditDataChange({ ...editData, leadCost: e.target.value })}
               placeholder="0 if none"
             />
-            <p className="text-xs text-gray-500 mt-1">Edit if you need to update lead cost for this job</p>
+            <p className="text-xs text-muted-foreground mt-1">Edit if you need to update lead cost for this job</p>
           </div>
 
           {/* QR code for online portion (online or partial) */}
@@ -533,7 +533,7 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
           {/* Payment screenshots - multiple, always show add/drop zone */}
           <div className="border-t pt-4">
             <Label className="text-base font-semibold">Payment screenshots</Label>
-            <p className="text-xs text-gray-500 mt-1 mb-2">Drag and drop or click to add. You can add more even if you already have some.</p>
+            <p className="text-xs text-muted-foreground mt-1 mb-2">Drag and drop or click to add. You can add more even if you already have some.</p>
             <div className="flex flex-wrap gap-2 mb-2">
               {(editData.paymentScreenshots || []).map((url: string, idx: number) => (
                 <div key={idx} className="relative group">
@@ -579,11 +579,11 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
               }}
               onClick={() => paymentInputRef.current?.click()}
               className={`border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors ${
-                dragOverPayment ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-blue-400 hover:bg-gray-50'
+                dragOverPayment ? 'border-blue-500 bg-blue-50' : 'border-border hover:border-blue-400 hover:bg-muted/40'
               } ${uploadingPaymentPhoto ? 'opacity-60 pointer-events-none' : ''}`}
             >
-              <ImagePlus className="w-8 h-8 mx-auto text-gray-400 mb-1" />
-              <p className="text-sm text-gray-600">
+              <ImagePlus className="w-8 h-8 mx-auto text-muted-foreground/70 mb-1" />
+              <p className="text-sm text-muted-foreground">
                 {uploadingPaymentPhoto ? 'Uploading...' : 'Drag & drop or click to add payment screenshot(s)'}
               </p>
             </div>
@@ -592,14 +592,14 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
           {/* Bill photos - multiple, always show add/drop zone */}
           <div>
             <Label className="text-base font-semibold">Bill photos</Label>
-            <p className="text-xs text-gray-500 mt-1 mb-2">Drag and drop or click to add. You can add more even if you already have some.</p>
+            <p className="text-xs text-muted-foreground mt-1 mb-2">Drag and drop or click to add. You can add more even if you already have some.</p>
             <div className="flex flex-wrap gap-2 mb-2">
               {(editData.billPhotos || []).map((url: string, idx: number) => (
                 <div key={idx} className="relative group">
                   <img
                     src={url}
                     alt={`Bill ${idx + 1}`}
-                    className="w-20 h-20 object-cover rounded-lg border border-gray-200"
+                    className="w-20 h-20 object-cover rounded-lg border border-border"
                   />
                   <button
                     type="button"
@@ -638,11 +638,11 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
               }}
               onClick={() => photoInputRef.current?.click()}
               className={`border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors ${
-                dragOverBill ? 'border-green-500 bg-green-50' : 'border-gray-300 hover:border-green-400 hover:bg-gray-50'
+                dragOverBill ? 'border-green-500 bg-green-50' : 'border-border hover:border-green-400 hover:bg-muted/40'
               } ${uploadingPhotos ? 'opacity-60 pointer-events-none' : ''}`}
             >
-              <ImagePlus className="w-8 h-8 mx-auto text-gray-400 mb-1" />
-              <p className="text-sm text-gray-600">
+              <ImagePlus className="w-8 h-8 mx-auto text-muted-foreground/70 mb-1" />
+              <p className="text-sm text-muted-foreground">
                 {uploadingPhotos ? 'Uploading...' : 'Drag & drop or click to add bill photos'}
               </p>
             </div>
@@ -796,7 +796,7 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
                 />
               </div>
             </div>
-            <p className="text-xs text-gray-500 mt-1">Leave empty to keep the original completion date</p>
+            <p className="text-xs text-muted-foreground mt-1">Leave empty to keep the original completion date</p>
           </div>
         </div>
 

@@ -203,7 +203,7 @@ export function BookingAbandonBanner() {
             type="button"
             variant="outline"
             size="sm"
-            className="h-8 border-amber-300 bg-white"
+            className="h-8 border-amber-300 bg-card"
             onClick={toggleMute}
             title={muted ? 'Unmute reminder beeps' : 'Mute beeps this session'}
           >
@@ -215,10 +215,10 @@ export function BookingAbandonBanner() {
         {rows.map((r) => (
           <li
             key={r.id}
-            className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-white/90 border border-amber-200/80 px-2 py-2 text-sm"
+            className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-card/90 border border-amber-200/80 px-2 py-2 text-sm"
           >
             <div className="min-w-0 flex flex-wrap items-center gap-x-3 gap-y-1">
-              <span className="font-medium text-gray-900 truncate">{r.full_name}</span>
+              <span className="font-medium text-foreground truncate">{r.full_name}</span>
               <a
                 href={`tel:${r.phone.replace(/\D/g, '')}`}
                 className="inline-flex items-center gap-1 text-blue-700 font-mono tabular-nums hover:underline"
@@ -226,7 +226,7 @@ export function BookingAbandonBanner() {
                 <Phone className="w-3.5 h-3.5 shrink-0" />
                 {r.phone}
               </a>
-              <span className="text-xs text-gray-600">
+              <span className="text-xs text-muted-foreground">
                 Step {r.step_reached}: {STEP_LABEL[r.step_reached] ?? '—'}
               </span>
             </div>

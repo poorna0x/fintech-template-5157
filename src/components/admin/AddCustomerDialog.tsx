@@ -1321,7 +1321,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
           <AlertDialogCancel onClick={handleStartNewEntry} className="w-full sm:w-auto mt-0">
             Start new
           </AlertDialogCancel>
-          <AlertDialogAction onClick={handleResumeDraft} className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700">
+          <AlertDialogAction onClick={handleResumeDraft} className="w-full sm:w-auto ">
             Resume
           </AlertDialogAction>
         </AlertDialogFooter>
@@ -1451,7 +1451,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                     className="text-sm"
                   />
                   {visibleAddressSuggestions && filteredAddressSuggestions.length > 0 && (
-                    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-48 overflow-y-auto">
+                    <div className="absolute z-50 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-48 overflow-y-auto">
                       {filteredAddressSuggestions.map((suggestion, idx) => (
                         <button
                           key={idx}
@@ -1470,7 +1470,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                     </div>
                   )}
                 </div>
-                <p className="text-xs text-gray-500">Enter a one-word location identifier for quick recognition. Start typing to see suggestions.</p>
+                <p className="text-xs text-muted-foreground">Enter a one-word location identifier for quick recognition. Start typing to see suggestions.</p>
               </div>
 
               <div className="space-y-2">
@@ -1506,7 +1506,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="add_google_location" className="text-sm font-medium text-gray-900">
+                <Label htmlFor="add_google_location" className="text-sm font-medium text-foreground">
                   Google Maps Location
                 </Label>
                 <div className="flex flex-wrap gap-2">
@@ -1554,7 +1554,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                     </Button>
                   )}
                 </div>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-muted-foreground">
                   Tip: copy the share link from Google Maps, then click <strong>Fetch Address</strong> — we'll paste it for you.
                 </p>
               </div>
@@ -1577,7 +1577,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                       className={`p-3 border-2 rounded-lg cursor-pointer transition-all ${
                         addFormData.service_types.includes(service.value)
                           ? 'border-blue-500 bg-blue-50 text-blue-700'
-                          : 'border-gray-200 hover:border-gray-300'
+                          : 'border-border hover:border-border'
                       }`}
                     >
                       <div className="flex items-center gap-2">
@@ -1604,9 +1604,9 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                     const photos = addFormData.photos[serviceType] || [];
                     
                     return (
-                      <div key={serviceType} className="bg-gray-50 p-4 rounded-lg space-y-3">
+                      <div key={serviceType} className="bg-muted/40 p-4 rounded-lg space-y-3">
                         <div className="flex items-center gap-2">
-                          <span className="font-medium text-gray-900">{serviceInfo?.label}</span>
+                          <span className="font-medium text-foreground">{serviceInfo?.label}</span>
                         </div>
                         
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1698,42 +1698,42 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
           {/* Step 4: Review & Notes */}
           {currentStep === 4 && (
             <div className="space-y-4">
-              <div className="bg-gray-50 p-4 rounded-lg space-y-3">
-                <h3 className="font-semibold text-gray-900">Customer Information Summary</h3>
+              <div className="bg-muted/40 p-4 rounded-lg space-y-3">
+                <h3 className="font-semibold text-foreground">Customer Information Summary</h3>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                   <div>
-                    <span className="font-medium text-gray-600">Name:</span>
-                    <p className="text-gray-900">{addFormData.full_name || 'Not provided'}</p>
+                    <span className="font-medium text-muted-foreground">Name:</span>
+                    <p className="text-foreground">{addFormData.full_name || 'Not provided'}</p>
                   </div>
                   <div>
-                    <span className="font-medium text-gray-600">Phone:</span>
-                    <p className="text-gray-900">{addFormData.phone || 'Not provided'}</p>
+                    <span className="font-medium text-muted-foreground">Phone:</span>
+                    <p className="text-foreground">{addFormData.phone || 'Not provided'}</p>
                   </div>
                   {addFormData.alternate_phone && (
                     <div>
-                      <span className="font-medium text-gray-600">Alternate Phone:</span>
-                      <p className="text-gray-900">{addFormData.alternate_phone}</p>
+                      <span className="font-medium text-muted-foreground">Alternate Phone:</span>
+                      <p className="text-foreground">{addFormData.alternate_phone}</p>
                     </div>
                   )}
                   <div>
-                    <span className="font-medium text-gray-600">Email:</span>
-                    <p className="text-gray-900">{addFormData.email || 'Not provided'}</p>
+                    <span className="font-medium text-muted-foreground">Email:</span>
+                    <p className="text-foreground">{addFormData.email || 'Not provided'}</p>
                   </div>
                   <div className="sm:col-span-2">
-                    <span className="font-medium text-gray-600">Location:</span>
-                    <p className="text-gray-900">{addFormData.visible_address || 'Not provided'}</p>
-                    <span className="font-medium text-gray-600">Complete Address:</span>
-                    <p className="text-gray-900">{addFormData.address || 'Not provided'}</p>
+                    <span className="font-medium text-muted-foreground">Location:</span>
+                    <p className="text-foreground">{addFormData.visible_address || 'Not provided'}</p>
+                    <span className="font-medium text-muted-foreground">Complete Address:</span>
+                    <p className="text-foreground">{addFormData.address || 'Not provided'}</p>
                     {addFormData.google_location && (
                       <div className="mt-1">
-                        <span className="font-medium text-gray-600">Google Maps:</span>
+                        <span className="font-medium text-muted-foreground">Google Maps:</span>
                         <p className="text-blue-600 text-sm break-all">{addFormData.google_location}</p>
                       </div>
                     )}
                   </div>
                   <div className="sm:col-span-2">
-                    <span className="font-medium text-gray-600">Services & Equipment:</span>
+                    <span className="font-medium text-muted-foreground">Services & Equipment:</span>
                     <div className="mt-1 space-y-2">
                       {addFormData.service_types.map((serviceType) => {
                         const serviceInfo = [
@@ -1746,7 +1746,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                         return (
                           <div key={serviceType} className="flex items-center gap-2 text-sm">
                             <span className="font-medium">{serviceInfo?.label}:</span>
-                            <span className="text-gray-700">
+                            <span className="text-foreground/90">
                               {equipment?.brand} - {equipment?.model}
                             </span>
                           </div>
@@ -1763,13 +1763,13 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
           {currentStep === 5 && (
             <div className="space-y-4">
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                <h3 className="font-semibold text-gray-900 mb-2">Create a New Job?</h3>
-                <p className="text-sm text-gray-600 mb-4">
+                <h3 className="font-semibold text-foreground mb-2">Create a New Job?</h3>
+                <p className="text-sm text-muted-foreground mb-4">
                   Would you like to create a new job for this customer right away?
                 </p>
                 
                 <div className="space-y-3">
-                  <label className="flex items-center gap-3 p-3 bg-white rounded-lg border-2 border-blue-500 cursor-pointer transition-all hover:border-blue-300">
+                  <label className="flex items-center gap-3 p-3 bg-card rounded-lg border-2 border-blue-500 cursor-pointer transition-all hover:border-blue-300">
                     <input
                       type="radio"
                       name="createJob"
@@ -1791,12 +1791,12 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                       className="h-4 w-4 text-blue-600"
                     />
                     <div>
-                      <span className="font-medium text-gray-900">Yes, create a new job</span>
-                      <p className="text-xs text-gray-500 mt-1">Fill in the job details below</p>
+                      <span className="font-medium text-foreground">Yes, create a new job</span>
+                      <p className="text-xs text-muted-foreground mt-1">Fill in the job details below</p>
                     </div>
                   </label>
                   
-                  <label className="flex items-center gap-3 p-3 bg-white rounded-lg border-2 cursor-pointer transition-all hover:border-blue-300">
+                  <label className="flex items-center gap-3 p-3 bg-card rounded-lg border-2 cursor-pointer transition-all hover:border-blue-300">
                     <input
                       type="radio"
                       name="createJob"
@@ -1805,8 +1805,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                       className="h-4 w-4 text-blue-600"
                     />
                     <div>
-                      <span className="font-medium text-gray-900">No, just create the customer</span>
-                      <p className="text-xs text-gray-500 mt-1">You can create a job later from the customer's profile</p>
+                      <span className="font-medium text-foreground">No, just create the customer</span>
+                      <p className="text-xs text-muted-foreground mt-1">You can create a job later from the customer's profile</p>
                     </div>
                   </label>
                 </div>
@@ -1814,7 +1814,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
               {shouldCreateJob && (
                 <div className="space-y-4 border-t pt-4">
-                  <h4 className="font-semibold text-gray-900">Job Information</h4>
+                  <h4 className="font-semibold text-foreground">Job Information</h4>
                   
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="space-y-2">
@@ -2021,7 +2021,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                         }}
                         placeholder="e.g., 400 or 400-500"
                       />
-                      <p className="text-xs text-gray-500">Enter a single amount or a range (e.g., 400-500)</p>
+                      <p className="text-xs text-muted-foreground">Enter a single amount or a range (e.g., 400-500)</p>
                     </div>
 
                     <div className="space-y-2 sm:col-span-2">
@@ -2046,7 +2046,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                         </SelectContent>
                       </Select>
                       {step5JobData.assigned_technician_id && (
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-muted-foreground">
                           Job will be assigned to selected technician immediately
                         </p>
                       )}
@@ -2065,20 +2065,20 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                     </div>
 
                     {/* OTP Verification Toggle */}
-                    <div className="space-y-2 sm:col-span-2 pt-2 border-t border-gray-200">
+                    <div className="space-y-2 sm:col-span-2 pt-2 border-t border-border">
                       <div className="flex items-center space-x-2">
                         <input
                           type="checkbox"
                           id="step5_require_otp"
                           checked={step5JobData.require_otp}
                           onChange={(e) => setStep5JobData(prev => ({ ...prev, require_otp: e.target.checked }))}
-                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-border rounded"
                         />
                         <Label htmlFor="step5_require_otp" className="cursor-pointer">
                           Require OTP Verification
                         </Label>
                       </div>
-                      <p className="text-xs text-gray-500 ml-6">
+                      <p className="text-xs text-muted-foreground ml-6">
                         If enabled, technician will need to enter a 4-digit OTP to complete this job
                       </p>
                     </div>
@@ -2100,11 +2100,11 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
           
           <div className="order-1 sm:order-2">
             {currentStep < 4 ? (
-              <Button onClick={nextStep} className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto text-sm">
+              <Button onClick={nextStep} className=" w-full sm:w-auto text-sm">
                 Next Step
               </Button>
             ) : currentStep === 4 ? (
-              <Button onClick={nextStep} className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto text-sm">
+              <Button onClick={nextStep} className=" w-full sm:w-auto text-sm">
                 Next Step
               </Button>
             ) : (

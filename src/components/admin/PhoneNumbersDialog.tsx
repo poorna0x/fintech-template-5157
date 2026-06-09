@@ -33,7 +33,7 @@ const PhoneNumbersDialog: React.FC<PhoneNumbersDialogProps> = ({ open, onOpenCha
   const alternatePhone = (customer as any)?.alternate_phone || (customer as any)?.alternatePhone;
 
   const renderAction = (phone?: string | null, variant: 'primary' | 'secondary' = 'primary') => {
-    const primaryClasses = 'bg-blue-600 hover:bg-blue-700';
+    const primaryClasses = '';
     const secondaryClasses = 'bg-gray-600 hover:bg-gray-700';
     const waClasses = 'bg-green-600 hover:bg-green-700';
     const colorClasses = isWhatsApp ? waClasses : variant === 'primary' ? primaryClasses : secondaryClasses;
@@ -88,7 +88,7 @@ const PhoneNumbersDialog: React.FC<PhoneNumbersDialogProps> = ({ open, onOpenCha
           {/* Primary Phone */}
           <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-200">
             <div>
-              <div className="font-semibold text-gray-900">{customer?.phone}</div>
+              <div className="font-semibold text-foreground">{customer?.phone}</div>
               <div className="text-sm text-blue-600 font-medium">Primary Number</div>
             </div>
             {renderAction(customer?.phone, 'primary')}
@@ -96,10 +96,10 @@ const PhoneNumbersDialog: React.FC<PhoneNumbersDialogProps> = ({ open, onOpenCha
 
           {/* Secondary Phone */}
           {alternatePhone && (
-            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <div className="flex items-center justify-between p-4 bg-muted/40 rounded-lg border border-border">
               <div>
-                <div className="font-semibold text-gray-900">{alternatePhone}</div>
-                <div className="text-sm text-gray-600 font-medium">Secondary Number</div>
+                <div className="font-semibold text-foreground">{alternatePhone}</div>
+                <div className="text-sm text-muted-foreground font-medium">Secondary Number</div>
               </div>
               {renderAction(alternatePhone, 'secondary')}
             </div>

@@ -118,12 +118,12 @@ export function AdminNotificationBell({ onOpenAmcView, className }: AdminNotific
           variant="outline"
           size="icon"
           className={cn(
-            'relative h-9 w-9 shrink-0 touch-manipulation border-gray-300 bg-white hover:bg-gray-50',
+            'relative h-9 w-9 shrink-0 touch-manipulation border-border bg-card hover:bg-muted/40',
             className
           )}
           aria-label={`Notifications: ${total} item${total === 1 ? '' : 's'} need attention today`}
         >
-          <Bell className="h-4 w-4 text-gray-700" strokeWidth={2} />
+          <Bell className="h-4 w-4 text-foreground/90" strokeWidth={2} />
           <span
             className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-white"
             aria-hidden

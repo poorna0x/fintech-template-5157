@@ -82,12 +82,14 @@ import { customerNameClassName } from '@/lib/customerDisplay';
 import FollowUpModal from '@/components/FollowUpModal';
 import { sendNotification, createJobAssignedNotification, createJobCompletedNotification, createJobCancelledNotification, createJobAssignmentRequestNotification } from '@/lib/notifications';
 import { hapticSwitch, hapticTap } from '@/lib/haptics';
-import BillModal from './BillModal';
-import AMCModal from './AMCModal';
-import QuotationModal from './QuotationModal';
-import TaxInvoiceModal from './TaxInvoiceModal';
-import GSTInvoicesPage from './GSTInvoicesPage';
-import AMCViewPage from './AMCViewPage';
+// Heavy, on-demand modals and full-screen views are code-split so they stay
+// out of the main admin dashboard chunk and only load when actually opened.
+const BillModal = lazyDefault(() => import('./BillModal'));
+const AMCModal = lazyDefault(() => import('./AMCModal'));
+const QuotationModal = lazyDefault(() => import('./QuotationModal'));
+const TaxInvoiceModal = lazyDefault(() => import('./TaxInvoiceModal'));
+const GSTInvoicesPage = lazyDefault(() => import('./GSTInvoicesPage'));
+const AMCViewPage = lazyDefault(() => import('./AMCViewPage'));
 // Letterhead builder is heavy (rich text + sanitizer + preview iframe) and only
 // used on demand. Code-split it so the main admin bundle stays lean.
 const LetterheadDocumentsPage = lazyDefault(() => import('./LetterheadDocumentsPage'));
@@ -98,10 +100,10 @@ type LetterheadDocumentType =
   | 'letterhead';
 import { getAmcDocumentBrandLabel } from '@/lib/amc-brand';
 import ImageUpload from '@/components/ImageUpload';
-import TechnicianPayments from './TechnicianPayments';
-import BillingStats from './BillingStats';
-import Analytics from './Analytics';
-import InventoryManagement from './InventoryManagement';
+const TechnicianPayments = lazyDefault(() => import('./TechnicianPayments'));
+const BillingStats = lazyDefault(() => import('./BillingStats'));
+const Analytics = lazyDefault(() => import('./Analytics'));
+const InventoryManagement = lazyDefault(() => import('./InventoryManagement'));
 import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, levenshteinDistance, calculateSimilarity, extractPhotoUrls, normalizePhotoUrl, parseJobRequirements, getFormattedTimeSlot, findLeadSource, normalizeLeadType, normalizeServiceSubType, completedJobMatchesDashboardClientFilters, isOfficeCompletedJob } from '@/lib/adminUtils';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { getLocationLinkFromObject } from '@/lib/jobLocationHelpers';
@@ -8978,7 +8980,9 @@ const AdminDashboard = () => {
               Back
             </Button>
           </div>
-          <GSTInvoicesPage />
+          <Suspense fallback={<AdminScreenLoader message="Loading invoices..." />}>
+            <GSTInvoicesPage />
+          </Suspense>
         </div>
       </div>
     );
@@ -8986,7 +8990,11 @@ const AdminDashboard = () => {
 
   // Show AMC View page if requested
   if (showAMCViewPage) {
-    return <AMCViewPage onBack={handleHideAMCView} onAMCDeleted={reloadAMCStatus} />;
+    return (
+      <Suspense fallback={<AdminScreenLoader message="Loading AMC..." />}>
+        <AMCViewPage onBack={handleHideAMCView} onAMCDeleted={reloadAMCStatus} />
+      </Suspense>
+    );
   }
 
   // Show Letterhead Documents / Service Reports builder if requested
@@ -9021,7 +9029,9 @@ const AdminDashboard = () => {
               Back
             </Button>
           </div>
-          <TechnicianPayments />
+          <Suspense fallback={<AdminScreenLoader message="Loading payments..." />}>
+            <TechnicianPayments />
+          </Suspense>
         </div>
       </div>
     );
@@ -9043,7 +9053,9 @@ const AdminDashboard = () => {
               Back
             </Button>
           </div>
-          <BillingStats />
+          <Suspense fallback={<AdminScreenLoader message="Loading billing..." />}>
+            <BillingStats />
+          </Suspense>
         </div>
       </div>
     );
@@ -9065,7 +9077,9 @@ const AdminDashboard = () => {
               Back
             </Button>
           </div>
-          <Analytics />
+          <Suspense fallback={<AdminScreenLoader message="Loading analytics..." />}>
+            <Analytics />
+          </Suspense>
         </div>
       </div>
     );
@@ -9087,7 +9101,9 @@ const AdminDashboard = () => {
               Back
             </Button>
           </div>
-          <InventoryManagement />
+          <Suspense fallback={<AdminScreenLoader message="Loading inventory..." />}>
+            <InventoryManagement />
+          </Suspense>
         </div>
       </div>
     );
@@ -11577,34 +11593,50 @@ const AdminDashboard = () => {
         }}
       />
 
-      {/* Bill Generation Modal */}
-      <BillModal
-        isOpen={billModalOpen}
-        onClose={handleBillModalClose}
-        customer={selectedCustomerForBill}
-      />
+      {/* Bill Generation Modal — code-split, only mounted while open */}
+      {billModalOpen && (
+        <Suspense fallback={null}>
+          <BillModal
+            isOpen={billModalOpen}
+            onClose={handleBillModalClose}
+            customer={selectedCustomerForBill}
+          />
+        </Suspense>
+      )}
 
       {/* Quotation Generation Modal */}
-      <QuotationModal
-        isOpen={quotationModalOpen}
-        onClose={handleQuotationModalClose}
-        customer={selectedCustomerForQuotation}
-      />
+      {quotationModalOpen && (
+        <Suspense fallback={null}>
+          <QuotationModal
+            isOpen={quotationModalOpen}
+            onClose={handleQuotationModalClose}
+            customer={selectedCustomerForQuotation}
+          />
+        </Suspense>
+      )}
 
       {/* AMC Generation Modal */}
-      <AMCModal
-        isOpen={amcModalOpen}
-        onClose={handleAMCModalClose}
-        customer={selectedCustomerForAMC}
-        onAMCSaved={reloadAMCStatus}
-      />
+      {amcModalOpen && (
+        <Suspense fallback={null}>
+          <AMCModal
+            isOpen={amcModalOpen}
+            onClose={handleAMCModalClose}
+            customer={selectedCustomerForAMC}
+            onAMCSaved={reloadAMCStatus}
+          />
+        </Suspense>
+      )}
 
       {/* Tax Invoice Generation Modal */}
-      <TaxInvoiceModal
-        isOpen={taxInvoiceModalOpen}
-        onClose={handleTaxInvoiceModalClose}
-        customer={selectedCustomerForTaxInvoice}
-      />
+      {taxInvoiceModalOpen && (
+        <Suspense fallback={null}>
+          <TaxInvoiceModal
+            isOpen={taxInvoiceModalOpen}
+            onClose={handleTaxInvoiceModalClose}
+            customer={selectedCustomerForTaxInvoice}
+          />
+        </Suspense>
+      )}
 
       {/* AMC Info Dialog */}
       <Dialog open={amcInfoDialogOpen} onOpenChange={setAmcInfoDialogOpen}>

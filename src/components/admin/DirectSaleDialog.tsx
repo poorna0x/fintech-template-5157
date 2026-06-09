@@ -342,9 +342,9 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
                 </div>
                 <div className="rounded-lg border overflow-hidden">
                   {loadingInventory ? (
-                    <div className="py-6 px-4 text-center text-sm text-gray-500">Loading items...</div>
+                    <div className="py-6 px-4 text-center text-sm text-muted-foreground">Loading items...</div>
                   ) : filteredInventory.length === 0 ? (
-                    <div className="py-6 px-4 text-center text-sm text-gray-500">
+                    <div className="py-6 px-4 text-center text-sm text-muted-foreground">
                       {inventory.length === 0
                         ? 'No inventory items.'
                         : debouncedSearch.trim()
@@ -460,7 +460,7 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
           </div>
 
           {paymentMode === 'PARTIAL' && (
-            <div className="space-y-3 pl-3 border-l-2 border-gray-200">
+            <div className="space-y-3 pl-3 border-l-2 border-border">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label htmlFor="direct-sale-partial-cash">Cash amount (₹)</Label>
@@ -515,7 +515,7 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
           )}
 
           {needsQr && (
-            <div className="space-y-3 pl-3 border-l-2 border-gray-200">
+            <div className="space-y-3 pl-3 border-l-2 border-border">
               <div className="space-y-1.5">
                 <Label htmlFor="direct-sale-qr">Select QR code {paymentMode === 'ONLINE' ? '*' : '(for online part)'}</Label>
                 <Select value={selectedQrId} onValueChange={setSelectedQrId}>
@@ -541,7 +541,7 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
           )}
 
           {selectedItem && qtyNum > 0 && (
-            <div className="rounded-lg border border-gray-200 bg-gray-50 dark:bg-gray-800/50 p-3 text-sm space-y-1">
+            <div className="rounded-lg border border-border bg-muted/40 dark:bg-gray-800/50 p-3 text-sm space-y-1">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">
                   Cost ({qtyNum} × ₹{formatCurrency(selectedItem.price)})

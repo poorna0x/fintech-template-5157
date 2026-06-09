@@ -447,11 +447,11 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
         
         <div className="flex-1 overflow-y-auto space-y-4 px-1">
           {/* Job Information */}
-          <div className="space-y-2 p-3 bg-gray-50 rounded-lg">
+          <div className="space-y-2 p-3 bg-muted/40 rounded-lg">
             <div className="font-semibold text-sm sm:text-base">
               {(job as any).job_number || job.jobNumber}
             </div>
-            <div className={`text-xs sm:text-sm text-gray-600 ${customerNameClassName(customer as any)}`}>
+            <div className={`text-xs sm:text-sm text-muted-foreground ${customerNameClassName(customer as any)}`}>
               {customer?.full_name || customer?.fullName || 'Customer'}
             </div>
             {(() => {
@@ -500,7 +500,7 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
                 !lowerLocation.includes('karnataka'); // Should not contain state name
               
               return isValidVisibleLocation ? (
-                <div className="text-xs sm:text-sm text-gray-600 mt-1">
+                <div className="text-xs sm:text-sm text-muted-foreground mt-1">
                   <strong>Location:</strong> {visibleLocation}
                 </div>
               ) : null;
@@ -508,7 +508,7 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
             <Button
               type="button"
               onClick={() => void handleLazyOpenGoogleMaps()}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition-colors mt-2 w-full sm:w-auto justify-center sm:justify-start"
+              className="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium rounded-lg transition-colors mt-2 w-full sm:w-auto justify-center sm:justify-start"
             >
               <MapPin className="w-4 h-4" />
               Open in Google Maps
@@ -554,7 +554,7 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
               onValueChange={onTechnicianSelect}
               disabled={technicianPickerBlocked}
             >
-              <SelectTrigger className="w-full border border-gray-300 focus:border-blue-500 focus:ring-0 focus:ring-offset-0">
+              <SelectTrigger className="w-full border border-border focus:border-blue-500 focus:ring-0 focus:ring-offset-0">
                 <SelectValue
                   placeholder={technicianPickerBlocked ? 'Loading technicians…' : 'Choose a technician'}
                 />
@@ -592,7 +592,7 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
               </SelectContent>
             </Select>
             {techniciansWithDistances.length > 0 && (
-              <div className="text-xs text-gray-500 mt-1">
+              <div className="text-xs text-muted-foreground mt-1">
                 Technicians sorted by distance from job location
               </div>
             )}
@@ -610,7 +610,7 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
           <Button
             onClick={onSave}
             disabled={technicianPickerBlocked || !selectedTechnicianId}
-            className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
+            className=" w-full sm:w-auto"
           >
             Assign Job
           </Button>

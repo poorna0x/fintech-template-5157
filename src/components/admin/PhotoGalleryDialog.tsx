@@ -41,7 +41,7 @@ const PhotoGalleryDialog: React.FC<PhotoGalleryDialogProps> = ({
                       <img
                         src={photo}
                         alt={`Photo ${index + 1}`}
-                        className="w-full h-48 object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-90 transition-opacity"
+                        className="w-full h-48 object-cover rounded-lg border border-border cursor-pointer hover:opacity-90 transition-opacity"
                         onClick={(e) => {
                           e.stopPropagation();
                           if (photo && photo.trim()) {
@@ -55,11 +55,11 @@ const PhotoGalleryDialog: React.FC<PhotoGalleryDialogProps> = ({
                         }}
                       />
                     ) : (
-                      <div className="w-full h-48 bg-gray-100 rounded-lg border border-gray-200 flex items-center justify-center">
-                        <div className="text-center text-gray-500">
+                      <div className="w-full h-48 bg-gray-100 rounded-lg border border-border flex items-center justify-center">
+                        <div className="text-center text-muted-foreground">
                           <Calendar className="w-8 h-8 mx-auto mb-2 text-gray-300" />
                           <p className="text-sm">Invalid photo URL</p>
-                          <p className="text-xs text-gray-400">{photo || 'No URL provided'}</p>
+                          <p className="text-xs text-muted-foreground/70">{photo || 'No URL provided'}</p>
                         </div>
                       </div>
                     )}
@@ -96,7 +96,7 @@ const PhotoGalleryDialog: React.FC<PhotoGalleryDialogProps> = ({
               })}
             </div>
           ) : (
-            <div className="text-center py-8 text-gray-500">
+            <div className="text-center py-8 text-muted-foreground">
               <Calendar className="w-12 h-12 mx-auto mb-2 text-gray-300" />
               <p>No photos available</p>
             </div>

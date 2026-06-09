@@ -446,14 +446,14 @@ const ReassignJobDialog: React.FC<ReassignJobDialogProps> = ({
         <div className="space-y-4 sm:space-y-6 overflow-y-auto flex-1 pr-1 sm:pr-2">
           {/* Job Details */}
           {job && (
-            <div className="bg-gray-50 rounded-lg p-3 sm:p-4">
+            <div className="bg-muted/40 rounded-lg p-3 sm:p-4">
               <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-2">
                 <span className="font-mono font-bold text-base sm:text-lg">{(job as any)?.job_number}</span>
                 <Badge className="bg-blue-100 text-blue-800 text-xs sm:text-sm w-fit">
                   {(job as any)?.service_type} - {(job as any)?.service_sub_type}
                 </Badge>
               </div>
-              <div className="space-y-1 text-xs sm:text-sm text-gray-600">
+              <div className="space-y-1 text-xs sm:text-sm text-muted-foreground">
                 <p>
                   <strong>Customer:</strong>{' '}
                   <span className={customerNameClassName((job as any)?.customer)}>
@@ -507,7 +507,7 @@ const ReassignJobDialog: React.FC<ReassignJobDialogProps> = ({
                     !lowerLocation.includes('karnataka'); // Should not contain state name
                   
                   return isValidVisibleLocation ? (
-                    <p className="text-xs sm:text-sm text-gray-600"><strong>Location:</strong> {visibleLocation}</p>
+                    <p className="text-xs sm:text-sm text-muted-foreground"><strong>Location:</strong> {visibleLocation}</p>
                   ) : (
                     <p className="truncate"><strong>Location:</strong> {(job as any)?.service_address?.street || 'N/A'}</p>
                   );
@@ -516,7 +516,7 @@ const ReassignJobDialog: React.FC<ReassignJobDialogProps> = ({
               <Button
                 type="button"
                 onClick={() => void handleLazyOpenGoogleMaps()}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg transition-colors mt-2 w-full sm:w-auto justify-center sm:justify-start"
+                className="inline-flex items-center gap-2 px-4 py-2 text-xs font-medium rounded-lg transition-colors mt-2 w-full sm:w-auto justify-center sm:justify-start"
               >
                 <MapPin className="w-4 h-4" />
                 Open in Google Maps
@@ -563,7 +563,7 @@ const ReassignJobDialog: React.FC<ReassignJobDialogProps> = ({
               onValueChange={onTechnicianSelect}
               disabled={technicianPickerBlocked}
             >
-              <SelectTrigger className="w-full border border-gray-300 focus:border-blue-500 focus:ring-0 focus:ring-offset-0">
+              <SelectTrigger className="w-full border border-border focus:border-blue-500 focus:ring-0 focus:ring-offset-0">
                 <SelectValue
                   placeholder={technicianPickerBlocked ? 'Loading technicians…' : 'Choose a technician'}
                 />
@@ -601,7 +601,7 @@ const ReassignJobDialog: React.FC<ReassignJobDialogProps> = ({
               </SelectContent>
             </Select>
             {techniciansWithDistances.length > 0 && (
-              <div className="text-xs text-gray-500 mt-1">
+              <div className="text-xs text-muted-foreground mt-1">
                 Technicians sorted by distance from job location
               </div>
             )}
@@ -619,7 +619,7 @@ const ReassignJobDialog: React.FC<ReassignJobDialogProps> = ({
           <Button
             onClick={onSave}
             disabled={technicianPickerBlocked || !selectedTechnicianId}
-            className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
+            className=" w-full sm:w-auto"
           >
             Reassign Job
           </Button>

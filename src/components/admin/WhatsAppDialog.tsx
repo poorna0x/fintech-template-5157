@@ -64,17 +64,17 @@ const WhatsAppDialog: React.FC<WhatsAppDialogProps> = ({
         </DialogHeader>
         
         <div className="py-4 space-y-3">
-          <div className="bg-gray-50 rounded-lg p-4 space-y-2">
-            <div className="text-sm text-gray-600">
+          <div className="bg-muted/40 rounded-lg p-4 space-y-2">
+            <div className="text-sm text-muted-foreground">
               <strong>To:</strong> {technicianName}
             </div>
-            <div className="text-sm text-gray-600">
+            <div className="text-sm text-muted-foreground">
               <strong>Phone:</strong> {technicianPhone}
             </div>
-            <div className="text-sm text-gray-600">
+            <div className="text-sm text-muted-foreground">
               <strong>Message:</strong>
             </div>
-            <div className="bg-white border border-gray-200 rounded p-3 text-sm">
+            <div className="bg-card border border-border rounded p-3 text-sm">
               {message}
             </div>
           </div>

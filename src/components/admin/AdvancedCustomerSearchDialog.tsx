@@ -705,7 +705,7 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
             <Button
               onClick={handleSearch}
               disabled={isSearching}
-              className="bg-blue-600 hover:bg-blue-700"
+              className=""
             >
               <Search className="w-4 h-4 mr-2" />
               {isSearching ? 'Searching…' : 'Search'}
@@ -1042,7 +1042,7 @@ const ResultRow: React.FC<ResultRowProps> = ({
           </Button>
           <Button
             size="sm"
-            className="h-8 bg-blue-600 hover:bg-blue-700"
+            className="h-8 "
             onClick={onOpen}
             title="Open in Admin"
           >
