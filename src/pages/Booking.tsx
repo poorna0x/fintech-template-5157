@@ -610,35 +610,23 @@ const Booking: React.FC = () => {
     return normalized.length === 10 && /^[6-9]\d{9}$/.test(normalized);
   };
 
-  /** Egress: 5s debounce + skip identical payloads vs last successful RPC. */
+  /** Egress: debounce + skip identical payloads vs last successful RPC. */
   const WEBSITE_INTENT_DEBOUNCE_MS = 1500;
 
-  useEffect(() => {
-    if (showConfirmation || showSuccessLoader || isSubmitting) {
-      if (websiteIntentTimerRef.current) {
-        clearTimeout(websiteIntentTimerRef.current);
-        websiteIntentTimerRef.current = null;
+  const flushWebsiteBookingIntent = useCallback(
+    async (step?: number) => {
+      const name = formData.fullName.trim();
+      const phoneNorm = normalizePhoneNumber(formData.phone);
+      // No ALTCHA gate: capture the live intent immediately. The booking-intent
+      // function no longer requires a token (the real booking still does).
+      if (name.length < 2 || !/^[6-9]\d{9}$/.test(phoneNorm)) {
+        return;
       }
-      return;
-    }
-    const name = formData.fullName.trim();
-    const phoneNorm = normalizePhoneNumber(formData.phone);
-    if (name.length < 2 || !/^[6-9]\d{9}$/.test(phoneNorm) || !altchaLoginToken) {
-      if (websiteIntentTimerRef.current) {
-        clearTimeout(websiteIntentTimerRef.current);
-        websiteIntentTimerRef.current = null;
-      }
-      return;
-    }
-
-    if (websiteIntentTimerRef.current) clearTimeout(websiteIntentTimerRef.current);
-    websiteIntentTimerRef.current = setTimeout(() => {
-      websiteIntentTimerRef.current = null;
       const payload = {
         full_name: name,
         phone: formData.phone,
         phone_normalized: phoneNorm,
-        current_step: currentStep,
+        current_step: step ?? currentStep,
         site_key: WEBSITE_BOOKING_SITE_KEY,
       };
       const last = websiteIntentLastSentRef.current;
@@ -654,15 +642,41 @@ const Booking: React.FC = () => {
         altchaLoginToken,
         altchaPayload: altchaPayload || undefined,
       };
-      void pushWebsiteBookingIntent(payload, altchaCtx).then(({ error }) => {
-        if (!error) {
-          websiteIntentLastSentRef.current = {
-            full_name: payload.full_name,
-            phone_normalized: payload.phone_normalized,
-            current_step: payload.current_step,
-          };
-        }
-      });
+      const { error } = await pushWebsiteBookingIntent(payload, altchaCtx);
+      if (!error) {
+        websiteIntentLastSentRef.current = {
+          full_name: payload.full_name,
+          phone_normalized: payload.phone_normalized,
+          current_step: payload.current_step,
+        };
+      }
+    },
+    [formData.fullName, formData.phone, currentStep, altchaLoginToken, altchaPayload]
+  );
+
+  useEffect(() => {
+    if (showConfirmation || showSuccessLoader || isSubmitting) {
+      if (websiteIntentTimerRef.current) {
+        clearTimeout(websiteIntentTimerRef.current);
+        websiteIntentTimerRef.current = null;
+      }
+      return;
+    }
+    const name = formData.fullName.trim();
+    const phoneNorm = normalizePhoneNumber(formData.phone);
+    // No ALTCHA gate — fire as soon as name + phone are valid.
+    if (name.length < 2 || !/^[6-9]\d{9}$/.test(phoneNorm)) {
+      if (websiteIntentTimerRef.current) {
+        clearTimeout(websiteIntentTimerRef.current);
+        websiteIntentTimerRef.current = null;
+      }
+      return;
+    }
+
+    if (websiteIntentTimerRef.current) clearTimeout(websiteIntentTimerRef.current);
+    websiteIntentTimerRef.current = setTimeout(() => {
+      websiteIntentTimerRef.current = null;
+      void flushWebsiteBookingIntent();
     }, WEBSITE_INTENT_DEBOUNCE_MS);
 
     return () => {
@@ -680,6 +694,7 @@ const Booking: React.FC = () => {
     isSubmitting,
     altchaLoginToken,
     altchaPayload,
+    flushWebsiteBookingIntent,
   ]);
 
   const handleInputChange = (field: keyof FormData, value: any) => {
@@ -1563,6 +1578,13 @@ const Booking: React.FC = () => {
   };
 
   const handleAutoSubmit = async () => {
+    if (websiteIntentTimerRef.current) {
+      clearTimeout(websiteIntentTimerRef.current);
+      websiteIntentTimerRef.current = null;
+    }
+    // Ensure a row exists before job create — mark-booked only UPDATEs, never INSERTs.
+    await flushWebsiteBookingIntent(5);
+
     setIsSubmitting(true);
     setShowSuccessLoader(true);
     
@@ -3147,32 +3169,8 @@ const Booking: React.FC = () => {
               </div>
             )}
             
-            {/* Background ALTCHA — starts once name+phone are valid (live intent + submit) */}
-            {!showConfirmation &&
-              !showSuccessLoader &&
-              !isSubmitting &&
-              formData.fullName.trim().length >= 2 &&
-              /^[6-9]\d{9}$/.test(normalizePhoneNumber(formData.phone)) &&
-              !isCaptchaVerified &&
-              !backgroundVerificationFailed && (
-              <AltchaWidget
-                tokenPurpose="booking"
-                onVerify={(verified, payload, loginToken) => {
-                  setIsCaptchaVerified(verified);
-                  if (payload) setAltchaPayload(payload);
-                  if (loginToken) setAltchaLoginToken(loginToken);
-                  if (verified) {
-                    setShowSecurityStep(false);
-                    setBackgroundVerificationFailed(false);
-                  } else if (currentStep === 5) {
-                    setBackgroundVerificationFailed(true);
-                    setShowSecurityStep(true);
-                  }
-                }}
-                autoStart={true}
-                hidden={true}
-              />
-            )}
+            {/* Background ALTCHA now warms up on page load (see top-level widget above),
+                so the token is ready well before this step. */}
 
             {/* Manual security widget - only shown if background verification failed */}
             {showSecurityStep && !isCaptchaVerified && backgroundVerificationFailed && (
@@ -3600,6 +3598,34 @@ const Booking: React.FC = () => {
               </div>
             )}
 
+
+            {/* Page-load ALTCHA warm-up: starts solving proof-of-work the moment the
+                booking page mounts (all steps), so altchaLoginToken is ready before the
+                user finishes typing. This lets the live-intent push fire from step 1 and
+                makes submit instant — without weakening the ALTCHA requirement. */}
+            {!showConfirmation &&
+              !showSuccessLoader &&
+              !isSubmitting &&
+              !isCaptchaVerified &&
+              !backgroundVerificationFailed && (
+              <AltchaWidget
+                tokenPurpose="booking"
+                onVerify={(verified, payload, loginToken) => {
+                  setIsCaptchaVerified(verified);
+                  if (payload) setAltchaPayload(payload);
+                  if (loginToken) setAltchaLoginToken(loginToken);
+                  if (verified) {
+                    setShowSecurityStep(false);
+                    setBackgroundVerificationFailed(false);
+                  } else if (currentStep === 5) {
+                    setBackgroundVerificationFailed(true);
+                    setShowSecurityStep(true);
+                  }
+                }}
+                autoStart={true}
+                hidden={true}
+              />
+            )}
 
             {/* Form Content */}
             <BehavioralTracker>

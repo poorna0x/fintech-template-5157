@@ -39,6 +39,11 @@ const syncTechnicianAuthUser = require('./sync-technician-auth-user');
 const deleteTechnicianAndData = require('./delete-technician-and-data');
 const cloudinaryDelete = require('./cloudinary-delete');
 const cloudinarySignedUrl = require('./cloudinary-signed-url');
+const bookingIntent = require('./booking-intent');
+const bookingJobCreate = require('./booking-job-create');
+const bookingCustomerMutate = require('./booking-customer-mutate');
+const bookingCustomerLookup = require('./booking-customer-lookup');
+const bookingNotify = require('./booking-notify');
 
 const PORT = 8888;
 
@@ -84,6 +89,16 @@ const server = http.createServer((req, res) => {
     handler = cloudinaryDelete;
   } else if (req.url.startsWith('/.netlify/functions/cloudinary-signed-url')) {
     handler = cloudinarySignedUrl;
+  } else if (req.url.startsWith('/.netlify/functions/booking-intent')) {
+    handler = bookingIntent;
+  } else if (req.url.startsWith('/.netlify/functions/booking-job-create')) {
+    handler = bookingJobCreate;
+  } else if (req.url.startsWith('/.netlify/functions/booking-customer-mutate')) {
+    handler = bookingCustomerMutate;
+  } else if (req.url.startsWith('/.netlify/functions/booking-customer-lookup')) {
+    handler = bookingCustomerLookup;
+  } else if (req.url.startsWith('/.netlify/functions/booking-notify')) {
+    handler = bookingNotify;
   } else {
     console.log('⚠️ No handler found for:', req.url);
   }

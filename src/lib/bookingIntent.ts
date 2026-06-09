@@ -9,13 +9,17 @@ export interface WebsiteBookingIntentRow {
 }
 
 async function bookingIntentFetch(
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  opts?: { keepalive?: boolean }
 ): Promise<{ error: { message: string } | null }> {
   try {
     const res = await fetch('/.netlify/functions/booking-intent', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      // keepalive lets the request complete even if the tab is closing/navigating
+      // away — critical for capturing the lead the moment they bail.
+      keepalive: opts?.keepalive === true,
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -32,18 +36,22 @@ async function bookingIntentFetch(
 /** Public /book — ALTCHA-gated; never calls Supabase RPC with anon key. */
 export async function pushWebsiteBookingIntent(
   row: WebsiteBookingIntentRow,
-  ctx: BookingAltchaContext
+  ctx: BookingAltchaContext,
+  opts?: { keepalive?: boolean }
 ) {
-  return bookingIntentFetch({
-    action: 'upsert',
-    full_name: row.full_name,
-    phone: row.phone,
-    phone_normalized: row.phone_normalized,
-    current_step: row.current_step,
-    site_key: row.site_key,
-    altchaLoginToken: ctx.altchaLoginToken,
-    altchaPayload: ctx.altchaPayload,
-  });
+  return bookingIntentFetch(
+    {
+      action: 'upsert',
+      full_name: row.full_name,
+      phone: row.phone,
+      phone_normalized: row.phone_normalized,
+      current_step: row.current_step,
+      site_key: row.site_key,
+      altchaLoginToken: ctx.altchaLoginToken,
+      altchaPayload: ctx.altchaPayload,
+    },
+    opts
+  );
 }
 
 export async function markWebsiteBookingIntentBooked(

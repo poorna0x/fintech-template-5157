@@ -73,8 +73,19 @@ exports.handler = async (event) => {
     });
   }
 
-  const altcha = verifyAltcha(body, corsHeaders);
-  if (!altcha.ok) return altcha.response;
+  // ALTCHA intentionally NOT required for live booking intent: this is a
+  // best-effort "someone is filling the form" signal that must be captured the
+  // instant a name + phone are typed (before proof-of-work could finish).
+  // Spam is bounded by the IP/phone rate limits above + the quarantine logic
+  // below. The actual booking (booking-job-create) STILL enforces ALTCHA + OTP.
+  // If a token happens to be present we validate it (free signal), but a missing
+  // or invalid token is not fatal here.
+  if (body.altchaLoginToken) {
+    const altcha = verifyAltcha(body, corsHeaders);
+    if (!altcha.ok) {
+      console.warn('[booking-intent] altcha token present but invalid — accepting intent anyway');
+    }
+  }
 
   const client = getServiceClient();
   if (client.error) {
