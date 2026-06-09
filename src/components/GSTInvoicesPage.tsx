@@ -760,7 +760,7 @@ export default function GSTInvoicesPage() {
   };
 
   // Export to Excel
-  const handleExportToExcel = () => {
+  const handleExportToExcel = async () => {
     const invoicesToExport = getFilteredInvoicesForExport();
     
     if (invoicesToExport.length === 0) {
@@ -778,12 +778,12 @@ export default function GSTInvoicesPage() {
       filename = `GST_Invoices_${startDate}_to_${endDate}`;
     }
 
-    exportGSTInvoicesToExcel(invoicesToExport, filename);
+    await exportGSTInvoicesToExcel(invoicesToExport, filename);
     toast.success(`Exported ${invoicesToExport.length} invoices to Excel`);
   };
 
   // Export monthly invoices (all invoices of selected month)
-  const handleExportMonthlyInvoices = (format: 'csv' | 'excel') => {
+  const handleExportMonthlyInvoices = async (format: 'csv' | 'excel') => {
     const monthlyInvoices = allInvoices.filter(inv => {
       const invDate = new Date(inv.invoice_date);
       return invDate.getMonth() + 1 === selectedMonth && invDate.getFullYear() === selectedYear;
@@ -801,7 +801,7 @@ export default function GSTInvoicesPage() {
       exportGSTInvoicesToCSV(monthlyInvoices, filename);
       toast.success(`Exported ${monthlyInvoices.length} invoices for ${monthName} ${selectedYear} to CSV`);
     } else {
-      exportGSTInvoicesToExcel(monthlyInvoices, filename);
+      await exportGSTInvoicesToExcel(monthlyInvoices, filename);
       toast.success(`Exported ${monthlyInvoices.length} invoices for ${monthName} ${selectedYear} to Excel`);
     }
   };
@@ -1399,8 +1399,8 @@ export default function GSTInvoicesPage() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => {
-                            exportGSTInvoicesToExcel([invoice], `Invoice_${invoice.invoice_number}`);
+                          onClick={async () => {
+                            await exportGSTInvoicesToExcel([invoice], `Invoice_${invoice.invoice_number}`);
                             toast.success('Invoice exported to Excel');
                           }}
                           className="border-green-600 text-green-700 hover:bg-green-50 text-xs"
@@ -1505,8 +1505,8 @@ export default function GSTInvoicesPage() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => {
-                              exportGSTInvoicesToExcel([invoice], `Invoice_${invoice.invoice_number}`);
+                            onClick={async () => {
+                              await exportGSTInvoicesToExcel([invoice], `Invoice_${invoice.invoice_number}`);
                               toast.success('Invoice exported to Excel');
                             }}
                             className="border-green-600 text-green-700 hover:bg-green-50"
@@ -1714,11 +1714,11 @@ export default function GSTInvoicesPage() {
                   <FileDown className="h-4 w-4 mr-2" />
                   Export CSV
                 </Button>
-                <Button 
-                  onClick={() => {
-                    exportGSTInvoicesToExcel([selectedInvoice], `Invoice_${selectedInvoice.invoice_number}`);
+                <Button
+                  onClick={async () => {
+                    await exportGSTInvoicesToExcel([selectedInvoice], `Invoice_${selectedInvoice.invoice_number}`);
                     toast.success('Invoice exported to Excel');
-                  }} 
+                  }}
                   variant="outline"
                   className="flex-1 min-w-[140px] border-green-600 text-green-700 hover:bg-green-50"
                 >

@@ -1,4 +1,7 @@
-import * as XLSX from 'xlsx';
+// NOTE: `xlsx` is intentionally NOT imported at the top level. It is a large
+// library (and only the Excel export path needs it), so it is dynamically
+// imported inside exportGSTInvoicesToExcel(). This keeps it out of the
+// GSTInvoicesPage chunk and the CSV-only export path.
 
 export interface TaxInvoice {
   id: string;
@@ -185,11 +188,14 @@ export function exportGSTInvoicesToCSV(invoices: TaxInvoice[], filename: string 
  * Export GST invoices to Excel format (GST Standard Format)
  * Creates a properly formatted Excel file with multiple sheets
  */
-export function exportGSTInvoicesToExcel(invoices: TaxInvoice[], filename: string = 'GST_Invoices'): void {
+export async function exportGSTInvoicesToExcel(invoices: TaxInvoice[], filename: string = 'GST_Invoices'): Promise<void> {
   if (invoices.length === 0) {
     alert('No invoices to export');
     return;
   }
+
+  // Load the heavy xlsx library only when an Excel export is actually requested.
+  const XLSX = await import('xlsx');
 
   // Create workbook
   const workbook = XLSX.utils.book_new();

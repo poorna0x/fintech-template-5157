@@ -1,12 +1,13 @@
 import * as React from "react";
-import dayjs, { type Dayjs } from "dayjs";
-import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
-import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
-import { StaticDatePicker } from "@mui/x-date-pickers/StaticDatePicker";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+
+// The actual calendar pulls in MUI + emotion + dayjs. Load it lazily so that
+// heavy dependency graph is only fetched when a date picker is opened, keeping
+// it out of the shared vendor chunk that loads on every page.
+const DatePickerCalendar = React.lazy(() => import("./date-picker-calendar"));
 
 export interface DatePickerProps {
   /** Value as YYYY-MM-DD string or undefined */
@@ -16,12 +17,6 @@ export interface DatePickerProps {
   placeholder?: string;
   className?: string;
   disabled?: boolean;
-}
-
-function toDayjs(value: string | undefined): Dayjs | null {
-  if (!value) return null;
-  const d = dayjs(value, "YYYY-MM-DD", true);
-  return d.isValid() ? d : null;
 }
 
 function formatDisplayDate(value: string | undefined): string {
@@ -38,7 +33,6 @@ export function DatePicker({
   disabled,
 }: DatePickerProps) {
   const [open, setOpen] = React.useState(false);
-  const dayjsValue = toDayjs(value);
   const displayText = formatDisplayDate(value) || placeholder;
 
   return (
@@ -62,20 +56,17 @@ export function DatePicker({
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0" align="start">
-        <LocalizationProvider dateAdapter={AdapterDayjs}>
-          <StaticDatePicker
-            value={dayjsValue}
-            onChange={(d) => {
-              if (d) {
-                onChange?.(dayjs(d).format("YYYY-MM-DD"));
-                setOpen(false);
-              }
-            }}
-            slotProps={{
-              actionBar: { actions: [] },
+        <React.Suspense
+          fallback={<div className="p-6 text-sm text-muted-foreground">Loading…</div>}
+        >
+          <DatePickerCalendar
+            value={value}
+            onSelect={(d) => {
+              onChange?.(d);
+              setOpen(false);
             }}
           />
-        </LocalizationProvider>
+        </React.Suspense>
       </PopoverContent>
     </Popover>
   );

@@ -57,7 +57,14 @@ export function manualChunks(id: string): string | undefined {
     return 'charts-vendor';
   }
 
-  // Single React chunk: react, radix, mui, forms, and all React-dependent UI libs.
+  // NOTE: @mui/*, @emotion/*, and dayjs are deliberately NOT given a manual
+  // chunk. They are reachable only through the lazy-loaded date-picker calendar
+  // (src/components/ui/date-picker.tsx -> date-picker-calendar.tsx). Letting
+  // Rollup auto-split them keeps any helper modules shared with react-vendor in
+  // react-vendor, so the on-demand MUI chunk depends on react-vendor instead of
+  // being pulled into the entry's static graph (and modulepreload).
+
+  // Single React chunk: react, radix, forms, and all React-dependent UI libs.
   if (
     id.includes('react-dom') ||
     id.includes('/react/') ||
@@ -66,9 +73,6 @@ export function manualChunks(id: string): string | undefined {
     id.includes('@floating-ui') ||
     id.includes('react-remove-scroll') ||
     id.includes('aria-hidden') ||
-    id.includes('@mui/') ||
-    id.includes('@emotion/') ||
-    id.includes('dayjs') ||
     id.includes('vaul') ||
     id.includes('cmdk') ||
     id.includes('sonner') ||
