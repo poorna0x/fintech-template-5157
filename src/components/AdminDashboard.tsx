@@ -1523,9 +1523,14 @@ const AdminDashboard = () => {
   const loadDashboardData = async (options?: {
     silent?: boolean;
     skipOngoingFetch?: boolean;
+    skipTechniciansFetch?: boolean;
   }) => {
     const silent = options?.silent === true;
     const skipOngoingFetch = options?.skipOngoingFetch === true;
+    // When the roster was just applied from a fresh live prefetch, skip the
+    // immediate re-fetch — the `get_technicians_for_admin` RPC otherwise runs
+    // twice on every cold boot (once in the prefetch, once here).
+    const skipTechniciansFetch = options?.skipTechniciansFetch === true;
     try {
       if (!silent) {
         setLoading(true);
@@ -1542,7 +1547,9 @@ const AdminDashboard = () => {
       scheduleAmcJobCreation();
 
       const [techniciansResult, jobCountsResult, ongoingResult] = await Promise.all([
-        db.technicians.getAllForDashboard(100),
+        skipTechniciansFetch
+          ? Promise.resolve({ data: null as Technician[] | null, error: null })
+          : db.technicians.getAllForDashboard(100),
         db.jobs.getCounts(),
         skipOngoingFetch && statusFilter === 'ONGOING'
           ? Promise.resolve({ data: null as Job[] | null, error: null })
@@ -1622,6 +1629,10 @@ const AdminDashboard = () => {
     if (dashboardLoadedWithSessionRef.current) return;
 
     let showedInstantData = false;
+    // True only when the roster/jobs came from the live prefetch (fresh, <1s old)
+    // rather than the sessionStorage snapshot (which can be up to 5 min stale and
+    // therefore must still be refreshed by loadDashboardData).
+    let appliedFreshPrefetch = false;
     const cached = readAdminDashboardCache();
     if (cached) {
       applyAdminSnapshot(cached);
@@ -1646,6 +1657,7 @@ const AdminDashboard = () => {
       if (prefetched) {
         applyAdminSnapshot(prefetched);
         showedInstantData = true;
+        appliedFreshPrefetch = true;
         setIsInitialLoad(false);
         setLoading(false);
       }
@@ -1655,6 +1667,9 @@ const AdminDashboard = () => {
       await loadDashboardDataRef.current({
         silent: true,
         skipOngoingFetch: showedInstantData && statusFilter === 'ONGOING',
+        // Roster is identical to what the prefetch just fetched — skip the
+        // duplicate get_technicians_for_admin RPC on this cold boot.
+        skipTechniciansFetch: appliedFreshPrefetch,
       });
       dashboardLoadedWithSessionRef.current = true;
     } catch (error) {

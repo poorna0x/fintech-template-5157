@@ -12,6 +12,13 @@ export { generateJobNumber } from './jobNumber';
 /** Typed client for admin/technician data layer (admin-data chunk). */
 const supabase = supabaseAuthClient as SupabaseClient<Database>;
 
+/**
+ * Set once if the optional `get_admin_job_counts` RPC is not present in the DB
+ * (e.g. before the SQL function is applied). When true, getCounts skips the RPC
+ * attempt and goes straight to the 4-query fallback to avoid a wasted round-trip.
+ */
+let adminJobCountsRpcMissing = false;
+
 /** Explicit job columns for ongoing admin list + technician job list (no before/after/images — use getPhotoFieldsForJobIds). */
 const JOB_SELECT_ONGOING_AND_TECH = [
   'id',
@@ -1723,7 +1730,38 @@ export const db = {
         // When converted to ISO string, they will be in UTC
         const todayStart = localStartOfDay.toISOString();
         const todayStartNextDay = localStartOfNextDay.toISOString();
-        
+
+        // Fast path: a single SECURITY INVOKER RPC computes all four counts in
+        // one round-trip (vs four separate count queries). The client passes the
+        // same UTC day bounds, so results are identical to the fallback below.
+        // Falls back transparently if the function isn't present yet.
+        if (!adminJobCountsRpcMissing) {
+          const rpc = await supabase.rpc('get_admin_job_counts', {
+            p_today_start: todayStart,
+            p_today_next: todayStartNextDay,
+          } as any);
+          if (!rpc.error && rpc.data) {
+            const row: any = Array.isArray(rpc.data) ? rpc.data[0] : rpc.data;
+            if (row) {
+              const countsData = {
+                ongoing: Number(row.ongoing) || 0,
+                followup: Number(row.followup) || 0,
+                denied: Number(row.denied) || 0,
+                completed: Number(row.completed) || 0,
+              };
+              cacheSet(countsCacheKey, countsData, 25_000);
+              return { data: countsData, error: null };
+            }
+          } else if (rpc.error) {
+            // PGRST202 = function not found in schema cache. Stop trying for this
+            // session so we don't pay a failed round-trip on every refresh.
+            const code = (rpc.error as any)?.code;
+            if (code === 'PGRST202' || code === '42883') {
+              adminJobCountsRpcMissing = true;
+            }
+          }
+        }
+
         // Count jobs in parallel for better performance
         const [ongoingResult, followupResult, deniedResult, completedResult] = await Promise.all([
           // Ongoing: ALL current jobs with status PENDING, ASSIGNED, EN_ROUTE, or IN_PROGRESS

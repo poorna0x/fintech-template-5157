@@ -15,10 +15,12 @@ import CanonicalTag from "./components/CanonicalTag";
 import GoogleAnalytics from "./components/GoogleAnalytics";
 import { disablePWA } from "@/lib/pwa";
 
-// Lazy load heavy components for better performance
-import AdminPortal from "./pages/AdminPortal";
+// Lazy load heavy components for better performance.
+// AdminPortal and TechnicianLogin are lazy too so their login + captcha widget
+// code stays out of the entry chunk that loads on every public page.
+const AdminPortal = lazy(() => import("./pages/AdminPortal"));
 const Booking = lazy(() => import("./pages/Booking"));
-import TechnicianLogin from "./pages/TechnicianLogin";
+const TechnicianLogin = lazy(() => import("./pages/TechnicianLogin"));
 const TechnicianDashboard = lazy(() => import("./pages/TechnicianDashboard"));
 const Settings = lazy(() => import("./pages/Settings"));
 const CallingPage = lazy(() => import("./pages/CallingPage"));
