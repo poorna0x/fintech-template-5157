@@ -48,7 +48,9 @@ import { buildTechnicianSalaryPayload, getCurrentMonthKey } from '@/lib/technici
 import { Technician } from '@/types';
 import ImageUpload from '@/components/ImageUpload';
 import { CommonQrCode, invalidateQrCodesCache, normalizeTechnicianAssignedCommonQrIds } from '@/lib/qrCodeManager';
-import JSZip from 'jszip';
+// NOTE: `jszip` and `qr-code-styling` are heavy and only used by specific
+// button actions (data export ZIP, styled QR image). They are dynamically
+// imported at their call sites so they stay out of the main Settings chunk.
 import CallingPage from '@/pages/CallingPage';
 import { registerAdminPWA } from '@/lib/pwa';
 import { SettingsRemindersDialog } from '@/components/reminders/SettingsRemindersDialog';
@@ -58,7 +60,6 @@ import { SettingsPendingPaymentsDialogV2 } from '@/components/reminders/PendingP
 import AdvancedCustomerSearchDialog from '@/components/admin/AdvancedCustomerSearchDialog';
 import MergeCustomersDialog from '@/components/admin/MergeCustomersDialog';
 import DirectSaleDialog from '@/components/admin/DirectSaleDialog';
-import QRCodeStyling from 'qr-code-styling';
 
 /** PostgREST error when a table was never created or was dropped (e.g. booking_abandonments). */
 const isMissingTableError = (error: { message?: string; code?: string } | null): boolean => {
@@ -777,6 +778,7 @@ const Settings = () => {
 
     setIsGeneratingQrImage(true);
     try {
+      const { default: QRCodeStyling } = await import('qr-code-styling');
       const qrSize = 760;
 
       const qrCode = new QRCodeStyling({
@@ -1417,6 +1419,7 @@ const Settings = () => {
       }
 
       // Create ZIP file with all CSV files
+      const { default: JSZip } = await import('jszip');
       const zip = new JSZip();
       
       // Add each table as a CSV file to the ZIP
