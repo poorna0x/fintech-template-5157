@@ -49,8 +49,15 @@ exports.handler = async (event) => {
     return jsonResponse(400, corsHeaders, { error: 'Invalid phone number' });
   }
 
+  // NOTE: an `upsert` is an idempotent write keyed by (phone_normalized,
+  // site_key) — one phone == one row no matter how many times it's sent. A
+  // single legitimate customer now emits one update per step AND per debounced
+  // keystroke, so a low cap (was 3) silently 429'd steps 4–5 and dropped the
+  // final pre-submit flush. Flood abuse from many DIFFERENT phones on one IP is
+  // bounded separately by the quarantine logic below, so these caps can be
+  // generous while still stopping a runaway client.
   const ipLimit = checkRateLimit(event, {
-    maxRequests: action === 'upsert' ? 3 : 10,
+    maxRequests: action === 'upsert' ? 80 : 10,
     windowMs: 3_600_000,
     endpoint: `booking-intent-${action}`,
   });
@@ -62,7 +69,7 @@ exports.handler = async (event) => {
   }
 
   const phoneLimit = checkRateLimitForKey(phoneNorm, {
-    maxRequests: action === 'upsert' ? 5 : 10,
+    maxRequests: action === 'upsert' ? 60 : 10,
     windowMs: 3_600_000,
     endpoint: `booking-intent-${action}-phone`,
   });
@@ -129,7 +136,10 @@ exports.handler = async (event) => {
   if (countErr) {
     console.error('[booking-intent count]', countErr.message);
   }
-  const quarantined = recentIpCount >= 3;
+  // Distinct intent ROWS (different phones) from one IP in the last hour. This
+  // is the real anti-flood signal; keep it lenient enough that a shared office/
+  // household IP with a few genuine customers isn't hidden from the banner.
+  const quarantined = recentIpCount >= 12;
 
   const { error } = await client.admin.rpc('upsert_website_booking_intent', {
     p_full_name: fullName,

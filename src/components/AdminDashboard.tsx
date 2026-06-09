@@ -2088,49 +2088,48 @@ const AdminDashboard = () => {
     };
   }, []);
 
-  const activeAlertRef = React.useRef<{
-    ctx: AudioContext;
-    osc: OscillatorNode;
-    gain: GainNode;
-    endsAt: number;
-  } | null>(null);
+  // Track EVERY scheduled alert oscillator (not just the latest). Rapid intent
+  // events can start several plays; if we only kept the last one, earlier
+  // oscillators became orphans that beeped for their full duration with nothing
+  // able to stop them. A Set lets stop()/mute kill all of them at once.
+  type AlertNode = { ctx: AudioContext; osc: OscillatorNode; gain: GainNode };
+  const activeAlertsRef = React.useRef<Set<AlertNode>>(new Set());
   // Monotonic token: bumped on every stop AND every play start. An in-flight
   // (async) play compares its captured token after `await ctx.resume()`; if it
-  // no longer matches, a stop/newer play happened and it aborts. This closes the
-  // race where Mute/Done fired while playback was still awaiting resume, which
-  // previously let an unstoppable 20s beep start after the stop had run.
+  // no longer matches, a stop/newer play happened and it aborts.
   const alertTokenRef = React.useRef(0);
 
-  // Pure teardown of the currently scheduled alert (no token bump).
+  // Pure teardown: silence + stop + disconnect ALL active alert oscillators.
   const teardownActiveAlert = useCallback(() => {
-    const active = activeAlertRef.current;
-    if (!active) return;
-    activeAlertRef.current = null;
-
-    const now = active.ctx.currentTime;
-    try {
-      active.gain.gain.cancelScheduledValues(now);
-    } catch {
-      /* ignore */
-    }
-    try {
-      // Fast ramp down to avoid clicks.
-      active.gain.gain.setValueAtTime(Math.max(active.gain.gain.value, 0.0001), now);
-      active.gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.03);
-    } catch {
-      /* ignore */
-    }
-    try {
-      active.osc.stop(now + 0.04);
-    } catch {
-      /* ignore */
-    }
-    try {
-      active.osc.disconnect();
-      active.gain.disconnect();
-    } catch {
-      /* ignore */
-    }
+    const nodes = activeAlertsRef.current;
+    if (nodes.size === 0) return;
+    nodes.forEach((node) => {
+      const now = node.ctx.currentTime;
+      try {
+        node.gain.gain.cancelScheduledValues(now);
+      } catch {
+        /* ignore */
+      }
+      try {
+        // Fast ramp down to avoid clicks.
+        node.gain.gain.setValueAtTime(Math.max(node.gain.gain.value, 0.0001), now);
+        node.gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.03);
+      } catch {
+        /* ignore */
+      }
+      try {
+        node.osc.stop(now + 0.04);
+      } catch {
+        /* ignore */
+      }
+      try {
+        node.osc.disconnect();
+        node.gain.disconnect();
+      } catch {
+        /* ignore */
+      }
+    });
+    nodes.clear();
   }, []);
 
   const stopNotificationSound = useCallback(() => {
@@ -2166,7 +2165,8 @@ const AdminDashboard = () => {
       // If a previous alert is still playing, stop it first (no token bump).
       teardownActiveAlert();
       const t = ctx.currentTime;
-      const durationSec = 20;
+      // Short attention beep (was 20s, which felt like it "wouldn't stop").
+      const durationSec = 4;
       const beepDuration = 0.5;
       const gap = 0.25;
       const cycleSec = beepDuration + gap;
@@ -2201,10 +2201,16 @@ const AdminDashboard = () => {
       // Safety: ensure we end silent.
       gain.gain.setValueAtTime(0.0001, endsAt);
 
+      const entry: AlertNode = { ctx, osc, gain };
+      activeAlertsRef.current.add(entry);
+      // Self-remove from the active set once it finishes naturally, so the Set
+      // never grows unbounded and stop() only iterates what's truly playing.
+      osc.onended = () => {
+        activeAlertsRef.current.delete(entry);
+      };
+
       osc.start(t);
       osc.stop(endsAt + 0.05);
-
-      activeAlertRef.current = { ctx, osc, gain, endsAt };
     } catch (e) {
       console.warn('Notification sound failed:', e);
     }
