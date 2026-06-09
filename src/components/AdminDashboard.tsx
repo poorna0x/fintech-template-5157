@@ -356,6 +356,8 @@ const AdminDashboard = () => {
   const SERVICE_HISTORY_PAGE_SIZE = 50;
   const [selectedPhoto, setSelectedPhoto] = useState<{url: string, index: number, total: number} | null>(null);
   const [selectedBillPhotos, setSelectedBillPhotos] = useState<string[] | null>(null); // Track bill photos array for navigation
+  // Optional context for naming downloaded photos (e.g. customer name + bill/payment).
+  const [photoDownloadMeta, setPhotoDownloadMeta] = useState<{ customerName?: string; type?: string } | null>(null);
   const [selectedCustomerPhotos, setSelectedCustomerPhotos] = useState<string[] | null>(null); // Track customer photos array for navigation
   const [isCompressingImage, setIsCompressingImage] = useState(false);
   
@@ -7697,31 +7699,48 @@ const AdminDashboard = () => {
 
   // Download photo
   const downloadPhoto = async (photoUrl: string, photoIndex: number) => {
+    // Fetch as a blob so cross-origin (Cloudinary) images actually save to the device.
+    // The anchor `download` attribute is ignored for cross-origin URLs, which is why a
+    // plain link just opened/redirected instead of downloading.
     try {
-      // For Cloudinary URLs, try to get the raw image URL
-      let downloadUrl = photoUrl;
-      
-      // If it's a Cloudinary URL, try to get the raw version
+      let fetchUrl = photoUrl;
       if (photoUrl.includes('cloudinary.com')) {
-        // Remove any transformations and get the raw image
-        downloadUrl = photoUrl.replace(/\/upload\/[^/]*\//, '/upload/');
+        // Strip transformations to get the original asset.
+        fetchUrl = photoUrl.replace(/\/upload\/[^/]*\//, '/upload/');
       }
-      
-      // Method 1: Try direct download
+
+      const response = await fetch(fetchUrl);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const blob = await response.blob();
+
+      // Pick an extension from the blob's mime type when available.
+      const ext = blob.type && blob.type.includes('/') ? blob.type.split('/')[1].split('+')[0] : 'jpg';
+
+      // Build a meaningful filename: "<Customer> <bill|payment> <n>" when we know the
+      // context (e.g. opened from a customer report), otherwise fall back to "photo-<n>".
+      const sanitize = (s: string) => s.replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '');
+      let baseName = `photo-${photoIndex + 1}`;
+      if (photoDownloadMeta?.customerName || photoDownloadMeta?.type) {
+        const parts = [
+          photoDownloadMeta.customerName ? sanitize(photoDownloadMeta.customerName) : '',
+          photoDownloadMeta.type === 'bill' ? 'bill' : photoDownloadMeta.type === 'payment' ? 'payment' : sanitize(photoDownloadMeta.type || ''),
+          String(photoIndex + 1),
+        ].filter(Boolean);
+        baseName = parts.join('_');
+      }
+
+      const objectUrl = URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.href = downloadUrl;
-      link.download = `photo-${photoIndex + 1}.jpg`;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      
-      // Add to DOM, click, and remove
+      link.href = objectUrl;
+      link.download = `${baseName}.${ext}`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      
-      toast.success('Download started');
+      URL.revokeObjectURL(objectUrl);
+
+      toast.success('Photo downloaded');
     } catch (error) {
-      // Method 2: Fallback - open in new tab for manual save
+      // Fallback - open in new tab for manual save (e.g. if fetch is blocked by CORS).
       try {
         const newWindow = window.open(photoUrl, '_blank', 'noopener,noreferrer');
         if (newWindow) {
@@ -11235,6 +11254,7 @@ const AdminDashboard = () => {
           setSelectedPhoto(null);
           setSelectedBillPhotos(null);
           setSelectedCustomerPhotos(null);
+          setPhotoDownloadMeta(null);
         }}
       />
 
@@ -11440,12 +11460,7 @@ const AdminDashboard = () => {
                 <Button
                   size="sm"
                   variant="secondary"
-                  onClick={() => {
-                    const link = document.createElement('a');
-                    link.href = selectedPhoto.url;
-                    link.download = `photo-${selectedPhoto.index + 1}.jpg`;
-                    link.click();
-                  }}
+                  onClick={() => downloadPhoto(selectedPhoto.url, selectedPhoto.index)}
                 >
                   <Download className="w-4 h-4 mr-2" />
                   Download
@@ -12060,11 +12075,13 @@ const AdminDashboard = () => {
         technicians={techniciansForReports.length > 0 ? techniciansForReports : technicians}
         onPhotoClick={(url, index, total) => {
           setSelectedPhoto({ url, index, total });
+          setPhotoDownloadMeta({ customerName: selectedCustomerForReport?.fullName, type: 'payment' });
           setPhotoViewerOpen(true);
         }}
         onBillPhotosClick={(photos, index) => {
           setSelectedBillPhotos(photos);
           setSelectedPhoto({ url: photos[index], index, total: photos.length });
+          setPhotoDownloadMeta({ customerName: selectedCustomerForReport?.fullName, type: 'bill' });
           setPhotoViewerOpen(true);
         }}
       />
