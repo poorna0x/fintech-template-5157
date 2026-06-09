@@ -2094,8 +2094,15 @@ const AdminDashboard = () => {
     gain: GainNode;
     endsAt: number;
   } | null>(null);
+  // Monotonic token: bumped on every stop AND every play start. An in-flight
+  // (async) play compares its captured token after `await ctx.resume()`; if it
+  // no longer matches, a stop/newer play happened and it aborts. This closes the
+  // race where Mute/Done fired while playback was still awaiting resume, which
+  // previously let an unstoppable 20s beep start after the stop had run.
+  const alertTokenRef = React.useRef(0);
 
-  const stopNotificationSound = useCallback(() => {
+  // Pure teardown of the currently scheduled alert (no token bump).
+  const teardownActiveAlert = useCallback(() => {
     const active = activeAlertRef.current;
     if (!active) return;
     activeAlertRef.current = null;
@@ -2126,8 +2133,17 @@ const AdminDashboard = () => {
     }
   }, []);
 
+  const stopNotificationSound = useCallback(() => {
+    // Invalidate any in-flight play that is still awaiting ctx.resume().
+    alertTokenRef.current++;
+    teardownActiveAlert();
+  }, [teardownActiveAlert]);
+
   // Play alert sound (used by live booking intent banner).
   const playNotificationSound = useCallback(async () => {
+    // Claim this playback. If a stop (mute/dismiss) or a newer play happens while
+    // we await ctx.resume() below, the token changes and we abort before starting.
+    const myToken = ++alertTokenRef.current;
     try {
       const Ac = window.AudioContext || (window as any).webkitAudioContext;
       if (!Ac) return;
@@ -2145,8 +2161,10 @@ const AdminDashboard = () => {
         toast.info('Click anywhere on this page once to enable sound', { duration: 5000 });
         return;
       }
-      // If a previous alert is still playing, stop it first.
-      stopNotificationSound();
+      // Aborted while awaiting resume (e.g. user hit Mute/Done) — do not start.
+      if (myToken !== alertTokenRef.current) return;
+      // If a previous alert is still playing, stop it first (no token bump).
+      teardownActiveAlert();
       const t = ctx.currentTime;
       const durationSec = 20;
       const beepDuration = 0.5;
@@ -2190,7 +2208,7 @@ const AdminDashboard = () => {
     } catch (e) {
       console.warn('Notification sound failed:', e);
     }
-  }, [stopNotificationSound]);
+  }, [teardownActiveAlert]);
 
   // Completed job sound: restore the older short multi-beep pattern.
   const playCompletedJobSound = useCallback(async () => {
