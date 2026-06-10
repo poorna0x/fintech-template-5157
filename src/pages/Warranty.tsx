@@ -462,6 +462,17 @@ const Warranty: React.FC = () => {
               </CardContent>
             </Card>
 
+            {/* Loading — shown while fetching the warranty result (e.g. just after OTP verify
+                or a resumed session) so there isn't a blank gap before results appear. */}
+            {state === 'loading' && (
+              <Card>
+                <CardContent className="p-8 flex flex-col items-center justify-center text-center gap-3">
+                  <span className="w-8 h-8 border-[3px] border-sky-600 border-t-transparent rounded-full animate-spin" />
+                  <p className="text-sm text-muted-foreground">Fetching your warranty details…</p>
+                </CardContent>
+              </Card>
+            )}
+
             {/* Error */}
             {state === 'error' && (
               <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
