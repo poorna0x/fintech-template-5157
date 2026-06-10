@@ -26,6 +26,8 @@ import {
   categoryDef,
   warrantyStatus,
   formatWarrantyDate,
+  GENERAL_WARRANTY_POLICY,
+  GENERAL_WARRANTY_TERMS,
   type PublicWarranty,
   type PublicWarrantyCustomer,
   type PublicAmcInfo,
@@ -542,12 +544,24 @@ const Warranty: React.FC = () => {
                   warranties.map((w) => <WarrantyCard key={w.id} warranty={w} />)
                 ) : amc?.active ? null : (
                   <Card>
-                    <CardContent className="p-8 text-center text-muted-foreground">
-                      <ShieldCheck className="w-12 h-12 mx-auto mb-3 text-muted-foreground/60" />
-                      <p className="font-medium text-foreground">No warranties recorded yet</p>
-                      <p className="text-sm mt-2">
-                        We found your customer record, but there are no warranties added to it.
-                      </p>
+                    <CardContent className="p-5 sm:p-6 space-y-4">
+                      <div className="flex items-start gap-3">
+                        <ShieldCheck className="w-6 h-6 text-sky-600 shrink-0 mt-0.5" />
+                        <div className="min-w-0">
+                          <p className="font-semibold text-foreground">No specific warranty on record</p>
+                          <p className="text-sm text-muted-foreground mt-1">{GENERAL_WARRANTY_POLICY}</p>
+                        </div>
+                      </div>
+                      <div className="rounded-lg bg-muted/40 p-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                          Terms &amp; conditions
+                        </p>
+                        <ul className="space-y-2 text-xs text-muted-foreground list-disc pl-4">
+                          {GENERAL_WARRANTY_TERMS.map((t, i) => (
+                            <li key={i}>{t}</li>
+                          ))}
+                        </ul>
+                      </div>
                     </CardContent>
                   </Card>
                 )}

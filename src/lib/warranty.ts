@@ -157,6 +157,24 @@ export function notePresetText(id: string): string {
   return NOTE_PRESET_MAP.get(id)?.text ?? '';
 }
 
+/** Default number of days a replaced spare is covered for (90 days). */
+export const DEFAULT_WARRANTY_DAYS = DEFAULT_WARRANTY_MONTHS * DAYS_PER_MONTH;
+
+/**
+ * Professional default policy shown when a customer has no specific warranty recorded.
+ * Keeps the public page reassuring even when nothing was entered for them yet.
+ */
+export const GENERAL_WARRANTY_POLICY =
+  `As a general policy, any spare parts replaced during service are covered by a ` +
+  `${DEFAULT_WARRANTY_DAYS}-day warranty from the date of replacement, unless a different ` +
+  `period is specified on your service bill/invoice.`;
+
+/** Standard terms shown with the general policy (exclusions + visiting charges). */
+export const GENERAL_WARRANTY_TERMS: string[] = [
+  notePresetText('exclusions'),
+  notePresetText('visiting_charge'),
+];
+
 // Best-effort category guess from a part/product name so the admin doesn't have to
 // classify every part by hand. Falls back to OTHER.
 export function guessCategory(name: string | null | undefined): WarrantyCategory {
