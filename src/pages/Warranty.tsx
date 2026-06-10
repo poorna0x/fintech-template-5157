@@ -49,15 +49,25 @@ const Warranty: React.FC = () => {
   const [otpSending, setOtpSending] = useState(false);
   const [otpVerifying, setOtpVerifying] = useState(false);
   const [otpError, setOtpError] = useState('');
+  const [otpResendAt, setOtpResendAt] = useState(0);
+  const [otpNow, setOtpNow] = useState(Date.now());
 
   const phoneDigits = phone.replace(/\D/g, '').slice(-10);
   const phoneValid = phoneDigits.length === 10 && /^[6-9]/.test(phoneDigits);
   const busy = state === 'loading' || otpSending || otpVerifying;
+  const otpResendRemaining = Math.max(0, Math.ceil((otpResendAt - otpNow) / 1000));
 
-  // Warm Firebase + invisible reCAPTCHA so the first "send code" tap is instant.
+  // Warm Firebase + invisible reCAPTCHA so the first "send OTP" tap is instant.
   useEffect(() => {
     if (OTP_ENABLED) void prewarmBookingOtp();
   }, []);
+
+  // Live resend countdown.
+  useEffect(() => {
+    if (!otpSent || otpResendAt <= Date.now()) return;
+    const id = setInterval(() => setOtpNow(Date.now()), 500);
+    return () => clearInterval(id);
+  }, [otpSent, otpResendAt]);
 
   const handleAltchaVerify = useCallback(
     (isValid: boolean, payload?: string, loginToken?: string) => {
@@ -93,6 +103,7 @@ const Warranty: React.FC = () => {
       setOtpSent(false);
       setOtpCode('');
       setOtpError('');
+      setOtpResendAt(0);
       resetBookingOtpSession();
     }
     if (state !== 'idle') {
@@ -138,11 +149,12 @@ const Warranty: React.FC = () => {
     const res = await sendBookingOtp(phoneDigits);
     setOtpSending(false);
     if (!res.ok) {
-      setOtpError(res.error || 'Could not send the code. Please try again.');
+      setOtpError(res.error || 'Could not send the OTP. Please try again.');
       return;
     }
     setOtpSent(true);
     setOtpCode('');
+    setOtpResendAt(Date.now() + 60_000);
   };
 
   const handleVerifyAndSearch = async () => {
@@ -241,7 +253,7 @@ const Warranty: React.FC = () => {
                         ) : (
                           <span className="flex items-center gap-2">
                             <Lock className="w-4 h-4" />
-                            Send code
+                            Send OTP
                           </span>
                         )}
                       </Button>
@@ -250,56 +262,69 @@ const Warranty: React.FC = () => {
 
                   {/* OTP entry */}
                   {otpFlow && otpSent && (
-                    <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-3">
+                    <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-4">
                       <p className="text-sm font-medium flex items-center gap-2">
                         <Lock className="w-4 h-4 text-sky-600" />
-                        Enter the code sent to {phoneDigits}
+                        Enter the 6-digit OTP sent to {phoneDigits}
                       </p>
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                        <InputOTP
-                          maxLength={6}
-                          pattern={REGEXP_ONLY_DIGITS}
-                          value={otpCode}
-                          onChange={setOtpCode}
-                        >
-                          <InputOTPGroup>
-                            {[0, 1, 2, 3, 4, 5].map((i) => (
-                              <InputOTPSlot key={i} index={i} />
-                            ))}
-                          </InputOTPGroup>
-                        </InputOTP>
-                        <Button
-                          type="button"
-                          onClick={handleVerifyAndSearch}
-                          disabled={otpCode.length < 6 || busy}
-                          className="h-11 px-5 bg-sky-600 hover:bg-sky-700 text-white"
-                        >
-                          {otpVerifying || state === 'loading' ? (
-                            <span className="flex items-center gap-2">
-                              <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                              Verifying...
-                            </span>
-                          ) : (
-                            'Verify & check'
-                          )}
-                        </Button>
-                      </div>
-                      <div className="flex items-center gap-4 text-xs">
+                      <InputOTP
+                        maxLength={6}
+                        inputMode="numeric"
+                        pattern={REGEXP_ONLY_DIGITS}
+                        value={otpCode}
+                        disabled={otpVerifying}
+                        onChange={setOtpCode}
+                        containerClassName="w-full"
+                      >
+                        <InputOTPGroup className="w-full justify-between gap-1.5 sm:gap-3">
+                          {[0, 1, 2, 3, 4, 5].map((i) => (
+                            <InputOTPSlot
+                              key={i}
+                              index={i}
+                              className="h-12 flex-1 rounded-md border border-input bg-background text-lg font-semibold shadow-sm sm:h-14 sm:text-xl"
+                            />
+                          ))}
+                        </InputOTPGroup>
+                      </InputOTP>
+                      <Button
+                        type="button"
+                        onClick={handleVerifyAndSearch}
+                        disabled={otpCode.length < 6 || busy}
+                        className="w-full h-11 bg-sky-600 hover:bg-sky-700 text-white"
+                      >
+                        {otpVerifying || state === 'loading' ? (
+                          <span className="flex items-center gap-2">
+                            <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            Verifying...
+                          </span>
+                        ) : (
+                          'Verify & check warranty'
+                        )}
+                      </Button>
+                      <div className="flex items-center justify-between gap-2 text-xs sm:text-sm">
+                        <span className="flex items-center gap-1.5 text-muted-foreground">
+                          Didn't get it?
+                          <button
+                            type="button"
+                            className="font-medium text-sky-600 dark:text-sky-400 underline-offset-2 hover:underline disabled:opacity-50 disabled:no-underline"
+                            onClick={handleSendOtp}
+                            disabled={busy || otpResendRemaining > 0}
+                          >
+                            {otpResendRemaining > 0
+                              ? `Resend in ${otpResendRemaining}s`
+                              : otpSending
+                                ? 'Sending…'
+                                : 'Resend OTP'}
+                          </button>
+                        </span>
                         <button
                           type="button"
-                          className="text-sky-600 hover:underline disabled:opacity-50"
-                          onClick={handleSendOtp}
-                          disabled={busy}
-                        >
-                          Resend code
-                        </button>
-                        <button
-                          type="button"
-                          className="text-muted-foreground hover:underline"
+                          className="font-medium text-muted-foreground underline-offset-2 hover:underline"
                           onClick={() => {
                             setOtpSent(false);
                             setOtpCode('');
                             setOtpError('');
+                            setOtpResendAt(0);
                             resetBookingOtpSession();
                           }}
                         >
