@@ -30,7 +30,9 @@ interface JobPartUsed {
   id: string;
   job_id: string;
   technician_id: string;
-  inventory_id: string;
+  inventory_id: string | null;
+  custom_name?: string | null;
+  source?: string | null;
   quantity_used: number;
   price_at_time_of_use?: number | null;
   created_at: string;
@@ -61,6 +63,34 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
   const [hasLoadedParts, setHasLoadedParts] = useState(false);
   const [applyingBundle, setApplyingBundle] = useState(false);
   const [addPartInventoryLoading, setAddPartInventoryLoading] = useState(false);
+
+  // Custom (one-off) part entry — name + qty + price, not tracked in any stock.
+  // Opened from a "+ Add custom item" row that appears while searching.
+  const [customDialogOpen, setCustomDialogOpen] = useState(false);
+  const [customName, setCustomName] = useState('');
+  const [customQty, setCustomQty] = useState('1');
+  const [customPrice, setCustomPrice] = useState('');
+  const [addingCustom, setAddingCustom] = useState(false);
+
+  const resetCustomForm = () => {
+    setCustomDialogOpen(false);
+    setCustomName('');
+    setCustomQty('1');
+    setCustomPrice('');
+  };
+
+  const openCustomDialog = () => {
+    setCustomName('');
+    setCustomQty('1');
+    setCustomPrice('');
+    setCustomDialogOpen(true);
+  };
+
+  // The virtual "Custom Item" entry surfaces when the user searches for it (e.g. "custom").
+  const customQueryMatches = (() => {
+    const q = inventorySearchQuery.trim().toLowerCase();
+    return q.length > 0 && 'custom item'.includes(q);
+  })();
 
   const recalcTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingRecalcJobIdRef = useRef<string | null>(null);
@@ -153,6 +183,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       setDebouncedSearchQuery('');
       setAddBundleDialogOpen(false);
       setAddPartInventoryLoading(false);
+      resetCustomForm();
     }
   }, [open, job?.id, technician?.id, loadPartsUsedOnDemand]);
 
@@ -435,12 +466,51 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     }
   };
 
+  // Add a custom one-off part (not in inventory). Stored with custom_name + price; no stock movement.
+  const handleAddCustomPart = async () => {
+    if (!job?.id || !technician?.id || addingCustom) return;
+    const name = customName.trim();
+    const qty = Math.max(1, Math.floor(Number(customQty) || 0));
+    const price = Math.max(0, Number(customPrice) || 0);
+    if (!name) {
+      toast.error('Enter an item name.');
+      return;
+    }
+    setAddingCustom(true);
+    try {
+      const { data: newPart, error } = await db.jobPartsUsed.create({
+        job_id: job.id,
+        technician_id: technician.id,
+        inventory_id: null,
+        custom_name: name,
+        quantity_used: qty,
+        price_at_time_of_use: price,
+        source: 'custom',
+      });
+      if (error) throw error;
+      if (newPart) setPartsUsed(prev => [newPart as unknown as JobPartUsed, ...prev]);
+      resetCustomForm();
+      setInventorySearchQuery('');
+      scheduleRecalcJobPartsCost(job.id);
+      toast.success('Custom part added.');
+    } catch (error: any) {
+      console.error('Error adding custom part:', error);
+      toast.error(error?.message || 'Failed to add custom part');
+    } finally {
+      setAddingCustom(false);
+    }
+  };
+
   // Remove part from job: if qty > 1, reduce by 1 only; if qty is 1, remove the row entirely.
   // Stock returns to the technician's bag only (single-source); main is untouched here.
-  const handleDeletePart = async (partId: string, inventoryId: string, quantityUsed: number) => {
+  // Custom parts (no inventory_id) carry no stock, so nothing is restored on removal.
+  const handleDeletePart = async (partId: string, inventoryId: string | null, quantityUsed: number) => {
     if (!technician?.id) return;
 
+    const isCustom = !inventoryId;
+
     const restoreTech = async (delta: number) => {
+      if (!inventoryId) return; // custom parts have no stock to restore
       // The parts list view doesn't preload technician inventory, so resolve the row
       // from memory first, then from the DB. Always INCREMENT an existing row — never
       // insert (a row may already exist and would violate the unique constraint).
@@ -485,7 +555,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
           prev.map(p => (p.id === partId ? (updatedPart || { ...p, quantity_used: newQuantityUsed }) : p))
         );
         if (job?.id) scheduleRecalcJobPartsCost(job.id);
-        toast.success('Removed 1 qty from job; returned to technician stock.');
+        toast.success(isCustom ? 'Removed 1 qty from job.' : 'Removed 1 qty from job; returned to technician stock.');
       } else {
         const { error: deleteError } = await db.jobPartsUsed.delete(partId);
         if (deleteError) throw deleteError;
@@ -494,7 +564,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
 
         setPartsUsed(prev => prev.filter(p => p.id !== partId));
         if (job?.id) scheduleRecalcJobPartsCost(job.id);
-        toast.success('Part removed; returned to technician stock.');
+        toast.success(isCustom ? 'Custom part removed.' : 'Part removed; returned to technician stock.');
       }
     } catch (error: any) {
       console.error('Error deleting part:', error);
@@ -570,7 +640,12 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
                         <TableCell className="font-medium">
                           {part.inventory
                             ? `${part.inventory.product_name}${part.inventory.code ? ` (${part.inventory.code})` : ''}`
-                            : 'Unknown'}
+                            : part.custom_name || 'Unknown'}
+                          {!part.inventory_id && (
+                            <span className="ml-2 align-middle rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                              Custom
+                            </span>
+                          )}
                         </TableCell>
                         <TableCell className="text-right font-semibold">
                           {part.quantity_used}
@@ -588,7 +663,11 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
                                   {part.quantity_used > 1 ? 'Remove 1 quantity?' : 'Remove part?'}
                                 </AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  {part.quantity_used > 1
+                                  {!part.inventory_id
+                                    ? part.quantity_used > 1
+                                      ? `This will reduce quantity used from ${part.quantity_used} to ${part.quantity_used - 1}.`
+                                      : 'Remove this custom item from the job?'
+                                    : part.quantity_used > 1
                                     ? `This will reduce quantity used from ${part.quantity_used} to ${part.quantity_used - 1}. One unit returns to the technician's stock.`
                                     : "Remove this part from the job? The quantity will return to the technician's stock."}
                                 </AlertDialogDescription>
@@ -646,15 +725,59 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
                   Loading parts...
                 </div>
               ) : filteredInventoryItems.length === 0 ? (
-                <div className="py-8 px-4 text-center text-sm text-muted-foreground">
-                  {technicianInventory.length === 0
-                    ? 'No parts in technician inventory.'
-                    : debouncedSearchQuery.trim()
-                    ? 'No parts match your search.'
-                    : 'No parts with available quantity.'}
+                <div className="overflow-y-auto overflow-x-hidden max-h-[min(50vh,280px)] sm:max-h-[320px] w-full min-w-0">
+                  {customQueryMatches && (
+                    <div className="group flex items-center gap-2 sm:gap-3 px-3 py-2.5 border-b last:border-b-0 bg-background hover:bg-muted/50 w-full max-w-full overflow-hidden">
+                      <div className="min-w-0 flex-1 overflow-hidden">
+                        <span className="text-sm font-medium truncate block">
+                          Custom Item
+                        </span>
+                        <span className="text-xs text-muted-foreground truncate block">
+                          Not in inventory · tap + to enter details
+                        </span>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 w-8 min-w-[2rem] shrink-0 bg-card text-foreground transition-colors hover:!bg-gray-800 hover:!text-white hover:!border-gray-800"
+                        onClick={() => { hapticTap(); openCustomDialog(); }}
+                        title="Add custom item"
+                      >
+                        <Plus className="w-4 h-4 text-current" />
+                      </Button>
+                    </div>
+                  )}
+                  <div className="py-8 px-4 text-center text-sm text-muted-foreground">
+                    {technicianInventory.length === 0
+                      ? 'No parts in technician inventory.'
+                      : debouncedSearchQuery.trim()
+                      ? 'No parts match your search.'
+                      : 'No parts with available quantity.'}
+                  </div>
                 </div>
               ) : (
                 <div className="overflow-y-auto overflow-x-hidden max-h-[min(50vh,280px)] sm:max-h-[320px] w-full min-w-0 pl-0 pr-0 [scrollbar-gutter:stable] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                  {customQueryMatches && (
+                    <div className="group flex items-center gap-2 sm:gap-3 px-3 py-2.5 border-b last:border-b-0 bg-background hover:bg-muted/50 w-full max-w-full overflow-hidden">
+                      <div className="min-w-0 flex-1 overflow-hidden">
+                        <span className="text-sm font-medium truncate block">
+                          Custom Item
+                        </span>
+                        <span className="text-xs text-muted-foreground truncate block">
+                          Not in inventory · tap + to enter details
+                        </span>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 w-8 min-w-[2rem] shrink-0 bg-card text-foreground transition-colors hover:!bg-gray-800 hover:!text-white hover:!border-gray-800"
+                        onClick={() => { hapticTap(); openCustomDialog(); }}
+                        title="Add custom item"
+                      >
+                        <Plus className="w-4 h-4 text-current" />
+                      </Button>
+                    </div>
+                  )}
                   {filteredInventoryItems.map((item) => {
                     const productName = item.inventory?.product_name || inventoryMap.get(item.inventory_id)?.product_name || 'Unknown';
                     const code = item.inventory?.code || inventoryMap.get(item.inventory_id)?.code || '';
@@ -702,6 +825,69 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
               Done
             </Button>
           </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Custom Item Dialog - enter name, qty, price for a part not in inventory */}
+      <Dialog open={customDialogOpen} onOpenChange={(o) => { if (!o) resetCustomForm(); }}>
+        <DialogContent className="w-[calc(100%-2rem)] max-w-sm p-4 sm:p-6">
+          <DialogHeader className="space-y-1.5">
+            <DialogTitle className="text-base sm:text-lg">Add custom item</DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm">
+              Enter a part not in inventory. It&apos;s added to this job only and isn&apos;t tracked in stock.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Item name</label>
+              <Input
+                placeholder="e.g. Custom filter housing"
+                value={customName}
+                onChange={(e) => setCustomName(e.target.value)}
+                className="h-10 text-sm"
+                autoFocus
+              />
+            </div>
+            <div className="flex gap-2">
+              <div className="flex-1 space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Qty</label>
+                <Input
+                  type="number"
+                  min={1}
+                  inputMode="numeric"
+                  value={customQty}
+                  onChange={(e) => setCustomQty(e.target.value)}
+                  className="h-10 text-sm"
+                />
+              </div>
+              <div className="flex-1 space-y-1">
+                <label className="text-xs font-medium text-muted-foreground">Unit price (₹)</label>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  inputMode="decimal"
+                  value={customPrice}
+                  onChange={(e) => setCustomPrice(e.target.value)}
+                  placeholder="0"
+                  className="h-10 text-sm"
+                />
+              </div>
+            </div>
+          </div>
+          <div className="flex gap-2 pt-2">
+            <Button variant="outline" className="flex-1" onClick={resetCustomForm} disabled={addingCustom}>
+              Cancel
+            </Button>
+            <Button
+              className="flex-1"
+              onClick={handleAddCustomPart}
+              disabled={addingCustom || !customName.trim()}
+            >
+              <Plus className="w-4 h-4 mr-1.5" />
+              {addingCustom ? 'Adding...' : 'Add item'}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

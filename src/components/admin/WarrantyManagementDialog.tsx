@@ -363,7 +363,7 @@ export default function WarrantyManagementDialog({
         const drafts: DraftItem[] = partRows.map((p) => {
           const inv = Array.isArray(p.inventory) ? p.inventory[0] : p.inventory;
           const invObj = (inv ?? {}) as Record<string, unknown>;
-          const name = String(invObj.product_name ?? 'Part');
+          const name = String(invObj.product_name ?? p.custom_name ?? 'Part');
           const qty = Number(p.quantity_used ?? 1);
           return {
             key: `part-${String(p.id)}`,

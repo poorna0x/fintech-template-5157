@@ -5260,6 +5260,7 @@ export const db = {
           job_id,
           technician_id,
           inventory_id,
+          custom_name,
           quantity_used,
           price_at_time_of_use,
           source,
@@ -5299,7 +5300,7 @@ export const db = {
       let query = supabase
         .from('job_parts_used')
         .select(
-          'id, job_id, technician_id, inventory_id, quantity_used, price_at_time_of_use, created_at, inventory:inventory(id, product_name, code, price)'
+          'id, job_id, technician_id, inventory_id, custom_name, quantity_used, price_at_time_of_use, created_at, inventory:inventory(id, product_name, code, price)'
         )
         .order('created_at', { ascending: false });
       if (startDate) query = query.gte('created_at', startDate);
@@ -5318,11 +5319,13 @@ export const db = {
       return { data: data || [], error };
     },
 
-    async create(part: { job_id: string; technician_id: string; inventory_id: string; quantity_used: number; price_at_time_of_use?: number; source?: 'technician' | 'main' }) {
-      const source = part.source === 'main' ? 'main' : 'technician';
-      // If price not provided, fetch it from inventory
+    async create(part: { job_id: string; technician_id: string; inventory_id?: string | null; custom_name?: string | null; quantity_used: number; price_at_time_of_use?: number; source?: 'technician' | 'main' | 'custom' }) {
+      // Custom (one-off) parts have no inventory row; they always carry their own price.
+      const isCustom = part.source === 'custom' || !part.inventory_id;
+      const source = isCustom ? 'custom' : part.source === 'main' ? 'main' : 'technician';
+      // If price not provided, fetch it from inventory (only possible for catalog parts).
       let priceToStore = part.price_at_time_of_use;
-      if (priceToStore === undefined || priceToStore === null) {
+      if ((priceToStore === undefined || priceToStore === null) && part.inventory_id) {
         const { data: invData } = await supabase
           .from('inventory')
           .select('price')
@@ -5330,13 +5333,15 @@ export const db = {
           .single();
         priceToStore = invData?.price ? Number(invData.price) : 0;
       }
+      if (priceToStore === undefined || priceToStore === null) priceToStore = 0;
 
       const { data, error } = await supabase
         .from('job_parts_used')
         .insert({
           job_id: part.job_id,
           technician_id: part.technician_id,
-          inventory_id: part.inventory_id,
+          inventory_id: part.inventory_id ?? null,
+          custom_name: isCustom ? (part.custom_name ?? null) : null,
           quantity_used: part.quantity_used,
           price_at_time_of_use: priceToStore,
           source
@@ -5346,6 +5351,7 @@ export const db = {
           job_id,
           technician_id,
           inventory_id,
+          custom_name,
           quantity_used,
           price_at_time_of_use,
           source,
@@ -5389,6 +5395,7 @@ export const db = {
           job_id,
           technician_id,
           inventory_id,
+          custom_name,
           quantity_used,
           price_at_time_of_use,
           source,

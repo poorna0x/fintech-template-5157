@@ -133,6 +133,9 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
         if (cancelled) return;
         const grouped = new Map<string, { inventory_id: string; product_name: string; code: string | null; quantity_used: number }>();
         (data || []).forEach((row: any) => {
+          // Custom one-off parts have no inventory_id and aren't tracked in stock,
+          // so they can't be moved to/from main and don't belong in the hide list.
+          if (!row.inventory_id) return;
           const inv = Array.isArray(row.inventory) ? row.inventory[0] : row.inventory;
           const key = row.inventory_id;
           const existing = grouped.get(key);

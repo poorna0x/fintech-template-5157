@@ -52,8 +52,11 @@ const SparePartsAnalytics: React.FC<SparePartsAnalyticsProps> = ({ startISO, end
         const map = new Map<string, PartRow>();
         (data || []).forEach((r: any) => {
           const inv = r.inventory;
-          const invId = r.inventory_id || inv?.id;
-          if (!invId) return;
+          // Custom one-off parts have no inventory row; group them by their typed name
+          // so they still appear (and their cost is counted) in the usage report.
+          const isCustom = !(r.inventory_id || inv?.id);
+          const customName = (r.custom_name as string | null) || 'Custom item';
+          const groupKey = isCustom ? `custom:${customName.toLowerCase()}` : (r.inventory_id || inv?.id);
           const qty = Number(r.quantity_used) || 0;
           const price =
             r.price_at_time_of_use != null
@@ -62,17 +65,17 @@ const SparePartsAnalytics: React.FC<SparePartsAnalyticsProps> = ({ startISO, end
               ? Number(inv.price)
               : 0;
 
-          let row = map.get(invId);
+          let row = map.get(groupKey);
           if (!row) {
             row = {
-              inventoryId: invId,
-              productName: inv?.product_name || 'Unknown part',
-              code: inv?.code ?? null,
+              inventoryId: groupKey,
+              productName: isCustom ? customName : (inv?.product_name || 'Unknown part'),
+              code: isCustom ? 'Custom' : (inv?.code ?? null),
               totalQty: 0,
               totalValue: 0,
               jobIds: new Set<string>(),
             };
-            map.set(invId, row);
+            map.set(groupKey, row);
           }
           row.totalQty += qty;
           row.totalValue += qty * price;

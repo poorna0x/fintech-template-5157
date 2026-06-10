@@ -12473,6 +12473,8 @@ const AdminDashboard = () => {
                           const qtyByInv = new Map<string, number>();
                           const techByInv = new Map<string, string>();
                           rows.forEach((r) => {
+                            // Skip custom one-off parts: they have no inventory_id and aren't tracked in stock.
+                            if (!r.inventory_id) return;
                             const inv = String(r.inventory_id);
                             qtyByInv.set(inv, (qtyByInv.get(inv) || 0) + (Number(r.quantity_used) || 0));
                             if (r.technician_id && !techByInv.has(inv)) techByInv.set(inv, String(r.technician_id));

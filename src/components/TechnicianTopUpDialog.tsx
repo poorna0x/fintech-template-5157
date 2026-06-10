@@ -83,7 +83,9 @@ const TechnicianTopUpDialog: React.FC<TechnicianTopUpDialogProps> = ({
           db.jobPartsUsed.getByTechnician(technicianId),
         ]);
         const jobs = jobsResult.data || [];
-        const allPartsUsed = (partsResult.data || []) as any[];
+        // Custom one-off parts have no inventory_id and aren't tracked in stock,
+        // so they never need a top-up — exclude them entirely.
+        const allPartsUsed = ((partsResult.data || []) as any[]).filter((p: any) => p.inventory_id);
         if (jobsResult.error) throw jobsResult.error;
         if (partsResult.error) throw partsResult.error;
 

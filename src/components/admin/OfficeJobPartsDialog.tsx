@@ -63,6 +63,19 @@ const OfficeJobPartsDialog: React.FC<OfficeJobPartsDialogProps> = ({
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
 
+  // Custom (non-inventory) item entry — name + qty + price, not tracked in main stock.
+  const [showCustom, setShowCustom] = useState(false);
+  const [customName, setCustomName] = useState('');
+  const [customQty, setCustomQty] = useState('1');
+  const [customPrice, setCustomPrice] = useState('');
+
+  const resetCustomForm = () => {
+    setShowCustom(false);
+    setCustomName('');
+    setCustomQty('1');
+    setCustomPrice('');
+  };
+
   useEffect(() => {
     if (!open || !job) return;
     let cancelled = false;
@@ -167,13 +180,51 @@ const OfficeJobPartsDialog: React.FC<OfficeJobPartsDialogProps> = ({
     }
   };
 
-  const handleRemoveOne = async (part: OfficeJobPart) => {
+  // Add a custom item not present in main inventory (no stock movement).
+  const handleAddCustomPart = async () => {
     if (!job?.id || saving) return;
+    const name = customName.trim();
+    const qty = Math.max(1, Math.floor(Number(customQty) || 0));
+    const price = Math.max(0, Number(customPrice) || 0);
+    if (!name) {
+      toast.error('Enter an item name.');
+      return;
+    }
     setSaving(true);
     try {
-      const { error: incErr } = await db.inventory.incrementForJob(part.inventory_id, 1);
-      if (incErr) {
-        throw new Error(incErr.message || 'Could not restore main inventory');
+      const next: OfficeJobPart[] = [
+        ...parts,
+        {
+          inventory_id: `custom:${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          product_name: name,
+          code: null,
+          quantity: qty,
+          unit_price: price,
+        },
+      ];
+      await persist(next);
+      setParts(next);
+      resetCustomForm();
+      setSearch('');
+      toast.success('Custom item added.');
+    } catch (e: any) {
+      toast.error(e?.message || 'Failed to add custom item');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRemoveOne = async (part: OfficeJobPart) => {
+    if (!job?.id || saving) return;
+    // Custom items aren't tracked in main inventory, so don't restore stock for them.
+    const isCustom = part.inventory_id.startsWith('custom:');
+    setSaving(true);
+    try {
+      if (!isCustom) {
+        const { error: incErr } = await db.inventory.incrementForJob(part.inventory_id, 1);
+        if (incErr) {
+          throw new Error(incErr.message || 'Could not restore main inventory');
+        }
       }
       const next =
         part.quantity > 1
@@ -183,12 +234,16 @@ const OfficeJobPartsDialog: React.FC<OfficeJobPartsDialogProps> = ({
           : parts.filter((p) => p.inventory_id !== part.inventory_id);
       await persist(next);
       setParts(next);
-      setInventory((prev) =>
-        prev.map((i) =>
-          i.id === part.inventory_id ? { ...i, quantity: i.quantity + 1 } : i
-        )
+      if (!isCustom) {
+        setInventory((prev) =>
+          prev.map((i) =>
+            i.id === part.inventory_id ? { ...i, quantity: i.quantity + 1 } : i
+          )
+        );
+      }
+      toast.success(
+        isCustom ? 'Custom item removed.' : 'Removed 1 qty. Stock returned to main inventory.'
       );
-      toast.success('Removed 1 qty. Stock returned to main inventory.');
     } catch (e: any) {
       toast.error(e?.message || 'Failed to remove part');
     } finally {
@@ -235,7 +290,9 @@ const OfficeJobPartsDialog: React.FC<OfficeJobPartsDialogProps> = ({
               </div>
             ) : (
               <div className="space-y-2">
-                {parts.map((part) => (
+                {parts.map((part) => {
+                  const partIsCustom = part.inventory_id.startsWith('custom:');
+                  return (
                   <div
                     key={part.inventory_id}
                     className="flex items-center gap-3 rounded-lg border p-3"
@@ -244,6 +301,11 @@ const OfficeJobPartsDialog: React.FC<OfficeJobPartsDialogProps> = ({
                       <span className="block truncate text-sm font-medium">
                         {part.product_name || 'Unknown item'}
                         {part.code ? ` (${part.code})` : ''}
+                        {partIsCustom && (
+                          <span className="ml-2 align-middle rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                            Custom
+                          </span>
+                        )}
                       </span>
                       <span className="block truncate text-xs text-muted-foreground">
                         Qty {part.quantity} × ₹{formatCurrency(part.unit_price)} = ₹
@@ -263,7 +325,9 @@ const OfficeJobPartsDialog: React.FC<OfficeJobPartsDialogProps> = ({
                           </AlertDialogTitle>
                           <AlertDialogDescription>
                             {part.quantity > 1
-                              ? `Reduce ${part.product_name || 'this part'} from ${part.quantity} to ${part.quantity - 1}. One unit returns to main inventory.`
+                              ? `Reduce ${part.product_name || 'this part'} from ${part.quantity} to ${part.quantity - 1}.${partIsCustom ? '' : ' One unit returns to main inventory.'}`
+                              : partIsCustom
+                              ? 'Remove this custom item from the sale?'
                               : 'Remove this part? The quantity returns to main inventory.'}
                           </AlertDialogDescription>
                         </AlertDialogHeader>
@@ -279,7 +343,8 @@ const OfficeJobPartsDialog: React.FC<OfficeJobPartsDialogProps> = ({
                       </AlertDialogContent>
                     </AlertDialog>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -293,6 +358,7 @@ const OfficeJobPartsDialog: React.FC<OfficeJobPartsDialogProps> = ({
           if (!o) {
             setAddOpen(false);
             setSearch('');
+            resetCustomForm();
           }
         }}
       >
@@ -300,7 +366,8 @@ const OfficeJobPartsDialog: React.FC<OfficeJobPartsDialogProps> = ({
           <DialogHeader className="shrink-0">
             <DialogTitle className="text-base sm:text-lg">Add Part</DialogTitle>
             <DialogDescription className="text-xs sm:text-sm">
-              Search and click + to add 1 qty from main inventory.
+              Search and click + to add 1 qty from main inventory, or add a custom item not in
+              inventory.
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col min-h-0 flex-1">
@@ -359,10 +426,80 @@ const OfficeJobPartsDialog: React.FC<OfficeJobPartsDialogProps> = ({
                 </div>
               )}
             </div>
-            <div className="shrink-0 pt-3 border-t mt-3">
-              <Button variant="outline" className="w-full sm:w-auto" onClick={() => setAddOpen(false)}>
-                Done
-              </Button>
+            <div className="shrink-0 pt-3 border-t mt-3 space-y-3">
+              {showCustom ? (
+                <div className="space-y-2 rounded-lg border p-3">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    Custom item (not in inventory)
+                  </p>
+                  <Input
+                    placeholder="Item name"
+                    value={customName}
+                    onChange={(e) => setCustomName(e.target.value)}
+                    className="h-9 text-sm"
+                    autoFocus
+                  />
+                  <div className="flex gap-2">
+                    <div className="flex-1 space-y-1">
+                      <label className="text-[11px] text-muted-foreground">Qty</label>
+                      <Input
+                        type="number"
+                        min={1}
+                        inputMode="numeric"
+                        value={customQty}
+                        onChange={(e) => setCustomQty(e.target.value)}
+                        className="h-9 text-sm"
+                      />
+                    </div>
+                    <div className="flex-1 space-y-1">
+                      <label className="text-[11px] text-muted-foreground">Unit price (₹)</label>
+                      <Input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        inputMode="decimal"
+                        value={customPrice}
+                        onChange={(e) => setCustomPrice(e.target.value)}
+                        placeholder="0"
+                        className="h-9 text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <Button variant="outline" className="flex-1" onClick={resetCustomForm} disabled={saving}>
+                      Cancel
+                    </Button>
+                    <Button
+                      className="flex-1"
+                      onClick={handleAddCustomPart}
+                      disabled={saving || !customName.trim()}
+                    >
+                      <Plus className="w-4 h-4 mr-1.5" />
+                      Add item
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Button
+                  variant="ghost"
+                  className="w-full justify-center text-sm border border-dashed"
+                  onClick={() => {
+                    setShowCustom(true);
+                    setCustomName(search.trim());
+                    setCustomQty('1');
+                    setCustomPrice('');
+                  }}
+                  disabled={saving}
+                >
+                  <Plus className="w-4 h-4 mr-1.5" />
+                  Add custom item{search.trim() ? ` "${search.trim()}"` : ''}
+                </Button>
+              )}
+              <div className="flex justify-end">
+                <Button variant="outline" className="w-full sm:w-auto" onClick={() => setAddOpen(false)}>
+                  Done
+                </Button>
+              </div>
             </div>
           </div>
         </DialogContent>
