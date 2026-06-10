@@ -25,7 +25,7 @@ const {
   getClientIdentifier,
 } = require('./rate-limiter');
 const { verifyLoginToken, isPlaceholderKey } = require('./altcha-guard');
-const { isOtpEnforced, verifyFirebasePhoneToken } = require('./otp-guard');
+const { isOtpEnforced, verifyFirebasePhoneToken, warmFirebaseAdmin } = require('./otp-guard');
 
 function normalizePhoneDigits(phone) {
   const digits = String(phone || '').replace(/\D/g, '');
@@ -56,6 +56,22 @@ exports.handler = async (event) => {
     return json(405, corsHeaders, { error: 'Method not allowed' });
   }
 
+  let body;
+  try {
+    body = JSON.parse(event.body || '{}');
+  } catch {
+    return json(400, corsHeaders, { error: 'Invalid JSON' });
+  }
+
+  // Warmup ping: pre-initialize firebase-admin and warm this container so the real
+  // verify + lookup hits a warm function (kills cold-start latency on the OTP path).
+  // Does no DB work, requires no tokens, and exposes nothing — so it is intentionally
+  // exempt from rate limiting and the security gates below.
+  if (body && body.warmup === true) {
+    warmFirebaseAdmin();
+    return json(200, corsHeaders, { warmed: true });
+  }
+
   // IP rate limit (disabled automatically in local dev by rate-limiter.js).
   const ipLimit = checkRateLimit(event, {
     maxRequests: 20,
@@ -72,13 +88,6 @@ exports.handler = async (event) => {
       }),
       body: JSON.stringify({ error: 'Too many requests', message: 'Please wait before trying again.' }),
     };
-  }
-
-  let body;
-  try {
-    body = JSON.parse(event.body || '{}');
-  } catch {
-    return json(400, corsHeaders, { error: 'Invalid JSON' });
   }
 
   const norm = normalizePhoneDigits(body.phone);

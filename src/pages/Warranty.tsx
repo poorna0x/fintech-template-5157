@@ -18,7 +18,7 @@ import {
   prewarmBookingOtp,
   checkOtpRateLimit,
 } from '@/lib/otp';
-import { lookupWarrantiesByPhone, type WarrantyLookupResponse } from '@/lib/warrantyLookup';
+import { lookupWarrantiesByPhone, warmWarrantyLookup, type WarrantyLookupResponse } from '@/lib/warrantyLookup';
 import {
   categoryDef,
   warrantyStatus,
@@ -57,8 +57,11 @@ const Warranty: React.FC = () => {
   const busy = state === 'loading' || otpSending || otpVerifying;
   const otpResendRemaining = Math.max(0, Math.ceil((otpResendAt - otpNow) / 1000));
 
-  // Warm Firebase + invisible reCAPTCHA so the first "send OTP" tap is instant.
+  // Warm the lookup function container on mount (and Firebase + invisible reCAPTCHA
+  // when OTP is on) so the first request hits a warm path. ALTCHA proof-of-work also
+  // starts solving on load via the hidden widget below, so its token is ready early.
   useEffect(() => {
+    warmWarrantyLookup();
     if (OTP_ENABLED) void prewarmBookingOtp();
   }, []);
 
@@ -155,6 +158,9 @@ const Warranty: React.FC = () => {
     setOtpSent(true);
     setOtpCode('');
     setOtpResendAt(Date.now() + 60_000);
+    // Warm firebase-admin on the function while the user reads the SMS + types the code,
+    // so the post-verify server-side token check hits a warm container.
+    warmWarrantyLookup();
   };
 
   const handleVerifyAndSearch = async () => {

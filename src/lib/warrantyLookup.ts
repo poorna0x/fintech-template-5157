@@ -20,6 +20,24 @@ export interface WarrantyLookupOptions {
   phoneToken?: string;
 }
 
+/**
+ * Fire-and-forget warmup so the real verify + lookup hits a warm Netlify container
+ * with firebase-admin already initialized (kills cold-start latency on the OTP path).
+ * Exposes nothing and does no DB work server-side. Safe to call repeatedly.
+ */
+export function warmWarrantyLookup(): void {
+  try {
+    void fetch('/.netlify/functions/warranty-lookup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ warmup: true }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    /* ignore */
+  }
+}
+
 export async function lookupWarrantiesByPhone(
   phone: string,
   opts: WarrantyLookupOptions = {}
