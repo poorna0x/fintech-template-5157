@@ -306,17 +306,20 @@ const Warranty: React.FC = () => {
                   </label>
                   <div className="flex flex-col sm:flex-row gap-3">
                     <div className="relative flex-1">
-                      <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                      <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center gap-2 border-r border-input pl-3 pr-3">
+                        <Phone className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-base font-semibold text-foreground">+91</span>
+                      </div>
                       <Input
                         id="warranty-phone"
                         type="tel"
                         inputMode="numeric"
                         autoComplete="tel"
-                        placeholder="Enter 10-digit mobile number"
+                        placeholder="00000 00000"
                         value={phone}
                         onChange={(e) => handlePhoneChange(e.target.value)}
                         disabled={otpFlow && otpSent}
-                        className="pl-9 h-12 text-base"
+                        className="pl-[4.75rem] h-12 text-base font-medium tracking-[0.18em] placeholder:tracking-[0.18em] placeholder:font-normal"
                       />
                     </div>
                     {!otpFlow ? (
