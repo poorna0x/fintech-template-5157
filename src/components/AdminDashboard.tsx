@@ -12436,6 +12436,105 @@ const AdminDashboard = () => {
                   if (error) {
                     toast.error('Failed to update job: ' + error.message);
                   } else {
+                    // "Hide from top-up" inventory correction: a part hidden from top-up is treated
+                    // as taken directly from MAIN, so move it main → tech (subtract main, add tech).
+                    // Un-hiding reverses it. Diff is taken against the job's previously-saved hide
+                    // flags so it applies only to what actually changed in this save.
+                    try {
+                      const parseReqs = (raw: any): any[] => {
+                        if (typeof raw === 'string') { try { return JSON.parse(raw); } catch { return []; } }
+                        if (Array.isArray(raw)) return raw;
+                        if (raw && typeof raw === 'object') return [raw];
+                        return [];
+                      };
+                      const oldReqs = parseReqs((selectedCompletedJob as any).requirements);
+                      const oldHideAll = oldReqs.some((r: any) => r?.hide_parts_from_topup === true);
+                      const oldPerItemEntry = oldReqs.find((r: any) => Array.isArray(r?.topup_hidden_inventory_ids));
+                      const oldPerItem = new Set<string>(
+                        oldPerItemEntry ? oldPerItemEntry.topup_hidden_inventory_ids.map((x: any) => String(x)) : []
+                      );
+                      const newHideAll = !!completedJobEditData.hidePartsFromTopup;
+                      const newPerItem = new Set<string>(
+                        Array.isArray(completedJobEditData.topupHiddenInventoryIds)
+                          ? completedJobEditData.topupHiddenInventoryIds.map((x: any) => String(x))
+                          : []
+                      );
+
+                      // Skip the parts fetch entirely unless the hide settings actually changed.
+                      const perItemSame =
+                        oldPerItem.size === newPerItem.size &&
+                        Array.from(newPerItem).every((id) => oldPerItem.has(id));
+                      const hideChanged = oldHideAll !== newHideAll || (!oldHideAll && !newHideAll && !perItemSame);
+
+                      if (hideChanged) {
+                        const { data: jpRows } = await db.jobPartsUsed.getByJob(selectedCompletedJob.id);
+                        const rows = (jpRows || []) as any[];
+                        if (rows.length > 0) {
+                          const qtyByInv = new Map<string, number>();
+                          const techByInv = new Map<string, string>();
+                          rows.forEach((r) => {
+                            const inv = String(r.inventory_id);
+                            qtyByInv.set(inv, (qtyByInv.get(inv) || 0) + (Number(r.quantity_used) || 0));
+                            if (r.technician_id && !techByInv.has(inv)) techByInv.set(inv, String(r.technician_id));
+                          });
+                          const allInvIds = Array.from(qtyByInv.keys());
+
+                          const oldHidden = new Set<string>(oldHideAll ? allInvIds : Array.from(oldPerItem));
+                          const newHidden = new Set<string>(newHideAll ? allInvIds : Array.from(newPerItem));
+
+                          const newlyHidden = allInvIds.filter((id) => newHidden.has(id) && !oldHidden.has(id));
+                          const newlyUnhidden = allInvIds.filter((id) => !newHidden.has(id) && oldHidden.has(id));
+                          const moveFailures: string[] = [];
+
+                          // Newly hidden → subtract main, add tech (atomic via top-up RPC).
+                          for (const inv of newlyHidden) {
+                            const qty = qtyByInv.get(inv) || 0;
+                            const techId = techByInv.get(inv);
+                            if (qty <= 0 || !techId) continue;
+                            const { error: e } = await db.technicianInventory.topUpFromMain(inv, qty, techId);
+                            if (e) moveFailures.push((e as any).message || 'move failed');
+                          }
+
+                          // Newly un-hidden → reverse: subtract tech, add main. Cache each
+                          // technician's inventory so we fetch it at most once (parts usually share one tech).
+                          const techInvCache = new Map<string, any[]>();
+                          for (const inv of newlyUnhidden) {
+                            const qty = qtyByInv.get(inv) || 0;
+                            const techId = techByInv.get(inv);
+                            if (qty <= 0 || !techId) continue;
+                            let techRows = techInvCache.get(techId);
+                            if (!techRows) {
+                              const { data } = await db.technicianInventory.getByTechnician(techId);
+                              techRows = (data || []) as any[];
+                              techInvCache.set(techId, techRows);
+                            }
+                            const techRow = techRows.find((t: any) => String(t.inventory_id) === inv);
+                            if (!techRow || Number(techRow.quantity) < qty) {
+                              moveFailures.push('Not enough technician stock to reverse a part');
+                              continue;
+                            }
+                            const nextQty = Number(techRow.quantity) - qty;
+                            const { error: te } = await db.technicianInventory.update(techRow.id, {
+                              quantity: nextQty,
+                            });
+                            if (te) { moveFailures.push((te as any).message || 'reverse failed'); continue; }
+                            techRow.quantity = nextQty; // keep cache consistent for repeat items
+                            const { error: me } = await db.inventory.incrementForJob(inv, qty);
+                            if (me) moveFailures.push((me as any).message || 'reverse main failed');
+                          }
+
+                          if (moveFailures.length > 0) {
+                            toast.warning(`Some stock moves failed: ${moveFailures.slice(0, 2).join('; ')}`);
+                          } else if (newlyHidden.length > 0 || newlyUnhidden.length > 0) {
+                            toast.success('Hidden parts moved from main to technician stock.');
+                          }
+                        }
+                      }
+                    } catch (invErr: any) {
+                      console.error('Top-up hide inventory move failed:', invErr);
+                      toast.warning('Job saved, but stock move for hidden parts failed.');
+                    }
+
                     // Office completion: remove any technician payment/commission for this job so
                     // the previously-assigned technician is no longer credited.
                     if (isOfficeCompletion && oldAssignedTechnicianId) {

@@ -5223,6 +5223,7 @@ export const db = {
           inventory_id,
           quantity_used,
           price_at_time_of_use,
+          source,
           created_at,
           inventory:inventory(id, product_name, code, price)
         `)
@@ -5278,7 +5279,8 @@ export const db = {
       return { data: data || [], error };
     },
 
-    async create(part: { job_id: string; technician_id: string; inventory_id: string; quantity_used: number; price_at_time_of_use?: number }) {
+    async create(part: { job_id: string; technician_id: string; inventory_id: string; quantity_used: number; price_at_time_of_use?: number; source?: 'technician' | 'main' }) {
+      const source = part.source === 'main' ? 'main' : 'technician';
       // If price not provided, fetch it from inventory
       let priceToStore = part.price_at_time_of_use;
       if (priceToStore === undefined || priceToStore === null) {
@@ -5297,7 +5299,8 @@ export const db = {
           technician_id: part.technician_id,
           inventory_id: part.inventory_id,
           quantity_used: part.quantity_used,
-          price_at_time_of_use: priceToStore
+          price_at_time_of_use: priceToStore,
+          source
         })
         .select(`
           id,
@@ -5306,17 +5309,20 @@ export const db = {
           inventory_id,
           quantity_used,
           price_at_time_of_use,
+          source,
           created_at,
           inventory:inventory(id, product_name, code)
         `)
         .single();
 
-      // UNIQUE(job_id, inventory_id): merge quantity when insert races or bundle lists same part twice
+      // UNIQUE(job_id, inventory_id, source): merge quantity when insert races or
+      // a bundle lists the same part twice (same source).
       const isUniqueViolation =
         error &&
         (error.code === '23505' ||
           (typeof error.message === 'string' &&
-            (error.message.includes('job_parts_used_job_id_inventory_id_key') ||
+            (error.message.includes('job_parts_used_job_inv_source_key') ||
+              error.message.includes('job_parts_used_job_id_inventory_id_key') ||
               error.message.includes('duplicate key'))));
       if (isUniqueViolation) {
         const { data: existing, error: fetchErr } = await supabase
@@ -5324,6 +5330,7 @@ export const db = {
           .select('id, quantity_used')
           .eq('job_id', part.job_id)
           .eq('inventory_id', part.inventory_id)
+          .eq('source', source)
           .maybeSingle();
         if (fetchErr || !existing) return { data: null, error: error };
         const mergedQty = Number(existing.quantity_used) + Number(part.quantity_used);
@@ -5345,6 +5352,7 @@ export const db = {
           inventory_id,
           quantity_used,
           price_at_time_of_use,
+          source,
           created_at,
           inventory:inventory(id, product_name, code)
         `)

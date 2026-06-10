@@ -275,41 +275,13 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     return filtered;
   }, [technicianInventory, debouncedSearchQuery, inventoryMap]);
 
-  // Deduct from main inventory (warehouse). Returns error message if insufficient.
-  // If existingMainItem is provided (e.g. from a prior getById for price), skip the fetch to avoid double getById.
-  // Uses SECURITY DEFINER RPC so technicians (blocked by RLS on direct UPDATE) can deduct too.
-  const deductMainInventory = async (
-    inventoryId: string,
-    quantity: number,
-    existingMainItem?: { quantity?: number } | null
-  ): Promise<string | null> => {
-    if (existingMainItem != null) {
-      const existingQty = Number((existingMainItem as any).quantity ?? NaN);
-      if (!Number.isNaN(existingQty) && existingQty < quantity) {
-        return `Main inventory has ${existingQty}, need ${quantity}`;
-      }
-    }
-    const { error: rpcErr } = await db.inventory.decrementForJob(inventoryId, quantity);
-    return rpcErr ? (rpcErr as { message?: string }).message || 'Failed to update main inventory' : null;
-  };
-
-  const restoreMainInventory = async (
-    inventoryId: string,
-    quantity: number
-  ): Promise<string | null> => {
-    const { error: rpcErr } = await db.inventory.incrementForJob(inventoryId, quantity);
-    return rpcErr
-      ? (rpcErr as { message?: string }).message || 'Failed to restore main inventory'
-      : null;
-  };
-
   // Handle add part - opens dialog with search
   const handleAddPart = () => {
     setInventorySearchQuery('');
     setAddPartDialogOpen(true);
   };
 
-  // Apply bundle: add all bundle items to job; deduct from technician AND main inventory. Price at time of use stored per part. All-or-nothing if insufficient stock.
+  // Apply bundle: add all bundle items to job; deduct from the technician's bag only. Price at time of use stored per part. All-or-nothing if insufficient tech stock.
   const handleApplyBundle = async (bundleId: string) => {
     if (!job?.id || !technician?.id) return;
     setApplyingBundle(true);
@@ -336,20 +308,6 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
         setApplyingBundle(false);
         return;
       }
-      // Check main inventory has enough for all items
-      for (const it of items) {
-        const { data: mainItem } = await db.inventory.getById(it.inventory_id);
-        const mainQty = mainItem ? Number((mainItem as any).quantity ?? 0) : 0;
-        if (mainQty < it.quantity) {
-          const name = inventoryMap.get(it.inventory_id)?.product_name || it.inventory_id;
-          short.push(`${name}: main has ${mainQty}, need ${it.quantity}`);
-        }
-      }
-      if (short.length > 0) {
-        toast.error(`Insufficient main inventory: ${short.join('; ')}`);
-        setApplyingBundle(false);
-        return;
-      }
       const priceMap = new Map<string, number>();
       for (const it of items) {
         const inv = inventoryMap.get(it.inventory_id) as InventoryItem | undefined;
@@ -364,12 +322,6 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
         const techItem = technicianInventory.find(i => i.inventory_id === it.inventory_id)!;
         const existingPart = workingParts.find(p => p.inventory_id === it.inventory_id);
         const price = priceMap.get(it.inventory_id) ?? 0;
-        const err = await deductMainInventory(it.inventory_id, it.quantity);
-        if (err) {
-          toast.error(`Main inventory: ${err}`);
-          setApplyingBundle(false);
-          return;
-        }
         if (existingPart) {
           const newQty = existingPart.quantity_used + it.quantity;
           await db.jobPartsUsed.update(existingPart.id, { quantity_used: newQty });
@@ -400,7 +352,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       }
       setAddBundleDialogOpen(false);
       scheduleRecalcJobPartsCost(job.id);
-      toast.success(`Bundle applied: ${items.length} part(s) added. Technician and main inventory updated.`);
+      toast.success(`Bundle applied: ${items.length} part(s) added from technician stock.`);
     } catch (e: any) {
       toast.error(e?.message || 'Failed to apply bundle');
     } finally {
@@ -422,9 +374,8 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     }
 
     try {
-      // Single getById when price not cached; reuse result for main-inventory deduct to avoid double fetch
+      // Single getById only when price isn't already cached.
       let currentPrice = 0;
-      let mainItemForDeduct: { quantity?: number } | null = null;
       const cachedInv = inventoryMap.get(inventoryId) as InventoryItem | undefined;
       if (cachedInv?.price != null) {
         currentPrice = Number(cachedInv.price);
@@ -432,16 +383,11 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
         const { data: inventoryData, error: invError } = await db.inventory.getById(inventoryId);
         if (invError) throw invError;
         currentPrice = inventoryData?.price ? Number(inventoryData.price) : 0;
-        mainItemForDeduct = inventoryData as { quantity?: number };
       }
 
+      // Parts come from the technician's bag only. Main inventory is replenished
+      // later via Top-up (or corrected via "hide from top-up" for direct-from-main parts).
       const existingPart = partsUsed.find(p => p.inventory_id === inventoryId);
-      // Deduct from main inventory (reuse mainItemForDeduct when we have it)
-      const mainErr = await deductMainInventory(inventoryId, 1, mainItemForDeduct);
-      if (mainErr) {
-        toast.error(`Main inventory: ${mainErr}`);
-        return;
-      }
       if (existingPart) {
         const newQuantity = existingPart.quantity_used + 1;
         const { data: updatedPart, error: updateError } = await db.jobPartsUsed.update(existingPart.id, {
@@ -480,7 +426,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       }
 
       scheduleRecalcJobPartsCost(job.id);
-      toast.success('Part added (1 qty). Technician and main inventory updated.');
+      toast.success('Part added (1 qty) from technician stock.');
     } catch (error: any) {
       console.error('Error quick adding part:', error);
       toast.error(error?.message || 'Failed to add part');
@@ -490,19 +436,42 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
   };
 
   // Remove part from job: if qty > 1, reduce by 1 only; if qty is 1, remove the row entirely.
+  // Stock returns to the technician's bag only (single-source); main is untouched here.
   const handleDeletePart = async (partId: string, inventoryId: string, quantityUsed: number) => {
     if (!technician?.id) return;
 
-    const techItem = technicianInventory.find(i => i.inventory_id === inventoryId);
-    const qtyToRestore = quantityUsed > 1 ? 1 : quantityUsed;
+    const restoreTech = async (delta: number) => {
+      // The parts list view doesn't preload technician inventory, so resolve the row
+      // from memory first, then from the DB. Always INCREMENT an existing row — never
+      // insert (a row may already exist and would violate the unique constraint).
+      let row = technicianInventory.find(i => i.inventory_id === inventoryId);
+      if (!row) {
+        const { data } = await db.technicianInventory.getByTechnician(technician.id);
+        row = (data || []).find((t: any) => t.inventory_id === inventoryId) as TechnicianInventoryItem | undefined;
+      }
+      if (row) {
+        const next = row.quantity + delta;
+        const { error } = await db.technicianInventory.update(row.id, { quantity: next });
+        if (error) throw error;
+        const rowId = row.id;
+        setTechnicianInventory(prev =>
+          prev.some(i => i.id === rowId)
+            ? prev.map(i => (i.id === rowId ? { ...i, quantity: next } : i))
+            : [...prev, { ...(row as TechnicianInventoryItem), quantity: next }]
+        );
+      } else {
+        // Technician genuinely has no row for this item yet — create one.
+        const { data, error } = await db.technicianInventory.create({
+          technician_id: technician.id,
+          inventory_id: inventoryId,
+          quantity: delta,
+        });
+        if (error) throw error;
+        if (data) setTechnicianInventory(prev => [...prev, data as TechnicianInventoryItem]);
+      }
+    };
 
     try {
-      const mainErr = await restoreMainInventory(inventoryId, qtyToRestore);
-      if (mainErr) {
-        toast.error(`Main inventory: ${mainErr}`);
-        return;
-      }
-
       if (quantityUsed > 1) {
         const newQuantityUsed = quantityUsed - 1;
         const { data: updatedPart, error: updateError } = await db.jobPartsUsed.update(partId, {
@@ -510,40 +479,22 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
         });
         if (updateError) throw updateError;
 
-        if (techItem) {
-          const newTechQuantity = techItem.quantity + 1;
-          const { error: updateTechError } = await db.technicianInventory.update(techItem.id, {
-            quantity: newTechQuantity,
-          });
-          if (updateTechError) throw updateTechError;
-          setTechnicianInventory(prev =>
-            prev.map(i => (i.id === techItem.id ? { ...i, quantity: newTechQuantity } : i))
-          );
-        }
+        await restoreTech(1);
 
         setPartsUsed(prev =>
           prev.map(p => (p.id === partId ? (updatedPart || { ...p, quantity_used: newQuantityUsed }) : p))
         );
         if (job?.id) scheduleRecalcJobPartsCost(job.id);
-        toast.success('Removed 1 qty from job; stock returned to technician and main inventory.');
+        toast.success('Removed 1 qty from job; returned to technician stock.');
       } else {
         const { error: deleteError } = await db.jobPartsUsed.delete(partId);
         if (deleteError) throw deleteError;
 
-        if (techItem) {
-          const newQuantity = techItem.quantity + quantityUsed;
-          const { error: updateTechError } = await db.technicianInventory.update(techItem.id, {
-            quantity: newQuantity,
-          });
-          if (updateTechError) throw updateTechError;
-          setTechnicianInventory(prev =>
-            prev.map(i => (i.id === techItem.id ? { ...i, quantity: newQuantity } : i))
-          );
-        }
+        await restoreTech(quantityUsed);
 
         setPartsUsed(prev => prev.filter(p => p.id !== partId));
         if (job?.id) scheduleRecalcJobPartsCost(job.id);
-        toast.success('Part removed; stock returned to technician and main inventory.');
+        toast.success('Part removed; returned to technician stock.');
       }
     } catch (error: any) {
       console.error('Error deleting part:', error);
@@ -565,7 +516,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
               Parts Used for Job
             </DialogTitle>
 <DialogDescription>
-            Manage parts used for this job. Each part (or bundle) is deducted from the technician&apos;s inventory and from main inventory. Price at time of use is stored per part. Top-up still works per item as before.
+            Manage parts used for this job. Each part is deducted from the technician&apos;s inventory. Price at time of use is stored per part. Main inventory is replenished via Top-up.
             </DialogDescription>
           </DialogHeader>
 
@@ -638,8 +589,8 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
                                 </AlertDialogTitle>
                                 <AlertDialogDescription>
                                   {part.quantity_used > 1
-                                    ? `This will reduce quantity used from ${part.quantity_used} to ${part.quantity_used - 1}. One unit returns to the technician and main inventory.`
-                                    : "Remove this part from the job? The quantity will return to the technician and main inventory."}
+                                    ? `This will reduce quantity used from ${part.quantity_used} to ${part.quantity_used - 1}. One unit returns to the technician's stock.`
+                                    : "Remove this part from the job? The quantity will return to the technician's stock."}
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>

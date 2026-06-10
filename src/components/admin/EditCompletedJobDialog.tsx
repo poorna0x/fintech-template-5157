@@ -47,6 +47,10 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
   const [dragOverBill, setDragOverBill] = useState(false);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const paymentInputRef = useRef<HTMLInputElement>(null);
+  // Guards against overlapping auto-saves when the dialog is dismissed while a save runs.
+  const autoSaveInFlightRef = useRef(false);
+  // Snapshot of editData when the dialog opened, to detect whether anything changed.
+  const initialDataSnapshotRef = useRef<string | null>(null);
 
   const uploadFiles = useCallback(async (files: File[], isPayment: boolean): Promise<string[]> => {
     const added: string[] = [];
@@ -160,6 +164,18 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
     }
   }, [open]);
 
+  // Capture the initial edit data when the dialog opens (parent sets editData and opens
+  // in the same batch, so this snapshot is reliable). Used to skip the save on a no-op close.
+  useEffect(() => {
+    if (open) {
+      try { initialDataSnapshotRef.current = JSON.stringify(editData ?? {}); }
+      catch { initialDataSnapshotRef.current = null; }
+    } else {
+      initialDataSnapshotRef.current = null;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   const hiddenPartIds: string[] = Array.isArray(editData.topupHiddenInventoryIds)
     ? editData.topupHiddenInventoryIds
     : [];
@@ -186,8 +202,32 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
     return String(Math.round(sum * 100) / 100);
   };
 
+  // Auto-save when the dialog is dismissed by clicking outside, pressing ESC, or the
+  // corner X — matching the Edit Customer dialog. onSave validates, persists, and closes
+  // on success; on validation/save failure it keeps the dialog open. The explicit Cancel
+  // button bypasses this (discards) by calling onOpenChange(false) directly.
+  const handleDialogOpenChange = (isOpen: boolean) => {
+    if (!isOpen) {
+      if (autoSaveInFlightRef.current) return;
+      // Nothing changed → just close, skip the heavier save (payment + inventory work).
+      let unchanged = false;
+      try { unchanged = JSON.stringify(editData ?? {}) === initialDataSnapshotRef.current; }
+      catch { unchanged = false; }
+      if (unchanged) {
+        onOpenChange(false);
+        return;
+      }
+      autoSaveInFlightRef.current = true;
+      Promise.resolve(onSave()).finally(() => {
+        autoSaveInFlightRef.current = false;
+      });
+      return;
+    }
+    onOpenChange(true);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleDialogOpenChange}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Completed Job Details</DialogTitle>
