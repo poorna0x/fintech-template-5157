@@ -23,11 +23,15 @@ import {
   Loader2,
   MapPin,
   Heart,
-  PhoneForwarded
+  PhoneForwarded,
+  Package
 } from 'lucide-react';
 import { normalizeForComparison, findLeadSource, normalizeLeadType } from '@/lib/adminUtils';
 import { Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+
+// Code-split: spare-parts analytics JS only downloads when the section is opened.
+const SparePartsAnalytics = React.lazy(() => import('@/components/admin/SparePartsAnalytics'));
 
 interface AnalyticsData {
   totalJobs: number;
@@ -251,6 +255,8 @@ const Analytics = () => {
   const [loadingDirectConversion, setLoadingDirectConversion] = useState(false);
   const [loadingRepeatVsNew, setLoadingRepeatVsNew] = useState(false);
   const [selectedTechForAvg, setSelectedTechForAvg] = useState<string>('');
+  // Spare parts analytics is opt-in: its component + data load only after click.
+  const [showSpareParts, setShowSpareParts] = useState(false);
 
   useEffect(() => {
     loadAnalytics();
@@ -2517,6 +2523,45 @@ const Analytics = () => {
                 );
               })()}
             </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Spare parts usage - lazy: component + data load only when opened */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Package className="w-5 h-5" />
+            Spare parts usage
+          </CardTitle>
+          <CardDescription>
+            Parts logged by technicians for {getPeriodLabel()}. Loaded on demand.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {!showSpareParts ? (
+            <Button variant="outline" onClick={() => setShowSpareParts(true)}>
+              Load spare parts usage
+            </Button>
+          ) : (
+            <React.Suspense
+              fallback={
+                <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Loading spare parts usage…
+                </div>
+              }
+            >
+              {(() => {
+                const { startDate, endDate } = getDateRange();
+                return (
+                  <SparePartsAnalytics
+                    startISO={startDate ? startDate.toISOString() : null}
+                    endISO={endDate ? endDate.toISOString() : null}
+                  />
+                );
+              })()}
+            </React.Suspense>
           )}
         </CardContent>
       </Card>

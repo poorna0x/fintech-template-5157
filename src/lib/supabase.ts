@@ -5251,6 +5251,23 @@ export const db = {
       return { data, error };
     },
 
+    /**
+     * Spare parts logged (job_parts_used) within a date range, joined with inventory
+     * info — for on-demand Spare Parts analytics. Pass null dates for "all time".
+     */
+    async getUsedInRange(startDate?: string | null, endDate?: string | null) {
+      let query = supabase
+        .from('job_parts_used')
+        .select(
+          'id, job_id, technician_id, inventory_id, quantity_used, price_at_time_of_use, created_at, inventory:inventory(id, product_name, code, price)'
+        )
+        .order('created_at', { ascending: false });
+      if (startDate) query = query.gte('created_at', startDate);
+      if (endDate) query = query.lte('created_at', endDate);
+      const { data, error } = await query;
+      return { data: data || [], error };
+    },
+
     /** Fetch parts used for given job IDs with stored price_at_time_of_use (for analytics spare parts cost) */
     async getWithPriceByJobIds(jobIds: string[]) {
       if (!jobIds?.length) return { data: [] as any[], error: null };
