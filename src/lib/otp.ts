@@ -2,6 +2,8 @@ import {
   RecaptchaVerifier,
   signInWithPhoneNumber,
   signOut,
+  setPersistence,
+  browserSessionPersistence,
   type ConfirmationResult,
   type RecaptchaVerifier as RecaptchaVerifierType,
 } from 'firebase/auth';
@@ -229,8 +231,18 @@ export async function sendBookingOtp(
   }
 }
 
-/** Confirm the SMS code; returns Firebase ID token for the booking API. */
-export async function verifyBookingOtp(otp: string): Promise<OtpVerifyResult> {
+/**
+ * Confirm the SMS code; returns a Firebase ID token for the API.
+ *
+ * By default the Firebase session is signed out right after we capture the token
+ * (booking only needs it once). Pass `{ keepSession: true }` to keep the session alive
+ * so a page refresh can silently re-verify via `resumeWarrantySession()` — used by the
+ * /warranty page so customers aren't re-prompted for an OTP on every reload.
+ */
+export async function verifyBookingOtp(
+  otp: string,
+  opts?: { keepSession?: boolean }
+): Promise<OtpVerifyResult> {
   if (!isFirebaseConfigured()) {
     return { verified: false, unavailable: true, error: 'Phone verification is not configured.' };
   }
@@ -245,16 +257,61 @@ export async function verifyBookingOtp(otp: string): Promise<OtpVerifyResult> {
     const cred = await confirmationResult.confirm(code);
     const phoneToken = await cred.user.getIdToken();
     confirmationResult = null;
-    // Sign out is just cleanup once we have the token — do it in the background so
-    // it never delays the booking confirmation that follows verification.
-    try {
-      void signOut(getFirebaseAuth());
-    } catch {
-      /* ignore */
+    if (!opts?.keepSession) {
+      // Sign out is just cleanup once we have the token — do it in the background so
+      // it never delays the booking confirmation that follows verification.
+      try {
+        void signOut(getFirebaseAuth());
+      } catch {
+        /* ignore */
+      }
     }
     return { verified: true, phoneToken };
   } catch (e) {
     return { verified: false, error: mapFirebaseError(e) };
+  }
+}
+
+/**
+ * Use a per-tab Firebase session for the warranty flow: it survives a page refresh
+ * (so we don't re-prompt OTP) but is cleared when the tab/browser is closed — a good
+ * balance for a public, possibly shared device. Best-effort; safe to call on mount.
+ */
+export async function setWarrantySessionPersistence(): Promise<void> {
+  if (!isFirebaseConfigured()) return;
+  try {
+    await setPersistence(getFirebaseAuth(), browserSessionPersistence);
+  } catch {
+    /* ignore — falls back to the default persistence */
+  }
+}
+
+/**
+ * If a verified Firebase phone session is still alive (same tab, post-refresh), return
+ * a fresh ID token + the verified phone so the page can re-run the lookup WITHOUT a new
+ * SMS. The token stays phone-bound, so the server still only reveals that number's data.
+ */
+export async function resumeWarrantySession(): Promise<{ phone: string; phoneToken: string } | null> {
+  if (!isFirebaseConfigured()) return null;
+  try {
+    const auth = getFirebaseAuth();
+    const user = auth.currentUser;
+    const ten = user?.phoneNumber ? phoneKey(user.phoneNumber) : '';
+    if (!user || ten.length !== 10) return null;
+    const phoneToken = await user.getIdToken();
+    return { phone: ten, phoneToken };
+  } catch {
+    return null;
+  }
+}
+
+/** End the warranty session (used by "Check another number"). */
+export async function endWarrantySession(): Promise<void> {
+  if (!isFirebaseConfigured()) return;
+  try {
+    await signOut(getFirebaseAuth());
+  } catch {
+    /* ignore */
   }
 }
 

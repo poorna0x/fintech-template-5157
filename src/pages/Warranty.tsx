@@ -17,6 +17,9 @@ import {
   resetBookingOtpSession,
   prewarmBookingOtp,
   checkOtpRateLimit,
+  setWarrantySessionPersistence,
+  resumeWarrantySession,
+  endWarrantySession,
 } from '@/lib/otp';
 import { lookupWarrantiesByPhone, warmWarrantyLookup, type WarrantyLookupResponse } from '@/lib/warrantyLookup';
 import {
@@ -42,6 +45,8 @@ const Warranty: React.FC = () => {
   // login token in production. Empty token is fine in local dev (server skips it).
   const altchaTokenRef = useRef('');
   const altchaPayloadRef = useRef<string | undefined>(undefined);
+  // A resumed session lookup waits here until the ALTCHA token is ready (prod needs it).
+  const pendingResumeRef = useRef<{ phone: string; phoneToken: string } | null>(null);
 
   // OTP (only when configured): user proves they own the SIM before any PII is shown.
   const [otpSent, setOtpSent] = useState(false);
@@ -51,19 +56,99 @@ const Warranty: React.FC = () => {
   const [otpError, setOtpError] = useState('');
   const [otpResendAt, setOtpResendAt] = useState(0);
   const [otpNow, setOtpNow] = useState(Date.now());
+  // The phone whose OTP session is currently verified (kept per-tab via Firebase).
+  const [verifiedPhone, setVerifiedPhone] = useState<string | null>(null);
+  const [resuming, setResuming] = useState(OTP_ENABLED);
 
   const phoneDigits = phone.replace(/\D/g, '').slice(-10);
   const phoneValid = phoneDigits.length === 10 && /^[6-9]/.test(phoneDigits);
   const busy = state === 'loading' || otpSending || otpVerifying;
   const otpResendRemaining = Math.max(0, Math.ceil((otpResendAt - otpNow) / 1000));
 
-  // Warm the lookup function container on mount (and Firebase + invisible reCAPTCHA
-  // when OTP is on) so the first request hits a warm path. ALTCHA proof-of-work also
-  // starts solving on load via the hidden widget below, so its token is ready early.
+  // Run the lookup for an explicit phone (stable identity — only uses setters + refs).
+  const doLookup = useCallback(
+    async (lookupPhone: string, phoneToken?: string): Promise<WarrantyLookupResponse> => {
+      setState('loading');
+      setErrorMsg('');
+      setCustomer(null);
+      setWarranties([]);
+      setAmc(null);
+      const res = await lookupWarrantiesByPhone(lookupPhone, {
+        altchaLoginToken: altchaTokenRef.current || undefined,
+        altchaPayload: altchaPayloadRef.current,
+        phoneToken,
+      });
+      if (res.error) {
+        setErrorMsg(res.error);
+        setState('error');
+      } else if (!res.found) {
+        setState('notfound');
+      } else {
+        setCustomer(res.customer || null);
+        setWarranties(res.warranties || []);
+        setAmc(res.amc ?? null);
+        setState('results');
+      }
+      return res;
+    },
+    []
+  );
+
+  const handleAltchaVerify = useCallback(
+    (isValid: boolean, payload?: string, loginToken?: string) => {
+      if (isValid && loginToken) {
+        altchaTokenRef.current = loginToken;
+        altchaPayloadRef.current = payload;
+        // Fire any lookup that was waiting for the proof-of-work token.
+        const pending = pendingResumeRef.current;
+        if (pending) {
+          pendingResumeRef.current = null;
+          void doLookup(pending.phone, pending.phoneToken);
+        }
+      }
+    },
+    [doLookup]
+  );
+
+  // On mount: warm the function, prewarm OTP, and silently resume a still-valid
+  // per-tab Firebase session so a refresh doesn't re-prompt for an OTP.
   useEffect(() => {
     warmWarrantyLookup();
-    if (OTP_ENABLED) void prewarmBookingOtp();
-  }, []);
+    if (!OTP_ENABLED) return;
+    void prewarmBookingOtp();
+    let cancelled = false;
+    let fallback: ReturnType<typeof setTimeout> | undefined;
+    (async () => {
+      await setWarrantySessionPersistence();
+      const resumed = await resumeWarrantySession();
+      if (cancelled) return;
+      if (!resumed) {
+        setResuming(false);
+        return;
+      }
+      setPhone(resumed.phone);
+      setVerifiedPhone(resumed.phone);
+      setResuming(false);
+      if (altchaTokenRef.current) {
+        void doLookup(resumed.phone, resumed.phoneToken);
+      } else {
+        // Defer until the background ALTCHA token lands; fall back shortly in dev where
+        // ALTCHA is not configured (the server skips it there anyway).
+        pendingResumeRef.current = resumed;
+        fallback = setTimeout(() => {
+          const p = pendingResumeRef.current;
+          if (!cancelled && p) {
+            pendingResumeRef.current = null;
+            void doLookup(p.phone, p.phoneToken);
+          }
+        }, 2500);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (fallback) clearTimeout(fallback);
+    };
+  }, [doLookup]);
 
   // Live resend countdown.
   useEffect(() => {
@@ -71,32 +156,6 @@ const Warranty: React.FC = () => {
     const id = setInterval(() => setOtpNow(Date.now()), 500);
     return () => clearInterval(id);
   }, [otpSent, otpResendAt]);
-
-  const handleAltchaVerify = useCallback(
-    (isValid: boolean, payload?: string, loginToken?: string) => {
-      if (isValid && loginToken) {
-        altchaTokenRef.current = loginToken;
-        altchaPayloadRef.current = payload;
-      }
-    },
-    []
-  );
-
-  const applyResult = (res: WarrantyLookupResponse) => {
-    if (res.error) {
-      setErrorMsg(res.error);
-      setState('error');
-      return;
-    }
-    if (!res.found) {
-      setState('notfound');
-      return;
-    }
-    setCustomer(res.customer || null);
-    setWarranties(res.warranties || []);
-    setAmc(res.amc ?? null);
-    setState('results');
-  };
 
   // Reset everything when the phone number is edited so a stale OTP / result can't leak.
   const handlePhoneChange = (value: string) => {
@@ -118,26 +177,11 @@ const Warranty: React.FC = () => {
     }
   };
 
-  const runLookup = async (phoneToken?: string): Promise<WarrantyLookupResponse> => {
-    setState('loading');
-    setErrorMsg('');
-    setCustomer(null);
-    setWarranties([]);
-    setAmc(null);
-    const res = await lookupWarrantiesByPhone(phoneDigits, {
-      altchaLoginToken: altchaTokenRef.current || undefined,
-      altchaPayload: altchaPayloadRef.current,
-      phoneToken,
-    });
-    applyResult(res);
-    return res;
-  };
-
   // OTP off: a single search button (still ALTCHA-gated on the server).
   const handleDirectSearch = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!phoneValid || busy) return;
-    await runLookup();
+    await doLookup(phoneDigits);
   };
 
   const handleSendOtp = async () => {
@@ -167,14 +211,16 @@ const Warranty: React.FC = () => {
     if (busy) return;
     setOtpError('');
     setOtpVerifying(true);
-    const res = await verifyBookingOtp(otpCode);
+    // Keep the Firebase session alive so a refresh can silently re-verify (per tab).
+    const res = await verifyBookingOtp(otpCode, { keepSession: true });
     if (!res.verified || !res.phoneToken) {
       setOtpVerifying(false);
       setOtpError(res.error || 'Incorrect or expired code. Please try again.');
       return;
     }
     setOtpVerifying(false);
-    const lookup = await runLookup(res.phoneToken);
+    setVerifiedPhone(phoneDigits);
+    const lookup = await doLookup(phoneDigits, res.phoneToken);
     // Collapse the verification UI once we've shown a result for this number.
     if (lookup.found || lookup.error == null) {
       setOtpSent(false);
@@ -182,7 +228,26 @@ const Warranty: React.FC = () => {
     }
   };
 
+  // End the verified session and clear everything (used by "Check another number").
+  const handleUseAnotherNumber = async () => {
+    pendingResumeRef.current = null;
+    await endWarrantySession();
+    resetBookingOtpSession();
+    setVerifiedPhone(null);
+    setPhone('');
+    setOtpSent(false);
+    setOtpCode('');
+    setOtpError('');
+    setOtpResendAt(0);
+    setState('idle');
+    setCustomer(null);
+    setWarranties([]);
+    setAmc(null);
+    setErrorMsg('');
+  };
+
   const otpFlow = OTP_ENABLED;
+  const sessionVerified = otpFlow && verifiedPhone !== null;
 
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground">
@@ -207,6 +272,32 @@ const Warranty: React.FC = () => {
                 {otpFlow && (
                   <div id={FIREBASE_RECAPTCHA_CONTAINER_ID} className="sr-only" aria-hidden="true" />
                 )}
+                {resuming && !sessionVerified ? (
+                  <p className="text-sm text-muted-foreground flex items-center gap-2 py-2">
+                    <span className="w-4 h-4 border-2 border-muted-foreground/40 border-t-transparent rounded-full animate-spin" />
+                    Checking your session…
+                  </p>
+                ) : sessionVerified ? (
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <BadgeCheck className="h-5 w-5 text-emerald-600 shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium">Verified</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          Showing warranty for {verifiedPhone}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-10"
+                      onClick={() => void handleUseAnotherNumber()}
+                    >
+                      Check another number
+                    </Button>
+                  </div>
+                ) : (
                 <form onSubmit={handleDirectSearch} className="space-y-4">
                   <label htmlFor="warranty-phone" className="block text-sm font-medium">
                     Registered mobile number
@@ -348,6 +439,7 @@ const Warranty: React.FC = () => {
                       : 'We only show warranty details for the number you enter.'}
                   </p>
                 </form>
+                )}
               </CardContent>
             </Card>
 
