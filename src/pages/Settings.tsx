@@ -117,6 +117,8 @@ const DATABASE_EXPORT_TABLES: {
   },
   { name: 'technician_payments', orderBy: 'created_at', label: 'Technician Payments' },
   { name: 'technicians', orderBy: 'created_at', label: 'Technicians' },
+  { name: 'warranties', orderBy: 'created_at', label: 'Warranties', optional: true },
+  { name: 'warranty_items', orderBy: 'created_at', label: 'Warranty Items', optional: true },
   { name: 'website_booking_intent', orderBy: 'updated_at', label: 'Website Booking Intent' },
 ];
 
