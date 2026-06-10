@@ -1,10 +1,20 @@
 // Public warranty lookup by phone for the /warranty page.
 //
-// NOTE: OTP and captcha (Turnstile/ALTCHA) are intentionally SKIPPED for now per
-// product decision (testing phase). We still apply CORS + IP/phone rate limiting, and
-// the read goes through the service-role key calling a SECURITY DEFINER RPC that
-// returns only customer-facing warranty fields (no full PII). To harden later, add the
-// ALTCHA gate exactly like booking-customer-lookup.js (verifyLoginToken).
+// Defense in depth (all enforced server-side — cannot be bypassed by calling the
+// function directly or skipping the UI):
+//   1. CORS origin allow-list.
+//   2. IP rate limit + per-phone rate limit (stops enumeration / volume abuse).
+//   3. ALTCHA proof-of-work token (verifyLoginToken) — required whenever ALTCHA is
+//      configured, and mandatory in production. Stops headless/bot traffic.
+//   4. Firebase phone OTP (verifyFirebasePhoneToken) — when OTP_ENFORCED=true, the
+//      caller must present a Firebase ID token whose phone MATCHES the number being
+//      looked up. This is the real anti-PII-harvest gate: you can only see a number's
+//      warranty if you control that SIM.
+//   5. The read itself uses the service-role key via a SECURITY DEFINER RPC that
+//      returns only customer-facing fields (no raw PII dump).
+//
+// OTP can be toggled off for the testing phase (OTP_ENFORCED unset) without weakening
+// the ALTCHA + rate-limit layers.
 const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
 const { addSecurityHeaders } = require('./security-headers');
@@ -14,6 +24,8 @@ const {
   rateLimitResponseForKey,
   getClientIdentifier,
 } = require('./rate-limiter');
+const { verifyLoginToken, isPlaceholderKey } = require('./altcha-guard');
+const { isOtpEnforced, verifyFirebasePhoneToken } = require('./otp-guard');
 
 function normalizePhoneDigits(phone) {
   const digits = String(phone || '').replace(/\D/g, '');
@@ -74,6 +86,23 @@ exports.handler = async (event) => {
     return json(400, corsHeaders, { error: 'Enter a valid 10-digit mobile number.' });
   }
 
+  // --- ALTCHA proof-of-work gate -------------------------------------------
+  // Required whenever ALTCHA is configured (real HMAC key). In production a missing
+  // key is a misconfiguration, so we fail closed rather than silently allowing bots.
+  const altchaConfigured = !isPlaceholderKey();
+  if (process.env.CONTEXT === 'production' && !altchaConfigured) {
+    return json(503, corsHeaders, { error: 'Security protection unavailable' });
+  }
+  if (altchaConfigured) {
+    if (!body.altchaLoginToken) {
+      return json(403, corsHeaders, { error: 'Security verification required' });
+    }
+    const tokenCheck = verifyLoginToken(body.altchaLoginToken, body.altchaPayload);
+    if (!tokenCheck.ok) {
+      return json(403, corsHeaders, { error: tokenCheck.error || 'Security verification failed' });
+    }
+  }
+
   // Per-phone rate limit to stop enumeration.
   const phoneLimit = checkRateLimitForKey(norm, {
     maxRequests: 10,
@@ -83,6 +112,20 @@ exports.handler = async (event) => {
   if (!phoneLimit.allowed) {
     const base = rateLimitResponseForKey(phoneLimit);
     return { ...base, headers: addSecurityHeaders({ ...base.headers, ...corsHeaders }) };
+  }
+
+  // --- Phone OTP gate ------------------------------------------------------
+  // When enforced, the Firebase ID token's phone must equal the looked-up number, so a
+  // caller can only reveal warranty details for a SIM they actually control. Done after
+  // rate limits so the Firebase verify endpoint can't be hammered.
+  if (isOtpEnforced()) {
+    const otpCheck = await verifyFirebasePhoneToken(body.phoneToken, norm);
+    if (!otpCheck.ok) {
+      return json(403, corsHeaders, {
+        error: otpCheck.error || 'Phone verification required',
+        otpRequired: true,
+      });
+    }
   }
 
   const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;

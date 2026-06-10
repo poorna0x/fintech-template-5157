@@ -1,12 +1,24 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import PageHero from '@/components/PageHero';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ShieldCheck, Search, Phone, Package, CheckCircle2, XCircle, AlertCircle, BadgeCheck } from 'lucide-react';
-import { lookupWarrantiesByPhone } from '@/lib/warrantyLookup';
+import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
+import { REGEXP_ONLY_DIGITS } from 'input-otp';
+import { ShieldCheck, Search, Phone, Package, CheckCircle2, XCircle, AlertCircle, BadgeCheck, Lock } from 'lucide-react';
+import AltchaWidget from '@/components/AltchaWidget';
+import {
+  OTP_ENABLED,
+  FIREBASE_RECAPTCHA_CONTAINER_ID,
+  sendBookingOtp,
+  verifyBookingOtp,
+  resetBookingOtpSession,
+  prewarmBookingOtp,
+  checkOtpRateLimit,
+} from '@/lib/otp';
+import { lookupWarrantiesByPhone, type WarrantyLookupResponse } from '@/lib/warrantyLookup';
 import {
   categoryDef,
   warrantyStatus,
@@ -26,19 +38,38 @@ const Warranty: React.FC = () => {
   const [warranties, setWarranties] = useState<PublicWarranty[]>([]);
   const [amc, setAmc] = useState<PublicAmcInfo | null>(null);
 
+  // ALTCHA proof-of-work runs in the background; the server requires the resulting
+  // login token in production. Empty token is fine in local dev (server skips it).
+  const altchaTokenRef = useRef('');
+  const altchaPayloadRef = useRef<string | undefined>(undefined);
+
+  // OTP (only when configured): user proves they own the SIM before any PII is shown.
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [otpSending, setOtpSending] = useState(false);
+  const [otpVerifying, setOtpVerifying] = useState(false);
+  const [otpError, setOtpError] = useState('');
+
   const phoneDigits = phone.replace(/\D/g, '').slice(-10);
-  const canSearch = phoneDigits.length === 10 && /^[6-9]/.test(phoneDigits) && state !== 'loading';
+  const phoneValid = phoneDigits.length === 10 && /^[6-9]/.test(phoneDigits);
+  const busy = state === 'loading' || otpSending || otpVerifying;
 
-  const handleSearch = async (e?: React.FormEvent) => {
-    e?.preventDefault();
-    if (!canSearch) return;
-    setState('loading');
-    setErrorMsg('');
-    setCustomer(null);
-    setWarranties([]);
-    setAmc(null);
+  // Warm Firebase + invisible reCAPTCHA so the first "send code" tap is instant.
+  useEffect(() => {
+    if (OTP_ENABLED) void prewarmBookingOtp();
+  }, []);
 
-    const res = await lookupWarrantiesByPhone(phoneDigits);
+  const handleAltchaVerify = useCallback(
+    (isValid: boolean, payload?: string, loginToken?: string) => {
+      if (isValid && loginToken) {
+        altchaTokenRef.current = loginToken;
+        altchaPayloadRef.current = payload;
+      }
+    },
+    []
+  );
+
+  const applyResult = (res: WarrantyLookupResponse) => {
     if (res.error) {
       setErrorMsg(res.error);
       setState('error');
@@ -54,6 +85,87 @@ const Warranty: React.FC = () => {
     setState('results');
   };
 
+  // Reset everything when the phone number is edited so a stale OTP / result can't leak.
+  const handlePhoneChange = (value: string) => {
+    const next = value.replace(/[^\d]/g, '').slice(0, 10);
+    setPhone(next);
+    if (otpSent || otpCode || otpError) {
+      setOtpSent(false);
+      setOtpCode('');
+      setOtpError('');
+      resetBookingOtpSession();
+    }
+    if (state !== 'idle') {
+      setState('idle');
+      setCustomer(null);
+      setWarranties([]);
+      setAmc(null);
+      setErrorMsg('');
+    }
+  };
+
+  const runLookup = async (phoneToken?: string): Promise<WarrantyLookupResponse> => {
+    setState('loading');
+    setErrorMsg('');
+    setCustomer(null);
+    setWarranties([]);
+    setAmc(null);
+    const res = await lookupWarrantiesByPhone(phoneDigits, {
+      altchaLoginToken: altchaTokenRef.current || undefined,
+      altchaPayload: altchaPayloadRef.current,
+      phoneToken,
+    });
+    applyResult(res);
+    return res;
+  };
+
+  // OTP off: a single search button (still ALTCHA-gated on the server).
+  const handleDirectSearch = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!phoneValid || busy) return;
+    await runLookup();
+  };
+
+  const handleSendOtp = async () => {
+    if (!phoneValid || busy) return;
+    setOtpError('');
+    const limit = checkOtpRateLimit(phoneDigits);
+    if (!limit.allowed) {
+      setOtpError(limit.reason || 'Please wait before requesting another code.');
+      return;
+    }
+    setOtpSending(true);
+    const res = await sendBookingOtp(phoneDigits);
+    setOtpSending(false);
+    if (!res.ok) {
+      setOtpError(res.error || 'Could not send the code. Please try again.');
+      return;
+    }
+    setOtpSent(true);
+    setOtpCode('');
+  };
+
+  const handleVerifyAndSearch = async () => {
+    if (busy) return;
+    setOtpError('');
+    setOtpVerifying(true);
+    const res = await verifyBookingOtp(otpCode);
+    if (!res.verified || !res.phoneToken) {
+      setOtpVerifying(false);
+      setOtpError(res.error || 'Incorrect or expired code. Please try again.');
+      return;
+    }
+    setOtpVerifying(false);
+    const lookup = await runLookup(res.phoneToken);
+    // Collapse the verification UI once we've shown a result for this number.
+    if (lookup.found || lookup.error == null) {
+      setOtpSent(false);
+      setOtpCode('');
+    }
+  };
+
+  const otpFlow = OTP_ENABLED;
+
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground">
       <Header />
@@ -65,12 +177,19 @@ const Warranty: React.FC = () => {
           showButtons={false}
         />
 
+        {/* Background ALTCHA proof-of-work (anti-bot). Hidden; runs on load. */}
+        <AltchaWidget hidden tokenPurpose="booking" onVerify={handleAltchaVerify} />
+
         <section className="w-full px-4 py-10 md:py-14">
           <div className="max-w-3xl mx-auto space-y-6">
-            {/* Search card */}
+            {/* Search / verification card */}
             <Card>
               <CardContent className="p-5 sm:p-6">
-                <form onSubmit={handleSearch} className="space-y-4">
+                {/* Firebase invisible reCAPTCHA host (used by OTP send) */}
+                {otpFlow && (
+                  <div id={FIREBASE_RECAPTCHA_CONTAINER_ID} className="sr-only" aria-hidden="true" />
+                )}
+                <form onSubmit={handleDirectSearch} className="space-y-4">
                   <label htmlFor="warranty-phone" className="block text-sm font-medium">
                     Registered mobile number
                   </label>
@@ -84,26 +203,118 @@ const Warranty: React.FC = () => {
                         autoComplete="tel"
                         placeholder="Enter 10-digit mobile number"
                         value={phone}
-                        onChange={(e) => setPhone(e.target.value.replace(/[^\d]/g, '').slice(0, 10))}
+                        onChange={(e) => handlePhoneChange(e.target.value)}
+                        disabled={otpFlow && otpSent}
                         className="pl-9 h-12 text-base"
                       />
                     </div>
-                    <Button type="submit" disabled={!canSearch} className="h-12 px-6 bg-sky-600 hover:bg-sky-700 text-white">
-                      {state === 'loading' ? (
-                        <span className="flex items-center gap-2">
-                          <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                          Checking...
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-2">
-                          <Search className="w-4 h-4" />
-                          Check warranty
-                        </span>
-                      )}
-                    </Button>
+                    {!otpFlow ? (
+                      <Button
+                        type="submit"
+                        disabled={!phoneValid || busy}
+                        className="h-12 px-6 bg-sky-600 hover:bg-sky-700 text-white"
+                      >
+                        {state === 'loading' ? (
+                          <span className="flex items-center gap-2">
+                            <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            Checking...
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-2">
+                            <Search className="w-4 h-4" />
+                            Check warranty
+                          </span>
+                        )}
+                      </Button>
+                    ) : !otpSent ? (
+                      <Button
+                        type="button"
+                        onClick={handleSendOtp}
+                        disabled={!phoneValid || busy}
+                        className="h-12 px-6 bg-sky-600 hover:bg-sky-700 text-white"
+                      >
+                        {otpSending ? (
+                          <span className="flex items-center gap-2">
+                            <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            Sending...
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-2">
+                            <Lock className="w-4 h-4" />
+                            Send code
+                          </span>
+                        )}
+                      </Button>
+                    ) : null}
                   </div>
+
+                  {/* OTP entry */}
+                  {otpFlow && otpSent && (
+                    <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-3">
+                      <p className="text-sm font-medium flex items-center gap-2">
+                        <Lock className="w-4 h-4 text-sky-600" />
+                        Enter the code sent to {phoneDigits}
+                      </p>
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                        <InputOTP
+                          maxLength={6}
+                          pattern={REGEXP_ONLY_DIGITS}
+                          value={otpCode}
+                          onChange={setOtpCode}
+                        >
+                          <InputOTPGroup>
+                            {[0, 1, 2, 3, 4, 5].map((i) => (
+                              <InputOTPSlot key={i} index={i} />
+                            ))}
+                          </InputOTPGroup>
+                        </InputOTP>
+                        <Button
+                          type="button"
+                          onClick={handleVerifyAndSearch}
+                          disabled={otpCode.length < 6 || busy}
+                          className="h-11 px-5 bg-sky-600 hover:bg-sky-700 text-white"
+                        >
+                          {otpVerifying || state === 'loading' ? (
+                            <span className="flex items-center gap-2">
+                              <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                              Verifying...
+                            </span>
+                          ) : (
+                            'Verify & check'
+                          )}
+                        </Button>
+                      </div>
+                      <div className="flex items-center gap-4 text-xs">
+                        <button
+                          type="button"
+                          className="text-sky-600 hover:underline disabled:opacity-50"
+                          onClick={handleSendOtp}
+                          disabled={busy}
+                        >
+                          Resend code
+                        </button>
+                        <button
+                          type="button"
+                          className="text-muted-foreground hover:underline"
+                          onClick={() => {
+                            setOtpSent(false);
+                            setOtpCode('');
+                            setOtpError('');
+                            resetBookingOtpSession();
+                          }}
+                        >
+                          Change number
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {otpError && <p className="text-xs text-red-600">{otpError}</p>}
+
                   <p className="text-xs text-muted-foreground">
-                    We only show warranty details for the number you enter. No login required.
+                    {otpFlow
+                      ? 'We send a one-time code to confirm the number is yours before showing any details.'
+                      : 'We only show warranty details for the number you enter.'}
                   </p>
                 </form>
               </CardContent>
