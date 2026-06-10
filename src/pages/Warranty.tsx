@@ -35,6 +35,17 @@ import {
 
 type ViewState = 'idle' | 'loading' | 'results' | 'notfound' | 'error';
 
+/**
+ * Normalize anything the user types/pastes/autofills into a standard Indian 10-digit
+ * mobile number: strips spaces/dashes, a leading 0, and a +91 / 91 country code.
+ *   "+91 77528 94643" → "7752894643"   "09876543210" → "9876543210"
+ */
+function normalizeIndianMobile(raw: string): string {
+  let d = raw.replace(/\D/g, '').replace(/^0+/, '');
+  if (d.length > 10 && d.startsWith('91')) d = d.slice(2);
+  return d.slice(0, 10);
+}
+
 const Warranty: React.FC = () => {
   const [phone, setPhone] = useState('');
   const [state, setState] = useState<ViewState>('idle');
@@ -161,7 +172,7 @@ const Warranty: React.FC = () => {
 
   // Reset everything when the phone number is edited so a stale OTP / result can't leak.
   const handlePhoneChange = (value: string) => {
-    const next = value.replace(/[^\d]/g, '').slice(0, 10);
+    const next = normalizeIndianMobile(value);
     setPhone(next);
     if (otpSent || otpCode || otpError) {
       setOtpSent(false);
@@ -358,6 +369,12 @@ const Warranty: React.FC = () => {
                       </Button>
                     ) : null}
                   </div>
+
+                  {phone.length > 0 && !phoneValid && (
+                    <p className="text-xs text-amber-600">
+                      Enter a valid 10-digit Indian mobile number (starting 6–9).
+                    </p>
+                  )}
 
                   {/* OTP entry */}
                   {otpFlow && otpSent && (
