@@ -37,7 +37,8 @@ import {
   Bell,
   Lock,
   GitMerge,
-  Repeat
+  Repeat,
+  ShieldCheck
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
@@ -59,6 +60,7 @@ import { RecurringServiceTracker } from '@/components/reminders/RecurringService
 import { SettingsPendingPaymentsDialogV2 } from '@/components/reminders/PendingPaymentsDialogV2';
 import AdvancedCustomerSearchDialog from '@/components/admin/AdvancedCustomerSearchDialog';
 import MergeCustomersDialog from '@/components/admin/MergeCustomersDialog';
+import WarrantyManagementDialog from '@/components/admin/WarrantyManagementDialog';
 import DirectSaleDialog from '@/components/admin/DirectSaleDialog';
 
 /** PostgREST error when a table was never created or was dropped (e.g. booking_abandonments). */
@@ -206,6 +208,7 @@ const Settings = () => {
   const [isDownloading, setIsDownloading] = useState(false);
 
   const [mergeCustomersOpen, setMergeCustomersOpen] = useState(false);
+  const [warrantyDialogOpen, setWarrantyDialogOpen] = useState(false);
   const [directSaleOpen, setDirectSaleOpen] = useState(false);
 
   // Todo management states
@@ -2190,6 +2193,39 @@ const Settings = () => {
             </CardContent>
           </Card>
 
+          {/* Warranty Management */}
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+                    <ShieldCheck className="w-5 h-5" />
+                    Warranty Management
+                  </CardTitle>
+                  <CardDescription className="text-sm mt-1">
+                    Add product & part warranties for a customer. They can self-check status at /warranty by phone.
+                  </CardDescription>
+                </div>
+                <Button
+                  onClick={() => setWarrantyDialogOpen(true)}
+                  variant="outline"
+                  className="w-full sm:w-auto"
+                  size="sm"
+                >
+                  <ShieldCheck className="w-4 h-4 mr-2" />
+                  Manage warranties
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-6 pt-0">
+              <p className="text-sm text-muted-foreground">
+                Pull parts from any job or add coverage by category (electricals, consumables, outside filter,
+                membrane, body). Default duration is 3 months per item. Requires{' '}
+                <code className="text-xs">add-warranties.sql</code> in Supabase.
+              </p>
+            </CardContent>
+          </Card>
+
           {/* Direct / Office Sales */}
           <Card>
             <CardHeader>
@@ -2706,6 +2742,8 @@ const Settings = () => {
         disabled={isManager}
         disabledTitle={managerRestrictedTitle}
       />
+
+      <WarrantyManagementDialog open={warrantyDialogOpen} onOpenChange={setWarrantyDialogOpen} />
 
       <DirectSaleDialog open={directSaleOpen} onOpenChange={setDirectSaleOpen} />
 

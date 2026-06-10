@@ -767,6 +767,16 @@ export const db = {
       return { data, error };
     },
 
+    /** Tiny fetch: just the address jsonb (e.g. warranty dialog summary). */
+    async getAddressById(id: string) {
+      const { data, error } = await supabase
+        .from('customers')
+        .select('address')
+        .eq('id', id)
+        .single();
+      return { data, error };
+    },
+
     async delete(id: string) {
       const { data, error } = await supabase
         .from('customers')
@@ -956,6 +966,20 @@ export const db = {
     async getByCustomerId(customerId: string) {
       // Backward-compatible default uses slim list; use getByCustomerIdForReport / getByCustomerIdForPhotoAggregation / getByCustomerIdFull as needed.
       return this.getByCustomerIdSlim(customerId);
+    },
+
+    /**
+     * Ultra-lean jobs list for pickers (e.g. warranty dialog): only the 5 columns
+     * needed to label a job. Capped to the 100 most recent to bound egress.
+     */
+    async getByCustomerIdForPicker(customerId: string) {
+      const { data, error } = await supabase
+        .from('jobs')
+        .select('id, job_number, status, service_type, scheduled_date, completed_at')
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: false })
+        .limit(100);
+      return { data: data || [], error };
     },
 
     /** Low-egress jobs-by-customer list. Avoids big payload fields. */
@@ -3612,8 +3636,23 @@ export const db = {
         .eq('customer_id', customerId)
         .eq('status', 'ACTIVE')
         .single();
-      
+
       return { data, error };
+    },
+
+    /**
+     * Lean active-AMC probe (just dates). Uses limit(1) instead of single() so a
+     * customer with no AMC returns `null` without an error round-trip/log.
+     */
+    async getActiveSlimByCustomerId(customerId: string) {
+      const { data, error } = await supabase
+        .from('amc_contracts')
+        .select('id, start_date, end_date')
+        .eq('customer_id', customerId)
+        .eq('status', 'ACTIVE')
+        .order('end_date', { ascending: false, nullsFirst: false })
+        .limit(1);
+      return { data: data && data.length > 0 ? data[0] : null, error };
     },
 
     async getAll(limit: number = 100, offset: number = 0) {
@@ -5388,6 +5427,189 @@ export const db = {
         .eq('id', jobId);
       return { error: updateError };
     }
+  },
+
+  // Structured product/part warranties (admin-managed). Requires scripts/add-warranties.sql.
+  warranties: {
+    /** A customer's warranties (newest-first) with their covered items. */
+    async getByCustomer(customerId: string) {
+      const { data, error } = await supabase
+        .from('warranties')
+        .select(`
+          id,
+          customer_id,
+          job_id,
+          start_date,
+          end_date,
+          default_months,
+          notes,
+          created_at,
+          items:warranty_items(
+            id,
+            warranty_id,
+            category,
+            label,
+            inventory_id,
+            job_part_id,
+            months,
+            duration_days,
+            start_date,
+            end_date,
+            covered,
+            notes
+          )
+        `)
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: false });
+      return { data: data || [], error };
+    },
+
+    /**
+     * Create a warranty header plus its items in one call. Items are inserted after
+     * the header; if item insert fails the header is rolled back (deleted) so we never
+     * leave an empty warranty behind.
+     */
+    async create(
+      warranty: {
+        customer_id: string;
+        job_id?: string | null;
+        start_date: string;
+        end_date: string;
+        default_months: number;
+        notes?: string | null;
+      },
+      items: Array<{
+        category: string;
+        label: string;
+        inventory_id?: string | null;
+        job_part_id?: string | null;
+        months: number;
+        duration_days?: number;
+        start_date: string;
+        end_date: string;
+        covered?: boolean;
+        notes?: string | null;
+      }>
+    ) {
+      const { data: header, error: headerErr } = await supabase
+        .from('warranties')
+        .insert({
+          customer_id: warranty.customer_id,
+          job_id: warranty.job_id ?? null,
+          start_date: warranty.start_date,
+          end_date: warranty.end_date,
+          default_months: warranty.default_months,
+          notes: warranty.notes ?? null,
+        })
+        .select('id')
+        .single();
+      if (headerErr || !header) return { data: null, error: headerErr };
+
+      if (items.length > 0) {
+        const rows = items.map((it) => ({
+          warranty_id: header.id,
+          category: it.category,
+          label: it.label,
+          inventory_id: it.inventory_id ?? null,
+          job_part_id: it.job_part_id ?? null,
+          months: it.months,
+          duration_days: it.duration_days ?? it.months * 30,
+          start_date: it.start_date,
+          end_date: it.end_date,
+          covered: it.covered ?? true,
+          notes: it.notes ?? null,
+        }));
+        const { error: itemsErr } = await supabase.from('warranty_items').insert(rows);
+        if (itemsErr) {
+          await supabase.from('warranties').delete().eq('id', header.id);
+          return { data: null, error: itemsErr };
+        }
+      }
+      return { data: header, error: null };
+    },
+
+    async updateHeader(
+      id: string,
+      updates: { start_date?: string; end_date?: string; default_months?: number; notes?: string | null }
+    ) {
+      const { data, error } = await supabase
+        .from('warranties')
+        .update(updates)
+        .eq('id', id)
+        .select('id')
+        .single();
+      return { data, error };
+    },
+
+    /**
+     * Full edit of an existing warranty: update the header and REPLACE all items
+     * (delete existing rows, insert the provided set). Simpler and race-free vs diffing.
+     */
+    async update(
+      id: string,
+      header: { start_date: string; end_date: string; default_months: number; notes?: string | null },
+      items: Array<{
+        category: string;
+        label: string;
+        inventory_id?: string | null;
+        job_part_id?: string | null;
+        months: number;
+        duration_days?: number;
+        start_date: string;
+        end_date: string;
+        covered?: boolean;
+        notes?: string | null;
+      }>
+    ) {
+      const { error: headerErr } = await supabase
+        .from('warranties')
+        .update({
+          start_date: header.start_date,
+          end_date: header.end_date,
+          default_months: header.default_months,
+          notes: header.notes ?? null,
+        })
+        .eq('id', id);
+      if (headerErr) return { error: headerErr };
+
+      const { error: delErr } = await supabase.from('warranty_items').delete().eq('warranty_id', id);
+      if (delErr) return { error: delErr };
+
+      if (items.length > 0) {
+        const rows = items.map((it) => ({
+          warranty_id: id,
+          category: it.category,
+          label: it.label,
+          inventory_id: it.inventory_id ?? null,
+          job_part_id: it.job_part_id ?? null,
+          months: it.months,
+          duration_days: it.duration_days ?? it.months * 30,
+          start_date: it.start_date,
+          end_date: it.end_date,
+          covered: it.covered ?? true,
+          notes: it.notes ?? null,
+        }));
+        const { error: insErr } = await supabase.from('warranty_items').insert(rows);
+        if (insErr) return { error: insErr };
+      }
+      return { error: null };
+    },
+
+    async delete(id: string) {
+      const { error } = await supabase.from('warranties').delete().eq('id', id);
+      return { error };
+    },
+
+    async deleteItem(itemId: string) {
+      const { error } = await supabase.from('warranty_items').delete().eq('id', itemId);
+      return { error };
+    },
+
+    /** Admin-side preview of the public lookup (same RPC the Netlify function calls). */
+    async lookupByPhone(phone: string) {
+      const { data, error } = await supabase.rpc('get_warranties_by_phone', { p_phone: phone });
+      return { data, error };
+    },
   },
 
   reminders: {

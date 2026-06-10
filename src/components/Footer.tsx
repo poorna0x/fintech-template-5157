@@ -92,6 +92,7 @@ const Footer = () => {
             <h4 className="font-medium text-lg text-foreground">Support & Booking</h4>
             <ul className="space-y-3">
               <li><a href="#booking" className="text-muted-foreground hover:text-foreground transition-colors">Book RO Service</a></li>
+              <li><Link to="/warranty" className="text-muted-foreground hover:text-foreground transition-colors">Check Warranty Status</Link></li>
               <li><a href="#about" className="text-muted-foreground hover:text-foreground transition-colors">RO Maintenance Tips</a></li>
               <li><a href="#contact" className="text-muted-foreground hover:text-foreground transition-colors">Service Support</a></li>
             </ul>
