@@ -2222,8 +2222,7 @@ const Settings = () => {
             <CardContent className="p-4 sm:p-6 pt-0">
               <p className="text-sm text-muted-foreground">
                 Pull parts from any job or add coverage by category (electricals, consumables, outside filter,
-                membrane, body). Default duration is 3 months per item. Requires{' '}
-                <code className="text-xs">add-warranties.sql</code> in Supabase.
+                membrane, body). Default duration is 3 months per item.
               </p>
             </CardContent>
           </Card>
