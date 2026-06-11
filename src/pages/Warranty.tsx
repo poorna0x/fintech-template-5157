@@ -291,22 +291,31 @@ const Warranty: React.FC = () => {
                     Checking your session…
                   </p>
                 ) : sessionVerified ? (
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <BadgeCheck className="h-5 w-5 text-emerald-600 shrink-0" />
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30">
+                        <BadgeCheck className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                      </span>
                       <div className="min-w-0">
-                        <p className="text-sm font-medium">Verified</p>
+                        <p className="text-sm font-semibold flex items-center gap-1.5">
+                          Verified
+                          <span className="inline-flex items-center rounded-full bg-emerald-100 dark:bg-emerald-900/30 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
+                            OTP
+                          </span>
+                        </p>
                         <p className="text-xs text-muted-foreground truncate">
-                          Showing warranty for {verifiedPhone}
+                          Showing warranty for{' '}
+                          <span className="font-medium text-foreground">+91 {verifiedPhone}</span>
                         </p>
                       </div>
                     </div>
                     <Button
                       type="button"
                       variant="outline"
-                      className="h-10"
+                      className="h-10 w-full shrink-0 sm:w-auto"
                       onClick={() => void handleUseAnotherNumber()}
                     >
+                      <Phone className="h-4 w-4 mr-2" />
                       Check another number
                     </Button>
                   </div>
