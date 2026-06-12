@@ -2,7 +2,7 @@ import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Edit, Plus, Camera, FileText, MoreVertical, Receipt, Star, Bell } from 'lucide-react';
+import { Edit, Plus, Camera, FileText, MoreVertical, Receipt, Star, Bell, ShieldCheck } from 'lucide-react';
 import { Customer } from '@/types';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import { customerNameClassName } from '@/lib/customerDisplay';
@@ -28,6 +28,7 @@ interface CustomerCardHeaderProps {
   onViewAMCInfo?: (customer: Customer) => void;
   onAddReminder?: (customer: Customer) => void;
   onViewReminders?: (customer: Customer) => void;
+  onManageWarranty?: (customer: Customer) => void;
   /** True when this card's job list includes at least one completed job (fixes prior dot if global map missed). */
   priorServiceFromJobs?: boolean;
 }
@@ -51,6 +52,7 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
   onViewAMCInfo,
   onAddReminder,
   onViewReminders,
+  onManageWarranty,
   priorServiceFromJobs = false,
 }) => {
   const hasGoogleReview =
@@ -298,6 +300,22 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
                     <div className="text-xs text-muted-foreground">Create a tax invoice with GST for this customer</div>
                   </div>
                 </Button>
+                {onManageWarranty && (
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start h-auto py-3 px-4"
+                    onClick={() => {
+                      onSetMoreOptionsDialogOpen(prev => ({ ...prev, [customer.id]: false }));
+                      onManageWarranty(customer);
+                    }}
+                  >
+                    <ShieldCheck className="mr-3 h-5 w-5" />
+                    <div className="text-left">
+                      <div className="font-medium">Add / manage warranty</div>
+                      <div className="text-xs text-muted-foreground">Add or view product & part warranties</div>
+                    </div>
+                  </Button>
+                )}
                 {hasAmc && onViewAMCInfo && (
                   <Button 
                     variant="outline"
@@ -437,6 +455,12 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
                 <Receipt className="mr-2 h-4 w-4" />
                 Generate Tax Invoice
               </DropdownMenuItem>
+              {onManageWarranty && (
+                <DropdownMenuItem onClick={() => onManageWarranty(customer)}>
+                  <ShieldCheck className="mr-2 h-4 w-4" />
+                  Add / manage warranty
+                </DropdownMenuItem>
+              )}
               {hasAmc && onViewAMCInfo && (
                 <DropdownMenuItem 
                   onClick={() => onViewAMCInfo(customer)}

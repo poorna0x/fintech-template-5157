@@ -7,8 +7,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { REGEXP_ONLY_DIGITS } from 'input-otp';
-import { ShieldCheck, Search, Phone, Package, CheckCircle2, XCircle, AlertCircle, BadgeCheck, Lock } from 'lucide-react';
+import { Search, Phone, Package, AlertCircle, BadgeCheck, Lock } from 'lucide-react';
 import AltchaWidget from '@/components/AltchaWidget';
+import { WarrantyCard, DetailRow, AmcBanner, GeneralWarrantyCard } from '@/components/warranty/WarrantyCard';
 import {
   OTP_ENABLED,
   FIREBASE_RECAPTCHA_CONTAINER_ID,
@@ -23,28 +24,13 @@ import {
 } from '@/lib/otp';
 import { lookupWarrantiesByPhone, warmWarrantyLookup, type WarrantyLookupResponse } from '@/lib/warrantyLookup';
 import {
-  categoryDef,
-  warrantyStatus,
   formatWarrantyDate,
-  GENERAL_WARRANTY_POLICY,
-  GENERAL_WARRANTY_TERMS,
   type PublicWarranty,
   type PublicWarrantyCustomer,
   type PublicAmcInfo,
 } from '@/lib/warranty';
 
 type ViewState = 'idle' | 'loading' | 'results' | 'notfound' | 'error';
-
-/**
- * Normalize anything the user types/pastes/autofills into a standard Indian 10-digit
- * mobile number: strips spaces/dashes, a leading 0, and a +91 / 91 country code.
- *   "+91 77528 94643" → "7752894643"   "09876543210" → "9876543210"
- */
-function normalizeIndianMobile(raw: string): string {
-  let d = raw.replace(/\D/g, '').replace(/^0+/, '');
-  if (d.length > 10 && d.startsWith('91')) d = d.slice(2);
-  return d.slice(0, 10);
-}
 
 const Warranty: React.FC = () => {
   const [phone, setPhone] = useState('');
@@ -172,7 +158,7 @@ const Warranty: React.FC = () => {
 
   // Reset everything when the phone number is edited so a stale OTP / result can't leak.
   const handlePhoneChange = (value: string) => {
-    const next = normalizeIndianMobile(value);
+    const next = value.replace(/[^\d]/g, '').slice(0, 10);
     setPhone(next);
     if (otpSent || otpCode || otpError) {
       setOtpSent(false);
@@ -291,31 +277,22 @@ const Warranty: React.FC = () => {
                     Checking your session…
                   </p>
                 ) : sessionVerified ? (
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30">
-                        <BadgeCheck className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-                      </span>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <BadgeCheck className="h-5 w-5 text-emerald-600 shrink-0" />
                       <div className="min-w-0">
-                        <p className="text-sm font-semibold flex items-center gap-1.5">
-                          Verified
-                          <span className="inline-flex items-center rounded-full bg-emerald-100 dark:bg-emerald-900/30 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
-                            OTP
-                          </span>
-                        </p>
+                        <p className="text-sm font-medium">Verified</p>
                         <p className="text-xs text-muted-foreground truncate">
-                          Showing warranty for{' '}
-                          <span className="font-medium text-foreground">+91 {verifiedPhone}</span>
+                          Showing warranty for {verifiedPhone}
                         </p>
                       </div>
                     </div>
                     <Button
                       type="button"
                       variant="outline"
-                      className="h-10 w-full shrink-0 sm:w-auto"
+                      className="h-10"
                       onClick={() => void handleUseAnotherNumber()}
                     >
-                      <Phone className="h-4 w-4 mr-2" />
                       Check another number
                     </Button>
                   </div>
@@ -326,17 +303,20 @@ const Warranty: React.FC = () => {
                   </label>
                   <div className="flex flex-col sm:flex-row gap-3">
                     <div className="relative flex-1">
-                      <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                      <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center gap-2 border-r border-input pl-3 pr-3">
+                        <Phone className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-base font-semibold text-foreground">+91</span>
+                      </div>
                       <Input
                         id="warranty-phone"
                         type="tel"
                         inputMode="numeric"
                         autoComplete="tel"
-                        placeholder="Enter 10-digit mobile number"
+                        placeholder="00000 00000"
                         value={phone}
                         onChange={(e) => handlePhoneChange(e.target.value)}
                         disabled={otpFlow && otpSent}
-                        className="pl-9 h-12 text-base"
+                        className="pl-[4.75rem] h-12 text-base font-medium tracking-[0.18em] placeholder:tracking-[0.18em] placeholder:font-normal"
                       />
                     </div>
                     {!otpFlow ? (
@@ -378,12 +358,6 @@ const Warranty: React.FC = () => {
                       </Button>
                     ) : null}
                   </div>
-
-                  {phone.length > 0 && !phoneValid && (
-                    <p className="text-xs text-amber-600">
-                      Enter a valid 10-digit Indian mobile number (starting 6–9).
-                    </p>
-                  )}
 
                   {/* OTP entry */}
                   {otpFlow && otpSent && (
@@ -471,17 +445,6 @@ const Warranty: React.FC = () => {
               </CardContent>
             </Card>
 
-            {/* Loading — shown while fetching the warranty result (e.g. just after OTP verify
-                or a resumed session) so there isn't a blank gap before results appear. */}
-            {state === 'loading' && (
-              <Card>
-                <CardContent className="p-8 flex flex-col items-center justify-center text-center gap-3">
-                  <span className="w-8 h-8 border-[3px] border-sky-600 border-t-transparent rounded-full animate-spin" />
-                  <p className="text-sm text-muted-foreground">Fetching your warranty details…</p>
-                </CardContent>
-              </Card>
-            )}
-
             {/* Error */}
             {state === 'error' && (
               <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
@@ -559,48 +522,12 @@ const Warranty: React.FC = () => {
                 </Card>
 
                 {/* AMC banner */}
-                {amc?.active && (
-                  <Card className="border-indigo-200 bg-indigo-50/60 dark:bg-indigo-950/20">
-                    <CardContent className="p-4 sm:p-5 flex items-start gap-3">
-                      <BadgeCheck className="w-6 h-6 text-indigo-600 shrink-0" />
-                      <div className="min-w-0">
-                        <p className="font-semibold text-indigo-900 dark:text-indigo-200">
-                          Covered under AMC
-                        </p>
-                        <p className="text-sm text-indigo-800/80 dark:text-indigo-300/80 mt-0.5">
-                          You have an active Annual Maintenance Contract
-                          {amc.end_date ? ` valid till ${formatWarrantyDate(amc.end_date)}` : ''}. Services
-                          and covered parts are provided as agreed in your AMC agreement.
-                        </p>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
+                {amc?.active && <AmcBanner amc={amc} />}
 
                 {warranties.length > 0 ? (
                   warranties.map((w) => <WarrantyCard key={w.id} warranty={w} />)
                 ) : amc?.active ? null : (
-                  <Card>
-                    <CardContent className="p-5 sm:p-6 space-y-4">
-                      <div className="flex items-start gap-3">
-                        <ShieldCheck className="w-6 h-6 text-sky-600 shrink-0 mt-0.5" />
-                        <div className="min-w-0">
-                          <p className="font-semibold text-foreground">No specific warranty on record</p>
-                          <p className="text-sm text-muted-foreground mt-1">{GENERAL_WARRANTY_POLICY}</p>
-                        </div>
-                      </div>
-                      <div className="rounded-lg bg-muted/40 p-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
-                          Terms &amp; conditions
-                        </p>
-                        <ul className="space-y-2 text-xs text-muted-foreground list-disc pl-4">
-                          {GENERAL_WARRANTY_TERMS.map((t, i) => (
-                            <li key={i}>{t}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    </CardContent>
-                  </Card>
+                  <GeneralWarrantyCard />
                 )}
               </div>
             )}
@@ -609,107 +536,6 @@ const Warranty: React.FC = () => {
       </main>
       <Footer />
     </div>
-  );
-};
-
-const DetailRow: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <div className="min-w-0">
-    <dt className="text-xs uppercase tracking-wide text-muted-foreground">{label}</dt>
-    <dd className="text-foreground break-words">{value}</dd>
-  </div>
-);
-
-const WarrantyCard: React.FC<{ warranty: PublicWarranty }> = ({ warranty }) => {
-  // Header status uses the latest COVERED item end date (or the warranty end date).
-  const coveredItems = warranty.items.filter((it) => it.covered !== false);
-  const overallEnd =
-    coveredItems.length > 0
-      ? coveredItems.reduce((max, it) => (it.end_date > max ? it.end_date : max), coveredItems[0].end_date)
-      : warranty.end_date;
-  const overall = warrantyStatus(overallEnd);
-
-  return (
-    <Card>
-      <CardContent className="p-5 sm:p-6 space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="w-5 h-5 text-sky-600" />
-            <div>
-              <p className="font-semibold">Warranty</p>
-              <p className="text-xs text-muted-foreground">
-                From {formatWarrantyDate(warranty.start_date)}
-              </p>
-            </div>
-          </div>
-          <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${overall.toneClass}`}>
-            {overall.label}
-          </span>
-        </div>
-
-        {warranty.items.length === 0 ? (
-          <div className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">
-            Covered until <span className="font-medium text-foreground">{formatWarrantyDate(warranty.end_date)}</span>
-          </div>
-        ) : (
-          <div className="divide-y rounded-lg border">
-            {warranty.items.map((it) => {
-              const cat = categoryDef(it.category);
-              const notCovered = it.covered === false;
-              const st = warrantyStatus(it.end_date);
-              // Hide the category badge when the label is just the category name (no new info).
-              const showBadge = it.label.trim().toLowerCase() !== cat.label.toLowerCase();
-              return (
-                <div key={it.id} className="flex items-center justify-between gap-3 p-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`text-sm font-medium truncate ${notCovered ? 'text-muted-foreground' : ''}`}>
-                        {it.label}
-                      </span>
-                      {showBadge && (
-                        <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${cat.badgeClass}`}>
-                          {cat.label}
-                        </span>
-                      )}
-                    </div>
-                    {!notCovered && (
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        Until {formatWarrantyDate(it.end_date)}
-                      </p>
-                    )}
-                  </div>
-                  <span className="shrink-0 inline-flex items-center gap-1 text-xs font-medium">
-                    {notCovered ? (
-                      <>
-                        <XCircle className="w-4 h-4 text-muted-foreground" />
-                        <span className="text-muted-foreground">Not covered</span>
-                      </>
-                    ) : (
-                      <>
-                        {st.active ? (
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                        ) : (
-                          <XCircle className="w-4 h-4 text-red-500" />
-                        )}
-                        <span className={st.active ? 'text-emerald-700' : 'text-red-600'}>{st.label}</span>
-                      </>
-                    )}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {warranty.notes && (
-          <div className="rounded-lg bg-muted/40 p-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">
-              Terms & conditions
-            </p>
-            <p className="text-xs text-muted-foreground whitespace-pre-line">{warranty.notes}</p>
-          </div>
-        )}
-      </CardContent>
-    </Card>
   );
 };
 

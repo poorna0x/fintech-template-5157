@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -42,7 +42,6 @@ import {
   MANUAL_WARRANTY_NOTE_PRESETS,
   categoryDef,
   guessCategory,
-  warrantyStatus,
   formatWarrantyDate,
   addDays,
   durationToDays,
@@ -51,12 +50,9 @@ import {
   DEFAULT_WARRANTY_MONTHS,
   type WarrantyCategory,
   type DurationUnit,
+  type PublicWarranty,
 } from '@/lib/warranty';
-
-interface WarrantyManagementDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}
+import { WarrantyCard } from '@/components/warranty/WarrantyCard';
 
 interface CustomerPick {
   id: string;
@@ -66,6 +62,13 @@ interface CustomerPick {
   model: string;
   brand: string;
   visible_address: string;
+}
+
+interface WarrantyManagementDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** When provided, the dialog skips search and loads this customer directly on open. */
+  initialCustomer?: CustomerPick | null;
 }
 
 interface SelectedCustomer extends CustomerPick {
@@ -164,6 +167,7 @@ function joinNotes(presetIds: Set<string>, custom: string): string {
 export default function WarrantyManagementDialog({
   open,
   onOpenChange,
+  initialCustomer,
 }: WarrantyManagementDialogProps) {
   // ---- customer search ----
   const [query, setQuery] = useState('');
@@ -230,6 +234,8 @@ export default function WarrantyManagementDialog({
   useEffect(() => {
     if (!open) resetAll();
   }, [open, resetAll]);
+
+  const autoLoadedIdRef = useRef<string | null>(null);
 
   const runSearch = useCallback(async () => {
     const trimmed = query.trim();
@@ -309,6 +315,20 @@ export default function WarrantyManagementDialog({
       setLoadingCustomer(false);
     }
   }, [resetForm]);
+
+  // When opened for a specific customer (from the customer card menu), skip the search
+  // step and load that customer's warranties directly. Tracked per id so reopening for
+  // a different customer reloads correctly.
+  useEffect(() => {
+    if (!open) {
+      autoLoadedIdRef.current = null;
+      return;
+    }
+    if (initialCustomer && autoLoadedIdRef.current !== initialCustomer.id) {
+      autoLoadedIdRef.current = initialCustomer.id;
+      void loadCustomer(initialCustomer);
+    }
+  }, [open, initialCustomer, loadCustomer]);
 
   // ---- form openers ----
   const openAddForm = useCallback(() => {
@@ -719,91 +739,37 @@ export default function WarrantyManagementDialog({
                   {existing.length === 0 ? (
                     <p className="text-xs text-muted-foreground">No warranties yet.</p>
                   ) : (
-                    <div className="space-y-2">
-                      {existing.map((w) => {
-                        const coveredItems = w.items.filter((it) => it.covered !== false);
-                        const end =
-                          coveredItems.length > 0
-                            ? coveredItems.reduce(
-                                (max, it) => (it.end_date > max ? it.end_date : max),
-                                coveredItems[0].end_date
-                              )
-                            : w.end_date;
-                        const st = warrantyStatus(end);
-                        return (
-                          <div key={w.id} className="rounded-lg border p-3">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-2 flex-wrap min-w-0">
-                                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${st.toneClass}`}>
-                                  {st.label}
-                                </span>
-                                <span className="text-xs text-muted-foreground">
-                                  From {formatWarrantyDate(w.start_date)}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-1 shrink-0">
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-8 w-8 p-0"
-                                  title="Edit warranty"
-                                  onClick={() => openEditForm(w)}
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-8 w-8 p-0 text-red-600 hover:text-red-700"
-                                  title="Delete warranty"
-                                  onClick={() => void handleDeleteWarranty(w.id)}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </div>
+                    <div className="space-y-3">
+                      {existing.map((w) => (
+                        <WarrantyCard
+                          key={w.id}
+                          warranty={w as unknown as PublicWarranty}
+                          actions={
+                            <div className="flex items-center gap-1">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 p-0"
+                                title="Edit warranty"
+                                onClick={() => openEditForm(w)}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 p-0 text-red-600 hover:text-red-700"
+                                title="Delete warranty"
+                                onClick={() => void handleDeleteWarranty(w.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
                             </div>
-                            {w.items.length > 0 && (
-                              <ul className="mt-2 space-y-1">
-                                {w.items.map((it) => {
-                                  const cat = categoryDef(it.category);
-                                  const ist = warrantyStatus(it.end_date);
-                                  const notCovered = it.covered === false;
-                                  const showBadge =
-                                    it.label.trim().toLowerCase() !== cat.label.toLowerCase();
-                                  return (
-                                    <li key={it.id} className="flex items-center justify-between gap-2 text-sm">
-                                      <span className="flex items-center gap-2 min-w-0">
-                                        {showBadge && (
-                                          <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase shrink-0 ${cat.badgeClass}`}>
-                                            {cat.label}
-                                          </span>
-                                        )}
-                                        <span className={`truncate ${notCovered ? 'text-muted-foreground line-through' : ''}`}>
-                                          {it.label}
-                                        </span>
-                                      </span>
-                                      <span className="text-xs shrink-0">
-                                        {notCovered ? (
-                                          <span className="text-red-600 font-medium">Not covered</span>
-                                        ) : (
-                                          <span className="text-muted-foreground">
-                                            {formatWarrantyDate(it.end_date)} · {ist.active ? 'Active' : 'Expired'}
-                                          </span>
-                                        )}
-                                      </span>
-                                    </li>
-                                  );
-                                })}
-                              </ul>
-                            )}
-                            {w.notes && (
-                              <p className="mt-2 text-xs text-muted-foreground whitespace-pre-line">{w.notes}</p>
-                            )}
-                          </div>
-                        );
-                      })}
+                          }
+                        />
+                      ))}
                     </div>
                   )}
                 </section>

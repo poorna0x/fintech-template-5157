@@ -118,6 +118,7 @@ import {
 } from '@/lib/adminDashboardCache';
 import { StatusBadge } from './admin/StatusBadge';
 import { CustomerCardHeader } from './admin/CustomerCardHeader';
+import WarrantyManagementDialog from './admin/WarrantyManagementDialog';
 import { WhatsAppIcon } from './WhatsAppIcon';
 import { ContactSection } from './admin/ContactSection';
 import { CompletedJobSection } from './admin/CompletedJobSection';
@@ -715,6 +716,16 @@ const AdminDashboard = () => {
   const [reminderEntity, setReminderEntity] = useState<{ type: 'customer' | 'job' | 'general'; id: string | null }>({ type: 'general', id: null });
   const [reminderContextLabel, setReminderContextLabel] = useState<string>('');
   const [viewRemindersCustomer, setViewRemindersCustomer] = useState<Customer | null>(null);
+  const [warrantyDialogOpen, setWarrantyDialogOpen] = useState(false);
+  const [warrantyDialogCustomer, setWarrantyDialogCustomer] = useState<{
+    id: string;
+    customer_id: string;
+    full_name: string;
+    phone: string;
+    model: string;
+    brand: string;
+    visible_address: string;
+  } | null>(null);
   const [messageSentFilter, setMessageSentFilter] = useState<'all' | 'sent' | 'not_sent'>('not_sent');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ONGOING' | 'PENDING' | 'ASSIGNED' | 'EN_ROUTE' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED'>('ONGOING');
   // Ongoing-only sub-filters (UI parity with completed filters, but only for ongoing section)
@@ -9969,6 +9980,21 @@ const AdminDashboard = () => {
                     setAddReminderDialogOpen(true);
                   }}
                   onViewReminders={(customer) => setViewRemindersCustomer(customer)}
+                  onManageWarranty={(customer) => {
+                    setWarrantyDialogCustomer({
+                      id: customer.id,
+                      customer_id: (customer as any).customer_id || customer.customerId || '',
+                      full_name: (customer as any).full_name || customer.fullName || '',
+                      phone: customer.phone || '',
+                      model: customer.model || '',
+                      brand: customer.brand || '',
+                      visible_address:
+                        customer.address?.visible_address ||
+                        (customer as any).visible_address ||
+                        '',
+                    });
+                    setWarrantyDialogOpen(true);
+                  }}
                 />
 
                 {/* Contact & Communication - Mobile First */}
@@ -12714,6 +12740,15 @@ const AdminDashboard = () => {
         onOpenChange={setAddReminderDialogOpen}
         entity={reminderEntity}
         contextLabel={reminderContextLabel || undefined}
+      />
+
+      <WarrantyManagementDialog
+        open={warrantyDialogOpen}
+        onOpenChange={(open) => {
+          setWarrantyDialogOpen(open);
+          if (!open) setWarrantyDialogCustomer(null);
+        }}
+        initialCustomer={warrantyDialogCustomer}
       />
 
       <TodayRemindersPopup />

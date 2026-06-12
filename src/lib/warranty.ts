@@ -165,18 +165,12 @@ export const DEFAULT_WARRANTY_DAYS = DEFAULT_WARRANTY_MONTHS * DAYS_PER_MONTH;
  * Keeps the public page reassuring even when nothing was entered for them yet.
  */
 export const GENERAL_WARRANTY_POLICY =
-  `As a general policy, any spare part replaced during service is covered by a ` +
-  `${DEFAULT_WARRANTY_DAYS}-day warranty starting from the date that part was changed, ` +
-  `unless a different period is specified on your service bill/invoice.`;
+  `As a general policy, any spare parts replaced during service are covered by a ` +
+  `${DEFAULT_WARRANTY_DAYS}-day warranty from the date of replacement, unless a different ` +
+  `period is specified on your service bill/invoice.`;
 
-/** Invoice/bill is the proof of the replacement date for any claim. */
-export const WARRANTY_INVOICE_REQUIRED_NOTE =
-  'Please keep your service bill/invoice safe — it serves as proof of the replacement ' +
-  'date and is required to process any warranty claim.';
-
-/** Standard terms shown with the general policy (proof of claim, exclusions, charges). */
+/** Standard terms shown with the general policy (exclusions + visiting charges). */
 export const GENERAL_WARRANTY_TERMS: string[] = [
-  WARRANTY_INVOICE_REQUIRED_NOTE,
   notePresetText('exclusions'),
   notePresetText('visiting_charge'),
 ];
