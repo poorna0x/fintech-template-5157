@@ -75,7 +75,7 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto overflow-x-hidden">
         <DialogHeader>
           <DialogTitle>
             Customer Report -{' '}
@@ -90,24 +90,24 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
           {/* Customer Info */}
           <div className="bg-muted/40 p-4 rounded-lg">
             <h3 className="font-semibold text-lg mb-3">Customer Information</h3>
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+              <div className="min-w-0 break-words">
                 <span className="text-muted-foreground">Name:</span>{' '}
                 <span className={customerNameClassName(customer)}>{customer.fullName}</span>
               </div>
-              <div>
+              <div className="min-w-0 break-words">
                 <span className="text-muted-foreground">Customer ID:</span> {customer.customerId}
               </div>
-              <div>
+              <div className="min-w-0 break-words">
                 <span className="text-muted-foreground">Phone:</span> {customer.phone}
               </div>
-              <div>
-                <span className="text-muted-foreground">Email:</span> {customer.email && customer.email.trim() && !customer.email.toLowerCase().includes('nomail') && !customer.email.toLowerCase().includes('no@mail')
+              <div className="min-w-0 break-all">
+                <span className="text-muted-foreground break-normal">Email:</span> {customer.email && customer.email.trim() && !customer.email.toLowerCase().includes('nomail') && !customer.email.toLowerCase().includes('no@mail')
                   ? customer.email
                   : 'nomail@mail'}
               </div>
               {((customer as any).raw_water_tds != null && (customer as any).raw_water_tds > 0) && (
-                <div>
+                <div className="min-w-0 break-words">
                   <span className="text-muted-foreground">Raw Water TDS:</span> {(customer as any).raw_water_tds} ppm
                 </div>
               )}
