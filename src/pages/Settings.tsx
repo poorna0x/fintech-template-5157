@@ -253,6 +253,27 @@ const Settings = () => {
     loadAmountTrackers();
   }, []);
 
+  // Deep-link from the admin "Recent" quick-access menu: scroll to a section, e.g.
+  // /settings?section=amount-trackers or ?section=technician-management.
+  useEffect(() => {
+    const section = new URLSearchParams(window.location.search).get('section');
+    if (!section) return;
+    // Wait for the section cards to render before scrolling.
+    const timer = window.setTimeout(() => {
+      const el = document.getElementById(`section-${section}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        el.classList.add('ring-2', 'ring-blue-400', 'ring-offset-2', 'rounded-lg');
+        window.setTimeout(() => {
+          el.classList.remove('ring-2', 'ring-blue-400', 'ring-offset-2', 'rounded-lg');
+        }, 2500);
+      }
+      // Clean the URL so a refresh doesn't re-scroll.
+      window.history.replaceState({}, '', '/settings');
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, []);
+
   // Handle location tracking toggle
   const handleLocationTrackingToggle = (enabled: boolean) => {
     setLocationTrackingEnabled(enabled);
@@ -1762,7 +1783,7 @@ const Settings = () => {
           </Card>
 
           {/* Amount Trackers */}
-          <Card>
+          <Card id="section-amount-trackers">
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
@@ -2600,7 +2621,7 @@ const Settings = () => {
           </Card>
 
           {/* Technician Management */}
-            <Card>
+            <Card id="section-technician-management">
               <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                   <div>

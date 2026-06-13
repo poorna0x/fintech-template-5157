@@ -132,6 +132,8 @@ import CustomerReportDialog from './admin/CustomerReportDialog';
 import SendMessageDialog from './admin/SendMessageDialog';
 import ShareTechnicianInfoToCustomerDialog from './admin/ShareTechnicianInfoToCustomerDialog';
 import RecentAccountsDialog from './admin/RecentAccountsDialog';
+import DirectSaleDialog from './admin/DirectSaleDialog';
+import AmountTrackersDialog from './admin/AmountTrackersDialog';
 import ServiceHistoryDialog from './admin/ServiceHistoryDialog';
 import PhotoGalleryDialog from './admin/PhotoGalleryDialog';
 import PhotoViewerDialog from './admin/PhotoViewerDialog';
@@ -632,6 +634,8 @@ const AdminDashboard = () => {
   const [recentAccountsDialogOpen, setRecentAccountsDialogOpen] = useState(false);
   const [recentAccountsToday, setRecentAccountsToday] = useState<Customer[]>([]);
   const [loadingRecentAccounts, setLoadingRecentAccounts] = useState(false);
+  const [directSaleOpen, setDirectSaleOpen] = useState(false);
+  const [amountTrackersOpen, setAmountTrackersOpen] = useState(false);
   const [step5JobData, setStep5JobData] = useState({
     service_type: 'RO' as 'RO' | 'SOFTENER',
     service_sub_type: 'Service',
@@ -9260,18 +9264,72 @@ const AdminDashboard = () => {
                 <Settings className="w-4 h-4" />
                 <span className="hidden sm:inline">Settings</span>
               </Button>
-              <Button
-                variant="outline"
-                  className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
-                onClick={() => {
-                  hapticTap();
-                  setRecentAccountsDialogOpen(true);
-                }}
-                  title="Recent"
-              >
-                <Clock className="w-4 h-4" />
-                  <span className="hidden sm:inline">Recent</span>
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
+                    title="Tools"
+                  >
+                    <Wrench className="w-4 h-4" />
+                    <span className="hidden sm:inline">Tools</span>
+                    <ChevronDown className="w-3.5 h-3.5 opacity-70" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-52">
+                  <DropdownMenuItem
+                    onClick={() => {
+                      hapticTap();
+                      setRecentAccountsDialogOpen(true);
+                    }}
+                  >
+                    <Clock className="w-4 h-4 mr-2" />
+                    Recent Accounts
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      hapticTap();
+                      handleShowAMCView();
+                    }}
+                  >
+                    <Star className="w-4 h-4 mr-2" />
+                    View AMC
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={isManager}
+                    onClick={() => {
+                      if (isManager) return;
+                      hapticTap();
+                      setDirectSaleOpen(true);
+                    }}
+                  >
+                    {isManager ? <Lock className="w-4 h-4 mr-2" /> : <ShoppingCart className="w-4 h-4 mr-2" />}
+                    Direct / Office Sales
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={isManager}
+                    onClick={() => {
+                      if (isManager) return;
+                      hapticTap();
+                      setAmountTrackersOpen(true);
+                    }}
+                  >
+                    {isManager ? <Lock className="w-4 h-4 mr-2" /> : <DollarSign className="w-4 h-4 mr-2" />}
+                    Amount Trackers
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={isManager}
+                    onClick={() => {
+                      if (isManager) return;
+                      hapticTap();
+                      navigate('/settings?section=technician-management');
+                    }}
+                  >
+                    {isManager ? <Lock className="w-4 h-4 mr-2" /> : <UserPlus className="w-4 h-4 mr-2" />}
+                    Edit Technician
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
                 <Button
                   variant={(currentView as string) === 'payments' ? 'default' : 'outline'}
                   onClick={() => handleViewChange('payments')}
@@ -12760,6 +12818,11 @@ const AdminDashboard = () => {
       />
 
       {/* PIN Dialog */}
+
+      {/* Direct / Office Sale Dialog – quick access from the Recent dropdown */}
+      <DirectSaleDialog open={directSaleOpen} onOpenChange={setDirectSaleOpen} />
+
+      <AmountTrackersDialog open={amountTrackersOpen} onOpenChange={setAmountTrackersOpen} />
 
       {/* Recent Accounts Dialog – scoped fetch when opened (no full customer list) */}
       <Dialog open={recentAccountsDialogOpen} onOpenChange={setRecentAccountsDialogOpen}>
