@@ -397,9 +397,9 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
                 // Get default lead cost for a source (used when switching to a non-Other source)
                 const getDefaultLeadCost = (leadSource: string): string => {
                   switch (leadSource) {
-                    case 'Home Triangle': return '280';
-                    case 'Home Triangle-Srujan': return '280';
-                    case 'Home Triangle-3': return '280';
+                    case 'Home Triangle': return '231';
+                    case 'Home Triangle-Srujan': return '231';
+                    case 'Home Triangle-3': return '231';
                     case 'Direct call': return '0';
                     case 'RO care india': return '400';
                     case 'Local Ramu': return '500';
