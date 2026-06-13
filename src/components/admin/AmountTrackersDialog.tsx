@@ -187,15 +187,17 @@ export default function AmountTrackersDialog({ open, onOpenChange }: AmountTrack
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="!w-[calc(100vw-2rem)] !max-w-[calc(100vw-2rem)] sm:!w-full sm:!max-w-2xl max-h-[85vh] overflow-y-auto p-5 sm:p-6">
-          <DialogHeader className="pr-8">
-            <DialogTitle className="flex items-center gap-2">
-              <DollarSign className="w-5 h-5" />
-              Amount Trackers
-            </DialogTitle>
-            <DialogDescription className="mt-1">
-              Named running totals — e.g. Cash flow starts at ₹1,000, add ₹100 → ₹1,100.
-            </DialogDescription>
-            <Button onClick={handleAddTracker} size="sm" className="w-full sm:w-auto sm:self-start mt-3">
+          <DialogHeader>
+            <div className="px-6 mb-2">
+              <DialogTitle className="flex items-center justify-center gap-2">
+                <DollarSign className="w-5 h-5" />
+                Amount Trackers
+              </DialogTitle>
+              <DialogDescription className="mt-1 text-center hidden sm:block">
+                Named running totals — e.g. Cash flow starts at ₹1,000, add ₹100 → ₹1,100.
+              </DialogDescription>
+            </div>
+            <Button onClick={handleAddTracker} size="sm" className="w-full sm:w-auto sm:self-start my-3 sm:my-4">
               <Plus className="w-4 h-4 mr-2" />
               New Tracker
             </Button>

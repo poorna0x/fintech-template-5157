@@ -271,16 +271,18 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="w-[calc(100%-2rem)] sm:max-w-md max-h-[90vh] overflow-y-auto p-4 sm:p-6">
+      <DialogContent className="!w-[calc(100vw-2rem)] !max-w-[calc(100vw-2rem)] sm:!w-full sm:!max-w-md max-h-[90vh] overflow-y-auto p-4 sm:p-6 [&>*]:min-w-0">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <ShoppingBag className="w-5 h-5" />
-            Record Direct Sale
-          </DialogTitle>
-          <DialogDescription className="text-xs sm:text-sm">
-            For office/counter sales with no customer or technician. Counts toward revenue for the
-            selected date.
-          </DialogDescription>
+          <div className="px-6">
+            <DialogTitle className="flex items-center justify-center gap-2">
+              <ShoppingBag className="w-5 h-5" />
+              Record Direct Sale
+            </DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm text-center mt-1">
+              For office/counter sales with no customer or technician. Counts toward revenue for the
+              selected date.
+            </DialogDescription>
+          </div>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
