@@ -83,10 +83,23 @@
   /* Hide browser's default loading progress bar */
   html {
     overflow-x: hidden;
+    /* Always reserve the vertical scrollbar's space. When a Radix overlay (dialog,
+       dropdown, popover) opens it locks body scroll, and without a reserved gutter the
+       page reflows sideways. */
+    scrollbar-gutter: stable;
     /* Allow pull-to-refresh on mobile - use auto to allow all touch gestures */
     touch-action: auto;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-y: auto;
+  }
+
+  /* react-remove-scroll (used by Radix dialogs/menus/popovers) adds margin/padding to
+     <body> to offset the removed scrollbar. With the gutter already reserved above, that
+     offset double-counts and shifts the page; cancel it so the layout stays put when any
+     overlay opens. The extra specificity beats the library's runtime-injected !important rule. */
+  html body[data-scroll-locked] {
+    margin-right: 0 !important;
+    padding-right: 0 !important;
   }
 
   /* Prevent freeze issues in PWA */
