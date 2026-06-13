@@ -1231,9 +1231,18 @@ export const db = {
       amount: number;
       item?: string;
       saleDate: Date;
+      /** @deprecated single-item fields kept for backward compatibility; prefer `items`. */
       inventoryId?: string | null;
       quantity?: number;
       partsCost?: number;
+      /** Multiple inventory items sold in one office sale. Stored as `office_parts`. */
+      items?: Array<{
+        inventoryId: string;
+        quantity: number;
+        unitPrice: number;
+        productName?: string;
+        code?: string | null;
+      }>;
       paymentMode?: 'CASH' | 'ONLINE' | 'PARTIAL';
       partialCashAmount?: number;
       partialOnlineAmount?: number;
@@ -1251,6 +1260,7 @@ export const db = {
         inventoryId,
         quantity,
         partsCost,
+        items,
         paymentMode,
         partialCashAmount,
         partialOnlineAmount,
@@ -1259,9 +1269,35 @@ export const db = {
       // Map the sale's payment mode to the jobs.payment_method enum used across analytics.
       const dbPaymentMethod =
         paymentMode === 'ONLINE' ? 'UPI' : paymentMode === 'PARTIAL' ? 'PARTIAL' : 'CASH';
-      const qty = Math.max(0, Math.floor(Number(quantity) || 0));
-      const cost = Math.max(0, Number(partsCost) || 0);
-      const useInventory = !!inventoryId && qty > 0;
+
+      // Normalize the items list. Prefer the new multi-item `items` array; fall back to the
+      // legacy single-item fields so older callers keep working.
+      let cleanItems = (Array.isArray(items) ? items : [])
+        .map((it) => ({
+          inventoryId: String(it.inventoryId),
+          quantity: Math.max(0, Math.floor(Number(it.quantity) || 0)),
+          unitPrice: Math.max(0, Number(it.unitPrice) || 0),
+          productName: it.productName || '',
+          code: it.code ?? null,
+        }))
+        .filter((it) => it.inventoryId && it.quantity > 0);
+
+      if (cleanItems.length === 0) {
+        const legacyQty = Math.max(0, Math.floor(Number(quantity) || 0));
+        const legacyCost = Math.max(0, Number(partsCost) || 0);
+        if (inventoryId && legacyQty > 0) {
+          cleanItems = [{
+            inventoryId: String(inventoryId),
+            quantity: legacyQty,
+            unitPrice: legacyQty > 0 ? legacyCost / legacyQty : legacyCost,
+            productName: '',
+            code: null,
+          }];
+        }
+      }
+
+      const useInventory = cleanItems.length > 0;
+      const totalPartsCost = cleanItems.reduce((s, it) => s + it.quantity * it.unitPrice, 0);
 
       const { data: walkIn, error: customerError } = await db.customers.getOrCreateWalkIn();
       if (customerError || !walkIn) {
@@ -1269,11 +1305,17 @@ export const db = {
       }
 
       // Reserve stock first so an out-of-stock sale fails before any job row is created.
-      if (useInventory) {
-        const { error: decErr } = await db.inventory.decrementForJob(inventoryId as string, qty);
+      // Track what we reserved so we can roll back every item if a later one fails.
+      const reserved: Array<{ id: string; qty: number }> = [];
+      for (const it of cleanItems) {
+        const { error: decErr } = await db.inventory.decrementForJob(it.inventoryId, it.quantity);
         if (decErr) {
+          for (const r of reserved) {
+            await db.inventory.incrementForJob(r.id, r.qty).catch(() => {});
+          }
           return { data: null, error: decErr };
         }
+        reserved.push({ id: it.inventoryId, qty: it.quantity });
       }
 
       // Anchor the sale to noon of the selected day so it lands inside the day's local range.
@@ -1291,11 +1333,22 @@ export const db = {
       const jobNumber = `${prefix}${timestamp}${random}`;
 
       const baseItem = (item && item.trim()) ? item.trim() : 'Direct office sale';
-      const description = useInventory ? `${baseItem} × ${qty}` : baseItem;
+      const itemsLabel = cleanItems
+        .map((it) => `${it.productName || 'Item'} × ${it.quantity}`)
+        .join(', ');
+      const description = useInventory && itemsLabel ? itemsLabel : baseItem;
 
       const requirements: any[] = [{ lead_source: 'Office Sale' }];
       if (useInventory) {
-        requirements.push({ direct_sale_inventory_id: inventoryId, direct_sale_quantity: qty, direct_sale_parts_cost: cost });
+        requirements.push({
+          office_parts: cleanItems.map((it) => ({
+            inventory_id: it.inventoryId,
+            product_name: it.productName,
+            code: it.code,
+            quantity: it.quantity,
+            unit_price: it.unitPrice,
+          })),
+        });
       }
       // Mirror the job-completion flow: store partial split and the QR used (for reports).
       if (paymentMode === 'PARTIAL') {
@@ -1326,7 +1379,7 @@ export const db = {
         estimated_cost: amount,
         actual_cost: amount,
         lead_cost: 0,
-        parts_cost_total: useInventory ? cost : 0,
+        parts_cost_total: useInventory ? totalPartsCost : 0,
         payment_status: 'PAID',
         payment_amount: amount,
         payment_method: dbPaymentMethod,
@@ -1337,9 +1390,11 @@ export const db = {
 
       const result = await db.jobs.create(jobData);
 
-      // If the job failed to save after we reserved stock, put it back.
+      // If the job failed to save after we reserved stock, put it all back.
       if ((result.error || !result.data) && useInventory) {
-        await db.inventory.incrementForJob(inventoryId as string, qty).catch(() => {});
+        for (const r of reserved) {
+          await db.inventory.incrementForJob(r.id, r.qty).catch(() => {});
+        }
       }
 
       return result;

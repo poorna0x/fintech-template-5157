@@ -9273,7 +9273,6 @@ const AdminDashboard = () => {
                   >
                     <Wrench className="w-4 h-4" />
                     <span className="hidden sm:inline">Tools</span>
-                    <ChevronDown className="w-3.5 h-3.5 opacity-70" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-52">

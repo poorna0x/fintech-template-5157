@@ -17,7 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2, ShoppingBag, Search, Check, X } from 'lucide-react';
+import { Loader2, ShoppingBag, Search, Check, X, Plus } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 
@@ -75,8 +75,8 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
 
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [loadingInventory, setLoadingInventory] = useState(false);
-  const [selectedInventoryId, setSelectedInventoryId] = useState<string>('');
-  const [quantity, setQuantity] = useState('1');
+  // Multiple inventory items can be sold in one office sale: id -> chosen quantity (as text).
+  const [selectedQuantities, setSelectedQuantities] = useState<Record<string, string>>({});
   const [inventorySearch, setInventorySearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
 
@@ -154,8 +154,7 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
     setPartialCashAmount('');
     setPartialOnlineAmount('');
     setSelectedQrId('');
-    setSelectedInventoryId('');
-    setQuantity('1');
+    setSelectedQuantities({});
     setInventorySearch('');
     setDebouncedSearch('');
   };
@@ -166,7 +165,33 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
     onOpenChange(next);
   };
 
-  const selectedItem = inventory.find((i) => i.id === selectedInventoryId) || null;
+  const addItem = (inv: InventoryItem) => {
+    setSelectedQuantities((prev) => (prev[inv.id] ? prev : { ...prev, [inv.id]: '1' }));
+  };
+
+  const removeItem = (id: string) => {
+    setSelectedQuantities((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  };
+
+  const setItemQuantity = (id: string, value: string) => {
+    setSelectedQuantities((prev) => ({ ...prev, [id]: value }));
+  };
+
+  // Resolved list of selected items with their quantity + stock/price details.
+  const selectedItems = useMemo(() => {
+    return Object.keys(selectedQuantities)
+      .map((id) => {
+        const inv = inventory.find((i) => i.id === id);
+        if (!inv) return null;
+        const qty = Math.max(0, Math.floor(Number(selectedQuantities[id]) || 0));
+        return { ...inv, qty };
+      })
+      .filter((x): x is InventoryItem & { qty: number } => x !== null);
+  }, [selectedQuantities, inventory]);
 
   const filteredInventory = useMemo(() => {
     const q = debouncedSearch.trim().toLowerCase();
@@ -181,9 +206,9 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
     return [...list].sort((a, b) => (a.product_name || '').localeCompare(b.product_name || ''));
   }, [inventory, debouncedSearch]);
 
-  const qtyNum = Math.max(0, Math.floor(Number(quantity) || 0));
+  const hasItems = selectedItems.length > 0;
   const amountNum = parseFloat(amount);
-  const partsCost = selectedItem ? selectedItem.price * qtyNum : 0;
+  const partsCost = selectedItems.reduce((s, it) => s + it.price * it.qty, 0);
   const profit = (isNaN(amountNum) ? 0 : amountNum) - partsCost;
 
   const selectedQr = qrOptions.find((q) => q.id === selectedQrId) || null;
@@ -198,13 +223,13 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
       toast.error('Select the sale date.');
       return;
     }
-    if (selectedItem) {
-      if (qtyNum < 1) {
-        toast.error('Enter a valid quantity.');
+    for (const it of selectedItems) {
+      if (it.qty < 1) {
+        toast.error(`Enter a valid quantity for ${it.product_name}.`);
         return;
       }
-      if (qtyNum > selectedItem.quantity) {
-        toast.error(`Only ${selectedItem.quantity} in stock for ${selectedItem.product_name}.`);
+      if (it.qty > it.quantity) {
+        toast.error(`Only ${it.quantity} in stock for ${it.product_name}.`);
         return;
       }
     }
@@ -230,7 +255,9 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
     const [y, m, d] = saleDate.split('-').map(Number);
     const parsedDate = new Date(y, (m || 1) - 1, d || 1);
 
-    const resolvedItem = selectedItem ? selectedItem.product_name : item.trim();
+    const resolvedItem = hasItems
+      ? selectedItems.map((it) => `${it.product_name} × ${it.qty}`).join(', ')
+      : item.trim();
 
     const qrPhotos = needsQr && selectedQr
       ? {
@@ -247,9 +274,13 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
         amount: amountNum,
         item: resolvedItem,
         saleDate: parsedDate,
-        inventoryId: selectedItem ? selectedItem.id : null,
-        quantity: selectedItem ? qtyNum : 0,
-        partsCost,
+        items: selectedItems.map((it) => ({
+          inventoryId: it.id,
+          quantity: it.qty,
+          unitPrice: it.price,
+          productName: it.product_name,
+          code: it.code ?? null,
+        })),
         paymentMode,
         partialCashAmount: partialCash,
         partialOnlineAmount: partialOnline,
@@ -304,108 +335,125 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
           <div className="space-y-1.5">
             <Label>From inventory</Label>
 
-            {selectedItem ? (
-              <div className="flex items-center gap-2 rounded-lg border border-green-300 bg-green-50 dark:bg-green-900/20 p-2.5">
-                <Check className="w-4 h-4 shrink-0 text-green-600" />
-                <div className="min-w-0 flex-1 overflow-hidden">
-                  <span className="block truncate text-sm font-medium">
-                    {selectedItem.product_name}
-                    {selectedItem.code ? ` (${selectedItem.code})` : ''}
-                  </span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {selectedItem.quantity} in stock · ₹{formatCurrency(selectedItem.price)} each
-                  </span>
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 px-2 shrink-0"
-                  onClick={() => {
-                    setSelectedInventoryId('');
-                    setQuantity('1');
-                    setInventorySearch('');
-                  }}
-                  title="Clear selection"
-                >
-                  <X className="w-4 h-4" />
-                </Button>
-              </div>
-            ) : (
-              <>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                  <Input
-                    placeholder="Search items by name or code..."
-                    value={inventorySearch}
-                    onChange={(e) => setInventorySearch(e.target.value)}
-                    className="pl-9 h-10 text-sm"
-                  />
-                </div>
-                <div className="rounded-lg border overflow-hidden">
-                  {loadingInventory ? (
-                    <div className="py-6 px-4 text-center text-sm text-muted-foreground">Loading items...</div>
-                  ) : filteredInventory.length === 0 ? (
-                    <div className="py-6 px-4 text-center text-sm text-muted-foreground">
-                      {inventory.length === 0
-                        ? 'No inventory items.'
-                        : debouncedSearch.trim()
-                        ? 'No items match your search.'
-                        : 'No items.'}
-                    </div>
-                  ) : (
-                    <div className="max-h-[min(40vh,240px)] overflow-y-auto [scrollbar-width:thin]">
-                      {filteredInventory.map((inv) => {
-                        const outOfStock = inv.quantity <= 0;
-                        return (
-                          <button
-                            key={inv.id}
+            {/* Selected items (multiple allowed) with per-item quantity. */}
+            {hasItems && (
+              <div className="space-y-2">
+                {selectedItems.map((it) => {
+                  const overStock = it.qty > it.quantity;
+                  return (
+                    <div
+                      key={it.id}
+                      className="rounded-lg border border-green-300 bg-green-50 dark:bg-green-900/20 p-2.5"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Check className="w-4 h-4 shrink-0 text-green-600" />
+                        <div className="min-w-0 flex-1 overflow-hidden">
+                          <span className="block truncate text-sm font-medium">
+                            {it.product_name}
+                            {it.code ? ` (${it.code})` : ''}
+                          </span>
+                          <span className="block truncate text-xs text-muted-foreground">
+                            {it.quantity} in stock · ₹{formatCurrency(it.price)} each
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Label htmlFor={`qty-${it.id}`} className="sr-only">
+                            Quantity for {it.product_name}
+                          </Label>
+                          <Input
+                            id={`qty-${it.id}`}
+                            type="number"
+                            inputMode="numeric"
+                            min="1"
+                            max={it.quantity}
+                            step="1"
+                            value={selectedQuantities[it.id] ?? ''}
+                            onChange={(e) => setItemQuantity(it.id, e.target.value)}
+                            className={`h-8 w-16 text-sm ${overStock ? 'border-red-400' : ''}`}
+                          />
+                          <Button
                             type="button"
-                            disabled={outOfStock}
-                            onClick={() => {
-                              setSelectedInventoryId(inv.id);
-                              setQuantity('1');
-                            }}
-                            className="flex w-full items-center gap-2 border-b px-3 py-2.5 text-left last:border-b-0 hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 px-2"
+                            onClick={() => removeItem(it.id)}
+                            title="Remove item"
                           >
-                            <div className="min-w-0 flex-1 overflow-hidden">
-                              <span className="block truncate text-sm font-medium">
-                                {inv.product_name}
-                                {inv.code ? ` (${inv.code})` : ''}
-                              </span>
-                              <span className="block truncate text-xs text-muted-foreground">
-                                {outOfStock ? 'Out of stock' : `${inv.quantity} in stock`} · ₹
-                                {formatCurrency(inv.price)}
-                              </span>
-                            </div>
-                          </button>
-                        );
-                      })}
+                            <X className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+                      {overStock && (
+                        <p className="mt-1 pl-6 text-xs text-red-600">
+                          Only {it.quantity} in stock.
+                        </p>
+                      )}
                     </div>
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Pick an item to deduct stock and track cost for profit, or skip it for other sales.
-                </p>
-              </>
+                  );
+                })}
+              </div>
             )}
-          </div>
 
-          {selectedItem ? (
-            <div className="space-y-1.5">
-              <Label htmlFor="direct-sale-qty">Quantity *</Label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
               <Input
-                id="direct-sale-qty"
-                type="number"
-                inputMode="numeric"
-                min="1"
-                max={selectedItem.quantity}
-                step="1"
-                value={quantity}
-                onChange={(e) => setQuantity(e.target.value)}
+                placeholder="Search items by name or code..."
+                value={inventorySearch}
+                onChange={(e) => setInventorySearch(e.target.value)}
+                className="pl-9 h-10 text-sm"
               />
             </div>
-          ) : (
+            <div className="rounded-lg border overflow-hidden">
+              {loadingInventory ? (
+                <div className="py-6 px-4 text-center text-sm text-muted-foreground">Loading items...</div>
+              ) : filteredInventory.length === 0 ? (
+                <div className="py-6 px-4 text-center text-sm text-muted-foreground">
+                  {inventory.length === 0
+                    ? 'No inventory items.'
+                    : debouncedSearch.trim()
+                    ? 'No items match your search.'
+                    : 'No items.'}
+                </div>
+              ) : (
+                <div className="max-h-[min(40vh,240px)] overflow-y-auto [scrollbar-width:thin]">
+                  {filteredInventory.map((inv) => {
+                    const outOfStock = inv.quantity <= 0;
+                    const alreadyAdded = !!selectedQuantities[inv.id];
+                    return (
+                      <button
+                        key={inv.id}
+                        type="button"
+                        disabled={outOfStock || alreadyAdded}
+                        onClick={() => addItem(inv)}
+                        className="flex w-full items-center gap-2 border-b px-3 py-2.5 text-left last:border-b-0 hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <div className="min-w-0 flex-1 overflow-hidden">
+                          <span className="block truncate text-sm font-medium">
+                            {inv.product_name}
+                            {inv.code ? ` (${inv.code})` : ''}
+                          </span>
+                          <span className="block truncate text-xs text-muted-foreground">
+                            {outOfStock ? 'Out of stock' : `${inv.quantity} in stock`} · ₹
+                            {formatCurrency(inv.price)}
+                          </span>
+                        </div>
+                        {alreadyAdded ? (
+                          <Check className="w-4 h-4 shrink-0 text-green-600" />
+                        ) : (
+                          <Plus className="w-4 h-4 shrink-0 text-muted-foreground" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Add one or more items to deduct stock and track cost for profit, or skip for other sales.
+            </p>
+          </div>
+
+          {!hasItems && (
             <div className="space-y-1.5">
               <Label htmlFor="direct-sale-item">Item / description</Label>
               <Input
@@ -542,11 +590,11 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
             </div>
           )}
 
-          {selectedItem && qtyNum > 0 && (
+          {hasItems && partsCost > 0 && (
             <div className="rounded-lg border border-border bg-muted/40 dark:bg-gray-800/50 p-3 text-sm space-y-1">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">
-                  Cost ({qtyNum} × ₹{formatCurrency(selectedItem.price)})
+                  Cost ({selectedItems.length} item{selectedItems.length > 1 ? 's' : ''})
                 </span>
                 <span className="font-medium text-orange-600">₹ {formatCurrency(partsCost)}</span>
               </div>
