@@ -1116,6 +1116,23 @@ export const db = {
     },
 
     /**
+     * Lean variant of getPhotoFieldsForJobIds for report / completed enrichment, which
+     * only consumes `after_photos`. Skips before_photos + images to cut egress (those
+     * JSON arrays can be large and are never read on the report path).
+     */
+    async getAfterPhotosForJobIds(jobIds: string[]) {
+      const ids = [...new Set(jobIds.filter(Boolean))];
+      if (ids.length === 0) {
+        return { data: [] as Record<string, unknown>[], error: null };
+      }
+      const { data, error } = await supabase
+        .from('jobs')
+        .select('id,after_photos')
+        .in('id', ids);
+      return { data: data || [], error };
+    },
+
+    /**
      * Latest COMPLETED job `service_brand` per customer (batched `.in` query).
      * Rows are ordered by completion time desc; first row per customer_id wins.
      */

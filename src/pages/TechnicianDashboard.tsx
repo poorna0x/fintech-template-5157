@@ -491,6 +491,12 @@ const TechnicianDashboard = () => {
   const lastJobIdsRef = useRef<Set<string>>(new Set()); // Track job IDs from last active session
   const hasJobsRef = useRef<boolean>(false); // Track if we have loaded jobs at least once
   const shouldPreserveOrderRef = useRef<boolean>(false); // Track if we should preserve job order (true when updating status, false when loading from DB)
+  // Freezes the ongoing list's on-screen order for the session (e.g. after the tech taps
+  // Start) so jobs don't jump to the top mid-work, even across realtime refetches. Null on
+  // a fresh page load, so the default sort (active jobs on top) applies after a reload.
+  // Reset on tab change and when acknowledging new jobs.
+  const ongoingOrderRef = useRef<string[] | null>(null);
+  const prevStatusFilterForOrderRef = useRef<string>('');
   const lastCompletedJobIdsOrderRef = useRef<string[]>([]); // Completed tab: preserve list order when only job data changes (e.g. add parts)
   const lastCompletedDateFilterRef = useRef<'today' | 'yesterday'>('today'); // so we re-sort when switching today/yesterday
   const jobsRef = useRef<Job[]>([]); // Track current jobs state for synchronous access in realtime handler
@@ -507,6 +513,8 @@ const TechnicianDashboard = () => {
     }
     return new Set();
   }); // Track jobs that have been interacted with (to remove blue border)
+  // Blocking "you have N new job(s)" alert so newly assigned jobs can't get buried.
+  const [newJobsAlertOpen, setNewJobsAlertOpen] = useState(false);
   const [confirmStartJobDialog, setConfirmStartJobDialog] = useState<{open: boolean, job: Job | null}>({open: false, job: null});
   const [confirmStartWorkDialog, setConfirmStartWorkDialog] = useState<{open: boolean, job: Job | null}>({open: false, job: null});
   const [confirmCompleteJobDialog, setConfirmCompleteJobDialog] = useState<{open: boolean, job: Job | null}>({open: false, job: null});
@@ -1857,25 +1865,21 @@ const TechnicianDashboard = () => {
         const customerUuid = await resolveCustomerUuidForQueries(selectedCustomerForReport);
 
         if (customerUuid) {
-          const { data, error } = await db.jobs.getByCustomerIdForReportEnriched(customerUuid);
+          // Fetch the (slim) completed list, merge in completed jobs already on this
+          // device, then enrich once. We use the non-enriched fetch here so we don't
+          // pull after_photos twice (the merge can add local rows that also need it).
+          const { data, error } = await db.jobs.getByCustomerIdForReport(customerUuid);
           if (error) {
             console.error('Error fetching customer jobs for report:', error);
             setCustomerReportJobs(mergeCustomerReportJobsForUuid([], customerUuid));
           } else {
             const merged = mergeCustomerReportJobsForUuid(data || [], customerUuid);
-            const needsEnrich = merged.some(
-              (j) =>
-                !(Array.isArray((j as any).after_photos) && (j as any).after_photos.length > 0) &&
-                !(Array.isArray((j as any).afterPhotos) && (j as any).afterPhotos.length > 0)
-            );
-            if (needsEnrich && merged.length > 0) {
-              try {
-                const enriched = await enrichJobsWithAfterPhotosIfNeeded(merged);
-                setCustomerReportJobs(enriched);
-              } catch {
-                setCustomerReportJobs(merged);
-              }
-            } else {
+            try {
+              // No-ops for rows that already carry after_photos (e.g. local completed
+              // jobs); only rows missing bill/payment photos trigger a single batched read.
+              const enriched = await enrichJobsWithAfterPhotosIfNeeded(merged);
+              setCustomerReportJobs(enriched);
+            } catch {
               setCustomerReportJobs(merged);
             }
           }
@@ -2552,6 +2556,12 @@ const TechnicianDashboard = () => {
   useEffect(() => {
     let filtered = jobs;
 
+    // Switching tabs clears any frozen ongoing order so the new tab sorts normally.
+    if (prevStatusFilterForOrderRef.current !== statusFilter) {
+      prevStatusFilterForOrderRef.current = statusFilter;
+      ongoingOrderRef.current = null;
+    }
+
     // Filter by status
     if (statusFilter === 'ONGOING') {
       filtered = filtered.filter(isOngoingJob);
@@ -2635,6 +2645,22 @@ const TechnicianDashboard = () => {
         });
         lastCompletedJobIdsOrderRef.current = filtered.map((j) => j.id);
       }
+    } else if (ongoingOrderRef.current && ongoingOrderRef.current.length > 0) {
+      // Session order is frozen (e.g. the tech tapped Start) — keep every job in its
+      // current on-screen slot so it doesn't jump, even across realtime refetches. Newly
+      // arrived jobs are appended (newest first). A page reload clears this and re-sorts.
+      const savedOrder = ongoingOrderRef.current;
+      const orderMap = new Map(savedOrder.map((id, i) => [id, i] as const));
+      const known = filtered.filter((j) => orderMap.has(j.id));
+      const fresh = filtered.filter((j) => !orderMap.has(j.id));
+      known.sort((a, b) => (orderMap.get(a.id)! - orderMap.get(b.id)!));
+      fresh.sort(
+        (a, b) =>
+          new Date((b as any).created_at || (b as any).createdAt || 0).getTime() -
+          new Date((a as any).created_at || (a as any).createdAt || 0).getTime()
+      );
+      filtered = [...known, ...fresh];
+      ongoingOrderRef.current = filtered.map((j) => j.id);
     } else if (didSort) {
       filtered.sort((a, b) => {
       const statusA = (a as any).status || a.status;
@@ -2700,6 +2726,23 @@ const TechnicianDashboard = () => {
 
     setFilteredJobs(filtered);
   }, [jobs, statusFilter, seenJobs, completedDateFilter, user?.technicianId, user?.id]);
+
+  // Newly assigned jobs the technician hasn't acknowledged yet (drives the blocking alert).
+  const newAssignedJobs = useMemo(
+    () =>
+      jobs.filter(
+        (j) =>
+          normalizeJobStatus((j as any).status ?? j.status) === 'ASSIGNED' &&
+          !seenJobs.has(j.id)
+      ),
+    [jobs, seenJobs]
+  );
+
+  // Pop the alert whenever there are unacknowledged new jobs (e.g. a fresh realtime
+  // assignment); close it automatically once none remain.
+  useEffect(() => {
+    setNewJobsAlertOpen(newAssignedJobs.length > 0);
+  }, [newAssignedJobs.length]);
 
   const loadAssignmentRequests = async (retryCount = 0) => {
     if (!user?.technicianId) return;
@@ -2842,6 +2885,32 @@ const TechnicianDashboard = () => {
     });
   };
 
+  // Mark several jobs seen at once (single localStorage write) — used by the new-jobs alert.
+  const markJobsAsSeen = (jobIds: string[]) => {
+    if (jobIds.length === 0) return;
+    setSeenJobs(prev => {
+      const updated = new Set(prev);
+      for (const id of jobIds) updated.add(id);
+      try {
+        localStorage.setItem('technician_seen_jobs', JSON.stringify(Array.from(updated)));
+      } catch (error) {
+        console.error('Error saving seen jobs to localStorage:', error);
+      }
+      return updated;
+    });
+  };
+
+  // Acknowledge all currently-new assigned jobs: mark them seen, close the alert, and
+  // jump to the Ongoing tab so the technician actually lands on the new jobs.
+  const acknowledgeNewJobs = () => {
+    markJobsAsSeen(newAssignedJobs.map(j => j.id));
+    setNewJobsAlertOpen(false);
+    // Re-sort the ongoing list so the acknowledged jobs land in their proper position.
+    ongoingOrderRef.current = null;
+    prevStatusFilterForOrderRef.current = 'ONGOING';
+    setStatusFilter('ONGOING');
+  };
+
   // Check if another job is in progress
   const hasJobInProgress = (): boolean => {
     return jobs.some(job => {
@@ -2879,6 +2948,9 @@ const TechnicianDashboard = () => {
         throw new Error(error.message);
       }
 
+      // Freeze the current on-screen order so this job stays where it is instead of
+      // jumping to the top now; a fresh page load will re-sort (active jobs on top).
+      ongoingOrderRef.current = filteredJobs.map(j => j.id);
       // Update local state - preserve order (don't re-sort)
       shouldPreserveOrderRef.current = true;
       setJobs(prev => {
@@ -2938,6 +3010,9 @@ const TechnicianDashboard = () => {
         throw new Error(error.message);
       }
 
+      // Freeze the current on-screen order so this job stays where it is instead of
+      // jumping to the top now; a fresh page load will re-sort (active jobs on top).
+      ongoingOrderRef.current = filteredJobs.map(j => j.id);
       // Update local state - preserve order (don't re-sort)
       shouldPreserveOrderRef.current = true;
       setJobs(prev => prev.map(j => 
@@ -9306,6 +9381,76 @@ const TechnicianDashboard = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Blocking new-jobs alert — must acknowledge so newly assigned jobs aren't missed */}
+      <AlertDialog open={newJobsAlertOpen} onOpenChange={setNewJobsAlertOpen}>
+        <AlertDialogContent
+          className="max-w-md"
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-500"></span>
+              </span>
+              {newAssignedJobs.length === 1
+                ? 'You have 1 new job'
+                : `You have ${newAssignedJobs.length} new jobs`}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              These were just assigned to you. Review them so nothing gets missed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="max-h-[50vh] overflow-y-auto space-y-2">
+            {newAssignedJobs.map((job) => {
+              const c = job.customer as any;
+              const sd = (job as any).scheduled_date || (job as any).scheduledDate;
+              const slot = (job as any).scheduled_time_slot || (job as any).scheduledTimeSlot;
+              const serviceLine = [
+                (job as any).service_type || (job as any).serviceType,
+                (job as any).service_sub_type || (job as any).serviceSubType,
+              ]
+                .filter(Boolean)
+                .join(' · ');
+              return (
+                <div
+                  key={job.id}
+                  className="rounded-lg border border-blue-200 bg-blue-50/60 p-3"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-sm font-semibold">
+                      {(job as any).job_number || (job as any).jobNumber || '—'}
+                    </span>
+                    <Badge className="bg-blue-100 text-blue-800 border-blue-300 text-[10px]">
+                      NEW
+                    </Badge>
+                  </div>
+                  <p className={`text-sm font-medium ${customerNameClassName(c)}`}>
+                    {c?.full_name || c?.fullName || 'Customer'}
+                  </p>
+                  {serviceLine && (
+                    <p className="text-xs text-muted-foreground">{serviceLine}</p>
+                  )}
+                  {(sd || slot) && (
+                    <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                      <Calendar className="h-3 w-3 shrink-0" />
+                      {[sd, slot].filter(Boolean).join(' · ')}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={acknowledgeNewJobs} className="w-full">
+              Got it — show my jobs
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Customer Report Dialog */}
       <Dialog open={customerReportDialogOpen} onOpenChange={setCustomerReportDialogOpen}>

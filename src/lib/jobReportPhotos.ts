@@ -201,7 +201,9 @@ export async function enrichJobsWithAfterPhotosIfNeeded<T extends { id: string }
   const idsNeeding = jobs.filter(jobNeedsAfterPhotosFallback).map((j) => j.id);
   if (idsNeeding.length === 0) return jobs;
 
-  const { data: photoRows, error } = await db.jobs.getPhotoFieldsForJobIds(idsNeeding);
+  // Only after_photos is read below, so fetch just that column (smaller egress than
+  // pulling before_photos + images too).
+  const { data: photoRows, error } = await db.jobs.getAfterPhotosForJobIds(idsNeeding);
   if (error || !photoRows?.length) return jobs;
 
   const byId = new Map(
