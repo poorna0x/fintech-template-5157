@@ -2919,6 +2919,36 @@ const TechnicianDashboard = () => {
     });
   };
 
+  // Return the active (EN_ROUTE / IN_PROGRESS) job, optionally ignoring one id (the job
+  // being started). Used to warn the tech before they start a second job at once.
+  const getActiveJob = (excludeJobId?: string): Job | null => {
+    return (
+      jobs.find(job => {
+        if (excludeJobId && job.id === excludeJobId) return false;
+        const status = normalizeJobStatus((job as any).status ?? job.status);
+        return status === 'IN_PROGRESS' || status === 'EN_ROUTE';
+      }) ?? null
+    );
+  };
+
+  // Small amber "you already have a job going" notice for the start dialogs.
+  const ActiveJobWarning: React.FC<{ activeJob: Job }> = ({ activeJob }) => {
+    const c = activeJob.customer as any;
+    const name = c?.full_name || c?.fullName || 'another customer';
+    const status = normalizeJobStatus((activeJob as any).status ?? activeJob.status);
+    const statusLabel = status === 'EN_ROUTE' ? 'on the way' : 'in progress';
+    return (
+      <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+        <AlertCircle className="h-4 w-4 mt-0.5 shrink-0 text-amber-600" />
+        <span>
+          You're already <strong>{statusLabel}</strong> with{' '}
+          <span className="font-semibold">{name}</span>. Finish that job first, or start
+          this one only if you've switched. Two jobs at once can cause mix-ups.
+        </span>
+      </div>
+    );
+  };
+
   // Handle starting job (going to location) - EN_ROUTE status
   const handleStartJob = async (job: Job) => {
     if (!user?.technicianId) return;
@@ -7100,11 +7130,15 @@ const TechnicianDashboard = () => {
             <AlertDialogHeader>
               <AlertDialogTitle>Start Job</AlertDialogTitle>
               <AlertDialogDescription>
-                {confirmStartJobDialog.job && hasJobInProgress() && ((confirmStartJobDialog.job as any).status || confirmStartJobDialog.job.status) !== 'EN_ROUTE' && ((confirmStartJobDialog.job as any).status || confirmStartJobDialog.job.status) !== 'IN_PROGRESS' 
-                  ? 'You already have a job in progress. Starting a new job will mark the current job as paused. Are you sure you want to start this new job?'
-                  : 'Are you sure you want to start this job? This will mark you as en route to the job location.'}
+                Are you sure you want to start this job? This will mark you as en route to the job location.
               </AlertDialogDescription>
             </AlertDialogHeader>
+            {(() => {
+              const activeJob = confirmStartJobDialog.job
+                ? getActiveJob(confirmStartJobDialog.job.id)
+                : null;
+              return activeJob ? <ActiveJobWarning activeJob={activeJob} /> : null;
+            })()}
             {confirmStartJobDialog.job && (
               <div className="bg-gray-50 p-3 rounded-lg text-sm">
                 <p>
@@ -7150,6 +7184,12 @@ const TechnicianDashboard = () => {
                 Are you sure you want to start work on this job? This will mark the job as in progress.
               </AlertDialogDescription>
             </AlertDialogHeader>
+            {(() => {
+              const activeJob = confirmStartWorkDialog.job
+                ? getActiveJob(confirmStartWorkDialog.job.id)
+                : null;
+              return activeJob ? <ActiveJobWarning activeJob={activeJob} /> : null;
+            })()}
             {confirmStartWorkDialog.job && (
               <div className="bg-gray-50 p-3 rounded-lg text-sm">
                 <p>
