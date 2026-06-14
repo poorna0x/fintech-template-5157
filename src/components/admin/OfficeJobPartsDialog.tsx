@@ -485,7 +485,7 @@ const OfficeJobPartsDialog: React.FC<OfficeJobPartsDialogProps> = ({
                   className="w-full justify-center text-sm border border-dashed"
                   onClick={() => {
                     setShowCustom(true);
-                    setCustomName(search.trim());
+                    setCustomName(search.trim().toUpperCase());
                     setCustomQty('1');
                     setCustomPrice('');
                   }}

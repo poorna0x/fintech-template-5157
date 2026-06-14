@@ -582,7 +582,7 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
                       type="button"
                       onClick={() => {
                         setShowCustom(true);
-                        setCustomName(inventorySearch.trim());
+                        setCustomName(inventorySearch.trim().toUpperCase());
                         setCustomQty('1');
                         setCustomPrice('');
                       }}

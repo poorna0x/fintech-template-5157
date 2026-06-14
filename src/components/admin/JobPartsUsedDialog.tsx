@@ -841,7 +841,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
                         onClick={() => {
                           hapticTap();
                           setShowCustom(true);
-                          setCustomName(inventorySearchQuery.trim());
+                          setCustomName(inventorySearchQuery.trim().toUpperCase());
                           setCustomQty('1');
                           setCustomPrice('');
                         }}
