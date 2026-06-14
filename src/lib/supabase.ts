@@ -1235,13 +1235,16 @@ export const db = {
       inventoryId?: string | null;
       quantity?: number;
       partsCost?: number;
-      /** Multiple inventory items sold in one office sale. Stored as `office_parts`. */
+      /** Multiple inventory items sold in one office sale. Stored as `office_parts`.
+       * Custom (one-off) items not in the catalog use `custom: true` and carry their own
+       * synthetic `inventoryId` (e.g. `custom:...`); they don't touch inventory stock. */
       items?: Array<{
         inventoryId: string;
         quantity: number;
         unitPrice: number;
         productName?: string;
         code?: string | null;
+        custom?: boolean;
       }>;
       paymentMode?: 'CASH' | 'ONLINE' | 'PARTIAL';
       partialCashAmount?: number;
@@ -1279,6 +1282,7 @@ export const db = {
           unitPrice: Math.max(0, Number(it.unitPrice) || 0),
           productName: it.productName || '',
           code: it.code ?? null,
+          custom: it.custom === true || String(it.inventoryId).startsWith('custom:'),
         }))
         .filter((it) => it.inventoryId && it.quantity > 0);
 
@@ -1292,6 +1296,7 @@ export const db = {
             unitPrice: legacyQty > 0 ? legacyCost / legacyQty : legacyCost,
             productName: '',
             code: null,
+            custom: false,
           }];
         }
       }
@@ -1308,6 +1313,8 @@ export const db = {
       // Track what we reserved so we can roll back every item if a later one fails.
       const reserved: Array<{ id: string; qty: number }> = [];
       for (const it of cleanItems) {
+        // Custom one-off items aren't tracked in inventory, so there's no stock to reserve.
+        if (it.custom) continue;
         const { error: decErr } = await db.inventory.decrementForJob(it.inventoryId, it.quantity);
         if (decErr) {
           for (const r of reserved) {

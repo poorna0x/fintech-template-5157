@@ -80,6 +80,16 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
   const [inventorySearch, setInventorySearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
 
+  // Custom (one-off) items not present in inventory: name + qty + unit price. They don't
+  // touch stock but still count toward parts cost and profit.
+  const [customItems, setCustomItems] = useState<
+    Array<{ id: string; name: string; quantity: string; unitPrice: string }>
+  >([]);
+  const [showCustom, setShowCustom] = useState(false);
+  const [customName, setCustomName] = useState('');
+  const [customQty, setCustomQty] = useState('1');
+  const [customPrice, setCustomPrice] = useState('');
+
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -146,6 +156,13 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
     return () => clearTimeout(t);
   }, [inventorySearch]);
 
+  const resetCustomForm = () => {
+    setShowCustom(false);
+    setCustomName('');
+    setCustomQty('1');
+    setCustomPrice('');
+  };
+
   const resetForm = () => {
     setAmount('');
     setItem('');
@@ -157,6 +174,8 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
     setSelectedQuantities({});
     setInventorySearch('');
     setDebouncedSearch('');
+    setCustomItems([]);
+    resetCustomForm();
   };
 
   const handleOpenChange = (next: boolean) => {
@@ -181,6 +200,35 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
     setSelectedQuantities((prev) => ({ ...prev, [id]: value }));
   };
 
+  const addCustomItem = () => {
+    const name = customName.trim();
+    const qty = Math.max(1, Math.floor(Number(customQty) || 0));
+    const price = Math.max(0, Number(customPrice) || 0);
+    if (!name) {
+      toast.error('Enter an item name.');
+      return;
+    }
+    setCustomItems((prev) => [
+      ...prev,
+      {
+        id: `custom:${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        name,
+        quantity: String(qty),
+        unitPrice: String(price),
+      },
+    ]);
+    resetCustomForm();
+    setInventorySearch('');
+  };
+
+  const removeCustomItem = (id: string) => {
+    setCustomItems((prev) => prev.filter((c) => c.id !== id));
+  };
+
+  const setCustomItemQuantity = (id: string, value: string) => {
+    setCustomItems((prev) => prev.map((c) => (c.id === id ? { ...c, quantity: value } : c)));
+  };
+
   // Resolved list of selected items with their quantity + stock/price details.
   const selectedItems = useMemo(() => {
     return Object.keys(selectedQuantities)
@@ -192,6 +240,19 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
       })
       .filter((x): x is InventoryItem & { qty: number } => x !== null);
   }, [selectedQuantities, inventory]);
+
+  // Resolved custom items with numeric qty/price for cost + submit.
+  const resolvedCustomItems = useMemo(
+    () =>
+      customItems.map((c) => ({
+        id: c.id,
+        product_name: c.name,
+        code: null as string | null,
+        price: Math.max(0, Number(c.unitPrice) || 0),
+        qty: Math.max(0, Math.floor(Number(c.quantity) || 0)),
+      })),
+    [customItems]
+  );
 
   const filteredInventory = useMemo(() => {
     const q = debouncedSearch.trim().toLowerCase();
@@ -206,9 +267,11 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
     return [...list].sort((a, b) => (a.product_name || '').localeCompare(b.product_name || ''));
   }, [inventory, debouncedSearch]);
 
-  const hasItems = selectedItems.length > 0;
+  const hasItems = selectedItems.length > 0 || resolvedCustomItems.length > 0;
   const amountNum = parseFloat(amount);
-  const partsCost = selectedItems.reduce((s, it) => s + it.price * it.qty, 0);
+  const partsCost =
+    selectedItems.reduce((s, it) => s + it.price * it.qty, 0) +
+    resolvedCustomItems.reduce((s, it) => s + it.price * it.qty, 0);
   const profit = (isNaN(amountNum) ? 0 : amountNum) - partsCost;
 
   const selectedQr = qrOptions.find((q) => q.id === selectedQrId) || null;
@@ -230,6 +293,12 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
       }
       if (it.qty > it.quantity) {
         toast.error(`Only ${it.quantity} in stock for ${it.product_name}.`);
+        return;
+      }
+    }
+    for (const it of resolvedCustomItems) {
+      if (it.qty < 1) {
+        toast.error(`Enter a valid quantity for ${it.product_name}.`);
         return;
       }
     }
@@ -256,7 +325,10 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
     const parsedDate = new Date(y, (m || 1) - 1, d || 1);
 
     const resolvedItem = hasItems
-      ? selectedItems.map((it) => `${it.product_name} × ${it.qty}`).join(', ')
+      ? [
+          ...selectedItems.map((it) => `${it.product_name} × ${it.qty}`),
+          ...resolvedCustomItems.map((it) => `${it.product_name} × ${it.qty}`),
+        ].join(', ')
       : item.trim();
 
     const qrPhotos = needsQr && selectedQr
@@ -274,13 +346,23 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
         amount: amountNum,
         item: resolvedItem,
         saleDate: parsedDate,
-        items: selectedItems.map((it) => ({
-          inventoryId: it.id,
-          quantity: it.qty,
-          unitPrice: it.price,
-          productName: it.product_name,
-          code: it.code ?? null,
-        })),
+        items: [
+          ...selectedItems.map((it) => ({
+            inventoryId: it.id,
+            quantity: it.qty,
+            unitPrice: it.price,
+            productName: it.product_name,
+            code: it.code ?? null,
+          })),
+          ...resolvedCustomItems.map((it) => ({
+            inventoryId: it.id,
+            quantity: it.qty,
+            unitPrice: it.price,
+            productName: it.product_name,
+            code: null,
+            custom: true,
+          })),
+        ],
         paymentMode,
         partialCashAmount: partialCash,
         partialOnlineAmount: partialOnline,
@@ -394,6 +476,58 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
               </div>
             )}
 
+            {/* Selected custom (non-inventory) items. */}
+            {resolvedCustomItems.length > 0 && (
+              <div className="space-y-2">
+                {resolvedCustomItems.map((it) => (
+                  <div
+                    key={it.id}
+                    className="rounded-lg border border-blue-300 bg-blue-50 dark:bg-blue-900/20 p-2.5"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Check className="w-4 h-4 shrink-0 text-blue-600" />
+                      <div className="min-w-0 flex-1 overflow-hidden">
+                        <span className="block truncate text-sm font-medium">
+                          {it.product_name}
+                          <span className="ml-2 align-middle rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                            Custom
+                          </span>
+                        </span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          Not in inventory · ₹{formatCurrency(it.price)} each
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Label htmlFor={`custom-qty-${it.id}`} className="sr-only">
+                          Quantity for {it.product_name}
+                        </Label>
+                        <Input
+                          id={`custom-qty-${it.id}`}
+                          type="number"
+                          inputMode="numeric"
+                          min="1"
+                          step="1"
+                          value={customItems.find((c) => c.id === it.id)?.quantity ?? ''}
+                          onChange={(e) => setCustomItemQuantity(it.id, e.target.value)}
+                          className="h-8 w-16 text-sm"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 px-2"
+                          onClick={() => removeCustomItem(it.id)}
+                          title="Remove item"
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
               <Input
@@ -406,13 +540,9 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
             <div className="rounded-lg border overflow-hidden">
               {loadingInventory ? (
                 <div className="py-6 px-4 text-center text-sm text-muted-foreground">Loading items...</div>
-              ) : filteredInventory.length === 0 ? (
+              ) : filteredInventory.length === 0 && !inventorySearch.trim() ? (
                 <div className="py-6 px-4 text-center text-sm text-muted-foreground">
-                  {inventory.length === 0
-                    ? 'No inventory items.'
-                    : debouncedSearch.trim()
-                    ? 'No items match your search.'
-                    : 'No items.'}
+                  {inventory.length === 0 ? 'No inventory items.' : 'No items.'}
                 </div>
               ) : (
                 <div className="max-h-[min(40vh,240px)] overflow-y-auto [scrollbar-width:thin]">
@@ -445,11 +575,92 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
                       </button>
                     );
                   })}
+
+                  {/* When searching, offer the typed text as a custom (non-inventory) item. */}
+                  {inventorySearch.trim() && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowCustom(true);
+                        setCustomName(inventorySearch.trim());
+                        setCustomQty('1');
+                        setCustomPrice('');
+                      }}
+                      className="flex w-full items-center gap-2 border-b bg-muted/30 px-3 py-2.5 text-left last:border-b-0 hover:bg-muted/60"
+                    >
+                      <div className="min-w-0 flex-1 overflow-hidden">
+                        <span className="block truncate text-sm font-medium">
+                          {inventorySearch.trim()}
+                        </span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          Custom item (not in inventory)
+                        </span>
+                      </div>
+                      <Plus className="w-4 h-4 shrink-0 text-muted-foreground" />
+                    </button>
+                  )}
                 </div>
               )}
             </div>
+
+            {/* Inline custom item entry form. */}
+            {showCustom && (
+              <div className="space-y-2 rounded-lg border p-3">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Custom item (not in inventory)
+                </p>
+                <Input
+                  placeholder="Item name"
+                  value={customName}
+                  onChange={(e) => setCustomName(e.target.value)}
+                  className="h-9 text-sm"
+                  autoFocus
+                />
+                <div className="flex gap-2">
+                  <div className="flex-1 space-y-1">
+                    <Label className="text-[11px] text-muted-foreground">Qty</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      inputMode="numeric"
+                      value={customQty}
+                      onChange={(e) => setCustomQty(e.target.value)}
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    <Label className="text-[11px] text-muted-foreground">Unit price (₹)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      inputMode="decimal"
+                      value={customPrice}
+                      onChange={(e) => setCustomPrice(e.target.value)}
+                      placeholder="0"
+                      className="h-9 text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <Button type="button" variant="outline" className="flex-1" onClick={resetCustomForm}>
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    className="flex-1"
+                    onClick={addCustomItem}
+                    disabled={!customName.trim()}
+                  >
+                    <Plus className="w-4 h-4 mr-1.5" />
+                    Add item
+                  </Button>
+                </div>
+              </div>
+            )}
             <p className="text-xs text-muted-foreground">
-              Add one or more items to deduct stock and track cost for profit, or skip for other sales.
+              Add one or more items to deduct stock and track cost for profit, or add a custom item
+              not in inventory. Skip for other sales.
             </p>
           </div>
 
@@ -594,7 +805,8 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
             <div className="rounded-lg border border-border bg-muted/40 dark:bg-gray-800/50 p-3 text-sm space-y-1">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">
-                  Cost ({selectedItems.length} item{selectedItems.length > 1 ? 's' : ''})
+                  Cost ({selectedItems.length + resolvedCustomItems.length} item
+                  {selectedItems.length + resolvedCustomItems.length > 1 ? 's' : ''})
                 </span>
                 <span className="font-medium text-orange-600">₹ {formatCurrency(partsCost)}</span>
               </div>
