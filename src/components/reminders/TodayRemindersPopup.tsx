@@ -21,9 +21,9 @@ const REMINDERS_POPUP_SESSION_CACHE_ENABLED = true;
 const DISMISSED_PENDING_PAYMENT_REMINDERS_KEY = 'dismissed_pending_payment_reminders_today';
 
 function getDismissedPendingPaymentReminderIds(today: string): Set<string> {
-  if (typeof sessionStorage === 'undefined') return new Set();
+  if (typeof localStorage === 'undefined') return new Set();
   try {
-    const parsed = JSON.parse(sessionStorage.getItem(DISMISSED_PENDING_PAYMENT_REMINDERS_KEY) || '{}') as {
+    const parsed = JSON.parse(localStorage.getItem(DISMISSED_PENDING_PAYMENT_REMINDERS_KEY) || '{}') as {
       date?: string;
       ids?: string[];
     };
@@ -35,8 +35,8 @@ function getDismissedPendingPaymentReminderIds(today: string): Set<string> {
 }
 
 function saveDismissedPendingPaymentReminderIds(today: string, ids: Set<string>): void {
-  if (typeof sessionStorage === 'undefined') return;
-  sessionStorage.setItem(
+  if (typeof localStorage === 'undefined') return;
+  localStorage.setItem(
     DISMISSED_PENDING_PAYMENT_REMINDERS_KEY,
     JSON.stringify({ date: today, ids: Array.from(ids) })
   );
