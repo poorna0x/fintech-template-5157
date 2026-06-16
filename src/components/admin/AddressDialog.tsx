@@ -6,17 +6,14 @@ import { Customer } from '@/types';
 import { formatAddressForDisplay, extractCoordinates } from '@/lib/maps';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import { toast } from 'sonner';
-import { captureUserLocation, OFFICE_ORIGIN_LOCATION, writeCachedUserLocation } from '@/lib/captureUserLocation';
 
 interface AddressDialogProps {
   open: { [customerId: string]: boolean };
   onOpenChange: (open: { [customerId: string]: boolean }) => void;
   customers: Customer[];
   currentLocation: { lat: number; lng: number } | null;
-  isGettingLocation?: boolean;
-  onSetOrigin?: (location: { lat: number; lng: number }) => void;
   customerDistances: Record<string, { distance: string; duration: string; isCalculating: boolean }>;
-  onCalculateDistance: (customer: Customer, origin?: { lat: number; lng: number }) => Promise<void>;
+  onCalculateDistance: (customer: Customer) => Promise<void>;
 }
 
 const AddressDialog: React.FC<AddressDialogProps> = ({
@@ -24,8 +21,6 @@ const AddressDialog: React.FC<AddressDialogProps> = ({
   onOpenChange,
   customers,
   currentLocation,
-  isGettingLocation = false,
-  onSetOrigin,
   customerDistances,
   onCalculateDistance
 }) => {
@@ -87,71 +82,15 @@ const AddressDialog: React.FC<AddressDialogProps> = ({
               
               {/* Distance and Time */}
               <div className="pt-3 border-t border-border">
-                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                <div className="flex items-center justify-between mb-2">
                   <div className="text-sm font-semibold text-foreground">Distance & Time</div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {onSetOrigin && (
-                      <>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="text-xs h-7 px-2"
-                          disabled={isGettingLocation}
-                          onClick={async () => {
-                            const result = await captureUserLocation({ skipCache: true });
-                            if (result.ok) {
-                              onSetOrigin(result.location);
-                              writeCachedUserLocation(result.location);
-                              toast.success(
-                                result.source === 'google_ip'
-                                  ? 'Using approximate network location.'
-                                  : 'Location updated.'
-                              );
-                            } else {
-                              toast.error(result.error);
-                            }
-                          }}
-                        >
-                          {isGettingLocation ? 'Locating…' : 'My location'}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="text-xs h-7 px-2"
-                          onClick={() => {
-                            onSetOrigin(OFFICE_ORIGIN_LOCATION);
-                            writeCachedUserLocation(OFFICE_ORIGIN_LOCATION);
-                            toast.success('Using office location (Bengaluru).');
-                          }}
-                        >
-                          Office
-                        </Button>
-                      </>
-                    )}
                   <Button
                     type="button"
                     variant="default"
                     size="sm"
                     onClick={async () => {
-                      let origin = currentLocation;
-                      if (!origin && onSetOrigin) {
-                        const result = await captureUserLocation();
-                        if (result.ok) {
-                          origin = result.location;
-                          onSetOrigin(result.location);
-                          writeCachedUserLocation(result.location);
-                          if (result.source === 'google_ip') {
-                            toast.info('Using approximate network location for distance.');
-                          }
-                        } else {
-                          toast.error(result.error);
-                          return;
-                        }
-                      }
-                      if (!origin) {
-                        toast.error('Set your location first (My location or Office).');
+                      if (!currentLocation) {
+                        toast.error('Your location is not available. Please enable location services.');
                         return;
                       }
                       
@@ -176,12 +115,12 @@ const AddressDialog: React.FC<AddressDialogProps> = ({
                       }
                       
                       if (finalCustomerLocation && finalCustomerLocation.latitude && finalCustomerLocation.longitude) {
-                        await onCalculateDistance(customer, origin);
+                        await onCalculateDistance(customer);
                       } else {
                         toast.error('Customer location coordinates are invalid');
                       }
                     }}
-                    disabled={customerDistances[customer.id]?.isCalculating || isGettingLocation}
+                    disabled={customerDistances[customer.id]?.isCalculating || !currentLocation}
                     className="bg-black hover:bg-gray-800 text-white text-xs h-7 px-2"
                   >
                     {customerDistances[customer.id]?.isCalculating ? (
@@ -196,7 +135,6 @@ const AddressDialog: React.FC<AddressDialogProps> = ({
                       </>
                     )}
                   </Button>
-                  </div>
                 </div>
                 {customerDistances[customer.id] ? (
                   <div className="text-sm">
@@ -215,11 +153,7 @@ const AddressDialog: React.FC<AddressDialogProps> = ({
                     )}
                   </div>
                 ) : (
-                  <div className="text-xs text-muted-foreground">
-                    {currentLocation
-                      ? 'Click Calculate for driving distance from your origin.'
-                      : 'Set My location, Office, or Calculate (will try network location).'}
-                  </div>
+                  <div className="text-xs text-muted-foreground">Click "Calculate" button to get distance and time</div>
                 )}
               </div>
             </div>
