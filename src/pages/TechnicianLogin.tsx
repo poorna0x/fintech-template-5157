@@ -306,9 +306,6 @@ const TechnicianLogin = () => {
             <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg">
               <Droplets className="w-7 h-7 text-primary-foreground" />
             </div>
-            <div className="text-2xl font-bold text-foreground">
-              Eleven RO
-            </div>
           </div>
         </div>
 

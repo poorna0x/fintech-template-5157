@@ -8,9 +8,11 @@ interface LogoProps {
   inFooter?: boolean;
   /** Brand text shown next to the icon. Defaults to "Hydrogen RO". */
   brandName?: string;
+  /** When false, render only the icon without the brand text. Defaults to true. */
+  showName?: boolean;
 }
 
-const Logo = ({ inFooter = false, brandName = 'Hydrogen RO' }: LogoProps) => {
+const Logo = ({ inFooter = false, brandName = 'Hydrogen RO', showName = true }: LogoProps) => {
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -58,7 +60,9 @@ const Logo = ({ inFooter = false, brandName = 'Hydrogen RO' }: LogoProps) => {
       <div className="w-8 h-8 bg-gradient-to-br from-sky-500 to-cyan-500 rounded-lg flex items-center justify-center relative z-50 flex-shrink-0 shadow-sm">
         <Droplets className="w-5 h-5 text-white" />
       </div>
-      <div className="text-xl font-bold text-foreground relative z-50 whitespace-nowrap">{brandName}</div>
+      {showName && (
+        <div className="text-xl font-bold text-foreground relative z-50 whitespace-nowrap">{brandName}</div>
+      )}
     </div>
   );
 };

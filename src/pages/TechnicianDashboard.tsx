@@ -5447,7 +5447,7 @@ const TechnicianDashboard = () => {
           {/* Centered Logo */}
           <div className="absolute left-1/2 transform -translate-x-1/2 z-50">
             <div className="p-3 bg-background/95 backdrop-blur-md rounded-lg">
-              <Logo brandName="Eleven RO" />
+              <Logo showName={false} />
             </div>
           </div>
           
