@@ -12205,9 +12205,12 @@ const AdminDashboard = () => {
         onOpenChange={setAddressDialogOpen}
         customers={baseCustomers}
         currentLocation={currentLocation}
+        isGettingLocation={isGettingLocation}
+        onSetOrigin={(loc) => setCurrentLocation(loc)}
         customerDistances={customerDistances}
-        onCalculateDistance={async (customer) => {
-          if (calculateDistanceAndTimeRef.current && currentLocation) {
+        onCalculateDistance={async (customer, origin) => {
+          const from = origin ?? currentLocation;
+          if (calculateDistanceAndTimeRef.current && from) {
                       const customerLocation = extractCoordinates(customer.location);
                       let finalCustomerLocation = customerLocation;
                       
@@ -12220,7 +12223,7 @@ const AdminDashboard = () => {
                       
                       if (finalCustomerLocation && finalCustomerLocation.latitude && finalCustomerLocation.longitude) {
                           await calculateDistanceAndTimeRef.current(
-                            currentLocation,
+                            from,
                             { lat: finalCustomerLocation.latitude, lng: finalCustomerLocation.longitude },
                             customer.id
                           );

@@ -5,6 +5,7 @@ import { extractCoordinates } from '@/lib/maps';
 import { toast } from 'sonner';
 import { WhatsAppIcon } from '../WhatsAppIcon';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
+import { captureUserLocation } from '@/lib/captureUserLocation';
 
 interface ContactSectionProps {
   customer: Customer;
@@ -32,59 +33,32 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
   setAddressDialogOpen,
   hydrateCustomerForMaps,
 }) => {
-  // Capture the admin's location with a desktop-friendly fallback. Laptops/desktops have
-  // no GPS, so a high-accuracy request often fails — retry with low accuracy + a cached fix.
-  const captureCurrentLocation = () => {
-    if (currentLocation) return;
-    if (!navigator.geolocation) {
-      toast.error('Geolocation is not supported by your browser');
-      return;
-    }
+  // Capture admin origin for distance (browser GPS, then Google network/IP fallback).
+  const ensureOriginLocation = async (): Promise<boolean> => {
+    if (currentLocation) return true;
+    if (isGettingLocation) return false;
 
     setIsGettingLocation(true);
-
-    const onSuccess = (position: GeolocationPosition) => {
-      setCurrentLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
-      setIsGettingLocation(false);
-    };
-
-    const reportError = (error: GeolocationPositionError) => {
-      setIsGettingLocation(false);
-      let msg = 'Failed to get your location';
-      switch (error.code) {
-        case error.PERMISSION_DENIED:
-          msg = 'Permission denied. Allow location access for this site.';
-          break;
-        case error.POSITION_UNAVAILABLE:
-          msg =
-            'Location unavailable. On desktop, turn on OS location services (macOS: System Settings → Privacy & Security → Location Services), then retry.';
-          break;
-        case error.TIMEOUT:
-          msg = 'Location request timed out. Please try again.';
-          break;
-      }
-      toast.error(msg);
-    };
-
-    const tryLowAccuracy = () => {
-      navigator.geolocation.getCurrentPosition(onSuccess, reportError, {
-        enableHighAccuracy: false,
-        timeout: 15000,
-        maximumAge: 300000,
-      });
-    };
-
-    navigator.geolocation.getCurrentPosition(
-      onSuccess,
-      (error) => {
-        if (error.code === error.POSITION_UNAVAILABLE || error.code === error.TIMEOUT) {
-          tryLowAccuracy();
-          return;
+    try {
+      const result = await captureUserLocation();
+      if (result.ok) {
+        setCurrentLocation(result.location);
+        if (result.source === 'google_ip') {
+          toast.info('Using approximate network location for distance.');
         }
-        reportError(error);
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-    );
+        return true;
+      }
+      toast.error(result.error);
+      return false;
+    } finally {
+      setIsGettingLocation(false);
+    }
+  };
+
+  const openAddressDialog = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    await ensureOriginLocation();
+    setAddressDialogOpen((prev) => ({ ...prev, [customer.id]: true }));
   };
 
   return (
@@ -232,11 +206,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
               <div className="text-xs">
                 {(customer.address as any)?.visible_address && String((customer.address as any).visible_address).trim() ? (
                   <button
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      captureCurrentLocation();
-                      setAddressDialogOpen(prev => ({ ...prev, [customer.id]: true }));
-                    }}
+                    onClick={openAddressDialog}
                     className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full text-left"
                     title="Click to view full address and calculate distance"
                   >
@@ -244,11 +214,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
                   </button>
                 ) : (
                   <button
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      captureCurrentLocation();
-                      setAddressDialogOpen(prev => ({ ...prev, [customer.id]: true }));
-                    }}
+                    onClick={openAddressDialog}
                     className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full text-left"
                     title="Click to view full address and calculate distance"
                   >
