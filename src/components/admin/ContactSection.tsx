@@ -32,6 +32,61 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
   setAddressDialogOpen,
   hydrateCustomerForMaps,
 }) => {
+  // Capture the admin's location with a desktop-friendly fallback. Laptops/desktops have
+  // no GPS, so a high-accuracy request often fails — retry with low accuracy + a cached fix.
+  const captureCurrentLocation = () => {
+    if (currentLocation) return;
+    if (!navigator.geolocation) {
+      toast.error('Geolocation is not supported by your browser');
+      return;
+    }
+
+    setIsGettingLocation(true);
+
+    const onSuccess = (position: GeolocationPosition) => {
+      setCurrentLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
+      setIsGettingLocation(false);
+    };
+
+    const reportError = (error: GeolocationPositionError) => {
+      setIsGettingLocation(false);
+      let msg = 'Failed to get your location';
+      switch (error.code) {
+        case error.PERMISSION_DENIED:
+          msg = 'Permission denied. Allow location access for this site.';
+          break;
+        case error.POSITION_UNAVAILABLE:
+          msg =
+            'Location unavailable. On desktop, turn on OS location services (macOS: System Settings → Privacy & Security → Location Services), then retry.';
+          break;
+        case error.TIMEOUT:
+          msg = 'Location request timed out. Please try again.';
+          break;
+      }
+      toast.error(msg);
+    };
+
+    const tryLowAccuracy = () => {
+      navigator.geolocation.getCurrentPosition(onSuccess, reportError, {
+        enableHighAccuracy: false,
+        timeout: 15000,
+        maximumAge: 300000,
+      });
+    };
+
+    navigator.geolocation.getCurrentPosition(
+      onSuccess,
+      (error) => {
+        if (error.code === error.POSITION_UNAVAILABLE || error.code === error.TIMEOUT) {
+          tryLowAccuracy();
+          return;
+        }
+        reportError(error);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  };
+
   return (
     <div className="p-4 border-b border-gray-100">
       <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
@@ -179,35 +234,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
                   <button
                     onClick={async (e) => {
                       e.stopPropagation();
-                      
-                      if (!currentLocation) {
-                        if (!navigator.geolocation) {
-                          toast.error('Geolocation is not supported by your browser');
-                          return;
-                        }
-                        
-                        setIsGettingLocation(true);
-                        navigator.geolocation.getCurrentPosition(
-                          (position) => {
-                            const location = {
-                              lat: position.coords.latitude,
-                              lng: position.coords.longitude
-                            };
-                            setCurrentLocation(location);
-                            setIsGettingLocation(false);
-                          },
-                          (error) => {
-                            setIsGettingLocation(false);
-                            toast.error('Failed to get your location');
-                          },
-                          {
-                            enableHighAccuracy: true,
-                            timeout: 10000,
-                            maximumAge: 0,
-                          }
-                        );
-                      }
-                      
+                      captureCurrentLocation();
                       setAddressDialogOpen(prev => ({ ...prev, [customer.id]: true }));
                     }}
                     className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full text-left"
@@ -219,35 +246,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
                   <button
                     onClick={async (e) => {
                       e.stopPropagation();
-                      
-                      if (!currentLocation) {
-                        if (!navigator.geolocation) {
-                          toast.error('Geolocation is not supported by your browser');
-                          return;
-                        }
-                        
-                        setIsGettingLocation(true);
-                        navigator.geolocation.getCurrentPosition(
-                          (position) => {
-                            const location = {
-                              lat: position.coords.latitude,
-                              lng: position.coords.longitude
-                            };
-                            setCurrentLocation(location);
-                            setIsGettingLocation(false);
-                          },
-                          (error) => {
-                            setIsGettingLocation(false);
-                            toast.error('Failed to get your location');
-                          },
-                          {
-                            enableHighAccuracy: true,
-                            timeout: 10000,
-                            maximumAge: 0,
-                          }
-                        );
-                      }
-                      
+                      captureCurrentLocation();
                       setAddressDialogOpen(prev => ({ ...prev, [customer.id]: true }));
                     }}
                     className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full text-left"
