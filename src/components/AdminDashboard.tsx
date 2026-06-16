@@ -3732,56 +3732,33 @@ const AdminDashboard = () => {
     }
 
     setIsGettingLocation(true);
-
-    const onSuccess = (position: GeolocationPosition) => {
-      const location = {
-        lat: position.coords.latitude,
-        lng: position.coords.longitude
-      };
-      setCurrentLocation(location);
-      setIsGettingLocation(false);
-      toast.success('Location captured!');
-      // Don't calculate distances automatically - user will click button in dialog
-    };
-
-    const reportError = (error: GeolocationPositionError) => {
-      setIsGettingLocation(false);
-      let errorMsg = 'Failed to get your location';
-      switch (error.code) {
-        case error.PERMISSION_DENIED:
-          errorMsg = 'Permission denied. Allow location access for this site.';
-          break;
-        case error.POSITION_UNAVAILABLE:
-          // Most common on desktops: no GPS + OS location services off / Ethernet.
-          errorMsg =
-            'Location unavailable. On desktop, enable your OS location services (macOS: System Settings → Privacy & Security → Location Services) and try again.';
-          break;
-        case error.TIMEOUT:
-          errorMsg = 'Location request timed out. Please try again.';
-          break;
-      }
-      toast.error(errorMsg);
-    };
-
-    // Desktops have no GPS, so a high-accuracy request often fails or times out.
-    // Try high accuracy first, then fall back to a low-accuracy attempt that allows a
-    // recent cached fix — which is what typically succeeds on laptops/desktops.
-    const tryLowAccuracy = () => {
-      navigator.geolocation.getCurrentPosition(onSuccess, reportError, {
-        enableHighAccuracy: false,
-        timeout: 15000,
-        maximumAge: 300000,
-      });
-    };
-
     navigator.geolocation.getCurrentPosition(
-      onSuccess,
+      (position) => {
+        const location = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude
+        };
+        setCurrentLocation(location);
+        setIsGettingLocation(false);
+        toast.success('Location captured!');
+        
+        // Don't calculate distances automatically - user will click button in dialog
+      },
       (error) => {
-        if (error.code === error.POSITION_UNAVAILABLE || error.code === error.TIMEOUT) {
-          tryLowAccuracy();
-          return;
+        setIsGettingLocation(false);
+        let errorMsg = 'Failed to get your location';
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            errorMsg = 'Permission denied. Please allow location access.';
+            break;
+          case error.POSITION_UNAVAILABLE:
+            errorMsg = 'Location information unavailable.';
+            break;
+          case error.TIMEOUT:
+            errorMsg = 'Location request timed out.';
+            break;
         }
-        reportError(error);
+        toast.error(errorMsg);
       },
       {
         enableHighAccuracy: true,
