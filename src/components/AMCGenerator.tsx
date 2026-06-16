@@ -302,10 +302,21 @@ ${notCoveredWithPreFilter}`;
     return { startDate, endDate: validityEndDate, years: years || 1 };
   };
 
+  // Keep a manually edited intro, but swap the brand name when the intro is still
+  // one of the auto-generated defaults (so picking ElevenRO doesn't keep "Hydrogen RO").
+  const resolveAgreementIntroForBrand = (currentIntro: string, brand: DocumentBrand): string => {
+    const trimmed = (currentIntro || '').trim();
+    const isDefault =
+      !trimmed ||
+      trimmed === getDefaultAgreementIntro('hydrogenro').trim() ||
+      trimmed === getDefaultAgreementIntro('elevenro').trim();
+    return isDefault ? getDefaultAgreementIntro(brand) : currentIntro;
+  };
+
   const applyBrandToForm = (brand: DocumentBrand) => {
     setDocumentBrand(brand);
     setCompany(getCompanyInfoForBrand(brand));
-    setAgreementIntro(getDefaultAgreementIntro(brand));
+    setAgreementIntro((prev) => resolveAgreementIntroForBrand(prev, brand));
   };
 
   // Function to save AMC contract to database
@@ -356,7 +367,7 @@ ${notCoveredWithPreFilter}`;
         customer_email: editableCustomer.email || null,
         customer_gst: editableCustomer.gst || null,
         customer_address: editableCustomer.address,
-        agreement_intro: agreementIntro,
+        agreement_intro: resolveAgreementIntroForBrand(agreementIntro, brand),
         document_brand: brand,
         saved_at: new Date().toISOString()
       };
@@ -489,7 +500,7 @@ ${notCoveredWithPreFilter}`;
       validity: validity === 'Custom' ? 
         `${new Date(customFromDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })} to ${new Date(endDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}` : 
         `${new Date(billDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })} to ${new Date(endDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}`,
-      agreementIntro,
+      agreementIntro: resolveAgreementIntroForBrand(agreementIntro, brand),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
