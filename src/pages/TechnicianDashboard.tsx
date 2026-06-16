@@ -567,7 +567,7 @@ const TechnicianDashboard = () => {
   const [reminderEntity, setReminderEntity] = useState<{ type: 'customer' | 'job' | 'general'; id: string | null }>({ type: 'general', id: null });
   const [reminderContextLabel, setReminderContextLabel] = useState<string>('');
   useEffect(() => {
-    document.title = 'Hydrogen RO Technician';
+    document.title = 'Eleven RO Technician';
     registerTechnicianPWA();
 
     return () => {
@@ -5447,7 +5447,7 @@ const TechnicianDashboard = () => {
           {/* Centered Logo */}
           <div className="absolute left-1/2 transform -translate-x-1/2 z-50">
             <div className="p-3 bg-background/95 backdrop-blur-md rounded-lg">
-              <Logo />
+              <Logo brandName="Eleven RO" />
             </div>
           </div>
           

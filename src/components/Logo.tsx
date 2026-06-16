@@ -6,9 +6,11 @@ import { useNavigate, useLocation } from 'react-router-dom';
 interface LogoProps {
   /** When true, use neutral z-index to avoid overlap on some mobile browsers (e.g. Samsung) */
   inFooter?: boolean;
+  /** Brand text shown next to the icon. Defaults to "Hydrogen RO". */
+  brandName?: string;
 }
 
-const Logo = ({ inFooter = false }: LogoProps) => {
+const Logo = ({ inFooter = false, brandName = 'Hydrogen RO' }: LogoProps) => {
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -56,7 +58,7 @@ const Logo = ({ inFooter = false }: LogoProps) => {
       <div className="w-8 h-8 bg-gradient-to-br from-sky-500 to-cyan-500 rounded-lg flex items-center justify-center relative z-50 flex-shrink-0 shadow-sm">
         <Droplets className="w-5 h-5 text-white" />
       </div>
-      <div className="text-xl font-bold text-foreground relative z-50 whitespace-nowrap">Hydrogen RO</div>
+      <div className="text-xl font-bold text-foreground relative z-50 whitespace-nowrap">{brandName}</div>
     </div>
   );
 };

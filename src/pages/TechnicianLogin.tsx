@@ -52,7 +52,7 @@ const TechnicianLogin = () => {
   const navigate = useNavigate();
   
   useEffect(() => {
-    document.title = 'Hydrogen RO Technician';
+    document.title = 'Eleven RO Technician';
     registerTechnicianPWA();
     void clearWrongPortalSession('technician');
     setIsCaptchaVerified(false);
@@ -307,7 +307,7 @@ const TechnicianLogin = () => {
               <Droplets className="w-7 h-7 text-primary-foreground" />
             </div>
             <div className="text-2xl font-bold text-foreground">
-              Hydrogen RO
+              Eleven RO
             </div>
           </div>
         </div>
