@@ -189,6 +189,19 @@ function AdminScreenLoader({ message }: { message: string }) {
   );
 }
 
+function AdminInlineLoader({ message }: { message: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 text-center">
+      <div className="flex items-center justify-center space-x-1 mb-3">
+        <div className="w-2.5 h-2.5 bg-black rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+        <div className="w-2.5 h-2.5 bg-black rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+        <div className="w-2.5 h-2.5 bg-black rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+      </div>
+      <p className="text-sm text-gray-600">{message}</p>
+    </div>
+  );
+}
+
 const AdminDashboard = () => {
   const navigate = useNavigate();
   const { user, isAdmin, authInitializing, logout } = useAuth();
@@ -814,6 +827,8 @@ const AdminDashboard = () => {
   const [isDeletingCustomerPhoto, setIsDeletingCustomerPhoto] = useState(false);
   const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
   const loadJobsRequestRef = useRef(0);
+  /** Per-filter job list cache for instant tab switches; always refreshed in background on open. */
+  const jobsListCacheRef = useRef(new Map<string, Job[]>());
   /** Newly created customers (row + optional job) until they appear in embedded job payloads — avoids derive-from-jobs wiping them. */
   const pendingNewCustomersRef = useRef<Map<string, Customer>>(new Map());
 
@@ -1241,6 +1256,28 @@ const AdminDashboard = () => {
   }, []);
 
 
+  const getJobsListCacheKey = useCallback((
+    filter: typeof statusFilter,
+    page: number
+  ) => {
+    if (filter === 'COMPLETED') {
+      if (completedDatePreset === 'day') {
+        return `COMPLETED:day:${completedDateFilter}:p${page}`;
+      }
+      return `COMPLETED:${completedDatePreset}:${completedRangeStartDate}:${completedRangeEndDate}:p${page}`;
+    }
+    if (filter === 'CANCELLED') {
+      return `CANCELLED:${deniedDateFilter}:p${page}`;
+    }
+    return `${filter}:p${page}`;
+  }, [
+    completedDatePreset,
+    completedDateFilter,
+    completedRangeStartDate,
+    completedRangeEndDate,
+    deniedDateFilter,
+  ]);
+
   // Load jobs based on current filter (optimized)
   const loadFilteredJobs = useCallback(async (
     filter: typeof statusFilter,
@@ -1251,6 +1288,10 @@ const AdminDashboard = () => {
     // Only non-silent (user-visible) loads bump the request id. Background resume sync must
     // not supersede an in-flight tab switch or loading stays stuck forever.
     const requestId = silent ? loadJobsRequestRef.current : ++loadJobsRequestRef.current;
+    const commitJobs = (data: Job[]) => {
+      setJobs(data);
+      jobsListCacheRef.current.set(getJobsListCacheKey(filter, page), data);
+    };
     try {
       if (!silent) {
         setLoading(true);
@@ -1263,7 +1304,7 @@ const AdminDashboard = () => {
         if (error) {
           setJobs([]);
         } else {
-          setJobs(data || []);
+          commitJobs(data || []);
         }
       } else if (filter === 'ONGOING') {
         // Load all ongoing jobs (usually not too many)
@@ -1272,7 +1313,7 @@ const AdminDashboard = () => {
         if (error) {
           setJobs([]);
         } else {
-          setJobs(data || []);
+          commitJobs(data || []);
           setTotalCount(data?.length || 0);
           setTotalPages(1);
         }
@@ -1394,7 +1435,7 @@ const AdminDashboard = () => {
             finalData = await enrichJobsWithAfterPhotosIfNeeded(finalData);
           }
 
-          setJobs(finalData);
+          commitJobs(finalData);
           setTotalCount(count || 0);
           setTotalPages(pages || 0);
         }
@@ -1422,7 +1463,7 @@ const AdminDashboard = () => {
         if (error) {
           setJobs([]);
         } else {
-          setJobs(data || []);
+          commitJobs(data || []);
           setTotalCount(count || 0);
           setTotalPages(pages || 0);
         }
@@ -1438,6 +1479,7 @@ const AdminDashboard = () => {
     }
   }, [
     pageSize,
+    getJobsListCacheKey,
     deniedDateFilter,
     completedDateFilter,
     completedDatePreset,
@@ -1872,11 +1914,13 @@ const AdminDashboard = () => {
   // Reload jobs when filter changes (but not on initial load)
   useEffect(() => {
     if (isInitialLoad) return;
-    setCurrentPage(1); // Reset to first page when filter changes
+    setCurrentPage(1);
+    const cached = jobsListCacheRef.current.get(getJobsListCacheKey(statusFilter, 1));
+    setJobs(cached ?? []);
     loadFilteredJobs(statusFilter, 1);
     // Refresh counts when filter changes
       loadJobCounts();
-  }, [statusFilter, loadFilteredJobs, loadJobCounts, isInitialLoad]);
+  }, [statusFilter, loadFilteredJobs, loadJobCounts, isInitialLoad, getJobsListCacheKey]);
 
   const resumeAdminSync = useCallback(async () => {
     if (isInitialLoad || !dashboardLoadedWithSessionRef.current) return;
@@ -9046,7 +9090,16 @@ const AdminDashboard = () => {
   });
 
   const isDashboardBootstrapping =
-    Boolean(user && isAdmin) && (loading || isInitialLoad);
+    Boolean(user && isAdmin) && isInitialLoad;
+
+  const isJobsListRefreshing = loading && !isInitialLoad;
+  const showJobsListLoader = isJobsListRefreshing && displayedCustomers.length === 0;
+  const jobsListRefreshLabel =
+    statusFilter === 'RESCHEDULED'
+      ? 'follow-up'
+      : statusFilter === 'CANCELLED'
+        ? 'denied'
+        : statusFilter.toLowerCase().replace('_', ' ');
 
   // Auth gate handled by AdminPortal — dashboard mounts only when user is admin
   if (isDashboardBootstrapping) {
@@ -10019,6 +10072,16 @@ const AdminDashboard = () => {
           
           {/* Customer Cards with Jobs */}
           <div className="space-y-6">
+            {showJobsListLoader ? (
+              <AdminInlineLoader message={`Loading ${jobsListRefreshLabel} jobs...`} />
+            ) : (
+              <>
+            {isJobsListRefreshing && displayedCustomers.length > 0 && (
+              <div className="flex items-center gap-2 text-sm text-gray-500 px-1">
+                <RefreshCw className="w-4 h-4 animate-spin shrink-0" />
+                Updating…
+              </div>
+            )}
             {displayedCustomers.map(({ customer, allJobs, upcomingJobs, completedJobs, cancelledJobs }) => {
               // Check if this customer has followup jobs scheduled for today or tomorrow (for card border)
               const hasTodayFollowup = statusFilter === 'RESCHEDULED' && allJobs.some(job => {
@@ -11087,6 +11150,8 @@ const AdminDashboard = () => {
               </Card>
             );
             })}
+              </>
+            )}
           </div>
 
           {completedProfitSummary && completedProfitSummary.jobCount > 0 && (
