@@ -62,7 +62,6 @@ import AdvancedCustomerSearchDialog from '@/components/admin/AdvancedCustomerSea
 import MergeCustomersDialog from '@/components/admin/MergeCustomersDialog';
 import WarrantyManagementDialog from '@/components/admin/WarrantyManagementDialog';
 import DirectSaleDialog from '@/components/admin/DirectSaleDialog';
-import { WebsiteAnalyticsGate } from '@/components/admin/WebsiteAnalyticsGate';
 
 /** PostgREST error when a table was never created or was dropped (e.g. booking_abandonments). */
 const isMissingTableError = (error: { message?: string; code?: string } | null): boolean => {
@@ -2093,9 +2092,6 @@ const Settings = () => {
               </Button>
             </CardContent>
           </Card>
-
-          {/* Website analytics */}
-          <WebsiteAnalyticsGate />
 
           {/* Letterhead Documents / Service Reports */}
           <Card>

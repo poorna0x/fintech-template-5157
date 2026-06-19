@@ -20,8 +20,8 @@ export function WebsiteAnalyticsGate() {
             Website analytics
           </CardTitle>
           <CardDescription className="text-sm mt-1 max-w-2xl">
-            Visitors, calls, and bookings on hydrogenro.com and elevenro.com (IST). Loads on demand
-            so Settings opens faster.
+            Visitors, calls, and bookings on hydrogenro.com and elevenro.com (IST). Uses its own
+            date and site filters — not the dashboard Period selector above.
           </CardDescription>
         </CardHeader>
         <CardContent className="p-4 sm:p-6 pt-0">

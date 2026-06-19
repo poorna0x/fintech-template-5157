@@ -277,12 +277,16 @@ const PrivacyPolicy = () => {
                     <li>Anonymous session identifier (stored in your browser session, not your name)</li>
                     <li>Page path visited and event type (e.g. page view, phone click, booking click)</li>
                     <li>Site brand (hydrogenro.com or elevenro.com)</li>
+                    <li>Approximate city and country (from connection routing, not GPS)</li>
+                    <li>Device type (mobile, tablet, or desktop) and browser family (e.g. Chrome, Safari)</li>
+                    <li>How you arrived (e.g. direct visit, Google, social link, or other website—hostname only, not full URLs)</li>
                     <li>Approximate time of the event and a one-way hash of connection metadata for abuse prevention</li>
                   </ul>
                   <p>
                     We do not use this system to store full phone numbers from analytics events—only masked
                     identifiers (e.g. last four digits) when a call button is tapped. A button tap does not prove a
-                    call was completed.
+                    call was completed. We do not store your full IP address, exact GPS location, full browser
+                    User-Agent string, or complete third-party page URLs.
                   </p>
                   <p>
                     Aggregated reports are available to authorised administrators only. Raw events may be deleted

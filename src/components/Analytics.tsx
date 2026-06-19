@@ -2784,6 +2784,9 @@ const Analytics = () => {
         </CardContent>
       </Card>
 
+      {/* Public website stats — own date/site filters; not tied to dashboard Period above */}
+      <WebsiteAnalyticsGate />
+
       {/* Softener Section */}
       {analytics.softenerData && (
         <div className="space-y-6">
@@ -3313,7 +3316,6 @@ const Analytics = () => {
         </Card>
       )}
 
-      <WebsiteAnalyticsGate />
     </div>
   );
 };

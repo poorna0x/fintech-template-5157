@@ -4,6 +4,7 @@ const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, isOriginAllowed, isProduction } = require('./cors-helper');
 const { addSecurityHeaders } = require('./security-headers');
 const { checkRateLimit, getClientIdentifier } = require('./rate-limiter');
+const { enrichEventMetadata } = require('./website-analytics-enrich');
 
 const SITE_KEYS = new Set(['hydrogenro', 'elevenro']);
 const EVENT_TYPES = new Set([
@@ -15,8 +16,9 @@ const EVENT_TYPES = new Set([
 ]);
 const MAX_EVENTS = 8;
 const MAX_PATH_LEN = 256;
-const MAX_META_KEYS = 6;
+const MAX_META_KEYS = 12;
 const MAX_META_VAL_LEN = 64;
+const CLIENT_ONLY_META_KEYS = new Set(['referrer_url']);
 
 function jsonResponse(statusCode, corsHeaders, body) {
   return {
@@ -67,7 +69,8 @@ function sanitizeMetadata(raw) {
     if (!/^[a-z][a-z0-9_]{0,31}$/i.test(key)) continue;
     const val = raw[key];
     if (typeof val === 'string') {
-      out[key] = val.slice(0, MAX_META_VAL_LEN);
+      const maxLen = CLIENT_ONLY_META_KEYS.has(key) ? 200 : MAX_META_VAL_LEN;
+      out[key] = val.slice(0, maxLen);
     } else if (typeof val === 'number' && Number.isFinite(val)) {
       out[key] = val;
     } else if (typeof val === 'boolean') {
@@ -75,6 +78,11 @@ function sanitizeMetadata(raw) {
     }
   }
   return out;
+}
+
+function buildMetadata(rawClientMeta, headers) {
+  const clientMeta = sanitizeMetadata(rawClientMeta);
+  return sanitizeMetadata(enrichEventMetadata(clientMeta, headers));
 }
 
 function getServiceClient() {
@@ -132,7 +140,7 @@ exports.handler = async (event) => {
       page_path: pagePath,
       session_hash: sessionHash,
       client_ip_hash: clientIpHash,
-      metadata: sanitizeMetadata(ev.metadata),
+      metadata: buildMetadata(ev.metadata, event.headers),
     });
   }
 

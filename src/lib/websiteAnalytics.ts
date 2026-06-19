@@ -16,6 +16,7 @@ export type WebsiteAnalyticsPayload = {
 };
 
 const SESSION_KEY = 'hro_wa_sid';
+const REFERRER_KEY = 'hro_wa_ref';
 const PAGE_VIEW_PREFIX = 'hro_wa_pv:';
 const PAGE_VIEW_TTL_MS = 30 * 60 * 1000;
 const FLUSH_MS = 2_000;
@@ -89,6 +90,37 @@ function markPageViewSent(path: string): void {
   }
 }
 
+function isOwnReferrerHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return (
+    host.includes('hydrogenro.com') ||
+    host.includes('elevenro.com') ||
+    host.includes('localhost') ||
+    host === '127.0.0.1'
+  );
+}
+
+function captureSessionReferrer(): string | undefined {
+  if (typeof sessionStorage === 'undefined') return undefined;
+  try {
+    let ref = sessionStorage.getItem(REFERRER_KEY);
+    if (!ref && typeof document !== 'undefined' && document.referrer) {
+      try {
+        const host = new URL(document.referrer).hostname;
+        if (!isOwnReferrerHost(host)) {
+          ref = document.referrer.slice(0, 200);
+          sessionStorage.setItem(REFERRER_KEY, ref);
+        }
+      } catch {
+        /* ignore malformed referrer */
+      }
+    }
+    return ref || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function scheduleFlush(): void {
   if (flushTimer) return;
   flushTimer = setTimeout(() => {
@@ -138,6 +170,8 @@ export function trackWebsiteEvent(
     markPageViewSent(pagePath);
   }
 
+  const referrerUrl = captureSessionReferrer();
+
   queue.push({
     event_type: eventType,
     page_path: pagePath,
@@ -145,6 +179,7 @@ export function trackWebsiteEvent(
     site_key: getPublicSiteKey(),
     metadata: {
       client_at: new Date().toISOString(),
+      ...(referrerUrl ? { referrer_url: referrerUrl } : {}),
       ...(metadata && Object.keys(metadata).length > 0 ? metadata : {}),
     },
   });

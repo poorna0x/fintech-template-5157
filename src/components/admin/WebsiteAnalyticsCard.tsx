@@ -186,13 +186,59 @@ function formatEventTimeIst(ev: RecentEvent): string {
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
-    second: '2-digit',
     hour12: true,
   });
 }
 
 function eventLabel(eventType: string): string {
   return EVENT_LABELS[eventType] ?? eventType;
+}
+
+function formatPagePath(path: string | null | undefined): string {
+  const p = (path || '/').trim();
+  if (p === '/' || p === '') return 'Home';
+  return p;
+}
+
+const REFERRER_LABELS: Record<string, string> = {
+  direct: 'Direct',
+  google: 'Google',
+  search: 'Search',
+  social: 'Social',
+  internal: 'Internal',
+  other: 'Other',
+};
+
+function titleCase(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function formatEventLocation(metadata?: Record<string, unknown> | null): string {
+  const city = metadata?.geo_city;
+  const country = metadata?.geo_country;
+  if (city && country) return `${String(city)}, ${String(country)}`;
+  if (country) return String(country);
+  if (city) return String(city);
+  return '—';
+}
+
+function formatEventDevice(metadata?: Record<string, unknown> | null): string {
+  const device = metadata?.device;
+  const browser = metadata?.browser;
+  if (!device && !browser) return '—';
+  const parts: string[] = [];
+  if (device) parts.push(titleCase(String(device)));
+  if (browser) parts.push(titleCase(String(browser)));
+  return parts.join(' · ');
+}
+
+function formatEventReferrer(metadata?: Record<string, unknown> | null): string {
+  const ref = metadata?.referrer;
+  if (!ref) return '—';
+  const label = REFERRER_LABELS[String(ref)] ?? titleCase(String(ref));
+  const host = metadata?.referrer_host;
+  if (host && ref === 'other') return `${label} (${String(host)})`;
+  return label;
 }
 
 function KpiCard({
@@ -457,7 +503,7 @@ export function WebsiteAnalyticsCard() {
             </CardTitle>
             <CardDescription className="text-sm mt-1 max-w-2xl">
               Visitors, calls, and bookings on hydrogenro.com and elevenro.com (IST). Call counts are
-              button taps, not confirmed conversations.
+              button taps, not confirmed conversations. Filters below apply only to this section.
             </CardDescription>
           </div>
           <Button
@@ -778,7 +824,7 @@ export function WebsiteAnalyticsCard() {
                         </div>
                         <p className="text-xs font-medium tabular-nums">{formatEventTimeIst(ev)}</p>
                         <p className="text-xs text-muted-foreground truncate">
-                          {ev.page_path || '/'}
+                          {formatPagePath(ev.page_path)}
                         </p>
                       </div>
                     ))}
@@ -793,6 +839,9 @@ export function WebsiteAnalyticsCard() {
                             <TableHead>Event</TableHead>
                             {siteFilter === 'all' ? <TableHead>Site</TableHead> : null}
                             <TableHead>Page</TableHead>
+                            <TableHead className="hidden md:table-cell">Location</TableHead>
+                            <TableHead className="hidden lg:table-cell">Device</TableHead>
+                            <TableHead className="hidden lg:table-cell">Referrer</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -813,8 +862,26 @@ export function WebsiteAnalyticsCard() {
                                   </Badge>
                                 </TableCell>
                               ) : null}
-                              <TableCell className="text-xs text-muted-foreground max-w-[240px] truncate">
-                                {ev.page_path || '/'}
+                              <TableCell className="text-xs text-muted-foreground max-w-[200px]">
+                                <div className="truncate">{formatPagePath(ev.page_path)}</div>
+                                <div className="mt-0.5 text-[10px] text-muted-foreground/80 lg:hidden">
+                                  {formatEventLocation(ev.metadata)}
+                                  {formatEventDevice(ev.metadata) !== '—'
+                                    ? ` · ${formatEventDevice(ev.metadata)}`
+                                    : ''}
+                                  {formatEventReferrer(ev.metadata) !== '—'
+                                    ? ` · ${formatEventReferrer(ev.metadata)}`
+                                    : ''}
+                                </div>
+                              </TableCell>
+                              <TableCell className="hidden md:table-cell text-xs text-muted-foreground whitespace-nowrap">
+                                {formatEventLocation(ev.metadata)}
+                              </TableCell>
+                              <TableCell className="hidden lg:table-cell text-xs text-muted-foreground whitespace-nowrap">
+                                {formatEventDevice(ev.metadata)}
+                              </TableCell>
+                              <TableCell className="hidden lg:table-cell text-xs text-muted-foreground whitespace-nowrap">
+                                {formatEventReferrer(ev.metadata)}
                               </TableCell>
                             </TableRow>
                           ))}

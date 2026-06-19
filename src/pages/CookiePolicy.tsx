@@ -91,6 +91,7 @@ const CookiePolicy: React.FC = () => {
                         sold to brokers
                       </li>
                       <li>Page views and user interactions on public marketing pages</li>
+                      <li>Approximate city/country, device type, browser family, and arrival source (direct, search, social, etc.)</li>
                       <li>Website performance and loading times (where measured)</li>
                       <li>Popular services and content</li>
                     </ul>
@@ -139,7 +140,7 @@ const CookiePolicy: React.FC = () => {
                   <p>
                     We run first-party analytics on hydrogenro.com and elevenro.com. It uses browser session
                     storage for an anonymous visit identifier and sends small event payloads (page path, event type,
-                    site brand) to our infrastructure.
+                    site brand, approximate location, device/browser, and how you arrived) to our infrastructure.
                   </p>
                   <p>
                     This is not used for advertising profiles. You can clear site data in your browser to reset the
