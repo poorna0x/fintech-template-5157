@@ -20,6 +20,7 @@ function parseNetlifyGeo(headers) {
       return {
         city: city || undefined,
         country: countryCode || countryName || undefined,
+        timezone: geo.timezone ? String(geo.timezone).trim() : undefined,
       };
     } catch {
       /* fall through */
@@ -31,6 +32,7 @@ function parseNetlifyGeo(headers) {
   return {
     city: city ? String(city).trim() : undefined,
     country: country ? String(country).trim() : undefined,
+    timezone: undefined,
   };
 }
 
@@ -102,6 +104,7 @@ function enrichEventMetadata(clientMeta, headers) {
   meta.os = os;
   if (geo.city) meta.geo_city = geo.city;
   if (geo.country) meta.geo_country = geo.country;
+  if (geo.timezone) meta.geo_tz = geo.timezone;
   meta.referrer = classified.referrer;
   if (classified.referrer_host) meta.referrer_host = classified.referrer_host;
 

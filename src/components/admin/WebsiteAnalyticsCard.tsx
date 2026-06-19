@@ -226,10 +226,17 @@ function titleCase(value: string): string {
 function formatEventLocation(metadata?: Record<string, unknown> | null): string {
   const city = metadata?.geo_city;
   const country = metadata?.geo_country;
-  if (city && country) return `${String(city)}, ${String(country)}`;
-  if (country) return String(country);
-  if (city) return String(city);
-  return '—';
+  const tz = metadata?.geo_tz;
+  let base = '—';
+  if (city && country) base = `${String(city)}, ${String(country)}`;
+  else if (country) base = String(country);
+  else if (city) base = String(city);
+  if (base === '—') return '—';
+  if (tz) {
+    const tzLabel = String(tz) === 'Asia/Kolkata' ? 'IST' : String(tz).split('/').pop()?.replace(/_/g, ' ') || String(tz);
+    return `${base} (${tzLabel})`;
+  }
+  return base;
 }
 
 function formatEventDevice(metadata?: Record<string, unknown> | null): string {
@@ -251,6 +258,21 @@ function formatEventReferrer(metadata?: Record<string, unknown> | null): string 
   const host = metadata?.referrer_host;
   if (host && ref === 'other') return `${label} (${String(host)})`;
   return label;
+}
+
+function RecentActivityMeta({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex gap-2 text-[10px] leading-snug min-w-0">
+      <span className="text-muted-foreground shrink-0 w-14">{label}</span>
+      <span className="text-foreground break-words min-w-0">{value}</span>
+    </div>
+  );
 }
 
 function KpiCard({
@@ -808,8 +830,9 @@ export function WebsiteAnalyticsCard() {
 
             <div className="space-y-2">
               <h4 className="text-sm font-medium px-0.5">Recent activity</h4>
-              <p className="text-xs text-muted-foreground px-0.5">
-                Exact visit and click times (IST). New events include browser time; older rows use server time.
+              <p className="text-xs text-muted-foreground px-0.5 leading-relaxed">
+                Times in IST (newer events use browser time). Location is approximate from the visitor&apos;s IP
+                (not GPS)—VPN, iCloud Private Relay, or ISP routing can show another country.
               </p>
 
               {recentEvents.length === 0 ? (
@@ -819,27 +842,39 @@ export function WebsiteAnalyticsCard() {
               ) : (
                 <>
                   <div className="space-y-2 md:hidden">
-                    {recentEvents.map((ev) => (
-                      <div
-                        key={ev.id}
-                        className="rounded-xl border border-border bg-card p-3 space-y-1.5"
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <Badge variant="secondary" className="text-[10px] font-normal">
-                            {eventLabel(ev.event_type)}
-                          </Badge>
-                          {siteFilter === 'all' ? (
-                            <Badge variant="outline" className="text-[10px] shrink-0">
-                              {getPublicSiteLabel(ev.site_key)}
+                    {recentEvents.map((ev) => {
+                      const location = formatEventLocation(ev.metadata);
+                      const device = formatEventDevice(ev.metadata);
+                      const referrer = formatEventReferrer(ev.metadata);
+                      return (
+                        <div
+                          key={ev.id}
+                          className="rounded-xl border border-border bg-card p-3 space-y-2"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <Badge variant="secondary" className="text-[10px] font-normal">
+                              {eventLabel(ev.event_type)}
                             </Badge>
-                          ) : null}
+                            {siteFilter === 'all' ? (
+                              <Badge variant="outline" className="text-[10px] shrink-0">
+                                {getPublicSiteLabel(ev.site_key)}
+                              </Badge>
+                            ) : null}
+                          </div>
+                          <p className="text-[11px] font-medium tabular-nums">{formatEventTimeIst(ev)}</p>
+                          <p className="text-xs text-muted-foreground break-words">
+                            {formatPagePath(ev.page_path)}
+                          </p>
+                          {(location !== '—' || device !== '—' || referrer !== '—') && (
+                            <div className="space-y-1 pt-2 border-t border-border/60">
+                              {location !== '—' ? <RecentActivityMeta label="Location" value={location} /> : null}
+                              {device !== '—' ? <RecentActivityMeta label="Device" value={device} /> : null}
+                              {referrer !== '—' ? <RecentActivityMeta label="Referrer" value={referrer} /> : null}
+                            </div>
+                          )}
                         </div>
-                        <p className="text-xs font-medium tabular-nums">{formatEventTimeIst(ev)}</p>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {formatPagePath(ev.page_path)}
-                        </p>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
 
                   <div className="hidden md:block rounded-lg border border-border overflow-hidden">
