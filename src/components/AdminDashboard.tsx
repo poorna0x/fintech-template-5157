@@ -1322,15 +1322,21 @@ const AdminDashboard = () => {
   const loadFilteredJobs = useCallback(async (
     filter: typeof statusFilter,
     page: number = 1,
-    opts?: { silent?: boolean }
+    opts?: { silent?: boolean; cacheOnly?: boolean }
   ) => {
     const silent = opts?.silent === true;
+    const cacheOnly = opts?.cacheOnly === true;
     // Only non-silent (user-visible) loads bump the request id. Background resume sync must
     // not supersede an in-flight tab switch or loading stays stuck forever.
     const requestId = silent ? loadJobsRequestRef.current : ++loadJobsRequestRef.current;
     const commitJobs = (data: Job[]) => {
-      setJobs(data);
-      setTabCachesStale(false);
+      if (!cacheOnly) {
+        setJobs(data);
+        setTabCachesStale(false);
+      } else if (filter === 'COMPLETED') {
+        // Realtime warm: Completed tab can open instantly after completion sound.
+        setTabCachesStale(false);
+      }
       if (filter === 'ONGOING') {
         ongoingJobsSnapshotRef.current = data;
         setModuleOngoingJobsSnapshot(data);
@@ -1350,20 +1356,22 @@ const AdminDashboard = () => {
         const { data, error } = await db.jobs.getOngoing();
         if (requestId !== loadJobsRequestRef.current) return;
         if (error) {
-          setJobs([]);
+          if (!cacheOnly) setJobs([]);
         } else {
-          setJobs(data || []);
+          if (!cacheOnly) setJobs(data || []);
         }
       } else if (filter === 'ONGOING') {
         // Load all ongoing jobs (usually not too many)
         const { data, error } = await db.jobs.getOngoing();
         if (requestId !== loadJobsRequestRef.current) return;
         if (error) {
-          setJobs([]);
+          if (!cacheOnly) setJobs([]);
         } else {
           commitJobs(data || []);
-          setTotalCount(data?.length || 0);
-          setTotalPages(1);
+          if (!cacheOnly) {
+            setTotalCount(data?.length || 0);
+            setTotalPages(1);
+          }
         }
       } else if (filter === 'COMPLETED' || filter === 'CANCELLED') {
         // Use pagination for completed and denied jobs
@@ -1428,7 +1436,7 @@ const AdminDashboard = () => {
         }
         if (requestId !== loadJobsRequestRef.current) return;
         if (error) {
-          setJobs([]);
+          if (!cacheOnly) setJobs([]);
         } else {
           let finalData = data || [];
           // Jobs without embedded customer (RLS/orphan rows) still need customer for grouping cards.
@@ -1474,7 +1482,7 @@ const AdminDashboard = () => {
             finalData = filtered.slice((effectivePage - 1) * pageSize, effectivePage * pageSize);
             count = filteredCount;
             pages = filteredPages;
-            if (effectivePage !== page) {
+            if (effectivePage !== page && !cacheOnly) {
               setCurrentPage(effectivePage);
             }
           }
@@ -1484,8 +1492,10 @@ const AdminDashboard = () => {
           }
 
           commitJobs(finalData);
-          setTotalCount(count || 0);
-          setTotalPages(pages || 0);
+          if (!cacheOnly) {
+            setTotalCount(count || 0);
+            setTotalPages(pages || 0);
+          }
         }
       } else if (filter === 'RESCHEDULED') {
         // Follow-up / rescheduled: slim query + photo fields + full customer embed (low egress vs jobs.*)
@@ -1509,15 +1519,17 @@ const AdminDashboard = () => {
         }
         if (requestId !== loadJobsRequestRef.current) return;
         if (error) {
-          setJobs([]);
+          if (!cacheOnly) setJobs([]);
         } else {
           commitJobs(data || []);
-          setTotalCount(count || 0);
-          setTotalPages(pages || 0);
+          if (!cacheOnly) {
+            setTotalCount(count || 0);
+            setTotalPages(pages || 0);
+          }
         }
       }
     } catch (error) {
-      if (requestId === loadJobsRequestRef.current) {
+      if (requestId === loadJobsRequestRef.current && !cacheOnly) {
         setJobs([]);
       }
     } finally {
@@ -2520,8 +2532,12 @@ const AdminDashboard = () => {
           void loadJobCounts();
           if (statusFilter === 'COMPLETED') {
             void loadFilteredJobs('COMPLETED', currentPage, { silent: true });
-          } else if (statusFilter === 'ONGOING') {
-            void loadFilteredJobs('ONGOING', 1, { silent: true });
+          } else {
+            // Warm page-1 cache so opening Completed after the sound is instant.
+            void loadFilteredJobs('COMPLETED', 1, { silent: true, cacheOnly: true });
+            if (statusFilter === 'ONGOING') {
+              void loadFilteredJobs('ONGOING', 1, { silent: true });
+            }
           }
         }
       )
