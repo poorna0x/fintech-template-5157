@@ -53,9 +53,10 @@ export function manualChunks(id: string): string | undefined {
     return 'supabase-vendor';
   }
 
-  if (id.includes('recharts')) {
-    return 'charts-vendor';
-  }
+  // NOTE: recharts is deliberately NOT given a manual chunk. Pinning it to
+  // charts-vendor caused a circular import with react-vendor that crashed the
+  // public site (blank page: "Cannot access 't' before initialization").
+  // Rollup auto-splits it into lazy-loaded admin chart chunks only.
 
   // NOTE: @mui/*, @emotion/*, and dayjs are deliberately NOT given a manual
   // chunk. They are reachable only through the lazy-loaded date-picker calendar

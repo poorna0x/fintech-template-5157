@@ -5,15 +5,7 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from '@/components/ui/chart';
-
-export type TrendPoint = {
-  day: string;
-  label: string;
-  visitors: number;
-  phone_clicks: number;
-  booking_clicks: number;
-  booking_submits: number;
-};
+import type { ChartMetricKey, TrendPoint } from './websiteAnalyticsTypes';
 
 const chartConfig = {
   visitors: { label: 'Visitors', color: 'hsl(199 89% 48%)' },
@@ -21,7 +13,7 @@ const chartConfig = {
   booking_submits: { label: 'Bookings', color: 'hsl(262 83% 58%)' },
 } satisfies ChartConfig;
 
-type MetricKey = 'visitors' | 'phone_clicks' | 'booking_submits';
+type MetricKey = ChartMetricKey;
 
 export default function WebsiteAnalyticsTrendChart({
   data,
@@ -39,19 +31,21 @@ export default function WebsiteAnalyticsTrendChart({
   }
 
   const ordered = [...data].sort((a, b) => a.day.localeCompare(b.day));
+  const tickInterval = ordered.length > 14 ? Math.ceil(ordered.length / 7) : 0;
 
   return (
-    <ChartContainer config={chartConfig} className="h-52 w-full aspect-auto">
-      <BarChart data={ordered} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+    <ChartContainer config={chartConfig} className="h-44 sm:h-52 w-full min-w-[280px] aspect-auto">
+      <BarChart data={ordered} margin={{ top: 8, right: 4, left: -16, bottom: 0 }}>
         <CartesianGrid vertical={false} strokeDasharray="3 3" />
         <XAxis
           dataKey="label"
           tickLine={false}
           axisLine={false}
-          interval="preserveStartEnd"
-          minTickGap={24}
+          interval={tickInterval || 'preserveStartEnd'}
+          minTickGap={16}
+          tick={{ fontSize: 11 }}
         />
-        <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={32} />
+        <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={28} tick={{ fontSize: 11 }} />
         <ChartTooltip
           cursor={{ fill: 'hsl(var(--muted) / 0.35)' }}
           content={
