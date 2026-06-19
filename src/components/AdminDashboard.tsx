@@ -827,8 +827,10 @@ const AdminDashboard = () => {
   const [isDeletingCustomerPhoto, setIsDeletingCustomerPhoto] = useState(false);
   const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
   const loadJobsRequestRef = useRef(0);
-  /** Per-filter job list cache for instant tab switches; always refreshed in background on open. */
+  /** Session cache for Completed / Follow-up tab switches; always refreshed in background on open. */
   const jobsListCacheRef = useRef(new Map<string, Job[]>());
+  /** Snapshot so switching back to Ongoing feels instant without Completed-style cache. */
+  const ongoingJobsSnapshotRef = useRef<Job[]>([]);
   /** Newly created customers (row + optional job) until they appear in embedded job payloads — avoids derive-from-jobs wiping them. */
   const pendingNewCustomersRef = useRef<Map<string, Customer>>(new Map());
 
@@ -1257,7 +1259,7 @@ const AdminDashboard = () => {
 
 
   const getJobsListCacheKey = useCallback((
-    filter: typeof statusFilter,
+    filter: 'COMPLETED' | 'RESCHEDULED',
     page: number
   ) => {
     if (filter === 'COMPLETED') {
@@ -1266,16 +1268,12 @@ const AdminDashboard = () => {
       }
       return `COMPLETED:${completedDatePreset}:${completedRangeStartDate}:${completedRangeEndDate}:p${page}`;
     }
-    if (filter === 'CANCELLED') {
-      return `CANCELLED:${deniedDateFilter}:p${page}`;
-    }
-    return `${filter}:p${page}`;
+    return `RESCHEDULED:p${page}`;
   }, [
     completedDatePreset,
     completedDateFilter,
     completedRangeStartDate,
     completedRangeEndDate,
-    deniedDateFilter,
   ]);
 
   // Load jobs based on current filter (optimized)
@@ -1290,7 +1288,11 @@ const AdminDashboard = () => {
     const requestId = silent ? loadJobsRequestRef.current : ++loadJobsRequestRef.current;
     const commitJobs = (data: Job[]) => {
       setJobs(data);
-      jobsListCacheRef.current.set(getJobsListCacheKey(filter, page), data);
+      if (filter === 'ONGOING') {
+        ongoingJobsSnapshotRef.current = data;
+      } else if (filter === 'COMPLETED' || filter === 'RESCHEDULED') {
+        jobsListCacheRef.current.set(getJobsListCacheKey(filter, page), data);
+      }
     };
     try {
       if (!silent) {
@@ -1304,7 +1306,7 @@ const AdminDashboard = () => {
         if (error) {
           setJobs([]);
         } else {
-          commitJobs(data || []);
+          setJobs(data || []);
         }
       } else if (filter === 'ONGOING') {
         // Load all ongoing jobs (usually not too many)
@@ -1510,6 +1512,7 @@ const AdminDashboard = () => {
   const applyAdminSnapshot = useCallback((snap: AdminDashboardSnapshot) => {
     const jobList = (snap.jobs as Job[]) ?? [];
     setJobs(jobList);
+    ongoingJobsSnapshotRef.current = jobList;
     setTotalCount(jobList.length);
     setTotalPages(1);
     const transformed = (snap.technicianRows as any[]).map(transformTechnicianData);
@@ -1639,6 +1642,7 @@ const AdminDashboard = () => {
         } else {
           const list = ongoingResult.data || [];
           setJobs(list);
+          ongoingJobsSnapshotRef.current = list;
           setTotalCount(list.length);
           setTotalPages(1);
         }
@@ -1915,8 +1919,15 @@ const AdminDashboard = () => {
   useEffect(() => {
     if (isInitialLoad) return;
     setCurrentPage(1);
-    const cached = jobsListCacheRef.current.get(getJobsListCacheKey(statusFilter, 1));
-    setJobs(cached ?? []);
+    if (statusFilter === 'COMPLETED' || statusFilter === 'RESCHEDULED') {
+      const cached = jobsListCacheRef.current.get(getJobsListCacheKey(statusFilter, 1));
+      setJobs(cached ?? []);
+    } else if (statusFilter === 'ONGOING' && ongoingJobsSnapshotRef.current.length > 0) {
+      setJobs(ongoingJobsSnapshotRef.current);
+    } else {
+      // Denied / All: clear the previous tab's jobs so they don't flash before the fetch lands.
+      setJobs([]);
+    }
     loadFilteredJobs(statusFilter, 1);
     // Refresh counts when filter changes
       loadJobCounts();
@@ -1934,6 +1945,11 @@ const AdminDashboard = () => {
     await Promise.all([
       loadJobCounts(),
       loadFilteredJobs(statusFilter, currentPage, { silent: true }),
+      // Keep the follow-up glow (red/yellow) in sync across devices — it's not driven by
+      // realtime, so without this the color can be stale after changes made on another device.
+      db.jobs.getFollowUpForGlow().then(({ data }) => {
+        if (data) setAllFollowUpJobs(data as Job[]);
+      }).catch(() => {}),
     ]);
   }, [isInitialLoad, statusFilter, currentPage, loadJobCounts, loadFilteredJobs]);
 
@@ -7377,6 +7393,12 @@ const AdminDashboard = () => {
       // Reload jobs to ensure everything is updated everywhere
       await loadFilteredJobs(statusFilter, currentPage);
 
+      // Refresh the follow-up glow (red/yellow) so the stats card updates immediately
+      // now that this job is no longer a today/tomorrow follow-up.
+      db.jobs.getFollowUpForGlow().then(({ data }) => {
+        if (data) setAllFollowUpJobs(data as Job[]);
+      }).catch(() => {});
+
       toast.success('Job moved to ongoing with updated schedule');
 
       // If this was a follow-up "Assign" flow, assignment was applied as part of the move-to-ongoing update.
@@ -9093,13 +9115,18 @@ const AdminDashboard = () => {
     Boolean(user && isAdmin) && isInitialLoad;
 
   const isJobsListRefreshing = loading && !isInitialLoad;
-  const showJobsListLoader = isJobsListRefreshing && displayedCustomers.length === 0;
+  // Ongoing keeps its instant snapshot; every other tab shows an inline loader while fetching
+  // (prevents the denied tab from flashing the previous tab's jobs for a split second).
+  const showJobsListLoader =
+    statusFilter !== 'ONGOING' && isJobsListRefreshing && displayedCustomers.length === 0;
   const jobsListRefreshLabel =
     statusFilter === 'RESCHEDULED'
       ? 'follow-up'
       : statusFilter === 'CANCELLED'
         ? 'denied'
-        : statusFilter.toLowerCase().replace('_', ' ');
+        : statusFilter === 'COMPLETED'
+          ? 'completed'
+          : 'jobs';
 
   // Auth gate handled by AdminPortal — dashboard mounts only when user is admin
   if (isDashboardBootstrapping) {
@@ -10075,14 +10102,7 @@ const AdminDashboard = () => {
             {showJobsListLoader ? (
               <AdminInlineLoader message={`Loading ${jobsListRefreshLabel} jobs...`} />
             ) : (
-              <>
-            {isJobsListRefreshing && displayedCustomers.length > 0 && (
-              <div className="flex items-center gap-2 text-sm text-gray-500 px-1">
-                <RefreshCw className="w-4 h-4 animate-spin shrink-0" />
-                Updating…
-              </div>
-            )}
-            {displayedCustomers.map(({ customer, allJobs, upcomingJobs, completedJobs, cancelledJobs }) => {
+            displayedCustomers.map(({ customer, allJobs, upcomingJobs, completedJobs, cancelledJobs }) => {
               // Check if this customer has followup jobs scheduled for today or tomorrow (for card border)
               const hasTodayFollowup = statusFilter === 'RESCHEDULED' && allJobs.some(job => {
                 if (!['FOLLOW_UP', 'RESCHEDULED'].includes(job.status)) return false;
@@ -11149,8 +11169,7 @@ const AdminDashboard = () => {
                 </div>
               </Card>
             );
-            })}
-              </>
+              })
             )}
           </div>
 
