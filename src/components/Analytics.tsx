@@ -200,10 +200,40 @@ function mapBrandRpcRow(r: Record<string, unknown>): NonNullable<AnalyticsData['
   };
 }
 
-type PeriodOption = '7d' | '30d' | 'thisWeek' | 'thisMonth' | 'previousMonth' | 'customMonth' | '3m' | '6m' | '1y' | 'all' | 'custom';
+type PeriodOption = '7d' | '30d' | 'thisWeek' | 'thisMonth' | 'thisYear' | 'previousMonth' | 'customMonth' | '3m' | '6m' | '1y' | 'all' | 'custom';
 
 /** Ishanga 7%: 7% of (Revenue − business expenses − salary − technician expenses). */
 const ISHANGA_RATE = 0.07;
+
+function toLocalDateString(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function getJobCompletedAt(job: {
+  completed_at?: string | null;
+  end_time?: string | null;
+  completedAt?: string | null;
+  endTime?: string | null;
+}): Date | null {
+  const raw = job.end_time || job.endTime || job.completed_at || job.completedAt;
+  if (!raw) return null;
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function isJobCompletedInRange(
+  job: { status?: string; completed_at?: string | null; end_time?: string | null },
+  startDate: Date,
+  endDate: Date
+): boolean {
+  if (job.status !== 'COMPLETED') return false;
+  const completedAt = getJobCompletedAt(job);
+  if (!completedAt) return false;
+  return completedAt >= startDate && completedAt <= endDate;
+}
 
 // Helper function to format currency with commas and without .00 when it's zero
 const formatCurrency = (amount: number): string => {
@@ -367,6 +397,13 @@ const Analytics = () => {
         endDate.setHours(23, 59, 59, 999);
         break;
       }
+      case 'thisYear': {
+        const year = new Date().getFullYear();
+        return {
+          startDate: new Date(year, 0, 1, 0, 0, 0, 0),
+          endDate: new Date(year, 11, 31, 23, 59, 59, 999),
+        };
+      }
       case 'previousMonth':
         // First day of previous month to last day of previous month
         startDate.setMonth(startDate.getMonth() - 1);
@@ -382,10 +419,14 @@ const Analytics = () => {
         startDate.setMonth(startDate.getMonth() - 6);
         endDate.setHours(23, 59, 59, 999); // End of today
         break;
-      case '1y':
-        startDate.setFullYear(startDate.getFullYear() - 1);
-        endDate.setHours(23, 59, 59, 999); // End of today
-        break;
+      case '1y': {
+        // Previous calendar year (matches “Previous Month” semantics).
+        const prevYear = new Date().getFullYear() - 1;
+        startDate.setFullYear(prevYear, 0, 1);
+        startDate.setHours(0, 0, 0, 0);
+        endDate = new Date(prevYear, 11, 31, 23, 59, 59, 999);
+        return { startDate, endDate };
+      }
       default:
         endDate.setHours(23, 59, 59, 999); // End of today
     }
@@ -451,11 +492,15 @@ const Analytics = () => {
       let totalSalaryIncludingAll = 0;
       let baseData: any = null;
 
-      const startStr = startDate?.toISOString().split('T')[0];
-      const endStr = endDate?.toISOString().split('T')[0];
+      const startStr = startDate ? toLocalDateString(startDate) : undefined;
+      const endStr = endDate ? toLocalDateString(endDate) : undefined;
 
       let jobs: any[] = [];
       let completedJobs: any[] = [];
+      let technicians: any[] = [];
+      let rangedPayments: { technician_id: string; commission_amount?: number | null; payment_status?: string | null }[] =
+        [];
+      const analyticsExpenseOpts = { forAnalytics: true as const };
 
       if (startDate && endDate) {
         // Parallel fetch: only in-range data (no getAnalytics = no full-table scans). Technicians + payments in range + jobs in range + expenses in range.
@@ -470,17 +515,13 @@ const Analytics = () => {
           { data: otherBusinessExpenses },
           paymentsInRangeRes
         ] = await Promise.all([
-          db.technicians.getAll(100),
+          db.technicians.getAllForDashboard(100, { activeRosterOnly: false }),
           db.jobs.getForAnalyticsInRange(startDate, endDate),
-          db.technicianExpenses.getAll(undefined, startStr, endStr),
-          db.technicianAdvances.getAll(undefined, startStr, endStr),
-          db.businessExpenses.getAll(startStr, endStr),
-          db.otherExpenses.getAll(startStr, endStr),
-          supabase
-            .from('technician_payments')
-            .select('technician_id, commission_amount, payment_status')
-            .gte('created_at', startISO)
-            .lte('created_at', endISO)
+          db.technicianExpenses.getAll(undefined, startStr, endStr, analyticsExpenseOpts),
+          db.technicianAdvances.getAll(undefined, startStr, endStr, analyticsExpenseOpts),
+          db.businessExpenses.getAll(startStr, endStr, analyticsExpenseOpts),
+          db.otherExpenses.getAll(startStr, endStr, analyticsExpenseOpts),
+          db.analyticsData.getAllTechnicianPayments({ startISO, endISO })
         ]);
 
         if (jobsInRangeResult.error || !jobsInRangeResult.data) {
@@ -490,8 +531,9 @@ const Analytics = () => {
         }
 
         const jobsForBase = jobsInRangeResult.data || [];
-        const technicians = techniciansRes.data || [];
-        const payments = paymentsInRangeRes.data || [];
+        technicians = techniciansRes.data || [];
+        rangedPayments = paymentsInRangeRes.data || [];
+        const payments = rangedPayments;
         const totalJobsCount = jobsForBase.length;
         const completedCount = jobsForBase.filter((j: any) => j.status === 'COMPLETED').length;
         const deniedCount = jobsForBase.filter((j: any) => j.status === 'DENIED' || j.status === 'CANCELLED').length;
@@ -568,21 +610,18 @@ const Analytics = () => {
         } else {
           // Other periods: pro-rated base + commissions + extra (before advances)
           try {
-            const { data: allTechnicians } = await db.technicians.getAll(100);
-            if (allTechnicians && startDate && endDate) {
-              const [paymentsRes, extraCommissionsRes] = await Promise.all([
-                supabase
-                  .from('technician_payments')
-                  .select('technician_id, commission_amount')
-                  .gte('created_at', startDate.toISOString())
-                  .lte('created_at', endDate.toISOString()),
-                db.technicianExtraCommissions.getAll(undefined, startStr, endStr)
-              ]);
-              const paymentsData = paymentsRes.data || [];
+            if (technicians.length > 0 && startDate && endDate) {
+              const extraCommissionsRes = await db.technicianExtraCommissions.getAll(
+                undefined,
+                startStr,
+                endStr,
+                analyticsExpenseOpts
+              );
+              const paymentsData = rangedPayments;
               const extraCommissionsData = extraCommissionsRes.data || [];
               let totalSalaryPaid = 0;
               const EXCLUDED_EMPLOYEE_ID = 'TECH851703400';
-              allTechnicians.forEach((tech: any) => {
+              technicians.forEach((tech: any) => {
                 const techId = tech.id;
                 const employeeId = tech.employee_id ?? tech.employeeId ?? '';
                 const techPayments = (paymentsData || []).filter((p: any) => p.technician_id === techId);
@@ -608,26 +647,99 @@ const Analytics = () => {
 
         const allInRange = Array.isArray(jobsInRangeResult.data) ? jobsInRangeResult.data : [];
         jobs = allInRange;
-        completedJobs = allInRange.filter((j: any) => j && j.status === 'COMPLETED');
+        completedJobs = allInRange.filter(
+          (j: any) => j && isJobCompletedInRange(j, startDate, endDate)
+        );
       } else {
-        const [analyticsRes, jobsRes] = await Promise.all([
-          db.stats.getAnalytics(),
-          db.jobs.getForAnalytics(5000)
+        const [
+          jobsRes,
+          techniciansRes,
+          { data: techExpenses },
+          { data: techAdvances },
+          { data: businessExpenses },
+          { data: otherBusinessExpenses },
+          paymentsAllRes
+        ] = await Promise.all([
+          db.jobs.getForAnalytics(),
+          db.technicians.getAllForDashboard(100, { activeRosterOnly: false }),
+          db.technicianExpenses.getAll(undefined, undefined, undefined, analyticsExpenseOpts),
+          db.technicianAdvances.getAll(undefined, undefined, undefined, analyticsExpenseOpts),
+          db.businessExpenses.getAll(undefined, undefined, analyticsExpenseOpts),
+          db.otherExpenses.getAll(undefined, undefined, analyticsExpenseOpts),
+          db.analyticsData.getAllTechnicianPayments(),
         ]);
-        baseData = analyticsRes.data;
-        if (analyticsRes.error) {
-          console.error('Error loading analytics:', analyticsRes.error);
-          toast.error('Failed to load analytics');
-          return;
-        }
+        technicians = techniciansRes.data || [];
+        rangedPayments = paymentsAllRes.data || [];
+
         if (jobsRes.error || !jobsRes.data) {
           console.error('Error loading jobs for detailed analytics:', jobsRes.error);
-          setAnalytics(baseData || {});
+          setAnalytics(null);
           return;
         }
+
         const allJobsList = Array.isArray(jobsRes.data) ? jobsRes.data : [];
         jobs = allJobsList;
         completedJobs = allJobsList.filter((j: any) => j && j.status === 'COMPLETED');
+
+        totalTechnicianExpenses = (techExpenses || []).reduce((sum: number, exp: any) => sum + Number(exp.amount || 0), 0);
+        totalTechnicianAdvances = (techAdvances || []).reduce((sum: number, adv: any) => sum + Number(adv.amount || 0), 0);
+        totalBusinessExpenses = (businessExpenses || []).reduce((sum: number, exp: any) => sum + Number(exp.amount || 0), 0);
+        const profitCats = new Set(['JOB_COST', 'BUSINESS']);
+        totalBusinessExpensesForProfit = (businessExpenses || []).reduce((sum: number, exp: any) => {
+          const cat = (exp?.category || '').toString().toUpperCase();
+          if (!profitCats.has(cat)) return sum;
+          return sum + Number(exp.amount || 0);
+        }, 0);
+        const profitCatsJobsOnly = new Set(['JOB_COST']);
+        totalBusinessExpensesForProfitJobsOnly = (businessExpenses || []).reduce((sum: number, exp: any) => {
+          const cat = (exp?.category || '').toString().toUpperCase();
+          if (!profitCatsJobsOnly.has(cat)) return sum;
+          return sum + Number(exp.amount || 0);
+        }, 0);
+        totalOtherBusinessLedgerExpenses = (businessExpenses || []).reduce((sum: number, exp: any) => {
+          const cat = (exp?.category || '').toString().toUpperCase();
+          if (cat !== 'OTHER_BUSINESS_EXPENSE') return sum;
+          return sum + Number(exp.amount || 0);
+        }, 0);
+        totalOtherBusinessExpenses = (otherBusinessExpenses || []).reduce((sum: number, exp: any) => sum + Number(exp.amount || 0), 0);
+
+        const payments = rangedPayments;
+        const totalJobsCount = jobs.length;
+        const completedCount = completedJobs.length;
+        const deniedCount = jobs.filter((j: any) => j.status === 'DENIED' || j.status === 'CANCELLED').length;
+        const pendingCount = jobs.filter((j: any) => j.status === 'PENDING').length;
+        const assignedCount = jobs.filter((j: any) => j.status === 'ASSIGNED').length;
+        const inProgressCount = jobs.filter((j: any) => j.status === 'IN_PROGRESS').length;
+        const completedWithPayment = completedJobs.filter((j: any) =>
+          j.status === 'COMPLETED' && (j.payment_amount || j.actual_cost)
+        );
+        const periodBillingSum = completedWithPayment.reduce((s: number, j: any) => s + (Number(j.payment_amount) || Number(j.actual_cost) || 0), 0);
+        baseData = {
+          totalJobs: totalJobsCount,
+          completedJobs: completedCount,
+          deniedJobs: deniedCount,
+          pendingJobs: pendingCount,
+          assignedJobs: assignedCount,
+          inProgressJobs: inProgressCount,
+          totalBilling: periodBillingSum,
+          averageBill: completedWithPayment.length > 0 ? periodBillingSum / completedWithPayment.length : 0,
+          technicianStats: technicians.map((tech: any) => {
+            const techJobs = jobs.filter((j: any) => j.assigned_technician_id === tech.id);
+            const techPayments = payments.filter((p: any) => p.technician_id === tech.id);
+            const totalEarnings = techPayments.filter((p: any) => p.payment_status === 'PAID').reduce((s: number, p: any) => s + (Number(p.commission_amount) || 0), 0);
+            const pendingEarnings = techPayments.filter((p: any) => p.payment_status === 'PENDING').reduce((s: number, p: any) => s + (Number(p.commission_amount) || 0), 0);
+            return {
+              id: tech.id,
+              name: `${tech.full_name}${tech.account_status === 'INACTIVE' ? ' (Inactive)' : ''}`,
+              totalJobs: techJobs.length,
+              completedJobs: techJobs.filter((j: any) => j.status === 'COMPLETED').length,
+              totalEarnings,
+              pendingEarnings
+            };
+          }),
+          completionRate: totalJobsCount > 0 ? (completedCount / totalJobsCount) * 100 : 0,
+          denialRate: totalJobsCount > 0 ? (deniedCount / totalJobsCount) * 100 : 0
+        };
       }
 
       // Spare parts cost: sum denormalized parts_cost_total from completed jobs in period
@@ -815,12 +927,7 @@ const Analytics = () => {
         serviceTypes: Record<string, { count: number; amount: number }>;
       }> = {};
       
-      // Get all technicians
-      // OPTIMIZATION: Limit technicians fetch
-      const { data: techniciansData } = await db.technicians.getAll(100);
-      const technicians = techniciansData || [];
-      
-      // Return complaints are loaded on demand when user clicks "Return Complaints" in the table header.
+      // Technicians loaded once above (getAllForDashboard — no live GPS blob).
 
       // Calculate stats for each technician based on jobs in the selected period
       jobs.forEach((job: any) => {
@@ -846,6 +953,10 @@ const Analytics = () => {
         technicianStatsMap[techId].totalJobs += 1;
         
         if (job.status === 'COMPLETED') {
+          const countsForPeriod =
+            !startDate || !endDate || isJobCompletedInRange(job, startDate, endDate);
+          if (!countsForPeriod) return;
+
           technicianStatsMap[techId].completedJobs += 1;
           
           // Calculate earnings for completed jobs in this period
@@ -1746,13 +1857,20 @@ const Analytics = () => {
       case '30d': return 'Last 30 Days';
       case 'thisWeek': return 'This Week';
       case 'thisMonth': return 'This Month';
+      case 'thisYear': {
+        const y = new Date().getFullYear();
+        return `This Year (${y})`;
+      }
       case 'previousMonth': return 'Previous Month';
       case 'customMonth': return customMonthValue
         ? new Date(customMonthValue + '-01').toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
         : 'Custom month';
       case '3m': return 'Last 3 Months';
       case '6m': return 'Last 6 Months';
-      case '1y': return 'Last Year';
+      case '1y': {
+        const y = new Date().getFullYear() - 1;
+        return `Previous Year (${y})`;
+      }
       case 'all': return 'All Time';
       case 'custom': return 'Custom Range';
       default: return 'Last 30 Days';
@@ -1767,60 +1885,57 @@ const Analytics = () => {
           <p className="text-gray-600">Comprehensive performance metrics and insights</p>
         </div>
 
-        <div className="flex flex-col gap-3 w-full sm:w-auto sm:ml-auto sm:items-end sm:shrink-0">
-          <div className="flex flex-col gap-2 w-full sm:flex-row sm:items-center sm:justify-end sm:w-auto">
-            <div className="flex items-center gap-2">
-              <Filter className="w-4 h-4 text-gray-500 shrink-0" />
-              <Label htmlFor="period-select" className="text-sm font-medium text-gray-700 whitespace-nowrap">
-                Period:
-              </Label>
-            </div>
-            <Select value={period} onValueChange={(value) => setPeriod(value as PeriodOption)}>
-              <SelectTrigger id="period-select" className="w-full sm:w-[180px]">
-                <SelectValue placeholder="Select period" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="thisWeek">This Week</SelectItem>
-                <SelectItem value="thisMonth">This Month</SelectItem>
-                <SelectItem value="previousMonth">Previous Month</SelectItem>
-                <SelectItem value="customMonth">Custom month</SelectItem>
-                <SelectItem value="7d">Last 7 Days</SelectItem>
-                <SelectItem value="30d">Last 30 Days</SelectItem>
-                <SelectItem value="3m">Last 3 Months</SelectItem>
-                <SelectItem value="6m">Last 6 Months</SelectItem>
-                <SelectItem value="1y">Last Year</SelectItem>
-                <SelectItem value="all">All Time</SelectItem>
-                <SelectItem value="custom">Custom Range</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          
-          {period === 'custom' && (
-            <div className="grid grid-cols-1 gap-2 w-full sm:flex sm:items-center sm:justify-end sm:gap-2 sm:w-auto">
-              <DatePicker
-                value={customStartDate}
-                onChange={(v) => v && setCustomStartDate(v)}
-                placeholder="Start date"
-                className="w-full sm:w-auto sm:min-w-[140px]"
-              />
-              <span className="text-gray-500 text-center sm:text-left">to</span>
-              <DatePicker
-                value={customEndDate}
-                onChange={(v) => v && setCustomEndDate(v)}
-                placeholder="End date"
-                className="w-full sm:w-auto sm:min-w-[140px]"
-              />
-            </div>
-          )}
-          {period === 'customMonth' && (
+        <div className="flex items-center gap-2 flex-wrap justify-start sm:justify-end w-full sm:w-auto sm:ml-auto sm:shrink-0">
+          <Filter className="w-4 h-4 text-gray-500 shrink-0" />
+          <Label htmlFor="period-select" className="text-sm font-medium text-gray-700 whitespace-nowrap shrink-0">
+            Period:
+          </Label>
+          <Select value={period} onValueChange={(value) => setPeriod(value as PeriodOption)}>
+            <SelectTrigger id="period-select" className="w-[180px] shrink-0">
+              <SelectValue placeholder="Select period" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="thisWeek">This Week</SelectItem>
+              <SelectItem value="thisMonth">This Month</SelectItem>
+              <SelectItem value="thisYear">This Year</SelectItem>
+              <SelectItem value="previousMonth">Previous Month</SelectItem>
+              <SelectItem value="customMonth">Custom month</SelectItem>
+              <SelectItem value="7d">Last 7 Days</SelectItem>
+              <SelectItem value="30d">Last 30 Days</SelectItem>
+              <SelectItem value="3m">Last 3 Months</SelectItem>
+              <SelectItem value="6m">Last 6 Months</SelectItem>
+              <SelectItem value="1y">Previous Year</SelectItem>
+              <SelectItem value="all">All Time</SelectItem>
+              <SelectItem value="custom">Custom Range</SelectItem>
+            </SelectContent>
+          </Select>
+          {period === 'customMonth' ? (
             <Input
               type="month"
               value={customMonthValue}
               onChange={(e) => setCustomMonthValue(e.target.value)}
-              className="w-full sm:w-[160px] sm:ml-auto"
+              className="w-[160px] shrink-0 h-10"
               max={new Date().toISOString().slice(0, 7)}
+              aria-label="Custom month"
             />
-          )}
+          ) : null}
+          {period === 'custom' ? (
+            <div className="flex items-center gap-2 flex-wrap">
+              <DatePicker
+                value={customStartDate}
+                onChange={(v) => v && setCustomStartDate(v)}
+                placeholder="Start date"
+                className="w-auto min-w-[140px]"
+              />
+              <span className="text-gray-500 text-sm shrink-0">to</span>
+              <DatePicker
+                value={customEndDate}
+                onChange={(v) => v && setCustomEndDate(v)}
+                placeholder="End date"
+                className="w-auto min-w-[140px]"
+              />
+            </div>
+          ) : null}
         </div>
       </div>
       

@@ -338,6 +338,35 @@ const TECHNICIAN_EXPENSE_ROW_COLUMNS =
 const TECHNICIAN_ADVANCE_ROW_COLUMNS =
   'id,technician_id,amount,description,advance_date,payment_method,payment_reference,notes,paid_by,created_at,updated_at';
 
+/** Slim selects for Analytics.tsx totals (less egress than full expense rows). */
+const ANALYTICS_TECHNICIAN_EXPENSE_COLUMNS = 'amount';
+const ANALYTICS_TECHNICIAN_ADVANCE_COLUMNS = 'amount';
+const ANALYTICS_BUSINESS_EXPENSE_COLUMNS = 'amount,category';
+const ANALYTICS_OTHER_EXPENSE_COLUMNS = 'amount';
+const ANALYTICS_EXTRA_COMMISSION_COLUMNS = 'technician_id,commission_date,amount';
+
+type AnalyticsQueryOpts = { forAnalytics?: boolean };
+
+const ANALYTICS_FETCH_PAGE_SIZE = 1000;
+
+/** Page through Supabase queries (default API max is 1000 rows per request). */
+async function fetchAnalyticsPages<T>(
+  fetchPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>
+): Promise<{ data: T[]; error: { message: string } | null }> {
+  const rows: T[] = [];
+  let from = 0;
+  for (;;) {
+    const to = from + ANALYTICS_FETCH_PAGE_SIZE - 1;
+    const { data, error } = await fetchPage(from, to);
+    if (error) return { data: rows, error };
+    const page = data ?? [];
+    rows.push(...page);
+    if (page.length < ANALYTICS_FETCH_PAGE_SIZE) break;
+    from += ANALYTICS_FETCH_PAGE_SIZE;
+  }
+  return { data: rows, error: null };
+}
+
 const JOB_ASSIGNMENT_REQUEST_ROW =
   'id,job_id,technician_id,status,assigned_by,assigned_at,responded_at,response_notes,created_at,updated_at';
 
@@ -2296,20 +2325,30 @@ export const db = {
       return { data: data || [], error };
     },
 
-    /** Analytics only: selective columns (no before_photos, after_photos, service_address, etc.). Same aggregates, lower egress. */
-    /** `limit` caps egress; use a higher value for attribution chains (e.g. Direct/Website conversion analysis). */
-    async getForAnalytics(limit: number = 5000) {
+    /** Analytics only: selective columns. Omit `limit` to fetch every job (paginated). Pass `limit` for capped on-demand reports. */
+    async getForAnalytics(limit?: number) {
       const cols = [
         'id', 'customer_id', 'status', 'created_at', 'completed_at', 'end_time', 'requirements',
         'assigned_technician_id', 'assigned_by', 'payment_amount', 'actual_cost', 'lead_cost', 'parts_cost_total',
         'service_type', 'service_sub_type', 'payment_method', 'job_number'
       ].join(', ');
-      const { data, error } = await supabase
-        .from('jobs')
-        .select(cols)
-        .order('created_at', { ascending: false })
-        .limit(Math.min(Math.max(1, limit), 15000));
-      return { data: data || [], error };
+
+      if (limit != null && limit > 0) {
+        const { data, error } = await supabase
+          .from('jobs')
+          .select(cols)
+          .order('created_at', { ascending: false })
+          .limit(limit);
+        return { data: data || [], error };
+      }
+
+      return fetchAnalyticsPages((from, to) =>
+        supabase
+          .from('jobs')
+          .select(cols)
+          .order('created_at', { ascending: false })
+          .range(from, to)
+      );
     },
 
     /**
@@ -2325,21 +2364,28 @@ export const db = {
       ].join(', ');
       const startISO = startDate.toISOString();
       const endISO = endDate.toISOString();
+      const completedFilter = `and(end_time.gte.${startISO},end_time.lte.${endISO}),and(end_time.is.null,completed_at.gte.${startISO},completed_at.lte.${endISO})`;
 
       const [completedRes, otherRes] = await Promise.all([
-        supabase
-          .from('jobs')
-          .select(cols)
-          .eq('status', 'COMPLETED')
-          .or(`and(end_time.gte.${startISO},end_time.lte.${endISO}),and(end_time.is.null,completed_at.gte.${startISO},completed_at.lte.${endISO})`)
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('jobs')
-          .select(cols)
-          .neq('status', 'COMPLETED')
-          .gte('created_at', startISO)
-          .lte('created_at', endISO)
-          .order('created_at', { ascending: false })
+        fetchAnalyticsPages((from, to) =>
+          supabase
+            .from('jobs')
+            .select(cols)
+            .eq('status', 'COMPLETED')
+            .or(completedFilter)
+            .order('created_at', { ascending: false })
+            .range(from, to)
+        ),
+        fetchAnalyticsPages((from, to) =>
+          supabase
+            .from('jobs')
+            .select(cols)
+            .neq('status', 'COMPLETED')
+            .gte('created_at', startISO)
+            .lte('created_at', endISO)
+            .order('created_at', { ascending: false })
+            .range(from, to)
+        ),
       ]);
 
       if (completedRes.error) return { data: [], error: completedRes.error };
@@ -2358,7 +2404,7 @@ export const db = {
     /**
      * Same date logic as `getForAnalyticsInRange`, but only columns needed for Direct/Website conversion attribution (smaller egress).
      */
-    async getForConversionAnalyticsInRange(startDate: Date, endDate: Date) {
+    async getForConversionAnalyticsInRange(startDate: Date, endDate: Date, limit: number = 15000) {
       const cols = [
         'id',
         'customer_id',
@@ -2375,6 +2421,7 @@ export const db = {
       ].join(', ');
       const startISO = startDate.toISOString();
       const endISO = endDate.toISOString();
+      const lim = Math.min(Math.max(1, limit), 15000);
 
       const [completedRes, otherRes] = await Promise.all([
         supabase
@@ -2384,7 +2431,8 @@ export const db = {
           .or(
             `and(end_time.gte.${startISO},end_time.lte.${endISO}),and(end_time.is.null,completed_at.gte.${startISO},completed_at.lte.${endISO})`
           )
-          .order('created_at', { ascending: false }),
+          .order('created_at', { ascending: false })
+          .limit(lim),
         supabase
           .from('jobs')
           .select(cols)
@@ -2392,6 +2440,7 @@ export const db = {
           .gte('created_at', startISO)
           .lte('created_at', endISO)
           .order('created_at', { ascending: false })
+          .limit(lim)
       ]);
 
       if (completedRes.error) return { data: [], error: completedRes.error };
@@ -4186,23 +4235,24 @@ export const db = {
   // Technician expenses operations
   technicianExpenses: {
     /** technicianId optional. startDate/endDate in YYYY-MM-DD for analytics (DB-side filter, less egress). */
-    async getAll(technicianId?: string, startDate?: string, endDate?: string) {
-      let query = supabase
-        .from('technician_expenses')
-        .select(TECHNICIAN_EXPENSE_ROW_COLUMNS)
-        .order('expense_date', { ascending: false });
-      
-      if (technicianId) {
-        query = query.eq('technician_id', technicianId);
+    async getAll(technicianId?: string, startDate?: string, endDate?: string, options?: AnalyticsQueryOpts) {
+      const cols = options?.forAnalytics ? ANALYTICS_TECHNICIAN_EXPENSE_COLUMNS : TECHNICIAN_EXPENSE_ROW_COLUMNS;
+      const buildQuery = () => {
+        let query = supabase
+          .from('technician_expenses')
+          .select(cols)
+          .order('expense_date', { ascending: false });
+        if (technicianId) query = query.eq('technician_id', technicianId);
+        if (startDate) query = query.gte('expense_date', startDate);
+        if (endDate) query = query.lte('expense_date', endDate);
+        return query;
+      };
+
+      if (options?.forAnalytics) {
+        return fetchAnalyticsPages((from, to) => buildQuery().range(from, to));
       }
-      if (startDate) {
-        query = query.gte('expense_date', startDate);
-      }
-      if (endDate) {
-        query = query.lte('expense_date', endDate);
-      }
-      
-      const { data, error } = await query;
+
+      const { data, error } = await buildQuery();
       return { data, error };
     },
 
@@ -4240,23 +4290,24 @@ export const db = {
   // Technician advances operations
   technicianAdvances: {
     /** technicianId optional. startDate/endDate in YYYY-MM-DD for analytics (DB-side filter, less egress). */
-    async getAll(technicianId?: string, startDate?: string, endDate?: string) {
-      let query = supabase
-        .from('technician_advances')
-        .select(TECHNICIAN_ADVANCE_ROW_COLUMNS)
-        .order('advance_date', { ascending: false });
-      
-      if (technicianId) {
-        query = query.eq('technician_id', technicianId);
+    async getAll(technicianId?: string, startDate?: string, endDate?: string, options?: AnalyticsQueryOpts) {
+      const cols = options?.forAnalytics ? ANALYTICS_TECHNICIAN_ADVANCE_COLUMNS : TECHNICIAN_ADVANCE_ROW_COLUMNS;
+      const buildQuery = () => {
+        let query = supabase
+          .from('technician_advances')
+          .select(cols)
+          .order('advance_date', { ascending: false });
+        if (technicianId) query = query.eq('technician_id', technicianId);
+        if (startDate) query = query.gte('advance_date', startDate);
+        if (endDate) query = query.lte('advance_date', endDate);
+        return query;
+      };
+
+      if (options?.forAnalytics) {
+        return fetchAnalyticsPages((from, to) => buildQuery().range(from, to));
       }
-      if (startDate) {
-        query = query.gte('advance_date', startDate);
-      }
-      if (endDate) {
-        query = query.lte('advance_date', endDate);
-      }
-      
-      const { data, error } = await query;
+
+      const { data, error } = await buildQuery();
       return { data, error };
     },
 
@@ -4294,24 +4345,26 @@ export const db = {
   // Technician extra commissions operations
   technicianExtraCommissions: {
     /** technicianId optional. startDate/endDate in YYYY-MM-DD for analytics (DB-side filter, less egress). */
-    async getAll(technicianId?: string, startDate?: string, endDate?: string) {
-      let query = supabase
-        .from('technician_extra_commissions')
-        // Fetch only fields used by UI (reduce Supabase egress).
-        .select('id, technician_id, commission_date, amount, description, payment_method, payment_reference, notes, created_at')
-        .order('commission_date', { ascending: false });
-      
-      if (technicianId) {
-        query = query.eq('technician_id', technicianId);
+    async getAll(technicianId?: string, startDate?: string, endDate?: string, options?: AnalyticsQueryOpts) {
+      const cols = options?.forAnalytics
+        ? ANALYTICS_EXTRA_COMMISSION_COLUMNS
+        : 'id, technician_id, commission_date, amount, description, payment_method, payment_reference, notes, created_at';
+      const buildQuery = () => {
+        let query = supabase
+          .from('technician_extra_commissions')
+          .select(cols)
+          .order('commission_date', { ascending: false });
+        if (technicianId) query = query.eq('technician_id', technicianId);
+        if (startDate) query = query.gte('commission_date', startDate);
+        if (endDate) query = query.lte('commission_date', endDate);
+        return query;
+      };
+
+      if (options?.forAnalytics) {
+        return fetchAnalyticsPages((from, to) => buildQuery().range(from, to));
       }
-      if (startDate) {
-        query = query.gte('commission_date', startDate);
-      }
-      if (endDate) {
-        query = query.lte('commission_date', endDate);
-      }
-      
-      const { data, error } = await query;
+
+      const { data, error } = await buildQuery();
       return { data, error };
     },
 
@@ -4403,21 +4456,25 @@ export const db = {
 
   // Business expenses operations
   businessExpenses: {
-    async getAll(startDate?: string, endDate?: string) {
-      let query = supabase
-        .from('business_expenses')
-        .select('id,amount,description,expense_date,category,receipt_url,notes,added_by,created_at,updated_at')
-        .order('expense_date', { ascending: false });
-      
-      if (startDate) {
-        query = query.gte('expense_date', startDate);
+    async getAll(startDate?: string, endDate?: string, options?: AnalyticsQueryOpts) {
+      const cols = options?.forAnalytics
+        ? ANALYTICS_BUSINESS_EXPENSE_COLUMNS
+        : 'id,amount,description,expense_date,category,receipt_url,notes,added_by,created_at,updated_at';
+      const buildQuery = () => {
+        let query = supabase
+          .from('business_expenses')
+          .select(cols)
+          .order('expense_date', { ascending: false });
+        if (startDate) query = query.gte('expense_date', startDate);
+        if (endDate) query = query.lte('expense_date', endDate);
+        return query;
+      };
+
+      if (options?.forAnalytics) {
+        return fetchAnalyticsPages((from, to) => buildQuery().range(from, to));
       }
-      
-      if (endDate) {
-        query = query.lte('expense_date', endDate);
-      }
-      
-      const { data, error } = await query;
+
+      const { data, error } = await buildQuery();
       return { data, error };
     },
 
@@ -4454,19 +4511,25 @@ export const db = {
 
   // Other expenses operations (same pattern as business expenses)
   otherExpenses: {
-    async getAll(startDate?: string, endDate?: string) {
-      let query = supabase
-        .from('other_expenses')
-        .select('id,amount,description,expense_date,category,receipt_url,notes,added_by,created_at,updated_at')
-        .order('expense_date', { ascending: false });
+    async getAll(startDate?: string, endDate?: string, options?: AnalyticsQueryOpts) {
+      const cols = options?.forAnalytics
+        ? ANALYTICS_OTHER_EXPENSE_COLUMNS
+        : 'id,amount,description,expense_date,category,receipt_url,notes,added_by,created_at,updated_at';
+      const buildQuery = () => {
+        let query = supabase
+          .from('other_expenses')
+          .select(cols)
+          .order('expense_date', { ascending: false });
+        if (startDate) query = query.gte('expense_date', startDate);
+        if (endDate) query = query.lte('expense_date', endDate);
+        return query;
+      };
 
-      if (startDate) {
-        query = query.gte('expense_date', startDate);
+      if (options?.forAnalytics) {
+        return fetchAnalyticsPages((from, to) => buildQuery().range(from, to));
       }
-      if (endDate) {
-        query = query.lte('expense_date', endDate);
-      }
-      const { data, error } = await query;
+
+      const { data, error } = await buildQuery();
       return { data, error };
     },
     async create(expense: any) {
@@ -6156,6 +6219,21 @@ export const db = {
         p_end_time: opts.endTime ?? null,
       });
       return { data, error };
+    },
+  },
+
+  analyticsData: {
+    /** Paginated fetch for analytics salary totals (Supabase returns max 1000 rows per request). */
+    async getAllTechnicianPayments(opts?: { startISO?: string; endISO?: string }) {
+      return fetchAnalyticsPages((from, to) => {
+        let query = supabase
+          .from('technician_payments')
+          .select('technician_id, commission_amount, payment_status')
+          .range(from, to);
+        if (opts?.startISO) query = query.gte('created_at', opts.startISO);
+        if (opts?.endISO) query = query.lte('created_at', opts.endISO);
+        return query;
+      });
     },
   },
 

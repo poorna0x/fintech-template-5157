@@ -448,6 +448,14 @@ export function WebsiteAnalyticsCard() {
     return istDateFromPreset(periodMode);
   }, [periodMode, customFrom, customTo, todayIst]);
 
+  const summaryFetchDays = useMemo(() => {
+    const from = parseISO(`${activeRange.from}T12:00:00`);
+    const to = parseISO(`${activeRange.to}T12:00:00`);
+    const span =
+      Math.ceil(Math.abs(to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    return Math.min(MAX_FETCH_DAYS, Math.max(1, span));
+  }, [activeRange.from, activeRange.to]);
+
   const fetchRecentActivity = useCallback(
     async (page: number, perPage: number) => {
       setRecentLoading(true);
@@ -478,7 +486,7 @@ export function WebsiteAnalyticsCard() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const summaryRes = await db.websiteAnalytics.getSummary(MAX_FETCH_DAYS);
+      const summaryRes = await db.websiteAnalytics.getSummary(summaryFetchDays);
       if (summaryRes.error) throw summaryRes.error;
       setSummary((summaryRes.data as Summary) || null);
     } catch (e) {
@@ -490,7 +498,7 @@ export function WebsiteAnalyticsCard() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [summaryFetchDays]);
 
   useEffect(() => {
     void load();
