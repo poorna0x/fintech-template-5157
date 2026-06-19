@@ -6095,14 +6095,85 @@ export const db = {
       to: string;
       siteKey?: PublicSiteKey;
       limit?: number;
+      offset?: number;
     }) {
       const { data, error } = await supabase.rpc('get_website_analytics_recent_events', {
         p_from_date: opts.from,
         p_to_date: opts.to,
         p_site_key: opts.siteKey ?? null,
-        p_limit: opts.limit ?? 120,
+        p_limit: opts.limit ?? 10,
+        p_offset: opts.offset ?? 0,
       });
-      return { data, error };
+      if (error) return { data: null, error };
+      const payload = data as { total?: number; rows?: unknown[] } | unknown[] | null;
+      if (Array.isArray(payload)) {
+        return { data: { total: payload.length, rows: payload }, error: null };
+      }
+      return {
+        data: {
+          total: Number(payload?.total ?? 0),
+          rows: (payload?.rows as unknown[]) ?? [],
+        },
+        error: null,
+      };
+    },
+  },
+
+  analyticsPaginated: {
+    async getTopLocations(opts: {
+      startDate?: Date;
+      endDate?: Date;
+      limit?: number;
+      offset?: number;
+      search?: string;
+    }) {
+      const { data, error } = await supabase.rpc('get_analytics_top_locations', {
+        p_start: opts.startDate?.toISOString() ?? null,
+        p_end: opts.endDate?.toISOString() ?? null,
+        p_limit: opts.limit ?? 10,
+        p_offset: opts.offset ?? 0,
+        p_search: opts.search?.trim() || null,
+      });
+      return { data: data as { total: number; rows: unknown[] } | null, error };
+    },
+    async getTopBrands(opts: {
+      startDate?: Date;
+      endDate?: Date;
+      limit?: number;
+      offset?: number;
+      search?: string;
+    }) {
+      const { data, error } = await supabase.rpc('get_analytics_top_brands', {
+        p_start: opts.startDate?.toISOString() ?? null,
+        p_end: opts.endDate?.toISOString() ?? null,
+        p_limit: opts.limit ?? 10,
+        p_offset: opts.offset ?? 0,
+        p_search: opts.search?.trim() || null,
+      });
+      return { data: data as { total: number; rows: unknown[] } | null, error };
+    },
+    async getSparePartsUsage(opts: {
+      startISO?: string | null;
+      endISO?: string | null;
+      limit?: number;
+      offset?: number;
+      search?: string;
+    }) {
+      const { data, error } = await supabase.rpc('get_analytics_spare_parts_usage', {
+        p_start: opts.startISO ?? null,
+        p_end: opts.endISO ?? null,
+        p_limit: opts.limit ?? 10,
+        p_offset: opts.offset ?? 0,
+        p_search: opts.search?.trim() || null,
+      });
+      return {
+        data: data as {
+          total: number;
+          summary: { distinct_parts: number; units_used: number; parts_value: number };
+          rows: unknown[];
+        } | null,
+        error,
+      };
     },
   },
 };

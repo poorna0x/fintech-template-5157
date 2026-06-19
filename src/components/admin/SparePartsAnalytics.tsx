@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Loader2, Search, Package } from 'lucide-react';
 import { db } from '@/lib/supabase';
+import { AnalyticsListPagination } from '@/components/admin/AnalyticsListPagination';
 
 interface SparePartsAnalyticsProps {
   /** ISO start of period, or null for all-time. */
@@ -11,115 +12,133 @@ interface SparePartsAnalyticsProps {
   endISO: string | null;
 }
 
-interface PartRow {
-  inventoryId: string;
+type PartRow = {
+  partKey: string;
   productName: string;
-  code: string | null;
   totalQty: number;
   totalValue: number;
-  jobIds: Set<string>;
-}
+  jobCount: number;
+};
+
+type PartsSummary = {
+  distinctParts: number;
+  unitsUsed: number;
+  partsValue: number;
+};
 
 const formatCurrency = (n: number) =>
   n.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
+function mapPartRow(r: Record<string, unknown>): PartRow {
+  return {
+    partKey: String(r.part_key),
+    productName: String(r.product_name),
+    totalQty: Number(r.total_qty ?? 0),
+    totalValue: Number(r.total_value ?? 0),
+    jobCount: Number(r.job_count ?? 0),
+  };
+}
+
+function SummaryStat({ label, value, tone = 'default' }: { label: string; value: string; tone?: 'default' | 'green' }) {
+  return (
+    <div className="rounded-xl border border-border bg-muted/25 p-3 min-w-0">
+      <p className="text-[10px] sm:text-[11px] font-medium uppercase tracking-wide text-muted-foreground truncate">
+        {label}
+      </p>
+      <p
+        className={
+          tone === 'green'
+            ? 'mt-1 text-lg sm:text-xl font-semibold tabular-nums text-green-700'
+            : 'mt-1 text-lg sm:text-xl font-semibold tabular-nums text-foreground'
+        }
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
 /**
- * Spare-parts usage analytics, sourced from job_parts_used (technician-logged
- * parts). Self-contained and lazy-loaded: it fetches only when mounted, and
- * re-fetches when the date range changes.
+ * Spare-parts usage analytics — server-aggregated pages (lower egress than loading all rows).
  */
 const SparePartsAnalytics: React.FC<SparePartsAnalyticsProps> = ({ startISO, endISO }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<PartRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [summary, setSummary] = useState<PartsSummary | null>(null);
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
+  const skipSearchDebounce = useRef(true);
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-
-    db.jobPartsUsed
-      .getUsedInRange(startISO, endISO)
-      .then(({ data, error: err }) => {
-        if (cancelled) return;
-        if (err) {
-          setError(err.message || 'Failed to load spare parts');
-          setRows([]);
-          return;
-        }
-
-        const map = new Map<string, PartRow>();
-        (data || []).forEach((r: any) => {
-          const inv = r.inventory;
-          // Custom one-off parts have no inventory row; group them by their typed name
-          // so they still appear (and their cost is counted) in the usage report.
-          const isCustom = !(r.inventory_id || inv?.id);
-          const customName = (r.custom_name as string | null) || 'Custom item';
-          const groupKey = isCustom ? `custom:${customName.toLowerCase()}` : (r.inventory_id || inv?.id);
-          const qty = Number(r.quantity_used) || 0;
-          const price =
-            r.price_at_time_of_use != null
-              ? Number(r.price_at_time_of_use)
-              : inv?.price != null
-              ? Number(inv.price)
-              : 0;
-
-          let row = map.get(groupKey);
-          if (!row) {
-            row = {
-              inventoryId: groupKey,
-              productName: isCustom ? customName : (inv?.product_name || 'Unknown part'),
-              code: isCustom ? 'Custom' : (inv?.code ?? null),
-              totalQty: 0,
-              totalValue: 0,
-              jobIds: new Set<string>(),
-            };
-            map.set(groupKey, row);
-          }
-          row.totalQty += qty;
-          row.totalValue += qty * price;
-          if (r.job_id) row.jobIds.add(r.job_id);
+  const fetchPage = useCallback(
+    async (nextPage: number, nextPerPage: number, nextSearch: string) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const { data, error: err } = await db.analyticsPaginated.getSparePartsUsage({
+          startISO,
+          endISO,
+          limit: nextPerPage,
+          offset: (nextPage - 1) * nextPerPage,
+          search: nextSearch,
         });
-
-        setRows(Array.from(map.values()).sort((a, b) => b.totalQty - a.totalQty));
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return;
+        if (err) throw err;
+        setRows((data?.rows ?? []).map((r) => mapPartRow(r as Record<string, unknown>)));
+        setTotal(data?.total ?? 0);
+        setSummary(
+          data?.summary
+            ? {
+                distinctParts: Number(data.summary.distinct_parts ?? 0),
+                unitsUsed: Number(data.summary.units_used ?? 0),
+                partsValue: Number(data.summary.parts_value ?? 0),
+              }
+            : null
+        );
+        setPage(nextPage);
+        setPerPage(nextPerPage);
+      } catch (e: unknown) {
         setError(e instanceof Error ? e.message : 'Failed to load spare parts');
         setRows([]);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [startISO, endISO]);
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter(
-      (r) => r.productName.toLowerCase().includes(q) || (r.code || '').toLowerCase().includes(q)
-    );
-  }, [rows, search]);
-
-  const totals = useMemo(
-    () =>
-      filtered.reduce(
-        (acc, r) => {
-          acc.units += r.totalQty;
-          acc.value += r.totalValue;
-          return acc;
-        },
-        { units: 0, value: 0 }
-      ),
-    [filtered]
+        setTotal(0);
+        setSummary(null);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [startISO, endISO]
   );
 
-  if (loading) {
+  useEffect(() => {
+    skipSearchDebounce.current = true;
+    setPage(1);
+    setSearch('');
+    void fetchPage(1, perPage, '');
+  }, [startISO, endISO, fetchPage, perPage]);
+
+  useEffect(() => {
+    if (skipSearchDebounce.current) {
+      skipSearchDebounce.current = false;
+      return;
+    }
+    const t = window.setTimeout(() => {
+      void fetchPage(1, perPage, search);
+    }, 350);
+    return () => window.clearTimeout(t);
+  }, [search]);
+
+  const totalPages = Math.max(1, Math.ceil(total / perPage));
+
+  const handlePageChange = (nextPage: number) => {
+    void fetchPage(nextPage, perPage, search);
+  };
+
+  const handlePerPageChange = (nextPerPage: number) => {
+    void fetchPage(1, nextPerPage, search);
+  };
+
+  if (loading && rows.length === 0 && !error) {
     return (
       <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
         <Loader2 className="w-4 h-4 animate-spin" />
@@ -132,7 +151,7 @@ const SparePartsAnalytics: React.FC<SparePartsAnalyticsProps> = ({ startISO, end
     return <p className="py-4 text-sm text-red-600">Failed to load spare parts: {error}</p>;
   }
 
-  if (rows.length === 0) {
+  if (total === 0 && !search.trim()) {
     return (
       <div className="py-8 text-center text-muted-foreground">
         <Package className="w-10 h-10 mx-auto mb-2 text-muted-foreground/60" />
@@ -143,64 +162,104 @@ const SparePartsAnalytics: React.FC<SparePartsAnalyticsProps> = ({ startISO, end
 
   return (
     <div className="space-y-4">
-      {/* Summary chips */}
-      <div className="flex flex-wrap gap-3 text-sm">
-        <span className="rounded-md bg-muted px-3 py-1.5 font-medium">
-          {filtered.length} distinct part{filtered.length === 1 ? '' : 's'}
-        </span>
-        <span className="rounded-md bg-muted px-3 py-1.5 font-medium">
-          {totals.units} unit{totals.units === 1 ? '' : 's'} used
-        </span>
-        <span className="rounded-md bg-muted px-3 py-1.5 font-medium text-green-700">
-          ₹ {formatCurrency(totals.value)} parts value
-        </span>
-      </div>
+      {summary ? (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <SummaryStat label="Distinct parts" value={String(summary.distinctParts)} />
+          <SummaryStat label="Units used" value={String(summary.unitsUsed)} />
+          <SummaryStat
+            label="Parts value"
+            value={`₹ ${formatCurrency(summary.partsValue)}`}
+            tone="green"
+          />
+        </div>
+      ) : null}
 
-      {/* Search */}
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+      <div className="relative w-full">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
         <Input
-          placeholder="Search part by name or code..."
+          placeholder="Search part by name..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
+          className="pl-9 w-full"
         />
       </div>
 
-      <div className="overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Part</TableHead>
-              <TableHead>Code</TableHead>
-              <TableHead className="text-right">Qty used</TableHead>
-              <TableHead className="text-right">Jobs</TableHead>
-              <TableHead className="text-right">Parts value</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filtered.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={5} className="text-center text-gray-500 py-6">
-                  No parts match your search.
-                </TableCell>
-              </TableRow>
-            ) : (
-              filtered.map((r) => (
-                <TableRow key={r.inventoryId}>
-                  <TableCell className="font-medium">{r.productName}</TableCell>
-                  <TableCell className="text-muted-foreground">{r.code || '—'}</TableCell>
-                  <TableCell className="text-right font-semibold">{r.totalQty}</TableCell>
-                  <TableCell className="text-right">{r.jobIds.size}</TableCell>
-                  <TableCell className="text-right font-medium text-green-600">
-                    ₹ {formatCurrency(r.totalValue)}
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+      <div id="spare-parts-list-top" className="scroll-mt-4" aria-hidden />
+
+      {rows.length === 0 ? (
+        <p className="text-sm text-muted-foreground text-center py-6 rounded-lg border border-dashed border-border">
+          No parts match your search.
+        </p>
+      ) : (
+        <>
+          <div className="space-y-2 md:hidden">
+            {rows.map((r) => (
+              <div
+                key={r.partKey}
+                className="rounded-xl border border-border bg-card p-3 space-y-2"
+              >
+                <p className="text-sm font-medium leading-snug break-words">{r.productName}</p>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="rounded-lg bg-muted/40 px-1 py-1.5">
+                    <p className="text-[10px] text-muted-foreground">Qty</p>
+                    <p className="text-sm font-semibold tabular-nums">{r.totalQty}</p>
+                  </div>
+                  <div className="rounded-lg bg-muted/40 px-1 py-1.5">
+                    <p className="text-[10px] text-muted-foreground">Jobs</p>
+                    <p className="text-sm font-semibold tabular-nums">{r.jobCount}</p>
+                  </div>
+                  <div className="rounded-lg bg-muted/40 px-1 py-1.5">
+                    <p className="text-[10px] text-muted-foreground">Value</p>
+                    <p className="text-sm font-semibold tabular-nums text-green-700">
+                      ₹ {formatCurrency(r.totalValue)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="hidden md:block rounded-lg border border-border overflow-hidden">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/40 hover:bg-muted/40">
+                    <TableHead>Part</TableHead>
+                    <TableHead className="text-right">Qty used</TableHead>
+                    <TableHead className="text-right">Jobs</TableHead>
+                    <TableHead className="text-right">Parts value</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((r) => (
+                    <TableRow key={r.partKey}>
+                      <TableCell className="font-medium max-w-[320px]">{r.productName}</TableCell>
+                      <TableCell className="text-right font-semibold tabular-nums">{r.totalQty}</TableCell>
+                      <TableCell className="text-right tabular-nums">{r.jobCount}</TableCell>
+                      <TableCell className="text-right font-medium text-green-600 tabular-nums">
+                        ₹ {formatCurrency(r.totalValue)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+
+          {total > 10 ? (
+            <AnalyticsListPagination
+              currentPage={page}
+              totalPages={totalPages}
+              totalItems={total}
+              itemsPerPage={perPage}
+              itemLabel="parts"
+              scrollAnchorId="spare-parts-list-top"
+              onPageChange={handlePageChange}
+              onItemsPerPageChange={handlePerPageChange}
+            />
+          ) : null}
+        </>
+      )}
     </div>
   );
 };

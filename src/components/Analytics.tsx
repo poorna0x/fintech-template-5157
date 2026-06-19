@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -33,6 +33,7 @@ import { Button } from '@/components/ui/button';
 // Code-split: spare-parts analytics JS only downloads when the section is opened.
 const SparePartsAnalytics = React.lazy(() => import('@/components/admin/SparePartsAnalytics'));
 import { WebsiteAnalyticsGate } from '@/components/admin/WebsiteAnalyticsGate';
+import { AnalyticsListPagination } from '@/components/admin/AnalyticsListPagination';
 
 interface AnalyticsData {
   totalJobs: number;
@@ -169,6 +170,30 @@ interface AnalyticsData {
   };
 }
 
+
+function mapLocationRpcRow(r: Record<string, unknown>): NonNullable<AnalyticsData['locationStats']>[number] {
+  return {
+    locationKey: String(r.location_key),
+    displayName: String(r.display_name),
+    jobCount: Number(r.job_count ?? 0),
+    totalRevenue: Number(r.total_revenue ?? 0),
+    serviceTypeBreakdown: (r.service_type_breakdown as Record<string, number>) ?? {},
+    avgTds: r.avg_tds != null ? Number(r.avg_tds) : null,
+    avgCallBilling: Number(r.avg_call_billing ?? 0),
+  };
+}
+
+function mapBrandRpcRow(r: Record<string, unknown>): NonNullable<AnalyticsData['brandStats']>[number] {
+  return {
+    brandKey: String(r.brand_key),
+    displayName: String(r.display_name),
+    jobCount: Number(r.job_count ?? 0),
+    totalRevenue: Number(r.total_revenue ?? 0),
+    serviceTypeBreakdown: (r.service_type_breakdown as Record<string, number>) ?? {},
+    avgCallBilling: Number(r.avg_call_billing ?? 0),
+  };
+}
+
 type PeriodOption = '7d' | '30d' | 'thisWeek' | 'thisMonth' | 'previousMonth' | 'customMonth' | '3m' | '6m' | '1y' | 'all' | 'custom';
 
 /** Ishanga 7%: 7% of (Revenue − business expenses − salary − technician expenses). */
@@ -258,9 +283,30 @@ const Analytics = () => {
   const [selectedTechForAvg, setSelectedTechForAvg] = useState<string>('');
   // Spare parts analytics is opt-in: its component + data load only after click.
   const [showSpareParts, setShowSpareParts] = useState(false);
+  const [locationRows, setLocationRows] = useState<NonNullable<AnalyticsData['locationStats']>>([]);
+  const [locationTotal, setLocationTotal] = useState(0);
+  const [locationPage, setLocationPage] = useState(1);
+  const [locationPerPage, setLocationPerPage] = useState(10);
+  const [locationsLoaded, setLocationsLoaded] = useState(false);
+  const [brandRows, setBrandRows] = useState<NonNullable<AnalyticsData['brandStats']>>([]);
+  const [brandTotal, setBrandTotal] = useState(0);
+  const [brandPage, setBrandPage] = useState(1);
+  const [brandPerPage, setBrandPerPage] = useState(10);
+  const [brandsLoaded, setBrandsLoaded] = useState(false);
 
   useEffect(() => {
     loadAnalytics();
+  }, [period, customStartDate, customEndDate, customMonthValue]);
+
+  useEffect(() => {
+    setLocationsLoaded(false);
+    setBrandsLoaded(false);
+    setLocationRows([]);
+    setBrandRows([]);
+    setLocationTotal(0);
+    setBrandTotal(0);
+    setLocationPage(1);
+    setBrandPage(1);
   }, [period, customStartDate, customEndDate, customMonthValue]);
 
   const getDateRange = (): { startDate: Date | null; endDate: Date | null } => {
@@ -1286,146 +1332,82 @@ const Analytics = () => {
     }
   };
 
-  const loadTopLocations = async () => {
+  const loadTopLocations = async (page = 1, perPage = locationPerPage, search = locationSearch) => {
     setLoadingLocationStats(true);
     try {
       const { startDate, endDate } = getDateRange();
-      const { data: locationJobs, error } = await db.jobs.getJobsWithCustomerLocationInRange(startDate ?? undefined, endDate ?? undefined);
-      if (error) throw error;
-      const jobs = locationJobs || [];
-      const locationMap: Record<string, {
-        displayNameCounts: Record<string, number>;
-        jobCount: number;
-        totalRevenue: number;
-        installation: number;
-        service: number;
-        tdsSum: number;
-        tdsCount: number;
-      }> = {};
-      jobs.forEach((row: any) => {
-        const cust = row.customer;
-        const locStr = (cust?.visible_address ?? (cust?.address && (typeof cust.address === 'object' ? (cust.address as any).visible_address ?? (cust.address as any).area : null)) ?? '').trim();
-        const key = locStr ? normalizeForComparison(locStr) : '__unknown__';
-        const displayName = locStr || 'Unknown';
-        if (!locationMap[key]) {
-          locationMap[key] = {
-            displayNameCounts: {},
-            jobCount: 0,
-            totalRevenue: 0,
-            installation: 0,
-            service: 0,
-            tdsSum: 0,
-            tdsCount: 0
-          };
-        }
-        const rec = locationMap[key];
-        rec.displayNameCounts[displayName] = (rec.displayNameCounts[displayName] || 0) + 1;
-        rec.jobCount += 1;
-        rec.totalRevenue += Number(row.payment_amount || row.actual_cost || 0);
-        const bucket = toInstallationOrService(row.service_sub_type || row.serviceSubType || '');
-        if (bucket === 'Installation') rec.installation += 1;
-        else rec.service += 1;
-        const tds = cust?.raw_water_tds != null ? Number(cust.raw_water_tds) : null;
-        if (tds != null && !isNaN(tds) && tds > 0) {
-          rec.tdsSum += tds;
-          rec.tdsCount += 1;
-        }
+      const { data, error } = await db.analyticsPaginated.getTopLocations({
+        startDate: startDate ?? undefined,
+        endDate: endDate ?? undefined,
+        limit: perPage,
+        offset: (page - 1) * perPage,
+        search,
       });
-      const locationStats = Object.entries(locationMap)
-        .map(([locationKey, rec]) => {
-          const displayName = Object.entries(rec.displayNameCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? (locationKey === '__unknown__' ? 'Unknown' : locationKey);
-          return {
-            locationKey,
-            displayName,
-            jobCount: rec.jobCount,
-            totalRevenue: rec.totalRevenue,
-            serviceTypeBreakdown: { Installation: rec.installation, Service: rec.service },
-            avgTds: rec.tdsCount > 0 ? Math.round((rec.tdsSum / rec.tdsCount) * 10) / 10 : null,
-            avgCallBilling: rec.jobCount > 0 ? rec.totalRevenue / rec.jobCount : 0
-          };
-        })
-        .sort((a, b) => b.jobCount - a.jobCount);
-      setAnalytics((prev) => (prev ? { ...prev, locationStats } : prev));
-      if (locationStats.length === 0) toast.info('No job locations found for this period.');
-    } catch (e: any) {
-      toast.error('Failed to load top locations: ' + (e?.message || 'Unknown error'));
+      if (error) throw error;
+      const rows = (data?.rows ?? []).map((r) => mapLocationRpcRow(r as Record<string, unknown>));
+      setLocationRows(rows);
+      setLocationTotal(data?.total ?? 0);
+      setLocationPage(page);
+      setLocationPerPage(perPage);
+      setLocationsLoaded(true);
+      if ((data?.total ?? 0) === 0 && !search.trim()) {
+        toast.info('No job locations found for this period.');
+      }
+    } catch (e: unknown) {
+      toast.error('Failed to load top locations: ' + (e instanceof Error ? e.message : 'Unknown error'));
+      setLocationRows([]);
+      setLocationTotal(0);
     } finally {
       setLoadingLocationStats(false);
     }
   };
 
-  const loadTopBrands = async () => {
+  const loadTopBrands = async (page = 1, perPage = brandPerPage, search = brandSearch) => {
     setLoadingBrandStats(true);
     try {
       const { startDate, endDate } = getDateRange();
-      const { data: brandJobs, error } = await db.jobs.getJobsWithCustomerBrandInRange(startDate ?? undefined, endDate ?? undefined);
-      if (error) throw error;
-
-      type BrandAnalyticsJob = {
-        brand?: string | null;
-        customer?: { brand?: string | null } | null;
-        payment_amount?: number | string | null;
-        actual_cost?: number | string | null;
-        service_sub_type?: string | null;
-        serviceSubType?: string | null;
-      };
-
-      const brandMap: Record<string, {
-        displayNameCounts: Record<string, number>;
-        jobCount: number;
-        totalRevenue: number;
-        installation: number;
-        service: number;
-      }> = {};
-
-      (brandJobs || []).forEach((row: BrandAnalyticsJob) => {
-        const brand = String(row.brand || row.customer?.brand || '').trim();
-        const key = brand ? normalizeForComparison(brand) : '__unknown__';
-        const displayName = brand || 'Unknown';
-
-        if (!brandMap[key]) {
-          brandMap[key] = {
-            displayNameCounts: {},
-            jobCount: 0,
-            totalRevenue: 0,
-            installation: 0,
-            service: 0
-          };
-        }
-
-        const rec = brandMap[key];
-        rec.displayNameCounts[displayName] = (rec.displayNameCounts[displayName] || 0) + 1;
-        rec.jobCount += 1;
-        rec.totalRevenue += Number(row.payment_amount || row.actual_cost || 0);
-
-        const bucket = toInstallationOrService(row.service_sub_type || row.serviceSubType || '');
-        if (bucket === 'Installation') rec.installation += 1;
-        else rec.service += 1;
+      const { data, error } = await db.analyticsPaginated.getTopBrands({
+        startDate: startDate ?? undefined,
+        endDate: endDate ?? undefined,
+        limit: perPage,
+        offset: (page - 1) * perPage,
+        search,
       });
-
-      const brandStats = Object.entries(brandMap)
-        .map(([brandKey, rec]) => {
-          const displayName = Object.entries(rec.displayNameCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? (brandKey === '__unknown__' ? 'Unknown' : brandKey);
-          return {
-            brandKey,
-            displayName,
-            jobCount: rec.jobCount,
-            totalRevenue: rec.totalRevenue,
-            serviceTypeBreakdown: { Installation: rec.installation, Service: rec.service },
-            avgCallBilling: rec.jobCount > 0 ? rec.totalRevenue / rec.jobCount : 0
-          };
-        })
-        .sort((a, b) => b.jobCount - a.jobCount);
-
-      setAnalytics((prev) => (prev ? { ...prev, brandStats } : prev));
-      if (brandStats.length === 0) toast.info('No brand data found for this period.');
+      if (error) throw error;
+      const rows = (data?.rows ?? []).map((r) => mapBrandRpcRow(r as Record<string, unknown>));
+      setBrandRows(rows);
+      setBrandTotal(data?.total ?? 0);
+      setBrandPage(page);
+      setBrandPerPage(perPage);
+      setBrandsLoaded(true);
+      if ((data?.total ?? 0) === 0 && !search.trim()) {
+        toast.info('No brand data found for this period.');
+      }
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : 'Unknown error';
       toast.error('Failed to load top brands: ' + message);
+      setBrandRows([]);
+      setBrandTotal(0);
     } finally {
       setLoadingBrandStats(false);
     }
   };
+
+  useEffect(() => {
+    if (!locationsLoaded) return;
+    const t = window.setTimeout(() => {
+      void loadTopLocations(1, locationPerPage, locationSearch);
+    }, 350);
+    return () => window.clearTimeout(t);
+  }, [locationSearch]);
+
+  useEffect(() => {
+    if (!brandsLoaded) return;
+    const t = window.setTimeout(() => {
+      void loadTopBrands(1, brandPerPage, brandSearch);
+    }, 350);
+    return () => window.clearTimeout(t);
+  }, [brandSearch]);
 
   const loadDirectWebsiteConversions = async () => {
     if (loadingDirectConversion) return;
@@ -1726,6 +1708,12 @@ const Analytics = () => {
     }
   };
 
+  const filteredLocationStats = useMemo(() => locationRows, [locationRows]);
+  const filteredBrandStats = useMemo(() => brandRows, [brandRows]);
+
+  const locationTotalPages = Math.max(1, Math.ceil(locationTotal / locationPerPage));
+  const brandTotalPages = Math.max(1, Math.ceil(brandTotal / brandPerPage));
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -1773,14 +1761,16 @@ const Analytics = () => {
           <p className="text-gray-600">Comprehensive performance metrics and insights</p>
         </div>
         
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-gray-500" />
-            <Label htmlFor="period-select" className="text-sm font-medium text-gray-700 whitespace-nowrap">
-              Period:
-            </Label>
+        <div className="flex flex-col gap-3 w-full sm:flex-row">
+          <div className="flex flex-col gap-2 w-full sm:flex-row sm:items-center sm:w-auto">
+            <div className="flex items-center gap-2">
+              <Filter className="w-4 h-4 text-gray-500 shrink-0" />
+              <Label htmlFor="period-select" className="text-sm font-medium text-gray-700 whitespace-nowrap">
+                Period:
+              </Label>
+            </div>
             <Select value={period} onValueChange={(value) => setPeriod(value as PeriodOption)}>
-              <SelectTrigger id="period-select" className="w-[180px]">
+              <SelectTrigger id="period-select" className="w-full sm:w-[180px]">
                 <SelectValue placeholder="Select period" />
               </SelectTrigger>
               <SelectContent>
@@ -1800,19 +1790,19 @@ const Analytics = () => {
           </div>
           
           {period === 'custom' && (
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="grid grid-cols-1 gap-2 w-full sm:flex sm:items-center sm:gap-2 sm:w-auto">
               <DatePicker
                 value={customStartDate}
                 onChange={(v) => v && setCustomStartDate(v)}
                 placeholder="Start date"
-                className="w-auto min-w-[140px]"
+                className="w-full sm:w-auto sm:min-w-[140px]"
               />
-              <span className="text-gray-500">to</span>
+              <span className="text-gray-500 text-center sm:text-left">to</span>
               <DatePicker
                 value={customEndDate}
                 onChange={(v) => v && setCustomEndDate(v)}
                 placeholder="End date"
-                className="w-auto min-w-[140px]"
+                className="w-full sm:w-auto sm:min-w-[140px]"
               />
             </div>
           )}
@@ -1821,7 +1811,7 @@ const Analytics = () => {
               type="month"
               value={customMonthValue}
               onChange={(e) => setCustomMonthValue(e.target.value)}
-              className="w-[160px]"
+              className="w-full sm:w-[160px]"
               max={new Date().toISOString().slice(0, 7)}
             />
           )}
@@ -2343,42 +2333,43 @@ const Analytics = () => {
             Jobs by one-word location (e.g. KR Puram, JP Nagar). Installation includes Installation, Reinstallation, Uninstallation; all other types count as Service. Click Load to fetch for the selected period.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="p-4 sm:p-6 pt-0 space-y-4">
           <Button
-            onClick={loadTopLocations}
+            type="button"
+            onClick={() => void loadTopLocations(1, locationPerPage, locationSearch)}
             disabled={loadingLocationStats}
-            variant="outline"
+            className="w-full sm:w-auto"
           >
             {loadingLocationStats ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Loading...
+                Loading top locations…
               </>
             ) : (
-              'Load top locations'
+              <>
+                <MapPin className="w-4 h-4 mr-2" />
+                Load top locations
+              </>
             )}
           </Button>
-          {analytics.locationStats && analytics.locationStats.length > 0 && (
+          {locationsLoaded && (
             <>
-              <div className="relative max-w-sm">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <div className="relative w-full">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                 <Input
                   placeholder="Search location..."
                   value={locationSearch}
                   onChange={(e) => setLocationSearch(e.target.value)}
-                  className="pl-9"
+                  className="pl-9 w-full"
                 />
               </div>
-              {(() => {
-                const searchNorm = locationSearch.trim() ? normalizeForComparison(locationSearch.trim()) : '';
-                const filtered = searchNorm
-                  ? analytics.locationStats.filter(
-                      (loc) =>
-                        loc.locationKey.includes(searchNorm) ||
-                        loc.displayName.toLowerCase().includes(locationSearch.trim().toLowerCase())
-                    )
-                  : analytics.locationStats;
-                return (
+              <div id="top-locations-list-top" className="scroll-mt-4" aria-hidden />
+              {locationTotal === 0 && !locationSearch.trim() ? (
+                <p className="text-sm text-gray-500 text-center py-6 rounded-lg border border-dashed border-gray-200">
+                  No location data for this period.
+                </p>
+              ) : (
+                <>
                   <div className="overflow-x-auto">
                     <Table>
                       <TableHeader>
@@ -2393,14 +2384,14 @@ const Analytics = () => {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {filtered.length === 0 ? (
+                        {filteredLocationStats.length === 0 ? (
                           <TableRow>
                             <TableCell colSpan={7} className="text-center text-gray-500 py-6">
-                              {locationSearch.trim() ? 'No locations match your search.' : 'No location data.'}
+                              No locations match your search.
                             </TableCell>
                           </TableRow>
                         ) : (
-                          filtered.map((loc) => (
+                          filteredLocationStats.map((loc) => (
                             <TableRow key={loc.locationKey}>
                               <TableCell className="font-medium">{loc.displayName}</TableCell>
                               <TableCell className="text-right">{loc.jobCount}</TableCell>
@@ -2425,8 +2416,20 @@ const Analytics = () => {
                       </TableBody>
                     </Table>
                   </div>
-                );
-              })()}
+                  {locationTotal > 10 ? (
+                    <AnalyticsListPagination
+                      currentPage={locationPage}
+                      totalPages={locationTotalPages}
+                      totalItems={locationTotal}
+                      itemsPerPage={locationPerPage}
+                      itemLabel="locations"
+                      scrollAnchorId="top-locations-list-top"
+                      onPageChange={(p) => void loadTopLocations(p, locationPerPage, locationSearch)}
+                      onItemsPerPageChange={(s) => void loadTopLocations(1, s, locationSearch)}
+                    />
+                  ) : null}
+                </>
+              )}
             </>
           )}
         </CardContent>
@@ -2443,42 +2446,43 @@ const Analytics = () => {
             Jobs grouped by RO brand name for the selected period. Model names are not shown.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="p-4 sm:p-6 pt-0 space-y-4">
           <Button
-            onClick={loadTopBrands}
+            type="button"
+            onClick={() => void loadTopBrands(1, brandPerPage, brandSearch)}
             disabled={loadingBrandStats}
-            variant="outline"
+            className="w-full sm:w-auto"
           >
             {loadingBrandStats ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Loading...
+                Loading top brands…
               </>
             ) : (
-              'Load top brands'
+              <>
+                <Award className="w-4 h-4 mr-2" />
+                Load top brands
+              </>
             )}
           </Button>
-          {analytics.brandStats && analytics.brandStats.length > 0 && (
+          {brandsLoaded && (
             <>
-              <div className="relative max-w-sm">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <div className="relative w-full">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
                 <Input
                   placeholder="Search brand..."
                   value={brandSearch}
                   onChange={(e) => setBrandSearch(e.target.value)}
-                  className="pl-9"
+                  className="pl-9 w-full"
                 />
               </div>
-              {(() => {
-                const searchNorm = brandSearch.trim() ? normalizeForComparison(brandSearch.trim()) : '';
-                const filtered = searchNorm
-                  ? analytics.brandStats.filter(
-                      (brand) =>
-                        brand.brandKey.includes(searchNorm) ||
-                        brand.displayName.toLowerCase().includes(brandSearch.trim().toLowerCase())
-                    )
-                  : analytics.brandStats;
-                return (
+              <div id="top-brands-list-top" className="scroll-mt-4" aria-hidden />
+              {brandTotal === 0 && !brandSearch.trim() ? (
+                <p className="text-sm text-gray-500 text-center py-6 rounded-lg border border-dashed border-gray-200">
+                  No brand data for this period.
+                </p>
+              ) : (
+                <>
                   <div className="overflow-x-auto">
                     <Table>
                       <TableHeader>
@@ -2492,14 +2496,14 @@ const Analytics = () => {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {filtered.length === 0 ? (
+                        {filteredBrandStats.length === 0 ? (
                           <TableRow>
                             <TableCell colSpan={6} className="text-center text-gray-500 py-6">
-                              {brandSearch.trim() ? 'No brands match your search.' : 'No brand data.'}
+                              No brands match your search.
                             </TableCell>
                           </TableRow>
                         ) : (
-                          filtered.map((brand) => (
+                          filteredBrandStats.map((brand) => (
                             <TableRow key={brand.brandKey}>
                               <TableCell className="font-medium">{brand.displayName}</TableCell>
                               <TableCell className="text-right">{brand.jobCount}</TableCell>
@@ -2521,8 +2525,20 @@ const Analytics = () => {
                       </TableBody>
                     </Table>
                   </div>
-                );
-              })()}
+                  {brandTotal > 10 ? (
+                    <AnalyticsListPagination
+                      currentPage={brandPage}
+                      totalPages={brandTotalPages}
+                      totalItems={brandTotal}
+                      itemsPerPage={brandPerPage}
+                      itemLabel="brands"
+                      scrollAnchorId="top-brands-list-top"
+                      onPageChange={(p) => void loadTopBrands(p, brandPerPage, brandSearch)}
+                      onItemsPerPageChange={(s) => void loadTopBrands(1, s, brandSearch)}
+                    />
+                  ) : null}
+                </>
+              )}
             </>
           )}
         </CardContent>
@@ -2539,9 +2555,10 @@ const Analytics = () => {
             Parts logged by technicians for {getPeriodLabel()}. Loaded on demand.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="p-4 sm:p-6 pt-0 space-y-4">
           {!showSpareParts ? (
-            <Button variant="outline" onClick={() => setShowSpareParts(true)}>
+            <Button type="button" className="w-full sm:w-auto" onClick={() => setShowSpareParts(true)}>
+              <Package className="w-4 h-4 mr-2" />
               Load spare parts usage
             </Button>
           ) : (
@@ -2574,19 +2591,23 @@ const Analytics = () => {
             Direct / website conversions
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="p-4 sm:p-6 pt-0 space-y-4">
           <Button
+            type="button"
             onClick={loadDirectWebsiteConversions}
             disabled={loadingDirectConversion}
-            variant="outline"
+            className="w-full sm:w-auto"
           >
             {loadingDirectConversion ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Loading...
+                Loading conversions…
               </>
             ) : (
-              'Load'
+              <>
+                <PhoneForwarded className="w-4 h-4 mr-2" />
+                Load direct / website conversions
+              </>
             )}
           </Button>
           {analytics.directWebsiteConversions &&
@@ -2661,16 +2682,24 @@ const Analytics = () => {
           </CardTitle>
           <CardDescription>Customer mix for {getPeriodLabel()}</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="p-4 sm:p-6 pt-0 space-y-4">
           {!analytics.repeatVsNew && (
-            <Button onClick={loadRepeatVsNew} disabled={loadingRepeatVsNew} variant="outline">
+            <Button
+              type="button"
+              onClick={loadRepeatVsNew}
+              disabled={loadingRepeatVsNew}
+              className="w-full sm:w-auto"
+            >
               {loadingRepeatVsNew ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Loading...
+                  Loading customer mix…
                 </>
               ) : (
-                'Load'
+                <>
+                  <Users className="w-4 h-4 mr-2" />
+                  Load repeat vs new customers
+                </>
               )}
             </Button>
           )}

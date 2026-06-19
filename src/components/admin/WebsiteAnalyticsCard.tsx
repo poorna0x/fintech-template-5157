@@ -3,7 +3,6 @@ import { subDays, parseISO } from 'date-fns';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { DatePicker } from '@/components/ui/date-picker';
 import {
@@ -32,6 +31,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import type { TrendPoint } from './websiteAnalyticsTypes';
+import { AnalyticsListPagination } from '@/components/admin/AnalyticsListPagination';
 
 const WebsiteAnalyticsTrendChart = lazy(() => import('./WebsiteAnalyticsTrendChart'));
 
@@ -366,6 +366,36 @@ function DailyMobileCard({ row, showSite }: { row: DailyRow; showSite: boolean }
   );
 }
 
+function RecentActivityMobileCard({ ev, showSite }: { ev: RecentEvent; showSite: boolean }) {
+  const location = formatEventLocation(ev.metadata);
+  const device = formatEventDevice(ev.metadata);
+  const referrer = formatEventReferrer(ev.metadata);
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-3 space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <Badge variant="secondary" className="text-[10px] font-normal">
+          {eventLabel(ev.event_type)}
+        </Badge>
+        {showSite ? (
+          <Badge variant="outline" className="text-[10px] shrink-0">
+            {getPublicSiteLabel(ev.site_key)}
+          </Badge>
+        ) : null}
+      </div>
+      <p className="text-[11px] font-medium tabular-nums">{formatEventTimeIst(ev)}</p>
+      <p className="text-xs text-muted-foreground break-words">{formatPagePath(ev.page_path)}</p>
+      {(location !== '—' || device !== '—' || referrer !== '—') && (
+        <div className="space-y-1 pt-2 border-t border-border/60">
+          {location !== '—' ? <RecentActivityMeta label="Location" value={location} /> : null}
+          {device !== '—' ? <RecentActivityMeta label="Device" value={device} /> : null}
+          {referrer !== '—' ? <RecentActivityMeta label="Referrer" value={referrer} /> : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AnalyticsSkeleton() {
   return (
     <div className="space-y-4 animate-pulse">
@@ -386,6 +416,9 @@ export function WebsiteAnalyticsCard() {
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [recentEvents, setRecentEvents] = useState<RecentEvent[]>([]);
+  const [recentEventsTotal, setRecentEventsTotal] = useState(0);
+  const [recentPage, setRecentPage] = useState(1);
+  const [recentPerPage, setRecentPerPage] = useState(10);
   const [siteFilter, setSiteFilter] = useState<SiteFilter>('all');
   const [periodMode, setPeriodMode] = useState<PeriodMode>('today');
   const [customFrom, setCustomFrom] = useState(todayIst);
@@ -405,40 +438,81 @@ export function WebsiteAnalyticsCard() {
     return istDateFromPreset(periodMode);
   }, [periodMode, customFrom, customTo, todayIst]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
+  const fetchRecentActivity = useCallback(
+    async (page: number, perPage: number) => {
       const siteKey = siteFilter === 'all' ? undefined : siteFilter;
-      const [summaryRes, recentRes] = await Promise.all([
-        db.websiteAnalytics.getSummary(MAX_FETCH_DAYS),
-        db.websiteAnalytics.getRecentEvents({
-          from: activeRange.from,
-          to: activeRange.to,
-          siteKey,
-          limit: 100,
-        }),
-      ]);
-      if (summaryRes.error) throw summaryRes.error;
-      setSummary((summaryRes.data as Summary) || null);
+      const recentRes = await db.websiteAnalytics.getRecentEvents({
+        from: activeRange.from,
+        to: activeRange.to,
+        siteKey,
+        limit: perPage,
+        offset: (page - 1) * perPage,
+      });
       if (recentRes.error) {
         console.warn(recentRes.error);
         setRecentEvents([]);
-      } else {
-        setRecentEvents((recentRes.data as RecentEvent[]) || []);
+        setRecentEventsTotal(0);
+        return;
       }
+      setRecentEvents((recentRes.data?.rows as RecentEvent[]) || []);
+      setRecentEventsTotal(recentRes.data?.total ?? 0);
+    },
+    [activeRange.from, activeRange.to, siteFilter]
+  );
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const summaryRes = await db.websiteAnalytics.getSummary(MAX_FETCH_DAYS);
+      if (summaryRes.error) throw summaryRes.error;
+      setSummary((summaryRes.data as Summary) || null);
     } catch (e) {
       console.error(e);
-      toast.error('Could not load website analytics. Run scripts/add-website-analytics.sql in Supabase.');
+      toast.error('Could not load website analytics. Run scripts/add-website-analytics.sql and scripts/add-analytics-paginated-rpcs.sql in Supabase.');
       setSummary(null);
       setRecentEvents([]);
+      setRecentEventsTotal(0);
     } finally {
       setLoading(false);
     }
-  }, [activeRange.from, activeRange.to, siteFilter]);
+  }, []);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    setRecentPage(1);
+  }, [activeRange.from, activeRange.to, siteFilter]);
+
+  useEffect(() => {
+    if (!summary) return;
+    void fetchRecentActivity(recentPage, recentPerPage);
+  }, [summary, activeRange.from, activeRange.to, siteFilter, recentPage, recentPerPage, fetchRecentActivity]);
+
+  const refreshAll = useCallback(() => {
+    void load();
+    if (summary) void fetchRecentActivity(recentPage, recentPerPage);
+  }, [load, summary, fetchRecentActivity, recentPage, recentPerPage]);
+
+  const recentTotalPages = Math.max(1, Math.ceil(recentEventsTotal / recentPerPage));
+
+  const handleRecentPageChange = useCallback(
+    (page: number) => {
+      setRecentPage(page);
+      void fetchRecentActivity(page, recentPerPage);
+    },
+    [fetchRecentActivity, recentPerPage]
+  );
+
+  const handleRecentPerPageChange = useCallback(
+    (perPage: number) => {
+      setRecentPerPage(perPage);
+      setRecentPage(1);
+      void fetchRecentActivity(1, perPage);
+    },
+    [fetchRecentActivity]
+  );
 
   const filteredDaily = useMemo(() => {
     const rows = summary?.daily ?? [];
@@ -545,7 +619,7 @@ export function WebsiteAnalyticsCard() {
             variant="outline"
             size="sm"
             className="shrink-0 w-full sm:w-auto"
-            onClick={() => void load()}
+            onClick={() => refreshAll()}
             disabled={loading}
           >
             <RefreshCw className={cn('w-4 h-4 mr-2', loading && 'animate-spin')} />
@@ -567,7 +641,7 @@ export function WebsiteAnalyticsCard() {
                     type="button"
                     size="sm"
                     variant={siteFilter === opt.value ? 'default' : 'outline'}
-                    className="h-8 text-xs px-2"
+                    className="h-8 text-xs px-2 w-full"
                     onClick={() => setSiteFilter(opt.value)}
                   >
                     <span className="sm:hidden">{opt.short}</span>
@@ -582,12 +656,12 @@ export function WebsiteAnalyticsCard() {
                 <CalendarRange className="h-3 w-3" />
                 Date range
               </span>
-              <div className="flex flex-wrap gap-1.5">
+              <div className="grid grid-cols-3 gap-1.5 sm:flex sm:flex-wrap sm:gap-1.5">
                 <Button
                   type="button"
                   size="sm"
                   variant={periodMode === 'today' ? 'default' : 'outline'}
-                  className="h-8 px-2.5 text-xs"
+                  className="h-8 px-2.5 text-xs w-full sm:w-auto"
                   onClick={handleToday}
                 >
                   Today
@@ -598,7 +672,7 @@ export function WebsiteAnalyticsCard() {
                     type="button"
                     size="sm"
                     variant={periodMode === opt.value ? 'default' : 'outline'}
-                    className="h-8 px-2.5 text-xs"
+                    className="h-8 px-2.5 text-xs w-full sm:w-auto"
                     onClick={() => handlePresetChange(opt.value)}
                   >
                     {opt.label}
@@ -608,7 +682,7 @@ export function WebsiteAnalyticsCard() {
                   type="button"
                   size="sm"
                   variant={periodMode === 'custom' ? 'default' : 'outline'}
-                  className="h-8 px-2.5 text-xs"
+                  className="h-8 px-2.5 text-xs w-full sm:w-auto"
                   onClick={() => setPeriodMode('custom')}
                 >
                   Custom
@@ -625,7 +699,7 @@ export function WebsiteAnalyticsCard() {
                   value={customFrom}
                   onChange={handleCustomFrom}
                   placeholder="Start date"
-                  className="h-9"
+                  className="h-9 w-full"
                 />
               </div>
               <div className="space-y-1">
@@ -634,7 +708,7 @@ export function WebsiteAnalyticsCard() {
                   value={customTo}
                   onChange={handleCustomTo}
                   placeholder="End date"
-                  className="h-9"
+                  className="h-9 w-full"
                 />
               </div>
             </div>
@@ -697,20 +771,34 @@ export function WebsiteAnalyticsCard() {
                     {rangeLabel}
                   </h4>
                 </div>
-                <div className="sm:hidden">
-                  <Select
-                    value={chartMetric}
-                    onValueChange={(v) => setChartMetric(v as ChartMetric)}
+                <div className="grid grid-cols-3 gap-1.5 sm:hidden">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={chartMetric === 'visitors' ? 'default' : 'outline'}
+                    className="h-8 px-2 text-xs w-full"
+                    onClick={() => setChartMetric('visitors')}
                   >
-                    <SelectTrigger className="h-9 w-full">
-                      <SelectValue placeholder="Metric" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="visitors">Visitors</SelectItem>
-                      <SelectItem value="phone_clicks">Calls</SelectItem>
-                      <SelectItem value="booking_submits">Bookings</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    Visitors
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={chartMetric === 'phone_clicks' ? 'default' : 'outline'}
+                    className="h-8 px-2 text-xs w-full"
+                    onClick={() => setChartMetric('phone_clicks')}
+                  >
+                    Calls
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={chartMetric === 'booking_submits' ? 'default' : 'outline'}
+                    className="h-8 px-2 text-xs w-full"
+                    onClick={() => setChartMetric('booking_submits')}
+                  >
+                    Bookings
+                  </Button>
                 </div>
                 <ToggleGroup
                   type="single"
@@ -828,57 +916,33 @@ export function WebsiteAnalyticsCard() {
               </div>
             </div>
 
-            <div className="space-y-2">
+            <div id="recent-activity" className="space-y-2">
               <h4 className="text-sm font-medium px-0.5">Recent activity</h4>
               <p className="text-xs text-muted-foreground px-0.5 leading-relaxed">
                 Times in IST (newer events use browser time). Location is approximate from the visitor&apos;s IP
                 (not GPS)—VPN, iCloud Private Relay, or ISP routing can show another country.
               </p>
 
-              {recentEvents.length === 0 ? (
+              {recentEventsTotal === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-6 rounded-lg border border-dashed border-border">
                   No events in this range.
                 </p>
               ) : (
                 <>
+                  <div id="recent-activity-list-top" className="scroll-mt-4" aria-hidden />
+
                   <div className="space-y-2 md:hidden">
-                    {recentEvents.map((ev) => {
-                      const location = formatEventLocation(ev.metadata);
-                      const device = formatEventDevice(ev.metadata);
-                      const referrer = formatEventReferrer(ev.metadata);
-                      return (
-                        <div
-                          key={ev.id}
-                          className="rounded-xl border border-border bg-card p-3 space-y-2"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <Badge variant="secondary" className="text-[10px] font-normal">
-                              {eventLabel(ev.event_type)}
-                            </Badge>
-                            {siteFilter === 'all' ? (
-                              <Badge variant="outline" className="text-[10px] shrink-0">
-                                {getPublicSiteLabel(ev.site_key)}
-                              </Badge>
-                            ) : null}
-                          </div>
-                          <p className="text-[11px] font-medium tabular-nums">{formatEventTimeIst(ev)}</p>
-                          <p className="text-xs text-muted-foreground break-words">
-                            {formatPagePath(ev.page_path)}
-                          </p>
-                          {(location !== '—' || device !== '—' || referrer !== '—') && (
-                            <div className="space-y-1 pt-2 border-t border-border/60">
-                              {location !== '—' ? <RecentActivityMeta label="Location" value={location} /> : null}
-                              {device !== '—' ? <RecentActivityMeta label="Device" value={device} /> : null}
-                              {referrer !== '—' ? <RecentActivityMeta label="Referrer" value={referrer} /> : null}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                    {recentEvents.map((ev) => (
+                      <RecentActivityMobileCard
+                        key={ev.id}
+                        ev={ev}
+                        showSite={siteFilter === 'all'}
+                      />
+                    ))}
                   </div>
 
                   <div className="hidden md:block rounded-lg border border-border overflow-hidden">
-                    <div className="overflow-x-auto max-h-80 overflow-y-auto">
+                    <div className="overflow-x-auto">
                       <Table>
                         <TableHeader>
                           <TableRow className="bg-muted/40 hover:bg-muted/40">
@@ -936,6 +1000,19 @@ export function WebsiteAnalyticsCard() {
                       </Table>
                     </div>
                   </div>
+
+                  {recentEventsTotal > 10 ? (
+                    <AnalyticsListPagination
+                      currentPage={recentPage}
+                      totalPages={recentTotalPages}
+                      totalItems={recentEventsTotal}
+                      itemsPerPage={recentPerPage}
+                      itemLabel="events"
+                      scrollAnchorId="recent-activity-list-top"
+                      onPageChange={handleRecentPageChange}
+                      onItemsPerPageChange={handleRecentPerPageChange}
+                    />
+                  ) : null}
                 </>
               )}
             </div>

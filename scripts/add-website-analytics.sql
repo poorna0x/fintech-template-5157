@@ -116,7 +116,8 @@ CREATE OR REPLACE FUNCTION public.get_website_analytics_recent_events(
   p_from_date date,
   p_to_date date,
   p_site_key text DEFAULT NULL,
-  p_limit integer DEFAULT 120
+  p_limit integer DEFAULT 10,
+  p_offset integer DEFAULT 0
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -128,6 +129,10 @@ DECLARE
   result jsonb;
   from_d date;
   to_d date;
+  lim integer;
+  off integer;
+  total_count integer;
+  rows_json jsonb;
 BEGIN
   IF NOT public.is_admin_user() THEN
     RAISE EXCEPTION 'not authorized' USING ERRCODE = '42501';
@@ -135,12 +140,18 @@ BEGIN
 
   from_d := LEAST(COALESCE(p_from_date, CURRENT_DATE), COALESCE(p_to_date, CURRENT_DATE));
   to_d := GREATEST(COALESCE(p_from_date, CURRENT_DATE), COALESCE(p_to_date, CURRENT_DATE));
+  lim := GREATEST(1, LEAST(COALESCE(p_limit, 10), 50));
+  off := GREATEST(0, COALESCE(p_offset, 0));
 
-  SELECT COALESCE(
-    jsonb_agg(row_to_json(r) ORDER BY r.created_at DESC),
-    '[]'::jsonb
-  )
-  INTO result
+  SELECT count(*)::integer
+  INTO total_count
+  FROM public.website_analytics_events e
+  WHERE (e.created_at AT TIME ZONE 'Asia/Kolkata')::date >= from_d
+    AND (e.created_at AT TIME ZONE 'Asia/Kolkata')::date <= to_d
+    AND (p_site_key IS NULL OR p_site_key = '' OR e.site_key = p_site_key);
+
+  SELECT COALESCE(jsonb_agg(row_to_json(r) ORDER BY r.created_at DESC), '[]'::jsonb)
+  INTO rows_json
   FROM (
     SELECT
       e.id,
@@ -154,15 +165,15 @@ BEGIN
       AND (e.created_at AT TIME ZONE 'Asia/Kolkata')::date <= to_d
       AND (p_site_key IS NULL OR p_site_key = '' OR e.site_key = p_site_key)
     ORDER BY e.created_at DESC
-    LIMIT GREATEST(1, LEAST(COALESCE(p_limit, 120), 200))
+    LIMIT lim OFFSET off
   ) r;
 
-  RETURN result;
+  RETURN jsonb_build_object('total', total_count, 'rows', rows_json);
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.get_website_analytics_recent_events(date, date, text, integer) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.get_website_analytics_recent_events(date, date, text, integer) TO authenticated;
+REVOKE ALL ON FUNCTION public.get_website_analytics_recent_events(date, date, text, integer, integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_website_analytics_recent_events(date, date, text, integer, integer) TO authenticated;
 
 -- Optional retention: delete rows older than 180 days (run via pg_cron or manual).
 -- DELETE FROM public.website_analytics_events WHERE created_at < now() - interval '180 days';
