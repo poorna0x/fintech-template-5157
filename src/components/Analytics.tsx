@@ -29,11 +29,16 @@ import {
 import { normalizeForComparison, findLeadSource, normalizeLeadType } from '@/lib/adminUtils';
 import { Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 // Code-split: spare-parts analytics JS only downloads when the section is opened.
 const SparePartsAnalytics = React.lazy(() => import('@/components/admin/SparePartsAnalytics'));
 import { WebsiteAnalyticsGate } from '@/components/admin/WebsiteAnalyticsGate';
-import { AnalyticsListPagination } from '@/components/admin/AnalyticsListPagination';
+import {
+  AnalyticsListPagination,
+  AnalyticsListLoadingOverlay,
+  ANALYTICS_LIST_SCROLL_ANCHOR_CLASS,
+} from '@/components/admin/AnalyticsListPagination';
 import { AnalyticsLoadSection } from '@/components/admin/AnalyticsLoadSection';
 
 interface AnalyticsData {
@@ -1335,9 +1340,6 @@ const Analytics = () => {
 
   const loadTopLocations = async (page = 1, perPage = locationPerPage, search = locationSearch) => {
     setLoadingLocationStats(true);
-    if (locationsLoaded) {
-      setLocationRows([]);
-    }
     try {
       const { startDate, endDate } = getDateRange();
       const { data, error } = await db.analyticsPaginated.getTopLocations({
@@ -1368,9 +1370,6 @@ const Analytics = () => {
 
   const loadTopBrands = async (page = 1, perPage = brandPerPage, search = brandSearch) => {
     setLoadingBrandStats(true);
-    if (brandsLoaded) {
-      setBrandRows([]);
-    }
     try {
       const { startDate, endDate } = getDateRange();
       const { data, error } = await db.analyticsPaginated.getTopBrands({
@@ -2351,7 +2350,6 @@ const Analytics = () => {
                   className="pl-9 w-full"
                 />
               </div>
-              <div id="top-locations-list-top" className="scroll-mt-24" aria-hidden />
               {loadingLocationStats && locationRows.length === 0 ? (
                 <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground rounded-lg border border-dashed border-border">
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -2363,8 +2361,20 @@ const Analytics = () => {
                 </p>
               ) : (
                 <>
-                  <div className="overflow-x-auto">
-                    <Table>
+                  <div
+                    id="top-locations-list-top"
+                    className={cn(ANALYTICS_LIST_SCROLL_ANCHOR_CLASS, 'h-0')}
+                    aria-hidden
+                  />
+                  <div className="relative min-h-[8rem]">
+                    <AnalyticsListLoadingOverlay loading={loadingLocationStats} />
+                    <div
+                      className={cn(
+                        'overflow-x-auto transition-opacity duration-150',
+                        loadingLocationStats && locationRows.length > 0 && 'opacity-40 pointer-events-none'
+                      )}
+                    >
+                      <Table>
                       <TableHeader>
                         <TableRow>
                           <TableHead>Location</TableHead>
@@ -2408,6 +2418,7 @@ const Analytics = () => {
                         )}
                       </TableBody>
                     </Table>
+                    </div>
                   </div>
                   {locationTotal > 10 ? (
                     <AnalyticsListPagination
@@ -2449,7 +2460,6 @@ const Analytics = () => {
                   className="pl-9 w-full"
                 />
               </div>
-              <div id="top-brands-list-top" className="scroll-mt-24" aria-hidden />
               {loadingBrandStats && brandRows.length === 0 ? (
                 <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground rounded-lg border border-dashed border-border">
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -2461,8 +2471,20 @@ const Analytics = () => {
                 </p>
               ) : (
                 <>
-                  <div className="overflow-x-auto">
-                    <Table>
+                  <div
+                    id="top-brands-list-top"
+                    className={cn(ANALYTICS_LIST_SCROLL_ANCHOR_CLASS, 'h-0')}
+                    aria-hidden
+                  />
+                  <div className="relative min-h-[8rem]">
+                    <AnalyticsListLoadingOverlay loading={loadingBrandStats} />
+                    <div
+                      className={cn(
+                        'overflow-x-auto transition-opacity duration-150',
+                        loadingBrandStats && brandRows.length > 0 && 'opacity-40 pointer-events-none'
+                      )}
+                    >
+                      <Table>
                       <TableHeader>
                         <TableRow>
                           <TableHead>Brand</TableHead>
@@ -2502,6 +2524,7 @@ const Analytics = () => {
                         )}
                       </TableBody>
                     </Table>
+                    </div>
                   </div>
                   {brandTotal > 10 ? (
                     <AnalyticsListPagination

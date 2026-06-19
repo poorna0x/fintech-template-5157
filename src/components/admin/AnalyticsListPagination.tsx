@@ -1,11 +1,12 @@
 import { useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, ArrowRight, Loader2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 export const ANALYTICS_PAGE_SIZES = [10, 20, 50] as const;
 
-/** Sticky admin header + small gap so list headers sit just below the bar. */
-const SCROLL_TOP_OFFSET_PX = 96;
+/** Anchor class — pairs with scrollToAnalyticsListAnchor (scroll-margin for sticky admin header). */
+export const ANALYTICS_LIST_SCROLL_ANCHOR_CLASS = 'scroll-mt-28 sm:scroll-mt-32';
 
 type AnalyticsListPaginationProps = {
   currentPage: number;
@@ -14,17 +15,49 @@ type AnalyticsListPaginationProps = {
   itemsPerPage: number;
   itemLabel?: string;
   scrollAnchorId?: string;
-  /** When true, page buttons are disabled and scroll runs after loading finishes. */
   loading?: boolean;
   onPageChange: (page: number) => void;
   onItemsPerPageChange: (size: number) => void;
 };
 
+/** Jump to list top after page load; uses scroll-margin on the anchor element. */
 export function scrollToAnalyticsListAnchor(elementId: string) {
   const el = document.getElementById(elementId);
   if (!el) return;
-  const top = el.getBoundingClientRect().top + window.scrollY - SCROLL_TOP_OFFSET_PX;
-  window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+  el.scrollIntoView({ behavior: 'auto', block: 'start' });
+}
+
+function runScrollAfterPaint(elementId: string) {
+  scrollToAnalyticsListAnchor(elementId);
+  requestAnimationFrame(() => {
+    scrollToAnalyticsListAnchor(elementId);
+    window.setTimeout(() => scrollToAnalyticsListAnchor(elementId), 50);
+  });
+}
+
+type AnalyticsListLoadingOverlayProps = {
+  loading: boolean;
+  className?: string;
+};
+
+/** Dim table + spinner while fetching the next page (keeps layout height stable). */
+export function AnalyticsListLoadingOverlay({ loading, className }: AnalyticsListLoadingOverlayProps) {
+  if (!loading) return null;
+  return (
+    <div
+      className={cn(
+        'absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-background/75 backdrop-blur-[2px]',
+        className
+      )}
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <div className="flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 shadow-sm text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+        <span>Loading…</span>
+      </div>
+    </div>
+  );
 }
 
 export function AnalyticsListPagination({
@@ -43,13 +76,10 @@ export function AnalyticsListPagination({
   const rangeEnd = Math.min(currentPage * itemsPerPage, totalItems);
 
   useEffect(() => {
-    if (!loading && scrollAfterLoadRef.current && scrollAnchorId) {
-      scrollAfterLoadRef.current = false;
-      requestAnimationFrame(() => {
-        scrollToAnalyticsListAnchor(scrollAnchorId);
-      });
-    }
-  }, [loading, scrollAnchorId]);
+    if (loading || !scrollAfterLoadRef.current || !scrollAnchorId) return;
+    scrollAfterLoadRef.current = false;
+    runScrollAfterPaint(scrollAnchorId);
+  }, [loading, currentPage, scrollAnchorId]);
 
   const handlePageChange = (page: number) => {
     if (loading || page === currentPage) return;

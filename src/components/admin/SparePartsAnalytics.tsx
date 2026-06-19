@@ -3,7 +3,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Input } from '@/components/ui/input';
 import { Loader2, Search, Package } from 'lucide-react';
 import { db } from '@/lib/supabase';
-import { AnalyticsListPagination } from '@/components/admin/AnalyticsListPagination';
+import { AnalyticsListPagination, AnalyticsListLoadingOverlay, ANALYTICS_LIST_SCROLL_ANCHOR_CLASS } from '@/components/admin/AnalyticsListPagination';
+import { cn } from '@/lib/utils';
 
 interface SparePartsAnalyticsProps {
   /** ISO start of period, or null for all-time. */
@@ -76,7 +77,6 @@ const SparePartsAnalytics: React.FC<SparePartsAnalyticsProps> = ({ startISO, end
     async (nextPage: number, nextPerPage: number, nextSearch: string) => {
       setLoading(true);
       setError(null);
-      setRows([]);
       try {
         const { data, error: err } = await db.analyticsPaginated.getSparePartsUsage({
           startISO,
@@ -185,19 +185,22 @@ const SparePartsAnalytics: React.FC<SparePartsAnalyticsProps> = ({ startISO, end
         />
       </div>
 
-      <div id="spare-parts-list-top" className="scroll-mt-24" aria-hidden />
+      <div id="spare-parts-list-top" className={cn(ANALYTICS_LIST_SCROLL_ANCHOR_CLASS, 'h-0')} aria-hidden />
 
-      {loading && rows.length === 0 ? (
-        <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground rounded-lg border border-dashed border-border">
-          <Loader2 className="w-4 h-4 animate-spin" />
-          Loading spare parts…
-        </div>
-      ) : rows.length === 0 ? (
+      {rows.length === 0 && !loading ? (
         <p className="text-sm text-muted-foreground text-center py-6 rounded-lg border border-dashed border-border">
           No parts match your search.
         </p>
       ) : (
         <>
+          <div className="relative min-h-[8rem]">
+            <AnalyticsListLoadingOverlay loading={loading} />
+            <div
+              className={cn(
+                'transition-opacity duration-150',
+                loading && rows.length > 0 && 'opacity-40 pointer-events-none'
+              )}
+            >
           <div className="space-y-2 md:hidden">
             {rows.map((r) => (
               <div
@@ -249,6 +252,8 @@ const SparePartsAnalytics: React.FC<SparePartsAnalyticsProps> = ({ startISO, end
                   ))}
                 </TableBody>
               </Table>
+            </div>
+          </div>
             </div>
           </div>
 

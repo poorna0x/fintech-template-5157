@@ -34,7 +34,11 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import type { TrendPoint } from './websiteAnalyticsTypes';
-import { AnalyticsListPagination } from '@/components/admin/AnalyticsListPagination';
+import {
+  AnalyticsListPagination,
+  AnalyticsListLoadingOverlay,
+  ANALYTICS_LIST_SCROLL_ANCHOR_CLASS,
+} from '@/components/admin/AnalyticsListPagination';
 import { WebsiteAnalyticsDataDelete } from '@/components/admin/WebsiteAnalyticsDataDelete';
 
 const WebsiteAnalyticsTrendChart = lazy(() => import('./WebsiteAnalyticsTrendChart'));
@@ -447,7 +451,6 @@ export function WebsiteAnalyticsCard() {
   const fetchRecentActivity = useCallback(
     async (page: number, perPage: number) => {
       setRecentLoading(true);
-      setRecentEvents([]);
       try {
         const siteKey = siteFilter === 'all' ? undefined : siteFilter;
         const recentRes = await db.websiteAnalytics.getRecentEvents({
@@ -938,8 +941,19 @@ export function WebsiteAnalyticsCard() {
                 </p>
               ) : (
                 <>
-                  <div id="recent-activity-list-top" className="scroll-mt-24" aria-hidden />
-
+                  <div
+                    id="recent-activity-list-top"
+                    className={cn(ANALYTICS_LIST_SCROLL_ANCHOR_CLASS, 'h-0')}
+                    aria-hidden
+                  />
+                  <div className="relative min-h-[8rem]">
+                    <AnalyticsListLoadingOverlay loading={recentLoading} />
+                    <div
+                      className={cn(
+                        'transition-opacity duration-150',
+                        recentLoading && recentEvents.length > 0 && 'opacity-40 pointer-events-none'
+                      )}
+                    >
                   <div className="space-y-2 md:hidden">
                     {recentEvents.map((ev) => (
                       <RecentActivityMobileCard
@@ -1007,6 +1021,8 @@ export function WebsiteAnalyticsCard() {
                           ))}
                         </TableBody>
                       </Table>
+                    </div>
+                  </div>
                     </div>
                   </div>
 
