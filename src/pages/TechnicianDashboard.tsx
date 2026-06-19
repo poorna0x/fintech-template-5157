@@ -62,6 +62,7 @@ import {
   ensureSupabaseSessionForWrite,
   locationUploadErrorMessage,
 } from '@/lib/ensureSupabaseSession';
+import { useResumeSync } from '@/hooks/useResumeSync';
 import { Job, JobAssignmentRequest } from '@/types';
 import { sendNotification, createJobCompletedNotification, createJobAssignmentRequestNotification, createJobAssignmentAcceptedNotification, createJobAssignmentRejectedNotification, requestNotificationPermission } from '@/lib/notifications';
 import FollowUpModal from '@/components/FollowUpModal';
@@ -481,7 +482,6 @@ const TechnicianDashboard = () => {
   const [loadingAMCInfo, setLoadingAMCInfo] = useState(false);
   const [realtimeConnected, setRealtimeConnected] = useState(false);
   const processingJobsRef = useRef<Set<string>>(new Set()); // Track jobs being processed to prevent duplicates (use ref for synchronous access)
-  const lastActiveTimeRef = useRef<Date>(new Date()); // Track when app was last active
   /** Throttle rare full QR refetch when returning to the app (Realtime merge is primary). */
   const lastQrRefreshOnFocusRef = useRef<number>(0);
   const qrLiveRef = useRef<TechnicianQrLiveRef>(emptyTechnicianQrLiveRef());
@@ -1707,62 +1707,6 @@ const TechnicianDashboard = () => {
     }
   }, [user]);
 
-  // Track app visibility to show notifications when app becomes active and refresh QR codes
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        // App became active - update last active time
-        const now = new Date();
-        const timeSinceLastActive = now.getTime() - lastActiveTimeRef.current.getTime();
-        
-        // Pull latest payment/common QR assignments when returning — Realtime can miss rows if RLS/publication misconfigured.
-        if (user?.role === 'technician') {
-          const t = Date.now();
-          if (t - lastQrRefreshOnFocusRef.current > 300_000) {
-            lastQrRefreshOnFocusRef.current = t;
-            loadQrCodes({ force: true });
-          }
-        }
-
-        // Only check for new jobs if app was inactive for more than 5 seconds
-        if (timeSinceLastActive > 5000 && user?.technicianId) {
-          // Reload jobs to check for new assignments
-          loadAssignedJobs();
-        }
-        
-        lastActiveTimeRef.current = now;
-      }
-    };
-
-    // Also track focus events (when user switches back to tab/window)
-    const handleFocus = () => {
-      const now = new Date();
-      const timeSinceLastActive = now.getTime() - lastActiveTimeRef.current.getTime();
-      
-      if (user?.role === 'technician') {
-        const t = Date.now();
-        if (t - lastQrRefreshOnFocusRef.current > 300_000) {
-          lastQrRefreshOnFocusRef.current = t;
-          loadQrCodes({ force: true });
-        }
-      }
-
-      if (timeSinceLastActive > 5000 && user?.technicianId) {
-        loadAssignedJobs();
-      }
-      
-      lastActiveTimeRef.current = now;
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    window.addEventListener('focus', handleFocus);
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('focus', handleFocus);
-    };
-  }, [user?.technicianId, user?.role, loadAssignedJobs, loadQrCodes, user]);
-
   // Realtime for QR codes — merge payload into local ref (immediate UI, no 4-query refetch; full fetch only if merge fails)
   useEffect(() => {
     if (!user || user.role !== 'technician') return;
@@ -2795,6 +2739,31 @@ const TechnicianDashboard = () => {
       setAssignmentRequestsLoading(false);
     }
   };
+
+  const resumeTechnicianSync = useCallback(async () => {
+    if (!user?.technicianId) return;
+
+    const session = await ensureSupabaseSessionForWrite();
+    if (!session.ok) {
+      console.warn('[TechnicianDashboard] Resume sync skipped — session not ready');
+      return;
+    }
+
+    await Promise.all([loadAssignedJobs(), loadAssignmentRequests()]);
+
+    const t = Date.now();
+    if (t - lastQrRefreshOnFocusRef.current > 300_000) {
+      lastQrRefreshOnFocusRef.current = t;
+      loadQrCodes({ force: true });
+    }
+  }, [user?.technicianId, loadAssignedJobs, loadQrCodes]);
+
+  useResumeSync({
+    enabled: !!user?.technicianId,
+    minHiddenMs: 60_000,
+    minIntervalMs: 15_000,
+    onResume: resumeTechnicianSync,
+  });
 
   const handleAssignmentResponse = async (requestId: string, status: 'ACCEPTED' | 'REJECTED') => {
     if (!user?.technicianId) return;

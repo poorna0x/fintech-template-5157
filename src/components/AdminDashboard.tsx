@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback, useMemo, useRef, startTransiti
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { ensureAdminSupabaseSession } from '@/lib/auth';
+import { ensureSupabaseSessionForWrite } from '@/lib/ensureSupabaseSession';
+import { useResumeSync } from '@/hooks/useResumeSync';
 import AdminHeader from '@/components/AdminHeader';
 import { WebsiteBookingIntentBanner } from '@/components/admin/WebsiteBookingIntentBanner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -1637,6 +1639,7 @@ const AdminDashboard = () => {
 
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const dashboardLoadedWithSessionRef = useRef(false);
+  const adminRealtimeStatusRef = useRef<string | null>(null);
   const loadDashboardDataRef = useRef(loadDashboardData);
   loadDashboardDataRef.current = loadDashboardData;
 
@@ -1872,6 +1875,31 @@ const AdminDashboard = () => {
     // Refresh counts when filter changes
       loadJobCounts();
   }, [statusFilter, loadFilteredJobs, loadJobCounts, isInitialLoad]);
+
+  const resumeAdminSync = useCallback(async () => {
+    if (isInitialLoad || !dashboardLoadedWithSessionRef.current) return;
+
+    const session = await ensureSupabaseSessionForWrite();
+    if (!session.ok) {
+      console.warn('[AdminDashboard] Resume sync skipped — session not ready');
+      return;
+    }
+
+    await Promise.all([
+      loadJobCounts(),
+      loadFilteredJobs(statusFilter, currentPage, { silent: true }),
+    ]);
+  }, [isInitialLoad, statusFilter, currentPage, loadJobCounts, loadFilteredJobs]);
+
+  const resumeAdminSyncRef = useRef(resumeAdminSync);
+  resumeAdminSyncRef.current = resumeAdminSync;
+
+  useResumeSync({
+    enabled: !authInitializing && !!user && isAdmin && !isInitialLoad,
+    minHiddenMs: 60_000,
+    minIntervalMs: 15_000,
+    onResume: resumeAdminSync,
+  });
 
   // Reload jobs when denied date filter changes
   useEffect(() => {
@@ -2345,7 +2373,13 @@ const AdminDashboard = () => {
           playCompletedJobSound();
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        const prev = adminRealtimeStatusRef.current;
+        adminRealtimeStatusRef.current = status;
+        if (status === 'SUBSCRIBED' && prev != null && prev !== 'SUBSCRIBED') {
+          void resumeAdminSyncRef.current();
+        }
+      });
 
     return () => {
       clearTimeout(seedTimeout);
