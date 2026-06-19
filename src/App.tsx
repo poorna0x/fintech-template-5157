@@ -12,7 +12,7 @@ import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import PerformanceMonitor from "./components/PerformanceMonitor";
 import CanonicalTag from "./components/CanonicalTag";
-import GoogleAnalytics from "./components/GoogleAnalytics";
+import WebsiteAnalyticsTracker from "./components/WebsiteAnalyticsTracker";
 import { disablePWA } from "@/lib/pwa";
 
 // Lazy load heavy components for better performance.
@@ -109,7 +109,7 @@ const App = () => (
             <Sonner />
             <BrowserRouter>
               <AuthPortalCoordinator />
-              <GoogleAnalytics />
+              <WebsiteAnalyticsTracker />
               <CanonicalTag />
               <PWARouteHandler />
               <Suspense fallback={<LoadingSpinner />}>

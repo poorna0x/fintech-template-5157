@@ -62,6 +62,7 @@ import AdvancedCustomerSearchDialog from '@/components/admin/AdvancedCustomerSea
 import MergeCustomersDialog from '@/components/admin/MergeCustomersDialog';
 import WarrantyManagementDialog from '@/components/admin/WarrantyManagementDialog';
 import DirectSaleDialog from '@/components/admin/DirectSaleDialog';
+import { WebsiteAnalyticsCard } from '@/components/admin/WebsiteAnalyticsCard';
 
 /** PostgREST error when a table was never created or was dropped (e.g. booking_abandonments). */
 const isMissingTableError = (error: { message?: string; code?: string } | null): boolean => {
@@ -120,6 +121,7 @@ const DATABASE_EXPORT_TABLES: {
   { name: 'warranties', orderBy: 'created_at', label: 'Warranties', optional: true },
   { name: 'warranty_items', orderBy: 'created_at', label: 'Warranty Items', optional: true },
   { name: 'website_booking_intent', orderBy: 'updated_at', label: 'Website Booking Intent' },
+  { name: 'website_analytics_events', orderBy: 'created_at', label: 'Website Analytics Events' },
 ];
 
 const Settings = () => {
@@ -2091,6 +2093,9 @@ const Settings = () => {
               </Button>
             </CardContent>
           </Card>
+
+          {/* Website analytics */}
+          <WebsiteAnalyticsCard />
 
           {/* Letterhead Documents / Service Reports */}
           <Card>

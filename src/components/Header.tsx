@@ -8,6 +8,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Switch } from '@/components/ui/switch';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTheme } from '@/contexts/ThemeContext';
+import { openPublicPhoneCall, trackPublicBookingClick } from '@/lib/websiteAnalytics';
 
 const Header = () => {
   const [activePage, setActivePage] = useState('home');
@@ -66,7 +67,7 @@ const Header = () => {
         navigate('/');
       }
     } else if (page === 'booking') {
-      // Navigate to booking page
+      trackPublicBookingClick('header_nav');
       navigate('/book');
     } else if (page === 'contact') {
       // Navigate to contact page
@@ -344,7 +345,7 @@ const Header = () => {
           {location.pathname === '/book' ? (
             <div className="rounded-2xl">
               <Button 
-                onClick={() => window.open('tel:+918884944288', '_self')}
+                onClick={() => openPublicPhoneCall('+918884944288', 'header_booking_page')}
                 className="bg-sky-600 text-white hover:bg-sky-700 shadow-lg flex items-center gap-2"
               >
                 <Phone size={18} />
@@ -354,7 +355,10 @@ const Header = () => {
           ) : (
             <div className="rounded-2xl">
               <Button 
-                onClick={() => navigate('/book')}
+                onClick={() => {
+                  trackPublicBookingClick('header_cta');
+                  navigate('/book');
+                }}
                 className="bg-sky-600 text-white hover:bg-sky-700 shadow-lg"
               >
                 Book Service

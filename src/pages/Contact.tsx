@@ -5,16 +5,18 @@ import PageHero from '@/components/PageHero';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Phone, Mail, MapPin, Clock, AlertCircle } from 'lucide-react';
+import { openPublicPhoneCall, trackPublicWhatsAppClick } from '@/lib/websiteAnalytics';
 
 const Contact = () => {
   const [showCallOptions, setShowCallOptions] = useState(false);
 
   const handleCall = (number: string) => {
-    window.open(`tel:${number}`, '_self');
+    openPublicPhoneCall(number, 'contact_page');
     setShowCallOptions(false);
   };
 
   const handleWhatsApp = () => {
+    trackPublicWhatsAppClick('contact_page');
     window.open('https://wa.me/918884944288', '_blank', 'noopener,noreferrer');
   };
 

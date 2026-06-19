@@ -1,12 +1,5 @@
 import { useEffect } from 'react';
 
-// Declare global types for better TypeScript support
-declare global {
-  interface Window {
-    gtag?: (...args: any[]) => void;
-  }
-}
-
 const PerformanceMonitor = () => {
   useEffect(() => {
     // Monitor Core Web Vitals
@@ -54,21 +47,8 @@ const PerformanceMonitor = () => {
               totalLoad: perfData.loadEventEnd - perfData.fetchStart,
             };
 
-            // Send to analytics in production
-            if (process.env.NODE_ENV === 'production' && window.gtag) {
-              window.gtag('event', 'page_performance', {
-                event_category: 'Performance',
-                event_label: 'Page Load',
-                value: Math.round(metrics.totalLoad),
-                custom_map: {
-                  dns_time: Math.round(metrics.dns),
-                  tcp_time: Math.round(metrics.tcp),
-                  request_time: Math.round(metrics.request),
-                  response_time: Math.round(metrics.response),
-                  dom_processing_time: Math.round(metrics.domProcessing),
-                }
-              });
-            }
+            // Metrics available for future first-party performance events if needed.
+            void metrics;
           }
         } catch (error) {
           console.warn('Failed to get performance metrics:', error);

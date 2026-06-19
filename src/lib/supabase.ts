@@ -6081,6 +6081,15 @@ export const db = {
       return { error };
     },
   },
+
+  websiteAnalytics: {
+    async getSummary(days = 7) {
+      const { data, error } = await supabase.rpc('get_website_analytics_summary', {
+        p_days: days,
+      });
+      return { data, error };
+    },
+  },
 };
 
 /** Calendar date in Asia/Kolkata (for dedupe bucket with `phone_normalized`). */

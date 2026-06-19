@@ -23,6 +23,7 @@ import {
   endWarrantySession,
 } from '@/lib/otp';
 import { lookupWarrantiesByPhone, warmWarrantyLookup, type WarrantyLookupResponse } from '@/lib/warrantyLookup';
+import { openPublicPhoneCall } from '@/lib/websiteAnalytics';
 import {
   formatWarrantyDate,
   type PublicWarranty,
@@ -466,7 +467,7 @@ const Warranty: React.FC = () => {
                   <Button
                     variant="outline"
                     className="mt-4"
-                    onClick={() => window.open('tel:+918884944288', '_self')}
+                    onClick={() => openPublicPhoneCall('+918884944288', 'warranty_page')}
                   >
                     <Phone className="w-4 h-4 mr-2" />
                     Call support

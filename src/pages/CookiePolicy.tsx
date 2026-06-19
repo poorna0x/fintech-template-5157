@@ -44,7 +44,8 @@ const CookiePolicy: React.FC = () => {
                     Cookies are small text files that are stored on your device when you visit our website. They help us provide you with a better experience by remembering your preferences and understanding how you use our site.
                   </p>
                   <p>
-                    This Cookie Policy explains how Hydrogen RO uses cookies and similar technologies on our website.
+                    This Cookie Policy explains how Hydrogen RO and Eleven RO use cookies and similar technologies
+                    on our websites (hydrogenro.com and elevenro.com).
                   </p>
                 </CardContent>
               </Card>
@@ -75,14 +76,22 @@ const CookiePolicy: React.FC = () => {
                   <div>
                     <h4 className="font-semibold text-foreground mb-2 flex items-center gap-2">
                       <BarChart className="w-4 h-4 text-blue-500" />
-                      Analytics Cookies
+                      Analytics (first-party)
                     </h4>
                     <p className="text-muted-foreground mb-2">
-                      These cookies help us understand how visitors use our website to improve our services.
+                      These help us understand how visitors use our sites so we can improve services and measure
+                      contact interest (page views, book-button clicks, phone/WhatsApp taps).
                     </p>
                     <ul className="list-disc list-inside space-y-1 text-muted-foreground text-sm">
-                      <li>Page views and user interactions</li>
-                      <li>Website performance and loading times</li>
+                      <li>
+                        <strong>First-party analytics:</strong> a session identifier in{' '}
+                        <code className="text-foreground">sessionStorage</code> (e.g.{' '}
+                        <code className="text-foreground">hro_wa_sid</code>) and short-lived keys to avoid
+                        duplicate page counts; event data is sent to our own servers (Supabase via Netlify), not
+                        sold to brokers
+                      </li>
+                      <li>Page views and user interactions on public marketing pages</li>
+                      <li>Website performance and loading times (where measured)</li>
                       <li>Popular services and content</li>
                     </ul>
                   </div>
@@ -115,7 +124,6 @@ const CookiePolicy: React.FC = () => {
                     We may use third-party services that set their own cookies:
                   </p>
                   <ul className="list-disc list-inside space-y-2 text-muted-foreground">
-                    <li><strong>Google Analytics:</strong> Website traffic and user behavior analysis</li>
                     <li><strong>Maps Services:</strong> Location services for service area mapping</li>
                     <li><strong>Payment Processors:</strong> Secure payment processing</li>
                     <li><strong>Social Media:</strong> Social sharing and integration features</li>
@@ -125,32 +133,17 @@ const CookiePolicy: React.FC = () => {
 
               <Card>
                 <CardHeader>
-                  <CardTitle>Google Analytics (GA4)</CardTitle>
+                  <CardTitle>First-party website analytics</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4 text-muted-foreground text-sm">
                   <p>
-                    When a valid Google Analytics measurement ID is configured for this site, Google may set
-                    cookies such as <code className="text-foreground">_ga</code>,{' '}
-                    <code className="text-foreground">_gid</code>, and related identifiers to distinguish users and
-                    sessions. These cookies help us understand page views, navigation, and approximate geography
-                    (city-level) from IP addresses before they may be truncated by Google.
+                    We run first-party analytics on hydrogenro.com and elevenro.com. It uses browser session
+                    storage for an anonymous visit identifier and sends small event payloads (page path, event type,
+                    site brand) to our infrastructure.
                   </p>
                   <p>
-                    Google&apos;s use of data is described in{' '}
-                    <a
-                      href="https://policies.google.com/privacy"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary underline hover:no-underline"
-                    >
-                      Google&apos;s Privacy Policy
-                    </a>
-                    . You can install the &quot;Google Analytics Opt-out Browser Add-on&quot; or use browser
-                    settings to limit analytics cookies.
-                  </p>
-                  <p>
-                    If no measurement ID is configured, the analytics script does not load and no GA4 cookies are set
-                    from our integration.
+                    This is not used for advertising profiles. You can clear site data in your browser to reset the
+                    session identifier. Blocking scripts may prevent this analytics from recording visits.
                   </p>
                 </CardContent>
               </Card>
@@ -185,7 +178,7 @@ const CookiePolicy: React.FC = () => {
                         You can opt out of specific cookie types:
                       </p>
                       <ul className="list-disc list-inside space-y-1 text-muted-foreground text-sm mt-2">
-                        <li>Google Analytics: Use the Google Analytics Opt-out Browser Add-on</li>
+                        <li>Clear site data or session storage to reset our anonymous analytics identifier</li>
                         <li>Advertising cookies: Visit the Digital Advertising Alliance website</li>
                         <li>Social media cookies: Adjust settings on respective platforms</li>
                       </ul>
