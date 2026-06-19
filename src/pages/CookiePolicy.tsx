@@ -91,7 +91,7 @@ const CookiePolicy: React.FC = () => {
                         sold to brokers
                       </li>
                       <li>Page views and user interactions on public marketing pages</li>
-                      <li>Approximate city/country, device type, browser family, and arrival source (direct, search, social, etc.)</li>
+                      <li>Approximate city/country, device type, OS, browser family, and arrival source (direct, search, social, etc.)</li>
                       <li>Website performance and loading times (where measured)</li>
                       <li>Popular services and content</li>
                     </ul>

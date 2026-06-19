@@ -48,7 +48,15 @@ function parseUserAgent(ua) {
   else if (/safari\//i.test(s) && !/chrome\//i.test(s)) browser = 'safari';
   else if (/opr\//i.test(s) || /opera/i.test(s)) browser = 'opera';
 
-  return { device, browser };
+  let os = 'other';
+  if (/iphone|ipad|ipod/i.test(s)) os = 'ios';
+  else if (/android/i.test(s)) os = 'android';
+  else if (/cros/i.test(s)) os = 'chromeos';
+  else if (/windows nt/i.test(s)) os = 'windows';
+  else if (/mac os x/i.test(s)) os = 'macos';
+  else if (/linux/i.test(s)) os = 'linux';
+
+  return { device, browser, os };
 }
 
 function hostFromUrl(url) {
@@ -85,12 +93,13 @@ function enrichEventMetadata(clientMeta, headers) {
   delete meta.referrer_url;
 
   const ua = header(headers, 'user-agent');
-  const { device, browser } = parseUserAgent(ua);
+  const { device, browser, os } = parseUserAgent(ua);
   const geo = parseNetlifyGeo(headers);
   const classified = classifyReferrer(referrerUrl);
 
   meta.device = device;
   meta.browser = browser;
+  meta.os = os;
   if (geo.city) meta.geo_city = geo.city;
   if (geo.country) meta.geo_country = geo.country;
   meta.referrer = classified.referrer;

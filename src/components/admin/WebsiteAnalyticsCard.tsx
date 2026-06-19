@@ -209,6 +209,16 @@ const REFERRER_LABELS: Record<string, string> = {
   other: 'Other',
 };
 
+const OS_LABELS: Record<string, string> = {
+  ios: 'iOS',
+  android: 'Android',
+  windows: 'Windows',
+  macos: 'macOS',
+  linux: 'Linux',
+  chromeos: 'Chrome OS',
+  other: 'Other',
+};
+
 function titleCase(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
@@ -224,10 +234,12 @@ function formatEventLocation(metadata?: Record<string, unknown> | null): string 
 
 function formatEventDevice(metadata?: Record<string, unknown> | null): string {
   const device = metadata?.device;
+  const os = metadata?.os;
   const browser = metadata?.browser;
-  if (!device && !browser) return '—';
+  if (!device && !os && !browser) return '—';
   const parts: string[] = [];
   if (device) parts.push(titleCase(String(device)));
+  if (os) parts.push(OS_LABELS[String(os)] ?? titleCase(String(os)));
   if (browser) parts.push(titleCase(String(browser)));
   return parts.join(' · ');
 }
