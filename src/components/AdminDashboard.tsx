@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef, startTransition, lazy as lazyDefault, Suspense } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { ensureAdminSupabaseSession } from '@/lib/auth';
 import { ensureSupabaseSessionForWrite } from '@/lib/ensureSupabaseSession';
@@ -121,7 +121,14 @@ import {
   getModuleJobsListCache,
   setModuleJobsListCache,
   clearModuleJobsListCache,
+  getModuleAdminUiState,
+  setModuleAdminUiState,
+  buildJobsListCacheKey,
+  getModuleDashboardSessionReady,
+  setModuleDashboardSessionReady,
+  getModuleJobsForUiRestore,
   type AdminDashboardSnapshot,
+  type AdminStatusFilter,
 } from '@/lib/adminDashboardCache';
 import { StatusBadge } from './admin/StatusBadge';
 import { CustomerCardHeader } from './admin/CustomerCardHeader';
@@ -216,15 +223,20 @@ function AdminInlineLoader({ message }: { message: string }) {
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, isAdmin, authInitializing, logout } = useAuth();
   const { isManager } = useAdminRole();
   const managerRestrictedTitle = 'Restricted for Manager role';
+  const savedUi = getModuleAdminUiState();
   const initialDashboardCache = readAdminDashboardCache();
   const initialOngoingJobs = initialDashboardCache
     ? ((initialDashboardCache.jobs as Job[]) ?? [])
     : ((getModuleOngoingJobsSnapshot() as Job[]) ?? []);
+  const restoredJobs = getModuleJobsForUiRestore(savedUi) as Job[];
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [jobs, setJobs] = useState<Job[]>(initialOngoingJobs);
+  const [jobs, setJobs] = useState<Job[]>(() =>
+    restoredJobs.length > 0 ? restoredJobs : initialOngoingJobs
+  );
   const [allFollowUpJobs, setAllFollowUpJobs] = useState<Job[]>([]); // All follow-up jobs for glow effect
   const [technicians, setTechnicians] = useState<Technician[]>(() => {
     if (!initialDashboardCache?.technicianRows) return [];
@@ -252,7 +264,13 @@ const AdminDashboard = () => {
   techniciansRef.current = technicians;
   // Slim technician list for historical displays (Completed By, reports, etc.). Includes INACTIVE.
   const [techniciansForReports, setTechniciansForReports] = useState<any[]>([]);
-  const [loading, setLoading] = useState(() => !initialDashboardCache && initialOngoingJobs.length === 0);
+  const [loading, setLoading] = useState(
+    () =>
+      !getModuleDashboardSessionReady() &&
+      !initialDashboardCache &&
+      restoredJobs.length === 0 &&
+      initialOngoingJobs.length === 0
+  );
   /** After idle resume / cross-device drift, skip instant tab cache until the next fetch lands. */
   const [tabCachesStale, setTabCachesStale] = useState(false);
   const [isResumeListSyncing, setIsResumeListSyncing] = useState(false);
@@ -785,7 +803,9 @@ const AdminDashboard = () => {
     visible_address: string;
   } | null>(null);
   const [messageSentFilter, setMessageSentFilter] = useState<'all' | 'sent' | 'not_sent'>('not_sent');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ONGOING' | 'PENDING' | 'ASSIGNED' | 'EN_ROUTE' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED'>('ONGOING');
+  const [statusFilter, setStatusFilter] = useState<AdminStatusFilter>(
+    () => savedUi.statusFilter
+  );
   // Ongoing-only sub-filters (UI parity with completed filters, but only for ongoing section)
   const [ongoingAssignmentFilter, setOngoingAssignmentFilter] = useState<'all' | 'assigned' | 'unassigned'>('all');
   const [ongoingAssignedTechnicianFilter, setOngoingAssignedTechnicianFilter] = useState<string>('all');
@@ -797,7 +817,7 @@ const AdminDashboard = () => {
   const [loadingCustomerJobs, setLoadingCustomerJobs] = useState<{[customerId: string]: boolean}>({});
   const [showAllFollowups, setShowAllFollowups] = useState<boolean>(false);
   // Pagination state
-  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [currentPage, setCurrentPage] = useState<number>(() => savedUi.currentPage);
   const [pageSize] = useState<number>(20);
   const [totalPages, setTotalPages] = useState<number>(0);
   const [totalCount, setTotalCount] = useState<number>(0);
@@ -820,12 +840,36 @@ const AdminDashboard = () => {
     return getTodayLocalDate();
   });
   // Date filter for completed jobs (default to today)
-  const [completedDateFilter, setCompletedDateFilter] = useState<string>(() => {
-    return getTodayLocalDate();
-  });
-  const [completedDatePreset, setCompletedDatePreset] = useState<'day' | 'week' | 'month' | 'custom'>('day');
-  const [completedRangeStartDate, setCompletedRangeStartDate] = useState<string>(() => getTodayLocalDate());
-  const [completedRangeEndDate, setCompletedRangeEndDate] = useState<string>(() => getTodayLocalDate());
+  const [completedDateFilter, setCompletedDateFilter] = useState<string>(
+    () => savedUi.completedDateFilter
+  );
+  const [completedDatePreset, setCompletedDatePreset] = useState<
+    'day' | 'week' | 'month' | 'custom'
+  >(() => savedUi.completedDatePreset);
+  const [completedRangeStartDate, setCompletedRangeStartDate] = useState<string>(
+    () => savedUi.completedRangeStartDate
+  );
+  const [completedRangeEndDate, setCompletedRangeEndDate] = useState<string>(
+    () => savedUi.completedRangeEndDate
+  );
+
+  useEffect(() => {
+    setModuleAdminUiState({
+      statusFilter,
+      currentPage,
+      completedDatePreset,
+      completedDateFilter,
+      completedRangeStartDate,
+      completedRangeEndDate,
+    });
+  }, [
+    statusFilter,
+    currentPage,
+    completedDatePreset,
+    completedDateFilter,
+    completedRangeStartDate,
+    completedRangeEndDate,
+  ]);
   const [completedLeadTypeFilter, setCompletedLeadTypeFilter] = useState<string>('all');
   const [completedServiceSubTypeFilter, setCompletedServiceSubTypeFilter] = useState<string>('all');
   const [completedByFilter, setCompletedByFilter] = useState<string>('all');
@@ -873,6 +917,7 @@ const AdminDashboard = () => {
   const ongoingJobsSnapshotRef = useRef<Job[]>(
     initialOngoingJobs.length > 0 ? initialOngoingJobs : (getModuleOngoingJobsSnapshot() as Job[])
   );
+  const prevStatusFilterRef = useRef<AdminStatusFilter | null>(null);
   /** Newly created customers (row + optional job) until they appear in embedded job payloads — avoids derive-from-jobs wiping them. */
   const pendingNewCustomersRef = useRef<Map<string, Customer>>(new Map());
 
@@ -1304,13 +1349,12 @@ const AdminDashboard = () => {
     filter: 'COMPLETED' | 'RESCHEDULED',
     page: number
   ) => {
-    if (filter === 'COMPLETED') {
-      if (completedDatePreset === 'day') {
-        return `COMPLETED:day:${completedDateFilter}:p${page}`;
-      }
-      return `COMPLETED:${completedDatePreset}:${completedRangeStartDate}:${completedRangeEndDate}:p${page}`;
-    }
-    return `RESCHEDULED:p${page}`;
+    return buildJobsListCacheKey(filter, page, {
+      completedDatePreset,
+      completedDateFilter,
+      completedRangeStartDate,
+      completedRangeEndDate,
+    });
   }, [
     completedDatePreset,
     completedDateFilter,
@@ -1746,7 +1790,11 @@ const AdminDashboard = () => {
   };
 
   const [isInitialLoad, setIsInitialLoad] = useState(
-    () => !initialDashboardCache && initialOngoingJobs.length === 0
+    () =>
+      !getModuleDashboardSessionReady() &&
+      !initialDashboardCache &&
+      restoredJobs.length === 0 &&
+      initialOngoingJobs.length === 0
   );
   const dashboardLoadedWithSessionRef = useRef(false);
   const adminRealtimeStatusRef = useRef<string | null>(null);
@@ -1755,6 +1803,26 @@ const AdminDashboard = () => {
 
   const runDashboardLoadOnceSessionReady = useCallback(async () => {
     if (dashboardLoadedWithSessionRef.current) return;
+
+    if (getModuleDashboardSessionReady()) {
+      const cached = readAdminDashboardCache();
+      if (cached) {
+        applyAdminSnapshot(cached);
+      }
+      setIsInitialLoad(false);
+      setLoading(false);
+      dashboardLoadedWithSessionRef.current = true;
+      try {
+        await loadDashboardDataRef.current({
+          silent: true,
+          skipOngoingFetch: statusFilter === 'ONGOING',
+          skipTechniciansFetch: Boolean(cached?.technicianRows?.length),
+        });
+      } catch (error) {
+        console.error('[AdminDashboard] Resume load failed:', error);
+      }
+      return;
+    }
 
     let showedInstantData = false;
     // True only when the roster/jobs came from the live prefetch (fresh, <1s old)
@@ -1800,6 +1868,7 @@ const AdminDashboard = () => {
         skipTechniciansFetch: appliedFreshPrefetch,
       });
       dashboardLoadedWithSessionRef.current = true;
+      setModuleDashboardSessionReady(true);
     } catch (error) {
       console.error('[AdminDashboard] Initial load failed:', error);
     } finally {
@@ -1818,6 +1887,7 @@ const AdminDashboard = () => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT') {
         dashboardLoadedWithSessionRef.current = false;
+        setModuleDashboardSessionReady(false);
         amcAutoCreateAttemptedRef.current = false;
         clearAdminDashboardCache();
         setIsInitialLoad(true);
@@ -1840,19 +1910,19 @@ const AdminDashboard = () => {
     return () => subscription.unsubscribe();
   }, [runDashboardLoadOnceSessionReady]);
 
-  // Check URL parameters for navigation from Settings page
+  // Check URL parameters for navigation from Settings page (re-run when search changes).
   useEffect(() => {
-    const searchParams = new URLSearchParams(window.location.search);
+    if (!location.pathname.startsWith('/admin')) return;
+
+    const searchParams = new URLSearchParams(location.search);
     const view = searchParams.get('view');
     const searchPrefill = searchParams.get('search');
     if (view === 'gst-invoices') {
       setShowGSTInvoicesPage(true);
-      // Clean up URL
-      window.history.replaceState({}, '', '/admin');
+      navigate('/admin', { replace: true });
     } else if (view === 'amc-view') {
       setShowAMCViewPage(true);
-      // Clean up URL
-      window.history.replaceState({}, '', '/admin');
+      navigate('/admin', { replace: true });
     } else if (view === 'letterhead-documents') {
       const typeParam = searchParams.get('type') as LetterheadDocumentType | null;
       const allowed: LetterheadDocumentType[] = [
@@ -1865,7 +1935,7 @@ const AdminDashboard = () => {
         setLetterheadInitialType(typeParam);
       }
       setShowLetterheadDocsPage(true);
-      window.history.replaceState({}, '', '/admin');
+      navigate('/admin', { replace: true });
     } else if (searchPrefill && searchPrefill.trim()) {
       // Pre-fill the admin search box and trigger a search so deep-links from
       // Settings → Advanced search → "Open in Admin" / "Photos" land directly on the result.
@@ -1873,7 +1943,7 @@ const AdminDashboard = () => {
       const action = searchParams.get('action');
       setSearchQuery(trimmed);
       setSearchTerm(trimmed);
-      window.history.replaceState({}, '', '/admin');
+      navigate('/admin', { replace: true });
       void (async () => {
         try {
           const { data, error } = await db.customers.searchSlim(trimmed, 50, {
@@ -1899,7 +1969,7 @@ const AdminDashboard = () => {
         }
       })();
     }
-  }, []);
+  }, [location.pathname, location.search, navigate]);
 
   // Set initial last checked job ID after jobs are loaded
   useEffect(() => {
@@ -1980,10 +2050,19 @@ const AdminDashboard = () => {
   // Reload jobs when filter changes (but not on initial load)
   useEffect(() => {
     if (isInitialLoad) return;
-    setCurrentPage(1);
+
+    const prevFilter = prevStatusFilterRef.current;
+    const filterChanged = prevFilter !== null && prevFilter !== statusFilter;
+    prevStatusFilterRef.current = statusFilter;
+
+    const page = filterChanged ? 1 : currentPage;
+    if (filterChanged) {
+      setCurrentPage(1);
+    }
+
     if (statusFilter === 'COMPLETED' || statusFilter === 'RESCHEDULED') {
       if (!tabCachesStale) {
-        const cacheKey = getJobsListCacheKey(statusFilter, 1);
+        const cacheKey = getJobsListCacheKey(statusFilter, page);
         const cached =
           jobsListCacheRef.current.get(cacheKey) ??
           (getModuleJobsListCache(cacheKey) as Job[] | undefined);
@@ -2005,14 +2084,14 @@ const AdminDashboard = () => {
       } else if (!jobsMatchOngoingTab(jobs)) {
         setJobs([]);
       }
-    } else {
+    } else if (filterChanged) {
       // Denied / All: clear the previous tab's jobs so they don't flash before the fetch lands.
       setJobs([]);
     }
-    loadFilteredJobs(statusFilter, 1);
+    loadFilteredJobs(statusFilter, page);
     // Refresh counts when filter changes
       loadJobCounts();
-  }, [statusFilter, loadFilteredJobs, loadJobCounts, isInitialLoad, getJobsListCacheKey]);
+  }, [statusFilter, loadFilteredJobs, loadJobCounts, isInitialLoad, getJobsListCacheKey, tabCachesStale]);
 
   const resumeAdminSync = useCallback(async (opts?: { invalidateTabCaches?: boolean }) => {
     if (isInitialLoad || !dashboardLoadedWithSessionRef.current) return;

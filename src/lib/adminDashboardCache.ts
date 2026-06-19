@@ -23,6 +23,98 @@ let inflightPrefetch: Promise<AdminDashboardSnapshot | null> | null = null;
 let moduleOngoingJobsSnapshot: unknown[] = [];
 /** Survives remounts for instant Completed / Follow-up tab restore. */
 const moduleJobsListCache = new Map<string, unknown[]>();
+/** True after first successful dashboard boot this browser session (skips cold boot on /settings return). */
+let moduleDashboardSessionReady = false;
+
+export type AdminStatusFilter =
+  | 'ALL'
+  | 'ONGOING'
+  | 'PENDING'
+  | 'ASSIGNED'
+  | 'EN_ROUTE'
+  | 'IN_PROGRESS'
+  | 'COMPLETED'
+  | 'CANCELLED'
+  | 'RESCHEDULED';
+
+export type AdminDashboardUiState = {
+  statusFilter: AdminStatusFilter;
+  currentPage: number;
+  completedDatePreset: 'day' | 'week' | 'month' | 'custom';
+  completedDateFilter: string;
+  completedRangeStartDate: string;
+  completedRangeEndDate: string;
+};
+
+const defaultUiState = (): AdminDashboardUiState => {
+  const today = getTodayLocalDate();
+  return {
+    statusFilter: 'ONGOING',
+    currentPage: 1,
+    completedDatePreset: 'day',
+    completedDateFilter: today,
+    completedRangeStartDate: today,
+    completedRangeEndDate: today,
+  };
+};
+
+let moduleUiState: AdminDashboardUiState = defaultUiState();
+
+function getTodayLocalDate(): string {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+export function getModuleAdminUiState(): AdminDashboardUiState {
+  return moduleUiState;
+}
+
+export function setModuleAdminUiState(partial: Partial<AdminDashboardUiState>): void {
+  moduleUiState = { ...moduleUiState, ...partial };
+}
+
+export function buildJobsListCacheKey(
+  filter: 'COMPLETED' | 'RESCHEDULED',
+  page: number,
+  ui: Pick<
+    AdminDashboardUiState,
+    'completedDatePreset' | 'completedDateFilter' | 'completedRangeStartDate' | 'completedRangeEndDate'
+  >
+): string {
+  if (filter === 'COMPLETED') {
+    if (ui.completedDatePreset === 'day') {
+      return `COMPLETED:day:${ui.completedDateFilter}:p${page}`;
+    }
+    return `COMPLETED:${ui.completedDatePreset}:${ui.completedRangeStartDate}:${ui.completedRangeEndDate}:p${page}`;
+  }
+  return `RESCHEDULED:p${page}`;
+}
+
+export function getModuleDashboardSessionReady(): boolean {
+  return moduleDashboardSessionReady;
+}
+
+export function setModuleDashboardSessionReady(ready: boolean): void {
+  moduleDashboardSessionReady = ready;
+}
+
+/** Jobs list to paint immediately when AdminDashboard remounts after /settings. */
+export function getModuleJobsForUiRestore(ui: AdminDashboardUiState = moduleUiState): unknown[] {
+  if (ui.statusFilter === 'ONGOING') {
+    if (moduleOngoingJobsSnapshot.length > 0) return moduleOngoingJobsSnapshot;
+    const cached = readAdminDashboardCache();
+    if (cached?.jobs?.length) return cached.jobs;
+    return [];
+  }
+  if (ui.statusFilter === 'COMPLETED' || ui.statusFilter === 'RESCHEDULED') {
+    const key = buildJobsListCacheKey(ui.statusFilter, ui.currentPage, ui);
+    return moduleJobsListCache.get(key) ?? [];
+  }
+  return [];
+}
 
 export function getModuleOngoingJobsSnapshot(): unknown[] {
   return moduleOngoingJobsSnapshot;
@@ -79,6 +171,8 @@ export function clearAdminDashboardCache(): void {
   inflightPrefetch = null;
   moduleOngoingJobsSnapshot = [];
   moduleJobsListCache.clear();
+  moduleDashboardSessionReady = false;
+  moduleUiState = defaultUiState();
 }
 
 /**

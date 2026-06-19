@@ -32,8 +32,8 @@ function AdminPortalLoader({ message }: { message: string }) {
 }
 
 /**
- * /admin and /settings entry. Keeps AdminDashboard mounted (hidden on /settings) so
- * returning from Settings does not remount the dashboard and flash the previous tab's jobs.
+ * /admin and /settings entry. Only one heavy shell mounts at a time; dashboard tab
+ * state is restored from adminDashboardCache on remount when returning from Settings.
  *
  * Security note: the dashboard chunk (and the admin-data chunk it pulls in) MUST stay
  * behind the auth gate. Anonymous visitors should only ever download AdminLogin.
@@ -45,6 +45,8 @@ export default function AdminPortal() {
   const [Dashboard, setDashboard] = useState<React.ComponentType | null>(null);
   const [Settings, setSettings] = useState<React.ComponentType | null>(null);
 
+  // Load dashboard chunk as soon as admin is signed in (including while on /settings)
+  // so returning to /admin or opening Settings deep-links does not wait on the chunk.
   useEffect(() => {
     if (authInitializing) return;
     if (!user || !isAdmin) return;
@@ -78,28 +80,25 @@ export default function AdminPortal() {
     }
   }, [user, isAdmin]);
 
-  const booting = authInitializing || (user && isAdmin && !Dashboard);
+  const booting =
+    authInitializing ||
+    (user && isAdmin && (onSettings ? !Settings : !Dashboard));
 
   if (booting) {
-    return <AdminPortalLoader message="Loading..." />;
+    return (
+      <AdminPortalLoader
+        message={onSettings ? 'Loading settings...' : 'Loading...'}
+      />
+    );
   }
 
   if (!user || !isAdmin) {
     return <AdminLogin />;
   }
 
-  return (
-    <>
-      <div className={onSettings ? 'hidden' : undefined} aria-hidden={onSettings}>
-        {Dashboard ? <Dashboard /> : null}
-      </div>
-      {onSettings ? (
-        Settings ? (
-          <Settings />
-        ) : (
-          <AdminPortalLoader message="Loading settings..." />
-        )
-      ) : null}
-    </>
-  );
+  if (onSettings) {
+    return Settings ? <Settings /> : null;
+  }
+
+  return Dashboard ? <Dashboard /> : null;
 }
