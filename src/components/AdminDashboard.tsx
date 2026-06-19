@@ -5668,8 +5668,8 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleSearch = async () => {
-    const trimmedQuery = searchQuery.trim();
+  const runCustomerSearch = useCallback(async (rawQuery: string) => {
+    const trimmedQuery = rawQuery.trim();
     hapticTap();
     setIsSearching(true);
     setSearchTerm(trimmedQuery);
@@ -5688,7 +5688,20 @@ const AdminDashboard = () => {
       setSearchResults(null);
     }
     setIsSearching(false);
-  };
+  }, []);
+
+  const handleSearch = useCallback(async () => {
+    await runCustomerSearch(searchQuery);
+  }, [runCustomerSearch, searchQuery]);
+
+  const handleSearchFromBookingIntent = useCallback((phone: string) => {
+    const query = normalizePhoneForSearch(phone) || phone.trim();
+    if (!query) return;
+    void runCustomerSearch(query);
+    requestAnimationFrame(() => {
+      document.querySelector('[data-admin-search]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, [runCustomerSearch]);
 
   const handleClearSearch = () => {
     hapticTap();
@@ -5709,7 +5722,7 @@ const AdminDashboard = () => {
     const normalized = normalizePhoneForSearch(pasted);
     if (normalized.length >= 10) {
       e.preventDefault();
-      setSearchQuery(normalized);
+      void runCustomerSearch(normalized);
     }
   };
 
@@ -9399,6 +9412,7 @@ const AdminDashboard = () => {
           <WebsiteBookingIntentBanner
             playAlert={playNotificationSound}
             stopAlert={stopNotificationSound}
+            onSearchCustomer={handleSearchFromBookingIntent}
           />
         )}
         {/* Page Header */}
@@ -9406,7 +9420,7 @@ const AdminDashboard = () => {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             
             {/* Search Bar - visible on desktop only, replaces title */}
-            <div className="hidden sm:flex flex-1 max-w-2xl items-center gap-1.5 sm:gap-2 flex-wrap">
+            <div className="hidden sm:flex flex-1 max-w-2xl items-center gap-1.5 sm:gap-2 flex-wrap" data-admin-search>
               <div className="relative flex-1 min-w-[12rem]">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
                 <Input
@@ -9613,7 +9627,7 @@ const AdminDashboard = () => {
         </div>
 
         {/* Search Bar - visible on mobile only (desktop version is in header) */}
-        <div className="mb-4 sm:mb-6 sm:hidden">
+        <div className="mb-4 sm:mb-6 sm:hidden" data-admin-search>
           <div className="flex flex-wrap gap-1.5 w-full max-w-2xl items-center">
             <div className="relative flex-1 min-w-0 basis-[min(100%,12rem)]">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
@@ -9678,14 +9692,6 @@ const AdminDashboard = () => {
               </Button>
             )}
           </div>
-          {searchTerm && (
-            <div className="mt-2 text-sm text-gray-600">
-              Showing results for: <span className="font-medium">"{searchTerm}"</span>
-              <span className="ml-2 text-gray-500">
-                ({filteredCustomers.length} customer{filteredCustomers.length !== 1 ? 's' : ''} found)
-              </span>
-            </div>
-          )}
         </div>
 
         {/* Stats Cards - Clickable Filter Buttons */}
@@ -9701,6 +9707,25 @@ const AdminDashboard = () => {
           allJobs={allFollowUpJobs}
         />
 
+        {searchTerm.trim() && displayedCustomers.length > 0 && !showJobsListLoader && (
+          <div className="mb-4 hidden sm:flex flex-wrap items-center justify-between gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2 text-sm text-gray-700">
+            <div>
+              Showing results for: <span className="font-medium text-gray-900">"{searchTerm}"</span>
+              <span className="ml-2 text-gray-500">
+                ({displayedCustomers.length} customer{displayedCustomers.length !== 1 ? 's' : ''} found)
+              </span>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 shrink-0 text-gray-600 hover:text-gray-900"
+              onClick={handleClearSearch}
+            >
+              <X className="w-4 h-4 mr-1" />
+              Clear search
+            </Button>
+          </div>
+        )}
 
         {/* Date Filter for Denied Jobs */}
         {statusFilter === 'CANCELLED' && (
@@ -10000,6 +10025,7 @@ const AdminDashboard = () => {
 
         {/* Customers with Jobs */}
         <div className="mb-6 pb-2 sm:pb-0">
+          {!searchTerm.trim() && (
           <div className={`flex items-center justify-between flex-wrap gap-2 ${statusFilter === 'ONGOING' ? 'mb-3 sm:mb-1' : 'mb-1'}`}>
             <h2 className="text-lg sm:text-xl font-bold text-gray-900">
               {statusFilter === 'ALL' ? 'All Customers' :
@@ -10010,7 +10036,7 @@ const AdminDashboard = () => {
                `Customers with ${statusFilter} Jobs`}
             </h2>
 
-            {statusFilter === 'ONGOING' && !searchTerm.trim() && (
+            {statusFilter === 'ONGOING' && (
               <Button
                 type="button"
                 variant="outline"
@@ -10036,7 +10062,7 @@ const AdminDashboard = () => {
             )}
             
             {/* Show all followups button */}
-            {statusFilter === 'RESCHEDULED' && !searchTerm.trim() && (() => {
+            {statusFilter === 'RESCHEDULED' && (() => {
               // Calculate total customers with followups (all dates)
               const allCustomersWithFollowups = customersWithJobs.filter(({ allJobs }) => 
                 allJobs.some(job => ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status))
@@ -10088,6 +10114,7 @@ const AdminDashboard = () => {
               );
             })()}
           </div>
+          )}
           {!searchTerm.trim() && (
             <p className={`text-xs text-gray-500 mb-3 ${statusFilter === 'ONGOING' ? 'hidden sm:block' : ''}`}>
               {statusFilter === 'ALL'
@@ -10211,6 +10238,34 @@ const AdminDashboard = () => {
           <div className="space-y-6">
             {showJobsListLoader ? (
               <AdminInlineLoader message={`Loading ${jobsListRefreshLabel} jobs...`} />
+            ) : displayedCustomers.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50/50 px-4 py-12 text-center">
+                {searchTerm.trim() ? (
+                  <>
+                    <p className="text-sm text-gray-600">
+                      No customers found for <span className="font-medium">"{searchTerm}"</span>
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-3"
+                      onClick={handleClearSearch}
+                    >
+                      Clear search
+                    </Button>
+                  </>
+                ) : statusFilter === 'ONGOING' ? (
+                  <p className="text-sm text-gray-600">No ongoing jobs right now.</p>
+                ) : statusFilter === 'COMPLETED' ? (
+                  <p className="text-sm text-gray-600">No completed jobs for the selected date or filters.</p>
+                ) : statusFilter === 'RESCHEDULED' ? (
+                  <p className="text-sm text-gray-600">No follow-up jobs scheduled.</p>
+                ) : statusFilter === 'CANCELLED' ? (
+                  <p className="text-sm text-gray-600">No denied jobs for the selected date.</p>
+                ) : (
+                  <p className="text-sm text-gray-600">No jobs to show for this filter.</p>
+                )}
+              </div>
             ) : (
             displayedCustomers.map(({ customer, allJobs, upcomingJobs, completedJobs, cancelledJobs }) => {
               // Check if this customer has followup jobs scheduled for today or tomorrow (for card border)

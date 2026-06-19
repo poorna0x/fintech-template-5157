@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Phone, Volume2, VolumeX } from 'lucide-react';
+import { Phone, Search, Volume2, VolumeX } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { db, supabase } from '@/lib/supabase';
+import { handlePhoneTap, prefersDirectPhoneCall } from '@/lib/utils';
 
 /** Throttle UPDATE pings (customer typing) so we don’t replay the job-completion sound every few seconds. */
 const UPDATE_SOUND_GAP_MS = 8_000;
@@ -99,9 +101,11 @@ type Props = {
   playAlert?: () => void | Promise<void>;
   /** Stop any ongoing alert sound (e.g., when the row is dismissed). */
   stopAlert?: () => void;
+  /** Fill admin customer search with this phone and run the search. */
+  onSearchCustomer?: (phone: string) => void;
 };
 
-export function WebsiteBookingIntentBanner({ playAlert, stopAlert }: Props) {
+export function WebsiteBookingIntentBanner({ playAlert, stopAlert, onSearchCustomer }: Props) {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [muted, setMuted] = useState(() => {
@@ -255,6 +259,15 @@ export function WebsiteBookingIntentBanner({ playAlert, stopAlert }: Props) {
     }
   };
 
+  const onPhoneTap = async (phone: string) => {
+    try {
+      const action = await handlePhoneTap(phone);
+      if (action === 'copy') toast.success('Phone copied');
+    } catch {
+      toast.error("Couldn't copy phone");
+    }
+  };
+
   const onDismiss = async (id: string) => {
     // Stop sound immediately on dismiss click (even before network roundtrip).
     stopAlert?.();
@@ -304,13 +317,15 @@ export function WebsiteBookingIntentBanner({ playAlert, stopAlert }: Props) {
                 {SITE_LABEL[r.site_key] ?? r.site_key}
               </span>
               <span className="font-medium text-foreground truncate">{r.full_name}</span>
-              <a
-                href={`tel:${r.phone.replace(/\D/g, '')}`}
+              <button
+                type="button"
+                onClick={() => void onPhoneTap(r.phone)}
                 className="inline-flex items-center gap-1 text-blue-700 font-mono tabular-nums hover:underline"
+                title={prefersDirectPhoneCall() ? 'Call' : 'Copy phone'}
               >
                 <Phone className="w-3.5 h-3.5 shrink-0" />
                 {r.phone}
-              </a>
+              </button>
               <span className="text-xs text-muted-foreground">
                 Step {r.current_step}: {STEP_LABEL[r.current_step] ?? '—'}
               </span>
@@ -326,16 +341,30 @@ export function WebsiteBookingIntentBanner({ playAlert, stopAlert }: Props) {
                 Started: {formatStartedAt(r.created_at)}
               </span>
             </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground shrink-0"
-              disabled={dismissingId === r.id}
-              onClick={() => void onDismiss(r.id)}
-            >
-              {dismissingId === r.id ? '…' : 'Done'}
-            </Button>
+            <div className="flex items-center gap-1 shrink-0">
+              {onSearchCustomer ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-xs border-emerald-300 bg-card text-emerald-900 hover:bg-emerald-50"
+                  onClick={() => onSearchCustomer(r.phone)}
+                >
+                  <Search className="w-3.5 h-3.5 mr-1" />
+                  Search
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                disabled={dismissingId === r.id}
+                onClick={() => void onDismiss(r.id)}
+              >
+                {dismissingId === r.id ? '…' : 'Done'}
+              </Button>
+            </div>
           </li>
         ))}
       </ul>

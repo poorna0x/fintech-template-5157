@@ -56,6 +56,27 @@ export function normalizeIndianMobileInput(input: string): string {
   return normalizePhoneForSearch(input).slice(0, 10);
 }
 
+/** Touch / mobile: tap-to-call. Desktop admin: copy number instead. */
+export function prefersDirectPhoneCall(): boolean {
+  if (typeof window === 'undefined') return false;
+  return (
+    window.matchMedia('(pointer: coarse)').matches ||
+    /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+  );
+}
+
+/** Copy on desktop; open dialer on phone/tablet. */
+export async function handlePhoneTap(phone: string): Promise<'call' | 'copy'> {
+  const digits = phone.replace(/\D/g, '');
+  if (!digits) throw new Error('Invalid phone');
+  if (prefersDirectPhoneCall()) {
+    window.location.href = `tel:${digits}`;
+    return 'call';
+  }
+  await navigator.clipboard.writeText(phone.trim());
+  return 'copy';
+}
+
 /**
  * Escape a string for safe use inside PostgreSQL LIKE patterns (% and _ are wildcards, \ is escape).
  */
