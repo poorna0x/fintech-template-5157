@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import AdminLogin from '@/components/AdminLogin';
 import { startAdminDashboardPrefetch } from '@/lib/adminDashboardCache';
 
 const adminDashboardImport = () => import('@/components/AdminDashboard');
+const settingsImport = () => import('./Settings');
 
 function AdminPortalLoader({ message }: { message: string }) {
   return (
@@ -30,19 +32,19 @@ function AdminPortalLoader({ message }: { message: string }) {
 }
 
 /**
- * /admin entry. Security note: the dashboard chunk (and the admin-data chunk it
- * pulls in) MUST stay behind the auth gate. Anonymous visitors hitting /admin
- * should only ever download AdminLogin — never the chunk that contains RPC names
- * like `delete_job_admin`, `backfill_technician_payments`, or table names like
- * `tax_invoices` / `technician_payments`.
+ * /admin and /settings entry. Keeps AdminDashboard mounted (hidden on /settings) so
+ * returning from Settings does not remount the dashboard and flash the previous tab's jobs.
+ *
+ * Security note: the dashboard chunk (and the admin-data chunk it pulls in) MUST stay
+ * behind the auth gate. Anonymous visitors should only ever download AdminLogin.
  */
 export default function AdminPortal() {
+  const { pathname } = useLocation();
+  const onSettings = pathname.startsWith('/settings');
   const { user, isAdmin, authInitializing } = useAuth();
   const [Dashboard, setDashboard] = useState<React.ComponentType | null>(null);
+  const [Settings, setSettings] = useState<React.ComponentType | null>(null);
 
-  // Only load the dashboard chunk after we've confirmed the user is an admin.
-  // Previously this ran on every /admin visit (incl. anonymous), which is what
-  // pulled `admin-data-*.js` over the wire for unauthenticated visitors.
   useEffect(() => {
     if (authInitializing) return;
     if (!user || !isAdmin) return;
@@ -56,6 +58,19 @@ export default function AdminPortal() {
       cancelled = true;
     };
   }, [authInitializing, user, isAdmin, Dashboard]);
+
+  useEffect(() => {
+    if (!onSettings) return;
+    if (Settings) return;
+
+    let cancelled = false;
+    void settingsImport().then((mod) => {
+      if (!cancelled) setSettings(() => mod.default);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [onSettings, Settings]);
 
   useEffect(() => {
     if (user && isAdmin) {
@@ -73,5 +88,18 @@ export default function AdminPortal() {
     return <AdminLogin />;
   }
 
-  return <Dashboard />;
+  return (
+    <>
+      <div className={onSettings ? 'hidden' : undefined} aria-hidden={onSettings}>
+        {Dashboard ? <Dashboard /> : null}
+      </div>
+      {onSettings ? (
+        Settings ? (
+          <Settings />
+        ) : (
+          <AdminPortalLoader message="Loading settings..." />
+        )
+      ) : null}
+    </>
+  );
 }

@@ -116,6 +116,10 @@ import {
   writeAdminDashboardCache,
   clearAdminDashboardCache,
   invalidateAdminDashboardCaches,
+  getModuleOngoingJobsSnapshot,
+  setModuleOngoingJobsSnapshot,
+  getModuleJobsListCache,
+  setModuleJobsListCache,
   type AdminDashboardSnapshot,
 } from '@/lib/adminDashboardCache';
 import { StatusBadge } from './admin/StatusBadge';
@@ -165,6 +169,13 @@ import {
 
 const ZERO_COMMISSION_EMPLOYEE_ID = 'TECH851703400';
 
+const ONGOING_JOB_STATUSES = new Set(['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS']);
+
+function jobsMatchOngoingTab(jobs: Job[]): boolean {
+  if (jobs.length === 0) return true;
+  return jobs.some((job) => ONGOING_JOB_STATUSES.has(job.status));
+}
+
 declare global {
   interface Window {
     google: any;
@@ -207,16 +218,40 @@ const AdminDashboard = () => {
   const { user, isAdmin, authInitializing, logout } = useAuth();
   const { isManager } = useAdminRole();
   const managerRestrictedTitle = 'Restricted for Manager role';
+  const initialDashboardCache = readAdminDashboardCache();
+  const initialOngoingJobs = initialDashboardCache
+    ? ((initialDashboardCache.jobs as Job[]) ?? [])
+    : ((getModuleOngoingJobsSnapshot() as Job[]) ?? []);
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [jobs, setJobs] = useState<Job[]>([]);
+  const [jobs, setJobs] = useState<Job[]>(initialOngoingJobs);
   const [allFollowUpJobs, setAllFollowUpJobs] = useState<Job[]>([]); // All follow-up jobs for glow effect
-  const [technicians, setTechnicians] = useState<Technician[]>([]);
+  const [technicians, setTechnicians] = useState<Technician[]>(() => {
+    if (!initialDashboardCache?.technicianRows) return [];
+    return (initialDashboardCache.technicianRows as any[]).map((tech) => ({
+      id: tech.id,
+      fullName: tech.full_name,
+      phone: tech.phone,
+      email: tech.email,
+      employeeId: tech.employee_id,
+      status: tech.status || 'AVAILABLE',
+      skills: tech.skills,
+      serviceAreas: tech.service_areas,
+      currentLocation: tech.current_location,
+      workSchedule: tech.work_schedule,
+      performance: tech.performance,
+      vehicle: tech.vehicle,
+      salary: tech.salary,
+      qrCode: tech.qr_code || tech.qrCode || '',
+      createdAt: tech.created_at,
+      updatedAt: tech.updated_at,
+    }));
+  });
   // Latest technicians for async callbacks (avoids loadFilteredJobs ↔ technicians churn → assign/reassign dialog blink).
   const techniciansRef = useRef<Technician[]>([]);
   techniciansRef.current = technicians;
   // Slim technician list for historical displays (Completed By, reports, etc.). Includes INACTIVE.
   const [techniciansForReports, setTechniciansForReports] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !initialDashboardCache && initialOngoingJobs.length === 0);
   const [customerAMCStatus, setCustomerAMCStatus] = useState<Record<string, boolean>>({}); // Map customer ID to hasActiveAMC
   const [customerPriorServiceStatus, setCustomerPriorServiceStatus] = useState<Record<string, boolean>>({}); // ≥1 completed job
   const [searchTerm, setSearchTerm] = useState('');
@@ -800,7 +835,8 @@ const AdminDashboard = () => {
   const [draftCompletedServiceSubTypeFilter, setDraftCompletedServiceSubTypeFilter] = useState<string>('all');
   const [draftCompletedByFilter, setDraftCompletedByFilter] = useState<string>('all');
   // Job counts for stats cards (loaded separately)
-  const [jobCounts, setJobCounts] = useState<{ongoing: number; followup: number; denied: number; completed: number}>({
+  const [jobCounts, setJobCounts] = useState<{ongoing: number; followup: number; denied: number; completed: number}>(() =>
+    initialDashboardCache?.jobCounts ?? {
     ongoing: 0,
     followup: 0,
     denied: 0,
@@ -830,7 +866,9 @@ const AdminDashboard = () => {
   /** Session cache for Completed / Follow-up tab switches; always refreshed in background on open. */
   const jobsListCacheRef = useRef(new Map<string, Job[]>());
   /** Snapshot so switching back to Ongoing feels instant without Completed-style cache. */
-  const ongoingJobsSnapshotRef = useRef<Job[]>([]);
+  const ongoingJobsSnapshotRef = useRef<Job[]>(
+    initialOngoingJobs.length > 0 ? initialOngoingJobs : (getModuleOngoingJobsSnapshot() as Job[])
+  );
   /** Newly created customers (row + optional job) until they appear in embedded job payloads — avoids derive-from-jobs wiping them. */
   const pendingNewCustomersRef = useRef<Map<string, Customer>>(new Map());
 
@@ -1290,8 +1328,11 @@ const AdminDashboard = () => {
       setJobs(data);
       if (filter === 'ONGOING') {
         ongoingJobsSnapshotRef.current = data;
+        setModuleOngoingJobsSnapshot(data);
       } else if (filter === 'COMPLETED' || filter === 'RESCHEDULED') {
-        jobsListCacheRef.current.set(getJobsListCacheKey(filter, page), data);
+        const cacheKey = getJobsListCacheKey(filter, page);
+        jobsListCacheRef.current.set(cacheKey, data);
+        setModuleJobsListCache(cacheKey, data);
       }
     };
     try {
@@ -1513,6 +1554,7 @@ const AdminDashboard = () => {
     const jobList = (snap.jobs as Job[]) ?? [];
     setJobs(jobList);
     ongoingJobsSnapshotRef.current = jobList;
+    setModuleOngoingJobsSnapshot(jobList);
     setTotalCount(jobList.length);
     setTotalPages(1);
     const transformed = (snap.technicianRows as any[]).map(transformTechnicianData);
@@ -1643,6 +1685,7 @@ const AdminDashboard = () => {
           const list = ongoingResult.data || [];
           setJobs(list);
           ongoingJobsSnapshotRef.current = list;
+          setModuleOngoingJobsSnapshot(list);
           setTotalCount(list.length);
           setTotalPages(1);
         }
@@ -1685,7 +1728,9 @@ const AdminDashboard = () => {
     }
   };
 
-  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [isInitialLoad, setIsInitialLoad] = useState(
+    () => !initialDashboardCache && initialOngoingJobs.length === 0
+  );
   const dashboardLoadedWithSessionRef = useRef(false);
   const adminRealtimeStatusRef = useRef<string | null>(null);
   const loadDashboardDataRef = useRef(loadDashboardData);
@@ -1920,10 +1965,22 @@ const AdminDashboard = () => {
     if (isInitialLoad) return;
     setCurrentPage(1);
     if (statusFilter === 'COMPLETED' || statusFilter === 'RESCHEDULED') {
-      const cached = jobsListCacheRef.current.get(getJobsListCacheKey(statusFilter, 1));
+      const cacheKey = getJobsListCacheKey(statusFilter, 1);
+      const cached =
+        jobsListCacheRef.current.get(cacheKey) ??
+        (getModuleJobsListCache(cacheKey) as Job[] | undefined);
       setJobs(cached ?? []);
-    } else if (statusFilter === 'ONGOING' && ongoingJobsSnapshotRef.current.length > 0) {
-      setJobs(ongoingJobsSnapshotRef.current);
+    } else if (statusFilter === 'ONGOING') {
+      const snapshot =
+        ongoingJobsSnapshotRef.current.length > 0
+          ? ongoingJobsSnapshotRef.current
+          : (getModuleOngoingJobsSnapshot() as Job[]);
+      if (snapshot.length > 0) {
+        setJobs(snapshot);
+      } else if (!jobsMatchOngoingTab(jobs)) {
+        // Returning from another tab (or remount): hide Completed/Follow-up rows on Ongoing.
+        setJobs([]);
+      }
     } else {
       // Denied / All: clear the previous tab's jobs so they don't flash before the fetch lands.
       setJobs([]);
@@ -9115,10 +9172,13 @@ const AdminDashboard = () => {
     Boolean(user && isAdmin) && isInitialLoad;
 
   const isJobsListRefreshing = loading && !isInitialLoad;
-  // Ongoing keeps its instant snapshot; every other tab shows an inline loader while fetching
-  // (prevents the denied tab from flashing the previous tab's jobs for a split second).
+  const ongoingTabHasStaleJobs =
+    statusFilter === 'ONGOING' && jobs.length > 0 && !jobsMatchOngoingTab(jobs);
+  // Ongoing keeps its instant snapshot; other tabs (and Ongoing when stale jobs linger) show a loader.
   const showJobsListLoader =
-    statusFilter !== 'ONGOING' && isJobsListRefreshing && displayedCustomers.length === 0;
+    isJobsListRefreshing &&
+    displayedCustomers.length === 0 &&
+    (statusFilter !== 'ONGOING' || ongoingTabHasStaleJobs);
   const jobsListRefreshLabel =
     statusFilter === 'RESCHEDULED'
       ? 'follow-up'

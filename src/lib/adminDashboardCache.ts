@@ -19,6 +19,27 @@ export type AdminDashboardSnapshot = {
 
 let inflightPrefetch: Promise<AdminDashboardSnapshot | null> | null = null;
 
+/** Survives AdminDashboard remounts (e.g. route changes) for instant Ongoing tab restore. */
+let moduleOngoingJobsSnapshot: unknown[] = [];
+/** Survives remounts for instant Completed / Follow-up tab restore. */
+const moduleJobsListCache = new Map<string, unknown[]>();
+
+export function getModuleOngoingJobsSnapshot(): unknown[] {
+  return moduleOngoingJobsSnapshot;
+}
+
+export function setModuleOngoingJobsSnapshot(jobs: unknown[]): void {
+  moduleOngoingJobsSnapshot = jobs;
+}
+
+export function getModuleJobsListCache(key: string): unknown[] | undefined {
+  return moduleJobsListCache.get(key);
+}
+
+export function setModuleJobsListCache(key: string, jobs: unknown[]): void {
+  moduleJobsListCache.set(key, jobs);
+}
+
 export function readAdminDashboardCache(): AdminDashboardSnapshot | null {
   if (typeof window === 'undefined') return null;
   try {
@@ -52,6 +73,8 @@ export function clearAdminDashboardCache(): void {
     /* ignore */
   }
   inflightPrefetch = null;
+  moduleOngoingJobsSnapshot = [];
+  moduleJobsListCache.clear();
 }
 
 /**
@@ -91,9 +114,12 @@ async function fetchCriticalSnapshot(): Promise<AdminDashboardSnapshot | null> {
       completed: 0,
     };
 
+    const jobs = jobsResult.data ?? [];
+    setModuleOngoingJobsSnapshot(jobs);
+
     return {
       savedAt: Date.now(),
-      jobs: jobsResult.data ?? [],
+      jobs,
       technicianRows: techniciansResult.data ?? [],
       jobCounts,
     };
