@@ -24,6 +24,9 @@ import {
   TrendingUp,
   Globe,
   CalendarRange,
+  ChevronDown,
+  Trash2,
+  Loader2,
 } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { getPublicSiteLabel, type PublicSiteKey } from '@/lib/websiteSiteKey';
@@ -32,6 +35,7 @@ import { cn } from '@/lib/utils';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import type { TrendPoint } from './websiteAnalyticsTypes';
 import { AnalyticsListPagination } from '@/components/admin/AnalyticsListPagination';
+import { WebsiteAnalyticsDataDelete } from '@/components/admin/WebsiteAnalyticsDataDelete';
 
 const WebsiteAnalyticsTrendChart = lazy(() => import('./WebsiteAnalyticsTrendChart'));
 
@@ -419,11 +423,13 @@ export function WebsiteAnalyticsCard() {
   const [recentEventsTotal, setRecentEventsTotal] = useState(0);
   const [recentPage, setRecentPage] = useState(1);
   const [recentPerPage, setRecentPerPage] = useState(10);
+  const [recentLoading, setRecentLoading] = useState(false);
   const [siteFilter, setSiteFilter] = useState<SiteFilter>('all');
   const [periodMode, setPeriodMode] = useState<PeriodMode>('today');
   const [customFrom, setCustomFrom] = useState(todayIst);
   const [customTo, setCustomTo] = useState(todayIst);
   const [chartMetric, setChartMetric] = useState<ChartMetric>('visitors');
+  const [showDeletePanel, setShowDeletePanel] = useState(false);
 
   const activeRange = useMemo(() => {
     if (periodMode === 'today') {
@@ -440,22 +446,28 @@ export function WebsiteAnalyticsCard() {
 
   const fetchRecentActivity = useCallback(
     async (page: number, perPage: number) => {
-      const siteKey = siteFilter === 'all' ? undefined : siteFilter;
-      const recentRes = await db.websiteAnalytics.getRecentEvents({
-        from: activeRange.from,
-        to: activeRange.to,
-        siteKey,
-        limit: perPage,
-        offset: (page - 1) * perPage,
-      });
-      if (recentRes.error) {
-        console.warn(recentRes.error);
-        setRecentEvents([]);
-        setRecentEventsTotal(0);
-        return;
+      setRecentLoading(true);
+      setRecentEvents([]);
+      try {
+        const siteKey = siteFilter === 'all' ? undefined : siteFilter;
+        const recentRes = await db.websiteAnalytics.getRecentEvents({
+          from: activeRange.from,
+          to: activeRange.to,
+          siteKey,
+          limit: perPage,
+          offset: (page - 1) * perPage,
+        });
+        if (recentRes.error) {
+          console.warn(recentRes.error);
+          setRecentEvents([]);
+          setRecentEventsTotal(0);
+          return;
+        }
+        setRecentEvents((recentRes.data?.rows as RecentEvent[]) || []);
+        setRecentEventsTotal(recentRes.data?.total ?? 0);
+      } finally {
+        setRecentLoading(false);
       }
-      setRecentEvents((recentRes.data?.rows as RecentEvent[]) || []);
-      setRecentEventsTotal(recentRes.data?.total ?? 0);
     },
     [activeRange.from, activeRange.to, siteFilter]
   );
@@ -497,22 +509,14 @@ export function WebsiteAnalyticsCard() {
 
   const recentTotalPages = Math.max(1, Math.ceil(recentEventsTotal / recentPerPage));
 
-  const handleRecentPageChange = useCallback(
-    (page: number) => {
-      setRecentPage(page);
-      void fetchRecentActivity(page, recentPerPage);
-    },
-    [fetchRecentActivity, recentPerPage]
-  );
+  const handleRecentPageChange = useCallback((page: number) => {
+    setRecentPage(page);
+  }, []);
 
-  const handleRecentPerPageChange = useCallback(
-    (perPage: number) => {
-      setRecentPerPage(perPage);
-      setRecentPage(1);
-      void fetchRecentActivity(1, perPage);
-    },
-    [fetchRecentActivity]
-  );
+  const handleRecentPerPageChange = useCallback((perPage: number) => {
+    setRecentPerPage(perPage);
+    setRecentPage(1);
+  }, []);
 
   const filteredDaily = useMemo(() => {
     const rows = summary?.daily ?? [];
@@ -923,13 +927,18 @@ export function WebsiteAnalyticsCard() {
                 (not GPS)—VPN, iCloud Private Relay, or ISP routing can show another country.
               </p>
 
-              {recentEventsTotal === 0 ? (
+              {recentLoading && recentEvents.length === 0 ? (
+                <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground rounded-lg border border-dashed border-border">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Loading activity…
+                </div>
+              ) : recentEventsTotal === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-6 rounded-lg border border-dashed border-border">
                   No events in this range.
                 </p>
               ) : (
                 <>
-                  <div id="recent-activity-list-top" className="scroll-mt-4" aria-hidden />
+                  <div id="recent-activity-list-top" className="scroll-mt-24" aria-hidden />
 
                   <div className="space-y-2 md:hidden">
                     {recentEvents.map((ev) => (
@@ -1009,6 +1018,7 @@ export function WebsiteAnalyticsCard() {
                       itemsPerPage={recentPerPage}
                       itemLabel="events"
                       scrollAnchorId="recent-activity-list-top"
+                      loading={recentLoading}
                       onPageChange={handleRecentPageChange}
                       onItemsPerPageChange={handleRecentPerPageChange}
                     />
@@ -1018,6 +1028,36 @@ export function WebsiteAnalyticsCard() {
             </div>
           </>
         )}
+
+        <div className="mt-6 pt-5 border-t border-border">
+          <button
+            type="button"
+            className="flex w-full items-center justify-between gap-3 rounded-xl border border-border bg-muted/10 px-3 py-3 sm:px-4 text-left touch-manipulation hover:bg-muted/20 transition-colors"
+            onClick={() => setShowDeletePanel((v) => !v)}
+            aria-expanded={showDeletePanel}
+          >
+            <span className="flex items-center gap-2 min-w-0">
+              <Trash2 className="w-4 h-4 shrink-0 text-muted-foreground" />
+              <span className="min-w-0">
+                <span className="block text-sm font-medium text-foreground">Delete analytics data</span>
+                <span className="block text-xs text-muted-foreground mt-0.5 truncate sm:whitespace-normal">
+                  By time, day, or date range
+                </span>
+              </span>
+            </span>
+            <ChevronDown
+              className={cn(
+                'w-5 h-5 shrink-0 text-muted-foreground transition-transform',
+                showDeletePanel && 'rotate-180'
+              )}
+            />
+          </button>
+          {showDeletePanel ? (
+            <div className="mt-3">
+              <WebsiteAnalyticsDataDelete onDeleted={() => void refreshAll()} />
+            </div>
+          ) : null}
+        </div>
       </CardContent>
     </Card>
   );

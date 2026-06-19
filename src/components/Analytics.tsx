@@ -34,6 +34,7 @@ import { Button } from '@/components/ui/button';
 const SparePartsAnalytics = React.lazy(() => import('@/components/admin/SparePartsAnalytics'));
 import { WebsiteAnalyticsGate } from '@/components/admin/WebsiteAnalyticsGate';
 import { AnalyticsListPagination } from '@/components/admin/AnalyticsListPagination';
+import { AnalyticsLoadSection } from '@/components/admin/AnalyticsLoadSection';
 
 interface AnalyticsData {
   totalJobs: number;
@@ -1334,6 +1335,9 @@ const Analytics = () => {
 
   const loadTopLocations = async (page = 1, perPage = locationPerPage, search = locationSearch) => {
     setLoadingLocationStats(true);
+    if (locationsLoaded) {
+      setLocationRows([]);
+    }
     try {
       const { startDate, endDate } = getDateRange();
       const { data, error } = await db.analyticsPaginated.getTopLocations({
@@ -1364,6 +1368,9 @@ const Analytics = () => {
 
   const loadTopBrands = async (page = 1, perPage = brandPerPage, search = brandSearch) => {
     setLoadingBrandStats(true);
+    if (brandsLoaded) {
+      setBrandRows([]);
+    }
     try {
       const { startDate, endDate } = getDateRange();
       const { data, error } = await db.analyticsPaginated.getTopBrands({
@@ -1755,14 +1762,14 @@ const Analytics = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
+      <div className="flex flex-col gap-4 w-full sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Analytics Dashboard</h2>
           <p className="text-gray-600">Comprehensive performance metrics and insights</p>
         </div>
-        
-        <div className="flex flex-col gap-3 w-full sm:flex-row">
-          <div className="flex flex-col gap-2 w-full sm:flex-row sm:items-center sm:w-auto">
+
+        <div className="flex flex-col gap-3 w-full sm:w-auto sm:ml-auto sm:items-end sm:shrink-0">
+          <div className="flex flex-col gap-2 w-full sm:flex-row sm:items-center sm:justify-end sm:w-auto">
             <div className="flex items-center gap-2">
               <Filter className="w-4 h-4 text-gray-500 shrink-0" />
               <Label htmlFor="period-select" className="text-sm font-medium text-gray-700 whitespace-nowrap">
@@ -1790,7 +1797,7 @@ const Analytics = () => {
           </div>
           
           {period === 'custom' && (
-            <div className="grid grid-cols-1 gap-2 w-full sm:flex sm:items-center sm:gap-2 sm:w-auto">
+            <div className="grid grid-cols-1 gap-2 w-full sm:flex sm:items-center sm:justify-end sm:gap-2 sm:w-auto">
               <DatePicker
                 value={customStartDate}
                 onChange={(v) => v && setCustomStartDate(v)}
@@ -1811,7 +1818,7 @@ const Analytics = () => {
               type="month"
               value={customMonthValue}
               onChange={(e) => setCustomMonthValue(e.target.value)}
-              className="w-full sm:w-[160px]"
+              className="w-full sm:w-[160px] sm:ml-auto"
               max={new Date().toISOString().slice(0, 7)}
             />
           )}
@@ -2323,36 +2330,17 @@ const Analytics = () => {
       )}
 
       {/* Top locations - load on demand */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <MapPin className="w-5 h-5" />
-            Top locations
-          </CardTitle>
-          <CardDescription>
-            Jobs by one-word location (e.g. KR Puram, JP Nagar). Installation includes Installation, Reinstallation, Uninstallation; all other types count as Service. Click Load to fetch for the selected period.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-4 sm:p-6 pt-0 space-y-4">
-          <Button
-            type="button"
-            onClick={() => void loadTopLocations(1, locationPerPage, locationSearch)}
-            disabled={loadingLocationStats}
-            className="w-full sm:w-auto"
-          >
-            {loadingLocationStats ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Loading top locations…
-              </>
-            ) : (
-              <>
-                <MapPin className="w-4 h-4 mr-2" />
-                Load top locations
-              </>
-            )}
-          </Button>
-          {locationsLoaded && (
+      <AnalyticsLoadSection
+        title="Top locations"
+        description="Jobs by one-word location (e.g. KR Puram, JP Nagar). Installation includes Installation, Reinstallation, Uninstallation; all other types count as Service."
+        icon={<MapPin />}
+        loadLabel="Load top locations"
+        loadingLabel="Loading top locations…"
+        onLoad={() => void loadTopLocations(1, locationPerPage, locationSearch)}
+        loading={loadingLocationStats}
+        loaded={locationsLoaded}
+        emptyHint="Load top locations for the selected period. Uses server-side pagination to save data."
+      >
             <>
               <div className="relative w-full">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
@@ -2363,8 +2351,13 @@ const Analytics = () => {
                   className="pl-9 w-full"
                 />
               </div>
-              <div id="top-locations-list-top" className="scroll-mt-4" aria-hidden />
-              {locationTotal === 0 && !locationSearch.trim() ? (
+              <div id="top-locations-list-top" className="scroll-mt-24" aria-hidden />
+              {loadingLocationStats && locationRows.length === 0 ? (
+                <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground rounded-lg border border-dashed border-border">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Loading locations…
+                </div>
+              ) : locationTotal === 0 && !locationSearch.trim() ? (
                 <p className="text-sm text-gray-500 text-center py-6 rounded-lg border border-dashed border-gray-200">
                   No location data for this period.
                 </p>
@@ -2424,6 +2417,7 @@ const Analytics = () => {
                       itemsPerPage={locationPerPage}
                       itemLabel="locations"
                       scrollAnchorId="top-locations-list-top"
+                      loading={loadingLocationStats}
                       onPageChange={(p) => void loadTopLocations(p, locationPerPage, locationSearch)}
                       onItemsPerPageChange={(s) => void loadTopLocations(1, s, locationSearch)}
                     />
@@ -2431,41 +2425,20 @@ const Analytics = () => {
                 </>
               )}
             </>
-          )}
-        </CardContent>
-      </Card>
+      </AnalyticsLoadSection>
 
       {/* Top brands - load on demand */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Award className="w-5 h-5" />
-            Top brands
-          </CardTitle>
-          <CardDescription>
-            Jobs grouped by RO brand name for the selected period. Model names are not shown.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-4 sm:p-6 pt-0 space-y-4">
-          <Button
-            type="button"
-            onClick={() => void loadTopBrands(1, brandPerPage, brandSearch)}
-            disabled={loadingBrandStats}
-            className="w-full sm:w-auto"
-          >
-            {loadingBrandStats ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Loading top brands…
-              </>
-            ) : (
-              <>
-                <Award className="w-4 h-4 mr-2" />
-                Load top brands
-              </>
-            )}
-          </Button>
-          {brandsLoaded && (
+      <AnalyticsLoadSection
+        title="Top brands"
+        description="Jobs grouped by RO brand name for the selected period. Model names are not shown."
+        icon={<Award />}
+        loadLabel="Load top brands"
+        loadingLabel="Loading top brands…"
+        onLoad={() => void loadTopBrands(1, brandPerPage, brandSearch)}
+        loading={loadingBrandStats}
+        loaded={brandsLoaded}
+        emptyHint="Load top brands for the selected period."
+      >
             <>
               <div className="relative w-full">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
@@ -2476,8 +2449,13 @@ const Analytics = () => {
                   className="pl-9 w-full"
                 />
               </div>
-              <div id="top-brands-list-top" className="scroll-mt-4" aria-hidden />
-              {brandTotal === 0 && !brandSearch.trim() ? (
+              <div id="top-brands-list-top" className="scroll-mt-24" aria-hidden />
+              {loadingBrandStats && brandRows.length === 0 ? (
+                <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground rounded-lg border border-dashed border-border">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Loading brands…
+                </div>
+              ) : brandTotal === 0 && !brandSearch.trim() ? (
                 <p className="text-sm text-gray-500 text-center py-6 rounded-lg border border-dashed border-gray-200">
                   No brand data for this period.
                 </p>
@@ -2533,6 +2511,7 @@ const Analytics = () => {
                       itemsPerPage={brandPerPage}
                       itemLabel="brands"
                       scrollAnchorId="top-brands-list-top"
+                      loading={loadingBrandStats}
                       onPageChange={(p) => void loadTopBrands(p, brandPerPage, brandSearch)}
                       onItemsPerPageChange={(s) => void loadTopBrands(1, s, brandSearch)}
                     />
@@ -2540,28 +2519,19 @@ const Analytics = () => {
                 </>
               )}
             </>
-          )}
-        </CardContent>
-      </Card>
+      </AnalyticsLoadSection>
 
       {/* Spare parts usage - lazy: component + data load only when opened */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Package className="w-5 h-5" />
-            Spare parts usage
-          </CardTitle>
-          <CardDescription>
-            Parts logged by technicians for {getPeriodLabel()}. Loaded on demand.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-4 sm:p-6 pt-0 space-y-4">
-          {!showSpareParts ? (
-            <Button type="button" className="w-full sm:w-auto" onClick={() => setShowSpareParts(true)}>
-              <Package className="w-4 h-4 mr-2" />
-              Load spare parts usage
-            </Button>
-          ) : (
+      <AnalyticsLoadSection
+        title="Spare parts usage"
+        description={`Parts logged by technicians for ${getPeriodLabel()}. Loaded on demand.`}
+        icon={<Package />}
+        loadLabel="Load spare parts usage"
+        loadingLabel="Loading spare parts…"
+        onLoad={() => setShowSpareParts(true)}
+        loaded={showSpareParts}
+        emptyHint="Load spare parts usage for the selected period."
+      >
             <React.Suspense
               fallback={
                 <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
@@ -2580,36 +2550,19 @@ const Analytics = () => {
                 );
               })()}
             </React.Suspense>
-          )}
-        </CardContent>
-      </Card>
+      </AnalyticsLoadSection>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <PhoneForwarded className="w-5 h-5" />
-            Direct / website conversions
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-4 sm:p-6 pt-0 space-y-4">
-          <Button
-            type="button"
-            onClick={loadDirectWebsiteConversions}
-            disabled={loadingDirectConversion}
-            className="w-full sm:w-auto"
-          >
-            {loadingDirectConversion ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Loading conversions…
-              </>
-            ) : (
-              <>
-                <PhoneForwarded className="w-4 h-4 mr-2" />
-                Load direct / website conversions
-              </>
-            )}
-          </Button>
+      <AnalyticsLoadSection
+        title="Direct / website conversions"
+        icon={<PhoneForwarded />}
+        loadLabel="Load direct / website conversions"
+        loadingLabel="Loading conversions…"
+        onLoad={loadDirectWebsiteConversions}
+        loading={loadingDirectConversion}
+        loaded={analytics.directWebsiteConversions !== undefined}
+        keepActionVisible
+        emptyHint="Load conversion breakdown by first-touch lead source for the selected period."
+      >
           {analytics.directWebsiteConversions &&
             analytics.directWebsiteConversions.byOriginalSource.length > 0 && (
               <div className="space-y-4">
@@ -2670,40 +2623,20 @@ const Analytics = () => {
           {analytics.directWebsiteConversions && analytics.directWebsiteConversions.totalJobs === 0 && (
             <p className="text-sm text-gray-500">None for this period.</p>
           )}
-        </CardContent>
-      </Card>
+      </AnalyticsLoadSection>
 
       {/* Repeat vs new customers - load on demand */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Users className="w-5 h-5" />
-            Repeat vs new customers
-          </CardTitle>
-          <CardDescription>Customer mix for {getPeriodLabel()}</CardDescription>
-        </CardHeader>
-        <CardContent className="p-4 sm:p-6 pt-0 space-y-4">
-          {!analytics.repeatVsNew && (
-            <Button
-              type="button"
-              onClick={loadRepeatVsNew}
-              disabled={loadingRepeatVsNew}
-              className="w-full sm:w-auto"
-            >
-              {loadingRepeatVsNew ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Loading customer mix…
-                </>
-              ) : (
-                <>
-                  <Users className="w-4 h-4 mr-2" />
-                  Load repeat vs new customers
-                </>
-              )}
-            </Button>
-          )}
-
+      <AnalyticsLoadSection
+        title="Repeat vs new customers"
+        description={`Customer mix for ${getPeriodLabel()}`}
+        icon={<Users />}
+        loadLabel="Load repeat vs new customers"
+        loadingLabel="Loading customer mix…"
+        onLoad={loadRepeatVsNew}
+        loading={loadingRepeatVsNew}
+        loaded={!!analytics.repeatVsNew}
+        emptyHint="Load new vs returning customer breakdown for the selected period."
+      >
           {analytics.repeatVsNew && analytics.repeatVsNew.activeCustomers === 0 && (
             <p className="text-sm text-gray-500">No customer activity for this period.</p>
           )}
@@ -2810,8 +2743,7 @@ const Analytics = () => {
               </div>
             );
           })()}
-        </CardContent>
-      </Card>
+      </AnalyticsLoadSection>
 
       {/* Public website stats — own date/site filters; not tied to dashboard Period above */}
       <WebsiteAnalyticsGate />

@@ -1,7 +1,7 @@
 import { lazy, Suspense, useState } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { BarChart3, Loader2 } from 'lucide-react';
+import { AnalyticsLoadSection } from '@/components/admin/AnalyticsLoadSection';
 
 const WebsiteAnalyticsCard = lazy(() =>
   import('./WebsiteAnalyticsCard').then((m) => ({ default: m.WebsiteAnalyticsCard }))
@@ -13,24 +13,17 @@ export function WebsiteAnalyticsGate() {
 
   if (!open) {
     return (
-      <Card id="section-website-analytics">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
-            <BarChart3 className="w-5 h-5 shrink-0" />
-            Website analytics
-          </CardTitle>
-          <CardDescription className="text-sm mt-1 max-w-2xl">
-            Visitors, calls, and bookings on hydrogenro.com and elevenro.com (IST). Uses its own
-            date and site filters — not the dashboard Period selector above.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-4 sm:p-6 pt-0">
-          <Button type="button" className="w-full sm:w-auto" onClick={() => setOpen(true)}>
-            <BarChart3 className="w-4 h-4 mr-2" />
-            Load website analytics
-          </Button>
-        </CardContent>
-      </Card>
+      <AnalyticsLoadSection
+        id="section-website-analytics"
+        title="Website analytics"
+        description="Visitors, calls, and bookings on hydrogenro.com and elevenro.com (IST). Uses its own date and site filters — not the dashboard Period selector above."
+        icon={<BarChart3 />}
+        loadLabel="Load website analytics"
+        loadingLabel="Loading website analytics…"
+        onLoad={() => setOpen(true)}
+        loaded={false}
+        emptyHint="Load visitor, call, and booking analytics for your public websites."
+      />
     );
   }
 

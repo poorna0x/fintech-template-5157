@@ -6117,6 +6117,46 @@ export const db = {
         error: null,
       };
     },
+    async previewDelete(opts: {
+      mode: 'older_than' | 'single_day' | 'date_range' | 'time_window';
+      olderThanDays?: number | null;
+      fromDate?: string | null;
+      toDate?: string | null;
+      startTime?: string | null;
+      endTime?: string | null;
+      siteKey?: PublicSiteKey | null;
+    }) {
+      const { data, error } = await supabase.rpc('preview_website_analytics_delete', {
+        p_mode: opts.mode,
+        p_older_than_days: opts.olderThanDays ?? null,
+        p_from_date: opts.fromDate ?? null,
+        p_to_date: opts.toDate ?? null,
+        p_site_key: opts.siteKey ?? null,
+        p_start_time: opts.startTime ?? null,
+        p_end_time: opts.endTime ?? null,
+      });
+      return { data, error };
+    },
+    async deleteEvents(opts: {
+      mode: 'older_than' | 'single_day' | 'date_range' | 'time_window';
+      olderThanDays?: number | null;
+      fromDate?: string | null;
+      toDate?: string | null;
+      startTime?: string | null;
+      endTime?: string | null;
+      siteKey?: PublicSiteKey | null;
+    }) {
+      const { data, error } = await supabase.rpc('delete_website_analytics_events', {
+        p_mode: opts.mode,
+        p_older_than_days: opts.olderThanDays ?? null,
+        p_from_date: opts.fromDate ?? null,
+        p_to_date: opts.toDate ?? null,
+        p_site_key: opts.siteKey ?? null,
+        p_start_time: opts.startTime ?? null,
+        p_end_time: opts.endTime ?? null,
+      });
+      return { data, error };
+    },
   },
 
   analyticsPaginated: {

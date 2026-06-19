@@ -76,6 +76,7 @@ const SparePartsAnalytics: React.FC<SparePartsAnalyticsProps> = ({ startISO, end
     async (nextPage: number, nextPerPage: number, nextSearch: string) => {
       setLoading(true);
       setError(null);
+      setRows([]);
       try {
         const { data, error: err } = await db.analyticsPaginated.getSparePartsUsage({
           startISO,
@@ -184,9 +185,14 @@ const SparePartsAnalytics: React.FC<SparePartsAnalyticsProps> = ({ startISO, end
         />
       </div>
 
-      <div id="spare-parts-list-top" className="scroll-mt-4" aria-hidden />
+      <div id="spare-parts-list-top" className="scroll-mt-24" aria-hidden />
 
-      {rows.length === 0 ? (
+      {loading && rows.length === 0 ? (
+        <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground rounded-lg border border-dashed border-border">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          Loading spare parts…
+        </div>
+      ) : rows.length === 0 ? (
         <p className="text-sm text-muted-foreground text-center py-6 rounded-lg border border-dashed border-border">
           No parts match your search.
         </p>
@@ -254,6 +260,7 @@ const SparePartsAnalytics: React.FC<SparePartsAnalyticsProps> = ({ startISO, end
               itemsPerPage={perPage}
               itemLabel="parts"
               scrollAnchorId="spare-parts-list-top"
+              loading={loading}
               onPageChange={handlePageChange}
               onItemsPerPageChange={handlePerPageChange}
             />

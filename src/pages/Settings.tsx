@@ -54,6 +54,7 @@ import { CommonQrCode, invalidateQrCodesCache, normalizeTechnicianAssignedCommon
 // imported at their call sites so they stay out of the main Settings chunk.
 import CallingPage from '@/pages/CallingPage';
 import { registerAdminPWA } from '@/lib/pwa';
+import { WebsiteAnalyticsSettings } from '@/components/admin/WebsiteAnalyticsSettings';
 import { SettingsRemindersDialog } from '@/components/reminders/SettingsRemindersDialog';
 import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
 import { RecurringServiceTracker } from '@/components/reminders/RecurringServiceTracker';
@@ -84,11 +85,15 @@ const DATABASE_EXPORT_TABLES: {
 }[] = [
   { name: 'admin_todos', orderBy: 'created_at', label: 'Admin Todos' },
   { name: 'admin_users', orderBy: 'id', label: 'Admin Users' },
+  { name: 'admin_audit_log', orderBy: 'created_at', label: 'Admin Audit Log', optional: true },
   { name: 'amc_contracts', orderBy: 'created_at', label: 'AMC Contracts' },
+  { name: 'amount_trackers', orderBy: 'created_at', label: 'Amount Trackers' },
+  { name: 'booking_abandonments', orderBy: 'created_at', label: 'Booking Abandonments', optional: true },
   { name: 'business_expenses', orderBy: 'expense_date', label: 'Business Expenses' },
   { name: 'call_history', orderBy: 'contacted_at', label: 'Call History' },
   { name: 'common_qr_codes', orderBy: 'created_at', label: 'Common QR Codes' },
   { name: 'customers', orderBy: 'created_at', label: 'Customers' },
+  { name: 'document_drafts', orderBy: 'updated_at', label: 'Document Drafts' },
   { name: 'follow_ups', orderBy: 'created_at', label: 'Follow-ups' },
   { name: 'inventory', orderBy: 'created_at', label: 'Inventory' },
   { name: 'inventory_bundle_items', orderBy: 'id', label: 'Inventory Bundle Items' },
@@ -120,7 +125,7 @@ const DATABASE_EXPORT_TABLES: {
   { name: 'warranties', orderBy: 'created_at', label: 'Warranties', optional: true },
   { name: 'warranty_items', orderBy: 'created_at', label: 'Warranty Items', optional: true },
   { name: 'website_booking_intent', orderBy: 'updated_at', label: 'Website Booking Intent' },
-  { name: 'website_analytics_events', orderBy: 'created_at', label: 'Website Analytics Events' },
+  { name: 'website_analytics_events', orderBy: 'created_at', label: 'Website Analytics Events', optional: true },
 ];
 
 const Settings = () => {
@@ -2704,6 +2709,8 @@ const Settings = () => {
               </div>
             </CardContent>
           </Card>
+
+          <WebsiteAnalyticsSettings />
 
           {/* Data Export Section - At Bottom */}
           <Card>
