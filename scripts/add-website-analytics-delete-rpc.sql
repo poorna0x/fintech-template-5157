@@ -1,5 +1,5 @@
 -- Admin-only delete / preview for website_analytics_events (IST).
--- Modes: older_than | single_day | date_range | time_window (hour range on one day).
+-- Modes: older_than | single_day | date_range | time_window (minute-precision IST range on one day).
 -- Run in Supabase SQL editor (safe to re-run).
 
 DROP FUNCTION IF EXISTS public.preview_website_analytics_delete(text, integer, date, date, text);
@@ -27,6 +27,7 @@ DECLARE
   start_t time;
   end_t time;
   match_count integer;
+  rows_json jsonb;
   mode_norm text;
 BEGIN
   IF NOT public.is_admin_user() THEN
@@ -92,9 +93,47 @@ BEGIN
       )
     );
 
+  SELECT COALESCE(jsonb_agg(row_to_json(r) ORDER BY r.created_at DESC), '[]'::jsonb)
+  INTO rows_json
+  FROM (
+    SELECT
+      e.id,
+      e.site_key,
+      e.event_type,
+      e.page_path,
+      e.created_at,
+      e.metadata
+    FROM public.website_analytics_events e
+    WHERE (p_site_key IS NULL OR p_site_key = '' OR e.site_key = p_site_key)
+      AND (
+        (
+          mode_norm = 'older_than'
+          AND (e.created_at AT TIME ZONE 'Asia/Kolkata')::date <= to_d
+        )
+        OR (
+          mode_norm = 'single_day'
+          AND (e.created_at AT TIME ZONE 'Asia/Kolkata')::date = from_d
+        )
+        OR (
+          mode_norm = 'date_range'
+          AND (e.created_at AT TIME ZONE 'Asia/Kolkata')::date >= from_d
+          AND (e.created_at AT TIME ZONE 'Asia/Kolkata')::date <= to_d
+        )
+        OR (
+          mode_norm = 'time_window'
+          AND (e.created_at AT TIME ZONE 'Asia/Kolkata')::date = from_d
+          AND (e.created_at AT TIME ZONE 'Asia/Kolkata')::time >= start_t
+          AND (e.created_at AT TIME ZONE 'Asia/Kolkata')::time <= end_t
+        )
+      )
+    ORDER BY e.created_at DESC
+    LIMIT 25
+  ) r;
+
   RETURN jsonb_build_object(
     'mode', mode_norm,
     'match_count', match_count,
+    'rows', rows_json,
     'from_date', from_d,
     'to_date', to_d,
     'older_than_days', CASE WHEN mode_norm = 'older_than' THEN p_older_than_days ELSE NULL END,

@@ -1,8 +1,17 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { DatePicker } from '@/components/ui/date-picker';
 import { TimePicker, formatTimePickerLabel } from '@/components/ui/time-picker';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import {
   Select,
   SelectContent,
@@ -20,15 +29,56 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Loader2, Lock, Trash2 } from 'lucide-react';
+import { Loader2, Lock, Trash2, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { db } from '@/lib/supabase';
+import { getPublicSiteLabel, type PublicSiteKey } from '@/lib/websiteSiteKey';
 import { subDays, parseISO, format } from 'date-fns';
-import type { PublicSiteKey } from '@/lib/websiteSiteKey';
 import { useAdminRole } from '@/lib/useAdminRole';
 import { cn } from '@/lib/utils';
 
 const IST = 'Asia/Kolkata';
+
+const EVENT_LABELS: Record<string, string> = {
+  page_view: 'Page view',
+  phone_click: 'Call',
+  whatsapp_click: 'WhatsApp',
+  booking_click: 'Book click',
+  booking_submit: 'Booking',
+};
+
+type PreviewEvent = {
+  id: string;
+  site_key: PublicSiteKey;
+  event_type: string;
+  page_path: string | null;
+  created_at: string;
+  metadata?: Record<string, unknown> | null;
+};
+
+function formatPreviewEventTime(ev: PreviewEvent): string {
+  const raw =
+    typeof ev.metadata?.client_at === 'string' && ev.metadata.client_at
+      ? ev.metadata.client_at
+      : ev.created_at;
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleString('en-IN', {
+    timeZone: IST,
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
+
+function formatPreviewPagePath(path: string | null | undefined): string {
+  const p = (path || '/').trim();
+  if (p === '/' || p === '') return 'Home';
+  return p;
+}
 
 type DeleteMode = 'time_window' | 'single_day' | 'date_range' | 'older_than';
 type SiteFilter = 'all' | PublicSiteKey;
@@ -136,6 +186,7 @@ export function WebsiteAnalyticsDataDelete({ onDeleted, className }: WebsiteAnal
   const [rangeFrom, setRangeFrom] = useState(todayIst);
   const [rangeTo, setRangeTo] = useState(todayIst);
   const [previewCount, setPreviewCount] = useState<number | null>(null);
+  const [previewRows, setPreviewRows] = useState<PreviewEvent[]>([]);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -206,7 +257,17 @@ export function WebsiteAnalyticsDataDelete({ onDeleted, className }: WebsiteAnal
 
   useEffect(() => {
     setPreviewCount(null);
+    setPreviewRows([]);
   }, [mode, siteFilter, olderThanDays, singleDay, rangeFrom, rangeTo, timeWindowDay, startTime, endTime]);
+
+  const applyPreviewResult = (data: unknown) => {
+    const payload = data as { match_count?: number; rows?: PreviewEvent[] } | null;
+    const count = Number(payload?.match_count ?? 0);
+    const rows = Array.isArray(payload?.rows) ? payload.rows : [];
+    setPreviewCount(count);
+    setPreviewRows(rows);
+    return count;
+  };
 
   const runPreview = useCallback(async () => {
     if (disabled || timeInvalid) return;
@@ -214,17 +275,17 @@ export function WebsiteAnalyticsDataDelete({ onDeleted, className }: WebsiteAnal
     try {
       const { data, error } = await db.websiteAnalytics.previewDelete(rpcParams);
       if (error) throw error;
-      const count = Number((data as { match_count?: number })?.match_count ?? 0);
-      setPreviewCount(count);
+      const count = applyPreviewResult(data);
       if (count === 0) toast.info('No events match.');
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Could not check count';
+      const msg = e instanceof Error ? e.message : 'Could not load preview';
       toast.error(
         msg.includes('preview_website_analytics_delete')
           ? 'Run scripts/add-website-analytics-delete-rpc.sql in Supabase first.'
           : msg
       );
       setPreviewCount(null);
+      setPreviewRows([]);
     } finally {
       setPreviewLoading(false);
     }
@@ -239,6 +300,7 @@ export function WebsiteAnalyticsDataDelete({ onDeleted, className }: WebsiteAnal
       const deleted = Number((data as { deleted_count?: number })?.deleted_count ?? 0);
       toast.success(`Deleted ${deleted.toLocaleString('en-IN')} event${deleted === 1 ? '' : 's'}.`);
       setPreviewCount(0);
+      setPreviewRows([]);
       setDeleteOpen(false);
       onDeleted?.();
     } catch (e: unknown) {
@@ -259,15 +321,14 @@ export function WebsiteAnalyticsDataDelete({ onDeleted, className }: WebsiteAnal
     try {
       const { data, error } = await db.websiteAnalytics.previewDelete(rpcParams);
       if (error) throw error;
-      const count = Number((data as { match_count?: number })?.match_count ?? 0);
-      setPreviewCount(count);
+      const count = applyPreviewResult(data);
       if (count === 0) {
         toast.info('No events match.');
         return;
       }
       setDeleteOpen(true);
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : 'Could not check count';
+      const msg = e instanceof Error ? e.message : 'Could not load preview';
       toast.error(
         msg.includes('preview_website_analytics_delete')
           ? 'Run scripts/add-website-analytics-delete-rpc.sql in Supabase first.'
@@ -409,12 +470,86 @@ export function WebsiteAnalyticsDataDelete({ onDeleted, className }: WebsiteAnal
           ) : null}
 
           {previewCount !== null ? (
-            <div className="rounded-lg bg-muted/40 px-4 py-3 text-sm text-center sm:text-left">
-              <span className="text-muted-foreground">Will delete </span>
-              <span className="font-semibold tabular-nums text-foreground">
-                {previewCount.toLocaleString('en-IN')}
-              </span>
-              <span className="text-muted-foreground"> event{previewCount === 1 ? '' : 's'}</span>
+            <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-3 sm:p-4">
+              <div className="text-sm">
+                <span className="text-muted-foreground">Will delete </span>
+                <span className="font-semibold tabular-nums text-foreground">
+                  {previewCount.toLocaleString('en-IN')}
+                </span>
+                <span className="text-muted-foreground"> event{previewCount === 1 ? '' : 's'}</span>
+                {previewCount > previewRows.length ? (
+                  <span className="text-muted-foreground">
+                    {' '}
+                    (showing {previewRows.length} most recent)
+                  </span>
+                ) : null}
+              </div>
+
+              {previewRows.length > 0 ? (
+                <>
+                  <div className="space-y-2 md:hidden">
+                    {previewRows.map((ev) => (
+                      <div key={ev.id} className="rounded-lg border border-border bg-card p-3 space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <Badge variant="secondary" className="text-[10px] font-normal">
+                            {EVENT_LABELS[ev.event_type] ?? ev.event_type}
+                          </Badge>
+                          {siteFilter === 'all' ? (
+                            <Badge variant="outline" className="text-[10px] shrink-0">
+                              {getPublicSiteLabel(ev.site_key)}
+                            </Badge>
+                          ) : null}
+                        </div>
+                        <p className="text-[11px] font-medium tabular-nums">{formatPreviewEventTime(ev)}</p>
+                        <p className="text-xs text-muted-foreground break-words">
+                          {formatPreviewPagePath(ev.page_path)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="hidden md:block rounded-lg border border-border overflow-hidden bg-card">
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-muted/40 hover:bg-muted/40">
+                            <TableHead className="whitespace-nowrap">Time (IST)</TableHead>
+                            <TableHead>Event</TableHead>
+                            {siteFilter === 'all' ? <TableHead>Site</TableHead> : null}
+                            <TableHead>Page</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {previewRows.map((ev) => (
+                            <TableRow key={ev.id}>
+                              <TableCell className="whitespace-nowrap text-xs tabular-nums font-medium">
+                                {formatPreviewEventTime(ev)}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="secondary" className="text-[10px] font-normal">
+                                  {EVENT_LABELS[ev.event_type] ?? ev.event_type}
+                                </Badge>
+                              </TableCell>
+                              {siteFilter === 'all' ? (
+                                <TableCell>
+                                  <Badge variant="outline" className="text-[10px]">
+                                    {getPublicSiteLabel(ev.site_key)}
+                                  </Badge>
+                                </TableCell>
+                              ) : null}
+                              <TableCell className="text-xs text-muted-foreground max-w-[240px] truncate">
+                                {formatPreviewPagePath(ev.page_path)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-2">No events match.</p>
+              )}
             </div>
           ) : null}
 
@@ -429,10 +564,13 @@ export function WebsiteAnalyticsDataDelete({ onDeleted, className }: WebsiteAnal
               {previewLoading ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Checking…
+                  Loading…
                 </>
               ) : (
-                'Check count'
+                <>
+                  <Eye className="w-4 h-4 mr-2" />
+                  Preview data
+                </>
               )}
             </Button>
             <Button
