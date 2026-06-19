@@ -120,6 +120,7 @@ import {
   setModuleOngoingJobsSnapshot,
   getModuleJobsListCache,
   setModuleJobsListCache,
+  clearModuleJobsListCache,
   type AdminDashboardSnapshot,
 } from '@/lib/adminDashboardCache';
 import { StatusBadge } from './admin/StatusBadge';
@@ -252,6 +253,9 @@ const AdminDashboard = () => {
   // Slim technician list for historical displays (Completed By, reports, etc.). Includes INACTIVE.
   const [techniciansForReports, setTechniciansForReports] = useState<any[]>([]);
   const [loading, setLoading] = useState(() => !initialDashboardCache && initialOngoingJobs.length === 0);
+  /** After idle resume / cross-device drift, skip instant tab cache until the next fetch lands. */
+  const [tabCachesStale, setTabCachesStale] = useState(false);
+  const [isResumeListSyncing, setIsResumeListSyncing] = useState(false);
   const [customerAMCStatus, setCustomerAMCStatus] = useState<Record<string, boolean>>({}); // Map customer ID to hasActiveAMC
   const [customerPriorServiceStatus, setCustomerPriorServiceStatus] = useState<Record<string, boolean>>({}); // ≥1 completed job
   const [searchTerm, setSearchTerm] = useState('');
@@ -1326,6 +1330,7 @@ const AdminDashboard = () => {
     const requestId = silent ? loadJobsRequestRef.current : ++loadJobsRequestRef.current;
     const commitJobs = (data: Job[]) => {
       setJobs(data);
+      setTabCachesStale(false);
       if (filter === 'ONGOING') {
         ongoingJobsSnapshotRef.current = data;
         setModuleOngoingJobsSnapshot(data);
@@ -1965,20 +1970,27 @@ const AdminDashboard = () => {
     if (isInitialLoad) return;
     setCurrentPage(1);
     if (statusFilter === 'COMPLETED' || statusFilter === 'RESCHEDULED') {
-      const cacheKey = getJobsListCacheKey(statusFilter, 1);
-      const cached =
-        jobsListCacheRef.current.get(cacheKey) ??
-        (getModuleJobsListCache(cacheKey) as Job[] | undefined);
-      setJobs(cached ?? []);
+      if (!tabCachesStale) {
+        const cacheKey = getJobsListCacheKey(statusFilter, 1);
+        const cached =
+          jobsListCacheRef.current.get(cacheKey) ??
+          (getModuleJobsListCache(cacheKey) as Job[] | undefined);
+        setJobs(cached ?? []);
+      } else {
+        setJobs([]);
+      }
     } else if (statusFilter === 'ONGOING') {
-      const snapshot =
-        ongoingJobsSnapshotRef.current.length > 0
-          ? ongoingJobsSnapshotRef.current
-          : (getModuleOngoingJobsSnapshot() as Job[]);
-      if (snapshot.length > 0) {
-        setJobs(snapshot);
+      if (!tabCachesStale) {
+        const snapshot =
+          ongoingJobsSnapshotRef.current.length > 0
+            ? ongoingJobsSnapshotRef.current
+            : (getModuleOngoingJobsSnapshot() as Job[]);
+        if (snapshot.length > 0) {
+          setJobs(snapshot);
+        } else if (!jobsMatchOngoingTab(jobs)) {
+          setJobs([]);
+        }
       } else if (!jobsMatchOngoingTab(jobs)) {
-        // Returning from another tab (or remount): hide Completed/Follow-up rows on Ongoing.
         setJobs([]);
       }
     } else {
@@ -1990,7 +2002,7 @@ const AdminDashboard = () => {
       loadJobCounts();
   }, [statusFilter, loadFilteredJobs, loadJobCounts, isInitialLoad, getJobsListCacheKey]);
 
-  const resumeAdminSync = useCallback(async () => {
+  const resumeAdminSync = useCallback(async (opts?: { invalidateTabCaches?: boolean }) => {
     if (isInitialLoad || !dashboardLoadedWithSessionRef.current) return;
 
     const session = await ensureSupabaseSessionForWrite();
@@ -1999,15 +2011,30 @@ const AdminDashboard = () => {
       return;
     }
 
-    await Promise.all([
-      loadJobCounts(),
-      loadFilteredJobs(statusFilter, currentPage, { silent: true }),
-      // Keep the follow-up glow (red/yellow) in sync across devices — it's not driven by
-      // realtime, so without this the color can be stale after changes made on another device.
-      db.jobs.getFollowUpForGlow().then(({ data }) => {
-        if (data) setAllFollowUpJobs(data as Job[]);
-      }).catch(() => {}),
-    ]);
+    const invalidate = opts?.invalidateTabCaches === true;
+    if (invalidate) {
+      clearModuleJobsListCache();
+      jobsListCacheRef.current.clear();
+      setTabCachesStale(true);
+      setIsResumeListSyncing(true);
+      if (statusFilter !== 'ONGOING') {
+        setJobs([]);
+      }
+    }
+
+    try {
+      await Promise.all([
+        loadJobCounts(),
+        loadFilteredJobs(statusFilter, currentPage, { silent: true }),
+        db.jobs.getFollowUpForGlow().then(({ data }) => {
+          if (data) setAllFollowUpJobs(data as Job[]);
+        }).catch(() => {}),
+      ]);
+    } finally {
+      if (invalidate) {
+        setIsResumeListSyncing(false);
+      }
+    }
   }, [isInitialLoad, statusFilter, currentPage, loadJobCounts, loadFilteredJobs]);
 
   const resumeAdminSyncRef = useRef(resumeAdminSync);
@@ -2017,7 +2044,7 @@ const AdminDashboard = () => {
     enabled: !authInitializing && !!user && isAdmin && !isInitialLoad,
     minHiddenMs: 60_000,
     minIntervalMs: 15_000,
-    onResume: resumeAdminSync,
+    onResume: () => resumeAdminSync({ invalidateTabCaches: true }),
   });
 
   // Reload jobs when denied date filter changes
@@ -2490,13 +2517,19 @@ const AdminDashboard = () => {
           }
           jobIdsCompletedByAdminRef.current.add(row.id);
           playCompletedJobSound();
+          void loadJobCounts();
+          if (statusFilter === 'COMPLETED') {
+            void loadFilteredJobs('COMPLETED', currentPage, { silent: true });
+          } else if (statusFilter === 'ONGOING') {
+            void loadFilteredJobs('ONGOING', 1, { silent: true });
+          }
         }
       )
       .subscribe((status) => {
         const prev = adminRealtimeStatusRef.current;
         adminRealtimeStatusRef.current = status;
         if (status === 'SUBSCRIBED' && prev != null && prev !== 'SUBSCRIBED') {
-          void resumeAdminSyncRef.current();
+          void resumeAdminSyncRef.current({ invalidateTabCaches: false });
         }
       });
 
@@ -2504,7 +2537,7 @@ const AdminDashboard = () => {
       clearTimeout(seedTimeout);
       supabase.removeChannel(channel);
     };
-  }, [isInitialLoad, isPollingEnabled, statusFilter, loadFilteredJobs, playCompletedJobSound]);
+  }, [isInitialLoad, isPollingEnabled, statusFilter, currentPage, loadFilteredJobs, loadJobCounts, playCompletedJobSound]);
 
   const handleDeleteCustomer = async () => {
     if (!customerToDelete) return;
@@ -9172,11 +9205,12 @@ const AdminDashboard = () => {
     Boolean(user && isAdmin) && isInitialLoad;
 
   const isJobsListRefreshing = loading && !isInitialLoad;
+  const listSyncActive = isJobsListRefreshing || isResumeListSyncing;
   const ongoingTabHasStaleJobs =
     statusFilter === 'ONGOING' && jobs.length > 0 && !jobsMatchOngoingTab(jobs);
-  // Ongoing keeps its instant snapshot; other tabs (and Ongoing when stale jobs linger) show a loader.
+  // Show loader only when there is nothing to display yet; cached Completed/Follow-up open instantly.
   const showJobsListLoader =
-    isJobsListRefreshing &&
+    listSyncActive &&
     displayedCustomers.length === 0 &&
     (statusFilter !== 'ONGOING' || ongoingTabHasStaleJobs);
   const jobsListRefreshLabel =

@@ -40,6 +40,10 @@ export function setModuleJobsListCache(key: string, jobs: unknown[]): void {
   moduleJobsListCache.set(key, jobs);
 }
 
+export function clearModuleJobsListCache(): void {
+  moduleJobsListCache.clear();
+}
+
 export function readAdminDashboardCache(): AdminDashboardSnapshot | null {
   if (typeof window === 'undefined') return null;
   try {
