@@ -1248,7 +1248,9 @@ const AdminDashboard = () => {
     opts?: { silent?: boolean }
   ) => {
     const silent = opts?.silent === true;
-    const requestId = ++loadJobsRequestRef.current;
+    // Only non-silent (user-visible) loads bump the request id. Background resume sync must
+    // not supersede an in-flight tab switch or loading stays stuck forever.
+    const requestId = silent ? loadJobsRequestRef.current : ++loadJobsRequestRef.current;
     try {
       if (!silent) {
         setLoading(true);
