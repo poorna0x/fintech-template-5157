@@ -5,6 +5,7 @@ import { escapeForLike, normalizePhoneForSearch } from './utils';
 import { PENDING_PAYMENT_REMINDER_TITLE } from './pendingPaymentReminder';
 import { cacheGet, cacheSet, cacheInvalidate } from './supabaseQueryCache';
 import { isMissingServiceBrandColumnError } from './amc-brand';
+import type { PublicSiteKey } from './websiteSiteKey';
 
 export { supabaseAuthClient as supabase };
 export { generateJobNumber } from './jobNumber';
@@ -6086,6 +6087,20 @@ export const db = {
     async getSummary(days = 7) {
       const { data, error } = await supabase.rpc('get_website_analytics_summary', {
         p_days: days,
+      });
+      return { data, error };
+    },
+    async getRecentEvents(opts: {
+      from: string;
+      to: string;
+      siteKey?: PublicSiteKey;
+      limit?: number;
+    }) {
+      const { data, error } = await supabase.rpc('get_website_analytics_recent_events', {
+        p_from_date: opts.from,
+        p_to_date: opts.to,
+        p_site_key: opts.siteKey ?? null,
+        p_limit: opts.limit ?? 120,
       });
       return { data, error };
     },

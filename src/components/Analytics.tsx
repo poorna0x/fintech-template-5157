@@ -32,6 +32,7 @@ import { Button } from '@/components/ui/button';
 
 // Code-split: spare-parts analytics JS only downloads when the section is opened.
 const SparePartsAnalytics = React.lazy(() => import('@/components/admin/SparePartsAnalytics'));
+import { WebsiteAnalyticsGate } from '@/components/admin/WebsiteAnalyticsGate';
 
 interface AnalyticsData {
   totalJobs: number;
@@ -3311,6 +3312,8 @@ const Analytics = () => {
           </CardContent>
         </Card>
       )}
+
+      <WebsiteAnalyticsGate />
     </div>
   );
 };

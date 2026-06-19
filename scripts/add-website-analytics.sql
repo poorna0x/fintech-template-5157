@@ -111,5 +111,58 @@ $$;
 REVOKE ALL ON FUNCTION public.get_website_analytics_summary(integer) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_website_analytics_summary(integer) TO authenticated;
 
+-- Recent events with timestamps (for admin activity log).
+CREATE OR REPLACE FUNCTION public.get_website_analytics_recent_events(
+  p_from_date date,
+  p_to_date date,
+  p_site_key text DEFAULT NULL,
+  p_limit integer DEFAULT 120
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  result jsonb;
+  from_d date;
+  to_d date;
+BEGIN
+  IF NOT public.is_admin_user() THEN
+    RAISE EXCEPTION 'not authorized' USING ERRCODE = '42501';
+  END IF;
+
+  from_d := LEAST(COALESCE(p_from_date, CURRENT_DATE), COALESCE(p_to_date, CURRENT_DATE));
+  to_d := GREATEST(COALESCE(p_from_date, CURRENT_DATE), COALESCE(p_to_date, CURRENT_DATE));
+
+  SELECT COALESCE(
+    jsonb_agg(row_to_json(r) ORDER BY r.created_at DESC),
+    '[]'::jsonb
+  )
+  INTO result
+  FROM (
+    SELECT
+      e.id,
+      e.site_key,
+      e.event_type,
+      e.page_path,
+      e.created_at,
+      e.metadata
+    FROM public.website_analytics_events e
+    WHERE (e.created_at AT TIME ZONE 'Asia/Kolkata')::date >= from_d
+      AND (e.created_at AT TIME ZONE 'Asia/Kolkata')::date <= to_d
+      AND (p_site_key IS NULL OR p_site_key = '' OR e.site_key = p_site_key)
+    ORDER BY e.created_at DESC
+    LIMIT GREATEST(1, LEAST(COALESCE(p_limit, 120), 200))
+  ) r;
+
+  RETURN result;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_website_analytics_recent_events(date, date, text, integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_website_analytics_recent_events(date, date, text, integer) TO authenticated;
+
 -- Optional retention: delete rows older than 180 days (run via pg_cron or manual).
 -- DELETE FROM public.website_analytics_events WHERE created_at < now() - interval '180 days';

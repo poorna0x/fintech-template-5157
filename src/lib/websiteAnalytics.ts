@@ -143,7 +143,10 @@ export function trackWebsiteEvent(
     page_path: pagePath,
     session_hash: getWebsiteSessionHash(),
     site_key: getPublicSiteKey(),
-    metadata: metadata && Object.keys(metadata).length > 0 ? metadata : undefined,
+    metadata: {
+      client_at: new Date().toISOString(),
+      ...(metadata && Object.keys(metadata).length > 0 ? metadata : {}),
+    },
   });
 
   if (queue.length >= MAX_BATCH) {

@@ -20,18 +20,17 @@ import {
   Users,
   Eye,
   Phone,
-  MessageCircle,
   MousePointerClick,
   CheckCircle2,
   TrendingUp,
   Globe,
   CalendarRange,
-  Filter,
 } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { getPublicSiteLabel, type PublicSiteKey } from '@/lib/websiteSiteKey';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import type { TrendPoint } from './websiteAnalyticsTypes';
 
 const WebsiteAnalyticsTrendChart = lazy(() => import('./WebsiteAnalyticsTrendChart'));
@@ -59,8 +58,25 @@ type Summary = {
 
 type SiteFilter = 'all' | PublicSiteKey;
 type PresetDays = 7 | 14 | 30 | 90;
-type PeriodMode = PresetDays | 'custom';
+type PeriodMode = 'today' | PresetDays | 'custom';
 type ChartMetric = 'visitors' | 'phone_clicks' | 'booking_submits';
+
+type RecentEvent = {
+  id: string;
+  site_key: PublicSiteKey;
+  event_type: string;
+  page_path: string | null;
+  created_at: string;
+  metadata?: Record<string, unknown> | null;
+};
+
+const EVENT_LABELS: Record<string, string> = {
+  page_view: 'Page view',
+  phone_click: 'Call',
+  whatsapp_click: 'WhatsApp',
+  booking_click: 'Book click',
+  booking_submit: 'Booking',
+};
 
 const EMPTY_STATS: SiteDayStats = {
   site_key: 'hydrogenro',
@@ -156,18 +172,43 @@ function inDateRange(day: string, from: string, to: string): boolean {
   return day >= from && day <= to;
 }
 
+function formatEventTimeIst(ev: RecentEvent): string {
+  const raw =
+    typeof ev.metadata?.client_at === 'string' && ev.metadata.client_at
+      ? ev.metadata.client_at
+      : ev.created_at;
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleString('en-IN', {
+    timeZone: IST,
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  });
+}
+
+function eventLabel(eventType: string): string {
+  return EVENT_LABELS[eventType] ?? eventType;
+}
+
 function KpiCard({
   label,
   value,
   icon: Icon,
   hint,
   compact,
+  iconTone = 'default',
 }: {
   label: string;
   value: number;
   icon: ComponentType<{ className?: string }>;
   hint?: string;
   compact?: boolean;
+  iconTone?: 'default' | 'whatsapp';
 }) {
   return (
     <div
@@ -193,7 +234,12 @@ function KpiCard({
             <p className="mt-1 text-[10px] sm:text-[11px] text-muted-foreground line-clamp-2">{hint}</p>
           ) : null}
         </div>
-        <div className="rounded-lg bg-primary/10 p-1.5 sm:p-2 text-primary shrink-0">
+        <div
+          className={cn(
+            'rounded-lg p-1.5 sm:p-2 shrink-0',
+            iconTone === 'whatsapp' ? 'bg-green-500/10 text-green-600' : 'bg-primary/10 text-primary'
+          )}
+        >
           <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
         </div>
       </div>
@@ -256,17 +302,20 @@ function AnalyticsSkeleton() {
 
 export function WebsiteAnalyticsCard() {
   const todayIst = getTodayIst();
-  const defaultRange = istDateFromPreset(14);
 
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [recentEvents, setRecentEvents] = useState<RecentEvent[]>([]);
   const [siteFilter, setSiteFilter] = useState<SiteFilter>('all');
-  const [periodMode, setPeriodMode] = useState<PeriodMode>(14);
-  const [customFrom, setCustomFrom] = useState(defaultRange.from);
-  const [customTo, setCustomTo] = useState(defaultRange.to);
+  const [periodMode, setPeriodMode] = useState<PeriodMode>('today');
+  const [customFrom, setCustomFrom] = useState(todayIst);
+  const [customTo, setCustomTo] = useState(todayIst);
   const [chartMetric, setChartMetric] = useState<ChartMetric>('visitors');
 
   const activeRange = useMemo(() => {
+    if (periodMode === 'today') {
+      return { from: todayIst, to: todayIst };
+    }
     if (periodMode === 'custom') {
       let from = customFrom;
       let to = customTo;
@@ -279,17 +328,33 @@ export function WebsiteAnalyticsCard() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { data, error } = await db.websiteAnalytics.getSummary(MAX_FETCH_DAYS);
-      if (error) throw error;
-      setSummary((data as Summary) || null);
+      const siteKey = siteFilter === 'all' ? undefined : siteFilter;
+      const [summaryRes, recentRes] = await Promise.all([
+        db.websiteAnalytics.getSummary(MAX_FETCH_DAYS),
+        db.websiteAnalytics.getRecentEvents({
+          from: activeRange.from,
+          to: activeRange.to,
+          siteKey,
+          limit: 100,
+        }),
+      ]);
+      if (summaryRes.error) throw summaryRes.error;
+      setSummary((summaryRes.data as Summary) || null);
+      if (recentRes.error) {
+        console.warn(recentRes.error);
+        setRecentEvents([]);
+      } else {
+        setRecentEvents((recentRes.data as RecentEvent[]) || []);
+      }
     } catch (e) {
       console.error(e);
       toast.error('Could not load website analytics. Run scripts/add-website-analytics.sql in Supabase.');
       setSummary(null);
+      setRecentEvents([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeRange.from, activeRange.to, siteFilter]);
 
   useEffect(() => {
     void load();
@@ -351,6 +416,12 @@ export function WebsiteAnalyticsCard() {
   const showTodayInRange = inDateRange(todayIst, activeRange.from, activeRange.to);
   const hasData = filteredDaily.length > 0 || (showTodayInRange && (summary?.today?.length ?? 0) > 0);
 
+  const handleToday = () => {
+    setPeriodMode('today');
+    setCustomFrom(todayIst);
+    setCustomTo(todayIst);
+  };
+
   const handlePresetChange = (days: PresetDays) => {
     setPeriodMode(days);
     const range = istDateFromPreset(days);
@@ -402,96 +473,92 @@ export function WebsiteAnalyticsCard() {
           </Button>
         </div>
 
-        <div className="rounded-xl border border-border bg-muted/20 p-3 sm:p-4 space-y-4">
-          <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-            <Filter className="h-3.5 w-3.5" />
-            Filters
-          </div>
-
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-              <Globe className="h-3.5 w-3.5" />
-              Website
-            </div>
-            <div className="grid grid-cols-3 gap-1.5 sm:flex sm:flex-wrap">
-              {SITE_OPTIONS.map((opt) => (
-                <Button
-                  key={opt.value}
-                  type="button"
-                  size="sm"
-                  variant={siteFilter === opt.value ? 'default' : 'outline'}
-                  className="h-9 text-xs sm:text-sm px-2 sm:px-3"
-                  onClick={() => setSiteFilter(opt.value)}
-                >
-                  <span className="sm:hidden">{opt.short}</span>
-                  <span className="hidden sm:inline">{opt.label}</span>
-                </Button>
-              ))}
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-              <CalendarRange className="h-3.5 w-3.5" />
-              Date range
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {PRESET_OPTIONS.map((opt) => (
-                <Button
-                  key={opt.value}
-                  type="button"
-                  size="sm"
-                  variant={periodMode === opt.value ? 'default' : 'outline'}
-                  className="h-8 px-2.5 text-xs"
-                  onClick={() => handlePresetChange(opt.value)}
-                >
-                  {opt.label}
-                </Button>
-              ))}
-              <Button
-                type="button"
-                size="sm"
-                variant={periodMode === 'custom' ? 'default' : 'outline'}
-                className="h-8 px-2.5 text-xs"
-                onClick={() => setPeriodMode('custom')}
-              >
-                Custom
-              </Button>
-            </div>
-
-            {periodMode === 'custom' ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-muted-foreground">From</label>
-                  <DatePicker
-                    value={customFrom}
-                    onChange={handleCustomFrom}
-                    placeholder="Start date"
-                    className="h-9"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-muted-foreground">To</label>
-                  <DatePicker
-                    value={customTo}
-                    onChange={handleCustomTo}
-                    placeholder="End date"
-                    className="h-9"
-                  />
-                </div>
+        <div className="rounded-xl border border-border bg-muted/15 p-3 sm:p-4 space-y-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:gap-x-6 sm:gap-y-3">
+            <div className="space-y-1.5 flex-1 min-w-[140px]">
+              <span className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
+                <Globe className="h-3 w-3" />
+                Website
+              </span>
+              <div className="grid grid-cols-3 gap-1.5">
+                {SITE_OPTIONS.map((opt) => (
+                  <Button
+                    key={opt.value}
+                    type="button"
+                    size="sm"
+                    variant={siteFilter === opt.value ? 'default' : 'outline'}
+                    className="h-8 text-xs px-2"
+                    onClick={() => setSiteFilter(opt.value)}
+                  >
+                    <span className="sm:hidden">{opt.short}</span>
+                    <span className="hidden sm:inline">{opt.label}</span>
+                  </Button>
+                ))}
               </div>
-            ) : null}
+            </div>
+
+            <div className="space-y-1.5 flex-[2] min-w-0">
+              <span className="text-[11px] font-medium text-muted-foreground flex items-center gap-1.5">
+                <CalendarRange className="h-3 w-3" />
+                Date range
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={periodMode === 'today' ? 'default' : 'outline'}
+                  className="h-8 px-2.5 text-xs"
+                  onClick={handleToday}
+                >
+                  Today
+                </Button>
+                {PRESET_OPTIONS.map((opt) => (
+                  <Button
+                    key={opt.value}
+                    type="button"
+                    size="sm"
+                    variant={periodMode === opt.value ? 'default' : 'outline'}
+                    className="h-8 px-2.5 text-xs"
+                    onClick={() => handlePresetChange(opt.value)}
+                  >
+                    {opt.label}
+                  </Button>
+                ))}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={periodMode === 'custom' ? 'default' : 'outline'}
+                  className="h-8 px-2.5 text-xs"
+                  onClick={() => setPeriodMode('custom')}
+                >
+                  Custom
+                </Button>
+              </div>
+            </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-border/60">
-            <Badge variant="secondary" className="font-normal text-xs">
-              {siteLabel}
-            </Badge>
-            <Badge variant="outline" className="font-normal text-xs">
-              {rangeLabel}
-            </Badge>
-            <span className="text-[11px] text-muted-foreground">India Standard Time</span>
-          </div>
+          {periodMode === 'custom' ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-muted-foreground">From</label>
+                <DatePicker
+                  value={customFrom}
+                  onChange={handleCustomFrom}
+                  placeholder="Start date"
+                  className="h-9"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-muted-foreground">To</label>
+                <DatePicker
+                  value={customTo}
+                  onChange={handleCustomTo}
+                  placeholder="End date"
+                  className="h-9"
+                />
+              </div>
+            </div>
+          ) : null}
         </div>
       </CardHeader>
 
@@ -509,10 +576,11 @@ export function WebsiteAnalyticsCard() {
         ) : (
           <>
             {showTodayInRange ? (
-              <div className="rounded-xl border border-border bg-muted/20 p-3 sm:p-4 space-y-3">
+              <div className="rounded-xl border border-border bg-gradient-to-br from-muted/30 to-muted/10 p-3 sm:p-4 space-y-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="secondary">Today</Badge>
-                  <span className="text-sm font-medium">{siteLabel}</span>
+                  <Badge variant="secondary" className="text-xs">Today</Badge>
+                  <span className="text-sm font-medium text-foreground">{siteLabel}</span>
+                  <span className="text-xs text-muted-foreground">· IST</span>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2">
                   <KpiCard label="Visitors" value={todayStats.visitors} icon={Users} compact />
@@ -521,7 +589,8 @@ export function WebsiteAnalyticsCard() {
                   <KpiCard
                     label="WhatsApp"
                     value={todayStats.whatsapp_clicks}
-                    icon={MessageCircle}
+                    icon={WhatsAppIcon}
+                    iconTone="whatsapp"
                     compact
                   />
                   <KpiCard
@@ -541,27 +610,13 @@ export function WebsiteAnalyticsCard() {
             ) : null}
 
             <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-muted-foreground shrink-0" />
-                <h4 className="text-sm font-medium">Period summary</h4>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2">
-                <KpiCard label="Visitors" value={periodTotals.visitors} icon={Users} />
-                <KpiCard label="Page views" value={periodTotals.page_views} icon={Eye} />
-                <KpiCard label="Calls" value={periodTotals.phone_clicks} icon={Phone} />
-                <KpiCard label="WhatsApp" value={periodTotals.whatsapp_clicks} icon={MessageCircle} />
-                <KpiCard
-                  label="Book clicks"
-                  value={periodTotals.booking_clicks}
-                  icon={MousePointerClick}
-                />
-                <KpiCard label="Bookings" value={periodTotals.booking_submits} icon={CheckCircle2} />
-              </div>
-            </div>
-
-            <div className="space-y-3">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <h4 className="text-sm font-medium">Daily trend</h4>
+                <div className="flex items-center gap-2 min-w-0">
+                  <TrendingUp className="w-4 h-4 text-muted-foreground shrink-0" />
+                  <h4 className="text-sm font-medium truncate">
+                    {rangeLabel}
+                  </h4>
+                </div>
                 <div className="sm:hidden">
                   <Select
                     value={chartMetric}
@@ -605,24 +660,24 @@ export function WebsiteAnalyticsCard() {
                 </Suspense>
               </div>
 
-              <div className="rounded-lg bg-muted/30 px-3 py-2.5 text-xs text-muted-foreground space-y-1">
-                <p>
-                  <span className="font-medium text-foreground">{chartMetricLabel}</span> over{' '}
-                  {rangeLabel}: {periodTotals[chartMetric]} total
-                </p>
-                <p>
-                  {periodTotals.phone_clicks} call taps ({pct(periodTotals.phone_clicks, periodTotals.visitors)}{' '}
-                  of visitors) · {periodTotals.booking_submits} completed bookings (
-                  {pct(periodTotals.booking_submits, periodTotals.visitors)} of visitors)
-                </p>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground px-1">
+                <span>
+                  <span className="font-medium text-foreground">{periodTotals[chartMetric]}</span>{' '}
+                  {chartMetricLabel.toLowerCase()}
+                </span>
+                <span className="hidden sm:inline text-border">|</span>
+                <span>
+                  {periodTotals.phone_clicks} calls ({pct(periodTotals.phone_clicks, periodTotals.visitors)})
+                </span>
+                <span className="hidden sm:inline text-border">|</span>
+                <span>
+                  {periodTotals.booking_submits} bookings ({pct(periodTotals.booking_submits, periodTotals.visitors)})
+                </span>
               </div>
             </div>
 
-            <div className="space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <h4 className="text-sm font-medium">Daily breakdown</h4>
-                <span className="text-xs text-muted-foreground">{tableRows.length} rows</span>
-              </div>
+            <div className="space-y-2">
+              <h4 className="text-sm font-medium px-0.5">By day</h4>
 
               <div className="space-y-2 md:hidden">
                 {tableRows.length === 0 ? (
@@ -691,6 +746,84 @@ export function WebsiteAnalyticsCard() {
                   </Table>
                 </div>
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <h4 className="text-sm font-medium px-0.5">Recent activity</h4>
+              <p className="text-xs text-muted-foreground px-0.5">
+                Exact visit and click times (IST). New events include browser time; older rows use server time.
+              </p>
+
+              {recentEvents.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-6 rounded-lg border border-dashed border-border">
+                  No events in this range.
+                </p>
+              ) : (
+                <>
+                  <div className="space-y-2 md:hidden">
+                    {recentEvents.map((ev) => (
+                      <div
+                        key={ev.id}
+                        className="rounded-xl border border-border bg-card p-3 space-y-1.5"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <Badge variant="secondary" className="text-[10px] font-normal">
+                            {eventLabel(ev.event_type)}
+                          </Badge>
+                          {siteFilter === 'all' ? (
+                            <Badge variant="outline" className="text-[10px] shrink-0">
+                              {getPublicSiteLabel(ev.site_key)}
+                            </Badge>
+                          ) : null}
+                        </div>
+                        <p className="text-xs font-medium tabular-nums">{formatEventTimeIst(ev)}</p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {ev.page_path || '/'}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="hidden md:block rounded-lg border border-border overflow-hidden">
+                    <div className="overflow-x-auto max-h-80 overflow-y-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-muted/40 hover:bg-muted/40">
+                            <TableHead className="whitespace-nowrap">Time (IST)</TableHead>
+                            <TableHead>Event</TableHead>
+                            {siteFilter === 'all' ? <TableHead>Site</TableHead> : null}
+                            <TableHead>Page</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {recentEvents.map((ev) => (
+                            <TableRow key={ev.id}>
+                              <TableCell className="whitespace-nowrap text-xs tabular-nums font-medium">
+                                {formatEventTimeIst(ev)}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="secondary" className="text-[10px] font-normal">
+                                  {eventLabel(ev.event_type)}
+                                </Badge>
+                              </TableCell>
+                              {siteFilter === 'all' ? (
+                                <TableCell>
+                                  <Badge variant="outline" className="text-[10px]">
+                                    {getPublicSiteLabel(ev.site_key)}
+                                  </Badge>
+                                </TableCell>
+                              ) : null}
+                              <TableCell className="text-xs text-muted-foreground max-w-[240px] truncate">
+                                {ev.page_path || '/'}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </>
         )}
