@@ -71,6 +71,8 @@ import {
 import {
   DocumentBrand,
   getDocumentBrandLabel,
+  getDocumentSealVariantLabel,
+  resolveBrandSealSrc,
 } from '@/lib/service-brands';
 
 interface LetterheadDocumentsPageProps {
@@ -1036,7 +1038,31 @@ export default function LetterheadDocumentsPage({
                 Brand seal is auto-attached on the left; you can replace either side.
               </CardDescription>
             </CardHeader>
-            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <CardContent className="grid grid-cols-1 gap-4">
+              {data.useBrandSealAsStamp && !data.hideLeftSignatory ? (
+                <div className="rounded-md border border-slate-200 bg-slate-50/60 p-3 space-y-2">
+                  <Label htmlFor="letterheadSealVariant" className="text-sm font-medium">
+                    Brand seal image (left signatory)
+                  </Label>
+                  <Select
+                    value={data.brandSealVariant || 'sign'}
+                    onValueChange={(v: 'sign' | 'stamp') => updateData('brandSealVariant', v)}
+                  >
+                    <SelectTrigger id="letterheadSealVariant">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="sign">{getDocumentSealVariantLabel('sign')}</SelectItem>
+                      <SelectItem value="stamp">{getDocumentSealVariantLabel('stamp')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-slate-500">
+                    Uses {resolveBrandSealSrc(data.brand, data.brandSealVariant || 'sign').replace(/^\//, '')} for{' '}
+                    {getDocumentBrandLabel(data.brand)}.
+                  </p>
+                </div>
+              ) : null}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <SignatorySection
                 title="Authorized Signatory (left)"
                 hidden={!!data.hideLeftSignatory}
@@ -1100,6 +1126,7 @@ export default function LetterheadDocumentsPage({
                 onCustomStampUpload={onCustomStampUpload}
                 onCustomStampClear={() => updateData('customStampUrl', '')}
               />
+              </div>
             </CardContent>
           </Card>
 

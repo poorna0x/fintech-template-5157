@@ -5,7 +5,7 @@ import {
   renderPdfLogoHtml,
   resolvePdfDocumentBrand,
 } from './document-pdf-brand';
-import { BRAND_SEAL_SRC, getDocumentBrandLabel } from './service-brands';
+import { getDocumentBrandLabel, resolveBrandSealSrc } from './service-brands';
 
 interface AMCPDFData {
   billNumber: string;
@@ -52,6 +52,7 @@ interface AMCPDFData {
   validity?: string;
   agreementIntro?: string;
   documentBrand?: 'hydrogenro' | 'elevenro';
+  sealVariant?: 'sign' | 'stamp';
 }
 
 interface AMCPDFOptions {
@@ -971,7 +972,7 @@ function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): string {
       <div class="signatures">
         <div class="signature-box">
           <div class="signature-label">Authorized Signatory</div>
-          <img src="${BRAND_SEAL_SRC[brand]}" alt="${brandLabel} Seal" class="signature-seal" />
+          <img src="${resolveBrandSealSrc(brand, data.sealVariant)}" alt="${brandLabel} Seal" class="signature-seal" />
           <div class="signature-date">Date: ${new Date(data.billDate).toLocaleDateString('en-IN', { 
             day: '2-digit', 
             month: '2-digit', 
@@ -1084,7 +1085,8 @@ export function generateAMCPDF(
       terms: bill.terms,
       validity: bill.validity,
       agreementIntro: bill.agreementIntro,
-      documentBrand: (bill as any).documentBrand
+      documentBrand: (bill as any).documentBrand,
+      sealVariant: (bill as any).sealVariant,
     };
     
     // Write content to new window
@@ -1196,7 +1198,8 @@ function handleMobilePrint(
       terms: bill.terms,
       validity: bill.validity,
       agreementIntro: bill.agreementIntro,
-      documentBrand: (bill as any).documentBrand
+      documentBrand: (bill as any).documentBrand,
+      sealVariant: (bill as any).sealVariant,
     };
     
         // Generate AMC HTML - this is a complete HTML document

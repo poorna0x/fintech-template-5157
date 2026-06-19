@@ -3,6 +3,18 @@
 
 import { getCompanyStateCode } from './indian-state-codes';
 import { sanitizeForTemplate } from './sanitize';
+import { resolveBrandSealSrc, resolveDocumentBrandFromData } from './service-brands';
+
+function resolveTaxInvoiceSealSrc(data: PDFTaxInvoiceData): string {
+  const brand = resolveDocumentBrandFromData({
+    company: data.company,
+    documentBrand: (data as { documentBrand?: unknown }).documentBrand,
+  });
+  const sealVariant =
+    (data as { pdfOptions?: { sealVariant?: unknown } }).pdfOptions?.sealVariant ??
+    (data as { sealVariant?: unknown }).sealVariant;
+  return resolveBrandSealSrc(brand, sealVariant ?? 'sign');
+}
 
 // Helper function to convert number to words
 function numberToWords(num: number): string {
@@ -1007,7 +1019,7 @@ function createTaxInvoiceContent(data: PDFTaxInvoiceData): string {
         <div class="signatures">
           <div class="signature-box">
             <div class="signature-label" style="text-align: center;">Authorized Signatory</div>
-            <img src="/HydrogenROSeal.webp" alt="Hydrogen RO Seal" class="signature-seal" />
+            <img src="${resolveTaxInvoiceSealSrc(data)}" alt="Authorized Signatory Seal" class="signature-seal" />
             <div class="signature-date" style="text-align: center;">Date: ${new Date((data as any).pdfOptions?.signatureDate || data.billDate).toLocaleDateString('en-IN', { 
               day: '2-digit', 
               month: '2-digit', 

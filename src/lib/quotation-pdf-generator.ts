@@ -53,6 +53,7 @@ export interface PDFQuotationData {
   notes?: string;
   terms?: string;
   documentBrand?: 'hydrogenro' | 'elevenro';
+  sealVariant?: 'sign' | 'stamp';
   bankDetails?: {
     accountHolderName?: string;
     bankName?: string;
@@ -1123,7 +1124,7 @@ function renderQuotationGstSummary(data: PDFQuotationData, halfGstRate: number, 
 function createQuotationContent(data: PDFQuotationData): string {
   const brand = resolvePdfDocumentBrand(data);
   const companyDetails = renderPdfCompanyDetailsHtml(data.company, brand);
-  const signatureBlock = renderPdfSignatureHtml(brand, data.billDate);
+  const signatureBlock = renderPdfSignatureHtml(brand, data.billDate, data.sealVariant ?? 'sign');
   const footerBlock = renderPdfFooterHtml(brand, data.company);
   const validityDate = data.validUntil
     ? new Date(data.validUntil)
@@ -1318,7 +1319,7 @@ function createQuotationContent(data: PDFQuotationData): string {
 function generateQuotationHTML(data: PDFQuotationData): string {
   const brand = resolvePdfDocumentBrand(data);
   const companyDetails = renderPdfCompanyDetailsHtml(data.company, brand);
-  const signatureBlock = renderPdfSignatureHtml(brand, data.billDate);
+  const signatureBlock = renderPdfSignatureHtml(brand, data.billDate, data.sealVariant ?? 'sign');
   const footerBlock = renderPdfFooterHtml(brand, data.company);
   const validityDate = new Date(new Date(data.billDate).getTime() + 30 * 24 * 60 * 60 * 1000);
   const gstRate = getQuotationGstRate(data);

@@ -71,6 +71,9 @@ export default function QuotationModal({ isOpen, onClose, customer }: QuotationM
     if ((quotation as any).documentBrand) {
       (pdfData as any).documentBrand = (quotation as any).documentBrand;
     }
+    if ((quotation as any).sealVariant) {
+      (pdfData as any).sealVariant = (quotation as any).sealVariant;
+    }
     
     try {
       generateQuotationPDF(pdfData, action);

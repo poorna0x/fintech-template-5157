@@ -1,10 +1,12 @@
 import { CompanyInfo } from '@/types';
 import { renderBrandLogoHtml } from './brand-logo-markup';
 import {
-  BRAND_SEAL_SRC,
   DocumentBrand,
+  DocumentSealVariant,
   brandHasGst,
   getDocumentBrandLabel,
+  normalizeDocumentSealVariant,
+  resolveBrandSealSrc,
   resolveDocumentBrandFromData,
 } from './service-brands';
 
@@ -45,14 +47,23 @@ export function renderPdfCompanyDetailsHtml(
   `;
 }
 
-export function renderPdfSignatureHtml(brand: DocumentBrand, billDate: string): string {
+export function renderPdfSignatureHtml(
+  brand: DocumentBrand,
+  billDate: string,
+  sealVariant?: DocumentSealVariant | unknown
+): string {
   const dateStr = new Date(billDate).toLocaleDateString('en-IN', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
   });
   const sealLabel = getDocumentBrandLabel(brand);
-  const seal = `<img src="${BRAND_SEAL_SRC[brand]}" alt="${sealLabel} Seal" class="signature-seal" />`;
+  const resolvedVariant =
+    sealVariant === undefined || sealVariant === null
+      ? 'stamp'
+      : normalizeDocumentSealVariant(sealVariant);
+  const sealSrc = resolveBrandSealSrc(brand, resolvedVariant);
+  const seal = `<img src="${sealSrc}" alt="${sealLabel} Seal" class="signature-seal" />`;
   return `
     <${TAG} class="signatures">
       <${TAG} class="signature-box">

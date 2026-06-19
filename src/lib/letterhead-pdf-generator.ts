@@ -10,11 +10,12 @@ import {
   renderPdfLogoHtml,
 } from './document-pdf-brand';
 import {
-  BRAND_SEAL_SRC,
   DocumentBrand,
+  DocumentSealVariant,
   getCompanyInfoForBrand,
   getDocumentBrandLabel,
   normalizeDocumentBrand,
+  resolveBrandSealSrc,
 } from './service-brands';
 
 /**
@@ -123,6 +124,8 @@ export interface LetterheadDocumentData {
   rightSignatory?: LetterheadSignatory;
   /** Show the brand seal automatically next to the left signatory. */
   useBrandSealAsStamp?: boolean;
+  /** Signatory seal (default) or round stamp when useBrandSealAsStamp is true. */
+  brandSealVariant?: DocumentSealVariant;
   /** Optional custom stamp/seal data URL to display next to the right signatory. */
   customStampUrl?: string;
   /** Don't print the left (authorized) signature block. */
@@ -282,6 +285,7 @@ export function createEmptyLetterhead(
       designation: 'Customer Signatory',
     },
     useBrandSealAsStamp: true,
+    brandSealVariant: 'sign',
     customStampUrl: '',
     notes: '',
     terms: '',
@@ -451,7 +455,9 @@ function renderSignaturesHtml(data: LetterheadDocumentData): string {
   const showLeft = !data.hideLeftSignatory;
   const showRight = !data.hideRightSignatory;
   if (!showLeft && !showRight) return '';
-  const leftStamp = data.useBrandSealAsStamp ? BRAND_SEAL_SRC[data.brand] : null;
+  const leftStamp = data.useBrandSealAsStamp
+    ? resolveBrandSealSrc(data.brand, data.brandSealVariant ?? 'sign')
+    : null;
   const rightStamp = data.customStampUrl?.trim() ? data.customStampUrl : null;
 
   const leftHtml = showLeft

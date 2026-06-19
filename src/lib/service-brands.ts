@@ -13,10 +13,39 @@ export function getDocumentBrandLabel(brand: DocumentBrand): string {
   return brand === 'elevenro' ? 'Eleven RO' : 'Hydrogen RO';
 }
 
-export const BRAND_SEAL_SRC: Record<DocumentBrand, string> = {
+/** Signatory seal with signature (default for AMC / quotation). */
+export const BRAND_SEAL_SIGN_SRC: Record<DocumentBrand, string> = {
+  hydrogenro: '/hydrogenro-seal-sign.webp',
+  elevenro: '/elevenro-seal-sign.webp',
+};
+
+/** Round stamp seal (legacy / alternate). */
+export const BRAND_SEAL_STAMP_SRC: Record<DocumentBrand, string> = {
   hydrogenro: '/HydrogenROSeal.webp',
   elevenro: '/elevenroseal.webp',
 };
+
+/** @deprecated Prefer resolveBrandSealSrc with an explicit variant. */
+export const BRAND_SEAL_SRC: Record<DocumentBrand, string> = BRAND_SEAL_STAMP_SRC;
+
+export type DocumentSealVariant = 'sign' | 'stamp';
+
+export function normalizeDocumentSealVariant(value: unknown): DocumentSealVariant {
+  return value === 'stamp' ? 'stamp' : 'sign';
+}
+
+export function resolveBrandSealSrc(
+  brand: DocumentBrand,
+  variant?: DocumentSealVariant | unknown
+): string {
+  return normalizeDocumentSealVariant(variant) === 'stamp'
+    ? BRAND_SEAL_STAMP_SRC[brand]
+    : BRAND_SEAL_SIGN_SRC[brand];
+}
+
+export function getDocumentSealVariantLabel(variant: DocumentSealVariant): string {
+  return variant === 'stamp' ? 'Round stamp seal' : 'Signatory seal (default)';
+}
 
 export function brandHasGst(brand: DocumentBrand): boolean {
   return brand === 'hydrogenro';

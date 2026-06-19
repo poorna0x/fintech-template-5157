@@ -21,6 +21,8 @@ import {
   getCompanyInfoForBrand,
   getDefaultAgreementIntro,
   getDocumentBrandLabel,
+  getDocumentSealVariantLabel,
+  resolveBrandSealSrc,
 } from '@/lib/service-brands';
 import DraftToolbar from '@/components/document-drafts/DraftToolbar';
 import { mergeEditableCustomer } from '@/lib/document-drafts';
@@ -55,6 +57,7 @@ export default function AMCGenerator({ customer, onPrint, onAMCSaved }: AMCGener
   const [roModel, setRoModel] = useState('');
   const [includesPreSedimentFiltration, setIncludesPreSedimentFiltration] = useState(false);
   const [showComputerGeneratedText, setShowComputerGeneratedText] = useState(true);
+  const [sealVariant, setSealVariant] = useState<'sign' | 'stamp'>('sign');
 
   // AMC service period default from settings (same source as "AMC service period (auto job creation)" control)
   const getDefaultServicePeriodFromStorage = (): { kind: '4' | '6' | 'custom' | 'no_auto'; customMonths: number } => {
@@ -390,6 +393,7 @@ ${notCoveredWithPreFilter}`;
         customer_address: editableCustomer.address,
         agreement_intro: resolveAgreementIntroForBrand(agreementIntro, brand),
         document_brand: brand,
+        seal_variant: sealVariant,
         saved_at: new Date().toISOString()
       };
 
@@ -534,6 +538,7 @@ ${notCoveredWithPreFilter}`;
       updatedAt: new Date().toISOString()
     };
     (bill as any).documentBrand = brand;
+    (bill as any).sealVariant = sealVariant;
 
     try {
       // Don't save to database automatically - user must explicitly click "Save to Database" button
@@ -577,6 +582,7 @@ ${notCoveredWithPreFilter}`;
     roModel,
     includesPreSedimentFiltration,
     showComputerGeneratedText,
+    sealVariant,
     servicePeriodKind,
     servicePeriodCustomMonths,
     terms,
@@ -603,6 +609,7 @@ ${notCoveredWithPreFilter}`;
       setIncludesPreSedimentFiltration(snap.includesPreSedimentFiltration);
     if (typeof snap.showComputerGeneratedText === 'boolean')
       setShowComputerGeneratedText(snap.showComputerGeneratedText);
+    if (snap.sealVariant === 'sign' || snap.sealVariant === 'stamp') setSealVariant(snap.sealVariant);
     if (
       snap.servicePeriodKind === '4' ||
       snap.servicePeriodKind === '6' ||
@@ -1028,7 +1035,26 @@ ${notCoveredWithPreFilter}`;
             <CardHeader>
               <CardTitle>Document Options</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
+              <div>
+                <Label htmlFor="amcSealVariant">Authorized signatory image</Label>
+                <Select
+                  value={sealVariant}
+                  onValueChange={(v: 'sign' | 'stamp') => setSealVariant(v)}
+                >
+                  <SelectTrigger id="amcSealVariant" className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="sign">{getDocumentSealVariantLabel('sign')}</SelectItem>
+                    <SelectItem value="stamp">{getDocumentSealVariantLabel('stamp')}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-500 mt-2">
+                  PDF uses {resolveBrandSealSrc(documentBrand, sealVariant).replace(/^\//, '')} for{' '}
+                  {getDocumentBrandLabel(documentBrand)}.
+                </p>
+              </div>
               <div className="flex items-center space-x-2">
                 <Checkbox
                   id="showComputerGeneratedText"

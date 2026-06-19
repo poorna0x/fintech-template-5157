@@ -30,6 +30,7 @@ import {
   DocumentBrand,
   brandHasGst,
   getCompanyInfoForBrand,
+  getDocumentSealVariantLabel,
 } from '@/lib/service-brands';
 import DraftToolbar from '@/components/document-drafts/DraftToolbar';
 import { mergeEditableCustomer } from '@/lib/document-drafts';
@@ -107,6 +108,7 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
   const [gstOption, setGstOption] = useState<'normal' | 'exclude' | 'include'>('include'); // Default to including GST
   const [addGSTNoteToNotes, setAddGSTNoteToNotes] = useState(false); // Option to add GST note to Additional Info
   const [showBankDetails, setShowBankDetails] = useState(false);
+  const [sealVariant, setSealVariant] = useState<'sign' | 'stamp'>('sign');
   const [bankDetails, setBankDetails] = useState(defaultBankDetails);
   const [brandPickerOpen, setBrandPickerOpen] = useState(false);
   const [pendingPrintAction, setPendingPrintAction] = useState<'print' | 'pdf'>('print');
@@ -465,6 +467,7 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
     // Add GST option and GST data
     (quotation as any).gstOption = effectiveGstOption;
     (quotation as any).documentBrand = brand;
+    (quotation as any).sealVariant = sealVariant;
     (quotation as any).includeGST = effectiveGstOption === 'include'; // For backward compatibility
     if (effectiveGstOption === 'include') {
       const posForOutput = preparePlaceOfSupplyForSave({
@@ -522,6 +525,7 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
     gstOption,
     addGSTNoteToNotes,
     showBankDetails,
+    sealVariant,
     bankDetails,
     placeOfSupply,
     placeOfSupplyCode,
@@ -545,6 +549,7 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
       setGstOption(snap.gstOption);
     if (typeof snap.addGSTNoteToNotes === 'boolean') setAddGSTNoteToNotes(snap.addGSTNoteToNotes);
     if (typeof snap.showBankDetails === 'boolean') setShowBankDetails(snap.showBankDetails);
+    if (snap.sealVariant === 'sign' || snap.sealVariant === 'stamp') setSealVariant(snap.sealVariant);
     if (snap.bankDetails && typeof snap.bankDetails === 'object')
       setBankDetails({ ...defaultBankDetails, ...snap.bankDetails });
     if (typeof snap.placeOfSupply === 'string') setPlaceOfSupply(snap.placeOfSupply);
@@ -1383,6 +1388,30 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
               </div>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg sm:text-xl">Document Options</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <Label htmlFor="quotationSealVariant">Authorized signatory image</Label>
+          <Select
+            value={sealVariant}
+            onValueChange={(v: 'sign' | 'stamp') => setSealVariant(v)}
+          >
+            <SelectTrigger id="quotationSealVariant" className="mt-1">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="sign">{getDocumentSealVariantLabel('sign')}</SelectItem>
+              <SelectItem value="stamp">{getDocumentSealVariantLabel('stamp')}</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-gray-500">
+            Default uses the signatory seal (hydrogenro-seal-sign / elevenro-seal-sign) for the brand you pick at print.
+          </p>
         </CardContent>
       </Card>
 

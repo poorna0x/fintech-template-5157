@@ -289,12 +289,18 @@ export default function GSTInvoicesPage() {
     
     (bill as any).bankDetails = invoice.bank_details;
 
+    const savedSealVariant = (invoice.invoice_details as { sealVariant?: string } | undefined)?.sealVariant;
+    (bill as any).pdfOptions = {
+      sealVariant: savedSealVariant === 'stamp' ? 'stamp' : 'sign',
+    };
+
     // Generate PDF
     const pdfData = {
       ...bill,
       gstData: (bill as any).gstData,
       invoiceDetails: (bill as any).invoiceDetails,
-      bankDetails: (bill as any).bankDetails
+      bankDetails: (bill as any).bankDetails,
+      pdfOptions: (bill as any).pdfOptions,
     };
 
     try {

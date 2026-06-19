@@ -23,6 +23,11 @@ import {
 import { Checkbox } from '@/components/ui/checkbox';
 import DraftToolbar from '@/components/document-drafts/DraftToolbar';
 import { mergeEditableCustomer } from '@/lib/document-drafts';
+import {
+  getDocumentSealVariantLabel,
+  resolveBrandSealSrc,
+  resolveDocumentBrandFromData,
+} from '@/lib/service-brands';
 
 // Helper function to convert number to words
 function numberToWords(num: number): string {
@@ -250,6 +255,7 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
   const [showComputerGeneratedText, setShowComputerGeneratedText] = useState(true);
   const [showFooterText, setShowFooterText] = useState(true);
   const [showDigitallySignedText, setShowDigitallySignedText] = useState(false);
+  const [sealVariant, setSealVariant] = useState<'sign' | 'stamp'>('sign');
   
   // DSC (Digital Signature Certificate) options
   const [useDSC, setUseDSC] = useState(false);
@@ -617,6 +623,7 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
           companyStateCode,
           placeOfSupply: posForSave.name,
           placeOfSupplyCode: posForSave.code,
+          sealVariant,
         },
         bank_details: bankDetails || {},
         notes: notesArray,
@@ -745,7 +752,8 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
       showComputerGeneratedText,
       showFooterText,
       showDigitallySignedText,
-      signatureDate: signatureDate || billDate
+      signatureDate: signatureDate || billDate,
+      sealVariant,
     };
     
     // Add DSC data if enabled
@@ -803,6 +811,7 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
     showComputerGeneratedText,
     showFooterText,
     showDigitallySignedText,
+    sealVariant,
     useDSC,
     dscAuthorizedSignatory,
     dscNameDesignation,
@@ -846,6 +855,7 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
     if (typeof snap.showFooterText === 'boolean') setShowFooterText(snap.showFooterText);
     if (typeof snap.showDigitallySignedText === 'boolean')
       setShowDigitallySignedText(snap.showDigitallySignedText);
+    if (snap.sealVariant === 'sign' || snap.sealVariant === 'stamp') setSealVariant(snap.sealVariant);
     if (typeof snap.useDSC === 'boolean') setUseDSC(snap.useDSC);
     if (typeof snap.dscAuthorizedSignatory === 'string')
       setDscAuthorizedSignatory(snap.dscAuthorizedSignatory);
@@ -1665,6 +1675,35 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
                 <CardTitle>Document Options</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
+                {!useDSC ? (
+                  <div>
+                    <Label htmlFor="taxInvoiceSealVariant">Authorized signatory image</Label>
+                    <Select
+                      value={sealVariant}
+                      onValueChange={(v: 'sign' | 'stamp') => setSealVariant(v)}
+                    >
+                      <SelectTrigger id="taxInvoiceSealVariant" className="mt-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="sign">{getDocumentSealVariantLabel('sign')}</SelectItem>
+                        <SelectItem value="stamp">{getDocumentSealVariantLabel('stamp')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-gray-500 mt-2">
+                      PDF uses{' '}
+                      {resolveBrandSealSrc(
+                        resolveDocumentBrandFromData({ company }),
+                        sealVariant
+                      ).replace(/^\//, '')}
+                      .
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-500">
+                    Seal image is hidden when Digital Signature Certificate (DSC) is enabled.
+                  </p>
+                )}
                 <div className="flex items-center space-x-2">
                   <Checkbox
                     id="showComputerGeneratedText"
