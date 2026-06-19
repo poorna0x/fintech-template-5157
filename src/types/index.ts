@@ -388,9 +388,11 @@ export interface Bill {
   totalAmount: number;
   
   // Payment Information
-  paymentStatus: 'PENDING' | 'PAID' | 'OVERDUE';
+  paymentStatus: 'PENDING' | 'PAID' | 'OVERDUE' | 'PARTIAL';
   paymentMethod?: 'CASH' | 'CARD' | 'UPI' | 'BANK_TRANSFER' | 'CHEQUE';
   paymentDate?: string;
+  /** Amount received toward totalAmount (for PARTIAL / record on agreement PDF). */
+  amountPaid?: number;
   
   // Additional Information
   notes?: string;

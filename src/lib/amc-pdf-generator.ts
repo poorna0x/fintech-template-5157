@@ -45,6 +45,8 @@ interface AMCPDFData {
   totalTax: number;
   serviceCharge?: number;
   totalAmount: number;
+  paymentStatus?: 'PENDING' | 'PAID' | 'PARTIAL' | 'OVERDUE';
+  amountPaid?: number;
   notes?: string;
   terms?: string;
   validity?: string;
@@ -55,6 +57,67 @@ interface AMCPDFData {
 interface AMCPDFOptions {
   includeDetails?: boolean;
   showComputerGeneratedText?: boolean;
+}
+
+function formatInr(amount: number): string {
+  return amount.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+
+function resolveAmcPayment(data: AMCPDFData): {
+  status: 'PAID' | 'PARTIAL' | 'PENDING';
+  total: number;
+  paid: number;
+  balance: number;
+} {
+  const total = Math.max(0, Number(data.totalAmount) || 0);
+  const rawPaid = Number(data.amountPaid);
+  const paid =
+    data.paymentStatus === 'PAID'
+      ? total
+      : data.paymentStatus === 'PENDING'
+        ? 0
+        : Number.isFinite(rawPaid)
+          ? Math.max(0, Math.min(rawPaid, total))
+          : 0;
+  const balance = Math.max(0, total - paid);
+  let status: 'PAID' | 'PARTIAL' | 'PENDING' = 'PENDING';
+  if (data.paymentStatus === 'PAID' || (total > 0 && paid >= total)) {
+    status = 'PAID';
+  } else if (data.paymentStatus === 'PARTIAL' || (paid > 0 && paid < total)) {
+    status = 'PARTIAL';
+  }
+  return { status, total, paid, balance };
+}
+
+function buildAmcPaymentNoticeHtml(data: AMCPDFData): string {
+  const { status, total, paid, balance } = resolveAmcPayment(data);
+  if (status === 'PAID') return '';
+
+  const totalStr = formatInr(total);
+  const paidStr = formatInr(paid);
+  const balanceStr = formatInr(balance);
+
+  if (status === 'PARTIAL') {
+    return `
+      <div class="payment-notice payment-notice-partial">
+        <div class="payment-notice-title">Payment acknowledgement — partial payment</div>
+        <p class="payment-notice-line"><strong>Total AMC agreement amount (all taxes inclusive):</strong> ₹${totalStr}</p>
+        <p class="payment-notice-line"><strong>Amount received as on agreement date:</strong> ₹${paidStr}</p>
+        <p class="payment-notice-line"><strong>Balance amount due:</strong> ₹${balanceStr}</p>
+        <p class="payment-notice-legal">The customer acknowledges that only part of the AMC agreement consideration has been received. This agreement is issued subject to payment of the full agreement amount. The company may withhold further AMC service visits until the outstanding balance is cleared, unless otherwise agreed in writing. The customer agrees to pay the balance amount on demand and, in any event, before the next scheduled service visit.</p>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="payment-notice payment-notice-pending">
+      <div class="payment-notice-title">Payment acknowledgement — payment pending</div>
+      <p class="payment-notice-line"><strong>Total AMC agreement amount (all taxes inclusive):</strong> ₹${totalStr}</p>
+      <p class="payment-notice-line"><strong>Amount received as on agreement date:</strong> ₹0</p>
+      <p class="payment-notice-line"><strong>Balance amount due:</strong> ₹${balanceStr}</p>
+      <p class="payment-notice-legal">This AMC agreement is issued for record and customer acknowledgement. AMC services shall commence only upon receipt of the full agreement amount, unless the company confirms otherwise in writing.</p>
+    </div>
+  `;
 }
 
 function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): string {
@@ -456,6 +519,64 @@ function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): string {
           font-weight: 700;
           font-size: 15px;
         }
+
+        .payment-notice {
+          margin: 28px 0 24px;
+          padding: 14px 16px;
+          border-radius: 8px;
+          border: 2px solid #d1d5db;
+          background: #f9fafb;
+          page-break-inside: avoid;
+          break-inside: avoid;
+        }
+
+        .payment-notice-title {
+          font-size: 13px;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.4px;
+          margin-bottom: 10px;
+        }
+
+        .payment-notice-line {
+          font-size: 13px;
+          margin: 0 0 6px 0;
+          line-height: 1.5;
+        }
+
+        .payment-notice-legal {
+          font-size: 12px;
+          line-height: 1.55;
+          margin: 10px 0 0 0;
+          color: #374151;
+        }
+
+        .payment-notice-paid {
+          border-color: #16a34a;
+          background: #f0fdf4;
+        }
+
+        .payment-notice-paid .payment-notice-title {
+          color: #166534;
+        }
+
+        .payment-notice-partial {
+          border-color: #d97706;
+          background: #fffbeb;
+        }
+
+        .payment-notice-partial .payment-notice-title {
+          color: #92400e;
+        }
+
+        .payment-notice-pending {
+          border-color: #dc2626;
+          background: #fef2f2;
+        }
+
+        .payment-notice-pending .payment-notice-title {
+          color: #991b1b;
+        }
         
         .signatures {
           margin-top: 40px;
@@ -665,6 +786,27 @@ function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): string {
               <div class="detail-value-new">₹${data.serviceCharge.toLocaleString()}</div>
             </div>
             ` : ''}
+            ${(() => {
+              const p = resolveAmcPayment(data);
+              if (p.status === 'PAID') return '';
+              const statusLabel =
+                p.status === 'PARTIAL' ? 'Partial payment' : 'Payment pending';
+              return `
+            <div class="detail-item-new">
+              <div class="detail-label-new">Payment Status</div>
+              <div class="detail-value-new">${statusLabel}</div>
+            </div>
+            <div class="detail-item-new">
+              <div class="detail-label-new">Amount Received</div>
+              <div class="detail-value-new">₹${formatInr(p.paid)}</div>
+            </div>
+            ${p.balance > 0 ? `
+            <div class="detail-item-new">
+              <div class="detail-label-new">Balance Due</div>
+              <div class="detail-value-new amount-value">₹${formatInr(p.balance)}</div>
+            </div>
+            ` : ''}`;
+            })()}
           </div>
         </div>
       </div>
@@ -823,6 +965,8 @@ function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): string {
         </div>
       ` : ''}
 
+      ${options?.includeDetails !== false ? buildAmcPaymentNoticeHtml(data) : ''}
+
       <!-- Signatures -->
       <div class="signatures">
         <div class="signature-box">
@@ -934,6 +1078,8 @@ export function generateAMCPDF(
       totalTax: bill.totalTax,
       serviceCharge: bill.serviceCharge,
       totalAmount: bill.totalAmount,
+      paymentStatus: bill.paymentStatus,
+      amountPaid: bill.amountPaid,
       notes: bill.notes,
       terms: bill.terms,
       validity: bill.validity,
@@ -1044,6 +1190,8 @@ function handleMobilePrint(
       totalTax: bill.totalTax,
       serviceCharge: bill.serviceCharge,
       totalAmount: bill.totalAmount,
+      paymentStatus: bill.paymentStatus,
+      amountPaid: bill.amountPaid,
       notes: bill.notes,
       terms: bill.terms,
       validity: bill.validity,

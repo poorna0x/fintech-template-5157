@@ -160,6 +160,8 @@ ${notCoveredWithPreFilter}`;
   );
   const [amcCost, setAmcCost] = useState(7000);
   const [serviceCharge, setServiceCharge] = useState(0);
+  const [paymentStatus, setPaymentStatus] = useState<'PAID' | 'PARTIAL' | 'PENDING'>('PAID');
+  const [amountReceived, setAmountReceived] = useState(7000);
   const [isEditingTerms, setIsEditingTerms] = useState(false);
   const [newTerm, setNewTerm] = useState('');
   const [termSection, setTermSection] = useState<'services' | 'terms'>('services');
@@ -218,6 +220,22 @@ ${notCoveredWithPreFilter}`;
   const subtotal = amcCost;
   const totalAmount = subtotal + serviceCharge;
 
+  React.useEffect(() => {
+    if (paymentStatus === 'PAID') {
+      setAmountReceived(totalAmount);
+    } else if (paymentStatus === 'PENDING') {
+      setAmountReceived(0);
+    }
+  }, [paymentStatus, totalAmount]);
+
+  const resolvedAmountReceived =
+    paymentStatus === 'PAID'
+      ? totalAmount
+      : paymentStatus === 'PENDING'
+        ? 0
+        : Math.max(0, Math.min(amountReceived, totalAmount));
+
+  const balanceDue = Math.max(0, totalAmount - resolvedAmountReceived);
 
   const addTerm = () => {
     if (newTerm.trim()) {
@@ -362,6 +380,9 @@ ${notCoveredWithPreFilter}`;
         validity_period: validity,
         description: description.trim() || null,
         notes: notes || null,
+        payment_status: paymentStatus,
+        amount_received: resolvedAmountReceived,
+        balance_due: balanceDue,
         customer_name: editableCustomer.name,
         customer_phone: editableCustomer.phone,
         customer_email: editableCustomer.email || null,
@@ -458,6 +479,13 @@ ${notCoveredWithPreFilter}`;
       return;
     }
 
+    if (paymentStatus === 'PARTIAL') {
+      if (resolvedAmountReceived <= 0 || resolvedAmountReceived >= totalAmount) {
+        toast.error('Enter a partial amount greater than 0 and less than the total');
+        return;
+      }
+    }
+
     const { startDate, endDate, years } = calculateDates();
 
     // Use the current terms state (preserves any manual edits)
@@ -494,7 +522,8 @@ ${notCoveredWithPreFilter}`;
       totalTax: 0,
       serviceCharge,
       totalAmount,
-      paymentStatus: 'PENDING',
+      paymentStatus,
+      amountPaid: resolvedAmountReceived,
       notes,
       terms,
       validity: validity === 'Custom' ? 
@@ -553,6 +582,8 @@ ${notCoveredWithPreFilter}`;
     terms,
     amcCost,
     serviceCharge,
+    paymentStatus,
+    amountReceived,
     agreementIntro,
     description,
     documentBrand,
@@ -584,6 +615,10 @@ ${notCoveredWithPreFilter}`;
     if (typeof snap.terms === 'string') setTerms(snap.terms);
     if (typeof snap.amcCost === 'number') setAmcCost(snap.amcCost);
     if (typeof snap.serviceCharge === 'number') setServiceCharge(snap.serviceCharge);
+    if (snap.paymentStatus === 'PAID' || snap.paymentStatus === 'PARTIAL' || snap.paymentStatus === 'PENDING') {
+      setPaymentStatus(snap.paymentStatus);
+    }
+    if (typeof snap.amountReceived === 'number') setAmountReceived(snap.amountReceived);
     if (typeof snap.agreementIntro === 'string') setAgreementIntro(snap.agreementIntro);
     if (typeof snap.description === 'string') setDescription(snap.description);
     if (snap.documentBrand === 'hydrogenro' || snap.documentBrand === 'elevenro') {
@@ -907,6 +942,60 @@ ${notCoveredWithPreFilter}`;
             </CardContent>
           </Card>
 
+          <Card className="border-2 border-amber-200 bg-amber-50/40">
+            <CardHeader>
+              <CardTitle className="text-base sm:text-lg text-amber-900">Payment on agreement</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-gray-600">
+                Printed on the agreement PDF with a legal payment acknowledgement (paid, partial, or pending).
+              </p>
+              <div>
+                <Label htmlFor="paymentStatus">Payment status</Label>
+                <Select
+                  value={paymentStatus}
+                  onValueChange={(v: 'PAID' | 'PARTIAL' | 'PENDING') => setPaymentStatus(v)}
+                >
+                  <SelectTrigger id="paymentStatus" className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="PAID">Paid in full</SelectItem>
+                    <SelectItem value="PARTIAL">Partial payment</SelectItem>
+                    <SelectItem value="PENDING">Payment pending</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {paymentStatus === 'PARTIAL' && (
+                <div>
+                  <Label htmlFor="amountReceived">Amount received (₹)</Label>
+                  <Input
+                    id="amountReceived"
+                    type="number"
+                    min={0}
+                    max={totalAmount}
+                    value={amountReceived}
+                    onChange={(e) => setAmountReceived(parseFloat(e.target.value) || 0)}
+                    className="mt-1"
+                  />
+                  <p className="text-xs text-gray-600 mt-1">
+                    Balance due: ₹{balanceDue.toLocaleString('en-IN')}
+                  </p>
+                </div>
+              )}
+              {paymentStatus === 'PENDING' && (
+                <p className="text-sm text-amber-900 font-medium">
+                  Full amount pending: ₹{totalAmount.toLocaleString('en-IN')}
+                </p>
+              )}
+              {paymentStatus === 'PAID' && (
+                <p className="text-sm text-green-800 font-medium">
+                  Received in full: ₹{totalAmount.toLocaleString('en-IN')}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Pre-Sediment Filtration Option */}
           <Card>
             <CardHeader>
@@ -1193,6 +1282,22 @@ ${notCoveredWithPreFilter}`;
                 <div className="flex justify-between font-bold text-base sm:text-lg border-t pt-2">
                   <span>Total Amount:</span>
                   <span>₹{totalAmount.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between text-sm sm:text-base pt-1">
+                  <span>Payment:</span>
+                  <span className={
+                    paymentStatus === 'PAID'
+                      ? 'text-green-700 font-medium'
+                      : paymentStatus === 'PARTIAL'
+                        ? 'text-amber-700 font-medium'
+                        : 'text-red-700 font-medium'
+                  }>
+                    {paymentStatus === 'PAID'
+                      ? 'Paid in full'
+                      : paymentStatus === 'PARTIAL'
+                        ? `Partial — ₹${resolvedAmountReceived.toLocaleString('en-IN')} received, ₹${balanceDue.toLocaleString('en-IN')} due`
+                        : 'Payment pending'}
+                  </span>
                 </div>
               </div>
 
