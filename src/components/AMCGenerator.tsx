@@ -39,11 +39,8 @@ import {
   formatCustomerFullAddressLine,
   normalizeCustomerAddress,
 } from '@/lib/customer-address';
-import { supabase } from '@/lib/supabaseClient';
-import {
-  getAmcEmailSuccessMessage,
-  sendAmcAgreementEmail,
-} from '@/lib/send-amc-agreement-email';
+import AmcEmailSendDialog from '@/components/amc/AmcEmailSendDialog';
+import { normalizeRecipientList } from '@/lib/email-recipients';
 
 interface AMCGeneratorProps {
   customer: Customer;
@@ -195,7 +192,13 @@ ${notCoveredWithPreFilter}`;
   );
   const [description, setDescription] = useState('');
   const [isSaving, setIsSaving] = useState(false);
-  const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [emailDialogOpen, setEmailDialogOpen] = useState(false);
+  const [emailSendContext, setEmailSendContext] = useState<{
+    bill: Bill;
+    brand: DocumentBrand;
+    endDateIso: string;
+    defaultRecipients: string[];
+  } | null>(null);
   const [brandPickerOpen, setBrandPickerOpen] = useState(false);
   const [pendingBrandAction, setPendingBrandAction] = useState<
     | { type: 'save' }
@@ -640,10 +643,6 @@ ${notCoveredWithPreFilter}`;
   const customerEmail = getValidCustomerEmail(editableCustomer.email);
 
   const handleEmailCustomer = () => {
-    if (!customerEmail) {
-      toast.error('Add a valid customer email to send the AMC agreement');
-      return;
-    }
     if (!billNumber.trim()) {
       toast.error('Please enter a bill number');
       return;
@@ -659,57 +658,17 @@ ${notCoveredWithPreFilter}`;
     setBrandPickerOpen(true);
   };
 
-  const executeEmailSend = async (brand: DocumentBrand) => {
+  const openEmailSendDialog = (brand: DocumentBrand) => {
     applyBrandToForm(brand);
     if (!validateAmcForm()) return;
 
-    const recipient = getValidCustomerEmail(editableCustomer.email);
-    if (!recipient) {
-      toast.error('Add a valid customer email to send the AMC agreement');
-      return;
-    }
-
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    if (!session?.access_token) {
-      toast.error('Sign in as admin to send email');
-      return;
-    }
-
     const { bill, endDateIso } = buildAmcBill(brand);
-    setIsSendingEmail(true);
-    const toastId = toast.loading('Generating PDF and sending email…');
+    const defaultRecipients = normalizeRecipientList(
+      customerEmail ? [customerEmail] : []
+    );
 
-    try {
-      const result = await sendAmcAgreementEmail({
-        bill,
-        brand,
-        recipientEmail: recipient,
-        accessToken: session.access_token,
-        endDateIso,
-        pdfOptions: {
-          includeDetails: true,
-          showComputerGeneratedText,
-        },
-      });
-
-      if (result.ok) {
-        toast.success(getAmcEmailSuccessMessage(brand, recipient), { id: toastId });
-        onPrint?.(bill);
-      } else {
-        toast.error(result.error || 'Could not send email', { id: toastId });
-      }
-    } catch (error) {
-      console.error('Error emailing AMC agreement:', error);
-      const message = error instanceof Error ? error.message : 'Failed to send AMC agreement';
-      toast.error('Could not email AMC agreement', {
-        id: toastId,
-        description: message,
-      });
-    } finally {
-      setIsSendingEmail(false);
-    }
+    setEmailSendContext({ bill, brand, endDateIso, defaultRecipients });
+    setEmailDialogOpen(true);
   };
 
   // ---- Draft snapshot / restore -----------------------------------------------
@@ -811,7 +770,7 @@ ${notCoveredWithPreFilter}`;
         embedded={embedded}
         actions={
           <DocumentGeneratorActionBar
-            primaryCols={customerEmail ? 4 : 3}
+            primaryCols={4}
             secondaryLabel="Terms only"
             draft={
               <DraftToolbar
@@ -852,17 +811,15 @@ ${notCoveredWithPreFilter}`;
                   <Download className="w-4 h-4 shrink-0" />
                   <span className="truncate">Download</span>
                 </Button>
-                {customerEmail ? (
-                  <Button
-                    onClick={handleEmailCustomer}
-                    variant="outline"
-                    className={documentOutlineBtnClass}
-                    disabled={!billNumber.trim() || isSendingEmail}
-                  >
-                    <Mail className="w-4 h-4 shrink-0" />
-                    <span className="truncate">{isSendingEmail ? 'Sending…' : 'Email PDF'}</span>
-                  </Button>
-                ) : null}
+                <Button
+                  onClick={handleEmailCustomer}
+                  variant="outline"
+                  className={documentOutlineBtnClass}
+                  disabled={!billNumber.trim()}
+                >
+                  <Mail className="w-4 h-4 shrink-0" />
+                  <span className="truncate">Email PDF</span>
+                </Button>
               </>
             }
             secondary={
@@ -1625,9 +1582,24 @@ ${notCoveredWithPreFilter}`;
           } else if (pendingBrandAction?.type === 'document') {
             void executePrint(brand, pendingBrandAction.action, pendingBrandAction.options);
           } else if (pendingBrandAction?.type === 'email') {
-            void executeEmailSend(brand);
+            openEmailSendDialog(brand);
           }
           setPendingBrandAction(null);
+        }}
+      />
+      <AmcEmailSendDialog
+        open={emailDialogOpen}
+        onOpenChange={setEmailDialogOpen}
+        bill={emailSendContext?.bill ?? null}
+        brand={emailSendContext?.brand ?? null}
+        endDateIso={emailSendContext?.endDateIso ?? ''}
+        defaultRecipients={emailSendContext?.defaultRecipients ?? []}
+        pdfOptions={{
+          includeDetails: true,
+          showComputerGeneratedText,
+        }}
+        onSent={() => {
+          if (emailSendContext?.bill) onPrint?.(emailSendContext.bill);
         }}
       />
     </div>

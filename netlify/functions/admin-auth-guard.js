@@ -78,6 +78,63 @@ async function verifyAdminBearerToken(token) {
   return { ok: true, userId: user.id };
 }
 
+/** Admin or technician JWT — for AMC agreement emails from the field. */
+async function verifyStaffBearerToken(token) {
+  if (!token) {
+    return { ok: false, error: 'Unauthorized' };
+  }
+
+  const supabaseUrl = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
+  const anonKey = (process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '').trim();
+  const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+
+  if (!supabaseUrl || !anonKey) {
+    return { ok: false, error: 'Server misconfigured' };
+  }
+
+  const userClient = createClient(supabaseUrl, anonKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
+  const { data: userData, error: userErr } = await userClient.auth.getUser(token);
+  if (userErr || !userData?.user) {
+    return { ok: false, error: 'Unauthorized' };
+  }
+
+  const user = userData.user;
+  const metaRole = user.app_metadata?.role ?? user.user_metadata?.role;
+
+  if (metaRole === 'technician') {
+    return { ok: true, userId: user.id, role: 'technician' };
+  }
+  if (metaRole === 'admin') {
+    return { ok: true, userId: user.id, role: 'admin' };
+  }
+
+  if (!serviceKey) {
+    return { ok: false, error: 'Unauthorized' };
+  }
+
+  const adminClient = createClient(supabaseUrl, serviceKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
+  const { data: techRow, error: techErr } = await adminClient
+    .from('technicians')
+    .select('id')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  if (techErr) {
+    return { ok: false, error: 'Unauthorized' };
+  }
+  if (techRow) {
+    return { ok: true, userId: user.id, role: 'technician' };
+  }
+
+  return { ok: true, userId: user.id, role: 'admin' };
+}
+
 /** Admin session JWT or legacy EMAIL_PREVIEW_SECRET header. */
 async function authorizeAdminRequest(event) {
   if (isPreviewSecretAuthorized(event)) {
@@ -93,8 +150,29 @@ async function authorizeAdminRequest(event) {
   return { ok: false, error: session.error || 'Unauthorized' };
 }
 
+/** Admin, technician, or preview secret — AMC agreement emails only. */
+async function authorizeStaffAmcEmailRequest(event) {
+  if (isPreviewSecretAuthorized(event)) {
+    return { ok: true, via: 'preview_secret', role: 'admin' };
+  }
+
+  const token = readBearerToken(event);
+  const session = await verifyStaffBearerToken(token);
+  if (session.ok) {
+    return { ok: true, via: 'session', userId: session.userId, role: session.role };
+  }
+
+  return { ok: false, error: session.error || 'Unauthorized' };
+}
+
+/** @deprecated Alias — use authorizeStaffAmcEmailRequest */
+const authorizeStaffRequest = authorizeStaffAmcEmailRequest;
+
 module.exports = {
   authorizeAdminRequest,
+  authorizeStaffAmcEmailRequest,
+  authorizeStaffRequest,
   verifyAdminBearerToken,
+  verifyStaffBearerToken,
   isPreviewSecretAuthorized,
 };

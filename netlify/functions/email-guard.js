@@ -114,7 +114,7 @@ function getBrandMailMeta(documentBrand) {
   };
 }
 
-const PREVIEW_PURPOSES = new Set(['booking_confirmation', 'admin_composer']);
+const PREVIEW_PURPOSES = new Set(['booking_confirmation', 'admin_composer', 'amc_agreement']);
 const MAX_PREVIEW_ATTACHMENTS = 5;
 const MAX_PREVIEW_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const MAX_PREVIEW_ATTACHMENT_TOTAL_BYTES = 25 * 1024 * 1024;

@@ -11,6 +11,7 @@ import {
   generateAMCHTML,
   type AMCPDFOptions,
 } from '@/lib/amc-pdf-generator';
+import { normalizeRecipientList } from '@/lib/email-recipients';
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getDocumentBrandLabel } from '@/lib/service-brands';
 import { generateDocumentPdfBase64 } from '@/lib/server-pdf-download';
@@ -18,11 +19,21 @@ import { generateDocumentPdfBase64 } from '@/lib/server-pdf-download';
 export interface SendAmcAgreementEmailParams {
   bill: Bill;
   brand: DocumentBrand;
-  recipientEmail: string;
+  /** One or more recipient addresses */
+  recipientEmails: string[];
   accessToken: string;
   /** AMC end date (ISO yyyy-mm-dd) for the email details block */
   endDateIso: string;
   pdfOptions?: AMCPDFOptions;
+  /** Override default template message body */
+  customMessage?: string;
+}
+
+export interface SendAmcAgreementEmailResult {
+  ok: boolean;
+  error?: string;
+  sentCount?: number;
+  failedRecipients?: string[];
 }
 
 function formatInrAmount(amount: number): string {
@@ -32,23 +43,49 @@ function formatInrAmount(amount: number): string {
 
 export async function sendAmcAgreementEmail(
   params: SendAmcAgreementEmailParams
-): Promise<{ ok: boolean; error?: string }> {
-  const { bill, brand, recipientEmail, accessToken, endDateIso, pdfOptions } = params;
+): Promise<SendAmcAgreementEmailResult> {
+  const {
+    bill,
+    brand,
+    recipientEmails,
+    accessToken,
+    endDateIso,
+    pdfOptions,
+    customMessage,
+  } = params;
+
+  const recipients = normalizeRecipientList(recipientEmails);
+  if (!recipients.length) {
+    return { ok: false, error: 'Add at least one valid email address' };
+  }
+
   const pdfFilename = `AMC_${bill.billNumber.replace(/\s+/g, '_')}.pdf`;
   const html = generateAMCHTML(billToAmcPdfData(bill), pdfOptions);
 
-  const { pdfBase64, filename, size } = await generateDocumentPdfBase64({
-    html,
-    filename: pdfFilename,
-  });
+  let pdfBase64: string;
+  let filename: string;
+  let size: number;
 
+  try {
+    const pdf = await generateDocumentPdfBase64({ html, filename: pdfFilename });
+    pdfBase64 = pdf.pdfBase64;
+    filename = pdf.filename;
+    size = pdf.size;
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : 'PDF generation failed',
+    };
+  }
+
+  const message = (customMessage || getDefaultDocumentMessage('amc_document')).trim();
   const documentData: AdminDocumentEmailData = {
     documentBrand: brand,
     customerName: bill.customer.name,
     documentRef: bill.billNumber,
     amount: formatInrAmount(bill.totalAmount),
     dueDate: endDateIso,
-    message: getDefaultDocumentMessage('amc_document'),
+    message,
     customSubject: '',
   };
 
@@ -59,33 +96,74 @@ export async function sendAmcAgreementEmail(
     { attachmentNames: [filename] }
   );
 
-  const result = await emailService.sendAdminComposerEmail(
-    {
-      templateType: 'amc_document',
-      documentBrand: brand,
-      to: recipientEmail.trim(),
-      subject: emailPreview.subject,
-      html: emailPreview.html,
-      text: emailPreview.text,
-      attachments: [
-        {
-          filename,
-          contentType: 'application/pdf',
-          content: pdfBase64,
-          size,
-        },
-      ],
-    },
-    accessToken
-  );
+  const attachment = {
+    filename,
+    contentType: 'application/pdf',
+    content: pdfBase64,
+    size,
+  };
 
-  if (!result.ok) {
-    return { ok: false, error: result.error || 'Could not send email' };
+  const failedRecipients: string[] = [];
+  let sentCount = 0;
+
+  for (const to of recipients) {
+    const result = await emailService.sendAmcAgreementEmail(
+      {
+        templateType: 'amc_document',
+        documentBrand: brand,
+        to,
+        subject: emailPreview.subject,
+        html: emailPreview.html,
+        text: emailPreview.text,
+        attachments: [attachment],
+      },
+      accessToken
+    );
+
+    if (result.ok) {
+      sentCount += 1;
+    } else {
+      failedRecipients.push(to);
+    }
   }
 
-  return { ok: true };
+  if (sentCount === 0) {
+    return {
+      ok: false,
+      error: 'Could not send to any recipient',
+      sentCount: 0,
+      failedRecipients,
+    };
+  }
+
+  if (failedRecipients.length) {
+    return {
+      ok: true,
+      sentCount,
+      failedRecipients,
+      error: `Sent to ${sentCount}; failed: ${failedRecipients.join(', ')}`,
+    };
+  }
+
+  return { ok: true, sentCount };
 }
 
-export function getAmcEmailSuccessMessage(brand: DocumentBrand, recipientEmail: string): string {
-  return `AMC agreement emailed from ${getDocumentBrandLabel(brand)} to ${recipientEmail.trim()}`;
+export function getAmcEmailSuccessMessage(
+  brand: DocumentBrand,
+  recipientEmails: string[]
+): string {
+  const recipients = normalizeRecipientList(recipientEmails);
+  const label = getDocumentBrandLabel(brand);
+  if (recipients.length <= 1) {
+    return `AMC agreement emailed from ${label} to ${recipients[0] || 'customer'}`;
+  }
+  return `AMC agreement emailed from ${label} to ${recipients.length} recipients`;
+}
+
+export async function downloadAmcAgreementPdf(
+  bill: Bill,
+  pdfOptions?: AMCPDFOptions
+): Promise<void> {
+  const { generateAMCPDF } = await import('@/lib/amc-pdf-generator');
+  generateAMCPDF(bill, 'pdf', pdfOptions);
 }

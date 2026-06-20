@@ -3,7 +3,7 @@
 
 const nodemailer = require('nodemailer');
 const { validatePreviewEmailBody, getFixedFromAddress, getBrandMailMeta } = require('./email-guard');
-const { authorizeAdminRequest } = require('./admin-auth-guard');
+const { authorizeAdminRequest, authorizeStaffAmcEmailRequest } = require('./admin-auth-guard');
 
 function jsonResponse(statusCode, headers, body) {
   return {
@@ -33,16 +33,20 @@ exports.handler = async (event) => {
     return jsonResponse(405, cors, { error: 'Method not allowed' });
   }
 
-  const auth = await authorizeAdminRequest(event);
-  if (!auth.ok) {
-    return jsonResponse(403, cors, { error: auth.error || 'Unauthorized' });
-  }
-
   let body;
   try {
     body = JSON.parse(event.body || '{}');
   } catch {
     return jsonResponse(400, cors, { error: 'Invalid JSON' });
+  }
+
+  const purpose = body.purpose;
+  const auth =
+    purpose === 'amc_agreement'
+      ? await authorizeStaffAmcEmailRequest(event)
+      : await authorizeAdminRequest(event);
+  if (!auth.ok) {
+    return jsonResponse(403, cors, { error: auth.error || 'Unauthorized' });
   }
 
   const validated = validatePreviewEmailBody(body);

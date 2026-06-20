@@ -111,6 +111,18 @@ import {
   writeTechnicianCompleteJobDraft,
   type TechnicianCompleteJobDraft,
 } from '@/lib/technicianCompleteJobDraft';
+import AmcDocumentActions from '@/components/amc/AmcDocumentActions';
+import {
+  buildTechnicianReferenceAmcBill,
+  suggestReferenceAmcBillNumber,
+} from '@/lib/amc-reference-bill';
+import {
+  buildTechnicianAmcPersistPayload,
+  persistAmcContract,
+} from '@/lib/save-amc-contract';
+import { normalizeCustomerAddress } from '@/lib/customer-address';
+import { normalizeDocumentBrand } from '@/lib/service-brands';
+import type { Customer } from '@/types';
 
 /** Visible-tab poll (backup if postgres/broadcast miss). */
 const TECH_JOBS_POLL_MS = 12_000;
@@ -662,6 +674,7 @@ const TechnicianDashboard = () => {
   const [amcServicePeriodKind, setAmcServicePeriodKind] = useState<'' | '4' | '6' | 'custom' | 'no_auto'>('');
   const [amcServicePeriodCustomMonths, setAmcServicePeriodCustomMonths] = useState<number>(4);
   const [hasAMC, setHasAMC] = useState<boolean | null>(null);
+  const [completeJobCustomerDoc, setCompleteJobCustomerDoc] = useState<Customer | null>(null);
   const [paymentMode, setPaymentMode] = useState<'CASH' | 'ONLINE' | 'PARTIAL' | ''>('');
   const [billAmountConfirmOpen, setBillAmountConfirmOpen] = useState(false);
   const [billPhotosSkipConfirmOpen, setBillPhotosSkipConfirmOpen] = useState(false);
@@ -692,6 +705,7 @@ const TechnicianDashboard = () => {
   const [completionRetryPhaseBOnly, setCompletionRetryPhaseBOnly] = useState(false);
   const [resumeCompleteJobDraftOpen, setResumeCompleteJobDraftOpen] = useState(false);
   const [completeJobDraftToResume, setCompleteJobDraftToResume] = useState<TechnicianCompleteJobDraft | null>(null);
+  const amcContractPersistedKeyRef = useRef<string | null>(null);
 
   // Phone popup state
   const [phonePopupOpen, setPhonePopupOpen] = useState(false);
@@ -3045,6 +3059,196 @@ const TechnicianDashboard = () => {
     setAmcEndDate(endDate.toISOString().split('T')[0]);
   };
 
+  useEffect(() => {
+    if (!completeDialogOpen || completeJobStep !== 3 || hasAMC !== true || !selectedJobForComplete) {
+      setCompleteJobCustomerDoc(null);
+      return;
+    }
+
+    const raw = selectedJobForComplete.customer as Record<string, unknown> | undefined;
+    const customerId =
+      (raw?.id as string | undefined) ||
+      selectedJobForComplete.customer_id ||
+      (selectedJobForComplete as { customerId?: string }).customerId;
+
+    if (!customerId) return;
+
+    let cancelled = false;
+
+    const fallbackCustomer = (): Customer => ({
+      id: String(customerId),
+      customerId: String(raw?.customer_id || raw?.customerId || ''),
+      fullName: String(raw?.full_name || raw?.fullName || 'Customer'),
+      phone: String(raw?.phone || ''),
+      email: String(raw?.email || ''),
+      address: normalizeCustomerAddress(raw?.address, {
+        visible_address: raw?.visible_address,
+      }),
+      location: { latitude: 0, longitude: 0, formattedAddress: '' },
+      serviceType: 'RO',
+      brand: String(raw?.brand || ''),
+      model: String(raw?.model || ''),
+      status: 'ACTIVE',
+      customerSince: '',
+    });
+
+    void (async () => {
+      const { data, error } = await db.customers.getByIdForDocuments(String(customerId));
+      if (cancelled) return;
+      if (error || !data) {
+        setCompleteJobCustomerDoc(fallbackCustomer());
+        return;
+      }
+      const row = data as Record<string, unknown>;
+      setCompleteJobCustomerDoc({
+        id: String(row.id),
+        customerId: String(row.customer_id || ''),
+        fullName: String(row.full_name || 'Customer'),
+        phone: String(row.phone || ''),
+        email: String(row.email || ''),
+        address: normalizeCustomerAddress(row.address, {
+          visible_address: row.visible_address,
+        }),
+        location: { latitude: 0, longitude: 0, formattedAddress: '' },
+        serviceType: (row.service_type as Customer['serviceType']) || 'RO',
+        brand: String(row.brand || ''),
+        model: String(row.model || ''),
+        status: 'ACTIVE',
+        customerSince: String(row.customer_since || ''),
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [completeDialogOpen, completeJobStep, hasAMC, selectedJobForComplete]);
+
+  const technicianReferenceAmcBill = useMemo(() => {
+    if (hasAMC !== true || amcYears <= 0) return null;
+    if (!amcDateGiven || !amcEndDate || !amcAmount.trim()) return null;
+    if (amcIncludesPrefilter === null || !amcServicePeriodKind) return null;
+    const amount = parseFloat(amcAmount);
+    if (!Number.isFinite(amount) || amount <= 0) return null;
+    const documentBrand = normalizeDocumentBrand(serviceBrand);
+    if (!documentBrand || !completeJobCustomerDoc || !selectedJobForComplete) return null;
+
+    return buildTechnicianReferenceAmcBill({
+      customer: completeJobCustomerDoc,
+      documentBrand,
+      billNumber: suggestReferenceAmcBillNumber(selectedJobForComplete.jobNumber),
+      startDate: amcDateGiven,
+      endDate: amcEndDate,
+      years: amcYears,
+      amount,
+      includesPrefilter: amcIncludesPrefilter === true,
+      servicePeriodKind: amcServicePeriodKind,
+      servicePeriodCustomMonths: amcServicePeriodCustomMonths,
+      additionalInfo: amcAdditionalInfo,
+    });
+  }, [
+    hasAMC,
+    amcYears,
+    amcDateGiven,
+    amcEndDate,
+    amcAmount,
+    amcIncludesPrefilter,
+    amcServicePeriodKind,
+    amcServicePeriodCustomMonths,
+    amcAdditionalInfo,
+    serviceBrand,
+    completeJobCustomerDoc,
+    selectedJobForComplete,
+  ]);
+
+  const persistTechnicianAmcForShare = useCallback(async (): Promise<{ ok: boolean; error?: string }> => {
+    if (!technicianReferenceAmcBill || !completeJobCustomerDoc || !selectedJobForComplete) {
+      return { ok: false, error: 'Complete all AMC fields first' };
+    }
+
+    const technicianId = user?.technicianId || user?.id;
+    if (!technicianId) {
+      return { ok: false, error: 'Technician session not found' };
+    }
+
+    const documentBrand = normalizeDocumentBrand(serviceBrand);
+    if (!documentBrand) {
+      return { ok: false, error: 'Select service brand on step 1' };
+    }
+
+    const persistKey = `${selectedJobForComplete.id}:${amcDateGiven}:${amcEndDate}:${amcAmount}:${documentBrand}`;
+    if (amcContractPersistedKeyRef.current === persistKey) {
+      return { ok: true };
+    }
+
+    const sessionReady = await ensureSupabaseSessionForWrite();
+    if (!sessionReady.ok) {
+      return { ok: false, error: 'Session expired. Please sign in again.' };
+    }
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      return { ok: false, error: 'Sign in to save AMC' };
+    }
+
+    const servicePeriodMonths =
+      amcServicePeriodKind === 'no_auto'
+        ? 0
+        : amcServicePeriodKind === '4'
+          ? 4
+          : amcServicePeriodKind === '6'
+            ? 6
+            : Math.max(1, amcServicePeriodCustomMonths);
+
+    const roModel =
+      [completeJobCustomerDoc.brand, completeJobCustomerDoc.model].filter(Boolean).join(' ').trim() ||
+      undefined;
+
+    const payload = buildTechnicianAmcPersistPayload({
+      billNumber: technicianReferenceAmcBill.billNumber,
+      customerId: completeJobCustomerDoc.id,
+      customerName: completeJobCustomerDoc.fullName,
+      customerPhone: completeJobCustomerDoc.phone || '',
+      customerEmail: completeJobCustomerDoc.email,
+      customerAddress: completeJobCustomerDoc.address,
+      jobId: selectedJobForComplete.id,
+      jobNumber: selectedJobForComplete.jobNumber,
+      startDate: amcDateGiven,
+      endDate: amcEndDate,
+      years: amcYears,
+      amount: parseFloat(amcAmount),
+      includesPrefilter: amcIncludesPrefilter === true,
+      servicePeriodMonths,
+      serviceBrand: documentBrand,
+      technicianId,
+      roModel,
+      additionalInfo: amcAdditionalInfo,
+    });
+
+    const result = await persistAmcContract(payload, session.access_token);
+    if (result.ok) {
+      amcContractPersistedKeyRef.current = persistKey;
+      setCustomerAMCStatus((prev) => ({ ...prev, [completeJobCustomerDoc.id]: true }));
+    }
+    return result;
+  }, [
+    technicianReferenceAmcBill,
+    completeJobCustomerDoc,
+    selectedJobForComplete,
+    user?.technicianId,
+    user?.id,
+    serviceBrand,
+    amcDateGiven,
+    amcEndDate,
+    amcAmount,
+    amcYears,
+    amcIncludesPrefilter,
+    amcServicePeriodKind,
+    amcServicePeriodCustomMonths,
+    amcAdditionalInfo,
+  ]);
+
   // Handle completing job - opens completion dialog
   const handleCompleteJob = async (job: Job) => {
     // Show confirmation dialog first
@@ -3065,6 +3269,8 @@ const TechnicianDashboard = () => {
     setAmcEndDate('');
     setAmcIncludesPrefilter(null);
     setHasAMC(null);
+    setCompleteJobCustomerDoc(null);
+    amcContractPersistedKeyRef.current = null;
     setAmcAdditionalInfo('');
     setAmcAmount('');
     setAmcServicePeriodKind('');
@@ -7955,12 +8161,6 @@ const TechnicianDashboard = () => {
                     </>
                   ) : (
                     <>
-                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                        <p className="text-sm text-blue-800">
-                          <strong>Note:</strong> This information is for reference only. The admin will generate the official AMC contract with a summary. If you enter 0 years, it will be treated as no AMC.
-                        </p>
-                      </div>
-                      
                       <div className="space-y-4">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
@@ -8107,6 +8307,30 @@ const TechnicianDashboard = () => {
                         This information is for admin reference only. The admin will create the official AMC contract.
                       </p>
               </div>
+
+                      {technicianReferenceAmcBill && serviceBrand ? (
+                        <div className="rounded-xl border border-violet-200 bg-violet-50/60 p-4 space-y-3">
+                          <div>
+                            <p className="text-sm font-semibold text-violet-950">Share AMC with customer</p>
+                            <p className="text-xs text-violet-900/75 mt-1 leading-relaxed">
+                              Download or email a reference AMC PDF using the details above and customer info.
+                              You can add or edit email addresses before sending.
+                            </p>
+                          </div>
+                          <AmcDocumentActions
+                            compact
+                            bill={technicianReferenceAmcBill}
+                            brand={normalizeDocumentBrand(serviceBrand) || 'hydrogenro'}
+                            endDateIso={amcEndDate}
+                            customerEmail={completeJobCustomerDoc?.email}
+                            onPersistBeforeAction={persistTechnicianAmcForShare}
+                            pdfOptions={{
+                              includeDetails: true,
+                              showComputerGeneratedText: true,
+                            }}
+                          />
+                        </div>
+                      ) : null}
                       </div>
                     </>
                   )}

@@ -94,6 +94,67 @@ export class EmailService {
     }
   }
 
+  /** AMC agreement with PDF attachment — admin or technician session. */
+  async sendAmcAgreementEmail(
+    payload: AdminComposerEmailPayload,
+    accessToken?: string | null
+  ): Promise<{ ok: boolean; error?: string; messageId?: string }> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    if (accessToken) {
+      headers.Authorization = `Bearer ${accessToken}`;
+    } else if (this.previewSecret) {
+      headers['X-Email-Preview-Secret'] = this.previewSecret;
+    } else {
+      return {
+        ok: false,
+        error: 'Sign in to send email.',
+      };
+    }
+
+    try {
+      const response = await fetch(this.previewApiUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          purpose: 'amc_agreement',
+          documentBrand: payload.documentBrand,
+          to: payload.to,
+          subject: payload.subject,
+          html: payload.html,
+          text: payload.text,
+          ...(payload.attachments?.length
+            ? {
+                attachments: payload.attachments.map(({ filename, contentType, content }) => ({
+                  filename,
+                  contentType,
+                  content,
+                })),
+              }
+            : {}),
+        }),
+      });
+
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        return {
+          ok: false,
+          error: result.error || response.statusText || 'Failed to send email',
+        };
+      }
+
+      return { ok: true, messageId: result.messageId };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : 'Failed to send email',
+      };
+    }
+  }
+
   /** Admin email composer — supports attachments; requires admin session or preview secret. */
   async sendAdminComposerEmail(
     payload: AdminComposerEmailPayload,

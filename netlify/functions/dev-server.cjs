@@ -46,6 +46,8 @@ const bookingCustomerLookup = require('./booking-customer-lookup');
 const bookingNotify = require('./booking-notify');
 const warrantyLookup = require('./warranty-lookup');
 const generatePdf = require('./generate-pdf');
+const saveAmcContract = require('./save-amc-contract');
+const sendEmailPreview = require('./send-email-preview');
 
 const PORT = 8888;
 
@@ -53,7 +55,10 @@ const server = http.createServer((req, res) => {
   // Enable CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'Content-Type, Authorization, X-Email-Preview-Secret'
+  );
 
   // Handle OPTIONS (CORS preflight)
   if (req.method === 'OPTIONS') {
@@ -105,6 +110,10 @@ const server = http.createServer((req, res) => {
     handler = warrantyLookup;
   } else if (req.url.startsWith('/.netlify/functions/generate-pdf')) {
     handler = generatePdf;
+  } else if (req.url.startsWith('/.netlify/functions/save-amc-contract')) {
+    handler = saveAmcContract;
+  } else if (req.url.startsWith('/.netlify/functions/send-email-preview')) {
+    handler = sendEmailPreview;
   } else {
     console.log('⚠️ No handler found for:', req.url);
   }
