@@ -80,8 +80,8 @@ export function buildTechnicianReferenceAmcBill(input: TechnicianReferenceAmcInp
     totalTax: 0,
     serviceCharge: 0,
     totalAmount: input.amount,
-    paymentStatus: 'PENDING',
-    amountPaid: 0,
+    paymentStatus: 'PAID',
+    amountPaid: input.amount,
     notes: input.additionalInfo?.trim() || '',
     terms: generateAmcTerms(
       input.includesPrefilter,

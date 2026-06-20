@@ -94,6 +94,8 @@ export function buildTechnicianAmcPersistPayload(
     customer_email: ctx.customerEmail || null,
     customer_address: ctx.customerAddress,
     document_brand: ctx.serviceBrand,
+    payment_status: 'PAID',
+    amount_received: ctx.amount,
     technician_reference: true,
     shared_via: 'technician_complete_job',
     job_number: ctx.jobNumber || null,
