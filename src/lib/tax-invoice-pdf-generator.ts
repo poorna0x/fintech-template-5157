@@ -4,6 +4,7 @@
 import { getCompanyStateCode } from './indian-state-codes';
 import { sanitizeForTemplate } from './sanitize';
 import { resolveBrandSealSrc, resolveDocumentBrandFromData } from './service-brands';
+import { downloadDocumentPdf } from './server-pdf-download';
 
 function resolveTaxInvoiceSealSrc(data: PDFTaxInvoiceData): string {
   const brand = resolveDocumentBrandFromData({
@@ -147,6 +148,22 @@ export function generateTaxInvoicePDF(billData: PDFTaxInvoiceData, action: 'prin
   }
   
   isPrinting = true;
+
+  if (action === 'pdf') {
+    void downloadDocumentPdf({
+      html: generateTaxInvoiceHTML(billData),
+      filename: `TaxInvoice_${billData.billNumber.replace(/\s+/g, '_')}.pdf`,
+    })
+      .then(() => {
+        isPrinting = false;
+      })
+      .catch((err) => {
+        console.warn('[tax-invoice-pdf] Server PDF failed, using print dialog', err);
+        isPrinting = false;
+        generateTaxInvoicePDF(billData, 'print');
+      });
+    return;
+  }
   
   try {
     // Check if it's a mobile device
@@ -1055,7 +1072,7 @@ function createTaxInvoiceContent(data: PDFTaxInvoiceData): string {
   `;
 }
 
-function generateTaxInvoiceHTML(data: PDFTaxInvoiceData): string {
+export function generateTaxInvoiceHTML(data: PDFTaxInvoiceData): string {
   return `
     <!DOCTYPE html>
     <html lang="en">
@@ -1333,13 +1350,6 @@ export function generateCombinedTaxInvoicePDF(
       return;
     }
 
-    // Create a new window for printing
-    const printWindow = window.open('', '_blank', 'width=800,height=600');
-    if (!printWindow) {
-      alert('Please allow popups to print the tax invoices');
-      return;
-    }
-
     // Combine all invoice contents with page breaks
     const combinedContent = invoices.map((invoice, index) => {
       const content = createTaxInvoiceContent(invoice);
@@ -1350,12 +1360,11 @@ export function generateCombinedTaxInvoicePDF(
       return content;
     }).join('');
 
-    // Write content to new window
-    printWindow.document.write(`
+    const combinedHtml = `
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Tax Invoices - ${filename}</title>
+        <title>Tax Invoices - ${sanitizeForTemplate(filename)}</title>
         <style>
           @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
           
@@ -1737,11 +1746,28 @@ export function generateCombinedTaxInvoicePDF(
         ${combinedContent}
       </body>
       </html>
-    `);
+    `;
+
+    if (action === 'pdf') {
+      void downloadDocumentPdf({
+        html: combinedHtml,
+        filename: `${filename.replace(/\s+/g, '_')}.pdf`,
+      }).catch((err) => {
+        console.warn('[combined-tax-invoice-pdf] Server PDF failed, using print dialog', err);
+        generateCombinedTaxInvoicePDF(invoices, filename, 'print');
+      });
+      return;
+    }
+
+    const printWindow = window.open('', '_blank', 'width=800,height=600');
+    if (!printWindow) {
+      alert('Please allow popups to print the tax invoices');
+      return;
+    }
+
+    printWindow.document.write(combinedHtml);
 
     printWindow.document.close();
-
-    // Wait for content to load, then print or save
     printWindow.onload = () => {
       setTimeout(() => {
         printWindow.print();

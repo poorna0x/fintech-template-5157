@@ -17,6 +17,7 @@ import {
   normalizeDocumentBrand,
   resolveBrandSealSrc,
 } from './service-brands';
+import { downloadDocumentPdf } from './server-pdf-download';
 
 /**
  * DOMPurify config tuned for the rich text editor inside the letterhead builder.
@@ -862,30 +863,17 @@ const LETTERHEAD_BASE_CSS = `
 `;
 
 /**
- * Open a new window with the rendered letterhead and trigger the browser print dialog.
- * Caller decides whether the user wants to print or save as PDF (both go through the
- * same dialog).
+ * Full printable HTML document for letterhead PDFs.
  */
-export function generateLetterheadPDF(
-  data: LetterheadDocumentData,
-  action: 'print' | 'pdf' = 'print'
-): void {
-  try {
-    const printWindow = window.open('', '_blank', 'width=900,height=700');
-    if (!printWindow) {
-      alert('Please allow popups to print the document.');
-      return;
-    }
+export function buildLetterheadDocumentHtml(data: LetterheadDocumentData): string {
+  const inner = buildLetterheadInnerHtml(data);
+  const title =
+    data.documentNumber ||
+    LETTERHEAD_DOCUMENT_TYPE_LABEL[data.documentType] ||
+    'Document';
+  const bodyClass = getLetterheadBodyClass(data);
 
-    const inner = buildLetterheadInnerHtml(data);
-    const title =
-      data.documentNumber ||
-      LETTERHEAD_DOCUMENT_TYPE_LABEL[data.documentType] ||
-      'Document';
-
-    const bodyClass = getLetterheadBodyClass(data);
-
-    printWindow.document.write(`<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8" />
@@ -895,7 +883,41 @@ export function generateLetterheadPDF(
 <body class="${bodyClass}">
 ${inner}
 </body>
-</html>`);
+</html>`;
+}
+
+/**
+ * Open a new window with the rendered letterhead and trigger the browser print dialog.
+ * Caller decides whether the user wants to print or save as PDF (both go through the
+ * same dialog).
+ */
+export function generateLetterheadPDF(
+  data: LetterheadDocumentData,
+  action: 'print' | 'pdf' = 'print'
+): void {
+  try {
+    if (action === 'pdf') {
+      const title =
+        data.documentNumber ||
+        LETTERHEAD_DOCUMENT_TYPE_LABEL[data.documentType] ||
+        'Document';
+      void downloadDocumentPdf({
+        html: buildLetterheadDocumentHtml(data),
+        filename: `${title.replace(/\s+/g, '_')}.pdf`,
+      }).catch((err) => {
+        console.warn('[letterhead-pdf] Server PDF failed, using print dialog', err);
+        generateLetterheadPDF(data, 'print');
+      });
+      return;
+    }
+
+    const printWindow = window.open('', '_blank', 'width=900,height=700');
+    if (!printWindow) {
+      alert('Please allow popups to print the document.');
+      return;
+    }
+
+    printWindow.document.write(buildLetterheadDocumentHtml(data));
     printWindow.document.close();
 
     printWindow.onload = () => {
@@ -927,8 +949,6 @@ ${inner}
         /* ignore */
       }
     }, 800);
-
-    void action;
   } catch (err) {
     console.error('[letterhead-pdf] generate failed', err);
     alert('Error generating document. Please try again.');

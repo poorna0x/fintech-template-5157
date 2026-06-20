@@ -6,6 +6,7 @@ import {
   resolvePdfDocumentBrand,
 } from './document-pdf-brand';
 import { getDocumentBrandLabel, resolveBrandSealSrc } from './service-brands';
+import { downloadDocumentPdf } from './server-pdf-download';
 
 interface AMCPDFData {
   billNumber: string;
@@ -121,7 +122,7 @@ function buildAmcPaymentNoticeHtml(data: AMCPDFData): string {
   `;
 }
 
-function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): string {
+export function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): string {
   const brand = resolvePdfDocumentBrand(data);
   const companyDetails = renderPdfCompanyDetailsHtml(data.company, brand);
   const headerLogo = renderPdfLogoHtml(brand);
@@ -1020,6 +1021,45 @@ export function generateAMCPDF(
   isPrinting = true;
   
   try {
+    if (action === 'pdf') {
+      const data: AMCPDFData = {
+        billNumber: bill.billNumber,
+        billDate: bill.billDate,
+        company: bill.company,
+        customer: {
+          ...bill.customer,
+          roModel: (bill.customer as any).roModel || ''
+        },
+        items: bill.items,
+        subtotal: bill.subtotal,
+        totalTax: bill.totalTax,
+        serviceCharge: bill.serviceCharge,
+        totalAmount: bill.totalAmount,
+        paymentStatus: bill.paymentStatus,
+        amountPaid: bill.amountPaid,
+        notes: bill.notes,
+        terms: bill.terms,
+        validity: bill.validity,
+        agreementIntro: bill.agreementIntro,
+        documentBrand: (bill as any).documentBrand,
+        sealVariant: (bill as any).sealVariant,
+      };
+
+      void downloadDocumentPdf({
+        html: generateAMCHTML(data, options),
+        filename: `AMC_${bill.billNumber.replace(/\s+/g, '_')}.pdf`,
+      })
+        .then(() => {
+          isPrinting = false;
+        })
+        .catch((err) => {
+          console.warn('[amc-pdf] Server PDF failed, using print dialog', err);
+          isPrinting = false;
+          generateAMCPDF(bill, 'print', options);
+        });
+      return;
+    }
+
     // Check if it's a mobile device
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     

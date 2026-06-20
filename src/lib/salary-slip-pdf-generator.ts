@@ -1,5 +1,6 @@
 import { TechnicianSalaryBreakdown } from '@/components/TechnicianPayments';
 import { sanitizeForTemplate } from './sanitize';
+import { downloadDocumentPdf } from './server-pdf-download';
 
 interface Payment {
   id: string;
@@ -92,7 +93,7 @@ interface SalarySlipPDFData {
   includeDayWiseBreakdown: boolean;
 }
 
-function generateSalarySlipHTML(data: SalarySlipPDFData, includeDayWiseBreakdown: boolean = true): string {
+export function generateSalarySlipHTML(data: SalarySlipPDFData, includeDayWiseBreakdown: boolean = true): string {
   const formatCurrency = (amount: number): string => {
     return amount.toLocaleString('en-IN', {
       minimumFractionDigits: 2,
@@ -917,6 +918,22 @@ export function generateSalarySlipPDF(
       company: companyData,
       includeDayWiseBreakdown
     };
+
+    if (action === 'pdf') {
+      void downloadDocumentPdf({
+        html: generateSalarySlipHTML(pdfData, includeDayWiseBreakdown),
+        filename: `SalarySlip_${breakdown.technicianName.replace(/\s+/g, '_')}_${period.start.toISOString().slice(0, 10)}.pdf`,
+      })
+        .then(() => {
+          (window as any).isPrintingSalarySlip = false;
+        })
+        .catch((err) => {
+          console.warn('[salary-slip-pdf] Server PDF failed, using print dialog', err);
+          (window as any).isPrintingSalarySlip = false;
+          generateSalarySlipPDF(breakdown, period, 'print', includeDayWiseBreakdown);
+        });
+      return;
+    }
 
     // Create a new window for printing
     const printWindow = window.open('', '_blank', 'width=800,height=600');

@@ -10,6 +10,7 @@ import {
   renderPdfSignatureHtml,
   resolvePdfDocumentBrand,
 } from './document-pdf-brand';
+import { downloadDocumentPdf } from './server-pdf-download';
 
 export interface PDFBillData {
   billNumber: string;
@@ -66,6 +67,22 @@ export function generateBillPDF(billData: PDFBillData, action: 'print' | 'pdf' =
   }
   
   isPrinting = true;
+
+  if (action === 'pdf') {
+    void downloadDocumentPdf({
+      html: generateBillHTML(billData),
+      filename: `Bill_${billData.billNumber.replace(/\s+/g, '_')}.pdf`,
+    })
+      .then(() => {
+        isPrinting = false;
+      })
+      .catch((err) => {
+        console.warn('[bill-pdf] Server PDF failed, using print dialog', err);
+        isPrinting = false;
+        generateBillPDF(billData, 'print');
+      });
+    return;
+  }
   
   try {
     // Check if it's a mobile device
@@ -1182,7 +1199,7 @@ function createBillContent(data: PDFBillData): string {
   `;
 }
 
-function generateBillHTML(data: PDFBillData): string {
+export function generateBillHTML(data: PDFBillData): string {
   const brand = resolvePdfDocumentBrand(data);
   const companyDetails = renderPdfCompanyDetailsHtml(data.company, brand, {
     hideGstInHeader: data.hideGstInHeader,

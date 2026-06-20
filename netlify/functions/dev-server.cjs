@@ -45,6 +45,7 @@ const bookingCustomerMutate = require('./booking-customer-mutate');
 const bookingCustomerLookup = require('./booking-customer-lookup');
 const bookingNotify = require('./booking-notify');
 const warrantyLookup = require('./warranty-lookup');
+const generatePdf = require('./generate-pdf');
 
 const PORT = 8888;
 
@@ -102,6 +103,8 @@ const server = http.createServer((req, res) => {
     handler = bookingNotify;
   } else if (req.url.startsWith('/.netlify/functions/warranty-lookup')) {
     handler = warrantyLookup;
+  } else if (req.url.startsWith('/.netlify/functions/generate-pdf')) {
+    handler = generatePdf;
   } else {
     console.log('⚠️ No handler found for:', req.url);
   }

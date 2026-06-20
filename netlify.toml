@@ -17,6 +17,9 @@
 [functions]
   directory = "netlify/functions"
 
+[functions."generate-pdf"]
+  timeout = 26
+
 # Force HTTPS - redirect HTTP to HTTPS
 [[redirects]]
   from = "http://hydrogenro.com/*"

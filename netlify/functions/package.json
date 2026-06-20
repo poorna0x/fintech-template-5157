@@ -3,8 +3,10 @@
   "version": "1.0.0",
   "description": "Netlify Functions for Hydrogen RO",
   "dependencies": {
+    "@sparticuz/chromium": "^131.0.1",
     "altcha-lib": "^1.3.0",
     "bcryptjs": "^2.4.3",
-    "nodemailer": "^7.0.6"
+    "nodemailer": "^7.0.6",
+    "puppeteer-core": "^24.2.1"
   }
 }

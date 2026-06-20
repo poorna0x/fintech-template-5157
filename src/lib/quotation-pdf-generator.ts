@@ -10,6 +10,7 @@ import {
   renderPdfSignatureHtml,
   resolvePdfDocumentBrand,
 } from './document-pdf-brand';
+import { downloadDocumentPdf } from './server-pdf-download';
 
 export interface PDFQuotationData {
   billNumber: string;
@@ -66,6 +67,17 @@ export interface PDFQuotationData {
 }
 
 export function generateQuotationPDF(quotationData: PDFQuotationData, action: 'print' | 'pdf' = 'print'): void {
+  if (action === 'pdf') {
+    void downloadDocumentPdf({
+      html: generateQuotationHTML(quotationData),
+      filename: `Quotation_${quotationData.billNumber.replace(/\s+/g, '_')}.pdf`,
+    }).catch((err) => {
+      console.warn('[quotation-pdf] Server PDF failed, using print dialog', err);
+      generateQuotationPDF(quotationData, 'print');
+    });
+    return;
+  }
+
   try {
     // Check if it's a mobile device
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -1316,7 +1328,7 @@ function createQuotationContent(data: PDFQuotationData): string {
   `;
 }
 
-function generateQuotationHTML(data: PDFQuotationData): string {
+export function generateQuotationHTML(data: PDFQuotationData): string {
   const brand = resolvePdfDocumentBrand(data);
   const companyDetails = renderPdfCompanyDetailsHtml(data.company, brand);
   const signatureBlock = renderPdfSignatureHtml(brand, data.billDate, data.sealVariant ?? 'sign');
