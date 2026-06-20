@@ -137,7 +137,7 @@ export async function downloadDocumentPdf(options: DownloadDocumentPdfOptions): 
     const message = error instanceof Error ? error.message : 'PDF generation failed';
     toast.error('Could not download PDF', {
       id: toastId,
-      description: `${message}. Use Generate for print preview, or retry in a moment.`,
+      description: `${message}. Ensure dev server is running (npm run dev) and a Chromium browser is installed.`,
     });
     throw error;
   }

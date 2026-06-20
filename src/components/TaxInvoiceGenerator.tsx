@@ -36,6 +36,7 @@ import {
   resolveBrandSealSrc,
   resolveDocumentBrandFromData,
 } from '@/lib/service-brands';
+import type { TaxInvoiceEditSnapshot } from '@/lib/tax-invoice-edit-utils';
 
 // Helper function to convert number to words
 function numberToWords(num: number): string {
@@ -84,6 +85,13 @@ interface TaxInvoiceGeneratorProps {
   onPrint?: (bill: Bill, action?: 'print' | 'pdf') => void;
   onTaxInvoiceSaved?: () => void;
   embedded?: boolean;
+  /** Edit mode — loads snapshot and updates existing row instead of creating. */
+  editInvoiceId?: string;
+  initialEditSnapshot?: TaxInvoiceEditSnapshot;
+  initialCompanyInfo?: CompanyInfo;
+  editCustomerId?: string | null;
+  /** View-only — same layout as generate, fields disabled, no save. */
+  readOnly?: boolean;
 }
 
 const defaultCompanyInfo: CompanyInfo = {
@@ -129,6 +137,11 @@ export default function TaxInvoiceGenerator({
   onPrint,
   onTaxInvoiceSaved,
   embedded = false,
+  editInvoiceId,
+  initialEditSnapshot,
+  initialCompanyInfo,
+  editCustomerId,
+  readOnly = false,
 }: TaxInvoiceGeneratorProps) {
   // Safe customer data extraction
   const customerName = customer?.fullName || (customer as any)?.full_name || 'Customer Name';
@@ -294,6 +307,7 @@ export default function TaxInvoiceGenerator({
 
   // Update invoice number when component mounts (preview only - doesn't reserve number)
   useEffect(() => {
+    if (editInvoiceId) return;
     let isMounted = true;
     getPreviewInvoiceNumber().then((invoiceNumber) => {
       if (!isMounted || billNumberEditedRef.current) return;
@@ -302,7 +316,9 @@ export default function TaxInvoiceGenerator({
     return () => {
       isMounted = false;
     };
-  }, []); // Only run once on mount
+  }, [editInvoiceId]); // Only run once on mount for new invoices
+
+  // Load existing invoice in edit mode — placed after applyDraftSnapshot below.
 
   // Editable customer information state
   const [isEditingCustomer, setIsEditingCustomer] = useState(false);
@@ -524,7 +540,8 @@ export default function TaxInvoiceGenerator({
 
   // Function to save invoice to database
   const handleSaveToDatabase = async () => {
-    if (!customer) {
+    if (readOnly) return;
+    if (!customer && !editInvoiceId) {
       toast.error('Please select a customer first');
       return;
     }
@@ -566,23 +583,31 @@ export default function TaxInvoiceGenerator({
         console.log('No authentication session found, attempting anonymous insert');
       }
 
-      // Check if invoice number already exists and fetch new one if needed
-      try {
-        const { exists: invoiceExists, error: checkError } = await db.taxInvoices.checkInvoiceNumberExists(billNumber);
-        if (checkError) {
-          console.warn('Could not check for duplicate invoice number:', checkError);
-          // Continue anyway - the insert will fail if duplicate
-        } else if (invoiceExists) {
-          // Invoice number was taken - fetch a new one automatically
-          console.log(`Invoice number ${billNumber} already exists, fetching new number...`);
-          const newInvoiceNumber = await getNextInvoiceNumberForSave();
-          setBillNumber(newInvoiceNumber);
-          toast.info(`Invoice number updated to ${newInvoiceNumber} (previous number was already used)`);
-          // Continue with the new number
+      // Check if invoice number already exists and fetch new one if needed (create only)
+      if (!editInvoiceId) {
+        try {
+          const { exists: invoiceExists, error: checkError } = await db.taxInvoices.checkInvoiceNumberExists(billNumber);
+          if (checkError) {
+            console.warn('Could not check for duplicate invoice number:', checkError);
+          } else if (invoiceExists) {
+            console.log(`Invoice number ${billNumber} already exists, fetching new number...`);
+            const newInvoiceNumber = await getNextInvoiceNumberForSave();
+            setBillNumber(newInvoiceNumber);
+            toast.info(`Invoice number updated to ${newInvoiceNumber} (previous number was already used)`);
+          }
+        } catch (checkErr) {
+          console.warn('Error checking duplicate invoice number:', checkErr);
         }
-      } catch (checkErr) {
-        console.warn('Error checking duplicate invoice number:', checkErr);
-        // Continue anyway
+      } else {
+        const { exists: invoiceExists } = await db.taxInvoices.checkInvoiceNumberExists(
+          billNumber,
+          editInvoiceId
+        );
+        if (invoiceExists) {
+          toast.error('Invoice number already exists. Please use a different number.');
+          setIsSaving(false);
+          return;
+        }
       }
 
       // Ensure customer_address is a valid JSONB object (not empty)
@@ -599,11 +624,11 @@ export default function TaxInvoiceGenerator({
       // Ensure notes is an array
       const notesArray = Array.isArray(notes) ? notes : [];
 
-      const { data: savedInvoice, error: saveError } = await db.taxInvoices.create({
+      const savePayload = {
         invoice_number: billNumber,
         invoice_date: billDate,
         invoice_type: invoiceType,
-        customer_id: customer.id || null,
+        customer_id: editCustomerId ?? customer?.id ?? null,
         customer_name: editableCustomer.name || 'Unknown Customer',
         customer_address: customerAddress,
         customer_phone: editableCustomer.phone || null,
@@ -639,13 +664,27 @@ export default function TaxInvoiceGenerator({
           placeOfSupply: posForSave.name,
           placeOfSupplyCode: posForSave.code,
           sealVariant,
+          showComputerGeneratedText,
+          showFooterText,
+          showDigitallySignedText,
+          signatureDate: signatureDate || billDate,
+          useDSC,
+          dscAuthorizedSignatory,
+          dscNameDesignation,
+          dscCompanyName,
+          dscBoxWidth,
+          dscBoxHeight,
         },
         bank_details: bankDetails || {},
         notes: notesArray,
         terms: terms || '',
         validity_note: validityNote || null,
-        service_type: customerServiceType || 'RO'
-      });
+        service_type: customerServiceType || 'RO',
+      };
+
+      const { data: savedInvoice, error: saveError } = editInvoiceId
+        ? await db.taxInvoices.update(editInvoiceId, savePayload)
+        : await db.taxInvoices.create(savePayload);
 
       if (saveError) {
         console.error('Database save error details:', {
@@ -662,6 +701,15 @@ export default function TaxInvoiceGenerator({
       setPlaceOfSupply(posForSave.name);
       setPlaceOfSupplyCode(posForSave.code);
       
+      if (editInvoiceId) {
+        window.dispatchEvent(new CustomEvent('taxInvoiceUpdated'));
+        toast.success('Invoice updated successfully', {
+          description: `Invoice ${billNumber} has been saved.`,
+        });
+        onTaxInvoiceSaved?.();
+        return;
+      }
+
       // Also save to localStorage as backup with month/year pattern
       const now = new Date();
       const year = now.getFullYear();
@@ -893,6 +941,13 @@ export default function TaxInvoiceGenerator({
       setEditableCustomer((prev) => mergeEditableCustomer(prev, snap.editableCustomer));
   };
 
+  useEffect(() => {
+    if (!editInvoiceId || !initialEditSnapshot) return;
+    billNumberEditedRef.current = true;
+    applyDraftSnapshot(initialEditSnapshot);
+    if (initialCompanyInfo) setCompany(initialCompanyInfo);
+  }, [editInvoiceId, initialEditSnapshot, initialCompanyInfo]);
+
   const buildDraftLabel = (snap: ReturnType<typeof getDraftSnapshot>) => {
     const num = snap.billNumber || 'Draft';
     const who = snap.editableCustomer?.name || 'Customer';
@@ -903,61 +958,100 @@ export default function TaxInvoiceGenerator({
     <div
       className={
         embedded
-          ? 'max-w-4xl mx-auto space-y-4'
+          ? editInvoiceId
+            ? 'w-full space-y-3'
+            : 'max-w-4xl mx-auto space-y-4'
           : 'max-w-4xl mx-auto p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4 md:space-y-6'
       }
     >
       <DocumentGeneratorPageHeader
-        title="Generate Tax Invoice"
-        description="GST invoice with line items and summary — save to database or export as PDF."
+        title={
+          readOnly
+            ? 'View Tax Invoice'
+            : editInvoiceId
+              ? 'Edit Tax Invoice'
+              : 'Generate Tax Invoice'
+        }
+        description={
+          readOnly
+            ? 'Review saved invoice details — use Generate for print preview or Download for PDF.'
+            : editInvoiceId
+              ? 'Update GST invoice details, then save changes or export as PDF.'
+              : 'GST invoice with line items and summary — save to database or export as PDF.'
+        }
         accent="blue"
         embedded={embedded}
+        embeddedCompact={embedded && !!editInvoiceId && !readOnly}
         actions={
           <DocumentGeneratorActionBar
-            primaryCols={3}
+            primaryCols={readOnly ? 2 : 3}
+            compact={embedded && !!editInvoiceId && !readOnly}
             draft={
-              <DraftToolbar
-                kind="tax_invoice"
-                documentNoun="tax invoice"
-                getSnapshot={getDraftSnapshot}
-                onLoad={applyDraftSnapshot}
-                buildLabel={buildDraftLabel}
-                stretch
-              />
+              readOnly || editInvoiceId ? undefined : (
+                <DraftToolbar
+                  kind="tax_invoice"
+                  documentNoun="tax invoice"
+                  getSnapshot={getDraftSnapshot}
+                  onLoad={applyDraftSnapshot}
+                  buildLabel={buildDraftLabel}
+                  stretch
+                />
+              )
             }
             primary={
-              <>
-                <Button
-                  onClick={handleSaveToDatabase}
-                  className={documentSaveBtnClass}
-                  disabled={!billNumber.trim() || isSaving || !customer}
-                >
-                  <Save className="w-4 h-4 shrink-0" />
-                  <span className="truncate">
-                    {isSaving ? 'Saving...' : 'Save to DB'}
-                  </span>
-                </Button>
-                <Button
-                  onClick={() => handlePrint('print')}
-                  className={documentGenerateBtnClass}
-                >
-                  <Printer className="w-4 h-4 shrink-0" />
-                  <span className="truncate">Generate</span>
-                </Button>
-                <Button
-                  onClick={() => handlePrint('pdf')}
-                  variant="outline"
-                  className={documentOutlineBtnClass}
-                >
-                  <Download className="w-4 h-4 shrink-0" />
-                  <span className="truncate">Download</span>
-                </Button>
-              </>
+              readOnly ? (
+                <>
+                  <Button
+                    onClick={() => handlePrint('print')}
+                    className={documentGenerateBtnClass}
+                  >
+                    <Printer className="w-4 h-4 shrink-0" />
+                    <span className="truncate">Generate</span>
+                  </Button>
+                  <Button
+                    onClick={() => handlePrint('pdf')}
+                    variant="outline"
+                    className={documentOutlineBtnClass}
+                  >
+                    <Download className="w-4 h-4 shrink-0" />
+                    <span className="truncate">Download</span>
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    onClick={handleSaveToDatabase}
+                    className={documentSaveBtnClass}
+                    disabled={!billNumber.trim() || isSaving || (!customer && !editInvoiceId)}
+                  >
+                    <Save className="w-4 h-4 shrink-0" />
+                    <span className="truncate">
+                      {isSaving ? 'Saving...' : editInvoiceId ? 'Update invoice' : 'Save to DB'}
+                    </span>
+                  </Button>
+                  <Button
+                    onClick={() => handlePrint('print')}
+                    className={documentGenerateBtnClass}
+                  >
+                    <Printer className="w-4 h-4 shrink-0" />
+                    <span className="truncate">Generate</span>
+                  </Button>
+                  <Button
+                    onClick={() => handlePrint('pdf')}
+                    variant="outline"
+                    className={documentOutlineBtnClass}
+                  >
+                    <Download className="w-4 h-4 shrink-0" />
+                    <span className="truncate">Download</span>
+                  </Button>
+                </>
+              )
             }
           />
         }
       />
 
+      <fieldset disabled={readOnly} className="min-w-0 border-0 p-0 m-0 disabled:opacity-100">
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 sm:gap-4 md:gap-6">
         {/* Invoice Information */}
         <Card>
@@ -2094,6 +2188,7 @@ export default function TaxInvoiceGenerator({
           </div>
         </CardContent>
       </Card>
+      </fieldset>
     </div>
   );
 }

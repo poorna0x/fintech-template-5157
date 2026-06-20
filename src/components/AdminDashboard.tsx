@@ -80,7 +80,7 @@ import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { isIOS, isPWA, shouldUseFileInputFallback, requestCameraAccess, createVideoElement, checkCameraPermission } from '@/lib/cameraUtils';
 import { getCachedQrCodes, cacheQrCodes, shouldUseCache, CommonQrCode } from '@/lib/qrCodeManager';
 import { openInGoogleMaps, extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
-import { normalizePhoneForSearch } from '@/lib/utils';
+import { normalizePhoneForSearch, cn } from '@/lib/utils';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import FollowUpModal from '@/components/FollowUpModal';
 import { sendNotification, createJobAssignedNotification, createJobCompletedNotification, createJobCancelledNotification, createJobAssignmentRequestNotification } from '@/lib/notifications';
@@ -304,6 +304,7 @@ const AdminDashboard = () => {
   const [taxInvoiceModalOpen, setTaxInvoiceModalOpen] = useState(false);
   const [selectedCustomerForTaxInvoice, setSelectedCustomerForTaxInvoice] = useState<Customer | null>(null);
   const [showGSTInvoicesPage, setShowGSTInvoicesPage] = useState(false);
+  const [gstInSubScreen, setGstInSubScreen] = useState(false);
   const [showAMCViewPage, setShowAMCViewPage] = useState(false);
   const [showLetterheadDocsPage, setShowLetterheadDocsPage] = useState(false);
   const [letterheadInitialType, setLetterheadInitialType] = useState<LetterheadDocumentType | undefined>(
@@ -9390,20 +9391,27 @@ const AdminDashboard = () => {
     return (
       <div className="min-h-screen bg-gray-50">
         <AdminHeader />
-        <div className="container mx-auto px-4 py-4 sm:py-8">
-          <div className="mb-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleHideGSTInvoices}
-              className="text-gray-600 hover:text-gray-900 -ml-2"
-            >
-              <ArrowLeft className="w-4 h-4 mr-1" />
-              Back
-            </Button>
-          </div>
+        <div
+          className={cn(
+            'container mx-auto px-3 sm:px-4',
+            gstInSubScreen ? 'py-2' : 'py-3 sm:py-5'
+          )}
+        >
+          {!gstInSubScreen ? (
+            <div className="mb-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleHideGSTInvoices}
+                className="h-8 text-gray-600 hover:text-gray-900 -ml-2"
+              >
+                <ArrowLeft className="w-4 h-4 mr-1" />
+                Back
+              </Button>
+            </div>
+          ) : null}
           <Suspense fallback={<AdminScreenLoader message="Loading invoices..." />}>
-            <GSTInvoicesPage />
+            <GSTInvoicesPage onSubScreenChange={setGstInSubScreen} />
           </Suspense>
         </div>
       </div>

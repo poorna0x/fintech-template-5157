@@ -1,88 +1,136 @@
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { 
   Search, 
   Download, 
-  Eye, 
-  FileText,
-  Printer,
-  Calendar,
-  User,
   Receipt,
+  Calendar,
   Filter,
-  X,
-  Edit,
-  Trash2,
-  Save,
   RefreshCw,
-  FileSpreadsheet,
-  FileDown
+  ChevronDown,
+  X,
 } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { documentOutlineBtnClass } from '@/components/DocumentGeneratorPageHeader';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { generateTaxInvoicePDF, generateCombinedTaxInvoicePDF } from '@/lib/tax-invoice-pdf-generator';
-import { exportGSTInvoicesToCSV, exportGSTInvoicesToExcel } from '@/lib/gst-export';
-import { getCompanyStateCode } from '@/lib/indian-state-codes';
-import { Bill, CompanyInfo, BillItem } from '@/types';
+import { generateCombinedTaxInvoicePDF } from '@/lib/tax-invoice-pdf-generator';
+import { taxInvoiceToPdfData } from '@/lib/tax-invoice-edit-utils';
+import GSTInvoiceDetailScreen from '@/components/gst/GSTInvoiceDetailScreen';
+import { GSTInvoiceRowActions } from '@/components/gst/GSTInvoiceRowActions';
+import { exportTaxInvoicePdf, type TaxInvoiceRecord } from '@/lib/tax-invoice-edit-utils';
+import { cn } from '@/lib/utils';
 
-interface TaxInvoice {
-  id: string;
-  invoice_number: string;
-  invoice_date: string;
-  invoice_type: 'B2B' | 'B2C';
-  customer_id?: string;
-  customer_name: string;
-  customer_address: any;
-  customer_phone?: string;
-  customer_email?: string;
-  customer_gstin?: string;
-  company_info: CompanyInfo;
-  items: BillItem[];
-  place_of_supply?: string;
-  place_of_supply_code?: string;
-  is_intra_state: boolean;
-  subtotal: number;
-  total_discount: number;
-  service_charge: number;
-  total_tax: number;
-  cgst: number;
-  sgst: number;
-  igst: number;
-  round_off: number;
-  total_amount: number;
-  gst_breakup?: any;
-  invoice_details?: any;
-  bank_details?: any;
-  notes?: string[];
-  terms?: string;
-  created_at: string;
+type TaxInvoice = TaxInvoiceRecord;
+
+type DateFilterMode = 'all' | 'custom' | 'month' | 'year';
+
+function toLocalDateKey(dateString: string): string {
+  if (!dateString) return '';
+  const isoDate = dateString.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (isoDate) return isoDate[1];
+  const d = new Date(dateString);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-export default function GSTInvoicesPage() {
+function filterTaxInvoices(
+  source: TaxInvoice[],
+  opts: {
+    filterType: 'ALL' | 'B2B' | 'B2C';
+    dateFilter: DateFilterMode;
+    startDate: string;
+    endDate: string;
+    selectedMonth: number;
+    selectedYear: number;
+    searchQuery: string;
+  }
+): TaxInvoice[] {
+  let filtered = [...source];
+
+  if (opts.filterType !== 'ALL') {
+    filtered = filtered.filter((inv) => inv.invoice_type === opts.filterType);
+  }
+
+  if (opts.dateFilter === 'custom' && opts.startDate && opts.endDate) {
+    const start = new Date(opts.startDate);
+    const end = new Date(opts.endDate);
+    end.setHours(23, 59, 59, 999);
+    filtered = filtered.filter((inv) => {
+      const invDate = new Date(inv.invoice_date);
+      return invDate >= start && invDate <= end;
+    });
+  } else if (opts.dateFilter === 'month') {
+    filtered = filtered.filter((inv) => {
+      const invDate = new Date(inv.invoice_date);
+      return invDate.getMonth() + 1 === opts.selectedMonth && invDate.getFullYear() === opts.selectedYear;
+    });
+  } else if (opts.dateFilter === 'year') {
+    filtered = filtered.filter((inv) => {
+      const invDate = new Date(inv.invoice_date);
+      return invDate.getFullYear() === opts.selectedYear;
+    });
+  }
+
+  if (opts.searchQuery.trim()) {
+    const query = opts.searchQuery.toLowerCase();
+    filtered = filtered.filter(
+      (invoice) =>
+        invoice.invoice_number.toLowerCase().includes(query) ||
+        invoice.customer_name.toLowerCase().includes(query) ||
+        invoice.customer_phone?.toLowerCase().includes(query) ||
+        invoice.customer_email?.toLowerCase().includes(query) ||
+        invoice.customer_gstin?.toLowerCase().includes(query)
+    );
+  }
+
+  return filtered;
+}
+
+function getDateFilterSummary(
+  dateFilter: DateFilterMode,
+  selectedMonth: number,
+  selectedYear: number,
+  startDate: string,
+  endDate: string
+): string | null {
+  if (dateFilter === 'all') return null;
+  if (dateFilter === 'month') {
+    const monthName = new Date(2000, selectedMonth - 1).toLocaleString('default', { month: 'long' });
+    return `${monthName} ${selectedYear}`;
+  }
+  if (dateFilter === 'year') return String(selectedYear);
+  if (dateFilter === 'custom' && startDate && endDate) return `${startDate} → ${endDate}`;
+  if (dateFilter === 'custom') return 'Custom range (pick dates)';
+  return null;
+}
+
+type GSTInvoicesPageProps = {
+  onSubScreenChange?: (inSubScreen: boolean) => void;
+};
+
+export default function GSTInvoicesPage({ onSubScreenChange }: GSTInvoicesPageProps = {}) {
   const [invoices, setInvoices] = useState<TaxInvoice[]>([]);
   const [allInvoices, setAllInvoices] = useState<TaxInvoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'ALL' | 'B2B' | 'B2C'>('ALL');
-  const [selectedInvoice, setSelectedInvoice] = useState<TaxInvoice | null>(null);
-  const [viewModalOpen, setViewModalOpen] = useState(false);
-  const [editInvoiceNumber, setEditInvoiceNumber] = useState('');
-  const [isEditingInvoiceNumber, setIsEditingInvoiceNumber] = useState(false);
-  const [isSavingInvoiceNumber, setIsSavingInvoiceNumber] = useState(false);
+  const [screen, setScreen] = useState<'list' | 'view' | 'edit'>('list');
+  const [activeInvoice, setActiveInvoice] = useState<TaxInvoice | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [deleteInvoiceId, setDeleteInvoiceId] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [bulkDownloadMode, setBulkDownloadMode] = useState<'single' | 'range' | 'all'>('single');
+  const [bulkDownloadMode, setBulkDownloadMode] = useState<'filtered' | 'single' | 'range' | 'all'>('filtered');
   const [bulkDownloadInvoiceType, setBulkDownloadInvoiceType] = useState<'ALL' | 'B2B' | 'B2C'>('ALL');
   const [bulkDownloadDate, setBulkDownloadDate] = useState('');
   const [bulkDownloadStartDate, setBulkDownloadStartDate] = useState('');
@@ -102,25 +150,24 @@ export default function GSTInvoicesPage() {
   useEffect(() => {
     loadInvoices();
     
-    // Listen for invoice creation events to refresh the list
-    const handleInvoiceCreated = () => {
-      console.log('Tax invoice created event received, refreshing list...');
+    const handleInvoiceRefresh = () => {
       loadInvoices();
     };
     
     // Listen for page visibility changes to refresh when page becomes visible
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        console.log('Page became visible, refreshing invoices...');
         loadInvoices();
       }
     };
     
-    window.addEventListener('taxInvoiceCreated', handleInvoiceCreated);
+    window.addEventListener('taxInvoiceCreated', handleInvoiceRefresh);
+    window.addEventListener('taxInvoiceUpdated', handleInvoiceRefresh);
     document.addEventListener('visibilitychange', handleVisibilityChange);
     
     return () => {
-      window.removeEventListener('taxInvoiceCreated', handleInvoiceCreated);
+      window.removeEventListener('taxInvoiceCreated', handleInvoiceRefresh);
+      window.removeEventListener('taxInvoiceUpdated', handleInvoiceRefresh);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []); // Only load once on mount
@@ -132,6 +179,10 @@ export default function GSTInvoicesPage() {
   useEffect(() => {
     applyFilters();
   }, [allInvoices, filterType, dateFilter, startDate, endDate, selectedMonth, selectedYear, searchQuery, currentPage]);
+
+  useEffect(() => {
+    onSubScreenChange?.(screen !== 'list');
+  }, [screen, onSubScreenChange]);
 
   const loadInvoices = async () => {
     try {
@@ -174,142 +225,61 @@ export default function GSTInvoicesPage() {
   };
 
   const applyFilters = () => {
-    let filtered = [...allInvoices];
+    const filtered = filterTaxInvoices(allInvoices, {
+      filterType,
+      dateFilter,
+      startDate,
+      endDate,
+      selectedMonth,
+      selectedYear,
+      searchQuery,
+    });
 
-    // Filter by type
-    if (filterType !== 'ALL') {
-      filtered = filtered.filter(inv => inv.invoice_type === filterType);
-    }
-
-    // Filter by date
-    if (dateFilter === 'custom' && startDate && endDate) {
-      const start = new Date(startDate);
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999); // Include full end date
-      filtered = filtered.filter(inv => {
-        const invDate = new Date(inv.invoice_date);
-        return invDate >= start && invDate <= end;
-      });
-    } else if (dateFilter === 'month') {
-      filtered = filtered.filter(inv => {
-        const invDate = new Date(inv.invoice_date);
-        return invDate.getMonth() + 1 === selectedMonth && invDate.getFullYear() === selectedYear;
-      });
-    } else if (dateFilter === 'year') {
-      filtered = filtered.filter(inv => {
-        const invDate = new Date(inv.invoice_date);
-        return invDate.getFullYear() === selectedYear;
-      });
-    }
-
-    // Filter by search query
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(invoice =>
-        invoice.invoice_number.toLowerCase().includes(query) ||
-        invoice.customer_name.toLowerCase().includes(query) ||
-        invoice.customer_phone?.toLowerCase().includes(query) ||
-        invoice.customer_email?.toLowerCase().includes(query) ||
-        invoice.customer_gstin?.toLowerCase().includes(query)
-      );
-    }
-
-    // Pagination
     const startIndex = (currentPage - 1) * pageSize;
     const endIndex = startIndex + pageSize;
     setInvoices(filtered.slice(startIndex, endIndex));
     setTotalCount(filtered.length);
   };
 
+  const listFilterParams = {
+    filterType,
+    dateFilter,
+    startDate,
+    endDate,
+    selectedMonth,
+    selectedYear,
+    searchQuery,
+  };
+
+  const filteredCountForBulk = filterTaxInvoices(allInvoices, listFilterParams).length;
+  const dateFilterSummary = getDateFilterSummary(dateFilter, selectedMonth, selectedYear, startDate, endDate);
+
   const filteredInvoices = invoices;
 
   const handleViewInvoice = (invoice: TaxInvoice) => {
-    setSelectedInvoice(invoice);
-    setEditInvoiceNumber(invoice.invoice_number);
-    setIsEditingInvoiceNumber(false);
-    setViewModalOpen(true);
+    setActiveInvoice(invoice);
+    setScreen('view');
+  };
+
+  const handleEditInvoice = (invoice: TaxInvoice) => {
+    setActiveInvoice(invoice);
+    setScreen('edit');
+  };
+
+  const handleBackToList = () => {
+    setScreen('list');
+    setActiveInvoice(null);
   };
 
   const handleRegenerateInvoice = (invoice: TaxInvoice, action: 'print' | 'pdf' = 'pdf') => {
-    // Convert database invoice to Bill format for PDF generation
-    const bill: Bill = {
-      id: invoice.id,
-      billNumber: invoice.invoice_number,
-      billDate: invoice.invoice_date,
-      company: invoice.company_info,
-      customer: {
-        id: invoice.customer_id || '',
-        name: invoice.customer_name,
-        address: typeof invoice.customer_address === 'object' 
-          ? `${invoice.customer_address.street || ''}, ${invoice.customer_address.area || ''}`.trim() || ''
-          : invoice.customer_address || '',
-        city: invoice.customer_address?.city || '',
-        state: invoice.customer_address?.state || '',
-        pincode: invoice.customer_address?.pincode || '',
-        phone: invoice.customer_phone || '',
-        email: invoice.customer_email || '',
-        gstNumber: invoice.customer_gstin
-      },
-      items: invoice.items,
-      subtotal: invoice.subtotal,
-      totalTax: invoice.total_tax,
-      serviceCharge: invoice.service_charge,
-      totalAmount: invoice.total_amount,
-      paymentStatus: 'PENDING' as const,
-      notes: invoice.notes?.join('\n'),
-      terms: invoice.terms,
-      createdAt: invoice.created_at,
-      updatedAt: invoice.created_at
-    };
-
-    // Add GST-specific data
-    (bill as any).gstData = {
-      placeOfSupply: invoice.place_of_supply,
-      placeOfSupplyCode: invoice.place_of_supply_code,
-      companyStateCode: getCompanyStateCode(invoice.company_info),
-      isIntraState: invoice.is_intra_state,
-      gstBreakup: invoice.gst_breakup,
-      taxSplit: {
-        cgst: invoice.cgst,
-        sgst: invoice.sgst,
-        igst: invoice.igst
-      },
-      reverseCharge: invoice.reverse_charge || false,
-      eWayBillNo: invoice.e_way_bill_no,
-      transportMode: invoice.transport_mode,
-      vehicleNo: invoice.vehicle_no,
-      roundOff: invoice.round_off,
-      customerGstRequired: invoice.invoice_type === 'B2B'
-    };
-
-    // Add invoice details and bank details
-    (bill as any).invoiceDetails = {
-      invoiceType: invoice.invoice_type,
-      ...invoice.invoice_details
-    };
-    
-    (bill as any).bankDetails = invoice.bank_details;
-
-    const savedSealVariant = (invoice.invoice_details as { sealVariant?: string } | undefined)?.sealVariant;
-    (bill as any).pdfOptions = {
-      sealVariant: savedSealVariant === 'stamp' ? 'stamp' : 'sign',
-    };
-
-    // Generate PDF
-    const pdfData = {
-      ...bill,
-      gstData: (bill as any).gstData,
-      invoiceDetails: (bill as any).invoiceDetails,
-      bankDetails: (bill as any).bankDetails,
-      pdfOptions: (bill as any).pdfOptions,
-    };
-
     try {
-      generateTaxInvoicePDF(pdfData, action);
-      toast.success(action === 'pdf' ? 'Invoice downloaded' : 'Invoice opened for printing');
+      exportTaxInvoicePdf(invoice, action);
+      if (action === 'print') {
+        toast.success('Invoice opened for printing');
+      }
     } catch (error) {
       console.error('Error regenerating invoice:', error);
-      toast.error('Failed to regenerate invoice');
+      toast.error('Failed to generate invoice');
     }
   };
 
@@ -327,62 +297,6 @@ export default function GSTInvoicesPage() {
       month: 'short',
       year: 'numeric'
     });
-  };
-
-  const handleEditInvoiceNumber = (invoice: TaxInvoice) => {
-    setSelectedInvoice(invoice);
-    setEditInvoiceNumber(invoice.invoice_number);
-    setIsEditingInvoiceNumber(true);
-    setViewModalOpen(true);
-  };
-
-  const handleSaveInvoiceNumber = async () => {
-    if (!selectedInvoice || !editInvoiceNumber.trim()) {
-      toast.error('Invoice number cannot be empty');
-      return;
-    }
-
-    if (editInvoiceNumber === selectedInvoice.invoice_number) {
-      setIsEditingInvoiceNumber(false);
-      return;
-    }
-
-    // Check if invoice number already exists
-    const { exists } = await db.taxInvoices.checkInvoiceNumberExists(editInvoiceNumber, selectedInvoice.id);
-    if (exists) {
-      toast.error('Invoice number already exists. Please use a different number.');
-      return;
-    }
-
-    setIsSavingInvoiceNumber(true);
-    try {
-      const { data, error } = await db.taxInvoices.update(selectedInvoice.id, {
-        invoice_number: editInvoiceNumber.trim()
-      });
-
-      if (error) {
-        throw error;
-      }
-
-      // Update local state
-      setAllInvoices(prev => prev.map(inv => 
-        inv.id === selectedInvoice.id 
-          ? { ...inv, invoice_number: editInvoiceNumber.trim() }
-          : inv
-      ));
-      setSelectedInvoice(prev => prev ? { ...prev, invoice_number: editInvoiceNumber.trim() } : null);
-      setIsEditingInvoiceNumber(false);
-      toast.success('Invoice number updated successfully');
-    } catch (error: any) {
-      console.error('Error updating invoice number:', error);
-      if (error.code === '23505') { // Unique constraint violation
-        toast.error('Invoice number already exists. Please use a different number.');
-      } else {
-        toast.error('Failed to update invoice number');
-      }
-    } finally {
-      setIsSavingInvoiceNumber(false);
-    }
   };
 
   const handleDeleteInvoice = (invoice: TaxInvoice) => {
@@ -418,9 +332,8 @@ export default function GSTInvoicesPage() {
 
       setAllInvoices((prev) => prev.filter((inv) => inv.id !== idToDelete));
       setInvoices((prev) => prev.filter((inv) => inv.id !== idToDelete));
-      if (selectedInvoice?.id === idToDelete) {
-        setViewModalOpen(false);
-        setSelectedInvoice(null);
+      if (activeInvoice?.id === idToDelete) {
+        handleBackToList();
       }
       setDeleteInvoiceId(null);
       setDeleteDialogOpen(false);
@@ -502,31 +415,30 @@ export default function GSTInvoicesPage() {
       }
 
       // Filter invoices based on selected mode
-      if (bulkDownloadMode === 'single') {
-        dateInvoices = invoicesToUse.filter(inv => {
-          const invDate = new Date(inv.invoice_date).toISOString().split('T')[0];
-          return invDate === bulkDownloadDate;
-        });
+      if (bulkDownloadMode === 'filtered') {
+        dateInvoices = filterTaxInvoices(invoicesToUse, listFilterParams);
+      } else if (bulkDownloadMode === 'single') {
+        dateInvoices = invoicesToUse.filter((inv) => toLocalDateKey(inv.invoice_date) === bulkDownloadDate);
       } else if (bulkDownloadMode === 'range') {
-        const start = new Date(bulkDownloadStartDate);
-        start.setHours(0, 0, 0, 0);
-        const end = new Date(bulkDownloadEndDate);
-        end.setHours(23, 59, 59, 999);
-        
-        dateInvoices = invoicesToUse.filter(inv => {
-          const invDate = new Date(inv.invoice_date);
-          return invDate >= start && invDate <= end;
+        const startKey = bulkDownloadStartDate;
+        const endKey = bulkDownloadEndDate;
+        dateInvoices = invoicesToUse.filter((inv) => {
+          const key = toLocalDateKey(inv.invoice_date);
+          return key >= startKey && key <= endKey;
         });
       } else if (bulkDownloadMode === 'all') {
         dateInvoices = invoicesToUse;
       }
 
       if (dateInvoices.length === 0) {
-        const errorMsg = bulkDownloadMode === 'all' 
-          ? 'No invoices found'
-          : bulkDownloadMode === 'range'
-          ? 'No invoices found for the selected date range'
-          : 'No invoices found for the selected date';
+        const errorMsg =
+          bulkDownloadMode === 'filtered'
+            ? 'No invoices match your current filters'
+            : bulkDownloadMode === 'all'
+              ? 'No invoices found'
+              : bulkDownloadMode === 'range'
+                ? 'No invoices found for the selected date range'
+                : 'No invoices found for the selected date';
         toast.error(errorMsg);
         setIsBulkDownloading(false);
         return;
@@ -534,14 +446,15 @@ export default function GSTInvoicesPage() {
 
       console.log(`Total invoices after filtering: ${dateInvoices.length}`);
       
-      // Filter by invoice type for bulk download
+      // Filter by invoice type for bulk download (not applied in filtered mode — list chips already set type)
       let invoicesToDownload = dateInvoices;
-      if (bulkDownloadInvoiceType === 'B2B') {
-        invoicesToDownload = dateInvoices.filter(inv => inv.invoice_type === 'B2B');
-      } else if (bulkDownloadInvoiceType === 'B2C') {
-        invoicesToDownload = dateInvoices.filter(inv => inv.invoice_type === 'B2C');
+      if (bulkDownloadMode !== 'filtered') {
+        if (bulkDownloadInvoiceType === 'B2B') {
+          invoicesToDownload = dateInvoices.filter((inv) => inv.invoice_type === 'B2B');
+        } else if (bulkDownloadInvoiceType === 'B2C') {
+          invoicesToDownload = dateInvoices.filter((inv) => inv.invoice_type === 'B2C');
+        }
       }
-      // If 'ALL', use all invoices
       
       console.log(`Invoices to download (${bulkDownloadInvoiceType}): ${invoicesToDownload.length}`);
       
@@ -562,70 +475,13 @@ export default function GSTInvoicesPage() {
       
       console.log(`B2B invoices: ${b2bInvoices.length}, B2C invoices: ${b2cInvoices.length}`);
 
-      // Convert invoices to Bill format
-      const convertInvoiceToBill = (invoice: TaxInvoice): any => {
-        const bill: Bill = {
-          id: invoice.id,
-          billNumber: invoice.invoice_number,
-          billDate: invoice.invoice_date,
-          company: invoice.company_info,
-          customer: {
-            id: invoice.customer_id || '',
-            name: invoice.customer_name,
-            address: typeof invoice.customer_address === 'object' 
-              ? `${invoice.customer_address.street || ''}, ${invoice.customer_address.area || ''}`.trim() || ''
-              : invoice.customer_address || '',
-            city: invoice.customer_address?.city || '',
-            state: invoice.customer_address?.state || '',
-            pincode: invoice.customer_address?.pincode || '',
-            phone: invoice.customer_phone || '',
-            email: invoice.customer_email || '',
-            gstNumber: invoice.customer_gstin
-          },
-          items: invoice.items,
-          subtotal: invoice.subtotal,
-          totalTax: invoice.total_tax,
-          serviceCharge: invoice.service_charge,
-          totalAmount: invoice.total_amount,
-          paymentStatus: 'PENDING' as const,
-          notes: invoice.notes?.join('\n'),
-          terms: invoice.terms,
-          createdAt: invoice.created_at,
-          updatedAt: invoice.created_at
-        };
-
-        (bill as any).gstData = {
-          placeOfSupply: invoice.place_of_supply,
-          placeOfSupplyCode: invoice.place_of_supply_code,
-          companyStateCode: getCompanyStateCode(invoice.company_info),
-          isIntraState: invoice.is_intra_state,
-          gstBreakup: invoice.gst_breakup,
-          taxSplit: {
-            cgst: invoice.cgst,
-            sgst: invoice.sgst,
-            igst: invoice.igst
-          },
-          reverseCharge: invoice.reverse_charge || false,
-          eWayBillNo: invoice.e_way_bill_no,
-          transportMode: invoice.transport_mode,
-          vehicleNo: invoice.vehicle_no,
-          roundOff: invoice.round_off,
-          customerGstRequired: invoice.invoice_type === 'B2B'
-        };
-
-        (bill as any).invoiceDetails = {
-          invoiceType: invoice.invoice_type,
-          ...invoice.invoice_details
-        };
-        
-        (bill as any).bankDetails = invoice.bank_details;
-
-        return bill;
-      };
-
       // Generate filename based on mode
       let filenameSuffix = '';
-      if (bulkDownloadMode === 'single') {
+      if (bulkDownloadMode === 'filtered') {
+        filenameSuffix =
+          dateFilterSummary?.replace(/\s+/g, '_').replace(/→/g, 'to') ||
+          (searchQuery.trim() ? 'Filtered' : 'Current_View');
+      } else if (bulkDownloadMode === 'single') {
         filenameSuffix = bulkDownloadDate;
       } else if (bulkDownloadMode === 'range') {
         filenameSuffix = `${bulkDownloadStartDate}_to_${bulkDownloadEndDate}`;
@@ -637,37 +493,24 @@ export default function GSTInvoicesPage() {
       // Sort by invoice date to maintain chronological order
       const allBills = invoicesToDownload
         .sort((a, b) => new Date(a.invoice_date).getTime() - new Date(b.invoice_date).getTime())
-        .map(convertInvoiceToBill);
+        .map(taxInvoiceToPdfData);
       
-      // Generate filename based on invoice type
-      const invoiceTypePrefix = bulkDownloadInvoiceType === 'ALL' 
-        ? 'All_Invoices' 
-        : bulkDownloadInvoiceType === 'B2B' 
-        ? 'B2B_Invoices' 
-        : 'B2C_Invoices';
-      
-      console.log(`Generating combined PDF for ${allBills.length} invoices (${b2bInvoices.length} B2B + ${b2cInvoices.length} B2C)`);
-      
+      const invoiceTypePrefix =
+        bulkDownloadMode === 'filtered'
+          ? filterType === 'ALL'
+            ? 'Invoices'
+            : `${filterType}_Invoices`
+          : bulkDownloadInvoiceType === 'ALL'
+            ? 'All_Invoices'
+            : bulkDownloadInvoiceType === 'B2B'
+              ? 'B2B_Invoices'
+              : 'B2C_Invoices';
+
       if (allBills.length > 0) {
-        // Generate single combined PDF with filtered invoices
-        generateCombinedTaxInvoicePDF(allBills, `${invoiceTypePrefix}_${filenameSuffix}`, 'pdf');
+        await generateCombinedTaxInvoicePDF(allBills, `${invoiceTypePrefix}_${filenameSuffix}`, 'pdf');
       } else {
         toast.error('No invoices to download');
       }
-
-      const modeText = bulkDownloadMode === 'all' 
-        ? 'all invoices'
-        : bulkDownloadMode === 'range'
-        ? `invoices from ${bulkDownloadStartDate} to ${bulkDownloadEndDate}`
-        : `invoices for ${bulkDownloadDate}`;
-      
-      const invoiceTypeText = bulkDownloadInvoiceType === 'ALL' 
-        ? `${b2bInvoices.length} B2B and ${b2cInvoices.length} B2C`
-        : bulkDownloadInvoiceType === 'B2B'
-        ? `${b2bInvoices.length} B2B`
-        : `${b2cInvoices.length} B2C`;
-      
-      toast.success(`Downloaded ${invoiceTypeText} ${modeText}`);
     } catch (error) {
       console.error('Error downloading bulk invoices:', error);
       toast.error('Failed to download invoices');
@@ -676,876 +519,507 @@ export default function GSTInvoicesPage() {
     }
   };
 
-  const generateBulkInvoicePDF = async (bills: any[], filename: string) => {
-    // For bulk download, we'll generate PDFs one by one
-    // The browser will handle multiple downloads
-    for (let i = 0; i < bills.length; i++) {
-      const bill = bills[i];
-      const pdfData = {
-        ...bill,
-        gstData: (bill as any).gstData,
-        invoiceDetails: (bill as any).invoiceDetails,
-        bankDetails: (bill as any).bankDetails
-      };
-      
-      // Generate PDF for each invoice
-      // Use a small delay between downloads to avoid browser blocking
-      if (i > 0) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
-      
-      generateTaxInvoicePDF(pdfData, 'pdf');
-    }
-  };
-
-  // Get filtered invoices based on current filters
-  const getFilteredInvoicesForExport = (): TaxInvoice[] => {
-    let filtered = [...allInvoices];
-
-    // Filter by type
-    if (filterType !== 'ALL') {
-      filtered = filtered.filter(inv => inv.invoice_type === filterType);
-    }
-
-    // Filter by date
-    if (dateFilter === 'custom' && startDate && endDate) {
-      const start = new Date(startDate);
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
-      filtered = filtered.filter(inv => {
-        const invDate = new Date(inv.invoice_date);
-        return invDate >= start && invDate <= end;
-      });
-    } else if (dateFilter === 'month') {
-      filtered = filtered.filter(inv => {
-        const invDate = new Date(inv.invoice_date);
-        return invDate.getMonth() + 1 === selectedMonth && invDate.getFullYear() === selectedYear;
-      });
-    } else if (dateFilter === 'year') {
-      filtered = filtered.filter(inv => {
-        const invDate = new Date(inv.invoice_date);
-        return invDate.getFullYear() === selectedYear;
-      });
-    }
-
-    // Filter by search query
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(invoice =>
-        invoice.invoice_number.toLowerCase().includes(query) ||
-        invoice.customer_name.toLowerCase().includes(query) ||
-        invoice.customer_phone?.toLowerCase().includes(query) ||
-        invoice.customer_email?.toLowerCase().includes(query) ||
-        invoice.customer_gstin?.toLowerCase().includes(query)
-      );
-    }
-
-    return filtered;
-  };
-
-  // Export to CSV
-  const handleExportToCSV = () => {
-    const invoicesToExport = getFilteredInvoicesForExport();
-    
-    if (invoicesToExport.length === 0) {
-      toast.error('No invoices to export');
-      return;
-    }
-
-    let filename = 'GST_Invoices';
-    if (dateFilter === 'month') {
-      const monthName = new Date(selectedYear, selectedMonth - 1).toLocaleString('default', { month: 'long' });
-      filename = `GST_Invoices_${monthName}_${selectedYear}`;
-    } else if (dateFilter === 'year') {
-      filename = `GST_Invoices_${selectedYear}`;
-    } else if (dateFilter === 'custom' && startDate && endDate) {
-      filename = `GST_Invoices_${startDate}_to_${endDate}`;
-    }
-
-    exportGSTInvoicesToCSV(invoicesToExport, filename);
-    toast.success(`Exported ${invoicesToExport.length} invoices to CSV`);
-  };
-
-  // Export to Excel
-  const handleExportToExcel = async () => {
-    const invoicesToExport = getFilteredInvoicesForExport();
-    
-    if (invoicesToExport.length === 0) {
-      toast.error('No invoices to export');
-      return;
-    }
-
-    let filename = 'GST_Invoices';
-    if (dateFilter === 'month') {
-      const monthName = new Date(selectedYear, selectedMonth - 1).toLocaleString('default', { month: 'long' });
-      filename = `GST_Invoices_${monthName}_${selectedYear}`;
-    } else if (dateFilter === 'year') {
-      filename = `GST_Invoices_${selectedYear}`;
-    } else if (dateFilter === 'custom' && startDate && endDate) {
-      filename = `GST_Invoices_${startDate}_to_${endDate}`;
-    }
-
-    await exportGSTInvoicesToExcel(invoicesToExport, filename);
-    toast.success(`Exported ${invoicesToExport.length} invoices to Excel`);
-  };
-
-  // Export monthly invoices (all invoices of selected month)
-  const handleExportMonthlyInvoices = async (format: 'csv' | 'excel') => {
-    const monthlyInvoices = allInvoices.filter(inv => {
-      const invDate = new Date(inv.invoice_date);
-      return invDate.getMonth() + 1 === selectedMonth && invDate.getFullYear() === selectedYear;
-    });
-
-    if (monthlyInvoices.length === 0) {
-      toast.error(`No invoices found for ${new Date(selectedYear, selectedMonth - 1).toLocaleString('default', { month: 'long' })} ${selectedYear}`);
-      return;
-    }
-
-    const monthName = new Date(selectedYear, selectedMonth - 1).toLocaleString('default', { month: 'long' });
-    const filename = `GST_Invoices_${monthName}_${selectedYear}`;
-
-    if (format === 'csv') {
-      exportGSTInvoicesToCSV(monthlyInvoices, filename);
-      toast.success(`Exported ${monthlyInvoices.length} invoices for ${monthName} ${selectedYear} to CSV`);
-    } else {
-      await exportGSTInvoicesToExcel(monthlyInvoices, filename);
-      toast.success(`Exported ${monthlyInvoices.length} invoices for ${monthName} ${selectedYear} to Excel`);
-    }
-  };
+  if (screen !== 'list' && activeInvoice) {
+    return (
+      <GSTInvoiceDetailScreen
+        invoice={activeInvoice}
+        mode={screen === 'view' ? 'view' : 'edit'}
+        onBack={handleBackToList}
+        onEdit={() => setScreen('edit')}
+        onUpdated={() => {
+          void loadInvoices();
+          handleBackToList();
+        }}
+      />
+    );
+  }
 
   return (
-    <div className="space-y-4 sm:space-y-6 p-3 sm:p-6 max-w-full overflow-x-hidden">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="mx-auto max-w-6xl space-y-3 p-2 sm:p-4">
+      <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-2xl sm:text-3xl font-bold">GST Invoices</h1>
-          <p className="text-sm sm:text-base text-gray-500 mt-1">View and manage all tax invoices</p>
+          <h1 className="text-lg font-bold tracking-tight text-slate-900 sm:text-xl">GST Invoices</h1>
+          <p className="text-xs text-slate-500 sm:text-sm">
+            {totalCount} invoice{totalCount === 1 ? '' : 's'}
+            {filterType !== 'ALL' ? ` · ${filterType}` : ''}
+            {dateFilterSummary ? ` · ${dateFilterSummary}` : ''}
+          </p>
         </div>
-        <div className="flex gap-2 flex-wrap">
-          {/* Quick Export Buttons */}
-          {getFilteredInvoicesForExport().length > 0 && (
+        <Button
+          variant="outline"
+          onClick={() => loadInvoices()}
+          disabled={loading}
+          className="h-8 shrink-0 gap-1.5 px-2.5 text-xs sm:h-9 sm:px-3 sm:text-sm"
+          size="sm"
+        >
+          {loading ? (
             <>
-              <Button
-                variant="outline"
-                onClick={handleExportToCSV}
-                className="border-green-600 text-green-700 hover:bg-green-50"
-                size="sm"
-              >
-                <FileDown className="h-4 w-4 mr-2" />
-                Export CSV ({getFilteredInvoicesForExport().length})
-              </Button>
-              <Button
-                variant="outline"
-                onClick={handleExportToExcel}
-                className="border-green-600 text-green-700 hover:bg-green-50"
-                size="sm"
-              >
-                <FileSpreadsheet className="h-4 w-4 mr-2" />
-                Export Excel ({getFilteredInvoicesForExport().length})
-              </Button>
+              <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-600 border-t-transparent" />
+              Loading…
+            </>
+          ) : (
+            <>
+              <RefreshCw className="h-3.5 w-3.5" />
+              Refresh
             </>
           )}
-          <Button
-            variant="outline"
-            onClick={() => loadInvoices()}
-            disabled={loading}
-            className="flex items-center gap-2"
-            size="sm"
-          >
-            {loading ? (
-              <>
-                <div className="w-4 h-4 border-2 border-gray-600 border-t-transparent rounded-full animate-spin" />
-                Loading...
-              </>
-            ) : (
-              <>
-                <RefreshCw className="h-4 w-4" />
-                Refresh
-              </>
-            )}
-          </Button>
-        </div>
+        </Button>
       </div>
 
-      {/* Filters and Search */}
-      <Card>
-        <CardHeader className="p-4 sm:p-6">
-          <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
-            <Filter className="h-4 w-4 sm:h-5 sm:w-5" />
-            Filters & Search
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4 p-4 sm:p-6">
-          {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+      {/* Search + quick filters — compact */}
+      <div className="rounded-lg border bg-white p-2.5 shadow-sm sm:p-3 space-y-2.5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="relative min-w-0 flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <Input
-              placeholder="Search by invoice number, customer name, phone, email, or GSTIN..."
+              placeholder="Search invoice #, customer, GSTIN…"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
+              className="h-9 pl-9 text-sm"
             />
           </div>
-
-          {/* Invoice Type Filter */}
-          <div>
-            <Label className="mb-2 block text-sm sm:text-base">Invoice Type</Label>
-            <div className="flex gap-2 flex-wrap">
+          <div className="flex shrink-0 flex-wrap gap-1.5">
+            {(['ALL', 'B2B', 'B2C'] as const).map((type) => (
               <Button
-                variant={filterType === 'ALL' ? 'default' : 'outline'}
-                onClick={() => setFilterType('ALL')}
+                key={type}
+                type="button"
                 size="sm"
+                variant={filterType === type ? 'default' : 'outline'}
+                className="h-8 rounded-full px-2.5 text-xs"
+                onClick={() => setFilterType(type)}
               >
-                All
+                {type === 'ALL' ? 'All' : type}
               </Button>
-              <Button
-                variant={filterType === 'B2B' ? 'default' : 'outline'}
-                onClick={() => setFilterType('B2B')}
-                size="sm"
-              >
-                B2B
-              </Button>
-              <Button
-                variant={filterType === 'B2C' ? 'default' : 'outline'}
-                onClick={() => setFilterType('B2C')}
-                size="sm"
-              >
-                B2C
-              </Button>
-            </div>
+            ))}
           </div>
+        </div>
 
-          {/* Bulk Download */}
-          <div className="border-t pt-4">
-            <Label className="mb-2 block font-semibold">Bulk Download</Label>
-            
-            {/* Download Mode Selection */}
-            <div className="mb-3">
-              <Label className="mb-2 block text-xs">Download Mode</Label>
-              <div className="flex gap-2 flex-wrap">
-                <Button
-                  variant={bulkDownloadMode === 'single' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setBulkDownloadMode('single')}
-                >
-                  Single Date
-                </Button>
-                <Button
-                  variant={bulkDownloadMode === 'range' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setBulkDownloadMode('range')}
-                >
-                  Date Range
-                </Button>
-                <Button
-                  variant={bulkDownloadMode === 'all' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setBulkDownloadMode('all')}
-                >
-                  All Invoices
-                </Button>
+        <Collapsible open={filtersOpen} onOpenChange={setFiltersOpen}>
+          <CollapsibleTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className={cn(
+                'h-8 w-full justify-between rounded-md px-2 text-xs sm:text-sm',
+                dateFilter !== 'all' ? 'bg-blue-50/80 text-blue-900 hover:bg-blue-100/80' : 'text-slate-700'
+              )}
+            >
+              <span className="flex items-center gap-2">
+                <Filter className="h-4 w-4 shrink-0" />
+                <span className="font-medium">Date filters</span>
+                {dateFilterSummary ? (
+                  <Badge variant="secondary" className="ml-1 hidden bg-blue-100 text-blue-800 sm:inline-flex">
+                    {dateFilterSummary}
+                  </Badge>
+                ) : null}
+              </span>
+              <ChevronDown className={cn('h-4 w-4 shrink-0 transition-transform', filtersOpen && 'rotate-180')} />
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="pt-2">
+            <div className="space-y-3 rounded-lg border border-slate-200/80 bg-slate-50/50 p-2.5 sm:p-3">
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Period</p>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {(
+                    [
+                      { value: 'all', label: 'All dates' },
+                      { value: 'month', label: 'Month' },
+                      { value: 'year', label: 'Year' },
+                      { value: 'custom', label: 'Custom' },
+                    ] as const
+                  ).map(({ value, label }) => (
+                    <Button
+                      key={value}
+                      type="button"
+                      size="sm"
+                      variant={dateFilter === value ? 'default' : 'outline'}
+                      className={cn(
+                        'h-9 rounded-lg text-xs sm:text-sm',
+                        dateFilter === value && 'bg-blue-600 shadow-sm hover:bg-blue-700'
+                      )}
+                      onClick={() => {
+                        setDateFilter(value);
+                        setCurrentPage(1);
+                      }}
+                    >
+                      {label}
+                    </Button>
+                  ))}
+                </div>
               </div>
-            </div>
 
-            {/* Single Date Mode */}
-            {bulkDownloadMode === 'single' && (
-              <div className="flex flex-col sm:flex-row gap-2 items-end mb-3">
-                <div className="flex-1 w-full sm:w-auto">
-                  <Label className="mb-1 block text-xs">Select Date</Label>
+              {dateFilter === 'month' && (
+                <div className="rounded-lg border bg-white p-3 shadow-sm">
+                  <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-slate-700">
+                    <Calendar className="h-4 w-4 text-blue-600" />
+                    Select month
+                  </p>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <Select
+                      value={selectedMonth.toString()}
+                      onValueChange={(value) => {
+                        setSelectedMonth(parseInt(value));
+                        setCurrentPage(1);
+                      }}
+                    >
+                      <SelectTrigger className="h-10 w-full bg-slate-50/80">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Array.from({ length: 12 }, (_, i) => i + 1).map((month) => (
+                          <SelectItem key={month} value={month.toString()}>
+                            {new Date(2000, month - 1).toLocaleString('default', { month: 'long' })}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Select
+                      value={selectedYear.toString()}
+                      onValueChange={(value) => {
+                        setSelectedYear(parseInt(value));
+                        setCurrentPage(1);
+                      }}
+                    >
+                      <SelectTrigger className="h-10 w-full bg-slate-50/80">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i).map((year) => (
+                          <SelectItem key={year} value={year.toString()}>
+                            {year}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
+
+              {dateFilter === 'year' && (
+                <div className="rounded-lg border bg-white p-3 shadow-sm">
+                  <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-slate-700">
+                    <Calendar className="h-4 w-4 text-blue-600" />
+                    Select year
+                  </p>
+                  <Select
+                    value={selectedYear.toString()}
+                    onValueChange={(value) => {
+                      setSelectedYear(parseInt(value));
+                      setCurrentPage(1);
+                    }}
+                  >
+                    <SelectTrigger className="h-10 w-full max-w-[200px] bg-slate-50/80">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i).map((year) => (
+                        <SelectItem key={year} value={year.toString()}>
+                          {year}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {dateFilter === 'custom' && (
+                <div className="rounded-lg border bg-white p-3 shadow-sm">
+                  <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-slate-700">
+                    <Calendar className="h-4 w-4 text-blue-600" />
+                    Date range
+                  </p>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <DatePicker
+                      value={startDate}
+                      onChange={(v) => {
+                        if (v) {
+                          setStartDate(v);
+                          setCurrentPage(1);
+                        }
+                      }}
+                      placeholder="Start date"
+                    />
+                    <DatePicker
+                      value={endDate}
+                      onChange={(v) => {
+                        if (v) {
+                          setEndDate(v);
+                          setCurrentPage(1);
+                        }
+                      }}
+                      placeholder="End date"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {dateFilter !== 'all' && (
+                <div className="flex flex-col gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm text-blue-900">
+                    <span className="font-medium">Showing:</span>{' '}
+                    {dateFilterSummary || 'Adjust filters above'}
+                  </p>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 shrink-0 gap-1 text-blue-700 hover:bg-blue-100/80 hover:text-blue-900"
+                    onClick={() => {
+                      setDateFilter('all');
+                      setStartDate('');
+                      setEndDate('');
+                      setSelectedMonth(new Date().getMonth() + 1);
+                      setSelectedYear(new Date().getFullYear());
+                      setCurrentPage(1);
+                    }}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                    Clear
+                  </Button>
+                </div>
+              )}
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+
+        <Collapsible open={bulkOpen} onOpenChange={setBulkOpen}>
+          <CollapsibleTrigger asChild>
+            <Button variant="ghost" size="sm" className="h-8 w-full justify-between rounded-md px-2 text-xs sm:text-sm text-slate-700">
+              <span className="flex items-center gap-2">
+                <Download className="h-4 w-4" />
+                <span className="font-medium">Bulk PDF download</span>
+              </span>
+              <ChevronDown className={cn('h-4 w-4 transition-transform', bulkOpen && 'rotate-180')} />
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="pt-2">
+            <div className="space-y-3 rounded-lg border border-slate-200/80 bg-slate-50/50 p-2.5 sm:p-3">
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Download scope</p>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {(
+                    [
+                      { value: 'filtered', label: 'Current view' },
+                      { value: 'single', label: 'One date' },
+                      { value: 'range', label: 'Date range' },
+                      { value: 'all', label: 'All invoices' },
+                    ] as const
+                  ).map(({ value, label }) => (
+                    <Button
+                      key={value}
+                      type="button"
+                      size="sm"
+                      variant={bulkDownloadMode === value ? 'default' : 'outline'}
+                      className={cn(
+                        'h-9 rounded-lg text-xs sm:text-sm',
+                        bulkDownloadMode === value && 'bg-emerald-600 shadow-sm hover:bg-emerald-700'
+                      )}
+                      onClick={() => setBulkDownloadMode(value)}
+                    >
+                      {label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              {bulkDownloadMode === 'filtered' && (
+                <div className="rounded-lg border border-emerald-100 bg-emerald-50/50 px-3 py-2.5 text-sm text-emerald-900">
+                  Downloads <strong>{filteredCountForBulk}</strong> invoice{filteredCountForBulk === 1 ? '' : 's'}{' '}
+                  matching your current search, type, and date filters.
+                </div>
+              )}
+
+              {bulkDownloadMode === 'single' && (
+                <div className="rounded-lg border bg-white p-3 shadow-sm">
+                  <Label className="mb-2 block text-sm font-medium text-slate-700">Invoice date</Label>
                   <DatePicker
                     value={bulkDownloadDate}
                     onChange={(v) => v && setBulkDownloadDate(v)}
                     placeholder="Pick date"
                   />
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Date Range Mode */}
-            {bulkDownloadMode === 'range' && (
-              <div className="flex flex-col sm:flex-row gap-2 items-end mb-3">
-                <div className="flex-1 w-full sm:w-auto">
-                  <Label className="mb-1 block text-xs">Start Date</Label>
-                  <DatePicker
-                    value={bulkDownloadStartDate}
-                    onChange={(v) => v && setBulkDownloadStartDate(v)}
-                    placeholder="Start date"
-                  />
+              {bulkDownloadMode === 'range' && (
+                <div className="rounded-lg border bg-white p-3 shadow-sm">
+                  <Label className="mb-2 block text-sm font-medium text-slate-700">From — To</Label>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <DatePicker
+                      value={bulkDownloadStartDate}
+                      onChange={(v) => v && setBulkDownloadStartDate(v)}
+                      placeholder="Start"
+                    />
+                    <DatePicker
+                      value={bulkDownloadEndDate}
+                      onChange={(v) => v && setBulkDownloadEndDate(v)}
+                      placeholder="End"
+                    />
+                  </div>
                 </div>
-                <div className="flex-1 w-full sm:w-auto">
-                  <Label className="mb-1 block text-xs">End Date</Label>
-                  <DatePicker
-                    value={bulkDownloadEndDate}
-                    onChange={(v) => v && setBulkDownloadEndDate(v)}
-                    placeholder="End date"
-                  />
+              )}
+
+              {bulkDownloadMode !== 'filtered' && (
+                <div>
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Invoice type</p>
+                  <div className="flex flex-wrap gap-2">
+                    {(['ALL', 'B2B', 'B2C'] as const).map((type) => (
+                      <Button
+                        key={type}
+                        type="button"
+                        size="sm"
+                        variant={bulkDownloadInvoiceType === type ? 'default' : 'outline'}
+                        className="h-8 rounded-full"
+                        onClick={() => setBulkDownloadInvoiceType(type)}
+                      >
+                        {type === 'ALL' ? 'All types' : type}
+                      </Button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Invoice Type Selection for Bulk Download */}
-            <div className="mb-3">
-              <Label className="mb-2 block text-xs">Invoice Type</Label>
-              <div className="flex gap-2 flex-wrap">
-                <Button
-                  variant={bulkDownloadInvoiceType === 'ALL' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setBulkDownloadInvoiceType('ALL')}
-                >
-                  All (B2B + B2C)
-                </Button>
-                <Button
-                  variant={bulkDownloadInvoiceType === 'B2B' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setBulkDownloadInvoiceType('B2B')}
-                >
-                  B2B Only
-                </Button>
-                <Button
-                  variant={bulkDownloadInvoiceType === 'B2C' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setBulkDownloadInvoiceType('B2C')}
-                >
-                  B2C Only
-                </Button>
-              </div>
-            </div>
-
-            {/* All Mode - Show info */}
-            {bulkDownloadMode === 'all' && (
-              <div className="mb-3 p-3 bg-blue-50 rounded-md">
-                <p className="text-sm text-blue-800">
-                  This will download {bulkDownloadInvoiceType === 'ALL' ? `all ${allInvoices.length} invoices (B2B + B2C)` : bulkDownloadInvoiceType === 'B2B' ? 'all B2B invoices' : 'all B2C invoices'} in a single PDF.
-                </p>
-              </div>
-            )}
-
-            {/* Download Buttons */}
-            <div className="space-y-3">
-              <div className="flex flex-col sm:flex-row gap-2">
-                <Button
-                  onClick={handleBulkDownload}
-                  disabled={
-                    isBulkDownloading ||
-                    (bulkDownloadMode === 'single' && !bulkDownloadDate) ||
-                    (bulkDownloadMode === 'range' && (!bulkDownloadStartDate || !bulkDownloadEndDate))
-                  }
-                  className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
-                >
-                  {isBulkDownloading ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                      Downloading...
-                    </>
-                  ) : (
-                    <>
-                      <Download className="h-4 w-4 mr-2" />
-                      Download PDF
-                    </>
-                  )}
-                </Button>
-                
-                {/* CSV Export Button */}
-                <Button
-                  onClick={handleExportToCSV}
-                  variant="outline"
-                  className="border-green-600 text-green-700 hover:bg-green-50 w-full sm:w-auto"
-                  disabled={
-                    (bulkDownloadMode === 'single' && !bulkDownloadDate) ||
-                    (bulkDownloadMode === 'range' && (!bulkDownloadStartDate || !bulkDownloadEndDate))
-                  }
-                >
-                  <FileDown className="h-4 w-4 mr-2" />
-                  Export CSV
-                </Button>
-                
-                {/* Excel Export Button */}
-                <Button
-                  onClick={handleExportToExcel}
-                  variant="outline"
-                  className="border-green-600 text-green-700 hover:bg-green-50 w-full sm:w-auto"
-                  disabled={
-                    (bulkDownloadMode === 'single' && !bulkDownloadDate) ||
-                    (bulkDownloadMode === 'range' && (!bulkDownloadStartDate || !bulkDownloadEndDate))
-                  }
-                >
-                  <FileSpreadsheet className="h-4 w-4 mr-2" />
-                  Export Excel
-                </Button>
-                
-                {/* Clear button for range mode */}
-                {bulkDownloadMode === 'range' && (bulkDownloadStartDate || bulkDownloadEndDate) && (
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setBulkDownloadStartDate('');
-                      setBulkDownloadEndDate('');
-                    }}
-                  >
-                    <X className="h-4 w-4 mr-2" />
-                    Clear
-                  </Button>
-                )}
-              </div>
-              
-              <p className="text-xs text-gray-500">
-                {bulkDownloadMode === 'all' 
-                  ? `Downloads ${bulkDownloadInvoiceType === 'ALL' ? 'all invoices (B2B + B2C)' : bulkDownloadInvoiceType === 'B2B' ? 'all B2B invoices' : 'all B2C invoices'} in a single PDF.`
-                  : bulkDownloadMode === 'range'
-                  ? `Downloads ${bulkDownloadInvoiceType === 'ALL' ? 'all invoices (B2B + B2C)' : bulkDownloadInvoiceType === 'B2B' ? 'B2B invoices' : 'B2C invoices'} within the selected date range.`
-                  : `Downloads ${bulkDownloadInvoiceType === 'ALL' ? 'all invoices (B2B + B2C)' : bulkDownloadInvoiceType === 'B2B' ? 'B2B invoices' : 'B2C invoices'} for the selected date.`}
-                <br />
-                <span className="text-green-700 font-semibold">CSV/Excel exports are formatted in GST standard format for easy GST filing.</span>
-              </p>
-            </div>
-          </div>
-
-          {/* Monthly Export Section */}
-          <div className="border-t pt-4 mt-4">
-            <Label className="mb-2 block font-semibold">Monthly Export (GST Filing)</Label>
-            <p className="text-xs text-gray-600 mb-3">
-              Export all invoices for a specific month in GST standard format for easy GST payment and filing.
-            </p>
-            <div className="flex gap-2 items-end mb-3">
-              <div className="flex-1">
-                <Label className="mb-1 block text-xs">Month</Label>
-                <Select value={selectedMonth.toString()} onValueChange={(value) => {
-                  setSelectedMonth(parseInt(value));
-                }}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Array.from({ length: 12 }, (_, i) => i + 1).map(month => (
-                      <SelectItem key={month} value={month.toString()}>
-                        {new Date(2000, month - 1).toLocaleString('default', { month: 'long' })}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="flex-1">
-                <Label className="mb-1 block text-xs">Year</Label>
-                <Select value={selectedYear.toString()} onValueChange={(value) => {
-                  setSelectedYear(parseInt(value));
-                }}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i).map(year => (
-                      <SelectItem key={year} value={year.toString()}>
-                        {year}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="flex flex-col sm:flex-row gap-2">
               <Button
-                onClick={() => handleExportMonthlyInvoices('csv')}
+                onClick={handleBulkDownload}
+                disabled={
+                  isBulkDownloading ||
+                  (bulkDownloadMode === 'single' && !bulkDownloadDate) ||
+                  (bulkDownloadMode === 'range' && (!bulkDownloadStartDate || !bulkDownloadEndDate)) ||
+                  (bulkDownloadMode === 'filtered' && filteredCountForBulk === 0)
+                }
                 variant="outline"
-                className="border-green-600 text-green-700 hover:bg-green-50 flex-1 w-full sm:w-auto"
+                className={cn(documentOutlineBtnClass, 'h-11 w-full !shadow-none sm:w-auto')}
               >
-                <FileDown className="h-4 w-4 mr-2" />
-                Export Month CSV
-              </Button>
-              <Button
-                onClick={() => handleExportMonthlyInvoices('excel')}
-                variant="outline"
-                className="border-green-600 text-green-700 hover:bg-green-50 flex-1 w-full sm:w-auto"
-              >
-                <FileSpreadsheet className="h-4 w-4 mr-2" />
-                Export Month Excel
+                <Download className="h-4 w-4 shrink-0" />
+                {isBulkDownloading ? 'Generating PDF…' : 'Download combined PDF'}
               </Button>
             </div>
-            <p className="text-xs text-gray-500 mt-2">
-              Exports all invoices for {new Date(selectedYear, selectedMonth - 1).toLocaleString('default', { month: 'long' })} {selectedYear} in GST standard format.
-            </p>
+          </CollapsibleContent>
+        </Collapsible>
+      </div>
+
+      {/* Invoice list */}
+      <div className="rounded-lg border bg-white shadow-sm">
+        <div className="flex items-center justify-between border-b px-3 py-2 sm:px-4">
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+            <Receipt className="h-4 w-4 text-blue-600" />
+            Invoices
           </div>
-
-          {/* Date Filter */}
-          <div className="border-t pt-4">
-            <Label className="mb-2 block text-sm sm:text-base">Date Filter</Label>
-            <Select value={dateFilter} onValueChange={(value: 'all' | 'custom' | 'month' | 'year') => {
-              setDateFilter(value);
-              setCurrentPage(1);
-            }}>
-              <SelectTrigger className="w-full sm:w-[200px]">
-                <SelectValue placeholder="Select date filter" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Dates</SelectItem>
-                <SelectItem value="month">This Month</SelectItem>
-                <SelectItem value="year">This Year</SelectItem>
-                <SelectItem value="custom">Custom Range</SelectItem>
-              </SelectContent>
-            </Select>
-
-            {dateFilter === 'month' && (
-              <div className="flex flex-col sm:flex-row gap-2 mt-2">
-                <Select value={selectedMonth.toString()} onValueChange={(value) => {
-                  setSelectedMonth(parseInt(value));
-                  setCurrentPage(1);
-                }}>
-                  <SelectTrigger className="w-full sm:w-[150px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Array.from({ length: 12 }, (_, i) => i + 1).map(month => (
-                      <SelectItem key={month} value={month.toString()}>
-                        {new Date(2000, month - 1).toLocaleString('default', { month: 'long' })}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select value={selectedYear.toString()} onValueChange={(value) => {
-                  setSelectedYear(parseInt(value));
-                  setCurrentPage(1);
-                }}>
-                  <SelectTrigger className="w-full sm:w-[150px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i).map(year => (
-                      <SelectItem key={year} value={year.toString()}>
-                        {year}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            {dateFilter === 'year' && (
-              <div className="mt-2">
-                <Select value={selectedYear.toString()} onValueChange={(value) => {
-                  setSelectedYear(parseInt(value));
-                  setCurrentPage(1);
-                }}>
-                  <SelectTrigger className="w-[200px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i).map(year => (
-                      <SelectItem key={year} value={year.toString()}>
-                        {year}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            {dateFilter === 'custom' && (
-              <div className="flex flex-col sm:flex-row gap-2 mt-2">
-                <div className="flex-1">
-                  <Label className="mb-1 block text-xs">Start Date</Label>
-                  <DatePicker
-                    value={startDate}
-                    onChange={(v) => {
-                      if (v) {
-                        setStartDate(v);
-                        setCurrentPage(1);
-                      }
-                    }}
-                    placeholder="Start date"
-                  />
-                </div>
-                <div className="flex-1">
-                  <Label className="mb-1 block text-xs">End Date</Label>
-                  <DatePicker
-                    value={endDate}
-                    onChange={(v) => {
-                      if (v) {
-                        setEndDate(v);
-                        setCurrentPage(1);
-                      }
-                    }}
-                    placeholder="End date"
-                  />
-                </div>
-                {(startDate || endDate) && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setStartDate('');
-                      setEndDate('');
-                      setCurrentPage(1);
-                    }}
-                    className="mt-6"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
-            )}
-
-            {dateFilter !== 'all' && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setDateFilter('all');
-                  setStartDate('');
-                  setEndDate('');
-                  setSelectedMonth(new Date().getMonth() + 1);
-                  setSelectedYear(new Date().getFullYear());
-                  setCurrentPage(1);
-                }}
-                className="mt-2"
-              >
-                Clear Date Filter
-              </Button>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Invoices Table */}
-      <Card>
-        <CardHeader className="p-4 sm:p-6">
-          <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
-            <Receipt className="h-4 w-4 sm:h-5 sm:w-5" />
-            Invoices ({totalCount})
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-4 sm:p-6">
+          <span className="text-xs text-slate-500">{totalCount} total</span>
+        </div>
+        <div className="p-2 sm:p-3">
           {loading ? (
             <div className="text-center py-8 text-gray-500">Loading invoices...</div>
           ) : filteredInvoices.length === 0 ? (
             <div className="text-center py-8 text-gray-500">No invoices found</div>
           ) : (
             <div className="overflow-x-hidden">
-              {/* Mobile Card View */}
-              <div className="block sm:hidden space-y-4">
+              {/* Mobile */}
+              <div className="space-y-3 md:hidden">
                 {filteredInvoices.map((invoice) => (
-                  <Card key={invoice.id}>
-                    <CardContent className="p-4 space-y-3">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1 min-w-0">
-                          <div className="font-mono font-semibold text-sm mb-1 break-all">
-                            {invoice.invoice_number}
-                          </div>
-                          <div className="flex items-center gap-1 text-xs text-gray-500">
-                            <Calendar className="h-3 w-3" />
-                            {formatDate(invoice.invoice_date)}
-                          </div>
-                        </div>
-                        <Badge variant={invoice.invoice_type === 'B2B' ? 'default' : 'secondary'} className="text-xs shrink-0">
-                          {invoice.invoice_type}
-                        </Badge>
+                  <button
+                    key={invoice.id}
+                    type="button"
+                    onClick={() => handleViewInvoice(invoice)}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50/50 p-4 text-left transition-colors hover:border-blue-200 hover:bg-blue-50/30"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-mono text-sm font-bold text-slate-900 break-all">
+                          {invoice.invoice_number}
+                        </p>
+                        <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-500">
+                          <Calendar className="h-3 w-3" />
+                          {formatDate(invoice.invoice_date)}
+                        </p>
                       </div>
-                      
-                      <div className="space-y-2 text-sm">
-                        <div>
-                          <span className="font-medium">Customer: </span>
-                          <span>{invoice.customer_name}</span>
-                        </div>
-                        {invoice.customer_phone && (
-                          <div>
-                            <span className="font-medium">Phone: </span>
-                            <span>{invoice.customer_phone}</span>
-                          </div>
-                        )}
-                        {invoice.customer_gstin && (
-                          <div>
-                            <span className="font-medium">GSTIN: </span>
-                            <span className="font-mono text-xs">{invoice.customer_gstin}</span>
-                          </div>
-                        )}
-                        <div>
-                          <span className="font-medium">Total: </span>
-                          <span className="font-semibold">{formatCurrency(invoice.total_amount)}</span>
-                        </div>
-                        <div className="text-xs">
-                          {invoice.is_intra_state ? (
-                            <div>
-                              <span>CGST: {formatCurrency(invoice.cgst)}</span>
-                              <span className="mx-2">|</span>
-                              <span>SGST: {formatCurrency(invoice.sgst)}</span>
-                            </div>
-                          ) : (
-                            <div>IGST: {formatCurrency(invoice.igst)}</div>
-                          )}
-                        </div>
-                      </div>
-                      
-                      <div className="flex flex-wrap gap-2 pt-2 border-t">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleViewInvoice(invoice)}
-                          className="flex-1 min-w-[80px] text-xs"
-                        >
-                          <Eye className="h-3 w-3 mr-1" />
-                          View
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleRegenerateInvoice(invoice, 'print')}
-                          className="flex-1 min-w-[80px] text-xs"
-                          title="Generate / print"
-                        >
-                          <Printer className="h-3 w-3 mr-1" />
-                          Print
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleRegenerateInvoice(invoice, 'pdf')}
-                          className="flex-1 min-w-[80px] text-xs"
-                          title="Download PDF"
-                        >
-                          <Download className="h-3 w-3 mr-1" />
-                          PDF
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => {
-                            exportGSTInvoicesToCSV([invoice], `Invoice_${invoice.invoice_number}`);
-                            toast.success('Invoice exported to CSV');
-                          }}
-                          className="border-green-600 text-green-700 hover:bg-green-50 text-xs"
-                          title="Export to CSV"
-                        >
-                          <FileDown className="h-3 w-3" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={async () => {
-                            await exportGSTInvoicesToExcel([invoice], `Invoice_${invoice.invoice_number}`);
-                            toast.success('Invoice exported to Excel');
-                          }}
-                          className="border-green-600 text-green-700 hover:bg-green-50 text-xs"
-                          title="Export to Excel"
-                        >
-                          <FileSpreadsheet className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
+                      <Badge variant={invoice.invoice_type === 'B2B' ? 'default' : 'secondary'}>
+                        {invoice.invoice_type}
+                      </Badge>
+                    </div>
+                    <p className="mt-2 truncate font-medium text-slate-800">{invoice.customer_name}</p>
+                    {invoice.customer_gstin ? (
+                      <p className="mt-1 truncate font-mono text-xs text-slate-600">
+                        GSTIN: {invoice.customer_gstin}
+                      </p>
+                    ) : null}
+                    <p className="mt-2 text-lg font-bold text-slate-900">{formatCurrency(invoice.total_amount)}</p>
+                    <div
+                      className="mt-3 border-t border-slate-200/80 pt-3"
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    >
+                      <GSTInvoiceRowActions
+                        onView={() => handleViewInvoice(invoice)}
+                        onEdit={() => handleEditInvoice(invoice)}
+                        onPrint={() => handleRegenerateInvoice(invoice, 'print')}
+                        onDownload={() => handleRegenerateInvoice(invoice, 'pdf')}
+                        onDelete={() => handleDeleteInvoice(invoice)}
+                      />
+                    </div>
+                  </button>
                 ))}
               </div>
-              
-              {/* Desktop Table View */}
-              <div className="hidden sm:block">
+
+              {/* Desktop */}
+              <div className="hidden md:block overflow-x-auto">
                 <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Invoice #</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Customer</TableHead>
-                    <TableHead>Customer GSTIN</TableHead>
-                    <TableHead>Total Amount</TableHead>
-                    <TableHead>GST</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredInvoices.map((invoice) => (
-                    <TableRow key={invoice.id}>
-                      <TableCell className="font-mono font-semibold">
-                        {invoice.invoice_number}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <Calendar className="h-4 w-4 text-gray-400" />
-                          {formatDate(invoice.invoice_date)}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={invoice.invoice_type === 'B2B' ? 'default' : 'secondary'}>
-                          {invoice.invoice_type}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div>
-                          <div className="font-medium">{invoice.customer_name}</div>
-                          {invoice.customer_phone && (
-                            <div className="text-sm text-gray-500">{invoice.customer_phone}</div>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="font-mono text-sm">
-                        {invoice.customer_gstin || '-'}
-                      </TableCell>
-                      <TableCell className="font-semibold">
-                        {formatCurrency(invoice.total_amount)}
-                      </TableCell>
-                      <TableCell>
-                        <div className="text-sm">
-                          {invoice.is_intra_state ? (
-                            <div>
-                              <div>CGST: {formatCurrency(invoice.cgst)}</div>
-                              <div>SGST: {formatCurrency(invoice.sgst)}</div>
-                            </div>
-                          ) : (
-                            <div>IGST: {formatCurrency(invoice.igst)}</div>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-2 flex-wrap">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleViewInvoice(invoice)}
-                          >
-                            <Eye className="h-4 w-4 mr-1" />
-                            View
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleRegenerateInvoice(invoice, 'print')}
-                          >
-                            <Printer className="h-4 w-4 mr-1" />
-                            Print
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleRegenerateInvoice(invoice, 'pdf')}
-                          >
-                            <Download className="h-4 w-4 mr-1" />
-                            PDF
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              exportGSTInvoicesToCSV([invoice], `Invoice_${invoice.invoice_number}`);
-                              toast.success('Invoice exported to CSV');
-                            }}
-                            className="border-green-600 text-green-700 hover:bg-green-50"
-                            title="Export to CSV"
-                          >
-                            <FileDown className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={async () => {
-                              await exportGSTInvoicesToExcel([invoice], `Invoice_${invoice.invoice_number}`);
-                              toast.success('Invoice exported to Excel');
-                            }}
-                            className="border-green-600 text-green-700 hover:bg-green-50"
-                            title="Export to Excel"
-                          >
-                            <FileSpreadsheet className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Invoice</TableHead>
+                      <TableHead>Customer</TableHead>
+                      <TableHead>GSTIN</TableHead>
+                      <TableHead className="text-right">Amount</TableHead>
+                      <TableHead className="w-[72px]" />
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredInvoices.map((invoice) => (
+                      <TableRow
+                        key={invoice.id}
+                        className="cursor-pointer hover:bg-slate-50/80"
+                        onClick={() => handleViewInvoice(invoice)}
+                      >
+                        <TableCell>
+                          <div className="font-mono text-sm font-semibold">{invoice.invoice_number}</div>
+                          <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
+                            <Calendar className="h-3.5 w-3.5" />
+                            {formatDate(invoice.invoice_date)}
+                            <Badge variant={invoice.invoice_type === 'B2B' ? 'default' : 'secondary'} className="h-5 px-1.5 text-[10px]">
+                              {invoice.invoice_type}
+                            </Badge>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium">{invoice.customer_name}</div>
+                          {invoice.customer_phone ? (
+                            <div className="text-xs text-slate-500">{invoice.customer_phone}</div>
+                          ) : null}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs max-w-[140px] truncate">
+                          {invoice.customer_gstin || '—'}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="font-semibold">{formatCurrency(invoice.total_amount)}</div>
+                          <div className="text-xs text-slate-500">
+                            {invoice.is_intra_state
+                              ? `CGST ${formatCurrency(invoice.cgst || 0)}`
+                              : `IGST ${formatCurrency(invoice.igst || 0)}`}
+                          </div>
+                        </TableCell>
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <GSTInvoiceRowActions
+                            layout="menu"
+                            onView={() => handleViewInvoice(invoice)}
+                            onEdit={() => handleEditInvoice(invoice)}
+                            onPrint={() => handleRegenerateInvoice(invoice, 'print')}
+                            onDownload={() => handleRegenerateInvoice(invoice, 'pdf')}
+                            onDelete={() => handleDeleteInvoice(invoice)}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               </div>
             </div>
           )}
@@ -1595,182 +1069,8 @@ export default function GSTInvoicesPage() {
               </Pagination>
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      {/* View Invoice Modal */}
-      <Dialog open={viewModalOpen} onOpenChange={setViewModalOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Invoice Details - {selectedInvoice?.invoice_number}</DialogTitle>
-            <DialogDescription>
-              View complete invoice information
-            </DialogDescription>
-          </DialogHeader>
-          
-          {selectedInvoice && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Invoice Number</label>
-                  {isEditingInvoiceNumber ? (
-                    <div className="flex gap-2 items-center mt-1">
-                      <Input
-                        value={editInvoiceNumber}
-                        onChange={(e) => setEditInvoiceNumber(e.target.value)}
-                        className="font-mono"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            handleSaveInvoiceNumber();
-                          } else if (e.key === 'Escape') {
-                            setIsEditingInvoiceNumber(false);
-                            setEditInvoiceNumber(selectedInvoice.invoice_number);
-                          }
-                        }}
-                      />
-                      <Button
-                        size="sm"
-                        onClick={handleSaveInvoiceNumber}
-                        disabled={isSavingInvoiceNumber}
-                      >
-                        {isSavingInvoiceNumber ? (
-                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        ) : (
-                          <Save className="h-4 w-4" />
-                        )}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          setIsEditingInvoiceNumber(false);
-                          setEditInvoiceNumber(selectedInvoice.invoice_number);
-                        }}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <p className="font-mono font-semibold">{selectedInvoice.invoice_number}</p>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          setEditInvoiceNumber(selectedInvoice.invoice_number);
-                          setIsEditingInvoiceNumber(true);
-                        }}
-                      >
-                        <Edit className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Invoice Date</label>
-                  <p>{formatDate(selectedInvoice.invoice_date)}</p>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Invoice Type</label>
-                  <Badge variant={selectedInvoice.invoice_type === 'B2B' ? 'default' : 'secondary'}>
-                    {selectedInvoice.invoice_type}
-                  </Badge>
-                </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Place of Supply</label>
-                  <p>{selectedInvoice.place_of_supply || '-'}</p>
-                </div>
-              </div>
-
-              <div className="border-t pt-4">
-                <label className="text-sm font-medium text-gray-500">Customer Information</label>
-                <div className="mt-2 space-y-1">
-                  <p className="font-medium">{selectedInvoice.customer_name}</p>
-                  {selectedInvoice.customer_phone && <p>Phone: {selectedInvoice.customer_phone}</p>}
-                  {selectedInvoice.customer_email && <p>Email: {selectedInvoice.customer_email}</p>}
-                  {selectedInvoice.customer_gstin && (
-                    <p className="font-mono">GSTIN: {selectedInvoice.customer_gstin}</p>
-                  )}
-                </div>
-              </div>
-
-              <div className="border-t pt-4">
-                <label className="text-sm font-medium text-gray-500">Financial Summary</label>
-                <div className="mt-2 space-y-1">
-                  <div className="flex justify-between">
-                    <span>Subtotal:</span>
-                    <span>{formatCurrency(selectedInvoice.subtotal)}</span>
-                  </div>
-                  {selectedInvoice.total_discount > 0 && (
-                    <div className="flex justify-between">
-                      <span>Discount:</span>
-                      <span>-{formatCurrency(selectedInvoice.total_discount)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between">
-                    <span>GST:</span>
-                    <span>{formatCurrency(selectedInvoice.total_tax)}</span>
-                  </div>
-                  {selectedInvoice.round_off !== 0 && (
-                    <div className="flex justify-between">
-                      <span>Round Off:</span>
-                      <span>{formatCurrency(selectedInvoice.round_off)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between font-bold text-lg border-t pt-2">
-                    <span>Total Amount:</span>
-                    <span>{formatCurrency(selectedInvoice.total_amount)}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex gap-2 pt-4 border-t flex-wrap">
-                <Button onClick={() => handleRegenerateInvoice(selectedInvoice, 'print')} className="flex-1 min-w-[140px]">
-                  <Printer className="h-4 w-4 mr-2" />
-                  Generate
-                </Button>
-                <Button onClick={() => handleRegenerateInvoice(selectedInvoice, 'pdf')} variant="outline" className="flex-1 min-w-[140px]">
-                  <Download className="h-4 w-4 mr-2" />
-                  Download PDF
-                </Button>
-                <Button 
-                  onClick={() => {
-                    exportGSTInvoicesToCSV([selectedInvoice], `Invoice_${selectedInvoice.invoice_number}`);
-                    toast.success('Invoice exported to CSV');
-                  }} 
-                  variant="outline"
-                  className="flex-1 min-w-[140px] border-green-600 text-green-700 hover:bg-green-50"
-                >
-                  <FileDown className="h-4 w-4 mr-2" />
-                  Export CSV
-                </Button>
-                <Button
-                  onClick={async () => {
-                    await exportGSTInvoicesToExcel([selectedInvoice], `Invoice_${selectedInvoice.invoice_number}`);
-                    toast.success('Invoice exported to Excel');
-                  }}
-                  variant="outline"
-                  className="flex-1 min-w-[140px] border-green-600 text-green-700 hover:bg-green-50"
-                >
-                  <FileSpreadsheet className="h-4 w-4 mr-2" />
-                  Export Excel
-                </Button>
-                <Button 
-                  onClick={() => handleDeleteInvoice(selectedInvoice)}
-                  variant="outline"
-                  className="flex-1 min-w-[140px] border-red-600 text-red-600 hover:bg-red-50"
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete
-                </Button>
-                <Button variant="outline" onClick={() => setViewModalOpen(false)} className="min-w-[100px]">
-                  Close
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+        </div>
+      </div>
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>

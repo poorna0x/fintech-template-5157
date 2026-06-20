@@ -38,6 +38,8 @@ export interface DocumentGeneratorActionBarProps {
   /** Columns for the primary button row on sm+ screens */
   primaryCols?: 2 | 3;
   secondaryLabel?: string;
+  /** Horizontal equal-width buttons without extra chrome */
+  compact?: boolean;
 }
 
 function PrimaryButtonRow({
@@ -106,7 +108,21 @@ export function DocumentGeneratorActionBar({
   secondary,
   primaryCols = 2,
   secondaryLabel = 'More options',
+  compact = false,
 }: DocumentGeneratorActionBarProps) {
+  if (compact && !secondary && !draft) {
+    return (
+      <div
+        className={cn(
+          'grid w-full min-w-0 gap-2',
+          primaryCols === 3 ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-1 sm:grid-cols-2'
+        )}
+      >
+        {primary}
+      </div>
+    );
+  }
+
   if (secondary) {
     return (
       <div className="flex w-full min-w-0 flex-col gap-3">
@@ -134,6 +150,8 @@ export interface DocumentGeneratorPageHeaderProps {
   accent?: DocumentGeneratorAccent;
   /** When true, hides title (e.g. inside a modal that already has a title). */
   embedded?: boolean;
+  /** Slim toolbar only — no gradient card wrapper (GST edit, etc.). */
+  embeddedCompact?: boolean;
   icon?: React.ReactNode;
   actions: React.ReactNode;
 }
@@ -143,10 +161,15 @@ export default function DocumentGeneratorPageHeader({
   description,
   accent = 'green',
   embedded = false,
+  embeddedCompact = false,
   icon,
   actions,
 }: DocumentGeneratorPageHeaderProps) {
   const styles = accentStyles[accent];
+
+  if (embeddedCompact) {
+    return <div className="w-full min-w-0">{actions}</div>;
+  }
 
   if (embedded) {
     return (

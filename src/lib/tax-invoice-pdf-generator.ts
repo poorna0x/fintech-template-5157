@@ -1083,21 +1083,47 @@ export function generateTaxInvoiceHTML(data: PDFTaxInvoiceData): string {
   return buildTaxInvoiceDocumentHtml(data);
 }
 
+const MAX_COMBINED_HTML_BYTES = 2.4 * 1024 * 1024;
+
+function chunkInvoicesForCombinedPdf(invoices: PDFTaxInvoiceData[]): PDFTaxInvoiceData[][] {
+  const chunks: PDFTaxInvoiceData[][] = [];
+  let current: PDFTaxInvoiceData[] = [];
+  let currentBytes = 8000;
+
+  for (const invoice of invoices) {
+    const size = new TextEncoder().encode(createTaxInvoiceContent(invoice)).length;
+    if (current.length > 0 && currentBytes + size > MAX_COMBINED_HTML_BYTES) {
+      chunks.push(current);
+      current = [invoice];
+      currentBytes = 8000 + size;
+    } else {
+      current.push(invoice);
+      currentBytes += size;
+    }
+  }
+
+  if (current.length > 0) {
+    chunks.push(current);
+  }
+
+  return chunks;
+}
+
 // Generate combined PDF with multiple invoices
-export function generateCombinedTaxInvoicePDF(
+export async function generateCombinedTaxInvoicePDF(
   invoices: PDFTaxInvoiceData[], 
   filename: string, 
   action: 'print' | 'pdf' = 'pdf'
-): void {
+): Promise<void> {
   try {
     console.log(`generateCombinedTaxInvoicePDF called with ${invoices.length} invoices`);
     if (invoices.length === 0) {
-      console.error('No invoices to generate PDF');
-      return;
+      throw new Error('No invoices to generate PDF');
     }
 
-    // Combine all invoice contents with page breaks
-    const combinedContent = invoices.map((invoice, index) => {
+    const buildCombinedHtml = (batch: PDFTaxInvoiceData[]) => {
+    // Combine invoice contents with page breaks
+    const combinedContent = batch.map((invoice, index) => {
       const content = createTaxInvoiceContent(invoice);
       // Add page break before each invoice except the first one
       if (index > 0) {
@@ -1493,16 +1519,28 @@ export function generateCombinedTaxInvoicePDF(
       </body>
       </html>
     `;
+    return combinedHtml;
+    };
 
     if (action === 'pdf') {
-      void downloadDocumentPdf({
-        html: combinedHtml,
-        filename: `${filename.replace(/\s+/g, '_')}.pdf`,
-      }).catch(() => {
-        /* errors surfaced via toast in downloadDocumentPdf */
-      });
+      const chunks = chunkInvoicesForCombinedPdf(invoices);
+      for (let i = 0; i < chunks.length; i += 1) {
+        const chunkFilename =
+          chunks.length > 1
+            ? `${filename.replace(/\s+/g, '_')}_part${i + 1}of${chunks.length}.pdf`
+            : `${filename.replace(/\s+/g, '_')}.pdf`;
+        await downloadDocumentPdf({
+          html: buildCombinedHtml(chunks[i]),
+          filename: chunkFilename,
+        });
+        if (i < chunks.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 800));
+        }
+      }
       return;
     }
+
+    const combinedHtml = buildCombinedHtml(invoices);
 
     const printWindow = window.open('', '_blank', 'width=800,height=600');
     if (!printWindow) {
