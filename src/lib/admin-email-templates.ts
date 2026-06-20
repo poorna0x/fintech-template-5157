@@ -231,7 +231,7 @@ function attachmentNoticeBlock(names: string[]): string {
   if (!names.length) return '';
   const items = names.map((n) => `<li style="margin:0 0 6px;font-family:${EMAIL_FONT};font-size:13px;color:${C.body};">${escapeHtml(n)}</li>`).join('');
   return `
-              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;margin-bottom:20px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;margin-top:20px;">
                 <tr>
                   <td style="padding:14px 16px;">
                     <p style="margin:0 0 8px;font-family:${EMAIL_FONT};font-size:12px;font-weight:600;color:#1d4ed8;text-transform:uppercase;letter-spacing:0.6px;">Attachments included</p>
@@ -398,7 +398,6 @@ function buildAdminDocumentEmail(
           </tr>
           <tr>
             <td style="padding:8px 28px 24px;">
-              ${attachmentBlock}
               ${detailsBlock}
               <p style="margin:0 0 20px;font-family:${EMAIL_FONT};font-size:15px;line-height:1.65;color:${C.body};white-space:pre-wrap;">${escapeHtml(message).replace(/\n/g, '<br>')}</p>
               <p style="margin:0 0 10px;font-family:${EMAIL_FONT};font-size:12px;font-weight:600;color:${C.label};text-transform:uppercase;letter-spacing:0.8px;text-align:center;">Need help?</p>
@@ -408,6 +407,7 @@ function buildAdminDocumentEmail(
                   <td width="50%" style="padding-left:6px;vertical-align:top;">${callButton}</td>
                 </tr>
               </table>
+              ${attachmentBlock}
             </td>
           </tr>
           <tr>
@@ -431,12 +431,12 @@ function buildAdminDocumentEmail(
     '',
     message,
     '',
-    ...(options?.attachmentNames?.length
-      ? ['Attachments:', ...options.attachmentNames.map((n) => `- ${n}`), '']
-      : []),
     `WhatsApp: https://wa.me/${contact.whatsapp}`,
     `Phone: ${contact.phoneDisplay}`,
     `Email: ${contact.email}`,
+    ...(options?.attachmentNames?.length
+      ? ['', 'Attachments:', ...options.attachmentNames.map((n) => `- ${n}`)]
+      : []),
     '',
     brandName,
   ];
