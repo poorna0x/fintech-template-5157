@@ -1936,6 +1936,10 @@ const AdminDashboard = () => {
       }
       setShowLetterheadDocsPage(true);
       navigate('/admin', { replace: true });
+    } else if (view === 'analytics') {
+      setCurrentView('analytics');
+      const hash = location.hash;
+      navigate(`/admin${hash}`, { replace: true });
     } else if (searchPrefill && searchPrefill.trim()) {
       // Pre-fill the admin search box and trigger a search so deep-links from
       // Settings → Advanced search → "Open in Admin" / "Photos" land directly on the result.
@@ -9634,6 +9638,17 @@ const AdminDashboard = () => {
                   >
                     {isManager ? <Lock className="w-4 h-4 mr-2" /> : <DollarSign className="w-4 h-4 mr-2" />}
                     Amount Trackers
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={isManager}
+                    onClick={() => {
+                      if (isManager) return;
+                      hapticTap();
+                      navigate('/settings?section=website-analytics-data');
+                    }}
+                  >
+                    {isManager ? <Lock className="w-4 h-4 mr-2" /> : <BarChart3 className="w-4 h-4 mr-2" />}
+                    Website analytics data
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     disabled={isManager}

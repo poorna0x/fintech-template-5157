@@ -331,6 +331,14 @@ const Analytics = () => {
   const [brandsLoaded, setBrandsLoaded] = useState(false);
 
   useEffect(() => {
+    if (window.location.hash !== '#section-website-analytics') return;
+    const timer = window.setTimeout(() => {
+      document.getElementById('section-website-analytics')?.scrollIntoView({ behavior: 'smooth' });
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
     loadAnalytics();
   }, [period, customStartDate, customEndDate, customMonthValue]);
 

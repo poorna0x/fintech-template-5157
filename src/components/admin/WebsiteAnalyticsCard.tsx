@@ -24,8 +24,6 @@ import {
   TrendingUp,
   Globe,
   CalendarRange,
-  ChevronDown,
-  Trash2,
   Loader2,
 } from 'lucide-react';
 import { db } from '@/lib/supabase';
@@ -39,8 +37,6 @@ import {
   AnalyticsListLoadingOverlay,
   ANALYTICS_LIST_SCROLL_ANCHOR_CLASS,
 } from '@/components/admin/AnalyticsListPagination';
-import { WebsiteAnalyticsDataDelete } from '@/components/admin/WebsiteAnalyticsDataDelete';
-
 const WebsiteAnalyticsTrendChart = lazy(() => import('./WebsiteAnalyticsTrendChart'));
 
 const IST = 'Asia/Kolkata';
@@ -433,7 +429,6 @@ export function WebsiteAnalyticsCard() {
   const [customFrom, setCustomFrom] = useState(todayIst);
   const [customTo, setCustomTo] = useState(todayIst);
   const [chartMetric, setChartMetric] = useState<ChartMetric>('visitors');
-  const [showDeletePanel, setShowDeletePanel] = useState(false);
 
   const activeRange = useMemo(() => {
     if (periodMode === 'today') {
@@ -1052,36 +1047,6 @@ export function WebsiteAnalyticsCard() {
             </div>
           </>
         )}
-
-        <div className="mt-6 pt-5 border-t border-border">
-          <button
-            type="button"
-            className="flex w-full items-center justify-between gap-3 rounded-xl border border-border bg-muted/10 px-3 py-3 sm:px-4 text-left touch-manipulation hover:bg-muted/20 transition-colors"
-            onClick={() => setShowDeletePanel((v) => !v)}
-            aria-expanded={showDeletePanel}
-          >
-            <span className="flex items-center gap-2 min-w-0">
-              <Trash2 className="w-4 h-4 shrink-0 text-muted-foreground" />
-              <span className="min-w-0">
-                <span className="block text-sm font-medium text-foreground">Delete analytics data</span>
-                <span className="block text-xs text-muted-foreground mt-0.5 truncate sm:whitespace-normal">
-                  By time, day, or date range
-                </span>
-              </span>
-            </span>
-            <ChevronDown
-              className={cn(
-                'w-5 h-5 shrink-0 text-muted-foreground transition-transform',
-                showDeletePanel && 'rotate-180'
-              )}
-            />
-          </button>
-          {showDeletePanel ? (
-            <div className="mt-3">
-              <WebsiteAnalyticsDataDelete onDeleted={() => void refreshAll()} />
-            </div>
-          ) : null}
-        </div>
       </CardContent>
     </Card>
   );
