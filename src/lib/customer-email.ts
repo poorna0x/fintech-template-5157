@@ -12,6 +12,15 @@ export function getValidCustomerEmail(email: unknown): string | null {
   return isValidCustomerEmail(email) ? email.trim() : null;
 }
 
+/** True when the entered email should be written to the customer record. */
+export function customerEmailNeedsSave(existing: unknown, next: string): boolean {
+  const trimmedNext = next.trim();
+  if (!trimmedNext) return false;
+  const validExisting = getValidCustomerEmail(existing);
+  if (!validExisting) return true;
+  return validExisting.toLowerCase() !== trimmedNext.toLowerCase();
+}
+
 export function getAdminEmailComposerUrl(
   customerId: string,
   template?: 'general' | 'quotation' | 'service_reminder' | 'amc_document' | 'invoice' | 'booking_confirmation'

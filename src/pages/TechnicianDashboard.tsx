@@ -3162,6 +3162,7 @@ const TechnicianDashboard = () => {
   const persistTechnicianAmcForShare = useCallback(async (options?: {
     sharedVia?: 'technician_download' | 'technician_email';
     emailedTo?: string[];
+    customerEmailOverride?: string;
   }): Promise<{ ok: boolean; error?: string }> => {
     if (!technicianReferenceAmcBill || !completeJobCustomerDoc || !selectedJobForComplete) {
       return { ok: false, error: 'Complete all AMC fields first' };
@@ -3206,7 +3207,7 @@ const TechnicianDashboard = () => {
       customerId: completeJobCustomerDoc.id,
       customerName: completeJobCustomerDoc.fullName,
       customerPhone: completeJobCustomerDoc.phone || '',
-      customerEmail: completeJobCustomerDoc.email,
+      customerEmail: options?.customerEmailOverride ?? completeJobCustomerDoc.email,
       customerAddress: completeJobCustomerDoc.address,
       jobId: selectedJobForComplete.id,
       jobNumber: selectedJobForComplete.jobNumber,
@@ -3246,6 +3247,36 @@ const TechnicianDashboard = () => {
     amcServicePeriodCustomMonths,
     amcAdditionalInfo,
   ]);
+
+  const saveCustomerEmailForAmc = useCallback(
+    async (email: string): Promise<{ ok: boolean; error?: string }> => {
+      if (!completeJobCustomerDoc?.id) {
+        return { ok: false, error: 'Customer not found' };
+      }
+
+      const trimmed = email.trim();
+      if (!trimmed) {
+        return { ok: false, error: 'Enter a valid email address' };
+      }
+
+      const sessionReady = await ensureSupabaseSessionForWrite();
+      if (!sessionReady.ok) {
+        return {
+          ok: false,
+          error: 'Could not refresh your session. Please try again in a moment.',
+        };
+      }
+
+      const { error } = await db.customers.update(completeJobCustomerDoc.id, { email: trimmed });
+      if (error) {
+        return { ok: false, error: error.message || 'Could not save customer email' };
+      }
+
+      setCompleteJobCustomerDoc((prev) => (prev ? { ...prev, email: trimmed } : prev));
+      return { ok: true };
+    },
+    [completeJobCustomerDoc?.id]
+  );
 
   // Handle completing job - opens completion dialog
   const handleCompleteJob = async (job: Job) => {
@@ -8312,7 +8343,7 @@ const TechnicianDashboard = () => {
                             <p className="text-sm font-semibold text-violet-950">Share AMC with customer</p>
                             <p className="text-xs text-violet-900/75 mt-1 leading-relaxed">
                               Download or email a reference AMC PDF using the details above and customer info.
-                              You can edit the customer email before sending.
+                              If the customer has no email, you can enter one when sending — it will be saved to their record.
                             </p>
                           </div>
                           <AmcDocumentActions
@@ -8321,16 +8352,21 @@ const TechnicianDashboard = () => {
                             brand={normalizeDocumentBrand(serviceBrand) || 'hydrogenro'}
                             endDateIso={amcEndDate}
                             customerEmail={completeJobCustomerDoc?.email}
+                            onSaveCustomerEmail={saveCustomerEmailForAmc}
                             onPersistBeforeAction={() =>
                               persistTechnicianAmcForShare({ sharedVia: 'technician_download' })
                             }
-                            onPersistBeforeEmail={() =>
-                              persistTechnicianAmcForShare({ sharedVia: 'technician_complete_job' })
+                            onPersistBeforeEmail={(recipients) =>
+                              persistTechnicianAmcForShare({
+                                sharedVia: 'technician_complete_job',
+                                customerEmailOverride: recipients[0],
+                              })
                             }
                             onPersistAfterEmail={(recipients) =>
                               persistTechnicianAmcForShare({
                                 sharedVia: 'technician_email',
                                 emailedTo: recipients,
+                                customerEmailOverride: recipients[0],
                               })
                             }
                             pdfOptions={{

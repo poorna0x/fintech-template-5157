@@ -17,6 +17,10 @@ import { Badge } from '@/components/ui/badge';
 import { getDefaultDocumentMessage } from '@/lib/admin-email-templates';
 import { ensureSupabaseSessionForWrite } from '@/lib/ensureSupabaseSession';
 import {
+  customerEmailNeedsSave,
+  getValidCustomerEmail,
+} from '@/lib/customer-email';
+import {
   isValidEmailFormat,
   normalizeRecipientList,
 } from '@/lib/email-recipients';
@@ -42,8 +46,12 @@ export interface AmcEmailSendDialogProps {
   pdfOptions?: AMCPDFOptions;
   /** Technician flow: one editable email field (no multi-recipient UI) */
   singleRecipient?: boolean;
+  /** Customer email currently on file (for save-if-missing flow) */
+  customerEmailOnFile?: string | null;
+  /** Persist a new/changed customer email before sending AMC */
+  onSaveCustomerEmail?: (email: string) => Promise<AmcPersistResult>;
   /** Save AMC before generating PDF / sending (technician reliability) */
-  onPersistBeforeEmail?: () => Promise<AmcPersistResult>;
+  onPersistBeforeEmail?: (recipients: string[]) => Promise<AmcPersistResult>;
   /** Save AMC to DB after email sends successfully */
   onPersistAfterEmail?: (recipients: string[]) => Promise<AmcPersistResult>;
   onSent?: () => void;
@@ -62,6 +70,8 @@ export default function AmcEmailSendDialog({
   defaultRecipients = [],
   pdfOptions,
   singleRecipient = false,
+  customerEmailOnFile,
+  onSaveCustomerEmail,
   onPersistBeforeEmail,
   onPersistAfterEmail,
   onSent,
@@ -91,6 +101,7 @@ export default function AmcEmailSendDialog({
   }, [singleRecipient, recipientEmail, recipientRows]);
 
   const brandLabel = brand ? getDocumentBrandLabel(brand) : '';
+  const hasCustomerEmailOnFile = Boolean(getValidCustomerEmail(customerEmailOnFile));
 
   const updateRow = (index: number, value: string) => {
     setRecipientRows((prev) => prev.map((row, i) => (i === index ? value : row)));
@@ -156,9 +167,22 @@ export default function AmcEmailSendDialog({
         }
       }
 
+      if (
+        singleRecipient &&
+        onSaveCustomerEmail &&
+        customerEmailNeedsSave(customerEmailOnFile, recipients[0])
+      ) {
+        toast.loading('Saving customer email…', { id: toastId });
+        const emailSaved = await onSaveCustomerEmail(recipients[0]);
+        if (!emailSaved.ok) {
+          toast.error(emailSaved.error || 'Could not save customer email', { id: toastId });
+          return;
+        }
+      }
+
       if (onPersistBeforeEmail) {
         toast.loading('Saving AMC to database…', { id: toastId });
-        const preSaved = await onPersistBeforeEmail();
+        const preSaved = await onPersistBeforeEmail(recipients);
         if (!preSaved.ok) {
           toast.error(preSaved.error || 'Could not save AMC to database', { id: toastId });
           return;
@@ -167,8 +191,13 @@ export default function AmcEmailSendDialog({
 
       toast.loading('Generating PDF and sending email…', { id: toastId });
 
+      const billForSend =
+        singleRecipient && bill.customer.email !== recipients[0]
+          ? { ...bill, customer: { ...bill.customer, email: recipients[0] } }
+          : bill;
+
       const result = await sendAmcAgreementEmail({
-        bill,
+        bill: billForSend,
         brand,
         recipientEmails: recipients,
         endDateIso,
@@ -254,14 +283,18 @@ export default function AmcEmailSendDialog({
                 type="email"
                 inputMode="email"
                 autoComplete="email"
-                placeholder="name@example.com"
+                placeholder={
+                  hasCustomerEmailOnFile ? 'name@example.com' : 'Enter customer email address'
+                }
                 value={recipientEmail}
                 onChange={(e) => setRecipientEmail(e.target.value)}
                 className="h-10"
                 disabled={sending}
               />
               <p className="text-xs text-muted-foreground">
-                Pre-filled from customer record — edit if needed before sending.
+                {hasCustomerEmailOnFile
+                  ? 'Pre-filled from customer record — edit if needed. Changes are saved to the customer.'
+                  : 'No email on file — enter one here. It will be saved to the customer when you send.'}
               </p>
             </div>
           ) : (

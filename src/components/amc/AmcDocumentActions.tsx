@@ -18,10 +18,12 @@ export interface AmcDocumentActionsProps {
   /** Compact row for technician complete-job wizard */
   compact?: boolean;
   disabled?: boolean;
+  /** Save a new/changed customer email before AMC email send */
+  onSaveCustomerEmail?: (email: string) => Promise<AmcPersistResult>;
   /** Save AMC contract to DB before download */
   onPersistBeforeAction?: () => Promise<AmcPersistResult>;
   /** Save AMC contract to DB before email send (technician reliability) */
-  onPersistBeforeEmail?: () => Promise<AmcPersistResult>;
+  onPersistBeforeEmail?: (recipients: string[]) => Promise<AmcPersistResult>;
   /** Save AMC contract to DB after email sends successfully */
   onPersistAfterEmail?: (recipients: string[]) => Promise<AmcPersistResult>;
   onSent?: () => void;
@@ -36,6 +38,7 @@ export default function AmcDocumentActions({
   pdfOptions,
   compact = false,
   disabled = false,
+  onSaveCustomerEmail,
   onPersistBeforeAction,
   onPersistBeforeEmail,
   onPersistAfterEmail,
@@ -120,7 +123,14 @@ export default function AmcDocumentActions({
         defaultRecipients={defaultRecipients}
         pdfOptions={pdfOptions}
         singleRecipient
-        onPersistBeforeEmail={onPersistBeforeEmail ?? onPersistBeforeAction}
+        customerEmailOnFile={customerEmail}
+        onSaveCustomerEmail={onSaveCustomerEmail}
+        onPersistBeforeEmail={
+          onPersistBeforeEmail ??
+          (onPersistBeforeAction
+            ? async (_recipients) => onPersistBeforeAction()
+            : undefined)
+        }
         onPersistAfterEmail={onPersistAfterEmail}
         onSent={onSent}
       />
