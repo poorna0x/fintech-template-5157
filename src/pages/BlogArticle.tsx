@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
-import SEOHead from '@/components/SEOHead';
+import SEOHead, { useBrandBlogSeo } from '@/components/SEOHead';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Phone, Mail } from 'lucide-react';
@@ -107,13 +107,16 @@ const BlogArticle = () => {
   const handleEmail = () => {
     window.open('mailto:info@hydrogenro.com', '_self');
   };
+
+  const blogSeo = useBrandBlogSeo(article.slug, article.title);
   
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground">
       <SEOHead
-        title={`${article.title} | Hydrogen RO Blog`}
-        description={`${article.title}. Expert RO water purifier tips and guides for Bengaluru. Read on Hydrogen RO blog.`}
-        canonical={`https://hydrogenro.com/blog/${article.slug}`}
+        title={blogSeo.title}
+        description={blogSeo.description}
+        canonical={blogSeo.canonical}
+        articleSlug={blogSeo.articleSlug}
       />
       <Header />
       

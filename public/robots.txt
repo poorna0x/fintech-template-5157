@@ -8,6 +8,7 @@ Allow: /*.png
 Allow: /*.ico
 
 Sitemap: https://hydrogenro.com/sitemap.xml
+Sitemap: https://elevenro.com/sitemap.xml
 
 User-agent: Googlebot
 Allow: /

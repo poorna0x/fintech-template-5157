@@ -1,4 +1,13 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import {
+  buildCanonicalUrl,
+  getBrandSeoProfile,
+  upsertLinkRel,
+  upsertMetaByName,
+  upsertMetaByProperty,
+  applyPublicSiteSeo,
+} from '@/lib/publicSiteSeo';
+import { getPublicSiteKey } from '@/lib/websiteSiteKey';
 
 interface SEOHeadProps {
   title: string;
@@ -6,36 +15,55 @@ interface SEOHeadProps {
   keywords?: string;
   canonical?: string;
   ogImage?: string;
+  /** When set, delegates to the shared public-site SEO pipeline for blog posts. */
+  articleSlug?: string;
 }
 
-const SEOHead: React.FC<SEOHeadProps> = ({ 
-  title, 
-  description, 
-  keywords = "RO water purifier Bengaluru, RO installation Bangalore, RO repair Karnataka, water softener Bangalore, RO maintenance Bengaluru, RO service Electronic City, RO service BTM, RO service HSR Layout, RO service Whitefield, RO service Koramangala, RO service Hebbal, RO service Yelahanka, RO service Sarjapur, RO service Bellandur, RO service JP Nagar, RO service Banashankari, RO service Tumakuru, RO service Nelamangala, RO service Attibele, RO service Chandapura, RO service Devanahalli, best RO service Bangalore",
+const SEOHead: React.FC<SEOHeadProps> = ({
+  title,
+  description,
+  keywords,
   canonical,
-  ogImage = "https://hydrogenro.com/og-image.jpg"
+  ogImage,
+  articleSlug,
 }) => {
-  return (
-    <>
-      <title>{title}</title>
-      <meta name="description" content={description} />
-      <meta name="keywords" content={keywords} />
-      {canonical && <link rel="canonical" href={canonical} />}
-      
-      {/* Open Graph Meta Tags */}
-      <meta property="og:title" content={title} />
-      <meta property="og:description" content={description} />
-      <meta property="og:image" content={ogImage} />
-      <meta property="og:type" content="website" />
-      <meta property="og:url" content={canonical || window.location.href} />
-      
-      {/* Twitter Card Meta Tags */}
-      <meta name="twitter:card" content="summary_large_image" />
-      <meta name="twitter:title" content={title} />
-      <meta name="twitter:description" content={description} />
-      <meta name="twitter:image" content={ogImage} />
-    </>
-  );
+  useEffect(() => {
+    if (articleSlug) {
+      applyPublicSiteSeo(`/blog/${articleSlug}`);
+      return;
+    }
+
+    const profile = getBrandSeoProfile();
+    const resolvedCanonical = canonical ?? buildCanonicalUrl(window.location.pathname);
+    const image = ogImage ?? profile.ogImage;
+
+    document.title = title;
+    upsertMetaByName('title', title);
+    upsertMetaByName('description', description);
+    if (keywords) upsertMetaByName('keywords', keywords);
+    upsertLinkRel('canonical', resolvedCanonical);
+    upsertMetaByProperty('og:title', title);
+    upsertMetaByProperty('og:description', description);
+    upsertMetaByProperty('og:url', resolvedCanonical);
+    upsertMetaByProperty('og:image', image);
+    upsertMetaByName('twitter:title', title);
+    upsertMetaByName('twitter:description', description);
+    upsertMetaByName('twitter:url', resolvedCanonical);
+    upsertMetaByName('twitter:image', image);
+  }, [title, description, keywords, canonical, ogImage, articleSlug]);
+
+  return null;
 };
 
 export default SEOHead;
+
+export function useBrandBlogSeo(slug: string, articleTitle: string) {
+  const siteKey = getPublicSiteKey();
+  const profile = getBrandSeoProfile(siteKey);
+  return {
+    title: `${articleTitle} | ${profile.brandName} Blog`,
+    description: `${articleTitle}. Expert RO water purifier tips and guides for Bengaluru. Read on ${profile.brandName} blog.`,
+    canonical: `${profile.origin}/blog/${slug}`,
+    articleSlug: slug,
+  };
+}

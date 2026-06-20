@@ -42,6 +42,8 @@ export const PRODUCTION_CSP = [
     'https://goo.gl',
     'https://hydrogenro.com',
     'https://www.hydrogenro.com',
+    'https://elevenro.com',
+    'https://www.elevenro.com',
     'https://challenges.cloudflare.com',
     // Firebase Auth identity endpoints (token mint/verify, secure token refresh)
     'https://identitytoolkit.googleapis.com',

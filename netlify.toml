@@ -24,6 +24,18 @@
   status = 301
   force = true
 
+[[redirects]]
+  from = "http://elevenro.com/*"
+  to = "https://elevenro.com/:splat"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "http://www.elevenro.com/*"
+  to = "https://www.elevenro.com/:splat"
+  status = 301
+  force = true
+
 # Canonical host enforcement — redirect Netlify-provided subdomain to custom domain
 # so scanners and stragglers do not see a different (potentially stale) bundle on
 # https://hydrogenro.netlify.app/*. force=true overrides any matching static asset.
@@ -45,6 +57,19 @@
   to = "https://www.hydrogenro.com/:splat"
   status = 301
   force = true
+
+# Host-specific SEO assets
+[[redirects]]
+  from = "/sitemap.xml"
+  to = "/sitemap-elevenro.xml"
+  status = 200
+  conditions = {Host = ["elevenro.com", "www.elevenro.com"]}
+
+[[redirects]]
+  from = "/llms.txt"
+  to = "/llms-elevenro.txt"
+  status = 200
+  conditions = {Host = ["elevenro.com", "www.elevenro.com"]}
 
 # Redirect old pages to main site with 301 status
 [[redirects]]
@@ -100,7 +125,7 @@
 [[headers]]
   for = "/*"
   [headers.values]
-    Content-Security-Policy = "default-src 'self'; script-src 'self' https://maps.googleapis.com https://maps.gstatic.com https://*.gstatic.com https://cdn.jsdelivr.net https://challenges.cloudflare.com https://www.google.com https://www.gstatic.com https://www.recaptcha.net https://apis.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://maps.gstatic.com https://*.gstatic.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https: blob:; worker-src 'self' blob:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.bigdatacloud.net https://api-bdc.io https://api.cloudinary.com https://res.cloudinary.com https://nominatim.openstreetmap.org https://maps.googleapis.com https://*.googleapis.com https://*.gstatic.com https://www.google.com https://*.google.com https://maps.app.goo.gl https://goo.gl https://hydrogenro.com https://www.hydrogenro.com https://challenges.cloudflare.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com; frame-src 'self' https://www.google.com https://www.recaptcha.net https://maps.google.com https://challenges.cloudflare.com https://*.firebaseapp.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' https://maps.googleapis.com https://maps.gstatic.com https://*.gstatic.com https://cdn.jsdelivr.net https://challenges.cloudflare.com https://www.google.com https://www.gstatic.com https://www.recaptcha.net https://apis.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://maps.gstatic.com https://*.gstatic.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https: blob:; worker-src 'self' blob:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.bigdatacloud.net https://api-bdc.io https://api.cloudinary.com https://res.cloudinary.com https://nominatim.openstreetmap.org https://maps.googleapis.com https://*.googleapis.com https://*.gstatic.com https://www.google.com https://*.google.com https://maps.app.goo.gl https://goo.gl https://hydrogenro.com https://www.hydrogenro.com https://elevenro.com https://www.elevenro.com https://challenges.cloudflare.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com; frame-src 'self' https://www.google.com https://www.recaptcha.net https://maps.google.com https://challenges.cloudflare.com https://*.firebaseapp.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"

@@ -11,7 +11,8 @@ import { Suspense, lazy, useEffect } from "react";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import PerformanceMonitor from "./components/PerformanceMonitor";
-import CanonicalTag from "./components/CanonicalTag";
+import PublicSiteSeo from "./components/PublicSiteSeo";
+import { SEO_LOCATION_PAGES, SEO_SERVICE_PAGES } from "@/lib/publicSeoPages";
 import WebsiteAnalyticsTracker from "./components/WebsiteAnalyticsTracker";
 import { disablePWA } from "@/lib/pwa";
 
@@ -110,7 +111,7 @@ const App = () => (
             <BrowserRouter>
               <AuthPortalCoordinator />
               <WebsiteAnalyticsTracker />
-              <CanonicalTag />
+              <PublicSiteSeo />
               <PWARouteHandler />
               <Suspense fallback={<LoadingSpinner />}>
                 <Routes>
@@ -142,49 +143,15 @@ const App = () => (
                   {/* Search route - return 404 */}
                   <Route path="/search" element={<NotFound />} />
                   
-                  {/* Service-specific pages */}
-                  <Route path="/ro-installation" element={<Services />} />
-                  <Route path="/ro-repair" element={<Services />} />
-                  <Route path="/water-softener" element={<Services />} />
-                  <Route path="/filter-replacement" element={<Services />} />
-                  <Route path="/ro-maintenance" element={<Services />} />
-                  <Route path="/ro-troubleshooting" element={<Services />} />
-                  <Route path="/ro-spare-parts" element={<Services />} />
-                  <Route path="/ro-brands" element={<Services />} />
-                  <Route path="/ro-price-list" element={<Services />} />
-                  <Route path="/ro-warranty" element={<Services />} />
-                  <Route path="/emergency-ro-repair" element={<Services />} />
-                  <Route path="/same-day-ro-service" element={<Services />} />
-                  
-                  {/* Location-specific pages */}
-                  <Route path="/ro-service-whitefield" element={<ServiceAreas />} />
-                  <Route path="/ro-service-electronic-city" element={<ServiceAreas />} />
-                  <Route path="/ro-service-koramangala" element={<ServiceAreas />} />
-                  <Route path="/ro-service-hsr-layout" element={<ServiceAreas />} />
-                  <Route path="/ro-service-indiranagar" element={<ServiceAreas />} />
-                  <Route path="/ro-service-marathahalli" element={<ServiceAreas />} />
-                  <Route path="/ro-service-btm-layout" element={<ServiceAreas />} />
-                  <Route path="/ro-service-jayanagar" element={<ServiceAreas />} />
-                  <Route path="/ro-service-malleshwaram" element={<ServiceAreas />} />
-                  <Route path="/ro-service-rajajinagar" element={<ServiceAreas />} />
-                  <Route path="/ro-service-hebbal" element={<ServiceAreas />} />
-                  <Route path="/ro-service-yelahanka" element={<ServiceAreas />} />
-                  <Route path="/ro-service-sarjapur" element={<ServiceAreas />} />
-                  <Route path="/ro-service-bellandur" element={<ServiceAreas />} />
-                  <Route path="/ro-service-jp-nagar" element={<ServiceAreas />} />
-                  <Route path="/ro-service-banashankari" element={<ServiceAreas />} />
-                  <Route path="/ro-service-bommanahalli" element={<ServiceAreas />} />
-                  <Route path="/ro-service-bannerghatta" element={<ServiceAreas />} />
+                  {/* Service-specific pages — same UI, unique SEO URLs */}
+                  {SEO_SERVICE_PAGES.map(({ path }) => (
+                    <Route key={path} path={path} element={<Services />} />
+                  ))}
 
-                  {/* Nearby city pages */}
-                  <Route path="/ro-service-tumakuru" element={<ServiceAreas />} />
-                  <Route path="/ro-service-hosur" element={<ServiceAreas />} />
-                  <Route path="/ro-service-kolar" element={<ServiceAreas />} />
-                  <Route path="/ro-service-ramanagara" element={<ServiceAreas />} />
-                  <Route path="/ro-service-nelamangala" element={<ServiceAreas />} />
-                  <Route path="/ro-service-doddaballapur" element={<ServiceAreas />} />
-                  <Route path="/ro-service-devanahalli" element={<ServiceAreas />} />
-                  <Route path="/ro-service-anekal" element={<ServiceAreas />} />
+                  {/* Location-specific pages — same UI, unique SEO URLs */}
+                  {SEO_LOCATION_PAGES.map(({ path }) => (
+                    <Route key={path} path={path} element={<ServiceAreas />} />
+                  ))}
                   
                   {/* Technician ID Card - Public route */}
                   <Route path="/technician-id/:id" element={<TechnicianIdCard />} />
