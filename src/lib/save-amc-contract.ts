@@ -1,4 +1,5 @@
 import type { DocumentBrand } from '@/lib/service-brands';
+import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 
 export interface PersistAmcContractPayload {
   customer_id: string;
@@ -22,20 +23,31 @@ export async function persistAmcContract(
   }
 
   try {
-    const response = await fetch('/.netlify/functions/save-amc-contract', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify(payload),
-    });
-
-    const result = (await response.json().catch(() => ({}))) as {
-      error?: string;
-      hint?: string;
-      id?: string;
+    const postSave = async (token: string) => {
+      const response = await fetch('/.netlify/functions/save-amc-contract', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+      const result = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        hint?: string;
+        id?: string;
+      };
+      return { response, result };
     };
+
+    let { response, result } = await postSave(accessToken);
+
+    if (response.status === 403) {
+      const retryToken = await resolveSupabaseAccessTokenForApi();
+      if (retryToken) {
+        ({ response, result } = await postSave(retryToken));
+      }
+    }
 
     if (!response.ok) {
       const hint = result.hint ? ` — ${result.hint}` : '';

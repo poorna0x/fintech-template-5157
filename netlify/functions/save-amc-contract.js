@@ -230,12 +230,9 @@ exports.handler = async (event) => {
 
   const payload = parsed.payload;
 
-  // Technicians may only save AMC they are recording (given_by = self).
+  // Technicians may only save AMC they are recording — JWT user id is source of truth.
   if (auth.role === 'technician') {
     if (!auth.userId) {
-      return jsonResponse(403, cors, { error: 'Forbidden' });
-    }
-    if (payload.given_by_technician_id && payload.given_by_technician_id !== auth.userId) {
       return jsonResponse(403, cors, { error: 'Forbidden' });
     }
     payload.given_by_technician_id = auth.userId;

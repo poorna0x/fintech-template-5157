@@ -3167,7 +3167,13 @@ const TechnicianDashboard = () => {
       return { ok: false, error: 'Complete all AMC fields first' };
     }
 
-    const technicianId = user?.technicianId || user?.id;
+    const sessionReady = await ensureSupabaseSessionForWrite();
+    if (!sessionReady.ok) {
+      return { ok: false, error: 'Could not refresh your session. Please try again in a moment.' };
+    }
+
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+    const technicianId = authUser?.id || user?.technicianId || user?.id;
     if (!technicianId) {
       return { ok: false, error: 'Technician session not found' };
     }
