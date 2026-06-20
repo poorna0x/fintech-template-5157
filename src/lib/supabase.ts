@@ -6358,6 +6358,21 @@ export const db = {
       });
       return { data, error };
     },
+    /** Calendar-month salary totals (Payments parity, admin-only RPC). */
+    async getCalendarSalaryTotals(opts: {
+      startISO: string;
+      endISO: string;
+      startDate: string;
+      endDate: string;
+    }) {
+      const { data, error } = await supabase.rpc('get_analytics_calendar_salary_totals', {
+        p_start: opts.startISO,
+        p_end: opts.endISO,
+        p_start_date: opts.startDate,
+        p_end_date: opts.endDate,
+      });
+      return { data, error };
+    },
     async getReturnComplaints(startDate?: Date, endDate?: Date) {
       const { data, error } = await supabase.rpc('get_analytics_return_complaints', {
         p_start: startDate?.toISOString() ?? null,

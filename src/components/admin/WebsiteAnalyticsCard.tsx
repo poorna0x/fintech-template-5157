@@ -31,6 +31,15 @@ import { getPublicSiteLabel, type PublicSiteKey } from '@/lib/websiteSiteKey';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
+import {
+  buildWebsiteRecentCacheKey,
+  buildWebsiteSummaryCacheKey,
+  clearWebsiteAnalyticsSessionCache,
+  readWebsiteRecentCache,
+  readWebsiteSummaryCache,
+  writeWebsiteRecentCache,
+  writeWebsiteSummaryCache,
+} from '@/lib/websiteAnalyticsSessionCache';
 import type { TrendPoint } from './websiteAnalyticsTypes';
 import {
   AnalyticsListPagination,
@@ -443,12 +452,24 @@ export function WebsiteAnalyticsCard() {
     return istDateFromPreset(periodMode);
   }, [periodMode, customFrom, customTo, todayIst]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts?: { bypassCache?: boolean }) => {
+    const cacheKey = buildWebsiteSummaryCacheKey(activeRange.from, activeRange.to);
+    if (!opts?.bypassCache) {
+      const cached = readWebsiteSummaryCache<Summary>(cacheKey);
+      if (cached) {
+        setSummary(cached);
+        setLoading(false);
+        return;
+      }
+    }
+
     setLoading(true);
     try {
       const summaryRes = await db.websiteAnalytics.getSummary(activeRange.from, activeRange.to);
       if (summaryRes.error) throw summaryRes.error;
-      setSummary((summaryRes.data as Summary) || null);
+      const next = (summaryRes.data as Summary) || null;
+      setSummary(next);
+      if (next) writeWebsiteSummaryCache(cacheKey, next);
     } catch (e) {
       console.error(e);
       toast.error('Could not load website analytics. Run scripts/add-website-analytics.sql and scripts/add-analytics-step4-rpcs.sql in Supabase.');
@@ -461,10 +482,28 @@ export function WebsiteAnalyticsCard() {
   }, [activeRange.from, activeRange.to]);
 
   const fetchRecentActivity = useCallback(
-    async (page: number, perPage: number) => {
+    async (page: number, perPage: number, opts?: { bypassCache?: boolean }) => {
+      const siteKey = siteFilter === 'all' ? undefined : siteFilter;
+      const cacheKey = buildWebsiteRecentCacheKey({
+        from: activeRange.from,
+        to: activeRange.to,
+        siteFilter,
+        page,
+        perPage,
+      });
+
+      if (!opts?.bypassCache) {
+        const cached = readWebsiteRecentCache<{ rows: RecentEvent[]; total: number }>(cacheKey);
+        if (cached) {
+          setRecentEvents(cached.rows);
+          setRecentEventsTotal(cached.total);
+          setRecentLoading(false);
+          return;
+        }
+      }
+
       setRecentLoading(true);
       try {
-        const siteKey = siteFilter === 'all' ? undefined : siteFilter;
         const recentRes = await db.websiteAnalytics.getRecentEvents({
           from: activeRange.from,
           to: activeRange.to,
@@ -478,8 +517,11 @@ export function WebsiteAnalyticsCard() {
           setRecentEventsTotal(0);
           return;
         }
-        setRecentEvents((recentRes.data?.rows as RecentEvent[]) || []);
-        setRecentEventsTotal(recentRes.data?.total ?? 0);
+        const rows = (recentRes.data?.rows as RecentEvent[]) || [];
+        const total = recentRes.data?.total ?? 0;
+        setRecentEvents(rows);
+        setRecentEventsTotal(total);
+        writeWebsiteRecentCache(cacheKey, { rows, total });
       } finally {
         setRecentLoading(false);
       }
@@ -501,8 +543,9 @@ export function WebsiteAnalyticsCard() {
   }, [summary, activeRange.from, activeRange.to, siteFilter, recentPage, recentPerPage, fetchRecentActivity]);
 
   const refreshAll = useCallback(() => {
-    void load();
-    if (summary) void fetchRecentActivity(recentPage, recentPerPage);
+    clearWebsiteAnalyticsSessionCache();
+    void load({ bypassCache: true });
+    if (summary) void fetchRecentActivity(recentPage, recentPerPage, { bypassCache: true });
   }, [load, summary, fetchRecentActivity, recentPage, recentPerPage]);
 
   const recentTotalPages = Math.max(1, Math.ceil(recentEventsTotal / recentPerPage));

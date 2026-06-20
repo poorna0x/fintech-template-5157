@@ -28,8 +28,10 @@ Last updated: 2026-06-19
 - **`lead_source` column on `jobs`** — analytics selects use `lead_source` instead of `requirements` JSON (2026-06-19). Run `scripts/add-job-lead-source-column.sql` in Supabase.
 - **`get_analytics_dashboard` RPC** — pre-aggregated KPIs in DB; Analytics page uses RPC first, falls back to job fetch if RPC unavailable (2026-06-19). Run `scripts/add-analytics-dashboard-rpc.sql`.
 - **Session cache (5 min)** — same-period revisits in one tab skip network (`analyticsSessionCache.ts` + `loadAnalytics`).
+- **Website analytics session cache (5 min)** — same range/site/page revisits skip summary + recent fetches (`websiteAnalyticsSessionCache.ts`).
 - **`get_analytics_expense_totals` RPC** — 7 expense sums in one call instead of 4 paginated row fetches. Run `scripts/add-analytics-step7-expense-totals-rpc.sql`.
 - **`get_analytics_commission_totals` RPC** — per-technician payment/extra sums for salary; payments fetch deferred off dashboard hot path. Run `scripts/add-analytics-step8-commission-totals-rpc.sql`.
+- **`get_analytics_calendar_salary_totals` RPC** — calendar-month salary totals (Payments parity) without jobs/payments/holidays row fetches. Run `scripts/add-analytics-step9-calendar-salary-rpc.sql`.
 - **`parts_cost_total`** on jobs — no `job_parts_used` join on main analytics load.
 
 ---
@@ -45,7 +47,8 @@ Last updated: 2026-06-19
 | `technicians.getAllForAnalytics` | ~20 | **~2–10 KB** | Slim RPC; falls back to `getAllForDashboard` |
 | Expense tables (4 queries) | tens–hundreds | **~0.5 KB** | **`get_analytics_expense_totals` RPC** when deployed |
 | Legacy expense row fetches | tens–hundreds | **50–500 KB** | Fallback if RPC not deployed |
-| `getTotalSalaryForCalendarMonth` | overlap | **100–400 KB** | Reuses preloaded technicians; still fetches jobs/holidays for Payments parity |
+| `getTotalSalaryForCalendarMonth` | overlap | **~0.1 KB** | **`get_analytics_calendar_salary_totals` RPC** when deployed |
+| Legacy calendar-month salary | overlap | **100–400 KB** | Client fallback if step 9 RPC not deployed |
 | `technician_payments` (legacy / salary) | hundreds | **~0.5–2 KB** | **Skipped on dashboard RPC path**; commission totals RPC for pro-rated periods |
 | Long periods (6m / 1y) | unbounded jobs | **5–15+ MB** | Same pattern, more jobs |
 
@@ -119,6 +122,7 @@ Last updated: 2026-06-19
 | 13 | Session/memory cache for same-period revisits | **Done** (`src/lib/analyticsSessionCache.ts`) |
 | 14 | Warn or restrict “All time” until dashboard RPC exists | **Addressed** — dashboard RPC handles null date range |
 | 15 | Remove debug `console.log` in softener analytics block | Done |
+| 16 | Session cache for website analytics (summary + recent activity) | **Done** (`src/lib/websiteAnalyticsSessionCache.ts`) |
 
 ---
 
@@ -128,6 +132,7 @@ Last updated: 2026-06-19
 |------|-------------|
 | `src/components/Analytics.tsx` | `loadAnalytics`, `loadReturnComplaints`, `loadTopLocations`, `loadDirectWebsiteConversions` |
 | `src/lib/analyticsSessionCache.ts` | 5-minute in-memory cache for `loadAnalytics` |
+| `src/lib/websiteAnalyticsSessionCache.ts` | 5-minute cache for website summary + recent events |
 | `src/components/admin/WebsiteAnalyticsCard.tsx` | `load`, `fetchRecentActivity`, `activeRange` |
 | `src/components/admin/WebsiteAnalyticsGate.tsx` | Lazy mount |
 | `src/lib/supabase.ts` | `jobs.getForAnalyticsInRange`, `technicians.getAllForAnalytics`, `analyticsPaginated.*`, `websiteAnalytics.*` |
@@ -140,6 +145,9 @@ Last updated: 2026-06-19
 
 1. Run all analytics SQL scripts in Supabase (see list below) if not done yet.
 2. Compare egress in Supabase dashboard after deploying RPCs.
+3. Verify calendar-month salary totals match Technician Payments for this/previous month after step 9 SQL.
+
+The CRM + website analytics egress plan (steps 1–10) is complete in app code; remaining work is running SQL in Supabase and validating totals.
 
 **SQL run order:**
 1. `scripts/add-job-lead-source-column.sql`
@@ -150,3 +158,4 @@ Last updated: 2026-06-19
 6. `scripts/add-analytics-step6-rpcs.sql` (slim technicians for Analytics + delete preview metadata)
 7. `scripts/add-analytics-step7-expense-totals-rpc.sql` (single RPC for expense/advance/business totals)
 8. `scripts/add-analytics-step8-commission-totals-rpc.sql` (per-technician commission sums; defer payments on dashboard path)
+9. `scripts/add-analytics-step9-calendar-salary-rpc.sql` (calendar-month salary totals; Payments parity)

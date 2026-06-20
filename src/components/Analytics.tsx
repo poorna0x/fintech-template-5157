@@ -39,6 +39,7 @@ import {
   mapRepeatVsNewFromRpc,
   parseAnalyticsExpenseTotalsRpc,
   parseAnalyticsCommissionTotalsRpc,
+  parseAnalyticsCalendarSalaryTotalsRpc,
   type AnalyticsDashboardRpc,
 } from '@/lib/analyticsDashboard';
 import {
@@ -573,6 +574,20 @@ async function loadAnalyticsSalaryTotals(
 
   if (usePaymentsSalary) {
     try {
+      const rpcRes = await db.analyticsPaginated.getCalendarSalaryTotals({
+        startISO: startDate.toISOString(),
+        endISO: endDate.toISOString(),
+        startDate: startStr,
+        endDate: endStr,
+      });
+      const parsed = parseAnalyticsCalendarSalaryTotalsRpc(rpcRes.data);
+      if (!rpcRes.error && parsed) {
+        return {
+          totalSalaryDeductions: parsed.totalSalaryBeforeAdvance,
+          totalSalaryIncludingAll: parsed.totalSalaryBeforeAdvanceIncludingAll,
+        };
+      }
+
       const result = await getTotalSalaryForCalendarMonth(
         startDate.getFullYear(),
         startDate.getMonth() + 1,
