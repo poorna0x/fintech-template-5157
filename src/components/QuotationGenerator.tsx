@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Trash2, Download, Edit, X, FileText } from 'lucide-react';
+import { Plus, Trash2, Download, Edit, X, FileText, Printer } from 'lucide-react';
 import { toast } from 'sonner';
 import { Bill, BillItem, CompanyInfo, Customer } from '@/types';
 import {
@@ -576,7 +576,11 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
             onLoad={applyDraftSnapshot}
             buildLabel={buildDraftLabel}
           />
-          <Button onClick={() => handlePrint('pdf')} className="bg-green-600 hover:bg-green-700 w-full sm:w-auto min-w-[140px]">
+          <Button onClick={() => handlePrint('print')} className="bg-green-600 hover:bg-green-700 w-full sm:w-auto min-w-[140px]">
+            <Printer className="w-4 h-4 mr-2" />
+            Generate Quotation
+          </Button>
+          <Button onClick={() => handlePrint('pdf')} variant="outline" className="w-full sm:w-auto min-w-[140px]">
             <Download className="w-4 h-4 mr-2" />
             Download Quotation
           </Button>

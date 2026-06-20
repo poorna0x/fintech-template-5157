@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Edit, Plus, Download, FileText, User, Phone, MapPin, Building, Droplets, Mail, Save } from 'lucide-react';
+import { Edit, Plus, Download, FileText, User, Phone, MapPin, Building, Droplets, Mail, Save, Printer } from 'lucide-react';
 import DocumentBrandLogo from '@/components/DocumentBrandLogo';
 import { toast } from 'sonner';
 import { Customer, Bill, BillItem, CompanyInfo } from '@/types';
@@ -178,7 +178,7 @@ ${notCoveredWithPreFilter}`;
   const [isSaving, setIsSaving] = useState(false);
   const [brandPickerOpen, setBrandPickerOpen] = useState(false);
   const [pendingBrandAction, setPendingBrandAction] = useState<
-    { type: 'save' } | { type: 'print'; options?: { termsOnly?: boolean } }
+    { type: 'save' } | { type: 'document'; action: 'print' | 'pdf'; options?: { termsOnly?: boolean } }
   | null>(null);
   const [documentBrand, setDocumentBrand] = useState<DocumentBrand>('hydrogenro');
   /** Skip one terms auto-regen after loading a draft (preserves custom/edited terms). */
@@ -457,7 +457,11 @@ ${notCoveredWithPreFilter}`;
     setBrandPickerOpen(true);
   };
 
-  const executePrint = async (brand: DocumentBrand, options?: { termsOnly?: boolean }) => {
+  const executePrint = async (
+    brand: DocumentBrand,
+    action: 'print' | 'pdf',
+    options?: { termsOnly?: boolean }
+  ) => {
     applyBrandToForm(brand);
     if (!billNumber.trim()) {
       toast.error('Please enter a bill number');
@@ -543,7 +547,7 @@ ${notCoveredWithPreFilter}`;
     try {
       // Don't save to database automatically - user must explicitly click "Save to Database" button
       // This allows generating/previewing AMC without creating an active contract in the database
-      generateAMCPDF(bill, 'pdf', { 
+      generateAMCPDF(bill, action, { 
         includeDetails: options?.termsOnly ? false : true,
         showComputerGeneratedText: showComputerGeneratedText
       });
@@ -554,7 +558,7 @@ ${notCoveredWithPreFilter}`;
     }
   };
 
-  const handlePrint = (options?: { termsOnly?: boolean }) => {
+  const handleDocument = (action: 'print' | 'pdf', options?: { termsOnly?: boolean }) => {
     if (!billNumber.trim()) {
       toast.error('Please enter a bill number');
       return;
@@ -566,7 +570,7 @@ ${notCoveredWithPreFilter}`;
       });
       return;
     }
-    setPendingBrandAction({ type: 'print', options });
+    setPendingBrandAction({ type: 'document', action, options });
     setBrandPickerOpen(true);
   };
 
@@ -1370,21 +1374,39 @@ ${notCoveredWithPreFilter}`;
                 {isSaving ? 'Saving...' : 'Save to Database'}
               </Button>
               <Button 
-                onClick={() => handlePrint()} 
+                onClick={() => handleDocument('print')} 
+                className="w-full text-sm sm:text-base"
+                disabled={!billNumber.trim()}
+              >
+                <Printer className="w-4 h-4 mr-2" />
+                Generate AMC Agreement
+              </Button>
+              <Button 
+                onClick={() => handleDocument('pdf')} 
+                variant="outline"
                 className="w-full text-sm sm:text-base"
                 disabled={!billNumber.trim()}
               >
                 <Download className="w-4 h-4 mr-2" />
-                Generate AMC Agreement
+                Download AMC Agreement
               </Button>
               <Button
                 variant="outline"
-                onClick={() => handlePrint({ termsOnly: true })}
+                onClick={() => handleDocument('print', { termsOnly: true })}
                 className="w-full text-sm sm:text-base"
                 disabled={!billNumber.trim()}
               >
                 <FileText className="w-4 h-4 mr-2" />
                 Share Terms Only
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => handleDocument('pdf', { termsOnly: true })}
+                className="w-full text-sm sm:text-base"
+                disabled={!billNumber.trim()}
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Download Terms Only
               </Button>
               <p className="text-xs text-gray-500 text-center">
                 Save to Database stores all contract details including description, dates, costs, and prefilter settings. Terms-only mode removes customer and agreement details, leaving just clauses.
@@ -1412,8 +1434,8 @@ ${notCoveredWithPreFilter}`;
         onSelect={(brand) => {
           if (pendingBrandAction?.type === 'save') {
             void executeSaveToDatabase(brand);
-          } else if (pendingBrandAction?.type === 'print') {
-            void executePrint(brand, pendingBrandAction.options);
+          } else if (pendingBrandAction?.type === 'document') {
+            void executePrint(brand, pendingBrandAction.action, pendingBrandAction.options);
           }
           setPendingBrandAction(null);
         }}

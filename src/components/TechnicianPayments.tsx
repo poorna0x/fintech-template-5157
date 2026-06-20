@@ -13,7 +13,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { DollarSign, User, Plus, Trash2, Edit, TrendingDown, TrendingUp, RefreshCw, ChevronDown, ChevronUp, Pencil, Check, X, ChevronLeft, ChevronRight, Eye, TrendingUp as TrendingUpIcon, Download, Users as UsersIcon, Filter } from 'lucide-react';
+import { DollarSign, User, Plus, Trash2, Edit, TrendingDown, TrendingUp, RefreshCw, ChevronDown, ChevronUp, Pencil, Check, X, ChevronLeft, ChevronRight, Eye, TrendingUp as TrendingUpIcon, Download, Printer, Users as UsersIcon, Filter } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { generateSalarySlipPDF } from '@/lib/salary-slip-pdf-generator';
 import {
@@ -2576,7 +2576,7 @@ const TechnicianPayments = () => {
                   className="bg-blue-600 hover:bg-blue-700 text-white h-10 w-full justify-center text-xs sm:text-sm whitespace-nowrap min-w-0"
                 >
                   <Download className="w-4 h-4 mr-2 shrink-0" />
-                  <span className="truncate">Download Salary Slip</span>
+                  <span className="truncate">Salary Slip</span>
                 </Button>
                 <Button
                   size="sm"
@@ -3721,9 +3721,9 @@ const TechnicianPayments = () => {
       <Dialog open={salarySlipDialogOpen} onOpenChange={setSalarySlipDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Download Salary Slip</DialogTitle>
+            <DialogTitle>Salary Slip</DialogTitle>
             <DialogDescription>
-              Choose the type of salary slip you want to download
+              Generate (print preview) or download the salary slip as a PDF
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -3761,7 +3761,7 @@ const TechnicianPayments = () => {
             <Button
               onClick={() => {
                 if (selectedBreakdownForSlip && commissionPeriod) {
-                  generateSalarySlipPDF(selectedBreakdownForSlip, commissionPeriod, 'pdf', includeDayWiseBreakdown);
+                  generateSalarySlipPDF(selectedBreakdownForSlip, commissionPeriod, 'print', includeDayWiseBreakdown);
                   setSalarySlipDialogOpen(false);
                   setSelectedBreakdownForSlip(null);
                 } else {
@@ -3769,6 +3769,21 @@ const TechnicianPayments = () => {
                 }
               }}
               className="bg-blue-600 hover:bg-blue-700"
+            >
+              <Printer className="w-4 h-4 mr-2" />
+              Generate
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (selectedBreakdownForSlip && commissionPeriod) {
+                  generateSalarySlipPDF(selectedBreakdownForSlip, commissionPeriod, 'pdf', includeDayWiseBreakdown);
+                  setSalarySlipDialogOpen(false);
+                  setSelectedBreakdownForSlip(null);
+                } else {
+                  toast.error('Period information not available');
+                }
+              }}
             >
               <Download className="w-4 h-4 mr-2" />
               Download

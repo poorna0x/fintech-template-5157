@@ -12,6 +12,7 @@ import {
   Download, 
   Eye, 
   FileText,
+  Printer,
   Calendar,
   User,
   Receipt,
@@ -229,7 +230,7 @@ export default function GSTInvoicesPage() {
     setViewModalOpen(true);
   };
 
-  const handleRegenerateInvoice = (invoice: TaxInvoice) => {
+  const handleRegenerateInvoice = (invoice: TaxInvoice, action: 'print' | 'pdf' = 'pdf') => {
     // Convert database invoice to Bill format for PDF generation
     const bill: Bill = {
       id: invoice.id,
@@ -304,8 +305,8 @@ export default function GSTInvoicesPage() {
     };
 
     try {
-      generateTaxInvoicePDF(pdfData, 'pdf');
-      toast.success('Invoice regenerated successfully');
+      generateTaxInvoicePDF(pdfData, action);
+      toast.success(action === 'pdf' ? 'Invoice downloaded' : 'Invoice opened for printing');
     } catch (error) {
       console.error('Error regenerating invoice:', error);
       toast.error('Failed to regenerate invoice');
@@ -1384,8 +1385,19 @@ export default function GSTInvoicesPage() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => handleRegenerateInvoice(invoice)}
+                          onClick={() => handleRegenerateInvoice(invoice, 'print')}
                           className="flex-1 min-w-[80px] text-xs"
+                          title="Generate / print"
+                        >
+                          <Printer className="h-3 w-3 mr-1" />
+                          Print
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleRegenerateInvoice(invoice, 'pdf')}
+                          className="flex-1 min-w-[80px] text-xs"
+                          title="Download PDF"
                         >
                           <Download className="h-3 w-3 mr-1" />
                           PDF
@@ -1491,7 +1503,15 @@ export default function GSTInvoicesPage() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => handleRegenerateInvoice(invoice)}
+                            onClick={() => handleRegenerateInvoice(invoice, 'print')}
+                          >
+                            <Printer className="h-4 w-4 mr-1" />
+                            Print
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleRegenerateInvoice(invoice, 'pdf')}
                           >
                             <Download className="h-4 w-4 mr-1" />
                             PDF
@@ -1705,7 +1725,11 @@ export default function GSTInvoicesPage() {
               </div>
 
               <div className="flex gap-2 pt-4 border-t flex-wrap">
-                <Button onClick={() => handleRegenerateInvoice(selectedInvoice)} className="flex-1 min-w-[140px]">
+                <Button onClick={() => handleRegenerateInvoice(selectedInvoice, 'print')} className="flex-1 min-w-[140px]">
+                  <Printer className="h-4 w-4 mr-2" />
+                  Generate
+                </Button>
+                <Button onClick={() => handleRegenerateInvoice(selectedInvoice, 'pdf')} variant="outline" className="flex-1 min-w-[140px]">
                   <Download className="h-4 w-4 mr-2" />
                   Download PDF
                 </Button>

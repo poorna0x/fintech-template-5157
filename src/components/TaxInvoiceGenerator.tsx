@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Trash2, Download, Edit, X, FileText, Save } from 'lucide-react';
+import { Plus, Trash2, Download, Edit, X, FileText, Save, Printer } from 'lucide-react';
 import { toast } from 'sonner';
 import { Bill, BillItem, CompanyInfo, Customer } from '@/types';
 import {
@@ -901,7 +901,11 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
             <Save className="w-4 h-4 mr-2" />
             {isSaving ? 'Saving...' : 'Save to Database'}
           </Button>
-          <Button onClick={() => handlePrint('pdf')} className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto min-w-[140px]">
+          <Button onClick={() => handlePrint('print')} className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto min-w-[140px]">
+            <Printer className="w-4 h-4 mr-2" />
+            Generate Tax Invoice
+          </Button>
+          <Button onClick={() => handlePrint('pdf')} variant="outline" className="w-full sm:w-auto min-w-[140px]">
             <Download className="w-4 h-4 mr-2" />
             Download Tax Invoice
           </Button>
