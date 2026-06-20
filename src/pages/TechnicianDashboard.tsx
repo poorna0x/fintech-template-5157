@@ -61,6 +61,7 @@ import { db, supabase, fetchCustomerIdsWithCompletedJobsMap } from '@/lib/supaba
 import {
   ensureSupabaseSessionForWrite,
   locationUploadErrorMessage,
+  resolveSupabaseAccessTokenForApi,
 } from '@/lib/ensureSupabaseSession';
 import { useResumeSync } from '@/hooks/useResumeSync';
 import { Job, JobAssignmentRequest } from '@/types';
@@ -3176,16 +3177,9 @@ const TechnicianDashboard = () => {
       return { ok: false, error: 'Select service brand on step 1' };
     }
 
-    const sessionReady = await ensureSupabaseSessionForWrite();
-    if (!sessionReady.ok) {
-      return { ok: false, error: 'Session expired. Please sign in again.' };
-    }
-
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    if (!session?.access_token) {
-      return { ok: false, error: 'Sign in to save AMC' };
+    const accessToken = await resolveSupabaseAccessTokenForApi();
+    if (!accessToken) {
+      return { ok: false, error: 'Could not refresh your session. Please try again in a moment.' };
     }
 
     const servicePeriodMonths =
@@ -3224,7 +3218,7 @@ const TechnicianDashboard = () => {
       emailedTo: options?.emailedTo,
     });
 
-    const result = await persistAmcContract(payload, session.access_token);
+    const result = await persistAmcContract(payload, accessToken);
     if (result.ok) {
       amcContractPersistedKeyRef.current = `${selectedJobForComplete.id}:${documentBrand}`;
       setCustomerAMCStatus((prev) => ({ ...prev, [completeJobCustomerDoc.id]: true }));

@@ -41,6 +41,7 @@ import {
 } from '@/lib/customer-address';
 import AmcEmailSendDialog from '@/components/amc/AmcEmailSendDialog';
 import { normalizeRecipientList } from '@/lib/email-recipients';
+import { ensureSupabaseSessionForWrite } from '@/lib/ensureSupabaseSession';
 
 interface AMCGeneratorProps {
   customer: Customer;
@@ -393,38 +394,43 @@ ${notCoveredWithPreFilter}`;
   };
 
   // Function to save AMC contract to database
-  const executeSaveToDatabase = async (brand: DocumentBrand) => {
+  const persistAmcToDatabase = async (
+    brand: DocumentBrand,
+    options?: { emailedTo?: string[]; sharedVia?: string }
+  ): Promise<{ ok: boolean; error?: string }> => {
     applyBrandToForm(brand);
     if (!billNumber.trim()) {
-      toast.error('Please enter an agreement number');
-      return;
+      return { ok: false, error: 'Please enter an agreement number' };
     }
 
-    // Validate RO Model/Brand
     if (!roModel.trim()) {
-      toast.error('Please enter RO Model/Brand before saving', {
-        description: 'RO Model is required to save the AMC contract.',
-        duration: 6000
-      });
-      return;
+      return { ok: false, error: 'Please enter RO Model/Brand before saving' };
     }
 
     if (validity === 'Custom' && (!customFromDate || !customToDate)) {
-      toast.error('Please select both from and to dates for custom validity');
-      return;
+      return { ok: false, error: 'Please select both from and to dates for custom validity' };
     }
 
-    if (validity === 'Custom' && customFromDate && customToDate && new Date(customFromDate) >= new Date(customToDate)) {
-      toast.error('To date must be after from date');
-      return;
+    if (
+      validity === 'Custom' &&
+      customFromDate &&
+      customToDate &&
+      new Date(customFromDate) >= new Date(customToDate)
+    ) {
+      return { ok: false, error: 'To date must be after from date' };
     }
-
-    setIsSaving(true);
 
     try {
+      const sessionReady = await ensureSupabaseSessionForWrite();
+      if (!sessionReady.ok) {
+        return {
+          ok: false,
+          error: 'Could not refresh your session. Please try again in a moment.',
+        };
+      }
+
       const { startDate, endDate, years } = calculateDates();
 
-      // Prepare comprehensive metadata to store in additional_info
       const metadata = {
         agreement_number: billNumber,
         agreement_date: billDate,
@@ -446,20 +452,23 @@ ${notCoveredWithPreFilter}`;
         agreement_intro: resolveAgreementIntroForBrand(agreementIntro, brand),
         document_brand: brand,
         seal_variant: sealVariant,
-        saved_at: new Date().toISOString()
+        shared_via: options?.sharedVia ?? 'admin_generator',
+        emailed_to: options?.emailedTo?.length ? options.emailedTo : null,
+        saved_at: new Date().toISOString(),
       };
 
-      // Resolve service period months: 0 = no auto
       const servicePeriodMonths =
-        servicePeriodKind === 'no_auto' ? 0
-          : servicePeriodKind === '4' ? 4
-          : servicePeriodKind === '6' ? 6
-          : Math.max(1, servicePeriodCustomMonths);
+        servicePeriodKind === 'no_auto'
+          ? 0
+          : servicePeriodKind === '4'
+            ? 4
+            : servicePeriodKind === '6'
+              ? 6
+              : Math.max(1, servicePeriodCustomMonths);
 
-      // Save AMC contract to database
       const { error: amcError } = await db.amcContracts.create({
         customer_id: customer.id,
-        job_id: null, // AMC created from generator, not from a job
+        job_id: null,
         start_date: startDate,
         end_date: endDate,
         years: years,
@@ -471,26 +480,35 @@ ${notCoveredWithPreFilter}`;
 
       if (amcError) {
         console.error('Failed to save AMC contract to database:', amcError);
-        toast.error('Failed to save AMC contract to database', {
-          description: amcError.message || 'Please try again.'
-        });
-      } else {
-        toast.success('AMC contract saved to database successfully', {
-          description: `Agreement ${billNumber} saved under ${getDocumentBrandLabel(brand)}.`,
-        });
-        // Notify parent to refresh AMC status
-        if (onAMCSaved) {
-          onAMCSaved();
-        }
+        return { ok: false, error: amcError.message || 'Failed to save AMC contract' };
       }
-    } catch (error: any) {
+
+      onAMCSaved?.();
+      return { ok: true };
+    } catch (error: unknown) {
       console.error('Error saving AMC contract:', error);
-      toast.error('Failed to save AMC contract', {
-        description: error?.message || 'An unexpected error occurred. Please try again.'
-      });
-    } finally {
-      setIsSaving(false);
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : 'Failed to save AMC contract',
+      };
     }
+  };
+
+  const executeSaveToDatabase = async (brand: DocumentBrand) => {
+    setIsSaving(true);
+
+    const result = await persistAmcToDatabase(brand);
+    if (result.ok) {
+      toast.success('AMC contract saved to database successfully', {
+        description: `Agreement ${billNumber} saved under ${getDocumentBrandLabel(brand)}.`,
+      });
+    } else {
+      toast.error('Failed to save AMC contract to database', {
+        description: result.error || 'Please try again.',
+      });
+    }
+
+    setIsSaving(false);
   };
 
   const handleSaveToDatabase = () => {
@@ -1597,6 +1615,16 @@ ${notCoveredWithPreFilter}`;
         pdfOptions={{
           includeDetails: true,
           showComputerGeneratedText,
+        }}
+        onPersistAfterEmail={async (recipients) => {
+          const brand = emailSendContext?.brand;
+          if (!brand) {
+            return { ok: false, error: 'Agreement brand is missing' };
+          }
+          return persistAmcToDatabase(brand, {
+            emailedTo: recipients,
+            sharedVia: 'admin_email',
+          });
         }}
         onSent={() => {
           if (emailSendContext?.bill) onPrint?.(emailSendContext.bill);

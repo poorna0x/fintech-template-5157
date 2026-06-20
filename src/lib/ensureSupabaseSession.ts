@@ -1,7 +1,24 @@
 import { supabase } from './supabaseClient';
 
 /** Refresh access token when within this many seconds of expiry. */
-const SESSION_REFRESH_BUFFER_SEC = 60;
+const SESSION_REFRESH_BUFFER_SEC = 120;
+
+function sessionAccessToken(
+  session: { access_token?: string; expires_at?: number } | null | undefined
+): string | null {
+  if (!session?.access_token) return null;
+  const expiresAt = session.expires_at ?? 0;
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (expiresAt <= nowSec) return null;
+  return session.access_token;
+}
+
+function sessionExpiresWithinBuffer(session: { expires_at?: number } | null | undefined): boolean {
+  if (!session) return true;
+  const expiresAt = session.expires_at ?? 0;
+  const nowSec = Math.floor(Date.now() / 1000);
+  return expiresAt - nowSec < SESSION_REFRESH_BUFFER_SEC;
+}
 
 export type EnsureSessionResult =
   | { ok: true }
@@ -22,13 +39,16 @@ export async function ensureSupabaseSessionForWrite(): Promise<EnsureSessionResu
     return { ok: true };
   }
 
-  const expiresAt = session.expires_at ?? 0;
-  const nowSec = Math.floor(Date.now() / 1000);
-  if (expiresAt - nowSec < SESSION_REFRESH_BUFFER_SEC) {
+  if (sessionExpiresWithinBuffer(session)) {
     const { data: { session: refreshed }, error } = await supabase.auth.refreshSession();
-    if (error || !refreshed) {
-      return { ok: false, reason: 'refresh_failed' };
+    if (refreshed && sessionAccessToken(refreshed)) {
+      return { ok: true };
     }
+    // Refresh failed — still OK if current access token is not expired yet
+    if (sessionAccessToken(session)) {
+      return { ok: true };
+    }
+    return { ok: false, reason: error ? 'refresh_failed' : 'no_session' };
   }
 
   return { ok: true };
@@ -36,17 +56,20 @@ export async function ensureSupabaseSessionForWrite(): Promise<EnsureSessionResu
 
 /** Fresh user JWT for Netlify function calls (email, AMC save, etc.). */
 export async function resolveSupabaseAccessTokenForApi(): Promise<string | null> {
-  const ready = await ensureSupabaseSessionForWrite();
-  if (!ready.ok) return null;
+  const { data: { session: current } } = await supabase.auth.getSession();
 
-  const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
-  const token =
-    refreshed.session?.access_token ??
-    (await supabase.auth.getSession()).data.session?.access_token ??
-    null;
+  if (!current) {
+    const { data: { session: refreshed } } = await supabase.auth.refreshSession();
+    return sessionAccessToken(refreshed);
+  }
 
-  if (!token && refreshError) return null;
-  return token;
+  if (sessionExpiresWithinBuffer(current)) {
+    const { data: { session: refreshed } } = await supabase.auth.refreshSession();
+    const freshToken = sessionAccessToken(refreshed);
+    if (freshToken) return freshToken;
+  }
+
+  return sessionAccessToken(current);
 }
 
 export function isPostgrestPermissionDenied(

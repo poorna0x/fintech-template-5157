@@ -15,13 +15,13 @@ import { normalizeRecipientList, formatRecipientsForEmailApi } from '@/lib/email
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getDocumentBrandLabel } from '@/lib/service-brands';
 import { generateDocumentPdfBase64 } from '@/lib/server-pdf-download';
+import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 
 export interface SendAmcAgreementEmailParams {
   bill: Bill;
   brand: DocumentBrand;
   /** One or more recipient addresses */
   recipientEmails: string[];
-  accessToken: string;
   /** AMC end date (ISO yyyy-mm-dd) for the email details block */
   endDateIso: string;
   pdfOptions?: AMCPDFOptions;
@@ -48,7 +48,6 @@ export async function sendAmcAgreementEmail(
     bill,
     brand,
     recipientEmails,
-    accessToken,
     endDateIso,
     pdfOptions,
     customMessage,
@@ -107,6 +106,17 @@ export async function sendAmcAgreementEmail(
     content: pdfBase64,
     size,
   };
+
+  // PDF generation can take a while — refresh JWT immediately before the email API call.
+  const accessToken = await resolveSupabaseAccessTokenForApi();
+  if (!accessToken) {
+    return {
+      ok: false,
+      error: 'Could not verify your session. Please try again in a moment.',
+      sentCount: 0,
+      failedRecipients: recipients,
+    };
+  }
 
   const result = await emailService.sendAmcAgreementEmail(
     {

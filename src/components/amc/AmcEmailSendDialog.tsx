@@ -15,7 +15,6 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { getDefaultDocumentMessage } from '@/lib/admin-email-templates';
-import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import {
   isValidEmailFormat,
   normalizeRecipientList,
@@ -47,10 +46,6 @@ export interface AmcEmailSendDialogProps {
 
 function emptyRow(): string {
   return '';
-}
-
-async function resolveAccessToken(): Promise<string | null> {
-  return resolveSupabaseAccessTokenForApi();
 }
 
 export default function AmcEmailSendDialog({
@@ -125,17 +120,10 @@ export default function AmcEmailSendDialog({
     );
 
     try {
-      const accessToken = await resolveAccessToken();
-      if (!accessToken) {
-        toast.error('Session expired. Please sign in again.', { id: toastId });
-        return;
-      }
-
       const result = await sendAmcAgreementEmail({
         bill,
         brand,
         recipientEmails: recipients,
-        accessToken,
         endDateIso,
         pdfOptions,
         customMessage: message.trim() || undefined,
@@ -160,7 +148,12 @@ export default function AmcEmailSendDialog({
         }
       }
 
-      toast.success(getAmcEmailSuccessMessage(brand, recipients), { id: toastId });
+      toast.success(
+        onPersistAfterEmail
+          ? `${getAmcEmailSuccessMessage(brand, recipients)} — saved to database`
+          : getAmcEmailSuccessMessage(brand, recipients),
+        { id: toastId }
+      );
       onSent?.();
       onOpenChange(false);
     } catch (error) {

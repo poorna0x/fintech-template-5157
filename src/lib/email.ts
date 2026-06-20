@@ -8,6 +8,7 @@ import {
   resolveBookingEmailDocumentBrand,
   type BookingConfirmationEmailData,
 } from '@/lib/booking-confirmation-email';
+import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 
 export type BookingConfirmationData = BookingConfirmationEmailData;
 
@@ -99,25 +100,13 @@ export class EmailService {
     payload: AdminComposerEmailPayload,
     accessToken?: string | null
   ): Promise<{ ok: boolean; error?: string; messageId?: string }> {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-
-    if (accessToken) {
-      headers.Authorization = `Bearer ${accessToken}`;
-    } else if (this.previewSecret) {
-      headers['X-Email-Preview-Secret'] = this.previewSecret;
-    } else {
-      return {
-        ok: false,
-        error: 'Sign in to send email.',
-      };
-    }
-
-    try {
+    const sendOnce = async (token: string) => {
       const response = await fetch(this.previewApiUrl, {
         method: 'POST',
-        headers,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({
           purpose: 'amc_agreement',
           documentBrand: payload.documentBrand,
@@ -138,13 +127,67 @@ export class EmailService {
       });
 
       const result = await response.json().catch(() => ({}));
+      return { response, result };
+    };
+
+    let token = accessToken ?? (await resolveSupabaseAccessTokenForApi());
+    if (!token && this.previewSecret) {
+      // Dev-only fallback
+      const response = await fetch(this.previewApiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Email-Preview-Secret': this.previewSecret,
+        },
+        body: JSON.stringify({
+          purpose: 'amc_agreement',
+          documentBrand: payload.documentBrand,
+          to: payload.to,
+          subject: payload.subject,
+          html: payload.html,
+          text: payload.text,
+          ...(payload.attachments?.length
+            ? {
+                attachments: payload.attachments.map(({ filename, contentType, content }) => ({
+                  filename,
+                  contentType,
+                  content,
+                })),
+              }
+            : {}),
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        return {
+          ok: false,
+          error: result.error || response.statusText || 'Failed to send email',
+        };
+      }
+      return { ok: true, messageId: result.messageId };
+    }
+
+    if (!token) {
+      return {
+        ok: false,
+        error: 'Could not verify your session. Please try again.',
+      };
+    }
+
+    try {
+      let { response, result } = await sendOnce(token);
+
+      if (response.status === 403) {
+        const retryToken = await resolveSupabaseAccessTokenForApi();
+        if (retryToken) {
+          ({ response, result } = await sendOnce(retryToken));
+        }
+      }
 
       if (!response.ok) {
         const message =
           response.status === 403
-            ? result.error === 'Unauthorized'
-              ? 'Session expired or not signed in — refresh the page and try again'
-              : result.error || 'Not authorized to send email'
+            ? 'Could not send email — please try again in a moment'
             : result.error || response.statusText || 'Failed to send email';
         return {
           ok: false,
