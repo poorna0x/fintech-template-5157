@@ -70,6 +70,7 @@ import {
   Lock
 } from 'lucide-react';
 import { db, supabase, fetchCustomerIdsWithCompletedJobsMap, CUSTOMER_ROW_COLUMNS, CUSTOMER_ADMIN_LIST_PATCH_COLUMNS } from '@/lib/supabase';
+import { scheduleDocumentGeneratorPreload } from '@/lib/document-generator-preload';
 import { useAdminRole } from '@/lib/useAdminRole';
 import { registerAdminPWA } from '@/lib/pwa';
 import { Customer, Job, Technician } from '@/types';
@@ -945,6 +946,7 @@ const AdminDashboard = () => {
 
   useEffect(() => {
     registerAdminPWA();
+    scheduleDocumentGeneratorPreload();
     // Do not disablePWA on unmount — navigating to /settings would reset manifest and break standalone.
     // PWARouteHandler disables when leaving admin app routes (public pages).
   }, []);
@@ -2762,6 +2764,26 @@ const AdminDashboard = () => {
   const loadFullCustomerForAction = useCallback(async (customer: Customer): Promise<Customer> => {
     try {
       const { data, error } = await db.customers.getById(customer.id);
+      if (error || !data) return customer;
+      return transformCustomerData(data);
+    } catch {
+      return customer;
+    }
+  }, []);
+
+  /** Document modals — slim fetch (no photos/notes); skip network when list row already has address. */
+  const loadCustomerForDocuments = useCallback(async (customer: Customer): Promise<Customer> => {
+    const addr = customer.address;
+    const hasAddress =
+      Boolean(addr?.street || addr?.area || addr?.visible_address) ||
+      Boolean((customer as any).visible_address);
+
+    if (customer.fullName && customer.phone && hasAddress) {
+      return customer;
+    }
+
+    try {
+      const { data, error } = await db.customers.getByIdForDocuments(customer.id);
       if (error || !data) return customer;
       return transformCustomerData(data);
     } catch {
@@ -5865,10 +5887,10 @@ const AdminDashboard = () => {
     setSelectedCustomerForBill(null);
   };
 
-  const handleGenerateQuotation = async (customer: Customer) => {
-    const c = await loadFullCustomerForAction(customer);
-    setSelectedCustomerForQuotation(c);
+  const handleGenerateQuotation = (customer: Customer) => {
+    setSelectedCustomerForQuotation(customer);
     setQuotationModalOpen(true);
+    void loadCustomerForDocuments(customer).then(setSelectedCustomerForQuotation);
   };
 
   const handleQuotationModalClose = () => {
@@ -5876,10 +5898,10 @@ const AdminDashboard = () => {
     setSelectedCustomerForQuotation(null);
   };
 
-  const handleGenerateAMC = async (customer: Customer) => {
-    const c = await loadFullCustomerForAction(customer);
-    setSelectedCustomerForAMC(c);
+  const handleGenerateAMC = (customer: Customer) => {
+    setSelectedCustomerForAMC(customer);
     setAmcModalOpen(true);
+    void loadCustomerForDocuments(customer).then(setSelectedCustomerForAMC);
   };
 
   const handleViewAMCInfo = async (customer: Customer) => {
@@ -5941,10 +5963,10 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleGenerateTaxInvoice = async (customer: Customer) => {
-    const c = await loadFullCustomerForAction(customer);
-    setSelectedCustomerForTaxInvoice(c);
+  const handleGenerateTaxInvoice = (customer: Customer) => {
+    setSelectedCustomerForTaxInvoice(customer);
     setTaxInvoiceModalOpen(true);
+    void loadCustomerForDocuments(customer).then(setSelectedCustomerForTaxInvoice);
   };
 
   const handleTaxInvoiceModalClose = () => {
@@ -12142,7 +12164,16 @@ const AdminDashboard = () => {
 
       {/* AMC Generation Modal */}
       {amcModalOpen && (
-        <Suspense fallback={null}>
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+              <div className="flex items-center gap-3 rounded-lg bg-white px-5 py-4 shadow-lg text-sm text-slate-700">
+                <RefreshCw className="w-5 h-5 animate-spin text-violet-600" />
+                Opening AMC…
+              </div>
+            </div>
+          }
+        >
           <AMCModal
             isOpen={amcModalOpen}
             onClose={handleAMCModalClose}
@@ -12154,7 +12185,16 @@ const AdminDashboard = () => {
 
       {/* Tax Invoice Generation Modal */}
       {taxInvoiceModalOpen && (
-        <Suspense fallback={null}>
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+              <div className="flex items-center gap-3 rounded-lg bg-white px-5 py-4 shadow-lg text-sm text-slate-700">
+                <RefreshCw className="w-5 h-5 animate-spin text-blue-600" />
+                Opening tax invoice…
+              </div>
+            </div>
+          }
+        >
           <TaxInvoiceModal
             isOpen={taxInvoiceModalOpen}
             onClose={handleTaxInvoiceModalClose}

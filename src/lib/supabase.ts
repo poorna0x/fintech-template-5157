@@ -211,6 +211,30 @@ export const CUSTOMER_ROW_COLUMNS = [
   'updated_at',
 ].join(',');
 
+/** Document modals (AMC, tax invoice, quotation) — omit photos, notes, location. */
+export const CUSTOMER_DOCUMENT_COLUMNS = [
+  'id',
+  'customer_id',
+  'full_name',
+  'phone',
+  'alternate_phone',
+  'email',
+  'address',
+  'visible_address',
+  'service_type',
+  'brand',
+  'model',
+  'installation_date',
+  'warranty_expiry',
+  'status',
+  'customer_since',
+  'last_service_date',
+  'preferred_time_slot',
+  'preferred_language',
+  'created_at',
+  'updated_at',
+].join(',');
+
 /** Assignment / map / calling: exclude INACTIVE; null treated as active (legacy rows). */
 const TECHNICIAN_ROSTER_ACTIVE_OR =
   'account_status.is.null,account_status.eq.ACTIVE,account_status.eq.SUSPENDED';
@@ -570,6 +594,17 @@ export const db = {
         .eq('id', id)
         .single();
       
+      return { data, error };
+    },
+
+    /** Slim row for document generators — skips photos, notes, and location JSON. */
+    async getByIdForDocuments(id: string) {
+      const { data, error } = await supabase
+        .from('customers')
+        .select(CUSTOMER_DOCUMENT_COLUMNS)
+        .eq('id', id)
+        .single();
+
       return { data, error };
     },
 
@@ -3474,6 +3509,18 @@ export const db = {
         .single();
       
       return { data, error };
+    },
+
+    /** Slim query for next preview invoice number — one row, invoice_number only. */
+    async getLatestInvoiceNumberForPrefix(prefix: string) {
+      const { data, error } = await supabase
+        .from('tax_invoices')
+        .select('invoice_number')
+        .like('invoice_number', `${prefix}-%`)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      return { data: data?.[0]?.invoice_number ?? null, error };
     },
     
     async getAll(limit: number = 100, offset: number = 0) {

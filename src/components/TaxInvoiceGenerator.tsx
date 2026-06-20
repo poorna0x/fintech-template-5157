@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { db, supabase } from '@/lib/supabase';
+import { getLocalFallbackTaxInvoiceNumber, persistTaxInvoiceNumberHint } from '@/lib/tax-invoice-number';
 import { Input } from '@/components/ui/input';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
@@ -139,60 +140,39 @@ export default function TaxInvoiceGenerator({
 
   // Get preview invoice number (doesn't increment - just shows what the next number would be)
   const getPreviewInvoiceNumber = async (): Promise<string> => {
-    try {
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const prefix = `INV-${year}-${month}`;
-      
-      // Query database directly for last saved invoice number (don't use function that might increment)
-      const { data: invoices, error } = await db.taxInvoices.getAll(10000, 0);
-      
-      if (!error && invoices && invoices.length > 0) {
-        // Filter invoices for current month/year and find the highest number
-        const monthInvoices = invoices.filter(inv => 
-          inv.invoice_number && inv.invoice_number.startsWith(prefix)
-        );
-        
-        if (monthInvoices.length > 0) {
-          // Sort by invoice number descending and get the first one
-          monthInvoices.sort((a, b) => {
-            const aNum = parseInt(a.invoice_number.match(/\d{3}$/)?.[0] || '0');
-            const bNum = parseInt(b.invoice_number.match(/\d{3}$/)?.[0] || '0');
-            return bNum - aNum;
-          });
-          
-          const lastInvoice = monthInvoices[0];
-          const match = lastInvoice.invoice_number.match(/\d{3}$/);
-          if (match) {
-            const nextNumber = parseInt(match[0], 10) + 1;
-            return `${prefix}-${String(nextNumber).padStart(3, '0')}`;
-          }
-        }
-      }
-    } catch (error) {
-      console.warn('Failed to query database for invoice numbers, using localStorage fallback:', error);
-    }
-    
-    // Fallback: Generate with month/year pattern using localStorage
     const now = new Date();
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const prefix = `INV-${year}-${month}`;
-    
-    // Try to get last number from localStorage for this month
-    const storageKey = `lastTaxInvoiceNumber_${year}_${month}`;
-    const lastNumber = localStorage.getItem(storageKey);
-    let nextNumber = 1;
-    
-    if (lastNumber && lastNumber.startsWith(prefix)) {
-      const match = lastNumber.match(/-\d{3}$/);
-      if (match) {
-        nextNumber = parseInt(match[0].substring(1), 10) + 1;
+
+    try {
+      const { data: rpcNumber, error: rpcError } = await db.taxInvoices.getNextInvoiceNumber();
+      if (!rpcError && rpcNumber) {
+        persistTaxInvoiceNumberHint(rpcNumber);
+        return rpcNumber;
       }
+    } catch (error) {
+      console.warn('Failed to fetch next invoice number from server, trying fallback query:', error);
     }
-    
-    return `${prefix}-${String(nextNumber).padStart(3, '0')}`;
+
+    try {
+      const { data: latest, error } = await db.taxInvoices.getLatestInvoiceNumberForPrefix(prefix);
+
+      if (!error && latest) {
+        const match = latest.match(/\d{3}$/);
+        if (match) {
+          const nextNumber = parseInt(match[0], 10) + 1;
+          const next = `${prefix}-${String(nextNumber).padStart(3, '0')}`;
+          persistTaxInvoiceNumberHint(next);
+          return next;
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to query latest invoice number, using localStorage fallback:', error);
+    }
+
+    // Fallback: localStorage counter for this month
+    return getLocalFallbackTaxInvoiceNumber(now);
   };
 
   // Get next invoice number for actual saving (only called when saving)
@@ -202,7 +182,8 @@ export default function TaxInvoiceGenerator({
   };
 
   // State management
-  const [billNumber, setBillNumber] = useState('');
+  const [billNumber, setBillNumber] = useState(() => getLocalFallbackTaxInvoiceNumber());
+  const billNumberEditedRef = useRef(false);
   const [billDate, setBillDate] = useState(new Date().toISOString().split('T')[0]);
   const [signatureDate, setSignatureDate] = useState('');
   const [company, setCompany] = useState<CompanyInfo>(defaultCompanyInfo);
@@ -315,9 +296,8 @@ export default function TaxInvoiceGenerator({
   useEffect(() => {
     let isMounted = true;
     getPreviewInvoiceNumber().then((invoiceNumber) => {
-      if (!isMounted) return;
-      // Don't overwrite a number the user typed or restored from a draft.
-      setBillNumber((prev) => (prev.trim() ? prev : invoiceNumber));
+      if (!isMounted || billNumberEditedRef.current) return;
+      setBillNumber(invoiceNumber);
     });
     return () => {
       isMounted = false;
@@ -339,6 +319,28 @@ export default function TaxInvoiceGenerator({
       pincode: customerAddress.pincode || ''
     }
   });
+
+  useEffect(() => {
+    if (!customer) return;
+    const name = customer.fullName || (customer as any)?.full_name || '';
+    const phone = typeof customer.phone === 'string' ? customer.phone : (customer as any)?.phone || '';
+    const email = customer.email || '';
+    const gst = customer.gstNumber || '';
+    const addr = customer.address || {};
+    setEditableCustomer((prev) => ({
+      name: prev.name || name,
+      phone: prev.phone || phone,
+      email: prev.email || email,
+      gst: prev.gst || gst,
+      address: {
+        street: prev.address.street || addr.street || '',
+        area: prev.address.area || addr.area || '',
+        city: prev.address.city || addr.city || '',
+        state: prev.address.state || addr.state || '',
+        pincode: prev.address.pincode || addr.pincode || '',
+      },
+    }));
+  }, [customer]);
 
   // Place of supply follows customer GSTIN state code when GSTIN is entered/updated
   useEffect(() => {
@@ -842,7 +844,10 @@ export default function TaxInvoiceGenerator({
 
   const applyDraftSnapshot = (snap: ReturnType<typeof getDraftSnapshot>) => {
     if (!snap || typeof snap !== 'object') return;
-    if (typeof snap.billNumber === 'string') setBillNumber(snap.billNumber);
+    if (typeof snap.billNumber === 'string') {
+      billNumberEditedRef.current = true;
+      setBillNumber(snap.billNumber);
+    }
     if (typeof snap.billDate === 'string') setBillDate(snap.billDate);
     if (typeof snap.signatureDate === 'string') setSignatureDate(snap.signatureDate);
     if (Array.isArray(snap.items)) setItems(snap.items as BillItem[]);
@@ -984,7 +989,10 @@ export default function TaxInvoiceGenerator({
                 <Input
                   id="billNumber"
                   value={billNumber}
-                  onChange={(e) => setBillNumber(e.target.value)}
+                  onChange={(e) => {
+                    billNumberEditedRef.current = true;
+                    setBillNumber(e.target.value);
+                  }}
                   placeholder="INV-001"
                   className="font-mono font-semibold"
                 />

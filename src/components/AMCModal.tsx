@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import React, { lazy, Suspense, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { X } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
 import { Customer, Bill } from '@/types';
-import AMCGenerator from '@/components/AMCGenerator';
-import { generateAMCPDF } from '@/lib/amc-pdf-generator';
 import { toast } from 'sonner';
+
+const AMCGenerator = lazy(() => import('@/components/AMCGenerator'));
 
 interface AMCModalProps {
   isOpen: boolean;
@@ -17,10 +17,11 @@ interface AMCModalProps {
 export default function AMCModal({ isOpen, onClose, customer, onAMCSaved }: AMCModalProps) {
   const [isGenerating, setIsGenerating] = useState(false);
 
-  const handlePrintAMC = (bill: Bill, action?: 'print' | 'pdf') => {
+  const handlePrintAMC = async (bill: Bill, action?: 'print' | 'pdf') => {
     setIsGenerating(true);
     
     try {
+      const { generateAMCPDF } = await import('@/lib/amc-pdf-generator');
       generateAMCPDF(bill, action ?? 'pdf');
     } catch (error) {
       console.error('Error generating AMC:', error);
@@ -63,12 +64,21 @@ export default function AMCModal({ isOpen, onClose, customer, onAMCSaved }: AMCM
 
         <div className="p-4 sm:p-6 pt-3 sm:pt-4">
           {customer ? (
-            <AMCGenerator
-              customer={customer}
-              onPrint={handlePrintAMC}
-              onAMCSaved={onAMCSaved}
-              embedded
-            />
+            <Suspense
+              fallback={
+                <div className="flex flex-col items-center justify-center gap-3 py-16 text-slate-600">
+                  <Loader2 className="w-8 h-8 animate-spin text-violet-600" />
+                  <p className="text-sm">Loading AMC form…</p>
+                </div>
+              }
+            >
+              <AMCGenerator
+                customer={customer}
+                onPrint={handlePrintAMC}
+                onAMCSaved={onAMCSaved}
+                embedded
+              />
+            </Suspense>
           ) : (
             <div className="flex items-center justify-center h-64">
               <div className="text-center text-gray-500">

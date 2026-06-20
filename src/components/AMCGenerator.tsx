@@ -13,7 +13,6 @@ import { Edit, Plus, Download, FileText, User, Phone, MapPin, Building, Droplets
 import DocumentBrandLogo from '@/components/DocumentBrandLogo';
 import { toast } from 'sonner';
 import { Customer, Bill, BillItem, CompanyInfo } from '@/types';
-import { generateAMCPDF } from '@/lib/amc-pdf-generator';
 import { db } from '@/lib/supabase';
 import DocumentBrandPickerDialog from '@/components/DocumentBrandPickerDialog';
 import {
@@ -220,13 +219,29 @@ ${notCoveredWithPreFilter}`;
     email: customer.email || '',
     gst: customer.gstNumber || '',
     address: {
-      street: customer.address.street || '',
-      area: customer.address.area || '',
-      city: customer.address.city || '',
-      state: customer.address.state || '',
-      pincode: customer.address.pincode || ''
+      street: customer.address?.street || '',
+      area: customer.address?.area || '',
+      city: customer.address?.city || '',
+      state: customer.address?.state || '',
+      pincode: customer.address?.pincode || ''
     }
   });
+
+  React.useEffect(() => {
+    setEditableCustomer((prev) => ({
+      name: prev.name || customer.fullName || '',
+      phone: prev.phone || (typeof customer.phone === 'string' ? customer.phone : (customer as any)?.phone || ''),
+      email: prev.email || customer.email || '',
+      gst: prev.gst || customer.gstNumber || '',
+      address: {
+        street: prev.address.street || customer.address?.street || '',
+        area: prev.address.area || customer.address?.area || '',
+        city: prev.address.city || customer.address?.city || '',
+        state: prev.address.state || customer.address?.state || '',
+        pincode: prev.address.pincode || customer.address?.pincode || '',
+      },
+    }));
+  }, [customer]);
 
   // Calculate totals - use direct AMC cost instead of items
   const subtotal = amcCost;
@@ -556,6 +571,7 @@ ${notCoveredWithPreFilter}`;
     try {
       // Don't save to database automatically - user must explicitly click "Save to Database" button
       // This allows generating/previewing AMC without creating an active contract in the database
+      const { generateAMCPDF } = await import('@/lib/amc-pdf-generator');
       generateAMCPDF(bill, action, { 
         includeDetails: options?.termsOnly ? false : true,
         showComputerGeneratedText: showComputerGeneratedText

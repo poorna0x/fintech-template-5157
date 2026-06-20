@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import React, { lazy, Suspense, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { X } from 'lucide-react';
-import TaxInvoiceGenerator from '@/components/TaxInvoiceGenerator';
+import { Loader2, X } from 'lucide-react';
 import { Customer, Bill } from '@/types';
-import { generateTaxInvoicePDF } from '@/lib/tax-invoice-pdf-generator';
 import { toast } from 'sonner';
+
+const TaxInvoiceGenerator = lazy(() => import('@/components/TaxInvoiceGenerator'));
 
 interface TaxInvoiceModalProps {
   isOpen: boolean;
@@ -16,7 +16,7 @@ interface TaxInvoiceModalProps {
 export default function TaxInvoiceModal({ isOpen, onClose, customer }: TaxInvoiceModalProps) {
   const [isGenerating, setIsGenerating] = useState(false);
 
-  const handlePrintTaxInvoice = (bill: Bill, action: 'print' | 'pdf' = 'pdf') => {
+  const handlePrintTaxInvoice = async (bill: Bill, action: 'print' | 'pdf' = 'pdf') => {
     setIsGenerating(true);
     
     const pdfData = {
@@ -41,6 +41,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, customer }: TaxInvoic
     };
     
     try {
+      const { generateTaxInvoicePDF } = await import('@/lib/tax-invoice-pdf-generator');
       generateTaxInvoicePDF(pdfData, action);
     } catch (error) {
       toast.error('Failed to generate tax invoice. Please try again.');
@@ -82,11 +83,20 @@ export default function TaxInvoiceModal({ isOpen, onClose, customer }: TaxInvoic
 
         <div className="p-4 sm:p-6 pt-3 sm:pt-4">
           {customer ? (
-            <TaxInvoiceGenerator
-              customer={customer}
-              onPrint={handlePrintTaxInvoice}
-              embedded
-            />
+            <Suspense
+              fallback={
+                <div className="flex flex-col items-center justify-center gap-3 py-16 text-slate-600">
+                  <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                  <p className="text-sm">Loading tax invoice form…</p>
+                </div>
+              }
+            >
+              <TaxInvoiceGenerator
+                customer={customer}
+                onPrint={handlePrintTaxInvoice}
+                embedded
+              />
+            </Suspense>
           ) : (
             <div className="flex items-center justify-center h-64">
               <div className="text-center text-gray-500">
