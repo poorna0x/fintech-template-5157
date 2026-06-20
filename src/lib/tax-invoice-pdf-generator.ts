@@ -157,10 +157,8 @@ export function generateTaxInvoicePDF(billData: PDFTaxInvoiceData, action: 'prin
       .then(() => {
         isPrinting = false;
       })
-      .catch((err) => {
-        console.warn('[tax-invoice-pdf] Server PDF failed, using print dialog', err);
+      .catch(() => {
         isPrinting = false;
-        generateTaxInvoicePDF(billData, 'print');
       });
     return;
   }
@@ -1752,9 +1750,8 @@ export function generateCombinedTaxInvoicePDF(
       void downloadDocumentPdf({
         html: combinedHtml,
         filename: `${filename.replace(/\s+/g, '_')}.pdf`,
-      }).catch((err) => {
-        console.warn('[combined-tax-invoice-pdf] Server PDF failed, using print dialog', err);
-        generateCombinedTaxInvoicePDF(invoices, filename, 'print');
+      }).catch(() => {
+        /* errors surfaced via toast in downloadDocumentPdf */
       });
       return;
     }

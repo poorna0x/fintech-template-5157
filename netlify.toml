@@ -19,6 +19,7 @@
 
 [functions."generate-pdf"]
   timeout = 26
+  memory = 2048
 
 # Force HTTPS - redirect HTTP to HTTPS
 [[redirects]]

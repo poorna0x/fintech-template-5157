@@ -1052,10 +1052,8 @@ export function generateAMCPDF(
         .then(() => {
           isPrinting = false;
         })
-        .catch((err) => {
-          console.warn('[amc-pdf] Server PDF failed, using print dialog', err);
+        .catch(() => {
           isPrinting = false;
-          generateAMCPDF(bill, 'print', options);
         });
       return;
     }

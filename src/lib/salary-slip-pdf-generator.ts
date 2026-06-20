@@ -927,10 +927,8 @@ export function generateSalarySlipPDF(
         .then(() => {
           (window as any).isPrintingSalarySlip = false;
         })
-        .catch((err) => {
-          console.warn('[salary-slip-pdf] Server PDF failed, using print dialog', err);
+        .catch(() => {
           (window as any).isPrintingSalarySlip = false;
-          generateSalarySlipPDF(breakdown, period, 'print', includeDayWiseBreakdown);
         });
       return;
     }

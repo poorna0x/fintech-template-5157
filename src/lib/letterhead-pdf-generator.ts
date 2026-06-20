@@ -904,9 +904,8 @@ export function generateLetterheadPDF(
       void downloadDocumentPdf({
         html: buildLetterheadDocumentHtml(data),
         filename: `${title.replace(/\s+/g, '_')}.pdf`,
-      }).catch((err) => {
-        console.warn('[letterhead-pdf] Server PDF failed, using print dialog', err);
-        generateLetterheadPDF(data, 'print');
+      }).catch(() => {
+        /* errors surfaced via toast in downloadDocumentPdf */
       });
       return;
     }

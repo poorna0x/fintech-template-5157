@@ -3,6 +3,9 @@ const chromium = require('@sparticuz/chromium');
 const puppeteer = require('puppeteer-core');
 const { checkRateLimit, getClientIdentifier } = require('./rate-limiter');
 
+// Reduce Chromium startup time/memory on serverless.
+chromium.setGraphicsMode = false;
+
 const MAX_HTML_BYTES = 3 * 1024 * 1024; // 3 MB
 const MAX_FILENAME_LENGTH = 180;
 
@@ -65,7 +68,9 @@ async function launchBrowser() {
       headless: chromium.headless,
     });
 
-  const isServerless = Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME);
+  const isServerless = Boolean(
+    process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NETLIFY || process.env.AWS_EXECUTION_ENV
+  );
   if (isServerless) {
     return launchWithSparticuz();
   }

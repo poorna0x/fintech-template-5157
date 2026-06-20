@@ -191,7 +191,11 @@ const server = http.createServer((req, res) => {
         
         responseSent = true;
         res.writeHead(result.statusCode || 200);
-        res.end(result.body || '');
+        if (result.isBase64Encoded && result.body) {
+          res.end(Buffer.from(result.body, 'base64'));
+        } else {
+          res.end(result.body || '');
+        }
       } catch (error) {
         sendError(error);
       }

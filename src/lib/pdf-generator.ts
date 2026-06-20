@@ -76,10 +76,8 @@ export function generateBillPDF(billData: PDFBillData, action: 'print' | 'pdf' =
       .then(() => {
         isPrinting = false;
       })
-      .catch((err) => {
-        console.warn('[bill-pdf] Server PDF failed, using print dialog', err);
+      .catch(() => {
         isPrinting = false;
-        generateBillPDF(billData, 'print');
       });
     return;
   }

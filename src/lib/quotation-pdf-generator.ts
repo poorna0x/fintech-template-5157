@@ -71,9 +71,8 @@ export function generateQuotationPDF(quotationData: PDFQuotationData, action: 'p
     void downloadDocumentPdf({
       html: generateQuotationHTML(quotationData),
       filename: `Quotation_${quotationData.billNumber.replace(/\s+/g, '_')}.pdf`,
-    }).catch((err) => {
-      console.warn('[quotation-pdf] Server PDF failed, using print dialog', err);
-      generateQuotationPDF(quotationData, 'print');
+    }).catch(() => {
+      /* errors surfaced via toast in downloadDocumentPdf */
     });
     return;
   }
