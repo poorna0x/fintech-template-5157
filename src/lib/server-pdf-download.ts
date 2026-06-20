@@ -1,6 +1,7 @@
 import { toast } from 'sonner';
 
 const PDF_ENDPOINT = '/.netlify/functions/generate-pdf';
+const PDF_REQUEST_TIMEOUT_MS = 55_000;
 
 function sanitizeFilename(raw: string): string {
   const base = raw
@@ -61,6 +62,7 @@ async function downloadViaServer(html: string, filename: string): Promise<void> 
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ html, filename }),
+    signal: AbortSignal.timeout(PDF_REQUEST_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -83,55 +85,8 @@ async function downloadViaServer(html: string, filename: string): Promise<void> 
   triggerFileDownload(buffer, filename);
 }
 
-/** Client-side fallback when the Netlify function is unavailable. */
-async function downloadViaBrowser(html: string, filename: string): Promise<void> {
-  const iframe = document.createElement('iframe');
-  iframe.setAttribute('aria-hidden', 'true');
-  iframe.style.cssText =
-    'position:fixed;left:-10000px;top:0;width:210mm;height:297mm;border:0;visibility:hidden';
-  document.body.appendChild(iframe);
-
-  const doc = iframe.contentDocument;
-  if (!doc) {
-    iframe.remove();
-    throw new Error('Could not prepare document for PDF export');
-  }
-
-  doc.open();
-  doc.write(html);
-  doc.close();
-
-  await new Promise<void>((resolve) => {
-    iframe.onload = () => resolve();
-    setTimeout(resolve, 1200);
-  });
-
-  try {
-    const html2pdf = (await import('html2pdf.js')).default;
-    await html2pdf()
-      .set({
-        margin: [0, 0, 0, 0],
-        filename,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: {
-          scale: 2,
-          useCORS: true,
-          allowTaint: true,
-          backgroundColor: '#ffffff',
-          logging: false,
-        },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-      })
-      .from(doc.body)
-      .save();
-  } finally {
-    iframe.remove();
-  }
-}
-
 /**
- * Download a PDF file. Tries the Netlify Puppeteer function first, then a browser fallback.
- * Never opens the print dialog.
+ * Download a PDF via the Netlify Puppeteer function (same layout as Generate / print).
  */
 export async function downloadDocumentPdf(options: DownloadDocumentPdfOptions): Promise<void> {
   const html = withAbsoluteAssetUrls(options.html, options.origin);
@@ -139,21 +94,13 @@ export async function downloadDocumentPdf(options: DownloadDocumentPdfOptions): 
   const toastId = toast.loading('Generating PDF…');
 
   try {
-    try {
-      await downloadViaServer(html, filename);
-      toast.success('PDF downloaded', { id: toastId });
-      return;
-    } catch (serverError) {
-      console.warn('[pdf-download] Server PDF failed, trying browser fallback', serverError);
-      toast.loading('Server busy — generating PDF in browser…', { id: toastId });
-      await downloadViaBrowser(html, filename);
-      toast.success('PDF downloaded', { id: toastId });
-    }
+    await downloadViaServer(html, filename);
+    toast.success('PDF downloaded', { id: toastId });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'PDF generation failed';
     toast.error('Could not download PDF', {
       id: toastId,
-      description: message,
+      description: `${message}. Use Generate for print preview, or retry in a moment.`,
     });
     throw error;
   }

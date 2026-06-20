@@ -100,6 +100,7 @@ async function renderHtmlToPdf(html) {
       waitUntil: ['load', 'networkidle0'],
       timeout: 45000,
     });
+    await page.evaluate(() => document.fonts.ready);
     await page.emulateMediaType('print');
 
     const pdfBuffer = await page.pdf({
