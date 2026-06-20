@@ -104,319 +104,7 @@ export function generateBillPDF(billData: PDFBillData, action: 'print' | 'pdf' =
     console.log('Bill content generated:', billContent.substring(0, 200) + '...');
     
     // Write content to new window
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Bill - ${sanitizeForTemplate(billData.billNumber)}</title>
-        <style>
-          @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
-          
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
-      
-        body {
-            font-family: 'Poppins', sans-serif;
-            line-height: 1.4;
-            color: #333;
-            background: white;
-            margin: 0;
-            padding: 15mm;
-            font-size: 11px;
-        }
-      
-      .bill-container {
-            width: 100%;
-            max-width: 100%;
-            margin: 0;
-            background: white;
-            padding: 0;
-            border: 2px solid #000;
-            box-sizing: border-box;
-          }
-          
-          .header {
-            text-align: center;
-            margin-bottom: 15px;
-            border-bottom: 2px solid #000000;
-            padding: 5px 0 8px 0;
-          }
-          
-          .logo-container {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 15px;
-          }
-          
-          .full-logo {
-            max-width: 200px;
-            height: auto;
-            max-height: 60px;
-          }
-          
-          .company-details {
-            font-size: 14px;
-            color: #666;
-            line-height: 1.4;
-          }
-          
-          .bill-info {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 15px;
-            gap: 15px;
-            padding: 0 5px;
-          }
-          
-          .bill-to, .bill-details {
-            flex: 1;
-          }
-          
-          .section-title {
-            font-size: 18px;
-            font-weight: bold;
-            color: #000000;
-            margin-bottom: 15px;
-            border-bottom: 2px solid #e5e7eb;
-            padding-bottom: 5px;
-          }
-          
-          .customer-info, .bill-meta {
-            font-size: 14px;
-            line-height: 1.5;
-          }
-          
-          .items-table {
-            width: calc(100% - 30px);
-            border-collapse: collapse;
-            margin: 0 15px 15px 15px;
-            font-size: 10px;
-            table-layout: fixed;
-          }
-          
-          .items-table th {
-            background-color: #f8fafc;
-            color: #374151;
-            font-weight: bold;
-            padding: 8px 4px;
-            text-align: center;
-            border: 1px solid #d1d5db;
-          }
-          
-          .items-table th:nth-child(1) { width: 50%; }
-          .items-table th:nth-child(2) { width: 15%; }
-          .items-table th:nth-child(3) { width: 20%; }
-          .items-table th:nth-child(4) { width: 15%; }
-          
-          .items-table td {
-            padding: 8px 4px;
-            border: 1px solid #d1d5db;
-            vertical-align: middle;
-            text-align: center;
-            word-wrap: break-word;
-            overflow: hidden;
-          }
-          
-          .items-table tr:nth-child(even) {
-            background-color: #f9fafb;
-          }
-          
-          .text-right {
-            text-align: right;
-          }
-          
-          .text-center {
-            text-align: center;
-          }
-          
-          .summary {
-            margin: 15px 15px 0 15px;
-            text-align: right;
-            width: calc(100% - 30px);
-            box-sizing: border-box;
-          }
-          
-          .summary-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 8px 0;
-            border-bottom: 1px solid #e5e7eb;
-          }
-          
-          .summary-row.total {
-            font-size: 18px;
-            font-weight: bold;
-            color: #000000;
-            border-top: 2px solid #000000;
-            border-bottom: 2px solid #000000;
-            margin-top: 10px;
-            padding: 5px 0;
-          }
-          
-          .notes-section {
-            margin: 15px 5px 0 5px;
-            padding-top: 10px;
-            border-top: 1px solid #e5e7eb;
-          }
-          
-          .notes-title {
-            font-size: 16px;
-            font-weight: bold;
-            color: #374151;
-            margin-bottom: 10px;
-          }
-          
-          .notes-content {
-            font-size: 14px;
-            line-height: 1.5;
-            color: #6b7280;
-          }
-          
-          .terms-list {
-            margin: 0;
-            padding-left: 5px;
-          }
-          
-          .terms-list li {
-            margin-bottom: 8px;
-            list-style-type: disc;
-          }
-          
-          .signatures {
-            display: flex;
-            justify-content: center;
-            margin: 30px 15px 20px 15px;
-            padding-top: 20px;
-            border-top: 1px solid #e5e7eb;
-          }
-          
-          .signature-box {
-            text-align: center;
-            padding-top: 15px;
-          }
-          
-          .signature-label {
-            font-weight: bold;
-            color: #000000;
-            margin-bottom: 5px;
-            font-size: 14px;
-          }
-          
-          .signature-seal {
-            width: 120px;
-            height: 120px;
-            margin: 20px auto 10px auto;
-            display: block;
-          }
-          
-          @media (max-width: 768px) {
-            .signature-seal {
-              width: 80px;
-              height: 80px;
-              margin: 15px auto 8px auto;
-            }
-            
-            .signature-label {
-              font-size: 12px;
-            }
-            
-            .signature-date {
-              font-size: 10px;
-            }
-          }
-          
-          .signature-date {
-            font-size: 12px;
-            color: #6b7280;
-          }
-          
-          .footer {
-            margin: 15px 15px 0 15px;
-            padding: 10px 0;
-            border-top: 1px solid #e5e7eb;
-            text-align: center;
-            font-size: 10px;
-            color: #6b7280;
-        }
-      
-      @media print {
-            * {
-              -webkit-print-color-adjust: exact !important;
-              color-adjust: exact !important;
-            }
-            
-        body {
-          margin: 0 !important;
-              padding: 15mm !important;
-              font-size: 12pt !important;
-              line-height: 1.4 !important;
-        }
-        
-        .bill-container {
-          width: 100% !important;
-          max-width: 100% !important;
-          margin: 0 !important;
-          padding: 20px 1px 20px 1px !important;
-              border: none !important;
-              box-shadow: none !important;
-              background: white !important;
-              box-sizing: border-box !important;
-              border-radius: 0 !important;
-            }
-            
-            @page {
-              size: A4 !important;
-              margin: 20mm 8mm 20mm 8mm !important;
-              border: 2px solid #000000 !important;
-              border-radius: 12px !important;
-            }
-            
-            @page :first {
-              margin-top: 20mm !important;
-              border: 2px solid #000000 !important;
-              border-radius: 12px !important;
-            }
-            
-            @page :left {
-              margin-left: 8mm !important;
-              margin-right: 5mm !important;
-              margin-top: 20mm !important;
-              border: 2px solid #000000 !important;
-              border-radius: 12px !important;
-            }
-            
-            @page :right {
-              margin-left: 5mm !important;
-              margin-right: 8mm !important;
-              margin-top: 20mm !important;
-              border: 2px solid #000000 !important;
-              border-radius: 12px !important;
-            }
-            
-            .page-break {
-              page-break-before: always !important;
-              margin-top: 20px !important;
-            }
-            
-            .new-page-content {
-              margin-top: 0 !important;
-            }
-            
-            .bill-container:not(:first-child) {
-              padding-top: 20px !important;
-            }
-          }
-        </style>
-      </head>
-      <body>
-        ${billContent}
-      </body>
-      </html>
-    `);
+    printWindow.document.write(buildBillDocumentHtml(billData));
     
     printWindow.document.close();
     
@@ -1197,482 +885,326 @@ function createBillContent(data: PDFBillData): string {
   `;
 }
 
-export function generateBillHTML(data: PDFBillData): string {
-  const brand = resolvePdfDocumentBrand(data);
-  const companyDetails = renderPdfCompanyDetailsHtml(data.company, brand, {
-    hideGstInHeader: data.hideGstInHeader,
-  });
-  const signatureBlock = renderPdfSignatureHtml(brand, data.billDate);
-  const footerBlock = renderPdfFooterHtml(brand, data.company);
-
+function getBillDocumentStyles(): string {
   return `
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Bill - ${sanitizeForTemplate(data.billNumber)}</title>
-      <style>
-        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
-        
-        * {
-          margin: 0;
-          padding: 0;
-          box-sizing: border-box;
-        }
-        
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      
         body {
-          font-family: 'Poppins', sans-serif;
-          line-height: 1.4;
-          color: #333;
-          background: white;
-          margin: 0;
-          padding: 0;
-          width: 210mm; /* A4 width */
-          min-height: 297mm; /* A4 height */
-          max-width: 210mm; /* Fixed A4 width */
-          padding: 15mm 12mm 15mm 12mm; /* Reduced margins for more content space */
-          box-sizing: border-box;
-          overflow: visible;
-          font-size: 11px; /* Smaller font for better fit */
+            font-family: 'Poppins', sans-serif;
+            line-height: 1.4;
+            color: #333;
+            background: white;
+            margin: 0;
+            padding: 15mm;
+            font-size: 11px;
         }
-        
-        .bill-container {
-          width: calc(100% - 4px); /* Account for border width */
-          max-width: calc(100% - 4px);
-          margin: 0;
-          background: white;
-          padding: 0;
-          overflow: hidden;
-          border: 2px solid #000;
-          min-height: calc(297mm - 30mm); /* A4 height minus margins */
-          box-sizing: border-box;
-        }
-        
-        .header {
-          text-align: center;
-          margin-bottom: 15px;
-          border-bottom: 2px solid #000000;
-          padding: 5px 0 8px 0;
-        }
-        
-        .logo-container {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          margin-bottom: 15px;
-        }
-        
-        .full-logo {
-          max-width: 200px;
-          height: auto;
-          max-height: 60px;
-        }
-        
-        .company-details {
-          font-size: 14px;
-          color: #666;
-          line-height: 1.4;
-        }
-        
-        .bill-info {
-          display: flex;
-          justify-content: space-between;
-          margin-bottom: 15px;
-          gap: 15px;
-          padding: 0 5px;
-        }
-        
-        .bill-to, .bill-details {
-          flex: 1;
-        }
-        
-        .section-title {
-          font-size: 18px;
-          font-weight: bold;
-          color: #000000;
-          margin-bottom: 15px;
-          border-bottom: 2px solid #e5e7eb;
-          padding-bottom: 5px;
-        }
-        
-        .customer-info, .bill-meta {
-          font-size: 14px;
-          line-height: 1.5;
-        }
-        
-        .items-table {
-          width: calc(100% - 30px); /* Account for left and right margins */
-          border-collapse: collapse;
-          margin: 0 15px 15px 15px;
-          font-size: 10px;
-          table-layout: fixed; /* Fixed table layout for better control */
-        }
-        
-        .items-table th {
-          background-color: #f8fafc;
-          color: #374151;
-          font-weight: bold;
-          padding: 8px 4px;
-          text-align: center;
-          border: 1px solid #d1d5db;
-        }
-        
-        .items-table th:nth-child(1) { width: 50%; } /* Description */
-        .items-table th:nth-child(2) { width: 15%; } /* Qty */
-        .items-table th:nth-child(3) { width: 20%; } /* Unit Price */
-        .items-table th:nth-child(4) { width: 15%; } /* Total */
-        
-        .items-table td {
-          padding: 8px 4px;
-          border: 1px solid #d1d5db;
-          vertical-align: middle;
-          text-align: center;
-          word-wrap: break-word;
-          overflow: hidden;
-        }
-        
-        .items-table tr:nth-child(even) {
-          background-color: #f9fafb;
-        }
-        
-        .text-right {
-          text-align: right;
-        }
-        
-        .text-center {
-          text-align: center;
-        }
-        
-        .summary {
-          margin: 15px 15px 0 15px;
-          text-align: right;
-          width: calc(100% - 30px);
-          box-sizing: border-box;
-        }
-        
-        .summary-row {
-          display: flex;
-          justify-content: space-between;
-          padding: 8px 0;
-          border-bottom: 1px solid #e5e7eb;
-        }
-        
-        .summary-row.total {
-          font-size: 18px;
-          font-weight: bold;
-          color: #000000;
-          border-top: 2px solid #000000;
-          border-bottom: 2px solid #000000;
-          margin-top: 10px;
-          padding: 5px 0;
-        }
-        
-        .notes-section {
-          margin: 15px 5px 0 5px;
-          padding-top: 10px;
-          border-top: 1px solid #e5e7eb;
-        }
-        
-        .notes-title {
-          font-size: 16px;
-          font-weight: bold;
-          color: #374151;
-          margin-bottom: 10px;
-        }
-        
-        .notes-content {
-          font-size: 14px;
-          line-height: 1.5;
-          color: #6b7280;
-        }
-        
-        .terms-list {
-          margin: 0;
-          padding-left: 20px;
-          padding-right: 0;
-          width: 100%;
-          box-sizing: border-box;
-        }
-        
-        .terms-list li {
-          margin-bottom: 8px;
-          list-style-type: disc;
-          padding-right: 0;
-          word-wrap: break-word;
-          overflow-wrap: break-word;
-        }
-        
-        .signatures {
-          display: flex;
-          justify-content: center;
-          margin: 30px 15px 20px 15px;
-          padding-top: 20px;
-          border-top: 1px solid #e5e7eb;
-        }
-        
-        .signature-box {
-          text-align: center;
-          padding-top: 15px;
-        }
-        
-        .signature-label {
-          font-weight: bold;
-          color: #000000;
-          margin-bottom: 5px;
-          font-size: 14px;
-        }
-        
-        .signature-seal {
-          width: 120px;
-          height: 120px;
-          margin: 20px auto 10px auto;
-          display: block;
-        }
-        
-        @media (max-width: 768px) {
-          .signature-seal {
-            width: 80px;
-            height: 80px;
-            margin: 15px auto 8px auto;
-          }
-          
-          .signature-label {
-            font-size: 12px;
-          }
-          
-          .signature-date {
-            font-size: 10px;
-          }
-        }
-        
-        .signature-date {
-          font-size: 12px;
-          color: #6b7280;
-        }
-        
-        .footer {
-          margin: 15px 15px 0 15px;
-          padding: 10px 0;
-          border-top: 1px solid #e5e7eb;
-          text-align: center;
-          font-size: 10px;
-          color: #6b7280;
-        }
-        
-        .status-badge {
-          display: inline-block;
-          padding: 4px 12px;
-          border-radius: 20px;
-          font-size: 12px;
-          font-weight: bold;
-          text-transform: uppercase;
-        }
-        
-        .status-pending {
-          background-color: #fef3c7;
-          color: #d97706;
-        }
-        
-        .status-paid {
-          background-color: #d1fae5;
-          color: #059669;
-        }
-        
-        .status-overdue {
-          background-color: #fee2e2;
-          color: #dc2626;
-        }
-        
-        @media print {
-          * {
-            -webkit-print-color-adjust: exact !important;
-            color-adjust: exact !important;
-          }
-          
-          body {
-            width: 210mm !important;
-            min-height: 297mm !important;
-            max-width: 210mm !important;
-            padding: 0 !important;
-            margin: 0 !important;
-            font-size: 12pt !important;
-            line-height: 1.4 !important;
-          }
-          
-          .bill-container {
-            width: 100% !important;
-            max-width: 100% !important;
-            margin: 0 !important;
-            padding: 20px 1px 20px 1px !important;
-            border: none !important;
-            box-shadow: none !important;
-            page-break-inside: avoid !important;
-            border-radius: 0 !important;
-          }
-          
-          @page {
-            size: A4 !important;
-            margin: 20mm 8mm 20mm 8mm !important;
-            border: 2px solid #000000 !important;
-            border-radius: 12px !important;
-          }
-          
-          @page :first {
-            margin-top: 20mm !important;
-            border: 2px solid #000000 !important;
-            border-radius: 12px !important;
-          }
-          
-          @page :left {
-            margin-left: 8mm !important;
-            margin-right: 5mm !important;
-            margin-top: 20mm !important;
-            border: 2px solid #000000 !important;
-            border-radius: 12px !important;
-          }
-          
-          @page :right {
-            margin-left: 5mm !important;
-            margin-right: 8mm !important;
-            margin-top: 20mm !important;
-            border: 2px solid #000000 !important;
-            border-radius: 12px !important;
+      
+      .bill-container {
+            width: 100%;
+            max-width: 100%;
+            margin: 0;
+            background: white;
+            padding: 0;
+            border: 2px solid #000;
+            box-sizing: border-box;
           }
           
           .header {
-            page-break-after: avoid !important;
-            margin-top: 0 !important;
-            padding-top: 5px !important;
+            text-align: center;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #000000;
+            padding: 5px 0 8px 0;
+          }
+          
+          .logo-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 15px;
+          }
+          
+          .full-logo {
+            max-width: 200px;
+            height: auto;
+            max-height: 60px;
+          }
+          
+          .company-details {
+            font-size: 14px;
+            color: #666;
+            line-height: 1.4;
+          }
+          
+          .bill-info {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 15px;
+            gap: 15px;
+            padding: 0 5px;
+          }
+          
+          .bill-to, .bill-details {
+            flex: 1;
+          }
+          
+          .section-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #000000;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #e5e7eb;
+            padding-bottom: 5px;
+          }
+          
+          .customer-info, .bill-meta {
+            font-size: 14px;
+            line-height: 1.5;
           }
           
           .items-table {
-            page-break-inside: auto !important;
+            width: calc(100% - 30px);
+            border-collapse: collapse;
+            margin: 0 15px 15px 15px;
+            font-size: 10px;
+            table-layout: fixed;
+          }
+          
+          .items-table th {
+            background-color: #f8fafc;
+            color: #374151;
+            font-weight: bold;
+            padding: 8px 4px;
+            text-align: center;
+            border: 1px solid #d1d5db;
+          }
+          
+          .items-table th:nth-child(1) { width: 50%; }
+          .items-table th:nth-child(2) { width: 15%; }
+          .items-table th:nth-child(3) { width: 20%; }
+          .items-table th:nth-child(4) { width: 15%; }
+          
+          .items-table td {
+            padding: 8px 4px;
+            border: 1px solid #d1d5db;
+            vertical-align: middle;
+            text-align: center;
+            word-wrap: break-word;
+            overflow: hidden;
+          }
+          
+          .items-table tr:nth-child(even) {
+            background-color: #f9fafb;
+          }
+          
+          .text-right {
+            text-align: right;
+          }
+          
+          .text-center {
+            text-align: center;
           }
           
           .summary {
-            page-break-before: avoid !important;
-            margin-top: 20px !important;
+            margin: 15px 15px 0 15px;
+            text-align: right;
+            width: calc(100% - 30px);
+            box-sizing: border-box;
           }
           
-          .page-break {
-            page-break-before: always !important;
-            margin-top: 20px !important;
+          .summary-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #e5e7eb;
           }
           
-          .new-page-content {
-            margin-top: 0 !important;
+          .summary-row.total {
+            font-size: 18px;
+            font-weight: bold;
+            color: #000000;
+            border-top: 2px solid #000000;
+            border-bottom: 2px solid #000000;
+            margin-top: 10px;
+            padding: 5px 0;
           }
           
-          .bill-container:not(:first-child) {
-            padding-top: 20px !important;
+          .notes-section {
+            margin: 15px 5px 0 5px;
+            padding-top: 10px;
+            border-top: 1px solid #e5e7eb;
           }
+          
+          .notes-title {
+            font-size: 16px;
+            font-weight: bold;
+            color: #374151;
+            margin-bottom: 10px;
+          }
+          
+          .notes-content {
+            font-size: 14px;
+            line-height: 1.5;
+            color: #6b7280;
+          }
+          
+          .terms-list {
+            margin: 0;
+            padding-left: 5px;
+          }
+          
+          .terms-list li {
+            margin-bottom: 8px;
+            list-style-type: disc;
+          }
+          
+          .signatures {
+            display: flex;
+            justify-content: center;
+            margin: 30px 15px 20px 15px;
+            padding-top: 20px;
+            border-top: 1px solid #e5e7eb;
+          }
+          
+          .signature-box {
+            text-align: center;
+            padding-top: 15px;
+          }
+          
+          .signature-label {
+            font-weight: bold;
+            color: #000000;
+            margin-bottom: 5px;
+            font-size: 14px;
+          }
+          
+          .signature-seal {
+            width: 120px;
+            height: 120px;
+            margin: 20px auto 10px auto;
+            display: block;
+          }
+          
+          @media (max-width: 768px) {
+            .signature-seal {
+              width: 80px;
+              height: 80px;
+              margin: 15px auto 8px auto;
+            }
+            
+            .signature-label {
+              font-size: 12px;
+            }
+            
+            .signature-date {
+              font-size: 10px;
+            }
+          }
+          
+          .signature-date {
+            font-size: 12px;
+            color: #6b7280;
+          }
+          
+          .footer {
+            margin: 15px 15px 0 15px;
+            padding: 10px 0;
+            border-top: 1px solid #e5e7eb;
+            text-align: center;
+            font-size: 10px;
+            color: #6b7280;
         }
-      </style>
-    </head>
-    <body>
-      <div class="bill-container">
-        <!-- Header -->
-        <div class="header">
-          <div class="logo-container">
-            ${renderPdfLogoHtml(resolvePdfDocumentBrand(data))}
-          </div>
-          <div class="company-details">
-            ${companyDetails}
-          </div>
-        </div>
+      
+      @media print {
+            * {
+              -webkit-print-color-adjust: exact !important;
+              color-adjust: exact !important;
+            }
+            
+        body {
+          margin: 0 !important;
+              padding: 15mm !important;
+              font-size: 12pt !important;
+              line-height: 1.4 !important;
+        }
         
-        <!-- Bill Information -->
-        <div class="bill-info">
-          <div class="bill-to">
-            <div class="section-title">Bill To:</div>
-            <div class="customer-info">
-              <div><strong>${sanitizeForTemplate(data.customer.name)}</strong></div>
-              ${data.customer.address ? `<div>${sanitizeForTemplate(data.customer.address)}</div>` : ''}
-              ${(data.customer.city || data.customer.state || data.customer.pincode) ? `<div>${sanitizeForTemplate(data.customer.city)}, ${sanitizeForTemplate(data.customer.state)} - ${sanitizeForTemplate(data.customer.pincode)}</div>` : ''}
-              ${data.customer.phone ? `<div>Phone: ${sanitizeForTemplate(data.customer.phone)}</div>` : ''}
-              ${data.customer.email ? `<div>Email: ${sanitizeForTemplate(data.customer.email)}</div>` : ''}
-              ${data.customer.gstNumber ? `<div>GST: ${sanitizeForTemplate(data.customer.gstNumber)}</div>` : ''}
-            </div>
-          </div>
-          
-          <div class="bill-details">
-            <div class="section-title">Bill Details:</div>
-            <div class="bill-meta">
-              <div><strong>Bill Number:</strong> ${sanitizeForTemplate(data.billNumber)}</div>
-              <div><strong>Bill Date:</strong> ${new Date(data.billDate).toLocaleDateString()}</div>
-            </div>
-          </div>
-        </div>
-        
-        <!-- Items Table -->
-        <table class="items-table">
-          <thead>
-            <tr>
-              <th>Description</th>
-              <th>Qty</th>
-              <th>Unit Price</th>
-              <th>Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${data.items.map(item => `
-              <tr>
-                <td>${sanitizeForTemplate(item.description)}</td>
-                <td>${item.quantity}</td>
-                <td>₹${item.unitPrice.toLocaleString()}</td>
-                <td>₹${item.total.toLocaleString()}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-        
-        <!-- Summary -->
-        <div class="summary">
-          <div class="summary-row">
-            <span>Subtotal:</span>
-            <span>₹${data.subtotal.toLocaleString()}</span>
-          </div>
-          ${data.serviceCharge && data.serviceCharge > 0 ? `
-            <div class="summary-row">
-              <span>Service Charge:</span>
-              <span>₹${data.serviceCharge.toLocaleString()}</span>
-            </div>
-          ` : ''}
-          <div class="summary-row total">
-            <span>Total Amount:</span>
-            <span>₹${data.totalAmount.toLocaleString()}</span>
-          </div>
-        </div>
-        
-        <!-- Notes and Terms -->
-        ${data.notes || data.terms ? `
-          <div class="notes-section">
-            ${data.notes ? `
-              <div class="notes-title">Additional Info:</div>
-              <div class="notes-content">${sanitizeForTemplate(data.notes)}</div>
-            ` : ''}
-            ${data.terms ? `
-              <div class="notes-title" style="margin-top: 20px;">Terms & Conditions:</div>
-              <div class="notes-content">
-                <ul class="terms-list">
-                  ${data.terms.split('\n').filter(line => line.trim()).map(term => {
-                    const cleanTerm = term.replace(/^\d+\.\s*/, ''); // Remove number if present
-                    return `<li>${sanitizeForTemplate(cleanTerm)}</li>`;
-                  }).join('')}
-                </ul>
-              </div>
-            ` : ''}
-          </div>
-        ` : ''}
-        
-        <!-- Signatures -->
-        ${signatureBlock}
-        
-        <!-- Footer -->
-        ${footerBlock}
-      </div>
-    </body>
-    </html>
+        .bill-container {
+          width: 100% !important;
+          max-width: 100% !important;
+          margin: 0 !important;
+          padding: 20px 1px 20px 1px !important;
+              border: none !important;
+              box-shadow: none !important;
+              background: white !important;
+              box-sizing: border-box !important;
+              border-radius: 0 !important;
+            }
+            
+            @page {
+              size: A4 !important;
+              margin: 20mm 8mm 20mm 8mm !important;
+              border: 2px solid #000000 !important;
+              border-radius: 12px !important;
+            }
+            
+            @page :first {
+              margin-top: 20mm !important;
+              border: 2px solid #000000 !important;
+              border-radius: 12px !important;
+            }
+            
+            @page :left {
+              margin-left: 8mm !important;
+              margin-right: 5mm !important;
+              margin-top: 20mm !important;
+              border: 2px solid #000000 !important;
+              border-radius: 12px !important;
+            }
+            
+            @page :right {
+              margin-left: 5mm !important;
+              margin-right: 8mm !important;
+              margin-top: 20mm !important;
+              border: 2px solid #000000 !important;
+              border-radius: 12px !important;
+            }
+            
+            .page-break {
+              page-break-before: always !important;
+              margin-top: 20px !important;
+            }
+            
+            .new-page-content {
+              margin-top: 0 !important;
+            }
+            
+            .bill-container:not(:first-child) {
+              padding-top: 20px !important;
+            }
+          }
   `;
+}
+
+function buildBillDocumentHtml(data: PDFBillData): string {
+  const content = createBillContent(data);
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <title>Bill - ${sanitizeForTemplate(data.billNumber)}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+    ${getBillDocumentStyles()}
+  </style>
+</head>
+<body>
+  ${content}
+</body>
+</html>`;
+}
+
+export function generateBillHTML(data: PDFBillData): string {
+  return buildBillDocumentHtml(data);
 }

@@ -184,402 +184,7 @@ export function generateTaxInvoicePDF(billData: PDFTaxInvoiceData, action: 'prin
     const invoiceContent = createTaxInvoiceContent(billData);
     
     // Write content to new window
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Tax Invoice - ${sanitizeForTemplate(billData.billNumber)}</title>
-        <style>
-          @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
-          
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
-      
-        body {
-            font-family: 'Poppins', sans-serif;
-            line-height: 1.4;
-            color: #333;
-            background: white;
-            margin: 0;
-            padding: 15mm;
-            font-size: 11px;
-        }
-      
-      .bill-container {
-            width: 100%;
-            max-width: 100%;
-            margin: 0;
-            background: white;
-            padding: 0;
-            border: 2px solid #000;
-            box-sizing: border-box;
-            page-break-inside: avoid;
-            page-break-after: avoid;
-            position: relative;
-          }
-          
-          .header {
-            text-align: center;
-            margin-bottom: 15px;
-            border-bottom: 2px solid #000000;
-            padding: 5px 0 8px 0;
-          }
-          
-          .logo-container {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 15px;
-          }
-          
-          .full-logo {
-            max-width: 200px;
-            height: auto;
-            max-height: 60px;
-          }
-          
-          .company-details {
-            font-size: 14px;
-            color: #666;
-            line-height: 1.4;
-          }
-          
-          .bill-info {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 15px;
-            gap: 15px;
-            padding: 0 5px;
-          }
-          
-          .bill-to, .bill-details {
-            flex: 1;
-          }
-          
-          .section-title {
-            font-size: 18px;
-            font-weight: bold;
-            color: #000000;
-            margin-bottom: 15px;
-            border-bottom: 2px solid #e5e7eb;
-            padding-bottom: 5px;
-          }
-          
-          .customer-info, .bill-meta {
-            font-size: 14px;
-            line-height: 1.5;
-          }
-          
-          .items-table {
-            width: calc(100% - 30px);
-            border-collapse: collapse;
-            margin: 0 15px 15px 15px;
-            font-size: 9px;
-            table-layout: fixed;
-          }
-          
-          .items-table th {
-            background-color: #f8fafc;
-            color: #374151;
-            font-weight: bold;
-            padding: 8px 4px;
-            text-align: center;
-            border: 1px solid #d1d5db;
-          }
-          
-          .items-table th:nth-child(1) { width: 18%; } /* Description */
-          .items-table th:nth-child(2) { width: 12%; } /* HSN/SAC */
-          .items-table th:nth-child(3) { width: 7%; } /* Qty */
-          .items-table th:nth-child(4) { width: 11%; } /* Unit Price */
-          .items-table th:nth-child(5) { width: 11%; } /* Base Amount */
-          .items-table th:nth-child(6) { width: 11%; } /* Taxable Value */
-          .items-table th:nth-child(7) { width: 7%; } /* GST Rate */
-          .items-table th:nth-child(8) { width: 11%; } /* GST Amount */
-          .items-table th:nth-child(9) { width: 12%; } /* Total */
-          
-          .items-table td {
-            padding: 8px 4px;
-            border: 1px solid #d1d5db;
-            vertical-align: middle;
-            text-align: center;
-            word-wrap: break-word;
-            overflow: hidden;
-          }
-          
-          .items-table tr:nth-child(even) {
-            background-color: #f9fafb;
-          }
-          
-          .text-right {
-            text-align: right;
-          }
-          
-          .text-center {
-            text-align: center;
-          }
-          
-          .summary {
-            margin: 15px 15px 0 15px;
-            text-align: right;
-            width: calc(100% - 30px);
-            box-sizing: border-box;
-          }
-          
-          .summary-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 8px 0;
-            border-bottom: 1px solid #e5e7eb;
-          }
-          
-          .summary-row.total {
-            font-size: 18px;
-            font-weight: bold;
-            color: #000000;
-            border-top: 2px solid #000000;
-            border-bottom: 2px solid #000000;
-            margin-top: 10px;
-            padding: 5px 0;
-          }
-          
-          .notes-section {
-            margin: 15px 5px 0 5px;
-            padding-top: 10px;
-            border-top: 1px solid #e5e7eb;
-          }
-          
-          .notes-title {
-            font-size: 16px;
-            font-weight: bold;
-            color: #374151;
-            margin-bottom: 10px;
-          }
-          
-          .notes-content {
-            font-size: 14px;
-            line-height: 1.5;
-            color: #6b7280;
-          }
-          
-          .terms-list {
-            margin: 0;
-            padding-left: 5px;
-          }
-          
-          .terms-list li {
-            margin-bottom: 8px;
-            list-style-type: disc;
-          }
-          
-          .signatures {
-            display: flex;
-            justify-content: center;
-            margin: 30px 15px 20px 15px;
-            padding-top: 20px;
-            border-top: 1px solid #e5e7eb;
-          }
-          
-          .signature-box {
-            text-align: center;
-            padding-top: 15px;
-          }
-          
-          .signature-label {
-            font-weight: bold;
-            color: #000000;
-            margin-bottom: 5px;
-            font-size: 14px;
-          }
-          
-          .signature-seal {
-            width: 120px;
-            height: 120px;
-            margin: 20px auto 10px auto;
-            display: block;
-          }
-          
-          /* Hide normal signature section when DSC is present */
-          .bill-container:has(.dsc-signature-section) .signatures {
-            display: none !important;
-          }
-          
-          @media (max-width: 768px) {
-            .signature-seal {
-              width: 80px;
-              height: 80px;
-              margin: 15px auto 8px auto;
-            }
-            
-            .signature-label {
-              font-size: 12px;
-            }
-            
-            .signature-date {
-              font-size: 10px;
-            }
-          }
-          
-          .signature-date {
-            font-size: 12px;
-            color: #6b7280;
-          }
-          
-          .dsc-signature-section {
-            width: 75mm;
-            max-width: 75mm;
-            text-align: right;
-            margin-left: auto;
-          }
-          
-          .dsc-signature-box {
-            border: 1px solid #d1d5db;
-            background-color: #fafafa;
-            margin-bottom: 10px;
-            border-radius: 2px;
-            box-sizing: border-box;
-          }
-          
-          .dsc-signature-placeholder {
-            display: none;
-          }
-          
-          .dsc-signature-info {
-            text-align: right;
-            font-size: 11px;
-            line-height: 1.4;
-            color: #374151;
-            border: none;
-            outline: none;
-            padding: 0;
-            margin: 0;
-          }
-          
-          .dsc-signature-label {
-            font-weight: 600;
-            color: #000000;
-            margin-bottom: 3px;
-            font-size: 12px;
-          }
-          
-          .dsc-name-designation {
-            font-weight: 500;
-            color: #1f2937;
-            margin-bottom: 2px;
-          }
-          
-          .dsc-company-name {
-            color: #4b5563;
-            margin-bottom: 5px;
-          }
-          
-          .dsc-signature-date {
-            color: #6b7280;
-            font-size: 10px;
-            margin-bottom: 3px;
-          }
-          
-          .dsc-applied-text {
-            font-size: 9px;
-            color: #6b7280;
-            font-style: italic;
-            margin-top: 5px;
-          }
-          
-          .footer {
-            margin: 15px 15px 0 15px;
-            padding: 10px 0 0 0;
-            border-top: 1px solid #e5e7eb;
-            text-align: center;
-            font-size: 10px;
-            color: #6b7280;
-            page-break-after: avoid;
-        }
-      
-      @media print {
-            * {
-              -webkit-print-color-adjust: exact !important;
-              color-adjust: exact !important;
-            }
-            
-        body {
-          margin: 0 !important;
-              padding: 15mm !important;
-              font-size: 12pt !important;
-              line-height: 1.4 !important;
-        }
-        
-        .bill-container {
-          width: 100% !important;
-          max-width: 100% !important;
-          margin: 0 !important;
-          padding: 20px 1px 20px 1px !important;
-              border: none !important;
-              box-shadow: none !important;
-              background: white !important;
-              box-sizing: border-box !important;
-              border-radius: 0 !important;
-              page-break-inside: avoid !important;
-              page-break-after: avoid !important;
-            }
-            
-            .footer {
-              page-break-after: avoid !important;
-              margin-bottom: 0 !important;
-              padding-bottom: 0 !important;
-            }
-            
-            @page {
-              size: A4 !important;
-              margin: 20mm 8mm 20mm 8mm !important;
-              border: 2px solid #000000 !important;
-              border-radius: 12px !important;
-            }
-            
-            @page :first {
-              margin-top: 20mm !important;
-              border: 2px solid #000000 !important;
-              border-radius: 12px !important;
-            }
-            
-            @page :left {
-              margin-left: 8mm !important;
-              margin-right: 5mm !important;
-              margin-top: 20mm !important;
-              border: 2px solid #000000 !important;
-              border-radius: 12px !important;
-            }
-            
-            @page :right {
-              margin-left: 5mm !important;
-              margin-right: 8mm !important;
-              margin-top: 20mm !important;
-              border: 2px solid #000000 !important;
-              border-radius: 12px !important;
-            }
-            
-            .page-break {
-              page-break-before: always !important;
-              margin-top: 20px !important;
-            }
-            
-            .new-page-content {
-              margin-top: 0 !important;
-            }
-            
-            .bill-container:not(:first-child) {
-              padding-top: 20px !important;
-            }
-          }
-        </style>
-      </head>
-      <body>
-        ${invoiceContent}
-      </body>
-      </html>
-    `);
+    printWindow.document.write(buildTaxInvoiceDocumentHtml(billData));
     printWindow.document.close();
     
     // Wait for content to load, then print
@@ -1070,269 +675,412 @@ function createTaxInvoiceContent(data: PDFTaxInvoiceData): string {
   `;
 }
 
-export function generateTaxInvoiceHTML(data: PDFTaxInvoiceData): string {
+function getTaxInvoiceDocumentStyles(): string {
   return `
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Tax Invoice - ${sanitizeForTemplate(data.billNumber)}</title>
-      <style>
-        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
-        
-        * {
-          margin: 0;
-          padding: 0;
-          box-sizing: border-box;
-        }
-        
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      
         body {
-          font-family: 'Poppins', sans-serif;
-          line-height: 1.4;
-          color: #333;
-          background: white;
-          margin: 0;
-          padding: 15mm;
-          font-size: 11px;
+            font-family: 'Poppins', sans-serif;
+            line-height: 1.4;
+            color: #333;
+            background: white;
+            margin: 0;
+            padding: 15mm;
+            font-size: 11px;
+        }
+      
+      .bill-container {
+            width: 100%;
+            max-width: 100%;
+            margin: 0;
+            background: white;
+            padding: 0;
+            border: 2px solid #000;
+            box-sizing: border-box;
+            page-break-inside: avoid;
+            page-break-after: avoid;
+            position: relative;
+          }
+          
+          .header {
+            text-align: center;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #000000;
+            padding: 5px 0 8px 0;
+          }
+          
+          .logo-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 15px;
+          }
+          
+          .full-logo {
+            max-width: 200px;
+            height: auto;
+            max-height: 60px;
+          }
+          
+          .company-details {
+            font-size: 14px;
+            color: #666;
+            line-height: 1.4;
+          }
+          
+          .bill-info {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 15px;
+            gap: 15px;
+            padding: 0 5px;
+          }
+          
+          .bill-to, .bill-details {
+            flex: 1;
+          }
+          
+          .section-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #000000;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #e5e7eb;
+            padding-bottom: 5px;
+          }
+          
+          .customer-info, .bill-meta {
+            font-size: 14px;
+            line-height: 1.5;
+          }
+          
+          .items-table {
+            width: calc(100% - 30px);
+            border-collapse: collapse;
+            margin: 0 15px 15px 15px;
+            font-size: 9px;
+            table-layout: fixed;
+          }
+          
+          .items-table th {
+            background-color: #f8fafc;
+            color: #374151;
+            font-weight: bold;
+            padding: 8px 4px;
+            text-align: center;
+            border: 1px solid #d1d5db;
+          }
+          
+          .items-table th:nth-child(1) { width: 18%; } /* Description */
+          .items-table th:nth-child(2) { width: 12%; } /* HSN/SAC */
+          .items-table th:nth-child(3) { width: 7%; } /* Qty */
+          .items-table th:nth-child(4) { width: 11%; } /* Unit Price */
+          .items-table th:nth-child(5) { width: 11%; } /* Base Amount */
+          .items-table th:nth-child(6) { width: 11%; } /* Taxable Value */
+          .items-table th:nth-child(7) { width: 7%; } /* GST Rate */
+          .items-table th:nth-child(8) { width: 11%; } /* GST Amount */
+          .items-table th:nth-child(9) { width: 12%; } /* Total */
+          
+          .items-table td {
+            padding: 8px 4px;
+            border: 1px solid #d1d5db;
+            vertical-align: middle;
+            text-align: center;
+            word-wrap: break-word;
+            overflow: hidden;
+          }
+          
+          .items-table tr:nth-child(even) {
+            background-color: #f9fafb;
+          }
+          
+          .text-right {
+            text-align: right;
+          }
+          
+          .text-center {
+            text-align: center;
+          }
+          
+          .summary {
+            margin: 15px 15px 0 15px;
+            text-align: right;
+            width: calc(100% - 30px);
+            box-sizing: border-box;
+          }
+          
+          .summary-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #e5e7eb;
+          }
+          
+          .summary-row.total {
+            font-size: 18px;
+            font-weight: bold;
+            color: #000000;
+            border-top: 2px solid #000000;
+            border-bottom: 2px solid #000000;
+            margin-top: 10px;
+            padding: 5px 0;
+          }
+          
+          .notes-section {
+            margin: 15px 5px 0 5px;
+            padding-top: 10px;
+            border-top: 1px solid #e5e7eb;
+          }
+          
+          .notes-title {
+            font-size: 16px;
+            font-weight: bold;
+            color: #374151;
+            margin-bottom: 10px;
+          }
+          
+          .notes-content {
+            font-size: 14px;
+            line-height: 1.5;
+            color: #6b7280;
+          }
+          
+          .terms-list {
+            margin: 0;
+            padding-left: 5px;
+          }
+          
+          .terms-list li {
+            margin-bottom: 8px;
+            list-style-type: disc;
+          }
+          
+          .signatures {
+            display: flex;
+            justify-content: center;
+            margin: 30px 15px 20px 15px;
+            padding-top: 20px;
+            border-top: 1px solid #e5e7eb;
+          }
+          
+          .signature-box {
+            text-align: center;
+            padding-top: 15px;
+          }
+          
+          .signature-label {
+            font-weight: bold;
+            color: #000000;
+            margin-bottom: 5px;
+            font-size: 14px;
+          }
+          
+          .signature-seal {
+            width: 120px;
+            height: 120px;
+            margin: 20px auto 10px auto;
+            display: block;
+          }
+          
+          /* Hide normal signature section when DSC is present */
+          .bill-container:has(.dsc-signature-section) .signatures {
+            display: none !important;
+          }
+          
+          @media (max-width: 768px) {
+            .signature-seal {
+              width: 80px;
+              height: 80px;
+              margin: 15px auto 8px auto;
+            }
+            
+            .signature-label {
+              font-size: 12px;
+            }
+            
+            .signature-date {
+              font-size: 10px;
+            }
+          }
+          
+          .signature-date {
+            font-size: 12px;
+            color: #6b7280;
+          }
+          
+          .dsc-signature-section {
+            width: 75mm;
+            max-width: 75mm;
+            text-align: right;
+            margin-left: auto;
+          }
+          
+          .dsc-signature-box {
+            border: 1px solid #d1d5db;
+            background-color: #fafafa;
+            margin-bottom: 10px;
+            border-radius: 2px;
+            box-sizing: border-box;
+          }
+          
+          .dsc-signature-placeholder {
+            display: none;
+          }
+          
+          .dsc-signature-info {
+            text-align: right;
+            font-size: 11px;
+            line-height: 1.4;
+            color: #374151;
+            border: none;
+            outline: none;
+            padding: 0;
+            margin: 0;
+          }
+          
+          .dsc-signature-label {
+            font-weight: 600;
+            color: #000000;
+            margin-bottom: 3px;
+            font-size: 12px;
+          }
+          
+          .dsc-name-designation {
+            font-weight: 500;
+            color: #1f2937;
+            margin-bottom: 2px;
+          }
+          
+          .dsc-company-name {
+            color: #4b5563;
+            margin-bottom: 5px;
+          }
+          
+          .dsc-signature-date {
+            color: #6b7280;
+            font-size: 10px;
+            margin-bottom: 3px;
+          }
+          
+          .dsc-applied-text {
+            font-size: 9px;
+            color: #6b7280;
+            font-style: italic;
+            margin-top: 5px;
+          }
+          
+          .footer {
+            margin: 15px 15px 0 15px;
+            padding: 10px 0 0 0;
+            border-top: 1px solid #e5e7eb;
+            text-align: center;
+            font-size: 10px;
+            color: #6b7280;
+            page-break-after: avoid;
+        }
+      
+      @media print {
+            * {
+              -webkit-print-color-adjust: exact !important;
+              color-adjust: exact !important;
+            }
+            
+        body {
+          margin: 0 !important;
+              padding: 15mm !important;
+              font-size: 12pt !important;
+              line-height: 1.4 !important;
         }
         
         .bill-container {
-          width: 100%;
-          max-width: 100%;
-          margin: 0;
-          background: white;
-          padding: 0;
-          border: 2px solid #000;
-          box-sizing: border-box;
-          position: relative;
-        }
-        
-        .header {
-          text-align: center;
-          margin-bottom: 15px;
-          border-bottom: 2px solid #000000;
-          padding: 5px 0 8px 0;
-        }
-        
-        .logo-container {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          margin-bottom: 15px;
-        }
-        
-        .full-logo {
-          max-width: 200px;
-          height: auto;
-          max-height: 60px;
-        }
-        
-        .company-details {
-          font-size: 14px;
-          color: #666;
-          line-height: 1.4;
-        }
-        
-        .bill-info {
-          display: flex;
-          justify-content: space-between;
-          margin-bottom: 15px;
-          gap: 15px;
-          padding: 0 5px;
-        }
-        
-        .bill-to, .bill-details {
-          flex: 1;
-        }
-        
-        .section-title {
-          font-size: 18px;
-          font-weight: bold;
-          color: #000000;
-          margin-bottom: 15px;
-          border-bottom: 2px solid #e5e7eb;
-          padding-bottom: 5px;
-        }
-        
-        .customer-info, .bill-meta {
-          font-size: 14px;
-          line-height: 1.5;
-        }
-        
-        .items-table {
-          width: calc(100% - 30px);
-          border-collapse: collapse;
-          margin: 0 15px 15px 15px;
-          font-size: 9px;
-          table-layout: fixed;
-        }
-        
-        .items-table th {
-          background-color: #f8fafc;
-          color: #374151;
-          font-weight: bold;
-          padding: 8px 4px;
-          text-align: center;
-          border: 1px solid #d1d5db;
-        }
-        
-        .items-table th:nth-child(1) { width: 18%; }
-        .items-table th:nth-child(2) { width: 12%; }
-        .items-table th:nth-child(3) { width: 7%; }
-        .items-table th:nth-child(4) { width: 11%; }
-        .items-table th:nth-child(5) { width: 11%; }
-        .items-table th:nth-child(6) { width: 11%; }
-        .items-table th:nth-child(7) { width: 7%; }
-        .items-table th:nth-child(8) { width: 11%; }
-        .items-table th:nth-child(9) { width: 12%; }
-        
-        .items-table td {
-          padding: 8px 4px;
-          border: 1px solid #d1d5db;
-          vertical-align: middle;
-          text-align: center;
-          word-wrap: break-word;
-          overflow: hidden;
-        }
-        
-        .items-table tr:nth-child(even) {
-          background-color: #f9fafb;
-        }
-        
-        .summary {
-          margin: 15px 15px 0 15px;
-          text-align: right;
-          width: calc(100% - 30px);
-          box-sizing: border-box;
-        }
-        
-        .summary-row {
-          display: flex;
-          justify-content: space-between;
-          padding: 8px 0;
-          border-bottom: 1px solid #e5e7eb;
-        }
-        
-        .summary-row.total {
-          font-size: 18px;
-          font-weight: bold;
-          color: #000000;
-          border-top: 2px solid #000000;
-          border-bottom: 2px solid #000000;
-          margin-top: 10px;
-          padding: 5px 0;
-        }
-        
-        .notes-section {
-          margin: 15px 5px 0 5px;
-          padding-top: 10px;
-          border-top: 1px solid #e5e7eb;
-        }
-        
-        .notes-title {
-          font-size: 16px;
-          font-weight: bold;
-          color: #374151;
-          margin-bottom: 10px;
-        }
-        
-        .notes-content {
-          font-size: 14px;
-          line-height: 1.5;
-          color: #6b7280;
-        }
-        
-        .terms-list {
-          margin: 0;
-          padding-left: 5px;
-        }
-        
-        .terms-list li {
-          margin-bottom: 8px;
-          list-style-type: disc;
-        }
-        
-        .signatures {
-          display: flex;
-          justify-content: center;
-          margin: 30px 15px 20px 15px;
-          padding-top: 20px;
-          border-top: 1px solid #e5e7eb;
-        }
-        
-        .signature-box {
-          text-align: center;
-          padding-top: 15px;
-        }
-        
-        .signature-label {
-          font-weight: bold;
-          color: #000000;
-          margin-bottom: 5px;
-          font-size: 14px;
-        }
-        
-        .signature-seal {
-          width: 120px;
-          height: 120px;
-          margin: 20px auto 10px auto;
-          display: block;
-        }
-        
-        .signature-date {
-          font-size: 12px;
-          color: #6b7280;
-        }
-        
-        .footer {
-          margin: 15px 15px 0 15px;
-          padding: 10px 0;
-          border-top: 1px solid #e5e7eb;
-          text-align: center;
-          font-size: 10px;
-          color: #6b7280;
-        }
-        
-        @media print {
-          * {
-            -webkit-print-color-adjust: exact !important;
-            color-adjust: exact !important;
+          width: 100% !important;
+          max-width: 100% !important;
+          margin: 0 !important;
+          padding: 20px 1px 20px 1px !important;
+              border: none !important;
+              box-shadow: none !important;
+              background: white !important;
+              box-sizing: border-box !important;
+              border-radius: 0 !important;
+              page-break-inside: avoid !important;
+              page-break-after: avoid !important;
+            }
+            
+            .footer {
+              page-break-after: avoid !important;
+              margin-bottom: 0 !important;
+              padding-bottom: 0 !important;
+            }
+            
+            @page {
+              size: A4 !important;
+              margin: 20mm 8mm 20mm 8mm !important;
+              border: 2px solid #000000 !important;
+              border-radius: 12px !important;
+            }
+            
+            @page :first {
+              margin-top: 20mm !important;
+              border: 2px solid #000000 !important;
+              border-radius: 12px !important;
+            }
+            
+            @page :left {
+              margin-left: 8mm !important;
+              margin-right: 5mm !important;
+              margin-top: 20mm !important;
+              border: 2px solid #000000 !important;
+              border-radius: 12px !important;
+            }
+            
+            @page :right {
+              margin-left: 5mm !important;
+              margin-right: 8mm !important;
+              margin-top: 20mm !important;
+              border: 2px solid #000000 !important;
+              border-radius: 12px !important;
+            }
+            
+            .page-break {
+              page-break-before: always !important;
+              margin-top: 20px !important;
+            }
+            
+            .new-page-content {
+              margin-top: 0 !important;
+            }
+            
+            .bill-container:not(:first-child) {
+              padding-top: 20px !important;
+            }
           }
-          
-          body {
-            margin: 0 !important;
-            padding: 15mm !important;
-            font-size: 12pt !important;
-            line-height: 1.4 !important;
-          }
-          
-          .bill-container {
-            width: 100% !important;
-            max-width: 100% !important;
-            margin: 0 !important;
-            padding: 20px 1px 20px 1px !important;
-            border: none !important;
-            box-shadow: none !important;
-            background: white !important;
-            box-sizing: border-box !important;
-            border-radius: 0 !important;
-          }
-          
-          @page {
-            size: A4 !important;
-            margin: 20mm 8mm 20mm 8mm !important;
-            border: 2px solid #000000 !important;
-            border-radius: 12px !important;
-          }
-        }
-      </style>
-    </head>
-    <body>
-      ${createTaxInvoiceContent(data)}
-    </body>
-    </html>
+        </style>
   `;
+}
+
+function buildTaxInvoiceDocumentHtml(data: PDFTaxInvoiceData): string {
+  const content = createTaxInvoiceContent(data);
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <title>Tax Invoice - ${sanitizeForTemplate(data.billNumber)}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+    ${getTaxInvoiceDocumentStyles()}
+  </style>
+</head>
+<body>
+  ${content}
+</body>
+</html>`;
+}
+
+export function generateTaxInvoiceHTML(data: PDFTaxInvoiceData): string {
+  return buildTaxInvoiceDocumentHtml(data);
 }
 
 // Generate combined PDF with multiple invoices

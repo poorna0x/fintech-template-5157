@@ -99,351 +99,7 @@ export function generateQuotationPDF(quotationData: PDFQuotationData, action: 'p
     console.log('Quotation content generated:', quotationContent.substring(0, 200) + '...');
     
     // Write content to new window
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Quotation - ${sanitizeForTemplate(quotationData.billNumber)}</title>
-        <style>
-          @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
-          
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
-      
-        body {
-            font-family: 'Poppins', sans-serif;
-            line-height: 1.4;
-            color: #333;
-            background: white;
-            margin: 0;
-            padding: 12mm 8mm;
-            font-size: 11px;
-        }
-      
-          .quotation-container {
-            width: 100%;
-            max-width: 100%;
-            margin: 0;
-            background: white;
-            padding: 0;
-            box-sizing: border-box;
-            box-decoration-break: clone;
-            -webkit-box-decoration-break: clone;
-          }
-          
-          .header {
-            text-align: center;
-            margin-bottom: 15px;
-            border-bottom: 2px solid #000000;
-            padding: 10px 0 8px 0;
-          }
-          
-          .logo-container {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 15px;
-          }
-          
-          .full-logo {
-            max-width: 200px;
-            height: auto;
-            max-height: 60px;
-          }
-          
-          .company-details {
-            font-size: 14px;
-            color: #666;
-            line-height: 1.4;
-          }
-          
-          .quotation-info {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 15px;
-            gap: 15px;
-            padding: 0 15px;
-          }
-          
-          .quotation-to, .quotation-details {
-            flex: 1;
-          }
-          
-          .section-title {
-            font-size: 18px;
-            font-weight: bold;
-            color: #000000;
-            margin-bottom: 15px;
-            border-bottom: 2px solid #e5e7eb;
-            padding-bottom: 5px;
-          }
-          
-          .customer-info, .quotation-meta {
-            font-size: 14px;
-            line-height: 1.5;
-          }
-          
-          .items-table {
-            width: calc(100% - 30px);
-            border-collapse: collapse;
-            margin: 0 15px 15px 15px;
-            font-size: 10px;
-            table-layout: fixed;
-          }
-          
-          .items-table th {
-            background-color: #f8fafc;
-            color: #374151;
-            font-weight: bold;
-            padding: 8px 4px;
-            text-align: center;
-            border: 1px solid #d1d5db;
-          }
-          
-          .items-table:not(.items-table-gst) th:nth-child(1) { width: 50%; }
-          .items-table:not(.items-table-gst) th:nth-child(2) { width: 15%; }
-          .items-table:not(.items-table-gst) th:nth-child(3) { width: 20%; }
-          .items-table:not(.items-table-gst) th:nth-child(4) { width: 15%; }
-
-          .items-table.items-table-gst {
-            font-size: 8px;
-            width: calc(100% - 16px);
-            margin: 0 8px 12px 8px;
-          }
-          .items-table.items-table-gst th:nth-child(1) { width: 16%; }
-          .items-table.items-table-gst th:nth-child(2) { width: 9%; }
-          .items-table.items-table-gst th:nth-child(3) { width: 6%; }
-          .items-table.items-table-gst th:nth-child(4) { width: 10%; }
-          .items-table.items-table-gst th:nth-child(5) { width: 10%; }
-          .items-table.items-table-gst th:nth-child(6) { width: 10%; }
-          .items-table.items-table-gst th:nth-child(7) { width: 7%; }
-          .items-table.items-table-gst th:nth-child(8) { width: 10%; }
-          .items-table.items-table-gst th:nth-child(9) { width: 12%; }
-          .items-table.items-table-gst td {
-            font-size: 8px;
-            padding: 5px 2px;
-            overflow: visible;
-            white-space: normal;
-          }
-          .items-table.items-table-gst td:nth-child(1) { text-align: left; }
-          .items-table.items-table-gst td.amount,
-          .items-table.items-table-gst th.amount { text-align: right; }
-          
-          .items-table td {
-            padding: 8px 4px;
-            border: 1px solid #d1d5db;
-            vertical-align: middle;
-            text-align: center;
-            word-wrap: break-word;
-            overflow: hidden;
-          }
-          
-          .items-table tr:nth-child(even) {
-            background-color: #f9fafb;
-          }
-          
-          .text-right {
-            text-align: right;
-          }
-          
-          .text-center {
-            text-align: center;
-          }
-          
-          .summary {
-            margin: 15px 15px 0 15px;
-            text-align: right;
-            width: calc(100% - 30px);
-            box-sizing: border-box;
-            page-break-inside: avoid;
-            break-inside: avoid;
-          }
-          
-          .summary-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 8px 0;
-            border-bottom: 1px solid #e5e7eb;
-          }
-          
-          .summary-row.total {
-            font-size: 18px;
-            font-weight: bold;
-            color: #000000;
-            border-top: 2px solid #000000;
-            border-bottom: 2px solid #000000;
-            margin-top: 10px;
-            padding: 15px 0;
-          }
-          
-          .notes-section {
-            margin: 15px 15px 0 15px;
-            padding-top: 10px;
-            border-top: 1px solid #e5e7eb;
-          }
-          
-          .notes-title {
-            font-size: 16px;
-            font-weight: bold;
-            color: #374151;
-            margin-bottom: 10px;
-          }
-          
-          .notes-content {
-            font-size: 14px;
-            line-height: 1.5;
-            color: #6b7280;
-          }
-          
-          .bank-section {
-            margin: 15px 15px 0 15px;
-            padding: 12px 15px;
-            border: 1px dashed #047857;
-            border-radius: 8px;
-            background: #ecfdf5;
-          }
-          
-          .bank-title {
-            font-size: 16px;
-            font-weight: 600;
-            color: #065f46;
-            margin-bottom: 8px;
-          }
-          
-          .bank-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 12px;
-          }
-          
-          .bank-item {
-            font-size: 13px;
-            line-height: 1.4;
-          }
-          
-          .bank-label {
-            font-weight: 600;
-            color: #064e3b;
-            display: block;
-          }
-          
-          .bank-value {
-            color: #065f46;
-            word-break: break-word;
-          }
-          
-          .bank-note {
-            margin-top: 10px;
-            font-size: 12px;
-            color: #064e3b;
-            font-style: italic;
-          }
-          
-          .validity-note {
-            background-color: #f8fafc;
-            border: 1px solid #e2e8f0;
-            border-radius: 6px;
-            padding: 15px;
-            margin: 15px 15px 20px 15px;
-            font-size: 14px;
-            color: #374151;
-            font-weight: 500;
-          }
-          
-          .validity-note strong {
-            color: #111827;
-            font-weight: 700;
-          }
-          
-          .gst-note {
-            margin: 0 15px 15px 15px;
-            background: #ecfdf5;
-            border-left: 4px solid #047857;
-            padding: 10px 12px;
-            font-size: 12px;
-            color: #065f46;
-            line-height: 1.5;
-          }
-          
-          .signatures {
-            margin-top: 40px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-          }
-          
-          .signature-box {
-            text-align: center;
-            padding-top: 15px;
-          }
-          
-          .signature-label {
-            font-weight: bold;
-            color: #000000;
-            margin-bottom: 5px;
-          }
-          
-          .signature-seal {
-            width: 120px;
-            height: 120px;
-            margin: 20px auto 10px auto;
-            display: block;
-          }
-          
-          .signature-date {
-            font-size: 12px;
-            color: #6b7280;
-          }
-          
-          .footer {
-            margin: 15px 15px 0 15px;
-            padding: 10px 0;
-            border-top: 1px solid #e5e7eb;
-            text-align: center;
-            font-size: 10px;
-            color: #6b7280;
-        }
-      
-      @media print {
-            * {
-              -webkit-print-color-adjust: exact !important;
-              color-adjust: exact !important;
-            }
-            
-        body {
-          margin: 0 !important;
-              padding: 12mm 8mm !important;
-              font-size: 12pt !important;
-              line-height: 1.4 !important;
-        }
-        
-        .quotation-container {
-          width: 100% !important;
-          max-width: 100% !important;
-          margin: 0 !important;
-          padding: 0 !important;
-              box-shadow: none !important;
-              background: white !important;
-              box-sizing: border-box !important;
-            }
-            
-            @page {
-              size: A4 !important;
-              margin: 12mm 8mm !important;
-              border: 2px solid #000000 !important;
-              border-radius: 10px !important;
-            }
-          }
-        </style>
-      </head>
-      <body>
-        ${quotationContent}
-      </body>
-      </html>
-    `);
+    printWindow.document.write(buildQuotationDocumentHtml(quotationData));
     
     printWindow.document.close();
     
@@ -1327,471 +983,358 @@ function createQuotationContent(data: PDFQuotationData): string {
   `;
 }
 
-export function generateQuotationHTML(data: PDFQuotationData): string {
-  const brand = resolvePdfDocumentBrand(data);
-  const companyDetails = renderPdfCompanyDetailsHtml(data.company, brand);
-  const signatureBlock = renderPdfSignatureHtml(brand, data.billDate, data.sealVariant ?? 'sign');
-  const footerBlock = renderPdfFooterHtml(brand, data.company);
-  const validityDate = new Date(new Date(data.billDate).getTime() + 30 * 24 * 60 * 60 * 1000);
-  const gstRate = getQuotationGstRate(data);
-  const halfGstRate = gstRate / 2;
-  const gstData = (data as { gstData?: Record<string, unknown> }).gstData;
-  
+function getQuotationDocumentStyles(): string {
   return `
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Quotation - ${sanitizeForTemplate(data.billNumber)}</title>
-      <style>
-        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
-        
-        * {
-          margin: 0;
-          padding: 0;
-          box-sizing: border-box;
-        }
-        
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      
         body {
-          font-family: 'Poppins', sans-serif;
-          line-height: 1.4;
-          color: #333;
-          background: white;
-          margin: 0;
-          padding: 0;
-          width: 210mm; /* A4 width */
-          min-height: 297mm; /* A4 height */
-          max-width: 210mm; /* Fixed A4 width */
-        padding: 12mm 8mm 12mm 8mm; /* Reduced margins for more content space */
-          box-sizing: border-box;
-          overflow: visible;
-          font-size: 11px; /* Smaller font for better fit */
+            font-family: 'Poppins', sans-serif;
+            line-height: 1.4;
+            color: #333;
+            background: white;
+            margin: 0;
+            padding: 12mm 8mm;
+            font-size: 11px;
         }
-        
-        .quotation-container {
-          width: calc(100% - 4px); /* Account for border width */
-          max-width: calc(100% - 4px);
-          margin: 0;
-          background: white;
-          padding: 0;
-          overflow: hidden;
-          min-height: calc(297mm - 30mm); /* A4 height minus margins */
-          box-sizing: border-box;
-          box-decoration-break: clone;
-          -webkit-box-decoration-break: clone;
-        }
-        
-        .header {
-          text-align: center;
-          margin-bottom: 15px;
-          border-bottom: 2px solid #000000;
-          padding: 10px 0 8px 0;
-        }
-        
-        .logo-container {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          margin-bottom: 15px;
-        }
-        
-        .full-logo {
-          max-width: 200px;
-          height: auto;
-          max-height: 60px;
-        }
-        
-        .company-details {
-          font-size: 14px;
-          color: #666;
-          line-height: 1.4;
-        }
-        
-        .quotation-info {
-          display: flex;
-          justify-content: space-between;
-          margin-bottom: 15px;
-          gap: 15px;
-          padding: 0 15px;
-        }
-        
-        .quotation-to, .quotation-details {
-          flex: 1;
-        }
-        
-        .section-title {
-          font-size: 18px;
-          font-weight: bold;
-          color: #000000;
-          margin-bottom: 15px;
-          border-bottom: 2px solid #e5e7eb;
-          padding-bottom: 5px;
-        }
-        
-        .customer-info, .quotation-meta {
-          font-size: 14px;
-          line-height: 1.5;
-        }
-        
-        .items-table {
-          width: calc(100% - 30px); /* Account for left and right margins */
-          border-collapse: collapse;
-          margin: 0 15px 15px 15px;
-          font-size: 10px;
-          table-layout: fixed; /* Fixed table layout for better control */
-        }
-        
-        .items-table th {
-          background-color: #f8fafc;
-          color: #374151;
-          font-weight: bold;
-          padding: 8px 4px;
-          text-align: center;
-          border: 1px solid #d1d5db;
-        }
-        
-        .items-table:not(.items-table-gst) th:nth-child(1) { width: 50%; }
-        .items-table:not(.items-table-gst) th:nth-child(2) { width: 15%; }
-        .items-table:not(.items-table-gst) th:nth-child(3) { width: 20%; }
-        .items-table:not(.items-table-gst) th:nth-child(4) { width: 15%; }
-
-        .items-table.items-table-gst {
-          font-size: 8px;
-          width: calc(100% - 16px);
-        }
-        .items-table.items-table-gst th:nth-child(1) { width: 16%; }
-        .items-table.items-table-gst th:nth-child(2) { width: 9%; }
-        .items-table.items-table-gst th:nth-child(3) { width: 6%; }
-        .items-table.items-table-gst th:nth-child(4) { width: 10%; }
-        .items-table.items-table-gst th:nth-child(5) { width: 10%; }
-        .items-table.items-table-gst th:nth-child(6) { width: 10%; }
-        .items-table.items-table-gst th:nth-child(7) { width: 7%; }
-        .items-table.items-table-gst th:nth-child(8) { width: 10%; }
-        .items-table.items-table-gst th:nth-child(9) { width: 12%; }
-        .items-table.items-table-gst td {
-          font-size: 8px;
-          padding: 5px 2px;
-          overflow: visible;
-          white-space: normal;
-        }
-        .items-table.items-table-gst td.amount,
-        .items-table.items-table-gst th.amount { text-align: right; }
-        
-        .items-table td {
-          padding: 8px 4px;
-          border: 1px solid #d1d5db;
-          vertical-align: middle;
-          text-align: center;
-          word-wrap: break-word;
-          overflow: hidden;
-        }
-        
-        .items-table tr:nth-child(even) {
-          background-color: #f9fafb;
-        }
-        
-        .text-right {
-          text-align: right;
-        }
-        
-        .text-center {
-          text-align: center;
-        }
-        
-        .summary {
-          margin: 15px 15px 0 15px;
-          text-align: right;
-          width: calc(100% - 30px);
-          box-sizing: border-box;
-        }
-        
-        .summary-row {
-          display: flex;
-          justify-content: space-between;
-          padding: 8px 0;
-          border-bottom: 1px solid #e5e7eb;
-        }
-        
-        .summary-row.total {
-          font-size: 18px;
-          font-weight: bold;
-          color: #000000;
-          border-top: 2px solid #000000;
-          border-bottom: 2px solid #000000;
-          margin-top: 10px;
-          padding: 15px 0;
-        }
-        
-        .notes-section {
-          margin: 15px 15px 0 15px;
-          padding-top: 10px;
-          border-top: 1px solid #e5e7eb;
-        }
-        
-        .notes-title {
-          font-size: 16px;
-          font-weight: bold;
-          color: #374151;
-          margin-bottom: 10px;
-        }
-        
-        .notes-content {
-          font-size: 14px;
-          line-height: 1.5;
-          color: #6b7280;
-        }
-        
-        .validity-note {
-          background-color: #fef3c7;
-          border: 1px solid #f59e0b;
-          border-radius: 4px;
-          padding: 15px;
-          margin: 15px 15px 0 15px;
-          font-size: 14px;
-          color: #92400e;
-        }
-        
-        .validity-note strong {
-          color: #b45309;
-        }
-        
-        .signatures {
-          margin-top: 40px;
-          display: flex;
-          justify-content: center;
-          align-items: center;
-        }
-        
-        .signature-box {
-          text-align: center;
-          padding-top: 15px;
-        }
-        
-        .signature-label {
-          font-weight: bold;
-          color: #000000;
-          margin-bottom: 5px;
-        }
-        
-        .signature-seal {
-          width: 120px;
-          height: 120px;
-          margin: 20px auto 10px auto;
-          display: block;
-        }
-        
-        .signature-date {
-          font-size: 12px;
-          color: #6b7280;
-        }
-        
-        .footer {
-          margin: 15px 15px 0 15px;
-          padding: 10px 0;
-          border-top: 1px solid #e5e7eb;
-          text-align: center;
-          font-size: 10px;
-          color: #6b7280;
-        }
-        
-        @media print {
-          * {
-            -webkit-print-color-adjust: exact !important;
-            color-adjust: exact !important;
-          }
-          
-          body {
-            width: 210mm !important;
-            min-height: 297mm !important;
-            max-width: 210mm !important;
-            padding: 0 !important;
-            margin: 0 !important;
-            font-size: 12pt !important;
-            line-height: 1.4 !important;
-          }
-          
+      
           .quotation-container {
-            width: 100% !important;
-            max-width: 100% !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            box-shadow: none !important;
-            page-break-inside: avoid !important;
-          }
-          
-          @page {
-            size: A4 !important;
-            margin: 12mm 8mm !important;
-            border: 2px solid #000000 !important;
-            border-radius: 10px !important;
+            width: 100%;
+            max-width: 100%;
+            margin: 0;
+            background: white;
+            padding: 0;
+            box-sizing: border-box;
+            box-decoration-break: clone;
+            -webkit-box-decoration-break: clone;
           }
           
           .header {
-            page-break-after: avoid !important;
+            text-align: center;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #000000;
+            padding: 10px 0 8px 0;
+          }
+          
+          .logo-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 15px;
+          }
+          
+          .full-logo {
+            max-width: 200px;
+            height: auto;
+            max-height: 60px;
+          }
+          
+          .company-details {
+            font-size: 14px;
+            color: #666;
+            line-height: 1.4;
+          }
+          
+          .quotation-info {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 15px;
+            gap: 15px;
+            padding: 0 15px;
+          }
+          
+          .quotation-to, .quotation-details {
+            flex: 1;
+          }
+          
+          .section-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #000000;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #e5e7eb;
+            padding-bottom: 5px;
+          }
+          
+          .customer-info, .quotation-meta {
+            font-size: 14px;
+            line-height: 1.5;
           }
           
           .items-table {
-            page-break-inside: avoid !important;
+            width: calc(100% - 30px);
+            border-collapse: collapse;
+            margin: 0 15px 15px 15px;
+            font-size: 10px;
+            table-layout: fixed;
+          }
+          
+          .items-table th {
+            background-color: #f8fafc;
+            color: #374151;
+            font-weight: bold;
+            padding: 8px 4px;
+            text-align: center;
+            border: 1px solid #d1d5db;
+          }
+          
+          .items-table:not(.items-table-gst) th:nth-child(1) { width: 50%; }
+          .items-table:not(.items-table-gst) th:nth-child(2) { width: 15%; }
+          .items-table:not(.items-table-gst) th:nth-child(3) { width: 20%; }
+          .items-table:not(.items-table-gst) th:nth-child(4) { width: 15%; }
+
+          .items-table.items-table-gst {
+            font-size: 8px;
+            width: calc(100% - 16px);
+            margin: 0 8px 12px 8px;
+          }
+          .items-table.items-table-gst th:nth-child(1) { width: 16%; }
+          .items-table.items-table-gst th:nth-child(2) { width: 9%; }
+          .items-table.items-table-gst th:nth-child(3) { width: 6%; }
+          .items-table.items-table-gst th:nth-child(4) { width: 10%; }
+          .items-table.items-table-gst th:nth-child(5) { width: 10%; }
+          .items-table.items-table-gst th:nth-child(6) { width: 10%; }
+          .items-table.items-table-gst th:nth-child(7) { width: 7%; }
+          .items-table.items-table-gst th:nth-child(8) { width: 10%; }
+          .items-table.items-table-gst th:nth-child(9) { width: 12%; }
+          .items-table.items-table-gst td {
+            font-size: 8px;
+            padding: 5px 2px;
+            overflow: visible;
+            white-space: normal;
+          }
+          .items-table.items-table-gst td:nth-child(1) { text-align: left; }
+          .items-table.items-table-gst td.amount,
+          .items-table.items-table-gst th.amount { text-align: right; }
+          
+          .items-table td {
+            padding: 8px 4px;
+            border: 1px solid #d1d5db;
+            vertical-align: middle;
+            text-align: center;
+            word-wrap: break-word;
+            overflow: hidden;
+          }
+          
+          .items-table tr:nth-child(even) {
+            background-color: #f9fafb;
+          }
+          
+          .text-right {
+            text-align: right;
+          }
+          
+          .text-center {
+            text-align: center;
           }
           
           .summary {
-            page-break-before: avoid !important;
+            margin: 15px 15px 0 15px;
+            text-align: right;
+            width: calc(100% - 30px);
+            box-sizing: border-box;
+            page-break-inside: avoid;
+            break-inside: avoid;
           }
-        }
-      </style>
-    </head>
-    <body>
-      <div class="quotation-container">
-        <!-- Header -->
-        <div class="header">
-          <div class="logo-container">
-            ${renderPdfLogoHtml(brand)}
-          </div>
-          <div class="company-details">
-            ${companyDetails}
-          </div>
-        </div>
-        
-        <!-- Quotation Information -->
-        <div class="quotation-info">
-          <div class="quotation-to">
-            <div class="section-title">Quotation To:</div>
-            <div class="customer-info">
-              <div><strong>${sanitizeForTemplate(data.customer.name)}</strong></div>
-              ${data.customer.address ? `<div>${sanitizeForTemplate(data.customer.address)}</div>` : ''}
-              ${(data.customer.city || data.customer.state || data.customer.pincode) ? `<div>${sanitizeForTemplate(data.customer.city)}, ${sanitizeForTemplate(data.customer.state)} - ${sanitizeForTemplate(data.customer.pincode)}</div>` : ''}
-              ${data.customer.phone ? `<div>Phone: ${sanitizeForTemplate(data.customer.phone)}</div>` : ''}
-              ${data.customer.email ? `<div>Email: ${sanitizeForTemplate(data.customer.email)}</div>` : ''}
-              ${data.customer.gstNumber ? `<div>GST: ${sanitizeForTemplate(data.customer.gstNumber)}</div>` : ''}
-            </div>
-          </div>
           
-          <div class="quotation-details">
-            <div class="section-title">Quotation Details:</div>
-            <div class="quotation-meta">
-              <div><strong>Quotation Number:</strong> ${sanitizeForTemplate(data.billNumber)}</div>
-              <div><strong>Quotation Date:</strong> ${new Date(data.billDate).toLocaleDateString()}</div>
-              <div><strong>Valid Until:</strong> ${validityDate.toLocaleDateString()}</div>
-            </div>
-          </div>
-        </div>
+          .summary-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #e5e7eb;
+          }
+          
+          .summary-row.total {
+            font-size: 18px;
+            font-weight: bold;
+            color: #000000;
+            border-top: 2px solid #000000;
+            border-bottom: 2px solid #000000;
+            margin-top: 10px;
+            padding: 15px 0;
+          }
+          
+          .notes-section {
+            margin: 15px 15px 0 15px;
+            padding-top: 10px;
+            border-top: 1px solid #e5e7eb;
+          }
+          
+          .notes-title {
+            font-size: 16px;
+            font-weight: bold;
+            color: #374151;
+            margin-bottom: 10px;
+          }
+          
+          .notes-content {
+            font-size: 14px;
+            line-height: 1.5;
+            color: #6b7280;
+          }
+          
+          .bank-section {
+            margin: 15px 15px 0 15px;
+            padding: 12px 15px;
+            border: 1px dashed #047857;
+            border-radius: 8px;
+            background: #ecfdf5;
+          }
+          
+          .bank-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #065f46;
+            margin-bottom: 8px;
+          }
+          
+          .bank-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+          }
+          
+          .bank-item {
+            font-size: 13px;
+            line-height: 1.4;
+          }
+          
+          .bank-label {
+            font-weight: 600;
+            color: #064e3b;
+            display: block;
+          }
+          
+          .bank-value {
+            color: #065f46;
+            word-break: break-word;
+          }
+          
+          .bank-note {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #064e3b;
+            font-style: italic;
+          }
+          
+          .validity-note {
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 15px;
+            margin: 15px 15px 20px 15px;
+            font-size: 14px;
+            color: #374151;
+            font-weight: 500;
+          }
+          
+          .validity-note strong {
+            color: #111827;
+            font-weight: 700;
+          }
+          
+          .gst-note {
+            margin: 0 15px 15px 15px;
+            background: #ecfdf5;
+            border-left: 4px solid #047857;
+            padding: 10px 12px;
+            font-size: 12px;
+            color: #065f46;
+            line-height: 1.5;
+          }
+          
+          .signatures {
+            margin-top: 40px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+          }
+          
+          .signature-box {
+            text-align: center;
+            padding-top: 15px;
+          }
+          
+          .signature-label {
+            font-weight: bold;
+            color: #000000;
+            margin-bottom: 5px;
+          }
+          
+          .signature-seal {
+            width: 120px;
+            height: 120px;
+            margin: 20px auto 10px auto;
+            display: block;
+          }
+          
+          .signature-date {
+            font-size: 12px;
+            color: #6b7280;
+          }
+          
+          .footer {
+            margin: 15px 15px 0 15px;
+            padding: 10px 0;
+            border-top: 1px solid #e5e7eb;
+            text-align: center;
+            font-size: 10px;
+            color: #6b7280;
+        }
+      
+      @media print {
+            * {
+              -webkit-print-color-adjust: exact !important;
+              color-adjust: exact !important;
+            }
+            
+        body {
+          margin: 0 !important;
+              padding: 12mm 8mm !important;
+              font-size: 12pt !important;
+              line-height: 1.4 !important;
+        }
         
-        ${(data as any).gstOption === 'exclude' ? `
-          <div class="gst-note">
-            <strong>GST Note:</strong> GST not included in the above prices. Applicable GST will be charged separately if required.
-            ${formatPlaceOfSupplyLine(gstData as { placeOfSupply?: string; placeOfSupplyCode?: string; isIntraState?: boolean })}
-          </div>
-        ` : ''}
-        
-        ${((data as any).gstOption === 'include' && data.totalTax > 0) ? `
-          <div class="gst-note">
-            <strong>GST Note:</strong> Prices include GST.
-            ${formatPlaceOfSupplyLine(gstData as { placeOfSupply?: string; placeOfSupplyCode?: string; isIntraState?: boolean })}
-          </div>
-        ` : ''}
-        
-        <!-- Items Table -->
-        ${renderQuotationItemsTable(data)}
-
-        ${renderQuotationGstSummary(data, halfGstRate, gstRate)}
-        
-        <!-- Summary -->
-        <div class="summary">
-          <div class="summary-row">
-            <span>${resolveQuotationGstOption(data) !== 'normal' ? 'Taxable Value:' : 'Subtotal:'}</span>
-            <span>₹${data.subtotal.toLocaleString()}</span>
-          </div>
-          ${data.serviceCharge && data.serviceCharge > 0 ? `
-            <div class="summary-row">
-              <span>Service Charge:</span>
-              <span>₹${data.serviceCharge.toLocaleString()}</span>
-            </div>
-          ` : ''}
-          <div class="summary-row total">
-            <span>Total Amount:</span>
-            <span>₹${data.totalAmount.toLocaleString()}</span>
-          </div>
-        </div>
-        
-        <!-- Additional Info -->
-        ${data.notes ? `
-          <div class="notes-section">
-            <div class="notes-title">Additional Info:</div>
-            <div class="notes-content">${sanitizeForTemplate(data.notes)}</div>
-          </div>
-        ` : ''}
-        
-        ${data.bankDetails ? `
-          <div class="bank-section">
-            <div class="bank-title">Bank Details for Payment</div>
-            <div class="bank-grid">
-              ${data.bankDetails.accountHolderName ? `
-                <div class="bank-item">
-                  <span class="bank-label">Account Holder</span>
-                  <span class="bank-value">${sanitizeForTemplate(data.bankDetails.accountHolderName)}</span>
-                </div>` : ''}
-              ${data.bankDetails.bankName ? `
-                <div class="bank-item">
-                  <span class="bank-label">Bank Name</span>
-                  <span class="bank-value">${sanitizeForTemplate(data.bankDetails.bankName)}</span>
-                </div>` : ''}
-              ${data.bankDetails.branchName ? `
-                <div class="bank-item">
-                  <span class="bank-label">Branch</span>
-                  <span class="bank-value">${sanitizeForTemplate(data.bankDetails.branchName)}</span>
-                </div>` : ''}
-            ${data.bankDetails.accountType ? `
-              <div class="bank-item">
-                <span class="bank-label">Account Type</span>
-                <span class="bank-value">${sanitizeForTemplate(data.bankDetails.accountType)}</span>
-              </div>` : ''}
-              ${data.bankDetails.accountNumber ? `
-                <div class="bank-item">
-                  <span class="bank-label">Account Number</span>
-                  <span class="bank-value">${sanitizeForTemplate(data.bankDetails.accountNumber)}</span>
-                </div>` : ''}
-              ${data.bankDetails.ifscCode ? `
-                <div class="bank-item">
-                  <span class="bank-label">IFSC Code</span>
-                  <span class="bank-value">${sanitizeForTemplate(data.bankDetails.ifscCode)}</span>
-                </div>` : ''}
-              ${data.bankDetails.upiId ? `
-                <div class="bank-item">
-                  <span class="bank-label">UPI ID</span>
-                  <span class="bank-value">${sanitizeForTemplate(data.bankDetails.upiId)}</span>
-                </div>` : ''}
-            </div>
-            ${data.bankDetails.note ? `<div class="bank-note">${sanitizeForTemplate(data.bankDetails.note)}</div>` : ''}
-          </div>
-        ` : ''}
-
-        <!-- Terms (Above Signatures / Seal) -->
-        ${data.terms ? `
-          <div class="notes-section">
-            <div class="notes-title">Terms & Conditions:</div>
-            <div class="notes-content">
-              <ul style="margin: 0; padding-left: 18px;">
-                ${data.terms
-                  .split('\n')
-                  .filter(line => line.trim())
-                  .map(term => {
-                    const cleanTerm = term.replace(/^\d+\.\s*/, '');
-                    return `<li style="margin: 4px 0;">${sanitizeForTemplate(cleanTerm)}</li>`;
-                  })
-                  .join('')}
-              </ul>
-            </div>
-          </div>
-        ` : ''}
-        
-        <!-- Signatures -->
-        ${signatureBlock}
-        
-        <!-- Footer -->
-        ${footerBlock}
-      </div>
-    </body>
-    </html>
+        .quotation-container {
+          width: 100% !important;
+          max-width: 100% !important;
+          margin: 0 !important;
+          padding: 0 !important;
+              box-shadow: none !important;
+              background: white !important;
+              box-sizing: border-box !important;
+            }
+            
+            @page {
+              size: A4 !important;
+              margin: 12mm 8mm !important;
+              border: 2px solid #000000 !important;
+              border-radius: 10px !important;
+            }
+          }
   `;
+}
+
+function buildQuotationDocumentHtml(data: PDFQuotationData): string {
+  const content = createQuotationContent(data);
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <title>Quotation - ${sanitizeForTemplate(data.billNumber)}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+    ${getQuotationDocumentStyles()}
+  </style>
+</head>
+<body>
+  ${content}
+</body>
+</html>`;
+}
+
+export function generateQuotationHTML(data: PDFQuotationData): string {
+  return buildQuotationDocumentHtml(data);
 }

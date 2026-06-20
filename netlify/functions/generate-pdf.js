@@ -94,6 +94,7 @@ async function renderHtmlToPdf(html) {
   try {
     browser = await launchBrowser();
     const page = await browser.newPage();
+    await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 1 });
     await page.setContent(html, {
       waitUntil: 'load',
       timeout: 30000,
