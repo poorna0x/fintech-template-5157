@@ -60,6 +60,7 @@ import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
 import { RecurringServiceTracker } from '@/components/reminders/RecurringServiceTracker';
 import { SettingsPendingPaymentsDialogV2 } from '@/components/reminders/PendingPaymentsDialogV2';
 import AdvancedCustomerSearchDialog from '@/components/admin/AdvancedCustomerSearchDialog';
+import { SettingsActionCard } from '@/components/admin/SettingsActionCard';
 import MergeCustomersDialog from '@/components/admin/MergeCustomersDialog';
 import WarrantyManagementDialog from '@/components/admin/WarrantyManagementDialog';
 import DirectSaleDialog from '@/components/admin/DirectSaleDialog';
@@ -1893,74 +1894,62 @@ const Settings = () => {
           </Card>
 
           {/* Advanced customer search */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
-                <Users className="w-5 h-5" />
-                Advanced customer search
-              </CardTitle>
-              <CardDescription className="text-sm mt-1">
-                Combine brand, location, service type, AMC, last service date, and more to find customers — like "Livpure in Kasavanahalli or Haralur".
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-4 sm:p-6">
+          <SettingsActionCard
+            title="Advanced customer search"
+            description='Combine brand, location, service type, AMC, last service date, and more to find customers — like "Livpure in Kasavanahalli or Haralur".'
+            icon={<Users />}
+            actions={
               <Button
                 type="button"
-                className="w-full sm:w-auto"
+                className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9 sm:shadow-sm"
                 onClick={() => setAdvancedSearchDialogOpen(true)}
               >
-                <Users className="w-4 h-4 mr-2 shrink-0" />
+                <Users className="w-4 h-4 shrink-0" />
                 Open advanced search
               </Button>
-            </CardContent>
-          </Card>
+            }
+          />
           <AdvancedCustomerSearchDialog
             open={advancedSearchDialogOpen}
             onOpenChange={setAdvancedSearchDialogOpen}
           />
 
           {/* Reminders: add general / customer, then load list dialog */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
-                <ListTodo className="w-5 h-5" />
-                Reminders
-              </CardTitle>
-              <CardDescription className="text-sm mt-1">
-                Add a general reminder, one tied to a customer, or load the list to search, filter, and edit.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-4 sm:p-6">
-              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-2">
+          <SettingsActionCard
+            title="Reminders"
+            description="Add a general reminder, one tied to a customer, or load the list to search, filter, and edit."
+            icon={<ListTodo />}
+            actions={
+              <>
                 <Button
                   type="button"
-                  className="w-full min-h-10 justify-center sm:min-w-0 sm:flex-1 sm:max-w-none"
+                  className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9 sm:shadow-sm"
                   onClick={() => setAddGeneralReminderOpen(true)}
                 >
-                  <Bell className="w-4 h-4 mr-2 shrink-0" />
+                  <Bell className="w-4 h-4 shrink-0" />
                   Add general reminder
                 </Button>
                 <Button
                   type="button"
                   variant="secondary"
-                  className="w-full min-h-10 justify-center sm:min-w-0 sm:flex-1 sm:max-w-none"
+                  className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9"
                   onClick={() => setAddCustomerReminderOpen(true)}
                 >
-                  <User className="w-4 h-4 mr-2 shrink-0" />
+                  <User className="w-4 h-4 shrink-0" />
                   Add customer reminder
                 </Button>
                 <Button
                   type="button"
                   variant="outline"
-                  className="w-full min-h-10 justify-center sm:min-w-0 sm:flex-1 sm:max-w-none"
+                  className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9"
                   onClick={() => setRemindersDialogOpen(true)}
                 >
-                  <ListTodo className="w-4 h-4 mr-2 shrink-0" />
+                  <ListTodo className="w-4 h-4 shrink-0" />
                   Load reminders
                 </Button>
-              </div>
-            </CardContent>
-          </Card>
+              </>
+            }
+          />
           <AddReminderDialog
             open={addGeneralReminderOpen}
             onOpenChange={setAddGeneralReminderOpen}
@@ -1980,29 +1969,21 @@ const Settings = () => {
           />
 
           {/* Recurring service tracking */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
-                <Repeat className="w-5 h-5" />
-                Reminder Tracking
-              </CardTitle>
-              <CardDescription className="text-sm mt-1">
-                All active reminders in one worklist, due ones first (one-time or recurring). Call the
-                customer, log the outcome (no response / waiting / will return / confirmed), snooze,
-                view reports, or create a job. Mark done to clear it.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-4 sm:p-6">
+          <SettingsActionCard
+            title="Reminder Tracking"
+            description="All active reminders in one worklist, due ones first (one-time or recurring). Call the customer, log the outcome (no response / waiting / will return / confirmed), snooze, view reports, or create a job. Mark done to clear it."
+            icon={<Repeat />}
+            actions={
               <Button
                 type="button"
-                className="w-full min-h-10 justify-center sm:w-auto"
+                className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9 sm:shadow-sm"
                 onClick={() => setRecurringServiceOpen(true)}
               >
-                <Repeat className="w-4 h-4 mr-2 shrink-0" />
+                <Repeat className="w-4 h-4 shrink-0" />
                 Open reminder tracker
               </Button>
-            </CardContent>
-          </Card>
+            }
+          />
           <RecurringServiceTracker
             open={recurringServiceOpen}
             onOpenChange={setRecurringServiceOpen}
@@ -2053,50 +2034,40 @@ const Settings = () => {
           />
 
           {/* GST Invoices */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
-                <Receipt className="w-5 h-5" />
-                GST Invoices
-              </CardTitle>
-              <CardDescription className="text-sm mt-1">
-                View and manage GST invoices
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-4 sm:p-6">
+          <SettingsActionCard
+            title="GST Invoices"
+            description="View and manage GST invoices"
+            icon={<Receipt />}
+            actions={
               <Button
+                type="button"
                 variant="outline"
-                className="w-full sm:w-auto"
+                className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9"
                 onClick={() => navigate('/admin?view=gst-invoices')}
               >
-                <Receipt className="w-4 h-4 mr-2" />
+                <Receipt className="w-4 h-4 shrink-0" />
                 Open GST Invoices
               </Button>
-            </CardContent>
-          </Card>
+            }
+          />
 
           {/* AMC View */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
-                <FileText className="w-5 h-5" />
-                View AMCs
-              </CardTitle>
-              <CardDescription className="text-sm mt-1">
-                View and manage Annual Maintenance Contracts
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-4 sm:p-6">
+          <SettingsActionCard
+            title="View AMCs"
+            description="View and manage Annual Maintenance Contracts"
+            icon={<FileText />}
+            actions={
               <Button
+                type="button"
                 variant="outline"
-                className="w-full sm:w-auto"
+                className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9"
                 onClick={() => navigate('/admin?view=amc-view')}
               >
-                <FileText className="w-4 h-4 mr-2" />
+                <FileText className="w-4 h-4 shrink-0" />
                 Open AMC View
               </Button>
-            </CardContent>
-          </Card>
+            }
+          />
 
           {/* Letterhead Documents / Service Reports */}
           <Card>
@@ -2161,27 +2132,22 @@ const Settings = () => {
           </Card>
 
           {/* Calling */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
-                <PhoneCall className="w-5 h-5" />
-                Calling
-              </CardTitle>
-              <CardDescription className="text-sm mt-1">
-                Manage customer calls and communication
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="p-4 sm:p-6">
+          <SettingsActionCard
+            title="Calling"
+            description="Manage customer calls and communication"
+            icon={<PhoneCall />}
+            actions={
               <Button
+                type="button"
                 variant="outline"
-                className="w-full sm:w-auto"
+                className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9"
                 onClick={() => setShowCallingPage(true)}
               >
-                <PhoneCall className="w-4 h-4 mr-2" />
+                <PhoneCall className="w-4 h-4 shrink-0" />
                 Open Calling Page
               </Button>
-            </CardContent>
-          </Card>
+            }
+          />
 
           {/* Merge duplicate customers */}
           <Card>
