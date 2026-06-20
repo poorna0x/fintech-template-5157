@@ -99,7 +99,21 @@ async function parsePdfResponse(response: Response, fallbackFilename: string): P
   return buffer;
 }
 
-async function downloadViaServer(html: string, filename: string): Promise<void> {
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+async function fetchPdfFromServer(html: string, filename: string): Promise<{
+  buffer: ArrayBuffer;
+  pdfBase64: string;
+  filename: string;
+}> {
   const response = await fetch(PDF_ENDPOINT, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -118,8 +132,60 @@ async function downloadViaServer(html: string, filename: string): Promise<void> 
     throw new Error(message);
   }
 
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    const payload = (await response.json()) as {
+      pdfBase64?: string;
+      filename?: string;
+      error?: string;
+      details?: string;
+    };
+    if (payload.error) {
+      throw new Error(payload.details || payload.error);
+    }
+    if (!payload.pdfBase64) {
+      throw new Error('Server response missing PDF data');
+    }
+    const buffer = base64ToArrayBuffer(payload.pdfBase64);
+    const bytes = new Uint8Array(buffer);
+    if (!isPdfBytes(bytes)) {
+      throw new Error('Server did not return a valid PDF file');
+    }
+    return {
+      buffer,
+      pdfBase64: payload.pdfBase64,
+      filename: sanitizeFilename(payload.filename || filename),
+    };
+  }
+
   const buffer = await parsePdfResponse(response, filename);
-  triggerFileDownload(buffer, filename);
+  return {
+    buffer,
+    pdfBase64: arrayBufferToBase64(buffer),
+    filename: sanitizeFilename(filename),
+  };
+}
+
+async function downloadViaServer(html: string, filename: string): Promise<void> {
+  const { buffer, filename: resolvedFilename } = await fetchPdfFromServer(html, filename);
+  triggerFileDownload(buffer, resolvedFilename);
+}
+
+export interface GenerateDocumentPdfBase64Result {
+  pdfBase64: string;
+  filename: string;
+  size: number;
+}
+
+/** Generate a PDF via Puppeteer and return base64 (for email attachments). */
+export async function generateDocumentPdfBase64(
+  options: DownloadDocumentPdfOptions
+): Promise<GenerateDocumentPdfBase64Result> {
+  const html = withAbsoluteAssetUrls(options.html, options.origin);
+  const filename = sanitizeFilename(options.filename);
+  const { pdfBase64, filename: resolvedFilename } = await fetchPdfFromServer(html, filename);
+  const size = Math.ceil((pdfBase64.length * 3) / 4);
+  return { pdfBase64, filename: resolvedFilename, size };
 }
 
 /**

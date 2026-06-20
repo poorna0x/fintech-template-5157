@@ -33,6 +33,12 @@ import DocumentGeneratorPageHeader, {
   documentSaveBtnClass,
 } from '@/components/DocumentGeneratorPageHeader';
 import { mergeEditableCustomer } from '@/lib/document-drafts';
+import { getValidCustomerEmail } from '@/lib/customer-email';
+import { supabase } from '@/lib/supabaseClient';
+import {
+  getAmcEmailSuccessMessage,
+  sendAmcAgreementEmail,
+} from '@/lib/send-amc-agreement-email';
 
 interface AMCGeneratorProps {
   customer: Customer;
@@ -184,9 +190,12 @@ ${notCoveredWithPreFilter}`;
   );
   const [description, setDescription] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [brandPickerOpen, setBrandPickerOpen] = useState(false);
   const [pendingBrandAction, setPendingBrandAction] = useState<
-    { type: 'save' } | { type: 'document'; action: 'print' | 'pdf'; options?: { termsOnly?: boolean } }
+    | { type: 'save' }
+    | { type: 'document'; action: 'print' | 'pdf'; options?: { termsOnly?: boolean } }
+    | { type: 'email' }
   | null>(null);
   const [documentBrand, setDocumentBrand] = useState<DocumentBrand>('hydrogenro');
   /** Skip one terms auto-regen after loading a draft (preserves custom/edited terms). */
@@ -481,47 +490,42 @@ ${notCoveredWithPreFilter}`;
     setBrandPickerOpen(true);
   };
 
-  const executePrint = async (
-    brand: DocumentBrand,
-    action: 'print' | 'pdf',
-    options?: { termsOnly?: boolean }
-  ) => {
-    applyBrandToForm(brand);
+  const validateAmcForm = (): boolean => {
     if (!billNumber.trim()) {
       toast.error('Please enter a bill number');
-      return;
+      return false;
     }
-
-    // Validate RO Model/Brand
     if (!roModel.trim()) {
       toast.error('Please enter RO Model/Brand before generating AMC Agreement', {
         description: 'RO Model is required to generate the agreement. Please add the brand and model information.',
-        duration: 6000
+        duration: 6000,
       });
-      return;
+      return false;
     }
-
     if (validity === 'Custom' && (!customFromDate || !customToDate)) {
       toast.error('Please select both from and to dates for custom validity');
-      return;
+      return false;
     }
-
-    if (validity === 'Custom' && customFromDate && customToDate && new Date(customFromDate) >= new Date(customToDate)) {
+    if (
+      validity === 'Custom' &&
+      customFromDate &&
+      customToDate &&
+      new Date(customFromDate) >= new Date(customToDate)
+    ) {
       toast.error('To date must be after from date');
-      return;
+      return false;
     }
-
     if (paymentStatus === 'PARTIAL') {
       if (resolvedAmountReceived <= 0 || resolvedAmountReceived >= totalAmount) {
         toast.error('Enter a partial amount greater than 0 and less than the total');
-        return;
+        return false;
       }
     }
+    return true;
+  };
 
-    const { startDate, endDate, years } = calculateDates();
-
-    // Use the current terms state (preserves any manual edits)
-    // Create a single item from the AMC cost
+  const buildAmcBill = (brand: DocumentBrand): { bill: Bill; endDateIso: string } => {
+    const { endDate } = calculateDates();
     const amcItem: BillItem = {
       id: '1',
       description: 'AMC Agreement - 1 Year Service Contract',
@@ -529,7 +533,7 @@ ${notCoveredWithPreFilter}`;
       unitPrice: amcCost,
       total: amcCost,
       taxRate: 0,
-      taxAmount: 0
+      taxAmount: 0,
     };
 
     const bill: Bill = {
@@ -547,8 +551,8 @@ ${notCoveredWithPreFilter}`;
         phone: editableCustomer.phone || '',
         email: editableCustomer.email || '',
         gstNumber: editableCustomer.gst || '',
-        roModel: roModel.trim()
-      } as any,
+        roModel: roModel.trim(),
+      } as Bill['customer'] & { roModel: string },
       items: [amcItem],
       subtotal,
       totalTax: 0,
@@ -558,23 +562,37 @@ ${notCoveredWithPreFilter}`;
       amountPaid: resolvedAmountReceived,
       notes,
       terms,
-      validity: validity === 'Custom' ? 
-        `${new Date(customFromDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })} to ${new Date(endDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}` : 
-        `${new Date(billDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })} to ${new Date(endDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}`,
+      validity:
+        validity === 'Custom'
+          ? `${new Date(customFromDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })} to ${new Date(endDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}`
+          : `${new Date(billDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })} to ${new Date(endDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}`,
       agreementIntro: resolveAgreementIntroForBrand(agreementIntro, brand),
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
     };
-    (bill as any).documentBrand = brand;
-    (bill as any).sealVariant = sealVariant;
+    (bill as Bill & { documentBrand: DocumentBrand; sealVariant: typeof sealVariant }).documentBrand = brand;
+    (bill as Bill & { sealVariant: typeof sealVariant }).sealVariant = sealVariant;
+
+    return { bill, endDateIso: endDate };
+  };
+
+  const executePrint = async (
+    brand: DocumentBrand,
+    action: 'print' | 'pdf',
+    options?: { termsOnly?: boolean }
+  ) => {
+    applyBrandToForm(brand);
+    if (!validateAmcForm()) return;
+
+    const { bill } = buildAmcBill(brand);
 
     try {
       // Don't save to database automatically - user must explicitly click "Save to Database" button
       // This allows generating/previewing AMC without creating an active contract in the database
       const { generateAMCPDF } = await import('@/lib/amc-pdf-generator');
-      generateAMCPDF(bill, action, { 
+      generateAMCPDF(bill, action, {
         includeDetails: options?.termsOnly ? false : true,
-        showComputerGeneratedText: showComputerGeneratedText
+        showComputerGeneratedText: showComputerGeneratedText,
       });
       onPrint?.(bill);
     } catch (error) {
@@ -597,6 +615,81 @@ ${notCoveredWithPreFilter}`;
     }
     setPendingBrandAction({ type: 'document', action, options });
     setBrandPickerOpen(true);
+  };
+
+  const customerEmail = getValidCustomerEmail(editableCustomer.email);
+
+  const handleEmailCustomer = () => {
+    if (!customerEmail) {
+      toast.error('Add a valid customer email to send the AMC agreement');
+      return;
+    }
+    if (!billNumber.trim()) {
+      toast.error('Please enter a bill number');
+      return;
+    }
+    if (!roModel.trim()) {
+      toast.error('Please enter RO Model/Brand before emailing AMC Agreement', {
+        description: 'RO Model is required to generate the agreement.',
+        duration: 6000,
+      });
+      return;
+    }
+    setPendingBrandAction({ type: 'email' });
+    setBrandPickerOpen(true);
+  };
+
+  const executeEmailSend = async (brand: DocumentBrand) => {
+    applyBrandToForm(brand);
+    if (!validateAmcForm()) return;
+
+    const recipient = getValidCustomerEmail(editableCustomer.email);
+    if (!recipient) {
+      toast.error('Add a valid customer email to send the AMC agreement');
+      return;
+    }
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      toast.error('Sign in as admin to send email');
+      return;
+    }
+
+    const { bill, endDateIso } = buildAmcBill(brand);
+    setIsSendingEmail(true);
+    const toastId = toast.loading('Generating PDF and sending email…');
+
+    try {
+      const result = await sendAmcAgreementEmail({
+        bill,
+        brand,
+        recipientEmail: recipient,
+        accessToken: session.access_token,
+        endDateIso,
+        pdfOptions: {
+          includeDetails: true,
+          showComputerGeneratedText,
+        },
+      });
+
+      if (result.ok) {
+        toast.success(getAmcEmailSuccessMessage(brand, recipient), { id: toastId });
+        onPrint?.(bill);
+      } else {
+        toast.error(result.error || 'Could not send email', { id: toastId });
+      }
+    } catch (error) {
+      console.error('Error emailing AMC agreement:', error);
+      const message = error instanceof Error ? error.message : 'Failed to send AMC agreement';
+      toast.error('Could not email AMC agreement', {
+        id: toastId,
+        description: message,
+      });
+    } finally {
+      setIsSendingEmail(false);
+    }
   };
 
   // ---- Draft snapshot / restore -----------------------------------------------
@@ -698,7 +791,7 @@ ${notCoveredWithPreFilter}`;
         embedded={embedded}
         actions={
           <DocumentGeneratorActionBar
-            primaryCols={3}
+            primaryCols={customerEmail ? 4 : 3}
             secondaryLabel="Terms only"
             draft={
               <DraftToolbar
@@ -739,6 +832,17 @@ ${notCoveredWithPreFilter}`;
                   <Download className="w-4 h-4 shrink-0" />
                   <span className="truncate">Download</span>
                 </Button>
+                {customerEmail ? (
+                  <Button
+                    onClick={handleEmailCustomer}
+                    variant="outline"
+                    className={documentOutlineBtnClass}
+                    disabled={!billNumber.trim() || isSendingEmail}
+                  >
+                    <Mail className="w-4 h-4 shrink-0" />
+                    <span className="truncate">{isSendingEmail ? 'Sending…' : 'Email PDF'}</span>
+                  </Button>
+                ) : null}
               </>
             }
             secondary={
@@ -1478,18 +1582,24 @@ ${notCoveredWithPreFilter}`;
         title={
           pendingBrandAction?.type === 'save'
             ? 'Which brand gave this AMC?'
-            : 'Which brand is this agreement for?'
+            : pendingBrandAction?.type === 'email'
+              ? 'Which brand is sending this AMC?'
+              : 'Which brand is this agreement for?'
         }
         description={
           pendingBrandAction?.type === 'save'
             ? 'Select Hydrogen RO or Eleven RO. This brand is stored on the AMC contract when you save.'
-            : 'The agreement PDF will use the selected brand address and logo.'
+            : pendingBrandAction?.type === 'email'
+              ? 'The PDF attachment and email will use the selected brand address, logo, and sender.'
+              : 'The agreement PDF will use the selected brand address and logo.'
         }
         onSelect={(brand) => {
           if (pendingBrandAction?.type === 'save') {
             void executeSaveToDatabase(brand);
           } else if (pendingBrandAction?.type === 'document') {
             void executePrint(brand, pendingBrandAction.action, pendingBrandAction.options);
+          } else if (pendingBrandAction?.type === 'email') {
+            void executeEmailSend(brand);
           }
           setPendingBrandAction(null);
         }}

@@ -61,6 +61,33 @@ interface AMCPDFOptions {
   showComputerGeneratedText?: boolean;
 }
 
+export type { AMCPDFOptions };
+
+export function billToAmcPdfData(bill: Bill): AMCPDFData {
+  return {
+    billNumber: bill.billNumber,
+    billDate: bill.billDate,
+    company: bill.company,
+    customer: {
+      ...bill.customer,
+      roModel: (bill.customer as { roModel?: string }).roModel || '',
+    },
+    items: bill.items,
+    subtotal: bill.subtotal,
+    totalTax: bill.totalTax,
+    serviceCharge: bill.serviceCharge,
+    totalAmount: bill.totalAmount,
+    paymentStatus: bill.paymentStatus,
+    amountPaid: bill.amountPaid,
+    notes: bill.notes,
+    terms: bill.terms,
+    validity: bill.validity,
+    agreementIntro: bill.agreementIntro,
+    documentBrand: (bill as { documentBrand?: 'hydrogenro' | 'elevenro' }).documentBrand,
+    sealVariant: (bill as { sealVariant?: 'sign' | 'stamp' }).sealVariant,
+  };
+}
+
 function formatInr(amount: number): string {
   return amount.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
@@ -1022,28 +1049,7 @@ export function generateAMCPDF(
   
   try {
     if (action === 'pdf') {
-      const data: AMCPDFData = {
-        billNumber: bill.billNumber,
-        billDate: bill.billDate,
-        company: bill.company,
-        customer: {
-          ...bill.customer,
-          roModel: (bill.customer as any).roModel || ''
-        },
-        items: bill.items,
-        subtotal: bill.subtotal,
-        totalTax: bill.totalTax,
-        serviceCharge: bill.serviceCharge,
-        totalAmount: bill.totalAmount,
-        paymentStatus: bill.paymentStatus,
-        amountPaid: bill.amountPaid,
-        notes: bill.notes,
-        terms: bill.terms,
-        validity: bill.validity,
-        agreementIntro: bill.agreementIntro,
-        documentBrand: (bill as any).documentBrand,
-        sealVariant: (bill as any).sealVariant,
-      };
+      const data = billToAmcPdfData(bill);
 
       void downloadDocumentPdf({
         html: generateAMCHTML(data, options),
