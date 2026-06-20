@@ -1,10 +1,12 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Phone, Mail, MapPin } from 'lucide-react';
 import { Customer } from '@/types';
 import { extractCoordinates } from '@/lib/maps';
 import { toast } from 'sonner';
 import { WhatsAppIcon } from '../WhatsAppIcon';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
+import { getAdminEmailComposerUrl, getValidCustomerEmail } from '@/lib/customer-email';
 
 interface ContactSectionProps {
   customer: Customer;
@@ -32,6 +34,14 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
   setAddressDialogOpen,
   hydrateCustomerForMaps,
 }) => {
+  const navigate = useNavigate();
+  const customerEmail = getValidCustomerEmail(customer.email);
+
+  const handleEmailClick = () => {
+    if (!customerEmail) return;
+    navigate(getAdminEmailComposerUrl(customer.id, 'general'));
+  };
+
   // Mirror the booking page's forgiving geolocation: longer timeout + allow a recent cached
   // fix, then retry with even more relaxed settings. Strict settings (10s, maximumAge: 0)
   // fail on desktops with no GPS, even when the booking page succeeds on the same device.
@@ -112,25 +122,39 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
           </div>
         </div>
         
-        {/* Email */}
-        <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
+        {/* Email — opens composer only when a real address is stored */}
+        <div
+          className={`bg-white rounded-lg p-3 border border-gray-200 transition-all duration-200 ${
+            customerEmail
+              ? 'hover:border-emerald-300 hover:shadow-sm cursor-pointer'
+              : 'opacity-90'
+          }`}
+          onClick={customerEmail ? handleEmailClick : undefined}
+          onKeyDown={
+            customerEmail
+              ? (e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleEmailClick();
+                  }
+                }
+              : undefined
+          }
+          role={customerEmail ? 'button' : undefined}
+          tabIndex={customerEmail ? 0 : undefined}
+          title={customerEmail ? 'Send email to this customer' : undefined}
+        >
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
             <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-              {customer.email && customer.email.trim() && !customer.email.toLowerCase().includes('nomail') && !customer.email.toLowerCase().includes('no@mail') ? (
-                <a href={`mailto:${customer.email}`} className="cursor-pointer">
-                  <Mail className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
-                </a>
-              ) : (
-                <Mail className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
-              )}
+              <Mail
+                className={`w-4 h-4 sm:w-5 sm:h-5 ${customerEmail ? 'text-emerald-600' : 'text-gray-400'}`}
+              />
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-sm font-semibold text-gray-900 truncate">
-                {customer.email && customer.email.trim() && !customer.email.toLowerCase().includes('nomail') && !customer.email.toLowerCase().includes('no@mail') 
-                  ? customer.email 
-                  : 'nomail@mail'}
+                {customerEmail || 'nomail@mail'}
               </div>
-              <div className="text-xs text-gray-500">Email</div>
+              <div className="text-xs text-gray-500">{customerEmail ? 'Send email' : 'Email'}</div>
             </div>
           </div>
         </div>

@@ -1,6 +1,8 @@
 // Email service utility for sending booking confirmations via secured Netlify function.
 
 import type { BookingAltchaContext } from '@/lib/bookingCustomer';
+import type { EmailAttachmentPayload } from '@/lib/admin-email-attachments';
+import type { AdminEmailTemplateType } from '@/lib/admin-email-templates';
 import {
   buildBookingConfirmationEmail,
   resolveBookingEmailDocumentBrand,
@@ -8,6 +10,16 @@ import {
 } from '@/lib/booking-confirmation-email';
 
 export type BookingConfirmationData = BookingConfirmationEmailData;
+
+export interface AdminComposerEmailPayload {
+  templateType: AdminEmailTemplateType;
+  documentBrand: 'hydrogenro' | 'elevenro';
+  to: string;
+  subject: string;
+  html: string;
+  text: string;
+  attachments?: EmailAttachmentPayload[];
+}
 
 export interface EmailData {
   to: string;
@@ -82,10 +94,9 @@ export class EmailService {
     }
   }
 
-  /** Admin preview tool — requires VITE_EMAIL_PREVIEW_SECRET + EMAIL_PREVIEW_SECRET on server. */
-  async sendPreviewEmail(
-    to: string,
-    data: BookingConfirmationData
+  /** Admin email composer — supports attachments; requires preview secret. */
+  async sendAdminComposerEmail(
+    payload: AdminComposerEmailPayload
   ): Promise<{ ok: boolean; error?: string; messageId?: string }> {
     if (!this.previewSecret) {
       return {
@@ -94,11 +105,8 @@ export class EmailService {
       };
     }
 
-    const template = buildBookingConfirmationEmail(data);
-    const documentBrand = resolveBookingEmailDocumentBrand(
-      data,
-      typeof window !== 'undefined' ? window.location.origin : undefined
-    );
+    const purpose =
+      payload.templateType === 'booking_confirmation' ? 'booking_confirmation' : 'admin_composer';
 
     try {
       const response = await fetch(this.previewApiUrl, {
@@ -108,12 +116,17 @@ export class EmailService {
           'X-Email-Preview-Secret': this.previewSecret,
         },
         body: JSON.stringify({
-          purpose: 'booking_confirmation',
-          documentBrand,
-          to,
-          subject: template.subject,
-          html: template.html,
-          text: template.text,
+          purpose,
+          documentBrand: payload.documentBrand,
+          to: payload.to,
+          subject: payload.subject,
+          html: payload.html,
+          text: payload.text,
+          attachments: payload.attachments?.map(({ filename, contentType, content }) => ({
+            filename,
+            contentType,
+            content,
+          })),
         }),
       });
 
@@ -133,6 +146,27 @@ export class EmailService {
         error: error instanceof Error ? error.message : 'Failed to send email',
       };
     }
+  }
+
+  /** @deprecated Use sendAdminComposerEmail */
+  async sendPreviewEmail(
+    to: string,
+    data: BookingConfirmationData
+  ): Promise<{ ok: boolean; error?: string; messageId?: string }> {
+    const template = buildBookingConfirmationEmail(data);
+    const documentBrand = resolveBookingEmailDocumentBrand(
+      data,
+      typeof window !== 'undefined' ? window.location.origin : undefined
+    );
+
+    return this.sendAdminComposerEmail({
+      templateType: 'booking_confirmation',
+      documentBrand,
+      to,
+      subject: template.subject,
+      html: template.html,
+      text: template.text,
+    });
   }
 
   sendBookingConfirmation(

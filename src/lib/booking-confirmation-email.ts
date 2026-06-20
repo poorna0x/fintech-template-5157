@@ -250,7 +250,11 @@ export function buildBookingConfirmationEmail(
   const whatsappIconUrl = getEmailWhatsappIconUrl(siteOrigin);
   const phoneIconUrl = getEmailPhoneIconUrl(siteOrigin);
 
-  const headerLogoBlock = buildEmailHeaderBlock(fullLogoUrl, brandName, contact.tagline);
+  const headerLogoBlock = buildEmailHeaderBlock(
+    fullLogoUrl,
+    getDocumentBrandLabel(documentBrand),
+    contact.tagline
+  );
 
   const customerName = data.customerName || 'Customer';
   const jobNumber = data.jobNumber || 'N/A';

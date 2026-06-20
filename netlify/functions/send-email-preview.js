@@ -1,8 +1,8 @@
-// Internal tool: send a booking confirmation preview email (no ALTCHA).
+// Internal tool: admin email preview/composer (no ALTCHA).
 // Protected by EMAIL_PREVIEW_SECRET header — set in Netlify env + VITE_EMAIL_PREVIEW_SECRET locally.
 
 const nodemailer = require('nodemailer');
-const { validateBookingEmailBody, getFixedFromAddress, getBrandMailMeta } = require('./email-guard');
+const { validatePreviewEmailBody, getFixedFromAddress, getBrandMailMeta } = require('./email-guard');
 
 function jsonResponse(statusCode, headers, body) {
   return {
@@ -50,7 +50,7 @@ exports.handler = async (event) => {
     return jsonResponse(400, cors, { error: 'Invalid JSON' });
   }
 
-  const validated = validateBookingEmailBody({ ...body, purpose: 'booking_confirmation' });
+  const validated = validatePreviewEmailBody(body);
   if (!validated.ok) {
     return jsonResponse(400, cors, { error: validated.error });
   }
@@ -75,6 +75,12 @@ exports.handler = async (event) => {
   });
 
   const brandMeta = getBrandMailMeta(body.documentBrand);
+  const nodemailerAttachments = (validated.attachments || []).map((att) => ({
+    filename: att.filename,
+    content: att.content,
+    encoding: 'base64',
+    contentType: att.contentType,
+  }));
 
   try {
     const info = await transporter.sendMail({
@@ -87,6 +93,7 @@ exports.handler = async (event) => {
       html: validated.html,
       text: validated.text,
       replyTo: brandMeta.replyTo,
+      attachments: nodemailerAttachments,
       headers: {
         'X-Mailer': `${brandMeta.mailer} Email Preview`,
         'X-Priority': '3',
@@ -97,6 +104,7 @@ exports.handler = async (event) => {
       success: true,
       messageId: info.messageId,
       message: 'Preview email sent',
+      attachmentCount: nodemailerAttachments.length,
     });
   } catch (error) {
     console.error('[send-email-preview] send failed', error && error.message);
