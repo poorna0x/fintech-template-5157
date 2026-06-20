@@ -144,6 +144,8 @@ import EditCustomerDialog from './admin/EditCustomerDialog';
 import AddCustomerDialog from './admin/AddCustomerDialog';
 import CustomerReportDialog from './admin/CustomerReportDialog';
 import SendMessageDialog from './admin/SendMessageDialog';
+import AdminEmailComposerDialog from './admin/AdminEmailComposer';
+import type { AdminEmailTemplateType } from '@/lib/admin-email-templates';
 import ShareTechnicianInfoToCustomerDialog from './admin/ShareTechnicianInfoToCustomerDialog';
 import RecentAccountsDialog from './admin/RecentAccountsDialog';
 import DirectSaleDialog from './admin/DirectSaleDialog';
@@ -786,6 +788,9 @@ const AdminDashboard = () => {
   const [completedJobEditData, setCompletedJobEditData] = useState<any>({});
   const [sendMessageDialogOpen, setSendMessageDialogOpen] = useState(false);
   const [selectedJobForMessage, setSelectedJobForMessage] = useState<any | null>(null);
+  const [emailComposerOpen, setEmailComposerOpen] = useState(false);
+  const [emailComposerCustomerId, setEmailComposerCustomerId] = useState<string | null>(null);
+  const [emailComposerTemplate, setEmailComposerTemplate] = useState<AdminEmailTemplateType>('general');
   const [shareTechnicianInfoDialogOpen, setShareTechnicianInfoDialogOpen] = useState(false);
   const [selectedJobForShareInfo, setSelectedJobForShareInfo] = useState<Job | null>(null);
   const [addReminderDialogOpen, setAddReminderDialogOpen] = useState(false);
@@ -1940,6 +1945,25 @@ const AdminDashboard = () => {
       setCurrentView('analytics');
       const hash = location.hash;
       navigate(`/admin${hash}`, { replace: true });
+    } else if (searchParams.get('composeEmail')) {
+      const customerId = searchParams.get('composeEmail');
+      const templateParam = searchParams.get('emailTemplate') as AdminEmailTemplateType | null;
+      const allowedTemplates: AdminEmailTemplateType[] = [
+        'booking_confirmation',
+        'amc_document',
+        'invoice',
+        'quotation',
+        'service_reminder',
+        'general',
+      ];
+      setEmailComposerCustomerId(customerId && customerId !== '1' ? customerId : null);
+      if (templateParam && allowedTemplates.includes(templateParam)) {
+        setEmailComposerTemplate(templateParam);
+      } else {
+        setEmailComposerTemplate('general');
+      }
+      setEmailComposerOpen(true);
+      navigate('/admin', { replace: true });
     } else if (searchPrefill && searchPrefill.trim()) {
       // Pre-fill the admin search box and trigger a search so deep-links from
       // Settings → Advanced search → "Open in Admin" / "Photos" land directly on the result.
@@ -13157,6 +13181,19 @@ const AdminDashboard = () => {
         onOpenChange={setSendMessageDialogOpen}
         job={selectedJobForMessage}
         onMessageSent={handleMessageSent}
+      />
+
+      <AdminEmailComposerDialog
+        open={emailComposerOpen}
+        onOpenChange={(open) => {
+          setEmailComposerOpen(open);
+          if (!open) {
+            setEmailComposerCustomerId(null);
+            setEmailComposerTemplate('general');
+          }
+        }}
+        initialCustomerId={emailComposerCustomerId}
+        initialTemplate={emailComposerTemplate}
       />
 
       <ShareTechnicianInfoToCustomerDialog

@@ -16,7 +16,7 @@ export function getAdminEmailComposerUrl(
   customerId: string,
   template?: 'general' | 'quotation' | 'service_reminder' | 'amc_document' | 'invoice' | 'booking_confirmation'
 ): string {
-  const params = new URLSearchParams({ customerId });
-  if (template) params.set('template', template);
-  return `/admin/email-preview?${params.toString()}`;
+  const params = new URLSearchParams({ composeEmail: customerId });
+  if (template) params.set('emailTemplate', template);
+  return `/admin?${params.toString()}`;
 }

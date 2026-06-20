@@ -104,6 +104,35 @@ export const SAMPLE_ADMIN_DOCUMENT_EMAIL: AdminDocumentEmailData = {
   customSubject: 'Message from Hydrogen RO',
 };
 
+export function createEmptyBookingForm(brand: DocumentBrand = 'hydrogenro'): BookingConfirmationEmailData {
+  return {
+    customerName: '',
+    jobNumber: '',
+    serviceType: '',
+    serviceSubType: '',
+    brand: '',
+    model: '',
+    scheduledDate: '',
+    scheduledTimeSlot: 'FIRST_HALF',
+    serviceAddress: '',
+    phone: '',
+    email: '',
+    documentBrand: brand,
+  };
+}
+
+export function createEmptyDocumentForm(brand: DocumentBrand = 'hydrogenro'): AdminDocumentEmailData {
+  return {
+    documentBrand: brand,
+    customerName: '',
+    documentRef: '',
+    amount: '',
+    dueDate: '',
+    message: '',
+    customSubject: '',
+  };
+}
+
 const EMAIL_FONT =
   "'Inter', 'Segoe UI', Roboto, 'Helvetica Neue', Helvetica, Arial, sans-serif";
 

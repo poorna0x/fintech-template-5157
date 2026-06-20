@@ -30,6 +30,10 @@ export interface EmailSourceApplyResult {
   sendBrand?: DocumentBrand;
   /** Last completed job service brand for the customer, if any. */
   lastServiceBrand?: DocumentBrand | null;
+  /** CRM record id applied (job, AMC, invoice, or customer). */
+  sourceRecordId?: string;
+  /** Customer uuid when known (for brand defaulting). */
+  customerId?: string;
 }
 
 function todayIsoDate(): string {
@@ -159,6 +163,14 @@ async function resolveSendBrand(
   };
 }
 
+/** Public helper — default send-as brand from customer's last completed service. */
+export async function resolveCustomerSendBrand(
+  customerId: string,
+  recordFallback?: DocumentBrand
+): Promise<{ sendBrand: DocumentBrand; lastServiceBrand: DocumentBrand | null }> {
+  return resolveSendBrand(customerId, recordFallback);
+}
+
 async function withSendBrand(
   customerId: string | undefined,
   recordFallback: DocumentBrand | undefined,
@@ -167,6 +179,7 @@ async function withSendBrand(
   const { sendBrand, lastServiceBrand } = await resolveSendBrand(customerId, recordFallback);
   return {
     ...base,
+    customerId: customerId || undefined,
     sendBrand,
     lastServiceBrand,
     bookingForm: base.bookingForm
@@ -377,6 +390,142 @@ async function fetchCustomerSearchOptions(query: string): Promise<EmailSourceOpt
   return mapCustomersToOptions(data as Record<string, unknown>[]);
 }
 
+function getCustomerServiceAddress(customer: Record<string, unknown>): string {
+  if (typeof customer.visible_address === 'string' && customer.visible_address.trim()) {
+    return customer.visible_address.trim();
+  }
+  const addr = customer.address;
+  if (typeof addr === 'string' && addr.trim()) return addr.trim();
+  if (addr && typeof addr === 'object') {
+    const a = addr as Record<string, unknown>;
+    if (typeof a.street === 'string' && a.street.trim()) return a.street.trim();
+  }
+  const loc = customer.location;
+  if (loc && typeof loc === 'object') {
+    const l = loc as Record<string, unknown>;
+    if (typeof l.formattedAddress === 'string' && l.formattedAddress.trim()) {
+      return l.formattedAddress.trim();
+    }
+  }
+  return '';
+}
+
+async function findLatestOngoingJobIdForCustomer(customerId: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('jobs')
+    .select('id')
+    .eq('customer_id', customerId)
+    .in('status', [...ONGOING_JOB_STATUSES])
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data?.id) return null;
+  return String(data.id);
+}
+
+async function findActiveAmcIdForCustomer(customerId: string): Promise<string | null> {
+  const today = todayIsoDate();
+  const { data, error } = await supabase
+    .from('amc_contracts')
+    .select('id')
+    .eq('customer_id', customerId)
+    .eq('status', 'ACTIVE')
+    .gte('end_date', today)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data?.id) return null;
+  return String(data.id);
+}
+
+async function findLatestInvoiceIdForCustomer(customerId: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('tax_invoices')
+    .select('id')
+    .eq('customer_id', customerId)
+    .order('invoice_date', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data?.id) return null;
+  return String(data.id);
+}
+
+async function applyCustomerBookingFallback(customerId: string): Promise<EmailSourceApplyResult | null> {
+  const { data, error } = await db.customers.getById(customerId);
+  if (error || !data) return null;
+
+  const customer = data as Record<string, unknown>;
+  const { sendBrand, lastServiceBrand } = await resolveSendBrand(customerId, undefined);
+
+  return {
+    sendBrand,
+    lastServiceBrand,
+    customerId,
+    sourceRecordId: customerId,
+    bookingForm: {
+      customerName: String(customer.full_name || ''),
+      jobNumber: '',
+      serviceType: 'Service',
+      serviceSubType: '',
+      brand: String(customer.brand || 'Not specified'),
+      model: String(customer.model || 'Not specified'),
+      scheduledDate: todayIsoDate(),
+      scheduledTimeSlot: 'FIRST_HALF',
+      serviceAddress: getCustomerServiceAddress(customer),
+      phone: String(customer.phone || ''),
+      email: String(customer.email || ''),
+      documentBrand: sendBrand,
+    },
+    recipientEmail: getValidCustomerEmail(customer.email) ?? undefined,
+  };
+}
+
+/** Load CRM data from a customer id (picks ongoing job, active AMC, latest invoice, etc.). */
+export async function applyEmailSourceForCustomer(
+  templateType: AdminEmailTemplateType,
+  customerId: string
+): Promise<EmailSourceApplyResult | null> {
+  switch (templateType) {
+    case 'booking_confirmation': {
+      const jobId = await findLatestOngoingJobIdForCustomer(customerId);
+      if (jobId) {
+        const result = await applyJobRecord(jobId);
+        return result ? { ...result, sourceRecordId: jobId } : null;
+      }
+      return applyCustomerBookingFallback(customerId);
+    }
+    case 'amc_document':
+    case 'service_reminder': {
+      const amcId = await findActiveAmcIdForCustomer(customerId);
+      if (amcId) {
+        const result = await applyAmcRecord(templateType, amcId);
+        return result ? { ...result, sourceRecordId: amcId } : null;
+      }
+      const fallback = await applyCustomerRecord(
+        customerId,
+        templateType === 'service_reminder' ? 'general' : 'quotation'
+      );
+      return fallback ? { ...fallback, sourceRecordId: customerId } : null;
+    }
+    case 'invoice': {
+      const invoiceId = await findLatestInvoiceIdForCustomer(customerId);
+      if (invoiceId) {
+        const result = await applyInvoiceRecord(invoiceId);
+        return result ? { ...result, sourceRecordId: invoiceId } : null;
+      }
+      return applyCustomerRecord(customerId, 'quotation');
+    }
+    case 'quotation':
+    case 'general':
+      return applyCustomerRecord(customerId, templateType);
+    default:
+      return null;
+  }
+}
+
 export async function applyEmailSourceRecord(
   templateType: AdminEmailTemplateType,
   recordId: string
@@ -408,6 +557,7 @@ async function applyJobRecord(jobId: string): Promise<EmailSourceApplyResult | n
   const customerId = String(job.customer_id || customer?.id || '');
 
   return withSendBrand(customerId, getJobDocumentBrand(job), {
+    sourceRecordId: jobId,
     bookingForm: {
       customerName: String(customer?.full_name || ''),
       jobNumber: String(job.job_number || ''),
@@ -445,6 +595,8 @@ async function applyAmcRecord(
     return {
       sendBrand,
       lastServiceBrand,
+      customerId,
+      sourceRecordId: amcId,
       documentForm: {
         documentBrand: sendBrand,
         customerName,
@@ -458,6 +610,8 @@ async function applyAmcRecord(
   return {
     sendBrand,
     lastServiceBrand,
+    customerId,
+    sourceRecordId: amcId,
     documentForm: {
       documentBrand: sendBrand,
       customerName,
@@ -483,6 +637,8 @@ async function applyInvoiceRecord(invoiceId: string): Promise<EmailSourceApplyRe
   const recordBrand = getInvoiceDocumentBrand(row.company_info);
 
   return withSendBrand(customerId, recordBrand, {
+    customerId,
+    sourceRecordId: invoiceId,
     documentForm: {
       customerName: String(row.customer_name || ''),
       documentRef: String(row.invoice_number || ''),
@@ -509,13 +665,16 @@ async function applyCustomerRecord(
   return {
     sendBrand,
     lastServiceBrand,
+    customerId,
+    sourceRecordId: customerId,
     documentForm: {
       documentBrand: sendBrand,
       customerName,
-      message: getDefaultDocumentMessage(templateType),
-      ...(templateType === 'general'
-        ? { customSubject: `Message from ${getDocumentBrandLabel(sendBrand)}` }
-        : {}),
+      documentRef: '',
+      amount: '',
+      dueDate: '',
+      message: templateType === 'general' ? '' : getDefaultDocumentMessage(templateType),
+      customSubject: templateType === 'general' ? '' : `Message from ${getDocumentBrandLabel(sendBrand)}`,
     },
     recipientEmail,
   };
