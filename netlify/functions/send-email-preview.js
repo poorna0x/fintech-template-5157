@@ -1,8 +1,9 @@
-// Internal tool: admin email preview/composer (no ALTCHA).
-// Protected by EMAIL_PREVIEW_SECRET header — set in Netlify env + VITE_EMAIL_PREVIEW_SECRET locally.
+// Admin email composer send — same Hostinger SMTP as booking confirmations.
+// Auth: logged-in admin Bearer JWT (preferred) or legacy EMAIL_PREVIEW_SECRET header.
 
 const nodemailer = require('nodemailer');
 const { validatePreviewEmailBody, getFixedFromAddress, getBrandMailMeta } = require('./email-guard');
+const { authorizeAdminRequest } = require('./admin-auth-guard');
 
 function jsonResponse(statusCode, headers, body) {
   return {
@@ -16,7 +17,7 @@ function corsHeaders(event) {
   const origin = event.headers.origin || event.headers.Origin || '*';
   return {
     'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Headers': 'Content-Type, X-Email-Preview-Secret',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Email-Preview-Secret',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
   };
 }
@@ -32,15 +33,9 @@ exports.handler = async (event) => {
     return jsonResponse(405, cors, { error: 'Method not allowed' });
   }
 
-  const expectedSecret = String(process.env.EMAIL_PREVIEW_SECRET || '').trim();
-  const providedSecret = String(
-    event.headers['x-email-preview-secret'] ||
-      event.headers['X-Email-Preview-Secret'] ||
-      ''
-  ).trim();
-
-  if (!expectedSecret || providedSecret !== expectedSecret) {
-    return jsonResponse(403, cors, { error: 'Unauthorized' });
+  const auth = await authorizeAdminRequest(event);
+  if (!auth.ok) {
+    return jsonResponse(403, cors, { error: auth.error || 'Unauthorized' });
   }
 
   let body;
@@ -95,7 +90,7 @@ exports.handler = async (event) => {
       replyTo: brandMeta.replyTo,
       attachments: nodemailerAttachments,
       headers: {
-        'X-Mailer': `${brandMeta.mailer} Email Preview`,
+        'X-Mailer': `${brandMeta.mailer} Admin Email`,
         'X-Priority': '3',
       },
     });
@@ -103,7 +98,7 @@ exports.handler = async (event) => {
     return jsonResponse(200, cors, {
       success: true,
       messageId: info.messageId,
-      message: 'Preview email sent',
+      message: 'Email sent',
       attachmentCount: nodemailerAttachments.length,
     });
   } catch (error) {

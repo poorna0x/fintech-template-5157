@@ -94,14 +94,23 @@ export class EmailService {
     }
   }
 
-  /** Admin email composer — supports attachments; requires preview secret. */
+  /** Admin email composer — supports attachments; requires admin session or preview secret. */
   async sendAdminComposerEmail(
-    payload: AdminComposerEmailPayload
+    payload: AdminComposerEmailPayload,
+    accessToken?: string | null
   ): Promise<{ ok: boolean; error?: string; messageId?: string }> {
-    if (!this.previewSecret) {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    if (accessToken) {
+      headers.Authorization = `Bearer ${accessToken}`;
+    } else if (this.previewSecret) {
+      headers['X-Email-Preview-Secret'] = this.previewSecret;
+    } else {
       return {
         ok: false,
-        error: 'Preview send is not configured. Set VITE_EMAIL_PREVIEW_SECRET in .env.local.',
+        error: 'Sign in as admin to send email.',
       };
     }
 
@@ -111,10 +120,7 @@ export class EmailService {
     try {
       const response = await fetch(this.previewApiUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Email-Preview-Secret': this.previewSecret,
-        },
+        headers,
         body: JSON.stringify({
           purpose,
           documentBrand: payload.documentBrand,

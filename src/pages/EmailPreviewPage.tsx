@@ -36,6 +36,7 @@ import type { BookingConfirmationEmailData } from '@/lib/booking-confirmation-em
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getDocumentBrandLabel } from '@/lib/service-brands';
 import { emailService } from '@/lib/email';
+import { supabase } from '@/lib/supabaseClient';
 
 type PreviewMode = 'mobile' | 'desktop';
 
@@ -205,16 +206,27 @@ export default function EmailPreviewPage() {
       return;
     }
 
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      toast.error('Sign in as admin to send email');
+      return;
+    }
+
     setSending(true);
-    const result = await emailService.sendAdminComposerEmail({
-      templateType,
-      documentBrand: activeBrand,
-      to: sendTo.trim(),
-      subject: emailPreview.subject,
-      html: emailPreview.html,
-      text: emailPreview.text,
-      attachments: attachments.map(stripAttachmentPayload),
-    });
+    const result = await emailService.sendAdminComposerEmail(
+      {
+        templateType,
+        documentBrand: activeBrand,
+        to: sendTo.trim(),
+        subject: emailPreview.subject,
+        html: emailPreview.html,
+        text: emailPreview.text,
+        attachments: attachments.map(stripAttachmentPayload),
+      },
+      session.access_token
+    );
     setSending(false);
 
     if (result.ok) {
@@ -522,8 +534,7 @@ export default function EmailPreviewPage() {
             <CardHeader>
               <CardTitle>Send email</CardTitle>
               <CardDescription>
-                Requires <code className="text-xs">VITE_EMAIL_PREVIEW_SECRET</code> matching{' '}
-                <code className="text-xs">EMAIL_PREVIEW_SECRET</code> on the server. Use Netlify dev for SMTP.
+                Uses the same Hostinger SMTP as booking confirmations. You must be signed in as admin.
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col sm:flex-row gap-3">
