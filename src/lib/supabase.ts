@@ -2908,6 +2908,35 @@ export const db = {
       return { data: rows, error: null };
     },
 
+    /** Analytics-only roster: id, name, salary fields — no phone/GPS/photo. Falls back to getAllForDashboard. */
+    async getAllForAnalytics(limit?: number, options?: { activeRosterOnly?: boolean }) {
+      const activeOnly = options?.activeRosterOnly !== false;
+      const { data, error } = await supabase.rpc('get_technicians_for_analytics');
+      if (error) {
+        if (isRpcNotFoundError(error)) {
+          return db.technicians.getAllForDashboard(limit, options);
+        }
+        return { data: null, error };
+      }
+
+      let rows: any[] = Array.isArray(data) ? data.slice() : [];
+      if (activeOnly) {
+        rows = rows.filter((t: any) => {
+          const status = t?.account_status;
+          return status == null || status === 'ACTIVE' || status === 'SUSPENDED';
+        });
+      }
+      rows.sort((a: any, b: any) => {
+        const aTime = a?.created_at ? new Date(a.created_at).getTime() : 0;
+        const bTime = b?.created_at ? new Date(b.created_at).getTime() : 0;
+        return bTime - aTime;
+      });
+      if (limit && limit > 0) {
+        rows = rows.slice(0, limit);
+      }
+      return { data: rows, error: null };
+    },
+
     /**
      * Slim list for dropdowns.
      * @param activeRosterOnly When true (default), excludes INACTIVE. Set false for payments/reports that must list former technicians.
@@ -6303,6 +6332,29 @@ export const db = {
       const { data, error } = await supabase.rpc('get_analytics_dashboard', {
         p_start: startDate?.toISOString() ?? null,
         p_end: endDate?.toISOString() ?? null,
+      });
+      return { data, error };
+    },
+    /** Pre-aggregated expense totals (admin-only RPC). Returns null when RPC not deployed. */
+    async getExpenseTotals(startDate?: string, endDate?: string) {
+      const { data, error } = await supabase.rpc('get_analytics_expense_totals', {
+        p_start_date: startDate ?? null,
+        p_end_date: endDate ?? null,
+      });
+      return { data, error };
+    },
+    /** Per-technician payment + extra commission sums for Analytics salary block. */
+    async getCommissionTotals(opts: {
+      startISO?: string;
+      endISO?: string;
+      startDate?: string;
+      endDate?: string;
+    }) {
+      const { data, error } = await supabase.rpc('get_analytics_commission_totals', {
+        p_start: opts.startISO ?? null,
+        p_end: opts.endISO ?? null,
+        p_start_date: opts.startDate ?? null,
+        p_end_date: opts.endDate ?? null,
       });
       return { data, error };
     },

@@ -28,6 +28,8 @@ Last updated: 2026-06-19
 - **`lead_source` column on `jobs`** — analytics selects use `lead_source` instead of `requirements` JSON (2026-06-19). Run `scripts/add-job-lead-source-column.sql` in Supabase.
 - **`get_analytics_dashboard` RPC** — pre-aggregated KPIs in DB; Analytics page uses RPC first, falls back to job fetch if RPC unavailable (2026-06-19). Run `scripts/add-analytics-dashboard-rpc.sql`.
 - **Session cache (5 min)** — same-period revisits in one tab skip network (`analyticsSessionCache.ts` + `loadAnalytics`).
+- **`get_analytics_expense_totals` RPC** — 7 expense sums in one call instead of 4 paginated row fetches. Run `scripts/add-analytics-step7-expense-totals-rpc.sql`.
+- **`get_analytics_commission_totals` RPC** — per-technician payment/extra sums for salary; payments fetch deferred off dashboard hot path. Run `scripts/add-analytics-step8-commission-totals-rpc.sql`.
 - **`parts_cost_total`** on jobs — no `job_parts_used` join on main analytics load.
 
 ---
@@ -40,9 +42,11 @@ Last updated: 2026-06-19
 |--------|--------------|---------|-------|
 | **`get_analytics_dashboard` RPC** (primary) | 1 call | **~5–50 KB** | Aggregates in DB; no job rows over the wire |
 | Legacy fallback `jobs.getForAnalyticsInRange` | 300–800/mo | **150 KB – 1 MB** | Only if RPC not deployed |
-| `technicians.getAllForDashboard` | ~20 | **20–80 KB** | No GPS `current_location` blob |
-| Expense tables (4 queries) | tens–hundreds | **50–500 KB** | Historically included `receipt_url`, notes |
-| `getTotalSalaryForCalendarMonth` | overlap | **100–400 KB** | Extra queries for calendar-month profit |
+| `technicians.getAllForAnalytics` | ~20 | **~2–10 KB** | Slim RPC; falls back to `getAllForDashboard` |
+| Expense tables (4 queries) | tens–hundreds | **~0.5 KB** | **`get_analytics_expense_totals` RPC** when deployed |
+| Legacy expense row fetches | tens–hundreds | **50–500 KB** | Fallback if RPC not deployed |
+| `getTotalSalaryForCalendarMonth` | overlap | **100–400 KB** | Reuses preloaded technicians; still fetches jobs/holidays for Payments parity |
+| `technician_payments` (legacy / salary) | hundreds | **~0.5–2 KB** | **Skipped on dashboard RPC path**; commission totals RPC for pro-rated periods |
 | Long periods (6m / 1y) | unbounded jobs | **5–15+ MB** | Same pattern, more jobs |
 
 ### CRM — “All time” period
@@ -99,9 +103,9 @@ Last updated: 2026-06-19
 | # | Opportunity | Impact | SQL? |
 |---|-------------|--------|------|
 | 6 | **`get_analytics_dashboard` RPC** — pre-aggregated KPIs (lead source, service type, daily stats) | Very high | Yes — **Done** (`scripts/add-analytics-dashboard-rpc.sql`) |
-| 7 | **`get_technicians_for_analytics` RPC** — id, name, salary only (no GPS) | Medium–high | Partial — `getAllForDashboard` |
+| 7 | **`get_technicians_for_analytics` RPC** — id, name, salary only (no GPS) | Medium–high | Yes — **Done** (`scripts/add-analytics-step6-rpcs.sql`) |
 | 8 | **Stored / generated `lead_source` on `jobs`** — drop `requirements` from analytics selects | Very high | Yes — **Done** (`scripts/add-job-lead-source-column.sql`) |
-| 9 | **Cap or rework “All time”** — `stats.getAnalytics()` has no row limit | Very high | Yes |
+| 9 | **Cap or rework “All time”** — `stats.getAnalytics()` has no row limit | Very high | Yes — **Addressed** via dashboard + expense totals RPCs (null dates) |
 | 10 | **Conversion / return-complaint RPCs** — server-side prior-job lookup | High (on-demand) | Yes — **Done** (`scripts/add-analytics-on-demand-rpcs.sql`) |
 | 11 | **Website summary by date range** (`p_from` / `p_to`) instead of fixed `p_days` | Low–medium | Yes — **Done** (`scripts/add-analytics-step4-rpcs.sql`) |
 | 12 | **Trim recent-events metadata** in list RPC (flat strings vs full JSON) | Low–medium | Yes — **Done** (`scripts/add-analytics-step5-polish.sql`) |
@@ -126,7 +130,7 @@ Last updated: 2026-06-19
 | `src/lib/analyticsSessionCache.ts` | 5-minute in-memory cache for `loadAnalytics` |
 | `src/components/admin/WebsiteAnalyticsCard.tsx` | `load`, `fetchRecentActivity`, `activeRange` |
 | `src/components/admin/WebsiteAnalyticsGate.tsx` | Lazy mount |
-| `src/lib/supabase.ts` | `jobs.getForAnalyticsInRange`, `technicians.getAllForDashboard`, `analyticsPaginated.*`, `websiteAnalytics.*` |
+| `src/lib/supabase.ts` | `jobs.getForAnalyticsInRange`, `technicians.getAllForAnalytics`, `analyticsPaginated.*`, `websiteAnalytics.*` |
 | `scripts/add-analytics-paginated-rpcs.sql` | Top locations/brands, spare parts, recent events |
 | `scripts/add-website-analytics.sql` | `get_website_analytics_summary` |
 
@@ -143,3 +147,6 @@ Last updated: 2026-06-19
 3. `scripts/add-analytics-on-demand-rpcs.sql`
 4. `scripts/add-analytics-step4-rpcs.sql`
 5. `scripts/add-analytics-step5-polish.sql` (slim recent-events metadata; safe to run anytime after paginated RPCs)
+6. `scripts/add-analytics-step6-rpcs.sql` (slim technicians for Analytics + delete preview metadata)
+7. `scripts/add-analytics-step7-expense-totals-rpc.sql` (single RPC for expense/advance/business totals)
+8. `scripts/add-analytics-step8-commission-totals-rpc.sql` (per-technician commission sums; defer payments on dashboard path)

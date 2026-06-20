@@ -37,6 +37,8 @@ import {
   mapDirectWebsiteConversionsFromRpc,
   parseRepeatVsNewRpc,
   mapRepeatVsNewFromRpc,
+  parseAnalyticsExpenseTotalsRpc,
+  parseAnalyticsCommissionTotalsRpc,
   type AnalyticsDashboardRpc,
 } from '@/lib/analyticsDashboard';
 import {
@@ -503,6 +505,148 @@ function computeExpenseTotals(
   };
 }
 
+async function loadAnalyticsExpenseTotals(
+  startStr?: string,
+  endStr?: string
+): Promise<ReturnType<typeof computeExpenseTotals>> {
+  const rpcRes = await db.analyticsPaginated.getExpenseTotals(startStr, endStr);
+  const parsed = parseAnalyticsExpenseTotalsRpc(rpcRes.data);
+  if (!rpcRes.error && parsed) return parsed;
+
+  const analyticsExpenseOpts = { forAnalytics: true as const };
+  const [
+    { data: techExpenses },
+    { data: techAdvances },
+    { data: businessExpenses },
+    { data: otherBusinessExpenses },
+  ] = await Promise.all([
+    db.technicianExpenses.getAll(undefined, startStr, endStr, analyticsExpenseOpts),
+    db.technicianAdvances.getAll(undefined, startStr, endStr, analyticsExpenseOpts),
+    db.businessExpenses.getAll(startStr, endStr, analyticsExpenseOpts),
+    db.otherExpenses.getAll(startStr, endStr, analyticsExpenseOpts),
+  ]);
+  return computeExpenseTotals(techExpenses, techAdvances, businessExpenses, otherBusinessExpenses);
+}
+
+const ANALYTICS_EXCLUDED_SALARY_EMPLOYEE_ID = 'TECH851703400';
+
+/** Pro-rated base salary for a period: only count salary up to today (current month "up to this date"). */
+function getProRatedBaseSalary(tech: any, periodStart: Date, periodEnd: Date): number {
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+  const effectiveEnd = periodEnd > today ? today : periodEnd;
+  if (periodStart > effectiveEnd) return 0;
+  const start = new Date(periodStart);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(effectiveEnd);
+  end.setHours(23, 59, 59, 999);
+  let total = 0;
+  const cur = new Date(start);
+  while (cur <= end) {
+    const monthDays = new Date(cur.getFullYear(), cur.getMonth() + 1, 0).getDate();
+    const monthStart = new Date(cur.getFullYear(), cur.getMonth(), 1);
+    const monthEnd = new Date(cur.getFullYear(), cur.getMonth() + 1, 0);
+    monthEnd.setHours(23, 59, 59, 999);
+    const rangeStart = monthStart < start ? start : monthStart;
+    const rangeEnd = monthEnd > end ? end : monthEnd;
+    const daysInRange = Math.round((rangeEnd.getTime() - rangeStart.getTime()) / 86400000) + 1;
+    const monthlyBaseSalary = getTechnicianMonthlyBaseSalary(tech, 8000, cur);
+    total += (monthlyBaseSalary * daysInRange) / monthDays;
+    cur.setMonth(cur.getMonth() + 1);
+    cur.setDate(1);
+  }
+  return Math.round(total * 100) / 100;
+}
+
+async function loadAnalyticsSalaryTotals(
+  technicians: any[],
+  startDate: Date,
+  endDate: Date,
+  period: PeriodOption,
+  startStr: string,
+  endStr: string
+): Promise<{ totalSalaryDeductions: number; totalSalaryIncludingAll: number }> {
+  const usePaymentsSalary =
+    (period === 'thisMonth' || period === 'previousMonth' || period === 'customMonth') &&
+    startDate &&
+    endDate;
+
+  if (usePaymentsSalary) {
+    try {
+      const result = await getTotalSalaryForCalendarMonth(
+        startDate.getFullYear(),
+        startDate.getMonth() + 1,
+        { technicians }
+      );
+      return {
+        totalSalaryDeductions: result.totalSalaryBeforeAdvance,
+        totalSalaryIncludingAll: result.totalSalaryBeforeAdvanceIncludingAll,
+      };
+    } catch (e) {
+      console.error('Error loading salary from Payments logic:', e);
+      return { totalSalaryDeductions: 0, totalSalaryIncludingAll: 0 };
+    }
+  }
+
+  if (technicians.length === 0 || !startDate || !endDate) {
+    return { totalSalaryDeductions: 0, totalSalaryIncludingAll: 0 };
+  }
+
+  let paymentByTech = new Map<string, number>();
+  let extraByTech = new Map<string, number>();
+
+  try {
+    const rpcRes = await db.analyticsPaginated.getCommissionTotals({
+      startISO: startDate.toISOString(),
+      endISO: endDate.toISOString(),
+      startDate: startStr,
+      endDate: endStr,
+    });
+    const parsed = parseAnalyticsCommissionTotalsRpc(rpcRes.data);
+    if (!rpcRes.error && parsed) {
+      paymentByTech = parsed.paymentByTech;
+      extraByTech = parsed.extraByTech;
+    } else {
+      const [paymentsRes, extraCommissionsRes] = await Promise.all([
+        db.analyticsData.getAllTechnicianPayments({
+          startISO: startDate.toISOString(),
+          endISO: endDate.toISOString(),
+        }),
+        db.technicianExtraCommissions.getAll(undefined, startStr, endStr, { forAnalytics: true }),
+      ]);
+      for (const p of paymentsRes.data || []) {
+        const techId = p.technician_id;
+        paymentByTech.set(techId, (paymentByTech.get(techId) || 0) + Number(p.commission_amount || 0));
+      }
+      for (const ec of extraCommissionsRes.data || []) {
+        const techId = ec.technician_id;
+        extraByTech.set(techId, (extraByTech.get(techId) || 0) + Number(ec.amount || 0));
+      }
+    }
+
+    let totalSalaryPaid = 0;
+    let totalSalaryIncludingAll = 0;
+    technicians.forEach((tech: any) => {
+      const techId = tech.id;
+      const employeeId = tech.employee_id ?? tech.employeeId ?? '';
+      const baseSalary = getProRatedBaseSalary(tech, startDate, endDate);
+      const commissions = paymentByTech.get(techId) || 0;
+      const extraCommissions = extraByTech.get(techId) || 0;
+      const amount = baseSalary + commissions + extraCommissions;
+      totalSalaryIncludingAll += amount;
+      if (employeeId === ANALYTICS_EXCLUDED_SALARY_EMPLOYEE_ID) return;
+      totalSalaryPaid += amount;
+    });
+    return {
+      totalSalaryDeductions: totalSalaryPaid,
+      totalSalaryIncludingAll,
+    };
+  } catch (e) {
+    console.error('Error calculating salary deductions:', e);
+    return { totalSalaryDeductions: 0, totalSalaryIncludingAll: 0 };
+  }
+}
+
 const Analytics = () => {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -656,34 +800,6 @@ const Analytics = () => {
     }
   };
 
-  /** Pro-rated base salary for a period: only count salary up to today (current month "up to this date"). */
-  const getProRatedBaseSalary = (tech: any, periodStart: Date, periodEnd: Date): number => {
-    const today = new Date();
-    today.setHours(23, 59, 59, 999);
-    const effectiveEnd = periodEnd > today ? today : periodEnd;
-    if (periodStart > effectiveEnd) return 0;
-    const start = new Date(periodStart);
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(effectiveEnd);
-    end.setHours(23, 59, 59, 999);
-    let total = 0;
-    const cur = new Date(start);
-    while (cur <= end) {
-      const monthDays = new Date(cur.getFullYear(), cur.getMonth() + 1, 0).getDate();
-      const monthStart = new Date(cur.getFullYear(), cur.getMonth(), 1);
-      const monthEnd = new Date(cur.getFullYear(), cur.getMonth() + 1, 0);
-      monthEnd.setHours(23, 59, 59, 999);
-      const rangeStart = monthStart < start ? start : monthStart;
-      const rangeEnd = monthEnd > end ? end : monthEnd;
-      const daysInRange = Math.round((rangeEnd.getTime() - rangeStart.getTime()) / 86400000) + 1;
-      const monthlyBaseSalary = getTechnicianMonthlyBaseSalary(tech, 8000, cur);
-      total += (monthlyBaseSalary * daysInRange) / monthDays;
-      cur.setMonth(cur.getMonth() + 1);
-      cur.setDate(1);
-    }
-    return Math.round(total * 100) / 100;
-  };
-
   const loadAnalytics = async () => {
     const cacheKey = buildAnalyticsCacheKey({
       period,
@@ -722,7 +838,6 @@ const Analytics = () => {
       let technicians: any[] = [];
       let rangedPayments: { technician_id: string; commission_amount?: number | null; payment_status?: string | null }[] =
         [];
-      const analyticsExpenseOpts = { forAnalytics: true as const };
 
       if (startDate && endDate) {
         // Parallel fetch: dashboard RPC + slim expense/technician data (no full jobs unless RPC unavailable).
@@ -731,30 +846,15 @@ const Analytics = () => {
         const [
           techniciansRes,
           dashboardRes,
-          { data: techExpenses },
-          { data: techAdvances },
-          { data: businessExpenses },
-          { data: otherBusinessExpenses },
-          paymentsInRangeRes
+          expensePartial,
         ] = await Promise.all([
-          db.technicians.getAllForDashboard(100, { activeRosterOnly: false }),
+          db.technicians.getAllForAnalytics(100, { activeRosterOnly: false }),
           db.analyticsPaginated.getDashboard(startDate, endDate),
-          db.technicianExpenses.getAll(undefined, startStr, endStr, analyticsExpenseOpts),
-          db.technicianAdvances.getAll(undefined, startStr, endStr, analyticsExpenseOpts),
-          db.businessExpenses.getAll(startStr, endStr, analyticsExpenseOpts),
-          db.otherExpenses.getAll(startStr, endStr, analyticsExpenseOpts),
-          db.analyticsData.getAllTechnicianPayments({ startISO, endISO })
+          loadAnalyticsExpenseTotals(startStr, endStr),
         ]);
 
         technicians = techniciansRes.data || [];
-        rangedPayments = paymentsInRangeRes.data || [];
 
-        const expensePartial = computeExpenseTotals(
-          techExpenses,
-          techAdvances,
-          businessExpenses,
-          otherBusinessExpenses
-        );
         totalTechnicianExpenses = expensePartial.totalTechnicianExpenses;
         totalTechnicianAdvances = expensePartial.totalTechnicianAdvances;
         totalBusinessExpenses = expensePartial.totalBusinessExpenses;
@@ -763,67 +863,34 @@ const Analytics = () => {
         totalOtherBusinessLedgerExpenses = expensePartial.totalOtherBusinessLedgerExpenses;
         totalOtherBusinessExpenses = expensePartial.totalOtherBusinessExpenses;
 
-        const usePaymentsSalary = (period === 'thisMonth' || period === 'previousMonth' || period === 'customMonth') && startDate && endDate;
-        if (usePaymentsSalary) {
-          try {
-            const year = startDate.getFullYear();
-            const month = startDate.getMonth() + 1;
-            const result = await getTotalSalaryForCalendarMonth(year, month);
-            totalSalaryDeductions = result.totalSalaryBeforeAdvance;
-            totalSalaryIncludingAll = result.totalSalaryBeforeAdvanceIncludingAll;
-          } catch (e) {
-            console.error('Error loading salary from Payments logic:', e);
-          }
-        } else {
-          try {
-            if (technicians.length > 0 && startDate && endDate) {
-              const extraCommissionsRes = await db.technicianExtraCommissions.getAll(
-                undefined,
-                startStr,
-                endStr,
-                analyticsExpenseOpts
-              );
-              const paymentsData = rangedPayments;
-              const extraCommissionsData = extraCommissionsRes.data || [];
-              let totalSalaryPaid = 0;
-              const EXCLUDED_EMPLOYEE_ID = 'TECH851703400';
-              technicians.forEach((tech: any) => {
-                const techId = tech.id;
-                const employeeId = tech.employee_id ?? tech.employeeId ?? '';
-                const techPayments = (paymentsData || []).filter((p: any) => p.technician_id === techId);
-                const techExtraCommissions = (extraCommissionsData || []).filter((ec: any) => {
-                  if (ec.technician_id !== techId) return false;
-                  const ecDate = new Date(ec.commission_date);
-                  return ecDate >= startDate && ecDate <= endDate;
-                });
-                const baseSalary = getProRatedBaseSalary(tech, startDate, endDate);
-                const commissions = techPayments.reduce((sum: number, p: any) => sum + (p.commission_amount || 0), 0);
-                const extraCommissions = techExtraCommissions.reduce((sum: number, ec: any) => sum + (ec.amount || 0), 0);
-                const amount = baseSalary + commissions + extraCommissions;
-                totalSalaryIncludingAll += amount;
-                if (employeeId === EXCLUDED_EMPLOYEE_ID) return;
-                totalSalaryPaid += amount;
-              });
-              totalSalaryDeductions = totalSalaryPaid;
-            }
-          } catch (e) {
-            console.error('Error calculating salary deductions:', e);
-          }
-        }
-
         const dash = parseAnalyticsDashboardRpc(dashboardRes.data);
         if (!dashboardRes.error && dash) {
+          const salaryTotals = await loadAnalyticsSalaryTotals(
+            technicians,
+            startDate,
+            endDate,
+            period,
+            startStr,
+            endStr
+          );
           const payload = buildAnalyticsPayloadFromDashboard(dash, technicians, {
             ...expensePartial,
-            totalSalaryDeductions,
-            totalSalaryIncludingAll,
+            ...salaryTotals,
           });
           setAnalytics(payload);
           writeAnalyticsSessionCache(cacheKey, payload);
           return;
         }
 
-        const jobsInRangeResult = await db.jobs.getForAnalyticsInRange(startDate, endDate);
+        const [paymentsInRangeRes, jobsInRangeResult, salaryTotals] = await Promise.all([
+          db.analyticsData.getAllTechnicianPayments({ startISO, endISO }),
+          db.jobs.getForAnalyticsInRange(startDate, endDate),
+          loadAnalyticsSalaryTotals(technicians, startDate, endDate, period, startStr, endStr),
+        ]);
+        rangedPayments = paymentsInRangeRes.data || [];
+        totalSalaryDeductions = salaryTotals.totalSalaryDeductions;
+        totalSalaryIncludingAll = salaryTotals.totalSalaryIncludingAll;
+
         if (jobsInRangeResult.error || !jobsInRangeResult.data) {
           console.error('Error loading jobs for detailed analytics:', jobsInRangeResult.error);
           setAnalytics(null);
@@ -878,29 +945,14 @@ const Analytics = () => {
         const [
           dashboardRes,
           techniciansRes,
-          { data: techExpenses },
-          { data: techAdvances },
-          { data: businessExpenses },
-          { data: otherBusinessExpenses },
-          paymentsAllRes
+          expensePartial,
         ] = await Promise.all([
           db.analyticsPaginated.getDashboard(undefined, undefined),
-          db.technicians.getAllForDashboard(100, { activeRosterOnly: false }),
-          db.technicianExpenses.getAll(undefined, undefined, undefined, analyticsExpenseOpts),
-          db.technicianAdvances.getAll(undefined, undefined, undefined, analyticsExpenseOpts),
-          db.businessExpenses.getAll(undefined, undefined, analyticsExpenseOpts),
-          db.otherExpenses.getAll(undefined, undefined, analyticsExpenseOpts),
-          db.analyticsData.getAllTechnicianPayments(),
+          db.technicians.getAllForAnalytics(100, { activeRosterOnly: false }),
+          loadAnalyticsExpenseTotals(undefined, undefined),
         ]);
         technicians = techniciansRes.data || [];
-        rangedPayments = paymentsAllRes.data || [];
 
-        const expensePartial = computeExpenseTotals(
-          techExpenses,
-          techAdvances,
-          businessExpenses,
-          otherBusinessExpenses
-        );
         totalTechnicianExpenses = expensePartial.totalTechnicianExpenses;
         totalTechnicianAdvances = expensePartial.totalTechnicianAdvances;
         totalBusinessExpenses = expensePartial.totalBusinessExpenses;
@@ -921,7 +973,12 @@ const Analytics = () => {
           return;
         }
 
-        const jobsRes = await db.jobs.getForAnalytics();
+        const [paymentsAllRes, jobsRes] = await Promise.all([
+          db.analyticsData.getAllTechnicianPayments(),
+          db.jobs.getForAnalytics(),
+        ]);
+        rangedPayments = paymentsAllRes.data || [];
+
         if (jobsRes.error || !jobsRes.data) {
           console.error('Error loading jobs for detailed analytics:', jobsRes.error);
           setAnalytics(null);
@@ -1129,7 +1186,7 @@ const Analytics = () => {
         serviceTypes: Record<string, { count: number; amount: number }>;
       }> = {};
       
-      // Technicians loaded once above (getAllForDashboard — no live GPS blob).
+      // Technicians loaded once above (getAllForAnalytics — slim roster, no GPS/phone blobs).
 
       // Calculate stats for each technician based on jobs in the selected period
       jobs.forEach((job: any) => {
@@ -1518,7 +1575,7 @@ const Analytics = () => {
 
       const [rpcRes, techniciansRes] = await Promise.all([
         db.analyticsPaginated.getReturnComplaints(startDate ?? undefined, endDate ?? undefined),
-        db.technicians.getAllForDashboard(100, { activeRosterOnly: false }),
+        db.technicians.getAllForAnalytics(100, { activeRosterOnly: false }),
       ]);
       const technicians = techniciansRes.data || [];
       const rpcParsed = parseReturnComplaintsRpc(rpcRes.data);
@@ -1748,7 +1805,7 @@ const Analytics = () => {
 
       const [rpcRes, techniciansRes] = await Promise.all([
         db.analyticsPaginated.getDirectWebsiteConversions(startDate ?? undefined, endDate ?? undefined),
-        db.technicians.getAllForDashboard(100, { activeRosterOnly: false }),
+        db.technicians.getAllForAnalytics(100, { activeRosterOnly: false }),
       ]);
       const technicians = techniciansRes.data || [];
       const rpcParsed = parseDirectWebsiteConversionsRpc(rpcRes.data);

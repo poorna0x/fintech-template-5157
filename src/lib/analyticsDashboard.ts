@@ -281,3 +281,57 @@ export function mapRepeatVsNewFromRpc(rpc: RepeatVsNewRpc) {
     monthly,
   };
 }
+
+export type AnalyticsExpenseTotalsRpc = {
+  total_technician_expenses: number;
+  total_technician_advances: number;
+  total_business_expenses: number;
+  total_business_expenses_for_profit: number;
+  total_business_expenses_for_profit_jobs_only: number;
+  total_other_business_ledger_expenses: number;
+  total_other_business_expenses: number;
+};
+
+export function parseAnalyticsExpenseTotalsRpc(data: unknown): {
+  totalTechnicianExpenses: number;
+  totalTechnicianAdvances: number;
+  totalBusinessExpenses: number;
+  totalBusinessExpensesForProfit: number;
+  totalBusinessExpensesForProfitJobsOnly: number;
+  totalOtherBusinessLedgerExpenses: number;
+  totalOtherBusinessExpenses: number;
+} | null {
+  if (!data || typeof data !== 'object') return null;
+  const row = data as AnalyticsExpenseTotalsRpc;
+  return {
+    totalTechnicianExpenses: Number(row.total_technician_expenses) || 0,
+    totalTechnicianAdvances: Number(row.total_technician_advances) || 0,
+    totalBusinessExpenses: Number(row.total_business_expenses) || 0,
+    totalBusinessExpensesForProfit: Number(row.total_business_expenses_for_profit) || 0,
+    totalBusinessExpensesForProfitJobsOnly: Number(row.total_business_expenses_for_profit_jobs_only) || 0,
+    totalOtherBusinessLedgerExpenses: Number(row.total_other_business_ledger_expenses) || 0,
+    totalOtherBusinessExpenses: Number(row.total_other_business_expenses) || 0,
+  };
+}
+
+export function parseAnalyticsCommissionTotalsRpc(data: unknown): {
+  paymentByTech: Map<string, number>;
+  extraByTech: Map<string, number>;
+} | null {
+  if (!data || typeof data !== 'object') return null;
+  const row = data as {
+    payment_commissions?: Array<{ technician_id?: string; total?: number }>;
+    extra_commissions?: Array<{ technician_id?: string; total?: number }>;
+  };
+  const paymentByTech = new Map<string, number>();
+  const extraByTech = new Map<string, number>();
+  for (const entry of row.payment_commissions || []) {
+    if (!entry?.technician_id) continue;
+    paymentByTech.set(entry.technician_id, Number(entry.total) || 0);
+  }
+  for (const entry of row.extra_commissions || []) {
+    if (!entry?.technician_id) continue;
+    extraByTech.set(entry.technician_id, Number(entry.total) || 0);
+  }
+  return { paymentByTech, extraByTech };
+}

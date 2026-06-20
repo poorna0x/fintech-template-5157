@@ -218,7 +218,8 @@ export interface TotalSalaryForMonthResult {
  */
 export async function getTotalSalaryForCalendarMonth(
   year: number,
-  month: number // 1-12
+  month: number, // 1-12
+  options?: { technicians?: any[] }
 ): Promise<TotalSalaryForMonthResult> {
   const monthIndex = month - 1;
   const startDate = new Date(year, monthIndex, 1, 0, 0, 0, 0);
@@ -230,12 +231,14 @@ export async function getTotalSalaryForCalendarMonth(
   const todayStr = formatDateString(today);
 
   const [
-    { data: technicians },
+    techniciansResult,
     { data: paymentsData },
     { data: extraCommissionsData },
     { data: holidaysData },
   ] = await Promise.all([
-    db.technicians.getAll(100),
+    options?.technicians
+      ? Promise.resolve({ data: options.technicians })
+      : db.technicians.getAllForAnalytics(100, { activeRosterOnly: false }),
     supabase
       .from('technician_payments')
       .select('technician_id, job_id, commission_amount')
@@ -253,7 +256,7 @@ export async function getTotalSalaryForCalendarMonth(
     .gte('end_time', startDate.toISOString())
     .lte('end_time', endDate.toISOString());
 
-  const allTechnicians = technicians || [];
+  const allTechnicians = techniciansResult.data || [];
   const payments = paymentsData || [];
   const extraCommissions = extraCommissionsData || [];
   const holidays = holidaysData || [];
