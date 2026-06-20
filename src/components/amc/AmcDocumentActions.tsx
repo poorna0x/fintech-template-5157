@@ -20,6 +20,8 @@ export interface AmcDocumentActionsProps {
   disabled?: boolean;
   /** Save AMC contract to DB before download */
   onPersistBeforeAction?: () => Promise<AmcPersistResult>;
+  /** Save AMC contract to DB before email send (technician reliability) */
+  onPersistBeforeEmail?: () => Promise<AmcPersistResult>;
   /** Save AMC contract to DB after email sends successfully */
   onPersistAfterEmail?: (recipients: string[]) => Promise<AmcPersistResult>;
   onSent?: () => void;
@@ -35,6 +37,7 @@ export default function AmcDocumentActions({
   compact = false,
   disabled = false,
   onPersistBeforeAction,
+  onPersistBeforeEmail,
   onPersistAfterEmail,
   onSent,
   className,
@@ -116,6 +119,8 @@ export default function AmcDocumentActions({
         endDateIso={endDateIso}
         defaultRecipients={defaultRecipients}
         pdfOptions={pdfOptions}
+        singleRecipient
+        onPersistBeforeEmail={onPersistBeforeEmail ?? onPersistBeforeAction}
         onPersistAfterEmail={onPersistAfterEmail}
         onSent={onSent}
       />

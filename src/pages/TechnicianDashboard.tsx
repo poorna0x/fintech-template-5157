@@ -8312,7 +8312,7 @@ const TechnicianDashboard = () => {
                             <p className="text-sm font-semibold text-violet-950">Share AMC with customer</p>
                             <p className="text-xs text-violet-900/75 mt-1 leading-relaxed">
                               Download or email a reference AMC PDF using the details above and customer info.
-                              You can add or edit email addresses before sending.
+                              You can edit the customer email before sending.
                             </p>
                           </div>
                           <AmcDocumentActions
@@ -8323,6 +8323,9 @@ const TechnicianDashboard = () => {
                             customerEmail={completeJobCustomerDoc?.email}
                             onPersistBeforeAction={() =>
                               persistTechnicianAmcForShare({ sharedVia: 'technician_download' })
+                            }
+                            onPersistBeforeEmail={() =>
+                              persistTechnicianAmcForShare({ sharedVia: 'technician_complete_job' })
                             }
                             onPersistAfterEmail={(recipients) =>
                               persistTechnicianAmcForShare({

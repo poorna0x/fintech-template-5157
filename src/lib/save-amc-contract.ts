@@ -126,7 +126,6 @@ export function buildTechnicianAmcPersistPayload(
     includes_prefilter: ctx.includesPrefilter,
     additional_info: JSON.stringify(metadata),
     service_period_months: ctx.servicePeriodMonths,
-    given_by_technician_id: ctx.technicianId,
     service_brand: ctx.serviceBrand,
   };
 }

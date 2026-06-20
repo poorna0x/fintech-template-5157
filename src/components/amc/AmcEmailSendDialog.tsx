@@ -15,6 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { getDefaultDocumentMessage } from '@/lib/admin-email-templates';
+import { ensureSupabaseSessionForWrite } from '@/lib/ensureSupabaseSession';
 import {
   isValidEmailFormat,
   normalizeRecipientList,
@@ -39,6 +40,10 @@ export interface AmcEmailSendDialogProps {
   /** Pre-filled recipient(s), e.g. customer email */
   defaultRecipients?: string[];
   pdfOptions?: AMCPDFOptions;
+  /** Technician flow: one editable email field (no multi-recipient UI) */
+  singleRecipient?: boolean;
+  /** Save AMC before generating PDF / sending (technician reliability) */
+  onPersistBeforeEmail?: () => Promise<AmcPersistResult>;
   /** Save AMC to DB after email sends successfully */
   onPersistAfterEmail?: (recipients: string[]) => Promise<AmcPersistResult>;
   onSent?: () => void;
@@ -56,9 +61,12 @@ export default function AmcEmailSendDialog({
   endDateIso,
   defaultRecipients = [],
   pdfOptions,
+  singleRecipient = false,
+  onPersistBeforeEmail,
   onPersistAfterEmail,
   onSent,
 }: AmcEmailSendDialogProps) {
+  const [recipientEmail, setRecipientEmail] = useState('');
   const [recipientRows, setRecipientRows] = useState<string[]>([emptyRow()]);
   const [message, setMessage] = useState(() => getDefaultDocumentMessage('amc_document'));
   const [sending, setSending] = useState(false);
@@ -66,14 +74,21 @@ export default function AmcEmailSendDialog({
   useEffect(() => {
     if (!open) return;
     const seeded = normalizeRecipientList(defaultRecipients);
-    setRecipientRows(seeded.length ? seeded : [emptyRow()]);
+    if (singleRecipient) {
+      setRecipientEmail(seeded[0] || '');
+    } else {
+      setRecipientRows(seeded.length ? seeded : [emptyRow()]);
+    }
     setMessage(getDefaultDocumentMessage('amc_document'));
-  }, [open, defaultRecipients]);
+  }, [open, defaultRecipients, singleRecipient]);
 
-  const normalizedRecipients = useMemo(
-    () => normalizeRecipientList(recipientRows),
-    [recipientRows]
-  );
+  const normalizedRecipients = useMemo(() => {
+    if (singleRecipient) {
+      const trimmed = recipientEmail.trim();
+      return isValidEmailFormat(trimmed) ? [trimmed] : [];
+    }
+    return normalizeRecipientList(recipientRows);
+  }, [singleRecipient, recipientEmail, recipientRows]);
 
   const brandLabel = brand ? getDocumentBrandLabel(brand) : '';
 
@@ -98,28 +113,60 @@ export default function AmcEmailSendDialog({
       return;
     }
 
-    const recipients = normalizeRecipientList(recipientRows);
-    if (!recipients.length) {
-      toast.error('Add at least one valid email address');
-      return;
-    }
+    let recipients: string[];
 
-    const invalid = recipientRows
-      .map((r) => r.trim())
-      .filter((r) => r && !isValidEmailFormat(r));
-    if (invalid.length) {
-      toast.error(`Invalid email: ${invalid[0]}`);
-      return;
+    if (singleRecipient) {
+      const trimmed = recipientEmail.trim();
+      if (!trimmed) {
+        toast.error('Enter a customer email address');
+        return;
+      }
+      if (!isValidEmailFormat(trimmed)) {
+        toast.error('Enter a valid email address');
+        return;
+      }
+      recipients = [trimmed];
+    } else {
+      recipients = normalizeRecipientList(recipientRows);
+      if (!recipients.length) {
+        toast.error('Add at least one valid email address');
+        return;
+      }
+
+      const invalid = recipientRows
+        .map((r) => r.trim())
+        .filter((r) => r && !isValidEmailFormat(r));
+      if (invalid.length) {
+        toast.error(`Invalid email: ${invalid[0]}`);
+        return;
+      }
     }
 
     setSending(true);
-    const toastId = toast.loading(
-      recipients.length > 1
-        ? `Generating PDF and sending to ${recipients.length} recipients…`
-        : 'Generating PDF and sending email…'
-    );
+    const toastId = toast.loading('Generating PDF and sending email…');
 
     try {
+      if (singleRecipient) {
+        const sessionReady = await ensureSupabaseSessionForWrite();
+        if (!sessionReady.ok) {
+          toast.error('Could not refresh your session. Please try again in a moment.', {
+            id: toastId,
+          });
+          return;
+        }
+      }
+
+      if (onPersistBeforeEmail) {
+        toast.loading('Saving AMC to database…', { id: toastId });
+        const preSaved = await onPersistBeforeEmail();
+        if (!preSaved.ok) {
+          toast.error(preSaved.error || 'Could not save AMC to database', { id: toastId });
+          return;
+        }
+      }
+
+      toast.loading('Generating PDF and sending email…', { id: toastId });
+
       const result = await sendAmcAgreementEmail({
         bill,
         brand,
@@ -177,7 +224,7 @@ export default function AmcEmailSendDialog({
           <DialogDescription className="text-xs sm:text-sm text-violet-900/80">
             {brandLabel
               ? `PDF attached · sent from ${brandLabel}`
-              : 'PDF will be attached to each message'}
+              : 'PDF will be attached to the email'}
           </DialogDescription>
         </DialogHeader>
 
@@ -197,56 +244,78 @@ export default function AmcEmailSendDialog({
             </div>
           ) : null}
 
-          <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <Label className="text-sm font-medium">Recipients</Label>
-              <span className="text-xs text-muted-foreground">
-                {normalizedRecipients.length} valid
-              </span>
-            </div>
-
+          {singleRecipient ? (
             <div className="space-y-2">
-              {recipientRows.map((row, index) => (
-                <div key={`recipient-${index}`} className="flex gap-2">
-                  <Input
-                    type="email"
-                    inputMode="email"
-                    autoComplete="email"
-                    placeholder="name@example.com"
-                    value={row}
-                    onChange={(e) => updateRow(index, e.target.value)}
-                    className="h-10 min-w-0 flex-1"
-                    disabled={sending}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    className="h-10 w-10 shrink-0"
-                    onClick={() => removeRow(index)}
-                    disabled={sending || recipientRows.length <= 1}
-                    aria-label="Remove recipient"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-
-            <div className="flex flex-col sm:flex-row gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-9 justify-center"
-                onClick={addRow}
+              <Label htmlFor="amc-recipient-email" className="text-sm font-medium">
+                Customer email
+              </Label>
+              <Input
+                id="amc-recipient-email"
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                placeholder="name@example.com"
+                value={recipientEmail}
+                onChange={(e) => setRecipientEmail(e.target.value)}
+                className="h-10"
                 disabled={sending}
-              >
-                <Plus className="h-4 w-4 mr-1.5" />
-                Add email
-              </Button>
+              />
+              <p className="text-xs text-muted-foreground">
+                Pre-filled from customer record — edit if needed before sending.
+              </p>
             </div>
-          </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <Label className="text-sm font-medium">Recipients</Label>
+                <span className="text-xs text-muted-foreground">
+                  {normalizedRecipients.length} valid
+                </span>
+              </div>
+
+              <div className="space-y-2">
+                {recipientRows.map((row, index) => (
+                  <div key={`recipient-${index}`} className="flex gap-2">
+                    <Input
+                      type="email"
+                      inputMode="email"
+                      autoComplete="email"
+                      placeholder="name@example.com"
+                      value={row}
+                      onChange={(e) => updateRow(index, e.target.value)}
+                      className="h-10 min-w-0 flex-1"
+                      disabled={sending}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="h-10 w-10 shrink-0"
+                      onClick={() => removeRow(index)}
+                      disabled={sending || recipientRows.length <= 1}
+                      aria-label="Remove recipient"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9 justify-center"
+                  onClick={addRow}
+                  disabled={sending}
+                >
+                  <Plus className="h-4 w-4 mr-1.5" />
+                  Add email
+                </Button>
+              </div>
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label htmlFor="amc-email-message" className="text-sm font-medium">
@@ -290,7 +359,7 @@ export default function AmcEmailSendDialog({
             ) : (
               <>
                 <Mail className="h-4 w-4 mr-2" />
-                Send{normalizedRecipients.length > 1 ? ` (${normalizedRecipients.length})` : ''}
+                Send email
               </>
             )}
           </Button>

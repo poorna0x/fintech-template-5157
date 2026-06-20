@@ -231,18 +231,14 @@ function validatePreviewEmailBody(body) {
     return { ok: false, error: 'Invalid or missing purpose' };
   }
 
-  const to =
-    purpose === 'amc_agreement' ||
-    (typeof body.to === 'string' && /[,;]/.test(body.to))
-      ? normalizePreviewRecipients(body.to)
-      : normalizeRecipient(body.to);
+  const toMulti = typeof body.to === 'string' && /[,;]/.test(body.to);
+  const to = toMulti ? normalizePreviewRecipients(body.to) : normalizeRecipient(body.to);
   if (!to) {
     return {
       ok: false,
-      error:
-        purpose === 'amc_agreement' && typeof body.to === 'string' && /[,;]/.test(body.to)
-          ? 'Invalid recipient addresses — check each email and try again'
-          : 'Invalid recipient address',
+      error: toMulti
+        ? 'Invalid recipient addresses — check each email and try again'
+        : 'Invalid recipient address',
     };
   }
 
