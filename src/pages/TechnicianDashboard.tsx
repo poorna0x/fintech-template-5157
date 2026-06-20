@@ -3143,7 +3143,6 @@ const TechnicianDashboard = () => {
       includesPrefilter: amcIncludesPrefilter === true,
       servicePeriodKind: amcServicePeriodKind,
       servicePeriodCustomMonths: amcServicePeriodCustomMonths,
-      additionalInfo: amcAdditionalInfo,
     });
   }, [
     hasAMC,
@@ -3154,7 +3153,6 @@ const TechnicianDashboard = () => {
     amcIncludesPrefilter,
     amcServicePeriodKind,
     amcServicePeriodCustomMonths,
-    amcAdditionalInfo,
     serviceBrand,
     completeJobCustomerDoc,
     selectedJobForComplete,
@@ -8304,7 +8302,7 @@ const TechnicianDashboard = () => {
                       className="mt-1 w-full rounded-md border border-input min-h-[80px]"
                 />
                       <p className="text-xs text-gray-500 mt-1">
-                        This information is for admin reference only. The admin will create the official AMC contract.
+                        Saved for admin reference only — not included on the customer AMC PDF.
                       </p>
               </div>
 

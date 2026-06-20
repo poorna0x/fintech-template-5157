@@ -22,7 +22,6 @@ export interface TechnicianReferenceAmcInput {
   includesPrefilter: boolean;
   servicePeriodKind: '4' | '6' | 'custom' | 'no_auto';
   servicePeriodCustomMonths: number;
-  additionalInfo?: string;
   roModel?: string;
 }
 
@@ -82,7 +81,8 @@ export function buildTechnicianReferenceAmcBill(input: TechnicianReferenceAmcInp
     totalAmount: input.amount,
     paymentStatus: 'PAID',
     amountPaid: input.amount,
-    notes: input.additionalInfo?.trim() || '',
+    // Admin-reference notes are persisted via save-amc-contract metadata, not on customer PDF.
+    notes: '',
     terms: generateAmcTerms(
       input.includesPrefilter,
       input.servicePeriodKind,
