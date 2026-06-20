@@ -90,8 +90,33 @@ function getFixedFromAddress() {
   return trimmed;
 }
 
+function resolveDocumentBrand(value) {
+  return value === 'elevenro' ? 'elevenro' : 'hydrogenro';
+}
+
+function getBrandMailMeta(documentBrand) {
+  const brand = resolveDocumentBrand(documentBrand);
+  if (brand === 'elevenro') {
+    return {
+      documentBrand: brand,
+      fromName: 'Eleven RO - Water Purifier Services',
+      replyTo: 'mail@elevenro.com',
+      mailer: 'Eleven RO Service',
+      messageIdDomain: 'elevenro.com',
+    };
+  }
+  return {
+    documentBrand: brand,
+    fromName: 'Hydrogen RO - Water Purifier Services',
+    replyTo: 'info@hydrogenro.com',
+    mailer: 'Hydrogen RO Service',
+    messageIdDomain: 'hydrogenro.com',
+  };
+}
+
 module.exports = {
   ALLOWED_PURPOSE,
   validateBookingEmailBody,
   getFixedFromAddress,
+  getBrandMailMeta,
 };

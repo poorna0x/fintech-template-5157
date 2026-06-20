@@ -10,7 +10,7 @@ const {
   getClientIdentifier,
 } = require('./booking-guard');
 const { enforceSendEmailRateLimits } = require('./rate-limiter');
-const { validateBookingEmailBody, getFixedFromAddress } = require('./email-guard');
+const { validateBookingEmailBody, getFixedFromAddress, getBrandMailMeta } = require('./email-guard');
 
 exports.handler = async (event) => {
   const pre = preflightOrReject(event);
@@ -69,6 +69,8 @@ exports.handler = async (event) => {
     });
   }
 
+  const brandMeta = getBrandMailMeta(body.documentBrand);
+
   const transporter = nodemailer.createTransport({
     host: 'smtp.hostinger.com',
     port: 587,
@@ -82,24 +84,24 @@ exports.handler = async (event) => {
 
   const mailOptions = {
     from: {
-      name: 'Hydrogen RO - Water Purifier Services',
+      name: brandMeta.fromName,
       address: fromAddress,
     },
     to: validated.to,
     subject: validated.subject,
     html: validated.html,
     text: validated.text,
-    replyTo: 'info@hydrogenro.com',
+    replyTo: brandMeta.replyTo,
     headers: {
-      'X-Mailer': 'Hydrogen RO Service',
+      'X-Mailer': brandMeta.mailer,
       'X-Priority': '3',
       'X-MSMail-Priority': 'Normal',
       Importance: 'Normal',
-      'X-Report-Abuse': 'Please report abuse to abuse@hydrogenro.com',
-      'List-Unsubscribe': '<mailto:unsubscribe@hydrogenro.com>',
+      'X-Report-Abuse': `Please report abuse to abuse@${brandMeta.messageIdDomain}`,
+      'List-Unsubscribe': `<mailto:unsubscribe@${brandMeta.messageIdDomain}>`,
       Precedence: 'bulk',
     },
-    messageId: `<${Date.now()}.${Math.random().toString(36).slice(2, 11)}@hydrogenro.com>`,
+    messageId: `<${Date.now()}.${Math.random().toString(36).slice(2, 11)}@${brandMeta.messageIdDomain}>`,
   };
 
   try {

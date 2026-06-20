@@ -2,7 +2,7 @@
 // Protected by EMAIL_PREVIEW_SECRET header — set in Netlify env + VITE_EMAIL_PREVIEW_SECRET locally.
 
 const nodemailer = require('nodemailer');
-const { validateBookingEmailBody, getFixedFromAddress } = require('./email-guard');
+const { validateBookingEmailBody, getFixedFromAddress, getBrandMailMeta } = require('./email-guard');
 
 function jsonResponse(statusCode, headers, body) {
   return {
@@ -74,19 +74,21 @@ exports.handler = async (event) => {
     tls: {},
   });
 
+  const brandMeta = getBrandMailMeta(body.documentBrand);
+
   try {
     const info = await transporter.sendMail({
       from: {
-        name: 'Hydrogen RO - Water Purifier Services',
+        name: brandMeta.fromName,
         address: fromAddress,
       },
       to: validated.to,
       subject: validated.subject,
       html: validated.html,
       text: validated.text,
-      replyTo: 'info@hydrogenro.com',
+      replyTo: brandMeta.replyTo,
       headers: {
-        'X-Mailer': 'Hydrogen RO Email Preview',
+        'X-Mailer': `${brandMeta.mailer} Email Preview`,
         'X-Priority': '3',
       },
     });

@@ -3,6 +3,7 @@
 import type { BookingAltchaContext } from '@/lib/bookingCustomer';
 import {
   buildBookingConfirmationEmail,
+  resolveBookingEmailDocumentBrand,
   type BookingConfirmationEmailData,
 } from '@/lib/booking-confirmation-email';
 
@@ -53,6 +54,7 @@ export class EmailService {
         },
         body: JSON.stringify({
           purpose: 'booking_confirmation',
+          documentBrand: emailData.data.documentBrand,
           altchaLoginToken: ctx.altchaLoginToken,
           altchaPayload: ctx.altchaPayload,
           phone,
@@ -93,6 +95,10 @@ export class EmailService {
     }
 
     const template = buildBookingConfirmationEmail(data);
+    const documentBrand = resolveBookingEmailDocumentBrand(
+      data,
+      typeof window !== 'undefined' ? window.location.origin : undefined
+    );
 
     try {
       const response = await fetch(this.previewApiUrl, {
@@ -103,6 +109,7 @@ export class EmailService {
         },
         body: JSON.stringify({
           purpose: 'booking_confirmation',
+          documentBrand,
           to,
           subject: template.subject,
           html: template.html,
@@ -138,6 +145,7 @@ export class EmailService {
     }
 
     const template = emailTemplates.bookingConfirmation(data);
+    const documentBrand = resolveBookingEmailDocumentBrand(data);
 
     return this.sendEmail(
       {
@@ -146,6 +154,7 @@ export class EmailService {
         template: 'bookingConfirmation',
         data: {
           ...data,
+          documentBrand,
           html: template.html,
           text: template.text,
         },

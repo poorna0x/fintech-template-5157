@@ -2019,6 +2019,11 @@ const Booking: React.FC = () => {
         ? (jobServiceLocation.googleLocation || formData.googleMapsLink)
         : formData.googleMapsLink;
 
+      const emailDocumentBrand: 'hydrogenro' | 'elevenro' =
+        bookingSource === 'elevenro' || bookingSource === 'hydrogenro'
+          ? bookingSource
+          : WEBSITE_BOOKING_SITE_KEY;
+
       // Send confirmation email (non-blocking for faster response)
       emailService
         .sendBookingConfirmation(
@@ -2036,6 +2041,7 @@ const Booking: React.FC = () => {
             scheduledTimeSlot: formData.preferredTime,
             serviceAddress: displayAddress,
             phone: formData.phone,
+            documentBrand: emailDocumentBrand,
           },
           altchaCtx,
           formData.phone

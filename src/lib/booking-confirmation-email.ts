@@ -97,6 +97,19 @@ export function getEmailPhoneIconUrl(baseUrl?: string): string {
   return `${getEmailSiteOrigin(baseUrl)}/telephone-call.png`;
 }
 
+/** Resolve brand from explicit field, then site origin (elevenro.com vs hydrogenro.com). */
+export function resolveBookingEmailDocumentBrand(
+  data: Pick<BookingConfirmationEmailData, 'documentBrand'>,
+  siteOrigin?: string
+): DocumentBrand {
+  if (data.documentBrand === 'elevenro' || data.documentBrand === 'hydrogenro') {
+    return data.documentBrand;
+  }
+  const origin = (siteOrigin || getEmailSiteOrigin()).toLowerCase();
+  if (origin.includes('elevenro')) return 'elevenro';
+  return 'hydrogenro';
+}
+
 export function formatBookingTimeSlot(timeSlot: string): string {
   const timeMap: Record<string, string> = {
     FIRST_HALF: 'Morning (9 AM - 2 PM)',
@@ -228,11 +241,11 @@ export function buildBookingConfirmationEmail(
   data: BookingConfirmationEmailData,
   options?: { logoUrl?: string; siteOrigin?: string }
 ): BookingConfirmationEmailResult {
-  const documentBrand = data.documentBrand || 'hydrogenro';
+  const siteOrigin = options?.siteOrigin || getEmailSiteOrigin();
+  const documentBrand = resolveBookingEmailDocumentBrand(data, siteOrigin);
   const brandName = getDocumentBrandLabel(documentBrand);
   const contact = BRAND_CONTACT[documentBrand];
   const c = EMAIL_COLORS;
-  const siteOrigin = options?.siteOrigin || getEmailSiteOrigin();
   const fullLogoUrl = options?.logoUrl || getEmailLogoUrl(siteOrigin, documentBrand);
   const whatsappIconUrl = getEmailWhatsappIconUrl(siteOrigin);
   const phoneIconUrl = getEmailPhoneIconUrl(siteOrigin);
