@@ -22,10 +22,10 @@ const MAX_TEXT_LENGTH = 150_000;
 const EMAIL_RE =
   /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
 
-function hasBlockedFields(body) {
+function hasBlockedFields(body, allowedKeys = null) {
   if (!body || typeof body !== 'object') return null;
   for (const key of Object.keys(body)) {
-    if (BLOCKED_BODY_KEYS.has(key)) {
+    if (BLOCKED_BODY_KEYS.has(key) && !(allowedKeys && allowedKeys.has(key))) {
       return key;
     }
   }
@@ -191,7 +191,7 @@ function validatePreviewEmailBody(body) {
     return { ok: false, error: 'Invalid request' };
   }
 
-  const blocked = hasBlockedFields(body);
+  const blocked = hasBlockedFields(body, new Set(['attachments']));
   if (blocked) {
     return { ok: false, error: 'Invalid request fields' };
   }

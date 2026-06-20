@@ -128,11 +128,15 @@ export class EmailService {
           subject: payload.subject,
           html: payload.html,
           text: payload.text,
-          attachments: payload.attachments?.map(({ filename, contentType, content }) => ({
-            filename,
-            contentType,
-            content,
-          })),
+          ...(payload.attachments?.length
+            ? {
+                attachments: payload.attachments.map(({ filename, contentType, content }) => ({
+                  filename,
+                  contentType,
+                  content,
+                })),
+              }
+            : {}),
         }),
       });
 
