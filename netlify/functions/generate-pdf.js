@@ -110,7 +110,7 @@ async function renderHtmlToPdf(html) {
       margin: { top: 0, right: 0, bottom: 0, left: 0 },
     });
 
-    return pdfBuffer;
+    return Buffer.from(pdfBuffer);
   } finally {
     if (browser) {
       await browser.close();
@@ -162,7 +162,7 @@ exports.handler = async (event) => {
   const filename = sanitizeFilename(body.filename);
 
   try {
-    const pdfBuffer = await renderHtmlToPdf(html);
+    const pdfBytes = await renderHtmlToPdf(html);
 
     return {
       statusCode: 200,
@@ -172,7 +172,7 @@ exports.handler = async (event) => {
         'Content-Disposition': `attachment; filename="${filename}"`,
         'Cache-Control': 'no-store',
       },
-      body: pdfBuffer.toString('base64'),
+      body: pdfBytes.toString('base64'),
       isBase64Encoded: true,
     };
   } catch (error) {
