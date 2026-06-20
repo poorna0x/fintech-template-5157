@@ -24,6 +24,7 @@ const Booking = lazy(() => import("./pages/Booking"));
 const TechnicianLogin = lazy(() => import("./pages/TechnicianLogin"));
 const TechnicianDashboard = lazy(() => import("./pages/TechnicianDashboard"));
 const CallingPage = lazy(() => import("./pages/CallingPage"));
+const EmailPreviewPage = lazy(() => import("./pages/EmailPreviewPage"));
 const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
 const TermsOfService = lazy(() => import("./pages/TermsOfService"));
 const RefundPolicy = lazy(() => import("./pages/RefundPolicy"));
@@ -119,6 +120,7 @@ const App = () => (
                   <Route path="/book" element={<Booking />} />
                   <Route path="/admin/login" element={<Navigate to="/admin" replace />} />
                   <Route path="/admin" element={<AdminPortal />} />
+                  <Route path="/admin/email-preview" element={<EmailPreviewPage />} />
                   <Route path="/settings" element={<AdminPortal />} />
                   <Route path="/calling" element={<CallingPage />} />
                   <Route path="/technician/login" element={<TechnicianLogin />} />
