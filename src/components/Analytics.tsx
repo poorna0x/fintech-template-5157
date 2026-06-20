@@ -26,7 +26,24 @@ import {
   PhoneForwarded,
   Package
 } from 'lucide-react';
-import { normalizeForComparison, findLeadSource, normalizeLeadType } from '@/lib/adminUtils';
+import { normalizeForComparison, normalizeLeadType, getLeadSourceFromJob } from '@/lib/adminUtils';
+import {
+  mapLeadSourceBreakdownFromDashboard,
+  mapTechnicianStatsFromDashboard,
+  parseAnalyticsDashboardRpc,
+  parseReturnComplaintsRpc,
+  parseDirectWebsiteConversionsRpc,
+  mapReturnComplaintsFromRpc,
+  mapDirectWebsiteConversionsFromRpc,
+  parseRepeatVsNewRpc,
+  mapRepeatVsNewFromRpc,
+  type AnalyticsDashboardRpc,
+} from '@/lib/analyticsDashboard';
+import {
+  buildAnalyticsCacheKey,
+  readAnalyticsSessionCache,
+  writeAnalyticsSessionCache,
+} from '@/lib/analyticsSessionCache';
 import { Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -279,28 +296,212 @@ const isFirstTouchAttributionSource = (leadRaw: string): boolean => {
   return !isDirectOrWebsiteLead(leadRaw) && !isGoogleLeadsLead(leadRaw);
 };
 
-const extractLeadSourceFromAnalyticsJob = (job: any): string => {
-  try {
-    const requirements = typeof job.requirements === 'string' ? JSON.parse(job.requirements) : (job.requirements || []);
-    if (Array.isArray(requirements)) {
-      const ls = findLeadSource(requirements);
-      if (ls && String(ls).trim()) return String(ls).trim();
-    } else if (requirements && typeof requirements === 'object' && (requirements as any).lead_source) {
-      return String((requirements as any).lead_source).trim();
-    }
-  } catch {
-    /* ignore */
-  }
-  if (job.assigned_by || job.assignedBy) return 'Admin Created';
-  return 'Direct call';
-};
-
 const getJobCompletionTime = (job: any): Date | null => {
   const raw = job.completed_at || job.end_time;
   if (!raw) return null;
   const d = new Date(raw);
   return isNaN(d.getTime()) ? null : d;
 };
+
+type AnalyticsExpenseTotals = {
+  totalTechnicianExpenses: number;
+  totalTechnicianAdvances: number;
+  totalBusinessExpenses: number;
+  totalBusinessExpensesForProfit: number;
+  totalBusinessExpensesForProfitJobsOnly: number;
+  totalOtherBusinessLedgerExpenses: number;
+  totalOtherBusinessExpenses: number;
+  totalSalaryDeductions: number;
+  totalSalaryIncludingAll: number;
+};
+
+/** Map secured `get_analytics_dashboard` RPC → same shape as client-side job aggregation. */
+function buildAnalyticsPayloadFromDashboard(
+  dash: AnalyticsDashboardRpc,
+  technicians: Array<{ id: string; full_name?: string; account_status?: string }>,
+  expenses: AnalyticsExpenseTotals
+) {
+  const sc = dash.status_counts;
+  const soft = dash.softener;
+  const softSc = soft.status_counts;
+  const periodBilling = Number(dash.billing_total) || 0;
+  const completedCount = dash.completed_in_period_count;
+  const periodJobCount = dash.period_job_count;
+
+  const leadSourceBreakdown = mapLeadSourceBreakdownFromDashboard(dash.lead_source_breakdown);
+  const totalLeadCostsSum = leadSourceBreakdown.reduce((sum, row) => sum + row.leadCost, 0);
+  const otherBusinessChargesTotal =
+    expenses.totalOtherBusinessExpenses + expenses.totalOtherBusinessLedgerExpenses;
+  const expenseTotalJobsOnly =
+    expenses.totalTechnicianExpenses +
+    expenses.totalSalaryDeductions +
+    otherBusinessChargesTotal +
+    dash.total_spare_parts_cost +
+    expenses.totalBusinessExpensesForProfitJobsOnly;
+  const expenseTotal =
+    expenses.totalTechnicianExpenses +
+    expenses.totalSalaryDeductions +
+    otherBusinessChargesTotal +
+    dash.total_spare_parts_cost +
+    expenses.totalBusinessExpensesForProfit;
+  const netProfitJobsOnly = periodBilling - totalLeadCostsSum - expenseTotalJobsOnly;
+  const netProfit = periodBilling - totalLeadCostsSum - expenseTotal;
+  const netCashInHand =
+    periodBilling -
+    expenses.totalBusinessExpenses -
+    Math.max(0, expenses.totalSalaryDeductions) -
+    expenses.totalTechnicianExpenses;
+  const revenueMinusCoreForIshanga =
+    periodBilling -
+    expenses.totalBusinessExpenses -
+    Math.max(0, expenses.totalSalaryDeductions) -
+    expenses.totalTechnicianExpenses;
+  const ishaDonationAmount = Math.max(0, revenueMinusCoreForIshanga) * ISHANGA_RATE;
+
+  const softenerTechStats = soft.technician_stats.map((row) => {
+    const tech = technicians.find((t) => t.id === row.technician_id);
+    const inactive = tech?.account_status === 'INACTIVE' ? ' (Inactive)' : '';
+    return {
+      id: row.technician_id,
+      name: `${tech?.full_name || 'Unknown'}${inactive}`,
+      totalJobs: Number(row.total_jobs) || 0,
+      completedJobs: Number(row.completed_jobs) || 0,
+      periodEarnings: Number(row.period_earnings) || 0,
+    };
+  });
+
+  return {
+    totalJobs: completedCount,
+    completedJobs: completedCount,
+    deniedJobs: sc.denied,
+    pendingJobs: sc.pending,
+    assignedJobs: sc.assigned,
+    inProgressJobs: sc.in_progress,
+    totalBilling: periodBilling,
+    averageBill: Number(dash.billing_average) || 0,
+    completionRate: periodJobCount > 0 ? (completedCount / periodJobCount) * 100 : 0,
+    denialRate: periodJobCount > 0 ? (sc.denied / periodJobCount) * 100 : 0,
+    returnComplaints: undefined as undefined,
+    technicianStats: mapTechnicianStatsFromDashboard(dash.technician_stats, technicians),
+    leadSourceBreakdown,
+    totalLeadCosts: totalLeadCostsSum,
+    totalTechnicianExpenses: expenses.totalTechnicianExpenses,
+    totalTechnicianAdvances: expenses.totalTechnicianAdvances,
+    totalBusinessExpenses: expenses.totalBusinessExpenses,
+    totalOtherBusinessExpenses: expenses.totalOtherBusinessExpenses,
+    totalOtherBusinessLedgerExpenses: expenses.totalOtherBusinessLedgerExpenses,
+    totalJobCostBusinessExpenses: expenses.totalBusinessExpensesForProfitJobsOnly,
+    totalSparePartsCost: dash.total_spare_parts_cost,
+    totalSalaryDeductions: expenses.totalSalaryDeductions,
+    totalSalaryIncludingAll: expenses.totalSalaryIncludingAll,
+    totalExpenses: expenseTotal,
+    totalProfit: netProfit,
+    totalProfitJobsOnly: netProfitJobsOnly,
+    netCashInHand,
+    ishaDonationAmount,
+    serviceTypeBreakdown: dash.service_type_breakdown.map((row) => ({
+      serviceType: row.service_type,
+      count: Number(row.count) || 0,
+      amount: Number(row.amount) || 0,
+    })),
+    paymentMethodBreakdown: dash.payment_method_breakdown
+      .filter((row) => !(row.method === 'Unknown' && Number(row.amount) === 0))
+      .map((row) => ({
+        method: row.method,
+        count: Number(row.count) || 0,
+        amount: Number(row.amount) || 0,
+      })),
+    dailyStats: dash.daily_stats.map((row) => ({
+      date: row.date,
+      jobs: Number(row.jobs) || 0,
+      revenue: Number(row.revenue) || 0,
+    })),
+    softenerData: {
+      totalJobs: soft.period_job_count,
+      completedJobs: soft.completed_in_period_count,
+      deniedJobs: softSc.denied,
+      pendingJobs: softSc.pending,
+      assignedJobs: softSc.assigned,
+      inProgressJobs: softSc.in_progress,
+      totalBilling: Number(soft.billing_total) || 0,
+      averageBill: Number(soft.billing_average) || 0,
+      completionRate:
+        soft.period_job_count > 0
+          ? (soft.completed_in_period_count / soft.period_job_count) * 100
+          : 0,
+      serviceTypeBreakdown: soft.service_type_breakdown.map((row) => ({
+        serviceType: row.service_type,
+        count: Number(row.count) || 0,
+        amount: Number(row.amount) || 0,
+      })),
+      paymentMethodBreakdown: soft.payment_method_breakdown
+        .filter((row) => !(row.method === 'Unknown' && Number(row.amount) === 0))
+        .map((row) => ({
+          method: row.method,
+          count: Number(row.count) || 0,
+          amount: Number(row.amount) || 0,
+        })),
+      technicianStats: softenerTechStats.sort((a, b) => b.completedJobs - a.completedJobs),
+      dailyStats: soft.daily_stats.map((row) => ({
+        date: row.date,
+        jobs: Number(row.jobs) || 0,
+        revenue: Number(row.revenue) || 0,
+      })),
+    },
+  };
+}
+
+function computeExpenseTotals(
+  techExpenses: any[] | null | undefined,
+  techAdvances: any[] | null | undefined,
+  businessExpenses: any[] | null | undefined,
+  otherBusinessExpenses: any[] | null | undefined
+): Pick<
+  AnalyticsExpenseTotals,
+  | 'totalTechnicianExpenses'
+  | 'totalTechnicianAdvances'
+  | 'totalBusinessExpenses'
+  | 'totalBusinessExpensesForProfit'
+  | 'totalBusinessExpensesForProfitJobsOnly'
+  | 'totalOtherBusinessLedgerExpenses'
+  | 'totalOtherBusinessExpenses'
+> {
+  const profitCats = new Set(['JOB_COST', 'BUSINESS']);
+  const profitCatsJobsOnly = new Set(['JOB_COST']);
+  return {
+    totalTechnicianExpenses: (techExpenses || []).reduce(
+      (sum: number, exp: any) => sum + Number(exp.amount || 0),
+      0
+    ),
+    totalTechnicianAdvances: (techAdvances || []).reduce(
+      (sum: number, adv: any) => sum + Number(adv.amount || 0),
+      0
+    ),
+    totalBusinessExpenses: (businessExpenses || []).reduce(
+      (sum: number, exp: any) => sum + Number(exp.amount || 0),
+      0
+    ),
+    totalBusinessExpensesForProfit: (businessExpenses || []).reduce((sum: number, exp: any) => {
+      const cat = (exp?.category || '').toString().toUpperCase();
+      if (!profitCats.has(cat)) return sum;
+      return sum + Number(exp.amount || 0);
+    }, 0),
+    totalBusinessExpensesForProfitJobsOnly: (businessExpenses || []).reduce((sum: number, exp: any) => {
+      const cat = (exp?.category || '').toString().toUpperCase();
+      if (!profitCatsJobsOnly.has(cat)) return sum;
+      return sum + Number(exp.amount || 0);
+    }, 0),
+    totalOtherBusinessLedgerExpenses: (businessExpenses || []).reduce((sum: number, exp: any) => {
+      const cat = (exp?.category || '').toString().toUpperCase();
+      if (cat !== 'OTHER_BUSINESS_EXPENSE') return sum;
+      return sum + Number(exp.amount || 0);
+    }, 0),
+    totalOtherBusinessExpenses: (otherBusinessExpenses || []).reduce(
+      (sum: number, exp: any) => sum + Number(exp.amount || 0),
+      0
+    ),
+  };
+}
 
 const Analytics = () => {
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
@@ -484,6 +685,19 @@ const Analytics = () => {
   };
 
   const loadAnalytics = async () => {
+    const cacheKey = buildAnalyticsCacheKey({
+      period,
+      customStartDate,
+      customEndDate,
+      customMonthValue,
+    });
+    const cached = readAnalyticsSessionCache<AnalyticsData>(cacheKey);
+    if (cached) {
+      setAnalytics(cached);
+      setLoading(false);
+      return;
+    }
+
     try {
       setLoading(true);
       const { startDate, endDate } = getDateRange();
@@ -511,12 +725,12 @@ const Analytics = () => {
       const analyticsExpenseOpts = { forAnalytics: true as const };
 
       if (startDate && endDate) {
-        // Parallel fetch: only in-range data (no getAnalytics = no full-table scans). Technicians + payments in range + jobs in range + expenses in range.
+        // Parallel fetch: dashboard RPC + slim expense/technician data (no full jobs unless RPC unavailable).
         const startISO = startDate.toISOString();
         const endISO = endDate.toISOString();
         const [
           techniciansRes,
-          jobsInRangeResult,
+          dashboardRes,
           { data: techExpenses },
           { data: techAdvances },
           { data: businessExpenses },
@@ -524,7 +738,7 @@ const Analytics = () => {
           paymentsInRangeRes
         ] = await Promise.all([
           db.technicians.getAllForDashboard(100, { activeRosterOnly: false }),
-          db.jobs.getForAnalyticsInRange(startDate, endDate),
+          db.analyticsPaginated.getDashboard(startDate, endDate),
           db.technicianExpenses.getAll(undefined, startStr, endStr, analyticsExpenseOpts),
           db.technicianAdvances.getAll(undefined, startStr, endStr, analyticsExpenseOpts),
           db.businessExpenses.getAll(startStr, endStr, analyticsExpenseOpts),
@@ -532,6 +746,84 @@ const Analytics = () => {
           db.analyticsData.getAllTechnicianPayments({ startISO, endISO })
         ]);
 
+        technicians = techniciansRes.data || [];
+        rangedPayments = paymentsInRangeRes.data || [];
+
+        const expensePartial = computeExpenseTotals(
+          techExpenses,
+          techAdvances,
+          businessExpenses,
+          otherBusinessExpenses
+        );
+        totalTechnicianExpenses = expensePartial.totalTechnicianExpenses;
+        totalTechnicianAdvances = expensePartial.totalTechnicianAdvances;
+        totalBusinessExpenses = expensePartial.totalBusinessExpenses;
+        totalBusinessExpensesForProfit = expensePartial.totalBusinessExpensesForProfit;
+        totalBusinessExpensesForProfitJobsOnly = expensePartial.totalBusinessExpensesForProfitJobsOnly;
+        totalOtherBusinessLedgerExpenses = expensePartial.totalOtherBusinessLedgerExpenses;
+        totalOtherBusinessExpenses = expensePartial.totalOtherBusinessExpenses;
+
+        const usePaymentsSalary = (period === 'thisMonth' || period === 'previousMonth' || period === 'customMonth') && startDate && endDate;
+        if (usePaymentsSalary) {
+          try {
+            const year = startDate.getFullYear();
+            const month = startDate.getMonth() + 1;
+            const result = await getTotalSalaryForCalendarMonth(year, month);
+            totalSalaryDeductions = result.totalSalaryBeforeAdvance;
+            totalSalaryIncludingAll = result.totalSalaryBeforeAdvanceIncludingAll;
+          } catch (e) {
+            console.error('Error loading salary from Payments logic:', e);
+          }
+        } else {
+          try {
+            if (technicians.length > 0 && startDate && endDate) {
+              const extraCommissionsRes = await db.technicianExtraCommissions.getAll(
+                undefined,
+                startStr,
+                endStr,
+                analyticsExpenseOpts
+              );
+              const paymentsData = rangedPayments;
+              const extraCommissionsData = extraCommissionsRes.data || [];
+              let totalSalaryPaid = 0;
+              const EXCLUDED_EMPLOYEE_ID = 'TECH851703400';
+              technicians.forEach((tech: any) => {
+                const techId = tech.id;
+                const employeeId = tech.employee_id ?? tech.employeeId ?? '';
+                const techPayments = (paymentsData || []).filter((p: any) => p.technician_id === techId);
+                const techExtraCommissions = (extraCommissionsData || []).filter((ec: any) => {
+                  if (ec.technician_id !== techId) return false;
+                  const ecDate = new Date(ec.commission_date);
+                  return ecDate >= startDate && ecDate <= endDate;
+                });
+                const baseSalary = getProRatedBaseSalary(tech, startDate, endDate);
+                const commissions = techPayments.reduce((sum: number, p: any) => sum + (p.commission_amount || 0), 0);
+                const extraCommissions = techExtraCommissions.reduce((sum: number, ec: any) => sum + (ec.amount || 0), 0);
+                const amount = baseSalary + commissions + extraCommissions;
+                totalSalaryIncludingAll += amount;
+                if (employeeId === EXCLUDED_EMPLOYEE_ID) return;
+                totalSalaryPaid += amount;
+              });
+              totalSalaryDeductions = totalSalaryPaid;
+            }
+          } catch (e) {
+            console.error('Error calculating salary deductions:', e);
+          }
+        }
+
+        const dash = parseAnalyticsDashboardRpc(dashboardRes.data);
+        if (!dashboardRes.error && dash) {
+          const payload = buildAnalyticsPayloadFromDashboard(dash, technicians, {
+            ...expensePartial,
+            totalSalaryDeductions,
+            totalSalaryIncludingAll,
+          });
+          setAnalytics(payload);
+          writeAnalyticsSessionCache(cacheKey, payload);
+          return;
+        }
+
+        const jobsInRangeResult = await db.jobs.getForAnalyticsInRange(startDate, endDate);
         if (jobsInRangeResult.error || !jobsInRangeResult.data) {
           console.error('Error loading jobs for detailed analytics:', jobsInRangeResult.error);
           setAnalytics(null);
@@ -539,8 +831,6 @@ const Analytics = () => {
         }
 
         const jobsForBase = jobsInRangeResult.data || [];
-        technicians = techniciansRes.data || [];
-        rangedPayments = paymentsInRangeRes.data || [];
         const payments = rangedPayments;
         const totalJobsCount = jobsForBase.length;
         const completedCount = jobsForBase.filter((j: any) => j.status === 'COMPLETED').length;
@@ -579,80 +869,6 @@ const Analytics = () => {
           denialRate: totalJobsCount > 0 ? (deniedCount / totalJobsCount) * 100 : 0
         };
 
-        totalTechnicianExpenses = (techExpenses || []).reduce((sum: number, exp: any) => sum + Number(exp.amount || 0), 0);
-        totalTechnicianAdvances = (techAdvances || []).reduce((sum: number, adv: any) => sum + Number(adv.amount || 0), 0);
-        totalBusinessExpenses = (businessExpenses || []).reduce((sum: number, exp: any) => sum + Number(exp.amount || 0), 0);
-        // Big green Net Profit includes JOB_COST + BUSINESS from business ledger.
-        const profitCats = new Set(['JOB_COST', 'BUSINESS']);
-        totalBusinessExpensesForProfit = (businessExpenses || []).reduce((sum: number, exp: any) => {
-          const cat = (exp?.category || '').toString().toUpperCase();
-          if (!profitCats.has(cat)) return sum;
-          return sum + Number(exp.amount || 0);
-        }, 0);
-        // Small "Revenue − total costs above" should include only JOB_COST from business ledger.
-        const profitCatsJobsOnly = new Set(['JOB_COST']);
-        totalBusinessExpensesForProfitJobsOnly = (businessExpenses || []).reduce((sum: number, exp: any) => {
-          const cat = (exp?.category || '').toString().toUpperCase();
-          if (!profitCatsJobsOnly.has(cat)) return sum;
-          return sum + Number(exp.amount || 0);
-        }, 0);
-        // Other Business charges can also be captured inside business_expenses as OTHER_BUSINESS_EXPENSE.
-        totalOtherBusinessLedgerExpenses = (businessExpenses || []).reduce((sum: number, exp: any) => {
-          const cat = (exp?.category || '').toString().toUpperCase();
-          if (cat !== 'OTHER_BUSINESS_EXPENSE') return sum;
-          return sum + Number(exp.amount || 0);
-        }, 0);
-        totalOtherBusinessExpenses = (otherBusinessExpenses || []).reduce((sum: number, exp: any) => sum + Number(exp.amount || 0), 0);
-        // Total salary (before advance): same basis as Payments “salary before advance”
-        const usePaymentsSalary = (period === 'thisMonth' || period === 'previousMonth' || period === 'customMonth') && startDate && endDate;
-        if (usePaymentsSalary) {
-          try {
-            const year = startDate.getFullYear();
-            const month = startDate.getMonth() + 1; // 1-12
-            const result = await getTotalSalaryForCalendarMonth(year, month);
-            totalSalaryDeductions = result.totalSalaryBeforeAdvance;
-            totalSalaryIncludingAll = result.totalSalaryBeforeAdvanceIncludingAll;
-          } catch (e) {
-            console.error('Error loading salary from Payments logic:', e);
-          }
-        } else {
-          // Other periods: pro-rated base + commissions + extra (before advances)
-          try {
-            if (technicians.length > 0 && startDate && endDate) {
-              const extraCommissionsRes = await db.technicianExtraCommissions.getAll(
-                undefined,
-                startStr,
-                endStr,
-                analyticsExpenseOpts
-              );
-              const paymentsData = rangedPayments;
-              const extraCommissionsData = extraCommissionsRes.data || [];
-              let totalSalaryPaid = 0;
-              const EXCLUDED_EMPLOYEE_ID = 'TECH851703400';
-              technicians.forEach((tech: any) => {
-                const techId = tech.id;
-                const employeeId = tech.employee_id ?? tech.employeeId ?? '';
-                const techPayments = (paymentsData || []).filter((p: any) => p.technician_id === techId);
-                const techExtraCommissions = (extraCommissionsData || []).filter((ec: any) => {
-                  if (ec.technician_id !== techId) return false;
-                  const ecDate = new Date(ec.commission_date);
-                  return ecDate >= startDate && ecDate <= endDate;
-                });
-                const baseSalary = getProRatedBaseSalary(tech, startDate, endDate);
-                const commissions = techPayments.reduce((sum: number, p: any) => sum + (p.commission_amount || 0), 0);
-                const extraCommissions = techExtraCommissions.reduce((sum: number, ec: any) => sum + (ec.amount || 0), 0);
-                const amount = baseSalary + commissions + extraCommissions;
-                totalSalaryIncludingAll += amount;
-                if (employeeId === EXCLUDED_EMPLOYEE_ID) return;
-                totalSalaryPaid += amount;
-              });
-              totalSalaryDeductions = totalSalaryPaid;
-            }
-          } catch (e) {
-            console.error('Error calculating salary deductions:', e);
-          }
-        }
-
         const allInRange = Array.isArray(jobsInRangeResult.data) ? jobsInRangeResult.data : [];
         jobs = allInRange;
         completedJobs = allInRange.filter(
@@ -660,7 +876,7 @@ const Analytics = () => {
         );
       } else {
         const [
-          jobsRes,
+          dashboardRes,
           techniciansRes,
           { data: techExpenses },
           { data: techAdvances },
@@ -668,7 +884,7 @@ const Analytics = () => {
           { data: otherBusinessExpenses },
           paymentsAllRes
         ] = await Promise.all([
-          db.jobs.getForAnalytics(),
+          db.analyticsPaginated.getDashboard(undefined, undefined),
           db.technicians.getAllForDashboard(100, { activeRosterOnly: false }),
           db.technicianExpenses.getAll(undefined, undefined, undefined, analyticsExpenseOpts),
           db.technicianAdvances.getAll(undefined, undefined, undefined, analyticsExpenseOpts),
@@ -679,6 +895,33 @@ const Analytics = () => {
         technicians = techniciansRes.data || [];
         rangedPayments = paymentsAllRes.data || [];
 
+        const expensePartial = computeExpenseTotals(
+          techExpenses,
+          techAdvances,
+          businessExpenses,
+          otherBusinessExpenses
+        );
+        totalTechnicianExpenses = expensePartial.totalTechnicianExpenses;
+        totalTechnicianAdvances = expensePartial.totalTechnicianAdvances;
+        totalBusinessExpenses = expensePartial.totalBusinessExpenses;
+        totalBusinessExpensesForProfit = expensePartial.totalBusinessExpensesForProfit;
+        totalBusinessExpensesForProfitJobsOnly = expensePartial.totalBusinessExpensesForProfitJobsOnly;
+        totalOtherBusinessLedgerExpenses = expensePartial.totalOtherBusinessLedgerExpenses;
+        totalOtherBusinessExpenses = expensePartial.totalOtherBusinessExpenses;
+
+        const dash = parseAnalyticsDashboardRpc(dashboardRes.data);
+        if (!dashboardRes.error && dash) {
+          const payload = buildAnalyticsPayloadFromDashboard(dash, technicians, {
+            ...expensePartial,
+            totalSalaryDeductions: 0,
+            totalSalaryIncludingAll: 0,
+          });
+          setAnalytics(payload);
+          writeAnalyticsSessionCache(cacheKey, payload);
+          return;
+        }
+
+        const jobsRes = await db.jobs.getForAnalytics();
         if (jobsRes.error || !jobsRes.data) {
           console.error('Error loading jobs for detailed analytics:', jobsRes.error);
           setAnalytics(null);
@@ -688,28 +931,6 @@ const Analytics = () => {
         const allJobsList = Array.isArray(jobsRes.data) ? jobsRes.data : [];
         jobs = allJobsList;
         completedJobs = allJobsList.filter((j: any) => j && j.status === 'COMPLETED');
-
-        totalTechnicianExpenses = (techExpenses || []).reduce((sum: number, exp: any) => sum + Number(exp.amount || 0), 0);
-        totalTechnicianAdvances = (techAdvances || []).reduce((sum: number, adv: any) => sum + Number(adv.amount || 0), 0);
-        totalBusinessExpenses = (businessExpenses || []).reduce((sum: number, exp: any) => sum + Number(exp.amount || 0), 0);
-        const profitCats = new Set(['JOB_COST', 'BUSINESS']);
-        totalBusinessExpensesForProfit = (businessExpenses || []).reduce((sum: number, exp: any) => {
-          const cat = (exp?.category || '').toString().toUpperCase();
-          if (!profitCats.has(cat)) return sum;
-          return sum + Number(exp.amount || 0);
-        }, 0);
-        const profitCatsJobsOnly = new Set(['JOB_COST']);
-        totalBusinessExpensesForProfitJobsOnly = (businessExpenses || []).reduce((sum: number, exp: any) => {
-          const cat = (exp?.category || '').toString().toUpperCase();
-          if (!profitCatsJobsOnly.has(cat)) return sum;
-          return sum + Number(exp.amount || 0);
-        }, 0);
-        totalOtherBusinessLedgerExpenses = (businessExpenses || []).reduce((sum: number, exp: any) => {
-          const cat = (exp?.category || '').toString().toUpperCase();
-          if (cat !== 'OTHER_BUSINESS_EXPENSE') return sum;
-          return sum + Number(exp.amount || 0);
-        }, 0);
-        totalOtherBusinessExpenses = (otherBusinessExpenses || []).reduce((sum: number, exp: any) => sum + Number(exp.amount || 0), 0);
 
         const payments = rangedPayments;
         const totalJobsCount = jobs.length;
@@ -808,34 +1029,7 @@ const Analytics = () => {
       completedJobs.forEach((job: any) => {
         if (!job) return;
         try {
-          const requirements = typeof job.requirements === 'string' 
-            ? JSON.parse(job.requirements) 
-            : (job.requirements || []);
-          
-          let leadSource = 'Direct call';
-          
-          // Try to extract lead source from requirements
-          if (Array.isArray(requirements)) {
-            const leadSourceObj = requirements.find((r: any) => r && r.lead_source);
-            if (leadSourceObj && leadSourceObj.lead_source) {
-              leadSource = leadSourceObj.lead_source;
-            }
-          } else if (requirements && typeof requirements === 'object') {
-            leadSource = requirements.lead_source || 'Direct call';
-          }
-          
-          // If still no lead source, try to infer from other job data
-          if (!leadSource || leadSource.trim() === '') {
-            // Check if job was created through admin (has assigned_by) vs website
-            // Jobs created through admin typically have assigned_by set
-            // Website jobs typically don't have assigned_by initially
-            if (job.assigned_by || job.assignedBy) {
-              leadSource = 'Admin Created';
-            } else {
-              // Default to Direct call for unknown sources
-              leadSource = 'Direct call';
-            }
-          }
+          let leadSource = getLeadSourceFromJob(job);
           
           // Normalize for comparison (trim, lowercase, normalize spaces)
           const trimmedSource = leadSource.trim() || 'Direct call';
@@ -888,7 +1082,7 @@ const Analytics = () => {
           leadSourceMap[normalizedKey].serviceTypes[serviceType].count += 1;
           leadSourceMap[normalizedKey].serviceTypes[serviceType].amount += amount;
         } catch (e) {
-          // Skip invalid requirements
+          // Skip invalid job rows
         }
       });
       
@@ -1039,19 +1233,8 @@ const Analytics = () => {
       const softenerJobs = jobs.filter((j: any) => {
         if (!j) return false;
         const serviceType = j.service_type || j.serviceType;
-        const isSoftener = serviceType === 'SOFTENER' || serviceType === 'softener';
-        if (isSoftener) {
-          console.log('🔵 [Analytics] Found softener job:', { 
-            id: j.id, 
-            serviceType, 
-            status: j.status,
-            jobNumber: j.job_number || j.jobNumber 
-          });
-        }
-        return isSoftener;
+        return serviceType === 'SOFTENER' || serviceType === 'softener';
       });
-      
-      console.log('🔵 [Analytics] Total softener jobs found:', softenerJobs.length, 'out of', jobs.length, 'total jobs');
       
       const softenerCompletedJobs = softenerJobs.filter((j: any) => j && j.status === 'COMPLETED');
       let softenerCompletedForBilling: typeof softenerCompletedJobs;
@@ -1237,7 +1420,7 @@ const Analytics = () => {
       const ishaDonationAmount = Math.max(0, revenueMinusCoreForIshanga) * ISHANGA_RATE;
 
       // Enhance analytics data (Top locations loaded on demand via Load button)
-      setAnalytics({
+      const nextAnalytics: AnalyticsData = {
         ...baseData,
         totalBilling: periodBilling, // Use period-specific billing
         averageBill: periodAverageBill, // Use period-specific average
@@ -1315,7 +1498,9 @@ const Analytics = () => {
             .sort((a, b) => b.completedJobs - a.completedJobs),
           dailyStats: softenerDailyStats
         }
-      });
+      };
+      setAnalytics(nextAnalytics);
+      writeAnalyticsSessionCache(cacheKey, nextAnalytics);
     } catch (error: any) {
       console.error('Error loading analytics:', error);
       toast.error('Failed to load analytics: ' + error.message);
@@ -1330,6 +1515,33 @@ const Analytics = () => {
     setReturnComplaintsLoading(true);
     try {
       const { startDate, endDate } = getDateRange();
+
+      const [rpcRes, techniciansRes] = await Promise.all([
+        db.analyticsPaginated.getReturnComplaints(startDate ?? undefined, endDate ?? undefined),
+        db.technicians.getAllForDashboard(100, { activeRosterOnly: false }),
+      ]);
+      const technicians = techniciansRes.data || [];
+      const rpcParsed = parseReturnComplaintsRpc(rpcRes.data);
+      if (!rpcRes.error && rpcParsed) {
+        const mapped = mapReturnComplaintsFromRpc(rpcParsed, technicians);
+        setAnalytics((prev) =>
+          prev
+            ? {
+                ...prev,
+                returnComplaints:
+                  mapped.total > 0
+                    ? { total: mapped.total, byTechnician: mapped.byTechnician }
+                    : undefined,
+                technicianStats: prev.technicianStats.map((tech) => ({
+                  ...tech,
+                  returnComplaints: mapped.countsByTechId[tech.id] || 0,
+                })),
+              }
+            : prev
+        );
+        return;
+      }
+
       let jobsCreatedInPeriod: any[];
       let allCompletedJobs: any[];
       const isReturnComplaint = (st: string): boolean => {
@@ -1338,19 +1550,17 @@ const Analytics = () => {
       };
 
       if (startDate && endDate) {
-        const [createdRes, techniciansRes] = await Promise.all([
-          db.jobs.getJobsCreatedInRange(startDate, endDate),
-          db.technicians.getAll(100)
-        ]);
+        const createdRes = await db.jobs.getJobsCreatedInRange(startDate, endDate);
         jobsCreatedInPeriod = createdRes.data || [];
-        const hasCandidate = jobsCreatedInPeriod.some((j: any) => isReturnComplaint(j.service_sub_type || j.serviceSubType || ''));
+        const hasCandidate = jobsCreatedInPeriod.some((j: any) =>
+          isReturnComplaint(j.service_sub_type || j.serviceSubType || '')
+        );
         if (hasCandidate) {
           const completedRes = await db.jobs.getCompletedJobsForReturnComplaintLookup(5000);
           allCompletedJobs = completedRes.data || [];
         } else {
           allCompletedJobs = [];
         }
-        const technicians = techniciansRes.data || [];
         let returnComplaintsTotal = 0;
         const returnComplaintsByTechnician: Record<string, number> = {};
         jobsCreatedInPeriod.forEach((currentJob: any) => {
@@ -1396,14 +1606,10 @@ const Analytics = () => {
           }))
         } : prev);
       } else {
-        const [jobsRes, techniciansRes] = await Promise.all([
-          db.jobs.getForAnalytics(5000),
-          db.technicians.getAll(100)
-        ]);
+        const jobsRes = await db.jobs.getForAnalytics(5000);
         const jobs = jobsRes.data || [];
         jobsCreatedInPeriod = jobs;
         allCompletedJobs = jobs.filter((j: any) => j && j.status === 'COMPLETED');
-        const technicians = techniciansRes.data || [];
         let returnComplaintsTotal = 0;
         const returnComplaintsByTechnician: Record<string, number> = {};
         jobsCreatedInPeriod.forEach((currentJob: any) => {
@@ -1540,6 +1746,33 @@ const Analytics = () => {
     try {
       const { startDate, endDate } = getDateRange();
 
+      const [rpcRes, techniciansRes] = await Promise.all([
+        db.analyticsPaginated.getDirectWebsiteConversions(startDate ?? undefined, endDate ?? undefined),
+        db.technicians.getAllForDashboard(100, { activeRosterOnly: false }),
+      ]);
+      const technicians = techniciansRes.data || [];
+      const rpcParsed = parseDirectWebsiteConversionsRpc(rpcRes.data);
+      if (!rpcRes.error && rpcParsed) {
+        const mapped = mapDirectWebsiteConversionsFromRpc(rpcParsed, technicians);
+        setAnalytics((prev) =>
+          prev
+            ? {
+                ...prev,
+                directWebsiteConversions: {
+                  totalJobs: mapped.totalJobs,
+                  totalRevenue: mapped.totalRevenue,
+                  byOriginalSource: mapped.byOriginalSource,
+                  byTechnician: mapped.byTechnician,
+                },
+              }
+            : prev
+        );
+        if (mapped.totalJobs === 0) {
+          toast.info('No direct/website conversion jobs found for this period.');
+        }
+        return;
+      }
+
       let jobs: any[] = [];
 
       if (startDate && endDate) {
@@ -1606,7 +1839,7 @@ const Analytics = () => {
         let firstTouchCreated = 0;
         for (const job of sorted) {
           if (job.status !== 'COMPLETED') continue;
-          const lead = extractLeadSourceFromAnalyticsJob(job);
+          const lead = getLeadSourceFromJob(job);
           if (isFirstTouchAttributionSource(lead)) {
             firstTouchLead = lead;
             firstTouchCreated = new Date(job.created_at || 0).getTime();
@@ -1622,7 +1855,7 @@ const Analytics = () => {
           const created = new Date(job.created_at || 0).getTime();
           if (created <= firstTouchCreated) continue;
 
-          const lead = extractLeadSourceFromAnalyticsJob(job);
+          const lead = getLeadSourceFromJob(job);
           if (!isDirectOrWebsiteLead(lead)) continue;
           if (!completionCompletedInPeriod(job)) continue;
 
@@ -1664,8 +1897,6 @@ const Analytics = () => {
 
       let byTechnician: Array<{ technicianId: string; technicianName: string; count: number; revenue: number }> = [];
       if (Object.keys(techAgg).length > 0) {
-        const { data: techniciansRows } = await db.technicians.getAll(100);
-        const technicians = techniciansRows || [];
         byTechnician = Object.entries(techAgg)
           .map(([technicianId, v]) => {
             const name =
@@ -1700,6 +1931,18 @@ const Analytics = () => {
     setLoadingRepeatVsNew(true);
     try {
       const { startDate, endDate } = getDateRange();
+
+      const rpcRes = await db.analyticsPaginated.getRepeatVsNew(startDate ?? undefined, endDate ?? undefined);
+      const rpcParsed = parseRepeatVsNewRpc(rpcRes.data);
+      if (!rpcRes.error && rpcParsed) {
+        const mapped = mapRepeatVsNewFromRpc(rpcParsed);
+        setAnalytics((prev) => (prev ? { ...prev, repeatVsNew: mapped } : prev));
+        if (mapped.activeCustomers === 0) {
+          toast.info('No customer activity found for this period.');
+        }
+        return;
+      }
+
       const isAllTime = !(startDate && endDate);
 
       let rows: any[] = [];

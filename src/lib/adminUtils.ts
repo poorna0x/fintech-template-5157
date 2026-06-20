@@ -519,6 +519,34 @@ export const findLeadSource = (requirements: any[]): string | null => {
   return leadSource;
 };
 
+/** Lead source for analytics — prefers `jobs.lead_source`, falls back to requirements JSON. */
+export function getLeadSourceFromJob(job: Record<string, unknown> | null | undefined): string {
+  if (!job) return 'Direct call';
+
+  const fromColumn = typeof job.lead_source === 'string' ? job.lead_source.trim() : '';
+  if (fromColumn) return fromColumn;
+
+  try {
+    const requirements = parseJobRequirements(job.requirements);
+    const ls = findLeadSource(requirements);
+    if (ls && String(ls).trim()) {
+      const trimmed = String(ls).trim();
+      if (trimmed.toLowerCase() === 'other') {
+        for (const req of requirements) {
+          const custom = req?.lead_source_custom;
+          if (custom && String(custom).trim()) return String(custom).trim();
+        }
+      }
+      return trimmed;
+    }
+  } catch {
+    /* ignore */
+  }
+
+  if (job.assigned_by || job.assignedBy) return 'Admin Created';
+  return 'Direct call';
+}
+
 const isMeaningfulEquipmentValue = (val: unknown): val is string => {
   if (typeof val !== 'string') return false;
   const t = val.trim();

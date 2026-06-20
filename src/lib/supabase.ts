@@ -349,6 +349,43 @@ type AnalyticsQueryOpts = { forAnalytics?: boolean };
 
 const ANALYTICS_FETCH_PAGE_SIZE = 1000;
 
+/** CRM analytics job rows — `lead_source` column instead of heavy `requirements` JSON. */
+const ANALYTICS_JOB_COLUMNS = [
+  'id',
+  'customer_id',
+  'status',
+  'created_at',
+  'completed_at',
+  'end_time',
+  'lead_source',
+  'assigned_technician_id',
+  'assigned_by',
+  'payment_amount',
+  'actual_cost',
+  'lead_cost',
+  'parts_cost_total',
+  'service_type',
+  'service_sub_type',
+  'payment_method',
+  'job_number',
+].join(', ');
+
+/** Conversion / attribution analytics — minimal columns, no requirements JSON. */
+const ANALYTICS_CONVERSION_JOB_COLUMNS = [
+  'id',
+  'customer_id',
+  'status',
+  'created_at',
+  'completed_at',
+  'end_time',
+  'lead_source',
+  'assigned_by',
+  'assigned_technician_id',
+  'payment_amount',
+  'actual_cost',
+  'service_sub_type',
+].join(', ');
+
 /** Page through Supabase queries (default API max is 1000 rows per request). */
 async function fetchAnalyticsPages<T>(
   fetchPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>
@@ -2327,11 +2364,7 @@ export const db = {
 
     /** Analytics only: selective columns. Omit `limit` to fetch every job (paginated). Pass `limit` for capped on-demand reports. */
     async getForAnalytics(limit?: number) {
-      const cols = [
-        'id', 'customer_id', 'status', 'created_at', 'completed_at', 'end_time', 'requirements',
-        'assigned_technician_id', 'assigned_by', 'payment_amount', 'actual_cost', 'lead_cost', 'parts_cost_total',
-        'service_type', 'service_sub_type', 'payment_method', 'job_number'
-      ].join(', ');
+      const cols = ANALYTICS_JOB_COLUMNS;
 
       if (limit != null && limit > 0) {
         const { data, error } = await supabase
@@ -2357,11 +2390,7 @@ export const db = {
      * - Other jobs: created_at in [startDate, endDate]
      */
     async getForAnalyticsInRange(startDate: Date, endDate: Date) {
-      const cols = [
-        'id', 'customer_id', 'status', 'created_at', 'completed_at', 'end_time', 'requirements',
-        'assigned_technician_id', 'assigned_by', 'payment_amount', 'actual_cost', 'lead_cost', 'parts_cost_total',
-        'service_type', 'service_sub_type', 'payment_method', 'job_number'
-      ].join(', ');
+      const cols = ANALYTICS_JOB_COLUMNS;
       const startISO = startDate.toISOString();
       const endISO = endDate.toISOString();
       const completedFilter = `and(end_time.gte.${startISO},end_time.lte.${endISO}),and(end_time.is.null,completed_at.gte.${startISO},completed_at.lte.${endISO})`;
@@ -2405,20 +2434,7 @@ export const db = {
      * Same date logic as `getForAnalyticsInRange`, but only columns needed for Direct/Website conversion attribution (smaller egress).
      */
     async getForConversionAnalyticsInRange(startDate: Date, endDate: Date, limit: number = 15000) {
-      const cols = [
-        'id',
-        'customer_id',
-        'status',
-        'created_at',
-        'completed_at',
-        'end_time',
-        'requirements',
-        'assigned_by',
-        'assigned_technician_id',
-        'payment_amount',
-        'actual_cost',
-        'service_sub_type'
-      ].join(', ');
+      const cols = ANALYTICS_CONVERSION_JOB_COLUMNS;
       const startISO = startDate.toISOString();
       const endISO = endDate.toISOString();
       const lim = Math.min(Math.max(1, limit), 15000);
@@ -2468,10 +2484,10 @@ export const db = {
         'created_at',
         'completed_at',
         'end_time',
-        'requirements',
+        'lead_source',
         'assigned_by',
         'assigned_technician_id',
-        'service_sub_type'
+        'service_sub_type',
       ].join(', ');
       const unique = [...new Set((customerIds || []).filter(Boolean))];
       if (unique.length === 0) return { data: [], error: null };
@@ -2503,20 +2519,7 @@ export const db = {
      * Recent jobs with conversion-only columns (all-time conversion report). Much smaller than `getForAnalytics`.
      */
     async getForConversionAnalyticsRecent(limit: number = 5000) {
-      const cols = [
-        'id',
-        'customer_id',
-        'status',
-        'created_at',
-        'completed_at',
-        'end_time',
-        'requirements',
-        'assigned_by',
-        'assigned_technician_id',
-        'payment_amount',
-        'actual_cost',
-        'service_sub_type'
-      ].join(', ');
+      const cols = ANALYTICS_CONVERSION_JOB_COLUMNS;
       const { data, error } = await supabase
         .from('jobs')
         .select(cols)
@@ -6147,9 +6150,11 @@ export const db = {
   },
 
   websiteAnalytics: {
-    async getSummary(days = 7) {
+    /** IST date range summary (matches WebsiteAnalyticsCard activeRange). */
+    async getSummary(fromDate: string, toDate: string) {
       const { data, error } = await supabase.rpc('get_website_analytics_summary', {
-        p_days: days,
+        p_from_date: fromDate,
+        p_to_date: toDate,
       });
       return { data, error };
     },
@@ -6292,6 +6297,35 @@ export const db = {
         } | null,
         error,
       };
+    },
+    /** Pre-aggregated CRM dashboard KPIs (admin-only RPC). Returns null when RPC not deployed. */
+    async getDashboard(startDate?: Date, endDate?: Date) {
+      const { data, error } = await supabase.rpc('get_analytics_dashboard', {
+        p_start: startDate?.toISOString() ?? null,
+        p_end: endDate?.toISOString() ?? null,
+      });
+      return { data, error };
+    },
+    async getReturnComplaints(startDate?: Date, endDate?: Date) {
+      const { data, error } = await supabase.rpc('get_analytics_return_complaints', {
+        p_start: startDate?.toISOString() ?? null,
+        p_end: endDate?.toISOString() ?? null,
+      });
+      return { data, error };
+    },
+    async getDirectWebsiteConversions(startDate?: Date, endDate?: Date) {
+      const { data, error } = await supabase.rpc('get_analytics_direct_website_conversions', {
+        p_start: startDate?.toISOString() ?? null,
+        p_end: endDate?.toISOString() ?? null,
+      });
+      return { data, error };
+    },
+    async getRepeatVsNew(startDate?: Date, endDate?: Date) {
+      const { data, error } = await supabase.rpc('get_analytics_repeat_vs_new', {
+        p_start: startDate?.toISOString() ?? null,
+        p_end: endDate?.toISOString() ?? null,
+      });
+      return { data, error };
     },
   },
 };

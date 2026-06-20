@@ -20,11 +20,14 @@ Last updated: 2026-06-19
 
 - **Top locations / brands / spare parts** — server-side RPCs with pagination; loaded on demand only.
 - **Website analytics gate** — zero egress until user clicks “Load website analytics”.
-- **Website summary** — `get_website_analytics_summary` aggregates in DB (not raw events).
-- **Website recent activity** — `get_website_analytics_recent_events` with `limit` + `offset`.
+- **Website summary** — `get_website_analytics_summary` filters by IST `p_from_date` / `p_to_date` (matches card range). Run `scripts/add-analytics-step4-rpcs.sql`.
+- **Website recent activity** — `get_website_analytics_recent_events` with `limit` + `offset`; slim metadata via `website_analytics_slim_metadata` (Step 5 SQL).
 - **Dated CRM periods** — `jobs.getForAnalyticsInRange()` filters in DB (not full table + JS filter).
-- **On-demand sections** — return complaints, conversions, repeat vs new load only when clicked.
+- **On-demand sections** — return complaints, direct/website conversions, and repeat vs new use secured RPCs first; legacy job fetch fallback if RPC unavailable.
 - **Slim conversion queries** — `getForConversionAnalyticsInRange`, `getCustomerActivityInRange`, etc.
+- **`lead_source` column on `jobs`** — analytics selects use `lead_source` instead of `requirements` JSON (2026-06-19). Run `scripts/add-job-lead-source-column.sql` in Supabase.
+- **`get_analytics_dashboard` RPC** — pre-aggregated KPIs in DB; Analytics page uses RPC first, falls back to job fetch if RPC unavailable (2026-06-19). Run `scripts/add-analytics-dashboard-rpc.sql`.
+- **Session cache (5 min)** — same-period revisits in one tab skip network (`analyticsSessionCache.ts` + `loadAnalytics`).
 - **`parts_cost_total`** on jobs — no `job_parts_used` join on main analytics load.
 
 ---
@@ -35,8 +38,9 @@ Last updated: 2026-06-19
 
 | Source | Typical rows | Payload | Notes |
 |--------|--------------|---------|-------|
-| `jobs.getForAnalyticsInRange` | 300–800/mo | **300 KB – 2 MB** | Includes `requirements` JSON per job (lead source) |
-| `technicians.getAll` / RPC | ~20 × 2–3 calls | **60–300 KB** | Full admin RPC incl. salary + GPS `current_location` |
+| **`get_analytics_dashboard` RPC** (primary) | 1 call | **~5–50 KB** | Aggregates in DB; no job rows over the wire |
+| Legacy fallback `jobs.getForAnalyticsInRange` | 300–800/mo | **150 KB – 1 MB** | Only if RPC not deployed |
+| `technicians.getAllForDashboard` | ~20 | **20–80 KB** | No GPS `current_location` blob |
 | Expense tables (4 queries) | tens–hundreds | **50–500 KB** | Historically included `receipt_url`, notes |
 | `getTotalSalaryForCalendarMonth` | overlap | **100–400 KB** | Extra queries for calendar-month profit |
 | Long periods (6m / 1y) | unbounded jobs | **5–15+ MB** | Same pattern, more jobs |
@@ -45,23 +49,23 @@ Last updated: 2026-06-19
 
 | Source | Risk |
 |--------|------|
-| `stats.getAnalytics()` | **Unbounded** `jobs` select |
-| `jobs.getForAnalytics(5000)` | Up to 5k rows with `requirements` |
+| **`get_analytics_dashboard` (null dates)** | **~5–50 KB** when RPC deployed |
+| Legacy `jobs.getForAnalytics()` | Unbounded paginated fetch — fallback only |
 
 ### CRM — on-demand (when clicked)
 
 | Section | Risk |
 |---------|------|
-| Direct/website conversions | Can pull large prior-job history per customer |
-| Return complaints (all-time) | Up to 5k full analytics jobs |
-| Repeat vs new (all-time) | Up to 8k slim job rows |
+| Direct/website conversions | **~2 KB** RPC when deployed (was: large prior-job history per customer) |
+| Return complaints (all-time) | **~1 KB** RPC when deployed (was: up to 5k full jobs) |
+| Repeat vs new (all-time) | **~2 KB** RPC when deployed (was: up to 8k slim rows) |
 | Top locations/brands/spare parts | **Low** (~2–10 KB/page) |
 
 ### Website analytics (after gate open)
 
 | Source | Notes |
 |--------|-------|
-| `getSummary(90)` always | Was fetching 90 days even for “Today” preset |
+| `getSummary(90)` always | Was fetching 90 days even for “Today” preset — **fixed** via date-range RPC |
 | Recent events | ~5–30 KB/page; `metadata` JSON is main cost |
 
 ---
@@ -94,13 +98,13 @@ Last updated: 2026-06-19
 
 | # | Opportunity | Impact | SQL? |
 |---|-------------|--------|------|
-| 6 | **`get_analytics_dashboard` RPC** — pre-aggregated KPIs (lead source, service type, daily stats) | Very high | Yes |
-| 7 | **`get_technicians_for_analytics` RPC** — id, name, salary only (no GPS) | Medium–high | Yes |
-| 8 | **Stored / generated `lead_source` on `jobs`** — drop `requirements` from analytics selects | Very high | Yes |
+| 6 | **`get_analytics_dashboard` RPC** — pre-aggregated KPIs (lead source, service type, daily stats) | Very high | Yes — **Done** (`scripts/add-analytics-dashboard-rpc.sql`) |
+| 7 | **`get_technicians_for_analytics` RPC** — id, name, salary only (no GPS) | Medium–high | Partial — `getAllForDashboard` |
+| 8 | **Stored / generated `lead_source` on `jobs`** — drop `requirements` from analytics selects | Very high | Yes — **Done** (`scripts/add-job-lead-source-column.sql`) |
 | 9 | **Cap or rework “All time”** — `stats.getAnalytics()` has no row limit | Very high | Yes |
-| 10 | **Conversion / return-complaint RPCs** — server-side prior-job lookup | High (on-demand) | Yes |
-| 11 | **Website summary by date range** (`p_from` / `p_to`) instead of fixed `p_days` | Low–medium | Yes |
-| 12 | **Trim recent-events metadata** in list RPC (flat strings vs full JSON) | Low–medium | Yes |
+| 10 | **Conversion / return-complaint RPCs** — server-side prior-job lookup | High (on-demand) | Yes — **Done** (`scripts/add-analytics-on-demand-rpcs.sql`) |
+| 11 | **Website summary by date range** (`p_from` / `p_to`) instead of fixed `p_days` | Low–medium | Yes — **Done** (`scripts/add-analytics-step4-rpcs.sql`) |
+| 12 | **Trim recent-events metadata** in list RPC (flat strings vs full JSON) | Low–medium | Yes — **Done** (`scripts/add-analytics-step5-polish.sql`) |
 
 ---
 
@@ -108,9 +112,9 @@ Last updated: 2026-06-19
 
 | # | Opportunity |
 |---|-------------|
-| 13 | Session/memory cache for same-period revisits |
-| 14 | Warn or restrict “All time” until dashboard RPC exists |
-| 15 | Remove debug `console.log` in softener analytics block |
+| 13 | Session/memory cache for same-period revisits | **Done** (`src/lib/analyticsSessionCache.ts`) |
+| 14 | Warn or restrict “All time” until dashboard RPC exists | **Addressed** — dashboard RPC handles null date range |
+| 15 | Remove debug `console.log` in softener analytics block | Done |
 
 ---
 
@@ -119,6 +123,7 @@ Last updated: 2026-06-19
 | File | Key symbols |
 |------|-------------|
 | `src/components/Analytics.tsx` | `loadAnalytics`, `loadReturnComplaints`, `loadTopLocations`, `loadDirectWebsiteConversions` |
+| `src/lib/analyticsSessionCache.ts` | 5-minute in-memory cache for `loadAnalytics` |
 | `src/components/admin/WebsiteAnalyticsCard.tsx` | `load`, `fetchRecentActivity`, `activeRange` |
 | `src/components/admin/WebsiteAnalyticsGate.tsx` | Lazy mount |
 | `src/lib/supabase.ts` | `jobs.getForAnalyticsInRange`, `technicians.getAllForDashboard`, `analyticsPaginated.*`, `websiteAnalytics.*` |
@@ -129,7 +134,12 @@ Last updated: 2026-06-19
 
 ## Recommended next steps
 
-1. Run analytics in Supabase dashboard after quick wins; compare egress for “This month” vs before.
-2. Add **`lead_source` column** or extract in RPC — biggest per-job savings without full dashboard RPC.
-3. Build **`get_analytics_dashboard`** for 6m / 1y / all-time periods.
-4. Re-run this doc when medium-tier RPCs ship; move items from “Medium effort” to “Already optimized”.
+1. Run all analytics SQL scripts in Supabase (see list below) if not done yet.
+2. Compare egress in Supabase dashboard after deploying RPCs.
+
+**SQL run order:**
+1. `scripts/add-job-lead-source-column.sql`
+2. `scripts/add-analytics-dashboard-rpc.sql`
+3. `scripts/add-analytics-on-demand-rpcs.sql`
+4. `scripts/add-analytics-step4-rpcs.sql`
+5. `scripts/add-analytics-step5-polish.sql` (slim recent-events metadata; safe to run anytime after paginated RPCs)
