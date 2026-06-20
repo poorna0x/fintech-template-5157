@@ -42,7 +42,7 @@ export default function EmailPreviewPage() {
     [form]
   );
 
-  const logoUrl = getEmailLogoUrl();
+  const logoUrl = getEmailLogoUrl(undefined, form.documentBrand || 'hydrogenro');
 
   const updateField = <K extends keyof BookingConfirmationEmailData>(
     key: K,
@@ -93,7 +93,7 @@ export default function EmailPreviewPage() {
               Booking Email Preview
             </h1>
             <p className="text-sm text-slate-500 mt-0.5">
-              Preview the confirmation email layout. Same logo for both brands — only the brand name changes.
+              Preview Hydrogen RO and Eleven RO confirmation emails with brand-specific logos.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -296,7 +296,7 @@ export default function EmailPreviewPage() {
               title="Booking confirmation email preview"
               srcDoc={emailPreview.html}
               className="w-full bg-white border-0"
-              style={{ height: previewMode === 'mobile' ? '720px' : '820px' }}
+              style={{ height: previewMode === 'mobile' ? '780px' : '900px' }}
               sandbox="allow-same-origin"
             />
           </div>
