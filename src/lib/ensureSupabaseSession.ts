@@ -34,6 +34,21 @@ export async function ensureSupabaseSessionForWrite(): Promise<EnsureSessionResu
   return { ok: true };
 }
 
+/** Fresh user JWT for Netlify function calls (email, AMC save, etc.). */
+export async function resolveSupabaseAccessTokenForApi(): Promise<string | null> {
+  const ready = await ensureSupabaseSessionForWrite();
+  if (!ready.ok) return null;
+
+  const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession();
+  const token =
+    refreshed.session?.access_token ??
+    (await supabase.auth.getSession()).data.session?.access_token ??
+    null;
+
+  if (!token && refreshError) return null;
+  return token;
+}
+
 export function isPostgrestPermissionDenied(
   error: { message?: string; code?: string } | null | undefined
 ): boolean {

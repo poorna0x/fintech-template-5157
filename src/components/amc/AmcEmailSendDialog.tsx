@@ -15,11 +15,10 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { getDefaultDocumentMessage } from '@/lib/admin-email-templates';
-import { ensureSupabaseSessionForWrite } from '@/lib/ensureSupabaseSession';
+import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import {
   isValidEmailFormat,
   normalizeRecipientList,
-  parseEmailListInput,
 } from '@/lib/email-recipients';
 import type { Bill } from '@/types';
 import type { DocumentBrand } from '@/lib/service-brands';
@@ -28,7 +27,6 @@ import {
   getAmcEmailSuccessMessage,
   sendAmcAgreementEmail,
 } from '@/lib/send-amc-agreement-email';
-import { supabase } from '@/lib/supabaseClient';
 import type { AMCPDFOptions } from '@/lib/amc-pdf-generator';
 
 export type AmcPersistResult = { ok: boolean; error?: string };
@@ -52,12 +50,7 @@ function emptyRow(): string {
 }
 
 async function resolveAccessToken(): Promise<string | null> {
-  const sessionReady = await ensureSupabaseSessionForWrite();
-  if (!sessionReady.ok) return null;
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  return session?.access_token ?? null;
+  return resolveSupabaseAccessTokenForApi();
 }
 
 export default function AmcEmailSendDialog({
@@ -74,14 +67,12 @@ export default function AmcEmailSendDialog({
   const [recipientRows, setRecipientRows] = useState<string[]>([emptyRow()]);
   const [message, setMessage] = useState(() => getDefaultDocumentMessage('amc_document'));
   const [sending, setSending] = useState(false);
-  const [pasteValue, setPasteValue] = useState('');
 
   useEffect(() => {
     if (!open) return;
     const seeded = normalizeRecipientList(defaultRecipients);
     setRecipientRows(seeded.length ? seeded : [emptyRow()]);
     setMessage(getDefaultDocumentMessage('amc_document'));
-    setPasteValue('');
   }, [open, defaultRecipients]);
 
   const normalizedRecipients = useMemo(
@@ -104,19 +95,6 @@ export default function AmcEmailSendDialog({
 
   const addRow = () => {
     setRecipientRows((prev) => [...prev, emptyRow()]);
-  };
-
-  const handlePasteAdd = () => {
-    const parsed = parseEmailListInput(pasteValue);
-    if (!parsed.length) {
-      toast.error('Paste one or more email addresses separated by commas');
-      return;
-    }
-    setRecipientRows((prev) => {
-      const merged = normalizeRecipientList([...prev, ...parsed]);
-      return merged.length ? merged : [emptyRow()];
-    });
-    setPasteValue('');
   };
 
   const handleSend = async () => {
@@ -195,7 +173,10 @@ export default function AmcEmailSendDialog({
 
   return (
     <Dialog open={open} onOpenChange={(next) => !sending && onOpenChange(next)}>
-      <DialogContent className="max-w-lg w-[calc(100vw-1.5rem)] sm:w-full max-h-[min(90vh,720px)] overflow-y-auto p-0 gap-0">
+      <DialogContent
+        dismissible={false}
+        className="max-w-lg w-[calc(100vw-1.5rem)] sm:w-full max-h-[min(90vh,720px)] overflow-y-auto p-0 gap-0"
+      >
         <DialogHeader className="px-4 sm:px-6 pt-5 pb-3 border-b bg-violet-50/80">
           <DialogTitle className="text-base sm:text-lg text-violet-950 pr-8">
             Email AMC agreement
@@ -271,32 +252,6 @@ export default function AmcEmailSendDialog({
                 <Plus className="h-4 w-4 mr-1.5" />
                 Add email
               </Button>
-            </div>
-
-            <div className="rounded-lg border border-dashed p-3 space-y-2 bg-white">
-              <Label htmlFor="amc-email-paste" className="text-xs text-muted-foreground">
-                Or paste multiple (comma separated)
-              </Label>
-              <div className="flex flex-col sm:flex-row gap-2">
-                <Input
-                  id="amc-email-paste"
-                  placeholder="a@x.com, b@y.com"
-                  value={pasteValue}
-                  onChange={(e) => setPasteValue(e.target.value)}
-                  className="h-9 min-w-0 flex-1"
-                  disabled={sending}
-                />
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  className="h-9 shrink-0"
-                  onClick={handlePasteAdd}
-                  disabled={sending || !pasteValue.trim()}
-                >
-                  Add all
-                </Button>
-              </div>
             </div>
           </div>
 

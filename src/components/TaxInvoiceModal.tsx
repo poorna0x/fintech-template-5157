@@ -57,8 +57,8 @@ export default function TaxInvoiceModal({ isOpen, onClose, customer }: TaxInvoic
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto p-0">
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) handleClose(); }}>
+      <DialogContent dismissible={false} hideCloseButton className="max-w-6xl max-h-[90vh] overflow-y-auto p-0">
         <DialogHeader className="sticky top-0 z-10 border-b bg-gradient-to-r from-blue-50/90 to-white px-4 py-4 sm:px-6">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 pr-2">

@@ -82,12 +82,17 @@ exports.handler = async (event) => {
   }));
 
   try {
+    const toField =
+      typeof validated.to === 'string' && validated.to.includes(',')
+        ? validated.to.split(',').map((addr) => addr.trim()).filter(Boolean)
+        : validated.to;
+
     const info = await transporter.sendMail({
       from: {
         name: brandMeta.fromName,
         address: fromAddress,
       },
-      to: validated.to,
+      to: toField,
       subject: validated.subject,
       html: validated.html,
       text: validated.text,

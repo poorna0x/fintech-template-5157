@@ -50,7 +50,6 @@ function normalizePreviewRecipients(to) {
 
   const parts = trimmed
     .split(/[,;]+/)
-    .flatMap((part) => part.split(/\s+/))
     .map((part) => part.trim())
     .filter(Boolean);
 
@@ -233,11 +232,18 @@ function validatePreviewEmailBody(body) {
   }
 
   const to =
-    purpose === 'amc_agreement'
+    purpose === 'amc_agreement' ||
+    (typeof body.to === 'string' && /[,;]/.test(body.to))
       ? normalizePreviewRecipients(body.to)
       : normalizeRecipient(body.to);
   if (!to) {
-    return { ok: false, error: 'Invalid recipient address' };
+    return {
+      ok: false,
+      error:
+        purpose === 'amc_agreement' && typeof body.to === 'string' && /[,;]/.test(body.to)
+          ? 'Invalid recipient addresses — check each email and try again'
+          : 'Invalid recipient address',
+    };
   }
 
   const subject = typeof body.subject === 'string' ? body.subject.trim() : '';

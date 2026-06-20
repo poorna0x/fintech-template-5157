@@ -32,6 +32,13 @@ export function normalizeRecipientList(emails: string[]): string[] {
   return out;
 }
 
+/** Comma-separated To header for AMC email API (matches server validation). */
+export function formatRecipientsForEmailApi(emails: string[]): string | null {
+  const list = normalizeRecipientList(emails);
+  if (!list.length) return null;
+  return list.join(',');
+}
+
 export function recipientListSummary(emails: string[]): string {
   const n = emails.length;
   if (n === 0) return 'No recipients';

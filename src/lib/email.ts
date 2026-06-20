@@ -140,9 +140,15 @@ export class EmailService {
       const result = await response.json().catch(() => ({}));
 
       if (!response.ok) {
+        const message =
+          response.status === 403
+            ? result.error === 'Unauthorized'
+              ? 'Session expired or not signed in — refresh the page and try again'
+              : result.error || 'Not authorized to send email'
+            : result.error || response.statusText || 'Failed to send email';
         return {
           ok: false,
-          error: result.error || response.statusText || 'Failed to send email',
+          error: message,
         };
       }
 

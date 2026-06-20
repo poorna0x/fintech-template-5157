@@ -11,7 +11,7 @@ import {
   generateAMCHTML,
   type AMCPDFOptions,
 } from '@/lib/amc-pdf-generator';
-import { normalizeRecipientList } from '@/lib/email-recipients';
+import { normalizeRecipientList, formatRecipientsForEmailApi } from '@/lib/email-recipients';
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getDocumentBrandLabel } from '@/lib/service-brands';
 import { generateDocumentPdfBase64 } from '@/lib/server-pdf-download';
@@ -56,6 +56,11 @@ export async function sendAmcAgreementEmail(
 
   const recipients = normalizeRecipientList(recipientEmails);
   if (!recipients.length) {
+    return { ok: false, error: 'Add at least one valid email address' };
+  }
+
+  const toHeader = formatRecipientsForEmailApi(recipients);
+  if (!toHeader) {
     return { ok: false, error: 'Add at least one valid email address' };
   }
 
@@ -107,7 +112,7 @@ export async function sendAmcAgreementEmail(
     {
       templateType: 'amc_document',
       documentBrand: brand,
-      to: recipients.join(', '),
+      to: toHeader,
       subject: emailPreview.subject,
       html: emailPreview.html,
       text: emailPreview.text,

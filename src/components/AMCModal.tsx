@@ -38,8 +38,12 @@ export default function AMCModal({ isOpen, onClose, customer, onAMCSaved }: AMCM
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto p-0 w-full sm:w-[95vw] md:w-[90vw] lg:w-[85vw] xl:w-full">
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) handleClose(); }}>
+      <DialogContent
+        dismissible={false}
+        hideCloseButton
+        className="max-w-6xl max-h-[90vh] overflow-y-auto p-0 w-full sm:w-[95vw] md:w-[90vw] lg:w-[85vw] xl:w-full"
+      >
         <DialogHeader className="sticky top-0 z-10 border-b bg-gradient-to-r from-violet-50/90 to-white px-4 py-4 sm:px-6">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 pr-2">
