@@ -34,6 +34,11 @@ import DocumentGeneratorPageHeader, {
 } from '@/components/DocumentGeneratorPageHeader';
 import { mergeEditableCustomer } from '@/lib/document-drafts';
 import { getValidCustomerEmail } from '@/lib/customer-email';
+import {
+  formatCustomerAddressForBill,
+  formatCustomerFullAddressLine,
+  normalizeCustomerAddress,
+} from '@/lib/customer-address';
 import { supabase } from '@/lib/supabaseClient';
 import {
   getAmcEmailSuccessMessage,
@@ -222,35 +227,46 @@ ${notCoveredWithPreFilter}`;
 
   // Editable customer information state
   const [isEditingCustomer, setIsEditingCustomer] = useState(false);
-  const [editableCustomer, setEditableCustomer] = useState({
-    name: customer.fullName || '',
-    phone: typeof customer.phone === 'string' ? customer.phone : (customer as any)?.phone || '',
-    email: customer.email || '',
-    gst: customer.gstNumber || '',
-    address: {
-      street: customer.address?.street || '',
-      area: customer.address?.area || '',
-      city: customer.address?.city || '',
-      state: customer.address?.state || '',
-      pincode: customer.address?.pincode || ''
-    }
+  const resolveCustomerAddress = () =>
+    normalizeCustomerAddress(customer.address, {
+      visible_address: customer.address?.visible_address,
+      formattedAddress: customer.location?.formattedAddress,
+    });
+
+  const [editableCustomer, setEditableCustomer] = useState(() => {
+    const addr = resolveCustomerAddress();
+    return {
+      name: customer.fullName || '',
+      phone: typeof customer.phone === 'string' ? customer.phone : (customer as { phone?: string })?.phone || '',
+      email: customer.email || '',
+      gst: customer.gstNumber || '',
+      address: {
+        street: addr.street,
+        area: addr.area,
+        city: addr.city,
+        state: addr.state,
+        pincode: addr.pincode,
+      },
+    };
   });
 
   React.useEffect(() => {
-    setEditableCustomer((prev) => ({
-      name: prev.name || customer.fullName || '',
-      phone: prev.phone || (typeof customer.phone === 'string' ? customer.phone : (customer as any)?.phone || ''),
-      email: prev.email || customer.email || '',
-      gst: prev.gst || customer.gstNumber || '',
+    if (isEditingCustomer) return;
+    const addr = resolveCustomerAddress();
+    setEditableCustomer({
+      name: customer.fullName || '',
+      phone: typeof customer.phone === 'string' ? customer.phone : (customer as { phone?: string })?.phone || '',
+      email: customer.email || '',
+      gst: customer.gstNumber || '',
       address: {
-        street: prev.address.street || customer.address?.street || '',
-        area: prev.address.area || customer.address?.area || '',
-        city: prev.address.city || customer.address?.city || '',
-        state: prev.address.state || customer.address?.state || '',
-        pincode: prev.address.pincode || customer.address?.pincode || '',
+        street: addr.street,
+        area: addr.area,
+        city: addr.city,
+        state: addr.state,
+        pincode: addr.pincode,
       },
-    }));
-  }, [customer]);
+    });
+  }, [customer, isEditingCustomer]);
 
   // Calculate totals - use direct AMC cost instead of items
   const subtotal = amcCost;
@@ -536,6 +552,10 @@ ${notCoveredWithPreFilter}`;
       taxAmount: 0,
     };
 
+    const billCustomerAddress = formatCustomerAddressForBill(
+      normalizeCustomerAddress(editableCustomer.address)
+    );
+
     const bill: Bill = {
       id: Date.now().toString(),
       billNumber,
@@ -544,10 +564,10 @@ ${notCoveredWithPreFilter}`;
       customer: {
         id: customer.id,
         name: editableCustomer.name,
-        address: `${editableCustomer.address.street || ''}, ${editableCustomer.address.area || ''}`.trim() || '',
-        city: editableCustomer.address.city || '',
-        state: editableCustomer.address.state || '',
-        pincode: editableCustomer.address.pincode || '',
+        address: billCustomerAddress.address,
+        city: billCustomerAddress.city,
+        state: billCustomerAddress.state,
+        pincode: billCustomerAddress.pincode,
         phone: editableCustomer.phone || '',
         email: editableCustomer.email || '',
         gstNumber: editableCustomer.gst || '',
@@ -1136,10 +1156,16 @@ ${notCoveredWithPreFilter}`;
                       <span>{editableCustomer.email}</span>
                     </div>
                   )}
-                  {(editableCustomer.address.street || editableCustomer.address.area || editableCustomer.address.city) && (
+                  {(editableCustomer.address.street ||
+                    editableCustomer.address.area ||
+                    editableCustomer.address.city) && (
                     <div className="flex items-center gap-2">
                       <MapPin className="w-4 h-4 text-gray-500" />
-                      <span>{editableCustomer.address.street}, {editableCustomer.address.area}, {editableCustomer.address.city}</span>
+                      <span>
+                        {formatCustomerFullAddressLine(
+                          normalizeCustomerAddress(editableCustomer.address)
+                        )}
+                      </span>
                     </div>
                   )}
                   {editableCustomer.gst && (

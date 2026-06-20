@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { normalizeCustomerAddress } from '@/lib/customer-address';
 import { db, supabase } from '@/lib/supabase';
 import { Customer, Technician } from '@/types';
 import { toast } from 'sonner';
@@ -31,15 +32,20 @@ const transformCustomerData = (customer: any): Customer => ({
   phone: customer.phone,
   alternatePhone: customer.alternate_phone,
   email: customer.email,
-  address: {
-    street: customer.address?.street || '',
-    area: customer.address?.area || '',
-    city: customer.address?.city || '',
-    state: customer.address?.state || '',
-    pincode: customer.address?.pincode || '',
-    landmark: customer.address?.landmark,
-    visible_address: customer.visible_address || customer.address?.visible_address || ''
-  },
+  address: (() => {
+    const normalized = normalizeCustomerAddress(customer.address, {
+      visible_address: customer.visible_address || customer.address?.visible_address,
+      formattedAddress: customer.location?.formatted_address || customer.location?.formattedAddress,
+    });
+    return {
+      ...normalized,
+      visible_address:
+        normalized.visible_address ||
+        customer.visible_address ||
+        customer.address?.visible_address ||
+        '',
+    };
+  })(),
   location: {
     latitude: customer.location?.latitude || 0,
     longitude: customer.location?.longitude || 0,

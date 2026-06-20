@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef, startTransiti
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { ensureAdminSupabaseSession } from '@/lib/auth';
+import { normalizeCustomerAddress } from '@/lib/customer-address';
 import { ensureSupabaseSessionForWrite } from '@/lib/ensureSupabaseSession';
 import { useResumeSync } from '@/hooks/useResumeSync';
 import AdminHeader from '@/components/AdminHeader';
@@ -1064,15 +1065,20 @@ const AdminDashboard = () => {
     phone: customer.phone,
     alternatePhone: customer.alternate_phone,
     email: customer.email,
-    address: {
-      street: customer.address?.street || '',
-      area: customer.address?.area || '',
-      city: customer.address?.city || '',
-      state: customer.address?.state || '',
-      pincode: customer.address?.pincode || '',
-      landmark: customer.address?.landmark,
-      visible_address: customer.visible_address || customer.address?.visible_address || ''
-    },
+    address: (() => {
+      const normalized = normalizeCustomerAddress(customer.address, {
+        visible_address: customer.visible_address || customer.address?.visible_address,
+        formattedAddress: customer.location?.formatted_address || customer.location?.formattedAddress,
+      });
+      return {
+        ...normalized,
+        visible_address:
+          normalized.visible_address ||
+          customer.visible_address ||
+          customer.address?.visible_address ||
+          '',
+      };
+    })(),
     location: {
       latitude: customer.location?.latitude || 0,
       longitude: customer.location?.longitude || 0,
@@ -2774,13 +2780,31 @@ const AdminDashboard = () => {
 
   /** Document modals — slim fetch (no photos/notes); skip network when list row already has address. */
   const loadCustomerForDocuments = useCallback(async (customer: Customer): Promise<Customer> => {
-    const addr = customer.address;
-    const hasAddress =
-      Boolean(addr?.street || addr?.area || addr?.visible_address) ||
-      Boolean((customer as any).visible_address);
+    const normalized = normalizeCustomerAddress(customer.address, {
+      visible_address: customer.address?.visible_address || (customer as { visible_address?: string }).visible_address,
+      formattedAddress: customer.location?.formattedAddress,
+    });
+    const hasAddress = Boolean(
+      normalized.street ||
+        normalized.area ||
+        normalized.city ||
+        normalized.state ||
+        normalized.pincode ||
+        customer.location?.formattedAddress?.trim()
+    );
 
     if (customer.fullName && customer.phone && hasAddress) {
-      return customer;
+      return {
+        ...customer,
+        address: {
+          ...normalized,
+          visible_address:
+            normalized.visible_address ||
+            customer.address?.visible_address ||
+            (customer as { visible_address?: string }).visible_address ||
+            '',
+        },
+      };
     }
 
     try {
