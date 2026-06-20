@@ -5,6 +5,10 @@ import { escapeForLike, normalizePhoneForSearch } from './utils';
 import { PENDING_PAYMENT_REMINDER_TITLE } from './pendingPaymentReminder';
 import { cacheGet, cacheSet, cacheInvalidate } from './supabaseQueryCache';
 import { isMissingServiceBrandColumnError } from './amc-brand';
+import {
+  normalizeAmcAgreementNumber,
+  parseAmcAgreementNumberFromAdditionalInfo,
+} from './amc-agreement-number';
 import type { PublicSiteKey } from './websiteSiteKey';
 
 export { supabaseAuthClient as supabase };
@@ -3773,31 +3777,6 @@ export const db = {
       given_by_technician_id?: string | null;
       service_brand?: 'hydrogenro' | 'elevenro' | null;
     }) {
-      // First, mark any existing active AMC for this customer as RENEWED or EXPIRED
-      const { data: existingAMCs } = await supabase
-        .from('amc_contracts')
-        .select('id')
-        .eq('customer_id', amc.customer_id)
-        .eq('status', 'ACTIVE');
-      
-      if (existingAMCs && existingAMCs.length > 0) {
-        // Mark existing AMCs as RENEWED if end_date hasn't passed, otherwise EXPIRED
-        const today = new Date().toISOString().split('T')[0];
-        for (const existingAMC of existingAMCs) {
-          const { data: existing } = await supabase
-            .from('amc_contracts')
-            .select('end_date')
-            .eq('id', existingAMC.id)
-            .single();
-          
-          const newStatus = existing && existing.end_date >= today ? 'RENEWED' : 'EXPIRED';
-          await supabase
-            .from('amc_contracts')
-            .update({ status: newStatus })
-            .eq('id', existingAMC.id);
-        }
-      }
-
       const insertBase = {
         customer_id: amc.customer_id,
         job_id: amc.job_id || null,
@@ -3811,20 +3790,137 @@ export const db = {
         status: 'ACTIVE' as const,
       };
 
-      let result = await supabase
-        .from('amc_contracts')
-        .insert({
-          ...insertBase,
-          ...(amc.service_brand ? { service_brand: amc.service_brand } : {}),
-        })
-        .select()
-        .single();
+      const withBrand = {
+        ...insertBase,
+        ...(amc.service_brand ? { service_brand: amc.service_brand } : {}),
+      };
+
+      const renewExistingActiveAmcs = async (exceptId: string | null = null) => {
+        let query = supabase
+          .from('amc_contracts')
+          .select('id')
+          .eq('customer_id', amc.customer_id)
+          .eq('status', 'ACTIVE');
+
+        if (exceptId) {
+          query = query.neq('id', exceptId);
+        }
+
+        const { data: existingAMCs } = await query;
+
+        if (!existingAMCs?.length) return;
+
+        const today = new Date().toISOString().split('T')[0];
+        for (const existingAMC of existingAMCs) {
+          const { data: existing } = await supabase
+            .from('amc_contracts')
+            .select('end_date')
+            .eq('id', existingAMC.id)
+            .single();
+
+          const newStatus = existing && existing.end_date >= today ? 'RENEWED' : 'EXPIRED';
+          await supabase.from('amc_contracts').update({ status: newStatus }).eq('id', existingAMC.id);
+        }
+      };
+
+      const buildUpdatePayload = (branded: typeof withBrand) => {
+        const payload: Record<string, unknown> = { ...branded };
+        if (!amc.job_id) {
+          delete payload.job_id;
+        }
+        if (!amc.given_by_technician_id) {
+          delete payload.given_by_technician_id;
+        }
+        return payload;
+      };
+
+      const buildFallbackUpdatePayload = (base: typeof insertBase) => {
+        const payload: Record<string, unknown> = { ...base };
+        if (!amc.job_id) {
+          delete payload.job_id;
+        }
+        if (!amc.given_by_technician_id) {
+          delete payload.given_by_technician_id;
+        }
+        return payload;
+      };
+
+      const updateExisting = async (existingId: string) => {
+        await renewExistingActiveAmcs(existingId);
+
+        let updateResult = await supabase
+          .from('amc_contracts')
+          .update(buildUpdatePayload(withBrand))
+          .eq('id', existingId)
+          .select()
+          .single();
+
+        if (
+          updateResult.error &&
+          amc.service_brand &&
+          isMissingServiceBrandColumnError(updateResult.error)
+        ) {
+          updateResult = await supabase
+            .from('amc_contracts')
+            .update(buildFallbackUpdatePayload(insertBase))
+            .eq('id', existingId)
+            .select()
+            .single();
+        }
+
+        return { data: updateResult.data, error: updateResult.error, updated: true as const };
+      };
+
+      if (amc.job_id) {
+        const { data: existingForJob, error: jobLookupErr } = await supabase
+          .from('amc_contracts')
+          .select('id')
+          .eq('job_id', amc.job_id)
+          .eq('status', 'ACTIVE')
+          .maybeSingle();
+
+        if (jobLookupErr) {
+          return { data: null, error: jobLookupErr };
+        }
+
+        if (existingForJob?.id) {
+          return updateExisting(existingForJob.id);
+        }
+      }
+
+      const agreementNumber = parseAmcAgreementNumberFromAdditionalInfo(amc.additional_info);
+      if (agreementNumber) {
+        const target = normalizeAmcAgreementNumber(agreementNumber);
+        const { data: activeRows, error: activeErr } = await supabase
+          .from('amc_contracts')
+          .select('id, additional_info, created_at')
+          .eq('customer_id', amc.customer_id)
+          .eq('status', 'ACTIVE')
+          .order('created_at', { ascending: false });
+
+        if (activeErr) {
+          return { data: null, error: activeErr };
+        }
+
+        const existingByNumber = (activeRows || []).find((row) => {
+          const num = parseAmcAgreementNumberFromAdditionalInfo(row.additional_info);
+          return num && normalizeAmcAgreementNumber(num) === target;
+        });
+
+        if (existingByNumber?.id) {
+          return updateExisting(existingByNumber.id);
+        }
+      }
+
+      await renewExistingActiveAmcs();
+
+      let result = await supabase.from('amc_contracts').insert(withBrand).select().single();
 
       if (result.error && amc.service_brand && isMissingServiceBrandColumnError(result.error)) {
         result = await supabase.from('amc_contracts').insert(insertBase).select().single();
       }
 
-      return { data: result.data, error: result.error };
+      return { data: result.data, error: result.error, updated: false as const };
     },
 
     async getByCustomerId(customerId: string) {

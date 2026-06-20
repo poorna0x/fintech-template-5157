@@ -2,6 +2,7 @@
 
 const { createClient } = require('@supabase/supabase-js');
 const { authorizeStaffAmcEmailRequest } = require('./admin-auth-guard');
+const { findActiveAmcIdByAgreementNumber, parseAgreementNumberFromAdditionalInfo } = require('./amc-agreement-number');
 
 function jsonResponse(statusCode, headers, body) {
   return {
@@ -119,6 +120,47 @@ async function renewExistingActiveAmcs(admin, customerId, exceptId = null) {
   }
 }
 
+async function updateExistingAmcRow(admin, payload, existingId, insertBase, withBrand) {
+  await renewExistingActiveAmcs(admin, payload.customer_id, existingId);
+
+  const updatePayload = { ...withBrand };
+  if (!payload.job_id) {
+    delete updatePayload.job_id;
+  }
+  if (!payload.given_by_technician_id) {
+    delete updatePayload.given_by_technician_id;
+  }
+
+  let updateResult = await admin
+    .from('amc_contracts')
+    .update(updatePayload)
+    .eq('id', existingId)
+    .select('id')
+    .single();
+
+  if (
+    updateResult.error &&
+    payload.service_brand &&
+    /service_brand|column/.test(String(updateResult.error.message || ''))
+  ) {
+    const fallbackPayload = { ...insertBase };
+    if (!payload.job_id) delete fallbackPayload.job_id;
+    if (!payload.given_by_technician_id) delete fallbackPayload.given_by_technician_id;
+    updateResult = await admin
+      .from('amc_contracts')
+      .update(fallbackPayload)
+      .eq('id', existingId)
+      .select('id')
+      .single();
+  }
+
+  if (updateResult.error) {
+    return { error: updateResult.error };
+  }
+
+  return { data: updateResult.data, updated: true };
+}
+
 async function upsertAmcContract(admin, payload) {
   const insertBase = {
     customer_id: payload.customer_id,
@@ -151,33 +193,23 @@ async function upsertAmcContract(admin, payload) {
     }
 
     if (existingForJob?.id) {
-      await renewExistingActiveAmcs(admin, payload.customer_id, existingForJob.id);
+      return updateExistingAmcRow(admin, payload, existingForJob.id, insertBase, withBrand);
+    }
+  }
 
-      let updateResult = await admin
-        .from('amc_contracts')
-        .update(withBrand)
-        .eq('id', existingForJob.id)
-        .select('id')
-        .single();
-
-      if (
-        updateResult.error &&
-        payload.service_brand &&
-        /service_brand|column/.test(String(updateResult.error.message || ''))
-      ) {
-        updateResult = await admin
-          .from('amc_contracts')
-          .update(insertBase)
-          .eq('id', existingForJob.id)
-          .select('id')
-          .single();
+  const agreementNumber = parseAgreementNumberFromAdditionalInfo(payload.additional_info);
+  if (agreementNumber) {
+    try {
+      const existingId = await findActiveAmcIdByAgreementNumber(
+        admin,
+        payload.customer_id,
+        agreementNumber
+      );
+      if (existingId) {
+        return updateExistingAmcRow(admin, payload, existingId, insertBase, withBrand);
       }
-
-      if (updateResult.error) {
-        return { error: updateResult.error };
-      }
-
-      return { data: updateResult.data, updated: true };
+    } catch (lookupErr) {
+      return { error: lookupErr };
     }
   }
 

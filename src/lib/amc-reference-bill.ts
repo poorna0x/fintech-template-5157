@@ -10,6 +10,7 @@ import {
   normalizeDocumentBrand,
 } from '@/lib/service-brands';
 import type { Bill, BillItem, Customer } from '@/types';
+import { suggestAmcAgreementNumber } from '@/lib/amc-agreement-number';
 
 export interface TechnicianReferenceAmcInput {
   customer: Customer;
@@ -101,9 +102,5 @@ export function buildTechnicianReferenceAmcBill(input: TechnicianReferenceAmcInp
 }
 
 export function suggestReferenceAmcBillNumber(jobNumber?: string | null): string {
-  const year = new Date().getFullYear();
-  if (jobNumber?.trim()) {
-    return `AMC-REF-${jobNumber.trim().replace(/\s+/g, '-')}`;
-  }
-  return `AMC-REF-${year}-${String(Math.floor(Math.random() * 1000)).padStart(3, '0')}`;
+  return suggestAmcAgreementNumber({ jobNumber });
 }

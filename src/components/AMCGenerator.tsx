@@ -33,6 +33,7 @@ import DocumentGeneratorPageHeader, {
   documentSaveBtnClass,
 } from '@/components/DocumentGeneratorPageHeader';
 import { mergeEditableCustomer } from '@/lib/document-drafts';
+import { suggestAmcAgreementNumber } from '@/lib/amc-agreement-number';
 import { getValidCustomerEmail } from '@/lib/customer-email';
 import {
   formatCustomerAddressForBill,
@@ -64,7 +65,7 @@ const defaultCompanyInfo: CompanyInfo = {
 };
 
 export default function AMCGenerator({ customer, onPrint, onAMCSaved, embedded = false }: AMCGeneratorProps) {
-  const [billNumber, setBillNumber] = useState(`AMC-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 1000)).padStart(3, '0')}`);
+  const [billNumber, setBillNumber] = useState(() => suggestAmcAgreementNumber());
   const [billDate, setBillDate] = useState(new Date().toISOString().split('T')[0]);
   const [company, setCompany] = useState<CompanyInfo>(defaultCompanyInfo);
   const [notes, setNotes] = useState('');
@@ -397,7 +398,7 @@ ${notCoveredWithPreFilter}`;
   const persistAmcToDatabase = async (
     brand: DocumentBrand,
     options?: { emailedTo?: string[]; sharedVia?: string }
-  ): Promise<{ ok: boolean; error?: string }> => {
+  ): Promise<{ ok: boolean; error?: string; updated?: boolean }> => {
     applyBrandToForm(brand);
     if (!billNumber.trim()) {
       return { ok: false, error: 'Please enter an agreement number' };
@@ -432,7 +433,7 @@ ${notCoveredWithPreFilter}`;
       const { startDate, endDate, years } = calculateDates();
 
       const metadata = {
-        agreement_number: billNumber,
+        agreement_number: billNumber.trim(),
         agreement_date: billDate,
         amc_cost: amcCost,
         service_charge: serviceCharge,
@@ -466,7 +467,7 @@ ${notCoveredWithPreFilter}`;
               ? 6
               : Math.max(1, servicePeriodCustomMonths);
 
-      const { error: amcError } = await db.amcContracts.create({
+      const { error: amcError, updated } = await db.amcContracts.create({
         customer_id: customer.id,
         job_id: null,
         start_date: startDate,
@@ -484,7 +485,7 @@ ${notCoveredWithPreFilter}`;
       }
 
       onAMCSaved?.();
-      return { ok: true };
+      return { ok: true, updated: Boolean(updated) };
     } catch (error: unknown) {
       console.error('Error saving AMC contract:', error);
       return {
@@ -499,9 +500,12 @@ ${notCoveredWithPreFilter}`;
 
     const result = await persistAmcToDatabase(brand);
     if (result.ok) {
-      toast.success('AMC contract saved to database successfully', {
-        description: `Agreement ${billNumber} saved under ${getDocumentBrandLabel(brand)}.`,
-      });
+      toast.success(
+        result.updated ? 'AMC contract updated in database' : 'AMC contract saved to database successfully',
+        {
+          description: `Agreement ${billNumber} ${result.updated ? 'updated' : 'saved'} under ${getDocumentBrandLabel(brand)}.`,
+        }
+      );
     } else {
       toast.error('Failed to save AMC contract to database', {
         description: result.error || 'Please try again.',
@@ -913,7 +917,7 @@ ${notCoveredWithPreFilter}`;
                     id="billNumber"
                     value={billNumber}
                     onChange={(e) => setBillNumber(e.target.value)}
-                    placeholder="AMC-2024-001"
+                    placeholder="AMC-2026-001"
                   />
                 </div>
                 <div>
