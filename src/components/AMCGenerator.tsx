@@ -543,7 +543,7 @@ ${notCoveredWithPreFilter}`;
     try {
       // Don't save to database automatically - user must explicitly click "Save to Database" button
       // This allows generating/previewing AMC without creating an active contract in the database
-      generateAMCPDF(bill, 'print', { 
+      generateAMCPDF(bill, 'pdf', { 
         includeDetails: options?.termsOnly ? false : true,
         showComputerGeneratedText: showComputerGeneratedText
       });

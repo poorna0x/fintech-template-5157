@@ -901,7 +901,7 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
             <Save className="w-4 h-4 mr-2" />
             {isSaving ? 'Saving...' : 'Save to Database'}
           </Button>
-          <Button onClick={() => handlePrint('print')} className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto min-w-[140px]">
+          <Button onClick={() => handlePrint('pdf')} className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto min-w-[140px]">
             <Download className="w-4 h-4 mr-2" />
             Download Tax Invoice
           </Button>

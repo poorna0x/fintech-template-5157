@@ -79,7 +79,7 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [hideGstInHeader, setHideGstInHeader] = useState(false);
   const [brandPickerOpen, setBrandPickerOpen] = useState(false);
-  const [pendingPrintAction, setPendingPrintAction] = useState<'print' | 'pdf'>('print');
+  const [pendingPrintAction, setPendingPrintAction] = useState<'print' | 'pdf'>('pdf');
 
   // Editable customer information state
   const [isEditingCustomer, setIsEditingCustomer] = useState(false);
@@ -306,7 +306,7 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
             onLoad={applyDraftSnapshot}
             buildLabel={buildDraftLabel}
           />
-          <Button onClick={() => handlePrint('print')} className="bg-green-600 hover:bg-green-700 w-full sm:w-auto min-w-[140px]">
+          <Button onClick={() => handlePrint('pdf')} className="bg-green-600 hover:bg-green-700 w-full sm:w-auto min-w-[140px]">
             <Download className="w-4 h-4 mr-2" />
             Download Bill
           </Button>

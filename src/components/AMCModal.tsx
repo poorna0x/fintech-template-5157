@@ -21,7 +21,7 @@ export default function AMCModal({ isOpen, onClose, customer, onAMCSaved }: AMCM
     setIsGenerating(true);
     
     try {
-      generateAMCPDF(bill);
+      generateAMCPDF(bill, action ?? 'pdf');
     } catch (error) {
       console.error('Error generating AMC:', error);
       toast.error('Failed to generate AMC Agreement');

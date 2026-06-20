@@ -16,7 +16,7 @@ interface TaxInvoiceModalProps {
 export default function TaxInvoiceModal({ isOpen, onClose, customer }: TaxInvoiceModalProps) {
   const [isGenerating, setIsGenerating] = useState(false);
 
-  const handlePrintTaxInvoice = (bill: Bill, action: 'print' | 'pdf' = 'print') => {
+  const handlePrintTaxInvoice = (bill: Bill, action: 'print' | 'pdf' = 'pdf') => {
     setIsGenerating(true);
     
     const pdfData = {

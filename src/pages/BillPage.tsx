@@ -117,7 +117,7 @@ export default function BillPage() {
     handleBackToList();
   };
 
-  const handlePrintBill = (bill: Bill) => {
+  const handlePrintBill = (bill: Bill, action: 'print' | 'pdf' = 'pdf') => {
            const pdfData = {
              billNumber: bill.billNumber,
              billDate: bill.billDate,
@@ -135,7 +135,7 @@ export default function BillPage() {
              documentBrand: (bill as any).documentBrand,
            };
     
-    generateBillPDF(pdfData);
+    generateBillPDF(pdfData, action);
   };
 
   if (isGeneratingBill && selectedCustomer) {

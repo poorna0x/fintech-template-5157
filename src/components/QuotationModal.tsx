@@ -16,7 +16,7 @@ interface QuotationModalProps {
 export default function QuotationModal({ isOpen, onClose, customer }: QuotationModalProps) {
   const [isGenerating, setIsGenerating] = useState(false);
 
-  const handlePrintQuotation = (quotation: Bill, action: 'print' | 'pdf' = 'print') => {
+  const handlePrintQuotation = (quotation: Bill, action: 'print' | 'pdf' = 'pdf') => {
     setIsGenerating(true);
     
     // Transform customer object from Bill format (fullName) to PDF format (name)

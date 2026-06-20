@@ -1,3 +1,5 @@
+import { toast } from 'sonner';
+
 const PDF_ENDPOINT = '/.netlify/functions/generate-pdf';
 
 function sanitizeFilename(raw: string): string {
@@ -34,32 +36,43 @@ export interface DownloadDocumentPdfOptions {
 export async function downloadDocumentPdf(options: DownloadDocumentPdfOptions): Promise<void> {
   const html = withAbsoluteAssetUrls(options.html, options.origin);
   const filename = sanitizeFilename(options.filename);
+  const toastId = toast.loading('Generating PDF…');
 
-  const response = await fetch(PDF_ENDPOINT, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ html, filename }),
-  });
+  try {
+    const response = await fetch(PDF_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ html, filename }),
+    });
 
-  if (!response.ok) {
-    let message = `PDF generation failed (${response.status})`;
-    try {
-      const payload = (await response.json()) as { error?: string; details?: string };
-      message = payload.details || payload.error || message;
-    } catch {
-      /* ignore parse errors */
+    if (!response.ok) {
+      let message = `PDF generation failed (${response.status})`;
+      try {
+        const payload = (await response.json()) as { error?: string; details?: string };
+        message = payload.details || payload.error || message;
+      } catch {
+        /* ignore parse errors */
+      }
+      throw new Error(message);
     }
-    throw new Error(message);
-  }
 
-  const blob = await response.blob();
-  const objectUrl = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = objectUrl;
-  anchor.download = filename;
-  anchor.style.display = 'none';
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  URL.revokeObjectURL(objectUrl);
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = filename;
+    anchor.style.display = 'none';
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(objectUrl);
+    toast.success('PDF downloaded', { id: toastId });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'PDF generation failed';
+    toast.error('Could not generate PDF', {
+      id: toastId,
+      description: message,
+    });
+    throw error;
+  }
 }

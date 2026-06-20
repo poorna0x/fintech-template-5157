@@ -111,7 +111,7 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
   const [sealVariant, setSealVariant] = useState<'sign' | 'stamp'>('sign');
   const [bankDetails, setBankDetails] = useState(defaultBankDetails);
   const [brandPickerOpen, setBrandPickerOpen] = useState(false);
-  const [pendingPrintAction, setPendingPrintAction] = useState<'print' | 'pdf'>('print');
+  const [pendingPrintAction, setPendingPrintAction] = useState<'print' | 'pdf'>('pdf');
   
   // Computed values for backward compatibility
   const includeGST = gstOption === 'include';
@@ -576,7 +576,7 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
             onLoad={applyDraftSnapshot}
             buildLabel={buildDraftLabel}
           />
-          <Button onClick={() => handlePrint('print')} className="bg-green-600 hover:bg-green-700 w-full sm:w-auto min-w-[140px]">
+          <Button onClick={() => handlePrint('pdf')} className="bg-green-600 hover:bg-green-700 w-full sm:w-auto min-w-[140px]">
             <Download className="w-4 h-4 mr-2" />
             Download Quotation
           </Button>

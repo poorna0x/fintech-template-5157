@@ -16,7 +16,7 @@ interface BillModalProps {
 export default function BillModal({ isOpen, onClose, customer }: BillModalProps) {
   const [isGenerating, setIsGenerating] = useState(false);
 
-  const handlePrintBill = (bill: Bill, action: 'print' | 'pdf' = 'print') => {
+  const handlePrintBill = (bill: Bill, action: 'print' | 'pdf' = 'pdf') => {
     setIsGenerating(true);
     
     const pdfData = {
