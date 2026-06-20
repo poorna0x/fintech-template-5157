@@ -40,6 +40,37 @@ function normalizeRecipient(to) {
   return trimmed;
 }
 
+const MAX_PREVIEW_RECIPIENTS = 10;
+
+/** Comma-separated To list for AMC agreement emails (up to 10 addresses). */
+function normalizePreviewRecipients(to) {
+  if (typeof to !== 'string') return null;
+  const trimmed = to.trim();
+  if (!trimmed) return null;
+
+  const parts = trimmed
+    .split(/[,;]+/)
+    .flatMap((part) => part.split(/\s+/))
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (!parts.length || parts.length > MAX_PREVIEW_RECIPIENTS) return null;
+
+  const seen = new Set();
+  const validated = [];
+  for (const part of parts) {
+    const lower = part.toLowerCase();
+    if (lower.includes('nomail') || lower.includes('no@mail')) return null;
+    if (!EMAIL_RE.test(part) || part.length > 254) return null;
+    if (seen.has(lower)) continue;
+    seen.add(lower);
+    validated.push(part);
+  }
+
+  if (!validated.length) return null;
+  return validated.join(', ');
+}
+
 function validateBookingEmailBody(body) {
   const blocked = hasBlockedFields(body);
   if (blocked) {
@@ -201,7 +232,10 @@ function validatePreviewEmailBody(body) {
     return { ok: false, error: 'Invalid or missing purpose' };
   }
 
-  const to = normalizeRecipient(body.to);
+  const to =
+    purpose === 'amc_agreement'
+      ? normalizePreviewRecipients(body.to)
+      : normalizeRecipient(body.to);
   if (!to) {
     return { ok: false, error: 'Invalid recipient address' };
   }

@@ -18,8 +18,10 @@ export interface AmcDocumentActionsProps {
   /** Compact row for technician complete-job wizard */
   compact?: boolean;
   disabled?: boolean;
-  /** Save AMC contract to DB before download or email */
+  /** Save AMC contract to DB before download */
   onPersistBeforeAction?: () => Promise<AmcPersistResult>;
+  /** Save AMC contract to DB after email sends successfully */
+  onPersistAfterEmail?: (recipients: string[]) => Promise<AmcPersistResult>;
   onSent?: () => void;
   className?: string;
 }
@@ -33,6 +35,7 @@ export default function AmcDocumentActions({
   compact = false,
   disabled = false,
   onPersistBeforeAction,
+  onPersistAfterEmail,
   onSent,
   className,
 }: AmcDocumentActionsProps) {
@@ -113,7 +116,7 @@ export default function AmcDocumentActions({
         endDateIso={endDateIso}
         defaultRecipients={defaultRecipients}
         pdfOptions={pdfOptions}
-        onPersistBeforeAction={onPersistBeforeAction}
+        onPersistAfterEmail={onPersistAfterEmail}
         onSent={onSent}
       />
     </>

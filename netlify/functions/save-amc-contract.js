@@ -91,12 +91,18 @@ function parseBody(body) {
   };
 }
 
-async function renewExistingActiveAmcs(admin, customerId) {
-  const { data: existingAMCs } = await admin
+async function renewExistingActiveAmcs(admin, customerId, exceptId = null) {
+  let query = admin
     .from('amc_contracts')
     .select('id')
     .eq('customer_id', customerId)
     .eq('status', 'ACTIVE');
+
+  if (exceptId) {
+    query = query.neq('id', exceptId);
+  }
+
+  const { data: existingAMCs } = await query;
 
   if (!existingAMCs?.length) return;
 
@@ -111,6 +117,87 @@ async function renewExistingActiveAmcs(admin, customerId) {
     const newStatus = existing && existing.end_date >= today ? 'RENEWED' : 'EXPIRED';
     await admin.from('amc_contracts').update({ status: newStatus }).eq('id', existingAMC.id);
   }
+}
+
+async function upsertAmcContract(admin, payload) {
+  const insertBase = {
+    customer_id: payload.customer_id,
+    job_id: payload.job_id,
+    start_date: payload.start_date,
+    end_date: payload.end_date,
+    years: payload.years,
+    includes_prefilter: payload.includes_prefilter,
+    additional_info: payload.additional_info,
+    service_period_months: payload.service_period_months,
+    given_by_technician_id: payload.given_by_technician_id,
+    status: 'ACTIVE',
+  };
+
+  const withBrand = {
+    ...insertBase,
+    ...(payload.service_brand ? { service_brand: payload.service_brand } : {}),
+  };
+
+  if (payload.job_id) {
+    const { data: existingForJob, error: lookupErr } = await admin
+      .from('amc_contracts')
+      .select('id')
+      .eq('job_id', payload.job_id)
+      .eq('status', 'ACTIVE')
+      .maybeSingle();
+
+    if (lookupErr) {
+      return { error: lookupErr };
+    }
+
+    if (existingForJob?.id) {
+      await renewExistingActiveAmcs(admin, payload.customer_id, existingForJob.id);
+
+      let updateResult = await admin
+        .from('amc_contracts')
+        .update(withBrand)
+        .eq('id', existingForJob.id)
+        .select('id')
+        .single();
+
+      if (
+        updateResult.error &&
+        payload.service_brand &&
+        /service_brand|column/.test(String(updateResult.error.message || ''))
+      ) {
+        updateResult = await admin
+          .from('amc_contracts')
+          .update(insertBase)
+          .eq('id', existingForJob.id)
+          .select('id')
+          .single();
+      }
+
+      if (updateResult.error) {
+        return { error: updateResult.error };
+      }
+
+      return { data: updateResult.data, updated: true };
+    }
+  }
+
+  await renewExistingActiveAmcs(admin, payload.customer_id);
+
+  let result = await admin.from('amc_contracts').insert(withBrand).select('id').single();
+
+  if (
+    result.error &&
+    payload.service_brand &&
+    /service_brand|column/.test(String(result.error.message || ''))
+  ) {
+    result = await admin.from('amc_contracts').insert(insertBase).select('id').single();
+  }
+
+  if (result.error) {
+    return { error: result.error };
+  }
+
+  return { data: result.data, updated: false };
 }
 
 exports.handler = async (event) => {
@@ -165,46 +252,17 @@ exports.handler = async (event) => {
   });
 
   try {
-    await renewExistingActiveAmcs(admin, payload.customer_id);
+    const upsert = await upsertAmcContract(admin, payload);
 
-    const insertBase = {
-      customer_id: payload.customer_id,
-      job_id: payload.job_id,
-      start_date: payload.start_date,
-      end_date: payload.end_date,
-      years: payload.years,
-      includes_prefilter: payload.includes_prefilter,
-      additional_info: payload.additional_info,
-      service_period_months: payload.service_period_months,
-      given_by_technician_id: payload.given_by_technician_id,
-      status: 'ACTIVE',
-    };
-
-    let result = await admin
-      .from('amc_contracts')
-      .insert({
-        ...insertBase,
-        ...(payload.service_brand ? { service_brand: payload.service_brand } : {}),
-      })
-      .select('id')
-      .single();
-
-    if (
-      result.error &&
-      payload.service_brand &&
-      /service_brand|column/.test(String(result.error.message || ''))
-    ) {
-      result = await admin.from('amc_contracts').insert(insertBase).select('id').single();
-    }
-
-    if (result.error) {
-      console.error('[save-amc-contract] insert failed', result.error.message);
-      return jsonResponse(500, cors, { error: result.error.message || 'Failed to save AMC' });
+    if (upsert.error) {
+      console.error('[save-amc-contract] upsert failed', upsert.error.message);
+      return jsonResponse(500, cors, { error: upsert.error.message || 'Failed to save AMC' });
     }
 
     return jsonResponse(200, cors, {
       success: true,
-      id: result.data?.id,
+      id: upsert.data?.id,
+      updated: Boolean(upsert.updated),
     });
   } catch (error) {
     console.error('[save-amc-contract] unexpected', error && error.message);

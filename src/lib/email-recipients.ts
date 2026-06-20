@@ -1,5 +1,3 @@
-import { isValidCustomerEmail } from '@/lib/customer-email';
-
 const EMAIL_RE =
   /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
 
@@ -18,17 +16,17 @@ export function parseEmailListInput(raw: string): string[] {
     .filter(Boolean);
 }
 
-/** Dedupe and keep only valid customer emails (excludes nomail placeholders). */
+/** Dedupe and keep valid email addresses (excludes nomail placeholders). */
 export function normalizeRecipientList(emails: string[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const raw of emails) {
     const trimmed = raw.trim();
-    if (!isValidCustomerEmail(trimmed) && !isValidEmailFormat(trimmed)) continue;
-    if (!isValidCustomerEmail(trimmed)) continue;
-    const key = trimmed.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
+    if (!isValidEmailFormat(trimmed)) continue;
+    const lower = trimmed.toLowerCase();
+    if (lower.includes('nomail') || lower.includes('no@mail')) continue;
+    if (seen.has(lower)) continue;
+    seen.add(lower);
     out.push(trimmed);
   }
   return out;

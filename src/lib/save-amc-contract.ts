@@ -76,6 +76,8 @@ export interface TechnicianAmcPersistContext {
   technicianId: string;
   roModel?: string;
   additionalInfo?: string;
+  sharedVia?: 'technician_download' | 'technician_email';
+  emailedTo?: string[];
 }
 
 export function buildTechnicianAmcPersistPayload(
@@ -97,7 +99,8 @@ export function buildTechnicianAmcPersistPayload(
     payment_status: 'PAID',
     amount_received: ctx.amount,
     technician_reference: true,
-    shared_via: 'technician_complete_job',
+    shared_via: ctx.sharedVia || 'technician_complete_job',
+    emailed_to: ctx.emailedTo?.length ? ctx.emailedTo : null,
     job_number: ctx.jobNumber || null,
     saved_at: new Date().toISOString(),
   };

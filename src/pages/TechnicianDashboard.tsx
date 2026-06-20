@@ -3158,7 +3158,10 @@ const TechnicianDashboard = () => {
     selectedJobForComplete,
   ]);
 
-  const persistTechnicianAmcForShare = useCallback(async (): Promise<{ ok: boolean; error?: string }> => {
+  const persistTechnicianAmcForShare = useCallback(async (options?: {
+    sharedVia?: 'technician_download' | 'technician_email';
+    emailedTo?: string[];
+  }): Promise<{ ok: boolean; error?: string }> => {
     if (!technicianReferenceAmcBill || !completeJobCustomerDoc || !selectedJobForComplete) {
       return { ok: false, error: 'Complete all AMC fields first' };
     }
@@ -3171,11 +3174,6 @@ const TechnicianDashboard = () => {
     const documentBrand = normalizeDocumentBrand(serviceBrand);
     if (!documentBrand) {
       return { ok: false, error: 'Select service brand on step 1' };
-    }
-
-    const persistKey = `${selectedJobForComplete.id}:${amcDateGiven}:${amcEndDate}:${amcAmount}:${documentBrand}`;
-    if (amcContractPersistedKeyRef.current === persistKey) {
-      return { ok: true };
     }
 
     const sessionReady = await ensureSupabaseSessionForWrite();
@@ -3222,11 +3220,13 @@ const TechnicianDashboard = () => {
       technicianId,
       roModel,
       additionalInfo: amcAdditionalInfo,
+      sharedVia: options?.sharedVia ?? 'technician_download',
+      emailedTo: options?.emailedTo,
     });
 
     const result = await persistAmcContract(payload, session.access_token);
     if (result.ok) {
-      amcContractPersistedKeyRef.current = persistKey;
+      amcContractPersistedKeyRef.current = `${selectedJobForComplete.id}:${documentBrand}`;
       setCustomerAMCStatus((prev) => ({ ...prev, [completeJobCustomerDoc.id]: true }));
     }
     return result;
@@ -8321,7 +8321,15 @@ const TechnicianDashboard = () => {
                             brand={normalizeDocumentBrand(serviceBrand) || 'hydrogenro'}
                             endDateIso={amcEndDate}
                             customerEmail={completeJobCustomerDoc?.email}
-                            onPersistBeforeAction={persistTechnicianAmcForShare}
+                            onPersistBeforeAction={() =>
+                              persistTechnicianAmcForShare({ sharedVia: 'technician_download' })
+                            }
+                            onPersistAfterEmail={(recipients) =>
+                              persistTechnicianAmcForShare({
+                                sharedVia: 'technician_email',
+                                emailedTo: recipients,
+                              })
+                            }
                             pdfOptions={{
                               includeDetails: true,
                               showComputerGeneratedText: true,

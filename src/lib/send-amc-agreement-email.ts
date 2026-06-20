@@ -103,49 +103,29 @@ export async function sendAmcAgreementEmail(
     size,
   };
 
-  const failedRecipients: string[] = [];
-  let sentCount = 0;
+  const result = await emailService.sendAmcAgreementEmail(
+    {
+      templateType: 'amc_document',
+      documentBrand: brand,
+      to: recipients.join(', '),
+      subject: emailPreview.subject,
+      html: emailPreview.html,
+      text: emailPreview.text,
+      attachments: [attachment],
+    },
+    accessToken
+  );
 
-  for (const to of recipients) {
-    const result = await emailService.sendAmcAgreementEmail(
-      {
-        templateType: 'amc_document',
-        documentBrand: brand,
-        to,
-        subject: emailPreview.subject,
-        html: emailPreview.html,
-        text: emailPreview.text,
-        attachments: [attachment],
-      },
-      accessToken
-    );
-
-    if (result.ok) {
-      sentCount += 1;
-    } else {
-      failedRecipients.push(to);
-    }
-  }
-
-  if (sentCount === 0) {
+  if (!result.ok) {
     return {
       ok: false,
-      error: 'Could not send to any recipient',
+      error: result.error || 'Could not send to any recipient',
       sentCount: 0,
-      failedRecipients,
+      failedRecipients: recipients,
     };
   }
 
-  if (failedRecipients.length) {
-    return {
-      ok: true,
-      sentCount,
-      failedRecipients,
-      error: `Sent to ${sentCount}; failed: ${failedRecipients.join(', ')}`,
-    };
-  }
-
-  return { ok: true, sentCount };
+  return { ok: true, sentCount: recipients.length };
 }
 
 export function getAmcEmailSuccessMessage(

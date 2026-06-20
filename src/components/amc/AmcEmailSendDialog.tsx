@@ -42,8 +42,8 @@ export interface AmcEmailSendDialogProps {
   /** Pre-filled recipient(s), e.g. customer email */
   defaultRecipients?: string[];
   pdfOptions?: AMCPDFOptions;
-  /** Save AMC to DB before sending (technician / admin share flow) */
-  onPersistBeforeAction?: () => Promise<AmcPersistResult>;
+  /** Save AMC to DB after email sends successfully */
+  onPersistAfterEmail?: (recipients: string[]) => Promise<AmcPersistResult>;
   onSent?: () => void;
 }
 
@@ -68,7 +68,7 @@ export default function AmcEmailSendDialog({
   endDateIso,
   defaultRecipients = [],
   pdfOptions,
-  onPersistBeforeAction,
+  onPersistAfterEmail,
   onSent,
 }: AmcEmailSendDialogProps) {
   const [recipientRows, setRecipientRows] = useState<string[]>([emptyRow()]);
@@ -140,29 +140,18 @@ export default function AmcEmailSendDialog({
     }
 
     setSending(true);
-    const toastId = toast.loading('Saving AMC and preparing email…');
+    const toastId = toast.loading(
+      recipients.length > 1
+        ? `Generating PDF and sending to ${recipients.length} recipients…`
+        : 'Generating PDF and sending email…'
+    );
 
     try {
-      if (onPersistBeforeAction) {
-        const saved = await onPersistBeforeAction();
-        if (!saved.ok) {
-          toast.error(saved.error || 'Could not save AMC to database', { id: toastId });
-          return;
-        }
-      }
-
       const accessToken = await resolveAccessToken();
       if (!accessToken) {
         toast.error('Session expired. Please sign in again.', { id: toastId });
         return;
       }
-
-      toast.loading(
-        recipients.length > 1
-          ? `Generating PDF and sending to ${recipients.length} recipients…`
-          : 'Generating PDF and sending email…',
-        { id: toastId }
-      );
 
       const result = await sendAmcAgreementEmail({
         bill,
@@ -174,16 +163,28 @@ export default function AmcEmailSendDialog({
         customMessage: message.trim() || undefined,
       });
 
-      if (result.ok) {
-        toast.success(getAmcEmailSuccessMessage(brand, recipients), { id: toastId });
-        if (result.failedRecipients?.length) {
-          toast.warning(`Could not send to: ${result.failedRecipients.join(', ')}`);
-        }
-        onSent?.();
-        onOpenChange(false);
-      } else {
+      if (!result.ok) {
         toast.error(result.error || 'Could not send email', { id: toastId });
+        return;
       }
+
+      if (onPersistAfterEmail) {
+        toast.loading('Saving AMC to database…', { id: toastId });
+        const saved = await onPersistAfterEmail(recipients);
+        if (!saved.ok) {
+          toast.warning('Email sent, but AMC could not be saved', {
+            id: toastId,
+            description: saved.error || 'Try downloading AMC to save again',
+          });
+          onSent?.();
+          onOpenChange(false);
+          return;
+        }
+      }
+
+      toast.success(getAmcEmailSuccessMessage(brand, recipients), { id: toastId });
+      onSent?.();
+      onOpenChange(false);
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Failed to send email';
       toast.error('Could not send AMC email', { id: toastId, description: msg });
