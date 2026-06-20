@@ -526,7 +526,7 @@ export default function LetterheadDocumentsPage({
                 size="sm"
                 onClick={() => void handleSaveDraft()}
                 disabled={savingDraft}
-                className="hidden sm:inline-flex border-slate-300"
+                className="hidden sm:inline-flex border-slate-300 text-slate-700 hover:text-slate-900 hover:bg-slate-100"
               >
                 <Save className="w-4 h-4 mr-1" /> {savingDraft ? 'Saving…' : 'Save'}
               </Button>
@@ -534,7 +534,7 @@ export default function LetterheadDocumentsPage({
                 variant="outline"
                 size="sm"
                 onClick={handleDownload}
-                className="border-slate-300"
+                className="border-slate-300 text-slate-700 hover:text-slate-900 hover:bg-slate-100"
                 aria-label="Save as PDF"
               >
                 <FileDown className="w-4 h-4 sm:mr-1" />
@@ -543,7 +543,7 @@ export default function LetterheadDocumentsPage({
               <Button
                 size="sm"
                 onClick={handlePrint}
-                className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+                className="bg-blue-600 hover:bg-blue-700 hover:!text-white text-white shadow-sm"
               >
                 <Printer className="w-4 h-4 sm:mr-1" />
                 <span className="hidden sm:inline">Print</span>
@@ -1267,7 +1267,7 @@ export default function LetterheadDocumentsPage({
           <Button
             size="sm"
             onClick={handlePrint}
-            className="flex flex-col items-center justify-center h-12 gap-0.5 text-[11px] bg-blue-600 hover:bg-blue-700 text-white"
+            className="flex flex-col items-center justify-center h-12 gap-0.5 text-[11px] bg-blue-600 hover:bg-blue-700 hover:!text-white text-white"
           >
             <Printer className="w-4 h-4" />
             Print
@@ -1454,7 +1454,7 @@ function CustomerPicker({ selectedSummary, onPick, onClear }: CustomerPickerProp
           type="button"
           onClick={() => void runSearch()}
           disabled={loading || query.trim().length < 2}
-          className="bg-blue-600 hover:bg-blue-700 text-white sm:w-auto w-full"
+          className="bg-blue-600 hover:bg-blue-700 hover:!text-white text-white sm:w-auto w-full"
         >
           {loading ? (
             <Loader2 className="w-4 h-4 mr-1 animate-spin" />

@@ -58,28 +58,34 @@ export default function TaxInvoiceModal({ isOpen, onClose, customer }: TaxInvoic
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto p-0">
-        <DialogHeader className="sticky top-0 bg-white z-10 border-b p-6 pb-4">
-          <div className="flex items-center justify-between">
-            <DialogTitle className="text-xl font-semibold">
-              Generate Tax Invoice {customer ? `for ${customer.fullName}` : ''}
-            </DialogTitle>
+        <DialogHeader className="sticky top-0 z-10 border-b bg-gradient-to-r from-blue-50/90 to-white px-4 py-4 sm:px-6">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 pr-2">
+              <DialogTitle className="text-lg sm:text-xl font-bold text-blue-950 leading-tight">
+                {customer ? `Tax Invoice for ${customer.fullName}` : 'Generate Tax Invoice'}
+              </DialogTitle>
+              <p className="mt-1 text-sm text-slate-600">
+                Fill in GST details below, then save or export the invoice.
+              </p>
+            </div>
             <Button
               variant="ghost"
               size="sm"
               onClick={handleClose}
               disabled={isGenerating}
-              className="h-8 w-8 p-0"
+              className="h-8 w-8 shrink-0 p-0"
             >
               <X className="h-4 w-4" />
             </Button>
           </div>
         </DialogHeader>
-        
-        <div className="p-6 pt-0">
+
+        <div className="p-4 sm:p-6 pt-3 sm:pt-4">
           {customer ? (
             <TaxInvoiceGenerator
               customer={customer}
               onPrint={handlePrintTaxInvoice}
+              embedded
             />
           ) : (
             <div className="flex items-center justify-center h-64">

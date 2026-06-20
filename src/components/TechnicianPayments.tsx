@@ -17,6 +17,10 @@ import { DollarSign, User, Plus, Trash2, Edit, TrendingDown, TrendingUp, Refresh
 import { supabase } from '@/lib/supabase';
 import { generateSalarySlipPDF } from '@/lib/salary-slip-pdf-generator';
 import {
+  documentGenerateBtnClass,
+  documentOutlineBtnClass,
+} from '@/components/DocumentGeneratorPageHeader';
+import {
   calculateTechnicianBillingSlabCommission,
   getTechnicianBaseSalaryForPeriod,
   getTechnicianDailyBaseSalary,
@@ -2573,7 +2577,7 @@ const TechnicianPayments = () => {
                       toast.error('Period information not available');
                     }
                   }}
-                  className="bg-blue-600 hover:bg-blue-700 text-white h-10 w-full justify-center text-xs sm:text-sm whitespace-nowrap min-w-0"
+                  className="bg-blue-600 hover:bg-blue-700 hover:!text-white text-white h-10 w-full justify-center text-xs sm:text-sm whitespace-nowrap min-w-0"
                 >
                   <Download className="w-4 h-4 mr-2 shrink-0" />
                   <span className="truncate">Salary Slip</span>
@@ -3768,7 +3772,7 @@ const TechnicianPayments = () => {
                   toast.error('Period information not available');
                 }
               }}
-              className="bg-blue-600 hover:bg-blue-700"
+              className={documentGenerateBtnClass}
             >
               <Printer className="w-4 h-4 mr-2" />
               Generate
@@ -3784,6 +3788,7 @@ const TechnicianPayments = () => {
                   toast.error('Period information not available');
                 }
               }}
+              className={documentOutlineBtnClass}
             >
               <Download className="w-4 h-4 mr-2" />
               Download

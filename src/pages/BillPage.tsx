@@ -163,6 +163,7 @@ export default function BillPage() {
         <BillGenerator
           customer={selectedCustomer}
           onPrint={handlePrintBill}
+          embedded
         />
       </div>
     );

@@ -22,6 +22,13 @@ import {
 } from '@/lib/indian-state-codes';
 import { Checkbox } from '@/components/ui/checkbox';
 import DraftToolbar from '@/components/document-drafts/DraftToolbar';
+import DocumentGeneratorPageHeader, {
+  documentSectionTitleClass,
+  DocumentGeneratorActionBar,
+  documentGenerateBtnClass,
+  documentOutlineBtnClass,
+  documentSaveBtnClass,
+} from '@/components/DocumentGeneratorPageHeader';
 import { mergeEditableCustomer } from '@/lib/document-drafts';
 import {
   getDocumentSealVariantLabel,
@@ -75,6 +82,7 @@ interface TaxInvoiceGeneratorProps {
   customer?: Customer;
   onPrint?: (bill: Bill, action?: 'print' | 'pdf') => void;
   onTaxInvoiceSaved?: () => void;
+  embedded?: boolean;
 }
 
 const defaultCompanyInfo: CompanyInfo = {
@@ -115,7 +123,12 @@ const defaultTaxInvoiceItems: BillItem[] = [
   }
 ];
 
-export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSaved }: TaxInvoiceGeneratorProps) {
+export default function TaxInvoiceGenerator({
+  customer,
+  onPrint,
+  onTaxInvoiceSaved,
+  embedded = false,
+}: TaxInvoiceGeneratorProps) {
   // Safe customer data extraction
   const customerName = customer?.fullName || (customer as any)?.full_name || 'Customer Name';
   const customerPhone = typeof customer?.phone === 'string' ? customer.phone : (customer as any)?.phone || '';
@@ -882,41 +895,69 @@ export default function TaxInvoiceGenerator({ customer, onPrint, onTaxInvoiceSav
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4 md:space-y-6">
-      <div className="flex flex-col gap-3 sm:gap-4">
-        <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 text-center sm:text-left">Generate Tax Invoice</h1>
-        <div className="flex flex-col sm:flex-row flex-wrap gap-2 justify-center sm:justify-end">
-          <DraftToolbar
-            kind="tax_invoice"
-            documentNoun="tax invoice"
-            getSnapshot={getDraftSnapshot}
-            onLoad={applyDraftSnapshot}
-            buildLabel={buildDraftLabel}
+    <div
+      className={
+        embedded
+          ? 'max-w-4xl mx-auto space-y-4'
+          : 'max-w-4xl mx-auto p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4 md:space-y-6'
+      }
+    >
+      <DocumentGeneratorPageHeader
+        title="Generate Tax Invoice"
+        description="GST invoice with line items and summary — save to database or export as PDF."
+        accent="blue"
+        embedded={embedded}
+        actions={
+          <DocumentGeneratorActionBar
+            primaryCols={3}
+            draft={
+              <DraftToolbar
+                kind="tax_invoice"
+                documentNoun="tax invoice"
+                getSnapshot={getDraftSnapshot}
+                onLoad={applyDraftSnapshot}
+                buildLabel={buildDraftLabel}
+                stretch
+              />
+            }
+            primary={
+              <>
+                <Button
+                  onClick={handleSaveToDatabase}
+                  className={documentSaveBtnClass}
+                  disabled={!billNumber.trim() || isSaving || !customer}
+                >
+                  <Save className="w-4 h-4 shrink-0" />
+                  <span className="truncate">
+                    {isSaving ? 'Saving...' : 'Save to DB'}
+                  </span>
+                </Button>
+                <Button
+                  onClick={() => handlePrint('print')}
+                  className={documentGenerateBtnClass}
+                >
+                  <Printer className="w-4 h-4 shrink-0" />
+                  <span className="truncate">Generate</span>
+                </Button>
+                <Button
+                  onClick={() => handlePrint('pdf')}
+                  variant="outline"
+                  className={documentOutlineBtnClass}
+                >
+                  <Download className="w-4 h-4 shrink-0" />
+                  <span className="truncate">Download</span>
+                </Button>
+              </>
+            }
           />
-          <Button 
-            onClick={handleSaveToDatabase}
-            className="w-full sm:w-auto bg-green-600 hover:bg-green-700 min-w-[140px]"
-            disabled={!billNumber.trim() || isSaving || !customer}
-          >
-            <Save className="w-4 h-4 mr-2" />
-            {isSaving ? 'Saving...' : 'Save to Database'}
-          </Button>
-          <Button onClick={() => handlePrint('print')} className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto min-w-[140px]">
-            <Printer className="w-4 h-4 mr-2" />
-            Generate Tax Invoice
-          </Button>
-          <Button onClick={() => handlePrint('pdf')} variant="outline" className="w-full sm:w-auto min-w-[140px]">
-            <Download className="w-4 h-4 mr-2" />
-            Download Tax Invoice
-          </Button>
-        </div>
-      </div>
+        }
+      />
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 sm:gap-4 md:gap-6">
         {/* Invoice Information */}
         <Card>
           <CardHeader>
-            <CardTitle>Tax Invoice Information</CardTitle>
+            <CardTitle className={documentSectionTitleClass}>Tax Invoice Information</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 sm:space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">

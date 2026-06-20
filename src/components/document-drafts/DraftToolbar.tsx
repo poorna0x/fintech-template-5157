@@ -21,6 +21,7 @@ import {
   loadDraft,
   saveDraft,
 } from '@/lib/document-drafts';
+import { documentDraftBtnClass } from '@/components/DocumentGeneratorPageHeader';
 
 interface DraftToolbarProps<TSnapshot extends object> {
   kind: DraftKind;
@@ -37,6 +38,8 @@ interface DraftToolbarProps<TSnapshot extends object> {
   className?: string;
   /** Visible name in the empty-state message (e.g. "quotation"). */
   documentNoun?: string;
+  /** Stretch buttons to fill equal width in a grid (generator toolbar). */
+  stretch?: boolean;
 }
 
 export default function DraftToolbar<TSnapshot extends object>({
@@ -46,6 +49,7 @@ export default function DraftToolbar<TSnapshot extends object>({
   buildLabel,
   className,
   documentNoun = 'document',
+  stretch = false,
 }: DraftToolbarProps<TSnapshot>) {
   const [drafts, setDrafts] = useState<DraftIndexEntry[]>([]);
   const [open, setOpen] = useState(false);
@@ -129,25 +133,47 @@ export default function DraftToolbar<TSnapshot extends object>({
   );
 
   return (
-    <div className={`flex items-center gap-2 ${className || ''}`}>
+    <div
+      className={
+        stretch
+          ? `grid w-full grid-cols-2 gap-2 ${className || ''}`
+          : `flex items-center gap-2 ${className || ''}`
+      }
+    >
       <Button
         type="button"
-        size="sm"
+        size={stretch ? 'default' : 'sm'}
         variant="outline"
         onClick={() => void handleSave()}
         disabled={saving}
         title={currentDraftId ? 'Update this draft' : 'Save a draft'}
+        className={
+          stretch
+            ? documentDraftBtnClass
+            : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100'
+        }
       >
-        <Save className="w-4 h-4 mr-1.5" />
-        {saving ? 'Saving…' : currentDraftId ? 'Update Draft' : 'Save Draft'}
+        <Save className="w-4 h-4 shrink-0" />
+        <span className="truncate">
+          {saving ? 'Saving…' : currentDraftId ? 'Update Draft' : 'Save Draft'}
+        </span>
       </Button>
 
       <DropdownMenu open={open} onOpenChange={setOpen}>
         <DropdownMenuTrigger asChild>
-          <Button type="button" size="sm" variant="outline">
-            <FolderOpen className="w-4 h-4 mr-1.5" />
-            {triggerLabel}
-            <ChevronDown className="w-3.5 h-3.5 ml-1.5 opacity-70" />
+          <Button
+            type="button"
+            size={stretch ? 'default' : 'sm'}
+            variant="outline"
+            className={
+          stretch
+            ? documentDraftBtnClass
+            : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100'
+        }
+          >
+            <FolderOpen className="w-4 h-4 shrink-0" />
+            <span className="truncate">{triggerLabel}</span>
+            <ChevronDown className="w-3.5 h-3.5 shrink-0 opacity-70" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-[320px]">

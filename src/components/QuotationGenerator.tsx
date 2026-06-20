@@ -33,11 +33,17 @@ import {
   getDocumentSealVariantLabel,
 } from '@/lib/service-brands';
 import DraftToolbar from '@/components/document-drafts/DraftToolbar';
+import DocumentGeneratorPageHeader, {
+  DocumentGeneratorActionBar,
+  documentGenerateBtnClass,
+  documentOutlineBtnClass,
+} from '@/components/DocumentGeneratorPageHeader';
 import { mergeEditableCustomer } from '@/lib/document-drafts';
 
 interface QuotationGeneratorProps {
   customer?: Customer;
   onPrint?: (quotation: Bill, action?: 'print' | 'pdf') => void;
+  embedded?: boolean;
 }
 
 const defaultCompanyInfo: CompanyInfo = {
@@ -77,7 +83,7 @@ const defaultBankDetails = {
   note: 'Account Type: Current Account. Please share the payment confirmation once the transfer is complete.'
 };
 
-export default function QuotationGenerator({ customer, onPrint }: QuotationGeneratorProps) {
+export default function QuotationGenerator({ customer, onPrint, embedded = false }: QuotationGeneratorProps) {
   // Safe customer data extraction
   const customerName = customer?.fullName || (customer as any)?.full_name || 'Customer Name';
   const customerPhone = typeof customer?.phone === 'string' ? customer.phone : (customer as any)?.phone || '';
@@ -565,27 +571,52 @@ export default function QuotationGenerator({ customer, onPrint }: QuotationGener
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4 md:space-y-6">
-      <div className="flex flex-col gap-3 sm:gap-4">
-        <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 text-center sm:text-left">Generate Quotation</h1>
-        <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2">
-          <DraftToolbar
-            kind="quotation"
-            documentNoun="quotation"
-            getSnapshot={getDraftSnapshot}
-            onLoad={applyDraftSnapshot}
-            buildLabel={buildDraftLabel}
+    <div
+      className={
+        embedded
+          ? 'max-w-4xl mx-auto space-y-4'
+          : 'max-w-4xl mx-auto p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4 md:space-y-6'
+      }
+    >
+      <DocumentGeneratorPageHeader
+        title="Generate Quotation"
+        description="Add items, GST options, and terms — then preview or download the quotation PDF."
+        accent="green"
+        embedded={embedded}
+        actions={
+          <DocumentGeneratorActionBar
+            draft={
+              <DraftToolbar
+                kind="quotation"
+                documentNoun="quotation"
+                getSnapshot={getDraftSnapshot}
+                onLoad={applyDraftSnapshot}
+                buildLabel={buildDraftLabel}
+                stretch
+              />
+            }
+            primary={
+              <>
+                <Button
+                  onClick={() => handlePrint('print')}
+                  className={documentGenerateBtnClass}
+                >
+                  <Printer className="w-4 h-4 mr-2 shrink-0" />
+                  Generate Quotation
+                </Button>
+                <Button
+                  onClick={() => handlePrint('pdf')}
+                  variant="outline"
+                  className={documentOutlineBtnClass}
+                >
+                  <Download className="w-4 h-4 mr-2 shrink-0" />
+                  Download Quotation
+                </Button>
+              </>
+            }
           />
-          <Button onClick={() => handlePrint('print')} className="bg-green-600 hover:bg-green-700 w-full sm:w-auto min-w-[140px]">
-            <Printer className="w-4 h-4 mr-2" />
-            Generate Quotation
-          </Button>
-          <Button onClick={() => handlePrint('pdf')} variant="outline" className="w-full sm:w-auto min-w-[140px]">
-            <Download className="w-4 h-4 mr-2" />
-            Download Quotation
-          </Button>
-        </div>
-      </div>
+        }
+      />
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 sm:gap-4 md:gap-6">
         {/* Quotation Information */}

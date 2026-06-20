@@ -25,12 +25,21 @@ import {
   resolveBrandSealSrc,
 } from '@/lib/service-brands';
 import DraftToolbar from '@/components/document-drafts/DraftToolbar';
+import DocumentGeneratorPageHeader, {
+  documentSectionTitleClass,
+  DocumentGeneratorActionBar,
+  documentDraftBtnClass,
+  documentGenerateVioletBtnClass,
+  documentOutlineBtnClass,
+  documentSaveBtnClass,
+} from '@/components/DocumentGeneratorPageHeader';
 import { mergeEditableCustomer } from '@/lib/document-drafts';
 
 interface AMCGeneratorProps {
   customer: Customer;
   onPrint?: (bill: Bill) => void;
   onAMCSaved?: () => void;
+  embedded?: boolean;
 }
 
 const defaultCompanyInfo: CompanyInfo = {
@@ -46,7 +55,7 @@ const defaultCompanyInfo: CompanyInfo = {
   website: "hydrogenro.com"
 };
 
-export default function AMCGenerator({ customer, onPrint, onAMCSaved }: AMCGeneratorProps) {
+export default function AMCGenerator({ customer, onPrint, onAMCSaved, embedded = false }: AMCGeneratorProps) {
   const [billNumber, setBillNumber] = useState(`AMC-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 1000)).padStart(3, '0')}`);
   const [billDate, setBillDate] = useState(new Date().toISOString().split('T')[0]);
   const [company, setCompany] = useState<CompanyInfo>(defaultCompanyInfo);
@@ -653,23 +662,94 @@ ${notCoveredWithPreFilter}`;
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4 md:space-y-6">
-      {/* Header */}
-      <div className="text-center mb-4 sm:mb-6 md:mb-8">
-        <div className="flex flex-col items-center justify-center mb-3 sm:mb-4 gap-2">
+    <div
+      className={
+        embedded
+          ? 'max-w-4xl mx-auto space-y-4'
+          : 'max-w-4xl mx-auto p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4 md:space-y-6'
+      }
+    >
+      {!embedded ? (
+        <div className="flex justify-center">
           <DocumentBrandLogo brand={documentBrand} />
-          <p className="text-xs sm:text-sm text-gray-600 mt-0">AMC Agreement Generator</p>
         </div>
-        <div className="flex justify-center mt-2">
-          <DraftToolbar
-            kind="amc"
-            documentNoun="AMC agreement"
-            getSnapshot={getDraftSnapshot}
-            onLoad={applyDraftSnapshot}
-            buildLabel={buildDraftLabel}
+      ) : null}
+
+      <DocumentGeneratorPageHeader
+        title="AMC Agreement Generator"
+        description="Configure agreement details, payment, and terms — then save, print, or download."
+        accent="violet"
+        embedded={embedded}
+        actions={
+          <DocumentGeneratorActionBar
+            primaryCols={3}
+            secondaryLabel="Terms only"
+            draft={
+              <DraftToolbar
+                kind="amc"
+                documentNoun="AMC agreement"
+                getSnapshot={getDraftSnapshot}
+                onLoad={applyDraftSnapshot}
+                buildLabel={buildDraftLabel}
+                stretch
+              />
+            }
+            primary={
+              <>
+                <Button
+                  onClick={handleSaveToDatabase}
+                  className={documentSaveBtnClass}
+                  disabled={!billNumber.trim() || isSaving}
+                >
+                  <Save className="w-4 h-4 shrink-0" />
+                  <span className="truncate">
+                    {isSaving ? 'Saving...' : 'Save to DB'}
+                  </span>
+                </Button>
+                <Button
+                  onClick={() => handleDocument('print')}
+                  className={documentGenerateVioletBtnClass}
+                  disabled={!billNumber.trim()}
+                >
+                  <Printer className="w-4 h-4 shrink-0" />
+                  <span className="truncate">Generate</span>
+                </Button>
+                <Button
+                  onClick={() => handleDocument('pdf')}
+                  variant="outline"
+                  className={documentOutlineBtnClass}
+                  disabled={!billNumber.trim()}
+                >
+                  <Download className="w-4 h-4 shrink-0" />
+                  <span className="truncate">Download</span>
+                </Button>
+              </>
+            }
+            secondary={
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => handleDocument('print', { termsOnly: true })}
+                  className={documentOutlineBtnClass}
+                  disabled={!billNumber.trim()}
+                >
+                  <FileText className="w-4 h-4 shrink-0" />
+                  <span className="truncate">Share Terms</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => handleDocument('pdf', { termsOnly: true })}
+                  className={documentOutlineBtnClass}
+                  disabled={!billNumber.trim()}
+                >
+                  <Download className="w-4 h-4 shrink-0" />
+                  <span className="truncate">Download Terms</span>
+                </Button>
+              </>
+            }
           />
-        </div>
-      </div>
+        }
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 md:gap-8">
         {/* Form Section */}
@@ -1295,7 +1375,7 @@ ${notCoveredWithPreFilter}`;
         <div className="space-y-6">
           <Card className="sticky top-4 sm:top-6">
             <CardHeader>
-              <CardTitle>AMC Agreement Details</CardTitle>
+              <CardTitle className={documentSectionTitleClass}>AMC Agreement Details</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
@@ -1365,51 +1445,9 @@ ${notCoveredWithPreFilter}`;
                 </p>
               </div>
 
-              <Button 
-                onClick={handleSaveToDatabase}
-                className="w-full text-sm sm:text-base bg-green-600 hover:bg-green-700"
-                disabled={!billNumber.trim() || isSaving}
-              >
-                <Save className="w-4 h-4 mr-2" />
-                {isSaving ? 'Saving...' : 'Save to Database'}
-              </Button>
-              <Button 
-                onClick={() => handleDocument('print')} 
-                className="w-full text-sm sm:text-base"
-                disabled={!billNumber.trim()}
-              >
-                <Printer className="w-4 h-4 mr-2" />
-                Generate AMC Agreement
-              </Button>
-              <Button 
-                onClick={() => handleDocument('pdf')} 
-                variant="outline"
-                className="w-full text-sm sm:text-base"
-                disabled={!billNumber.trim()}
-              >
-                <Download className="w-4 h-4 mr-2" />
-                Download AMC Agreement
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => handleDocument('print', { termsOnly: true })}
-                className="w-full text-sm sm:text-base"
-                disabled={!billNumber.trim()}
-              >
-                <FileText className="w-4 h-4 mr-2" />
-                Share Terms Only
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => handleDocument('pdf', { termsOnly: true })}
-                className="w-full text-sm sm:text-base"
-                disabled={!billNumber.trim()}
-              >
-                <Download className="w-4 h-4 mr-2" />
-                Download Terms Only
-              </Button>
-              <p className="text-xs text-gray-500 text-center">
-                Save to Database stores all contract details including description, dates, costs, and prefilter settings. Terms-only mode removes customer and agreement details, leaving just clauses.
+              <p className="text-xs text-slate-500 border-t pt-3 leading-relaxed">
+                Save stores contract details including description, dates, costs, and prefilter settings.
+                Terms-only PDFs include clauses without customer or agreement details.
               </p>
             </CardContent>
           </Card>

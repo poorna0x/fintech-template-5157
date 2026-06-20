@@ -15,11 +15,19 @@ import {
   getCompanyInfoForBrand,
 } from '@/lib/service-brands';
 import DraftToolbar from '@/components/document-drafts/DraftToolbar';
+import DocumentGeneratorPageHeader, {
+  documentSectionTitleClass,
+  DocumentGeneratorActionBar,
+  documentGenerateBtnClass,
+  documentOutlineBtnClass,
+} from '@/components/DocumentGeneratorPageHeader';
 import { mergeEditableCustomer } from '@/lib/document-drafts';
 
 interface BillGeneratorProps {
   customer?: Customer;
   onPrint?: (bill: Bill, action?: 'print' | 'pdf') => void;
+  /** Hide page title when parent (modal / page shell) already shows one */
+  embedded?: boolean;
 }
 
 const defaultCompanyInfo: CompanyInfo = {
@@ -47,7 +55,7 @@ const defaultBillItems: BillItem[] = [
   }
 ];
 
-export default function BillGenerator({ customer, onPrint }: BillGeneratorProps) {
+export default function BillGenerator({ customer, onPrint, embedded = false }: BillGeneratorProps) {
   // Safe customer data extraction
   const customerName = customer?.fullName || (customer as any)?.full_name || 'Customer Name';
   const customerPhone = typeof customer?.phone === 'string' ? customer.phone : (customer as any)?.phone || '';
@@ -295,33 +303,58 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
   };
 
   return (
-    <div className="max-w-4xl mx-auto p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4 md:space-y-6">
-      <div className="flex flex-col gap-3 sm:gap-4">
-        <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-gray-900 text-center sm:text-left">Generate Bill</h1>
-        <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2">
-          <DraftToolbar
-            kind="bill"
-            documentNoun="bill"
-            getSnapshot={getDraftSnapshot}
-            onLoad={applyDraftSnapshot}
-            buildLabel={buildDraftLabel}
+    <div
+      className={
+        embedded
+          ? 'max-w-4xl mx-auto space-y-4'
+          : 'max-w-4xl mx-auto p-3 sm:p-4 md:p-6 space-y-3 sm:space-y-4 md:space-y-6'
+      }
+    >
+      <DocumentGeneratorPageHeader
+        title="Generate Bill"
+        description="Fill in customer and item details, then generate a print preview or download a PDF."
+        accent="green"
+        embedded={embedded}
+        actions={
+          <DocumentGeneratorActionBar
+            draft={
+              <DraftToolbar
+                kind="bill"
+                documentNoun="bill"
+                getSnapshot={getDraftSnapshot}
+                onLoad={applyDraftSnapshot}
+                buildLabel={buildDraftLabel}
+                stretch
+              />
+            }
+            primary={
+              <>
+                <Button
+                  onClick={() => handlePrint('print')}
+                  className={documentGenerateBtnClass}
+                >
+                  <Printer className="w-4 h-4 mr-2 shrink-0" />
+                  Generate Bill
+                </Button>
+                <Button
+                  onClick={() => handlePrint('pdf')}
+                  variant="outline"
+                  className={documentOutlineBtnClass}
+                >
+                  <Download className="w-4 h-4 mr-2 shrink-0" />
+                  Download Bill
+                </Button>
+              </>
+            }
           />
-          <Button onClick={() => handlePrint('print')} className="bg-green-600 hover:bg-green-700 w-full sm:w-auto min-w-[140px]">
-            <Printer className="w-4 h-4 mr-2" />
-            Generate Bill
-          </Button>
-          <Button onClick={() => handlePrint('pdf')} variant="outline" className="w-full sm:w-auto min-w-[140px]">
-            <Download className="w-4 h-4 mr-2" />
-            Download Bill
-          </Button>
-        </div>
-      </div>
+        }
+      />
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 sm:gap-4 md:gap-6">
         {/* Bill Information */}
         <Card>
           <CardHeader>
-            <CardTitle>Bill Information</CardTitle>
+            <CardTitle className={documentSectionTitleClass}>Bill Information</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 sm:space-y-4">
             <div className="flex items-center space-x-2 pb-2 border-b">
@@ -362,7 +395,7 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
         <Card>
           <CardHeader>
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <CardTitle>Customer Information</CardTitle>
+            <CardTitle className={documentSectionTitleClass}>Customer Information</CardTitle>
               <Button
                 variant="outline"
                 size="sm"
@@ -506,7 +539,7 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
       <Card>
         <CardHeader>
           <div className="flex flex-col gap-3 sm:gap-4">
-            <CardTitle className="text-lg sm:text-xl">Bill Items</CardTitle>
+            <CardTitle className={documentSectionTitleClass}>Bill Items</CardTitle>
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4">
               <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                 <Label htmlFor="serviceCharge" className="text-sm font-medium whitespace-nowrap">Service Charge:</Label>
@@ -594,7 +627,7 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
       {/* Bill Summary */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg sm:text-xl">Bill Summary</CardTitle>
+          <CardTitle className={documentSectionTitleClass}>Bill Summary</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 sm:space-y-4">
           <div className="space-y-3 sm:space-y-4">
@@ -619,7 +652,7 @@ export default function BillGenerator({ customer, onPrint }: BillGeneratorProps)
       {/* Additional Information */}
       <Card className="border-blue-200 bg-blue-50/30">
         <CardHeader>
-          <CardTitle className="text-lg sm:text-xl text-blue-800">Additional Information</CardTitle>
+          <CardTitle className={`${documentSectionTitleClass} text-blue-900`}>Additional Information</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
