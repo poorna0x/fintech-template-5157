@@ -41,6 +41,15 @@ function isPdfBytes(bytes: Uint8Array): boolean {
   );
 }
 
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
+
 function triggerFileDownload(buffer: ArrayBuffer, filename: string): void {
   const blob = new Blob([buffer], { type: 'application/pdf' });
   const objectUrl = URL.createObjectURL(blob);
@@ -55,6 +64,39 @@ function triggerFileDownload(buffer: ArrayBuffer, filename: string): void {
     anchor.remove();
     URL.revokeObjectURL(objectUrl);
   }, 2000);
+}
+
+async function parsePdfResponse(response: Response, fallbackFilename: string): Promise<ArrayBuffer> {
+  const contentType = response.headers.get('content-type') || '';
+
+  if (contentType.includes('application/json')) {
+    const payload = (await response.json()) as {
+      pdfBase64?: string;
+      filename?: string;
+      error?: string;
+      details?: string;
+    };
+    if (payload.error) {
+      throw new Error(payload.details || payload.error);
+    }
+    if (!payload.pdfBase64) {
+      throw new Error('Server response missing PDF data');
+    }
+    const buffer = base64ToArrayBuffer(payload.pdfBase64);
+    const bytes = new Uint8Array(buffer);
+    if (!isPdfBytes(bytes)) {
+      throw new Error('Server did not return a valid PDF file');
+    }
+    return buffer;
+  }
+
+  const buffer = await response.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  if (!isPdfBytes(bytes)) {
+    throw new Error('Server did not return a valid PDF file');
+  }
+  void fallbackFilename;
+  return buffer;
 }
 
 async function downloadViaServer(html: string, filename: string): Promise<void> {
@@ -76,12 +118,7 @@ async function downloadViaServer(html: string, filename: string): Promise<void> 
     throw new Error(message);
   }
 
-  const buffer = await response.arrayBuffer();
-  const bytes = new Uint8Array(buffer);
-  if (!isPdfBytes(bytes)) {
-    throw new Error('Server did not return a valid PDF file');
-  }
-
+  const buffer = await parsePdfResponse(response, filename);
   triggerFileDownload(buffer, filename);
 }
 

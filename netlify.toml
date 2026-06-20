@@ -20,6 +20,8 @@
 [functions."generate-pdf"]
   timeout = 26
   memory = 2048
+  node_bundler = "esbuild"
+  external_node_modules = ["@sparticuz/chromium"]
 
 # Force HTTPS - redirect HTTP to HTTPS
 [[redirects]]

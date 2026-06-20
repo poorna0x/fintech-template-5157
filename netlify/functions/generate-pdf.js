@@ -68,9 +68,7 @@ async function launchBrowser() {
       headless: chromium.headless,
     });
 
-  const isServerless = Boolean(
-    process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NETLIFY || process.env.AWS_EXECUTION_ENV
-  );
+  const isServerless = Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME);
   if (isServerless) {
     return launchWithSparticuz();
   }
@@ -97,10 +95,10 @@ async function renderHtmlToPdf(html) {
     browser = await launchBrowser();
     const page = await browser.newPage();
     await page.setContent(html, {
-      waitUntil: ['load', 'networkidle0'],
-      timeout: 45000,
+      waitUntil: 'load',
+      timeout: 30000,
     });
-    await page.evaluate(() => document.fonts.ready);
+    await page.evaluate(() => document.fonts.ready).catch(() => undefined);
     await page.emulateMediaType('print');
 
     const pdfBuffer = await page.pdf({
@@ -164,16 +162,18 @@ exports.handler = async (event) => {
   try {
     const pdfBytes = await renderHtmlToPdf(html);
 
+    // JSON + base64 avoids Netlify Lambda binary decode errors (502 illegal base64).
     return {
       statusCode: 200,
       headers: {
         ...corsHeaders,
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Type': 'application/json',
         'Cache-Control': 'no-store',
       },
-      body: pdfBytes.toString('base64'),
-      isBase64Encoded: true,
+      body: JSON.stringify({
+        pdfBase64: pdfBytes.toString('base64'),
+        filename,
+      }),
     };
   } catch (error) {
     console.error('[generate-pdf] failed', { clientId, message: error.message });
