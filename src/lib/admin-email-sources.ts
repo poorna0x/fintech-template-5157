@@ -7,6 +7,7 @@ import {
 import type { AdminDocumentEmailData, AdminEmailTemplateType } from '@/lib/admin-email-templates';
 import { getDefaultDocumentMessage } from '@/lib/admin-email-templates';
 import type { BookingConfirmationEmailData } from '@/lib/booking-confirmation-email';
+import { buildJobCompletionMessageFromJob } from '@/lib/job-completion-message';
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getDocumentBrandLabel, normalizeDocumentBrand } from '@/lib/service-brands';
 import { getValidCustomerEmail } from '@/lib/customer-email';
@@ -210,6 +211,8 @@ export function getCrmSourceLabel(templateType: AdminEmailTemplateType): string 
       return 'Customer';
     case 'service_reminder':
       return 'Active AMC (service due)';
+    case 'job_completion':
+      return 'Completed job';
     default:
       return 'Record';
   }
@@ -227,6 +230,8 @@ export function getEmailSourceSearchHint(templateType: AdminEmailTemplateType): 
     case 'quotation':
     case 'general':
       return 'Enter customer name, phone, or ID, then click Search.';
+    case 'job_completion':
+      return 'Enter customer name, phone, or job #, then click Search to find a completed job.';
     default:
       return 'Enter search terms, then click Search.';
   }
@@ -286,9 +291,28 @@ export async function fetchEmailSourceOptions(
     case 'quotation':
     case 'general':
       return fetchCustomerSearchOptions(q);
+    case 'job_completion':
+      return searchCompletedJobsByCustomer(q);
     default:
       return [];
   }
+}
+
+async function searchCompletedJobsByCustomer(query: string): Promise<EmailSourceOption[]> {
+  const { data: customers, error: cErr } = await db.customers.searchSlim(query, 20);
+  if (cErr || !customers?.length) return [];
+
+  const customerIds = (customers as { id: string }[]).map((c) => c.id);
+  const { data: jobs, error } = await supabase
+    .from('jobs')
+    .select(`${JOB_PICKER_COLUMNS},customer:customers(${CUSTOMER_PICKER_EMBED})`)
+    .in('customer_id', customerIds)
+    .eq('status', 'COMPLETED')
+    .order('completed_at', { ascending: false })
+    .limit(50);
+
+  if (error || !jobs?.length) return [];
+  return mapJobsToOptions(jobs as Record<string, unknown>[]);
 }
 
 async function searchOngoingJobsByCustomer(query: string): Promise<EmailSourceOption[]> {
@@ -439,6 +463,20 @@ async function findLatestOngoingJobIdForCustomer(customerId: string): Promise<st
   return String(data.id);
 }
 
+async function findLatestCompletedJobIdForCustomer(customerId: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('jobs')
+    .select('id')
+    .eq('customer_id', customerId)
+    .eq('status', 'COMPLETED')
+    .order('completed_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data?.id) return null;
+  return String(data.id);
+}
+
 async function findActiveAmcIdForCustomer(customerId: string): Promise<string | null> {
   const today = todayIsoDate();
   const { data, error } = await supabase
@@ -537,6 +575,14 @@ export async function applyEmailSourceForCustomer(
     case 'quotation':
     case 'general':
       return applyCustomerRecord(customerId, templateType);
+    case 'job_completion': {
+      const jobId = await findLatestCompletedJobIdForCustomer(customerId);
+      if (jobId) {
+        const result = await applyCompletedJobRecord(jobId);
+        return result ? { ...result, sourceRecordId: jobId } : null;
+      }
+      return null;
+    }
     default:
       return null;
   }
@@ -559,6 +605,8 @@ export async function applyEmailSourceRecord(
       return applyCustomerRecord(recordId, 'quotation');
     case 'general':
       return applyCustomerRecord(recordId, 'general');
+    case 'job_completion':
+      return applyCompletedJobRecord(recordId);
     default:
       return null;
   }
@@ -590,6 +638,40 @@ async function applyJobRecord(jobId: string): Promise<EmailSourceApplyResult | n
     recipientEmail: typeof customer?.email === 'string' ? customer.email : undefined,
     ...getCustomerPhones(customer),
   });
+}
+
+async function applyCompletedJobRecord(jobId: string): Promise<EmailSourceApplyResult | null> {
+  const { data, error } = await db.jobs.getByIdFull(jobId);
+  if (error || !data) return null;
+
+  const job = data as Record<string, unknown>;
+  const status = String(job.status || '').toUpperCase();
+  if (status !== 'COMPLETED') return null;
+
+  const customer = job.customer as Record<string, unknown> | undefined;
+  const customerId = String(job.customer_id || customer?.id || '');
+  const completion = buildJobCompletionMessageFromJob(job);
+  const { sendBrand, lastServiceBrand } = await resolveSendBrand(customerId, completion.documentBrand);
+
+  return {
+    sendBrand,
+    lastServiceBrand,
+    customerId,
+    sourceRecordId: jobId,
+    documentForm: {
+      documentBrand: sendBrand,
+      customerName: completion.customerName,
+      documentRef: completion.jobNumber,
+      amount: completion.amount,
+      dueDate: '',
+      message: completion.message,
+      customSubject: '',
+      completionServiceType: completion.serviceType,
+      completionServiceSubType: completion.serviceSubType,
+    },
+    recipientEmail: getValidCustomerEmail(customer?.email) ?? undefined,
+    ...getCustomerPhones(customer),
+  };
 }
 
 async function applyAmcRecord(

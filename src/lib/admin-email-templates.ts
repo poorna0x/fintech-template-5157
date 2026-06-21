@@ -1,5 +1,6 @@
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getDocumentBrandLabel } from '@/lib/service-brands';
+import { buildJobCompletionLine } from '@/lib/job-completion-message';
 import {
   buildBookingConfirmationEmail,
   getEmailLogoUrl,
@@ -16,6 +17,7 @@ export type AdminEmailTemplateType =
   | 'invoice'
   | 'quotation'
   | 'service_reminder'
+  | 'job_completion'
   | 'general';
 
 export interface AdminDocumentEmailData {
@@ -26,6 +28,9 @@ export interface AdminDocumentEmailData {
   dueDate: string;
   message: string;
   customSubject: string;
+  /** job_completion template — rebuilds the completion line when the message is edited. */
+  completionServiceType?: string;
+  completionServiceSubType?: string;
 }
 
 export interface AdminEmailBuildOptions {
@@ -81,6 +86,14 @@ export const ADMIN_EMAIL_TEMPLATE_META: Record<AdminEmailTemplateType, AdminEmai
     showDocumentRef: false,
     showAmount: false,
     showDueDate: true,
+    showCustomSubject: false,
+  },
+  job_completion: {
+    label: 'Service completed',
+    description: 'Confirmation after a job is completed — same message as the WhatsApp completion send.',
+    showDocumentRef: true,
+    showAmount: true,
+    showDueDate: false,
     showCustomSubject: false,
   },
   general: {
@@ -166,6 +179,10 @@ const C = {
   detailsBg: '#fafafa',
   headerTagline: '#737373',
   cardShadow: '0 1px 2px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.06)',
+  success: '#16a34a',
+  successBg: '#dcfce7',
+  successBorder: '#bbf7d0',
+  successText: '#15803d',
 };
 
 function escapeHtml(value: string): string {
@@ -227,6 +244,68 @@ function actionButton(
     </a>`;
 }
 
+function formatCollectedAmountDisplay(amount: string): string {
+  const trimmed = amount.trim();
+  if (!trimmed) return '';
+  if (trimmed.includes('₹')) return trimmed;
+  const n = parseFloat(trimmed.replace(/[^\d.-]/g, ''));
+  if (Number.isFinite(n) && n > 0) return `₹${n.toLocaleString('en-IN')}`;
+  return trimmed;
+}
+
+function buildJobCompletionEmailBody(
+  data: AdminDocumentEmailData,
+  brand: DocumentBrand
+): string {
+  const brandName = getDocumentBrandLabel(brand);
+
+  const completionLine =
+    buildJobCompletionLine(data.completionServiceType || '', data.completionServiceSubType || '') ||
+    'Your service has been completed successfully.';
+
+  const messageLines = data.message
+    .trim()
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const headline = messageLines[0] || completionLine;
+  const note =
+    messageLines.slice(1).join(' ') ||
+    `Thank you for choosing ${brandName}. We appreciate your trust and hope you're satisfied with our work.`;
+
+  const jobRef = data.documentRef.trim();
+  const amountDisplay = formatCollectedAmountDisplay(data.amount);
+
+  const jobRefBlock = jobRef
+    ? `<p style="margin:14px 0 0;font-family:${EMAIL_FONT};font-size:11px;font-weight:600;line-height:1.4;color:${C.successText};text-transform:uppercase;letter-spacing:0.6px;opacity:0.75;">Job reference</p>
+                    <p style="margin:4px 0 0;font-family:${EMAIL_FONT};font-size:14px;font-weight:600;line-height:1.4;color:${C.successText};">${escapeHtml(jobRef)}</p>`
+    : '';
+
+  const amountBlock = amountDisplay
+    ? `<p style="margin:12px 0 0;font-family:${EMAIL_FONT};font-size:11px;font-weight:600;line-height:1.4;color:${C.successText};text-transform:uppercase;letter-spacing:0.6px;opacity:0.75;">Amount collected</p>
+                    <p style="margin:4px 0 0;font-family:${EMAIL_FONT};font-size:18px;font-weight:700;line-height:1.3;color:${C.successText};">${escapeHtml(amountDisplay)}</p>`
+    : '';
+
+  return `
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto 18px;">
+                <tr>
+                  <td align="center" valign="middle" width="52" height="52" style="width:52px;height:52px;background-color:${C.successBg};border-radius:999px;font-family:${EMAIL_FONT};font-size:26px;font-weight:700;color:${C.success};line-height:52px;text-align:center;">
+                    &#10003;
+                  </td>
+                </tr>
+              </table>
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:${C.successBg};border:1px solid ${C.successBorder};border-radius:12px;margin-bottom:18px;">
+                <tr>
+                  <td style="padding:18px 20px;text-align:center;">
+                    <p style="margin:0;font-family:${EMAIL_FONT};font-size:17px;font-weight:600;line-height:1.45;color:${C.successText};">${escapeHtml(headline)}</p>
+                    ${jobRefBlock}
+                    ${amountBlock}
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:0 0 20px;font-family:${EMAIL_FONT};font-size:15px;line-height:1.65;color:${C.body};text-align:center;">${escapeHtml(note)}</p>`;
+}
+
 function attachmentNoticeBlock(names: string[]): string {
   if (!names.length) return '';
   const items = names.map((n) => `<li style="margin:0 0 6px;font-family:${EMAIL_FONT};font-size:13px;color:${C.body};">${escapeHtml(n)}</li>`).join('');
@@ -251,6 +330,8 @@ function templateHeadline(type: AdminEmailTemplateType): string {
       return 'Quotation';
     case 'service_reminder':
       return 'Service Reminder';
+    case 'job_completion':
+      return 'Service Completed';
     default:
       return 'Message';
   }
@@ -266,6 +347,8 @@ function templateEyebrow(type: AdminEmailTemplateType): string {
       return 'Estimate';
     case 'service_reminder':
       return 'Maintenance';
+    case 'job_completion':
+      return 'Job completion';
     default:
       return 'Customer update';
   }
@@ -286,6 +369,8 @@ function buildSubject(
       return ref ? `Quotation — ${brandLabel} (${ref})` : `Quotation — ${brandLabel}`;
     case 'service_reminder':
       return `RO Service Reminder — ${brandLabel}`;
+    case 'job_completion':
+      return ref ? `Service Completed — ${brandLabel} (${ref})` : `Service Completed — ${brandLabel}`;
     case 'general':
       return data.customSubject.trim() || `Message from ${brandLabel}`;
     default:
@@ -301,7 +386,13 @@ function buildDetailsRows(
   const rows: string[] = [];
   if (meta.showDocumentRef && data.documentRef.trim()) {
     const refLabel =
-      type === 'invoice' ? 'Invoice no.' : type === 'quotation' ? 'Quote no.' : 'Reference';
+      type === 'invoice'
+        ? 'Invoice no.'
+        : type === 'quotation'
+          ? 'Quote no.'
+          : type === 'job_completion'
+            ? 'Job no.'
+            : 'Reference';
     rows.push(detailRow(refLabel, data.documentRef.trim()));
   }
   if (meta.showAmount && data.amount.trim()) {
@@ -347,8 +438,13 @@ function buildAdminDocumentEmail(
   const eyebrow = templateEyebrow(type);
   const meta = ADMIN_EMAIL_TEMPLATE_META[type];
   const subject = buildSubject(type, brandName, data);
-  const detailsBlock = buildDetailsRows(type, data, meta);
+  const detailsBlock =
+    type === 'job_completion' ? '' : buildDetailsRows(type, data, meta);
   const attachmentBlock = attachmentNoticeBlock(options?.attachmentNames || []);
+  const messageBlock =
+    type === 'job_completion'
+      ? buildJobCompletionEmailBody(data, brand)
+      : `<p style="margin:0 0 20px;font-family:${EMAIL_FONT};font-size:15px;line-height:1.65;color:${C.body};white-space:pre-wrap;">${escapeHtml(message).replace(/\n/g, '<br>')}</p>`;
 
   const whatsappButton = actionButton(
     `https://wa.me/${contact.whatsapp}`,
@@ -398,8 +494,7 @@ function buildAdminDocumentEmail(
           </tr>
           <tr>
             <td style="padding:8px 28px 24px;">
-              ${detailsBlock}
-              <p style="margin:0 0 20px;font-family:${EMAIL_FONT};font-size:15px;line-height:1.65;color:${C.body};white-space:pre-wrap;">${escapeHtml(message).replace(/\n/g, '<br>')}</p>
+              ${type === 'job_completion' ? messageBlock : `${detailsBlock}${messageBlock}`}
               <p style="margin:0 0 10px;font-family:${EMAIL_FONT};font-size:12px;font-weight:600;color:${C.label};text-transform:uppercase;letter-spacing:0.8px;text-align:center;">Need help?</p>
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                 <tr>
@@ -424,22 +519,46 @@ function buildAdminDocumentEmail(
 </body>
 </html>`;
 
-  const textLines = [
-    subject,
-    '',
-    `Hi ${customerName},`,
-    '',
-    message,
-    '',
-    `WhatsApp: https://wa.me/${contact.whatsapp}`,
-    `Phone: ${contact.phoneDisplay}`,
-    `Email: ${contact.email}`,
-    ...(options?.attachmentNames?.length
-      ? ['', 'Attachments:', ...options.attachmentNames.map((n) => `- ${n}`)]
-      : []),
-    '',
-    brandName,
-  ];
+  const textLines =
+    type === 'job_completion'
+      ? [
+          subject,
+          '',
+          `Hi ${customerName},`,
+          '',
+          buildJobCompletionLine(data.completionServiceType || '', data.completionServiceSubType || '') ||
+            message.split('\n')[0]?.trim() ||
+            'Your service has been completed successfully.',
+          ...(data.documentRef.trim() ? [`Job reference: ${data.documentRef.trim()}`] : []),
+          ...(data.amount.trim()
+            ? [`Amount collected: ${formatCollectedAmountDisplay(data.amount)}`]
+            : []),
+          '',
+          message.split('\n').slice(1).join(' ').trim() ||
+            `Thank you for choosing ${brandName}. We appreciate your trust.`,
+          '',
+          `WhatsApp: https://wa.me/${contact.whatsapp}`,
+          `Phone: ${contact.phoneDisplay}`,
+          `Email: ${contact.email}`,
+          '',
+          brandName,
+        ]
+      : [
+          subject,
+          '',
+          `Hi ${customerName},`,
+          '',
+          message,
+          '',
+          `WhatsApp: https://wa.me/${contact.whatsapp}`,
+          `Phone: ${contact.phoneDisplay}`,
+          `Email: ${contact.email}`,
+          ...(options?.attachmentNames?.length
+            ? ['', 'Attachments:', ...options.attachmentNames.map((n) => `- ${n}`)]
+            : []),
+          '',
+          brandName,
+        ];
 
   return { subject, html, text: textLines.join('\n') };
 }
@@ -468,6 +587,8 @@ export function getDefaultDocumentMessage(type: AdminEmailTemplateType): string 
       return 'Please find our quotation attached. Contact us to confirm or if you need any changes.';
     case 'service_reminder':
       return 'This is a friendly reminder that your RO water purifier is due for service. Regular maintenance keeps your water safe and your purifier running smoothly.';
+    case 'job_completion':
+      return 'Your service has been completed successfully.\n\nThank you for choosing us. We appreciate your trust.';
     case 'general':
       return 'Thank you for choosing us for your RO water purifier needs.';
     default:

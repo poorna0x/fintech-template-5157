@@ -12,6 +12,9 @@ import {
 } from '@/lib/booking-confirmation-email';
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getCompanyInfoForBrand, getDocumentBrandLabel } from '@/lib/service-brands';
+import {
+  buildJobCompletionWhatsAppMessage,
+} from '@/lib/job-completion-message';
 
 export interface AdminWhatsAppMessageResult {
   text: string;
@@ -79,6 +82,32 @@ function buildBookingWhatsApp(data: BookingConfirmationEmailData): AdminWhatsApp
   };
 }
 
+function parseAmountCollected(amount: string): number {
+  const n = parseFloat(String(amount || '').replace(/[^\d.-]/g, ''));
+  return Number.isNaN(n) ? 0 : n;
+}
+
+function buildJobCompletionWhatsApp(
+  data: AdminDocumentEmailData
+): AdminWhatsAppMessageResult {
+  const brand = data.documentBrand;
+  const brandName = getDocumentBrandLabel(brand);
+  const text = buildJobCompletionWhatsAppMessage({
+    customerName: data.customerName,
+    serviceType: data.completionServiceType || '',
+    serviceSubType: data.completionServiceSubType || '',
+    amountCollected: parseAmountCollected(data.amount),
+    documentBrand: brand,
+  });
+  const ref = data.documentRef.trim();
+  return {
+    text,
+    previewTitle: ref
+      ? `Service completed · ${brandName} (${ref})`
+      : `Service completed · ${brandName}`,
+  };
+}
+
 function buildDocumentWhatsApp(
   type: AdminEmailTemplateType,
   data: AdminDocumentEmailData
@@ -88,6 +117,10 @@ function buildDocumentWhatsApp(
   const customerName = data.customerName.trim() || 'Customer';
   const meta = ADMIN_EMAIL_TEMPLATE_META[type];
   const message = data.message.trim();
+
+  if (type === 'job_completion') {
+    return buildJobCompletionWhatsApp(data);
+  }
 
   const detailLines: string[] = [];
   if (meta.showDocumentRef && data.documentRef.trim()) {

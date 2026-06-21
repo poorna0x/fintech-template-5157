@@ -149,6 +149,8 @@ import SendMessageDialog from './admin/SendMessageDialog';
 import AdminEmailComposerDialog from './admin/AdminEmailComposer';
 import AdminWhatsAppComposerDialog from './admin/AdminWhatsAppComposer';
 import type { AdminEmailTemplateType } from '@/lib/admin-email-templates';
+import { getValidCustomerEmail } from '@/lib/customer-email';
+import type { DocumentBrand } from '@/lib/service-brands';
 import ShareTechnicianInfoToCustomerDialog from './admin/ShareTechnicianInfoToCustomerDialog';
 import RecentAccountsDialog from './admin/RecentAccountsDialog';
 import DirectSaleDialog from './admin/DirectSaleDialog';
@@ -794,6 +796,9 @@ const AdminDashboard = () => {
   const [selectedJobForMessage, setSelectedJobForMessage] = useState<any | null>(null);
   const [emailComposerOpen, setEmailComposerOpen] = useState(false);
   const [emailComposerCustomerId, setEmailComposerCustomerId] = useState<string | null>(null);
+  const [emailComposerJobId, setEmailComposerJobId] = useState<string | null>(null);
+  const [emailComposerContext, setEmailComposerContext] = useState<'default' | 'completed_job'>('default');
+  const [emailComposerForcedBrand, setEmailComposerForcedBrand] = useState<DocumentBrand | null>(null);
   const [emailComposerTemplate, setEmailComposerTemplate] = useState<AdminEmailTemplateType>('general');
   const [whatsappComposerOpen, setWhatsappComposerOpen] = useState(false);
   const [whatsappComposerCustomerId, setWhatsappComposerCustomerId] = useState<string | null>(null);
@@ -1970,12 +1975,24 @@ const AdminDashboard = () => {
         'general',
       ];
       setEmailComposerCustomerId(customerId && customerId !== '1' ? customerId : null);
+      setEmailComposerJobId(null);
+      setEmailComposerContext('default');
       if (templateParam && allowedTemplates.includes(templateParam)) {
         setEmailComposerTemplate(templateParam);
       } else {
         setEmailComposerTemplate('general');
       }
       setEmailComposerOpen(true);
+      navigate('/admin', { replace: true });
+    } else if (searchParams.get('composeEmailJob')) {
+      const jobId = searchParams.get('composeEmailJob');
+      if (jobId) {
+        setEmailComposerJobId(jobId);
+        setEmailComposerCustomerId(null);
+        setEmailComposerTemplate('job_completion');
+        setEmailComposerContext('completed_job');
+        setEmailComposerOpen(true);
+      }
       navigate('/admin', { replace: true });
     } else if (searchParams.get('composeWhatsApp')) {
       const customerId = searchParams.get('composeWhatsApp');
@@ -5917,6 +5934,21 @@ const AdminDashboard = () => {
     setWhatsappComposerCustomerId(customer.id);
     setWhatsappComposerTemplate('general');
     setWhatsappComposerOpen(true);
+  };
+
+  const openCompletionEmailComposer = (job: Job, brand: DocumentBrand) => {
+    const customer = (job as any).customer || job.customer;
+    const email = getValidCustomerEmail(customer?.email);
+    if (!email) {
+      toast.error('This customer has no email on file');
+      return;
+    }
+    setEmailComposerForcedBrand(brand);
+    setEmailComposerJobId(job.id);
+    setEmailComposerCustomerId(null);
+    setEmailComposerTemplate('job_completion');
+    setEmailComposerContext('completed_job');
+    setEmailComposerOpen(true);
   };
 
   const handleGenerateBill = async (customer: Customer) => {
@@ -10884,6 +10916,7 @@ const AdminDashboard = () => {
                               setEditCompletedJobDialogOpen={setEditCompletedJobDialogOpen}
                               setSelectedJobForMessage={setSelectedJobForMessage}
                               setSendMessageDialogOpen={setSendMessageDialogOpen}
+                              onOpenCompletionEmail={openCompletionEmailComposer}
                               setSelectedBillPhotos={setSelectedBillPhotos}
                               setSelectedPhoto={setSelectedPhoto}
                               setPhotoViewerOpen={setPhotoViewerOpen}
@@ -13279,11 +13312,18 @@ const AdminDashboard = () => {
           setEmailComposerOpen(open);
           if (!open) {
             setEmailComposerCustomerId(null);
+            setEmailComposerJobId(null);
+            setEmailComposerContext('default');
+            setEmailComposerForcedBrand(null);
             setEmailComposerTemplate('general');
           }
         }}
         initialCustomerId={emailComposerCustomerId}
+        initialJobId={emailComposerJobId}
         initialTemplate={emailComposerTemplate}
+        composerContext={emailComposerContext}
+        initialForcedBrand={emailComposerForcedBrand}
+        onCompletionMessageSent={handleMessageSent}
       />
 
       <AdminWhatsAppComposerDialog

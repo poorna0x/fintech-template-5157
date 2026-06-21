@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle, Edit, ShoppingCart } from 'lucide-react';
+import { CheckCircle, Edit, Mail, ShoppingCart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -19,6 +19,24 @@ import JobPartsUsedDialog from './JobPartsUsedDialog';
 import OfficeJobPartsDialog from './OfficeJobPartsDialog';
 import { db } from '@/lib/supabase';
 import { customerNameClassName } from '@/lib/customerDisplay';
+import { getValidCustomerEmail } from '@/lib/customer-email';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import type { DocumentBrand } from '@/lib/service-brands';
+import { getCompanyInfoForBrand, getDocumentBrandLabel, normalizeDocumentBrand } from '@/lib/service-brands';
 
 const ZERO_COMMISSION_EMPLOYEE_ID = 'TECH851703400';
 
@@ -41,6 +59,7 @@ interface CompletedJobSectionProps {
   setEditCompletedJobDialogOpen: (open: boolean) => void;
   setSelectedJobForMessage: (job: Job) => void;
   setSendMessageDialogOpen: (open: boolean) => void;
+  onOpenCompletionEmail?: (job: Job, brand: DocumentBrand) => void;
   setSelectedBillPhotos: (photos: string[]) => void;
   setSelectedPhoto: (photo: { url: string; index: number; total: number }) => void;
   setPhotoViewerOpen: (open: boolean) => void;
@@ -69,6 +88,7 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
   setEditCompletedJobDialogOpen,
   setSelectedJobForMessage,
   setSendMessageDialogOpen,
+  onOpenCompletionEmail,
   setSelectedBillPhotos,
   setSelectedPhoto,
   setPhotoViewerOpen,
@@ -82,6 +102,22 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
   const [officePartsOverride, setOfficePartsOverride] = useState<number | null>(null);
   const [sparePartsCost, setSparePartsCost] = useState<number>(0);
   const [sendMessageConfirmOpen, setSendMessageConfirmOpen] = useState(false);
+  const [completionEmailOpen, setCompletionEmailOpen] = useState(false);
+  const [completionEmailBrand, setCompletionEmailBrand] = useState<DocumentBrand>('hydrogenro');
+
+  const customerEmail = getValidCustomerEmail(
+    (job as any).customer?.email || job.customer?.email
+  );
+  const jobServiceBrand: DocumentBrand =
+    normalizeDocumentBrand((job as any).service_brand) || 'hydrogenro';
+  const jobServiceBrandInfo = getCompanyInfoForBrand(jobServiceBrand);
+  const completionEmailBrandInfo = getCompanyInfoForBrand(completionEmailBrand);
+
+  useEffect(() => {
+    if (completionEmailOpen) {
+      setCompletionEmailBrand(jobServiceBrand);
+    }
+  }, [completionEmailOpen, jobServiceBrand]);
 
   const fetchSparePartsCost = () => {
     if (!job?.id || job.status !== 'COMPLETED') return;
@@ -580,11 +616,22 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
                 setSendMessageDialogOpen(true);
               }
             }}
-            title={messageSent ? 'Send Again' : 'Send Message'}
+            title={messageSent ? 'Send WhatsApp again' : 'Send WhatsApp message'}
             className="text-xs flex-1 min-w-0 justify-center py-2 px-2"
           >
             <WhatsAppIcon className="w-4 h-4 shrink-0" />
           </Button>
+          {customerEmail && onOpenCompletionEmail ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setCompletionEmailOpen(true)}
+              title="Send completion email"
+              className="text-xs flex-1 min-w-0 justify-center py-2 px-2"
+            >
+              <Mail className="w-4 h-4 shrink-0" />
+            </Button>
+          ) : null}
           {assignedTechnician ? (
             <Button
               size="sm"
@@ -635,6 +682,78 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={completionEmailOpen} onOpenChange={setCompletionEmailOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Send completion email</DialogTitle>
+            <DialogDescription>
+              Choose which brand to send as for{' '}
+              <span className={customerNameClassName((job as any).customer)}>{customerName}</span>.
+              Defaults to the brand this job was completed under.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="rounded-lg border border-border bg-muted/40 p-4 text-center">
+              <div className="text-xs sm:text-sm text-muted-foreground mb-1.5">
+                Job completed as{' '}
+                <span className="font-medium text-foreground">
+                  {getDocumentBrandLabel(jobServiceBrand)}
+                </span>
+              </div>
+              <div className="text-xs text-muted-foreground mt-1.5">
+                Phone: {jobServiceBrandInfo.phone} · Email: {jobServiceBrandInfo.email}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Send email as</label>
+              <Select
+                value={completionEmailBrand}
+                onValueChange={(value: DocumentBrand) => setCompletionEmailBrand(value)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="hydrogenro">Hydrogen RO</SelectItem>
+                  <SelectItem value="elevenro">Eleven RO</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Selected: {getDocumentBrandLabel(completionEmailBrand)} ·{' '}
+                {completionEmailBrandInfo.phone} · {completionEmailBrandInfo.email}
+              </p>
+            </div>
+            <p className="text-xs text-muted-foreground break-all">
+              To: {customerEmail}
+            </p>
+          </div>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full sm:w-auto"
+              onClick={() => setCompletionEmailOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="w-full sm:w-auto bg-black hover:bg-gray-800 text-white"
+              onClick={() => {
+                if (!onOpenCompletionEmail) {
+                  toast.error('Email composer is not available');
+                  return;
+                }
+                onOpenCompletionEmail(job, completionEmailBrand);
+                setCompletionEmailOpen(false);
+              }}
+            >
+              Continue to email
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       
       {/* Parts Used Dialog */}
       {assignedTechnician && (

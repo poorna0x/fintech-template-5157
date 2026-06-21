@@ -15,7 +15,8 @@ import { toast } from 'sonner';
 import EmailAttachmentDropzone from '@/components/admin/EmailAttachmentDropzone';
 import EmailSourcePicker from '@/components/admin/EmailSourcePicker';
 import type { EmailSourceMode } from '@/lib/admin-email-sources';
-import { applyEmailSourceForCustomer, resolveCustomerSendBrand } from '@/lib/admin-email-sources';
+import { applyEmailSourceForCustomer, applyEmailSourceRecord, resolveCustomerSendBrand } from '@/lib/admin-email-sources';
+import { buildJobCompletionMessage } from '@/lib/job-completion-message';
 import { getValidCustomerEmail } from '@/lib/customer-email';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -75,21 +76,37 @@ const TEMPLATE_ORDER: AdminEmailTemplateType[] = [
   'general',
 ];
 
+const COMPLETED_JOB_TEMPLATE_ORDER: AdminEmailTemplateType[] = ['job_completion'];
+
+export type AdminEmailComposerContext = 'default' | 'completed_job';
+
 export interface AdminEmailComposerPanelProps {
   initialCustomerId?: string | null;
+  initialJobId?: string | null;
   initialTemplate?: AdminEmailTemplateType;
+  composerContext?: AdminEmailComposerContext;
+  initialForcedBrand?: DocumentBrand | null;
   onClose?: () => void;
+  onCompletionMessageSent?: (jobId: string) => void | Promise<void>;
 }
 
 export function AdminEmailComposerPanel({
   initialCustomerId,
+  initialJobId,
   initialTemplate = 'general',
+  composerContext = 'default',
+  initialForcedBrand = null,
   onClose,
+  onCompletionMessageSent,
 }: AdminEmailComposerPanelProps) {
   const loadedCustomerRef = useRef<string | null>(null);
   const confirmSectionRef = useRef<HTMLDivElement>(null);
-  const [customerLoading, setCustomerLoading] = useState(Boolean(initialCustomerId));
-  const [templateType, setTemplateType] = useState<AdminEmailTemplateType>(initialTemplate);
+  const [customerLoading, setCustomerLoading] = useState(
+    Boolean(initialCustomerId) || Boolean(initialJobId && composerContext === 'completed_job')
+  );
+  const [templateType, setTemplateType] = useState<AdminEmailTemplateType>(
+    composerContext === 'completed_job' ? 'job_completion' : initialTemplate
+  );
   const [bookingForm, setBookingForm] = useState<BookingConfirmationEmailData>(() =>
     createEmptyBookingForm()
   );
@@ -110,6 +127,11 @@ export function AdminEmailComposerPanel({
   const [sendBrand, setSendBrand] = useState<DocumentBrand>('hydrogenro');
   const [lastServiceBrand, setLastServiceBrand] = useState<DocumentBrand | null>(null);
   const [linkedCustomerId, setLinkedCustomerId] = useState<string | null>(initialCustomerId ?? null);
+  const [linkedJobId, setLinkedJobId] = useState<string | null>(initialJobId ?? null);
+
+  const templateOptions =
+    composerContext === 'completed_job' ? COMPLETED_JOB_TEMPLATE_ORDER : TEMPLATE_ORDER;
+  const isCompletedJobComposer = composerContext === 'completed_job';
 
   const templateMeta = ADMIN_EMAIL_TEMPLATE_META[templateType];
   const siteOrigin = typeof window !== 'undefined' ? window.location.origin : undefined;
@@ -231,6 +253,58 @@ export function AdminEmailComposerPanel({
     []
   );
 
+  const applyForcedCompletionBrand = useCallback((forcedBrand: DocumentBrand) => {
+    setSendBrand(forcedBrand);
+    setDocumentForm((prev) => {
+      const amountCollected =
+        parseFloat(String(prev.amount || '').replace(/[^\d.-]/g, '')) || 0;
+      return {
+        ...prev,
+        documentBrand: forcedBrand,
+        message: buildJobCompletionMessage({
+          customerName: prev.customerName,
+          serviceType: prev.completionServiceType || '',
+          serviceSubType: prev.completionServiceSubType || '',
+          amountCollected,
+          documentBrand: forcedBrand,
+        }),
+      };
+    });
+  }, []);
+
+  const loadJobCompletionSource = useCallback(
+    async (jobId: string, forcedBrand?: DocumentBrand | null) => {
+      setSourceMode('crm');
+      setCustomerLoading(true);
+
+      try {
+        const result = await applyEmailSourceRecord('job_completion', jobId);
+        if (!result) {
+          toast.error('Could not load completed job for email');
+          return;
+        }
+
+        handleApplySource(result);
+        setLinkedJobId(jobId);
+
+        if (forcedBrand) {
+          applyForcedCompletionBrand(forcedBrand);
+        }
+
+        const email = getValidCustomerEmail(result.recipientEmail);
+        if (!email) {
+          toast.error('This customer has no email on file');
+          return;
+        }
+
+        toast.success('Loaded completed job details');
+      } finally {
+        setCustomerLoading(false);
+      }
+    },
+    [handleApplySource, applyForcedCompletionBrand]
+  );
+
   const loadCustomerSource = useCallback(
     async (customerId: string, tpl: AdminEmailTemplateType) => {
       setSourceMode('crm');
@@ -303,6 +377,7 @@ export function AdminEmailComposerPanel({
   };
 
   useEffect(() => {
+    if (composerContext === 'completed_job') return;
     if (!initialCustomerId) return;
 
     const tpl = TEMPLATE_ORDER.includes(initialTemplate) ? initialTemplate : 'general';
@@ -314,7 +389,20 @@ export function AdminEmailComposerPanel({
       setTemplateType(tpl);
       await loadCustomerSource(initialCustomerId, tpl);
     })();
-  }, [initialCustomerId, initialTemplate, loadCustomerSource]);
+  }, [composerContext, initialCustomerId, initialTemplate, loadCustomerSource]);
+
+  useEffect(() => {
+    if (composerContext !== 'completed_job' || !initialJobId) return;
+
+    const loadKey = `job:${initialJobId}`;
+    if (loadedCustomerRef.current === loadKey) return;
+    loadedCustomerRef.current = loadKey;
+
+    void (async () => {
+      setTemplateType('job_completion');
+      await loadJobCompletionSource(initialJobId, initialForcedBrand);
+    })();
+  }, [composerContext, initialJobId, initialForcedBrand, loadJobCompletionSource]);
 
   const updateBookingField = <K extends keyof BookingConfirmationEmailData>(
     key: K,
@@ -394,6 +482,9 @@ export function AdminEmailComposerPanel({
           ? `Email sent from ${activeBrandLabel} to ${sendTo.trim()} with ${attachments.length} attachment(s)`
           : `Email sent from ${activeBrandLabel} to ${sendTo.trim()}`
       );
+      if (isCompletedJobComposer && linkedJobId && onCompletionMessageSent) {
+        await onCompletionMessageSent(linkedJobId);
+      }
     } else {
       setSendPhase('confirm');
       toast.error(result.error || 'Could not send email');
@@ -634,6 +725,7 @@ export function AdminEmailComposerPanel({
 
   const renderComposePanel = () => (
     <div className="space-y-4 pb-24 xl:pb-0">
+      {!isCompletedJobComposer && (
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base sm:text-lg">Template</CardTitle>
@@ -645,7 +737,7 @@ export function AdminEmailComposerPanel({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {TEMPLATE_ORDER.map((key) => (
+              {templateOptions.map((key) => (
                 <SelectItem key={key} value={key}>
                   {ADMIN_EMAIL_TEMPLATE_META[key].label}
                 </SelectItem>
@@ -654,6 +746,7 @@ export function AdminEmailComposerPanel({
           </Select>
         </CardContent>
       </Card>
+      )}
 
       <Card>
         <CardHeader className="pb-3">
@@ -679,6 +772,7 @@ export function AdminEmailComposerPanel({
           <CardDescription className="text-xs sm:text-sm">Edit fields to update the live preview.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {!isCompletedJobComposer && (
           <EmailSourcePicker
             templateType={templateType}
             sourceMode={sourceMode}
@@ -688,6 +782,7 @@ export function AdminEmailComposerPanel({
             onApply={handleApplySource}
             disabled={sending}
           />
+          )}
 
           {sourceMode === 'crm' && customerLoading ? (
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-8 text-center">
@@ -825,7 +920,9 @@ export function AdminEmailComposerPanel({
                       ? 'Invoice number'
                       : templateType === 'quotation'
                         ? 'Quotation number'
-                        : 'Reference number'}
+                        : templateType === 'job_completion'
+                          ? 'Job number'
+                          : 'Reference number'}
                   </Label>
                   <Input
                     value={documentForm.documentRef}
@@ -838,7 +935,9 @@ export function AdminEmailComposerPanel({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {templateMeta.showAmount && (
                     <div className="space-y-2">
-                      <Label>Amount</Label>
+                      <Label>
+                        {templateType === 'job_completion' ? 'Amount collected' : 'Amount'}
+                      </Label>
                       <Input
                         value={documentForm.amount}
                         onChange={(e) => updateDocumentField('amount', e.target.value)}
@@ -862,11 +961,18 @@ export function AdminEmailComposerPanel({
               )}
 
               <div className="space-y-2">
-                <Label>Message</Label>
+                <Label>
+                  {templateType === 'job_completion' ? 'Personal note' : 'Message'}
+                </Label>
                 <Textarea
-                  rows={5}
+                  rows={templateType === 'job_completion' ? 3 : 5}
                   value={documentForm.message}
                   onChange={(e) => updateDocumentField('message', e.target.value)}
+                  placeholder={
+                    templateType === 'job_completion'
+                      ? 'Optional — shown below the completion headline in the email'
+                      : undefined
+                  }
                 />
               </div>
             </>
@@ -982,14 +1088,22 @@ export interface AdminEmailComposerDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialCustomerId?: string | null;
+  initialJobId?: string | null;
   initialTemplate?: AdminEmailTemplateType;
+  composerContext?: AdminEmailComposerContext;
+  initialForcedBrand?: DocumentBrand | null;
+  onCompletionMessageSent?: (jobId: string) => void | Promise<void>;
 }
 
 export default function AdminEmailComposerDialog({
   open,
   onOpenChange,
   initialCustomerId,
+  initialJobId,
   initialTemplate = 'general',
+  composerContext = 'default',
+  initialForcedBrand = null,
+  onCompletionMessageSent,
 }: AdminEmailComposerDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -999,9 +1113,13 @@ export default function AdminEmailComposerDialog({
       >
         {open ? (
           <AdminEmailComposerPanel
-            key={`${initialCustomerId ?? 'blank'}-${initialTemplate}`}
+            key={`${initialCustomerId ?? 'blank'}-${initialJobId ?? 'nojob'}-${initialTemplate}-${composerContext}-${initialForcedBrand ?? 'brand'}`}
             initialCustomerId={initialCustomerId}
+            initialJobId={initialJobId}
             initialTemplate={initialTemplate}
+            composerContext={composerContext}
+            initialForcedBrand={initialForcedBrand}
+            onCompletionMessageSent={onCompletionMessageSent}
             onClose={() => onOpenChange(false)}
           />
         ) : null}

@@ -35,7 +35,7 @@ const PhoneNumbersDialog: React.FC<PhoneNumbersDialogProps> = ({ open, onOpenCha
   const renderAction = (phone?: string | null, variant: 'primary' | 'secondary' = 'primary') => {
     const primaryClasses = '';
     const secondaryClasses = 'bg-gray-600 hover:bg-gray-700';
-    const waClasses = 'bg-green-600 hover:bg-green-700';
+    const waClasses = 'bg-black hover:bg-gray-800';
     const colorClasses = isWhatsApp ? waClasses : variant === 'primary' ? primaryClasses : secondaryClasses;
 
     if (isWhatsApp) {
@@ -69,7 +69,7 @@ const PhoneNumbersDialog: React.FC<PhoneNumbersDialogProps> = ({ open, onOpenCha
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {isWhatsApp ? (
-              <WhatsAppIcon className="w-5 h-5 text-green-600" />
+              <WhatsAppIcon className="w-5 h-5 text-gray-600" />
             ) : (
               <Phone className="w-5 h-5 text-blue-600" />
             )}

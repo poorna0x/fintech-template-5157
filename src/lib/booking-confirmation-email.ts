@@ -68,13 +68,29 @@ const EMAIL_COLORS = {
   cardShadow: '0 1px 2px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.06)',
 } as const;
 
+const DEFAULT_PUBLIC_EMAIL_ORIGIN = 'https://hydrogenro.com';
+
+function isLocalDevOrigin(origin: string): boolean {
+  return /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(origin.replace(/\/$/, ''));
+}
+
+/** Public origin for email image assets — never localhost (mail clients cannot fetch it). */
+export function getPublicEmailSiteOrigin(): string {
+  const configured = String(import.meta.env.VITE_SITE_URL || '').replace(/\/$/, '');
+  if (configured && !isLocalDevOrigin(configured)) return configured;
+  return DEFAULT_PUBLIC_EMAIL_ORIGIN;
+}
+
 function getEmailSiteOrigin(baseUrl?: string): string {
-  return (
-    baseUrl?.replace(/\/$/, '') ||
-    (typeof window !== 'undefined'
-      ? window.location.origin
-      : String(import.meta.env.VITE_SITE_URL || 'https://hydrogenro.com').replace(/\/$/, ''))
-  );
+  const normalized = baseUrl?.replace(/\/$/, '');
+  if (normalized) {
+    return isLocalDevOrigin(normalized) ? getPublicEmailSiteOrigin() : normalized;
+  }
+  if (typeof window !== 'undefined') {
+    const origin = window.location.origin.replace(/\/$/, '');
+    return isLocalDevOrigin(origin) ? getPublicEmailSiteOrigin() : origin;
+  }
+  return getPublicEmailSiteOrigin();
 }
 
 export function getEmailLogoUrl(

@@ -38,3 +38,7 @@ export function getAdminWhatsAppComposerUrl(
   if (template) params.set('whatsappTemplate', template);
   return `/admin?${params.toString()}`;
 }
+
+export function getAdminCompletionEmailComposerUrl(jobId: string): string {
+  return `/admin?${new URLSearchParams({ composeEmailJob: jobId }).toString()}`;
+}

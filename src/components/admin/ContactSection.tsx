@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Phone, Mail, MapPin } from 'lucide-react';
 import { Customer } from '@/types';
@@ -6,6 +6,9 @@ import { extractCoordinates } from '@/lib/maps';
 import { toast } from 'sonner';
 import { WhatsAppIcon } from '../WhatsAppIcon';
 import { getAdminEmailComposerUrl, getAdminWhatsAppComposerUrl, getValidCustomerEmail } from '@/lib/customer-email';
+import { formatPhoneForWhatsApp } from '@/lib/utils';
+import WhatsAppActionDialog from '@/components/admin/WhatsAppActionDialog';
+import PhoneNumbersDialog from '@/components/admin/PhoneNumbersDialog';
 
 interface ContactSectionProps {
   customer: Customer;
@@ -35,13 +38,36 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
 }) => {
   const navigate = useNavigate();
   const customerEmail = getValidCustomerEmail(customer.email);
+  const [whatsappChoiceOpen, setWhatsappChoiceOpen] = useState(false);
+  const [whatsappNumbersOpen, setWhatsappNumbersOpen] = useState(false);
+
+  const customerDisplayName =
+    (customer as any).full_name || customer.fullName || 'Customer';
+  const alternatePhone =
+    (customer as any).alternate_phone || (customer as any).alternatePhone;
 
   const handleEmailClick = () => {
     if (!customerEmail) return;
     navigate(getAdminEmailComposerUrl(customer.id, 'general'));
   };
 
-  const handleWhatsAppComposerClick = () => {
+  const openWhatsAppDirect = () => {
+    if (!customer.phone?.trim()) {
+      toast.error('Phone number not available');
+      return;
+    }
+    if (alternatePhone && String(alternatePhone).trim() !== customer.phone?.trim()) {
+      setWhatsappNumbersOpen(true);
+      return;
+    }
+    window.open(
+      `https://wa.me/${formatPhoneForWhatsApp(customer.phone)}`,
+      '_blank',
+      'noopener,noreferrer'
+    );
+  };
+
+  const openWhatsAppTemplate = () => {
     if (!customer.phone?.trim()) {
       toast.error('Phone number not available');
       return;
@@ -51,6 +77,14 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
       return;
     }
     navigate(getAdminWhatsAppComposerUrl(customer.id, 'general'));
+  };
+
+  const handleWhatsAppCardClick = () => {
+    if (!customer.phone?.trim()) {
+      toast.error('Phone number not available');
+      return;
+    }
+    setWhatsappChoiceOpen(true);
   };
 
   // Mirror the booking page's forgiving geolocation: longer timeout + allow a recent cached
@@ -107,6 +141,19 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
 
   return (
     <div className="p-4 border-b border-gray-100">
+      <WhatsAppActionDialog
+        open={whatsappChoiceOpen}
+        onOpenChange={setWhatsappChoiceOpen}
+        customerName={customerDisplayName}
+        onOpenWhatsApp={openWhatsAppDirect}
+        onOpenTemplate={openWhatsAppTemplate}
+      />
+      <PhoneNumbersDialog
+        open={whatsappNumbersOpen}
+        onOpenChange={setWhatsappNumbersOpen}
+        customer={customer}
+        mode="whatsapp"
+      />
       <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {/* Phone */}
         <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
@@ -177,20 +224,20 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
               ? 'hover:border-gray-300 hover:shadow-sm cursor-pointer'
               : 'opacity-90'
           }`}
-          onClick={customer.phone?.trim() ? handleWhatsAppComposerClick : undefined}
+          onClick={customer.phone?.trim() ? handleWhatsAppCardClick : undefined}
           onKeyDown={
             customer.phone?.trim()
               ? (e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
-                    handleWhatsAppComposerClick();
+                    handleWhatsAppCardClick();
                   }
                 }
               : undefined
           }
           role={customer.phone?.trim() ? 'button' : undefined}
           tabIndex={customer.phone?.trim() ? 0 : undefined}
-          title={customer.phone?.trim() ? 'Send WhatsApp to this customer' : undefined}
+          title={customer.phone?.trim() ? 'WhatsApp — open chat or use template' : undefined}
         >
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
             <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">

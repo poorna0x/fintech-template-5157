@@ -1,11 +1,11 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import { Job } from '@/types';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
-import { useEffect, useState } from 'react';
+import { buildJobCompletionMessageFromJob } from '@/lib/job-completion-message';
 
 interface SendMessageDialogProps {
   open: boolean;
@@ -30,70 +30,26 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
 
   if (!job) return null;
 
-  type ServiceBrand = 'elevenro' | 'hydrogenro';
-  const normalizeServiceBrand = (value: unknown): ServiceBrand | null => {
-    if (typeof value !== 'string') return null;
-    const normalized = value.trim().toLowerCase();
-    if (normalized === 'elevenro' || normalized === 'hydrogenro') return normalized;
-    return null;
-  };
-
   const customer = (job as any).customer || job.customer;
   const customerName = customer?.full_name || customer?.fullName || 'Customer';
   const customerPhone = customer?.phone || '';
   const alternatePhone = customer?.alternate_phone || (customer as any)?.alternatePhone || '';
   const hasAlternate = alternatePhone?.trim() && alternatePhone.trim() !== customerPhone?.trim();
-  
-  const actualCost = (job as any).actual_cost || job.actual_cost || null;
-  const paymentAmount = (job as any).payment_amount || job.payment_amount || null;
-  const amount = actualCost || paymentAmount || 0;
 
-  const serviceType = ((job as any).service_type || job.serviceType || '').toUpperCase();
-  const serviceSubType = (job as any).service_sub_type || job.serviceSubType || '';
-  const capitalize = (s: string) => s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : '';
-  const rawSubtypeText = serviceSubType ? capitalize(serviceSubType) : '';
-  // For completion message, "New Purifier Installation" should display as "installation"
-  const subtypeText = (serviceSubType || '').trim() === 'New Purifier Installation' ? 'installation' : rawSubtypeText;
-
-  let completionLine: string;
-  if (serviceType && serviceType.includes('RO') && subtypeText) {
-    completionLine = `Your Water Purifier ${subtypeText} is completed.`;
-  } else if (serviceType && serviceType.includes('SOFTENER') && subtypeText) {
-    completionLine = `Your Softener ${subtypeText} is completed.`;
-  } else if (subtypeText) {
-    completionLine = `Your ${subtypeText} is completed.`;
-  } else {
-    completionLine = 'Your service has been completed successfully.';
-  }
-  
-  const amountLine = amount > 0 ? `💰 Amount of ₹${amount} has been collected.\n\n` : '';
-  const serviceBrand = normalizeServiceBrand((job as any).service_brand) || 'hydrogenro';
+  const completion = buildJobCompletionMessageFromJob(job as Record<string, unknown>);
+  const whatsappMessage = completion.whatsappMessage;
   const brandContact =
-    serviceBrand === 'elevenro'
+    completion.documentBrand === 'elevenro'
       ? {
           label: 'ElevenRO',
           phone: '9880693311',
           email: 'mail@elevenro.com',
-          website: 'https://elevenro.com',
-          bookingUrl: 'https://elevenro.com/book',
         }
       : {
           label: 'HydrogenRO',
           phone: '8884944288',
           email: 'info@hydrogenro.com',
-          website: 'https://hydrogenro.com',
-          bookingUrl: 'https://hydrogenro.com/book',
         };
-
-  const whatsappMessage = `Dear ${customerName},
-
-✅ ${completionLine}
-${amountLine}For any queries or support, please contact us:
-📞 Phone: ${brandContact.phone}
-📧 Email: ${brandContact.email}
-🌐 Website: ${brandContact.website}
-
-📱 For future bookings, you can book directly on ${brandContact.bookingUrl} for ease and convenience.`;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -116,7 +72,7 @@ ${amountLine}For any queries or support, please contact us:
             </div>
             <div className="flex flex-col sm:flex-row sm:justify-end gap-2">
               <Button
-                className="w-full bg-green-600 hover:bg-green-700 text-white"
+                className="w-full bg-black hover:bg-gray-800 text-white"
                 onClick={() => setBrandConfirmed(true)}
               >
                 Confirm and Continue
@@ -151,7 +107,7 @@ ${amountLine}For any queries or support, please contact us:
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <Button
                       variant="default"
-                      className="bg-green-600 hover:bg-green-700 text-white"
+                      className="bg-black hover:bg-gray-800 text-white"
                       onClick={async () => {
                         const formattedPhone = formatPhoneForWhatsApp(customerPhone);
                         const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(whatsappMessage)}`;
@@ -164,7 +120,7 @@ ${amountLine}For any queries or support, please contact us:
                     </Button>
                     <Button
                       variant="default"
-                      className="bg-green-600 hover:bg-green-700 text-white"
+                      className="bg-black hover:bg-gray-800 text-white"
                       onClick={async () => {
                         const formattedPhone = formatPhoneForWhatsApp(alternatePhone);
                         const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(whatsappMessage)}`;
@@ -180,7 +136,7 @@ ${amountLine}For any queries or support, please contact us:
               ) : (
                 <Button
                   variant="default"
-                  className="w-full bg-green-600 hover:bg-green-700 text-white"
+                  className="w-full bg-black hover:bg-gray-800 text-white"
                   onClick={async () => {
                     const formattedPhone = formatPhoneForWhatsApp(customerPhone);
                     const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(whatsappMessage)}`;
@@ -222,4 +178,3 @@ ${amountLine}For any queries or support, please contact us:
 };
 
 export default SendMessageDialog;
-
