@@ -152,6 +152,20 @@ function preventAutoLinkText(text: string): string {
     .replace(/\//g, ' &#8203;/&#8203; ');
 }
 
+function isMeaningfulDeviceValue(val: string | undefined): boolean {
+  if (!val) return false;
+  const t = val.trim();
+  return t !== '' && t.toLowerCase() !== 'not specified' && t.toLowerCase() !== 'n/a';
+}
+
+/** Both brand and model must be present; otherwise omit the Device row entirely. */
+function formatDeviceLine(brand: string | undefined, model: string | undefined): string | null {
+  const validBrand = isMeaningfulDeviceValue(brand) ? brand!.trim() : '';
+  const validModel = isMeaningfulDeviceValue(model) ? model!.trim() : '';
+  if (!validBrand || !validModel) return null;
+  return `${validBrand} ${validModel}`;
+}
+
 function detailRow(label: string, value: string, last = false, highlight = false): string {
   const border = last ? '' : `border-bottom:1px solid ${EMAIL_COLORS.border};`;
   const valueColor = highlight ? EMAIL_COLORS.heading : EMAIL_COLORS.heading;
@@ -259,7 +273,7 @@ export function buildBookingConfirmationEmail(
   const customerName = data.customerName || 'Customer';
   const jobNumber = data.jobNumber || 'N/A';
   const serviceLine = `${data.serviceType || 'RO'} - ${data.serviceSubType || 'Service'}`;
-  const deviceLine = `${data.brand || 'Not specified'} ${data.model || ''}`.trim();
+  const deviceLine = formatDeviceLine(data.brand, data.model);
   const serviceDate = formatServiceDate(data.scheduledDate);
   const timeSlot = formatBookingTimeSlot(data.scheduledTimeSlot);
   const address = data.serviceAddress || '—';
@@ -350,7 +364,7 @@ export function buildBookingConfirmationEmail(
                   <td style="padding:0 18px 16px;">
                     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                       ${detailRow('Service', serviceLine)}
-                      ${detailRow('Device', deviceLine)}
+                      ${deviceLine ? detailRow('Device', deviceLine) : ''}
                       ${detailRow('Date', serviceDate, false, true)}
                       ${detailRow('Time', timeSlot, false, true)}
                       ${detailRow('Address', address, true)}
@@ -421,7 +435,7 @@ export function buildBookingConfirmationEmail(
     '',
     'Appointment details:',
     `- Service: ${serviceLine}`,
-    `- Device: ${deviceLine}`,
+    ...(deviceLine ? [`- Device: ${deviceLine}`] : []),
     `- Date: ${serviceDate}`,
     `- Time: ${timeSlot}`,
     `- Address: ${address}`,
