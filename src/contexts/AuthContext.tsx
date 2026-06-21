@@ -27,6 +27,7 @@ import {
 import { isPWAMode } from '@/lib/pwa';
 import { formatWelcomeDisplayName } from '@/lib/welcomeDisplayName';
 import { syncPortalSessionCookie } from '@/lib/syncPortalSession';
+import { refreshSupabaseSessionInBackground } from '@/lib/ensureSupabaseSession';
 import type { Session } from '@supabase/supabase-js';
 
 export interface User {
@@ -293,6 +294,27 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       subscription.unsubscribe();
     };
   }, [applySessionUser]);
+
+  // Keep JWT fresh while the app is open — especially for technician PWA all-day use.
+  useEffect(() => {
+    if (!user) return;
+
+    const refresh = () => {
+      void refreshSupabaseSessionInBackground();
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+
+    document.addEventListener('visibilitychange', onVisibility);
+    const intervalId = window.setInterval(refresh, 45 * 60 * 1000);
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.clearInterval(intervalId);
+    };
+  }, [user?.id, user?.role]);
 
   const login = async (
     email: string,

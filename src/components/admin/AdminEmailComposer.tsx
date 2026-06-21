@@ -351,7 +351,7 @@ export function AdminEmailComposerPanel({
 
     const sessionReady = await ensureSupabaseSessionForWrite();
     if (!sessionReady.ok) {
-      toast.error('Could not refresh your session. Please sign out and sign in again.');
+      toast.error('Could not refresh your session. Please try again in a moment.');
       setSendPhase('confirm');
       return;
     }

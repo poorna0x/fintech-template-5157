@@ -8,7 +8,7 @@ import {
   resolveBookingEmailDocumentBrand,
   type BookingConfirmationEmailData,
 } from '@/lib/booking-confirmation-email';
-import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
+import { resolveSupabaseAccessTokenForApi, refreshSupabaseSessionInBackground } from '@/lib/ensureSupabaseSession';
 
 export type BookingConfirmationData = BookingConfirmationEmailData;
 
@@ -182,16 +182,26 @@ export class EmailService {
 
       if (response.status === 401 || response.status === 403) {
         const retryToken = await resolveSupabaseAccessTokenForApi();
-        if (retryToken) {
+        if (retryToken && retryToken !== token) {
+          token = retryToken;
           ({ response, result } = await sendOnce(retryToken));
+        } else if (response.status === 401) {
+          await refreshSupabaseSessionInBackground();
+          const secondRetry = await resolveSupabaseAccessTokenForApi();
+          if (secondRetry && secondRetry !== token) {
+            token = secondRetry;
+            ({ response, result } = await sendOnce(secondRetry));
+          }
         }
       }
 
       if (!response.ok) {
         const message =
-          response.status === 403
-            ? 'Could not send email — please try again in a moment'
-            : result.error || response.statusText || 'Failed to send email';
+          response.status === 401
+            ? 'Could not verify your session. Please try again — you should not need to log in every time.'
+            : response.status === 403
+              ? 'Could not send email — please try again in a moment'
+              : result.error || response.statusText || 'Failed to send email';
         return {
           ok: false,
           error: message,
@@ -300,16 +310,26 @@ export class EmailService {
         if (retryToken && retryToken !== token) {
           token = retryToken;
           ({ response, result } = await sendOnce(retryToken));
+        } else if (response.status === 401) {
+          // One more refresh attempt after a short server round-trip
+          await refreshSupabaseSessionInBackground();
+          const secondRetry = await resolveSupabaseAccessTokenForApi();
+          if (secondRetry && secondRetry !== token) {
+            token = secondRetry;
+            ({ response, result } = await sendOnce(secondRetry));
+          }
         }
       }
 
       if (!response.ok) {
         const message =
-          response.status === 401 || response.status === 403
-            ? result.error === 'Forbidden'
-              ? 'Your account is not authorized to send admin email.'
-              : 'Session expired — please sign out and sign in again, then retry.'
-            : result.error || response.statusText || 'Failed to send email';
+          response.status === 401
+            ? 'Could not verify your session. Open the app again and retry — you should not need to log in every time.'
+            : response.status === 403
+              ? result.error === 'Forbidden'
+                ? 'Your account is not authorized to send admin email.'
+                : result.error || 'Could not send email — please try again.'
+              : result.error || response.statusText || 'Failed to send email';
         return {
           ok: false,
           error: message,
