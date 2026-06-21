@@ -31,6 +31,7 @@ import {
   getAmcEmailSuccessMessage,
   sendAmcAgreementEmail,
 } from '@/lib/send-amc-agreement-email';
+import { forceLightThemeClass } from '@/lib/force-light-theme';
 import type { AMCPDFOptions } from '@/lib/amc-pdf-generator';
 
 export type AmcPersistResult = { ok: boolean; error?: string };
@@ -242,7 +243,9 @@ export default function AmcEmailSendDialog({
     <Dialog open={open} onOpenChange={(next) => !sending && onOpenChange(next)}>
       <DialogContent
         dismissible={false}
-        className="max-w-lg w-[calc(100vw-1.5rem)] sm:w-full max-h-[min(90vh,720px)] overflow-y-auto p-0 gap-0"
+        className={forceLightThemeClass(
+          'max-w-lg w-[calc(100vw-1.5rem)] sm:w-full max-h-[min(90vh,720px)] overflow-y-auto p-0 gap-0'
+        )}
       >
         <DialogHeader className="px-4 sm:px-6 pt-5 pb-3 border-b bg-violet-50/80">
           <DialogTitle className="text-base sm:text-lg text-violet-950 pr-8">

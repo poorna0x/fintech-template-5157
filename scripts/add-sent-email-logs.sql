@@ -43,7 +43,9 @@ CREATE TABLE IF NOT EXISTS public.crm_settings (
 
 INSERT INTO public.crm_settings (key, value)
 VALUES ('email_open_tracking_enabled', 'true'::jsonb)
-ON CONFLICT (key) DO NOTHING;
+ON CONFLICT (key) DO UPDATE
+SET value = 'true'::jsonb,
+    updated_at = now();
 
 ALTER TABLE public.crm_settings ENABLE ROW LEVEL SECURITY;
 

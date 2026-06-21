@@ -37,6 +37,7 @@ import {
 } from '@/components/ui/select';
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getCompanyInfoForBrand, getDocumentBrandLabel, normalizeDocumentBrand } from '@/lib/service-brands';
+import { forceLightSelectContentClass, forceLightThemeClass } from '@/lib/force-light-theme';
 
 const ZERO_COMMISSION_EMPLOYEE_ID = 'TECH851703400';
 
@@ -718,7 +719,7 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
       </AlertDialog>
 
       <Dialog open={completionEmailOpen} onOpenChange={setCompletionEmailOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className={forceLightThemeClass('sm:max-w-md')}>
           <DialogHeader>
             <DialogTitle>Send completion email</DialogTitle>
             <DialogDescription>
@@ -746,7 +747,7 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className={forceLightSelectContentClass()}>
                   <SelectItem value="hydrogenro">Hydrogen RO</SelectItem>
                   <SelectItem value="elevenro">Eleven RO</SelectItem>
                 </SelectContent>

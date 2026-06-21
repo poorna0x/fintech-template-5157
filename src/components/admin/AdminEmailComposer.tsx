@@ -54,6 +54,7 @@ import {
   ensureSupabaseSessionForWrite,
   resolveSupabaseAccessTokenForApi,
 } from '@/lib/ensureSupabaseSession';
+import { forceLightSelectContentClass, forceLightThemeClass } from '@/lib/force-light-theme';
 
 type PreviewMode = 'mobile' | 'desktop';
 type MobilePanel = 'compose' | 'preview';
@@ -738,7 +739,7 @@ export function AdminEmailComposerPanel({
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className={forceLightSelectContentClass()}>
               {templateOptions.map((key) => (
                 <SelectItem key={key} value={key}>
                   {ADMIN_EMAIL_TEMPLATE_META[key].label}
@@ -760,7 +761,7 @@ export function AdminEmailComposerPanel({
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className={forceLightSelectContentClass()}>
               <SelectItem value="hydrogenro">Hydrogen RO</SelectItem>
               <SelectItem value="elevenro">Eleven RO</SelectItem>
             </SelectContent>
@@ -850,7 +851,7 @@ export function AdminEmailComposerPanel({
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className={forceLightSelectContentClass()}>
                       <SelectItem value="FIRST_HALF">Morning (9 AM - 2 PM)</SelectItem>
                       <SelectItem value="SECOND_HALF">Afternoon (2 PM - 8 PM)</SelectItem>
                       <SelectItem value="MORNING">Morning (9 AM - 12 PM)</SelectItem>
@@ -1006,7 +1007,7 @@ export function AdminEmailComposerPanel({
   );
 
   return (
-    <div className="flex flex-col h-full min-h-0 bg-slate-100">
+    <div className={forceLightThemeClass('flex flex-col h-full min-h-0 bg-slate-100')}>
       <div className="border-b bg-white shrink-0 safe-area-top">
         <div className="px-3 sm:px-6 py-3 sm:py-4 flex flex-wrap items-start sm:items-center justify-between gap-2 sm:gap-3">
           <div className="min-w-0 flex-1">
@@ -1110,9 +1111,11 @@ export default function AdminEmailComposerDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        hideCloseButton
-        className="max-w-[100vw] sm:max-w-[98vw] w-full h-[100dvh] sm:h-[96vh] max-h-[100dvh] sm:max-h-[96vh] p-0 gap-0 overflow-hidden flex flex-col rounded-none sm:rounded-lg"
-      >
+          hideCloseButton
+          className={forceLightThemeClass(
+            'max-w-[100vw] sm:max-w-[98vw] w-full h-[100dvh] sm:h-[96vh] max-h-[100dvh] sm:max-h-[96vh] p-0 gap-0 overflow-hidden flex flex-col rounded-none sm:rounded-lg'
+          )}
+        >
         {open ? (
           <AdminEmailComposerPanel
             key={`${initialCustomerId ?? 'blank'}-${initialJobId ?? 'nojob'}-${initialTemplate}-${composerContext}-${initialForcedBrand ?? 'brand'}`}

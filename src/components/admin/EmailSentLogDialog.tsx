@@ -36,6 +36,7 @@ import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { getDocumentBrandLabel } from '@/lib/service-brands';
 import { cn } from '@/lib/utils';
+import { forceLightSelectContentClass, forceLightThemeClass } from '@/lib/force-light-theme';
 import type {
   SentEmailLogBrandFilter,
   SentEmailLogOpenFilter,
@@ -296,7 +297,9 @@ export function EmailSentLogDialog({ open, onOpenChange }: EmailSentLogDialogPro
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent
           hideCloseButton
-          className="max-w-[100vw] sm:max-w-2xl w-full h-[100dvh] sm:h-[min(88dvh,720px)] max-h-[100dvh] flex flex-col gap-0 p-0 overflow-hidden rounded-none sm:rounded-lg"
+          className={forceLightThemeClass(
+            'max-w-[100vw] sm:max-w-2xl w-full h-[100dvh] sm:h-[min(88dvh,720px)] max-h-[100dvh] flex flex-col gap-0 p-0 overflow-hidden rounded-none sm:rounded-lg'
+          )}
         >
           <DialogHeader className="px-4 sm:px-5 pt-4 pb-3 shrink-0 border-b border-border">
             <div className="flex items-center justify-between gap-3">
@@ -363,7 +366,7 @@ export function EmailSentLogDialog({ open, onOpenChange }: EmailSentLogDialogPro
                 <SelectTrigger className="h-9 bg-background text-xs sm:text-sm">
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className={forceLightSelectContentClass()}>
                   <SelectItem value="all">All status</SelectItem>
                   <SelectItem value="opened">Opened</SelectItem>
                   <SelectItem value="not_opened">Not opened</SelectItem>
@@ -380,7 +383,7 @@ export function EmailSentLogDialog({ open, onOpenChange }: EmailSentLogDialogPro
                 <SelectTrigger className="h-9 bg-background text-xs sm:text-sm">
                   <SelectValue placeholder="Brand" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className={forceLightSelectContentClass()}>
                   <SelectItem value="all">All brands</SelectItem>
                   <SelectItem value="hydrogenro">Hydrogen RO</SelectItem>
                   <SelectItem value="elevenro">Eleven RO</SelectItem>
@@ -396,7 +399,7 @@ export function EmailSentLogDialog({ open, onOpenChange }: EmailSentLogDialogPro
                 <SelectTrigger className="h-9 bg-background text-xs sm:text-sm col-span-2 sm:col-span-1">
                   <SelectValue placeholder="Type" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className={forceLightSelectContentClass()}>
                   <SelectItem value="all">All types</SelectItem>
                   <SelectItem value="job_completion">Job completion</SelectItem>
                   <SelectItem value="booking_confirmation">Booking</SelectItem>
@@ -544,7 +547,7 @@ export function EmailSentLogDialog({ open, onOpenChange }: EmailSentLogDialogPro
                       <SelectTrigger className="h-9 bg-background text-xs sm:text-sm">
                         <SelectValue placeholder="Status" />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className={forceLightSelectContentClass()}>
                         <SelectItem value="all">All status</SelectItem>
                         <SelectItem value="opened">Opened</SelectItem>
                         <SelectItem value="not_opened">Not opened</SelectItem>
@@ -558,7 +561,7 @@ export function EmailSentLogDialog({ open, onOpenChange }: EmailSentLogDialogPro
                       <SelectTrigger className="h-9 bg-background text-xs sm:text-sm">
                         <SelectValue placeholder="Brand" />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className={forceLightSelectContentClass()}>
                         <SelectItem value="all">All brands</SelectItem>
                         <SelectItem value="hydrogenro">Hydrogen RO</SelectItem>
                         <SelectItem value="elevenro">Eleven RO</SelectItem>
@@ -571,7 +574,7 @@ export function EmailSentLogDialog({ open, onOpenChange }: EmailSentLogDialogPro
                       <SelectTrigger className="h-9 bg-background text-xs sm:text-sm col-span-2 sm:col-span-1">
                         <SelectValue placeholder="Type" />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className={forceLightSelectContentClass()}>
                         <SelectItem value="all">All types</SelectItem>
                         <SelectItem value="job_completion">Job completion</SelectItem>
                         <SelectItem value="booking_confirmation">Booking</SelectItem>

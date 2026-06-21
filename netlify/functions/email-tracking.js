@@ -1,4 +1,5 @@
 // Shared helpers: log sent emails, inject open-tracking pixel, record opens.
+// Open tracking is always ON for outbound mail (no admin toggle).
 // Egress-conscious: insert without RETURNING, single RPC on pixel hit.
 
 const crypto = require('crypto');
@@ -47,7 +48,7 @@ function injectTrackingPixel(html, token) {
   if (!html || !token || !isUuid(token)) return html;
   const url = getTrackingPixelUrl(token);
   // Avoid display:none — some mail clients skip loading hidden images.
-  const pixel = `<img src="${url}" width="1" height="1" border="0" alt="" style="width:1px;height:1px;margin:0;padding:0;line-height:1px;" />`;
+  const pixel = `<img src="${url}" width="1" height="1" border="0" alt="" referrerpolicy="no-referrer" style="width:1px;height:1px;margin:0;padding:0;line-height:1px;" />`;
   if (/<\/body>/i.test(html)) {
     return html.replace(/<\/body>/i, `${pixel}</body>`);
   }
