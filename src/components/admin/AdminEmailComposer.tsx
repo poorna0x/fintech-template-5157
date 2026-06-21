@@ -53,7 +53,6 @@ import {
   ensureSupabaseSessionForWrite,
   resolveSupabaseAccessTokenForApi,
 } from '@/lib/ensureSupabaseSession';
-import { supabase } from '@/lib/supabaseClient';
 
 type PreviewMode = 'mobile' | 'desktop';
 type MobilePanel = 'compose' | 'preview';
