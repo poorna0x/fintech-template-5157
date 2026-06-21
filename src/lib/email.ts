@@ -180,7 +180,7 @@ export class EmailService {
     try {
       let { response, result } = await sendOnce(token);
 
-      if (response.status === 403) {
+      if (response.status === 401 || response.status === 403) {
         const retryToken = await resolveSupabaseAccessTokenForApi();
         if (retryToken) {
           ({ response, result } = await sendOnce(retryToken));
@@ -212,30 +212,18 @@ export class EmailService {
     payload: AdminComposerEmailPayload,
     accessToken?: string | null
   ): Promise<{ ok: boolean; error?: string; messageId?: string }> {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-
-    if (accessToken) {
-      headers.Authorization = `Bearer ${accessToken}`;
-    } else if (this.previewSecret) {
-      headers['X-Email-Preview-Secret'] = this.previewSecret;
-    } else {
-      return {
-        ok: false,
-        error: 'Sign in as admin to send email.',
-      };
-    }
-
-    const purpose =
-      payload.templateType === 'booking_confirmation' ? 'booking_confirmation' : 'admin_composer';
-
-    try {
+    const sendOnce = async (token: string) => {
       const response = await fetch(this.previewApiUrl, {
         method: 'POST',
-        headers,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({
-          purpose,
+          purpose:
+            payload.templateType === 'booking_confirmation'
+              ? 'booking_confirmation'
+              : 'admin_composer',
           documentBrand: payload.documentBrand,
           to: payload.to,
           subject: payload.subject,
@@ -254,11 +242,77 @@ export class EmailService {
       });
 
       const result = await response.json().catch(() => ({}));
+      return { response, result };
+    };
 
+    let token = accessToken ?? (await resolveSupabaseAccessTokenForApi());
+
+    if (!token && this.previewSecret) {
+      const response = await fetch(this.previewApiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Email-Preview-Secret': this.previewSecret,
+        },
+        body: JSON.stringify({
+          purpose:
+            payload.templateType === 'booking_confirmation'
+              ? 'booking_confirmation'
+              : 'admin_composer',
+          documentBrand: payload.documentBrand,
+          to: payload.to,
+          subject: payload.subject,
+          html: payload.html,
+          text: payload.text,
+          ...(payload.attachments?.length
+            ? {
+                attachments: payload.attachments.map(({ filename, contentType, content }) => ({
+                  filename,
+                  contentType,
+                  content,
+                })),
+              }
+            : {}),
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
       if (!response.ok) {
         return {
           ok: false,
           error: result.error || response.statusText || 'Failed to send email',
+        };
+      }
+      return { ok: true, messageId: result.messageId };
+    }
+
+    if (!token) {
+      return {
+        ok: false,
+        error: 'Could not verify your session. Please sign in again.',
+      };
+    }
+
+    try {
+      let { response, result } = await sendOnce(token);
+
+      if (response.status === 401 || response.status === 403) {
+        const retryToken = await resolveSupabaseAccessTokenForApi();
+        if (retryToken && retryToken !== token) {
+          token = retryToken;
+          ({ response, result } = await sendOnce(retryToken));
+        }
+      }
+
+      if (!response.ok) {
+        const message =
+          response.status === 401 || response.status === 403
+            ? result.error === 'Forbidden'
+              ? 'Your account is not authorized to send admin email.'
+              : 'Session expired — please sign out and sign in again, then retry.'
+            : result.error || response.statusText || 'Failed to send email';
+        return {
+          ok: false,
+          error: message,
         };
       }
 

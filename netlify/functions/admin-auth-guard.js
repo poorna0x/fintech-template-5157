@@ -60,13 +60,17 @@ async function verifyAdminBearerToken(token) {
   if (metaRole === 'technician') {
     return { ok: false, error: 'Forbidden' };
   }
-  if (metaRole === 'admin') {
-    return { ok: true, userId: user.id };
+
+  const email = String(user.email || '').trim();
+  if (!email) {
+    return { ok: false, error: 'Unauthorized' };
   }
 
-  // Legacy admins may omit JWT role — exclude technician table rows.
   if (!serviceKey) {
-    return { ok: false, error: 'Unauthorized' };
+    if (metaRole === 'admin') {
+      return { ok: true, userId: user.id };
+    }
+    return { ok: false, error: 'Server misconfigured' };
   }
 
   const adminClient = createClient(supabaseUrl, serviceKey, {
@@ -80,9 +84,25 @@ async function verifyAdminBearerToken(token) {
     .maybeSingle();
 
   if (techErr) {
+    console.error('[admin-auth-guard] technicians lookup failed', techErr.message);
     return { ok: false, error: 'Unauthorized' };
   }
   if (techRow) {
+    return { ok: false, error: 'Forbidden' };
+  }
+
+  const { data: adminRow, error: adminErr } = await adminClient
+    .from('admin_users')
+    .select('id')
+    .ilike('email', email)
+    .eq('is_active', true)
+    .maybeSingle();
+
+  if (adminErr) {
+    console.error('[admin-auth-guard] admin_users lookup failed', adminErr.message);
+    return { ok: false, error: 'Unauthorized' };
+  }
+  if (!adminRow) {
     return { ok: false, error: 'Forbidden' };
   }
 

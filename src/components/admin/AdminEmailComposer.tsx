@@ -49,6 +49,10 @@ import type { BookingConfirmationEmailData } from '@/lib/booking-confirmation-em
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getCompanyInfoForBrand, getDocumentBrandLabel } from '@/lib/service-brands';
 import { emailService } from '@/lib/email';
+import {
+  ensureSupabaseSessionForWrite,
+  resolveSupabaseAccessTokenForApi,
+} from '@/lib/ensureSupabaseSession';
 import { supabase } from '@/lib/supabaseClient';
 
 type PreviewMode = 'mobile' | 'desktop';
@@ -346,11 +350,17 @@ export function AdminEmailComposerPanel({
       return;
     }
 
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    if (!session?.access_token) {
+    const sessionReady = await ensureSupabaseSessionForWrite();
+    if (!sessionReady.ok) {
+      toast.error('Could not refresh your session. Please sign out and sign in again.');
+      setSendPhase('confirm');
+      return;
+    }
+
+    const accessToken = await resolveSupabaseAccessTokenForApi();
+    if (!accessToken) {
       toast.error('Sign in as admin to send email');
+      setSendPhase('confirm');
       return;
     }
 
@@ -366,7 +376,7 @@ export function AdminEmailComposerPanel({
         text: emailPreview.text,
         attachments: attachments.map(stripAttachmentPayload),
       },
-      session.access_token
+      accessToken
     );
     setSending(false);
 
