@@ -18,7 +18,9 @@ CREATE OR REPLACE FUNCTION public.delete_sent_email_logs(
   p_filter text DEFAULT 'all',
   p_brand text DEFAULT 'all',
   p_template_type text DEFAULT 'all',
-  p_search text DEFAULT NULL
+  p_search text DEFAULT NULL,
+  p_sent_from timestamptz DEFAULT NULL,
+  p_sent_to timestamptz DEFAULT NULL
 )
 RETURNS integer
 LANGUAGE plpgsql
@@ -71,6 +73,8 @@ BEGIN
         OR l.recipient_email ILIKE '%' || search_term || '%'
         OR l.subject ILIKE '%' || search_term || '%'
       )
+      AND (p_sent_from IS NULL OR l.sent_at >= p_sent_from)
+      AND (p_sent_to IS NULL OR l.sent_at < p_sent_to)
   )
   DELETE FROM public.sent_email_logs l
   USING doomed d
@@ -81,9 +85,11 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.delete_sent_email_logs(uuid, text, text, text, text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.delete_sent_email_logs(uuid, text, text, text, text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.delete_sent_email_logs(uuid, text, text, text, text) TO service_role;
+DROP FUNCTION IF EXISTS public.delete_sent_email_logs(uuid, text, text, text, text);
+
+REVOKE ALL ON FUNCTION public.delete_sent_email_logs(uuid, text, text, text, text, timestamptz, timestamptz) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.delete_sent_email_logs(uuid, text, text, text, text, timestamptz, timestamptz) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.delete_sent_email_logs(uuid, text, text, text, text, timestamptz, timestamptz) TO service_role;
 
 -- Table grants (direct DELETE fallback if RPC unavailable)
 DROP POLICY IF EXISTS sent_email_logs_admin_delete ON public.sent_email_logs;

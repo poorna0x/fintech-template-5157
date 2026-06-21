@@ -3,7 +3,8 @@ import { getDocumentBrandLabel } from '@/lib/service-brands';
 import { buildJobCompletionLine } from '@/lib/job-completion-message';
 import {
   buildBookingConfirmationEmail,
-  getEmailLogoUrl,
+  buildEmailLogoHeaderBlock,
+  getEmailLogoUrls,
   getEmailPhoneIconUrl,
   getEmailWhatsappIconUrl,
   SAMPLE_BOOKING_CONFIRMATION_EMAIL,
@@ -43,6 +44,8 @@ export interface AdminDocumentEmailData {
 export interface AdminEmailBuildOptions {
   siteOrigin?: string;
   attachmentNames?: string[];
+  /** CRM iframe preview — load images from localhost /public instead of production. */
+  allowLocalhostAssets?: boolean;
 }
 
 export interface AdminEmailTemplateMeta {
@@ -225,8 +228,8 @@ function detailRow(label: string, value: string, last = false): string {
   const border = last ? '' : `border-bottom:1px solid ${C.border};`;
   return `
     <tr>
-      <td style="padding:11px 0;${border}font-family:${EMAIL_FONT};font-size:11px;color:${C.label};width:34%;vertical-align:top;text-transform:uppercase;letter-spacing:0.4px;font-weight:500;">${escapeHtml(label)}</td>
-      <td style="padding:11px 0 11px 12px;${border}font-family:${EMAIL_FONT};font-size:14px;color:${C.heading};font-weight:600;vertical-align:top;line-height:1.45;">${escapeHtml(value)}</td>
+      <td class="email-detail-label" style="padding:11px 0;${border}font-family:${EMAIL_FONT};font-size:11px;width:34%;vertical-align:top;text-transform:uppercase;letter-spacing:0.4px;font-weight:500;">${escapeHtml(label)}</td>
+      <td class="email-detail-value" style="padding:11px 0 11px 12px;${border}font-family:${EMAIL_FONT};font-size:14px;font-weight:600;vertical-align:top;line-height:1.45;">${escapeHtml(value)}</td>
     </tr>`;
 }
 
@@ -236,16 +239,19 @@ function actionButton(
   label: string,
   borderColor: string,
   textColor: string,
-  bgColor: string
+  bgColor: string,
+  variant: 'whatsapp' | 'call' = 'call'
 ): string {
+  const variantClass =
+    variant === 'whatsapp' ? 'email-action-btn-whatsapp' : 'email-action-btn-call';
   return `
-    <a href="${href}" style="display:block;background-color:${bgColor};color:${textColor};text-decoration:none;border-radius:10px;padding:12px 10px;border:1px solid ${borderColor};">
+    <a href="${href}" class="email-action-btn ${variantClass}" style="display:block;background-color:${bgColor};color:${textColor};text-decoration:none;border-radius:10px;padding:12px 10px;border:1px solid ${borderColor};">
       <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto;">
         <tr>
           <td valign="middle" style="padding-right:7px;line-height:0;">
-            <img src="${iconUrl}" width="18" height="18" alt="" style="display:block;width:18px;height:18px;border:0;" />
+            <img src="${iconUrl}" width="18" height="18" alt="" class="email-action-btn-icon" style="display:block;width:18px;height:18px;border:0;" />
           </td>
-          <td valign="middle" style="font-family:${EMAIL_FONT};font-size:13px;font-weight:600;color:${textColor};">${escapeHtml(label)}</td>
+          <td valign="middle" class="email-action-btn-label" style="font-family:${EMAIL_FONT};font-size:13px;font-weight:600;color:${textColor};">${escapeHtml(label)}</td>
         </tr>
       </table>
     </a>`;
@@ -284,43 +290,43 @@ function buildJobCompletionEmailBody(
   const amountDisplay = formatCollectedAmountDisplay(data.amount);
 
   const jobRefBlock = jobRef
-    ? `<p style="margin:14px 0 0;font-family:${EMAIL_FONT};font-size:11px;font-weight:600;line-height:1.4;color:${C.successText};text-transform:uppercase;letter-spacing:0.6px;opacity:0.75;">Job reference</p>
-                    <p style="margin:4px 0 0;font-family:${EMAIL_FONT};font-size:14px;font-weight:600;line-height:1.4;color:${C.successText};">${escapeHtml(jobRef)}</p>`
+    ? `<p style="margin:14px 0 0;font-family:${EMAIL_FONT};font-size:11px;font-weight:600;line-height:1.4;text-transform:uppercase;letter-spacing:0.6px;opacity:0.75;">Job reference</p>
+                    <p style="margin:4px 0 0;font-family:${EMAIL_FONT};font-size:14px;font-weight:600;line-height:1.4;">${escapeHtml(jobRef)}</p>`
     : '';
 
   const amountBlock = amountDisplay
-    ? `<p style="margin:12px 0 0;font-family:${EMAIL_FONT};font-size:11px;font-weight:600;line-height:1.4;color:${C.successText};text-transform:uppercase;letter-spacing:0.6px;opacity:0.75;">Amount collected</p>
-                    <p style="margin:4px 0 0;font-family:${EMAIL_FONT};font-size:18px;font-weight:700;line-height:1.3;color:${C.successText};">${escapeHtml(amountDisplay)}</p>`
+    ? `<p style="margin:12px 0 0;font-family:${EMAIL_FONT};font-size:11px;font-weight:600;line-height:1.4;text-transform:uppercase;letter-spacing:0.6px;opacity:0.75;">Amount collected</p>
+                    <p style="margin:4px 0 0;font-family:${EMAIL_FONT};font-size:18px;font-weight:700;line-height:1.3;">${escapeHtml(amountDisplay)}</p>`
     : '';
 
   return `
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto 18px;">
                 <tr>
-                  <td align="center" valign="middle" width="52" height="52" style="width:52px;height:52px;background-color:${C.successBg};border-radius:999px;font-family:${EMAIL_FONT};font-size:26px;font-weight:700;color:${C.success};line-height:52px;text-align:center;">
+                  <td align="center" valign="middle" width="52" height="52" class="email-success-icon" style="width:52px;height:52px;background-color:${C.successBg};border-radius:999px;font-family:${EMAIL_FONT};font-size:26px;font-weight:700;color:${C.success};line-height:52px;text-align:center;">
                     &#10003;
                   </td>
                 </tr>
               </table>
-              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:${C.successBg};border:1px solid ${C.successBorder};border-radius:12px;margin-bottom:18px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="email-success-panel" style="background-color:${C.successBg};border:1px solid ${C.successBorder};border-radius:12px;margin-bottom:18px;">
                 <tr>
                   <td style="padding:18px 20px;text-align:center;">
-                    <p style="margin:0;font-family:${EMAIL_FONT};font-size:17px;font-weight:600;line-height:1.45;color:${C.successText};">${escapeHtml(headline)}</p>
+                    <p style="margin:0;font-family:${EMAIL_FONT};font-size:17px;font-weight:600;line-height:1.45;">${escapeHtml(headline)}</p>
                     ${jobRefBlock}
                     ${amountBlock}
                   </td>
                 </tr>
               </table>
-              <p style="margin:0 0 20px;font-family:${EMAIL_FONT};font-size:15px;line-height:1.65;color:${C.body};text-align:center;">${escapeHtml(note)}</p>`;
+              <p class="email-body-text" style="margin:0 0 20px;font-family:${EMAIL_FONT};font-size:15px;line-height:1.65;text-align:center;">${escapeHtml(note)}</p>`;
 }
 
 function attachmentNoticeBlock(names: string[]): string {
   if (!names.length) return '';
-  const items = names.map((n) => `<li style="margin:0 0 6px;font-family:${EMAIL_FONT};font-size:13px;color:${C.body};">${escapeHtml(n)}</li>`).join('');
+  const items = names.map((n) => `<li style="margin:0 0 6px;font-family:${EMAIL_FONT};font-size:13px;">${escapeHtml(n)}</li>`).join('');
   return `
-              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;margin-top:20px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="email-attachment-notice" style="border-radius:10px;margin-top:20px;">
                 <tr>
                   <td style="padding:14px 16px;">
-                    <p style="margin:0 0 8px;font-family:${EMAIL_FONT};font-size:12px;font-weight:600;color:#1d4ed8;text-transform:uppercase;letter-spacing:0.6px;">Attachments included</p>
+                    <p style="margin:0 0 8px;font-family:${EMAIL_FONT};font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.6px;">Attachments included</p>
                     <ul style="margin:0;padding-left:18px;">${items}</ul>
                   </td>
                 </tr>
@@ -411,10 +417,10 @@ function buildDetailsRows(
   }
   if (!rows.length) return '';
   return `
-              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:${C.detailsBg};border:1px solid ${C.border};border-radius:12px;border-left:3px solid ${C.heading};margin-bottom:20px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="email-force-light-details" style="background-color:${C.detailsBg};border:1px solid ${C.border};border-radius:12px;border-left:3px solid ${C.heading};margin-bottom:20px;">
                 <tr>
                   <td style="padding:14px 16px 6px;">
-                    <p style="margin:0;font-family:${EMAIL_FONT};font-size:13px;font-weight:600;color:${C.heading};">Details</p>
+                    <p class="email-details-title" style="margin:0;font-family:${EMAIL_FONT};font-size:13px;font-weight:600;">Details</p>
                   </td>
                 </tr>
                 <tr>
@@ -432,13 +438,14 @@ function buildAdminDocumentEmail(
   data: AdminDocumentEmailData,
   options?: AdminEmailBuildOptions
 ): BookingConfirmationEmailResult {
-  const siteOrigin = options?.siteOrigin;
   const brand = data.documentBrand;
+  const assetOriginOpts = { allowLocalhost: options?.allowLocalhostAssets, brand };
+  const siteOrigin = options?.siteOrigin;
   const brandName = getDocumentBrandLabel(brand);
   const contact = BRAND_CONTACT[brand];
-  const logoUrl = getEmailLogoUrl(siteOrigin, brand);
-  const whatsappIconUrl = getEmailWhatsappIconUrl(siteOrigin);
-  const phoneIconUrl = getEmailPhoneIconUrl(siteOrigin);
+  const logoUrls = getEmailLogoUrls(siteOrigin, brand, assetOriginOpts);
+  const whatsappIconUrl = getEmailWhatsappIconUrl(siteOrigin, brand, assetOriginOpts);
+  const phoneIconUrl = getEmailPhoneIconUrl(siteOrigin, brand, assetOriginOpts);
   const customerName = data.customerName.trim() || 'Customer';
   const message = data.message.trim();
   const headline = templateHeadline(type);
@@ -451,7 +458,7 @@ function buildAdminDocumentEmail(
   const messageBlock =
     type === 'job_completion'
       ? buildJobCompletionEmailBody(data, brand)
-      : `<p style="margin:0 0 20px;font-family:${EMAIL_FONT};font-size:15px;line-height:1.65;color:${C.body};white-space:pre-wrap;">${escapeHtml(message).replace(/\n/g, '<br>')}</p>`;
+      : `<p class="email-body-text" style="margin:0 0 20px;font-family:${EMAIL_FONT};font-size:15px;line-height:1.65;white-space:pre-wrap;">${escapeHtml(message).replace(/\n/g, '<br>')}</p>`;
 
   const whatsappButton = actionButton(
     `https://wa.me/${contact.whatsapp}`,
@@ -459,7 +466,8 @@ function buildAdminDocumentEmail(
     'WhatsApp',
     '#86efac',
     '#15803d',
-    '#f0fdf4'
+    '#f0fdf4',
+    'whatsapp'
   );
   const callButton = actionButton(
     `tel:${contact.phoneTel}`,
@@ -467,11 +475,12 @@ function buildAdminDocumentEmail(
     'Call us',
     C.border,
     C.heading,
-    '#fafafa'
+    '#fafafa',
+    'call'
   );
 
   const html = `<!DOCTYPE html>
-<html lang="en" style="color-scheme:light only;">
+<html lang="en" style="color-scheme:light dark;">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -487,23 +496,22 @@ function buildAdminDocumentEmail(
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="email-force-light-card" bgcolor="${EMAIL_CARD_BG}" style="max-width:560px;background-color:${C.cardBg};border:1px solid ${C.border};border-radius:14px;overflow:hidden;box-shadow:${C.cardShadow};">
           <tr>
             <td align="center" class="email-force-light-header" bgcolor="${EMAIL_CARD_BG}" style="padding:28px 28px 22px;background-color:${C.cardBg};border-bottom:1px solid ${C.border};">
-              <img src="${logoUrl}" alt="${escapeHtml(brandName)}" width="200" height="52" style="display:block;margin:0 auto;height:52px;width:auto;max-width:200px;border:0;" />
-              <p style="margin:12px 0 0;font-family:${EMAIL_FONT};font-size:12px;color:${C.headerTagline};">${escapeHtml(contact.tagline)}</p>
+              ${buildEmailLogoHeaderBlock(logoUrls, brandName)}
             </td>
           </tr>
           <tr>
             <td class="email-force-light-body" bgcolor="${EMAIL_CARD_BG}" style="padding:28px 28px 8px;text-align:center;background-color:${C.cardBg};">
-              <p style="margin:0 0 8px;font-family:${EMAIL_FONT};font-size:11px;font-weight:600;color:${C.label};text-transform:uppercase;letter-spacing:1.2px;" class="email-force-light-muted">${escapeHtml(eyebrow)}</p>
-              <h1 style="margin:0 0 14px;font-family:${EMAIL_FONT};font-size:24px;font-weight:700;color:${C.heading};letter-spacing:-0.03em;" class="email-force-light-heading">${escapeHtml(headline)}</h1>
-              <p style="margin:0;font-family:${EMAIL_FONT};font-size:15px;line-height:1.6;color:${C.body};">
-                Hi <strong style="color:${C.heading};">${escapeHtml(customerName)}</strong>,
+              <p class="email-force-light-muted" style="margin:0 0 8px;font-family:${EMAIL_FONT};font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1.2px;">${escapeHtml(eyebrow)}</p>
+              <h1 class="email-force-light-heading" style="margin:0 0 14px;font-family:${EMAIL_FONT};font-size:24px;font-weight:700;letter-spacing:-0.03em;">${escapeHtml(headline)}</h1>
+              <p class="email-body-text" style="margin:0;font-family:${EMAIL_FONT};font-size:15px;line-height:1.6;">
+                Hi <strong class="email-text-strong">${escapeHtml(customerName)}</strong>,
               </p>
             </td>
           </tr>
           <tr>
             <td class="email-force-light-body" bgcolor="${EMAIL_CARD_BG}" style="padding:8px 28px 24px;background-color:${C.cardBg};">
               ${type === 'job_completion' ? messageBlock : `${detailsBlock}${messageBlock}`}
-              <p style="margin:0 0 10px;font-family:${EMAIL_FONT};font-size:12px;font-weight:600;color:${C.label};text-transform:uppercase;letter-spacing:0.8px;text-align:center;">Need help?</p>
+              <p class="email-section-label" style="margin:0 0 10px;font-family:${EMAIL_FONT};font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;text-align:center;">Need help?</p>
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                 <tr>
                   <td width="50%" style="padding-right:6px;vertical-align:top;">${whatsappButton}</td>
@@ -515,9 +523,9 @@ function buildAdminDocumentEmail(
           </tr>
           <tr>
             <td align="center" class="email-force-light-footer" bgcolor="${EMAIL_FOOTER_BG}" style="padding:18px 24px 22px;background-color:${C.footerBg};border-top:1px solid ${C.border};">
-              <p style="margin:0 0 6px;font-family:${EMAIL_FONT};font-size:13px;font-weight:600;color:${C.heading};">${escapeHtml(brandName)}</p>
-              <p style="margin:0 0 4px;font-family:${EMAIL_FONT};font-size:12px;color:${C.label};">${preventAutoLinkText(contact.phoneDisplay)} &middot; ${preventAutoLinkText(contact.email)}</p>
-              <p style="margin:0;font-family:${EMAIL_FONT};font-size:11px;color:${C.label};">${preventAutoLinkText(contact.website)}</p>
+              <p class="email-details-title" style="margin:0 0 6px;font-family:${EMAIL_FONT};font-size:13px;font-weight:600;text-align:center;">${escapeHtml(brandName)}</p>
+              <p class="email-footer-muted" style="margin:0 0 4px;font-family:${EMAIL_FONT};font-size:12px;text-align:center;">${preventAutoLinkText(contact.phoneDisplay)} &middot; ${preventAutoLinkText(contact.email)}</p>
+              <p class="email-footer-muted" style="margin:0;font-family:${EMAIL_FONT};font-size:11px;text-align:center;">${preventAutoLinkText(contact.website)}</p>
             </td>
           </tr>
         </table>
@@ -580,6 +588,7 @@ export function buildAdminEmail(
   if (templateType === 'booking_confirmation') {
     return buildBookingConfirmationEmail(bookingData, {
       siteOrigin: options?.siteOrigin,
+      allowLocalhostAssets: options?.allowLocalhostAssets,
     });
   }
   return buildAdminDocumentEmail(templateType, documentData, options);

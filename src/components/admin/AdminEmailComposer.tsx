@@ -5,9 +5,11 @@ import {
   Loader2,
   Mail,
   Monitor,
+  Moon,
   PenLine,
   Send,
   Smartphone,
+  Sun,
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -55,6 +57,7 @@ import {
   resolveSupabaseAccessTokenForApi,
 } from '@/lib/ensureSupabaseSession';
 import { forceLightSelectContentClass, forceLightThemeClass } from '@/lib/force-light-theme';
+import { wrapEmailHtmlForPreview, type EmailPreviewTheme } from '@/lib/email-preview-html';
 
 type PreviewMode = 'mobile' | 'desktop';
 type MobilePanel = 'compose' | 'preview';
@@ -117,6 +120,7 @@ export function AdminEmailComposerPanel({
   const [attachments, setAttachments] = useState<EmailAttachmentItem[]>([]);
   const [sendTo, setSendTo] = useState('');
   const [previewMode, setPreviewMode] = useState<PreviewMode>('mobile');
+  const [previewTheme, setPreviewTheme] = useState<EmailPreviewTheme>('light');
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>('compose');
   const [sendPhase, setSendPhase] = useState<SendPhase>('compose');
   const [sentSummary, setSentSummary] = useState<SentEmailSummary | null>(null);
@@ -144,6 +148,7 @@ export function AdminEmailComposerPanel({
     () =>
       buildAdminEmail(templateType, bookingForm, documentForm, {
         siteOrigin,
+        allowLocalhostAssets: true,
         attachmentNames: attachments.map((a) => a.filename),
       }),
     [templateType, bookingForm, documentForm, siteOrigin, attachments]
@@ -154,6 +159,11 @@ export function AdminEmailComposerPanel({
   );
   const previewFrameHeight =
     previewMode === 'mobile' ? 'min(68dvh, 620px)' : 'min(72dvh, 880px)';
+
+  const previewHtml = useMemo(
+    () => wrapEmailHtmlForPreview(emailPreview.html, previewTheme),
+    [emailPreview.html, previewTheme]
+  );
 
   const isPreviewEmpty = useMemo(() => {
     if (sourceMode === 'crm' && (!crmDataLoaded || customerLoading)) return true;
@@ -454,14 +464,17 @@ export function AdminEmailComposerPanel({
 
     setSendPhase('sending');
     setSending(true);
+    const outboundEmail = buildAdminEmail(templateType, bookingForm, documentForm, {
+      attachmentNames: attachments.map((a) => a.filename),
+    });
     const result = await emailService.sendAdminComposerEmail(
       {
         templateType,
         documentBrand: activeBrand,
         to: sendTo.trim(),
-        subject: emailPreview.subject,
-        html: emailPreview.html,
-        text: emailPreview.text,
+        subject: outboundEmail.subject,
+        html: outboundEmail.html,
+        text: outboundEmail.text,
         attachments: attachments.map(stripAttachmentPayload),
         jobId: linkedJobId,
         customerId: linkedCustomerId,
@@ -473,7 +486,7 @@ export function AdminEmailComposerPanel({
     if (result.ok) {
       const summary: SentEmailSummary = {
         to: sendTo.trim(),
-        subject: emailPreview.subject,
+        subject: outboundEmail.subject,
         brandLabel: getDocumentBrandLabel(activeBrand),
         attachmentCount: attachments.length,
         attachmentBytes,
@@ -676,13 +689,42 @@ export function AdminEmailComposerPanel({
 
   const renderPreviewPanel = () => (
     <div className="space-y-3 min-h-0">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <p className="text-sm font-medium text-slate-700">
-          Preview — {templateMeta.label} · {getDocumentBrandLabel(activeBrand)}
-        </p>
-        <p className="text-xs text-slate-500 sm:truncate sm:max-w-[50%]">
-          {isPreviewEmpty ? 'Select a record or enter details' : emailPreview.subject}
-        </p>
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-medium text-slate-700 min-w-0">
+            Preview — {templateMeta.label} · {getDocumentBrandLabel(activeBrand)}
+          </p>
+          <div className="flex items-center rounded-md border border-slate-200 bg-white p-0.5 shrink-0">
+            <Button
+              type="button"
+              variant={previewTheme === 'light' ? 'default' : 'ghost'}
+              size="sm"
+              className="h-7 px-2"
+              onClick={() => setPreviewTheme('light')}
+            >
+              <Sun className="w-3.5 h-3.5 sm:mr-1" />
+              <span className="hidden sm:inline text-xs">Light</span>
+            </Button>
+            <Button
+              type="button"
+              variant={previewTheme === 'dark' ? 'default' : 'ghost'}
+              size="sm"
+              className="h-7 px-2"
+              onClick={() => setPreviewTheme('dark')}
+            >
+              <Moon className="w-3.5 h-3.5 sm:mr-1" />
+              <span className="hidden sm:inline text-xs">Dark</span>
+            </Button>
+          </div>
+        </div>
+        {!isPreviewEmpty && (
+          <p className="text-xs text-slate-500 break-words leading-snug">
+            Subject: {emailPreview.subject}
+          </p>
+        )}
+        {isPreviewEmpty && (
+          <p className="text-xs text-slate-500">Select a record or enter details to preview</p>
+        )}
       </div>
 
       {isPreviewEmpty ? (
@@ -705,19 +747,27 @@ export function AdminEmailComposerPanel({
       <div
         className={
           previewMode === 'mobile'
-            ? 'mx-auto w-full max-w-[390px] rounded-xl border border-slate-300 bg-slate-200 shadow-lg overflow-hidden'
-            : 'w-full rounded-xl border border-slate-300 bg-slate-200 shadow-lg overflow-hidden'
+            ? `mx-auto w-full max-w-[390px] rounded-xl border shadow-lg overflow-hidden ${
+                previewTheme === 'dark' ? 'border-slate-700 bg-slate-900' : 'border-slate-300 bg-slate-200'
+              }`
+            : `w-full rounded-xl border shadow-lg overflow-hidden ${
+                previewTheme === 'dark' ? 'border-slate-700 bg-slate-900' : 'border-slate-300 bg-slate-200'
+              }`
         }
       >
         {previewMode === 'mobile' && (
-          <div className="h-6 bg-slate-800 flex items-center justify-center">
+          <div
+            className={`h-6 flex items-center justify-center ${
+              previewTheme === 'dark' ? 'bg-black' : 'bg-slate-800'
+            }`}
+          >
             <div className="w-16 h-1 rounded-full bg-slate-600" />
           </div>
         )}
         <iframe
           title="Email preview"
-          srcDoc={emailPreview.html}
-          className="w-full bg-white border-0"
+          srcDoc={previewHtml}
+          className={`w-full border-0 ${previewTheme === 'dark' ? 'bg-slate-900' : 'bg-white'}`}
           style={{ height: previewFrameHeight }}
           sandbox="allow-same-origin"
         />

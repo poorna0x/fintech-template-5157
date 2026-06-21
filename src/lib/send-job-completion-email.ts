@@ -4,7 +4,7 @@ import {
   createEmptyBookingForm,
   type AdminDocumentEmailData,
 } from '@/lib/admin-email-templates';
-import { getPublicEmailSiteOrigin } from '@/lib/booking-confirmation-email';
+import { getPublicEmailAssetOrigin } from '@/lib/booking-confirmation-email';
 import { getValidCustomerEmail } from '@/lib/customer-email';
 import { emailService } from '@/lib/email';
 import { ensureSupabaseSessionForWrite, resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
@@ -61,7 +61,7 @@ export async function sendJobCompletionEmail(
     'job_completion',
     createEmptyBookingForm(brand),
     documentData,
-    { siteOrigin: getPublicEmailSiteOrigin() }
+    { siteOrigin: getPublicEmailAssetOrigin(brand) }
   );
 
   const sessionReady = await ensureSupabaseSessionForWrite();

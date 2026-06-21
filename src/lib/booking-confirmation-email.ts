@@ -1,5 +1,6 @@
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getDocumentBrandLabel } from '@/lib/service-brands';
+import { getPublicSiteOrigin } from '@/lib/publicSiteSeo';
 import {
   buildEmailForceLightHead,
   buildEmailForceLightBodyAttrs,
@@ -74,49 +75,96 @@ const EMAIL_COLORS = {
   cardShadow: '0 1px 2px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.06)',
 } as const;
 
-const DEFAULT_PUBLIC_EMAIL_ORIGIN = 'https://hydrogenro.com';
+/** Logo webp files are hosted on hydrogenro.com (mail clients cannot load localhost/CRM origins). */
+const EMAIL_LOGO_ASSET_ORIGIN = 'https://hydrogenro.com';
+
+export type EmailAssetOriginOptions = {
+  /** CRM preview only — load /public images from localhost instead of production. */
+  allowLocalhost?: boolean;
+  /** Brand for public-site asset URLs (whatsapp/phone icons). */
+  brand?: DocumentBrand;
+};
 
 function isLocalDevOrigin(origin: string): boolean {
-  return /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(origin.replace(/\/$/, ''));
+  return /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)(:\d+)?$/i.test(
+    origin.replace(/\/$/, '')
+  );
 }
 
-/** Public origin for email image assets — never localhost (mail clients cannot fetch it). */
+/** Public marketing-site origin for email assets — never localhost or the CRM app URL. */
+export function getPublicEmailAssetOrigin(brand: DocumentBrand = 'hydrogenro'): string {
+  return getPublicSiteOrigin(brand);
+}
+
+/** @deprecated Prefer getPublicEmailAssetOrigin */
 export function getPublicEmailSiteOrigin(): string {
-  const configured = String(import.meta.env.VITE_SITE_URL || '').replace(/\/$/, '');
-  if (configured && !isLocalDevOrigin(configured)) return configured;
-  return DEFAULT_PUBLIC_EMAIL_ORIGIN;
+  return getPublicEmailAssetOrigin('hydrogenro');
 }
 
-function getEmailSiteOrigin(baseUrl?: string): string {
-  const normalized = baseUrl?.replace(/\/$/, '');
-  if (normalized) {
-    return isLocalDevOrigin(normalized) ? getPublicEmailSiteOrigin() : normalized;
+function getEmailSiteOrigin(baseUrl?: string, options?: EmailAssetOriginOptions): string {
+  const allowLocalhost = options?.allowLocalhost ?? false;
+  const brand = options?.brand ?? 'hydrogenro';
+
+  if (allowLocalhost) {
+    const normalized = baseUrl?.replace(/\/$/, '');
+    if (normalized && isLocalDevOrigin(normalized)) {
+      return normalized;
+    }
+    if (typeof window !== 'undefined') {
+      const origin = window.location.origin.replace(/\/$/, '');
+      if (isLocalDevOrigin(origin)) {
+        return origin;
+      }
+    }
   }
-  if (typeof window !== 'undefined') {
-    const origin = window.location.origin.replace(/\/$/, '');
-    return isLocalDevOrigin(origin) ? getPublicEmailSiteOrigin() : origin;
-  }
-  return getPublicEmailSiteOrigin();
+
+  return getPublicEmailAssetOrigin(brand);
+}
+
+export function getEmailLogoUrls(
+  baseUrl?: string,
+  brand: DocumentBrand = 'hydrogenro',
+  options?: EmailAssetOriginOptions
+): { light: string; dark: string } {
+  const origin = options?.allowLocalhost
+    ? getEmailSiteOrigin(baseUrl, { ...options, brand })
+    : EMAIL_LOGO_ASSET_ORIGIN;
+  return {
+    light: `${origin}/logo-dark.webp`,
+    dark: `${origin}/logo-white.webp`,
+  };
 }
 
 export function getEmailLogoUrl(
   baseUrl?: string,
-  brand: DocumentBrand = 'hydrogenro'
+  brand: DocumentBrand = 'hydrogenro',
+  options?: EmailAssetOriginOptions
 ): string {
-  const path = brand === 'elevenro' ? '/elevenrofulloogo.webp' : '/fulllogo.webp';
-  return `${getEmailSiteOrigin(baseUrl)}${path}`;
+  return getEmailLogoUrls(baseUrl, brand, options).light;
 }
 
-export function getEmailIconUrl(baseUrl?: string): string {
-  return `${getEmailSiteOrigin(baseUrl)}/logo.webp`;
+export function getEmailIconUrl(
+  baseUrl?: string,
+  brand: DocumentBrand = 'hydrogenro',
+  options?: EmailAssetOriginOptions
+): string {
+  return `${getEmailSiteOrigin(baseUrl, { ...options, brand })}/logo.webp`;
 }
 
-export function getEmailWhatsappIconUrl(baseUrl?: string): string {
-  return `${getEmailSiteOrigin(baseUrl)}/whatsapp.png`;
+export function getEmailWhatsappIconUrl(
+  baseUrl?: string,
+  brand: DocumentBrand = 'hydrogenro',
+  options?: EmailAssetOriginOptions
+): string {
+  return `${getEmailSiteOrigin(baseUrl, { ...options, brand })}/whatsapp.png`;
 }
 
-export function getEmailPhoneIconUrl(baseUrl?: string): string {
-  return `${getEmailSiteOrigin(baseUrl)}/telephone-call.png`;
+export function getEmailPhoneIconUrl(
+  baseUrl?: string,
+  brand: DocumentBrand = 'hydrogenro',
+  options?: EmailAssetOriginOptions
+): string {
+  return `${getEmailSiteOrigin(baseUrl, { ...options, brand })}/telephone-call.png`;
 }
 
 /** Resolve brand from explicit field, then site origin (elevenro.com vs hydrogenro.com). */
@@ -190,12 +238,11 @@ export function formatDeviceLine(brand: string | undefined, model: string | unde
 
 function detailRow(label: string, value: string, last = false, highlight = false): string {
   const border = last ? '' : `border-bottom:1px solid ${EMAIL_COLORS.border};`;
-  const valueColor = highlight ? EMAIL_COLORS.heading : EMAIL_COLORS.heading;
   const valueWeight = highlight ? '700' : '600';
   return `
     <tr>
-      <td style="padding:12px 0;${border}font-family:${EMAIL_FONT};font-size:11px;color:${EMAIL_COLORS.label};width:30%;vertical-align:top;text-transform:uppercase;letter-spacing:0.4px;font-weight:500;">${escapeHtml(label)}</td>
-      <td style="padding:12px 0 12px 12px;${border}font-family:${EMAIL_FONT};font-size:14px;color:${valueColor};font-weight:${valueWeight};vertical-align:top;line-height:1.45;">${escapeHtml(value)}</td>
+      <td class="email-detail-label" style="padding:12px 0;${border}font-family:${EMAIL_FONT};font-size:11px;width:30%;vertical-align:top;text-transform:uppercase;letter-spacing:0.4px;font-weight:500;">${escapeHtml(label)}</td>
+      <td class="email-detail-value" style="padding:12px 0 12px 12px;${border}font-family:${EMAIL_FONT};font-size:14px;font-weight:${valueWeight};vertical-align:top;line-height:1.45;">${escapeHtml(value)}</td>
     </tr>`;
 }
 
@@ -205,16 +252,19 @@ function compactActionButton(
   label: string,
   borderColor: string,
   textColor: string,
-  bgColor = '#ffffff'
+  bgColor = '#ffffff',
+  variant: 'whatsapp' | 'call' = 'call'
 ): string {
+  const variantClass =
+    variant === 'whatsapp' ? 'email-action-btn-whatsapp' : 'email-action-btn-call';
   return `
-    <a href="${href}" style="display:block;background-color:${bgColor};color:${textColor};text-decoration:none;border-radius:10px;padding:12px 10px;border:1px solid ${borderColor};">
+    <a href="${href}" class="email-action-btn ${variantClass}" style="display:block;background-color:${bgColor};color:${textColor};text-decoration:none;border-radius:10px;padding:12px 10px;border:1px solid ${borderColor};">
       <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto;">
         <tr>
           <td valign="middle" style="padding-right:7px;line-height:0;">
-            <img src="${iconUrl}" width="18" height="18" alt="" style="display:block;width:18px;height:18px;border:0;" />
+            <img src="${iconUrl}" width="18" height="18" alt="" class="email-action-btn-icon" style="display:block;width:18px;height:18px;border:0;" />
           </td>
-          <td valign="middle" style="font-family:${EMAIL_FONT};font-size:13px;font-weight:600;color:${textColor};letter-spacing:-0.01em;">
+          <td valign="middle" class="email-action-btn-label" style="font-family:${EMAIL_FONT};font-size:13px;font-weight:600;color:${textColor};letter-spacing:-0.01em;">
             ${escapeHtml(label)}
           </td>
         </tr>
@@ -231,13 +281,13 @@ function nextStepRow(step: number, text: string, last = false): string {
         <td width="30" valign="top" style="width:30px;padding-right:12px;line-height:0;">
           <table role="presentation" cellpadding="0" cellspacing="0" border="0">
             <tr>
-              <td align="center" valign="middle" width="24" height="24" style="width:24px;height:24px;background-color:${c.heading};border-radius:999px;font-family:${EMAIL_FONT};font-size:11px;font-weight:700;color:#ffffff;line-height:24px;text-align:center;">
+              <td align="center" valign="middle" width="24" height="24" class="email-step-num" style="width:24px;height:24px;background-color:${c.heading};border-radius:999px;font-family:${EMAIL_FONT};font-size:11px;font-weight:700;color:#ffffff;line-height:24px;text-align:center;">
                 ${step}
               </td>
             </tr>
           </table>
         </td>
-        <td valign="middle" style="font-family:${EMAIL_FONT};font-size:13px;line-height:1.5;color:${c.body};padding-top:2px;">
+        <td valign="middle" class="email-step-text" style="font-family:${EMAIL_FONT};font-size:13px;line-height:1.5;padding-top:2px;">
           ${escapeHtml(text)}
         </td>
       </tr>
@@ -249,47 +299,63 @@ function buildSuccessIconBlock(): string {
   return `
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto 14px;">
                 <tr>
-                  <td align="center" valign="middle" width="48" height="48" style="width:48px;height:48px;background-color:${c.successBg};border-radius:999px;font-family:${EMAIL_FONT};font-size:24px;font-weight:700;color:${c.success};line-height:48px;text-align:center;">
+                  <td align="center" valign="middle" width="48" height="48" class="email-success-icon" style="width:48px;height:48px;background-color:${c.successBg};border-radius:999px;font-family:${EMAIL_FONT};font-size:24px;font-weight:700;color:${c.success};line-height:48px;text-align:center;">
                     &#10003;
                   </td>
                 </tr>
               </table>`;
 }
 
-/** Matches DocumentBrandLogo: h-12 sm:h-14 → 52px tall, max 200px wide. */
-const EMAIL_LOGO_HEIGHT = 52;
-const EMAIL_LOGO_MAX_WIDTH = 200;
+/** Icon + wordmark — same as site Header Logo (Inter bold, w-8 icon, gap-2, text-xl). */
+const EMAIL_BRAND_ICON_SIZE = 32;
+const EMAIL_BRAND_FONT_SIZE = 20;
+const EMAIL_BRAND_GAP = 8;
+const EMAIL_BRAND_FONT =
+  "'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif";
 
-function buildEmailHeaderBlock(
-  fullLogoUrl: string,
-  brandName: string,
-  tagline: string
+export function buildEmailLogoHeaderBlock(
+  logoUrls: { light: string; dark: string },
+  brandName: string
 ): string {
-  const c = EMAIL_COLORS;
-  const h = EMAIL_LOGO_HEIGHT;
+  const icon = EMAIL_BRAND_ICON_SIZE;
+  const imgStyle = `display:block;width:${icon}px;height:${icon}px;max-width:${icon}px;max-height:${icon}px;border:0;object-fit:contain;`;
 
   return `
-              <img src="${fullLogoUrl}" alt="${escapeHtml(brandName)}" width="${EMAIL_LOGO_MAX_WIDTH}" height="${h}" style="display:block;margin:0 auto;height:${h}px;width:auto;max-width:${EMAIL_LOGO_MAX_WIDTH}px;max-height:${h}px;border:0;" />
-              <p style="margin:12px 0 0;font-family:${EMAIL_FONT};font-size:12px;line-height:1.45;color:${c.headerTagline};text-align:center;font-weight:400;">${escapeHtml(tagline)}</p>`;
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto;">
+                <tr>
+                  <td valign="middle" style="padding-right:${EMAIL_BRAND_GAP}px;line-height:0;font-size:0;">
+                    <img class="email-logo-light" src="${logoUrls.light}" alt="" width="${icon}" height="${icon}" style="${imgStyle}" />
+                    <img class="email-logo-dark" src="${logoUrls.dark}" alt="" width="${icon}" height="${icon}" style="${imgStyle}" />
+                  </td>
+                  <td valign="middle" class="email-brand-name" style="font-family:${EMAIL_BRAND_FONT};font-size:${EMAIL_BRAND_FONT_SIZE}px;font-weight:700;line-height:1;letter-spacing:-0.01em;white-space:nowrap;">
+                    ${escapeHtml(brandName)}
+                  </td>
+                </tr>
+              </table>`;
 }
 
 export function buildBookingConfirmationEmail(
   data: BookingConfirmationEmailData,
-  options?: { logoUrl?: string; siteOrigin?: string }
+  options?: { logoUrl?: string; siteOrigin?: string; allowLocalhostAssets?: boolean }
 ): BookingConfirmationEmailResult {
-  const siteOrigin = options?.siteOrigin || getEmailSiteOrigin();
-  const documentBrand = resolveBookingEmailDocumentBrand(data, siteOrigin);
+  const documentBrand = resolveBookingEmailDocumentBrand(data, options?.siteOrigin);
+  const assetOriginOpts: EmailAssetOriginOptions = {
+    allowLocalhost: options?.allowLocalhostAssets,
+    brand: documentBrand,
+  };
+  const siteOrigin = options?.siteOrigin || getEmailSiteOrigin(undefined, assetOriginOpts);
   const brandName = getDocumentBrandLabel(documentBrand);
   const contact = BRAND_CONTACT[documentBrand];
   const c = EMAIL_COLORS;
-  const fullLogoUrl = options?.logoUrl || getEmailLogoUrl(siteOrigin, documentBrand);
-  const whatsappIconUrl = getEmailWhatsappIconUrl(siteOrigin);
-  const phoneIconUrl = getEmailPhoneIconUrl(siteOrigin);
+  const logoUrls = options?.logoUrl
+    ? { light: options.logoUrl, dark: options.logoUrl }
+    : getEmailLogoUrls(siteOrigin, documentBrand, assetOriginOpts);
+  const whatsappIconUrl = getEmailWhatsappIconUrl(siteOrigin, documentBrand, assetOriginOpts);
+  const phoneIconUrl = getEmailPhoneIconUrl(siteOrigin, documentBrand, assetOriginOpts);
 
-  const headerLogoBlock = buildEmailHeaderBlock(
-    fullLogoUrl,
-    getDocumentBrandLabel(documentBrand),
-    contact.tagline
+  const headerLogoBlock = buildEmailLogoHeaderBlock(
+    logoUrls,
+    getDocumentBrandLabel(documentBrand)
   );
 
   const customerName = data.customerName || 'Customer';
@@ -310,7 +376,8 @@ export function buildBookingConfirmationEmail(
     'WhatsApp',
     '#86efac',
     c.successMuted,
-    '#f0fdf4'
+    '#f0fdf4',
+    'whatsapp'
   );
 
   const callButton = compactActionButton(
@@ -319,14 +386,15 @@ export function buildBookingConfirmationEmail(
     'Call us',
     c.border,
     c.heading,
-    '#fafafa'
+    '#fafafa',
+    'call'
   );
 
   const footerContactLine = `${preventAutoLinkText(contact.phoneDisplay)} &middot; ${preventAutoLinkText(contact.email)}`;
   const footerWebsiteLine = preventAutoLinkText(contact.website);
 
   const html = `<!DOCTYPE html>
-<html lang="en" style="color-scheme:light only;">
+<html lang="en" style="color-scheme:light dark;">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -353,22 +421,22 @@ export function buildBookingConfirmationEmail(
           </tr>
 
           <tr>
-            <td align="center" style="padding:28px 28px 8px;text-align:center;background-color:${c.cardBg};">
+            <td align="center" class="email-force-light-body email-surface-body" bgcolor="${EMAIL_CARD_BG}" style="padding:28px 28px 8px;text-align:center;background-color:${c.cardBg};">
               ${buildSuccessIconBlock()}
-              <p style="margin:0 0 8px;font-family:${EMAIL_FONT};font-size:11px;font-weight:600;color:${c.label};text-transform:uppercase;letter-spacing:1.4px;text-align:center;">Service booking</p>
-              <h1 style="margin:0 0 14px;font-family:${EMAIL_FONT};font-size:26px;line-height:1.2;font-weight:700;color:${c.heading};text-align:center;letter-spacing:-0.03em;">Booking Confirmed</h1>
-              <p style="margin:0;font-family:${EMAIL_FONT};font-size:15px;line-height:1.6;color:${c.body};text-align:center;font-weight:400;max-width:420px;">
-                Hi <strong style="color:${c.heading};font-weight:600;">${escapeHtml(customerName)}</strong>, your appointment with ${escapeHtml(brandName)} is confirmed.
+              <p class="email-force-light-muted" style="margin:0 0 8px;font-family:${EMAIL_FONT};font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1.4px;text-align:center;">Service booking</p>
+              <h1 class="email-force-light-heading" style="margin:0 0 14px;font-family:${EMAIL_FONT};font-size:26px;line-height:1.2;font-weight:700;text-align:center;letter-spacing:-0.03em;">Booking Confirmed</h1>
+              <p class="email-body-text" style="margin:0;font-family:${EMAIL_FONT};font-size:15px;line-height:1.6;text-align:center;font-weight:400;max-width:420px;">
+                Hi <strong class="email-text-strong" style="font-weight:600;">${escapeHtml(customerName)}</strong>, your appointment with ${escapeHtml(brandName)} is confirmed.
               </p>
             </td>
           </tr>
 
           <tr>
-            <td align="center" style="padding:8px 28px 24px;text-align:center;background-color:${c.cardBg};">
+            <td align="center" class="email-surface-body" style="padding:8px 28px 24px;text-align:center;background-color:${c.cardBg};">
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto;">
                 <tr>
-                  <td style="background-color:${c.badgeBg};border:1px solid ${c.border};border-radius:999px;padding:9px 20px;font-family:${EMAIL_FONT};font-size:13px;font-weight:500;color:${c.badgeText};text-align:center;">
-                    Ref&nbsp;<strong style="font-weight:700;letter-spacing:-0.02em;">${escapeHtml(jobNumber)}</strong>&nbsp;&middot;&nbsp;<span style="color:${c.success};font-weight:600;">Confirmed</span>
+                  <td class="email-badge" style="border:1px solid ${c.border};border-radius:999px;padding:9px 20px;font-family:${EMAIL_FONT};font-size:13px;font-weight:500;text-align:center;">
+                    Ref&nbsp;<strong class="email-text-strong" style="font-weight:700;letter-spacing:-0.02em;">${escapeHtml(jobNumber)}</strong>&nbsp;&middot;&nbsp;<span class="email-badge-success" style="font-weight:600;">Confirmed</span>
                   </td>
                 </tr>
               </table>
@@ -376,11 +444,11 @@ export function buildBookingConfirmationEmail(
           </tr>
 
           <tr>
-            <td style="padding:0 24px 22px;background-color:${c.cardBg};">
-              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:${c.detailsBg};border:1px solid ${c.border};border-radius:12px;border-left:3px solid ${c.heading};">
+            <td class="email-surface-body" style="padding:0 24px 22px;background-color:${c.cardBg};">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="email-force-light-details" style="background-color:${c.detailsBg};border:1px solid ${c.border};border-radius:12px;border-left:3px solid ${c.heading};">
                 <tr>
                   <td style="padding:16px 18px 8px;">
-                    <p style="margin:0;font-family:${EMAIL_FONT};font-size:13px;font-weight:600;color:${c.heading};letter-spacing:-0.01em;">Appointment details</p>
+                    <p class="email-details-title" style="margin:0;font-family:${EMAIL_FONT};font-size:13px;font-weight:600;letter-spacing:-0.01em;">Appointment details</p>
                   </td>
                 </tr>
                 <tr>
@@ -399,13 +467,13 @@ export function buildBookingConfirmationEmail(
           </tr>
 
           <tr>
-            <td style="padding:0 24px 8px;background-color:${c.cardBg};">
-              <p style="margin:0 0 10px;font-family:${EMAIL_FONT};font-size:12px;font-weight:600;color:${c.label};text-transform:uppercase;letter-spacing:0.8px;text-align:center;">Need help?</p>
+            <td class="email-surface-body" style="padding:0 24px 8px;background-color:${c.cardBg};">
+              <p class="email-section-label" style="margin:0 0 10px;font-family:${EMAIL_FONT};font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;text-align:center;">Need help?</p>
             </td>
           </tr>
 
           <tr>
-            <td style="padding:0 24px 22px;background-color:${c.cardBg};">
+            <td class="email-surface-body" style="padding:0 24px 22px;background-color:${c.cardBg};">
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                 <tr>
                   <td width="50%" style="width:50%;padding-right:6px;vertical-align:top;">${whatsappButton}</td>
@@ -416,11 +484,11 @@ export function buildBookingConfirmationEmail(
           </tr>
 
           <tr>
-            <td style="padding:0 24px 26px;background-color:${c.cardBg};">
-              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:${c.footerBg};border:1px solid ${c.border};border-radius:12px;">
+            <td class="email-surface-body" style="padding:0 24px 26px;background-color:${c.cardBg};">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="email-info-box" style="background-color:${c.footerBg};border:1px solid ${c.border};border-radius:12px;">
                 <tr>
                   <td style="padding:18px 20px;">
-                    <p style="margin:0 0 14px;font-family:${EMAIL_FONT};font-size:13px;font-weight:600;color:${c.heading};text-align:center;">What happens next</p>
+                    <p class="email-details-title" style="margin:0 0 14px;font-family:${EMAIL_FONT};font-size:13px;font-weight:600;text-align:center;">What happens next</p>
                     ${nextStepRow(1, 'Technician calls you within 30 minutes')}
                     ${nextStepRow(2, 'Visit at your scheduled time slot')}
                     ${nextStepRow(3, 'Service completed as requested', true)}
@@ -431,13 +499,13 @@ export function buildBookingConfirmationEmail(
           </tr>
 
           <tr>
-            <td align="center" style="padding:18px 24px 22px;background-color:${c.footerBg};border-top:1px solid ${c.border};text-align:center;">
-              <p style="margin:0 0 6px;font-family:${EMAIL_FONT};font-size:13px;font-weight:600;color:${c.textOnDark};text-align:center;">${escapeHtml(brandName)}</p>
-              <p style="margin:0 0 4px;font-family:${EMAIL_FONT};font-size:12px;line-height:1.5;color:${c.mutedOnDark};text-align:center;font-weight:400;">
-                <span style="color:${c.mutedOnDark} !important;text-decoration:none !important;">${footerContactLine}</span>
+            <td align="center" class="email-force-light-footer email-surface-footer" bgcolor="${EMAIL_FOOTER_BG}" style="padding:18px 24px 22px;background-color:${c.footerBg};border-top:1px solid ${c.border};text-align:center;">
+              <p class="email-details-title" style="margin:0 0 6px;font-family:${EMAIL_FONT};font-size:13px;font-weight:600;text-align:center;">${escapeHtml(brandName)}</p>
+              <p class="email-footer-muted" style="margin:0 0 4px;font-family:${EMAIL_FONT};font-size:12px;line-height:1.5;text-align:center;font-weight:400;">
+                <span style="text-decoration:none !important;">${footerContactLine}</span>
               </p>
-              <p style="margin:0;font-family:${EMAIL_FONT};font-size:11px;color:${c.mutedOnDark};text-align:center;font-weight:400;">
-                <span style="color:${c.mutedOnDark} !important;text-decoration:none !important;">${footerWebsiteLine}</span>
+              <p class="email-footer-muted" style="margin:0;font-family:${EMAIL_FONT};font-size:11px;text-align:center;font-weight:400;">
+                <span style="text-decoration:none !important;">${footerWebsiteLine}</span>
               </p>
             </td>
           </tr>

@@ -37,11 +37,16 @@ import { toast } from 'sonner';
 import { getDocumentBrandLabel } from '@/lib/service-brands';
 import { cn } from '@/lib/utils';
 import { forceLightSelectContentClass, forceLightThemeClass } from '@/lib/force-light-theme';
-import type {
-  SentEmailLogBrandFilter,
-  SentEmailLogOpenFilter,
-  SentEmailLogQueryFilters,
-  SentEmailLogTemplateFilter,
+import { DatePicker } from '@/components/ui/date-picker';
+import {
+  describeSentEmailLogDateRange,
+  getTodayIstDate,
+  isSentEmailLogTodayOnly,
+  type SentEmailLogBrandFilter,
+  type SentEmailLogDateFilter,
+  type SentEmailLogOpenFilter,
+  type SentEmailLogQueryFilters,
+  type SentEmailLogTemplateFilter,
 } from '@/lib/sent-email-log-filters';
 
 export type SentEmailLogRow = {
@@ -92,6 +97,10 @@ const OPEN_FILTER_LABELS: Record<SentEmailLogOpenFilter, string> = {
 
 function describeActiveFilters(filters: SentEmailLogQueryFilters): string[] {
   const parts: string[] = [];
+  const dateLabel = describeSentEmailLogDateRange(filters);
+  if (dateLabel) {
+    parts.push(dateLabel);
+  }
   if (filters.filter && filters.filter !== 'all') {
     parts.push(OPEN_FILTER_LABELS[filters.filter]);
   }
@@ -107,6 +116,70 @@ function describeActiveFilters(filters: SentEmailLogQueryFilters): string[] {
   return parts;
 }
 
+interface SentEmailLogDateFilterRowProps {
+  dateFilter: SentEmailLogDateFilter;
+  dateFrom: string;
+  dateTo: string;
+  disabled?: boolean;
+  onDateFilterChange: (value: SentEmailLogDateFilter) => void;
+  onDateFromChange: (value: string) => void;
+  onDateToChange: (value: string) => void;
+}
+
+function SentEmailLogDateFilterRow({
+  dateFilter,
+  dateFrom,
+  dateTo,
+  disabled,
+  onDateFilterChange,
+  onDateFromChange,
+  onDateToChange,
+}: SentEmailLogDateFilterRowProps) {
+  return (
+    <div className="flex flex-col sm:flex-row gap-2">
+      <Select
+        value={dateFilter}
+        onValueChange={(v: SentEmailLogDateFilter) => onDateFilterChange(v)}
+      >
+        <SelectTrigger className="h-9 bg-background text-xs sm:text-sm sm:min-w-[9.5rem]">
+          <SelectValue placeholder="Date" />
+        </SelectTrigger>
+        <SelectContent className={forceLightSelectContentClass()}>
+          <SelectItem value="today">Today</SelectItem>
+          <SelectItem value="yesterday">Yesterday</SelectItem>
+          <SelectItem value="last7">Last 7 days</SelectItem>
+          <SelectItem value="range">Date range</SelectItem>
+          <SelectItem value="all">All dates</SelectItem>
+        </SelectContent>
+      </Select>
+      {dateFilter === 'range' ? (
+        <>
+          <DatePicker
+            value={dateFrom}
+            onChange={(value) => {
+              if (!value) return;
+              onDateFromChange(value);
+            }}
+            placeholder="From"
+            disabled={disabled}
+            className="h-9 text-xs sm:text-sm"
+          />
+          <DatePicker
+            value={dateTo}
+            onChange={(value) => {
+              if (!value) return;
+              onDateToChange(value);
+            }}
+            placeholder="To"
+            disabled={disabled}
+            className="h-9 text-xs sm:text-sm"
+          />
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 interface EmailSentLogDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -119,11 +192,17 @@ export function EmailSentLogDialog({ open, onOpenChange }: EmailSentLogDialogPro
   const [tableMissing, setTableMissing] = useState(false);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [dateFilter, setDateFilter] = useState<SentEmailLogDateFilter>('today');
+  const [dateFrom, setDateFrom] = useState(() => getTodayIstDate());
+  const [dateTo, setDateTo] = useState(() => getTodayIstDate());
   const [openFilter, setOpenFilter] = useState<SentEmailLogOpenFilter>('all');
   const [brandFilter, setBrandFilter] = useState<SentEmailLogBrandFilter>('all');
   const [templateFilter, setTemplateFilter] = useState<SentEmailLogTemplateFilter>('all');
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
+  const [deleteDateFilter, setDeleteDateFilter] = useState<SentEmailLogDateFilter>('today');
+  const [deleteDateFrom, setDeleteDateFrom] = useState(() => getTodayIstDate());
+  const [deleteDateTo, setDeleteDateTo] = useState(() => getTodayIstDate());
   const [deleteOpenFilter, setDeleteOpenFilter] = useState<SentEmailLogOpenFilter>('all');
   const [deleteBrandFilter, setDeleteBrandFilter] = useState<SentEmailLogBrandFilter>('all');
   const [deleteTemplateFilter, setDeleteTemplateFilter] = useState<SentEmailLogTemplateFilter>('all');
@@ -146,8 +225,11 @@ export function EmailSentLogDialog({ open, onOpenChange }: EmailSentLogDialogPro
       brand: brandFilter,
       templateType: templateFilter,
       search,
+      dateFilter,
+      dateFrom: dateFilter === 'range' ? dateFrom : undefined,
+      dateTo: dateFilter === 'range' ? dateTo : undefined,
     }),
-    [openFilter, brandFilter, templateFilter, search]
+    [openFilter, brandFilter, templateFilter, search, dateFilter, dateFrom, dateTo]
   );
 
   const deleteFilters = useMemo<SentEmailLogQueryFilters>(
@@ -156,9 +238,22 @@ export function EmailSentLogDialog({ open, onOpenChange }: EmailSentLogDialogPro
       brand: deleteBrandFilter,
       templateType: deleteTemplateFilter,
       search: deleteSearch,
+      dateFilter: deleteDateFilter,
+      dateFrom: deleteDateFilter === 'range' ? deleteDateFrom : undefined,
+      dateTo: deleteDateFilter === 'range' ? deleteDateTo : undefined,
     }),
-    [deleteOpenFilter, deleteBrandFilter, deleteTemplateFilter, deleteSearch]
+    [
+      deleteOpenFilter,
+      deleteBrandFilter,
+      deleteTemplateFilter,
+      deleteSearch,
+      deleteDateFilter,
+      deleteDateFrom,
+      deleteDateTo,
+    ]
   );
+
+  const isTodayOnly = isSentEmailLogTodayOnly(queryFilters);
 
   const deleteFilterLabels = useMemo(() => describeActiveFilters(deleteFilters), [deleteFilters]);
 
@@ -205,6 +300,9 @@ export function EmailSentLogDialog({ open, onOpenChange }: EmailSentLogDialogPro
       brand: brandFilter,
       templateType: templateFilter,
       search: next,
+      dateFilter,
+      dateFrom: dateFilter === 'range' ? dateFrom : undefined,
+      dateTo: dateFilter === 'range' ? dateTo : undefined,
     };
     setPage(1);
     if (next === search) {
@@ -212,19 +310,22 @@ export function EmailSentLogDialog({ open, onOpenChange }: EmailSentLogDialogPro
     } else {
       setSearch(next);
     }
-  }, [searchInput, search, openFilter, brandFilter, templateFilter, load]);
+  }, [searchInput, search, openFilter, brandFilter, templateFilter, dateFilter, dateFrom, dateTo, load]);
 
   const runDeleteSearch = useCallback(() => {
     setDeleteSearch(deleteSearchInput.trim());
   }, [deleteSearchInput]);
 
   const syncDeleteFiltersFromView = useCallback(() => {
+    setDeleteDateFilter(dateFilter);
+    setDeleteDateFrom(dateFrom);
+    setDeleteDateTo(dateTo);
     setDeleteOpenFilter(openFilter);
     setDeleteBrandFilter(brandFilter);
     setDeleteTemplateFilter(templateFilter);
     setDeleteSearch(search);
     setDeleteSearchInput(search);
-  }, [openFilter, brandFilter, templateFilter, search]);
+  }, [dateFilter, dateFrom, dateTo, openFilter, brandFilter, templateFilter, search]);
 
   useEffect(() => {
     if (open) return;
@@ -355,6 +456,24 @@ export function EmailSentLogDialog({ open, onOpenChange }: EmailSentLogDialogPro
                 Search
               </Button>
             </div>
+            <SentEmailLogDateFilterRow
+              dateFilter={dateFilter}
+              dateFrom={dateFrom}
+              dateTo={dateTo}
+              disabled={loading}
+              onDateFilterChange={(value) => {
+                setDateFilter(value);
+                setPage(1);
+              }}
+              onDateFromChange={(value) => {
+                setDateFrom(value);
+                setPage(1);
+              }}
+              onDateToChange={(value) => {
+                setDateTo(value);
+                setPage(1);
+              }}
+            />
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               <Select
                 value={openFilter}
@@ -412,8 +531,19 @@ export function EmailSentLogDialog({ open, onOpenChange }: EmailSentLogDialogPro
                 </SelectContent>
               </Select>
             </div>
-            {!tableMissing && total > 0 ? (
-              <p className="text-[11px] sm:text-xs text-muted-foreground">{total} email{total === 1 ? '' : 's'}</p>
+            {!tableMissing ? (
+              <p className="text-[11px] sm:text-xs text-muted-foreground">
+                {total > 0 ? (
+                  <>
+                    {total} email{total === 1 ? '' : 's'}
+                    {isTodayOnly ? ' sent today' : null}
+                  </>
+                ) : isTodayOnly ? (
+                  'No emails sent today'
+                ) : (
+                  'No emails match these filters'
+                )}
+              </p>
             ) : null}
           </div>
 
@@ -539,6 +669,14 @@ export function EmailSentLogDialog({ open, onOpenChange }: EmailSentLogDialogPro
                       Use view filters
                     </Button>
                   </div>
+                  <SentEmailLogDateFilterRow
+                    dateFilter={deleteDateFilter}
+                    dateFrom={deleteDateFrom}
+                    dateTo={deleteDateTo}
+                    onDateFilterChange={setDeleteDateFilter}
+                    onDateFromChange={setDeleteDateFrom}
+                    onDateToChange={setDeleteDateTo}
+                  />
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                     <Select
                       value={deleteOpenFilter}
@@ -618,7 +756,7 @@ export function EmailSentLogDialog({ open, onOpenChange }: EmailSentLogDialogPro
                       ))}
                     </div>
                   ) : (
-                    <p className="text-[11px] text-muted-foreground">All logs (no delete filters)</p>
+                    <p className="text-[11px] text-muted-foreground">Today&apos;s logs only (default delete scope)</p>
                   )}
                   <Button
                     type="button"

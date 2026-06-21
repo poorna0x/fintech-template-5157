@@ -12,6 +12,7 @@ import {
 import type { PublicSiteKey } from './websiteSiteKey';
 import {
   applySentEmailLogFilters,
+  resolveSentEmailLogDateRange,
   SENT_EMAIL_LOG_LIST_COLUMNS,
   type SentEmailLogQueryFilters,
 } from './sent-email-log-filters';
@@ -6608,12 +6609,15 @@ export const db = {
     },
 
     async deleteMatching(opts: SentEmailLogQueryFilters) {
+      const dateRange = resolveSentEmailLogDateRange(opts);
       const { error: rpcError } = await supabase.rpc('delete_sent_email_logs', {
         p_id: null,
         p_filter: opts.filter ?? 'all',
         p_brand: opts.brand ?? 'all',
         p_template_type: opts.templateType ?? 'all',
         p_search: opts.search ?? '',
+        p_sent_from: dateRange.from ?? null,
+        p_sent_to: dateRange.to ?? null,
       });
       if (!rpcError) return { error: null };
       const msg = rpcError.message || '';

@@ -86,10 +86,17 @@
     --destructive: 0 84% 60%;
     --destructive-foreground: 210 40% 98%;
     --border: 0 0% 85%;
-    --input: 0 0% 100%;
+    --input: 0 0% 90%;
     --ring: 0 0% 25%;
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
+  }
+
+  /* border-input uses --input; keep fields white with a visible border */
+  .force-light-theme :where(input, textarea, button[role="combobox"]) {
+    border-color: hsl(var(--border)) !important;
+    background-color: hsl(var(--card)) !important;
+    color: hsl(var(--foreground)) !important;
   }
 
   * {
