@@ -40,6 +40,17 @@ import { getCompanyInfoForBrand, getDocumentBrandLabel, normalizeDocumentBrand }
 
 const ZERO_COMMISSION_EMPLOYEE_ID = 'TECH851703400';
 
+function formatSentAt(iso: string): string {
+  return new Date(iso).toLocaleString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
+
 interface CompletedJobSectionProps {
   job: Job;
   technicians: Technician[];
@@ -522,7 +533,7 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
           {/* WhatsApp message status */}
           {messageSent ? (
             <div className="text-xs text-green-600 mt-2 pt-2 border-t border-green-200 break-words font-medium">
-              ✓ Message Sent{messageSentAt ? ` on ${new Date(messageSentAt).toLocaleString()}` : ''}
+              ✓ Message Sent{messageSentAt ? ` on ${formatSentAt(messageSentAt)}` : ''}
             </div>
           ) : (
             <div className="text-xs text-orange-600 mt-2 pt-2 border-t border-green-200 break-words font-medium">
@@ -533,7 +544,7 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
           {/* Completion email — only show when sent */}
           {mailSent ? (
             <div className="text-xs text-green-600 mt-2 break-words font-medium">
-              ✓ Mail Sent{mailSentAt ? ` on ${new Date(mailSentAt).toLocaleString()}` : ''}
+              ✓ Mail Sent{mailSentAt ? ` on ${formatSentAt(mailSentAt)}` : ''}
             </div>
           ) : null}
         </div>
