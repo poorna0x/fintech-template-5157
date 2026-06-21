@@ -25,6 +25,7 @@ const TechnicianLogin = lazy(() => import("./pages/TechnicianLogin"));
 const TechnicianDashboard = lazy(() => import("./pages/TechnicianDashboard"));
 const CallingPage = lazy(() => import("./pages/CallingPage"));
 const EmailPreviewRedirect = lazy(() => import("./pages/EmailPreviewPage"));
+const WhatsAppPreviewRedirect = lazy(() => import("./pages/WhatsAppPreviewPage"));
 const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
 const TermsOfService = lazy(() => import("./pages/TermsOfService"));
 const RefundPolicy = lazy(() => import("./pages/RefundPolicy"));
@@ -121,6 +122,7 @@ const App = () => (
                   <Route path="/admin/login" element={<Navigate to="/admin" replace />} />
                   <Route path="/admin" element={<AdminPortal />} />
                   <Route path="/admin/email-preview" element={<EmailPreviewRedirect />} />
+                  <Route path="/admin/whatsapp-preview" element={<WhatsAppPreviewRedirect />} />
                   <Route path="/settings" element={<AdminPortal />} />
                   <Route path="/calling" element={<CallingPage />} />
                   <Route path="/technician/login" element={<TechnicianLogin />} />

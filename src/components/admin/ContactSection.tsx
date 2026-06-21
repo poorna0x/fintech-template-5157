@@ -5,8 +5,7 @@ import { Customer } from '@/types';
 import { extractCoordinates } from '@/lib/maps';
 import { toast } from 'sonner';
 import { WhatsAppIcon } from '../WhatsAppIcon';
-import { formatPhoneForWhatsApp } from '@/lib/utils';
-import { getAdminEmailComposerUrl, getValidCustomerEmail } from '@/lib/customer-email';
+import { getAdminEmailComposerUrl, getAdminWhatsAppComposerUrl, getValidCustomerEmail } from '@/lib/customer-email';
 
 interface ContactSectionProps {
   customer: Customer;
@@ -40,6 +39,18 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
   const handleEmailClick = () => {
     if (!customerEmail) return;
     navigate(getAdminEmailComposerUrl(customer.id, 'general'));
+  };
+
+  const handleWhatsAppComposerClick = () => {
+    if (!customer.phone?.trim()) {
+      toast.error('Phone number not available');
+      return;
+    }
+    if (handleWhatsAppClick) {
+      handleWhatsAppClick(customer);
+      return;
+    }
+    navigate(getAdminWhatsAppComposerUrl(customer.id, 'general'));
   };
 
   // Mirror the booking page's forgiving geolocation: longer timeout + allow a recent cached
@@ -159,36 +170,41 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
           </div>
         </div>
         
-        {/* WhatsApp */}
-        <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
+        {/* WhatsApp — opens composer when phone is on file */}
+        <div
+          className={`bg-white rounded-lg p-3 border border-gray-200 transition-all duration-200 ${
+            customer.phone?.trim()
+              ? 'hover:border-green-300 hover:shadow-sm cursor-pointer'
+              : 'opacity-90'
+          }`}
+          onClick={customer.phone?.trim() ? handleWhatsAppComposerClick : undefined}
+          onKeyDown={
+            customer.phone?.trim()
+              ? (e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleWhatsAppComposerClick();
+                  }
+                }
+              : undefined
+          }
+          role={customer.phone?.trim() ? 'button' : undefined}
+          tabIndex={customer.phone?.trim() ? 0 : undefined}
+          title={customer.phone?.trim() ? 'Send WhatsApp to this customer' : undefined}
+        >
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
             <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-              <button
-                onClick={() => {
-                  if (handleWhatsAppClick) {
-                    handleWhatsAppClick(customer);
-                    return;
-                  }
-
-                  const phoneToUse = customer.phone || '';
-
-                  if (!phoneToUse) {
-                    toast.error('Phone number not available');
-                    return;
-                  }
-
-                  const formattedPhone = formatPhoneForWhatsApp(phoneToUse);
-                  const whatsappUrl = `https://wa.me/${formattedPhone}`;
-                  window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
-                }}
-                className="cursor-pointer"
-              >
-                <WhatsAppIcon className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600 hover:text-green-600 transition-colors" />
-              </button>
+              <WhatsAppIcon
+                className={`w-4 h-4 sm:w-5 sm:h-5 ${
+                  customer.phone?.trim() ? 'text-green-600' : 'text-gray-400'
+                }`}
+              />
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-sm font-semibold text-gray-900">WhatsApp</div>
-              <div className="text-xs text-gray-500">Send Message</div>
+              <div className="text-xs text-gray-500">
+                {customer.phone?.trim() ? 'Send message' : 'No phone'}
+              </div>
             </div>
           </div>
         </div>

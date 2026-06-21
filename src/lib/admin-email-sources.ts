@@ -26,6 +26,8 @@ export interface EmailSourceApplyResult {
   bookingForm?: Partial<BookingConfirmationEmailData>;
   documentForm?: Partial<AdminDocumentEmailData>;
   recipientEmail?: string;
+  recipientPhone?: string;
+  alternatePhone?: string;
   /** Resolved send-as brand (prefers customer's last completed service brand). */
   sendBrand?: DocumentBrand;
   /** Last completed job service brand for the customer, if any. */
@@ -390,6 +392,19 @@ async function fetchCustomerSearchOptions(query: string): Promise<EmailSourceOpt
   return mapCustomersToOptions(data as Record<string, unknown>[]);
 }
 
+function getCustomerPhones(customer: Record<string, unknown> | undefined): {
+  recipientPhone?: string;
+  alternatePhone?: string;
+} {
+  if (!customer) return {};
+  const phone = String(customer.phone || '').trim();
+  const alt = String(customer.alternate_phone || customer.alternatePhone || '').trim();
+  return {
+    recipientPhone: phone || undefined,
+    alternatePhone: alt && alt !== phone ? alt : undefined,
+  };
+}
+
 function getCustomerServiceAddress(customer: Record<string, unknown>): string {
   if (typeof customer.visible_address === 'string' && customer.visible_address.trim()) {
     return customer.visible_address.trim();
@@ -480,6 +495,7 @@ async function applyCustomerBookingFallback(customerId: string): Promise<EmailSo
       documentBrand: sendBrand,
     },
     recipientEmail: getValidCustomerEmail(customer.email) ?? undefined,
+    ...getCustomerPhones(customer),
   };
 }
 
@@ -572,6 +588,7 @@ async function applyJobRecord(jobId: string): Promise<EmailSourceApplyResult | n
       email: String(customer?.email || ''),
     },
     recipientEmail: typeof customer?.email === 'string' ? customer.email : undefined,
+    ...getCustomerPhones(customer),
   });
 }
 
@@ -604,6 +621,7 @@ async function applyAmcRecord(
         message: buildServiceReminderMessage(customerName, nextDue, sendBrand),
       },
       recipientEmail,
+      ...getCustomerPhones(customers),
     };
   }
 
@@ -621,6 +639,7 @@ async function applyAmcRecord(
       message: getDefaultDocumentMessage('amc_document'),
     },
     recipientEmail,
+    ...getCustomerPhones(customers),
   };
 }
 
@@ -647,6 +666,10 @@ async function applyInvoiceRecord(invoiceId: string): Promise<EmailSourceApplyRe
       message: getDefaultDocumentMessage('invoice'),
     },
     recipientEmail: typeof row.customer_email === 'string' ? row.customer_email : undefined,
+    recipientPhone:
+      typeof row.customer_phone === 'string' && row.customer_phone.trim()
+        ? row.customer_phone.trim()
+        : undefined,
   });
 }
 
@@ -677,5 +700,6 @@ async function applyCustomerRecord(
       customSubject: templateType === 'general' ? '' : `Message from ${getDocumentBrandLabel(sendBrand)}`,
     },
     recipientEmail,
+    ...getCustomerPhones(customer),
   };
 }

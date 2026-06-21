@@ -132,7 +132,7 @@ function escapeHtml(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
-function formatServiceDate(scheduledDate: string): string {
+export function formatServiceDate(scheduledDate: string): string {
   try {
     return new Date(scheduledDate).toLocaleDateString('en-IN', {
       weekday: 'long',
@@ -158,8 +158,8 @@ function isMeaningfulDeviceValue(val: string | undefined): boolean {
   return t !== '' && t.toLowerCase() !== 'not specified' && t.toLowerCase() !== 'n/a';
 }
 
-/** Both brand and model must be present; otherwise omit the Device row entirely. */
-function formatDeviceLine(brand: string | undefined, model: string | undefined): string | null {
+/** Both brand and model must be present; otherwise omit the Device line entirely. */
+export function formatDeviceLine(brand: string | undefined, model: string | undefined): string | null {
   const validBrand = isMeaningfulDeviceValue(brand) ? brand!.trim() : '';
   const validModel = isMeaningfulDeviceValue(model) ? model!.trim() : '';
   if (!validBrand || !validModel) return null;

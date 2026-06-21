@@ -29,3 +29,12 @@ export function getAdminEmailComposerUrl(
   if (template) params.set('emailTemplate', template);
   return `/admin?${params.toString()}`;
 }
+
+export function getAdminWhatsAppComposerUrl(
+  customerId: string,
+  template?: 'general' | 'quotation' | 'service_reminder' | 'amc_document' | 'invoice' | 'booking_confirmation'
+): string {
+  const params = new URLSearchParams({ composeWhatsApp: customerId });
+  if (template) params.set('whatsappTemplate', template);
+  return `/admin?${params.toString()}`;
+}

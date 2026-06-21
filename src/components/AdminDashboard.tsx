@@ -147,6 +147,7 @@ import AddCustomerDialog from './admin/AddCustomerDialog';
 import CustomerReportDialog from './admin/CustomerReportDialog';
 import SendMessageDialog from './admin/SendMessageDialog';
 import AdminEmailComposerDialog from './admin/AdminEmailComposer';
+import AdminWhatsAppComposerDialog from './admin/AdminWhatsAppComposer';
 import type { AdminEmailTemplateType } from '@/lib/admin-email-templates';
 import ShareTechnicianInfoToCustomerDialog from './admin/ShareTechnicianInfoToCustomerDialog';
 import RecentAccountsDialog from './admin/RecentAccountsDialog';
@@ -794,6 +795,9 @@ const AdminDashboard = () => {
   const [emailComposerOpen, setEmailComposerOpen] = useState(false);
   const [emailComposerCustomerId, setEmailComposerCustomerId] = useState<string | null>(null);
   const [emailComposerTemplate, setEmailComposerTemplate] = useState<AdminEmailTemplateType>('general');
+  const [whatsappComposerOpen, setWhatsappComposerOpen] = useState(false);
+  const [whatsappComposerCustomerId, setWhatsappComposerCustomerId] = useState<string | null>(null);
+  const [whatsappComposerTemplate, setWhatsappComposerTemplate] = useState<AdminEmailTemplateType>('general');
   const [shareTechnicianInfoDialogOpen, setShareTechnicianInfoDialogOpen] = useState(false);
   const [selectedJobForShareInfo, setSelectedJobForShareInfo] = useState<Job | null>(null);
   const [addReminderDialogOpen, setAddReminderDialogOpen] = useState(false);
@@ -1972,6 +1976,25 @@ const AdminDashboard = () => {
         setEmailComposerTemplate('general');
       }
       setEmailComposerOpen(true);
+      navigate('/admin', { replace: true });
+    } else if (searchParams.get('composeWhatsApp')) {
+      const customerId = searchParams.get('composeWhatsApp');
+      const templateParam = searchParams.get('whatsappTemplate') as AdminEmailTemplateType | null;
+      const allowedTemplates: AdminEmailTemplateType[] = [
+        'booking_confirmation',
+        'amc_document',
+        'invoice',
+        'quotation',
+        'service_reminder',
+        'general',
+      ];
+      setWhatsappComposerCustomerId(customerId && customerId !== '1' ? customerId : null);
+      if (templateParam && allowedTemplates.includes(templateParam)) {
+        setWhatsappComposerTemplate(templateParam);
+      } else {
+        setWhatsappComposerTemplate('general');
+      }
+      setWhatsappComposerOpen(true);
       navigate('/admin', { replace: true });
     } else if (searchPrefill && searchPrefill.trim()) {
       // Pre-fill the admin search box and trigger a search so deep-links from
@@ -5887,18 +5910,13 @@ const AdminDashboard = () => {
 
   const handleWhatsAppClick = (customer: Customer) => {
     const phone = customer?.phone || '';
-    const altPhone = (customer as any)?.alternate_phone || (customer as any)?.alternatePhone;
-    if (altPhone && String(altPhone).trim()) {
-      setSelectedCustomerWhatsApp(customer);
-      setWhatsappPopupOpen(true);
-      return;
-    }
-    if (!phone) {
+    if (!phone.trim()) {
       toast.error('Phone number not available');
       return;
     }
-    const whatsappUrl = `https://wa.me/${formatPhoneForWhatsApp(phone)}`;
-    window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+    setWhatsappComposerCustomerId(customer.id);
+    setWhatsappComposerTemplate('general');
+    setWhatsappComposerOpen(true);
   };
 
   const handleGenerateBill = async (customer: Customer) => {
@@ -13266,6 +13284,19 @@ const AdminDashboard = () => {
         }}
         initialCustomerId={emailComposerCustomerId}
         initialTemplate={emailComposerTemplate}
+      />
+
+      <AdminWhatsAppComposerDialog
+        open={whatsappComposerOpen}
+        onOpenChange={(open) => {
+          setWhatsappComposerOpen(open);
+          if (!open) {
+            setWhatsappComposerCustomerId(null);
+            setWhatsappComposerTemplate('general');
+          }
+        }}
+        initialCustomerId={whatsappComposerCustomerId}
+        initialTemplate={whatsappComposerTemplate}
       />
 
       <ShareTechnicianInfoToCustomerDialog
