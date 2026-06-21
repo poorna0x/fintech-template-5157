@@ -87,7 +87,7 @@ export interface AdminEmailComposerPanelProps {
   composerContext?: AdminEmailComposerContext;
   initialForcedBrand?: DocumentBrand | null;
   onClose?: () => void;
-  onCompletionMessageSent?: (jobId: string) => void | Promise<void>;
+  onCompletionMailSent?: (jobId: string) => void | Promise<void>;
 }
 
 export function AdminEmailComposerPanel({
@@ -97,7 +97,7 @@ export function AdminEmailComposerPanel({
   composerContext = 'default',
   initialForcedBrand = null,
   onClose,
-  onCompletionMessageSent,
+  onCompletionMailSent,
 }: AdminEmailComposerPanelProps) {
   const loadedCustomerRef = useRef<string | null>(null);
   const confirmSectionRef = useRef<HTMLDivElement>(null);
@@ -482,8 +482,8 @@ export function AdminEmailComposerPanel({
           ? `Email sent from ${activeBrandLabel} to ${sendTo.trim()} with ${attachments.length} attachment(s)`
           : `Email sent from ${activeBrandLabel} to ${sendTo.trim()}`
       );
-      if (isCompletedJobComposer && linkedJobId && onCompletionMessageSent) {
-        await onCompletionMessageSent(linkedJobId);
+      if (isCompletedJobComposer && linkedJobId && onCompletionMailSent) {
+        await onCompletionMailSent(linkedJobId);
       }
     } else {
       setSendPhase('confirm');
@@ -1092,7 +1092,7 @@ export interface AdminEmailComposerDialogProps {
   initialTemplate?: AdminEmailTemplateType;
   composerContext?: AdminEmailComposerContext;
   initialForcedBrand?: DocumentBrand | null;
-  onCompletionMessageSent?: (jobId: string) => void | Promise<void>;
+  onCompletionMailSent?: (jobId: string) => void | Promise<void>;
 }
 
 export default function AdminEmailComposerDialog({
@@ -1103,7 +1103,7 @@ export default function AdminEmailComposerDialog({
   initialTemplate = 'general',
   composerContext = 'default',
   initialForcedBrand = null,
-  onCompletionMessageSent,
+  onCompletionMailSent,
 }: AdminEmailComposerDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1119,7 +1119,7 @@ export default function AdminEmailComposerDialog({
             initialTemplate={initialTemplate}
             composerContext={composerContext}
             initialForcedBrand={initialForcedBrand}
-            onCompletionMessageSent={onCompletionMessageSent}
+            onCompletionMailSent={onCompletionMailSent}
             onClose={() => onOpenChange(false)}
           />
         ) : null}

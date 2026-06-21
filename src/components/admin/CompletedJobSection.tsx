@@ -214,6 +214,13 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
     return false;
   });
   const messageSentAt = requirements.find((r: any) => r?.message_sent_at)?.message_sent_at;
+  const mailSent = requirements.some((r: any) => {
+    if (r && typeof r === 'object') {
+      return r.mail_sent === true || r.mail_sent === 'true';
+    }
+    return false;
+  });
+  const mailSentAt = requirements.find((r: any) => r?.mail_sent_at)?.mail_sent_at;
   const dontSendMessage = requirements.some((r: any) => r?.dont_send_message === true);
   const customerName = (job as any).customer?.full_name || (job as any).customer?.fullName || 'customer';
 
@@ -512,7 +519,7 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
             </div>
           )}
           
-          {/* Message Sent Status - Always show */}
+          {/* WhatsApp message status */}
           {messageSent ? (
             <div className="text-xs text-green-600 mt-2 pt-2 border-t border-green-200 break-words font-medium">
               ✓ Message Sent{messageSentAt ? ` on ${new Date(messageSentAt).toLocaleString()}` : ''}
@@ -522,6 +529,13 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
               ⚠ Message Not Sent
             </div>
           )}
+
+          {/* Completion email — only show when sent */}
+          {mailSent ? (
+            <div className="text-xs text-green-600 mt-2 break-words font-medium">
+              ✓ Mail Sent{mailSentAt ? ` on ${new Date(mailSentAt).toLocaleString()}` : ''}
+            </div>
+          ) : null}
         </div>
         <div className="flex flex-shrink-0 flex-nowrap items-center gap-1.5 sm:gap-2 mt-2 sm:mt-0 min-w-0 w-full sm:w-auto">
           <Button

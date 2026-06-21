@@ -5960,7 +5960,7 @@ const AdminDashboard = () => {
           ? `Completion email sent to ${result.to}`
           : 'Completion email sent'
       );
-      await handleMessageSent(job.id);
+      await handleMailSent(job.id);
       return true;
     }
     toast.error(result.error || 'Could not send email');
@@ -7859,6 +7859,64 @@ const AdminDashboard = () => {
       } else {
         toast.error(errorMessage);
       }
+    }
+  };
+
+  // Handle completion email sent (separate from WhatsApp message_sent)
+  const handleMailSent = async (jobId: string) => {
+    try {
+      const job = jobs.find(j => j.id === jobId);
+      if (!job) return;
+
+      let requirements: any[] = [];
+      try {
+        const reqData = (job as any).requirements || job.requirements;
+        if (typeof reqData === 'string') {
+          requirements = JSON.parse(reqData);
+        } else if (Array.isArray(reqData)) {
+          requirements = reqData;
+        } else if (reqData && typeof reqData === 'object') {
+          requirements = [reqData];
+        }
+      } catch (e) {
+        requirements = [];
+      }
+
+      const mailIndex = requirements.findIndex((r: any) => r?.mail_sent !== undefined);
+      if (mailIndex >= 0) {
+        requirements[mailIndex].mail_sent = true;
+        requirements[mailIndex].mail_sent_at = new Date().toISOString();
+      } else {
+        let added = false;
+        for (let i = 0; i < requirements.length; i++) {
+          if (requirements[i] && typeof requirements[i] === 'object' && !Array.isArray(requirements[i])) {
+            requirements[i].mail_sent = true;
+            requirements[i].mail_sent_at = new Date().toISOString();
+            added = true;
+            break;
+          }
+        }
+        if (!added) {
+          requirements.push({
+            mail_sent: true,
+            mail_sent_at: new Date().toISOString(),
+          });
+        }
+      }
+
+      const { error } = await db.jobs.update(jobId, {
+        requirements: JSON.stringify(requirements),
+      } as any);
+
+      if (error) {
+        console.error('Error marking mail as sent:', error);
+        toast.error('Failed to save mail status: ' + error.message);
+      } else {
+        await loadCompletedJobDetails(jobId);
+        await loadFilteredJobs(statusFilter, currentPage);
+      }
+    } catch (error: any) {
+      console.error('Error marking mail as sent:', error);
     }
   };
 
@@ -13340,7 +13398,7 @@ const AdminDashboard = () => {
         initialTemplate={emailComposerTemplate}
         composerContext={emailComposerContext}
         initialForcedBrand={emailComposerForcedBrand}
-        onCompletionMessageSent={handleMessageSent}
+        onCompletionMailSent={handleMailSent}
       />
 
       <AdminWhatsAppComposerDialog
