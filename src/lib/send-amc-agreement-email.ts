@@ -15,7 +15,7 @@ import { normalizeRecipientList, formatRecipientsForEmailApi } from '@/lib/email
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getDocumentBrandLabel } from '@/lib/service-brands';
 import { generateDocumentPdfBase64 } from '@/lib/server-pdf-download';
-import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
+import { ensureSupabaseSessionForWrite, resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 
 export interface SendAmcAgreementEmailParams {
   bill: Bill;
@@ -65,6 +65,14 @@ export async function sendAmcAgreementEmail(
 
   const pdfFilename = `AMC_${bill.billNumber.replace(/\s+/g, '_')}.pdf`;
   const html = generateAMCHTML(billToAmcPdfData(bill), pdfOptions);
+
+  const sessionReady = await ensureSupabaseSessionForWrite();
+  if (!sessionReady.ok) {
+    return {
+      ok: false,
+      error: 'Could not verify your session. Please try again in a moment.',
+    };
+  }
 
   let pdfBase64: string;
   let filename: string;

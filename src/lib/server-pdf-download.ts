@@ -110,16 +110,7 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
-async function fetchPdfFromServer(html: string, filename: string): Promise<{
-  buffer: ArrayBuffer;
-  pdfBase64: string;
-  filename: string;
-}> {
-  const accessToken = await resolveSupabaseAccessTokenForApi();
-  if (!accessToken) {
-    throw new Error('Sign in to generate PDFs');
-  }
-
+async function postPdfRequest(html: string, filename: string, accessToken: string) {
   const response = await fetch(PDF_ENDPOINT, {
     method: 'POST',
     headers: {
@@ -130,18 +121,16 @@ async function fetchPdfFromServer(html: string, filename: string): Promise<{
     signal: AbortSignal.timeout(PDF_REQUEST_TIMEOUT_MS),
   });
 
+  const contentType = response.headers.get('content-type') || '';
   if (!response.ok) {
     let message = `PDF generation failed (${response.status})`;
-    try {
+    if (contentType.includes('application/json')) {
       const payload = (await response.json()) as { error?: string; details?: string };
-      message = payload.details || payload.error || message;
-    } catch {
-      /* ignore parse errors */
+      message = payload.error || payload.details || message;
     }
-    throw new Error(message);
+    return { response, error: message as string | null, payload: null as null };
   }
 
-  const contentType = response.headers.get('content-type') || '';
   if (contentType.includes('application/json')) {
     const payload = (await response.json()) as {
       pdfBase64?: string;
@@ -150,28 +139,74 @@ async function fetchPdfFromServer(html: string, filename: string): Promise<{
       details?: string;
     };
     if (payload.error) {
-      throw new Error(payload.details || payload.error);
+      return {
+        response,
+        error: payload.error || payload.details || 'PDF generation failed',
+        payload: null,
+      };
     }
-    if (!payload.pdfBase64) {
-      throw new Error('Server response missing PDF data');
+    return { response, error: null, payload };
+  }
+
+  const buffer = await response.arrayBuffer();
+  return { response, error: null, payload: { rawBuffer: buffer } as { rawBuffer: ArrayBuffer } };
+}
+
+async function fetchPdfFromServer(html: string, filename: string): Promise<{
+  buffer: ArrayBuffer;
+  pdfBase64: string;
+  filename: string;
+}> {
+  let accessToken = await resolveSupabaseAccessTokenForApi();
+  if (!accessToken) {
+    throw new Error('Sign in to generate PDFs');
+  }
+
+  let attempt = await postPdfRequest(html, filename, accessToken);
+
+  if (attempt.response.status === 401 || attempt.response.status === 403) {
+    const retryToken = await resolveSupabaseAccessTokenForApi();
+    if (retryToken && retryToken !== accessToken) {
+      accessToken = retryToken;
+      attempt = await postPdfRequest(html, filename, retryToken);
     }
-    const buffer = base64ToArrayBuffer(payload.pdfBase64);
-    const bytes = new Uint8Array(buffer);
+  }
+
+  if (attempt.error) {
+    throw new Error(attempt.error);
+  }
+
+  if (attempt.payload && 'rawBuffer' in attempt.payload) {
+    const bytes = new Uint8Array(attempt.payload.rawBuffer);
     if (!isPdfBytes(bytes)) {
       throw new Error('Server did not return a valid PDF file');
     }
+    const pdfBase64 = arrayBufferToBase64(attempt.payload.rawBuffer);
     return {
-      buffer,
-      pdfBase64: payload.pdfBase64,
-      filename: sanitizeFilename(payload.filename || filename),
+      buffer: attempt.payload.rawBuffer,
+      pdfBase64,
+      filename: sanitizeFilename(filename),
     };
   }
 
-  const buffer = await parsePdfResponse(response, filename);
+  const payload = attempt.payload as {
+    pdfBase64?: string;
+    filename?: string;
+  };
+  if (!payload?.pdfBase64) {
+    throw new Error('Server response missing PDF data');
+  }
+
+  const buffer = base64ToArrayBuffer(payload.pdfBase64);
+  const bytes = new Uint8Array(buffer);
+  if (!isPdfBytes(bytes)) {
+    throw new Error('Server did not return a valid PDF file');
+  }
+
   return {
     buffer,
-    pdfBase64: arrayBufferToBase64(buffer),
-    filename: sanitizeFilename(filename),
+    pdfBase64: payload.pdfBase64,
+    filename: sanitizeFilename(payload.filename || filename),
   };
 }
 

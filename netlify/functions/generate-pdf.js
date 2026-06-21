@@ -18,6 +18,8 @@ const ALLOWED_ASSET_HOSTS = [
   'elevenro.com',
   'www.elevenro.com',
   'hydrogenro.netlify.app',
+  'fonts.googleapis.com',
+  'fonts.gstatic.com',
   'localhost',
   '127.0.0.1',
 ];

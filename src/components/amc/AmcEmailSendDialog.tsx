@@ -157,14 +157,12 @@ export default function AmcEmailSendDialog({
     const toastId = toast.loading('Generating PDF and sending email…');
 
     try {
-      if (singleRecipient) {
-        const sessionReady = await ensureSupabaseSessionForWrite();
-        if (!sessionReady.ok) {
-          toast.error('Could not refresh your session. Please try again in a moment.', {
-            id: toastId,
-          });
-          return;
-        }
+      const sessionReady = await ensureSupabaseSessionForWrite();
+      if (!sessionReady.ok) {
+        toast.error('Could not refresh your session. Please try again in a moment.', {
+          id: toastId,
+        });
+        return;
       }
 
       if (

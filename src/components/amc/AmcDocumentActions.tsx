@@ -6,6 +6,7 @@ import AmcEmailSendDialog, { type AmcPersistResult } from '@/components/amc/AmcE
 import type { Bill } from '@/types';
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getValidCustomerEmail } from '@/lib/customer-email';
+import { ensureSupabaseSessionForWrite } from '@/lib/ensureSupabaseSession';
 import { downloadAmcAgreementPdf } from '@/lib/send-amc-agreement-email';
 import type { AMCPDFOptions } from '@/lib/amc-pdf-generator';
 
@@ -61,6 +62,13 @@ export default function AmcDocumentActions({
     const toastId = toast.loading('Saving AMC and generating PDF…');
     try {
       if (onPersistBeforeAction) {
+        const sessionReady = await ensureSupabaseSessionForWrite();
+        if (!sessionReady.ok) {
+          toast.error('Could not refresh your session. Please try again in a moment.', {
+            id: toastId,
+          });
+          return;
+        }
         const saved = await onPersistBeforeAction();
         if (!saved.ok) {
           toast.error(saved.error || 'Could not save AMC to database', { id: toastId });
