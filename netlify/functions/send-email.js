@@ -11,6 +11,7 @@ const {
 } = require('./booking-guard');
 const { enforceSendEmailRateLimits } = require('./rate-limiter');
 const { validateBookingEmailBody, getFixedFromAddress, getBrandMailMeta } = require('./email-guard');
+const { prepareTrackedEmail } = require('./email-tracking');
 
 exports.handler = async (event) => {
   const pre = preflightOrReject(event);
@@ -82,29 +83,40 @@ exports.handler = async (event) => {
     tls: {},
   });
 
-  const mailOptions = {
-    from: {
-      name: brandMeta.fromName,
-      address: fromAddress,
-    },
-    to: validated.to,
-    subject: validated.subject,
-    html: validated.html,
-    text: validated.text,
-    replyTo: brandMeta.replyTo,
-    headers: {
-      'X-Mailer': brandMeta.mailer,
-      'X-Priority': '3',
-      'X-MSMail-Priority': 'Normal',
-      Importance: 'Normal',
-      'X-Report-Abuse': `Please report abuse to abuse@${brandMeta.messageIdDomain}`,
-      'List-Unsubscribe': `<mailto:unsubscribe@${brandMeta.messageIdDomain}>`,
-      Precedence: 'bulk',
-    },
-    messageId: `<${Date.now()}.${Math.random().toString(36).slice(2, 11)}@${brandMeta.messageIdDomain}>`,
-  };
-
   try {
+    const tracked = await prepareTrackedEmail({
+      html: validated.html,
+      recipientEmail: validated.to,
+      subject: validated.subject,
+      purpose: 'booking_confirmation',
+      templateType: 'booking_confirmation',
+      documentBrand: body.documentBrand,
+      customerId: body.customerId,
+      sentByUserId: null,
+    });
+
+    const mailOptions = {
+      from: {
+        name: brandMeta.fromName,
+        address: fromAddress,
+      },
+      to: validated.to,
+      subject: validated.subject,
+      html: tracked.html,
+      text: validated.text,
+      replyTo: brandMeta.replyTo,
+      headers: {
+        'X-Mailer': brandMeta.mailer,
+        'X-Priority': '3',
+        'X-MSMail-Priority': 'Normal',
+        Importance: 'Normal',
+        'X-Report-Abuse': `Please report abuse to abuse@${brandMeta.messageIdDomain}`,
+        'List-Unsubscribe': `<mailto:unsubscribe@${brandMeta.messageIdDomain}>`,
+        Precedence: 'bulk',
+      },
+      messageId: `<${Date.now()}.${Math.random().toString(36).slice(2, 11)}@${brandMeta.messageIdDomain}>`,
+    };
+
     const info = await transporter.sendMail(mailOptions);
 
     if (altcha.tokenCheck?.consumeKey) {

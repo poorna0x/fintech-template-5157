@@ -462,6 +462,8 @@ export function AdminEmailComposerPanel({
         html: emailPreview.html,
         text: emailPreview.text,
         attachments: attachments.map(stripAttachmentPayload),
+        jobId: linkedJobId,
+        customerId: linkedCustomerId,
       },
       accessToken
     );

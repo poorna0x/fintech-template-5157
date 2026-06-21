@@ -3,6 +3,7 @@
 
 const nodemailer = require('nodemailer');
 const { validatePreviewEmailBody, getFixedFromAddress, getBrandMailMeta } = require('./email-guard');
+const { prepareTrackedEmail } = require('./email-tracking');
 const { authorizeAdminRequest, authorizeStaffAmcEmailRequest } = require('./admin-auth-guard');
 const {
   checkRateLimit,
@@ -127,6 +128,18 @@ exports.handler = async (event) => {
         ? validated.to.split(',').map((addr) => addr.trim()).filter(Boolean)
         : validated.to;
 
+    const tracked = await prepareTrackedEmail({
+      html: validated.html,
+      recipientEmail: validated.to,
+      subject: validated.subject,
+      purpose: body.purpose,
+      templateType: body.templateType,
+      documentBrand: body.documentBrand,
+      jobId: body.jobId,
+      customerId: body.customerId,
+      sentByUserId: auth.userId || null,
+    });
+
     const info = await transporter.sendMail({
       from: {
         name: brandMeta.fromName,
@@ -134,7 +147,7 @@ exports.handler = async (event) => {
       },
       to: toField,
       subject: validated.subject,
-      html: validated.html,
+      html: tracked.html,
       text: validated.text,
       replyTo: brandMeta.replyTo,
       attachments: nodemailerAttachments,

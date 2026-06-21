@@ -20,6 +20,9 @@ export interface AdminComposerEmailPayload {
   html: string;
   text: string;
   attachments?: EmailAttachmentPayload[];
+  /** Optional — stored in sent_email_logs for Settings tracking */
+  jobId?: string | null;
+  customerId?: string | null;
 }
 
 export interface EmailData {
@@ -103,6 +106,12 @@ export class EmailService {
     payload: AdminComposerEmailPayload,
     accessToken?: string | null
   ): Promise<{ ok: boolean; error?: string; messageId?: string }> {
+    const trackingFields = {
+      templateType: payload.templateType,
+      ...(payload.jobId ? { jobId: payload.jobId } : {}),
+      ...(payload.customerId ? { customerId: payload.customerId } : {}),
+    };
+
     const sendOnce = async (token: string) => {
       const response = await fetch(this.previewApiUrl, {
         method: 'POST',
@@ -117,6 +126,7 @@ export class EmailService {
           subject: payload.subject,
           html: payload.html,
           text: payload.text,
+          ...trackingFields,
           ...(payload.attachments?.length
             ? {
                 attachments: payload.attachments.map(({ filename, contentType, content }) => ({
@@ -149,6 +159,7 @@ export class EmailService {
           subject: payload.subject,
           html: payload.html,
           text: payload.text,
+          ...trackingFields,
           ...(payload.attachments?.length
             ? {
                 attachments: payload.attachments.map(({ filename, contentType, content }) => ({
@@ -222,6 +233,12 @@ export class EmailService {
     payload: AdminComposerEmailPayload,
     accessToken?: string | null
   ): Promise<{ ok: boolean; error?: string; messageId?: string }> {
+    const trackingFields = {
+      templateType: payload.templateType,
+      ...(payload.jobId ? { jobId: payload.jobId } : {}),
+      ...(payload.customerId ? { customerId: payload.customerId } : {}),
+    };
+
     const sendOnce = async (token: string) => {
       const response = await fetch(this.previewApiUrl, {
         method: 'POST',
@@ -239,6 +256,7 @@ export class EmailService {
           subject: payload.subject,
           html: payload.html,
           text: payload.text,
+          ...trackingFields,
           ...(payload.attachments?.length
             ? {
                 attachments: payload.attachments.map(({ filename, contentType, content }) => ({
@@ -274,6 +292,7 @@ export class EmailService {
           subject: payload.subject,
           html: payload.html,
           text: payload.text,
+          ...trackingFields,
           ...(payload.attachments?.length
             ? {
                 attachments: payload.attachments.map(({ filename, contentType, content }) => ({

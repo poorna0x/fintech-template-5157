@@ -85,6 +85,7 @@ export async function sendJobCompletionEmail(
       subject: emailPreview.subject,
       html: emailPreview.html,
       text: emailPreview.text,
+      jobId,
     },
     accessToken
   );

@@ -135,6 +135,7 @@ export async function sendAmcAgreementEmail(
       html: emailPreview.html,
       text: emailPreview.text,
       attachments: [attachment],
+      customerId: bill.customer?.id,
     },
     accessToken
   );

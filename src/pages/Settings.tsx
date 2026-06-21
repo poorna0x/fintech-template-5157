@@ -56,6 +56,7 @@ import { CommonQrCode, invalidateQrCodesCache, normalizeTechnicianAssignedCommon
 import CallingPage from '@/pages/CallingPage';
 import { registerAdminPWA } from '@/lib/pwa';
 import { WebsiteAnalyticsSettings } from '@/components/admin/WebsiteAnalyticsSettings';
+import { EmailTrackingSettings } from '@/components/admin/EmailTrackingSettings';
 import { SettingsRemindersDialog } from '@/components/reminders/SettingsRemindersDialog';
 import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
 import { RecurringServiceTracker } from '@/components/reminders/RecurringServiceTracker';
@@ -108,6 +109,8 @@ const DATABASE_EXPORT_TABLES: {
   { name: 'parts_inventory', orderBy: 'id', label: 'Parts Inventory' },
   { name: 'product_qr_codes', orderBy: 'created_at', label: 'Product QR Codes' },
   { name: 'reminders', orderBy: 'reminder_at', label: 'Reminders' },
+  { name: 'sent_email_logs', orderBy: 'sent_at', label: 'Sent Email Logs', optional: true },
+  { name: 'crm_settings', orderBy: 'key', label: 'CRM Settings', optional: true },
   { name: 'service_areas', orderBy: 'id', label: 'Service Areas' },
   { name: 'tax_invoices', orderBy: 'created_at', label: 'Tax Invoices' },
   { name: 'technician_advances', orderBy: 'created_at', label: 'Technician Advances' },
@@ -2028,6 +2031,8 @@ const Settings = () => {
               </Button>
             }
           />
+
+          <EmailTrackingSettings />
 
           {/* AMC View */}
           <SettingsActionCard
