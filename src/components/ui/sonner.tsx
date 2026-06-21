@@ -37,7 +37,8 @@ function SonnerInner({ ...props }: ToasterProps) {
         classNames: {
           toast: cn(
             "group toast group-[.toaster]:bg-background group-[.toaster]:text-foreground",
-            "group-[.toaster]:border-border group-[.toaster]:shadow-lg"
+            "group-[.toaster]:border-border group-[.toaster]:shadow-lg",
+            "group-[.toaster]:pr-12"
           ),
           description: "group-[.toast]:text-muted-foreground",
           actionButton:
@@ -45,10 +46,15 @@ function SonnerInner({ ...props }: ToasterProps) {
           cancelButton:
             "group-[.toast]:bg-muted group-[.toast]:text-muted-foreground",
           closeButton: cn(
-            "group-[.toast]:bg-gray-100 group-[.toast]:text-gray-600 group-[.toast]:hover:bg-gray-200",
+            "group-[.toast]:!absolute group-[.toast]:!top-2.5 group-[.toast]:!right-2.5",
+            "group-[.toast]:!left-auto group-[.toast]:!translate-x-0 group-[.toast]:!translate-y-0",
+            "group-[.toast]:!w-8 group-[.toast]:!h-8 group-[.toast]:!min-w-8 group-[.toast]:!min-h-8",
+            "group-[.toast]:flex group-[.toast]:items-center group-[.toast]:justify-center",
+            "group-[.toast]:bg-gray-100 group-[.toast]:text-gray-700",
+            "group-[.toast]:hover:bg-gray-200 group-[.toast]:active:bg-gray-300",
             "group-[.toast]:border group-[.toast]:border-gray-300 group-[.toast]:rounded-full",
-            "group-[.toast]:w-6 group-[.toast]:h-6 group-[.toast]:flex group-[.toast]:items-center group-[.toast]:justify-center",
-            "group-[.toast]:text-xs group-[.toast]:font-bold"
+            "group-[.toast]:opacity-100 group-[.toast]:!z-20 group-[.toast]:pointer-events-auto",
+            "group-[.toast]:touch-manipulation group-[.toast]:cursor-pointer"
           ),
         },
       }}

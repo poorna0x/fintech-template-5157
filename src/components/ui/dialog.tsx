@@ -3,6 +3,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { X } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { guardDialogFromSonnerOutsideEvent } from "@/lib/sonner-dialog-guard"
 
 const Dialog = DialogPrimitive.Root
 
@@ -40,10 +41,12 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       onInteractOutside={(event) => {
+        if (guardDialogFromSonnerOutsideEvent(event)) return;
         if (!dismissible) event.preventDefault();
         onInteractOutside?.(event);
       }}
       onPointerDownOutside={(event) => {
+        if (guardDialogFromSonnerOutsideEvent(event)) return;
         if (!dismissible) event.preventDefault();
         onPointerDownOutside?.(event);
       }}

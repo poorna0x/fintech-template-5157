@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle, Edit, Mail, ShoppingCart } from 'lucide-react';
+import { CheckCircle, Edit, Loader2, Mail, ShoppingCart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -59,7 +59,8 @@ interface CompletedJobSectionProps {
   setEditCompletedJobDialogOpen: (open: boolean) => void;
   setSelectedJobForMessage: (job: Job) => void;
   setSendMessageDialogOpen: (open: boolean) => void;
-  onOpenCompletionEmail?: (job: Job, brand: DocumentBrand) => void;
+  onSendCompletionEmail?: (job: Job, brand: DocumentBrand) => Promise<boolean>;
+  onEditCompletionEmail?: (job: Job, brand: DocumentBrand) => void;
   setSelectedBillPhotos: (photos: string[]) => void;
   setSelectedPhoto: (photo: { url: string; index: number; total: number }) => void;
   setPhotoViewerOpen: (open: boolean) => void;
@@ -88,7 +89,8 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
   setEditCompletedJobDialogOpen,
   setSelectedJobForMessage,
   setSendMessageDialogOpen,
-  onOpenCompletionEmail,
+  onSendCompletionEmail,
+  onEditCompletionEmail,
   setSelectedBillPhotos,
   setSelectedPhoto,
   setPhotoViewerOpen,
@@ -104,6 +106,7 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
   const [sendMessageConfirmOpen, setSendMessageConfirmOpen] = useState(false);
   const [completionEmailOpen, setCompletionEmailOpen] = useState(false);
   const [completionEmailBrand, setCompletionEmailBrand] = useState<DocumentBrand>('hydrogenro');
+  const [completionEmailSending, setCompletionEmailSending] = useState(false);
 
   const customerEmail = getValidCustomerEmail(
     (job as any).customer?.email || job.customer?.email
@@ -621,7 +624,7 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
           >
             <WhatsAppIcon className="w-4 h-4 shrink-0" />
           </Button>
-          {customerEmail && onOpenCompletionEmail ? (
+          {customerEmail && (onSendCompletionEmail || onEditCompletionEmail) ? (
             <Button
               size="sm"
               variant="outline"
@@ -688,9 +691,7 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
           <DialogHeader>
             <DialogTitle>Send completion email</DialogTitle>
             <DialogDescription>
-              Choose which brand to send as for{' '}
-              <span className={customerNameClassName((job as any).customer)}>{customerName}</span>.
-              Defaults to the brand this job was completed under.
+              Choose brand and send the completion email, or edit it first if needed.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
@@ -733,24 +734,50 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
               type="button"
               variant="outline"
               className="w-full sm:w-auto"
+              disabled={completionEmailSending}
               onClick={() => setCompletionEmailOpen(false)}
             >
               Cancel
             </Button>
-            <Button
-              type="button"
-              className="w-full sm:w-auto bg-black hover:bg-gray-800 text-white"
-              onClick={() => {
-                if (!onOpenCompletionEmail) {
-                  toast.error('Email composer is not available');
-                  return;
-                }
-                onOpenCompletionEmail(job, completionEmailBrand);
-                setCompletionEmailOpen(false);
-              }}
-            >
-              Continue to email
-            </Button>
+            {onEditCompletionEmail ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full sm:w-auto"
+                disabled={completionEmailSending}
+                onClick={() => {
+                  onEditCompletionEmail(job, completionEmailBrand);
+                  setCompletionEmailOpen(false);
+                }}
+              >
+                Edit email
+              </Button>
+            ) : null}
+            {onSendCompletionEmail ? (
+              <Button
+                type="button"
+                className="w-full sm:w-auto bg-black hover:bg-gray-800 text-white"
+                disabled={completionEmailSending}
+                onClick={async () => {
+                  setCompletionEmailSending(true);
+                  try {
+                    const sent = await onSendCompletionEmail(job, completionEmailBrand);
+                    if (sent) setCompletionEmailOpen(false);
+                  } finally {
+                    setCompletionEmailSending(false);
+                  }
+                }}
+              >
+                {completionEmailSending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Sending…
+                  </>
+                ) : (
+                  'Send now'
+                )}
+              </Button>
+            ) : null}
           </DialogFooter>
         </DialogContent>
       </Dialog>

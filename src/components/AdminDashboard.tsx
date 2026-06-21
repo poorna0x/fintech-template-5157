@@ -150,6 +150,7 @@ import AdminEmailComposerDialog from './admin/AdminEmailComposer';
 import AdminWhatsAppComposerDialog from './admin/AdminWhatsAppComposer';
 import type { AdminEmailTemplateType } from '@/lib/admin-email-templates';
 import { getValidCustomerEmail } from '@/lib/customer-email';
+import { sendJobCompletionEmail } from '@/lib/send-job-completion-email';
 import type { DocumentBrand } from '@/lib/service-brands';
 import ShareTechnicianInfoToCustomerDialog from './admin/ShareTechnicianInfoToCustomerDialog';
 import RecentAccountsDialog from './admin/RecentAccountsDialog';
@@ -5951,6 +5952,21 @@ const AdminDashboard = () => {
     setEmailComposerOpen(true);
   };
 
+  const sendCompletionEmailQuick = async (job: Job, brand: DocumentBrand): Promise<boolean> => {
+    const result = await sendJobCompletionEmail({ jobId: job.id, brand });
+    if (result.ok) {
+      toast.success(
+        result.to
+          ? `Completion email sent to ${result.to}`
+          : 'Completion email sent'
+      );
+      await handleMessageSent(job.id);
+      return true;
+    }
+    toast.error(result.error || 'Could not send email');
+    return false;
+  };
+
   const handleGenerateBill = async (customer: Customer) => {
     const c = await loadFullCustomerForAction(customer);
     setSelectedCustomerForBill(c);
@@ -10916,7 +10932,8 @@ const AdminDashboard = () => {
                               setEditCompletedJobDialogOpen={setEditCompletedJobDialogOpen}
                               setSelectedJobForMessage={setSelectedJobForMessage}
                               setSendMessageDialogOpen={setSendMessageDialogOpen}
-                              onOpenCompletionEmail={openCompletionEmailComposer}
+                              onSendCompletionEmail={sendCompletionEmailQuick}
+                              onEditCompletionEmail={openCompletionEmailComposer}
                               setSelectedBillPhotos={setSelectedBillPhotos}
                               setSelectedPhoto={setSelectedPhoto}
                               setPhotoViewerOpen={setPhotoViewerOpen}

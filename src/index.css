@@ -679,3 +679,36 @@ _::-webkit-full-page-media, _:future, :root input[type="date"] {
     font-size: 16px !important;
   }
 }
+
+/* Sonner toasts — close button inside top-right (default sits half outside, hard to tap) */
+[data-sonner-toaster][dir="ltr"] {
+  --toast-close-button-start: unset;
+  --toast-close-button-end: 10px;
+  --toast-close-button-transform: none;
+}
+
+[data-sonner-toast][data-styled="true"] [data-close-button] {
+  top: 10px !important;
+  right: 10px !important;
+  left: auto !important;
+  transform: none !important;
+  width: 2rem !important;
+  height: 2rem !important;
+  min-width: 2rem !important;
+  min-height: 2rem !important;
+  opacity: 1 !important;
+  z-index: 20 !important;
+  pointer-events: auto !important;
+  touch-action: manipulation;
+  cursor: pointer;
+}
+
+[data-sonner-toast][data-styled="true"] [data-close-button] svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2;
+}
+
+[data-sonner-toast][data-styled="true"] [data-content] {
+  padding-right: 0.25rem;
+}
