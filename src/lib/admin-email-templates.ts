@@ -10,6 +10,13 @@ import {
   type BookingConfirmationEmailData,
   type BookingConfirmationEmailResult,
 } from '@/lib/booking-confirmation-email';
+import {
+  buildEmailForceLightHead,
+  buildEmailForceLightBodyAttrs,
+  EMAIL_PAGE_BG,
+  EMAIL_CARD_BG,
+  EMAIL_FOOTER_BG,
+} from '@/lib/email-force-light-html';
 
 export type AdminEmailTemplateType =
   | 'booking_confirmation'
@@ -464,36 +471,37 @@ function buildAdminDocumentEmail(
   );
 
   const html = `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="color-scheme:light only;">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="format-detection" content="telephone=no, date=no, email=no, address=no">
   <title>${escapeHtml(subject)}</title>
+  ${buildEmailForceLightHead()}
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
-<body style="margin:0;padding:0;background-color:${C.pageBg};font-family:${EMAIL_FONT};">
-  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:${C.pageBg};">
+<body ${buildEmailForceLightBodyAttrs(`background-color:${C.pageBg};font-family:${EMAIL_FONT};`)}>
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="email-force-light-page" bgcolor="${EMAIL_PAGE_BG}" style="background-color:${C.pageBg};">
     <tr>
       <td align="center" style="padding:24px 16px;">
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:560px;background-color:${C.cardBg};border:1px solid ${C.border};border-radius:14px;overflow:hidden;box-shadow:${C.cardShadow};">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="email-force-light-card" bgcolor="${EMAIL_CARD_BG}" style="max-width:560px;background-color:${C.cardBg};border:1px solid ${C.border};border-radius:14px;overflow:hidden;box-shadow:${C.cardShadow};">
           <tr>
-            <td align="center" style="padding:28px 28px 22px;border-bottom:1px solid ${C.border};">
+            <td align="center" class="email-force-light-header" bgcolor="${EMAIL_CARD_BG}" style="padding:28px 28px 22px;background-color:${C.cardBg};border-bottom:1px solid ${C.border};">
               <img src="${logoUrl}" alt="${escapeHtml(brandName)}" width="200" height="52" style="display:block;margin:0 auto;height:52px;width:auto;max-width:200px;border:0;" />
               <p style="margin:12px 0 0;font-family:${EMAIL_FONT};font-size:12px;color:${C.headerTagline};">${escapeHtml(contact.tagline)}</p>
             </td>
           </tr>
           <tr>
-            <td style="padding:28px 28px 8px;text-align:center;">
-              <p style="margin:0 0 8px;font-family:${EMAIL_FONT};font-size:11px;font-weight:600;color:${C.label};text-transform:uppercase;letter-spacing:1.2px;">${escapeHtml(eyebrow)}</p>
-              <h1 style="margin:0 0 14px;font-family:${EMAIL_FONT};font-size:24px;font-weight:700;color:${C.heading};letter-spacing:-0.03em;">${escapeHtml(headline)}</h1>
+            <td class="email-force-light-body" bgcolor="${EMAIL_CARD_BG}" style="padding:28px 28px 8px;text-align:center;background-color:${C.cardBg};">
+              <p style="margin:0 0 8px;font-family:${EMAIL_FONT};font-size:11px;font-weight:600;color:${C.label};text-transform:uppercase;letter-spacing:1.2px;" class="email-force-light-muted">${escapeHtml(eyebrow)}</p>
+              <h1 style="margin:0 0 14px;font-family:${EMAIL_FONT};font-size:24px;font-weight:700;color:${C.heading};letter-spacing:-0.03em;" class="email-force-light-heading">${escapeHtml(headline)}</h1>
               <p style="margin:0;font-family:${EMAIL_FONT};font-size:15px;line-height:1.6;color:${C.body};">
                 Hi <strong style="color:${C.heading};">${escapeHtml(customerName)}</strong>,
               </p>
             </td>
           </tr>
           <tr>
-            <td style="padding:8px 28px 24px;">
+            <td class="email-force-light-body" bgcolor="${EMAIL_CARD_BG}" style="padding:8px 28px 24px;background-color:${C.cardBg};">
               ${type === 'job_completion' ? messageBlock : `${detailsBlock}${messageBlock}`}
               <p style="margin:0 0 10px;font-family:${EMAIL_FONT};font-size:12px;font-weight:600;color:${C.label};text-transform:uppercase;letter-spacing:0.8px;text-align:center;">Need help?</p>
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
@@ -506,7 +514,7 @@ function buildAdminDocumentEmail(
             </td>
           </tr>
           <tr>
-            <td align="center" style="padding:18px 24px 22px;background-color:${C.footerBg};border-top:1px solid ${C.border};">
+            <td align="center" class="email-force-light-footer" bgcolor="${EMAIL_FOOTER_BG}" style="padding:18px 24px 22px;background-color:${C.footerBg};border-top:1px solid ${C.border};">
               <p style="margin:0 0 6px;font-family:${EMAIL_FONT};font-size:13px;font-weight:600;color:${C.heading};">${escapeHtml(brandName)}</p>
               <p style="margin:0 0 4px;font-family:${EMAIL_FONT};font-size:12px;color:${C.label};">${preventAutoLinkText(contact.phoneDisplay)} &middot; ${preventAutoLinkText(contact.email)}</p>
               <p style="margin:0;font-family:${EMAIL_FONT};font-size:11px;color:${C.label};">${preventAutoLinkText(contact.website)}</p>

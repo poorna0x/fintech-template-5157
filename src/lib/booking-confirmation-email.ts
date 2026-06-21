@@ -1,5 +1,11 @@
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getDocumentBrandLabel } from '@/lib/service-brands';
+import {
+  buildEmailForceLightHead,
+  buildEmailForceLightBodyAttrs,
+  EMAIL_PAGE_BG,
+  EMAIL_CARD_BG,
+} from '@/lib/email-force-light-html';
 
 export interface BookingConfirmationEmailData {
   customerName: string;
@@ -320,27 +326,28 @@ export function buildBookingConfirmationEmail(
   const footerWebsiteLine = preventAutoLinkText(contact.website);
 
   const html = `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="color-scheme:light only;">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="format-detection" content="telephone=no, date=no, email=no, address=no">
   <title>${escapeHtml(brandName)} — Booking Confirmed</title>
+  ${buildEmailForceLightHead()}
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
-<body style="margin:0;padding:0;background-color:${c.pageBg};font-family:${EMAIL_FONT};-webkit-text-size-adjust:100%;">
+<body ${buildEmailForceLightBodyAttrs(`background-color:${c.pageBg};font-family:${EMAIL_FONT};-webkit-text-size-adjust:100%;`)}>
   <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;">
     ${escapeHtml(brandName)} booking ${escapeHtml(jobNumber)} confirmed for ${escapeHtml(customerName)}.
   </div>
 
-  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:${c.pageBg};font-family:${EMAIL_FONT};">
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="email-force-light-page" bgcolor="${EMAIL_PAGE_BG}" style="background-color:${c.pageBg};font-family:${EMAIL_FONT};">
     <tr>
       <td align="center" style="padding:24px 16px;">
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="max-width:560px;background-color:${c.cardBg};border:1px solid ${c.border};border-radius:14px;overflow:hidden;font-family:${EMAIL_FONT};box-shadow:${c.cardShadow};">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="email-force-light-card" bgcolor="${EMAIL_CARD_BG}" style="max-width:560px;background-color:${c.cardBg};border:1px solid ${c.border};border-radius:14px;overflow:hidden;font-family:${EMAIL_FONT};box-shadow:${c.cardShadow};">
 
           <tr>
-            <td align="center" style="padding:28px 28px 22px;background-color:${c.headerBg};border-bottom:1px solid ${c.border};text-align:center;">
+            <td align="center" class="email-force-light-header" bgcolor="${EMAIL_CARD_BG}" style="padding:28px 28px 22px;background-color:${c.headerBg};border-bottom:1px solid ${c.border};text-align:center;">
               ${headerLogoBlock}
             </td>
           </tr>
