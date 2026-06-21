@@ -288,7 +288,10 @@
   var profile = SITE_PROFILES[siteKey];
   var p = (window.location.pathname || '/').replace(/\/$/, '') || '';
   var pathForTest = '/' + (p || '');
-  var noIndex = /^\/(technician|admin|dashboard|search|settings|calling)(\/|$)/.test(pathForTest);
+  var noIndex =
+    /^\/(technician-id|technician\/|technician$|admin|dashboard|search|settings|calling|product-verify)(\/|$)/.test(
+      pathForTest
+    );
   var canonical = profile.origin + (p ? p : '');
   var routeSeo = resolveRouteSeo(profile, p ? p : '/');
 

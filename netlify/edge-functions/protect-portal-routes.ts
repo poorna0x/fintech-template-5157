@@ -23,6 +23,7 @@ function isPublicPortalPath(pathname: string): boolean {
 }
 
 function requiredPortalRole(pathname: string): PortalRole | null {
+  if (pathname.startsWith('/technician-id/')) return null;
   if (pathname === '/technician' || pathname.startsWith('/technician/')) {
     if (isPublicPortalPath(pathname)) return null;
     return 'technician';

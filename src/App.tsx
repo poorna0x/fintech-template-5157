@@ -15,6 +15,7 @@ import PublicSiteSeo from "./components/PublicSiteSeo";
 import { SEO_LOCATION_PAGES, SEO_SERVICE_PAGES } from "@/lib/publicSeoPages";
 import WebsiteAnalyticsTracker from "./components/WebsiteAnalyticsTracker";
 import { disablePWA } from "@/lib/pwa";
+import { isTechnicianPortalPath } from "@/lib/authPortal";
 
 // Lazy load heavy components for better performance.
 // AdminPortal and TechnicianLogin are lazy too so their login + captcha widget
@@ -74,7 +75,7 @@ const PWARouteHandler = () => {
   useEffect(() => {
     // Admin app routes (must match admin-manifest scope / install — do not disablePWA here)
     const isPWAPage =
-      location.pathname.startsWith('/technician') ||
+      isTechnicianPortalPath(location.pathname) ||
       location.pathname.startsWith('/admin') ||
       location.pathname.startsWith('/settings') ||
       location.pathname.startsWith('/calling');
@@ -93,7 +94,7 @@ const PWARouteHandler = () => {
         void import('./components/AdminDashboard');
         void import('./lib/supabase');
       }
-    } else if (location.pathname.startsWith('/technician')) {
+    } else if (isTechnicianPortalPath(location.pathname)) {
       void import('./pages/TechnicianDashboard');
     }
   }, [location.pathname, user, isAdmin]);

@@ -48,6 +48,7 @@ import { deleteTechnicianCompletely } from '@/lib/deleteTechnician';
 import { buildTechnicianSalaryPayload, getCurrentMonthKey } from '@/lib/technicianSalaryForPeriod';
 import { Technician } from '@/types';
 import ImageUpload from '@/components/ImageUpload';
+import { TechnicianIdCardLinks } from '@/components/admin/TechnicianIdCardLinks';
 import { CommonQrCode, invalidateQrCodesCache, normalizeTechnicianAssignedCommonQrIds } from '@/lib/qrCodeManager';
 // NOTE: `jszip` and `qr-code-styling` are heavy and only used by specific
 // button actions (data export ZIP, styled QR image). They are dynamically
@@ -318,11 +319,6 @@ const Settings = () => {
     createdAt: tech.created_at,
     updatedAt: tech.updated_at
   });
-
-  // Generate ID card link for technician
-  const generateIdCardLink = (technicianId: string): string => {
-    return `${window.location.origin}/technician-id/${technicianId}`;
-  };
 
   const loadTechnicians = async () => {
     try {
@@ -1566,26 +1562,8 @@ const Settings = () => {
           </div>
         </div>
 
-        <div className="mb-3 p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-blue-900 dark:text-blue-200 mb-1">ID Card Link:</p>
-              <p className="text-xs text-blue-700 dark:text-blue-300 truncate font-mono">
-                {generateIdCardLink(technician.id)}
-              </p>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                navigator.clipboard.writeText(generateIdCardLink(technician.id));
-                toast.success('ID Card link copied!');
-              }}
-              className="shrink-0 h-8 w-8 p-0"
-            >
-              <Copy className="w-3 h-3" />
-            </Button>
-          </div>
+        <div className="mb-3">
+          <TechnicianIdCardLinks technicianId={technician.id} />
         </div>
 
         <Button
@@ -3108,41 +3086,9 @@ const Settings = () => {
                       Technician Created Successfully!
                     </h3>
                     <p className="text-sm text-green-700 dark:text-green-300 mb-3">
-                      Copy the ID Card link below and use any QR code generator to create a QR code for this technician.
+                      Copy the Hydrogen RO or Eleven RO ID card link below and use any QR code generator to create a QR code for this technician.
                     </p>
-                    <div className="bg-card dark:bg-gray-800 p-3 rounded border border-green-200 dark:border-green-700">
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <Label className="text-xs font-medium text-foreground/90 dark:text-gray-300">ID Card Link:</Label>
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              navigator.clipboard.writeText(generateIdCardLink(newlyCreatedTechnicianId));
-                              toast.success('Link copied to clipboard!');
-                            }}
-                            className="h-7 px-2 text-xs"
-                          >
-                            <Copy className="w-3 h-3 mr-1" />
-                            Copy
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              window.open(generateIdCardLink(newlyCreatedTechnicianId), '_blank');
-                            }}
-                            className="h-7 px-2 text-xs"
-                          >
-                            <ExternalLink className="w-3 h-3 mr-1" />
-                            Open
-                          </Button>
-                        </div>
-                      </div>
-                      <p className="text-xs font-mono text-muted-foreground dark:text-muted-foreground/70 break-all">
-                        {generateIdCardLink(newlyCreatedTechnicianId)}
-                      </p>
-                    </div>
+                    <TechnicianIdCardLinks technicianId={newlyCreatedTechnicianId} showOpen />
                     <p className="text-xs text-green-600 dark:text-green-400 mt-2">
                       💡 Tip: Visit <a href="https://www.qr-code-generator.com" target="_blank" rel="noopener noreferrer" className="underline">qr-code-generator.com</a> or any QR generator, paste this link, and download the QR code image.
                     </p>

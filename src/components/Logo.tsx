@@ -2,6 +2,7 @@
 import React from 'react';
 import { Droplets } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { isTechnicianPortalPath } from '@/lib/authPortal';
 
 interface LogoProps {
   /** When true, use neutral z-index to avoid overlap on some mobile browsers (e.g. Samsung) */
@@ -16,8 +17,7 @@ const Logo = ({ inFooter = false, brandName = 'Hydrogen RO', showName = true }: 
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Disable navigation on technician pages
-  const isTechnicianPage = location.pathname.startsWith('/technician');
+  const isTechnicianPage = isTechnicianPortalPath(location.pathname);
 
   const handleLogoClick = (e: React.MouseEvent) => {
     e.preventDefault();

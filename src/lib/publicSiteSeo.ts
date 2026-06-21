@@ -89,13 +89,15 @@ export function getBrandSeoProfile(siteKey?: PublicSiteKey): BrandSeoProfile {
 }
 
 export const NO_INDEX_PREFIXES = [
-  '/technician',
+  '/technician-id/',
+  '/technician/',
+  '/technician/login',
   '/admin',
   '/dashboard',
   '/search',
   '/settings',
   '/calling',
-  '/product-verify',
+  '/product-verify/',
 ];
 
 export function shouldIndexPath(pathname: string): boolean {

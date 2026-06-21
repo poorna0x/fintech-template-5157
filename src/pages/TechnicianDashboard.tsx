@@ -49,7 +49,9 @@ import {
   Package,
   ChevronLeft,
   ChevronRight,
-  IndianRupee
+  IndianRupee,
+  Copy,
+  ExternalLink,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getAmcDocumentBrandLabel } from '@/lib/amc-brand';
@@ -122,7 +124,8 @@ import {
   persistAmcContract,
 } from '@/lib/save-amc-contract';
 import { normalizeCustomerAddress } from '@/lib/customer-address';
-import { normalizeDocumentBrand } from '@/lib/service-brands';
+import { normalizeDocumentBrand, getDocumentBrandLabel, type DocumentBrand } from '@/lib/service-brands';
+import { getTechnicianIdCardUrl } from '@/lib/technician-id-card';
 import type { Customer } from '@/types';
 
 /** Visible-tab poll (backup if postgres/broadcast miss). */
@@ -728,6 +731,7 @@ const TechnicianDashboard = () => {
   const [headerOptionsDialogOpen, setHeaderOptionsDialogOpen] = useState(false);
   // Technician ID Card QR Code Dialog
   const [technicianIdCardDialogOpen, setTechnicianIdCardDialogOpen] = useState(false);
+  const [idCardBrand, setIdCardBrand] = useState<DocumentBrand>('hydrogenro');
   const [inventoryDialogOpen, setInventoryDialogOpen] = useState(false);
   // Monthly Billing Dialog
   const [billingDialogOpen, setBillingDialogOpen] = useState(false);
@@ -10291,13 +10295,13 @@ const TechnicianDashboard = () => {
               Technician ID Card QR Code
             </DialogTitle>
             <DialogDescription>
-              Scan this QR code to view technician information
+              Choose brand, then scan or share the QR code for your ID card
             </DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col items-center justify-center py-6">
+          <div className="flex flex-col items-center justify-center py-4">
             {(() => {
               const technicianId = user?.technicianId || user?.id;
-              
+
               if (!technicianId) {
                 return (
                   <div className="text-center py-8">
@@ -10308,23 +10312,43 @@ const TechnicianDashboard = () => {
                 );
               }
 
-              // Generate QR code URL for technician ID card
-              const technicianIdCardUrl = `https://hydrogenro.com/technician-id/${technicianId}`;
+              const technicianIdCardUrl = getTechnicianIdCardUrl(technicianId, idCardBrand);
               const qrCodeImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=256x256&data=${encodeURIComponent(technicianIdCardUrl)}`;
+              const brandLabel = getDocumentBrandLabel(idCardBrand);
 
               return (
-                <div className="flex flex-col items-center gap-4">
+                <div className="flex w-full flex-col items-center gap-4">
+                  <div className="w-full space-y-2">
+                    <Label htmlFor="id-card-brand" className="text-sm font-medium">
+                      ID card brand
+                    </Label>
+                    <Select
+                      value={idCardBrand}
+                      onValueChange={(value) => setIdCardBrand(value as DocumentBrand)}
+                    >
+                      <SelectTrigger id="id-card-brand" className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="hydrogenro">Hydrogen RO</SelectItem>
+                        <SelectItem value="elevenro">Eleven RO</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
                   <div className="bg-white p-4 rounded-lg border-2 border-gray-200 shadow-lg">
                     <img
+                      key={idCardBrand}
                       src={qrCodeImageUrl}
-                      alt="Technician ID Card QR Code"
+                      alt={`${brandLabel} technician ID card QR code`}
                       className="w-64 h-64 object-contain"
                       onError={(e) => {
                         console.error('QR code image failed to load:', qrCodeImageUrl);
                         e.currentTarget.style.display = 'none';
                         const parent = e.currentTarget.parentElement;
                         if (parent) {
-                          parent.innerHTML = '<div class="text-center py-8 text-gray-600">QR code image not available</div>';
+                          parent.innerHTML =
+                            '<div class="text-center py-8 text-gray-600">QR code image not available</div>';
                         }
                       }}
                     />
@@ -10335,20 +10359,50 @@ const TechnicianDashboard = () => {
                       {user?.employeeId && (
                         <p className="text-sm text-gray-600">ID: {user.employeeId}</p>
                       )}
+                      <p className="text-xs text-muted-foreground mt-1">{brandLabel} ID card</p>
                     </div>
                   )}
-                  <div className="text-center">
-                    <p className="text-xs text-gray-500 max-w-xs mb-2">
-                      Scan this QR code to view technician information
+                  <div className="w-full text-center space-y-2">
+                    <p className="text-xs text-gray-500">
+                      Customers can scan this QR to verify you under {brandLabel}.
                     </p>
-                    <a
-                      href={technicianIdCardUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-blue-600 hover:text-blue-800 underline break-all"
+                    <div
+                      className={
+                        idCardBrand === 'elevenro'
+                          ? 'rounded-lg border border-violet-200 bg-violet-50/80 p-2.5 text-left dark:border-violet-800 dark:bg-violet-950/30'
+                          : 'rounded-lg border border-blue-200 bg-blue-50/80 p-2.5 text-left dark:border-blue-800 dark:bg-blue-950/30'
+                      }
                     >
-                      {technicianIdCardUrl}
-                    </a>
+                      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground mb-1">
+                        {brandLabel} link
+                      </p>
+                      <p className="text-xs font-mono break-all text-foreground/90">{technicianIdCardUrl}</p>
+                      <div className="flex justify-end gap-1 mt-2">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 px-2 text-xs"
+                          onClick={() => {
+                            navigator.clipboard.writeText(technicianIdCardUrl);
+                            toast.success(`${brandLabel} ID card link copied`);
+                          }}
+                        >
+                          <Copy className="w-3 h-3 mr-1" />
+                          Copy
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 px-2 text-xs"
+                          onClick={() => window.open(technicianIdCardUrl, '_blank', 'noopener,noreferrer')}
+                        >
+                          <ExternalLink className="w-3 h-3 mr-1" />
+                          Open
+                        </Button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               );

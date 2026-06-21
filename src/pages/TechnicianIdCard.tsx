@@ -1,16 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Loader2, User, Phone, Mail, Briefcase, Building2, MapPin, Globe } from 'lucide-react';
 // Use the lightweight auth client — this public page does a single technicians
 // SELECT and must not pull in the admin/technician data layer (admin-data chunk).
 import { supabase } from '@/lib/supabaseClient';
-import Logo from '@/components/Logo';
-import Header from '@/components/Header';
-import { useTheme } from '@/contexts/ThemeContext';
+import { getPublicSiteKey } from '@/lib/websiteSiteKey';
+import { getTechnicianIdCardDisplayEmail } from '@/lib/technician-id-card';
 import {
-  BRAND_SEAL_SRC,
   getCompanyInfoForBrand,
   getDocumentBrandLabel,
   normalizeDocumentBrand,
@@ -30,7 +27,6 @@ interface TechnicianData {
 const TechnicianIdCard: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
-  const { isDarkMode } = useTheme();
   const [technician, setTechnician] = useState<TechnicianData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -38,10 +34,14 @@ const TechnicianIdCard: React.FC = () => {
   // Read the brand from `?brand=elevenro` (defaults to hydrogenro). Same
   // technician record can be shown under either brand without duplicating rows.
   const brand: DocumentBrand = useMemo(() => {
-    return normalizeDocumentBrand(searchParams.get('brand')) ?? 'hydrogenro';
+    return normalizeDocumentBrand(searchParams.get('brand')) ?? getPublicSiteKey();
   }, [searchParams]);
   const companyInfo = useMemo(() => getCompanyInfoForBrand(brand), [brand]);
   const brandLabel = useMemo(() => getDocumentBrandLabel(brand), [brand]);
+  const displayEmail = useMemo(
+    () => (technician ? getTechnicianIdCardDisplayEmail(technician.email, brand) : ''),
+    [technician, brand]
+  );
 
   useEffect(() => {
     const loadTechnician = async () => {
@@ -124,25 +124,13 @@ const TechnicianIdCard: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <Header />
-      <div className="p-4">
+      <div className="p-4 pt-8">
         <div className="max-w-sm mx-auto">
-        {/* Brand banner above the card — makes it obvious which brand this card belongs to. */}
-        <div className="flex items-center justify-center gap-2 sm:gap-3 mb-3">
-          <img
-            src={BRAND_SEAL_SRC[brand]}
-            alt={`${brandLabel} seal`}
-            className="w-8 h-8 sm:w-9 sm:h-9 object-contain"
-            onError={(e) => {
-              (e.target as HTMLImageElement).style.display = 'none';
-            }}
-          />
-          <div className="text-center">
-            <p className="text-base sm:text-lg font-bold text-foreground leading-tight">{brandLabel}</p>
-            <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wide">
-              Technician ID Card
-            </p>
-          </div>
+        <div className="mb-3 text-center">
+          <p className="text-base sm:text-lg font-bold text-foreground leading-tight">{brandLabel}</p>
+          <p className="text-[10px] sm:text-xs text-muted-foreground uppercase tracking-wide">
+            Technician ID Card
+          </p>
         </div>
         {/* ID Card */}
         <Card className="bg-card border-2 border-primary/20 dark:border-primary/30 shadow-xl overflow-hidden rounded-xl">
@@ -198,7 +186,7 @@ const TechnicianIdCard: React.FC = () => {
                   <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-primary/10 dark:bg-primary/20 flex items-center justify-center flex-shrink-0">
                     <Mail className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-primary" />
                   </div>
-                  <span className="text-sm sm:text-base text-card-foreground font-medium break-all">{technician.email}</span>
+                  <span className="text-sm sm:text-base text-card-foreground font-medium break-all">{displayEmail}</span>
                 </div>
                 <div className="flex items-center gap-2.5 sm:gap-3">
                   <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-primary/10 dark:bg-primary/20 flex items-center justify-center flex-shrink-0">
