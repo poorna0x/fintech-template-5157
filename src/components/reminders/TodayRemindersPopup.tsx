@@ -4,6 +4,8 @@ import { Button } from '@/components/ui/button';
 import { format, addMonths } from 'date-fns';
 import { Bell, Calendar, CalendarClock, IndianRupee } from 'lucide-react';
 import { db } from '@/lib/supabase';
+import { ensureAdminSupabaseSession } from '@/lib/auth';
+import { isPostgrestPermissionDenied } from '@/lib/ensureSupabaseSession';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { AddReminderDialog } from './AddReminderDialog';
@@ -42,18 +44,33 @@ function saveDismissedPendingPaymentReminderIds(today: string, ids: Set<string>)
   );
 }
 
+function reminderLoadErrorMessage(error: { message?: string; code?: string }): string {
+  if (isPostgrestPermissionDenied(error)) {
+    return 'Reminders could not be loaded. Confirm your email is in admin_users and RLS helper grants are applied.';
+  }
+  return error.message || 'Reminders could not be loaded.';
+}
+
 export function TodayRemindersPopup() {
-  const { user } = useAuth();
+  const { user, isAdmin, authInitializing } = useAuth();
   const [open, setOpen] = useState(false);
   const [todayReminders, setTodayReminders] = useState<Reminder[]>([]);
   const [customerLabels, setCustomerLabels] = useState<Record<string, CustomerLabel>>({});
   const [rescheduleReminder, setRescheduleReminder] = useState<Reminder | null>(null);
   const [markingDone, setMarkingDone] = useState(false);
 
-  const loadToday = useCallback(() => {
+  const loadToday = useCallback(async () => {
+    if (!user || !isAdmin) return;
+    const sessionOk = await ensureAdminSupabaseSession(1_500);
+    if (!sessionOk) return;
+
     const today = format(new Date(), 'yyyy-MM-dd');
     db.reminders.getForTodayAndTomorrow().then(({ data, error }) => {
-      if (error || !data) return;
+      if (error) {
+        toast.error(reminderLoadErrorMessage(error));
+        return;
+      }
+      if (!data) return;
       const forToday = (data as Reminder[]).filter((r) => r.reminder_at === today);
       setTodayReminders(forToday);
       const customerIds = [...new Set(
@@ -69,14 +86,17 @@ export function TodayRemindersPopup() {
         setCustomerLabels(labels);
       });
     });
-  }, []);
+  }, [user, isAdmin]);
 
   const REMINDERS_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours (only if REMINDERS_POPUP_SESSION_CACHE_ENABLED)
   const REMINDERS_CACHE_KEY = 'reminders_today_cache';
 
   useEffect(() => {
+    if (authInitializing || !user || !isAdmin) return;
+
     const today = format(new Date(), 'yyyy-MM-dd');
     let retryTimeoutId: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
 
     const applyReminders = (forToday: Reminder[], list: Reminder[]) => {
       const dismissedPendingPaymentIds = getDismissedPendingPaymentReminderIds(today);
@@ -106,7 +126,7 @@ export function TodayRemindersPopup() {
       }
     };
 
-    const tryLoad = (isRetry = false) => {
+    const tryLoad = async (isRetry = false) => {
       if (REMINDERS_POPUP_SESSION_CACHE_ENABLED) {
         const cached = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(REMINDERS_CACHE_KEY) : null;
         if (cached && !isRetry) {
@@ -123,7 +143,11 @@ export function TodayRemindersPopup() {
         }
       }
 
+      const sessionOk = await ensureAdminSupabaseSession(1_500);
+      if (cancelled || !sessionOk) return;
+
       db.reminders.getForTodayAndTomorrow().then(({ data, error }) => {
+        if (cancelled) return;
         if (import.meta.env.DEV) {
           console.log('[Reminders popup] getForTodayAndTomorrow' + (isRetry ? ' (retry)' : '') + ':', {
             today,
@@ -132,7 +156,7 @@ export function TodayRemindersPopup() {
           });
         }
         if (error) {
-          toast.error('Reminders could not be loaded. Check RLS policies for the reminders table.');
+          toast.error(reminderLoadErrorMessage(error));
           return;
         }
         const list = (data || []) as Reminder[];
@@ -142,17 +166,22 @@ export function TodayRemindersPopup() {
         const forToday = list.filter((r) => r.reminder_at === today);
         applyReminders(forToday, list);
         if (forToday.length === 0 && !isRetry && list.length === 0) {
-          retryTimeoutId = setTimeout(() => tryLoad(true), 1500);
+          retryTimeoutId = setTimeout(() => {
+            void tryLoad(true);
+          }, 1500);
         }
       });
     };
 
-    const initialTimeoutId = setTimeout(() => tryLoad(false), 400);
+    const initialTimeoutId = setTimeout(() => {
+      void tryLoad(false);
+    }, 400);
     return () => {
+      cancelled = true;
       clearTimeout(initialTimeoutId);
       if (retryTimeoutId != null) clearTimeout(retryTimeoutId);
     };
-  }, []);
+  }, [authInitializing, user?.id, isAdmin]);
 
   const markOneCompleted = async (r: Reminder) => {
     if (isPendingPaymentReminderTitle(r.title)) {
