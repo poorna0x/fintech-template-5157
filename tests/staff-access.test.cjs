@@ -1,13 +1,13 @@
 /**
  * Lightweight unit checks for staff-access helpers (no Supabase required).
- * Run: node netlify/functions/staff-access.test.js
+ * Run: node tests/staff-access.test.cjs
  */
 const assert = require('assert');
 const {
   technicianCanAccessJob,
   technicianCanAccessCustomer,
   verifyTechnicianAmcSaveAccess,
-} = require('./staff-access');
+} = require('../netlify/functions/staff-access');
 
 const TECH = 'tech-1111-1111-1111-111111111111';
 const OTHER = 'tech-2222-2222-2222-222222222222';
