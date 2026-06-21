@@ -137,7 +137,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
         <div
           className={`bg-white rounded-lg p-3 border border-gray-200 transition-all duration-200 ${
             customerEmail
-              ? 'hover:border-emerald-300 hover:shadow-sm cursor-pointer'
+              ? 'hover:border-gray-300 hover:shadow-sm cursor-pointer'
               : 'opacity-90'
           }`}
           onClick={customerEmail ? handleEmailClick : undefined}
@@ -158,7 +158,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
             <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
               <Mail
-                className={`w-4 h-4 sm:w-5 sm:h-5 ${customerEmail ? 'text-emerald-600' : 'text-gray-400'}`}
+                className={`w-4 h-4 sm:w-5 sm:h-5 ${customerEmail ? 'text-gray-600' : 'text-gray-400'}`}
               />
             </div>
             <div className="flex-1 min-w-0">
@@ -174,7 +174,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
         <div
           className={`bg-white rounded-lg p-3 border border-gray-200 transition-all duration-200 ${
             customer.phone?.trim()
-              ? 'hover:border-green-300 hover:shadow-sm cursor-pointer'
+              ? 'hover:border-gray-300 hover:shadow-sm cursor-pointer'
               : 'opacity-90'
           }`}
           onClick={customer.phone?.trim() ? handleWhatsAppComposerClick : undefined}
@@ -196,7 +196,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
             <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
               <WhatsAppIcon
                 className={`w-4 h-4 sm:w-5 sm:h-5 ${
-                  customer.phone?.trim() ? 'text-green-600' : 'text-gray-400'
+                  customer.phone?.trim() ? 'text-gray-600' : 'text-gray-400'
                 }`}
               />
             </div>

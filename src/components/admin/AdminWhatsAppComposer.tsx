@@ -369,7 +369,7 @@ export function AdminWhatsAppComposerPanel({
                   <Button
                     type="button"
                     size="sm"
-                    className="bg-green-600 hover:bg-green-700 text-white"
+                    className="bg-black hover:bg-gray-800 text-white"
                     onClick={onClose}
                   >
                     Done
@@ -421,7 +421,7 @@ export function AdminWhatsAppComposerPanel({
                 <>
                   <Button
                     type="button"
-                    className="w-full sm:flex-1 bg-green-600 hover:bg-green-700 text-white"
+                    className="w-full sm:flex-1 bg-black hover:bg-gray-800 text-white"
                     onClick={() => handleOpenWhatsApp(sendTo)}
                   >
                     <WhatsAppIcon className="w-4 h-4 mr-2" />
@@ -429,7 +429,7 @@ export function AdminWhatsAppComposerPanel({
                   </Button>
                   <Button
                     type="button"
-                    className="w-full sm:flex-1 bg-green-600 hover:bg-green-700 text-white"
+                    className="w-full sm:flex-1 bg-black hover:bg-gray-800 text-white"
                     onClick={() => handleOpenWhatsApp(alternatePhone)}
                   >
                     <WhatsAppIcon className="w-4 h-4 mr-2" />
@@ -439,7 +439,7 @@ export function AdminWhatsAppComposerPanel({
               ) : (
                 <Button
                   type="button"
-                  className="w-full sm:flex-1 bg-green-600 hover:bg-green-700 text-white"
+                  className="w-full sm:flex-1 bg-black hover:bg-gray-800 text-white"
                   onClick={() => handleOpenWhatsApp(sendTo)}
                 >
                   <WhatsAppIcon className="w-4 h-4 mr-2" />
@@ -471,7 +471,7 @@ export function AdminWhatsAppComposerPanel({
             <Button
               type="button"
               onClick={handleReviewSend}
-              className="w-full bg-green-600 hover:bg-green-700 text-white hover:text-white"
+              className="w-full bg-black hover:bg-gray-800 text-white hover:text-white"
             >
               <Send className="w-4 h-4 mr-2" />
               Review & open WhatsApp
@@ -594,7 +594,7 @@ export function AdminWhatsAppComposerPanel({
 
           {sourceMode === 'crm' && customerLoading ? (
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-8 text-center">
-              <Loader2 className="w-6 h-6 mx-auto animate-spin text-green-600 mb-2" />
+              <Loader2 className="w-6 h-6 mx-auto animate-spin text-slate-600 mb-2" />
               <p className="text-sm font-medium text-slate-700">Loading customer details…</p>
             </div>
           ) : sourceMode === 'crm' && !crmDataLoaded ? (
@@ -779,7 +779,7 @@ export function AdminWhatsAppComposerPanel({
         <div className="px-3 sm:px-6 py-3 sm:py-4 flex flex-wrap items-start sm:items-center justify-between gap-2 sm:gap-3">
           <div className="min-w-0 flex-1">
             <h2 className="text-lg sm:text-xl font-bold text-slate-900 flex items-center gap-2">
-              <WhatsAppIcon className="w-5 h-5 text-green-600 shrink-0" />
+              <WhatsAppIcon className="w-5 h-5 text-slate-900 shrink-0" />
               Send WhatsApp
             </h2>
             <p className="hidden sm:block text-sm text-slate-500 mt-0.5">
