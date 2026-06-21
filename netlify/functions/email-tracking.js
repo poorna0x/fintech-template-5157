@@ -1,5 +1,5 @@
 // Shared helpers: log sent emails, inject open-tracking pixel, record opens.
-// Egress-conscious: cache CRM setting, insert without RETURNING, single RPC on pixel hit.
+// Egress-conscious: insert without RETURNING, single RPC on pixel hit.
 
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
@@ -11,10 +11,6 @@ const TRANSPARENT_GIF = Buffer.from(
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-/** Avoid reading crm_settings on every send (same pattern as admin notification counts). */
-const TRACKING_SETTING_CACHE_MS = 5 * 60 * 1000;
-let trackingEnabledCache = { value: true, expiresAt: 0 };
 
 function isUuid(value) {
   return typeof value === 'string' && UUID_RE.test(value.trim());
@@ -47,36 +43,6 @@ function sanitizeBrand(raw) {
   return raw === 'elevenro' ? 'elevenro' : 'hydrogenro';
 }
 
-async function isTrackingEnabled(admin) {
-  const now = Date.now();
-  if (now < trackingEnabledCache.expiresAt) {
-    return trackingEnabledCache.value;
-  }
-
-  if (!admin) return true;
-
-  try {
-    const { data, error } = await admin
-      .from('crm_settings')
-      .select('value')
-      .eq('key', 'email_open_tracking_enabled')
-      .maybeSingle();
-    let enabled = true;
-    if (!error && data) {
-      const v = data.value;
-      if (v === false || v === 'false' || v === 0) enabled = false;
-    }
-    trackingEnabledCache = { value: enabled, expiresAt: now + TRACKING_SETTING_CACHE_MS };
-    return enabled;
-  } catch {
-    return true;
-  }
-}
-
-function invalidateTrackingSettingCache() {
-  trackingEnabledCache.expiresAt = 0;
-}
-
 function injectTrackingPixel(html, token) {
   if (!html || !token || !isUuid(token)) return html;
   const url = getTrackingPixelUrl(token);
@@ -105,14 +71,7 @@ async function prepareTrackedEmail(options) {
     return { html, logId: null };
   }
 
-  let trackingEnabled = false;
-  try {
-    trackingEnabled = await isTrackingEnabled(admin);
-  } catch {
-    trackingEnabled = true;
-  }
-
-  const trackingToken = trackingEnabled ? crypto.randomUUID() : null;
+  const trackingToken = crypto.randomUUID();
   const row = {
     tracking_token: trackingToken,
     recipient_email: String(recipientEmail || '').slice(0, 500),
@@ -123,7 +82,7 @@ async function prepareTrackedEmail(options) {
     customer_id: isUuid(customerId) ? customerId.trim() : null,
     sent_by_user_id: isUuid(sentByUserId) ? sentByUserId.trim() : null,
     smtp_message_id: null,
-    tracking_pixel_enabled: Boolean(trackingEnabled && trackingToken),
+    tracking_pixel_enabled: true,
     sent_at: new Date().toISOString(),
   };
 
@@ -138,7 +97,7 @@ async function prepareTrackedEmail(options) {
       return { html, logId: null };
     }
 
-    const finalHtml = trackingToken ? injectTrackingPixel(html, trackingToken) : html;
+    const finalHtml = injectTrackingPixel(html, trackingToken);
     return { html: finalHtml, logId: null };
   } catch (err) {
     console.warn('[email-tracking] prepare failed', err && err.message);
@@ -195,5 +154,4 @@ module.exports = {
   isUuid,
   prepareTrackedEmail,
   recordEmailOpen,
-  invalidateTrackingSettingCache,
 };

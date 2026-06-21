@@ -10,6 +10,11 @@ import {
   parseAmcAgreementNumberFromAdditionalInfo,
 } from './amc-agreement-number';
 import type { PublicSiteKey } from './websiteSiteKey';
+import {
+  applySentEmailLogFilters,
+  SENT_EMAIL_LOG_LIST_COLUMNS,
+  type SentEmailLogQueryFilters,
+} from './sent-email-log-filters';
 
 export { supabaseAuthClient as supabase };
 export { generateJobNumber } from './jobNumber';
@@ -6541,46 +6546,23 @@ export const db = {
 
   /** Admin Settings — sent email log (Hostinger SMTP + open pixel). Slim columns, head count. */
   sentEmailLogs: {
-    async list(opts: {
-      page?: number;
-      pageSize?: number;
-      filter?: 'all' | 'opened' | 'not_opened';
-      search?: string;
-      /** When false, skip count query (e.g. page 2+) to save egress. */
-      includeCount?: boolean;
-    }) {
+    async list(
+      opts: {
+        page?: number;
+        pageSize?: number;
+        includeCount?: boolean;
+      } & SentEmailLogQueryFilters
+    ) {
       const page = Math.max(1, opts.page ?? 1);
       const pageSize = Math.min(Math.max(1, opts.pageSize ?? 20), 25);
       const from = (page - 1) * pageSize;
       const to = from + pageSize - 1;
 
-      const applyFilters = (query: {
-        not: (col: string, op: string, val: null) => typeof query;
-        is: (col: string, op: string, val: null) => typeof query;
-        eq: (col: string, val: boolean) => typeof query;
-        or: (expr: string) => typeof query;
-      }) => {
-        let q = query;
-        if (opts.filter === 'opened') {
-          q = q.not('opened_at', 'is', null);
-        } else if (opts.filter === 'not_opened') {
-          q = q.is('opened_at', null).eq('tracking_pixel_enabled', true);
-        }
-        const term = (opts.search || '').trim().slice(0, 80);
-        if (term) {
-          const safe = term.replace(/[%_,]/g, ' ');
-          q = q.or(`recipient_email.ilike.%${safe}%,subject.ilike.%${safe}%`);
-        }
-        return q;
-      };
-
-      const dataQuery = applyFilters(
-        supabase
-          .from('sent_email_logs')
-          .select(
-            'id, recipient_email, subject, template_type, document_brand, sent_at, opened_at, tracking_pixel_enabled'
-          )
-          .order('sent_at', { ascending: false })
+      const dataQuery = applySentEmailLogFilters(
+        supabase.from('sent_email_logs').select(SENT_EMAIL_LOG_LIST_COLUMNS).order('sent_at', {
+          ascending: false,
+        }),
+        opts
       ).range(from, to);
 
       if (opts.includeCount === false) {
@@ -6588,8 +6570,9 @@ export const db = {
         return { data: data || [], error, count: undefined as number | undefined };
       }
 
-      const countQuery = applyFilters(
-        supabase.from('sent_email_logs').select('id', { count: 'exact', head: true })
+      const countQuery = applySentEmailLogFilters(
+        supabase.from('sent_email_logs').select('id', { count: 'exact', head: true }),
+        opts
       );
 
       const [{ data, error }, { count, error: countError }] = await Promise.all([
@@ -6603,32 +6586,62 @@ export const db = {
         count: count ?? 0,
       };
     },
-  },
 
-  crmSettings: {
-    async getEmailOpenTrackingEnabled() {
-      const { data, error } = await supabase
-        .from('crm_settings')
-        .select('value')
-        .eq('key', 'email_open_tracking_enabled')
-        .maybeSingle();
-      if (error) return { enabled: true, error };
-      const v = data?.value;
-      if (v === false || v === 'false' || v === 0) return { enabled: false, error: null };
-      return { enabled: true, error: null };
-    },
-    async setEmailOpenTrackingEnabled(enabled: boolean) {
-      const { error } = await supabase
-        .from('crm_settings')
-        .upsert(
-          {
-            key: 'email_open_tracking_enabled',
-            value: enabled,
-            updated_at: new Date().toISOString(),
+    async deleteById(id: string) {
+      const { error: rpcError } = await supabase.rpc('delete_sent_email_logs', { p_id: id });
+      if (!rpcError) return { error: null };
+      const msg = rpcError.message || '';
+      if (!/delete_sent_email_logs|PGRST202|42883|schema cache/i.test(msg)) {
+        return { error: rpcError };
+      }
+      const { error } = await supabase.from('sent_email_logs').delete().eq('id', id);
+      if (error && /permission denied/i.test(error.message || '')) {
+        return {
+          error: {
+            ...error,
+            message:
+              'Delete not allowed. Run scripts/delete-sent-email-logs-rpc.sql in Supabase SQL editor.',
           },
-          { onConflict: 'key' }
-        );
+        };
+      }
       return { error };
+    },
+
+    async deleteMatching(opts: SentEmailLogQueryFilters) {
+      const { error: rpcError } = await supabase.rpc('delete_sent_email_logs', {
+        p_id: null,
+        p_filter: opts.filter ?? 'all',
+        p_brand: opts.brand ?? 'all',
+        p_template_type: opts.templateType ?? 'all',
+        p_search: opts.search ?? '',
+      });
+      if (!rpcError) return { error: null };
+      const msg = rpcError.message || '';
+      if (!/delete_sent_email_logs|PGRST202|42883|schema cache/i.test(msg)) {
+        return { error: rpcError };
+      }
+      const { error } = await applySentEmailLogFilters(
+        supabase.from('sent_email_logs').delete(),
+        opts
+      );
+      if (error && /permission denied/i.test(error.message || '')) {
+        return {
+          error: {
+            ...error,
+            message:
+              'Delete not allowed. Run scripts/delete-sent-email-logs-rpc.sql in Supabase SQL editor.',
+          },
+        };
+      }
+      return { error };
+    },
+
+    async countMatching(opts: SentEmailLogQueryFilters) {
+      const { count, error } = await applySentEmailLogFilters(
+        supabase.from('sent_email_logs').select('id', { count: 'exact', head: true }),
+        opts
+      );
+      return { count: count ?? 0, error };
     },
   },
 };

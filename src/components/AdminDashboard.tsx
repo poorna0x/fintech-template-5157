@@ -156,6 +156,7 @@ import ShareTechnicianInfoToCustomerDialog from './admin/ShareTechnicianInfoToCu
 import RecentAccountsDialog from './admin/RecentAccountsDialog';
 import DirectSaleDialog from './admin/DirectSaleDialog';
 import AmountTrackersDialog from './admin/AmountTrackersDialog';
+import { EmailSentLogDialog } from './admin/EmailSentLogDialog';
 import ServiceHistoryDialog from './admin/ServiceHistoryDialog';
 import PhotoGalleryDialog from './admin/PhotoGalleryDialog';
 import PhotoViewerDialog from './admin/PhotoViewerDialog';
@@ -713,6 +714,7 @@ const AdminDashboard = () => {
   const [isCreating, setIsCreating] = useState(false);
   const [shouldCreateJob, setShouldCreateJob] = useState(false);
   const [recentAccountsDialogOpen, setRecentAccountsDialogOpen] = useState(false);
+  const [emailSentLogOpen, setEmailSentLogOpen] = useState(false);
   const [recentAccountsToday, setRecentAccountsToday] = useState<Customer[]>([]);
   const [loadingRecentAccounts, setLoadingRecentAccounts] = useState(false);
   const [directSaleOpen, setDirectSaleOpen] = useState(false);
@@ -9853,6 +9855,15 @@ const AdminDashboard = () => {
                     Website analytics data
                   </DropdownMenuItem>
                   <DropdownMenuItem
+                    onClick={() => {
+                      hapticTap();
+                      setEmailSentLogOpen(true);
+                    }}
+                  >
+                    <Mail className="w-4 h-4 mr-2" />
+                    Sent email log
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
                     disabled={isManager}
                     onClick={() => {
                       if (isManager) return;
@@ -13456,6 +13467,7 @@ const AdminDashboard = () => {
       <DirectSaleDialog open={directSaleOpen} onOpenChange={setDirectSaleOpen} />
 
       <AmountTrackersDialog open={amountTrackersOpen} onOpenChange={setAmountTrackersOpen} />
+      <EmailSentLogDialog open={emailSentLogOpen} onOpenChange={setEmailSentLogOpen} />
 
       {/* Recent Accounts Dialog – scoped fetch when opened (no full customer list) */}
       <Dialog open={recentAccountsDialogOpen} onOpenChange={setRecentAccountsDialogOpen}>

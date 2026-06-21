@@ -2032,8 +2032,6 @@ const Settings = () => {
             }
           />
 
-          <EmailTrackingSettings />
-
           {/* AMC View */}
           <SettingsActionCard
             title="View AMCs"
@@ -2660,6 +2658,8 @@ const Settings = () => {
           </Card>
 
           <WebsiteAnalyticsSettings />
+
+          <EmailTrackingSettings />
 
           {/* Data Export Section - At Bottom */}
           <Card>

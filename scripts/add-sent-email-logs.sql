@@ -132,7 +132,86 @@ CREATE POLICY sent_email_logs_admin_select
   ON public.sent_email_logs FOR SELECT TO authenticated
   USING (public.is_admin_user());
 
--- No INSERT/UPDATE/DELETE for authenticated — Netlify service role only.
+-- No INSERT/UPDATE for authenticated — Netlify service role only; admins may DELETE log rows.
 REVOKE ALL ON TABLE public.sent_email_logs FROM anon;
-REVOKE INSERT, UPDATE, DELETE ON TABLE public.sent_email_logs FROM authenticated;
-GRANT SELECT ON TABLE public.sent_email_logs TO authenticated;
+REVOKE INSERT, UPDATE ON TABLE public.sent_email_logs FROM authenticated;
+GRANT SELECT, DELETE ON TABLE public.sent_email_logs TO authenticated;
+
+DROP POLICY IF EXISTS sent_email_logs_admin_delete ON public.sent_email_logs;
+
+CREATE POLICY sent_email_logs_admin_delete
+  ON public.sent_email_logs FOR DELETE TO authenticated
+  USING (public.is_admin_user());
+
+-- Admin delete RPC (SECURITY DEFINER — use when table DELETE grant fails in PostgREST).
+CREATE OR REPLACE FUNCTION public.delete_sent_email_logs(
+  p_id uuid DEFAULT NULL,
+  p_filter text DEFAULT 'all',
+  p_brand text DEFAULT 'all',
+  p_template_type text DEFAULT 'all',
+  p_search text DEFAULT NULL
+)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  deleted_count integer;
+  search_term text;
+  filter_norm text;
+  brand_norm text;
+  type_norm text;
+BEGIN
+  IF NOT public.is_admin_user() THEN
+    RAISE EXCEPTION 'not authorized' USING ERRCODE = '42501';
+  END IF;
+
+  filter_norm := coalesce(nullif(btrim(p_filter), ''), 'all');
+  brand_norm := coalesce(nullif(btrim(p_brand), ''), 'all');
+  type_norm := coalesce(nullif(btrim(p_template_type), ''), 'all');
+
+  search_term := nullif(btrim(coalesce(p_search, '')), '');
+  IF search_term IS NOT NULL THEN
+    search_term := left(regexp_replace(search_term, '[%_,]', ' ', 'g'), 80);
+    IF search_term = '' THEN
+      search_term := NULL;
+    END IF;
+  END IF;
+
+  IF p_id IS NOT NULL THEN
+    DELETE FROM public.sent_email_logs WHERE id = p_id;
+    GET DIAGNOSTICS deleted_count = ROW_COUNT;
+    RETURN deleted_count;
+  END IF;
+
+  WITH doomed AS (
+    SELECT l.id
+    FROM public.sent_email_logs l
+    WHERE
+      (
+        filter_norm = 'all'
+        OR (filter_norm = 'opened' AND l.opened_at IS NOT NULL)
+        OR (filter_norm = 'not_opened' AND l.opened_at IS NULL AND l.tracking_pixel_enabled = true)
+        OR (filter_norm = 'tracking_off' AND l.tracking_pixel_enabled = false)
+      )
+      AND (brand_norm = 'all' OR l.document_brand = brand_norm)
+      AND (type_norm = 'all' OR l.template_type = type_norm)
+      AND (
+        search_term IS NULL
+        OR l.recipient_email ILIKE '%' || search_term || '%'
+        OR l.subject ILIKE '%' || search_term || '%'
+      )
+  )
+  DELETE FROM public.sent_email_logs l
+  USING doomed d
+  WHERE l.id = d.id;
+
+  GET DIAGNOSTICS deleted_count = ROW_COUNT;
+  RETURN deleted_count;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.delete_sent_email_logs(uuid, text, text, text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.delete_sent_email_logs(uuid, text, text, text, text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.delete_sent_email_logs(uuid, text, text, text, text) TO service_role;
