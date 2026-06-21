@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle, Edit, Loader2, Mail, ShoppingCart } from 'lucide-react';
+import { CheckCircle, Edit, Images, Loader2, Mail, ShoppingCart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -220,6 +220,39 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
   // Use normalized URLs only (count + viewer) so "View Bill Photos (1)" matches a real image URL
   const billPhotoUrls = extractPhotoUrls(Array.isArray(billPhotos) ? billPhotos : []);
   const paymentPhotoUrl = normalizePhotoUrl(paymentScreenshot);
+
+  const openPaymentAndBillViewer = () => {
+    const allPhotos: string[] = [...billPhotoUrls];
+    if (paymentPhotoUrl) {
+      allPhotos.push(paymentPhotoUrl);
+    }
+
+    if (allPhotos.length === 0) {
+      toast.error('No valid photo links for this job');
+      return;
+    }
+
+    setSelectedBillPhotos(allPhotos);
+    setSelectedPhoto({
+      url: allPhotos[0],
+      index: 0,
+      total: allPhotos.length,
+    });
+    setPhotoViewerOpen(true);
+  };
+
+  const billCount = billPhotoUrls.length;
+  const hasPayment = !!paymentPhotoUrl;
+  const documentCount = billCount + (hasPayment ? 1 : 0);
+  const documentButtonLabel =
+    hasPayment && billCount > 0
+      ? `Payment & bill photos (${documentCount})`
+      : hasPayment
+        ? 'Payment photo'
+        : `Bill photos (${billCount})`;
+
+  const documentChipClass =
+    'inline-flex items-center gap-1.5 rounded-lg border border-emerald-200/90 bg-white px-2.5 py-1.5 text-xs font-medium text-emerald-900 shadow-sm transition-colors touch-manipulation hover:border-emerald-300 hover:bg-emerald-50';
   
   // Extract OTP information
   const otpRequirement = requirements.find((r: any) => r?.require_otp === true);
@@ -351,44 +384,17 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
             </div>
           )}
           
-          {/* Payment Screenshot & Bill Photos - Combined */}
+          {/* Payment Screenshot & Bill Photos */}
           {paymentPhotoUrl || billPhotoUrls.length > 0 ? (
-            <div className="text-gray-700 mt-2 pt-2 border-t border-green-200">
-              <span className="text-gray-500 font-medium">Payment & Bill Documents:</span>
+            <div className="mt-2 pt-2 border-t border-green-200">
+              <div className="text-gray-500 font-medium text-xs mb-2">Payment & Bill Documents</div>
               <button
-                onClick={() => {
-                  const allPhotos: string[] = [...billPhotoUrls];
-                  if (paymentPhotoUrl) {
-                    allPhotos.push(paymentPhotoUrl);
-                  }
-
-                  if (allPhotos.length === 0) {
-                    toast.error('No valid photo links for this job');
-                    return;
-                  }
-                  setSelectedBillPhotos(allPhotos);
-                  setSelectedPhoto({
-                    url: allPhotos[0],
-                    index: 0,
-                    total: allPhotos.length,
-                  });
-                  setPhotoViewerOpen(true);
-                }}
-                className="ml-2 text-blue-600 hover:underline break-all cursor-pointer"
+                type="button"
+                onClick={openPaymentAndBillViewer}
+                className={documentChipClass}
               >
-                {(() => {
-                  const billCount = billPhotoUrls.length;
-                  const hasPayment = !!paymentPhotoUrl;
-                  const totalCount = billCount + (hasPayment ? 1 : 0);
-
-                  if (hasPayment && billCount > 0) {
-                    return `View Payment Photo & Bill Photos (${totalCount})`;
-                  } else if (hasPayment) {
-                    return 'View Payment Photo';
-                  } else {
-                    return `View Bill Photos (${billCount})`;
-                  }
-                })()}
+                <Images className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                <span>{documentButtonLabel}</span>
               </button>
             </div>
           ) : null}
