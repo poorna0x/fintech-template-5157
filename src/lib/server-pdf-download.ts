@@ -1,4 +1,5 @@
 import { toast } from 'sonner';
+import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 
 const PDF_ENDPOINT = '/.netlify/functions/generate-pdf';
 const PDF_REQUEST_TIMEOUT_MS = 55_000;
@@ -114,9 +115,17 @@ async function fetchPdfFromServer(html: string, filename: string): Promise<{
   pdfBase64: string;
   filename: string;
 }> {
+  const accessToken = await resolveSupabaseAccessTokenForApi();
+  if (!accessToken) {
+    throw new Error('Sign in to generate PDFs');
+  }
+
   const response = await fetch(PDF_ENDPOINT, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
     body: JSON.stringify({ html, filename }),
     signal: AbortSignal.timeout(PDF_REQUEST_TIMEOUT_MS),
   });

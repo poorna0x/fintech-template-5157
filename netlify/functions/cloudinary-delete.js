@@ -6,9 +6,9 @@
 //   2. An allowed Origin
 //   3. Per-IP and per-user rate limits
 //   4. A strict publicId format (no shell/path injection, length-bounded)
-const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
 const { addSecurityHeaders } = require('./security-headers');
+const { verifyStaffBearerToken, readAccessTokenFromEvent } = require('./admin-auth-guard');
 const {
   checkRateLimit,
   checkRateLimitForKey,
@@ -103,9 +103,7 @@ exports.handler = async (event, context) => {
   }
 
   // --- AUTHENTICATION: require a valid Supabase access token (admin or technician) ---
-  const accessToken =
-    body.accessToken ||
-    (event.headers.authorization || event.headers.Authorization || '').replace(/^Bearer\s+/i, '');
+  const accessToken = readAccessTokenFromEvent(event, body);
   if (!accessToken) {
     return {
       statusCode: 401,
@@ -114,43 +112,18 @@ exports.handler = async (event, context) => {
     };
   }
 
-  const supabaseUrl = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
-  const anonKey = (process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '').trim();
-  if (!supabaseUrl || !anonKey) {
+  const auth = await verifyStaffBearerToken(accessToken);
+  if (!auth.ok) {
     return {
-      statusCode: 503,
+      statusCode: auth.error === 'Unauthorized' ? 401 : 403,
       headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ deleted: false, error: 'Server misconfigured' }),
-    };
-  }
-
-  const userClient = createClient(supabaseUrl, anonKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-  const { data: userData, error: userErr } = await userClient.auth.getUser(accessToken);
-  if (userErr || !userData?.user) {
-    return {
-      statusCode: 401,
-      headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ deleted: false, error: 'Unauthorized' }),
-    };
-  }
-
-  const role =
-    userData.user.app_metadata?.role ||
-    userData.user.user_metadata?.role ||
-    'admin';
-  if (role !== 'admin' && role !== 'technician') {
-    return {
-      statusCode: 403,
-      headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ deleted: false, error: 'Forbidden' }),
+      body: JSON.stringify({ deleted: false, error: auth.error || 'Forbidden' }),
     };
   }
 
   // Per-user limit (shared with IP limit). Tighter than IP because each authenticated
   // user is a single principal and deletes should not happen in bursts.
-  const userLimit = checkRateLimitForKey(`cloudinary-delete-user:${userData.user.id}`, {
+  const userLimit = checkRateLimitForKey(`cloudinary-delete-user:${auth.userId}`, {
     maxRequests: 100,
     windowMs: 60 * 60 * 1000,
     endpoint: 'cloudinary-delete-user',

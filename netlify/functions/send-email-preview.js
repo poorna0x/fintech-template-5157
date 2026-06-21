@@ -4,6 +4,11 @@
 const nodemailer = require('nodemailer');
 const { validatePreviewEmailBody, getFixedFromAddress, getBrandMailMeta } = require('./email-guard');
 const { authorizeAdminRequest, authorizeStaffAmcEmailRequest } = require('./admin-auth-guard');
+const {
+  checkRateLimit,
+  checkRateLimitForKey,
+  rateLimitResponseForKey,
+} = require('./rate-limiter');
 
 function jsonResponse(statusCode, headers, body) {
   return {
@@ -47,6 +52,41 @@ exports.handler = async (event) => {
       : await authorizeAdminRequest(event);
   if (!auth.ok) {
     return jsonResponse(403, cors, { error: auth.error || 'Unauthorized' });
+  }
+
+  const ipLimit = checkRateLimit(event, {
+    maxRequests: 30,
+    windowMs: 60_000,
+    endpoint: 'send-email-preview',
+  });
+  if (!ipLimit.allowed) {
+    return jsonResponse(429, cors, {
+      error: 'Too many email requests. Please try again shortly.',
+      retryAfterMs: Math.max(0, ipLimit.resetTime - Date.now()),
+    });
+  }
+
+  if (auth.userId) {
+    const userLimit = checkRateLimitForKey(`send-email-preview-user:${auth.userId}`, {
+      maxRequests: purpose === 'amc_agreement' ? 40 : 60,
+      windowMs: 60 * 60 * 1000,
+      endpoint: 'send-email-preview-user',
+    });
+    if (!userLimit.allowed) {
+      return {
+        ...rateLimitResponseForKey(userLimit),
+        headers: { ...rateLimitResponseForKey(userLimit).headers, ...cors },
+      };
+    }
+  } else if (auth.via === 'preview_secret') {
+    const previewLimit = checkRateLimit(event, {
+      maxRequests: 10,
+      windowMs: 60_000,
+      endpoint: 'send-email-preview-secret',
+    });
+    if (!previewLimit.allowed) {
+      return jsonResponse(429, cors, { error: 'Too many email requests. Please try again shortly.' });
+    }
   }
 
   const validated = validatePreviewEmailBody(body);

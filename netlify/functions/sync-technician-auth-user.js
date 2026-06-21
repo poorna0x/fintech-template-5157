@@ -2,6 +2,7 @@
 // Called from admin Settings when saving a technician password.
 const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
+const { authorizeAdminBearer } = require('./admin-auth-guard');
 const { upsertTechnicianAuthUser } = require('./technician-auth-upsert');
 
 exports.handler = async (event) => {
@@ -60,30 +61,12 @@ exports.handler = async (event) => {
     };
   }
 
-  const userClient = createClient(supabaseUrl, anonKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-  const { data: userData, error: userError } = await userClient.auth.getUser(accessToken);
-  if (userError || !userData?.user) {
+  const adminAuth = await authorizeAdminBearer(event, body);
+  if (!adminAuth.ok) {
     return {
-      statusCode: 401,
+      statusCode: adminAuth.error === 'Unauthorized' ? 401 : 403,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        error: 'Unauthorized',
-        hint: 'Log out and log in again as admin so Settings can sync technician login.',
-      }),
-    };
-  }
-
-  const role =
-    userData.user.app_metadata?.role ||
-    userData.user.user_metadata?.role ||
-    'admin';
-  if (role === 'technician') {
-    return {
-      statusCode: 403,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ error: 'Admin only' }),
+      body: JSON.stringify({ error: adminAuth.error || 'Unauthorized' }),
     };
   }
 

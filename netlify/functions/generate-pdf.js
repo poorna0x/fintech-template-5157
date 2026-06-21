@@ -1,26 +1,38 @@
 // Netlify Function: render HTML to PDF via headless Chromium (Puppeteer).
+// Auth: admin or technician JWT required.
 const chromium = require('@sparticuz/chromium');
 const puppeteer = require('puppeteer-core');
-const { checkRateLimit, getClientIdentifier } = require('./rate-limiter');
+const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
+const { addSecurityHeaders } = require('./security-headers');
+const { verifyStaffBearerToken } = require('./admin-auth-guard');
+const { checkRateLimit, checkRateLimitForKey, getClientIdentifier } = require('./rate-limiter');
 
-// Reduce Chromium startup time/memory on serverless.
 chromium.setGraphicsMode = false;
 
 const MAX_HTML_BYTES = 3 * 1024 * 1024; // 3 MB
 const MAX_FILENAME_LENGTH = 180;
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-};
+const ALLOWED_ASSET_HOSTS = [
+  'hydrogenro.com',
+  'www.hydrogenro.com',
+  'elevenro.com',
+  'www.elevenro.com',
+  'hydrogenro.netlify.app',
+  'localhost',
+  '127.0.0.1',
+];
 
-function jsonResponse(statusCode, body) {
+function jsonResponse(statusCode, corsHeaders, body) {
   return {
     statusCode,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
     body: JSON.stringify(body),
   };
+}
+
+function readBearerToken(event) {
+  const authHeader = event.headers.authorization || event.headers.Authorization || '';
+  return authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
 }
 
 function sanitizeFilename(raw) {
@@ -29,6 +41,40 @@ function sanitizeFilename(raw) {
     .replace(/\s+/g, '_')
     .slice(0, MAX_FILENAME_LENGTH);
   return base.toLowerCase().endsWith('.pdf') ? base : `${base}.pdf`;
+}
+
+function getAllowedAssetHosts() {
+  const hosts = new Set(ALLOWED_ASSET_HOSTS);
+  for (const envUrl of [process.env.URL, process.env.DEPLOY_PRIME_URL]) {
+    if (!envUrl) continue;
+    try {
+      hosts.add(new URL(envUrl).hostname.toLowerCase());
+    } catch {
+      /* skip invalid URL */
+    }
+  }
+  return hosts;
+}
+
+function isAllowedPdfResourceUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  if (url.startsWith('data:') || url.startsWith('blob:')) return true;
+
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+
+  const host = parsed.hostname.toLowerCase();
+  const allowedHosts = getAllowedAssetHosts();
+  for (const allowed of allowedHosts) {
+    if (host === allowed || host.endsWith(`.${allowed}`)) return true;
+  }
+  return false;
 }
 
 function listBrowserExecutablePaths() {
@@ -136,6 +182,21 @@ async function renderHtmlToPdf(html) {
   try {
     browser = await launchBrowser();
     const page = await browser.newPage();
+
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+      const resourceType = req.resourceType();
+      if (resourceType === 'document') {
+        req.continue();
+        return;
+      }
+      if (isAllowedPdfResourceUrl(req.url())) {
+        req.continue();
+        return;
+      }
+      req.abort();
+    });
+
     await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 1 });
     await page.setContent(html, {
       waitUntil: 'load',
@@ -160,12 +221,25 @@ async function renderHtmlToPdf(html) {
 }
 
 exports.handler = async (event) => {
+  const requestOrigin = event.headers.origin || event.headers.Origin;
+  const corsHeaders = getCorsHeaders(requestOrigin);
+
   if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 204, headers: corsHeaders, body: '' };
+    return { statusCode: 204, headers: addSecurityHeaders(corsHeaders), body: '' };
+  }
+
+  if (requestOrigin && !isOriginAllowed(requestOrigin)) {
+    return jsonResponse(403, corsHeaders, { error: 'Forbidden: Origin not allowed' });
   }
 
   if (event.httpMethod !== 'POST') {
-    return jsonResponse(405, { error: 'Method not allowed' });
+    return jsonResponse(405, corsHeaders, { error: 'Method not allowed' });
+  }
+
+  const token = readBearerToken(event);
+  const auth = await verifyStaffBearerToken(token);
+  if (!auth.ok) {
+    return jsonResponse(401, corsHeaders, { error: auth.error || 'Unauthorized' });
   }
 
   const clientId = getClientIdentifier(event);
@@ -175,9 +249,21 @@ exports.handler = async (event) => {
     endpoint: 'generate-pdf',
   });
   if (!rate.allowed) {
-    return jsonResponse(429, {
+    return jsonResponse(429, corsHeaders, {
       error: 'Too many PDF requests. Please try again shortly.',
       retryAfterMs: Math.max(0, rate.resetTime - Date.now()),
+    });
+  }
+
+  const userLimit = checkRateLimitForKey(`generate-pdf-user:${auth.userId}`, {
+    maxRequests: 60,
+    windowMs: 60 * 60 * 1000,
+    endpoint: 'generate-pdf-user',
+  });
+  if (!userLimit.allowed) {
+    return jsonResponse(429, corsHeaders, {
+      error: 'Too many PDF requests. Please try again later.',
+      retryAfterMs: Math.max(0, userLimit.resetTime - Date.now()),
     });
   }
 
@@ -185,17 +271,17 @@ exports.handler = async (event) => {
   try {
     body = JSON.parse(event.body || '{}');
   } catch {
-    return jsonResponse(400, { error: 'Invalid JSON body' });
+    return jsonResponse(400, corsHeaders, { error: 'Invalid JSON body' });
   }
 
   const html = typeof body.html === 'string' ? body.html.trim() : '';
   if (!html) {
-    return jsonResponse(400, { error: 'Missing html content' });
+    return jsonResponse(400, corsHeaders, { error: 'Missing html content' });
   }
 
   const htmlBytes = Buffer.byteLength(html, 'utf8');
   if (htmlBytes > MAX_HTML_BYTES) {
-    return jsonResponse(413, {
+    return jsonResponse(413, corsHeaders, {
       error: `HTML payload too large (${htmlBytes} bytes, max ${MAX_HTML_BYTES})`,
     });
   }
@@ -205,24 +291,20 @@ exports.handler = async (event) => {
   try {
     const pdfBytes = await renderHtmlToPdf(html);
 
-    // JSON + base64 avoids Netlify Lambda binary decode errors (502 illegal base64).
     return {
       statusCode: 200,
-      headers: {
+      headers: addSecurityHeaders({
         ...corsHeaders,
         'Content-Type': 'application/json',
         'Cache-Control': 'no-store',
-      },
+      }),
       body: JSON.stringify({
         pdfBase64: pdfBytes.toString('base64'),
         filename,
       }),
     };
   } catch (error) {
-    console.error('[generate-pdf] failed', { clientId, message: error.message });
-    return jsonResponse(500, {
-      error: 'Failed to generate PDF',
-      details: error.message,
-    });
+    console.error('[generate-pdf] failed', { clientId, userId: auth.userId, message: error.message });
+    return jsonResponse(500, corsHeaders, { error: 'Failed to generate PDF' });
   }
 };

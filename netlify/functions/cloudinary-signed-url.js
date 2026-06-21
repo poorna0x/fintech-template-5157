@@ -1,9 +1,9 @@
 // Signed, short-lived Cloudinary delivery URLs for payment receipts / bills.
 // Requires Supabase JWT (admin or technician). Secrets stay server-side.
 const crypto = require('crypto');
-const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
 const { addSecurityHeaders } = require('./security-headers');
+const { verifyStaffBearerToken, readAccessTokenFromEvent } = require('./admin-auth-guard');
 
 const trim = (s) => (s && typeof s === 'string' ? s.trim() : s);
 
@@ -95,9 +95,7 @@ exports.handler = async (event) => {
     };
   }
 
-  const accessToken =
-    body.accessToken ||
-    (event.headers.authorization || event.headers.Authorization || '').replace(/^Bearer\s+/i, '');
+  const accessToken = readAccessTokenFromEvent(event, body);
   const urls = Array.isArray(body.urls) ? body.urls : body.url ? [body.url] : [];
 
   if (!accessToken || !urls.length) {
@@ -108,25 +106,12 @@ exports.handler = async (event) => {
     };
   }
 
-  const supabaseUrl = trim(process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL);
-  const anonKey = trim(process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY);
-  if (!supabaseUrl || !anonKey) {
+  const auth = await verifyStaffBearerToken(accessToken);
+  if (!auth.ok) {
     return {
-      statusCode: 503,
+      statusCode: auth.error === 'Unauthorized' ? 401 : 403,
       headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ error: 'Supabase not configured' }),
-    };
-  }
-
-  const userClient = createClient(supabaseUrl, anonKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-  const { data: userData, error: userError } = await userClient.auth.getUser(accessToken);
-  if (userError || !userData?.user) {
-    return {
-      statusCode: 401,
-      headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ error: 'Unauthorized' }),
+      body: JSON.stringify({ error: auth.error || 'Forbidden' }),
     };
   }
 

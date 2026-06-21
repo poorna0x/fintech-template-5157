@@ -15,7 +15,18 @@ function readBearerToken(event) {
   return authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
 }
 
+function isPreviewSecretAllowedEnvironment() {
+  const ctx = process.env.CONTEXT;
+  // Never accept preview-secret auth on production deploys.
+  if (ctx === 'production') return false;
+  // Local dev-server / netlify dev only.
+  if (process.env.NETLIFY_DEV === 'true') return true;
+  if (!ctx || ctx === 'dev') return true;
+  return false;
+}
+
 function isPreviewSecretAuthorized(event) {
+  if (!isPreviewSecretAllowedEnvironment()) return false;
   const expected = String(process.env.EMAIL_PREVIEW_SECRET || '').trim();
   if (!expected) return false;
   return readPreviewSecret(event) === expected;
@@ -165,14 +176,33 @@ async function authorizeStaffAmcEmailRequest(event) {
   return { ok: false, error: session.error || 'Unauthorized' };
 }
 
+function readAccessTokenFromEvent(event, body) {
+  const fromBody = body?.accessToken;
+  if (typeof fromBody === 'string' && fromBody.trim()) return fromBody.trim();
+  return readBearerToken(event);
+}
+
+/** Admin JWT from Authorization header or body.accessToken. */
+async function authorizeAdminBearer(event, body) {
+  const token = readAccessTokenFromEvent(event, body);
+  const session = await verifyAdminBearerToken(token);
+  if (session.ok) {
+    return { ok: true, userId: session.userId };
+  }
+  return { ok: false, error: session.error || 'Unauthorized' };
+}
+
 /** @deprecated Alias — use authorizeStaffAmcEmailRequest */
 const authorizeStaffRequest = authorizeStaffAmcEmailRequest;
 
 module.exports = {
   authorizeAdminRequest,
+  authorizeAdminBearer,
   authorizeStaffAmcEmailRequest,
   authorizeStaffRequest,
   verifyAdminBearerToken,
   verifyStaffBearerToken,
   isPreviewSecretAuthorized,
+  readBearerToken,
+  readAccessTokenFromEvent,
 };

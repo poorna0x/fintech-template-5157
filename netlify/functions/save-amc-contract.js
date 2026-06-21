@@ -2,6 +2,7 @@
 
 const { createClient } = require('@supabase/supabase-js');
 const { authorizeStaffAmcEmailRequest } = require('./admin-auth-guard');
+const { verifyTechnicianAmcSaveAccess } = require('./staff-access');
 const { findActiveAmcIdByAgreementNumber, parseAgreementNumberFromAdditionalInfo } = require('./amc-agreement-number');
 
 function jsonResponse(statusCode, headers, body) {
@@ -279,6 +280,16 @@ exports.handler = async (event) => {
   const admin = createClient(supabaseUrl, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
+
+  if (auth.role === 'technician') {
+    const access = await verifyTechnicianAmcSaveAccess(admin, auth.userId, {
+      customerId: payload.customer_id,
+      jobId: payload.job_id,
+    });
+    if (!access.ok) {
+      return jsonResponse(403, cors, { error: access.error || 'Forbidden' });
+    }
+  }
 
   try {
     const upsert = await upsertAmcContract(admin, payload);
