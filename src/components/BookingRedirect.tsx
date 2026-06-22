@@ -2,13 +2,12 @@ import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Clock, MapPin, Phone } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { openPublicPhoneCall, trackPublicBookingClick } from '@/lib/websiteAnalytics';
+import { openPublicPhoneCall } from '@/lib/publicPhone';
 
 const BookingRedirect: React.FC = () => {
   const navigate = useNavigate();
 
   const handleBookService = () => {
-    trackPublicBookingClick('booking_redirect');
     navigate('/book');
   };
 

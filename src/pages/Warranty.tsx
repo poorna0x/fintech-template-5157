@@ -23,7 +23,7 @@ import {
   endWarrantySession,
 } from '@/lib/otp';
 import { lookupWarrantiesByPhone, warmWarrantyLookup, type WarrantyLookupResponse } from '@/lib/warrantyLookup';
-import { openPublicPhoneCall } from '@/lib/websiteAnalytics';
+import { openPublicPhoneCall } from '@/lib/publicPhone';
 import {
   formatWarrantyDate,
   type PublicWarranty,

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Star, ShieldCheck, Clock, Phone, Droplets, CheckCircle2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { openPublicPhoneCall, trackPublicBookingClick } from '@/lib/websiteAnalytics';
+import { openPublicPhoneCall } from '@/lib/publicPhone';
 
 const HeroSection = () => {
   const [isVisible, setIsVisible] = useState(false);
@@ -14,10 +14,9 @@ const HeroSection = () => {
   }, []);
 
   const handleBookService = () => {
-    trackPublicBookingClick('hero');
     navigate('/book');
   };
-  const handleCall = () => openPublicPhoneCall('+918884944288', 'hero');
+  const handleCall = () => openPublicPhoneCall('+918884944288');
 
   const trustPoints = [
     'Same-day service',

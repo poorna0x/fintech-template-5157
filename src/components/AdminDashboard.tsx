@@ -9845,17 +9845,6 @@ const AdminDashboard = () => {
                     Amount Trackers
                   </DropdownMenuItem>
                   <DropdownMenuItem
-                    disabled={isManager}
-                    onClick={() => {
-                      if (isManager) return;
-                      hapticTap();
-                      navigate(settingsPath('website-analytics-data'));
-                    }}
-                  >
-                    {isManager ? <Lock className="w-4 h-4 mr-2" /> : <BarChart3 className="w-4 h-4 mr-2" />}
-                    Website analytics data
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
                     onClick={() => {
                       hapticTap();
                       setEmailSentLogOpen(true);

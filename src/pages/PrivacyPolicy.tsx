@@ -161,14 +161,6 @@ const PrivacyPolicy = () => {
                       when you use those features.
                     </li>
                     <li>
-                      <strong>Analytics:</strong> our first-party website analytics stored in our database—to
-                      understand traffic, page views, and contact button usage (see our{' '}
-                      <Link to="/cookie-policy" className="text-primary underline hover:no-underline">
-                        Cookie Policy
-                      </Link>
-                      ).
-                    </li>
-                    <li>
                       <strong>Media / CDN:</strong> hosting photos you upload for service jobs where we use such a
                       service.
                     </li>
@@ -257,40 +249,6 @@ const PrivacyPolicy = () => {
                   <p>
                     We may need to verify your identity before fulfilling requests. Some requests cannot be honored
                     if we must retain data for legal, accounting, or dispute-resolution reasons.
-                  </p>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Website analytics (first-party)</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4 text-muted-foreground text-sm">
-                  <p>
-                    We collect limited, privacy-oriented usage data on our public websites to understand how many
-                    people visit, which pages are viewed, and when contact actions (such as tapping a phone number,
-                    WhatsApp link, or &quot;Book&quot; button) occur. This helps us improve our service and measure
-                    interest by brand (Hydrogen RO vs Eleven RO).
-                  </p>
-                  <p>Typical data in this analytics system includes:</p>
-                  <ul className="list-disc list-inside space-y-1">
-                    <li>Anonymous session identifier (stored in your browser session, not your name)</li>
-                    <li>Page path visited and event type (e.g. page view, phone click, booking click)</li>
-                    <li>Site brand (hydrogenro.com or elevenro.com)</li>
-                    <li>Approximate city and country (from connection routing, not GPS)</li>
-                    <li>Device type (mobile, tablet, or desktop), operating system (e.g. iOS, Android, Windows), and browser family (e.g. Chrome, Safari)</li>
-                    <li>How you arrived (e.g. direct visit, Google, social link, or other website—hostname only, not full URLs)</li>
-                    <li>Approximate time of the event and a one-way hash of connection metadata for abuse prevention</li>
-                  </ul>
-                  <p>
-                    We do not use this system to store full phone numbers from analytics events—only masked
-                    identifiers (e.g. last four digits) when a call button is tapped. A button tap does not prove a
-                    call was completed. We do not store your full IP address, exact GPS location, full browser
-                    User-Agent string, or complete third-party page URLs.
-                  </p>
-                  <p>
-                    Aggregated reports are available to authorised administrators only. Raw events may be deleted
-                    after a reasonable retention period.
                   </p>
                 </CardContent>
               </Card>

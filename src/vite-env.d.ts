@@ -14,9 +14,6 @@ interface ImportMetaEnv {
   // Never declare them as VITE_* — Vite would inline them into the public bundle.
   /** Public booking intent: 'hydrogenro' | 'elevenro' — defaults per app if unset */
   readonly VITE_WEBSITE_BOOKING_SITE_KEY?: 'hydrogenro' | 'elevenro'
-  /** GA4 — set both in one .env.local; code picks by hostname */
-  readonly VITE_GA_MEASUREMENT_ID_HYDROGENRO?: string
-  readonly VITE_GA_MEASUREMENT_ID_ELEVENRO?: string
 }
 
 interface ImportMeta {

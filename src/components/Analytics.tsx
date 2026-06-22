@@ -53,7 +53,6 @@ import { cn } from '@/lib/utils';
 
 // Code-split: spare-parts analytics JS only downloads when the section is opened.
 const SparePartsAnalytics = React.lazy(() => import('@/components/admin/SparePartsAnalytics'));
-import { WebsiteAnalyticsGate } from '@/components/admin/WebsiteAnalyticsGate';
 import {
   AnalyticsListPagination,
   AnalyticsListLoadingOverlay,
@@ -689,14 +688,6 @@ const Analytics = () => {
   const [brandPage, setBrandPage] = useState(1);
   const [brandPerPage, setBrandPerPage] = useState(10);
   const [brandsLoaded, setBrandsLoaded] = useState(false);
-
-  useEffect(() => {
-    if (window.location.hash !== '#section-website-analytics') return;
-    const timer = window.setTimeout(() => {
-      document.getElementById('section-website-analytics')?.scrollIntoView({ behavior: 'smooth' });
-    }, 400);
-    return () => window.clearTimeout(timer);
-  }, []);
 
   useEffect(() => {
     loadAnalytics();
@@ -3205,9 +3196,6 @@ const Analytics = () => {
             );
           })()}
       </AnalyticsLoadSection>
-
-      {/* Public website stats — own date/site filters; not tied to dashboard Period above */}
-      <WebsiteAnalyticsGate />
 
       {/* Softener Section */}
       {analytics.softenerData && (

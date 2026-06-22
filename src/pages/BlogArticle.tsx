@@ -6,7 +6,7 @@ import SEOHead, { useBrandBlogSeo } from '@/components/SEOHead';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Phone, Mail } from 'lucide-react';
-import { openPublicPhoneCall, trackPublicWhatsAppClick } from '@/lib/websiteAnalytics';
+import { openPublicPhoneCall } from '@/lib/publicPhone';
 import NotFound from './NotFound';
 
 // Blog articles data - matches Blog.tsx
@@ -95,12 +95,11 @@ const BlogArticle = () => {
   }
 
   const handleCall = (number: string) => {
-    openPublicPhoneCall(number, 'blog_article');
+    openPublicPhoneCall(number);
     setShowCallOptions(false);
   };
 
   const handleWhatsApp = () => {
-    trackPublicWhatsAppClick('blog_article');
     window.open('https://wa.me/918884944288', '_blank', 'noopener,noreferrer');
   };
 

@@ -25,7 +25,7 @@ import {
   markWebsiteBookingIntentBooked,
 } from '@/lib/bookingIntent';
 import { createBookingJob } from '@/lib/bookingJob';
-import { openPublicPhoneCall, trackPublicBookingSubmit } from '@/lib/websiteAnalytics';
+import { openPublicPhoneCall } from '@/lib/publicPhone';
 import {
   OTP_ENABLED,
   FIREBASE_RECAPTCHA_CONTAINER_ID,
@@ -1988,8 +1988,6 @@ const Booking: React.FC = () => {
       }
 
       bookingSucceededRef.current = true;
-      trackPublicBookingSubmit();
-
       // Mark "live intent" as successfully booked (best-effort; non-blocking).
       try {
         const phoneNorm = normalizePhoneNumber(formData.phone);
@@ -3487,7 +3485,7 @@ const Booking: React.FC = () => {
                     </p>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3 justify-center items-center">
                       <Button 
-                        onClick={() => openPublicPhoneCall('+918884944288', 'booking_page')}
+                        onClick={() => openPublicPhoneCall('+918884944288')}
                         className="flex items-center gap-2 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 transition-transform duration-300 hover:scale-105"
                       >
                         <Phone className="w-4 h-4" />

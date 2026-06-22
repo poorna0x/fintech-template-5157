@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Cookie, Settings, BarChart, Shield, Phone, Mail, MapPin, Calendar } from 'lucide-react';
+import { Cookie, Settings, Shield, Phone, Mail, MapPin, Calendar } from 'lucide-react';
 
 const CookiePolicy: React.FC = () => {
   // Scroll to top when component mounts
@@ -72,31 +72,6 @@ const CookiePolicy: React.FC = () => {
                     </ul>
                   </div>
 
-                  {/* Analytics Cookies */}
-                  <div>
-                    <h4 className="font-semibold text-foreground mb-2 flex items-center gap-2">
-                      <BarChart className="w-4 h-4 text-blue-500" />
-                      Analytics (first-party)
-                    </h4>
-                    <p className="text-muted-foreground mb-2">
-                      These help us understand how visitors use our sites so we can improve services and measure
-                      contact interest (page views, book-button clicks, phone/WhatsApp taps).
-                    </p>
-                    <ul className="list-disc list-inside space-y-1 text-muted-foreground text-sm">
-                      <li>
-                        <strong>First-party analytics:</strong> a session identifier in{' '}
-                        <code className="text-foreground">sessionStorage</code> (e.g.{' '}
-                        <code className="text-foreground">hro_wa_sid</code>) and short-lived keys to avoid
-                        duplicate page counts; event data is sent to our own servers (Supabase via Netlify), not
-                        sold to brokers
-                      </li>
-                      <li>Page views and user interactions on public marketing pages</li>
-                      <li>Approximate city/country, device type, OS, browser family, and arrival source (direct, search, social, etc.)</li>
-                      <li>Website performance and loading times (where measured)</li>
-                      <li>Popular services and content</li>
-                    </ul>
-                  </div>
-
                   {/* Functional Cookies */}
                   <div>
                     <h4 className="font-semibold text-foreground mb-2 flex items-center gap-2">
@@ -129,23 +104,6 @@ const CookiePolicy: React.FC = () => {
                     <li><strong>Payment Processors:</strong> Secure payment processing</li>
                     <li><strong>Social Media:</strong> Social sharing and integration features</li>
                   </ul>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>First-party website analytics</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4 text-muted-foreground text-sm">
-                  <p>
-                    We run first-party analytics on hydrogenro.com and elevenro.com. It uses browser session
-                    storage for an anonymous visit identifier and sends small event payloads (page path, event type,
-                    site brand, approximate location, device/browser, and how you arrived) to our infrastructure.
-                  </p>
-                  <p>
-                    This is not used for advertising profiles. You can clear site data in your browser to reset the
-                    session identifier. Blocking scripts may prevent this analytics from recording visits.
-                  </p>
                 </CardContent>
               </Card>
 

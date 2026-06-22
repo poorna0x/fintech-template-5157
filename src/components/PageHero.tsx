@@ -2,7 +2,7 @@ import React from 'react';
 import { Button } from '@/components/ui/button';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTheme } from '@/contexts/ThemeContext';
-import { openPublicPhoneCall, trackPublicBookingClick } from '@/lib/websiteAnalytics';
+import { openPublicPhoneCall } from '@/lib/publicPhone';
 
 interface PageHeroProps {
   badge?: string;
@@ -34,11 +34,10 @@ const PageHero: React.FC<PageHeroProps> = ({
     : {};
 
   const handleBookService = () => {
-    trackPublicBookingClick('page_hero');
     navigate('/book');
   };
 
-  const handleCall = () => openPublicPhoneCall('+918884944288', 'page_hero');
+  const handleCall = () => openPublicPhoneCall('+918884944288');
 
   return (
     <section 

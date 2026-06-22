@@ -8,7 +8,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Switch } from '@/components/ui/switch';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTheme } from '@/contexts/ThemeContext';
-import { openPublicPhoneCall, trackPublicBookingClick } from '@/lib/websiteAnalytics';
+import { openPublicPhoneCall } from '@/lib/publicPhone';
 
 const Header = () => {
   const [activePage, setActivePage] = useState('home');
@@ -67,7 +67,6 @@ const Header = () => {
         navigate('/');
       }
     } else if (page === 'booking') {
-      trackPublicBookingClick('header_nav');
       navigate('/book');
     } else if (page === 'contact') {
       // Navigate to contact page
@@ -356,7 +355,6 @@ const Header = () => {
             <div className="rounded-2xl">
               <Button 
                 onClick={() => {
-                  trackPublicBookingClick('header_cta');
                   navigate('/book');
                 }}
                 className="bg-sky-600 text-white hover:bg-sky-700 shadow-lg"

@@ -55,7 +55,6 @@ import { CommonQrCode, invalidateQrCodesCache, normalizeTechnicianAssignedCommon
 // imported at their call sites so they stay out of the main Settings chunk.
 import CallingPage from '@/pages/CallingPage';
 import { registerAdminPWA } from '@/lib/pwa';
-import { WebsiteAnalyticsSettings } from '@/components/admin/WebsiteAnalyticsSettings';
 import { EmailTrackingSettings } from '@/components/admin/EmailTrackingSettings';
 import { SettingsRemindersDialog } from '@/components/reminders/SettingsRemindersDialog';
 import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
@@ -131,7 +130,6 @@ const DATABASE_EXPORT_TABLES: {
   { name: 'warranties', orderBy: 'created_at', label: 'Warranties', optional: true },
   { name: 'warranty_items', orderBy: 'created_at', label: 'Warranty Items', optional: true },
   { name: 'website_booking_intent', orderBy: 'updated_at', label: 'Website Booking Intent' },
-  { name: 'website_analytics_events', orderBy: 'created_at', label: 'Website Analytics Events', optional: true },
 ];
 
 const Settings = () => {
@@ -2661,8 +2659,6 @@ const Settings = () => {
               </div>
             </CardContent>
           </Card>
-
-          <WebsiteAnalyticsSettings />
 
           <EmailTrackingSettings />
 

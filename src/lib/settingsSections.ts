@@ -4,7 +4,6 @@ export const SETTINGS_SECTIONS = {
   reminders: true,
   'pending-payments': true,
   'technician-management': true,
-  'website-analytics-data': true,
   'email-tracking': true,
 } as const;
 
