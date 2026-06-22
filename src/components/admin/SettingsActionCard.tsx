@@ -6,12 +6,17 @@ type SettingsActionCardProps = {
   description?: string;
   icon: ReactNode;
   actions: ReactNode;
+  /** Deep-link anchor: renders as id="section-{sectionId}" with scroll margin */
+  sectionId?: string;
 };
 
 /** Settings section card — title/description left, actions right on desktop (matches Analytics). */
-export function SettingsActionCard({ title, description, icon, actions }: SettingsActionCardProps) {
+export function SettingsActionCard({ title, description, icon, actions, sectionId }: SettingsActionCardProps) {
   return (
-    <Card>
+    <Card
+      id={sectionId ? `section-${sectionId}` : undefined}
+      className={sectionId ? 'scroll-mt-24' : undefined}
+    >
       <CardHeader className="space-y-0 pb-4">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
           <div className="space-y-1.5 flex-1 min-w-0">

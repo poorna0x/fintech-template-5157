@@ -14,7 +14,7 @@ export function WebsiteAnalyticsSettings({
   disabledTitle: _disabledTitle,
 }: WebsiteAnalyticsSettingsProps) {
   return (
-    <div id="section-website-analytics-data" className="space-y-6">
+    <div id="section-website-analytics-data" className="space-y-6 scroll-mt-24">
       <WebsiteAnalyticsGate />
 
       <Card>

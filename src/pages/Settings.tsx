@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -66,6 +66,7 @@ import { SettingsActionCard } from '@/components/admin/SettingsActionCard';
 import MergeCustomersDialog from '@/components/admin/MergeCustomersDialog';
 import WarrantyManagementDialog from '@/components/admin/WarrantyManagementDialog';
 import DirectSaleDialog from '@/components/admin/DirectSaleDialog';
+import { scrollToSettingsSection } from '@/lib/settingsSectionScroll';
 
 /** PostgREST error when a table was never created or was dropped (e.g. booking_abandonments). */
 const isMissingTableError = (error: { message?: string; code?: string } | null): boolean => {
@@ -138,6 +139,7 @@ const Settings = () => {
   const { isManager } = useAdminRole();
   const managerRestrictedTitle = 'Restricted for Manager role';
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     registerAdminPWA();
@@ -266,26 +268,17 @@ const Settings = () => {
     loadAmountTrackers();
   }, []);
 
-  // Deep-link from the admin "Recent" quick-access menu: scroll to a section, e.g.
-  // /settings?section=amount-trackers or ?section=technician-management.
+  // Deep-link from admin Tools / notification bell: /settings?section=…
   useEffect(() => {
-    const section = new URLSearchParams(window.location.search).get('section');
+    const section = new URLSearchParams(location.search).get('section');
     if (!section) return;
-    // Wait for the section cards to render before scrolling.
-    const timer = window.setTimeout(() => {
-      const el = document.getElementById(`section-${section}`);
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        el.classList.add('ring-2', 'ring-blue-400', 'ring-offset-2', 'rounded-lg');
-        window.setTimeout(() => {
-          el.classList.remove('ring-2', 'ring-blue-400', 'ring-offset-2', 'rounded-lg');
-        }, 2500);
-      }
-      // Clean the URL so a refresh doesn't re-scroll.
-      window.history.replaceState({}, '', '/settings');
-    }, 350);
-    return () => window.clearTimeout(timer);
-  }, []);
+
+    return scrollToSettingsSection(section, {
+      onComplete: () => {
+        navigate('/settings', { replace: true });
+      },
+    });
+  }, [location.search, navigate]);
 
   // Handle location tracking toggle
   const handleLocationTrackingToggle = (enabled: boolean) => {
@@ -1773,7 +1766,7 @@ const Settings = () => {
           </Card>
 
           {/* Amount Trackers */}
-          <Card id="section-amount-trackers">
+          <Card id="section-amount-trackers" className="scroll-mt-24">
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
@@ -1899,6 +1892,7 @@ const Settings = () => {
 
           {/* Reminders: add general / customer, then load list dialog */}
           <SettingsActionCard
+            sectionId="reminders"
             title="Reminders"
             description="Add a general reminder, one tied to a customer, or load the list to search, filter, and edit."
             icon={<ListTodo />}
@@ -1973,7 +1967,7 @@ const Settings = () => {
           />
 
           {/* Pending payments */}
-          <Card>
+          <Card id="section-pending-payments" className="scroll-mt-24">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
                 <DollarSign className="w-5 h-5" />
@@ -2585,7 +2579,7 @@ const Settings = () => {
           </Card>
 
           {/* Technician Management */}
-            <Card id="section-technician-management">
+            <Card id="section-technician-management" className="scroll-mt-24">
               <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                   <div>

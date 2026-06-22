@@ -4,6 +4,7 @@ import { Bell, Calendar, IndianRupee, Loader2, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { db } from '@/lib/supabase';
+import { settingsPath } from '@/lib/settingsSections';
 import { cn } from '@/lib/utils';
 
 const POLL_MS = 5 * 60 * 1000;
@@ -149,13 +150,13 @@ export function AdminNotificationBell({ onOpenAmcView, className }: AdminNotific
               {row(
                 'Reminders (due today)',
                 counts.generalReminders,
-                () => navigate('/settings'),
+                () => navigate(settingsPath('reminders')),
                 <Calendar className="h-4 w-4" />
               )}
               {row(
                 'Customer pending payments (due today)',
                 counts.pendingCustomerPayments,
-                () => navigate('/settings'),
+                () => navigate(settingsPath('pending-payments')),
                 <IndianRupee className="h-4 w-4" />
               )}
               {row(

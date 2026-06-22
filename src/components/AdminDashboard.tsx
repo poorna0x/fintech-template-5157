@@ -157,6 +157,7 @@ import RecentAccountsDialog from './admin/RecentAccountsDialog';
 import DirectSaleDialog from './admin/DirectSaleDialog';
 import AmountTrackersDialog from './admin/AmountTrackersDialog';
 import { EmailSentLogDialog } from './admin/EmailSentLogDialog';
+import { settingsPath } from '@/lib/settingsSections';
 import ServiceHistoryDialog from './admin/ServiceHistoryDialog';
 import PhotoGalleryDialog from './admin/PhotoGalleryDialog';
 import PhotoViewerDialog from './admin/PhotoViewerDialog';
@@ -9848,7 +9849,7 @@ const AdminDashboard = () => {
                     onClick={() => {
                       if (isManager) return;
                       hapticTap();
-                      navigate('/settings?section=website-analytics-data');
+                      navigate(settingsPath('website-analytics-data'));
                     }}
                   >
                     {isManager ? <Lock className="w-4 h-4 mr-2" /> : <BarChart3 className="w-4 h-4 mr-2" />}
@@ -9868,7 +9869,7 @@ const AdminDashboard = () => {
                     onClick={() => {
                       if (isManager) return;
                       hapticTap();
-                      navigate('/settings?section=technician-management');
+                      navigate(settingsPath('technician-management'));
                     }}
                   >
                     {isManager ? <Lock className="w-4 h-4 mr-2" /> : <UserPlus className="w-4 h-4 mr-2" />}

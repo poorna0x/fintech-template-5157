@@ -10,7 +10,7 @@ export function EmailTrackingSettings() {
 
   return (
     <>
-      <div id="section-email-tracking">
+      <div id="section-email-tracking" className="scroll-mt-24">
         <SettingsActionCard
           title="Sent email log"
           icon={<Mail />}
