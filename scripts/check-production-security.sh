@@ -90,6 +90,14 @@ echo "=== 7) Portal route guard ==="
 bash "$ROOT/scripts/test-portal-route-guard.sh" "$SITE" || FAIL=1
 
 echo ""
+echo "=== 8) Sensitive probe paths (BreachMe: .git, config.json) ==="
+if bash "$ROOT/scripts/verify-sensitive-public-paths.sh" "$SITE"; then
+  echo "  OK — sensitive paths return 404"
+else
+  FAIL=1
+fi
+
+echo ""
 if [[ "$FAIL" -eq 0 ]]; then
   echo "All automated checks passed."
 else
