@@ -14,6 +14,7 @@ import PerformanceMonitor from "./components/PerformanceMonitor";
 import PublicSiteSeo from "./components/PublicSiteSeo";
 import { SEO_LOCATION_PAGES, SEO_SERVICE_PAGES } from "@/lib/publicSeoPages";
 import WebsiteAnalyticsTracker from "./components/WebsiteAnalyticsTracker";
+import GoogleAnalytics from "./components/GoogleAnalytics";
 import { disablePWA } from "@/lib/pwa";
 import { isTechnicianPortalPath } from "@/lib/authPortal";
 
@@ -114,6 +115,7 @@ const App = () => (
             <BrowserRouter>
               <AuthPortalCoordinator />
               <WebsiteAnalyticsTracker />
+              <GoogleAnalytics />
               <PublicSiteSeo />
               <PWARouteHandler />
               <Suspense fallback={<LoadingSpinner />}>
