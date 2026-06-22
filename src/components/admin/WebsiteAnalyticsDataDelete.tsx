@@ -41,6 +41,7 @@ const IST = 'Asia/Kolkata';
 
 const EVENT_LABELS: Record<string, string> = {
   page_view: 'Page view',
+  engagement: 'Click',
   phone_click: 'Call',
   whatsapp_click: 'WhatsApp',
   booking_click: 'Book click',

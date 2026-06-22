@@ -13,6 +13,7 @@ const {
 const SITE_KEYS = new Set(['hydrogenro', 'elevenro']);
 const EVENT_TYPES = new Set([
   'page_view',
+  'engagement',
   'phone_click',
   'whatsapp_click',
   'booking_click',

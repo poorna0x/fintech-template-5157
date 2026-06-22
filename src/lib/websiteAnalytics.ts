@@ -8,10 +8,20 @@ const BOT_UA_PATTERN =
 
 export type WebsiteAnalyticsEventType =
   | 'page_view'
+  | 'engagement'
   | 'phone_click'
   | 'whatsapp_click'
   | 'booking_click'
   | 'booking_submit';
+
+/** Sessions with any of these count as an engaged visitor (not passive page loads). */
+export const WEBSITE_ENGAGEMENT_EVENT_TYPES = [
+  'engagement',
+  'phone_click',
+  'whatsapp_click',
+  'booking_click',
+  'booking_submit',
+] as const;
 
 export type WebsiteAnalyticsPayload = {
   event_type: WebsiteAnalyticsEventType;
@@ -261,6 +271,31 @@ export function trackPublicBookingClick(source: string): void {
 
 export function trackPublicBookingSubmit(): void {
   trackWebsiteEvent('booking_submit');
+}
+
+function engagementLabel(el: HTMLElement): string {
+  const aria = el.getAttribute('aria-label')?.trim();
+  if (aria) return aria.slice(0, 48);
+  const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+  if (text) return text.slice(0, 48);
+  return 'unknown';
+}
+
+/** Any button/link tap on the public site (nav, CTA, internal links, etc.). */
+export function trackWebsiteEngagement(
+  element: HTMLElement,
+  anchor?: HTMLAnchorElement | null
+): void {
+  const href = anchor?.getAttribute('href') || '';
+  if (href.startsWith('tel:') || href.includes('wa.me') || href.includes('whatsapp.com')) {
+    return;
+  }
+
+  trackWebsiteEvent('engagement', {
+    kind: anchor ? 'link' : 'button',
+    label: engagementLabel(element),
+    ...(href && !href.startsWith('javascript:') ? { href: href.slice(0, 120) } : {}),
+  });
 }
 
 export function openPublicPhoneCall(phone: string, source?: string): void {

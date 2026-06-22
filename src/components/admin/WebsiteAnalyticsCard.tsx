@@ -85,6 +85,7 @@ type RecentEvent = {
 
 const EVENT_LABELS: Record<string, string> = {
   page_view: 'Page view',
+  engagement: 'Click',
   phone_click: 'Call',
   whatsapp_click: 'WhatsApp',
   booking_click: 'Book click',
@@ -108,7 +109,7 @@ const SITE_OPTIONS: { value: SiteFilter; label: string; short: string }[] = [
 ];
 
 const PUBLIC_ANALYTICS_DESCRIPTION =
-  'Public marketing visits on hydrogenro.com and elevenro.com (IST). Excludes admin/technician apps, staff logins, product & ID QR pages, and search bots. Call counts are button taps, not confirmed conversations.';
+  'Engaged public visitors on hydrogenro.com and elevenro.com (IST): counted only after a tap/click (nav, call, WhatsApp, book, etc.), not passive page loads. Excludes CRM apps, staff sessions, internal QR pages, and search bots.';
 
 const PRESET_OPTIONS: { value: PresetDays; label: string }[] = [
   { value: 7, label: '7 days' },
@@ -359,7 +360,7 @@ function DailyMobileCard({ row, showSite }: { row: DailyRow; showSite: boolean }
       </div>
       <div className="grid grid-cols-3 gap-2 text-center">
         <div className="rounded-lg bg-muted/40 px-1 py-1.5">
-          <p className="text-[10px] text-muted-foreground">Public visitors</p>
+          <p className="text-[10px] text-muted-foreground">Engaged visitors</p>
           <p className="text-sm font-semibold tabular-nums">{row.visitors}</p>
         </div>
         <div className="rounded-lg bg-muted/40 px-1 py-1.5">
@@ -646,7 +647,7 @@ export function WebsiteAnalyticsCard() {
   };
 
   const chartMetricLabel =
-    chartMetric === 'visitors' ? 'Public visitors' : chartMetric === 'phone_clicks' ? 'Calls' : 'Bookings';
+    chartMetric === 'visitors' ? 'Engaged visitors' : chartMetric === 'phone_clicks' ? 'Calls' : 'Bookings';
 
   return (
     <Card id="section-website-analytics" className="overflow-hidden">
@@ -784,7 +785,7 @@ export function WebsiteAnalyticsCard() {
                   <span className="text-xs text-muted-foreground">· IST</span>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2">
-                  <KpiCard label="Public visitors" value={todayStats.visitors} icon={Users} compact />
+                  <KpiCard label="Engaged visitors" value={todayStats.visitors} icon={Users} compact />
                   <KpiCard label="Page views" value={todayStats.page_views} icon={Eye} compact />
                   <KpiCard label="Calls" value={todayStats.phone_clicks} icon={Phone} compact />
                   <KpiCard
@@ -826,7 +827,7 @@ export function WebsiteAnalyticsCard() {
                     className="h-8 px-2 text-xs w-full"
                     onClick={() => setChartMetric('visitors')}
                   >
-                    Public visitors
+                    Engaged visitors
                   </Button>
                   <Button
                     type="button"
@@ -854,7 +855,7 @@ export function WebsiteAnalyticsCard() {
                   className="hidden sm:flex justify-start"
                 >
                   <ToggleGroupItem value="visitors" className="h-8 px-3 text-xs">
-                    Public visitors
+                    Engaged visitors
                   </ToggleGroupItem>
                   <ToggleGroupItem value="phone_clicks" className="h-8 px-3 text-xs">
                     Calls
@@ -915,7 +916,7 @@ export function WebsiteAnalyticsCard() {
                       <TableRow className="bg-muted/40 hover:bg-muted/40">
                         <TableHead className="whitespace-nowrap">Date</TableHead>
                         {siteFilter === 'all' ? <TableHead>Site</TableHead> : null}
-                        <TableHead className="text-right">Public visitors</TableHead>
+                        <TableHead className="text-right">Engaged visitors</TableHead>
                         <TableHead className="text-right">Views</TableHead>
                         <TableHead className="text-right">Calls</TableHead>
                         <TableHead className="text-right">WhatsApp</TableHead>

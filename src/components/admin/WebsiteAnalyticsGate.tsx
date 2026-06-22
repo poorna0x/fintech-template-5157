@@ -16,13 +16,13 @@ export function WebsiteAnalyticsGate() {
       <AnalyticsLoadSection
         id="section-website-analytics"
         title="Public marketing analytics"
-        description="Public customer visits on hydrogenro.com and elevenro.com (IST). Excludes CRM apps, staff sessions, internal QR pages, and bots. Uses its own date and site filters — not the dashboard Period selector above."
+        description="Engaged public visitors on hydrogenro.com and elevenro.com (IST): counted after a real click/tap, not passive loads. Excludes CRM apps, staff sessions, internal QR pages, and bots. Uses its own date and site filters — not the dashboard Period selector above."
         icon={<BarChart3 />}
         loadLabel="Load website analytics"
         loadingLabel="Loading website analytics…"
         onLoad={() => setOpen(true)}
         loaded={false}
-        emptyHint="Load public marketing visitor, call, and booking analytics (customer traffic only)."
+        emptyHint="Load engaged visitor, call, and booking analytics (clicks/taps only)."
       />
     );
   }
