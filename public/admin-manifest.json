@@ -3,7 +3,7 @@
   "short_name": "HRO Admin",
   "description": "Admin dashboard for managing customers, jobs, and technicians",
   "id": "/admin",
-  "scope": "/",
+  "scope": "/admin",
   "start_url": "/admin",
   "display": "standalone",
   "launch_handler": {

@@ -1,4 +1,10 @@
+import { getAuthSession } from '@/lib/auth';
+import { isTechnicianIdCardPath } from '@/lib/authPortal';
 import { getPublicSiteKey, type PublicSiteKey } from '@/lib/websiteSiteKey';
+
+/** Crawlers / SEO tools — not counted as public marketing visits. */
+const BOT_UA_PATTERN =
+  /googlebot|bingbot|slurp|duckduckbot|baiduspider|yandexbot|facebookexternalhit|twitterbot|linkedinbot|embedly|quora link preview|showyoubot|outbrain|pinterest|applebot|semrushbot|ahrefsbot|mj12bot|dotbot|petalbot|bytespider|gptbot|claudebot|headlesschrome|phantomjs/i;
 
 export type WebsiteAnalyticsEventType =
   | 'page_view'
@@ -54,13 +60,53 @@ export function maskPhoneForAnalytics(phone: string): string {
   return `***${digits.slice(-4)}`;
 }
 
-export function isPublicMarketingPath(pathname: string): boolean {
+/** Admin / technician CRM routes — never tracked. */
+export function isCrmPortalPath(pathname: string): boolean {
   return (
-    !pathname.startsWith('/admin') &&
-    !pathname.startsWith('/technician') &&
-    !pathname.startsWith('/settings') &&
-    !pathname.startsWith('/calling')
+    pathname.startsWith('/admin') ||
+    pathname.startsWith('/technician') ||
+    pathname.startsWith('/settings') ||
+    pathname.startsWith('/calling')
   );
+}
+
+/** Internal tools on public URLs (product QR, technician ID card) — not marketing visits. */
+export function isInternalNonMarketingPath(pathname: string): boolean {
+  return pathname.startsWith('/product-verify') || isTechnicianIdCardPath(pathname);
+}
+
+export function isPublicMarketingPath(pathname: string): boolean {
+  return !isCrmPortalPath(pathname) && !isInternalNonMarketingPath(pathname);
+}
+
+export function isLikelyBotUserAgent(userAgent?: string): boolean {
+  const ua =
+    userAgent ?? (typeof navigator !== 'undefined' ? navigator.userAgent : '');
+  if (!ua) return false;
+  return BOT_UA_PATTERN.test(ua);
+}
+
+export function isStaffAuthSession(): boolean {
+  const session = getAuthSession();
+  return session?.role === 'admin' || session?.role === 'technician';
+}
+
+export type WebsiteAnalyticsTrackOptions = {
+  /** Pass from AuthContext when available (covers session before localStorage sync). */
+  staffSession?: boolean;
+};
+
+/** True when a public marketing event should be recorded for this path/session. */
+export function shouldTrackWebsiteAnalytics(
+  pathname?: string,
+  options?: WebsiteAnalyticsTrackOptions
+): boolean {
+  if (typeof window === 'undefined') return false;
+  const path = pathname ?? window.location.pathname;
+  if (!isPublicMarketingPath(path)) return false;
+  if (isLikelyBotUserAgent()) return false;
+  if (options?.staffSession || isStaffAuthSession()) return false;
+  return true;
 }
 
 function currentPagePath(): string {
@@ -158,10 +204,11 @@ export async function flushWebsiteAnalytics(): Promise<void> {
 
 export function trackWebsiteEvent(
   eventType: WebsiteAnalyticsEventType,
-  metadata?: Record<string, string | number | boolean>
+  metadata?: Record<string, string | number | boolean>,
+  options?: WebsiteAnalyticsTrackOptions
 ): void {
   if (typeof window === 'undefined') return;
-  if (!isPublicMarketingPath(window.location.pathname)) return;
+  if (!shouldTrackWebsiteAnalytics(window.location.pathname, options)) return;
 
   const pagePath = currentPagePath();
 

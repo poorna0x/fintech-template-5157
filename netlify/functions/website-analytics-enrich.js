@@ -1,6 +1,29 @@
 // Server-side enrichment for website analytics (geo, device, browser, referrer).
 const OWN_HOSTS = ['hydrogenro.com', 'elevenro.com', 'localhost', '127.0.0.1'];
 
+const BOT_UA_PATTERN =
+  /googlebot|bingbot|slurp|duckduckbot|baiduspider|yandexbot|facebookexternalhit|twitterbot|linkedinbot|embedly|quora link preview|showyoubot|outbrain|pinterest|applebot|semrushbot|ahrefsbot|mj12bot|dotbot|petalbot|bytespider|gptbot|claudebot|headlesschrome|phantomjs/i;
+
+function isBotUserAgent(ua) {
+  return BOT_UA_PATTERN.test(String(ua || '').toLowerCase());
+}
+
+function isExcludedAnalyticsPath(pagePath) {
+  if (!pagePath || typeof pagePath !== 'string') return false;
+  const path = pagePath.split('?')[0];
+  if (
+    path.startsWith('/admin') ||
+    path.startsWith('/technician') ||
+    path.startsWith('/settings') ||
+    path.startsWith('/calling') ||
+    path.startsWith('/product-verify') ||
+    path.startsWith('/technician-id/')
+  ) {
+    return true;
+  }
+  return false;
+}
+
 function header(headers, name) {
   const target = name.toLowerCase();
   for (const key of Object.keys(headers || {})) {
@@ -111,4 +134,4 @@ function enrichEventMetadata(clientMeta, headers) {
   return meta;
 }
 
-module.exports = { enrichEventMetadata };
+module.exports = { enrichEventMetadata, isBotUserAgent, isExcludedAnalyticsPath };

@@ -1,8 +1,9 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   flushWebsiteAnalytics,
-  isPublicMarketingPath,
+  shouldTrackWebsiteAnalytics,
   trackPublicPhoneCall,
   trackPublicWhatsAppClick,
   trackWebsiteEvent,
@@ -11,14 +12,20 @@ import {
 /** First-party analytics for public marketing pages (hydrogenro + elevenro). */
 export default function WebsiteAnalyticsTracker() {
   const location = useLocation();
+  const { user, isAdmin, isTechnician } = useAuth();
+  const staffSession = useMemo(
+    () => isAdmin || isTechnician || Boolean(user),
+    [isAdmin, isTechnician, user]
+  );
+  const trackOptions = useMemo(() => ({ staffSession }), [staffSession]);
 
   useEffect(() => {
-    if (!isPublicMarketingPath(location.pathname)) return;
-    trackWebsiteEvent('page_view');
-  }, [location.pathname, location.search]);
+    if (!shouldTrackWebsiteAnalytics(location.pathname, trackOptions)) return;
+    trackWebsiteEvent('page_view', undefined, trackOptions);
+  }, [location.pathname, location.search, trackOptions]);
 
   useEffect(() => {
-    if (!isPublicMarketingPath(location.pathname)) return;
+    if (!shouldTrackWebsiteAnalytics(location.pathname, trackOptions)) return;
 
     const onClick = (event: MouseEvent) => {
       const target = event.target as HTMLElement | null;
@@ -37,7 +44,7 @@ export default function WebsiteAnalyticsTracker() {
 
     document.addEventListener('click', onClick, true);
     return () => document.removeEventListener('click', onClick, true);
-  }, [location.pathname]);
+  }, [location.pathname, trackOptions]);
 
   useEffect(() => {
     const onHide = () => void flushWebsiteAnalytics();

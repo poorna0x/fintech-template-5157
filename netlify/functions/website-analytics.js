@@ -4,7 +4,11 @@ const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, isOriginAllowed, isProduction } = require('./cors-helper');
 const { addSecurityHeaders } = require('./security-headers');
 const { checkRateLimit, getClientIdentifier } = require('./rate-limiter');
-const { enrichEventMetadata } = require('./website-analytics-enrich');
+const {
+  enrichEventMetadata,
+  isBotUserAgent,
+  isExcludedAnalyticsPath,
+} = require('./website-analytics-enrich');
 
 const SITE_KEYS = new Set(['hydrogenro', 'elevenro']);
 const EVENT_TYPES = new Set([
@@ -119,6 +123,11 @@ exports.handler = async (event) => {
   }
 
   const clientIpHash = hashClientIp(event);
+  const requestUa = event.headers['user-agent'] || event.headers['User-Agent'] || '';
+  if (isBotUserAgent(requestUa)) {
+    return jsonResponse(200, corsHeaders, { ok: true, skipped: 'bot' });
+  }
+
   const rows = [];
 
   for (const ev of events) {
@@ -134,6 +143,8 @@ exports.handler = async (event) => {
     const pagePath =
       typeof ev.page_path === 'string' ? ev.page_path.slice(0, MAX_PATH_LEN) : null;
 
+    if (isExcludedAnalyticsPath(pagePath)) continue;
+
     rows.push({
       site_key: siteKey,
       event_type: eventType,
@@ -145,7 +156,7 @@ exports.handler = async (event) => {
   }
 
   if (!rows.length) {
-    return jsonResponse(400, corsHeaders, { error: 'No valid events' });
+    return jsonResponse(200, corsHeaders, { ok: true, skipped: 'filtered' });
   }
 
   const client = getServiceClient();
