@@ -181,6 +181,8 @@ const Settings = () => {
   const [editTechnicianCommonQrDialogOpen, setEditTechnicianCommonQrDialogOpen] = useState(false);
   const [selectedTechnicianCommonQr, setSelectedTechnicianCommonQr] = useState<CommonQrCode | null>(null);
   const [technicianCommonQrFormData, setTechnicianCommonQrFormData] = useState({ name: '', qrCodeUrl: '' });
+  const [technicianCommonQrUploading, setTechnicianCommonQrUploading] = useState(false);
+  const [qrCodeUploading, setQrCodeUploading] = useState(false);
 
   // Product QR Code management states
   const [productQrCodes, setProductQrCodes] = useState<any[]>([]);
@@ -2398,11 +2400,20 @@ const Settings = () => {
             <CardContent className="p-4 sm:p-6">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {technicianCommonQrCodes.map((qrCode) => (
-                  <Card key={qrCode.id} className="hover:shadow-md transition-shadow">
+                  <Card key={qrCode.id} className="hover:shadow-md transition-shadow overflow-hidden">
                     <CardContent className="p-4">
-                      <div className="flex items-start justify-between mb-3 gap-2">
-                        <div className="flex-1 min-w-0">
-                          <h3 className="font-semibold text-foreground text-sm sm:text-base truncate">{qrCode.name}</h3>
+                      <div className="flex flex-col sm:flex-row sm:items-start gap-3 mb-3">
+                        {qrCode.qrCodeUrl ? (
+                          <div className="shrink-0 mx-auto sm:mx-0">
+                            <img
+                              src={qrCode.qrCodeUrl}
+                              alt={qrCode.name}
+                              className="w-24 h-24 sm:w-20 sm:h-20 object-contain border border-border rounded bg-white"
+                            />
+                          </div>
+                        ) : null}
+                        <div className="flex-1 min-w-0 text-center sm:text-left">
+                          <h3 className="font-semibold text-foreground text-sm sm:text-base break-words">{qrCode.name}</h3>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -3188,14 +3199,15 @@ const Settings = () => {
           setEditQrCodeDialogOpen(false);
           setSelectedQrCode(null);
           setQrCodeFormData({ name: '', qrCodeUrl: '' });
+          setQrCodeUploading(false);
         }
       }}>
-        <DialogContent className="sm:max-w-md mx-4 max-h-[90vh] overflow-y-auto">
+        <DialogContent className="!w-[calc(100vw-2rem)] !max-w-[calc(100vw-2rem)] sm:!w-full sm:!max-w-md max-h-[85vh] overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
-            <DialogTitle>
+            <DialogTitle className="text-base sm:text-lg pr-6">
               {editQrCodeDialogOpen ? 'Edit QR Code' : 'Add New QR Code'}
             </DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="text-sm">
               {editQrCodeDialogOpen 
                 ? 'Update QR code information'
                 : 'Create a new common QR code for payment scanning'
@@ -3231,16 +3243,12 @@ const Settings = () => {
                 <Label>Upload QR Code Image *</Label>
                 <p className="text-sm text-muted-foreground mb-2">Upload QR code image for payment scanning</p>
                 <ImageUpload
+                  key={selectedQrCode?.id ?? (addQrCodeDialogOpen ? 'new-payment-qr' : 'closed-payment-qr')}
                   onImagesChange={(images) => {
-                    console.log('ImageUpload callback called with images:', images);
-                    const url = images[0] || '';
-                    console.log('Setting QR code URL:', url);
-                    setQrCodeFormData(prev => {
-                      const updated = { ...prev, qrCodeUrl: url };
-                      console.log('Updated qrCodeFormData:', updated);
-                      return updated;
-                    });
+                    setQrCodeFormData((prev) => ({ ...prev, qrCodeUrl: images[0] || '' }));
                   }}
+                  onUploadStateChange={setQrCodeUploading}
+                  initialImages={qrCodeFormData.qrCodeUrl ? [qrCodeFormData.qrCodeUrl] : []}
                   maxImages={1}
                   folder="common-qr-codes"
                   title=""
@@ -3249,19 +3257,14 @@ const Settings = () => {
                   quality={0.8}
                   aggressiveCompression={false}
                   useSecondaryAccount={false}
+                  compact
+                  skipOfflineQueue
                 />
-                {qrCodeFormData.qrCodeUrl && (
-                  <div className="mt-2">
-                    <img 
-                      src={qrCodeFormData.qrCodeUrl} 
-                      alt="QR Code" 
-                      className="w-32 h-32 object-contain border border-border rounded"
-                    />
-                    <p className="text-xs text-muted-foreground mt-1">URL: {qrCodeFormData.qrCodeUrl.substring(0, 50)}...</p>
-                  </div>
+                {!qrCodeFormData.qrCodeUrl && !qrCodeUploading && (
+                  <p className="text-xs text-muted-foreground mt-1">No QR code uploaded yet</p>
                 )}
-                {!qrCodeFormData.qrCodeUrl && (
-                  <p className="text-xs text-red-500 mt-1">No QR code uploaded yet</p>
+                {qrCodeUploading && (
+                  <p className="text-xs text-muted-foreground mt-1">Uploading image…</p>
                 )}
               </div>
             </div>
@@ -3292,7 +3295,7 @@ const Settings = () => {
                 });
                 handleSaveQrCode();
               }}
-              disabled={!qrCodeFormData.name || !qrCodeFormData.qrCodeUrl}
+              disabled={!qrCodeFormData.name || !qrCodeFormData.qrCodeUrl || qrCodeUploading}
               className=" w-full sm:w-auto"
             >
               {editQrCodeDialogOpen ? 'Update QR Code' : 'Create QR Code'}
@@ -3308,12 +3311,15 @@ const Settings = () => {
           setEditTechnicianCommonQrDialogOpen(false);
           setSelectedTechnicianCommonQr(null);
           setTechnicianCommonQrFormData({ name: '', qrCodeUrl: '' });
+          setTechnicianCommonQrUploading(false);
         }
       }}>
-        <DialogContent className="sm:max-w-md mx-4 max-h-[90vh] overflow-y-auto">
+        <DialogContent className="!w-[calc(100vw-2rem)] !max-w-[calc(100vw-2rem)] sm:!w-full sm:!max-w-md max-h-[85vh] overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
-            <DialogTitle>{editTechnicianCommonQrDialogOpen ? 'Edit Common QR' : 'Add Common QR'}</DialogTitle>
-            <DialogDescription>
+            <DialogTitle className="text-base sm:text-lg pr-6">
+              {editTechnicianCommonQrDialogOpen ? 'Edit Common QR' : 'Add Common QR'}
+            </DialogTitle>
+            <DialogDescription className="text-sm">
               {editTechnicianCommonQrDialogOpen ? 'Update this Common QR' : 'Create a QR shown to technicians below the payment QR. Assign it in Technician Management.'}
             </DialogDescription>
           </DialogHeader>
@@ -3332,7 +3338,14 @@ const Settings = () => {
                 <Label>Upload QR Code Image *</Label>
                 <p className="text-sm text-muted-foreground mb-2">Upload the QR image (non-payment)</p>
                 <ImageUpload
-                  onImagesChange={(images) => setTechnicianCommonQrFormData(prev => ({ ...prev, qrCodeUrl: images[0] || '' }))}
+                  key={selectedTechnicianCommonQr?.id ?? (addTechnicianCommonQrDialogOpen ? 'new-common-qr' : 'closed-common-qr')}
+                  onImagesChange={(images) =>
+                    setTechnicianCommonQrFormData((prev) => ({ ...prev, qrCodeUrl: images[0] || '' }))
+                  }
+                  onUploadStateChange={setTechnicianCommonQrUploading}
+                  initialImages={
+                    technicianCommonQrFormData.qrCodeUrl ? [technicianCommonQrFormData.qrCodeUrl] : []
+                  }
                   maxImages={1}
                   folder="technician-common-qr"
                   title=""
@@ -3341,11 +3354,14 @@ const Settings = () => {
                   quality={0.8}
                   aggressiveCompression={false}
                   useSecondaryAccount={false}
+                  compact
+                  skipOfflineQueue
                 />
-                {technicianCommonQrFormData.qrCodeUrl && (
-                  <div className="mt-2">
-                    <img src={technicianCommonQrFormData.qrCodeUrl} alt="Common QR" className="w-32 h-32 object-contain border border-border rounded" />
-                  </div>
+                {technicianCommonQrUploading && (
+                  <p className="text-xs text-muted-foreground mt-1">Uploading image…</p>
+                )}
+                {!technicianCommonQrFormData.qrCodeUrl && !technicianCommonQrUploading && (
+                  <p className="text-xs text-muted-foreground mt-1">No QR image uploaded yet</p>
                 )}
               </div>
             </div>
@@ -3365,7 +3381,11 @@ const Settings = () => {
             </Button>
             <Button
               onClick={handleSaveTechnicianCommonQr}
-              disabled={!technicianCommonQrFormData.name?.trim() || !technicianCommonQrFormData.qrCodeUrl?.trim()}
+              disabled={
+                !technicianCommonQrFormData.name?.trim() ||
+                !technicianCommonQrFormData.qrCodeUrl?.trim() ||
+                technicianCommonQrUploading
+              }
               className=" w-full sm:w-auto"
             >
               {editTechnicianCommonQrDialogOpen ? 'Update Common QR' : 'Create Common QR'}

@@ -30,7 +30,13 @@ interface ImageUploadProps {
   /** Slot the photo represents on the job. Drives which requirements key the retry
    *  worker writes to (only `bill` and `payment` are auto-linked back to the job). */
   photoType?: 'bill' | 'before' | 'after' | 'payment' | 'other';
+  /** Smaller drop zone for dialogs / mobile admin forms */
+  compact?: boolean;
+  /** Skip offline queue (faster for settings/admin one-off uploads) */
+  skipOfflineQueue?: boolean;
 }
+
+const EMPTY_INITIAL_IMAGES: string[] = [];
 
 interface UploadedImage {
   id: string;
@@ -50,23 +56,27 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   quality,
   aggressiveCompression = false,
   useSecondaryAccount = false,
-  initialImages = [],
+  initialImages,
   onUploadStateChange,
   jobId,
   photoType,
+  compact = false,
+  skipOfflineQueue = false,
 }) => {
+  const resolvedInitialImages = initialImages ?? EMPTY_INITIAL_IMAGES;
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>(() => {
-    // Initialize with initialImages if provided
-    if (initialImages && initialImages.length > 0) {
-      return initialImages.map((url, index) => ({
+    if (resolvedInitialImages.length > 0) {
+      return resolvedInitialImages.map((url, index) => ({
         id: `img_${Date.now()}_${index}`,
         url,
-        publicId: '', // Will be empty for initial images
+        publicId: '',
         name: `Image ${index + 1}`,
       }));
     }
     return [];
   });
+  const uploadedImagesRef = useRef<UploadedImage[]>(uploadedImages);
+  uploadedImagesRef.current = uploadedImages;
   const [isUploading, setIsUploading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ [key: string]: number }>({});
@@ -79,36 +89,27 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   const prevInitialImagesRef = useRef<string[]>([]);
   
   useEffect(() => {
-    const prevUrls = prevInitialImagesRef.current.sort().join(',');
-    const currentUrls = (initialImages || []).sort().join(',');
-    
-    // Only sync if initialImages actually changed
+    const prevUrls = [...prevInitialImagesRef.current].sort().join(',');
+    const currentUrls = [...resolvedInitialImages].sort().join(',');
+
     if (prevUrls !== currentUrls) {
-      if (initialImages && initialImages.length > 0) {
-        // Check if we need to sync with current state
-        const existingUrls = uploadedImages.map(img => img.url).sort().join(',');
-        
+      if (resolvedInitialImages.length > 0) {
+        const existingUrls = uploadedImagesRef.current.map((img) => img.url).sort().join(',');
         if (existingUrls !== currentUrls) {
-          // Rebuild uploadedImages from initialImages
-          const syncedImages = initialImages.map((url, index) => ({
-            id: `img_${Date.now()}_${index}_${url.slice(-10)}`, // Unique ID based on URL
+          const syncedImages = resolvedInitialImages.map((url, index) => ({
+            id: `img_${Date.now()}_${index}_${url.slice(-10)}`,
             url,
             publicId: '',
             name: `Image ${index + 1}`,
           }));
           setUploadedImages(syncedImages);
         }
-      } else {
-        // Clear if initialImages is empty
-        if (uploadedImages.length > 0) {
-          setUploadedImages([]);
-        }
+      } else if (uploadedImagesRef.current.length > 0) {
+        setUploadedImages([]);
       }
-      
-      prevInitialImagesRef.current = [...(initialImages || [])];
+      prevInitialImagesRef.current = [...resolvedInitialImages];
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialImages]);
+  }, [resolvedInitialImages]);
 
   // Notify parent of upload state changes
   useEffect(() => {
@@ -116,6 +117,19 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
       onUploadStateChange(isUploading);
     }
   }, [isUploading, onUploadStateChange]);
+
+  const notifyParent = (images: UploadedImage[]) => {
+    onImagesChange(images.map((img) => img.url));
+  };
+
+  const uploadWithRetry = async (file: File, folder: string, useSecondaryAccount: boolean) => {
+    try {
+      return await cloudinaryService.uploadImage(file, folder, useSecondaryAccount);
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      return cloudinaryService.uploadImage(file, folder, useSecondaryAccount);
+    }
+  };
 
   const handleFileSelect = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -164,9 +178,6 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
       }
 
     try {
-      // Process and upload images one by one for better progress tracking
-      const newImages: UploadedImage[] = [];
-      
       for (let i = 0; i < filesToUpload.length; i++) {
         const file = filesToUpload[i];
         const fileId = `file_${Date.now()}_${i}`;
@@ -226,32 +237,33 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
           const compressedFile = await compressImage(file, compressionWidth, compressionQuality, true);
           setUploadProgress(prev => ({ ...prev, [fileId]: 30 }));
 
-          // STEP 2: Save compressed file to localStorage (much smaller than original → faster queue write)
+          // STEP 2: Save compressed file to localStorage (skip for admin/settings one-off uploads)
           let queuedPhotoId: string | null = null;
-          try {
-            queuedPhotoId = await queuePhoto(compressedFile, folder, {
-              maxWidth: compressionWidth,
-              quality: compressionQuality,
-              aggressiveCompression,
-              useSecondaryAccount,
-              alreadyCompressed: true,
-              jobId,
-              photoType,
-            });
-            if (queuedPhotoId && !queuedPhotoId.startsWith('temp_')) {
-              console.log('✅ Photo saved to local storage:', file.name);
+          if (!skipOfflineQueue) {
+            try {
+              queuedPhotoId = await queuePhoto(compressedFile, folder, {
+                maxWidth: compressionWidth,
+                quality: compressionQuality,
+                aggressiveCompression,
+                useSecondaryAccount,
+                alreadyCompressed: true,
+                jobId,
+                photoType,
+              });
+              if (queuedPhotoId && !queuedPhotoId.startsWith('temp_')) {
+                console.log('✅ Photo saved to local storage:', file.name);
+              }
+            } catch (saveError: any) {
+              if (saveError?.message?.includes('QuotaExceededError') || saveError?.code === 22 || saveError?.message?.includes('full')) {
+                toast.error('Storage full. Please free up space and try again.');
+              }
             }
-          } catch (saveError: any) {
-            if (saveError?.message?.includes('QuotaExceededError') || saveError?.code === 22 || saveError?.message?.includes('full')) {
-              toast.error('Storage full. Please free up space and try again.');
-            }
-            // Continue with upload
           }
 
-          // STEP 3: Try to upload to Cloudinary
+          // STEP 3: Try to upload to Cloudinary (one automatic retry on transient failure)
           let uploadResult;
           try {
-            uploadResult = await cloudinaryService.uploadImage(compressedFile, folder, useSecondaryAccount);
+            uploadResult = await uploadWithRetry(compressedFile, folder, useSecondaryAccount);
             setUploadProgress(prev => ({ ...prev, [fileId]: 100 }));
 
             // Upload successful - remove from localStorage
@@ -266,18 +278,18 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
             const reduction = ((1 - compressedFile.size / file.size) * 100).toFixed(1);
             console.log(`Image optimized: ${originalSize}KB → ${compressedSize}KB (${reduction}% reduction)`);
 
-            // Add to new images
-            newImages.push({
+            const nextImage: UploadedImage = {
               id: `img_${Date.now()}_${i}`,
               url: uploadResult.secure_url,
               publicId: uploadResult.public_id,
               name: file.name,
-            });
+            };
 
-            // Notify parent after each successful upload so parent state is updated even if user navigates away before all uploads finish
-            const currentList = [...uploadedImages, ...newImages];
-            setUploadedImages(currentList);
-            onImagesChange(currentList.map(img => img.url));
+            setUploadedImages((prev) => {
+              const currentList = [...prev, nextImage];
+              notifyParent(currentList);
+              return currentList;
+            });
 
             toast.success('Photo uploaded', { duration: 3000 });
 
@@ -315,53 +327,36 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   };
 
   const handleRemoveImage = (imageId: string) => {
-    const updatedImages = uploadedImages.filter(img => img.id !== imageId);
-    setUploadedImages(updatedImages);
-    onImagesChange(updatedImages.map(img => img.url));
+    setUploadedImages((prev) => {
+      const updatedImages = prev.filter((img) => img.id !== imageId);
+      notifyParent(updatedImages);
+      return updatedImages;
+    });
+  };
+
+  const readFilesFromInput = (input: HTMLInputElement, attempt = 0): void => {
+    const files = input.files;
+    if (files && files.length > 0) {
+      handleFileSelect(files);
+      setTimeout(() => {
+        input.value = '';
+      }, 100);
+      return;
+    }
+    // Mobile browsers sometimes populate files asynchronously on first pick
+    if (attempt < 4) {
+      setTimeout(() => readFilesFromInput(input, attempt + 1), attempt === 0 ? 50 : 150);
+      return;
+    }
+    toast.error('No file selected. Please try again.');
   };
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // iOS PWA: Sometimes files array is empty even when files were selected
-    // Wait a bit and try again if needed
-    const files = e.target.files;
-    if (!files || files.length === 0) {
-      // iOS PWA: Sometimes the file input doesn't work on first try
-      setTimeout(() => {
-        if (e.target.files && e.target.files.length > 0) {
-          handleFileSelect(e.target.files);
-        }
-      }, 100);
-      return;
-    }
-    
-    handleFileSelect(files);
-    // Reset input value - iOS PWA: Use setTimeout to ensure it works
-    setTimeout(() => {
-      e.target.value = '';
-    }, 100);
+    readFilesFromInput(e.target);
   };
 
   const handleCameraCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) {
-      // iOS PWA: Sometimes files are empty on first try
-      setTimeout(() => {
-        if (e.target.files && e.target.files.length > 0) {
-    handleFileSelect(e.target.files);
-        }
-      }, 200);
-    // Reset input value
-      setTimeout(() => {
-        e.target.value = '';
-      }, 100);
-      return;
-    }
-    
-    handleFileSelect(files);
-    // Reset input value - use setTimeout for iOS compatibility
-    setTimeout(() => {
-    e.target.value = '';
-    }, 100);
+    readFilesFromInput(e.target);
   };
 
   const openFileDialog = () => {
@@ -697,11 +692,13 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   };
 
   return (
-    <div className={`space-y-4 ${className}`}>
-      <div>
-        <h4 className="font-medium text-foreground mb-1">{title}</h4>
-        <p className="text-sm text-muted-foreground">{description}</p>
-      </div>
+    <div className={`space-y-3 sm:space-y-4 ${className}`}>
+      {(title || description) && (
+        <div>
+          {title ? <h4 className="font-medium text-foreground mb-1">{title}</h4> : null}
+          {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
+        </div>
+      )}
 
       {/* Drag and Drop Zone */}
       <div
@@ -709,15 +706,15 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        onTouchStart={(e) => {
+        onTouchStart={() => {
           // Allow scrolling to work properly on mobile
-          // Don't prevent default for touch events unless actually dragging
         }}
         style={{
-          touchAction: 'manipulation', // Allow scrolling but prevent double-tap zoom
+          touchAction: 'manipulation',
         }}
         className={`
-          relative border-2 border-dashed rounded-lg p-4 sm:p-8 text-center transition-all duration-200
+          relative border-2 border-dashed rounded-lg text-center transition-all duration-200
+          ${compact ? 'p-3 sm:p-5' : 'p-4 sm:p-8'}
           ${isDragOver 
             ? 'border-primary bg-primary/5 scale-105' 
             : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50'
@@ -726,29 +723,31 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         `}
         onClick={!isUploading && uploadedImages.length < maxImages ? openFileDialog : undefined}
       >
-        <div className="space-y-2 sm:space-y-4">
-          <div className="mx-auto w-12 h-12 sm:w-16 sm:h-16 bg-muted rounded-full flex items-center justify-center">
+        <div className={compact ? 'space-y-2' : 'space-y-2 sm:space-y-4'}>
+          <div className={`mx-auto bg-muted rounded-full flex items-center justify-center ${compact ? 'w-10 h-10' : 'w-12 h-12 sm:w-16 sm:h-16'}`}>
             {isDragOver ? (
-              <FileImage className="w-6 h-6 sm:w-8 sm:h-8 text-primary" />
+              <FileImage className={compact ? 'w-5 h-5 text-primary' : 'w-6 h-6 sm:w-8 sm:h-8 text-primary'} />
             ) : (
-              <Upload className="w-6 h-6 sm:w-8 sm:h-8 text-muted-foreground" />
+              <Upload className={compact ? 'w-5 h-5 text-muted-foreground' : 'w-6 h-6 sm:w-8 sm:h-8 text-muted-foreground'} />
             )}
           </div>
           
           <div>
-            <h3 className="text-sm sm:text-lg font-medium text-foreground">
-              {isDragOver ? 'Drop images here' : 'Drag & drop images here'}
+            <h3 className={`font-medium text-foreground ${compact ? 'text-sm' : 'text-sm sm:text-lg'}`}>
+              {isDragOver ? 'Drop image here' : compact ? 'Tap to upload image' : 'Drag & drop images here'}
             </h3>
-            <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-              or click to browse files
-            </p>
-            <p className="text-xs text-muted-foreground mt-1 sm:mt-2 hidden sm:block">
-              Supports JPEG, PNG, WebP • Max 5MB per image • Up to {maxImages} images
+            {!compact && (
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+                or click to browse files
+              </p>
+            )}
+            <p className={`text-xs text-muted-foreground ${compact ? 'mt-1' : 'mt-1 sm:mt-2'}`}>
+              JPEG, PNG, WebP{compact ? '' : ` • Max 5MB • Up to ${maxImages} images`}
             </p>
           </div>
 
           {/* Upload Buttons */}
-          <div className="flex flex-col sm:flex-row gap-2 justify-center">
+          <div className={`flex gap-2 justify-center ${compact ? 'flex-col' : 'flex-col sm:flex-row'}`}>
             <Button
               type="button"
               variant="outline"
@@ -757,7 +756,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
                 openFileDialog();
               }}
               disabled={isUploading || uploadedImages.length >= maxImages}
-              className="flex items-center gap-2 text-sm sm:text-base py-2 sm:py-2"
+              className={`flex items-center justify-center gap-2 ${compact ? 'w-full text-sm py-2' : 'text-sm sm:text-base py-2 sm:py-2'}`}
             >
               {isUploading ? (
                 <div className="flex space-x-1">
@@ -779,7 +778,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
                 openCameraDialog();
               }}
               disabled={isUploading || uploadedImages.length >= maxImages}
-              className="flex items-center gap-2 text-sm sm:text-base py-2 sm:py-2"
+              className={`flex items-center justify-center gap-2 ${compact ? 'w-full text-sm py-2' : 'text-sm sm:text-base py-2 sm:py-2'}`}
             >
               <Camera className="w-4 h-4" />
               Take Photo
@@ -819,7 +818,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
 
       {/* Uploaded Images Grid */}
       {uploadedImages.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+        <div className={`grid gap-3 ${compact ? 'grid-cols-1' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4'}`}>
           {uploadedImages.map((image) => (
             <Card key={image.id} className="relative group overflow-hidden">
               <CardContent className="p-2">
