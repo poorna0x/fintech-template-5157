@@ -6,6 +6,7 @@ import {
   buildEmailForceLightBodyAttrs,
   EMAIL_PAGE_BG,
   EMAIL_CARD_BG,
+  EMAIL_FOOTER_BG,
 } from '@/lib/email-force-light-html';
 
 export interface BookingConfirmationEmailData {
