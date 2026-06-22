@@ -5,37 +5,46 @@ import {
 
 export type EmailPreviewTheme = 'light' | 'dark';
 
+const LOGO_BLOCK_LIGHT_RE =
+  /<table role="presentation"[^>]*\bemail-logo-block-light\b[^>]*>[\s\S]*?<\/table>\s*/i;
+const LOGO_BLOCK_DARK_RE =
+  /<table role="presentation"[^>]*\bemail-logo-block-dark\b[^>]*>[\s\S]*?<\/table>\s*/i;
+
+function stripInactivePreviewLogo(html: string, theme: EmailPreviewTheme): string {
+  return theme === 'dark'
+    ? html.replace(LOGO_BLOCK_LIGHT_RE, '')
+    : html.replace(LOGO_BLOCK_DARK_RE, '');
+}
+
 /**
- * CRM preview — same CSS as sent mail, locked via class so it matches regardless of OS theme.
- * Light preview uses buildEmailLightSurfaceCss (same as sent mail in light mode).
- * Dark preview uses buildEmailDarkSurfaceCss (same as sent mail @media dark).
+ * CRM preview — same HTML/assets as sent mail, with theme locked so Light/Dark toggle
+ * matches what recipients see on their device.
  */
-function buildPreviewThemeCss(theme: EmailPreviewTheme): string {
+export function wrapEmailHtmlForPreview(html: string, theme: EmailPreviewTheme): string {
   const rootClass = theme === 'dark' ? 'crm-preview-dark' : 'crm-preview-light';
-  const rules =
+  const lockRules =
     theme === 'dark'
       ? buildEmailDarkSurfaceCss(`html.${rootClass}`)
       : buildEmailLightSurfaceCss(`html.${rootClass}`);
 
-  return `
+  const themeCss = `
 <style id="crm-email-preview-theme">
   html.${rootClass} { color-scheme: ${theme} !important; }
-  ${rules}
+  ${lockRules}
 </style>`;
-}
-
-export function wrapEmailHtmlForPreview(html: string, theme: EmailPreviewTheme): string {
-  const rootClass = theme === 'dark' ? 'crm-preview-dark' : 'crm-preview-light';
-  const themeCss = buildPreviewThemeCss(theme);
 
   if (!html.includes('</head>')) {
     return `${themeCss}${html}`;
   }
 
-  let out = html.replace('<html', `<html class="${rootClass}"`);
-  if (!out.includes(`class="${rootClass}"`)) {
-    out = out.replace('<html class="', `<html class="${rootClass} `);
-  }
+  let out = html.replace(/<html([^>]*)>/i, (_match, attrs: string) => {
+    if (/class="/i.test(attrs)) {
+      return `<html${attrs.replace(/class="([^"]*)"/i, `class="${rootClass} $1"`)}>`;
+    }
+    return `<html class="${rootClass}"${attrs}>`;
+  });
+
+  out = stripInactivePreviewLogo(out, theme);
   out = out.replace('color-scheme:light only', 'color-scheme:light dark');
   return out.replace('</head>', `${themeCss}</head>`);
 }

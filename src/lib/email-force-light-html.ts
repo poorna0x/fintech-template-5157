@@ -24,15 +24,39 @@ function sel(prefix: string): string {
 export function buildEmailLightComponentCss(selectorPrefix = ''): string {
   const s = sel(selectorPrefix);
   return `
+  ${s}.email-logo-icon-clip {
+    border-radius: 8px !important;
+    -webkit-border-radius: 8px !important;
+    overflow: hidden !important;
+  }
+  ${s}.email-logo-block-light {
+    display: table !important;
+    border-collapse: collapse !important;
+  }
+  ${s}.email-logo-block-dark {
+    display: none !important;
+    max-height: 0 !important;
+    max-width: 0 !important;
+    width: 0 !important;
+    height: 0 !important;
+    overflow: hidden !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+    mso-hide: all !important;
+    border-collapse: collapse !important;
+  }
   ${s}.email-logo-light {
     display: block !important;
     max-height: none !important;
-    overflow: visible !important;
+    border-radius: 8px !important;
+    -webkit-border-radius: 8px !important;
   }
   ${s}.email-logo-dark {
     display: none !important;
     max-height: 0 !important;
     overflow: hidden !important;
+    visibility: hidden !important;
+    mso-hide: all !important;
   }
   ${s}.email-brand-name { color: ${EMAIL_HEADING} !important; }
   ${s}.email-section-label { color: ${EMAIL_LABEL} !important; }
@@ -139,11 +163,34 @@ export function buildEmailLightSurfaceCss(selectorPrefix = ''): string {
 export function buildEmailDarkComponentCss(selectorPrefix = ''): string {
   const s = sel(selectorPrefix);
   return `
+  ${s}.email-logo-block-light {
+    display: none !important;
+    max-height: 0 !important;
+    max-width: 0 !important;
+    width: 0 !important;
+    height: 0 !important;
+    overflow: hidden !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+    mso-hide: all !important;
+  }
+  ${s}.email-logo-block-dark {
+    display: table !important;
+    max-height: none !important;
+    width: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    border-collapse: collapse !important;
+  }
   ${s}.email-logo-light { display: none !important; }
   ${s}.email-logo-dark {
     display: block !important;
     max-height: none !important;
-    overflow: visible !important;
+    overflow: hidden !important;
+    border-radius: 8px !important;
+    -webkit-border-radius: 8px !important;
   }
   ${s}.email-brand-name { color: ${EMAIL_DARK_HEADING} !important; }
   ${s}.email-section-label { color: ${EMAIL_DARK_LABEL} !important; }
@@ -258,10 +305,38 @@ export function buildEmailForceLightHead(): string {
       color-scheme: light dark;
       background-color: ${EMAIL_PAGE_BG};
     }
+    .email-logo-icon-clip {
+      border-radius: 8px !important;
+      -webkit-border-radius: 8px !important;
+      overflow: hidden !important;
+    }
+    .email-logo-block-light {
+      display: table !important;
+      border-collapse: collapse !important;
+    }
+    .email-logo-block-dark {
+      display: none !important;
+      max-height: 0 !important;
+      max-width: 0 !important;
+      width: 0 !important;
+      height: 0 !important;
+      overflow: hidden !important;
+      opacity: 0 !important;
+      visibility: hidden !important;
+      mso-hide: all !important;
+      border-collapse: collapse !important;
+    }
+    .email-logo-light {
+      display: block !important;
+      border-radius: 8px !important;
+      -webkit-border-radius: 8px !important;
+    }
     .email-logo-dark {
       display: none !important;
       max-height: 0 !important;
       overflow: hidden !important;
+      visibility: hidden !important;
+      mso-hide: all !important;
     }
     .email-brand-name {
       color: ${EMAIL_HEADING} !important;

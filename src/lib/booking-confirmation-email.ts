@@ -122,16 +122,14 @@ function getEmailSiteOrigin(baseUrl?: string, options?: EmailAssetOriginOptions)
 }
 
 export function getEmailLogoUrls(
-  baseUrl?: string,
-  brand: DocumentBrand = 'hydrogenro',
-  options?: EmailAssetOriginOptions
+  _baseUrl?: string,
+  _brand: DocumentBrand = 'hydrogenro',
+  _options?: EmailAssetOriginOptions
 ): { light: string; dark: string } {
-  const origin = options?.allowLocalhost
-    ? getEmailSiteOrigin(baseUrl, { ...options, brand })
-    : EMAIL_LOGO_ASSET_ORIGIN;
+  // Always hydrogenro.com — mail clients cannot load localhost; preview must match sent mail.
   return {
-    light: `${origin}/logo-dark.webp`,
-    dark: `${origin}/logo-white.webp`,
+    light: `${EMAIL_LOGO_ASSET_ORIGIN}/logo-dark.webp`,
+    dark: `${EMAIL_LOGO_ASSET_ORIGIN}/logo-white.webp`,
   };
 }
 
@@ -308,6 +306,7 @@ function buildSuccessIconBlock(): string {
 
 /** Icon + wordmark — same as site Header Logo (Inter bold, w-8 icon, gap-2, text-xl). */
 const EMAIL_BRAND_ICON_SIZE = 32;
+const EMAIL_BRAND_ICON_RADIUS = 8;
 const EMAIL_BRAND_FONT_SIZE = 20;
 const EMAIL_BRAND_GAP = 8;
 const EMAIL_BRAND_FONT =
@@ -318,14 +317,29 @@ export function buildEmailLogoHeaderBlock(
   brandName: string
 ): string {
   const icon = EMAIL_BRAND_ICON_SIZE;
-  const imgStyle = `display:block;width:${icon}px;height:${icon}px;max-width:${icon}px;max-height:${icon}px;border:0;object-fit:contain;`;
+  const radius = EMAIL_BRAND_ICON_RADIUS;
+  const imgStyle = `display:block;width:${icon}px;height:${icon}px;max-width:${icon}px;max-height:${icon}px;border:0;border-radius:${radius}px;-webkit-border-radius:${radius}px;object-fit:cover;object-position:center;`;
+  const clipStyle = `width:${icon}px;height:${icon}px;padding:0;line-height:0;font-size:0;border-radius:${radius}px;-webkit-border-radius:${radius}px;overflow:hidden;`;
+  const darkBlockHidden = `display:none;max-height:0;max-width:0;width:0;height:0;overflow:hidden;opacity:0;visibility:hidden;mso-hide:all;border-collapse:collapse;`;
 
   return `
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto;">
                 <tr>
                   <td valign="middle" style="padding-right:${EMAIL_BRAND_GAP}px;line-height:0;font-size:0;">
-                    <img class="email-logo-light" src="${logoUrls.light}" alt="" width="${icon}" height="${icon}" style="${imgStyle}" />
-                    <img class="email-logo-dark" src="${logoUrls.dark}" alt="" width="${icon}" height="${icon}" style="${imgStyle}" />
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" class="email-logo-block-light" style="border-collapse:collapse;">
+                      <tr>
+                        <td class="email-logo-icon-clip" style="${clipStyle}">
+                          <img class="email-logo-light" src="${logoUrls.light}" alt="" width="${icon}" height="${icon}" style="${imgStyle}" />
+                        </td>
+                      </tr>
+                    </table>
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0" class="email-logo-block-dark" style="${darkBlockHidden}">
+                      <tr>
+                        <td class="email-logo-icon-clip" style="${clipStyle}">
+                          <img class="email-logo-dark" src="${logoUrls.dark}" alt="" width="${icon}" height="${icon}" style="${imgStyle}" />
+                        </td>
+                      </tr>
+                    </table>
                   </td>
                   <td valign="middle" class="email-brand-name" style="font-family:${EMAIL_BRAND_FONT};font-size:${EMAIL_BRAND_FONT_SIZE}px;font-weight:700;line-height:1;letter-spacing:-0.01em;white-space:nowrap;">
                     ${escapeHtml(brandName)}

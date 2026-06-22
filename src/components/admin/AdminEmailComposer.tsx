@@ -139,7 +139,6 @@ export function AdminEmailComposerPanel({
   const isCompletedJobComposer = composerContext === 'completed_job';
 
   const templateMeta = ADMIN_EMAIL_TEMPLATE_META[templateType];
-  const siteOrigin = typeof window !== 'undefined' ? window.location.origin : undefined;
   const activeBrand: DocumentBrand = sendBrand;
   const activeBrandInfo = useMemo(() => getCompanyInfoForBrand(activeBrand), [activeBrand]);
   const activeBrandLabel = getDocumentBrandLabel(activeBrand);
@@ -147,11 +146,9 @@ export function AdminEmailComposerPanel({
   const emailPreview = useMemo(
     () =>
       buildAdminEmail(templateType, bookingForm, documentForm, {
-        siteOrigin,
-        allowLocalhostAssets: true,
         attachmentNames: attachments.map((a) => a.filename),
       }),
-    [templateType, bookingForm, documentForm, siteOrigin, attachments]
+    [templateType, bookingForm, documentForm, attachments]
   );
   const attachmentBytes = useMemo(
     () => attachments.reduce((sum, file) => sum + file.size, 0),
@@ -464,17 +461,14 @@ export function AdminEmailComposerPanel({
 
     setSendPhase('sending');
     setSending(true);
-    const outboundEmail = buildAdminEmail(templateType, bookingForm, documentForm, {
-      attachmentNames: attachments.map((a) => a.filename),
-    });
     const result = await emailService.sendAdminComposerEmail(
       {
         templateType,
         documentBrand: activeBrand,
         to: sendTo.trim(),
-        subject: outboundEmail.subject,
-        html: outboundEmail.html,
-        text: outboundEmail.text,
+        subject: emailPreview.subject,
+        html: emailPreview.html,
+        text: emailPreview.text,
         attachments: attachments.map(stripAttachmentPayload),
         jobId: linkedJobId,
         customerId: linkedCustomerId,
@@ -486,7 +480,7 @@ export function AdminEmailComposerPanel({
     if (result.ok) {
       const summary: SentEmailSummary = {
         to: sendTo.trim(),
-        subject: outboundEmail.subject,
+        subject: emailPreview.subject,
         brandLabel: getDocumentBrandLabel(activeBrand),
         attachmentCount: attachments.length,
         attachmentBytes,
