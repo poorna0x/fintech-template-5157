@@ -19,22 +19,14 @@ export interface TechnicianDistance {
 }
 
 /**
- * Calculate distances from multiple origins to multiple destinations
- * Calls Google Distance Matrix API directly from the browser
+ * Calculate distances from multiple origins to multiple destinations.
+ * Uses the Netlify distance-matrix function (Google key stays server-side).
  */
 export async function calculateDistances(
   origins: Array<{ lat: number; lng: number } | string>,
-  destinations: Array<{ lat: number; lng: number } | string>,
-  apiKey: string
+  destinations: Array<{ lat: number; lng: number } | string>
 ): Promise<DistanceResult[][] | null> {
   try {
-    if (!apiKey) {
-      console.error('Google Maps API key is required');
-      return null;
-    }
-
-    // Use Netlify function to avoid CORS issues
-    // Google Distance Matrix API doesn't allow direct browser calls
     const response = await fetch('/.netlify/functions/distance-matrix', {
       method: 'POST',
       headers: {
@@ -44,7 +36,6 @@ export async function calculateDistances(
         origins,
         destinations,
         mode: 'driving',
-        apiKey,
       }),
     });
 
@@ -111,8 +102,7 @@ export async function calculateTechnicianDistances(
       longitude: number;
       lastUpdated?: string;
     };
-  }>,
-  apiKey: string
+  }>
 ): Promise<TechnicianDistance[]> {
   // Filter technicians with valid locations
   // Check both currentLocation and current_location (database field name)
@@ -162,7 +152,7 @@ export async function calculateTechnicianDistances(
     };
   });
 
-  const results = await calculateDistances(origins, destinations, apiKey);
+  const results = await calculateDistances(origins, destinations);
 
   if (!results || results.length === 0) {
     return [];

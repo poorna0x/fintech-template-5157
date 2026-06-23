@@ -2,6 +2,18 @@
 // Calculates distance and duration between multiple origins and destinations
 // Optimized for free tier usage with caching
 const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
+const { checkRateLimit } = require('./rate-limiter');
+
+const trim = (s) => (s && typeof s === 'string' ? s.trim() : '');
+
+/** Server-only Maps key — never accept apiKey from the client (quota theft / key scraping). */
+function getGoogleMapsServerKey() {
+  return (
+    trim(process.env.GOOGLE_MAPS_API_KEY) ||
+    trim(process.env.VITE_GOOGLE_MAPS_API_KEY) ||
+    null
+  );
+}
 
 // Simple in-memory cache (in production, use Redis or similar)
 const distanceCache = new Map();
@@ -55,6 +67,37 @@ exports.handler = async (event, context) => {
     };
   }
 
+  const rateLimit = checkRateLimit(event, {
+    maxRequests: 30,
+    windowMs: 60_000,
+    endpoint: 'distance-matrix',
+  });
+  if (!rateLimit.allowed) {
+    return {
+      statusCode: 429,
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json',
+        'Retry-After': String(rateLimit.retryAfterSeconds ?? 60),
+      },
+      body: JSON.stringify({ error: 'Too many requests. Please try again shortly.' }),
+    };
+  }
+
+  const apiKey = getGoogleMapsServerKey();
+  if (!apiKey) {
+    return {
+      statusCode: 503,
+      headers: {
+        ...corsHeaders,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        error: 'Distance Matrix is not configured (set GOOGLE_MAPS_API_KEY on Netlify)',
+      }),
+    };
+  }
+
   try {
     console.log('📍 Distance Matrix function called:', {
       method: event.httpMethod,
@@ -74,7 +117,6 @@ exports.handler = async (event, context) => {
           originsCount: bodyData.origins?.length || 0,
           hasDestinations: !!bodyData.destinations,
           destinationsCount: bodyData.destinations?.length || 0,
-          hasApiKey: !!bodyData.apiKey,
           mode: bodyData.mode
         });
       } catch (parseError) {
@@ -96,7 +138,7 @@ exports.handler = async (event, context) => {
       bodyData = event.body;
     }
 
-    const { origins, destinations, mode = 'driving', apiKey } = bodyData;
+    const { origins, destinations, mode = 'driving' } = bodyData;
 
     if (!origins || !Array.isArray(origins) || origins.length === 0) {
       return {
@@ -117,17 +159,6 @@ exports.handler = async (event, context) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ error: 'Missing or invalid destinations array' }),
-      };
-    }
-
-    if (!apiKey) {
-      return {
-        statusCode: 400,
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ error: 'Missing Google Maps API key' }),
       };
     }
 
@@ -185,8 +216,6 @@ exports.handler = async (event, context) => {
       originsCount: formattedOrigins.length,
       destinationsCount: formattedDestinations.length,
       mode: mode,
-      hasApiKey: !!apiKey,
-      apiKeyLength: apiKey?.length || 0
     });
 
     const response = await fetch(url.toString());
@@ -288,8 +317,7 @@ exports.handler = async (event, context) => {
       },
       body: JSON.stringify({
         error: 'Distance calculation failed',
-        details: error.message,
-        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+        ...(process.env.NODE_ENV === 'development' ? { details: error.message } : {}),
       }),
     };
   }
