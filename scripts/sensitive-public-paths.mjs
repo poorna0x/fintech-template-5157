@@ -55,6 +55,9 @@ export function publicRedirectsFileContent() {
     lines.push(`${from} /404.html 404!`);
   }
   lines.push('');
+  lines.push('# Netlify functions (must be before SPA catch-all)');
+  lines.push('/api/* /.netlify/functions/:splat 200!');
+  lines.push('');
   lines.push('# SPA fallback — must be last');
   lines.push('/* /index.html 200');
   return `${lines.join('\n')}\n`;

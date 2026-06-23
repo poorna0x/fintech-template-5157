@@ -23,5 +23,8 @@
 /server-status /404.html 404!
 /.well-known/git/* /404.html 404!
 
+# Netlify functions (must be before SPA catch-all)
+/api/* /.netlify/functions/:splat 200!
+
 # SPA fallback — must be last
 /* /index.html 200

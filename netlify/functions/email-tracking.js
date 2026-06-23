@@ -26,7 +26,8 @@ function getSupabaseAdmin() {
 
 /** Customer emails must hit production — localhost/preview URLs never load from Gmail. */
 function getTrackingPixelUrl(token) {
-  return `https://hydrogenro.com/api/email-open-track?t=${encodeURIComponent(token)}`;
+  // Use /.netlify/functions/ — /api/* is rewritten to SPA index.html via public/_redirects.
+  return `https://hydrogenro.com/.netlify/functions/email-open-track?t=${encodeURIComponent(token)}`;
 }
 
 function sanitizeTemplateType(purpose, raw) {
