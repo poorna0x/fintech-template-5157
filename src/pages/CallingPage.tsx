@@ -25,7 +25,9 @@ import {
   Edit,
   Lock,
   Camera,
-  FileText
+  FileText,
+  Loader2,
+  Send
 } from 'lucide-react';
 
 // WhatsApp Icon Component
@@ -43,6 +45,16 @@ import { customerNameClassName } from '@/lib/customerDisplay';
 import CustomerPhotoGalleryDialog from '@/components/admin/CustomerPhotoGalleryDialog';
 import CustomerReportDialog from '@/components/admin/CustomerReportDialog';
 import PhotoViewerDialog from '@/components/admin/PhotoViewerDialog';
+import { resolveCustomerSendBrand } from '@/lib/admin-email-sources';
+import {
+  buildCallingWhatsAppMessage,
+  callingContextFromCustomer,
+  CALLING_WA_TEMPLATE_META,
+  CALLING_WA_TEMPLATE_ORDER,
+  type CallingWhatsAppTemplate,
+} from '@/lib/calling-whatsapp-templates';
+import type { DocumentBrand } from '@/lib/service-brands';
+import { getDocumentBrandLabel } from '@/lib/service-brands';
 
 interface CallHistory {
   id: string;
@@ -156,6 +168,12 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [whatsappDialogOpen, setWhatsappDialogOpen] = useState(false);
   const [selectedCustomerForWhatsApp, setSelectedCustomerForWhatsApp] = useState<CustomerWithHistory | null>(null);
+  const [waBrand, setWaBrand] = useState<DocumentBrand>('hydrogenro');
+  const [waLastServiceBrand, setWaLastServiceBrand] = useState<DocumentBrand | null>(null);
+  const [waBrandLoading, setWaBrandLoading] = useState(false);
+  const [waTemplate, setWaTemplate] = useState<CallingWhatsAppTemplate>('service_due');
+  const [waMessage, setWaMessage] = useState('');
+  const [waMessageTouched, setWaMessageTouched] = useState(false);
   const [customerPhotoGalleryOpen, setCustomerPhotoGalleryOpen] = useState(false);
   const [selectedCustomerForPhotos, setSelectedCustomerForPhotos] = useState<Customer | null>(null);
   const [customerPhotos, setCustomerPhotos] = useState<string[]>([]);
@@ -339,39 +357,65 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
     }
   };
 
-  const generateWhatsAppMessage = (customer: CustomerWithHistory, template: string): string => {
-    const daysSinceService = customer.daysSinceService;
-    
-    switch (template) {
-      case 'service_due': {
-        let message = `Hi ${customer.fullName},\n\n`;
-        if (daysSinceService != null && daysSinceService > 0) {
-          message += `We noticed it's been ${formatDaysAgo(daysSinceService)} since your last RO service.\n\n`;
+  const waMessageContext = useMemo(
+    () =>
+      selectedCustomerForWhatsApp
+        ? callingContextFromCustomer(selectedCustomerForWhatsApp)
+        : null,
+    [selectedCustomerForWhatsApp]
+  );
+
+  useEffect(() => {
+    if (!whatsappDialogOpen || !selectedCustomerForWhatsApp?.id) return;
+
+    let cancelled = false;
+    setWaBrandLoading(true);
+    setWaTemplate('service_due');
+    setWaMessageTouched(false);
+
+    resolveCustomerSendBrand(selectedCustomerForWhatsApp.id)
+      .then(({ sendBrand, lastServiceBrand }) => {
+        if (cancelled) return;
+        setWaBrand(sendBrand);
+        setWaLastServiceBrand(lastServiceBrand);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setWaBrand('hydrogenro');
+          setWaLastServiceBrand(null);
         }
-        message += `Your RO water purifier service is due. We're here to help maintain your RO in top condition.\n\n`;
-        message += `Would you like to schedule a service? Please reply to this message or call us at 8884944288.\n\n`;
-        message += `Thank you!\nHydrogen RO Team`;
-        return message;
+      })
+      .finally(() => {
+        if (!cancelled) setWaBrandLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [whatsappDialogOpen, selectedCustomerForWhatsApp?.id]);
+
+  useEffect(() => {
+    if (!waMessageContext || waMessageTouched) return;
+    setWaMessage(buildCallingWhatsAppMessage(waMessageContext, waTemplate, waBrand));
+  }, [waMessageContext, waTemplate, waBrand, waMessageTouched]);
+
+  const waBrandHint = useMemo(() => {
+    if (waBrandLoading) return 'Loading last service brand…';
+    if (waLastServiceBrand) {
+      const lastLabel = getDocumentBrandLabel(waLastServiceBrand);
+      if (waBrand === waLastServiceBrand) {
+        return `Using last service brand (${lastLabel}). Change if needed.`;
       }
-
-      case 'contact':
-        return `Hi ${customer.fullName},\n\nThis is Hydrogen RO. We wanted to reach out and check if you need any assistance with your RO water purifier.\n\nIf you have any questions or need service, please reply to this message or call us at:\n📞 8884944288\n📞 9886944288\n\nWe're here to help!\nHydrogen RO Team`;
-
-      case 'website':
-        return `Hi ${customer.fullName},\n\nThank you for being our valued customer!\n\nVisit our website for more information:\n🌐 hydrogenro.com\n\nFor service bookings, inquiries, or support:\n📞 Call: 8884944288 / 9886944288\n💬 WhatsApp: Reply to this message\n\nBest regards,\nHydrogen RO Team`;
-
-      case 'maintenance_reminder':
-        return `Hi ${customer.fullName},\n\n🔧 RO Maintenance Reminder\n\nRegular maintenance ensures your RO water purifier works efficiently and provides clean, safe water.\n\nBenefits of regular service:\n✅ Clean filters for better water quality\n✅ Optimal RO performance\n✅ Extended equipment life\n✅ Safe drinking water\n\nSchedule your service today:\n📞 Call: 8884944288\n💬 Reply to this message\n\nHydrogen RO Team`;
-
-      case 'follow_up':
-        return `Hi ${customer.fullName},\n\nWe hope you're satisfied with our service!\n\nIs everything working well with your RO water purifier? If you need any assistance or have questions, we're just a message away.\n\nFor support:\n📞 8884944288\n💬 Reply here\n\nThank you for choosing Hydrogen RO!\nHydrogen RO Team`;
-
-      case 'custom':
-        return `Hi ${customer.fullName},\n\nThis is Hydrogen RO. How can we assist you today?\n\nFor service bookings or inquiries:\n📞 8884944288\n💬 Reply to this message\n\nHydrogen RO Team`;
-
-      default:
-        return `Hi ${customer.fullName},\n\nThis is Hydrogen RO. How can we assist you today?\n\n📞 Call: 8884944288\n💬 Reply to this message\n\nHydrogen RO Team`;
+      return `Last served: ${lastLabel}. Currently sending as ${getDocumentBrandLabel(waBrand)}.`;
     }
+    return `No prior service brand on file — using ${getDocumentBrandLabel(waBrand)}.`;
+  }, [waBrandLoading, waLastServiceBrand, waBrand]);
+
+  const resetWhatsAppComposer = () => {
+    setWhatsappDialogOpen(false);
+    setSelectedCustomerForWhatsApp(null);
+    setWaMessageTouched(false);
+    setWaTemplate('service_due');
   };
 
   const handleWhatsApp = (customer: CustomerWithHistory) => {
@@ -384,20 +428,33 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
     setWhatsappDialogOpen(true);
   };
 
-  const sendWhatsAppMessage = (customer: CustomerWithHistory, template: string) => {
-    if (!customer.phone) {
+  const handleWaTemplateSelect = (template: CallingWhatsAppTemplate) => {
+    setWaTemplate(template);
+    setWaMessageTouched(false);
+  };
+
+  const handleWaBrandChange = (brand: DocumentBrand) => {
+    setWaBrand(brand);
+    setWaMessageTouched(false);
+  };
+
+  const sendWhatsAppMessage = () => {
+    const customer = selectedCustomerForWhatsApp;
+    if (!customer?.phone) {
       toast.error('Phone number not available');
+      return;
+    }
+    const message = waMessage.trim();
+    if (!message) {
+      toast.error('Message is empty');
       return;
     }
 
     const formattedPhone = formatPhoneForWhatsApp(customer.phone);
-    const message = generateWhatsAppMessage(customer, template);
     const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`;
     window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
-    
-    // Close dialog and open status dialog
-    setWhatsappDialogOpen(false);
-    setSelectedCustomerForWhatsApp(null);
+
+    resetWhatsAppComposer();
     openStatusDialog(customer, 'WHATSAPP', customer.phone, message);
   };
 
@@ -1045,107 +1102,135 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
         </div>
       </div>
 
-      {/* WhatsApp Message Template Dialog */}
-      <Dialog open={whatsappDialogOpen} onOpenChange={(open) => {
-        setWhatsappDialogOpen(open);
-        if (!open) {
-          setSelectedCustomerForWhatsApp(null);
-        }
-      }}>
-        <DialogContent className="sm:max-w-lg">
+      {/* WhatsApp Message Composer */}
+      <Dialog
+        open={whatsappDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) resetWhatsAppComposer();
+          else setWhatsappDialogOpen(true);
+        }}
+      >
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <WhatsAppIcon className="w-5 h-5 text-green-600" />
-              Select WhatsApp Message
+              WhatsApp message
             </DialogTitle>
             <DialogDescription asChild>
               <span>
-                Choose a message template to send to{' '}
+                Compose for{' '}
                 <span className={customerNameClassName(selectedCustomerForWhatsApp as any)}>
                   {selectedCustomerForWhatsApp?.fullName}
                 </span>
+                {selectedCustomerForWhatsApp?.phone ? (
+                  <span className="text-muted-foreground"> · {selectedCustomerForWhatsApp.phone}</span>
+                ) : null}
               </span>
             </DialogDescription>
           </DialogHeader>
-          
-          <div className="space-y-2 py-4">
-            {selectedCustomerForWhatsApp && (
-              <>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start h-auto py-3 px-4 text-left"
-                  onClick={() => sendWhatsAppMessage(selectedCustomerForWhatsApp, 'service_due')}
-                >
-                  <div className="flex flex-col items-start">
-                    <div className="font-semibold">Service Due Reminder</div>
-                    <div className="text-xs text-muted-foreground mt-1">Remind about upcoming service</div>
-                  </div>
-                </Button>
 
-                <Button
-                  variant="outline"
-                  className="w-full justify-start h-auto py-3 px-4 text-left"
-                  onClick={() => sendWhatsAppMessage(selectedCustomerForWhatsApp, 'contact')}
-                >
-                  <div className="flex flex-col items-start">
-                    <div className="font-semibold">Contact Message</div>
-                    <div className="text-xs text-muted-foreground mt-1">General contact and support</div>
+          {selectedCustomerForWhatsApp && (
+            <div className="space-y-4 py-1">
+              <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+                <div className="space-y-2">
+                  <Label htmlFor="calling-wa-brand">Send as brand</Label>
+                  <Select
+                    value={waBrand}
+                    onValueChange={(v) => handleWaBrandChange(v as DocumentBrand)}
+                    disabled={waBrandLoading}
+                  >
+                    <SelectTrigger id="calling-wa-brand">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="hydrogenro">Hydrogen RO</SelectItem>
+                      <SelectItem value="elevenro">Eleven RO</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    {waBrandLoading && <Loader2 className="h-3 w-3 animate-spin shrink-0" />}
+                    {waBrandHint}
+                  </p>
+                </div>
+                {waMessageContext?.deviceBrand && (
+                  <div className="rounded-lg border bg-muted/30 px-3 py-2 text-xs text-muted-foreground sm:max-w-[200px]">
+                    <span className="font-medium text-foreground">Purifier on file</span>
+                    <div className="mt-0.5 break-words">
+                      {waMessageContext.deviceBrand}
+                      {waMessageContext.deviceModel ? ` — ${waMessageContext.deviceModel}` : ''}
+                    </div>
                   </div>
-                </Button>
+                )}
+              </div>
 
-                <Button
-                  variant="outline"
-                  className="w-full justify-start h-auto py-3 px-4 text-left"
-                  onClick={() => sendWhatsAppMessage(selectedCustomerForWhatsApp, 'website')}
-                >
-                  <div className="flex flex-col items-start">
-                    <div className="font-semibold">Website Information</div>
-                    <div className="text-xs text-muted-foreground mt-1">Share website and contact details</div>
-                  </div>
-                </Button>
+              <div className="space-y-2">
+                <Label>Message type</Label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {CALLING_WA_TEMPLATE_ORDER.map((key) => {
+                    const meta = CALLING_WA_TEMPLATE_META[key];
+                    const selected = waTemplate === key;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => handleWaTemplateSelect(key)}
+                        className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                          selected
+                            ? 'border-green-600 bg-green-50 ring-1 ring-green-600/30'
+                            : 'border-border hover:bg-muted/40'
+                        }`}
+                      >
+                        <div className="text-sm font-medium text-foreground">{meta.label}</div>
+                        <div className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
+                          {meta.description}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
-                <Button
-                  variant="outline"
-                  className="w-full justify-start h-auto py-3 px-4 text-left"
-                  onClick={() => sendWhatsAppMessage(selectedCustomerForWhatsApp, 'maintenance_reminder')}
-                >
-                  <div className="flex flex-col items-start">
-                    <div className="font-semibold">Maintenance Reminder</div>
-                    <div className="text-xs text-muted-foreground mt-1">Benefits of regular maintenance</div>
-                  </div>
-                </Button>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor="calling-wa-message">Message preview</Label>
+                  {waMessageTouched && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => setWaMessageTouched(false)}
+                    >
+                      Reset to template
+                    </Button>
+                  )}
+                </div>
+                <Textarea
+                  id="calling-wa-message"
+                  value={waMessage}
+                  onChange={(e) => {
+                    setWaMessageTouched(true);
+                    setWaMessage(e.target.value);
+                  }}
+                  rows={12}
+                  className="text-sm font-mono leading-relaxed resize-y min-h-[200px]"
+                  placeholder="Choose a template or type your message…"
+                />
+              </div>
+            </div>
+          )}
 
-                <Button
-                  variant="outline"
-                  className="w-full justify-start h-auto py-3 px-4 text-left"
-                  onClick={() => sendWhatsAppMessage(selectedCustomerForWhatsApp, 'follow_up')}
-                >
-                  <div className="flex flex-col items-start">
-                    <div className="font-semibold">Follow Up</div>
-                    <div className="text-xs text-muted-foreground mt-1">Check satisfaction after service</div>
-                  </div>
-                </Button>
-
-                <Button
-                  variant="outline"
-                  className="w-full justify-start h-auto py-3 px-4 text-left"
-                  onClick={() => sendWhatsAppMessage(selectedCustomerForWhatsApp, 'custom')}
-                >
-                  <div className="flex flex-col items-start">
-                    <div className="font-semibold">Custom Message</div>
-                    <div className="text-xs text-muted-foreground mt-1">Simple greeting and contact info</div>
-                  </div>
-                </Button>
-              </>
-            )}
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => {
-              setWhatsappDialogOpen(false);
-              setSelectedCustomerForWhatsApp(null);
-            }}>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={resetWhatsAppComposer}>
               Cancel
+            </Button>
+            <Button
+              className="bg-green-600 hover:bg-green-700 text-white"
+              onClick={sendWhatsAppMessage}
+              disabled={!waMessage.trim() || waBrandLoading}
+            >
+              <Send className="w-4 h-4 mr-2" />
+              Open in WhatsApp
             </Button>
           </DialogFooter>
         </DialogContent>
