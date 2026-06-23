@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Phone } from 'lucide-react';
@@ -7,6 +7,8 @@ import { customerNameClassName } from '@/lib/customerDisplay';
 import { WhatsAppIcon } from '../WhatsAppIcon';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { toast } from 'sonner';
+import { db } from '@/lib/supabase';
+import PhoneSwapButton from '@/components/admin/PhoneSwapButton';
 
 type ContactMode = 'call' | 'whatsapp';
 
@@ -16,7 +18,11 @@ interface PhoneNumbersDialogProps {
   customer: Customer | null;
   /** 'call' shows tel: links, 'whatsapp' opens wa.me. Defaults to 'call'. */
   mode?: ContactMode;
+  onPhonesSwapped?: (customer: Customer) => void;
 }
+
+const getAlternatePhone = (customer: Customer | null | undefined): string =>
+  String((customer as any)?.alternate_phone || (customer as any)?.alternatePhone || '').trim();
 
 const openWhatsApp = (phone?: string | null) => {
   const raw = (phone || '').trim();
@@ -28,9 +34,50 @@ const openWhatsApp = (phone?: string | null) => {
   window.open(`https://wa.me/${formatted}`, '_blank', 'noopener,noreferrer');
 };
 
-const PhoneNumbersDialog: React.FC<PhoneNumbersDialogProps> = ({ open, onOpenChange, customer, mode = 'call' }) => {
+const PhoneNumbersDialog: React.FC<PhoneNumbersDialogProps> = ({
+  open,
+  onOpenChange,
+  customer,
+  mode = 'call',
+  onPhonesSwapped,
+}) => {
   const isWhatsApp = mode === 'whatsapp';
-  const alternatePhone = (customer as any)?.alternate_phone || (customer as any)?.alternatePhone;
+  const [displayCustomer, setDisplayCustomer] = useState<Customer | null>(customer);
+  const [swapping, setSwapping] = useState(false);
+
+  useEffect(() => {
+    setDisplayCustomer(customer);
+  }, [customer, open]);
+
+  const primaryPhone = String(displayCustomer?.phone || '').trim();
+  const alternatePhone = getAlternatePhone(displayCustomer);
+  const canSwap = Boolean(primaryPhone && alternatePhone && displayCustomer?.id);
+
+  const handleSwap = async () => {
+    if (!displayCustomer?.id || !canSwap) return;
+    setSwapping(true);
+    try {
+      const { error } = await db.customers.update(displayCustomer.id, {
+        phone: alternatePhone,
+        alternate_phone: primaryPhone,
+      });
+      if (error) throw new Error(error.message);
+
+      const updated = {
+        ...displayCustomer,
+        phone: alternatePhone,
+        alternatePhone: primaryPhone,
+        alternate_phone: primaryPhone,
+      } as Customer;
+      setDisplayCustomer(updated);
+      onPhonesSwapped?.(updated);
+      toast.success('Primary and alternate numbers swapped');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to swap numbers');
+    } finally {
+      setSwapping(false);
+    }
+  };
 
   const renderAction = (phone?: string | null, variant: 'primary' | 'secondary' = 'primary') => {
     const primaryClasses = '';
@@ -78,8 +125,8 @@ const PhoneNumbersDialog: React.FC<PhoneNumbersDialogProps> = ({ open, onOpenCha
           <DialogDescription asChild>
             <span>
               {isWhatsApp ? 'Choose a number to message ' : 'Choose a phone number to call for '}
-              <span className={customerNameClassName(customer)}>
-                {(customer as any)?.full_name || customer?.fullName || 'customer'}
+              <span className={customerNameClassName(displayCustomer)}>
+                {(displayCustomer as any)?.full_name || displayCustomer?.fullName || 'customer'}
               </span>
             </span>
           </DialogDescription>
@@ -88,11 +135,17 @@ const PhoneNumbersDialog: React.FC<PhoneNumbersDialogProps> = ({ open, onOpenCha
           {/* Primary Phone */}
           <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-200">
             <div>
-              <div className="font-semibold text-foreground">{customer?.phone}</div>
+              <div className="font-semibold text-foreground">{primaryPhone}</div>
               <div className="text-sm text-blue-600 font-medium">Primary Number</div>
             </div>
-            {renderAction(customer?.phone, 'primary')}
+            {renderAction(primaryPhone, 'primary')}
           </div>
+
+          {canSwap && (
+            <div className="flex justify-center py-0.5">
+              <PhoneSwapButton onSwap={handleSwap} saving={swapping} />
+            </div>
+          )}
 
           {/* Secondary Phone */}
           {alternatePhone && (

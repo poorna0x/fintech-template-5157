@@ -13,6 +13,7 @@ import { MapPin, Download, ExternalLink, Trash2, Lock } from 'lucide-react';
 import { useAdminRole } from '@/lib/useAdminRole';
 import { mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas } from '@/lib/adminUtils';
 import { normalizeIndianMobileInput } from '@/lib/utils';
+import PhoneSwapButton from '@/components/admin/PhoneSwapButton';
 
 // Brand and model data - RO and Softener brands including local (Aqua Grand, Aqua Smart, Dolphin, etc.)
 const brandData = {
@@ -367,6 +368,18 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
 
   const handleEditPhoneFieldChange = (field: 'phone' | 'alternate_phone', value: string) => {
     handleEditFormChange(field, normalizeIndianMobileInput(value));
+  };
+
+  const canSwapPhones =
+    Boolean(editFormData.phone?.trim()) && Boolean(editFormData.alternate_phone?.trim());
+
+  const handleSwapPhones = () => {
+    if (!canSwapPhones) return;
+    setEditFormData((prev) => ({
+      ...prev,
+      phone: prev.alternate_phone,
+      alternate_phone: prev.phone,
+    }));
   };
 
   const handleAddressFieldChange = (field: string, value: string) => {
@@ -1136,28 +1149,6 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="edit_phone">Primary Phone</Label>
-                <Input
-                  id="edit_phone"
-                  value={editFormData?.phone ?? ''}
-                  onChange={(e) => handleEditPhoneFieldChange('phone', e.target.value)}
-                  placeholder="Enter 10-digit phone number"
-                  inputMode="numeric"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="edit_alternate_phone">Alternate Phone</Label>
-                <Input
-                  id="edit_alternate_phone"
-                  value={editFormData?.alternate_phone ?? ''}
-                  onChange={(e) => handleEditPhoneFieldChange('alternate_phone', e.target.value)}
-                  placeholder="Enter 10-digit phone number (optional)"
-                  inputMode="numeric"
-                />
-              </div>
-
-              <div className="space-y-2">
                 <Label htmlFor="edit_email">Email</Label>
                 <Input
                   id="edit_email"
@@ -1166,6 +1157,38 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
                   onChange={(e) => handleEditFormChange('email', e.target.value)}
                   placeholder="Enter email address"
                 />
+              </div>
+
+              <div className="space-y-2 md:col-span-2">
+                <div className="flex flex-col sm:flex-row sm:items-end gap-1 sm:gap-1.5">
+                  <div className="flex-1 space-y-2 min-w-0">
+                    <Label htmlFor="edit_phone">Primary Phone</Label>
+                    <Input
+                      id="edit_phone"
+                      value={editFormData?.phone ?? ''}
+                      onChange={(e) => handleEditPhoneFieldChange('phone', e.target.value)}
+                      placeholder="Enter 10-digit phone number"
+                      inputMode="numeric"
+                    />
+                  </div>
+
+                  {canSwapPhones && (
+                    <div className="flex justify-center sm:pb-2 shrink-0">
+                      <PhoneSwapButton onSwap={handleSwapPhones} />
+                    </div>
+                  )}
+
+                  <div className="flex-1 space-y-2 min-w-0">
+                    <Label htmlFor="edit_alternate_phone">Alternate Phone</Label>
+                    <Input
+                      id="edit_alternate_phone"
+                      value={editFormData?.alternate_phone ?? ''}
+                      onChange={(e) => handleEditPhoneFieldChange('alternate_phone', e.target.value)}
+                      placeholder="Enter 10-digit phone number (optional)"
+                      inputMode="numeric"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
           </div>

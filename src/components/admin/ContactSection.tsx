@@ -22,6 +22,7 @@ interface ContactSectionProps {
   setAddressDialogOpen: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   /** Load full customer from DB when the list card only has a slim embed (e.g. map pin / coordinates). */
   hydrateCustomerForMaps?: (customerId: string) => Promise<Customer | null>;
+  onCustomerPhonesSwapped?: (customer: Customer) => void;
 }
 
 export const ContactSection: React.FC<ContactSectionProps> = ({
@@ -35,6 +36,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
   setIsGettingLocation,
   setAddressDialogOpen,
   hydrateCustomerForMaps,
+  onCustomerPhonesSwapped,
 }) => {
   const navigate = useNavigate();
   const customerEmail = getValidCustomerEmail(customer.email);
@@ -153,6 +155,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
         onOpenChange={setWhatsappNumbersOpen}
         customer={customer}
         mode="whatsapp"
+        onPhonesSwapped={onCustomerPhonesSwapped}
       />
       <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {/* Phone */}

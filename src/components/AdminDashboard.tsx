@@ -5935,6 +5935,38 @@ const AdminDashboard = () => {
     setPhonePopupOpen(true);
   };
 
+  const patchCustomerPhonesInState = useCallback((updated: Customer) => {
+    const alt = (updated as any).alternate_phone ?? updated.alternatePhone ?? '';
+    setCustomers((prev) =>
+      prev.map((c) =>
+        c.id === updated.id
+          ? { ...c, phone: updated.phone, alternate_phone: alt, alternatePhone: alt }
+          : c
+      )
+    );
+    setJobs((prev) =>
+      prev.map((job) => {
+        const cust = (job as any).customer;
+        if (!cust || cust.id !== updated.id) return job;
+        return {
+          ...job,
+          customer: {
+            ...cust,
+            phone: updated.phone,
+            alternate_phone: alt,
+            alternatePhone: alt,
+          },
+        };
+      })
+    );
+    setSelectedCustomerPhone((prev) =>
+      prev?.id === updated.id ? { ...prev, phone: updated.phone, alternatePhone: alt, alternate_phone: alt } : prev
+    );
+    setSelectedCustomerWhatsApp((prev) =>
+      prev?.id === updated.id ? { ...prev, phone: updated.phone, alternatePhone: alt, alternate_phone: alt } : prev
+    );
+  }, []);
+
   const handleWhatsAppClick = (customer: Customer) => {
     const phone = customer?.phone || '';
     if (!phone.trim()) {
@@ -10670,6 +10702,7 @@ const AdminDashboard = () => {
                   setIsGettingLocation={setIsGettingLocation}
                   setAddressDialogOpen={setAddressDialogOpen}
                   hydrateCustomerForMaps={hydrateCustomerForMaps}
+                  onCustomerPhonesSwapped={patchCustomerPhonesInState}
                 />
 
                                 {/* Services Section - Always show, even if no jobs */}
@@ -12263,6 +12296,7 @@ const AdminDashboard = () => {
         open={phonePopupOpen}
         onOpenChange={setPhonePopupOpen}
         customer={selectedCustomerPhone}
+        onPhonesSwapped={patchCustomerPhonesInState}
       />
 
       {/* WhatsApp Numbers Popup */}
@@ -12271,6 +12305,7 @@ const AdminDashboard = () => {
         onOpenChange={setWhatsappPopupOpen}
         customer={selectedCustomerWhatsApp}
         mode="whatsapp"
+        onPhonesSwapped={patchCustomerPhonesInState}
       />
 
       {/* Reassign Job Dialog */}

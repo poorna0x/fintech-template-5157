@@ -15,6 +15,7 @@ import { MapPin, Download, ExternalLink, Loader2 } from 'lucide-react';
 import { generateJobNumber, extractLocationFromAddressString, bangaloreAreas } from '@/lib/adminUtils';
 import ImageUpload from '@/components/ImageUpload';
 import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmentTimeSelect';
+import PhoneSwapButton from '@/components/admin/PhoneSwapButton';
 
 // Brand and model data - RO and Softener brands including local (Aqua Grand, Aqua Smart, Dolphin, etc.)
 const brandData = {
@@ -518,6 +519,18 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         alternate_phone: ''
       }));
     }
+  };
+
+  const canSwapPhones =
+    Boolean(addFormData.phone?.trim()) && Boolean(addFormData.alternate_phone?.trim());
+
+  const handleSwapPhones = () => {
+    if (!canSwapPhones) return;
+    setAddFormData((prev) => ({
+      ...prev,
+      phone: prev.alternate_phone,
+      alternate_phone: prev.phone,
+    }));
   };
 
   const filteredAddressSuggestions = useMemo(() => {
@@ -1376,37 +1389,45 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                 )}
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="add_phone" className="text-sm font-medium">Primary Phone *</Label>
-                  <Input
-                    id="add_phone"
-                    value={addFormData.phone}
-                    onChange={(e) => { handlePhoneChange(e.target.value); setDuplicateFoundOnBlur(null); }}
-                    placeholder="Enter 10-digit phone number"
-                    className={`text-sm ${formErrors.phone ? 'border-red-500' : ''}`}
-                    required
-                  />
-                  {formErrors?.phone && (
-                    <p className="text-xs text-red-500">{formErrors.phone}</p>
-                  )}
-                  {duplicateFoundOnBlur && (
-                    <p className="text-xs text-amber-600">A customer with this number or email already exists.</p>
-                  )}
-                </div>
+              <div className="space-y-2 sm:col-span-2">
+                <div className="flex flex-col sm:flex-row sm:items-end gap-1 sm:gap-1.5">
+                  <div className="flex-1 space-y-2 min-w-0">
+                    <Label htmlFor="add_phone" className="text-sm font-medium">Primary Phone *</Label>
+                    <Input
+                      id="add_phone"
+                      value={addFormData.phone}
+                      onChange={(e) => { handlePhoneChange(e.target.value); setDuplicateFoundOnBlur(null); }}
+                      placeholder="Enter 10-digit phone number"
+                      className={`text-sm ${formErrors.phone ? 'border-red-500' : ''}`}
+                      required
+                    />
+                    {formErrors?.phone && (
+                      <p className="text-xs text-red-500">{formErrors.phone}</p>
+                    )}
+                    {duplicateFoundOnBlur && (
+                      <p className="text-xs text-amber-600">A customer with this number or email already exists.</p>
+                    )}
+                  </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="add_alternate_phone" className="text-sm font-medium">Alternate Phone</Label>
-                  <Input
-                    id="add_alternate_phone"
-                    value={addFormData.alternate_phone}
-                    onChange={(e) => handleAlternatePhoneChange(e.target.value)}
-                    placeholder="Enter 10-digit phone number (optional)"
-                    className={`text-sm ${formErrors.alternate_phone ? 'border-red-500' : ''}`}
-                  />
-                  {formErrors?.alternate_phone && (
-                    <p className="text-xs text-red-500">{formErrors.alternate_phone}</p>
+                  {canSwapPhones && (
+                    <div className="flex justify-center sm:pb-2 shrink-0">
+                      <PhoneSwapButton onSwap={handleSwapPhones} />
+                    </div>
                   )}
+
+                  <div className="flex-1 space-y-2 min-w-0">
+                    <Label htmlFor="add_alternate_phone" className="text-sm font-medium">Alternate Phone</Label>
+                    <Input
+                      id="add_alternate_phone"
+                      value={addFormData.alternate_phone}
+                      onChange={(e) => handleAlternatePhoneChange(e.target.value)}
+                      placeholder="Enter 10-digit phone number (optional)"
+                      className={`text-sm ${formErrors.alternate_phone ? 'border-red-500' : ''}`}
+                    />
+                    {formErrors?.alternate_phone && (
+                      <p className="text-xs text-red-500">{formErrors.alternate_phone}</p>
+                    )}
+                  </div>
                 </div>
               </div>
 
