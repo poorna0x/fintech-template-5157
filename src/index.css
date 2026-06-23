@@ -106,6 +106,8 @@
   body {
     @apply bg-background font-inter text-foreground antialiased;
     letter-spacing: -0.025em;
+    /* Match html: reserve scrollbar space so lock/unlock does not reflow the layout. */
+    scrollbar-gutter: stable;
     /* Allow pull-to-refresh on mobile - use auto to allow all touch gestures */
     touch-action: auto;
     -webkit-overflow-scrolling: touch;
@@ -126,13 +128,33 @@
     overscroll-behavior-y: auto;
   }
 
-  /* react-remove-scroll (used by Radix dialogs/menus/popovers) adds margin/padding to
-     <body> to offset the removed scrollbar. With the gutter already reserved above, that
-     offset double-counts and shifts the page; cancel it so the layout stays put when any
-     overlay opens. The extra specificity beats the library's runtime-injected !important rule. */
+  /* react-remove-scroll (Radix dialogs/menus/popovers) compensates for the scrollbar by
+     adding body margin/padding and nudging fixed elements. With gutter already reserved,
+     that double-counts and the page appears to jump sideways (often after idle when the
+     OS shows/hides the scrollbar on first click). */
   html body[data-scroll-locked] {
     margin-right: 0 !important;
+    margin-left: 0 !important;
     padding-right: 0 !important;
+    padding-left: 0 !important;
+    padding-top: 0 !important;
+  }
+
+  html body[data-scroll-locked] .right-scroll-bar-position {
+    right: 0 !important;
+  }
+
+  html body[data-scroll-locked] .width-before-scroll-bar {
+    margin-right: 0 !important;
+  }
+
+  html body.with-scroll-bars-hidden {
+    padding-right: 0 !important;
+  }
+
+  /* Public site mobile nav — avoid background scroll without layout jump */
+  body.mobile-nav-open {
+    overflow: hidden;
   }
 
   /* Prevent freeze issues in PWA */

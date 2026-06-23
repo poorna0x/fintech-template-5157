@@ -53,6 +53,12 @@ const Header = () => {
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, [location.pathname]);
+
+  // Keep page from scrolling behind the full-screen mobile menu (no sideways jump).
+  useEffect(() => {
+    document.body.classList.toggle('mobile-nav-open', mobileMenuOpen);
+    return () => document.body.classList.remove('mobile-nav-open');
+  }, [mobileMenuOpen]);
   
   const handleNavClick = (page: string) => (e: React.MouseEvent) => {
     e.preventDefault();
