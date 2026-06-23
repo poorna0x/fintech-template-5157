@@ -9935,9 +9935,10 @@ const AdminDashboard = () => {
               </div>
               
               {/* Add Customer button */}
-              <Button 
+              <Button
+                variant="brand"
                 onClick={handleAddCustomer}
-                className="border border-transparent hover:border-transparent bg-blue-600 hover:bg-blue-700 text-white w-full sm:w-auto px-4 py-2 text-sm sm:text-base"
+                className="w-full sm:w-auto px-4 py-2 text-sm sm:text-base"
               >
                 <Users className="w-4 h-4 mr-2" />
                 <span className="hidden sm:inline">Add Customer</span>
