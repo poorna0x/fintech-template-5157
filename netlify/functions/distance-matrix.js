@@ -1,7 +1,7 @@
 // Netlify Function for Google Distance Matrix API
 // Calculates distance and duration between multiple origins and destinations
 // Optimized for free tier usage with caching
-const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
+const { getCorsHeaders, isOriginAllowed, isProduction } = require('./cors-helper');
 const { checkRateLimit } = require('./rate-limiter');
 
 const trim = (s) => (s && typeof s === 'string' ? s.trim() : '');
@@ -39,6 +39,14 @@ exports.handler = async (event, context) => {
       statusCode: 200,
       headers: corsHeaders,
       body: '',
+    };
+  }
+
+  if (isProduction() && !requestOrigin) {
+    return {
+      statusCode: 403,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ error: 'Forbidden' }),
     };
   }
 

@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { ensureAdminSupabaseSession } from '@/lib/auth';
 import { normalizeCustomerAddress } from '@/lib/customer-address';
-import { ensureSupabaseSessionForWrite } from '@/lib/ensureSupabaseSession';
+import { ensureSupabaseSessionForWrite, resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import { useResumeSync } from '@/hooks/useResumeSync';
 import AdminHeader from '@/components/AdminHeader';
 import { WebsiteBookingIntentBanner } from '@/components/admin/WebsiteBookingIntentBanner';
@@ -3422,11 +3422,17 @@ const AdminDashboard = () => {
     if (!address.trim()) return;
     
     try {
-      // Use the existing geocoding function
+      const token = await resolveSupabaseAccessTokenForApi();
+      if (!token) {
+        toast.error('Please sign in again to geocode addresses.');
+        return;
+      }
+
       const response = await fetch(`/.netlify/functions/geocode`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ query: address })
       });
