@@ -384,6 +384,23 @@ type AnalyticsQueryOpts = { forAnalytics?: boolean };
 
 const ANALYTICS_FETCH_PAGE_SIZE = 1000;
 
+/** Slim columns for Calling page — no address/location JSONB. */
+const CUSTOMER_CALLING_PAGE_COLUMNS = [
+  'id',
+  'customer_id',
+  'full_name',
+  'customer_tier',
+  'phone',
+  'alternate_phone',
+  'email',
+  'service_type',
+  'brand',
+  'model',
+  'status',
+  'has_prefilter',
+  'last_service_date',
+].join(', ');
+
 /** CRM analytics job rows — `lead_source` column instead of heavy `requirements` JSON. */
 const ANALYTICS_JOB_COLUMNS = [
   'id',
@@ -527,6 +544,295 @@ async function getCustomerTableAuthMode(): Promise<CustomerTableAuthMode> {
   const role =
     session.user.app_metadata?.role ?? session.user.user_metadata?.role ?? 'admin';
   return role === 'technician' ? 'technician' : 'admin';
+}
+
+function isCallingRpcNotFoundError(error: unknown): boolean {
+  const e = error as { code?: string; message?: string };
+  if (e?.code === 'PGRST202') return true;
+  const msg = typeof e?.message === 'string' ? e.message : '';
+  return msg.includes('Could not find the function') || msg.includes('does not exist');
+}
+
+export type CallingPageRpcRow = {
+  id: string;
+  customer_id: string;
+  full_name: string;
+  customer_tier?: string | null;
+  phone: string;
+  alternate_phone?: string | null;
+  email?: string | null;
+  service_type: string;
+  brand: string;
+  model: string;
+  status: string;
+  has_prefilter?: boolean | null;
+  last_service_date?: string | null;
+  raw_water_tds?: number | null;
+  last_service_at?: string | null;
+  last_service_type?: string | null;
+  last_service_sub_type?: string | null;
+  last_contacted_at?: string | null;
+  last_contact_status?: string | null;
+  days_since_service?: number | null;
+  days_since_contact?: number | null;
+};
+
+export type CallingPageRpcResult = {
+  total: number;
+  stats: { over_one_year: number; six_to_twelve: number };
+  rows: CallingPageRpcRow[];
+  server_paginated: boolean;
+};
+
+type CallingPageQueryParams = {
+  page: number;
+  limit: number;
+  search?: string;
+  serviceFilter?: string;
+  serviceHistoryFilter?: string;
+  serviceSubTypeFilter?: string;
+  showRecentlyContacted?: boolean;
+  recentContactDays?: number;
+  statusFilter?: string;
+  prefilterFilter?: string;
+  onFallbackProgress?: (loaded: number) => void;
+};
+
+/** Client-side filter + slice when get_calling_page RPC is not deployed yet. */
+async function getCallingPageFallback(
+  params: CallingPageQueryParams,
+  page: number,
+  limit: number
+): Promise<CallingPageRpcResult | null> {
+  const rows: Record<string, unknown>[] = [];
+  let from = 0;
+  for (;;) {
+    const to = from + ANALYTICS_FETCH_PAGE_SIZE - 1;
+    const { data, error } = await supabase
+      .from('customers')
+      .select(CUSTOMER_CALLING_PAGE_COLUMNS)
+      .order('created_at', { ascending: false })
+      .range(from, to);
+    if (error) return null;
+    const batch = data ?? [];
+    rows.push(...batch);
+    params.onFallbackProgress?.(rows.length);
+    if (batch.length < ANALYTICS_FETCH_PAGE_SIZE) break;
+    from += ANALYTICS_FETCH_PAGE_SIZE;
+  }
+
+  type JobRow = {
+    customer_id: string;
+    completed_at: string;
+    service_type?: string | null;
+    service_sub_type?: string | null;
+  };
+  type ContactRow = { customer_id: string; contacted_at: string; status: string };
+
+  const [jobsRes, contactsRes] = await Promise.all([
+    supabase.rpc('get_last_completed_job_per_customer') as Promise<{
+      data: JobRow[] | null;
+      error: unknown;
+    }>,
+    supabase.rpc('get_last_contact_per_customer') as Promise<{
+      data: ContactRow[] | null;
+      error: unknown;
+    }>,
+  ]);
+
+  let lastJobsData: JobRow[] | null = jobsRes.data;
+  if (jobsRes.error) {
+    const fallback = await supabase
+      .from('jobs')
+      .select('customer_id, completed_at, service_type, service_sub_type')
+      .eq('status', 'COMPLETED')
+      .not('completed_at', 'is', null)
+      .order('completed_at', { ascending: false })
+      .limit(2000);
+    lastJobsData = fallback.data;
+  }
+
+  let lastContactsData: ContactRow[] | null = contactsRes.data;
+  if (contactsRes.error) {
+    const fallback = await supabase
+      .from('call_history')
+      .select('customer_id, contacted_at, status')
+      .order('contacted_at', { ascending: false })
+      .limit(2000);
+    lastContactsData = fallback.data;
+  }
+
+  const lastServiceMap = new Map<
+    string,
+    { completed_at: string; service_type?: string | null; service_sub_type?: string | null }
+  >();
+  (lastJobsData || []).forEach((job) => {
+    if (job.customer_id && !lastServiceMap.has(job.customer_id)) {
+      lastServiceMap.set(job.customer_id, {
+        completed_at: job.completed_at,
+        service_type: job.service_type ?? null,
+        service_sub_type: job.service_sub_type ?? null,
+      });
+    }
+  });
+
+  const lastContactMap = new Map<string, { contacted_at: string; status: string }>();
+  (lastContactsData || []).forEach((contact) => {
+    if (contact.customer_id && !lastContactMap.has(contact.customer_id)) {
+      lastContactMap.set(contact.customer_id, {
+        contacted_at: contact.contacted_at,
+        status: contact.status,
+      });
+    }
+  });
+
+  const now = Date.now();
+  const search = (params.search ?? '').trim();
+  const searchLower = search.toLowerCase();
+  const searchDigits = search.replace(/\D/g, '');
+  const isPhoneSearch = searchDigits.length >= 10;
+
+  const enriched: CallingPageRpcRow[] = rows.map((customer: any) => {
+    const lastJobInfo = lastServiceMap.get(customer.id);
+    const lastServiceAt = lastJobInfo?.completed_at || customer.last_service_date || null;
+    const lastContact = lastContactMap.get(customer.id);
+    const daysSinceService =
+      lastServiceAt != null
+        ? Math.floor((now - new Date(lastServiceAt).getTime()) / (1000 * 60 * 60 * 24))
+        : null;
+    const daysSinceContact =
+      lastContact != null
+        ? Math.floor((now - new Date(lastContact.contacted_at).getTime()) / (1000 * 60 * 60 * 24))
+        : null;
+
+    return {
+      id: customer.id,
+      customer_id: customer.customer_id,
+      full_name: customer.full_name,
+      customer_tier: customer.customer_tier ?? null,
+      phone: customer.phone,
+      alternate_phone: customer.alternate_phone ?? null,
+      email: customer.email ?? null,
+      service_type: customer.service_type,
+      brand: customer.brand,
+      model: customer.model,
+      status: customer.status,
+      has_prefilter: customer.has_prefilter ?? null,
+      last_service_date: customer.last_service_date ?? null,
+      raw_water_tds: customer.raw_water_tds ?? null,
+      last_service_at: lastServiceAt,
+      last_service_type: lastJobInfo?.service_type ?? null,
+      last_service_sub_type: lastJobInfo?.service_sub_type ?? null,
+      last_contacted_at: lastContact?.contacted_at ?? null,
+      last_contact_status: lastContact?.status ?? null,
+      days_since_service: daysSinceService,
+      days_since_contact: daysSinceContact,
+    };
+  });
+
+  let filtered = enriched;
+
+  if (search) {
+    filtered = filtered.filter((customer) => {
+      const phoneMatch =
+        isPhoneSearch &&
+        (customer.phone?.replace(/\D/g, '') === searchDigits ||
+          (customer.alternate_phone ?? '').replace(/\D/g, '') === searchDigits);
+      return (
+        customer.full_name?.toLowerCase().includes(searchLower) ||
+        customer.phone?.includes(search) ||
+        (customer.alternate_phone ?? '').includes(search) ||
+        customer.customer_id?.toLowerCase().includes(searchLower) ||
+        (customer.email ?? '').toLowerCase().includes(searchLower) ||
+        phoneMatch
+      );
+    });
+  }
+
+  const serviceFilter = params.serviceFilter ?? 'all';
+  if (serviceFilter !== 'all') {
+    filtered = filtered.filter((customer) => {
+      if (!customer.last_service_at) return serviceFilter === 'never';
+      const days = customer.days_since_service ?? 0;
+      switch (serviceFilter) {
+        case '3months':
+          return days >= 90 && days < 180;
+        case '6months':
+          return days >= 180 && days < 365;
+        case '1year':
+          return days >= 365;
+        case 'never':
+          return false;
+        default:
+          return true;
+      }
+    });
+  }
+
+  const serviceHistoryFilter = params.serviceHistoryFilter ?? 'all';
+  if (serviceHistoryFilter !== 'all') {
+    filtered = filtered.filter((customer) => {
+      const hasService = !!customer.last_service_at;
+      if (serviceHistoryFilter === 'serviced') return hasService;
+      if (serviceHistoryFilter === 'never') return !hasService;
+      return true;
+    });
+  }
+
+  const serviceSubTypeFilter = params.serviceSubTypeFilter ?? 'all';
+  if (serviceSubTypeFilter !== 'all') {
+    filtered = filtered.filter((customer) => {
+      const subType = (customer.last_service_sub_type || '').toUpperCase();
+      return subType === serviceSubTypeFilter.toUpperCase();
+    });
+  }
+
+  const recentContactDays = params.recentContactDays ?? 7;
+  if (!params.showRecentlyContacted) {
+    filtered = filtered.filter((customer) => {
+      if (!customer.last_contacted_at) return true;
+      return (customer.days_since_contact ?? 0) >= recentContactDays;
+    });
+  }
+
+  const statusFilter = params.statusFilter ?? 'all';
+  if (statusFilter !== 'all') {
+    filtered = filtered.filter((customer) => {
+      if (!customer.last_contact_status) return statusFilter === 'never';
+      return customer.last_contact_status === statusFilter;
+    });
+  }
+
+  const prefilterFilter = params.prefilterFilter ?? 'all';
+  if (prefilterFilter !== 'all') {
+    filtered = filtered.filter((customer) => {
+      if (prefilterFilter === 'yes') return customer.has_prefilter === true;
+      if (prefilterFilter === 'no') return customer.has_prefilter === false;
+      if (prefilterFilter === 'unknown') return customer.has_prefilter == null;
+      return true;
+    });
+  }
+
+  filtered.sort((a, b) => {
+    const aDays = a.days_since_service != null ? a.days_since_service : -1;
+    const bDays = b.days_since_service != null ? b.days_since_service : -1;
+    return bDays - aDays;
+  });
+
+  const total = filtered.length;
+  const overOneYear = filtered.filter((c) => (c.days_since_service ?? 0) >= 365).length;
+  const sixToTwelve = filtered.filter(
+    (c) => (c.days_since_service ?? 0) >= 180 && (c.days_since_service ?? 0) < 365
+  ).length;
+  const offset = (page - 1) * limit;
+  const pageRows = filtered.slice(offset, offset + limit);
+
+  return {
+    total,
+    stats: { over_one_year: overOneYear, six_to_twelve: sixToTwelve },
+    rows: pageRows,
+    server_paginated: false,
+  };
 }
 
 // Database helper functions
@@ -773,6 +1079,30 @@ export const db = {
 
       const { data, error } = await query;
       return { data, error };
+    },
+
+    /**
+     * All customers for Calling page (batched 1000/request — Supabase row cap).
+     * Optional onProgress reports rows loaded so the UI can show fetch progress.
+     */
+    async getAllForCallingPage(opts?: { onProgress?: (loaded: number) => void }) {
+      const rows: Record<string, unknown>[] = [];
+      let from = 0;
+      for (;;) {
+        const to = from + ANALYTICS_FETCH_PAGE_SIZE - 1;
+        const { data, error } = await supabase
+          .from('customers')
+          .select(CUSTOMER_CALLING_PAGE_COLUMNS)
+          .order('created_at', { ascending: false })
+          .range(from, to);
+        if (error) return { data: rows, error };
+        const page = data ?? [];
+        rows.push(...page);
+        opts?.onProgress?.(rows.length);
+        if (page.length < ANALYTICS_FETCH_PAGE_SIZE) break;
+        from += ANALYTICS_FETCH_PAGE_SIZE;
+      }
+      return { data: rows, error: null };
     },
 
     async search(query: string, limit: number = 50) {
@@ -5020,6 +5350,56 @@ export const db = {
         error: null
       };
     }
+  },
+
+  // Calling page — server-paginated list (see scripts/add-calling-page-rpc.sql)
+  calling: {
+    async getPage(params: {
+      page: number;
+      limit: number;
+      search?: string;
+      serviceFilter?: string;
+      serviceHistoryFilter?: string;
+      serviceSubTypeFilter?: string;
+      showRecentlyContacted?: boolean;
+      recentContactDays?: number;
+      statusFilter?: string;
+      prefilterFilter?: string;
+      /** Used only when RPC is missing — reports rows loaded during full-table fallback. */
+      onFallbackProgress?: (loaded: number) => void;
+    }): Promise<{
+      data: CallingPageRpcResult | null;
+      error: unknown;
+      mode: 'rpc' | 'fallback';
+    }> {
+      const page = Math.max(1, params.page);
+      const limit = Math.max(1, Math.min(params.limit, 100));
+      const offset = (page - 1) * limit;
+
+      const rpcArgs = {
+        p_limit: limit,
+        p_offset: offset,
+        p_search: params.search?.trim() || null,
+        p_service_filter: params.serviceFilter ?? 'all',
+        p_service_history: params.serviceHistoryFilter ?? 'all',
+        p_service_sub_type: params.serviceSubTypeFilter ?? 'all',
+        p_show_recently_contacted: params.showRecentlyContacted === true,
+        p_recent_contact_days: params.recentContactDays ?? 7,
+        p_status_filter: params.statusFilter ?? 'all',
+        p_prefilter_filter: params.prefilterFilter ?? 'all',
+      };
+
+      const { data, error } = await supabase.rpc('get_calling_page', rpcArgs);
+      if (!error && data) {
+        return { data: data as CallingPageRpcResult, error: null, mode: 'rpc' };
+      }
+      if (error && !isCallingRpcNotFoundError(error)) {
+        return { data: null, error, mode: 'rpc' };
+      }
+
+      const fallback = await getCallingPageFallback(params, page, limit);
+      return { data: fallback, error: fallback ? null : new Error('Fallback load failed'), mode: 'fallback' };
+    },
   },
 
   // Call History operations

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -36,9 +36,9 @@ const WhatsAppIcon = ({ className }: { className?: string }) => (
 );
 import { toast } from 'sonner';
 import { registerAdminPWA } from '@/lib/pwa';
-import { db, supabase } from '@/lib/supabase';
+import { db, supabase, type CallingPageRpcRow } from '@/lib/supabase';
 import { Customer } from '@/types';
-import { formatPhoneForWhatsApp, normalizePhoneForSearch } from '@/lib/utils';
+import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import CustomerPhotoGalleryDialog from '@/components/admin/CustomerPhotoGalleryDialog';
 import CustomerReportDialog from '@/components/admin/CustomerReportDialog';
@@ -73,12 +73,44 @@ interface CallingPageProps {
   onBack?: () => void;
 }
 
+function mapCallingRowToCustomer(row: CallingPageRpcRow): CustomerWithHistory {
+  return {
+    id: row.id,
+    customerId: row.customer_id,
+    fullName: row.full_name,
+    phone: row.phone,
+    alternatePhone: row.alternate_phone ?? undefined,
+    email: row.email ?? undefined,
+    address: { street: '', area: '', city: '', state: '', pincode: '' },
+    location: { latitude: 0, longitude: 0, formattedAddress: '' },
+    serviceType: row.service_type as Customer['serviceType'],
+    brand: row.brand,
+    model: row.model,
+    status: row.status as Customer['status'],
+    hasPrefilter: row.has_prefilter ?? null,
+    rawWaterTds: row.raw_water_tds ?? 0,
+    lastServiceDate: row.last_service_at ?? row.last_service_date ?? undefined,
+    daysSinceService: row.days_since_service ?? undefined,
+    lastServiceSubType: row.last_service_sub_type ?? null,
+    lastServiceType: row.last_service_type ?? null,
+    lastContacted: row.last_contacted_at ?? undefined,
+    daysSinceContact: row.days_since_contact ?? undefined,
+    lastContactStatus: row.last_contact_status ?? undefined,
+    callHistory: [],
+    customer_tier: row.customer_tier ?? undefined,
+  } as CustomerWithHistory;
+}
+
 const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   const navigate = useNavigate();
   const { user, isAdmin, authInitializing } = useAuth();
-  const [customers, setCustomers] = useState<CustomerWithHistory[]>([]);
-  const [filteredCustomers, setFilteredCustomers] = useState<CustomerWithHistory[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [pageRows, setPageRows] = useState<CustomerWithHistory[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [stats, setStats] = useState({ overOneYear: 0, sixToTwelve: 0 });
+  const [listLoading, setListLoading] = useState(true);
+  const [serverPaginated, setServerPaginated] = useState(true);
+  const [fallbackLoadProgress, setFallbackLoadProgress] = useState(0);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [serviceFilter, setServiceFilter] = useState<string>('all');
   const [serviceHistoryFilter, setServiceHistoryFilter] = useState<string>('all'); // 'all', 'serviced', 'never'
@@ -87,6 +119,30 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   const [recentContactDays, setRecentContactDays] = useState(7); // Don't show if contacted within 7 days
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [prefilterFilter, setPrefilterFilter] = useState<string>('all'); // 'all', 'yes', 'no', 'unknown'
+  const filterSignature = useMemo(
+    () =>
+      JSON.stringify({
+        debouncedSearch,
+        serviceFilter,
+        serviceHistoryFilter,
+        serviceSubTypeFilter,
+        showRecentlyContacted,
+        recentContactDays,
+        statusFilter,
+        prefilterFilter,
+      }),
+    [
+      debouncedSearch,
+      serviceFilter,
+      serviceHistoryFilter,
+      serviceSubTypeFilter,
+      showRecentlyContacted,
+      recentContactDays,
+      statusFilter,
+      prefilterFilter,
+    ]
+  );
+  const prevFilterSignatureRef = useRef(filterSignature);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [pendingContact, setPendingContact] = useState<{
     customerId: string;
@@ -98,7 +154,6 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   const [contactNotes, setContactNotes] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
-  const [paginatedCustomers, setPaginatedCustomers] = useState<CustomerWithHistory[]>([]);
   const [whatsappDialogOpen, setWhatsappDialogOpen] = useState(false);
   const [selectedCustomerForWhatsApp, setSelectedCustomerForWhatsApp] = useState<CustomerWithHistory | null>(null);
   const [customerPhotoGalleryOpen, setCustomerPhotoGalleryOpen] = useState(false);
@@ -129,24 +184,64 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   }, [user, isAdmin, authInitializing, navigate, hideHeader]);
 
   useEffect(() => {
-    loadCustomers();
-  }, []);
+    const timer = window.setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [searchTerm]);
 
-  // Lazy-load technicians only when report dialog is opened (saves one DB round-trip on page load)
-  useEffect(() => {
-    if (!customerReportDialogOpen || technicians.length > 0) return;
-    const loadTechnicians = async () => {
-      const { data, error } = await db.technicians.getList(100);
-      if (!error && data) setTechnicians(data);
-    };
-    loadTechnicians();
-  }, [customerReportDialogOpen]);
+  const fetchPage = useCallback(async (pageOverride?: number) => {
+    const filtersChanged = prevFilterSignatureRef.current !== filterSignature;
+    if (filtersChanged) {
+      prevFilterSignatureRef.current = filterSignature;
+      if (currentPage !== 1) {
+        setCurrentPage(1);
+        return;
+      }
+    }
 
-  useEffect(() => {
-    filterCustomers();
+    const pageToLoad = pageOverride ?? currentPage;
+
+    try {
+      setListLoading(true);
+      const { data, error } = await db.calling.getPage({
+        page: pageToLoad,
+        limit: itemsPerPage,
+        search: debouncedSearch,
+        serviceFilter,
+        serviceHistoryFilter,
+        serviceSubTypeFilter,
+        showRecentlyContacted,
+        recentContactDays,
+        statusFilter,
+        prefilterFilter,
+        onFallbackProgress: setFallbackLoadProgress,
+      });
+
+      if (error || !data) {
+        throw error ?? new Error('No data returned');
+      }
+
+      setServerPaginated(data.server_paginated);
+      setTotalCount(data.total);
+      setStats({
+        overOneYear: data.stats.over_one_year,
+        sixToTwelve: data.stats.six_to_twelve,
+      });
+      setPageRows((data.rows ?? []).map(mapCallingRowToCustomer));
+    } catch (error) {
+      console.error('Error loading calling page:', error);
+      toast.error('Failed to load customers');
+      setPageRows([]);
+      setTotalCount(0);
+      setStats({ overOneYear: 0, sixToTwelve: 0 });
+    } finally {
+      setListLoading(false);
+      setFallbackLoadProgress(0);
+    }
   }, [
-    customers,
-    searchTerm,
+    currentPage,
+    itemsPerPage,
+    filterSignature,
+    debouncedSearch,
     serviceFilter,
     serviceHistoryFilter,
     serviceSubTypeFilter,
@@ -157,284 +252,20 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   ]);
 
   useEffect(() => {
-    // Reset to page 1 when filters change
-    setCurrentPage(1);
-  }, [
-    searchTerm,
-    serviceFilter,
-    serviceHistoryFilter,
-    serviceSubTypeFilter,
-    showRecentlyContacted,
-    statusFilter,
-    prefilterFilter,
-  ]);
+    if (hideHeader || (!authInitializing && user && isAdmin)) {
+      void fetchPage();
+    }
+  }, [fetchPage, hideHeader, authInitializing, user, isAdmin]);
 
+  // Lazy-load technicians only when report dialog is opened (saves one DB round-trip on page load)
   useEffect(() => {
-    // Calculate paginated customers
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    const endIndex = startIndex + itemsPerPage;
-    setPaginatedCustomers(filteredCustomers.slice(startIndex, endIndex));
-  }, [filteredCustomers, currentPage, itemsPerPage]);
-
-  // Clamp current page when result size changes (prevents empty pages after filtering).
-  useEffect(() => {
-    const totalPages = Math.max(1, Math.ceil(filteredCustomers.length / itemsPerPage));
-    if (currentPage > totalPages) {
-      setCurrentPage(totalPages);
-    } else if (currentPage < 1) {
-      setCurrentPage(1);
-    }
-  }, [filteredCustomers.length, itemsPerPage, currentPage]);
-
-  const loadCustomers = async () => {
-    try {
-      setLoading(true);
-      
-      // Slim select: no address/location (large JSONB) – report dialog doesn't use them
-      const { data: customersData, error: customersError } = await supabase
-        .from('customers')
-        .select(`
-          id,
-          customer_id,
-          full_name,
-          customer_tier,
-          phone,
-          alternate_phone,
-          email,
-          service_type,
-          brand,
-          model,
-          status,
-          has_prefilter,
-          last_service_date
-        `)
-        // Cap customers pulled from DB to avoid full-table egress.
-        // Client still paginates using `currentPage/itemsPerPage`.
-        .order('created_at', { ascending: false })
-        .limit(1000);
-
-      if (customersError) throw customersError;
-
-      // Prefer RPCs (one row per customer) to cut egress; fallback to full table fetch if RPCs missing
-      type JobRow = { customer_id: string; completed_at: string; service_type?: string | null; service_sub_type?: string | null };
-      type ContactRow = { customer_id: string; contacted_at: string; status: string };
-      let lastJobsData: JobRow[] | null = null;
-      let lastContactsData: ContactRow[] | null = null;
-
-      const [jobsRes, contactsRes] = await Promise.all([
-        supabase.rpc('get_last_completed_job_per_customer') as Promise<{ data: JobRow[] | null; error: unknown }>,
-        supabase.rpc('get_last_contact_per_customer') as Promise<{ data: ContactRow[] | null; error: unknown }>
-      ]);
-
-      if (jobsRes.error) {
-        const fallback = await supabase
-          .from('jobs')
-          .select('customer_id, completed_at, service_type, service_sub_type')
-          .eq('status', 'COMPLETED')
-          .not('completed_at', 'is', null)
-          .order('completed_at', { ascending: false })
-          .limit(2000);
-        lastJobsData = fallback.data;
-      } else {
-        lastJobsData = jobsRes.data;
-      }
-      if (contactsRes.error) {
-        const fallback = await supabase
-          .from('call_history')
-          .select('customer_id, contacted_at, status')
-          .order('contacted_at', { ascending: false })
-          .limit(2000);
-        lastContactsData = fallback.data;
-      } else {
-        lastContactsData = contactsRes.data;
-      }
-
-      const lastServiceMap = new Map<string, { completed_at: string; service_type?: string | null; service_sub_type?: string | null }>();
-      (lastJobsData || []).forEach((job: any) => {
-        if (job.customer_id && !lastServiceMap.has(job.customer_id)) {
-          lastServiceMap.set(job.customer_id, {
-            completed_at: job.completed_at,
-            service_type: job.service_type ?? null,
-            service_sub_type: job.service_sub_type ?? null,
-          });
-        }
-      });
-
-      const lastContactMap = new Map<string, { contacted_at: string; status: string }>();
-      (lastContactsData || []).forEach((contact: any) => {
-        if (contact.customer_id && !lastContactMap.has(contact.customer_id)) {
-          lastContactMap.set(contact.customer_id, {
-            contacted_at: contact.contacted_at,
-            status: contact.status
-          });
-        }
-      });
-
-      // Process customers efficiently
-      const now = new Date().getTime();
-      const customersWithHistory: CustomerWithHistory[] = (customersData || []).map((customer: any) => {
-        const lastJobInfo = lastServiceMap.get(customer.id);
-        const lastServiceDate = lastJobInfo?.completed_at || customer.last_service_date;
-        const lastContact = lastContactMap.get(customer.id);
-        
-        const daysSinceService = lastServiceDate 
-          ? Math.floor((now - new Date(lastServiceDate).getTime()) / (1000 * 60 * 60 * 24))
-          : null;
-
-        const daysSinceContact = lastContact
-          ? Math.floor((now - new Date(lastContact.contacted_at).getTime()) / (1000 * 60 * 60 * 24))
-          : null;
-
-        return {
-          ...customer,
-          id: customer.id,
-          customerId: customer.customer_id,
-          fullName: customer.full_name,
-          phone: customer.phone,
-          alternatePhone: customer.alternate_phone,
-          email: customer.email,
-          address: customer.address ?? { street: '', area: '', city: '', state: '', pincode: '' },
-          location: customer.location ?? { latitude: 0, longitude: 0, formattedAddress: '' },
-          serviceType: customer.service_type,
-          brand: customer.brand,
-          model: customer.model,
-          status: customer.status,
-          hasPrefilter: customer.has_prefilter ?? null,
-          rawWaterTds: (customer as any).raw_water_tds ?? 0,
-          lastServiceDate,
-          daysSinceService,
-          lastServiceSubType: lastJobInfo?.service_sub_type || null,
-          lastServiceType: lastJobInfo?.service_type || null,
-          lastContacted: lastContact?.contacted_at || null,
-          daysSinceContact,
-          lastContactStatus: lastContact?.status || null,
-          callHistory: [] // Not needed for display, only last contact matters
-        };
-      });
-
-      setCustomers(customersWithHistory);
-    } catch (error) {
-      console.error('Error loading customers:', error);
-      toast.error('Failed to load customers');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const filterCustomers = () => {
-    let filtered = [...customers];
-
-    // Filter by search term
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      const normSearch = normalizePhoneForSearch(searchTerm);
-      const isPhoneSearch = normSearch.length >= 10;
-      filtered = filtered.filter(customer => {
-        const phoneMatch = isPhoneSearch && (
-          normalizePhoneForSearch(customer.phone) === normSearch ||
-          normalizePhoneForSearch((customer as any).alternatePhone ?? (customer as any).alternate_phone) === normSearch
-        );
-        return (
-          customer.fullName?.toLowerCase().includes(term) ||
-          customer.phone?.includes(searchTerm) ||
-          (customer as any).alternatePhone?.includes(searchTerm) ||
-          (customer as any).alternate_phone?.includes(searchTerm) ||
-          customer.customerId?.toLowerCase().includes(term) ||
-          customer.email?.toLowerCase().includes(term) ||
-          phoneMatch
-        );
-      });
-    }
-
-    // Filter by service date window (how long since last service)
-    if (serviceFilter !== 'all') {
-      const now = new Date();
-      filtered = filtered.filter(customer => {
-        if (!customer.lastServiceDate) return false;
-        
-        const serviceDate = new Date(customer.lastServiceDate);
-        const daysDiff = Math.floor((now.getTime() - serviceDate.getTime()) / (1000 * 60 * 60 * 24));
-        
-        switch (serviceFilter) {
-          case '3months':
-            return daysDiff >= 90 && daysDiff < 180;
-          case '6months':
-            return daysDiff >= 180 && daysDiff < 365;
-          case '1year':
-            return daysDiff >= 365;
-          case 'never':
-            return !customer.lastServiceDate;
-          default:
-            return true;
-        }
-      });
-    }
-
-    // Filter by basic service history (ever serviced vs never)
-    if (serviceHistoryFilter !== 'all') {
-      filtered = filtered.filter(customer => {
-        const hasService = !!customer.lastServiceDate;
-        if (serviceHistoryFilter === 'serviced') {
-          return hasService;
-        }
-        if (serviceHistoryFilter === 'never') {
-          return !hasService;
-        }
-        return true;
-      });
-    }
-
-    // Filter by last service sub type (Installation / Reinstallation / Service, etc.)
-    if (serviceSubTypeFilter !== 'all') {
-      filtered = filtered.filter(customer => {
-        const subType = (customer.lastServiceSubType || '').toUpperCase();
-        if (!subType) return false;
-        return subType === serviceSubTypeFilter.toUpperCase();
-      });
-    }
-
-    // Filter out recently contacted customers
-    if (!showRecentlyContacted) {
-      filtered = filtered.filter(customer => {
-        if (!customer.lastContacted) return true; // Never contacted, show them
-        const daysSinceContact = customer.daysSinceContact || 0;
-        return daysSinceContact >= recentContactDays;
-      });
-    }
-
-    // Filter by contact status
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(customer => {
-        if (!customer.lastContactStatus) {
-          return statusFilter === 'never';
-        }
-        return customer.lastContactStatus === statusFilter;
-      });
-    }
-
-    // Filter by prefilter
-    if (prefilterFilter !== 'all') {
-      filtered = filtered.filter(customer => {
-        if (prefilterFilter === 'yes') {
-          return customer.hasPrefilter === true;
-        } else if (prefilterFilter === 'no') {
-          return customer.hasPrefilter === false;
-        } else if (prefilterFilter === 'unknown') {
-          return customer.hasPrefilter === null || customer.hasPrefilter === undefined;
-        }
-        return true;
-      });
-    }
-
-    // Sort by days since last service: oldest service first (customers not yet serviced go last)
-    filtered.sort((a, b) => {
-      const aDays = a.daysSinceService != null ? a.daysSinceService : -1;
-      const bDays = b.daysSinceService != null ? b.daysSinceService : -1;
-      return bDays - aDays;
-    });
-
-    setFilteredCustomers(filtered);
-  };
+    if (!customerReportDialogOpen || technicians.length > 0) return;
+    const loadTechnicians = async () => {
+      const { data, error } = await db.technicians.getList(100);
+      if (!error && data) setTechnicians(data);
+    };
+    loadTechnicians();
+  }, [customerReportDialogOpen]);
 
   const recordCall = async (customerId: string, contactType: 'CALL' | 'WHATSAPP' | 'SMS' | 'EMAIL', phoneNumber?: string, message?: string, status?: string, notes?: string) => {
     try {
@@ -451,7 +282,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
 
       // Optimistic update: avoid full reload (saves egress and DB load)
       const now = new Date().toISOString();
-      setCustomers(prev => prev.map(c =>
+      setPageRows(prev => prev.map(c =>
         c.id === customerId
           ? { ...c, lastContacted: now, daysSinceContact: 0, lastContactStatus: status || 'COMPLETED' }
           : c
@@ -763,15 +594,22 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
     }
   };
 
-  const callingTotalPages = Math.max(1, Math.ceil(filteredCustomers.length / itemsPerPage));
+  const callingTotalPages = Math.max(1, Math.ceil(totalCount / itemsPerPage));
+  const initialLoading = listLoading && pageRows.length === 0;
 
-  // Show loading while checking auth or loading data
-  if (authInitializing || loading) {
+  // Show loading while checking auth or loading first page
+  if (authInitializing || initialLoading) {
     return (
       <div className="min-h-screen bg-muted/40 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto mb-3"></div>
-          <p className="text-muted-foreground">{authInitializing ? 'Checking authentication...' : 'Loading customers...'}</p>
+          <p className="text-muted-foreground">
+            {authInitializing
+              ? 'Checking authentication...'
+              : !serverPaginated && fallbackLoadProgress > 0
+                ? `Loading all customers… ${fallbackLoadProgress.toLocaleString()} loaded`
+                : 'Loading customers...'}
+          </p>
         </div>
       </div>
     );
@@ -976,14 +814,14 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <Card>
             <CardContent className="p-4">
-              <div className="text-2xl font-bold text-foreground">{filteredCustomers.length}</div>
+              <div className="text-2xl font-bold text-foreground">{totalCount.toLocaleString()}</div>
               <div className="text-sm text-muted-foreground">Customers to Contact</div>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="p-4">
               <div className="text-2xl font-bold text-green-600">
-                {filteredCustomers.filter(c => c.daysSinceService && c.daysSinceService >= 365).length}
+                {stats.overOneYear.toLocaleString()}
               </div>
               <div className="text-sm text-muted-foreground">Over 1 Year Since Service</div>
             </CardContent>
@@ -991,7 +829,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
           <Card>
             <CardContent className="p-4">
               <div className="text-2xl font-bold text-orange-600">
-                {filteredCustomers.filter(c => c.daysSinceService && c.daysSinceService >= 180 && c.daysSinceService < 365).length}
+                {stats.sixToTwelve.toLocaleString()}
               </div>
               <div className="text-sm text-muted-foreground">6-12 Months Since Service</div>
             </CardContent>
@@ -1000,7 +838,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
 
         {/* Customer List */}
         <div className="space-y-4">
-          {filteredCustomers.length === 0 ? (
+          {totalCount === 0 && !listLoading ? (
             <Card>
               <CardContent className="p-8 text-center">
                 <p className="text-muted-foreground">No customers found matching your filters.</p>
@@ -1012,9 +850,12 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
               {/* Results count and items per page selector */}
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
                 <div className="text-sm text-muted-foreground">
-                  Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredCustomers.length)} of {filteredCustomers.length} customers
+                  Showing {totalCount === 0 ? 0 : ((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalCount)} of {totalCount.toLocaleString()} customers
                 </div>
                 <div className="flex items-center gap-2">
+                  {listLoading && (
+                    <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+                  )}
                   <Label htmlFor="itemsPerPage" className="text-sm">Items per page:</Label>
                   <Select value={itemsPerPage.toString()} onValueChange={(value) => {
                     setItemsPerPage(parseInt(value));
@@ -1033,7 +874,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                 </div>
               </div>
 
-              {paginatedCustomers.map((customer) => (
+              {pageRows.map((customer) => (
               <Card key={customer.id} className="hover:shadow-md transition-shadow">
                 <CardContent className="p-4 sm:p-6">
                   <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
