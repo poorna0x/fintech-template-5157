@@ -3,10 +3,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { DatePicker } from '@/components/ui/date-picker';
-import { supabase } from '@/lib/supabase';
+import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { DollarSign, QrCode, TrendingUp, User, Calendar, Filter } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  isJobCompletedInRange,
+  resolveJobBillingAmount,
+  resolveJobPaymentBreakdown,
+} from '@/lib/jobAnalytics';
 
 interface QRCodeBilling {
   qrCodeName: string;
@@ -76,7 +81,8 @@ const BillingStats = () => {
     sparePartsCost: number;
     commission10: number;
     profit: number;
-  }>({ revenue: 0, leadCost: 0, sparePartsCost: 0, commission10: 0, profit: 0 });
+    completedJobs: number;
+  }>({ revenue: 0, leadCost: 0, sparePartsCost: 0, commission10: 0, profit: 0, completedJobs: 0 });
 
   useEffect(() => {
     loadBillingStats();
@@ -98,6 +104,8 @@ const BillingStats = () => {
       case 'thismonth':
         start = new Date(end.getFullYear(), end.getMonth(), 1);
         start.setHours(0, 0, 0, 0);
+        end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
+        end.setHours(23, 59, 59, 999);
         break;
       case 'previousmonth':
         start = new Date(end.getFullYear(), end.getMonth() - 1, 1);
@@ -149,37 +157,8 @@ const BillingStats = () => {
       setLoading(true);
       
       const { startDate, endDate } = getDateRange();
-      
-      // Use getBillingByDateRange if it exists, otherwise fetch all and filter
-      const { data, error } = await supabase
-        .from('jobs')
-        .select(`
-          id,
-          job_number,
-          requirements,
-          payment_amount,
-          actual_cost,
-          payment_method,
-          status,
-          assigned_technician_id,
-          lead_cost,
-          parts_cost_total,
-          technician:technicians(
-            id,
-            full_name,
-            employee_id
-          ),
-          customer:customers(
-            id,
-            customer_id,
-            full_name
-          ),
-          completed_at
-        `)
-        .eq('status', 'COMPLETED')
-        .gte('completed_at', startDate.toISOString())
-        .lte('completed_at', endDate.toISOString())
-        .not('payment_amount', 'is', null);
+
+      const { data, error } = await db.jobs.getCompletedJobsForBillingInRange(startDate, endDate);
       
       if (error) {
         console.error('Error loading billing:', error);
@@ -187,7 +166,9 @@ const BillingStats = () => {
         return;
       }
 
-      const jobs = data || [];
+      const jobs = (data || []).filter((job: any) =>
+        isJobCompletedInRange(job, startDate, endDate)
+      );
       
       // Group by technician
       const techTotals: Record<string, TechnicianBilling> = {};
@@ -197,23 +178,8 @@ const BillingStats = () => {
       jobs.forEach((job: any) => {
         const techId = job.assigned_technician_id;
         const paymentMethod = job.payment_method || 'OTHER';
-        let amount = job.payment_amount || job.actual_cost || 0;
-        let cashAmount = 0;
-        let qrAmount = 0;
-        if (paymentMethod === 'PARTIAL') {
-          try {
-            const requirements = typeof job.requirements === 'string' ? JSON.parse(job.requirements) : job.requirements || [];
-            const partialReq = Array.isArray(requirements) ? requirements.find((r: any) => r?.partial_cash_amount != null || r?.partial_online_amount != null) : null;
-            cashAmount = Number(partialReq?.partial_cash_amount) || 0;
-            qrAmount = Number(partialReq?.partial_online_amount) || 0;
-            amount = cashAmount + qrAmount;
-          } catch {
-            amount = job.payment_amount || job.actual_cost || 0;
-          }
-        } else {
-          if (paymentMethod === 'CASH') cashAmount = amount;
-          else if (paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') qrAmount = amount;
-        }
+        const { total: amount, cash: cashAmount, qr: qrAmount, other: otherAmount } =
+          resolveJobPaymentBreakdown(job);
 
         // Technician billing
         if (techId) {
@@ -232,11 +198,9 @@ const BillingStats = () => {
           
           techTotals[techId].totalBilling += amount;
           techTotals[techId].jobCount += 1;
-          techTotals[techId].cashAmount += paymentMethod === 'PARTIAL' ? cashAmount : (paymentMethod === 'CASH' ? amount : 0);
-          techTotals[techId].qrAmount += paymentMethod === 'PARTIAL' ? qrAmount : (paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER' ? amount : 0);
-          if (paymentMethod !== 'PARTIAL' && paymentMethod !== 'CASH' && paymentMethod !== 'UPI' && paymentMethod !== 'CARD' && paymentMethod !== 'BANK_TRANSFER') {
-            techTotals[techId].otherAmount += amount;
-          }
+          techTotals[techId].cashAmount += cashAmount;
+          techTotals[techId].qrAmount += qrAmount;
+          techTotals[techId].otherAmount += otherAmount;
         }
         
         // QR Code billing
@@ -303,12 +267,15 @@ const BillingStats = () => {
       setLeadTypeBilling(Object.values(leadTotals));
 
       // Summary: revenue - (10% commission + spare parts + lead cost) = profit
-      const revenue = jobs.reduce((sum: number, j: any) => sum + (Number(j.payment_amount) || Number(j.actual_cost) || 0), 0);
+      const revenue = jobs.reduce(
+        (sum: number, j: any) => sum + resolveJobBillingAmount(j.payment_amount, j.actual_cost),
+        0
+      );
       const leadCost = jobs.reduce((sum: number, j: any) => sum + (Number(j.lead_cost) || 0), 0);
       const sparePartsCost = jobs.reduce((sum: number, j: any) => sum + (Number(j.parts_cost_total) || 0), 0);
       const commission10 = revenue * 0.1;
       const profit = revenue - commission10 - sparePartsCost - leadCost;
-      setSummary({ revenue, leadCost, sparePartsCost, commission10, profit });
+      setSummary({ revenue, leadCost, sparePartsCost, commission10, profit, completedJobs: jobs.length });
     } catch (error: any) {
       console.error('Error loading billing stats:', error);
       toast.error('Failed to load billing stats: ' + error.message);
@@ -318,10 +285,10 @@ const BillingStats = () => {
   };
 
 
-  const totalBilling = technicianBilling.reduce((sum, item) => sum + item.totalBilling, 0);
+  const totalBilling = summary.revenue;
   const totalCash = technicianBilling.reduce((sum, item) => sum + item.cashAmount, 0);
   const totalQR = qrCodeBilling.reduce((sum, item) => sum + item.totalAmount, 0);
-  const totalJobs = technicianBilling.reduce((sum, item) => sum + item.jobCount, 0);
+  const totalJobs = summary.completedJobs;
 
   if (loading) {
     return (

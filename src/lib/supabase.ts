@@ -16,6 +16,7 @@ import {
   SENT_EMAIL_LOG_LIST_COLUMNS,
   type SentEmailLogQueryFilters,
 } from './sent-email-log-filters';
+import { buildCompletedJobsDateOrFilter } from './jobAnalytics';
 
 export { supabaseAuthClient as supabase };
 export { generateJobNumber } from './jobNumber';
@@ -2438,7 +2439,7 @@ export const db = {
       const cols = ANALYTICS_JOB_COLUMNS;
       const startISO = startDate.toISOString();
       const endISO = endDate.toISOString();
-      const completedFilter = `and(end_time.gte.${startISO},end_time.lte.${endISO}),and(end_time.is.null,completed_at.gte.${startISO},completed_at.lte.${endISO})`;
+      const completedFilter = buildCompletedJobsDateOrFilter(startISO, endISO);
 
       const [completedRes, otherRes] = await Promise.all([
         fetchAnalyticsPages((from, to) =>
@@ -2476,6 +2477,48 @@ export const db = {
     },
 
     /**
+     * Completed jobs for billing stats — same completion-date filter as Analytics (end_time, else completed_at).
+     */
+    async getCompletedJobsForBillingInRange(startDate: Date, endDate: Date) {
+      const startISO = startDate.toISOString();
+      const endISO = endDate.toISOString();
+      const completedFilter = buildCompletedJobsDateOrFilter(startISO, endISO);
+
+      return fetchAnalyticsPages((from, to) =>
+        supabase
+          .from('jobs')
+          .select(`
+            id,
+            job_number,
+            requirements,
+            payment_amount,
+            actual_cost,
+            payment_method,
+            status,
+            assigned_technician_id,
+            lead_cost,
+            parts_cost_total,
+            completed_at,
+            end_time,
+            technician:technicians(
+              id,
+              full_name,
+              employee_id
+            ),
+            customer:customers(
+              id,
+              customer_id,
+              full_name
+            )
+          `)
+          .eq('status', 'COMPLETED')
+          .or(completedFilter)
+          .order('created_at', { ascending: false })
+          .range(from, to)
+      );
+    },
+
+    /**
      * Same date logic as `getForAnalyticsInRange`, but only columns needed for Direct/Website conversion attribution (smaller egress).
      */
     async getForConversionAnalyticsInRange(startDate: Date, endDate: Date, limit: number = 15000) {
@@ -2489,9 +2532,7 @@ export const db = {
           .from('jobs')
           .select(cols)
           .eq('status', 'COMPLETED')
-          .or(
-            `and(end_time.gte.${startISO},end_time.lte.${endISO}),and(end_time.is.null,completed_at.gte.${startISO},completed_at.lte.${endISO})`
-          )
+          .or(buildCompletedJobsDateOrFilter(startISO, endISO))
           .order('created_at', { ascending: false })
           .limit(lim),
         supabase
@@ -4805,6 +4846,8 @@ export const db = {
           payment_method,
           status,
           assigned_technician_id,
+          completed_at,
+          end_time,
           technician:technicians(
             id,
             full_name,
@@ -4814,13 +4857,10 @@ export const db = {
             id,
             customer_id,
             full_name
-          ),
-          completed_at
+          )
         `)
         .eq('status', 'COMPLETED')
-        .gte('completed_at', startDate.toISOString())
-        .lt('completed_at', endDate.toISOString())
-        .not('payment_amount', 'is', null);
+        .or(buildCompletedJobsDateOrFilter(startDate.toISOString(), endDate.toISOString()));
       
       return { data, error };
     },
@@ -4837,26 +4877,26 @@ export const db = {
           actual_cost,
           status,
           completed_at,
+          end_time,
           customer:customers(
             id,
             customer_id,
             full_name
           )
         `)
-        .eq('status', 'COMPLETED')
-        .not('payment_amount', 'is', null);
+        .eq('status', 'COMPLETED');
       
-      // Filter by date if provided
+      // Filter by completion date if provided (end_time, else completed_at)
       if (date) {
-        // Parse date string (format: YYYY-MM-DD) and create date range in local timezone
         const [year, month, day] = date.split('-').map(Number);
         const localStartOfDay = new Date(year, month - 1, day, 0, 0, 0, 0);
-        const localStartOfNextDay = new Date(year, month - 1, day + 1, 0, 0, 0, 0);
-        
-        // Use Date objects directly - they automatically convert to UTC when calling toISOString()
-        query = query
-          .gte('completed_at', localStartOfDay.toISOString())
-          .lt('completed_at', localStartOfNextDay.toISOString());
+        const localEndOfDay = new Date(year, month - 1, day, 23, 59, 59, 999);
+        query = query.or(
+          buildCompletedJobsDateOrFilter(
+            localStartOfDay.toISOString(),
+            localEndOfDay.toISOString()
+          )
+        );
       }
       
       const { data, error } = await query;

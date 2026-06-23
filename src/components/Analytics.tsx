@@ -6,6 +6,11 @@ import { Input } from '@/components/ui/input';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
 import { db, supabase } from '@/lib/supabase';
+import {
+  getJobCompletedAt,
+  isJobCompletedInRange,
+  resolveJobBillingAmount,
+} from '@/lib/jobAnalytics';
 import { getTotalSalaryForCalendarMonth, getTechnicianMonthlyBaseSalary } from '@/lib/technicianSalaryForPeriod';
 import { toast } from 'sonner';
 import {
@@ -231,29 +236,6 @@ function toLocalDateString(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
-function getJobCompletedAt(job: {
-  completed_at?: string | null;
-  end_time?: string | null;
-  completedAt?: string | null;
-  endTime?: string | null;
-}): Date | null {
-  const raw = job.end_time || job.endTime || job.completed_at || job.completedAt;
-  if (!raw) return null;
-  const d = new Date(raw);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-
-function isJobCompletedInRange(
-  job: { status?: string; completed_at?: string | null; end_time?: string | null },
-  startDate: Date,
-  endDate: Date
-): boolean {
-  if (job.status !== 'COMPLETED') return false;
-  const completedAt = getJobCompletedAt(job);
-  if (!completedAt) return false;
-  return completedAt >= startDate && completedAt <= endDate;
-}
-
 // Helper function to format currency with commas and without .00 when it's zero
 const formatCurrency = (amount: number): string => {
   const formatted = amount.toLocaleString('en-IN', {
@@ -298,12 +280,7 @@ const isFirstTouchAttributionSource = (leadRaw: string): boolean => {
   return !isDirectOrWebsiteLead(leadRaw) && !isGoogleLeadsLead(leadRaw);
 };
 
-const getJobCompletionTime = (job: any): Date | null => {
-  const raw = job.completed_at || job.end_time;
-  if (!raw) return null;
-  const d = new Date(raw);
-  return isNaN(d.getTime()) ? null : d;
-};
+const getJobCompletionTime = getJobCompletedAt;
 
 type AnalyticsExpenseTotals = {
   totalTechnicianExpenses: number;
@@ -905,16 +882,22 @@ const Analytics = () => {
 
         const jobsForBase = jobsInRangeResult.data || [];
         const payments = rangedPayments;
+        const allInRange = Array.isArray(jobsInRangeResult.data) ? jobsInRangeResult.data : [];
+        jobs = allInRange;
+        completedJobs = allInRange.filter(
+          (j: any) => j && isJobCompletedInRange(j, startDate, endDate)
+        );
+
         const totalJobsCount = jobsForBase.length;
-        const completedCount = jobsForBase.filter((j: any) => j.status === 'COMPLETED').length;
+        const completedCount = completedJobs.length;
         const deniedCount = jobsForBase.filter((j: any) => j.status === 'DENIED' || j.status === 'CANCELLED').length;
         const pendingCount = jobsForBase.filter((j: any) => j.status === 'PENDING').length;
         const assignedCount = jobsForBase.filter((j: any) => j.status === 'ASSIGNED').length;
         const inProgressCount = jobsForBase.filter((j: any) => j.status === 'IN_PROGRESS').length;
-        const completedWithPayment = jobsForBase.filter((j: any) =>
-          j.status === 'COMPLETED' && (j.payment_amount || j.actual_cost)
+        const periodBillingSum = completedJobs.reduce(
+          (s: number, j: any) => s + resolveJobBillingAmount(j.payment_amount, j.actual_cost),
+          0
         );
-        const periodBillingSum = completedWithPayment.reduce((s: number, j: any) => s + (Number(j.payment_amount) || Number(j.actual_cost) || 0), 0);
         baseData = {
           totalJobs: totalJobsCount,
           completedJobs: completedCount,
@@ -923,7 +906,7 @@ const Analytics = () => {
           assignedJobs: assignedCount,
           inProgressJobs: inProgressCount,
           totalBilling: periodBillingSum,
-          averageBill: completedWithPayment.length > 0 ? periodBillingSum / completedWithPayment.length : 0,
+          averageBill: completedCount > 0 ? periodBillingSum / completedCount : 0,
           technicianStats: technicians.map((tech: any) => {
             const techJobs = jobsForBase.filter((j: any) => j.assigned_technician_id === tech.id);
             const techPayments = payments.filter((p: any) => p.technician_id === tech.id);
@@ -941,12 +924,6 @@ const Analytics = () => {
           completionRate: totalJobsCount > 0 ? (completedCount / totalJobsCount) * 100 : 0,
           denialRate: totalJobsCount > 0 ? (deniedCount / totalJobsCount) * 100 : 0
         };
-
-        const allInRange = Array.isArray(jobsInRangeResult.data) ? jobsInRangeResult.data : [];
-        jobs = allInRange;
-        completedJobs = allInRange.filter(
-          (j: any) => j && isJobCompletedInRange(j, startDate, endDate)
-        );
       } else {
         const [
           dashboardRes,
@@ -1002,10 +979,10 @@ const Analytics = () => {
         const pendingCount = jobs.filter((j: any) => j.status === 'PENDING').length;
         const assignedCount = jobs.filter((j: any) => j.status === 'ASSIGNED').length;
         const inProgressCount = jobs.filter((j: any) => j.status === 'IN_PROGRESS').length;
-        const completedWithPayment = completedJobs.filter((j: any) =>
-          j.status === 'COMPLETED' && (j.payment_amount || j.actual_cost)
+        const periodBillingSum = completedJobs.reduce(
+          (s: number, j: any) => s + resolveJobBillingAmount(j.payment_amount, j.actual_cost),
+          0
         );
-        const periodBillingSum = completedWithPayment.reduce((s: number, j: any) => s + (Number(j.payment_amount) || Number(j.actual_cost) || 0), 0);
         baseData = {
           totalJobs: totalJobsCount,
           completedJobs: completedCount,
@@ -1014,7 +991,7 @@ const Analytics = () => {
           assignedJobs: assignedCount,
           inProgressJobs: inProgressCount,
           totalBilling: periodBillingSum,
-          averageBill: completedWithPayment.length > 0 ? periodBillingSum / completedWithPayment.length : 0,
+          averageBill: completedCount > 0 ? periodBillingSum / completedCount : 0,
           technicianStats: technicians.map((tech: any) => {
             const techJobs = jobs.filter((j: any) => j.assigned_technician_id === tech.id);
             const techPayments = payments.filter((p: any) => p.technician_id === tech.id);
@@ -1429,28 +1406,13 @@ const Analytics = () => {
       
       // ========== END SOFTENER ANALYTICS ==========
       
-      // Calculate total billing for the selected period (from completed jobs with payment)
-      // Only count jobs that have payment_amount > 0 (actual payments received)
-      // Prefer payment_amount over actual_cost as it represents actual money received
-      const periodBilling = completedJobs.reduce((sum: number, job: any) => {
-        if (!job) return sum;
-        const paymentAmount = Number(job.payment_amount || 0);
-        // Only count if payment_amount exists and is greater than 0
-        // This ensures we only count actual payments, not estimated costs
-        if (paymentAmount > 0) {
-          return sum + paymentAmount;
-        }
-        // If no payment_amount, check actual_cost as fallback (but this should be rare)
-        const actualCost = Number(job.actual_cost || 0);
-        if (actualCost > 0) {
-          return sum + actualCost;
-        }
-        return sum;
-      }, 0);
-      
-      const periodAverageBill = completedJobs.length > 0
-        ? periodBilling / completedJobs.length
-        : 0;
+      const periodBilling = completedJobs.reduce(
+        (sum: number, job: any) =>
+          sum + resolveJobBillingAmount(job?.payment_amount, job?.actual_cost),
+        0
+      );
+
+      const periodAverageBill = completedJobs.length > 0 ? periodBilling / completedJobs.length : 0;
 
       const totalLeadCostsSum = Object.values(leadSourceMap).reduce((sum, stats) => sum + stats.leadCost, 0);
       const otherBusinessChargesTotal = totalOtherBusinessExpenses + totalOtherBusinessLedgerExpenses;
