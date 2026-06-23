@@ -1,4 +1,5 @@
 import { TechnicianSalaryBreakdown } from '@/components/TechnicianPayments';
+import { BRAND_SEAL_SIGN_SRC } from './service-brands';
 import { sanitizeForTemplate } from './sanitize';
 import { downloadDocumentPdf } from './server-pdf-download';
 
@@ -652,7 +653,7 @@ export function generateSalarySlipHTML(data: SalarySlipPDFData, includeDayWiseBr
           
           <div class="signature-box">
             <div class="signature-label">Authorized Signatory</div>
-            <img src="/HydrogenROSeal.webp" alt="Hydrogen RO Seal" class="signature-seal" />
+            <img src="${BRAND_SEAL_SIGN_SRC.hydrogenro}" alt="Hydrogen RO Seal" class="signature-seal" />
             <div class="signature-date">Date: ${formatDate(paymentDate)}</div>
           </div>
         </div>
