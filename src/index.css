@@ -106,8 +106,6 @@
   body {
     @apply bg-background font-inter text-foreground antialiased;
     letter-spacing: -0.025em;
-    /* Match html: reserve scrollbar space so lock/unlock does not reflow the layout. */
-    scrollbar-gutter: stable;
     /* Allow pull-to-refresh on mobile - use auto to allow all touch gestures */
     touch-action: auto;
     -webkit-overflow-scrolling: touch;
@@ -118,43 +116,10 @@
   /* Hide browser's default loading progress bar */
   html {
     overflow-x: hidden;
-    /* Always reserve the vertical scrollbar's space. When a Radix overlay (dialog,
-       dropdown, popover) opens it locks body scroll, and without a reserved gutter the
-       page reflows sideways. */
-    scrollbar-gutter: stable;
     /* Allow pull-to-refresh on mobile - use auto to allow all touch gestures */
     touch-action: auto;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-y: auto;
-  }
-
-  /* react-remove-scroll (Radix dialogs/menus/popovers) compensates for the scrollbar by
-     adding body margin/padding and nudging fixed elements. With gutter already reserved,
-     that double-counts and the page appears to jump sideways (often after idle when the
-     OS shows/hides the scrollbar on first click). */
-  html body[data-scroll-locked] {
-    margin-right: 0 !important;
-    margin-left: 0 !important;
-    padding-right: 0 !important;
-    padding-left: 0 !important;
-    padding-top: 0 !important;
-  }
-
-  html body[data-scroll-locked] .right-scroll-bar-position {
-    right: 0 !important;
-  }
-
-  html body[data-scroll-locked] .width-before-scroll-bar {
-    margin-right: 0 !important;
-  }
-
-  html body.with-scroll-bars-hidden {
-    padding-right: 0 !important;
-  }
-
-  /* Public site mobile nav — avoid background scroll without layout jump */
-  body.mobile-nav-open {
-    overflow: hidden;
   }
 
   /* Prevent freeze issues in PWA */
@@ -766,4 +731,50 @@ _::-webkit-full-page-media, _:future, :root input[type="date"] {
 
 [data-sonner-toast][data-styled="true"] [data-content] {
   padding-right: 0.25rem;
+}
+
+/*
+ * Radix / react-remove-scroll scroll-lock overrides — MUST stay outside @layer so they
+ * beat the library's runtime-injected unlayered !important rules (Settings dialogs, etc.).
+ */
+html {
+  scrollbar-gutter: stable;
+}
+
+html body[data-scroll-locked] {
+  margin-right: 0 !important;
+  margin-left: 0 !important;
+  padding-right: 0 !important;
+  padding-left: 0 !important;
+  padding-top: 0 !important;
+}
+
+html body[data-scroll-locked] .right-scroll-bar-position {
+  right: 0 !important;
+}
+
+html body[data-scroll-locked] .width-before-scroll-bar {
+  margin-right: 0 !important;
+}
+
+html body.with-scroll-bars-hidden {
+  padding-right: 0 !important;
+}
+
+/* Settings / admin sticky headers must not slide when a dialog opens */
+html body[data-scroll-locked] .admin-page > .sticky {
+  left: 0;
+  right: 0;
+  width: 100%;
+}
+
+body.mobile-nav-open {
+  overflow: hidden;
+}
+
+/* Modal / dialog scroll regions: reserve gutter so macOS overlay scrollbar on hover doesn't shift content */
+[role="dialog"] .overflow-y-auto,
+[role="alertdialog"] .overflow-y-auto,
+[data-radix-select-viewport] {
+  scrollbar-gutter: stable;
 }

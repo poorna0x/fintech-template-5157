@@ -716,7 +716,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
           relative border-2 border-dashed rounded-lg text-center transition-all duration-200
           ${compact ? 'p-3 sm:p-5' : 'p-4 sm:p-8'}
           ${isDragOver 
-            ? 'border-primary bg-primary/5 scale-105' 
+            ? 'border-primary bg-primary/5 ring-2 ring-primary/30' 
             : 'border-muted-foreground/25 hover:border-primary/50 hover:bg-muted/50'
           }
           ${isUploading || uploadedImages.length >= maxImages ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
@@ -826,7 +826,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
                   <img
                     src={getOptimizedImageUrl(image.url, 300)}
                     alt={image.name}
-                    className="w-full h-full object-cover rounded-md transition-transform group-hover:scale-105"
+                    className="w-full h-full object-cover rounded-md"
                     loading="lazy"
                   />
                   

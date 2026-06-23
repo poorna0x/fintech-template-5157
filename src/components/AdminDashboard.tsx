@@ -6057,6 +6057,38 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleManualRefresh = useCallback(async () => {
+    hapticTap();
+    await invalidateAdminDashboardCaches();
+    jobsListCacheRef.current.clear();
+    setModuleDashboardSessionReady(true);
+    try {
+      const sessionReady = await ensureAdminSupabaseSession();
+      if (!sessionReady) {
+        toast.error('Could not refresh — session not ready. Please try again.');
+        return;
+      }
+      await reloadCustomerPriorServiceStatus();
+      const [techniciansResult] = await Promise.all([
+        db.technicians.getAllForDashboard(100),
+        loadJobCounts(),
+        loadFilteredJobs(statusFilter, currentPage),
+      ]);
+      if (techniciansResult.data) {
+        const transformed = techniciansResult.data.map(transformTechnicianData);
+        techniciansRef.current = transformed;
+        setTechnicians(transformed);
+      } else if (techniciansResult.error) {
+        console.error('Failed to refresh technicians:', techniciansResult.error);
+      }
+      void loadDashboardSecondary();
+    } catch (error) {
+      toast.error(
+        `Failed to refresh data: ${error instanceof Error ? error.message : 'Unknown error'}`
+      );
+    }
+  }, [statusFilter, currentPage, loadJobCounts, loadFilteredJobs, loadDashboardSecondary]);
+
   const handleGenerateTaxInvoice = (customer: Customer) => {
     setSelectedCustomerForTaxInvoice(customer);
     setTaxInvoiceModalOpen(true);
@@ -9752,15 +9784,7 @@ const AdminDashboard = () => {
                 size="sm"
                 className="h-9 px-2.5 shrink-0"
                 title="Refresh data (no full page reload)"
-                onClick={async () => {
-                  hapticTap();
-                  await invalidateAdminDashboardCaches();
-                  await reloadCustomerPriorServiceStatus();
-                  await loadDashboardData();
-                  if (statusFilter !== 'ONGOING') {
-                    await loadFilteredJobs(statusFilter, currentPage);
-                  }
-                }}
+                onClick={() => void handleManualRefresh()}
               >
                 <RefreshCw className="w-4 h-4" />
               </Button>
@@ -9913,7 +9937,7 @@ const AdminDashboard = () => {
               {/* Add Customer button */}
               <Button 
                 onClick={handleAddCustomer}
-                className="bg-blue-600 hover:bg-blue-700 text-white w-full sm:w-auto px-4 py-2 text-sm sm:text-base"
+                className="border border-transparent hover:border-transparent bg-blue-600 hover:bg-blue-700 text-white w-full sm:w-auto px-4 py-2 text-sm sm:text-base"
               >
                 <Users className="w-4 h-4 mr-2" />
                 <span className="hidden sm:inline">Add Customer</span>
@@ -9965,15 +9989,7 @@ const AdminDashboard = () => {
               size="sm"
               className="h-9 px-2.5 shrink-0"
               title="Refresh data (no full page reload)"
-              onClick={async () => {
-                hapticTap();
-                await invalidateAdminDashboardCaches();
-                await reloadCustomerPriorServiceStatus();
-                await loadDashboardData();
-                if (statusFilter !== 'ONGOING') {
-                  await loadFilteredJobs(statusFilter, currentPage);
-                }
-              }}
+              onClick={() => void handleManualRefresh()}
             >
               <RefreshCw className="w-4 h-4" />
             </Button>

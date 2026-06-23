@@ -1357,7 +1357,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
           </DialogDescription>
         </DialogHeader>
         
-        <div className="py-6 px-2 sm:px-4 flex-1 overflow-y-auto">
+        <div className="py-6 px-2 sm:px-4 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
           {/* Step 1: Personal Information */}
           {currentStep === 1 && (
             <div className="space-y-4">
@@ -1451,7 +1451,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                     className="text-sm"
                   />
                   {visibleAddressSuggestions && filteredAddressSuggestions.length > 0 && (
-                    <div className="absolute z-50 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-48 overflow-y-auto">
+                    <div className="absolute z-50 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-48 overflow-y-auto [scrollbar-gutter:stable]">
                       {filteredAddressSuggestions.map((suggestion, idx) => (
                         <button
                           key={idx}
@@ -1624,7 +1624,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                               }}
                             />
                             {showBrandSuggestions && brandSuggestions.length > 0 && (
-                              <div className="absolute z-10 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-40 overflow-y-auto">
+                              <div className="absolute z-10 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-40 overflow-y-auto [scrollbar-gutter:stable]">
                                 {brandSuggestions.map((brand, index) => (
                                   <div
                                     key={index}
@@ -1655,7 +1655,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                               }}
                             />
                             {showModelSuggestions && modelSuggestions.length > 0 && (
-                              <div className="absolute z-10 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-40 overflow-y-auto">
+                              <div className="absolute z-10 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-40 overflow-y-auto [scrollbar-gutter:stable]">
                                 {modelSuggestions.map((model, index) => (
                                   <div
                                     key={index}
