@@ -1522,17 +1522,17 @@ const Settings = () => {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setShowCallingPage(false)}
+                onClick={() => navigate('/admin')}
                 className="text-muted-foreground hover:text-foreground -ml-2"
               >
                 <ArrowLeft className="w-4 h-4 mr-1" />
-                Back to Settings
+                Back to Home
               </Button>
             </div>
           </div>
         </div>
         <div className="container mx-auto px-4 py-4 sm:py-8">
-          <CallingPage hideHeader={true} onBack={() => setShowCallingPage(false)} />
+          <CallingPage hideHeader={true} onBack={() => navigate('/admin')} />
         </div>
       </div>
     );

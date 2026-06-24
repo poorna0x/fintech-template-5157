@@ -842,11 +842,11 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={onBack || (() => navigate('/settings'))}
+                  onClick={onBack || (() => navigate('/admin'))}
                   className="text-muted-foreground hover:text-foreground"
                 >
                   <ArrowLeft className="w-4 h-4 mr-1" />
-                  Back
+                  Back to Home
                 </Button>
               </div>
             </div>
