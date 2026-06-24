@@ -154,16 +154,14 @@
     <link rel="icon" type="image/png" sizes="512x512" href="https://hydrogenro.com/android-chrome-512x512.png?v=4" />
     <script src="/head-pwa-manifest.js" defer></script>
     
-    <!-- Non-blocking Inter font (system stack in critical CSS is the first paint fallback) -->
+    <!-- Inter — blocking so first paint matches brand typography (async caused system-font fallback on mobile) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
-      media="print"
-      onload="this.media='all'"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
     />
-    <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"></noscript>
     
     <!-- Critical CSS to prevent FOUC -->
     <style>
@@ -172,6 +170,7 @@
         margin: 0; 
         padding: 0; 
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        letter-spacing: -0.025em;
         background-color: hsl(0, 0%, 98%);
         color: hsl(0, 0%, 20%);
         -webkit-font-smoothing: antialiased;
