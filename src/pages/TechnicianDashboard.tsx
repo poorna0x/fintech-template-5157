@@ -56,7 +56,8 @@ import { getAmcDocumentBrandLabel } from '@/lib/amc-brand';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { formatCompletedWhen } from '@/lib/relativeTime';
 import { getJobEquipmentDisplay, parseJobRequirements, isOfficeCompletedJob } from '@/lib/adminUtils';
-import { canVibrate, hapticConfirm, hapticTap } from '@/lib/haptics';
+import { hapticConfirm, hapticTap } from '@/lib/haptics';
+import { markHapticFired, useGlobalButtonHaptics } from '@/hooks/useGlobalButtonHaptics';
 import { db, supabase, fetchCustomerIdsWithCompletedJobsMap } from '@/lib/supabase';
 import {
   ensureSupabaseSessionForWrite,
@@ -412,59 +413,9 @@ const TechnicianDashboard = () => {
     }
   }, []);
 
-  // Global haptics for any button press (supported browsers only).
-  // Guard against double-vibrate when specific handlers also vibrate.
+  // Global haptics for button presses (Android: vibrate; iOS: invisible switch on <Button>).
   const lastHapticAtRef = useRef<number>(0);
-  useEffect(() => {
-    if (!canVibrate()) return;
-
-    const shouldHapticForTarget = (target: EventTarget | null) => {
-      const node = target as HTMLElement | null;
-      if (!node) return null;
-      const el = node.closest('button,[role="button"]') as HTMLElement | null;
-      if (!el) return null;
-      const disabled = (el as HTMLButtonElement).disabled || el.getAttribute('aria-disabled') === 'true';
-      if (disabled) return null;
-      return el;
-    };
-
-    const fire = () => {
-      const now = Date.now();
-      if (now - lastHapticAtRef.current < 120) return;
-      lastHapticAtRef.current = now;
-      hapticTap();
-    };
-
-    const onPointerDown = (e: PointerEvent) => {
-      if (!shouldHapticForTarget(e.target)) return;
-      fire();
-    };
-
-    const onTouchStart = (e: TouchEvent) => {
-      if (!shouldHapticForTarget(e.target)) return;
-      fire();
-    };
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Enter' && e.key !== ' ') return;
-      if (!shouldHapticForTarget(e.target)) return;
-      fire();
-    };
-
-    // Prefer earliest gesture events for maximum browser support.
-    document.addEventListener('pointerdown', onPointerDown, true);
-    document.addEventListener('touchstart', onTouchStart, { capture: true, passive: true });
-    document.addEventListener('keydown', onKeyDown, true);
-    // Keep click as a fallback for older browsers.
-    document.addEventListener('click', onPointerDown as any, true);
-
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown, true);
-      document.removeEventListener('touchstart', onTouchStart as any, true);
-      document.removeEventListener('keydown', onKeyDown, true);
-      document.removeEventListener('click', onPointerDown as any, true);
-    };
-  }, []);
+  useGlobalButtonHaptics(true);
   
   const [jobs, setJobs] = useState<Job[]>([]);
   const [filteredJobs, setFilteredJobs] = useState<Job[]>([]);
@@ -5456,7 +5407,7 @@ const TechnicianDashboard = () => {
             <Button
               size="default"
               onClick={() => {
-                lastHapticAtRef.current = Date.now();
+                markHapticFired(lastHapticAtRef);
                 hapticConfirm();
                 markJobAsSeen(job.id);
                 handleStartJob(job);
@@ -5487,7 +5438,7 @@ const TechnicianDashboard = () => {
             <Button
               size="default"
               onClick={() => {
-                lastHapticAtRef.current = Date.now();
+                markHapticFired(lastHapticAtRef);
                 hapticConfirm();
                 markJobAsSeen(job.id);
                 handleStartWork(job);
@@ -5518,7 +5469,7 @@ const TechnicianDashboard = () => {
             <Button
               size="default"
               onClick={() => {
-                lastHapticAtRef.current = Date.now();
+                markHapticFired(lastHapticAtRef);
                 hapticConfirm();
                 markJobAsSeen(job.id);
                 handleCompleteJob(job);

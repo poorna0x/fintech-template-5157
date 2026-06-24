@@ -86,6 +86,7 @@ import { customerNameClassName } from '@/lib/customerDisplay';
 import FollowUpModal from '@/components/FollowUpModal';
 import { sendNotification, createJobAssignedNotification, createJobCompletedNotification, createJobCancelledNotification, createJobAssignmentRequestNotification } from '@/lib/notifications';
 import { hapticSwitch, hapticTap } from '@/lib/haptics';
+import { useGlobalButtonHaptics } from '@/hooks/useGlobalButtonHaptics';
 // Heavy, on-demand modals and full-screen views are code-split so they stay
 // out of the main admin dashboard chunk and only load when actually opened.
 const BillModal = lazyDefault(() => import('./BillModal'));
@@ -272,6 +273,7 @@ const AdminDashboard = () => {
   // Latest technicians for async callbacks (avoids loadFilteredJobs ↔ technicians churn → assign/reassign dialog blink).
   const techniciansRef = useRef<Technician[]>([]);
   techniciansRef.current = technicians;
+  useGlobalButtonHaptics(true);
   // Slim technician list for historical displays (Completed By, reports, etc.). Includes INACTIVE.
   const [techniciansForReports, setTechniciansForReports] = useState<any[]>([]);
   const [loading, setLoading] = useState(

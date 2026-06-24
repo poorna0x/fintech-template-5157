@@ -26,6 +26,7 @@ import {
   getTechnicianDailyBaseSalary,
   getTechnicianMonthlyBaseSalary,
 } from '@/lib/technicianSalaryForPeriod';
+import { hapticConfirm, hapticTap } from '@/lib/haptics';
 
 interface TechnicianPayment {
   id: string;
@@ -1902,20 +1903,6 @@ const TechnicianPayments = () => {
     setSelectedTechFilterIds([]);
   };
 
-  const triggerHapticPulse = (pattern: number | number[] = 18) => {
-    if (typeof navigator === 'undefined') return;
-    const vibrate = (navigator as Navigator & {
-      vibrate?: (pattern: number | number[]) => boolean;
-    }).vibrate;
-    if (typeof vibrate === 'function') {
-      try {
-        vibrate.call(navigator, pattern);
-      } catch {
-        // Some browsers throw on cross-origin iframes — silently ignore.
-      }
-    }
-  };
-
   const advanceTechIndex = (direction: 1 | -1) => {
     const len = displayedSalaryBreakdowns.length;
     if (len < 2) return;
@@ -1925,7 +1912,8 @@ const TechnicianPayments = () => {
       const wrapped =
         (direction === 1 && prev === len - 1 && next === 0) ||
         (direction === -1 && prev === 0 && next === len - 1);
-      triggerHapticPulse(wrapped ? [12, 60, 18] : 18);
+      if (wrapped) hapticConfirm();
+      else hapticTap();
       return next;
     });
   };
