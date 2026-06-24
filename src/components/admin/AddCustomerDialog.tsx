@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
@@ -34,6 +34,8 @@ const brandData = {
   'I': ['iSpring'],
   'N': ['Nasaka']
 };
+
+const EMPTY_PHOTO_LIST: string[] = [];
 
 const modelData = {
   'RO': {
@@ -218,10 +220,42 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   const [technicians, setTechnicians] = useState<any[]>([]);
   const [loadingTechnicians, setLoadingTechnicians] = useState(false);
   const [leadCostExpanded, setLeadCostExpanded] = useState(false);
+  const equipmentUploadingRef = useRef<Record<string, boolean>>({});
+  const [anyEquipmentUploading, setAnyEquipmentUploading] = useState(false);
+  const [isWaitingForPhotos, setIsWaitingForPhotos] = useState(false);
+  const addFormDataRef = useRef(addFormData);
+  addFormDataRef.current = addFormData;
+
+  const handleEquipmentUploadState = useCallback((serviceType: string, uploading: boolean) => {
+    equipmentUploadingRef.current[serviceType] = uploading;
+    setAnyEquipmentUploading(Object.values(equipmentUploadingRef.current).some(Boolean));
+  }, []);
+
+  const waitForEquipmentUploads = useCallback((timeoutMs = 120_000) => {
+    return new Promise<boolean>((resolve) => {
+      const start = Date.now();
+      const tick = () => {
+        if (!Object.values(equipmentUploadingRef.current).some(Boolean)) {
+          resolve(true);
+          return;
+        }
+        if (Date.now() - start >= timeoutMs) {
+          resolve(false);
+          return;
+        }
+        setTimeout(tick, 250);
+      };
+      tick();
+    });
+  }, []);
 
   useEffect(() => {
     if (open) setDuplicateFoundOnBlur(null);
-    if (!open) setLeadCostExpanded(false);
+    if (!open) {
+      setLeadCostExpanded(false);
+      equipmentUploadingRef.current = {};
+      setAnyEquipmentUploading(false);
+    }
   }, [open]);
 
   // On open, if there's an uncreated draft, ask the admin to resume or start new.
@@ -849,6 +883,10 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   };
 
   const handleServiceTypeToggle = (serviceType: string) => {
+    if (addFormData.service_types.includes(serviceType)) {
+      delete equipmentUploadingRef.current[serviceType];
+      setAnyEquipmentUploading(Object.values(equipmentUploadingRef.current).some(Boolean));
+    }
     setAddFormData(prev => {
       const newServiceTypes = prev.service_types.includes(serviceType)
         ? prev.service_types.filter(type => type !== serviceType)
@@ -985,7 +1023,18 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   const createCustomer = async () => {
     setIsCreating(true);
     try {
-      const extractedLocation = extractLocationFromAddressString(addFormData.address);
+      if (Object.values(equipmentUploadingRef.current).some(Boolean)) {
+        setIsWaitingForPhotos(true);
+        const finished = await waitForEquipmentUploads();
+        setIsWaitingForPhotos(false);
+        if (!finished) {
+          toast.error('Photos are still uploading. Please wait a moment and try again.', TOAST_VALIDATION);
+          return;
+        }
+      }
+
+      const formData = addFormDataRef.current;
+      const extractedLocation = extractLocationFromAddressString(formData.address);
       
       // Extract coordinates from Google Maps link if provided
       let latitude = 0;
@@ -993,8 +1042,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       let googleLocation: string | null = null;
       let coordinatesExtracted = false;
       
-      if (addFormData.google_location && addFormData.google_location.trim()) {
-        const googleLocationInput = addFormData.google_location.trim();
+      if (formData.google_location && formData.google_location.trim()) {
+        const googleLocationInput = formData.google_location.trim();
         
         // Check if it's already a Google Maps URL
         if (googleLocationInput.includes('google.com/maps') || googleLocationInput.includes('maps.app.goo.gl')) {
@@ -1043,7 +1092,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       
       // Collect all photos from all service types (only include uploaded URLs)
       const allPhotos: string[] = [];
-      Object.values(addFormData.photos).forEach(photoArray => {
+      Object.values(formData.photos).forEach(photoArray => {
         (photoArray || []).forEach((url: string) => {
           if (typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'))) {
             allPhotos.push(url);
@@ -1053,12 +1102,12 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
       const customerData = {
         customer_id: '',
-        full_name: addFormData.full_name,
-        phone: addFormData.phone ? formatPhoneNumber(addFormData.phone) : '',
-        alternate_phone: addFormData.alternate_phone ? formatPhoneNumber(addFormData.alternate_phone) : '',
-        email: addFormData.email,
+        full_name: formData.full_name,
+        phone: formData.phone ? formatPhoneNumber(formData.phone) : '',
+        alternate_phone: formData.alternate_phone ? formatPhoneNumber(formData.alternate_phone) : '',
+        email: formData.email,
         address: {
-          street: addFormData.address,
+          street: formData.address,
           area: '',
           city: 'Bangalore',
           state: 'Karnataka',
@@ -1067,25 +1116,26 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         location: {
           latitude: latitude,
           longitude: longitude,
-          formattedAddress: addFormData.address,
+          formattedAddress: formData.address,
           googleLocation: googleLocation
         },
-        visible_address: addFormData.visible_address ? addFormData.visible_address.trim().substring(0, 20) : (extractedLocation ? extractedLocation.substring(0, 20) : ''),
+        visible_address: formData.visible_address ? formData.visible_address.trim().substring(0, 20) : (extractedLocation ? extractedLocation.substring(0, 20) : ''),
         service_type: (() => {
-          const selectedTypes = addFormData.service_types;
+          const selectedTypes = formData.service_types;
           const validTypes = ['RO', 'SOFTENER'];
           const validSelectedTypes = selectedTypes.filter(type => validTypes.includes(type));
           if (validSelectedTypes.length === 0) return 'RO';
           if (validSelectedTypes.length === 1) return validSelectedTypes[0];
           return validSelectedTypes[0];
         })() as 'RO' | 'SOFTENER',
-        brand: Object.values(addFormData.equipment).map(eq => eq.brand).join(', '),
-        model: Object.values(addFormData.equipment).map(eq => eq.model).join(', '),
-        preferred_language: (addFormData.native_language || 'ENGLISH') as 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU',
-        status: addFormData.status as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
-        notes: addFormData.notes,
+        brand: Object.values(formData.equipment).map(eq => eq.brand).join(', '),
+        model: Object.values(formData.equipment).map(eq => eq.model).join(', '),
+        preferred_language: (formData.native_language || 'ENGLISH') as 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU',
+        status: formData.status as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
+        notes: formData.notes,
         customer_since: new Date().toISOString(),
-        preferred_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING'
+        preferred_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING',
+        ...(allPhotos.length > 0 ? { photos: allPhotos } : {}),
       };
 
       let { data: newCustomer, error } = await db.customers.create(customerData);
@@ -1290,11 +1340,11 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
           technicianId: step5JobData.assigned_technician_id,
           serviceSubType: serviceSubType || 'Service',
           customerName:
-            addFormData.full_name ||
+            formData.full_name ||
             (newCustomer as { full_name?: string; fullName?: string })?.full_name ||
             (newCustomer as { fullName?: string })?.fullName ||
             'Customer',
-          visibleAddress: addFormData.visible_address,
+          visibleAddress: formData.visible_address,
           address: customerData.address,
         });
       }
@@ -1308,6 +1358,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       setShouldCreateJob(true); // Reset to true (default)
       setStep5JobData(createDefaultStep5JobData());
       setLeadCostExpanded(false);
+      equipmentUploadingRef.current = {};
+      setAnyEquipmentUploading(false);
 
       // Call onCustomerCreated with the new customer so parent can append to list (e.g. when no job created)
       await onCustomerCreated(newCustomer ?? undefined);
@@ -1315,6 +1367,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       toast.error('Failed to create customer');
     } finally {
       setIsCreating(false);
+      setIsWaitingForPhotos(false);
     }
   };
 
@@ -1614,9 +1667,12 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                   <p className="text-sm text-red-500">{formErrors.service_types}</p>
                 )}
               </div>
+            </div>
+          )}
 
-              {addFormData.service_types.length > 0 && (
-                <div className="space-y-4">
+          {/* Equipment + photos stay mounted (hidden off step 3) so uploads can finish in the background */}
+          {addFormData.service_types.length > 0 && (
+            <div className={currentStep === 3 ? 'space-y-4' : 'hidden'} aria-hidden={currentStep !== 3}>
                   <Label className="text-base font-semibold">Equipment Details</Label>
                   {addFormData.service_types.map((serviceType) => {
                     const serviceInfo = [
@@ -1625,7 +1681,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                     ].find(s => s.value === serviceType);
                     
                     const equipment = addFormData.equipment[serviceType] || { brand: '', model: '' };
-                    const photos = addFormData.photos[serviceType] || [];
+                    const photos = addFormData.photos[serviceType] ?? EMPTY_PHOTO_LIST;
                     
                     return (
                       <div key={serviceType} className="bg-muted/40 p-4 rounded-lg space-y-3">
@@ -1702,6 +1758,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                           <Label>Add Photo</Label>
                           <ImageUpload
                             onImagesChange={(photoUrls) => handlePhotosChange(serviceType, photoUrls)}
+                            onUploadStateChange={(uploading) => handleEquipmentUploadState(serviceType, uploading)}
                             maxImages={5}
                             folder="customer-equipment"
                             title={`${serviceInfo?.label} Photo`}
@@ -1709,13 +1766,19 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                             initialImages={photos}
                             maxWidth={1280}
                             quality={0.7}
+                            compact
+                            skipOfflineQueue
                           />
+                          {anyEquipmentUploading && currentStep === 3 && (
+                            <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                              <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+                              Photo uploading — you can continue; it will finish when you create the customer.
+                            </p>
+                          )}
                         </div>
                       </div>
                     );
                   })}
-                </div>
-              )}
             </div>
           )}
 
@@ -1786,6 +1849,12 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
           {/* Step 5: Create Job Option */}
           {currentStep === 5 && (
             <div className="space-y-4">
+              {anyEquipmentUploading && (
+                <p className="text-xs text-muted-foreground flex items-center gap-1.5 px-1">
+                  <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+                  Equipment photo still uploading — Create Customer will wait until it finishes.
+                </p>
+              )}
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
                 <h3 className="font-semibold text-foreground mb-2">Create a New Job?</h3>
                 <p className="text-sm text-muted-foreground mb-4">
@@ -2160,7 +2229,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                 {isCreating ? (
                   <div className="flex items-center gap-2">
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    Creating...
+                    {isWaitingForPhotos ? 'Uploading photos...' : 'Creating...'}
                   </div>
                 ) : (
                   'Create Customer'

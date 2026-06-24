@@ -78,6 +78,8 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   const uploadedImagesRef = useRef<UploadedImage[]>(uploadedImages);
   uploadedImagesRef.current = uploadedImages;
   const [isUploading, setIsUploading] = useState(false);
+  const isUploadingRef = useRef(false);
+  isUploadingRef.current = isUploading;
   const [isDragOver, setIsDragOver] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ [key: string]: number }>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -104,7 +106,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
           }));
           setUploadedImages(syncedImages);
         }
-      } else if (uploadedImagesRef.current.length > 0) {
+      } else if (uploadedImagesRef.current.length > 0 && !isUploadingRef.current) {
         setUploadedImages([]);
       }
       prevInitialImagesRef.current = [...resolvedInitialImages];
