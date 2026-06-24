@@ -18,7 +18,8 @@ export function asyncCssPlugin(mode) {
 
         return html.replace(stylesheetPattern, (_match, href) => {
           return (
-            `<link rel="preload" href="${href}" as="style" crossorigin data-async-css="true">\n` +
+            `<link rel="preload" href="${href}" as="style" crossorigin data-async-css="true" ` +
+            `onload="this.onload=null;this.rel='stylesheet';this.removeAttribute('as');this.removeAttribute('data-async-css')">\n` +
             `    <noscript><link rel="stylesheet" crossorigin href="${href}"></noscript>\n`
           );
         });

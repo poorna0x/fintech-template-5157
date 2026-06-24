@@ -363,26 +363,57 @@
 
   function activateAsyncStyles() {
     function activate(link) {
+      if (link.getAttribute('data-async-css') !== 'true') return;
       link.rel = 'stylesheet';
       link.removeAttribute('data-async-css');
       link.removeAttribute('as');
+    }
+
+    function isPreloadComplete(href) {
+      var absoluteHref = href;
+      try {
+        absoluteHref = new URL(href, document.baseURI || window.location.href).href;
+      } catch (e) {
+        // keep relative href
+      }
+
+      if (performance.getEntriesByName(absoluteHref).length > 0) return true;
+      if (absoluteHref !== href && performance.getEntriesByName(href).length > 0) return true;
+
+      var resources = performance.getEntriesByType('resource');
+      for (var i = 0; i < resources.length; i++) {
+        if (resources[i].name.indexOf(href) !== -1) return true;
+      }
+      return false;
     }
 
     var links = document.querySelectorAll('link[data-async-css="true"]');
     for (var i = 0; i < links.length; i++) {
       (function (link) {
         var href = link.getAttribute('href');
+        if (!href) return;
+
         link.addEventListener('load', function () {
           activate(link);
         });
         link.addEventListener('error', function () {
           activate(link);
         });
-        if (performance.getEntriesByName(href).length > 0) {
+
+        // Cached preloads can finish before listeners attach (relative href broke the old check).
+        if (isPreloadComplete(href)) {
           activate(link);
         }
       })(links[i]);
     }
+
+    // Last resort: never leave the page unstyled if activation was missed.
+    window.setTimeout(function () {
+      var pending = document.querySelectorAll('link[data-async-css="true"]');
+      for (var j = 0; j < pending.length; j++) {
+        activate(pending[j]);
+      }
+    }, 2500);
   }
 
   activateAsyncStyles();

@@ -266,6 +266,22 @@
       }
 
       img { max-width: 100%; height: auto; display: block; }
+
+      /* Minimal layout guard while async Tailwind loads (prevents mobile FOUC) */
+      .hidden { display: none !important; }
+      @media (min-width: 768px) {
+        .md\:hidden { display: none !important; }
+        .md\:flex { display: flex !important; }
+        .md\:block { display: block !important; }
+      }
+      @media (max-width: 767px) {
+        .md\:hidden { display: block; }
+        .md\:flex { display: none !important; }
+      }
+      button {
+        font-family: inherit;
+        cursor: pointer;
+      }
     </style>
     
     <!-- Login-critical origins: warm TLS+DNS so the first Turnstile/Supabase request is fast on mobile -->
