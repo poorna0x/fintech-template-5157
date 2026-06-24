@@ -177,5 +177,21 @@ export function applySentEmailLogFilters(query: any, opts: SentEmailLogQueryFilt
   return q;
 }
 
+export function buildSentEmailLogRpcArgs(
+  opts: SentEmailLogQueryFilters & { limit: number; offset: number }
+) {
+  const dateRange = resolveSentEmailLogDateRange(opts);
+  return {
+    p_limit: opts.limit,
+    p_offset: opts.offset,
+    p_filter: opts.filter ?? 'all',
+    p_brand: opts.brand ?? 'all',
+    p_template_type: opts.templateType ?? 'all',
+    p_search: (opts.search || '').trim() || null,
+    p_sent_from: dateRange.from ?? null,
+    p_sent_to: dateRange.to ?? null,
+  };
+}
+
 export const SENT_EMAIL_LOG_LIST_COLUMNS =
   'id, recipient_email, subject, template_type, document_brand, sent_at, opened_at, tracking_pixel_enabled';

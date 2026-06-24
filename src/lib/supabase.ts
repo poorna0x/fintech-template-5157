@@ -12,6 +12,7 @@ import {
 import type { PublicSiteKey } from './websiteSiteKey';
 import {
   applySentEmailLogFilters,
+  buildSentEmailLogRpcArgs,
   resolveSentEmailLogDateRange,
   SENT_EMAIL_LOG_LIST_COLUMNS,
   type SentEmailLogQueryFilters,
@@ -552,6 +553,16 @@ function isCallingRpcNotFoundError(error: unknown): boolean {
   const msg = typeof e?.message === 'string' ? e.message : '';
   return msg.includes('Could not find the function') || msg.includes('does not exist');
 }
+
+function isSentEmailLogsRpcNotFoundError(error: unknown): boolean {
+  return isCallingRpcNotFoundError(error);
+}
+
+export type SentEmailLogsPageResult = {
+  total: number;
+  rows: Record<string, unknown>[];
+  server_paginated: boolean;
+};
 
 export type CallingPageRpcRow = {
   id: string;
@@ -7017,7 +7028,35 @@ export const db = {
     ) {
       const page = Math.max(1, opts.page ?? 1);
       const pageSize = Math.min(Math.max(1, opts.pageSize ?? 20), 25);
-      const from = (page - 1) * pageSize;
+      const offset = (page - 1) * pageSize;
+      const includeCount = opts.includeCount !== false;
+
+      const rpcArgs = buildSentEmailLogRpcArgs({
+        ...opts,
+        limit: pageSize,
+        offset,
+      });
+
+      const { data: rpcData, error: rpcError } = await supabase.rpc(
+        'get_sent_email_logs_page',
+        rpcArgs
+      );
+
+      if (!rpcError && rpcData) {
+        const result = rpcData as SentEmailLogsPageResult;
+        return {
+          data: result.rows || [],
+          error: null,
+          count: includeCount ? result.total ?? 0 : undefined,
+          mode: 'rpc' as const,
+        };
+      }
+
+      if (rpcError && !isSentEmailLogsRpcNotFoundError(rpcError)) {
+        return { data: [], error: rpcError, count: 0, mode: 'rpc' as const };
+      }
+
+      const from = offset;
       const to = from + pageSize - 1;
 
       const dataQuery = applySentEmailLogFilters(
@@ -7027,9 +7066,14 @@ export const db = {
         opts
       ).range(from, to);
 
-      if (opts.includeCount === false) {
+      if (!includeCount) {
         const { data, error } = await dataQuery;
-        return { data: data || [], error, count: undefined as number | undefined };
+        return {
+          data: data || [],
+          error,
+          count: undefined as number | undefined,
+          mode: 'fallback' as const,
+        };
       }
 
       const countQuery = applySentEmailLogFilters(
@@ -7046,6 +7090,7 @@ export const db = {
         data: data || [],
         error: error || countError,
         count: count ?? 0,
+        mode: 'fallback' as const,
       };
     },
 

@@ -31,7 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2, Mail, RefreshCw, Search, Trash2, X, ChevronDown } from 'lucide-react';
+import { Loader2, Mail, RefreshCw, Search, Trash2, X, ChevronDown, ArrowLeft, ArrowRight } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { getDocumentBrandLabel } from '@/lib/service-brands';
@@ -258,14 +258,13 @@ export function EmailSentLogDialog({ open, onOpenChange }: EmailSentLogDialogPro
   const deleteFilterLabels = useMemo(() => describeActiveFilters(deleteFilters), [deleteFilters]);
 
   const load = useCallback(
-    async (pageNum: number, filters: SentEmailLogQueryFilters, opts?: { forceCount?: boolean }) => {
+    async (pageNum: number, filters: SentEmailLogQueryFilters) => {
       setLoading(true);
       setTableMissing(false);
-      const includeCount = pageNum === 1 || opts?.forceCount === true;
       const { data, error, count } = await db.sentEmailLogs.list({
         page: pageNum,
         pageSize: PAGE_SIZE,
-        includeCount,
+        includeCount: true,
         ...filters,
       });
       setLoading(false);
@@ -283,11 +282,7 @@ export function EmailSentLogDialog({ open, onOpenChange }: EmailSentLogDialogPro
       }
 
       setRows((data as SentEmailLogRow[]) || []);
-      if (count !== undefined) {
-        setTotal(count);
-      } else if (pageNum === 1 && (data?.length ?? 0) < PAGE_SIZE) {
-        setTotal(data?.length ?? 0);
-      }
+      setTotal(count ?? 0);
       setLoaded(true);
     },
     []
@@ -306,7 +301,7 @@ export function EmailSentLogDialog({ open, onOpenChange }: EmailSentLogDialogPro
     };
     setPage(1);
     if (next === search) {
-      void load(1, filters, { forceCount: true });
+      void load(1, filters);
     } else {
       setSearch(next);
     }
@@ -336,7 +331,7 @@ export function EmailSentLogDialog({ open, onOpenChange }: EmailSentLogDialogPro
 
   useEffect(() => {
     if (!open) return;
-    void load(page, queryFilters, { forceCount: page === 1 });
+    void load(page, queryFilters);
   }, [open, page, queryFilters, load]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -362,7 +357,7 @@ export function EmailSentLogDialog({ open, onOpenChange }: EmailSentLogDialogPro
       return;
     }
     toast.success('Log deleted');
-    void load(page, queryFilters, { forceCount: true });
+    void load(page, queryFilters);
   };
 
   const openBulkDelete = async () => {
@@ -390,7 +385,7 @@ export function EmailSentLogDialog({ open, onOpenChange }: EmailSentLogDialogPro
     }
     toast.success(`Deleted ${bulkDeleteCount} log${bulkDeleteCount === 1 ? '' : 's'}`);
     setPage(1);
-    void load(1, queryFilters, { forceCount: true });
+    void load(1, queryFilters);
   };
 
   return (
@@ -415,7 +410,7 @@ export function EmailSentLogDialog({ open, onOpenChange }: EmailSentLogDialogPro
                   size="icon"
                   className="h-8 w-8"
                   disabled={loading}
-                  onClick={() => void load(page, queryFilters, { forceCount: true })}
+                  onClick={() => void load(page, queryFilters)}
                   title="Refresh"
                 >
                   <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -626,31 +621,40 @@ export function EmailSentLogDialog({ open, onOpenChange }: EmailSentLogDialogPro
 
           <div className="shrink-0 border-t border-border bg-background">
             {total > PAGE_SIZE ? (
-              <div className="px-4 sm:px-5 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-border">
-                <span className="text-xs text-muted-foreground">
-                  Page {page} / {totalPages}
-                </span>
-                <div className="flex flex-wrap items-center justify-end gap-2 w-full sm:w-auto">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 flex-1 sm:flex-none"
-                    disabled={page <= 1 || loading}
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  >
-                    Prev
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 flex-1 sm:flex-none"
-                    disabled={page >= totalPages || loading}
-                    onClick={() => setPage((p) => p + 1)}
-                  >
-                    Next
-                  </Button>
+              <div className="px-4 sm:px-5 py-3 border-b border-border">
+                <div className="flex flex-col items-center gap-2">
+                  <span className="text-xs text-muted-foreground tabular-nums text-center">
+                    {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, total)}
+                    <span className="hidden sm:inline"> of {total.toLocaleString()}</span>
+                    <span className="sm:hidden"> / {total.toLocaleString()}</span>
+                  </span>
+                  <div className="flex flex-wrap items-center justify-center gap-2 w-full max-w-full">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-9 shrink-0 touch-manipulation flex-1 sm:flex-none max-w-[9rem] sm:max-w-none"
+                      disabled={page <= 1 || loading}
+                      onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    >
+                      <ArrowLeft className="h-4 w-4 sm:mr-1" />
+                      <span className="hidden sm:inline">Previous</span>
+                    </Button>
+                    <span className="text-sm text-foreground/90 tabular-nums px-2 text-center min-w-[5.5rem]">
+                      {page} / {totalPages}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-9 shrink-0 touch-manipulation flex-1 sm:flex-none max-w-[9rem] sm:max-w-none"
+                      disabled={page >= totalPages || loading}
+                      onClick={() => setPage((p) => p + 1)}
+                    >
+                      <span className="hidden sm:inline">Next</span>
+                      <ArrowRight className="h-4 w-4 sm:ml-1" />
+                    </Button>
+                  </div>
                 </div>
               </div>
             ) : null}
