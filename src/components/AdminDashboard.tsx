@@ -10713,7 +10713,6 @@ const AdminDashboard = () => {
                   setIsGettingLocation={setIsGettingLocation}
                   setAddressDialogOpen={setAddressDialogOpen}
                   hydrateCustomerForMaps={hydrateCustomerForMaps}
-                  onCustomerPhonesSwapped={patchCustomerPhonesInState}
                 />
 
                                 {/* Services Section - Always show, even if no jobs */}
@@ -12307,7 +12306,6 @@ const AdminDashboard = () => {
         open={phonePopupOpen}
         onOpenChange={setPhonePopupOpen}
         customer={selectedCustomerPhone}
-        onPhonesSwapped={patchCustomerPhonesInState}
       />
 
       {/* WhatsApp Numbers Popup */}
@@ -12316,7 +12314,6 @@ const AdminDashboard = () => {
         onOpenChange={setWhatsappPopupOpen}
         customer={selectedCustomerWhatsApp}
         mode="whatsapp"
-        onPhonesSwapped={patchCustomerPhonesInState}
       />
 
       {/* Reassign Job Dialog */}
