@@ -9,6 +9,8 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { cn } from '@/lib/utils';
 import { 
   Phone, 
   MessageCircle, 
@@ -17,7 +19,6 @@ import {
   Search, 
   Filter,
   Calendar,
-  User,
   Mail,
   CheckCircle2,
   XCircle,
@@ -27,7 +28,8 @@ import {
   Camera,
   FileText,
   Loader2,
-  Send
+  Send,
+  ChevronDown
 } from 'lucide-react';
 
 // WhatsApp Icon Component
@@ -113,6 +115,19 @@ function mapCallingRowToCustomer(row: CallingPageRpcRow): CustomerWithHistory {
   } as CustomerWithHistory;
 }
 
+/** DB call_history.status allows: COMPLETED, FAILED, NO_ANSWER, BUSY */
+function normalizeCallHistoryStatus(status: string): string {
+  switch (status) {
+    case 'ANSWERED':
+    case 'DELIVERED':
+      return 'COMPLETED';
+    case 'NOT_DELIVERED':
+      return 'FAILED';
+    default:
+      return status;
+  }
+}
+
 const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   const navigate = useNavigate();
   const { user, isAdmin, authInitializing } = useAuth();
@@ -131,6 +146,8 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   const [recentContactDays, setRecentContactDays] = useState(7); // Don't show if contacted within 7 days
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [prefilterFilter, setPrefilterFilter] = useState<string>('all'); // 'all', 'yes', 'no', 'unknown'
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [isMdUp, setIsMdUp] = useState(false);
   const filterSignature = useMemo(
     () =>
       JSON.stringify({
@@ -155,6 +172,34 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
     ]
   );
   const prevFilterSignatureRef = useRef(filterSignature);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 768px)');
+    const sync = () => setIsMdUp(mq.matches);
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
+
+  const activeFilterCount = useMemo(() => {
+    let n = 0;
+    if (debouncedSearch.trim()) n++;
+    if (serviceFilter !== 'all') n++;
+    if (serviceHistoryFilter !== 'all') n++;
+    if (serviceSubTypeFilter !== 'all') n++;
+    if (showRecentlyContacted) n++;
+    if (statusFilter !== 'all') n++;
+    if (prefilterFilter !== 'all') n++;
+    return n;
+  }, [
+    debouncedSearch,
+    serviceFilter,
+    serviceHistoryFilter,
+    serviceSubTypeFilter,
+    showRecentlyContacted,
+    statusFilter,
+    prefilterFilter,
+  ]);
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [pendingContact, setPendingContact] = useState<{
     customerId: string;
@@ -285,30 +330,40 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
     loadTechnicians();
   }, [customerReportDialogOpen]);
 
-  const recordCall = async (customerId: string, contactType: 'CALL' | 'WHATSAPP' | 'SMS' | 'EMAIL', phoneNumber?: string, message?: string, status?: string, notes?: string) => {
+  const recordCall = async (
+    customerId: string,
+    contactType: 'CALL' | 'WHATSAPP' | 'SMS' | 'EMAIL',
+    phoneNumber?: string,
+    message?: string,
+    status?: string,
+    notes?: string,
+    options?: { quiet?: boolean }
+  ) => {
     try {
+      const dbStatus = normalizeCallHistoryStatus(status || 'COMPLETED');
       const { error } = await db.callHistory.create({
         customer_id: customerId,
         contact_type: contactType,
         phone_number: phoneNumber,
         message_sent: message,
-        status: status || 'COMPLETED',
+        status: dbStatus,
         notes: notes
       });
 
       if (error) throw error;
 
-      // Optimistic update: avoid full reload (saves egress and DB load)
       const now = new Date().toISOString();
       setPageRows(prev => prev.map(c =>
         c.id === customerId
-          ? { ...c, lastContacted: now, daysSinceContact: 0, lastContactStatus: status || 'COMPLETED' }
+          ? { ...c, lastContacted: now, daysSinceContact: 0, lastContactStatus: dbStatus }
           : c
       ));
-      toast.success('Call/message recorded');
+      if (!options?.quiet) {
+        toast.success('Contact recorded');
+      }
     } catch (error) {
       console.error('Error recording call:', error);
-      toast.error('Failed to record call');
+      toast.error('Failed to save contact to database');
     }
   };
 
@@ -341,9 +396,9 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
       phoneNumber,
       message
     });
-    setStatusDialogOpen(true);
-    setContactStatus('COMPLETED');
+    setContactStatus(contactType === 'CALL' ? 'NO_ANSWER' : 'COMPLETED');
     setContactNotes('');
+    setStatusDialogOpen(true);
   };
 
   const handleCall = (customer: CustomerWithHistory) => {
@@ -438,7 +493,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
     setWaMessageTouched(false);
   };
 
-  const sendWhatsAppMessage = () => {
+  const sendWhatsAppMessage = async () => {
     const customer = selectedCustomerForWhatsApp;
     if (!customer?.phone) {
       toast.error('Phone number not available');
@@ -454,8 +509,18 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
     const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`;
     window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
 
+    await recordCall(
+      customer.id,
+      'WHATSAPP',
+      customer.phone,
+      message,
+      'COMPLETED',
+      undefined,
+      { quiet: true }
+    );
+
     resetWhatsAppComposer();
-    openStatusDialog(customer, 'WHATSAPP', customer.phone, message);
+    toast.success('WhatsApp opened — message saved to contact history');
   };
 
   // Handle viewing photos
@@ -613,18 +678,16 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
 
   const getStatusBadge = (status?: string | null) => {
     if (!status) return null;
-    
+
+    const normalized = normalizeCallHistoryStatus(status);
     const statusConfig: Record<string, { label: string; className: string; icon: React.ReactNode }> = {
-      'ANSWERED': { label: 'Answered', className: 'bg-green-100 text-green-800', icon: <CheckCircle2 className="w-3 h-3 mr-1" /> },
+      'COMPLETED': { label: 'Completed', className: 'bg-green-100 text-green-800', icon: <CheckCircle2 className="w-3 h-3 mr-1" /> },
       'NO_ANSWER': { label: 'No Answer', className: 'bg-yellow-100 text-yellow-800', icon: <XCircle className="w-3 h-3 mr-1" /> },
       'BUSY': { label: 'Busy', className: 'bg-orange-100 text-orange-800', icon: <Phone className="w-3 h-3 mr-1" /> },
       'FAILED': { label: 'Failed', className: 'bg-red-100 text-red-800', icon: <XCircle className="w-3 h-3 mr-1" /> },
-      'DELIVERED': { label: 'Delivered', className: 'bg-green-100 text-green-800', icon: <CheckCircle2 className="w-3 h-3 mr-1" /> },
-      'NOT_DELIVERED': { label: 'Not Delivered', className: 'bg-red-100 text-red-800', icon: <XCircle className="w-3 h-3 mr-1" /> },
-      'COMPLETED': { label: 'Completed', className: 'bg-blue-100 text-blue-800', icon: <CheckCircle2 className="w-3 h-3 mr-1" /> },
     };
 
-    const config = statusConfig[status] || { label: status, className: 'bg-gray-100 text-foreground', icon: null };
+    const config = statusConfig[normalized] || { label: status, className: 'bg-gray-100 text-foreground', icon: null };
     
     return (
       <Badge className={config.className}>
@@ -637,18 +700,16 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   const getStatusOptions = (contactType: 'CALL' | 'WHATSAPP' | 'SMS' | 'EMAIL') => {
     if (contactType === 'CALL') {
       return [
-        { value: 'ANSWERED', label: 'Answered' },
+        { value: 'COMPLETED', label: 'Answered' },
         { value: 'NO_ANSWER', label: 'No Answer' },
         { value: 'BUSY', label: 'Busy' },
         { value: 'FAILED', label: 'Failed' },
       ];
-    } else {
-      return [
-        { value: 'DELIVERED', label: 'Delivered' },
-        { value: 'NOT_DELIVERED', label: 'Not Delivered' },
-        { value: 'COMPLETED', label: 'Completed' },
-      ];
     }
+    return [
+      { value: 'COMPLETED', label: 'Sent' },
+      { value: 'FAILED', label: 'Failed' },
+    ];
   };
 
   const callingTotalPages = Math.max(1, Math.ceil(totalCount / itemsPerPage));
@@ -721,17 +782,54 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
         </div>
       )}
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
-        {/* Filters */}
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Filter className="w-5 h-5" />
-              Filters
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-6 lg:py-8 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        {/* Filters — collapsible on mobile */}
+        <Card className="mb-3 sm:mb-6 rounded-xl overflow-hidden">
+          <Collapsible open={filtersOpen || isMdUp} onOpenChange={setFiltersOpen}>
+            <div className="flex items-center justify-between gap-2 p-3 sm:px-6 sm:pt-6 sm:pb-0 border-b border-border/50 md:border-0">
+              <CollapsibleTrigger asChild className="md:pointer-events-none md:flex-1">
+                <button
+                  type="button"
+                  className="flex flex-1 items-center gap-2 text-left min-h-[44px] touch-manipulation md:cursor-default"
+                >
+                  <Filter className="w-4 h-4 sm:w-5 sm:h-5 text-muted-foreground shrink-0" />
+                  <span className="font-semibold text-sm sm:text-base">Filters</span>
+                  {activeFilterCount > 0 && (
+                    <Badge variant="secondary" className="h-5 px-1.5 text-[10px] font-semibold">
+                      {activeFilterCount}
+                    </Badge>
+                  )}
+                  <ChevronDown
+                    className={cn(
+                      'w-4 h-4 ml-auto text-muted-foreground transition-transform md:hidden',
+                      (filtersOpen || isMdUp) && 'rotate-180'
+                    )}
+                  />
+                </button>
+              </CollapsibleTrigger>
+              {activeFilterCount > 0 && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-9 text-xs shrink-0 md:hidden"
+                  onClick={() => {
+                    setSearchTerm('');
+                    setServiceFilter('all');
+                    setServiceHistoryFilter('all');
+                    setServiceSubTypeFilter('all');
+                    setShowRecentlyContacted(false);
+                    setStatusFilter('all');
+                    setPrefilterFilter('all');
+                  }}
+                >
+                  Clear
+                </Button>
+              )}
+            </div>
+            <CollapsibleContent className="md:block">
+              <CardContent className="pt-3 sm:pt-4 pb-4 sm:pb-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
               <div>
                 <Label htmlFor="search">Search</Label>
                 <div className="relative">
@@ -838,11 +936,9 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                   <SelectContent>
                     <SelectItem value="all">All Status</SelectItem>
                     <SelectItem value="never">Never Contacted</SelectItem>
-                    <SelectItem value="ANSWERED">Answered</SelectItem>
+                    <SelectItem value="COMPLETED">Completed / Sent</SelectItem>
                     <SelectItem value="NO_ANSWER">No Answer</SelectItem>
                     <SelectItem value="BUSY">Busy</SelectItem>
-                    <SelectItem value="DELIVERED">Delivered</SelectItem>
-                    <SelectItem value="NOT_DELIVERED">Not Delivered</SelectItem>
                     <SelectItem value="FAILED">Failed</SelectItem>
                   </SelectContent>
                 </Select>
@@ -864,37 +960,55 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
               </div>
 
             </div>
-          </CardContent>
+              </CardContent>
+            </CollapsibleContent>
+          </Collapsible>
         </Card>
 
-        {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <Card>
-            <CardContent className="p-4">
-              <div className="text-2xl font-bold text-foreground">{totalCount.toLocaleString()}</div>
-              <div className="text-sm text-muted-foreground">Customers to Contact</div>
+        {/* Stats — single strip on mobile, cards on desktop */}
+        <Card className="rounded-xl overflow-hidden mb-3 sm:mb-6 md:hidden">
+          <CardContent className="p-0 flex divide-x divide-border">
+            <div className="flex-1 min-w-0 px-2 py-3 text-center">
+              <div className="text-base font-bold tabular-nums truncate">{totalCount.toLocaleString()}</div>
+              <div className="text-[10px] text-muted-foreground mt-0.5">To contact</div>
+            </div>
+            <div className="flex-1 min-w-0 px-2 py-3 text-center">
+              <div className="text-base font-bold text-green-600 tabular-nums">{stats.overOneYear.toLocaleString()}</div>
+              <div className="text-[10px] text-muted-foreground mt-0.5">1+ year</div>
+            </div>
+            <div className="flex-1 min-w-0 px-2 py-3 text-center">
+              <div className="text-base font-bold text-orange-600 tabular-nums">{stats.sixToTwelve.toLocaleString()}</div>
+              <div className="text-[10px] text-muted-foreground mt-0.5">6–12 mo</div>
+            </div>
+          </CardContent>
+        </Card>
+        <div className="hidden md:grid md:grid-cols-3 gap-4 mb-6">
+          <Card className="rounded-xl">
+            <CardContent className="p-3 sm:p-4">
+              <div className="text-lg sm:text-2xl font-bold text-foreground tabular-nums">{totalCount.toLocaleString()}</div>
+              <div className="text-[11px] sm:text-sm text-muted-foreground leading-tight mt-0.5">To contact</div>
             </CardContent>
           </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="text-2xl font-bold text-green-600">
+          <Card className="rounded-xl">
+            <CardContent className="p-3 sm:p-4">
+              <div className="text-lg sm:text-2xl font-bold text-green-600 tabular-nums">
                 {stats.overOneYear.toLocaleString()}
               </div>
-              <div className="text-sm text-muted-foreground">Over 1 Year Since Service</div>
+              <div className="text-[11px] sm:text-sm text-muted-foreground leading-tight mt-0.5">Over 1 year</div>
             </CardContent>
           </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="text-2xl font-bold text-orange-600">
+          <Card className="rounded-xl">
+            <CardContent className="p-3 sm:p-4">
+              <div className="text-lg sm:text-2xl font-bold text-orange-600 tabular-nums">
                 {stats.sixToTwelve.toLocaleString()}
               </div>
-              <div className="text-sm text-muted-foreground">6-12 Months Since Service</div>
+              <div className="text-[11px] sm:text-sm text-muted-foreground leading-tight mt-0.5">6–12 months</div>
             </CardContent>
           </Card>
         </div>
 
         {/* Customer List */}
-        <div className="space-y-4">
+        <div className="space-y-3 sm:space-y-4">
           {totalCount === 0 && !listLoading ? (
             <Card>
               <CardContent className="p-8 text-center">
@@ -904,154 +1018,195 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
             </Card>
           ) : (
             <>
-              {/* Results count and items per page selector */}
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
-                <div className="text-sm text-muted-foreground">
-                  Showing {totalCount === 0 ? 0 : ((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalCount)} of {totalCount.toLocaleString()} customers
-                </div>
-                <div className="flex items-center gap-2">
-                  {listLoading && (
-                    <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
-                  )}
-                  <Label htmlFor="itemsPerPage" className="text-sm">Items per page:</Label>
-                  <Select value={itemsPerPage.toString()} onValueChange={(value) => {
-                    setItemsPerPage(parseInt(value));
-                    setCurrentPage(1);
-                  }}>
-                    <SelectTrigger className="w-20">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="10">10</SelectItem>
-                      <SelectItem value="20">20</SelectItem>
-                      <SelectItem value="50">50</SelectItem>
-                      <SelectItem value="100">100</SelectItem>
-                    </SelectContent>
-                  </Select>
+              {/* Results toolbar — sticky on mobile */}
+              <div className="sticky top-0 z-10 -mx-3 px-3 py-2 mb-2 sm:static sm:mx-0 sm:px-0 sm:py-0 sm:mb-4 bg-muted/80 backdrop-blur-md sm:bg-transparent sm:backdrop-blur-none border-b border-border/40 sm:border-0">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[11px] sm:text-sm text-muted-foreground leading-tight min-w-0">
+                    <span className="font-medium text-foreground tabular-nums">
+                      {totalCount === 0 ? 0 : ((currentPage - 1) * itemsPerPage) + 1}–{Math.min(currentPage * itemsPerPage, totalCount)}
+                    </span>
+                    <span className="hidden sm:inline"> of {totalCount.toLocaleString()}</span>
+                    <span className="sm:hidden"> / {totalCount.toLocaleString()}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {listLoading && (
+                      <div className="w-3.5 h-3.5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+                    )}
+                    <Select value={itemsPerPage.toString()} onValueChange={(value) => {
+                      setItemsPerPage(parseInt(value));
+                      setCurrentPage(1);
+                    }}>
+                      <SelectTrigger id="itemsPerPage" className="w-[4.25rem] h-8 text-xs sm:h-9 sm:text-sm sm:w-[4.5rem]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="10">10</SelectItem>
+                        <SelectItem value="20">20</SelectItem>
+                        <SelectItem value="50">50</SelectItem>
+                        <SelectItem value="100">100</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </div>
 
-              {pageRows.map((customer) => (
-              <Card key={customer.id} className="hover:shadow-md transition-shadow">
-                <CardContent className="p-4 sm:p-6">
-                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-                    <div className="flex-1">
-                      <div className="flex items-start gap-3 mb-3">
-                        <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center shrink-0">
-                          <User className="w-5 h-5 text-blue-600" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h3 className={`font-semibold text-base sm:text-lg ${customerNameClassName(customer) || 'text-foreground'}`}>
-                              {customer.fullName}
-                            </h3>
-                            <Badge variant="outline">{customer.customerId}</Badge>
-                            {customer.daysSinceContact !== null && customer.daysSinceContact !== undefined && customer.daysSinceContact < recentContactDays && (
-                              <Badge className="bg-yellow-100 text-yellow-800">
-                                <Clock className="w-3 h-3 mr-1" />
-                                Contacted {formatDaysAgo(customer.daysSinceContact)} ago
-                              </Badge>
-                            )}
-                          </div>
-                          
-                          <div className="space-y-1 text-sm text-muted-foreground">
-                            <div className="flex items-center gap-2">
-                              <Phone className="w-4 h-4" />
-                              <span>{customer.phone}</span>
-                              {customer.alternatePhone && (
-                                <span className="text-muted-foreground/70">/ {customer.alternatePhone}</span>
-                              )}
-                            </div>
-                            {customer.email && (
-                              <div className="flex items-center gap-2">
-                                <Mail className="w-4 h-4" />
-                                <span>{customer.email}</span>
-                              </div>
-                            )}
-                            {(customer.rawWaterTds != null && customer.rawWaterTds > 0) && (
-                              <div className="flex items-center gap-2">
-                                <span className="text-muted-foreground">Raw water TDS:</span>
-                                <span className="font-medium">{customer.rawWaterTds} ppm</span>
-                              </div>
-                            )}
-                            <div className="flex items-center gap-2">
-                              <Calendar className="w-4 h-4" />
-                              <span>
-                                Last Service: {formatDate(customer.lastServiceDate)}
-                                {customer.daysSinceService !== null && customer.daysSinceService !== undefined && (
-                                  <Badge className={`ml-2 ${getServiceBadgeColor(customer.daysSinceService)} text-white text-xs`}>
-                                    {formatDaysAgo(customer.daysSinceService)} ago
-                                  </Badge>
-                                )}
-                              </span>
-                            </div>
-                            {customer.lastContacted && (
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <Clock className="w-4 h-4" />
-                                <span className="text-muted-foreground">
-                                  Last Contacted: {formatDate(customer.lastContacted)}
-                                  {customer.daysSinceContact !== null && customer.daysSinceContact !== undefined && (
-                                    <span className="ml-2">({formatDaysAgo(customer.daysSinceContact)} ago)</span>
-                                  )}
-                                </span>
-                                {customer.lastContactStatus && getStatusBadge(customer.lastContactStatus)}
-                              </div>
-                            )}
-                          </div>
-                        </div>
+              {pageRows.map((customer) => {
+                const serviceDays = customer.daysSinceService;
+                const recentlyContacted =
+                  customer.daysSinceContact != null &&
+                  customer.daysSinceContact < recentContactDays;
+
+                return (
+              <Card
+                key={customer.id}
+                className="overflow-hidden border-border/80 shadow-sm active:shadow-md transition-shadow rounded-2xl sm:rounded-xl"
+              >
+                <CardContent className="p-0">
+                  {/* Header — ID pill + name */}
+                  <div className="px-3 pt-3 pb-2 sm:px-4 sm:pt-4 sm:pb-3">
+                    <div className="flex flex-wrap items-start gap-2">
+                      <span className="shrink-0 font-mono text-[11px] font-bold text-blue-800 bg-blue-50 border border-blue-200/80 px-2 py-1 rounded-md leading-none">
+                        {customer.customerId}
+                      </span>
+                      <h3
+                        className={`flex-1 min-w-[8rem] font-semibold text-[15px] sm:text-base leading-snug break-words ${
+                          customerNameClassName(customer) || 'text-foreground'
+                        }`}
+                      >
+                        {customer.fullName}
+                      </h3>
+                    </div>
+                    {recentlyContacted && (
+                      <Badge className="mt-2 bg-amber-100 text-amber-900 border-amber-200/80 text-[10px] font-normal">
+                        <Clock className="w-3 h-3 mr-1 shrink-0" />
+                        Contacted {formatDaysAgo(customer.daysSinceContact!)} ago
+                      </Badge>
+                    )}
+                  </div>
+
+                  {/* Contact + service meta */}
+                  <div className="px-3 pb-3 sm:px-4 space-y-2">
+                    <a
+                      href={`tel:${customer.phone}`}
+                      className="flex items-center gap-2.5 text-sm font-medium text-foreground min-h-[44px] -mx-0.5 px-2 rounded-xl bg-background border border-border/60 active:bg-muted/50 touch-manipulation"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        handleCall(customer);
+                      }}
+                    >
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-50">
+                        <Phone className="w-4 h-4 text-blue-600" />
+                      </span>
+                      <span className="min-w-0 leading-snug">
+                        <span className="block truncate">{customer.phone}</span>
+                        {customer.alternatePhone && (
+                          <span className="block text-xs text-muted-foreground font-normal truncate mt-0.5">
+                            Alt: {customer.alternatePhone}
+                          </span>
+                        )}
+                      </span>
+                    </a>
+
+                    {customer.email && (
+                      <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground min-w-0 px-0.5">
+                        <Mail className="w-3.5 h-3.5 shrink-0" />
+                        <span className="truncate">{customer.email}</span>
                       </div>
+                    )}
+
+                    {(customer.rawWaterTds != null && customer.rawWaterTds > 0) && (
+                      <div className="text-xs sm:text-sm text-muted-foreground px-0.5">
+                        TDS: <span className="font-medium text-foreground">{customer.rawWaterTds} ppm</span>
+                      </div>
+                    )}
+
+                    <div className="rounded-xl bg-muted/35 border border-border/50 px-3 py-2.5">
+                      <div className="flex items-center gap-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                        <Calendar className="w-3 h-3" />
+                        Last service
+                      </div>
+                      <div className="mt-1.5 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-1.5 sm:gap-2">
+                        <span className="text-sm font-semibold text-foreground">
+                          {formatDate(customer.lastServiceDate)}
+                        </span>
+                        {serviceDays != null && (
+                          <Badge
+                            className={`${getServiceBadgeColor(serviceDays)} text-white text-[10px] px-2 py-0 w-fit`}
+                          >
+                            {formatDaysAgo(serviceDays)} ago
+                          </Badge>
+                        )}
+                      </div>
+                      {customer.lastServiceSubType && (
+                        <p className="text-[11px] text-muted-foreground mt-1">{customer.lastServiceSubType}</p>
+                      )}
                     </div>
 
-                    <div className="flex flex-wrap gap-2 sm:flex-nowrap">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleCall(customer)}
-                        className="flex-1 sm:flex-none"
-                      >
-                        <Phone className="w-4 h-4 mr-2" />
-                        Call
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleWhatsApp(customer)}
-                        className="flex-1 sm:flex-none bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
-                      >
-                        <WhatsAppIcon className="w-4 h-4 mr-2" />
-                        WhatsApp
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleViewPhotos(customer)}
-                        disabled={isLoadingPhotos && selectedCustomerForPhotos?.id === customer.id}
-                        className="flex-1 sm:flex-none"
-                      >
-                        {isLoadingPhotos && selectedCustomerForPhotos?.id === customer.id ? (
-                          <div className="w-4 h-4 border-2 border-gray-600 border-t-transparent rounded-full animate-spin mr-2" />
-                        ) : (
-                          <Camera className="w-4 h-4 mr-2" />
-                        )}
-                        Photos
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          setSelectedCustomerForReport(customer);
-                          setCustomerReportDialogOpen(true);
-                        }}
-                        className="flex-1 sm:flex-none"
-                      >
-                        <FileText className="w-4 h-4 mr-2" />
-                        Reports
-                      </Button>
-                    </div>
+                    {customer.lastContacted && (
+                      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-muted-foreground px-0.5">
+                        <Clock className="w-3 h-3 shrink-0" />
+                        <span className="leading-snug">
+                          Contacted {formatDate(customer.lastContacted)}
+                          {customer.daysSinceContact != null && (
+                            <> · {formatDaysAgo(customer.daysSinceContact)} ago</>
+                          )}
+                        </span>
+                        {customer.lastContactStatus && getStatusBadge(customer.lastContactStatus)}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Actions — icon stack on mobile */}
+                  <div className="grid grid-cols-2 gap-2 p-3 border-t border-border/50 bg-muted/20 sm:flex sm:flex-wrap sm:gap-2 sm:p-4 sm:bg-transparent sm:border-t-0">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleCall(customer)}
+                      className="h-[3.25rem] sm:h-9 sm:flex-none touch-manipulation flex flex-col gap-0.5 sm:flex-row sm:gap-2 items-center justify-center rounded-xl sm:rounded-md bg-background border-blue-200 text-blue-700 hover:bg-blue-50 text-xs sm:text-sm"
+                    >
+                      <Phone className="w-[18px] h-[18px] sm:w-4 sm:h-4 shrink-0" />
+                      Call
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleWhatsApp(customer)}
+                      className="h-[3.25rem] sm:h-9 sm:flex-none touch-manipulation flex flex-col gap-0.5 sm:flex-row sm:gap-2 items-center justify-center rounded-xl sm:rounded-md bg-green-600 hover:bg-green-700 text-white border-green-600 shadow-sm text-xs sm:text-sm font-medium"
+                    >
+                      <WhatsAppIcon className="w-[18px] h-[18px] sm:w-4 sm:h-4 shrink-0" />
+                      WhatsApp
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleViewPhotos(customer)}
+                      disabled={isLoadingPhotos && selectedCustomerForPhotos?.id === customer.id}
+                      className="h-10 sm:h-9 sm:flex-none touch-manipulation flex flex-col gap-0.5 sm:flex-row sm:gap-2 items-center justify-center rounded-xl sm:rounded-md bg-background text-xs sm:text-sm"
+                    >
+                      {isLoadingPhotos && selectedCustomerForPhotos?.id === customer.id ? (
+                        <div className="w-4 h-4 border-2 border-gray-600 border-t-transparent rounded-full animate-spin shrink-0" />
+                      ) : (
+                        <Camera className="w-4 h-4 shrink-0" />
+                      )}
+                      Photos
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setSelectedCustomerForReport(customer);
+                        setCustomerReportDialogOpen(true);
+                      }}
+                      className="h-10 sm:h-9 sm:flex-none touch-manipulation flex flex-col gap-0.5 sm:flex-row sm:gap-2 items-center justify-center rounded-xl sm:rounded-md bg-background text-xs sm:text-sm"
+                    >
+                      <FileText className="w-4 h-4 shrink-0" />
+                      Reports
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
-              ))}
+                );
+              })}
 
               {/* Pagination — compact, wraps on small screens (matches admin completed jobs) */}
               {callingTotalPages > 1 && (
