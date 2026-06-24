@@ -1,5 +1,5 @@
 import React from 'react';
-import { isIOS } from '@/lib/haptics';
+import { isIOS, markNativeSwitchHaptic } from '@/lib/haptics';
 
 type Props = {
   disabled?: boolean;
@@ -20,6 +20,7 @@ export function IOSSwitchHapticOverlay({ disabled }: Props) {
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    markNativeSwitchHaptic();
     e.currentTarget.checked = false;
   };
 

@@ -1,5 +1,11 @@
 export type VibrationPattern = number | number[];
 
+const HAPTIC_COOLDOWN_MS = 220;
+
+let lastHapticAt = 0;
+/** After a real iOS switch tap, skip programmatic haptics triggered by forwarded button clicks. */
+let nativeSwitchHapticUntil = 0;
+
 export function isIOS(): boolean {
   if (typeof window === 'undefined') return false;
   const ua = window.navigator.userAgent || '';
@@ -23,6 +29,24 @@ export function canHaptic(): boolean {
 /** @deprecated Prefer canHaptic — kept for existing call sites. */
 export function canVibrate(): boolean {
   return hasVibrationApi();
+}
+
+/** Call when the invisible iOS switch overlay fires a native Taptic pulse. */
+export function markNativeSwitchHaptic(): void {
+  const now = Date.now();
+  lastHapticAt = now;
+  nativeSwitchHapticUntil = now + 450;
+}
+
+function canFireProgrammaticHaptic(): boolean {
+  const now = Date.now();
+  if (now < nativeSwitchHapticUntil) return false;
+  if (now - lastHapticAt < HAPTIC_COOLDOWN_MS) return false;
+  return true;
+}
+
+function recordProgrammaticHaptic(): void {
+  lastHapticAt = Date.now();
 }
 
 function iosSwitchPulse(): void {
@@ -49,11 +73,13 @@ function iosSwitchPulse(): void {
 
 export function vibrate(pattern: VibrationPattern = 50): void {
   if (typeof window === 'undefined') return;
+  if (!canFireProgrammaticHaptic()) return;
 
   if (!isIOS() && hasVibrationApi()) {
     try {
       const nav = window.navigator as Navigator & { vibrate?: (pattern: VibrationPattern) => boolean };
       nav.vibrate?.(pattern);
+      recordProgrammaticHaptic();
       return;
     } catch {
       // ignore
@@ -61,6 +87,7 @@ export function vibrate(pattern: VibrationPattern = 50): void {
   }
 
   iosSwitchPulse();
+  recordProgrammaticHaptic();
 }
 
 export function hapticTap(): void {
@@ -72,10 +99,19 @@ export function hapticSwitch(): void {
 }
 
 export function hapticConfirm(): void {
+  if (!canFireProgrammaticHaptic()) return;
+
   if (!isIOS() && hasVibrationApi()) {
-    vibrate([40, 30, 40]);
-    return;
+    try {
+      const nav = window.navigator as Navigator & { vibrate?: (pattern: VibrationPattern) => boolean };
+      nav.vibrate?.([40, 30, 40]);
+      recordProgrammaticHaptic();
+      return;
+    } catch {
+      // ignore
+    }
   }
+
   iosSwitchPulse();
-  window.setTimeout(iosSwitchPulse, 70);
+  recordProgrammaticHaptic();
 }

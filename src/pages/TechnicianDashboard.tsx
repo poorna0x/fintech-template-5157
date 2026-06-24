@@ -56,8 +56,7 @@ import { getAmcDocumentBrandLabel } from '@/lib/amc-brand';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { formatCompletedWhen } from '@/lib/relativeTime';
 import { getJobEquipmentDisplay, parseJobRequirements, isOfficeCompletedJob } from '@/lib/adminUtils';
-import { hapticConfirm, hapticTap } from '@/lib/haptics';
-import { markHapticFired, useGlobalButtonHaptics } from '@/hooks/useGlobalButtonHaptics';
+import { useGlobalButtonHaptics } from '@/hooks/useGlobalButtonHaptics';
 import { db, supabase, fetchCustomerIdsWithCompletedJobsMap } from '@/lib/supabase';
 import {
   ensureSupabaseSessionForWrite,
@@ -414,7 +413,6 @@ const TechnicianDashboard = () => {
   }, []);
 
   // Global haptics for button presses (Android: vibrate; iOS: invisible switch on <Button>).
-  const lastHapticAtRef = useRef<number>(0);
   useGlobalButtonHaptics(true);
   
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -5407,8 +5405,6 @@ const TechnicianDashboard = () => {
             <Button
               size="default"
               onClick={() => {
-                markHapticFired(lastHapticAtRef);
-                hapticConfirm();
                 markJobAsSeen(job.id);
                 handleStartJob(job);
               }}
@@ -5438,8 +5434,6 @@ const TechnicianDashboard = () => {
             <Button
               size="default"
               onClick={() => {
-                markHapticFired(lastHapticAtRef);
-                hapticConfirm();
                 markJobAsSeen(job.id);
                 handleStartWork(job);
               }}
@@ -5469,8 +5463,6 @@ const TechnicianDashboard = () => {
             <Button
               size="default"
               onClick={() => {
-                markHapticFired(lastHapticAtRef);
-                hapticConfirm();
                 markJobAsSeen(job.id);
                 handleCompleteJob(job);
               }}
