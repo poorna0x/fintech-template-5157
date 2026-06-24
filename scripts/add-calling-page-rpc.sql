@@ -58,8 +58,19 @@ BEGIN
     SELECT DISTINCT ON (ch.customer_id)
       ch.customer_id,
       ch.contacted_at,
+      ch.status,
+      ch.contact_type
+    FROM public.call_history ch
+    WHERE ch.contact_type = 'CALL'
+    ORDER BY ch.customer_id, ch.contacted_at DESC
+  ),
+  last_whatsapp AS (
+    SELECT DISTINCT ON (ch.customer_id)
+      ch.customer_id,
+      ch.contacted_at,
       ch.status
     FROM public.call_history ch
+    WHERE ch.contact_type = 'WHATSAPP'
     ORDER BY ch.customer_id, ch.contacted_at DESC
   ),
   enriched AS (
@@ -83,6 +94,9 @@ BEGIN
       lj.service_sub_type AS last_service_sub_type,
       lc.contacted_at AS last_contacted_at,
       lc.status AS last_contact_status,
+      lc.contact_type AS last_contact_type,
+      lw.contacted_at AS last_whatsapp_at,
+      lw.status AS last_whatsapp_status,
       CASE
         WHEN COALESCE(lj.completed_at, c.last_service_date) IS NOT NULL THEN
           EXTRACT(EPOCH FROM (now() - COALESCE(lj.completed_at, c.last_service_date))) / 86400.0
@@ -92,10 +106,16 @@ BEGIN
         WHEN lc.contacted_at IS NOT NULL THEN
           EXTRACT(EPOCH FROM (now() - lc.contacted_at)) / 86400.0
         ELSE NULL
-      END AS days_since_contact
+      END AS days_since_contact,
+      CASE
+        WHEN lw.contacted_at IS NOT NULL THEN
+          EXTRACT(EPOCH FROM (now() - lw.contacted_at)) / 86400.0
+        ELSE NULL
+      END AS days_since_whatsapp
     FROM public.customers c
     LEFT JOIN last_jobs lj ON lj.customer_id = c.id
     LEFT JOIN last_contacts lc ON lc.customer_id = c.id
+    LEFT JOIN last_whatsapp lw ON lw.customer_id = c.id
   ),
   filtered AS (
     SELECT e.*
@@ -194,8 +214,12 @@ BEGIN
       f.last_service_sub_type,
       f.last_contacted_at,
       f.last_contact_status,
+      f.last_contact_type,
+      f.last_whatsapp_at,
+      f.last_whatsapp_status,
       f.days_since_service,
       f.days_since_contact,
+      f.days_since_whatsapp,
       COALESCE(f.days_since_service, -1) AS sort_days
     FROM filtered f
     ORDER BY COALESCE(f.days_since_service, -1) DESC, f.full_name ASC

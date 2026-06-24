@@ -22,7 +22,6 @@ import {
   Mail,
   CheckCircle2,
   XCircle,
-  Clock,
   Edit,
   Lock,
   Camera,
@@ -77,6 +76,10 @@ interface CustomerWithHistory extends Customer {
   lastContacted?: string;
   daysSinceContact?: number;
   lastContactStatus?: string;
+  lastContactType?: string | null;
+  lastWhatsAppAt?: string;
+  daysSinceWhatsApp?: number;
+  lastWhatsAppStatus?: string | null;
   hasPrefilter?: boolean | null;
   rawWaterTds?: number;
   callHistory?: CallHistory[];
@@ -110,6 +113,10 @@ function mapCallingRowToCustomer(row: CallingPageRpcRow): CustomerWithHistory {
     lastContacted: row.last_contacted_at ?? undefined,
     daysSinceContact: row.days_since_contact ?? undefined,
     lastContactStatus: row.last_contact_status ?? undefined,
+    lastContactType: row.last_contact_type ?? null,
+    lastWhatsAppAt: row.last_whatsapp_at ?? undefined,
+    daysSinceWhatsApp: row.days_since_whatsapp ?? undefined,
+    lastWhatsAppStatus: row.last_whatsapp_status ?? null,
     callHistory: [],
     customer_tier: row.customer_tier ?? undefined,
   } as CustomerWithHistory;
@@ -353,11 +360,27 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
       if (error) throw error;
 
       const now = new Date().toISOString();
-      setPageRows(prev => prev.map(c =>
-        c.id === customerId
-          ? { ...c, lastContacted: now, daysSinceContact: 0, lastContactStatus: dbStatus }
-          : c
-      ));
+      setPageRows(prev => prev.map(c => {
+        if (c.id !== customerId) return c;
+        if (contactType === 'WHATSAPP') {
+          return {
+            ...c,
+            lastWhatsAppAt: now,
+            daysSinceWhatsApp: 0,
+            lastWhatsAppStatus: dbStatus,
+          };
+        }
+        if (contactType === 'CALL') {
+          return {
+            ...c,
+            lastContacted: now,
+            daysSinceContact: 0,
+            lastContactStatus: dbStatus,
+            lastContactType: 'CALL',
+          };
+        }
+        return c;
+      }));
       if (!options?.quiet) {
         toast.success('Contact recorded');
       }
@@ -676,18 +699,27 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
     return 'bg-red-500';
   };
 
-  const getStatusBadge = (status?: string | null) => {
+  const getStatusBadge = (status?: string | null, compact = false) => {
     if (!status) return null;
 
     const normalized = normalizeCallHistoryStatus(status);
     const statusConfig: Record<string, { label: string; className: string; icon: React.ReactNode }> = {
-      'COMPLETED': { label: 'Completed', className: 'bg-green-100 text-green-800', icon: <CheckCircle2 className="w-3 h-3 mr-1" /> },
-      'NO_ANSWER': { label: 'No Answer', className: 'bg-yellow-100 text-yellow-800', icon: <XCircle className="w-3 h-3 mr-1" /> },
-      'BUSY': { label: 'Busy', className: 'bg-orange-100 text-orange-800', icon: <Phone className="w-3 h-3 mr-1" /> },
-      'FAILED': { label: 'Failed', className: 'bg-red-100 text-red-800', icon: <XCircle className="w-3 h-3 mr-1" /> },
+      'COMPLETED': { label: 'Sent', className: 'bg-green-100 text-green-800', icon: <CheckCircle2 className="w-2.5 h-2.5 mr-0.5" /> },
+      'NO_ANSWER': { label: 'No answer', className: 'bg-yellow-100 text-yellow-800', icon: <XCircle className="w-2.5 h-2.5 mr-0.5" /> },
+      'BUSY': { label: 'Busy', className: 'bg-orange-100 text-orange-800', icon: <Phone className="w-2.5 h-2.5 mr-0.5" /> },
+      'FAILED': { label: 'Failed', className: 'bg-red-100 text-red-800', icon: <XCircle className="w-2.5 h-2.5 mr-0.5" /> },
     };
 
     const config = statusConfig[normalized] || { label: status, className: 'bg-gray-100 text-foreground', icon: null };
+
+    if (compact) {
+      return (
+        <span className={`inline-flex items-center rounded px-1 py-0 text-[10px] font-medium ${config.className}`}>
+          {config.icon}
+          {config.label}
+        </span>
+      );
+    }
     
     return (
       <Badge className={config.className}>
@@ -1008,7 +1040,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
         </div>
 
         {/* Customer List */}
-        <div className="space-y-3 sm:space-y-4">
+        <div className="space-y-2 sm:space-y-3">
           {totalCount === 0 && !listLoading ? (
             <Card>
               <CardContent className="p-8 text-center">
@@ -1059,148 +1091,160 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                 return (
               <Card
                 key={customer.id}
-                className="overflow-hidden border-border/80 shadow-sm active:shadow-md transition-shadow rounded-2xl sm:rounded-xl"
+                className="overflow-hidden border-border/60 shadow-none sm:shadow-sm rounded-xl"
               >
                 <CardContent className="p-0">
-                  {/* Header — ID pill + name */}
-                  <div className="px-3 pt-3 pb-2 sm:px-4 sm:pt-4 sm:pb-3">
-                    <div className="flex flex-wrap items-start gap-2">
-                      <span className="shrink-0 font-mono text-[11px] font-bold text-blue-800 bg-blue-50 border border-blue-200/80 px-2 py-1 rounded-md leading-none">
-                        {customer.customerId}
-                      </span>
-                      <h3
-                        className={`flex-1 min-w-[8rem] font-semibold text-[15px] sm:text-base leading-snug break-words ${
-                          customerNameClassName(customer) || 'text-foreground'
-                        }`}
-                      >
-                        {customer.fullName}
-                      </h3>
-                    </div>
+                  {/* Header */}
+                  <div className="flex items-center gap-2 px-3 pt-2.5 pb-2">
+                    <span className="shrink-0 font-mono text-[10px] font-semibold text-blue-700 bg-blue-50/80 px-1.5 py-0.5 rounded">
+                      {customer.customerId}
+                    </span>
+                    <h3
+                      className={`flex-1 min-w-0 text-sm font-semibold leading-tight truncate ${
+                        customerNameClassName(customer) || 'text-foreground'
+                      }`}
+                    >
+                      {customer.fullName}
+                    </h3>
                     {recentlyContacted && (
-                      <Badge className="mt-2 bg-amber-100 text-amber-900 border-amber-200/80 text-[10px] font-normal">
-                        <Clock className="w-3 h-3 mr-1 shrink-0" />
-                        Contacted {formatDaysAgo(customer.daysSinceContact!)} ago
-                      </Badge>
+                      <span className="shrink-0 text-[10px] text-amber-700 font-medium">
+                        {formatDaysAgo(customer.daysSinceContact!)} ago
+                      </span>
                     )}
                   </div>
 
-                  {/* Contact + service meta */}
-                  <div className="px-3 pb-3 sm:px-4 space-y-2">
-                    <a
-                      href={`tel:${customer.phone}`}
-                      className="flex items-center gap-2.5 text-sm font-medium text-foreground min-h-[44px] -mx-0.5 px-2 rounded-xl bg-background border border-border/60 active:bg-muted/50 touch-manipulation"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        handleCall(customer);
-                      }}
+                  <div className="px-3 pb-2 space-y-1.5">
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 text-sm text-foreground py-1 touch-manipulation text-left"
+                      onClick={() => handleCall(customer)}
                     >
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-50">
-                        <Phone className="w-4 h-4 text-blue-600" />
-                      </span>
-                      <span className="min-w-0 leading-snug">
-                        <span className="block truncate">{customer.phone}</span>
-                        {customer.alternatePhone && (
-                          <span className="block text-xs text-muted-foreground font-normal truncate mt-0.5">
-                            Alt: {customer.alternatePhone}
-                          </span>
-                        )}
-                      </span>
-                    </a>
+                      <Phone className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                      <span className="truncate font-medium">{customer.phone}</span>
+                      {customer.alternatePhone && (
+                        <span className="text-[11px] text-muted-foreground truncate hidden sm:inline">
+                          / {customer.alternatePhone}
+                        </span>
+                      )}
+                    </button>
 
                     {customer.email && (
-                      <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground min-w-0 px-0.5">
-                        <Mail className="w-3.5 h-3.5 shrink-0" />
+                      <div className="flex items-center gap-2 text-[11px] text-muted-foreground min-w-0 pl-5 sm:pl-0">
+                        <Mail className="w-3 h-3 shrink-0 sm:hidden" />
                         <span className="truncate">{customer.email}</span>
                       </div>
                     )}
 
-                    {(customer.rawWaterTds != null && customer.rawWaterTds > 0) && (
-                      <div className="text-xs sm:text-sm text-muted-foreground px-0.5">
-                        TDS: <span className="font-medium text-foreground">{customer.rawWaterTds} ppm</span>
-                      </div>
-                    )}
-
-                    <div className="rounded-xl bg-muted/35 border border-border/50 px-3 py-2.5">
-                      <div className="flex items-center gap-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                        <Calendar className="w-3 h-3" />
-                        Last service
-                      </div>
-                      <div className="mt-1.5 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-1.5 sm:gap-2">
-                        <span className="text-sm font-semibold text-foreground">
-                          {formatDate(customer.lastServiceDate)}
+                    {/* Compact meta strip */}
+                    <div className="rounded-lg border border-border/50 bg-muted/20 text-[11px] divide-y divide-border/40">
+                      <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 min-h-0">
+                        <span className="text-muted-foreground flex items-center gap-1 shrink-0">
+                          <Calendar className="w-3 h-3" />
+                          Service
                         </span>
-                        {serviceDays != null && (
-                          <Badge
-                            className={`${getServiceBadgeColor(serviceDays)} text-white text-[10px] px-2 py-0 w-fit`}
-                          >
-                            {formatDaysAgo(serviceDays)} ago
-                          </Badge>
-                        )}
-                      </div>
-                      {customer.lastServiceSubType && (
-                        <p className="text-[11px] text-muted-foreground mt-1">{customer.lastServiceSubType}</p>
-                      )}
-                    </div>
-
-                    {customer.lastContacted && (
-                      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-muted-foreground px-0.5">
-                        <Clock className="w-3 h-3 shrink-0" />
-                        <span className="leading-snug">
-                          Contacted {formatDate(customer.lastContacted)}
-                          {customer.daysSinceContact != null && (
-                            <> · {formatDaysAgo(customer.daysSinceContact)} ago</>
+                        <span className="text-right min-w-0 leading-tight">
+                          <span className="font-medium text-foreground">{formatDate(customer.lastServiceDate)}</span>
+                          {serviceDays != null && (
+                            <span
+                              className={`ml-1.5 inline-block rounded px-1 py-px text-[9px] font-medium text-white ${getServiceBadgeColor(serviceDays)}`}
+                            >
+                              {formatDaysAgo(serviceDays)}
+                            </span>
                           )}
                         </span>
-                        {customer.lastContactStatus && getStatusBadge(customer.lastContactStatus)}
                       </div>
-                    )}
+
+                      <div className="flex items-center justify-between gap-2 px-2.5 py-1.5">
+                        <span className="text-muted-foreground flex items-center gap-1 shrink-0">
+                          <Phone className="w-3 h-3 text-blue-600" />
+                          Call
+                        </span>
+                        <div className="text-right min-w-0 leading-tight">
+                          {customer.lastContacted ? (
+                            <>
+                              <div className="font-medium text-foreground">{formatDate(customer.lastContacted)}</div>
+                              <div className="text-muted-foreground flex flex-wrap items-center justify-end gap-x-1 gap-y-0.5">
+                                {customer.daysSinceContact != null && (
+                                  <span>{formatDaysAgo(customer.daysSinceContact)}</span>
+                                )}
+                                {customer.lastContactStatus && getStatusBadge(customer.lastContactStatus, true)}
+                              </div>
+                            </>
+                          ) : (
+                            <span className="text-muted-foreground">Never</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 px-2.5 py-1.5">
+                        <span className="text-muted-foreground flex items-center gap-1 shrink-0">
+                          <WhatsAppIcon className="w-3 h-3 text-green-600" />
+                          WhatsApp
+                        </span>
+                        <div className="text-right min-w-0 leading-tight">
+                          {customer.lastWhatsAppAt ? (
+                            <>
+                              <div className="font-medium text-foreground">{formatDate(customer.lastWhatsAppAt)}</div>
+                              <div className="text-muted-foreground flex flex-wrap items-center justify-end gap-x-1 gap-y-0.5">
+                                {customer.daysSinceWhatsApp != null && (
+                                  <span>{formatDaysAgo(customer.daysSinceWhatsApp)}</span>
+                                )}
+                                {customer.lastWhatsAppStatus && getStatusBadge(customer.lastWhatsAppStatus, true)}
+                              </div>
+                            </>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
-                  {/* Actions — icon stack on mobile */}
-                  <div className="grid grid-cols-2 gap-2 p-3 border-t border-border/50 bg-muted/20 sm:flex sm:flex-wrap sm:gap-2 sm:p-4 sm:bg-transparent sm:border-t-0">
+                  {/* Actions — single compact row */}
+                  <div className="grid grid-cols-4 gap-1 p-2 border-t border-border/40 bg-muted/10">
                     <Button
                       size="sm"
-                      variant="outline"
+                      variant="ghost"
                       onClick={() => handleCall(customer)}
-                      className="h-[3.25rem] sm:h-9 sm:flex-none touch-manipulation flex flex-col gap-0.5 sm:flex-row sm:gap-2 items-center justify-center rounded-xl sm:rounded-md bg-background border-blue-200 text-blue-700 hover:bg-blue-50 text-xs sm:text-sm"
+                      className="h-8 px-1 touch-manipulation flex flex-row gap-1 items-center justify-center rounded-lg text-[11px] text-blue-700 hover:bg-blue-50 hover:text-blue-800"
                     >
-                      <Phone className="w-[18px] h-[18px] sm:w-4 sm:h-4 shrink-0" />
-                      Call
+                      <Phone className="w-3.5 h-3.5 shrink-0" />
+                      <span className="hidden min-[380px]:inline">Call</span>
                     </Button>
                     <Button
                       size="sm"
-                      variant="outline"
+                      variant="ghost"
                       onClick={() => handleWhatsApp(customer)}
-                      className="h-[3.25rem] sm:h-9 sm:flex-none touch-manipulation flex flex-col gap-0.5 sm:flex-row sm:gap-2 items-center justify-center rounded-xl sm:rounded-md bg-green-600 hover:bg-green-700 text-white border-green-600 shadow-sm text-xs sm:text-sm font-medium"
+                      className="h-8 px-1 touch-manipulation flex flex-row gap-1 items-center justify-center rounded-lg text-[11px] bg-green-600 hover:bg-green-700 text-white hover:text-white"
                     >
-                      <WhatsAppIcon className="w-[18px] h-[18px] sm:w-4 sm:h-4 shrink-0" />
-                      WhatsApp
+                      <WhatsAppIcon className="w-3.5 h-3.5 shrink-0" />
+                      <span className="hidden min-[380px]:inline">WA</span>
                     </Button>
                     <Button
                       size="sm"
-                      variant="outline"
+                      variant="ghost"
                       onClick={() => handleViewPhotos(customer)}
                       disabled={isLoadingPhotos && selectedCustomerForPhotos?.id === customer.id}
-                      className="h-10 sm:h-9 sm:flex-none touch-manipulation flex flex-col gap-0.5 sm:flex-row sm:gap-2 items-center justify-center rounded-xl sm:rounded-md bg-background text-xs sm:text-sm"
+                      className="h-8 px-1 touch-manipulation flex flex-row gap-1 items-center justify-center rounded-lg text-[11px] text-muted-foreground hover:text-foreground"
                     >
                       {isLoadingPhotos && selectedCustomerForPhotos?.id === customer.id ? (
-                        <div className="w-4 h-4 border-2 border-gray-600 border-t-transparent rounded-full animate-spin shrink-0" />
+                        <div className="w-3.5 h-3.5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin shrink-0" />
                       ) : (
-                        <Camera className="w-4 h-4 shrink-0" />
+                        <Camera className="w-3.5 h-3.5 shrink-0" />
                       )}
-                      Photos
+                      <span className="hidden min-[380px]:inline">Photos</span>
                     </Button>
                     <Button
                       size="sm"
-                      variant="outline"
+                      variant="ghost"
                       onClick={() => {
                         setSelectedCustomerForReport(customer);
                         setCustomerReportDialogOpen(true);
                       }}
-                      className="h-10 sm:h-9 sm:flex-none touch-manipulation flex flex-col gap-0.5 sm:flex-row sm:gap-2 items-center justify-center rounded-xl sm:rounded-md bg-background text-xs sm:text-sm"
+                      className="h-8 px-1 touch-manipulation flex flex-row gap-1 items-center justify-center rounded-lg text-[11px] text-muted-foreground hover:text-foreground"
                     >
-                      <FileText className="w-4 h-4 shrink-0" />
-                      Reports
+                      <FileText className="w-3.5 h-3.5 shrink-0" />
+                      <span className="hidden min-[380px]:inline">Report</span>
                     </Button>
                   </div>
                 </CardContent>

@@ -573,8 +573,12 @@ export type CallingPageRpcRow = {
   last_service_sub_type?: string | null;
   last_contacted_at?: string | null;
   last_contact_status?: string | null;
+  last_contact_type?: string | null;
+  last_whatsapp_at?: string | null;
+  last_whatsapp_status?: string | null;
   days_since_service?: number | null;
   days_since_contact?: number | null;
+  days_since_whatsapp?: number | null;
 };
 
 export type CallingPageRpcResult = {
@@ -597,6 +601,86 @@ type CallingPageQueryParams = {
   prefilterFilter?: string;
   onFallbackProgress?: (loaded: number) => void;
 };
+
+type CallHistoryContactSummary = {
+  lastCall?: {
+    contacted_at: string;
+    status: string;
+    contact_type: string;
+  };
+  lastWhatsApp?: {
+    contacted_at: string;
+    status: string;
+  };
+};
+
+async function enrichCallingPageRowsWithContactMeta(
+  rows: CallingPageRpcRow[]
+): Promise<CallingPageRpcRow[]> {
+  if (rows.length === 0) return rows;
+
+  const ids = rows.map((r) => r.id);
+  const summary: Record<string, CallHistoryContactSummary> = {};
+  const CHUNK = 80;
+
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const chunk = ids.slice(i, i + CHUNK);
+    const { data, error } = await supabase
+      .from('call_history')
+      .select('customer_id, contacted_at, status, contact_type')
+      .in('customer_id', chunk)
+      .order('contacted_at', { ascending: false })
+      .limit(400);
+
+    if (error) return rows;
+
+    for (const row of data || []) {
+      const cid = (row as { customer_id?: string }).customer_id;
+      if (!cid) continue;
+      if (!summary[cid]) summary[cid] = {};
+      const entry = summary[cid];
+      const typed = row as {
+        contacted_at: string;
+        status: string;
+        contact_type: string;
+      };
+      if (!entry.lastCall && typed.contact_type === 'CALL') {
+        entry.lastCall = typed;
+      }
+      if (typed.contact_type === 'WHATSAPP' && !entry.lastWhatsApp) {
+        entry.lastWhatsApp = { contacted_at: typed.contacted_at, status: typed.status };
+      }
+    }
+  }
+
+  const now = Date.now();
+  return rows.map((row) => {
+    const meta = summary[row.id];
+    const lastContactedAt = meta?.lastCall?.contacted_at ?? row.last_contacted_at ?? null;
+    const lastWhatsappAt = meta?.lastWhatsApp?.contacted_at ?? row.last_whatsapp_at ?? null;
+    const daysSinceContact =
+      row.days_since_contact ??
+      (lastContactedAt != null
+        ? Math.floor((now - new Date(lastContactedAt).getTime()) / (1000 * 60 * 60 * 24))
+        : null);
+    const daysSinceWhatsapp =
+      row.days_since_whatsapp ??
+      (lastWhatsappAt != null
+        ? Math.floor((now - new Date(lastWhatsappAt).getTime()) / (1000 * 60 * 60 * 24))
+        : null);
+
+    return {
+      ...row,
+      last_contacted_at: lastContactedAt,
+      last_contact_status: meta?.lastCall?.status ?? row.last_contact_status ?? null,
+      last_contact_type: meta?.lastCall?.contact_type ?? (lastContactedAt ? 'CALL' : null),
+      last_whatsapp_at: lastWhatsappAt,
+      last_whatsapp_status: meta?.lastWhatsApp?.status ?? row.last_whatsapp_status ?? null,
+      days_since_contact: daysSinceContact,
+      days_since_whatsapp: daysSinceWhatsapp,
+    };
+  });
+}
 
 /** Client-side filter + slice when get_calling_page RPC is not deployed yet. */
 async function getCallingPageFallback(
@@ -627,7 +711,12 @@ async function getCallingPageFallback(
     service_type?: string | null;
     service_sub_type?: string | null;
   };
-  type ContactRow = { customer_id: string; contacted_at: string; status: string };
+  type ContactRow = {
+    customer_id: string;
+    contacted_at: string;
+    status: string;
+    contact_type?: string;
+  };
 
   const [jobsRes, contactsRes] = await Promise.all([
     supabase.rpc('get_last_completed_job_per_customer') as Promise<{
@@ -656,7 +745,7 @@ async function getCallingPageFallback(
   if (contactsRes.error) {
     const fallback = await supabase
       .from('call_history')
-      .select('customer_id, contacted_at, status')
+      .select('customer_id, contacted_at, status, contact_type')
       .order('contacted_at', { ascending: false })
       .limit(2000);
     lastContactsData = fallback.data;
@@ -676,10 +765,24 @@ async function getCallingPageFallback(
     }
   });
 
-  const lastContactMap = new Map<string, { contacted_at: string; status: string }>();
+  const lastCallMap = new Map<
+    string,
+    { contacted_at: string; status: string }
+  >();
+  const lastWhatsAppMap = new Map<
+    string,
+    { contacted_at: string; status: string }
+  >();
   (lastContactsData || []).forEach((contact) => {
-    if (contact.customer_id && !lastContactMap.has(contact.customer_id)) {
-      lastContactMap.set(contact.customer_id, {
+    if (!contact.customer_id) return;
+    if (contact.contact_type === 'CALL' && !lastCallMap.has(contact.customer_id)) {
+      lastCallMap.set(contact.customer_id, {
+        contacted_at: contact.contacted_at,
+        status: contact.status,
+      });
+    }
+    if (contact.contact_type === 'WHATSAPP' && !lastWhatsAppMap.has(contact.customer_id)) {
+      lastWhatsAppMap.set(contact.customer_id, {
         contacted_at: contact.contacted_at,
         status: contact.status,
       });
@@ -695,14 +798,19 @@ async function getCallingPageFallback(
   const enriched: CallingPageRpcRow[] = rows.map((customer: any) => {
     const lastJobInfo = lastServiceMap.get(customer.id);
     const lastServiceAt = lastJobInfo?.completed_at || customer.last_service_date || null;
-    const lastContact = lastContactMap.get(customer.id);
+    const lastCall = lastCallMap.get(customer.id);
+    const lastWhatsApp = lastWhatsAppMap.get(customer.id);
     const daysSinceService =
       lastServiceAt != null
         ? Math.floor((now - new Date(lastServiceAt).getTime()) / (1000 * 60 * 60 * 24))
         : null;
     const daysSinceContact =
-      lastContact != null
-        ? Math.floor((now - new Date(lastContact.contacted_at).getTime()) / (1000 * 60 * 60 * 24))
+      lastCall != null
+        ? Math.floor((now - new Date(lastCall.contacted_at).getTime()) / (1000 * 60 * 60 * 24))
+        : null;
+    const daysSinceWhatsapp =
+      lastWhatsApp != null
+        ? Math.floor((now - new Date(lastWhatsApp.contacted_at).getTime()) / (1000 * 60 * 60 * 24))
         : null;
 
     return {
@@ -723,10 +831,14 @@ async function getCallingPageFallback(
       last_service_at: lastServiceAt,
       last_service_type: lastJobInfo?.service_type ?? null,
       last_service_sub_type: lastJobInfo?.service_sub_type ?? null,
-      last_contacted_at: lastContact?.contacted_at ?? null,
-      last_contact_status: lastContact?.status ?? null,
+      last_contacted_at: lastCall?.contacted_at ?? null,
+      last_contact_status: lastCall?.status ?? null,
+      last_contact_type: lastCall ? 'CALL' : null,
+      last_whatsapp_at: lastWhatsApp?.contacted_at ?? null,
+      last_whatsapp_status: lastWhatsApp?.status ?? null,
       days_since_service: daysSinceService,
       days_since_contact: daysSinceContact,
+      days_since_whatsapp: daysSinceWhatsapp,
     };
   });
 
@@ -5391,13 +5503,20 @@ export const db = {
 
       const { data, error } = await supabase.rpc('get_calling_page', rpcArgs);
       if (!error && data) {
-        return { data: data as CallingPageRpcResult, error: null, mode: 'rpc' };
+        const result = data as CallingPageRpcResult;
+        if (result.rows?.length) {
+          result.rows = await enrichCallingPageRowsWithContactMeta(result.rows);
+        }
+        return { data: result, error: null, mode: 'rpc' };
       }
       if (error && !isCallingRpcNotFoundError(error)) {
         return { data: null, error, mode: 'rpc' };
       }
 
       const fallback = await getCallingPageFallback(params, page, limit);
+      if (fallback?.rows?.length) {
+        fallback.rows = await enrichCallingPageRowsWithContactMeta(fallback.rows);
+      }
       return { data: fallback, error: fallback ? null : new Error('Fallback load failed'), mode: 'fallback' };
     },
   },

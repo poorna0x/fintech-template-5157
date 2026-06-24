@@ -11,7 +11,7 @@ import { Customer } from '@/types';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
-import { MapPin, Download, ExternalLink, Loader2 } from 'lucide-react';
+import { MapPin, Download, ExternalLink, Loader2, ChevronDown } from 'lucide-react';
 import { generateJobNumber, extractLocationFromAddressString, bangaloreAreas } from '@/lib/adminUtils';
 import ImageUpload from '@/components/ImageUpload';
 import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmentTimeSelect';
@@ -217,9 +217,11 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   // Load technicians for assignment
   const [technicians, setTechnicians] = useState<any[]>([]);
   const [loadingTechnicians, setLoadingTechnicians] = useState(false);
+  const [leadCostExpanded, setLeadCostExpanded] = useState(false);
 
   useEffect(() => {
     if (open) setDuplicateFoundOnBlur(null);
+    if (!open) setLeadCostExpanded(false);
   }, [open]);
 
   // On open, if there's an uncreated draft, ask the admin to resume or start new.
@@ -1305,6 +1307,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       setDuplicateFoundOnBlur(null);
       setShouldCreateJob(true); // Reset to true (default)
       setStep5JobData(createDefaultStep5JobData());
+      setLeadCostExpanded(false);
 
       // Call onCustomerCreated with the new customer so parent can append to list (e.g. when no job created)
       await onCustomerCreated(newCustomer ?? undefined);
@@ -1998,6 +2001,43 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                       </Select>
                     </div>
 
+                    <div className="space-y-2">
+                      <Label htmlFor="step5_lead_cost">Lead Cost (₹) *</Label>
+                      {leadCostExpanded ? (
+                        <div className="relative">
+                          <Input
+                            id="step5_lead_cost"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={step5JobData.lead_cost || '0'}
+                            onChange={(e) => setStep5JobData(prev => ({ ...prev, lead_cost: e.target.value }))}
+                            placeholder="Enter lead cost"
+                            disabled={!step5JobData.lead_source}
+                            className="pr-10 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                            required
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setLeadCostExpanded(false)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                            aria-label="Hide lead cost"
+                          >
+                            <ChevronDown className="h-4 w-4 rotate-180" />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setLeadCostExpanded(true)}
+                          className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm ring-offset-background hover:bg-accent/50"
+                        >
+                          <span className="font-mono text-sm text-muted-foreground tracking-widest">••••</span>
+                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        </button>
+                      )}
+                    </div>
+
                     {step5JobData.lead_source === 'Other' && (
                       <div className="space-y-2">
                         <Label htmlFor="step5_lead_source_custom">Custom Lead Source</Label>
@@ -2007,23 +2047,6 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                           onChange={(e) => handleStep5TextChange('lead_source_custom', e.target.value)}
                           autoCapitalize="sentences"
                           placeholder="Enter custom lead source"
-                        />
-                      </div>
-                    )}
-
-                    {/* Lead Cost - Required when lead source is selected */}
-                    {step5JobData.lead_source && (
-                      <div className="space-y-2">
-                        <Label htmlFor="step5_lead_cost">Lead Cost (₹) *</Label>
-                        <Input
-                          id="step5_lead_cost"
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={step5JobData.lead_cost || '0'}
-                          onChange={(e) => setStep5JobData(prev => ({ ...prev, lead_cost: e.target.value }))}
-                          placeholder="Enter lead cost"
-                          required
                         />
                       </div>
                     )}
