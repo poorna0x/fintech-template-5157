@@ -691,6 +691,47 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
     return `${years} ${y} ${months} ${m}`;
   };
 
+  const formatShortDate = (dateString?: string) => {
+    if (!dateString) return '—';
+    return new Date(dateString).toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+    });
+  };
+
+  /** Compact duration for narrow screens (e.g. 6mo 18d). */
+  const formatDaysAgoCompact = (days: number): string => {
+    if (days === 0) return 'today';
+    if (days < 30) return `${days}d`;
+    if (days < 365) {
+      const months = Math.floor(days / 30);
+      const rem = days % 30;
+      return rem === 0 ? `${months}mo` : `${months}mo ${rem}d`;
+    }
+    const years = Math.floor(days / 365);
+    const months = Math.floor((days % 365) / 30);
+    return months === 0 ? `${years}y` : `${years}y ${months}mo`;
+  };
+
+  const renderTouchHistoryMeta = (
+    dateString?: string,
+    status?: string | null,
+    emptyLabel = 'Never'
+  ) => {
+    if (!dateString) {
+      return <span className="text-muted-foreground">{emptyLabel}</span>;
+    }
+    return (
+      <span className="inline-flex items-center justify-end gap-1 min-w-0 max-w-[62%] sm:max-w-none">
+        <span className="font-medium text-foreground truncate">
+          <span className="sm:hidden">{formatShortDate(dateString)}</span>
+          <span className="hidden sm:inline">{formatDate(dateString)}</span>
+        </span>
+        {status ? getStatusBadge(status, true) : null}
+      </span>
+    );
+  };
+
   const getServiceBadgeColor = (days?: number | null) => {
     if (!days) return 'bg-muted/400';
     if (days < 90) return 'bg-green-500';
@@ -714,8 +755,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
 
     if (compact) {
       return (
-        <span className={`inline-flex items-center rounded px-1 py-0 text-[10px] font-medium ${config.className}`}>
-          {config.icon}
+        <span className={`inline-flex shrink-0 items-center rounded px-1 py-0 text-[9px] font-medium leading-tight whitespace-nowrap ${config.className}`}>
           {config.label}
         </span>
       );
@@ -1135,104 +1175,83 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                       </div>
                     )}
 
-                    {/* Compact meta strip */}
+                    {/* Compact meta strip — single line per row on mobile */}
                     <div className="rounded-lg border border-border/50 bg-muted/20 text-[11px] divide-y divide-border/40">
-                      <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 min-h-0">
+                      <div className="flex items-center justify-between gap-2 px-2.5 py-2">
                         <span className="text-muted-foreground flex items-center gap-1 shrink-0">
                           <Calendar className="w-3 h-3" />
                           Service
                         </span>
-                        <span className="text-right min-w-0 leading-tight">
-                          <span className="font-medium text-foreground">{formatDate(customer.lastServiceDate)}</span>
+                        <span className="inline-flex items-center justify-end gap-1 min-w-0 max-w-[68%] sm:max-w-none">
+                          <span className="font-medium text-foreground truncate whitespace-nowrap">
+                            <span className="sm:hidden">{formatShortDate(customer.lastServiceDate)}</span>
+                            <span className="hidden sm:inline">{formatDate(customer.lastServiceDate)}</span>
+                          </span>
                           {serviceDays != null && (
                             <span
-                              className={`ml-1.5 inline-block rounded px-1 py-px text-[9px] font-medium text-white ${getServiceBadgeColor(serviceDays)}`}
+                              className={`shrink-0 rounded px-1 py-px text-[9px] font-medium text-white whitespace-nowrap ${getServiceBadgeColor(serviceDays)}`}
                             >
-                              {formatDaysAgo(serviceDays)}
+                              <span className="sm:hidden">{formatDaysAgoCompact(serviceDays)}</span>
+                              <span className="hidden sm:inline">{formatDaysAgo(serviceDays)}</span>
                             </span>
                           )}
                         </span>
                       </div>
 
-                      <div className="flex items-center justify-between gap-2 px-2.5 py-1.5">
+                      <div className="flex items-center justify-between gap-2 px-2.5 py-2">
                         <span className="text-muted-foreground flex items-center gap-1 shrink-0">
                           <Phone className="w-3 h-3 text-blue-600" />
                           Call
                         </span>
-                        <div className="text-right min-w-0 leading-tight">
-                          {customer.lastContacted ? (
-                            <>
-                              <div className="font-medium text-foreground">{formatDate(customer.lastContacted)}</div>
-                              <div className="text-muted-foreground flex flex-wrap items-center justify-end gap-x-1 gap-y-0.5">
-                                {customer.daysSinceContact != null && (
-                                  <span>{formatDaysAgo(customer.daysSinceContact)}</span>
-                                )}
-                                {customer.lastContactStatus && getStatusBadge(customer.lastContactStatus, true)}
-                              </div>
-                            </>
-                          ) : (
-                            <span className="text-muted-foreground">Never</span>
-                          )}
-                        </div>
+                        {renderTouchHistoryMeta(customer.lastContacted, customer.lastContactStatus)}
                       </div>
 
-                      <div className="flex items-center justify-between gap-2 px-2.5 py-1.5">
+                      <div className="flex items-center justify-between gap-2 px-2.5 py-2">
                         <span className="text-muted-foreground flex items-center gap-1 shrink-0">
                           <WhatsAppIcon className="w-3 h-3 text-green-600" />
                           WhatsApp
                         </span>
-                        <div className="text-right min-w-0 leading-tight">
-                          {customer.lastWhatsAppAt ? (
-                            <>
-                              <div className="font-medium text-foreground">{formatDate(customer.lastWhatsAppAt)}</div>
-                              <div className="text-muted-foreground flex flex-wrap items-center justify-end gap-x-1 gap-y-0.5">
-                                {customer.daysSinceWhatsApp != null && (
-                                  <span>{formatDaysAgo(customer.daysSinceWhatsApp)}</span>
-                                )}
-                                {customer.lastWhatsAppStatus && getStatusBadge(customer.lastWhatsAppStatus, true)}
-                              </div>
-                            </>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </div>
+                        {renderTouchHistoryMeta(customer.lastWhatsAppAt, customer.lastWhatsAppStatus, '—')}
                       </div>
                     </div>
                   </div>
 
-                  {/* Actions — single compact row */}
-                  <div className="grid grid-cols-4 gap-1 p-2 border-t border-border/40 bg-muted/10">
+                  {/* Actions — icon-only on mobile, labels on sm+ */}
+                  <div className="grid grid-cols-4 gap-1.5 px-2.5 py-2 border-t border-border/40 bg-muted/10">
                     <Button
                       size="sm"
                       variant="ghost"
                       onClick={() => handleCall(customer)}
-                      className="h-8 px-1 touch-manipulation flex flex-row gap-1 items-center justify-center rounded-lg text-[11px] text-blue-700 hover:bg-blue-50 hover:text-blue-800"
+                      className="h-9 px-0 touch-manipulation flex items-center justify-center rounded-lg text-blue-700 hover:bg-blue-50 hover:text-blue-800"
+                      title="Call"
                     >
-                      <Phone className="w-3.5 h-3.5 shrink-0" />
-                      <span className="hidden min-[380px]:inline">Call</span>
+                      <Phone className="w-4 h-4 shrink-0" />
+                      <span className="sr-only">Call</span>
                     </Button>
                     <Button
                       size="sm"
                       variant="ghost"
                       onClick={() => handleWhatsApp(customer)}
-                      className="h-8 px-1 touch-manipulation flex flex-row gap-1 items-center justify-center rounded-lg text-[11px] bg-green-600 hover:bg-green-700 text-white hover:text-white"
+                      className="h-9 px-0 touch-manipulation flex items-center justify-center rounded-lg text-green-700 hover:bg-green-50 hover:text-green-800"
+                      title="WhatsApp"
                     >
-                      <WhatsAppIcon className="w-3.5 h-3.5 shrink-0" />
-                      <span className="hidden min-[380px]:inline">WA</span>
+                      <WhatsAppIcon className="w-4 h-4 shrink-0" />
+                      <span className="sr-only">WhatsApp</span>
                     </Button>
                     <Button
                       size="sm"
                       variant="ghost"
                       onClick={() => handleViewPhotos(customer)}
                       disabled={isLoadingPhotos && selectedCustomerForPhotos?.id === customer.id}
-                      className="h-8 px-1 touch-manipulation flex flex-row gap-1 items-center justify-center rounded-lg text-[11px] text-muted-foreground hover:text-foreground"
+                      className="h-9 px-0 touch-manipulation flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                      title="Photos"
                     >
                       {isLoadingPhotos && selectedCustomerForPhotos?.id === customer.id ? (
-                        <div className="w-3.5 h-3.5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin shrink-0" />
+                        <div className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin shrink-0" />
                       ) : (
-                        <Camera className="w-3.5 h-3.5 shrink-0" />
+                        <Camera className="w-4 h-4 shrink-0" />
                       )}
-                      <span className="hidden min-[380px]:inline">Photos</span>
+                      <span className="sr-only">Photos</span>
                     </Button>
                     <Button
                       size="sm"
@@ -1241,10 +1260,11 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                         setSelectedCustomerForReport(customer);
                         setCustomerReportDialogOpen(true);
                       }}
-                      className="h-8 px-1 touch-manipulation flex flex-row gap-1 items-center justify-center rounded-lg text-[11px] text-muted-foreground hover:text-foreground"
+                      className="h-9 px-0 touch-manipulation flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/60"
+                      title="Report"
                     >
-                      <FileText className="w-3.5 h-3.5 shrink-0" />
-                      <span className="hidden min-[380px]:inline">Report</span>
+                      <FileText className="w-4 h-4 shrink-0" />
+                      <span className="sr-only">Report</span>
                     </Button>
                   </div>
                 </CardContent>
