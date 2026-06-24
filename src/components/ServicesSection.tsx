@@ -140,7 +140,7 @@ const ServicesSection = () => {
     <section id="services" className="py-16 px-4 md:px-12 bg-background">
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-12">
-          <span className="inline-block text-sm font-semibold text-sky-600 dark:text-sky-400 mb-3">
+          <span className="inline-block text-sm font-semibold text-sky-700 dark:text-sky-400 mb-3">
             Our services
           </span>
           <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
@@ -157,7 +157,7 @@ const ServicesSection = () => {
               <CardContent className="p-6 flex-1 flex">
                 <div className="flex items-stretch gap-4 w-full">
                   <div className="w-12 h-12 bg-sky-100 dark:bg-sky-500/15 rounded-xl flex items-center justify-center flex-shrink-0 self-start">
-                    <service.icon className="w-6 h-6 text-sky-600 dark:text-sky-400" />
+                    <service.icon className="w-6 h-6 text-sky-700 dark:text-sky-400" />
                   </div>
                   <div className="flex-1 flex flex-col">
                     <div className="mb-3">
@@ -168,7 +168,7 @@ const ServicesSection = () => {
                       </div>
                       {service.pricing && (
                         <div className="mb-3">
-                          <p className="text-sky-600 dark:text-sky-400 font-bold text-lg">
+                          <p className="text-sky-700 dark:text-sky-400 font-bold text-lg">
                             {service.pricing}
                           </p>
                         </div>
@@ -277,7 +277,7 @@ const ServicesSection = () => {
                             <div className="flex flex-col sm:flex-row gap-3 justify-center">
                               <Button 
                                 onClick={handleBookService}
-                                className="bg-sky-600 text-white hover:bg-sky-700"
+                                className="bg-sky-700 text-white hover:bg-sky-800"
                               >
                                 Book Now
                               </Button>

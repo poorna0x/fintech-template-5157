@@ -95,7 +95,7 @@ const Testimonials = () => {
       
       <div className="max-w-7xl mx-auto space-y-16 relative z-10">
         <div className="text-center space-y-3 max-w-3xl mx-auto">
-          <span className="inline-block text-sm font-semibold text-sky-600 dark:text-sky-400">
+          <span className="inline-block text-sm font-semibold text-sky-700 dark:text-sky-400">
             Reviews
           </span>
           <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-foreground">
@@ -113,10 +113,11 @@ const Testimonials = () => {
               variant="outline"
               size="icon"
               onClick={scrollLeft}
+              aria-label="Scroll testimonials left"
               className="rounded-full bg-background/80 backdrop-blur-sm border-border/50 hover:scale-110 transition-transform duration-200 shadow-lg"
               style={{ WebkitBackdropFilter: 'blur(4px)' }}
             >
-              <ChevronLeft className="h-4 w-4" />
+              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
             </Button>
           </div>
           <div className="hidden md:flex absolute right-0 top-1/2 -translate-y-1/2 z-10 -mr-16">
@@ -124,10 +125,11 @@ const Testimonials = () => {
               variant="outline"
               size="icon"
               onClick={scrollRight}
+              aria-label="Scroll testimonials right"
               className="rounded-full bg-background/80 backdrop-blur-sm border-border/50 hover:scale-110 transition-transform duration-200 shadow-lg"
               style={{ WebkitBackdropFilter: 'blur(4px)' }}
             >
-              <ChevronRight className="h-4 w-4" />
+              <ChevronRight className="h-4 w-4" aria-hidden="true" />
             </Button>
           </div>
           
@@ -152,7 +154,7 @@ const Testimonials = () => {
                     </AvatarFallback>
                   </Avatar>
                   <div>
-                    <h4 className="font-medium text-foreground">{testimonial.author}</h4>
+                    <p className="font-medium text-foreground">{testimonial.author}</p>
                     <p className="text-sm text-muted-foreground">{testimonial.position}</p>
                   </div>
                 </div>
@@ -177,7 +179,7 @@ const Testimonials = () => {
                     </AvatarFallback>
                   </Avatar>
                   <div>
-                    <h4 className="font-medium text-foreground">{testimonial.author}</h4>
+                    <p className="font-medium text-foreground">{testimonial.author}</p>
                     <p className="text-sm text-muted-foreground">{testimonial.position}</p>
                   </div>
                 </div>
@@ -202,7 +204,7 @@ const Testimonials = () => {
                     </AvatarFallback>
                   </Avatar>
                   <div>
-                    <h4 className="font-medium text-foreground">{testimonial.author}</h4>
+                    <p className="font-medium text-foreground">{testimonial.author}</p>
                     <p className="text-sm text-muted-foreground">{testimonial.position}</p>
                   </div>
                 </div>

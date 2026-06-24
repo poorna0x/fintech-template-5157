@@ -39,12 +39,13 @@ const Logo = ({ inFooter = false, brandName = 'Hydrogen RO', showName = true }: 
   };
 
   return (
-    <div 
+    <div
       className={`flex items-center gap-2 ${isTechnicianPage ? 'cursor-default' : 'cursor-pointer hover:opacity-80'} transition-opacity relative whitespace-nowrap ${inFooter ? 'z-auto' : 'z-50'}`}
       onClick={handleLogoClick}
       style={{ position: 'relative', zIndex: inFooter ? 'auto' : 9999 }}
-      role={isTechnicianPage ? undefined : "button"}
+      role={isTechnicianPage ? undefined : 'button'}
       tabIndex={isTechnicianPage ? -1 : 0}
+      aria-label={isTechnicianPage ? undefined : `${brandName}, go to home`}
       onKeyDown={(e) => {
         if (isTechnicianPage) return;
         if (e.key === 'Enter' || e.key === ' ') {

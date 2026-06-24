@@ -6,7 +6,7 @@ const AboutSection = () => {
     <section id="about" className="py-16 px-4 md:px-12 water-soft">
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-12">
-          <span className="inline-block text-sm font-semibold text-sky-600 dark:text-sky-400 mb-3">
+          <span className="inline-block text-sm font-semibold text-sky-700 dark:text-sky-400 mb-3">
             About us
           </span>
           <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
@@ -25,7 +25,7 @@ const AboutSection = () => {
           ].map((item) => (
             <div key={item.title} className="text-center space-y-3 rounded-2xl bg-white/60 dark:bg-card/50 border border-sky-100 dark:border-sky-500/15 p-6">
               <div className="w-16 h-16 bg-sky-100 dark:bg-sky-500/15 rounded-2xl flex items-center justify-center mx-auto">
-                <item.icon className="w-8 h-8 text-sky-600 dark:text-sky-400" />
+                <item.icon className="w-8 h-8 text-sky-700 dark:text-sky-400" />
               </div>
               <h3 className="text-xl font-semibold text-foreground">{item.title}</h3>
               <p className="text-muted-foreground">{item.desc}</p>

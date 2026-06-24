@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useSecurity } from '@/contexts/SecurityContext';
+import { ensureAltchaLoaded } from '@/lib/altchaLoader';
 
 // Extend HTML elements to include altcha-widget (namespace required for JSX intrinsic elements)
 /* eslint-disable @typescript-eslint/no-namespace */
@@ -48,6 +49,7 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
   const widgetRef = useRef<HTMLElement | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [altchaBundleReady, setAltchaBundleReady] = useState(false);
   const { difficultyLevel, isRateLimited } = useSecurity();
   const isVerifyingRef = useRef(false); // Prevent duplicate verification requests
   const isConfiguredRef = useRef(false); // Track if widget has been configured
@@ -71,6 +73,21 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
   }, [onVerify, onAutoSubmit]);
 
   useEffect(() => {
+    let cancelled = false;
+    ensureAltchaLoaded()
+      .then(() => {
+        if (!cancelled) setAltchaBundleReady(true);
+      })
+      .catch(() => {
+        if (!cancelled) setError('Failed to load verification widget');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!altchaBundleReady) return;
     const widget = widgetRef.current;
     if (!widget) return;
     
@@ -436,7 +453,15 @@ const AltchaWidget: React.FC<AltchaWidgetProps> = ({
         clearTimeout(verifyingTimeoutRef.current);
       }
     };
-  }, [autoStart, difficultyLevel]); // Removed onVerify and onAutoSubmit from dependencies
+  }, [altchaBundleReady, autoStart, difficultyLevel]); // Removed onVerify and onAutoSubmit from dependencies
+
+  if (!altchaBundleReady) {
+    return hidden ? null : (
+      <div className={`flex justify-center items-center w-full min-h-[48px] ${className}`} aria-hidden={hidden}>
+        <span className="sr-only">Loading verification</span>
+      </div>
+    );
+  }
 
   // display:none breaks many web components; keep off-screen with real dimensions for PoW.
   if (hidden) {

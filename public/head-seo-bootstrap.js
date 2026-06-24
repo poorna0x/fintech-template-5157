@@ -309,6 +309,18 @@
   setMetaName('title', routeSeo.title);
   setMetaName('description', routeSeo.description);
   setMetaName('keywords', routeSeo.keywords);
+
+  if (!p || p === '/') {
+    var heroPreload = document.createElement('link');
+    heroPreload.rel = 'preload';
+    heroPreload.as = 'image';
+    heroPreload.href = '/hero-ro-purifier-640.webp';
+    heroPreload.type = 'image/webp';
+    heroPreload.setAttribute('fetchpriority', 'high');
+    heroPreload.setAttribute('imagesrcset', '/hero-ro-purifier-640.webp 640w, /hero-ro-purifier.webp 1100w');
+    heroPreload.setAttribute('imagesizes', '(max-width: 1024px) 100vw, 50vw');
+    document.head.appendChild(heroPreload);
+  }
   setMetaName('author', profile.brandName + ' - Water Purifier Services');
   setMetaName('robots', 'index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1');
   setMetaName('business:contact_data:phone_number', profile.primaryPhone);

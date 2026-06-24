@@ -18,7 +18,7 @@
     <meta name="bingbot" content="index, follow" />
     
     <!-- Canonical URL - set immediately from requested URL so crawlers see correct canonical before React -->
-    <script src="/head-seo-bootstrap.js"></script>
+    <script src="/head-seo-bootstrap.js" defer></script>
     <link rel="alternate" type="text/plain" href="/llms.txt" title="LLM site information" />
     
     <!-- Open Graph / Facebook -->
@@ -152,19 +152,18 @@
     <!-- Windows tiles -->
     <link rel="icon" type="image/png" sizes="192x192" href="https://hydrogenro.com/android-chrome-192x192.png?v=4" />
     <link rel="icon" type="image/png" sizes="512x512" href="https://hydrogenro.com/android-chrome-512x512.png?v=4" />
-    <!-- PWA Manifest - Set dynamically based on path for iOS compatibility -->
-    <script src="/head-pwa-manifest.js"></script>
+    <script src="/head-pwa-manifest.js" defer></script>
     
-    <!-- Preconnect for performance -->
+    <!-- Non-blocking Inter font (system stack in critical CSS is the first paint fallback) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <!-- Login-critical origins: warm TLS+DNS so the first Turnstile/Supabase request is fast on mobile -->
-    <link rel="preconnect" href="https://challenges.cloudflare.com" crossorigin>
-    <link rel="preconnect" href="https://cgpjfmbyxjetmzehkumo.supabase.co" crossorigin>
-    <link rel="dns-prefetch" href="//challenges.cloudflare.com">
-    <link rel="dns-prefetch" href="//cgpjfmbyxjetmzehkumo.supabase.co">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"></noscript>
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      media="print"
+      onload="this.media='all'"
+    />
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
     
     <!-- Critical CSS to prevent FOUC -->
     <style>
@@ -254,12 +253,15 @@
       }
     </style>
     
+    <!-- Login-critical origins: warm TLS+DNS so the first Turnstile/Supabase request is fast on mobile -->
+    <link rel="preconnect" href="https://challenges.cloudflare.com" crossorigin>
+    <link rel="preconnect" href="https://cgpjfmbyxjetmzehkumo.supabase.co" crossorigin>
+    <link rel="dns-prefetch" href="//challenges.cloudflare.com">
+    <link rel="dns-prefetch" href="//cgpjfmbyxjetmzehkumo.supabase.co">
+    
     <!-- DNS Prefetch for external resources -->
     <link rel="dns-prefetch" href="//fonts.googleapis.com">
     <link rel="dns-prefetch" href="//fonts.gstatic.com">
-    
-    <!-- Resource hints for better performance -->
-    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" as="style">
     
     <!-- Google Maps API for address autocomplete (optional - will use free services if not available) -->
     <!-- <script async defer src="https://maps.googleapis.com/maps/api/js?key=YOUR_ACTUAL_GOOGLE_MAPS_API_KEY&libraries=places"></script> -->

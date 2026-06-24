@@ -104,8 +104,8 @@ const App = () => (
     <ThemeProvider>
       <SecurityProvider>
         <AuthProvider>
-          <TooltipProvider>
-            <PerformanceMonitor />
+            <TooltipProvider>
+            {import.meta.env.DEV ? <PerformanceMonitor /> : null}
             <Toaster />
             <Sonner />
             <BrowserRouter>

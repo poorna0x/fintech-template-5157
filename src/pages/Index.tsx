@@ -2,31 +2,21 @@
 import React, { Suspense, lazy } from 'react';
 import Header from '@/components/Header';
 import HeroSection from '@/components/HeroSection';
-import AboutSection from '@/components/AboutSection';
 import ServicesSection from '@/components/ServicesSection';
 import HowItWorks from '@/components/HowItWorks';
-import ServiceAreasSection from '@/components/ServiceAreasSection';
-import PincodeServiceSection from '@/components/PincodeServiceSection';
-import BookingRedirect from '@/components/BookingRedirect';
-import WhyChooseSection from '@/components/WhyChooseSection';
-import ContactSection from '@/components/ContactSection';
 import Footer from '@/components/Footer';
 
-// Lazy load heavy components
+// Below-the-fold sections: lazy-loaded to shrink the homepage entry chunk.
+const WhyChooseSection = lazy(() => import('@/components/WhyChooseSection'));
+const AboutSection = lazy(() => import('@/components/AboutSection'));
+const ServiceAreasSection = lazy(() => import('@/components/ServiceAreasSection'));
+const PincodeServiceSection = lazy(() => import('@/components/PincodeServiceSection'));
 const Testimonials = lazy(() => import('@/components/Testimonials'));
+const BookingRedirect = lazy(() => import('@/components/BookingRedirect'));
+const ContactSection = lazy(() => import('@/components/ContactSection'));
 
-// Loading component for testimonials
-const TestimonialsLoading = () => (
-  <div className="py-16 bg-background">
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div className="text-center">
-        <div className="animate-pulse">
-          <div className="h-8 bg-muted rounded w-1/3 mx-auto mb-4"></div>
-          <div className="h-4 bg-muted rounded w-1/2 mx-auto"></div>
-        </div>
-      </div>
-    </div>
-  </div>
+const SectionFallback = ({ minHeight = '12rem' }: { minHeight?: string }) => (
+  <div aria-hidden="true" style={{ minHeight }} />
 );
 
 const Index = () => {
@@ -42,15 +32,27 @@ const Index = () => {
         <HeroSection />
         <ServicesSection />
         <HowItWorks />
-        <WhyChooseSection />
-        <AboutSection />
-        <ServiceAreasSection />
-        <PincodeServiceSection />
-        <Suspense fallback={<TestimonialsLoading />}>
+        <Suspense fallback={<SectionFallback minHeight="28rem" />}>
+          <WhyChooseSection />
+        </Suspense>
+        <Suspense fallback={<SectionFallback minHeight="24rem" />}>
+          <AboutSection />
+        </Suspense>
+        <Suspense fallback={<SectionFallback minHeight="20rem" />}>
+          <ServiceAreasSection />
+        </Suspense>
+        <Suspense fallback={<SectionFallback />}>
+          <PincodeServiceSection />
+        </Suspense>
+        <Suspense fallback={<SectionFallback minHeight="24rem" />}>
           <Testimonials />
         </Suspense>
-        <BookingRedirect />
-        <ContactSection />
+        <Suspense fallback={<SectionFallback minHeight="16rem" />}>
+          <BookingRedirect />
+        </Suspense>
+        <Suspense fallback={<SectionFallback minHeight="24rem" />}>
+          <ContactSection />
+        </Suspense>
       </main>
       <Footer />
     </div>

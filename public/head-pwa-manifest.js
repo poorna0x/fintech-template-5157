@@ -10,11 +10,16 @@
     if (appleTitle) appleTitle.setAttribute('content', 'HRO Technician');
     var appName = document.querySelector('meta[name="application-name"]');
     if (appName) appName.setAttribute('content', 'HRO Technician');
-  } else if (
-    path.startsWith('/admin') ||
-    path.startsWith('/settings')
-  ) {
+  } else if (path.startsWith('/admin') || path.startsWith('/settings')) {
     manifestHref = '/admin-manifest.json';
   }
-  document.write('<link rel="manifest" href="' + manifestHref + '" id="pwa-manifest" />');
+
+  var existing = document.getElementById('pwa-manifest');
+  if (existing) existing.remove();
+
+  var link = document.createElement('link');
+  link.rel = 'manifest';
+  link.href = manifestHref;
+  link.id = 'pwa-manifest';
+  document.head.appendChild(link);
 })();

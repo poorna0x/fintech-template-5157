@@ -30,7 +30,7 @@ const WhyChooseSection = () => {
     <section id="why-choose" className="py-16 px-4 md:px-12 bg-background">
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-12">
-          <span className="inline-block text-sm font-semibold text-sky-600 dark:text-sky-400 mb-3">
+          <span className="inline-block text-sm font-semibold text-sky-700 dark:text-sky-400 mb-3">
             Why Hydrogen RO
           </span>
           <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
@@ -46,7 +46,7 @@ const WhyChooseSection = () => {
             <Card key={index} className="text-center border-sky-100 dark:border-sky-500/15 hover:border-sky-300 dark:hover:border-sky-500/40 hover:shadow-lg hover:shadow-sky-900/5 transition-all duration-300">
               <CardContent className="p-5 md:p-6">
                 <div className="w-14 h-14 md:w-16 md:h-16 bg-sky-100 dark:bg-sky-500/15 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                  <reason.icon className="w-7 h-7 md:w-8 md:h-8 text-sky-600 dark:text-sky-400" />
+                  <reason.icon className="w-7 h-7 md:w-8 md:h-8 text-sky-700 dark:text-sky-400" />
                 </div>
                 <h3 className="text-base md:text-lg font-semibold text-foreground mb-2">
                   {reason.title}

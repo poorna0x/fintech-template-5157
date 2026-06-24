@@ -117,23 +117,28 @@ const Header = () => {
         
         {/* Mobile menu button */}
         {!mobileMenuOpen && (
-          <button 
+          <button
+            type="button"
             className="md:hidden p-3 rounded-2xl text-muted-foreground hover:text-foreground bg-background/80 backdrop-blur-sm border border-border/50"
             onClick={toggleMobileMenu}
+            aria-label="Open menu"
+            aria-expanded={false}
+            aria-controls="mobile-navigation"
           >
-            <Menu size={24} />
+            <span className="sr-only">Open menu</span>
+            <Menu size={24} aria-hidden="true" />
           </button>
         )}
         
         {/* Desktop navigation */}
-        <nav className="hidden md:flex items-center absolute left-1/2 transform -translate-x-1/2">
+        <nav className="hidden md:flex items-center absolute left-1/2 transform -translate-x-1/2" aria-label="Main navigation">
           <div className="rounded-full px-1 py-1 backdrop-blur-md bg-white/70 dark:bg-card/70 border border-sky-100 dark:border-sky-500/15 shadow-lg shadow-sky-900/5">
             <ToggleGroup type="single" value={activePage} onValueChange={(value) => value && setActivePage(value)}>
               <ToggleGroupItem 
                 value="home"
                 className={cn(
-                  "px-4 py-2 rounded-full transition-all duration-300 ease-in-out relative transform data-[state=on]:bg-sky-600 dark:data-[state=on]:bg-sky-500 data-[state=on]:text-white",
-                  activePage === 'home' ? 'text-white bg-sky-600 dark:bg-sky-500 scale-105 shadow-md shadow-sky-600/20' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
+                  "px-4 py-2 rounded-full transition-all duration-300 ease-in-out relative transform data-[state=on]:bg-sky-700 dark:data-[state=on]:bg-sky-500 data-[state=on]:text-white",
+                  activePage === 'home' ? 'text-white bg-sky-700 dark:bg-sky-500 scale-105 shadow-md shadow-sky-600/20' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
                 )}
                 onClick={handleNavClick('home')}
               >
@@ -142,8 +147,8 @@ const Header = () => {
               <ToggleGroupItem 
                 value="about" 
                 className={cn(
-                  "px-4 py-2 rounded-full transition-all duration-300 ease-in-out relative transform data-[state=on]:bg-sky-600 dark:data-[state=on]:bg-sky-500 data-[state=on]:text-white",
-                  activePage === 'about' ? 'text-white bg-sky-600 dark:bg-sky-500 scale-105 shadow-md shadow-sky-600/20' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
+                  "px-4 py-2 rounded-full transition-all duration-300 ease-in-out relative transform data-[state=on]:bg-sky-700 dark:data-[state=on]:bg-sky-500 data-[state=on]:text-white",
+                  activePage === 'about' ? 'text-white bg-sky-700 dark:bg-sky-500 scale-105 shadow-md shadow-sky-600/20' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
                 )}
                 onClick={handleNavClick('about')}
               >
@@ -152,8 +157,8 @@ const Header = () => {
               <ToggleGroupItem 
                 value="services"
                 className={cn(
-                  "px-4 py-2 rounded-full transition-all duration-300 ease-in-out relative transform data-[state=on]:bg-sky-600 dark:data-[state=on]:bg-sky-500 data-[state=on]:text-white",
-                  activePage === 'services' ? 'text-white bg-sky-600 dark:bg-sky-500 scale-105 shadow-md shadow-sky-600/20' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
+                  "px-4 py-2 rounded-full transition-all duration-300 ease-in-out relative transform data-[state=on]:bg-sky-700 dark:data-[state=on]:bg-sky-500 data-[state=on]:text-white",
+                  activePage === 'services' ? 'text-white bg-sky-700 dark:bg-sky-500 scale-105 shadow-md shadow-sky-600/20' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
                 )}
                 onClick={handleNavClick('services')}
               >
@@ -162,8 +167,8 @@ const Header = () => {
               <ToggleGroupItem 
                 value="booking"
                 className={cn(
-                  "px-4 py-2 rounded-full transition-all duration-300 ease-in-out relative transform data-[state=on]:bg-sky-600 dark:data-[state=on]:bg-sky-500 data-[state=on]:text-white",
-                  activePage === 'booking' ? 'text-white bg-sky-600 dark:bg-sky-500 scale-105 shadow-md shadow-sky-600/20' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
+                  "px-4 py-2 rounded-full transition-all duration-300 ease-in-out relative transform data-[state=on]:bg-sky-700 dark:data-[state=on]:bg-sky-500 data-[state=on]:text-white",
+                  activePage === 'booking' ? 'text-white bg-sky-700 dark:bg-sky-500 scale-105 shadow-md shadow-sky-600/20' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
                 )}
                 onClick={handleNavClick('booking')}
               >
@@ -172,8 +177,8 @@ const Header = () => {
               <ToggleGroupItem 
                 value="contact"
                 className={cn(
-                  "px-4 py-2 rounded-full transition-all duration-300 ease-in-out relative transform data-[state=on]:bg-sky-600 dark:data-[state=on]:bg-sky-500 data-[state=on]:text-white",
-                  activePage === 'contact' ? 'text-white bg-sky-600 dark:bg-sky-500 scale-105 shadow-md shadow-sky-600/20' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
+                  "px-4 py-2 rounded-full transition-all duration-300 ease-in-out relative transform data-[state=on]:bg-sky-700 dark:data-[state=on]:bg-sky-500 data-[state=on]:text-white",
+                  activePage === 'contact' ? 'text-white bg-sky-700 dark:bg-sky-500 scale-105 shadow-md shadow-sky-600/20' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
                 )}
                 onClick={handleNavClick('contact')}
               >
@@ -185,8 +190,12 @@ const Header = () => {
         
         {/* Mobile navigation */}
         {mobileMenuOpen && (
-          <div 
-            className="md:hidden fixed inset-0 bg-background z-50 flex flex-col" 
+          <div
+            id="mobile-navigation"
+            className="md:hidden fixed inset-0 bg-background z-50 flex flex-col"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Mobile navigation menu"
             style={{ 
               WebkitOverflowScrolling: 'touch',
               position: 'fixed',
@@ -205,65 +214,30 @@ const Header = () => {
           >
             {/* Header with logo and close button */}
             <div className="flex items-center justify-between p-6 border-b border-border bg-background relative">
-              <div 
-                className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+              <button
+                type="button"
+                className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity bg-transparent border-0 p-0"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
                   handleNavClick('home')(e);
                 }}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    handleNavClick('home')(e as any);
-                  }
-                }}
+                aria-label="Hydrogen RO home"
               >
                 <div className="w-8 h-8 bg-gradient-to-br from-sky-500 to-cyan-500 rounded-lg flex items-center justify-center flex-shrink-0 shadow-sm">
-                  <Droplets className="w-5 h-5 text-white" />
+                  <Droplets className="w-5 h-5 text-white" aria-hidden="true" />
                 </div>
                 <div className="text-xl font-bold text-foreground whitespace-nowrap">Hydrogen RO</div>
-              </div>
-              <div 
-                className="relative w-10 h-10 flex items-center justify-center"
-                style={{ 
-                  position: 'relative',
-                  zIndex: 1000,
-                  isolation: 'isolate',
-                  WebkitTransform: 'translateZ(0)',
-                  transform: 'translateZ(0)',
-                  WebkitBackfaceVisibility: 'hidden',
-                  backfaceVisibility: 'hidden'
-                }}
+              </button>
+              <button
+                type="button"
+                onClick={toggleMobileMenu}
+                className="relative w-10 h-10 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                aria-label="Close menu"
               >
-                <div
-                  onClick={toggleMobileMenu}
-                  className="w-full h-full flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
-                  style={{ 
-                    WebkitAppearance: 'none',
-                    appearance: 'none',
-                    background: 'transparent',
-                    border: 'none',
-                    outline: 'none',
-                    position: 'relative',
-                    zIndex: 1001,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    width: '100%',
-                    height: '100%',
-                    isolation: 'isolate',
-                    WebkitTransform: 'translateZ(0)',
-                    transform: 'translateZ(0)',
-                    WebkitBackfaceVisibility: 'hidden',
-                    backfaceVisibility: 'hidden'
-                  }}
-                >
-                  <X size={24} style={{ position: 'relative', zIndex: 1002 }} />
-                </div>
-              </div>
+                <span className="sr-only">Close menu</span>
+                <X size={24} aria-hidden="true" />
+              </button>
             </div>
             
             {/* Navigation links - takes up remaining space */}
@@ -271,7 +245,7 @@ const Header = () => {
               <a 
                 href="#" 
                 className={`px-4 py-3 text-base rounded-lg transition-all duration-300 ease-in-out transform ${
-                  activePage === 'home' ? 'bg-sky-600 dark:bg-sky-500 text-white scale-105 shadow-md shadow-sky-600/20' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
+                  activePage === 'home' ? 'bg-sky-700 dark:bg-sky-500 text-white scale-105 shadow-md shadow-sky-600/20' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
                 }`}
                 onClick={handleNavClick('home')}
               >
@@ -280,7 +254,7 @@ const Header = () => {
               <a 
                 href="#about" 
                 className={`px-4 py-3 text-base rounded-lg transition-all duration-300 ease-in-out transform ${
-                  activePage === 'about' ? 'bg-sky-600 dark:bg-sky-500 text-white scale-105 shadow-md shadow-sky-600/20' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
+                  activePage === 'about' ? 'bg-sky-700 dark:bg-sky-500 text-white scale-105 shadow-md shadow-sky-600/20' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
                 }`}
                 onClick={handleNavClick('about')}
               >
@@ -289,7 +263,7 @@ const Header = () => {
               <a 
                 href="#services" 
                 className={`px-4 py-3 text-base rounded-lg transition-all duration-300 ease-in-out transform ${
-                  activePage === 'services' ? 'bg-sky-600 dark:bg-sky-500 text-white scale-105 shadow-md shadow-sky-600/20' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
+                  activePage === 'services' ? 'bg-sky-700 dark:bg-sky-500 text-white scale-105 shadow-md shadow-sky-600/20' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
                 }`}
                 onClick={handleNavClick('services')}
               >
@@ -298,7 +272,7 @@ const Header = () => {
               <a 
                 href="#booking" 
                 className={`px-4 py-3 text-base rounded-lg transition-all duration-300 ease-in-out transform ${
-                  activePage === 'booking' ? 'bg-sky-600 dark:bg-sky-500 text-white scale-105 shadow-md shadow-sky-600/20' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
+                  activePage === 'booking' ? 'bg-sky-700 dark:bg-sky-500 text-white scale-105 shadow-md shadow-sky-600/20' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
                 }`}
                 onClick={handleNavClick('booking')}
               >
@@ -307,7 +281,7 @@ const Header = () => {
               <a 
                 href="#contact" 
                 className={`px-4 py-3 text-base rounded-lg transition-all duration-300 ease-in-out transform ${
-                  activePage === 'contact' ? 'bg-sky-600 dark:bg-sky-500 text-white scale-105 shadow-md shadow-sky-600/20' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
+                  activePage === 'contact' ? 'bg-sky-700 dark:bg-sky-500 text-white scale-105 shadow-md shadow-sky-600/20' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
                 }`}
                 onClick={handleNavClick('contact')}
               >
@@ -320,13 +294,14 @@ const Header = () => {
               <div className="flex items-center justify-between px-4 py-3 bg-card rounded-lg border border-border">
                 <span className="text-sm text-muted-foreground">Theme</span>
                 <div className="flex items-center gap-2">
-                  <Moon size={16} className={`${isDarkMode ? 'text-primary' : 'text-muted-foreground'}`} />
-                  <Switch 
-                    checked={!isDarkMode} 
-                    onCheckedChange={toggleTheme} 
+                  <Moon size={16} className={`${isDarkMode ? 'text-primary' : 'text-muted-foreground'}`} aria-hidden="true" />
+                  <Switch
+                    checked={!isDarkMode}
+                    onCheckedChange={toggleTheme}
                     className="data-[state=checked]:bg-primary"
+                    aria-label="Toggle light and dark theme"
                   />
-                  <Sun size={16} className={`${!isDarkMode ? 'text-primary' : 'text-muted-foreground'}`} />
+                  <Sun size={16} className={`${!isDarkMode ? 'text-primary' : 'text-muted-foreground'}`} aria-hidden="true" />
                 </div>
               </div>
             </div>
@@ -337,13 +312,14 @@ const Header = () => {
           {/* Theme toggle for desktop */}
           
           <div className="flex items-center gap-2 rounded-full px-3 py-2 bg-white/70 dark:bg-card/70 backdrop-blur-sm border border-sky-100 dark:border-sky-500/15">
-            <Moon size={18} className={`${isDarkMode ? 'text-primary' : 'text-muted-foreground'}`} />
-            <Switch 
-              checked={!isDarkMode} 
-              onCheckedChange={toggleTheme} 
+            <Moon size={18} className={`${isDarkMode ? 'text-primary' : 'text-muted-foreground'}`} aria-hidden="true" />
+            <Switch
+              checked={!isDarkMode}
+              onCheckedChange={toggleTheme}
               className="data-[state=checked]:bg-primary"
+              aria-label="Toggle light and dark theme"
             />
-            <Sun size={18} className={`${!isDarkMode ? 'text-primary' : 'text-muted-foreground'}`} />
+            <Sun size={18} className={`${!isDarkMode ? 'text-primary' : 'text-muted-foreground'}`} aria-hidden="true" />
           </div>
           
           {/* Show phone number on booking page, Book Service button on other pages */}
@@ -351,7 +327,7 @@ const Header = () => {
             <div className="rounded-2xl">
               <Button 
                 onClick={() => openPublicPhoneCall('+918884944288', 'header_booking_page')}
-                className="bg-sky-600 text-white hover:bg-sky-700 shadow-lg flex items-center gap-2"
+                className="bg-sky-700 text-white hover:bg-sky-800 shadow-lg flex items-center gap-2"
               >
                 <Phone size={18} />
                 +91-8884944288
@@ -363,7 +339,7 @@ const Header = () => {
                 onClick={() => {
                   navigate('/book');
                 }}
-                className="bg-sky-600 text-white hover:bg-sky-700 shadow-lg"
+                className="bg-sky-700 text-white hover:bg-sky-800 shadow-lg"
               >
                 Book Service
               </Button>

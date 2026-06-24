@@ -5,11 +5,11 @@ import { useNavigate } from 'react-router-dom';
 import { openPublicPhoneCall } from '@/lib/publicPhone';
 
 const HeroSection = () => {
-  const [isVisible, setIsVisible] = useState(false);
+  const [copyVisible, setCopyVisible] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
-    const timer = setTimeout(() => setIsVisible(true), 150);
+    const timer = setTimeout(() => setCopyVisible(true), 150);
     return () => clearTimeout(timer);
   }, []);
 
@@ -32,7 +32,7 @@ const HeroSection = () => {
           {/* Left: copy */}
           <div
             className={`space-y-6 text-center lg:text-left transition-all duration-700 ${
-              isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'
+              copyVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'
             }`}
           >
             <div className="flex justify-center lg:justify-start">
@@ -65,7 +65,7 @@ const HeroSection = () => {
             <div className="flex flex-col sm:flex-row gap-3 justify-center lg:justify-start pt-2">
               <Button
                 onClick={handleBookService}
-                className="h-12 px-8 text-base font-semibold bg-sky-600 hover:bg-sky-700 text-white shadow-lg shadow-sky-600/20 transition-all"
+                className="h-12 px-8 text-base font-semibold bg-sky-700 hover:bg-sky-800 text-white shadow-lg shadow-sky-700/20 transition-all"
               >
                 Book Service Now
               </Button>
@@ -74,7 +74,7 @@ const HeroSection = () => {
                 variant="outline"
                 className="h-12 px-8 text-base font-semibold border-sky-200 dark:border-sky-500/30 text-foreground hover:bg-sky-50 dark:hover:bg-sky-500/10 flex items-center gap-2"
               >
-                <Phone className="w-4 h-4 text-sky-600" />
+                <Phone className="w-4 h-4 text-sky-700" />
                 +91-8884944288
               </Button>
             </div>
@@ -90,15 +90,13 @@ const HeroSection = () => {
             </div>
           </div>
 
-          {/* Right: photo */}
-          <div
-            className={`relative transition-all duration-1000 delay-200 ${
-              isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-10'
-            }`}
-          >
+          {/* Right: photo — visible immediately for LCP (no fade-in delay) */}
+          <div className="relative">
             <div className="relative rounded-3xl overflow-hidden shadow-2xl shadow-sky-900/10 border border-white/60 dark:border-white/10">
               <img
-                src="/hero-ro-purifier.webp"
+                src="/hero-ro-purifier-640.webp"
+                srcSet="/hero-ro-purifier-640.webp 640w, /hero-ro-purifier.webp 1100w"
+                sizes="(max-width: 1024px) 100vw, 50vw"
                 alt="RO water purifier installed in a modern Bengaluru kitchen with clean drinking water"
                 width={1100}
                 height={733}
@@ -138,7 +136,7 @@ const HeroSection = () => {
               key={stat.label}
               className="rounded-2xl bg-white/70 dark:bg-card/60 backdrop-blur-sm border border-sky-100 dark:border-sky-500/15 p-5 text-center"
             >
-              <stat.icon className="w-6 h-6 text-sky-600 dark:text-sky-400 mx-auto mb-2" />
+              <stat.icon className="w-6 h-6 text-sky-700 dark:text-sky-400 mx-auto mb-2" />
               <div className="text-xl font-bold text-foreground">{stat.value}</div>
               <div className="text-xs text-muted-foreground">{stat.label}</div>
             </div>

@@ -29,7 +29,7 @@ const ServiceAreasSection = () => {
     <section id="service-areas" className="py-12 px-4 md:px-12 bg-background">
       <div className="max-w-7xl mx-auto">
         <div className="text-center mb-10">
-          <span className="inline-block text-sm font-semibold text-sky-600 dark:text-sky-400 mb-3">
+          <span className="inline-block text-sm font-semibold text-sky-700 dark:text-sky-400 mb-3">
             Service areas
           </span>
           <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
@@ -145,7 +145,7 @@ const ServiceAreasSection = () => {
           ].map((stat) => (
             <Card key={stat.label} className="text-center border-sky-100 dark:border-sky-500/15 bg-white/60 dark:bg-card/50">
               <CardContent className="p-4">
-                <div className="text-2xl font-bold text-sky-600 dark:text-sky-400">{stat.value}</div>
+                <div className="text-2xl font-bold text-sky-700 dark:text-sky-400">{stat.value}</div>
                 <div className="text-sm text-muted-foreground">{stat.label}</div>
               </CardContent>
             </Card>
