@@ -18,8 +18,7 @@ export function getAuthPortal(pathname: string): AuthPortal {
   if (isTechnicianPortalPath(pathname)) return 'technician';
   if (
     pathname.startsWith('/admin') ||
-    pathname.startsWith('/settings') ||
-    pathname.startsWith('/calling')
+    pathname.startsWith('/settings')
   ) {
     return 'admin';
   }

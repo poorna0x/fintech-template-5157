@@ -33,7 +33,6 @@ function requiredPortalRole(pathname: string): PortalRole | null {
     return 'admin';
   }
   if (pathname === '/settings' || pathname.startsWith('/settings/')) return 'admin';
-  if (pathname === '/calling' || pathname.startsWith('/calling/')) return 'admin';
   return null;
 }
 
@@ -87,5 +86,5 @@ export default async function handler(request: Request, context: Context) {
 }
 
 export const config: Config = {
-  path: ['/admin', '/admin/*', '/technician', '/technician/*', '/settings', '/settings/*', '/calling', '/calling/*'],
+  path: ['/admin', '/admin/*', '/technician', '/technician/*', '/settings', '/settings/*'],
 };

@@ -5,6 +5,7 @@ export const SETTINGS_SECTIONS = {
   'pending-payments': true,
   'technician-management': true,
   'email-tracking': true,
+  calling: true,
 } as const;
 
 export type SettingsSectionId = keyof typeof SETTINGS_SECTIONS;

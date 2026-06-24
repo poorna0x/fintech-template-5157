@@ -66,6 +66,7 @@ import MergeCustomersDialog from '@/components/admin/MergeCustomersDialog';
 import WarrantyManagementDialog from '@/components/admin/WarrantyManagementDialog';
 import DirectSaleDialog from '@/components/admin/DirectSaleDialog';
 import { scrollToSettingsSection } from '@/lib/settingsSectionScroll';
+import { SETTINGS_SECTIONS } from '@/lib/settingsSections';
 
 /** PostgREST error when a table was never created or was dropped (e.g. booking_abandonments). */
 const isMissingTableError = (error: { message?: string; code?: string } | null): boolean => {
@@ -268,8 +269,17 @@ const Settings = () => {
 
   // Deep-link from admin Tools / notification bell: /settings?section=…
   useEffect(() => {
-    const section = new URLSearchParams(location.search).get('section');
+    const params = new URLSearchParams(location.search);
+    const section = params.get('section');
     if (!section) return;
+
+    if (section === 'calling' && params.get('action') === 'open') {
+      setShowCallingPage(true);
+      navigate('/settings', { replace: true });
+      return;
+    }
+
+    if (!(section in SETTINGS_SECTIONS)) return;
 
     return scrollToSettingsSection(section, {
       onComplete: () => {
@@ -2108,6 +2118,7 @@ const Settings = () => {
 
           {/* Calling */}
           <SettingsActionCard
+            sectionId="calling"
             title="Calling"
             description="Manage customer calls and communication"
             icon={<PhoneCall />}

@@ -23,7 +23,6 @@ const AdminPortal = lazy(() => import("./pages/AdminPortal"));
 const Booking = lazy(() => import("./pages/Booking"));
 const TechnicianLogin = lazy(() => import("./pages/TechnicianLogin"));
 const TechnicianDashboard = lazy(() => import("./pages/TechnicianDashboard"));
-const CallingPage = lazy(() => import("./pages/CallingPage"));
 const EmailPreviewRedirect = lazy(() => import("./pages/EmailPreviewPage"));
 const WhatsAppPreviewRedirect = lazy(() => import("./pages/WhatsAppPreviewPage"));
 const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy"));
@@ -76,8 +75,7 @@ const PWARouteHandler = () => {
     const isPWAPage =
       isTechnicianPortalPath(location.pathname) ||
       location.pathname.startsWith('/admin') ||
-      location.pathname.startsWith('/settings') ||
-      location.pathname.startsWith('/calling');
+      location.pathname.startsWith('/settings');
     
     if (!isPWAPage) {
       disablePWA();
@@ -123,7 +121,10 @@ const App = () => (
                   <Route path="/admin/email-preview" element={<EmailPreviewRedirect />} />
                   <Route path="/admin/whatsapp-preview" element={<WhatsAppPreviewRedirect />} />
                   <Route path="/settings" element={<AdminPortal />} />
-                  <Route path="/calling" element={<CallingPage />} />
+                  <Route
+                    path="/calling"
+                    element={<Navigate to="/settings?section=calling&action=open" replace />}
+                  />
                   <Route path="/technician/login" element={<TechnicianLogin />} />
                   <Route path="/technician" element={<TechnicianDashboard />} />
                   <Route path="/privacy-policy" element={<PrivacyPolicy />} />

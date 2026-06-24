@@ -96,7 +96,6 @@ export const NO_INDEX_PREFIXES = [
   '/dashboard',
   '/search',
   '/settings',
-  '/calling',
   '/product-verify/',
 ];
 

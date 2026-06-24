@@ -9878,7 +9878,7 @@ const AdminDashboard = () => {
                   <DropdownMenuItem
                     onClick={() => {
                       hapticTap();
-                      navigate('/calling');
+                      navigate(settingsPath('calling', 'open'));
                     }}
                   >
                     <PhoneCall className="w-4 h-4 mr-2" />

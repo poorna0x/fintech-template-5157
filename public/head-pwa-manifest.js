@@ -12,8 +12,7 @@
     if (appName) appName.setAttribute('content', 'HRO Technician');
   } else if (
     path.startsWith('/admin') ||
-    path.startsWith('/settings') ||
-    path.startsWith('/calling')
+    path.startsWith('/settings')
   ) {
     manifestHref = '/admin-manifest.json';
   }
