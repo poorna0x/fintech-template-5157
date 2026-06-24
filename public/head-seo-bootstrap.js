@@ -360,4 +360,30 @@
       elevenCrawler.removeAttribute('aria-hidden');
     }
   }
+
+  function activateAsyncStyles() {
+    function activate(link) {
+      link.rel = 'stylesheet';
+      link.removeAttribute('data-async-css');
+      link.removeAttribute('as');
+    }
+
+    var links = document.querySelectorAll('link[data-async-css="true"]');
+    for (var i = 0; i < links.length; i++) {
+      (function (link) {
+        var href = link.getAttribute('href');
+        link.addEventListener('load', function () {
+          activate(link);
+        });
+        link.addEventListener('error', function () {
+          activate(link);
+        });
+        if (performance.getEntriesByName(href).length > 0) {
+          activate(link);
+        }
+      })(links[i]);
+    }
+  }
+
+  activateAsyncStyles();
 })();

@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
 import { securityCspPlugin } from "./scripts/vite-plugin-security-csp.mjs";
+import { asyncCssPlugin } from "./scripts/vite-plugin-async-css.mjs";
 import { manualChunks } from "./vite.config.chunks";
 
 // https://vitejs.dev/config/
@@ -39,6 +40,7 @@ export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
     securityCspPlugin(mode),
+    asyncCssPlugin(mode),
     mode === 'development' &&
     componentTagger(),
   ].filter(Boolean),
