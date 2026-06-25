@@ -1549,14 +1549,14 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
               </div>
 
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <Label htmlFor="add_address">Complete Address</Label>
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
                     onClick={handleFetchLocationFromAddress}
-                    className="whitespace-nowrap"
+                    className="w-full sm:w-auto whitespace-nowrap"
                     title={addFormData.visible_address && addFormData.visible_address.trim().length > 0 
                       ? "Location already set. Clear it first to fetch a new one."
                       : "Extract location from complete address"}
@@ -1584,17 +1584,17 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                 <Label htmlFor="add_google_location" className="text-sm font-medium text-foreground">
                   Google Maps Location
                 </Label>
-                <div className="flex flex-wrap gap-2">
-                  <Input
-                    id="add_google_location"
-                    value={addFormData.google_location}
-                    onChange={(e) => {
-                      mapsShareTextRef.current = e.target.value;
-                      handleAddFormChange('google_location', e.target.value);
-                    }}
-                    placeholder="Paste Google Maps share link here..."
-                    className="text-sm flex-1 min-w-[180px]"
-                  />
+                <Input
+                  id="add_google_location"
+                  value={addFormData.google_location}
+                  onChange={(e) => {
+                    mapsShareTextRef.current = e.target.value;
+                    handleAddFormChange('google_location', e.target.value);
+                  }}
+                  placeholder="Paste Google Maps share link here..."
+                  className="w-full text-sm"
+                />
+                <div className={`grid gap-2 ${addFormData.google_location ? 'grid-cols-2' : 'grid-cols-1'}`}>
                   <Button
                     type="button"
                     variant="outline"
@@ -1602,7 +1602,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                     onClick={fetchAddressFromGoogleLocation}
                     disabled={isFetchingAddress}
                     aria-busy={isFetchingAddress}
-                    className="whitespace-nowrap"
+                    className="w-full whitespace-nowrap"
                     title={
                       addFormData.google_location
                         ? 'Fetch address from Google Maps link'
@@ -1622,9 +1622,12 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                       variant="outline"
                       size="sm"
                       onClick={() => {
-                        window.open(addFormData.google_location, '_blank', 'noopener,noreferrer');
+                        const link =
+                          extractMapsUrlFromText(addFormData.google_location) ||
+                          sanitizeGoogleMapsInput(addFormData.google_location);
+                        window.open(link, '_blank', 'noopener,noreferrer');
                       }}
-                      className="whitespace-nowrap"
+                      className="w-full whitespace-nowrap"
                       title="Open in Google Maps"
                     >
                       <ExternalLink className="w-3 h-3 mr-1" />
@@ -1632,9 +1635,6 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                     </Button>
                   )}
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Tip: in Google Maps tap <strong>Share</strong> and paste the whole message here (place name + link). On mobile, tap <strong>Fetch Address</strong> — we read the clipboard for you.
-                </p>
               </div>
             </div>
           )}

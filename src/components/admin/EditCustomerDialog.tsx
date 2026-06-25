@@ -1297,43 +1297,44 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
               <Label htmlFor="edit_google_location" className="text-sm font-medium text-foreground">
                 Google Maps Location
               </Label>
-              <div className="flex gap-2">
-                <Input
-                  id="edit_google_location"
-                  value={editFormData?.google_location ?? ''}
-                  onChange={(e) => handleGoogleMapsLinkChange(e.target.value)}
-                  placeholder="Paste Google Maps share link here..."
-                  className="text-sm flex-1"
-                />
-                {editFormData?.google_location && (
-                  <>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={fetchAddressFromGoogleLocation}
-                      className="whitespace-nowrap"
-                      title="Fetch address from Google Maps link"
-                    >
-                      <Download className="w-3 h-3 mr-1" />
-                      Fetch Address
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        window.open(editFormData.google_location, '_blank', 'noopener,noreferrer');
-                      }}
-                      className="whitespace-nowrap"
-                      title="Open in Google Maps"
-                    >
-                      <ExternalLink className="w-3 h-3 mr-1" />
-                      Test
-                    </Button>
-                  </>
-                )}
-              </div>
+              <Input
+                id="edit_google_location"
+                value={editFormData?.google_location ?? ''}
+                onChange={(e) => handleGoogleMapsLinkChange(e.target.value)}
+                placeholder="Paste Google Maps share link here..."
+                className="w-full text-sm"
+              />
+              {editFormData?.google_location && (
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={fetchAddressFromGoogleLocation}
+                    className="w-full whitespace-nowrap"
+                    title="Fetch address from Google Maps link"
+                  >
+                    <Download className="w-3 h-3 mr-1" />
+                    Fetch Address
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      const link =
+                        extractMapsUrlFromText(editFormData.google_location) ||
+                        sanitizeGoogleMapsInput(editFormData.google_location);
+                      window.open(link, '_blank', 'noopener,noreferrer');
+                    }}
+                    className="w-full whitespace-nowrap"
+                    title="Open in Google Maps"
+                  >
+                    <ExternalLink className="w-3 h-3 mr-1" />
+                    Test
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
 
