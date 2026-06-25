@@ -361,12 +361,18 @@
     }
   }
 
+  function removeFoucGuards() {
+    var el = document.getElementById('async-css-fouc-guards');
+    if (el) el.remove();
+  }
+
   function activateAsyncStyles() {
     function activate(link) {
       if (link.getAttribute('data-async-css') !== 'true') return;
       link.rel = 'stylesheet';
       link.removeAttribute('data-async-css');
       link.removeAttribute('as');
+      removeFoucGuards();
     }
 
     function isPreloadComplete(href) {
@@ -413,6 +419,7 @@
       for (var j = 0; j < pending.length; j++) {
         activate(pending[j]);
       }
+      removeFoucGuards();
     }, 2500);
   }
 

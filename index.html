@@ -266,7 +266,14 @@
 
       img { max-width: 100%; height: auto; display: block; }
 
-      /* Minimal layout guard while async Tailwind loads (prevents mobile FOUC) */
+      button {
+        font-family: inherit;
+        cursor: pointer;
+      }
+    </style>
+
+    <!-- Removed once app CSS loads — do not use !important on .hidden (breaks hidden sm:flex in admin) -->
+    <style id="async-css-fouc-guards">
       .hidden { display: none !important; }
       @media (min-width: 768px) {
         .md\:hidden { display: none !important; }
@@ -276,10 +283,6 @@
       @media (max-width: 767px) {
         .md\:hidden { display: block; }
         .md\:flex { display: none !important; }
-      }
-      button {
-        font-family: inherit;
-        cursor: pointer;
       }
     </style>
     
