@@ -16,6 +16,13 @@ import { generateJobNumber, extractLocationFromAddressString, bangaloreAreas } f
 import ImageUpload from '@/components/ImageUpload';
 import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmentTimeSelect';
 import PhoneSwapButton from '@/components/admin/PhoneSwapButton';
+import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
+import {
+  extractCoordinatesFromGoogleMapsLink,
+  isGoogleMapsShortLink,
+  isGoogleMapsUrl,
+  resolveGoogleMapsLinkViaApi,
+} from '@/lib/googleMapsLink';
 
 // Brand and model data - RO and Softener brands including local (Aqua Grand, Aqua Smart, Dolphin, etc.)
 const brandData = {
@@ -605,37 +612,6 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     }
   };
 
-  // Extract coordinates from Google Maps link
-  const extractCoordinatesFromGoogleMapsLink = (url: string): { latitude: number; longitude: number } | null => {
-    try {
-      let lat: number | null = null;
-      let lng: number | null = null;
-      
-      const preciseMatch = url.match(/!3d([0-9.-]+)!4d([0-9.-]+)/);
-      if (preciseMatch) {
-        lat = parseFloat(preciseMatch[1]);
-        lng = parseFloat(preciseMatch[2]);
-        if (lat && lng && !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-          return { latitude: lat, longitude: lng };
-        }
-      }
-      
-      const placeMatch = url.match(/\/place\/([0-9.-]+),([0-9.-]+)/);
-      if (placeMatch) {
-        lat = parseFloat(placeMatch[1]);
-        lng = parseFloat(placeMatch[2]);
-        if (lat && lng && !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-          return { latitude: lat, longitude: lng };
-        }
-      }
-      
-      return null;
-    } catch (error) {
-      console.error('Error extracting coordinates:', error);
-      return null;
-    }
-  };
-
   const loadGoogleMapsScript = (): Promise<void> => {
     return new Promise((resolve, reject) => {
       if (window.google && window.google.maps && window.google.maps.Geocoder) {
@@ -755,18 +731,44 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         }
       }
 
-      if (
-        !googleLocation.includes('google.com/maps') &&
-        !googleLocation.includes('maps.app.goo.gl') &&
-        !googleLocation.includes('goo.gl/maps')
-      ) {
+      if (!isGoogleMapsUrl(googleLocation)) {
         toast.error('Please enter a valid Google Maps link');
         return;
       }
 
-      const coords = extractCoordinatesFromGoogleMapsLink(googleLocation);
-      if (!coords) {
-        toast.error('Could not extract coordinates from this link. Short links may not work.');
+      let resolvedLocation = googleLocation;
+      let coords = extractCoordinatesFromGoogleMapsLink(resolvedLocation);
+
+      if (!coords && isGoogleMapsShortLink(resolvedLocation)) {
+        const token = await resolveSupabaseAccessTokenForApi();
+        if (!token) {
+          toast.error('Please sign in again to resolve short links.');
+          return;
+        }
+
+        loadingToast = toast.loading('Resolving short link...');
+        const expanded = await resolveGoogleMapsLinkViaApi(resolvedLocation, token);
+        if (loadingToast !== undefined) toast.dismiss(loadingToast);
+        loadingToast = undefined;
+
+        if (!expanded) {
+          toast.error('Could not resolve this short link. Try opening it in a browser and copy the full URL.');
+          return;
+        }
+
+        resolvedLocation = expanded;
+        setAddFormData((prev) => ({ ...prev, google_location: expanded }));
+        googleLocationRef.current = expanded;
+        coords = extractCoordinatesFromGoogleMapsLink(expanded);
+
+        if (!coords) {
+          toast.error('Short link resolved but coordinates were not found. Try copying the full URL from your browser.');
+          return;
+        }
+
+        toast.info('Short link expanded');
+      } else if (!coords) {
+        toast.error('Could not extract coordinates from this link.');
         return;
       }
 
@@ -1045,33 +1047,13 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       if (formData.google_location && formData.google_location.trim()) {
         const googleLocationInput = formData.google_location.trim();
         
-        // Check if it's already a Google Maps URL
-        if (googleLocationInput.includes('google.com/maps') || googleLocationInput.includes('maps.app.goo.gl')) {
+        if (isGoogleMapsUrl(googleLocationInput)) {
           googleLocation = googleLocationInput;
-          
-          // Try to extract coordinates from the URL
-          // Format 1: https://www.google.com/maps/place/12.9716,77.5946
-          const placeMatch = googleLocationInput.match(/\/place\/([0-9.-]+),([0-9.-]+)/);
-          if (placeMatch) {
-            latitude = parseFloat(placeMatch[1]);
-            longitude = parseFloat(placeMatch[2]);
+          const extracted = extractCoordinatesFromGoogleMapsLink(googleLocationInput);
+          if (extracted) {
+            latitude = extracted.latitude;
+            longitude = extracted.longitude;
             coordinatesExtracted = true;
-          } else {
-            // Format 2: https://www.google.com/maps/@12.9716,77.5946,15z
-            const atMatch = googleLocationInput.match(/@([0-9.-]+),([0-9.-]+)/);
-            if (atMatch) {
-              latitude = parseFloat(atMatch[1]);
-              longitude = parseFloat(atMatch[2]);
-              coordinatesExtracted = true;
-            } else {
-              // Format 3: https://maps.google.com/maps?q=12.9716,77.5946
-              const queryMatch = googleLocationInput.match(/[?&]q=([0-9.-]+),([0-9.-]+)/);
-              if (queryMatch) {
-                latitude = parseFloat(queryMatch[1]);
-                longitude = parseFloat(queryMatch[2]);
-                coordinatesExtracted = true;
-              }
-            }
           }
         } else {
           // If it looks like coordinates (lat,lng format)

@@ -14,6 +14,13 @@ import { useAdminRole } from '@/lib/useAdminRole';
 import { mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas } from '@/lib/adminUtils';
 import { normalizeIndianMobileInput } from '@/lib/utils';
 import PhoneSwapButton from '@/components/admin/PhoneSwapButton';
+import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
+import {
+  extractCoordinatesFromGoogleMapsLink,
+  isGoogleMapsShortLink,
+  isGoogleMapsUrl,
+  resolveGoogleMapsLinkViaApi,
+} from '@/lib/googleMapsLink';
 
 // Brand and model data - RO and Softener brands including local (Aqua Grand, Aqua Smart, Dolphin, etc.)
 const brandData = {
@@ -531,45 +538,6 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
     setShowModelSuggestions(false);
   };
 
-  // Extract coordinates from Google Maps link
-  const extractCoordinatesFromGoogleMapsLink = (url: string): { latitude: number; longitude: number } | null => {
-    try {
-      let lat: number | null = null;
-      let lng: number | null = null;
-      
-      const preciseMatch = url.match(/!3d([0-9.-]+)!4d([0-9.-]+)/);
-      if (preciseMatch) {
-        lat = parseFloat(preciseMatch[1]);
-        lng = parseFloat(preciseMatch[2]);
-        if (lat && lng && !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-          return { latitude: lat, longitude: lng };
-        }
-      }
-      
-      const placeMatch = url.match(/\/place\/([0-9.-]+),([0-9.-]+)/);
-      if (placeMatch) {
-        lat = parseFloat(placeMatch[1]);
-        lng = parseFloat(placeMatch[2]);
-        if (lat && lng && !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-          return { latitude: lat, longitude: lng };
-        }
-      }
-      
-      const atMatch = url.match(/@([0-9.-]+),([0-9.-]+)/);
-      if (atMatch) {
-        lat = parseFloat(atMatch[1]);
-        lng = parseFloat(atMatch[2]);
-        if (lat && lng && !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-          return { latitude: lat, longitude: lng };
-        }
-      }
-      
-      return null;
-    } catch (error) {
-      return null;
-    }
-  };
-
   // Load Google Maps script
   const loadGoogleMapsScript = (): Promise<void> => {
     return new Promise((resolve) => {
@@ -687,19 +655,49 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
       return;
     }
 
-    if (!googleLocation.includes('google.com/maps') && !googleLocation.includes('maps.app.goo.gl') && !googleLocation.includes('goo.gl/maps')) {
+    if (!isGoogleMapsUrl(googleLocation)) {
       toast.error('Please enter a valid Google Maps link');
       return;
     }
 
-    const coords = extractCoordinatesFromGoogleMapsLink(googleLocation);
-    if (!coords) {
-      toast.error('Could not extract coordinates from this link. Short links may not work.');
-      return;
-    }
+    let resolvedLocation = googleLocation;
+    let coords = extractCoordinatesFromGoogleMapsLink(resolvedLocation);
+
+    let loadingToast: string | number | undefined;
 
     try {
-      const loadingToast = toast.loading('Fetching address from Google Maps...');
+      if (!coords && isGoogleMapsShortLink(resolvedLocation)) {
+        const token = await resolveSupabaseAccessTokenForApi();
+        if (!token) {
+          toast.error('Please sign in again to resolve short links.');
+          return;
+        }
+
+        loadingToast = toast.loading('Resolving short link...');
+        const expanded = await resolveGoogleMapsLinkViaApi(resolvedLocation, token);
+        if (loadingToast !== undefined) toast.dismiss(loadingToast);
+
+        if (!expanded) {
+          toast.error('Could not resolve this short link. Try opening it in a browser and copy the full URL.');
+          return;
+        }
+
+        resolvedLocation = expanded;
+        setEditFormData((prev) => ({ ...prev, google_location: expanded }));
+        coords = extractCoordinatesFromGoogleMapsLink(expanded);
+
+        if (!coords) {
+          toast.error('Short link resolved but coordinates were not found. Try copying the full URL from your browser.');
+          return;
+        }
+
+        toast.info('Short link expanded');
+      } else if (!coords) {
+        toast.error('Could not extract coordinates from this link.');
+        return;
+      }
+
+      loadingToast = toast.loading('Fetching address from Google Maps...');
 
       const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
       if (apiKey && (!window.google || !window.google.maps || !window.google.maps.Geocoder)) {
@@ -745,8 +743,6 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
         locationManuallyEditedRef.current = false;
       }
       
-      toast.dismiss(loadingToast);
-      
       if (address) {
         toast.success(`Address fetched: ${address.substring(0, 50)}${address.length > 50 ? '...' : ''}`);
         if (extractedLocation) {
@@ -762,6 +758,8 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
     } catch (error) {
       console.error('Error fetching address:', error);
       toast.error('Failed to fetch address. Please try again.');
+    } finally {
+      if (loadingToast !== undefined) toast.dismiss(loadingToast);
     }
   };
 
