@@ -1,15 +1,16 @@
-// Expand Google Maps short links (maps.app.goo.gl) server-side — staff-only, rate-limited.
-const { getCorsHeaders, isOriginAllowed, shouldRejectMissingOrigin } = require('./cors-helper');
+// Expand Google Maps short links (maps.app.goo.gl) — public, rate-limited.
+const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
 const { checkRateLimit } = require('./rate-limiter');
 const { addSecurityHeaders } = require('./security-headers');
-const { verifyStaffBearerToken, readAccessTokenFromEvent } = require('./admin-auth-guard');
 
 const MAX_URL_LEN = 2048;
-const MAX_REDIRECTS = 10;
+const MAX_REDIRECTS = 12;
 
 const USER_AGENTS = [
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+  'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
 ];
 
 function jsonResponse(statusCode, corsHeaders, body) {
@@ -29,7 +30,9 @@ function isAllowedMapsHost(hostname) {
     host === 'google.com' ||
     host.endsWith('.google.com') ||
     host.endsWith('.google.co.in') ||
-    host === 'maps.google.com'
+    host === 'maps.google.com' ||
+    host === 'consent.google.com' ||
+    host === 'accounts.google.com'
   );
 }
 
@@ -38,6 +41,17 @@ function isAllowedMapsUrl(input) {
     const u = new URL(String(input || '').trim());
     if (u.protocol !== 'https:') return false;
     return isAllowedMapsHost(u.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function isMapsDestinationUrl(input) {
+  try {
+    const u = new URL(String(input || '').trim());
+    if (u.protocol !== 'https:') return false;
+    const host = u.hostname.toLowerCase();
+    return host.includes('google.') && (u.pathname.includes('/maps') || host === 'maps.app.goo.gl');
   } catch {
     return false;
   }
@@ -111,8 +125,15 @@ function unwrapGoogleUrlWrapper(url) {
     const u = new URL(url);
     if (u.pathname === '/url') {
       const nested = u.searchParams.get('q') || u.searchParams.get('url');
-      if (nested && isAllowedMapsUrl(nested)) {
+      if (nested && isMapsDestinationUrl(nested)) {
         return nested;
+      }
+    }
+    if (u.hostname.includes('accounts.google.com') || u.hostname.includes('consent.google.com')) {
+      const cont = u.searchParams.get('continue');
+      if (cont) {
+        const decoded = decodeURIComponent(cont);
+        if (isMapsDestinationUrl(decoded)) return decoded;
       }
     }
   } catch {
@@ -121,8 +142,33 @@ function unwrapGoogleUrlWrapper(url) {
   return url;
 }
 
+function decodeHtmlEntities(value) {
+  return String(value || '')
+    .replace(/&amp;/g, '&')
+    .replace(/\\x([0-9a-fA-F]{2})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+}
+
+function extractContinueUrlFromHtml(html) {
+  if (!html) return null;
+  const patterns = [
+    /continue\\x3d(https?:\\\/\\\/[^&"']+)/i,
+    /continue=(https?:\/\/[^&"']+)/i,
+    /"continue":"(https?:[^"]+)"/i,
+  ];
+  for (const pattern of patterns) {
+    const match = html.match(pattern);
+    if (!match) continue;
+    const candidate = decodeHtmlEntities(match[1]).replace(/\\\//g, '/');
+    if (isMapsDestinationUrl(candidate)) return candidate;
+  }
+  return null;
+}
+
 function extractMapsUrlFromHtml(html) {
   if (!html || typeof html !== 'string') return null;
+
+  const continueUrl = extractContinueUrlFromHtml(html);
+  if (continueUrl && extractCoordinatesFromUrl(continueUrl)) return continueUrl;
 
   const candidates = [];
   const patterns = [
@@ -131,15 +177,27 @@ function extractMapsUrlFromHtml(html) {
     /rel="canonical"\s+href="([^"]+)"/i,
     /href="(https:\/\/(?:www\.)?google\.com\/maps[^"]+)"/gi,
     /"(https:\/\/(?:www\.)?google\.com\/maps[^"]+)"/gi,
+    /\[(null,null,)?(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)(?:,\d+)?\]/g,
   ];
 
-  for (const pattern of patterns) {
+  for (let i = 0; i < 4; i += 1) {
+    const pattern = patterns[i];
     const matches = html.matchAll(pattern);
     for (const match of matches) {
-      const candidate = (match[1] || match[0] || '').replace(/&amp;/g, '&');
-      if (candidate.includes('google.com/maps') && isAllowedMapsUrl(candidate.split('?')[0])) {
+      const candidate = decodeHtmlEntities(match[1] || match[0] || '');
+      if (candidate.includes('google.com/maps')) {
         candidates.push(candidate);
       }
+    }
+  }
+
+  const coordMatches = [...html.matchAll(patterns[4])];
+  if (coordMatches.length > 0) {
+    const last = coordMatches[coordMatches.length - 1];
+    const lat = last[2] || last[1];
+    const lng = last[3] || last[2];
+    if (lat && lng) {
+      return `https://www.google.com/maps?q=${lat},${lng}`;
     }
   }
 
@@ -161,7 +219,8 @@ async function fetchWithManualRedirects(startUrl, userAgent) {
       redirect: 'manual',
       headers: {
         'User-Agent': userAgent,
-        Accept: 'text/html,application/xhtml+xml',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-IN,en;q=0.9',
       },
     });
 
@@ -169,7 +228,7 @@ async function fetchWithManualRedirects(startUrl, userAgent) {
       const location = response.headers.get('location');
       if (!location) break;
       const next = new URL(location, current).href;
-      if (!isAllowedMapsUrl(next)) break;
+      if (!isAllowedMapsHost(new URL(next).hostname)) break;
       current = next;
       continue;
     }
@@ -201,6 +260,7 @@ async function fetchWithAutoRedirects(startUrl, userAgent) {
       headers: {
         'User-Agent': userAgent,
         Accept: 'text/html,application/xhtml+xml',
+        'Accept-Language': 'en-IN,en;q=0.9',
       },
     });
 
@@ -219,16 +279,41 @@ async function fetchWithAutoRedirects(startUrl, userAgent) {
 
 async function followRedirects(startUrl) {
   const cleaned = sanitizeUrl(startUrl);
+  const variants = [cleaned, `${cleaned}?_imcp=1`];
 
-  for (const userAgent of USER_AGENTS) {
-    const manual = await fetchWithManualRedirects(cleaned, userAgent);
-    if (extractCoordinatesFromUrl(manual)) return manual;
+  for (const variant of variants) {
+    for (const userAgent of USER_AGENTS) {
+      const manual = await fetchWithManualRedirects(variant, userAgent);
+      if (extractCoordinatesFromUrl(manual)) return manual;
 
-    const automatic = await fetchWithAutoRedirects(cleaned, userAgent);
-    if (extractCoordinatesFromUrl(automatic)) return automatic;
+      const automatic = await fetchWithAutoRedirects(variant, userAgent);
+      if (extractCoordinatesFromUrl(automatic)) return automatic;
+    }
   }
 
   return unwrapGoogleUrlWrapper(cleaned);
+}
+
+function extractPlaceNameFromUrl(url) {
+  try {
+    const match = normalizeUrlForParsing(url).match(/\/place\/([^/@?]+)/);
+    if (!match) return null;
+    const raw = decodeURIComponent(match[1].replace(/\+/g, ' ')).trim();
+    if (!raw || /^-?\d/.test(raw)) return null;
+    return raw;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveMapsUrl(inputUrl) {
+  const expandedUrl = await followRedirects(inputUrl);
+  const coords = extractCoordinatesFromUrl(expandedUrl);
+  const stillShort =
+    expandedUrl.includes('maps.app.goo.gl') || expandedUrl.includes('goo.gl/maps');
+  const placeName = extractPlaceNameFromUrl(expandedUrl);
+
+  return { expandedUrl, coords, stillShort, placeName };
 }
 
 exports.handler = async (event) => {
@@ -239,20 +324,18 @@ exports.handler = async (event) => {
     return { statusCode: 200, headers: addSecurityHeaders(corsHeaders), body: '' };
   }
 
-  if (shouldRejectMissingOrigin(event)) {
-    return jsonResponse(403, corsHeaders, { error: 'Forbidden' });
-  }
-
+  // Public read-only endpoint — rate limit + URL allowlist. Same-origin mobile
+  // Safari often omits Origin; do not require it here.
   if (requestOrigin && !isOriginAllowed(requestOrigin)) {
     return jsonResponse(403, corsHeaders, { error: 'Forbidden: Origin not allowed' });
   }
 
-  if (event.httpMethod !== 'POST') {
+  if (!['GET', 'POST'].includes(event.httpMethod)) {
     return jsonResponse(405, corsHeaders, { error: 'Method not allowed' });
   }
 
   const rateLimit = checkRateLimit(event, {
-    maxRequests: 30,
+    maxRequests: 60,
     windowMs: 60_000,
     endpoint: 'resolve-maps-link',
   });
@@ -262,21 +345,19 @@ exports.handler = async (event) => {
     });
   }
 
-  let body = {};
-  try {
-    body = JSON.parse(event.body || '{}');
-  } catch {
-    return jsonResponse(400, corsHeaders, { error: 'Invalid JSON' });
+  let inputUrl = '';
+  if (event.httpMethod === 'GET') {
+    inputUrl = sanitizeUrl((event.queryStringParameters || {}).url);
+  } else {
+    let body = {};
+    try {
+      body = JSON.parse(event.body || '{}');
+    } catch {
+      return jsonResponse(400, corsHeaders, { error: 'Invalid JSON' });
+    }
+    inputUrl = sanitizeUrl(body.url);
   }
 
-  const token = readAccessTokenFromEvent(event, body);
-  const auth = await verifyStaffBearerToken(token);
-  if (!auth.ok) {
-    const status = auth.error === 'Unauthorized' ? 401 : 403;
-    return jsonResponse(status, corsHeaders, { error: auth.error || 'Forbidden' });
-  }
-
-  const inputUrl = sanitizeUrl(body.url);
   if (!inputUrl) {
     return jsonResponse(400, corsHeaders, { error: 'Missing url parameter' });
   }
@@ -288,17 +369,15 @@ exports.handler = async (event) => {
   }
 
   try {
-    const expandedUrl = await followRedirects(inputUrl);
-    const coords = extractCoordinatesFromUrl(expandedUrl);
-    const stillShort =
-      expandedUrl.includes('maps.app.goo.gl') || expandedUrl.includes('goo.gl/maps');
+    const { expandedUrl, coords, stillShort, placeName } = await resolveMapsUrl(inputUrl);
 
     if (!coords || stillShort) {
       return jsonResponse(422, corsHeaders, {
         error:
-          'Google could not expand this short link. Open it in the Maps app, then copy the full URL from your browser address bar.',
+          'Could not expand this short link from Google. If you shared from Maps, copy the whole share text (place name + link), not just the URL.',
         expandedUrl,
         originalUrl: inputUrl,
+        ...(placeName ? { placeName } : {}),
       });
     }
 
@@ -307,6 +386,7 @@ exports.handler = async (event) => {
       originalUrl: inputUrl,
       latitude: coords.latitude,
       longitude: coords.longitude,
+      ...(placeName ? { placeName } : {}),
     });
   } catch (error) {
     console.error('resolve-maps-link error:', error);
@@ -314,5 +394,5 @@ exports.handler = async (event) => {
   }
 };
 
-// Exported for quick node smoke tests
 exports.extractCoordinatesFromUrl = extractCoordinatesFromUrl;
+exports.followRedirects = followRedirects;

@@ -16,8 +16,10 @@ import { normalizeIndianMobileInput } from '@/lib/utils';
 import PhoneSwapButton from '@/components/admin/PhoneSwapButton';
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import {
+  collectPlaceHints,
   extractCoordinatesFromGoogleMapsLink,
   extractMapsUrlFromText,
+  geocodePlaceHintViaApi,
   isGoogleMapsShortLink,
   isGoogleMapsUrl,
   resolveGoogleMapsLinkViaApi,
@@ -671,35 +673,51 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
 
     try {
       if (!coords && isGoogleMapsShortLink(resolvedLocation)) {
-        const token = await resolveSupabaseAccessTokenForApi();
-        if (!token) {
-          toast.error('Please sign in again to resolve short links.');
-          return;
-        }
-
         loadingToast = toast.loading('Resolving short link...');
-        const resolveResult = await resolveGoogleMapsLinkViaApi(resolvedLocation, token);
+        const resolveResult = await resolveGoogleMapsLinkViaApi(resolvedLocation);
         if (loadingToast !== undefined) toast.dismiss(loadingToast);
 
-        if (!resolveResult.ok) {
-          toast.error(resolveResult.error, { duration: 6000 });
-          return;
+        if (resolveResult.ok) {
+          const resolved = resolveResult.data;
+          resolvedLocation = resolved.expandedUrl;
+          setEditFormData((prev) => ({ ...prev, google_location: resolved.expandedUrl }));
+          coords =
+            resolved.latitude !== undefined && resolved.longitude !== undefined
+              ? { latitude: resolved.latitude, longitude: resolved.longitude }
+              : extractCoordinatesFromGoogleMapsLink(resolved.expandedUrl);
+          if (coords) toast.info('Short link expanded');
         }
-
-        const resolved = resolveResult.data;
-        resolvedLocation = resolved.expandedUrl;
-        setEditFormData((prev) => ({ ...prev, google_location: resolved.expandedUrl }));
-        coords =
-          resolved.latitude !== undefined && resolved.longitude !== undefined
-            ? { latitude: resolved.latitude, longitude: resolved.longitude }
-            : extractCoordinatesFromGoogleMapsLink(resolved.expandedUrl);
 
         if (!coords) {
-          toast.error('Could not read coordinates from this link. Paste the full URL from your browser address bar.');
-          return;
+          const token = await resolveSupabaseAccessTokenForApi();
+          const placeHints = collectPlaceHints(
+            editFormData?.google_location || '',
+            editFormData?.address?.street || ''
+          );
+
+          for (const hint of placeHints) {
+            if (!token) break;
+            loadingToast = toast.loading('Looking up address from place name...');
+            const geocoded = await geocodePlaceHintViaApi(hint, token);
+            if (loadingToast !== undefined) toast.dismiss(loadingToast);
+            if (geocoded) {
+              coords = { latitude: geocoded.latitude, longitude: geocoded.longitude };
+              toast.info(`Found location from place name: ${hint.split(',')[0]}`);
+              break;
+            }
+          }
         }
 
-        toast.info('Short link expanded');
+        if (!coords) {
+          toast.error(
+            resolveResult.ok
+              ? 'Could not read coordinates from this link.'
+              : resolveResult.error ||
+                  'Could not resolve this link. Paste the full Google Maps share (place name + link).',
+            { duration: 8000 }
+          );
+          return;
+        }
       } else if (!coords) {
         toast.error('Could not extract coordinates from this link.');
         return;

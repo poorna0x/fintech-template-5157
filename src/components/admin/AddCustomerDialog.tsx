@@ -18,8 +18,10 @@ import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmen
 import PhoneSwapButton from '@/components/admin/PhoneSwapButton';
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import {
+  collectPlaceHints,
   extractCoordinatesFromGoogleMapsLink,
   extractMapsUrlFromText,
+  geocodePlaceHintViaApi,
   isGoogleMapsShortLink,
   isGoogleMapsUrl,
   resolveGoogleMapsLinkViaApi,
@@ -218,6 +220,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   // Mirrors addFormData.google_location for race-safe reads across async awaits
   // (e.g. while clipboard.readText is in flight, the user might start typing).
   const googleLocationRef = useRef('');
+  // Full Maps share text (place name + link) from clipboard — used when short-link expand fails.
+  const mapsShareTextRef = useRef('');
   // Guards against double-clicks and other re-entrancy on the Fetch Address button.
   const [isFetchingAddress, setIsFetchingAddress] = useState(false);
   const [step5JobData, setStep5JobData] = useState(() => ({
@@ -683,6 +687,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       toast.error('Clipboard is empty. Copy a Google Maps share link first.');
       return null;
     }
+    mapsShareTextRef.current = text;
     const link = extractMapsUrlFromText(text);
     if (!link) {
       toast.error("Clipboard doesn't contain a Google Maps link.");
@@ -730,37 +735,54 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       let coords = extractCoordinatesFromGoogleMapsLink(resolvedLocation);
 
       if (!coords && isGoogleMapsShortLink(resolvedLocation)) {
-        const token = await resolveSupabaseAccessTokenForApi();
-        if (!token) {
-          toast.error('Please sign in again to resolve short links.');
-          return;
-        }
-
         loadingToast = toast.loading('Resolving short link...');
-        const resolveResult = await resolveGoogleMapsLinkViaApi(resolvedLocation, token);
+        const resolveResult = await resolveGoogleMapsLinkViaApi(resolvedLocation);
         if (loadingToast !== undefined) toast.dismiss(loadingToast);
         loadingToast = undefined;
 
-        if (!resolveResult.ok) {
-          toast.error(resolveResult.error, { duration: 6000 });
-          return;
+        if (resolveResult.ok) {
+          const resolved = resolveResult.data;
+          resolvedLocation = resolved.expandedUrl;
+          setAddFormData((prev) => ({ ...prev, google_location: resolved.expandedUrl }));
+          googleLocationRef.current = resolved.expandedUrl;
+          coords =
+            resolved.latitude !== undefined && resolved.longitude !== undefined
+              ? { latitude: resolved.latitude, longitude: resolved.longitude }
+              : extractCoordinatesFromGoogleMapsLink(resolved.expandedUrl);
+          if (coords) toast.info('Short link expanded');
         }
-
-        const resolved = resolveResult.data;
-        resolvedLocation = resolved.expandedUrl;
-        setAddFormData((prev) => ({ ...prev, google_location: resolved.expandedUrl }));
-        googleLocationRef.current = resolved.expandedUrl;
-        coords =
-          resolved.latitude !== undefined && resolved.longitude !== undefined
-            ? { latitude: resolved.latitude, longitude: resolved.longitude }
-            : extractCoordinatesFromGoogleMapsLink(resolved.expandedUrl);
 
         if (!coords) {
-          toast.error('Could not read coordinates from this link. Paste the full URL from your browser address bar.');
-          return;
+          const token = await resolveSupabaseAccessTokenForApi();
+          const placeHints = collectPlaceHints(
+            mapsShareTextRef.current,
+            googleLocationRef.current,
+            addFormData.address
+          );
+
+          for (const hint of placeHints) {
+            if (!token) break;
+            loadingToast = toast.loading('Looking up address from place name...');
+            const geocoded = await geocodePlaceHintViaApi(hint, token);
+            if (loadingToast !== undefined) toast.dismiss(loadingToast);
+            loadingToast = undefined;
+            if (geocoded) {
+              coords = { latitude: geocoded.latitude, longitude: geocoded.longitude };
+              toast.info(`Found location from place name: ${hint.split(',')[0]}`);
+              break;
+            }
+          }
         }
 
-        toast.info('Short link expanded');
+        if (!coords) {
+          const apiError = resolveResult.ok ? null : resolveResult.error;
+          toast.error(
+            apiError ||
+              'Could not resolve this link. Copy the full share from Google Maps (place name + link), paste here, and try again.',
+            { duration: 8000 }
+          );
+          return;
+        }
       } else if (!coords) {
         toast.error('Could not extract coordinates from this link.');
         return;
@@ -1566,7 +1588,10 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                   <Input
                     id="add_google_location"
                     value={addFormData.google_location}
-                    onChange={(e) => handleAddFormChange('google_location', e.target.value)}
+                    onChange={(e) => {
+                      mapsShareTextRef.current = e.target.value;
+                      handleAddFormChange('google_location', e.target.value);
+                    }}
                     placeholder="Paste Google Maps share link here..."
                     className="text-sm flex-1 min-w-[180px]"
                   />
@@ -1608,7 +1633,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Tip: copy the share link from Google Maps, then click <strong>Fetch Address</strong> — we'll paste it for you.
+                  Tip: in Google Maps tap <strong>Share</strong> and paste the whole message here (place name + link). On mobile, tap <strong>Fetch Address</strong> — we read the clipboard for you.
                 </p>
               </div>
             </div>

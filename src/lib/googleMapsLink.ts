@@ -8,6 +8,12 @@ export type ResolveGoogleMapsLinkResult =
   | { ok: true; data: GoogleMapsResolvedLink }
   | { ok: false; error: string; status?: number };
 
+export interface GeocodedPlaceHint {
+  latitude: number;
+  longitude: number;
+  address: string;
+}
+
 /**
  * Strip invisible chars mobile keyboards/clipboards often insert.
  */
@@ -26,6 +32,60 @@ export function extractMapsUrlFromText(text: string): string | null {
   const match = trimmed.match(MAPS_URL_REGEX);
   if (match) return match[0].replace(/[)>\].,;'"]+$/g, '');
   return null;
+}
+
+/**
+ * Google Maps mobile share often includes the place name above the short link.
+ * Example:
+ *   Sobha Dream Acres
+ *   https://maps.app.goo.gl/xxx
+ */
+export function extractPlaceHintFromShareText(text: string): string | null {
+  const cleaned = sanitizeGoogleMapsInput(text);
+  if (!cleaned) return null;
+
+  const url = extractMapsUrlFromText(cleaned);
+  const withoutUrl = url ? cleaned.replace(url, '').trim() : cleaned;
+
+  const lines = withoutUrl
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 2 && !line.startsWith('http'));
+
+  const candidates = lines.filter(
+    (line) =>
+      !/^[\d\s\-+()]+$/.test(line) &&
+      !/^maps\.app\.goo\.gl/i.test(line) &&
+      line.length <= 200
+  );
+
+  if (candidates.length === 0) return null;
+
+  const hint = candidates.slice(0, 2).join(', ');
+  if (/bengaluru|bangalore|karnataka/i.test(hint)) return hint;
+  return `${hint}, Bengaluru, Karnataka`;
+}
+
+/**
+ * Place name from an expanded /place/Name,.../ Google Maps URL.
+ */
+export function extractPlaceNameFromMapsUrl(url: string): string | null {
+  try {
+    const value = normalizeUrlForParsing(url);
+    const match = value.match(/\/place\/([^/@?]+)/);
+    if (!match) return null;
+
+    const raw = decodeURIComponent(match[1].replace(/\+/g, ' ')).trim();
+    if (!raw || /^-?\d/.test(raw)) return null;
+
+    const primary = raw.split(',')[0].trim();
+    if (!primary || primary.length < 3) return null;
+
+    if (/bengaluru|bangalore|karnataka/i.test(raw)) return raw;
+    return `${raw}, Bengaluru, Karnataka`;
+  } catch {
+    return null;
+  }
 }
 
 function normalizeUrlForParsing(url: string): string {
@@ -73,7 +133,6 @@ export function extractCoordinatesFromGoogleMapsLink(
       /[?&]center=(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/,
     ];
 
-    // Prefer the last !3d!4d pair — final segment is usually the pin, not map center.
     const preciseMatches = [...value.matchAll(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/g)];
     if (preciseMatches.length > 0) {
       const last = preciseMatches[preciseMatches.length - 1];
@@ -110,6 +169,11 @@ export function isGoogleMapsShortLink(url: string): boolean {
   return value.includes('maps.app.goo.gl') || value.includes('goo.gl/maps');
 }
 
+export function isMobileDevice(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+}
+
 function resolveMapsLinkEndpoint(): string {
   if (typeof window !== 'undefined' && window.location?.origin) {
     return `${window.location.origin}/.netlify/functions/resolve-maps-link`;
@@ -117,26 +181,14 @@ function resolveMapsLinkEndpoint(): string {
   return '/.netlify/functions/resolve-maps-link';
 }
 
-export async function resolveGoogleMapsLinkViaApi(
-  shortUrl: string,
-  accessToken: string
-): Promise<ResolveGoogleMapsLinkResult> {
-  const cleaned = extractMapsUrlFromText(shortUrl) || sanitizeGoogleMapsInput(shortUrl);
-
-  let response: Response;
-  try {
-    response = await fetch(resolveMapsLinkEndpoint(), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({ url: cleaned }),
-    });
-  } catch {
-    return { ok: false, error: 'Network error while resolving link. Check your connection and try again.' };
+function geocodeEndpoint(): string {
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return `${window.location.origin}/.netlify/functions/geocode`;
   }
+  return '/.netlify/functions/geocode';
+}
 
+async function parseResolveResponse(response: Response): Promise<ResolveGoogleMapsLinkResult> {
   let data: {
     expandedUrl?: string;
     latitude?: number;
@@ -151,16 +203,6 @@ export async function resolveGoogleMapsLinkViaApi(
   }
 
   if (!response.ok) {
-    if (response.status === 401) {
-      return { ok: false, error: 'Session expired. Please sign in again.', status: response.status };
-    }
-    if (response.status === 403) {
-      return {
-        ok: false,
-        error: 'Access denied. Refresh the page and sign in again.',
-        status: response.status,
-      };
-    }
     return {
       ok: false,
       error:
@@ -189,4 +231,86 @@ export async function resolveGoogleMapsLinkViaApi(
       ...(lat !== undefined && lng !== undefined ? { latitude: lat, longitude: lng } : {}),
     },
   };
+}
+
+/** Expand short links — no auth required (rate-limited server-side). */
+export async function resolveGoogleMapsLinkViaApi(
+  shortUrl: string,
+  _accessToken?: string | null
+): Promise<ResolveGoogleMapsLinkResult> {
+  const cleaned = extractMapsUrlFromText(shortUrl) || sanitizeGoogleMapsInput(shortUrl);
+  const endpoint = resolveMapsLinkEndpoint();
+
+  try {
+    // GET first: simpler on mobile Safari (no CORS preflight).
+    const getResponse = await fetch(`${endpoint}?url=${encodeURIComponent(cleaned)}`, {
+      method: 'GET',
+      credentials: 'same-origin',
+    });
+    const getResult = await parseResolveResponse(getResponse);
+    if (getResult.ok) return getResult;
+
+    const postResponse = await fetch(endpoint, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: cleaned }),
+    });
+    return parseResolveResponse(postResponse);
+  } catch {
+    return {
+      ok: false,
+      error: 'Network error while resolving link. Check your connection and try again.',
+    };
+  }
+}
+
+/** Fallback when short-link expansion fails — geocode place name from share text. */
+export async function geocodePlaceHintViaApi(
+  query: string,
+  accessToken: string | null
+): Promise<GeocodedPlaceHint | null> {
+  const q = query.trim();
+  if (!q || !accessToken) return null;
+
+  try {
+    const response = await fetch(geocodeEndpoint(), {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ query: q }),
+    });
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    if (!Array.isArray(data) || data.length === 0) return null;
+
+    const result = data[0];
+    const latitude = parseFloat(result.lat);
+    const longitude = parseFloat(result.lon);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+
+    return {
+      latitude,
+      longitude,
+      address: typeof result.display_name === 'string' ? result.display_name : q,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function collectPlaceHints(...texts: Array<string | null | undefined>): string[] {
+  const hints = new Set<string>();
+  for (const text of texts) {
+    if (!text) continue;
+    const fromShare = extractPlaceHintFromShareText(text);
+    if (fromShare) hints.add(fromShare);
+    const fromUrl = extractPlaceNameFromMapsUrl(text);
+    if (fromUrl) hints.add(fromUrl);
+  }
+  return [...hints];
 }
