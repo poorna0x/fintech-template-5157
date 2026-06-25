@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
 import './index.css'
+import { initLayoutStabilityOnResume } from './lib/layoutStability'
 
 function removeFoucGuards() {
   document.getElementById('async-css-fouc-guards')?.remove();
@@ -21,4 +22,10 @@ if (import.meta.env.DEV) {
   }
 }
 
+const disposeLayoutStability = initLayoutStabilityOnResume()
+
 createRoot(document.getElementById("root")!).render(<App />);
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => disposeLayoutStability())
+}
