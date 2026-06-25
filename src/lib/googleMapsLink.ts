@@ -4,6 +4,10 @@ export interface GoogleMapsResolvedLink {
   longitude?: number;
 }
 
+export type ResolveGoogleMapsLinkResult =
+  | { ok: true; data: GoogleMapsResolvedLink }
+  | { ok: false; error: string; status?: number };
+
 /**
  * Strip invisible chars mobile keyboards/clipboards often insert.
  */
@@ -106,42 +110,83 @@ export function isGoogleMapsShortLink(url: string): boolean {
   return value.includes('maps.app.goo.gl') || value.includes('goo.gl/maps');
 }
 
+function resolveMapsLinkEndpoint(): string {
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return `${window.location.origin}/.netlify/functions/resolve-maps-link`;
+  }
+  return '/.netlify/functions/resolve-maps-link';
+}
+
 export async function resolveGoogleMapsLinkViaApi(
   shortUrl: string,
   accessToken: string
-): Promise<GoogleMapsResolvedLink | null> {
+): Promise<ResolveGoogleMapsLinkResult> {
   const cleaned = extractMapsUrlFromText(shortUrl) || sanitizeGoogleMapsInput(shortUrl);
 
-  const response = await fetch('/.netlify/functions/resolve-maps-link', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${accessToken}`,
-    },
-    body: JSON.stringify({ url: cleaned }),
-  });
-
-  if (!response.ok) {
-    return null;
+  let response: Response;
+  try {
+    response = await fetch(resolveMapsLinkEndpoint(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ url: cleaned }),
+    });
+  } catch {
+    return { ok: false, error: 'Network error while resolving link. Check your connection and try again.' };
   }
 
-  const data = (await response.json()) as {
+  let data: {
     expandedUrl?: string;
     latitude?: number;
     longitude?: number;
-  };
+    error?: string;
+  } = {};
+
+  try {
+    data = (await response.json()) as typeof data;
+  } catch {
+    data = {};
+  }
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      return { ok: false, error: 'Session expired. Please sign in again.', status: response.status };
+    }
+    if (response.status === 403) {
+      return {
+        ok: false,
+        error: 'Access denied. Refresh the page and sign in again.',
+        status: response.status,
+      };
+    }
+    return {
+      ok: false,
+      error:
+        typeof data.error === 'string' && data.error.trim()
+          ? data.error.trim()
+          : 'Could not resolve this short link.',
+      status: response.status,
+    };
+  }
 
   const expandedUrl =
     typeof data.expandedUrl === 'string' && data.expandedUrl.trim()
       ? data.expandedUrl.trim()
       : null;
-  if (!expandedUrl) return null;
+  if (!expandedUrl) {
+    return { ok: false, error: 'Could not resolve this short link.', status: response.status };
+  }
 
   const lat = typeof data.latitude === 'number' ? data.latitude : undefined;
   const lng = typeof data.longitude === 'number' ? data.longitude : undefined;
 
   return {
-    expandedUrl,
-    ...(lat !== undefined && lng !== undefined ? { latitude: lat, longitude: lng } : {}),
+    ok: true,
+    data: {
+      expandedUrl,
+      ...(lat !== undefined && lng !== undefined ? { latitude: lat, longitude: lng } : {}),
+    },
   };
 }

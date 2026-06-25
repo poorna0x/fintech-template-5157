@@ -1,5 +1,5 @@
 // Expand Google Maps short links (maps.app.goo.gl) server-side — staff-only, rate-limited.
-const { getCorsHeaders, isOriginAllowed, isProduction } = require('./cors-helper');
+const { getCorsHeaders, isOriginAllowed, shouldRejectMissingOrigin } = require('./cors-helper');
 const { checkRateLimit } = require('./rate-limiter');
 const { addSecurityHeaders } = require('./security-headers');
 const { verifyStaffBearerToken, readAccessTokenFromEvent } = require('./admin-auth-guard');
@@ -239,7 +239,7 @@ exports.handler = async (event) => {
     return { statusCode: 200, headers: addSecurityHeaders(corsHeaders), body: '' };
   }
 
-  if (isProduction() && !requestOrigin) {
+  if (shouldRejectMissingOrigin(event)) {
     return jsonResponse(403, corsHeaders, { error: 'Forbidden' });
   }
 
@@ -290,11 +290,23 @@ exports.handler = async (event) => {
   try {
     const expandedUrl = await followRedirects(inputUrl);
     const coords = extractCoordinatesFromUrl(expandedUrl);
+    const stillShort =
+      expandedUrl.includes('maps.app.goo.gl') || expandedUrl.includes('goo.gl/maps');
+
+    if (!coords || stillShort) {
+      return jsonResponse(422, corsHeaders, {
+        error:
+          'Google could not expand this short link. Open it in the Maps app, then copy the full URL from your browser address bar.',
+        expandedUrl,
+        originalUrl: inputUrl,
+      });
+    }
 
     return jsonResponse(200, corsHeaders, {
       expandedUrl,
       originalUrl: inputUrl,
-      ...(coords ? { latitude: coords.latitude, longitude: coords.longitude } : {}),
+      latitude: coords.latitude,
+      longitude: coords.longitude,
     });
   } catch (error) {
     console.error('resolve-maps-link error:', error);

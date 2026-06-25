@@ -1,5 +1,5 @@
 // Netlify Function for geocoding (Nominatim proxy) — staff-only, rate-limited.
-const { getCorsHeaders, isOriginAllowed, isProduction } = require('./cors-helper');
+const { getCorsHeaders, isOriginAllowed, shouldRejectMissingOrigin } = require('./cors-helper');
 const { checkRateLimit } = require('./rate-limiter');
 const { addSecurityHeaders } = require('./security-headers');
 const { verifyStaffBearerToken, readAccessTokenFromEvent } = require('./admin-auth-guard');
@@ -22,7 +22,7 @@ exports.handler = async (event) => {
     return { statusCode: 200, headers: addSecurityHeaders(corsHeaders), body: '' };
   }
 
-  if (isProduction() && !requestOrigin) {
+  if (shouldRejectMissingOrigin(event)) {
     return jsonResponse(403, corsHeaders, { error: 'Forbidden' });
   }
 

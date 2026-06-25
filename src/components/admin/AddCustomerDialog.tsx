@@ -737,15 +737,16 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         }
 
         loadingToast = toast.loading('Resolving short link...');
-        const resolved = await resolveGoogleMapsLinkViaApi(resolvedLocation, token);
+        const resolveResult = await resolveGoogleMapsLinkViaApi(resolvedLocation, token);
         if (loadingToast !== undefined) toast.dismiss(loadingToast);
         loadingToast = undefined;
 
-        if (!resolved?.expandedUrl) {
-          toast.error('Could not resolve this short link. Try opening it in a browser and copy the full URL.');
+        if (!resolveResult.ok) {
+          toast.error(resolveResult.error, { duration: 6000 });
           return;
         }
 
+        const resolved = resolveResult.data;
         resolvedLocation = resolved.expandedUrl;
         setAddFormData((prev) => ({ ...prev, google_location: resolved.expandedUrl }));
         googleLocationRef.current = resolved.expandedUrl;

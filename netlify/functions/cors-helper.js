@@ -108,6 +108,21 @@ function isOriginAllowed(requestOrigin) {
   return getAllowedOrigin(requestOrigin) !== null;
 }
 
+function hasBearerAuthorization(event) {
+  const authHeader = event.headers.authorization || event.headers.Authorization || '';
+  return authHeader.startsWith('Bearer ') && authHeader.slice(7).trim().length > 0;
+}
+
+/**
+ * Production blocks missing Origin to stop sandboxed iframe abuse — but same-origin
+ * browser fetches (common on mobile Safari) often omit Origin. Allow when JWT present.
+ */
+function shouldRejectMissingOrigin(event) {
+  if (!isProduction()) return false;
+  if (event.headers.origin || event.headers.Origin) return false;
+  return !hasBearerAuthorization(event);
+}
+
 /** @deprecated Use isLocalDev(); kept for booking-guard imports */
 function isProduction() {
   return !isLocalDev();
@@ -116,7 +131,9 @@ function isProduction() {
 module.exports = {
   getAllowedOrigin,
   getCorsHeaders,
+  hasBearerAuthorization,
   isOriginAllowed,
   isProduction,
   isLocalDev,
+  shouldRejectMissingOrigin,
 };
