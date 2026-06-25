@@ -17,9 +17,11 @@ import PhoneSwapButton from '@/components/admin/PhoneSwapButton';
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import {
   extractCoordinatesFromGoogleMapsLink,
+  extractMapsUrlFromText,
   isGoogleMapsShortLink,
   isGoogleMapsUrl,
   resolveGoogleMapsLinkViaApi,
+  sanitizeGoogleMapsInput,
 } from '@/lib/googleMapsLink';
 
 // Brand and model data - RO and Softener brands including local (Aqua Grand, Aqua Smart, Dolphin, etc.)
@@ -648,9 +650,11 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
   };
 
   const fetchAddressFromGoogleLocation = async () => {
-    const googleLocation = editFormData?.google_location || '';
+    const googleLocation =
+      extractMapsUrlFromText(editFormData?.google_location || '') ||
+      sanitizeGoogleMapsInput(editFormData?.google_location || '');
     
-    if (!googleLocation.trim()) {
+    if (!googleLocation) {
       toast.error('Please enter a Google Maps link first');
       return;
     }
@@ -674,20 +678,23 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
         }
 
         loadingToast = toast.loading('Resolving short link...');
-        const expanded = await resolveGoogleMapsLinkViaApi(resolvedLocation, token);
+        const resolved = await resolveGoogleMapsLinkViaApi(resolvedLocation, token);
         if (loadingToast !== undefined) toast.dismiss(loadingToast);
 
-        if (!expanded) {
+        if (!resolved?.expandedUrl) {
           toast.error('Could not resolve this short link. Try opening it in a browser and copy the full URL.');
           return;
         }
 
-        resolvedLocation = expanded;
-        setEditFormData((prev) => ({ ...prev, google_location: expanded }));
-        coords = extractCoordinatesFromGoogleMapsLink(expanded);
+        resolvedLocation = resolved.expandedUrl;
+        setEditFormData((prev) => ({ ...prev, google_location: resolved.expandedUrl }));
+        coords =
+          resolved.latitude !== undefined && resolved.longitude !== undefined
+            ? { latitude: resolved.latitude, longitude: resolved.longitude }
+            : extractCoordinatesFromGoogleMapsLink(resolved.expandedUrl);
 
         if (!coords) {
-          toast.error('Short link resolved but coordinates were not found. Try copying the full URL from your browser.');
+          toast.error('Could not read coordinates from this link. Paste the full URL from your browser address bar.');
           return;
         }
 

@@ -19,9 +19,11 @@ import PhoneSwapButton from '@/components/admin/PhoneSwapButton';
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import {
   extractCoordinatesFromGoogleMapsLink,
+  extractMapsUrlFromText,
   isGoogleMapsShortLink,
   isGoogleMapsUrl,
   resolveGoogleMapsLinkViaApi,
+  sanitizeGoogleMapsInput,
 } from '@/lib/googleMapsLink';
 
 // Brand and model data - RO and Softener brands including local (Aqua Grand, Aqua Smart, Dolphin, etc.)
@@ -652,21 +654,6 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   };
 
   /**
-   * Pull the first Google Maps URL out of arbitrary clipboard text.
-   * Tolerates: pure URL, URL with surrounding whitespace/newlines, a paragraph
-   * containing a URL, or multiple URLs (first match wins).
-   */
-  const extractMapsUrlFromText = (text: string): string | null => {
-    const trimmed = (text || '').trim();
-    if (!trimmed) return null;
-    const MAPS_URL_REGEX =
-      /https?:\/\/(?:www\.)?(?:google\.[^/\s]+\/maps\S*|maps\.app\.goo\.gl\/\S+|goo\.gl\/maps\/\S+)/i;
-    const match = trimmed.match(MAPS_URL_REGEX);
-    if (match) return match[0].replace(/[)>\].,;'"]+$/g, '');
-    return null;
-  };
-
-  /**
    * Read the OS clipboard and return a Google Maps URL if one is in there.
    * Returns null and surfaces a user-facing toast on every failure mode so the
    * caller doesn't need to know why it failed.
@@ -711,7 +698,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
     let loadingToast: string | number | undefined;
     try {
-      let googleLocation = (googleLocationRef.current || '').trim();
+      let googleLocation = extractMapsUrlFromText(googleLocationRef.current || '') ||
+        sanitizeGoogleMapsInput(googleLocationRef.current || '');
 
       if (!googleLocation) {
         // No link in the field — try the clipboard so the user can skip pasting.
@@ -720,7 +708,9 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
         // Race-safe: the user may have started typing during the clipboard read.
         // Re-read the latest value via the ref, NOT the captured closure.
-        const latestTyped = (googleLocationRef.current || '').trim();
+        const latestTyped =
+          extractMapsUrlFromText(googleLocationRef.current || '') ||
+          sanitizeGoogleMapsInput(googleLocationRef.current || '');
         if (latestTyped) {
           googleLocation = latestTyped;
         } else {
@@ -747,22 +737,25 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         }
 
         loadingToast = toast.loading('Resolving short link...');
-        const expanded = await resolveGoogleMapsLinkViaApi(resolvedLocation, token);
+        const resolved = await resolveGoogleMapsLinkViaApi(resolvedLocation, token);
         if (loadingToast !== undefined) toast.dismiss(loadingToast);
         loadingToast = undefined;
 
-        if (!expanded) {
+        if (!resolved?.expandedUrl) {
           toast.error('Could not resolve this short link. Try opening it in a browser and copy the full URL.');
           return;
         }
 
-        resolvedLocation = expanded;
-        setAddFormData((prev) => ({ ...prev, google_location: expanded }));
-        googleLocationRef.current = expanded;
-        coords = extractCoordinatesFromGoogleMapsLink(expanded);
+        resolvedLocation = resolved.expandedUrl;
+        setAddFormData((prev) => ({ ...prev, google_location: resolved.expandedUrl }));
+        googleLocationRef.current = resolved.expandedUrl;
+        coords =
+          resolved.latitude !== undefined && resolved.longitude !== undefined
+            ? { latitude: resolved.latitude, longitude: resolved.longitude }
+            : extractCoordinatesFromGoogleMapsLink(resolved.expandedUrl);
 
         if (!coords) {
-          toast.error('Short link resolved but coordinates were not found. Try copying the full URL from your browser.');
+          toast.error('Could not read coordinates from this link. Paste the full URL from your browser address bar.');
           return;
         }
 

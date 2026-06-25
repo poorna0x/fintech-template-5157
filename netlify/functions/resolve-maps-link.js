@@ -7,6 +7,11 @@ const { verifyStaffBearerToken, readAccessTokenFromEvent } = require('./admin-au
 const MAX_URL_LEN = 2048;
 const MAX_REDIRECTS = 10;
 
+const USER_AGENTS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+];
+
 function jsonResponse(statusCode, corsHeaders, body) {
   return {
     statusCode,
@@ -23,7 +28,8 @@ function isAllowedMapsHost(hostname) {
     host.endsWith('.goo.gl') ||
     host === 'google.com' ||
     host.endsWith('.google.com') ||
-    host.endsWith('.google.co.in')
+    host.endsWith('.google.co.in') ||
+    host === 'maps.google.com'
   );
 }
 
@@ -35,6 +41,69 @@ function isAllowedMapsUrl(input) {
   } catch {
     return false;
   }
+}
+
+function sanitizeUrl(input) {
+  return String(input || '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .trim();
+}
+
+function normalizeUrlForParsing(url) {
+  try {
+    return decodeURIComponent(sanitizeUrl(url));
+  } catch {
+    return sanitizeUrl(url);
+  }
+}
+
+function extractCoordinatesFromUrl(url) {
+  const value = normalizeUrlForParsing(url);
+  if (!value) return null;
+
+  const tryPair = (latRaw, lngRaw) => {
+    const latitude = parseFloat(latRaw);
+    const longitude = parseFloat(lngRaw);
+    if (
+      Number.isFinite(latitude) &&
+      Number.isFinite(longitude) &&
+      latitude >= -90 &&
+      latitude <= 90 &&
+      longitude >= -180 &&
+      longitude <= 180
+    ) {
+      return { latitude, longitude };
+    }
+    return null;
+  };
+
+  const patterns = [
+    /!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/g,
+    /\/place\/(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/,
+    /\/search\/(-?\d+(?:\.\d+)?),\+?(-?\d+(?:\.\d+)?)/,
+    /@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/,
+    /[?&]q=(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/,
+    /[?&]query=(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/,
+    /[?&]ll=(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/,
+    /[?&]center=(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/,
+  ];
+
+  const preciseMatches = [...value.matchAll(patterns[0])];
+  if (preciseMatches.length > 0) {
+    const last = preciseMatches[preciseMatches.length - 1];
+    const coords = tryPair(last[1], last[2]);
+    if (coords) return coords;
+  }
+
+  for (let i = 1; i < patterns.length; i += 1) {
+    const match = value.match(patterns[i]);
+    if (match) {
+      const coords = tryPair(match[1], match[2]);
+      if (coords) return coords;
+    }
+  }
+
+  return null;
 }
 
 function unwrapGoogleUrlWrapper(url) {
@@ -52,7 +121,36 @@ function unwrapGoogleUrlWrapper(url) {
   return url;
 }
 
-async function followRedirects(startUrl) {
+function extractMapsUrlFromHtml(html) {
+  if (!html || typeof html !== 'string') return null;
+
+  const candidates = [];
+  const patterns = [
+    /property="og:url"\s+content="([^"]+)"/i,
+    /content="([^"]+)"\s+property="og:url"/i,
+    /rel="canonical"\s+href="([^"]+)"/i,
+    /href="(https:\/\/(?:www\.)?google\.com\/maps[^"]+)"/gi,
+    /"(https:\/\/(?:www\.)?google\.com\/maps[^"]+)"/gi,
+  ];
+
+  for (const pattern of patterns) {
+    const matches = html.matchAll(pattern);
+    for (const match of matches) {
+      const candidate = (match[1] || match[0] || '').replace(/&amp;/g, '&');
+      if (candidate.includes('google.com/maps') && isAllowedMapsUrl(candidate.split('?')[0])) {
+        candidates.push(candidate);
+      }
+    }
+  }
+
+  for (const candidate of candidates) {
+    if (extractCoordinatesFromUrl(candidate)) return candidate;
+  }
+
+  return candidates[0] || null;
+}
+
+async function fetchWithManualRedirects(startUrl, userAgent) {
   let current = startUrl;
 
   for (let i = 0; i < MAX_REDIRECTS; i++) {
@@ -62,8 +160,7 @@ async function followRedirects(startUrl) {
       method: 'GET',
       redirect: 'manual',
       headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': userAgent,
         Accept: 'text/html,application/xhtml+xml',
       },
     });
@@ -77,10 +174,61 @@ async function followRedirects(startUrl) {
       continue;
     }
 
+    if (response.status >= 200 && response.status < 300) {
+      const finalUrl = unwrapGoogleUrlWrapper(response.url || current);
+      if (extractCoordinatesFromUrl(finalUrl)) {
+        return finalUrl;
+      }
+
+      const html = await response.text();
+      const fromHtml = extractMapsUrlFromHtml(html);
+      if (fromHtml) return fromHtml;
+
+      return finalUrl;
+    }
+
     break;
   }
 
   return unwrapGoogleUrlWrapper(current);
+}
+
+async function fetchWithAutoRedirects(startUrl, userAgent) {
+  try {
+    const response = await fetch(startUrl, {
+      method: 'GET',
+      redirect: 'follow',
+      headers: {
+        'User-Agent': userAgent,
+        Accept: 'text/html,application/xhtml+xml',
+      },
+    });
+
+    const finalUrl = unwrapGoogleUrlWrapper(response.url || startUrl);
+    if (extractCoordinatesFromUrl(finalUrl)) {
+      return finalUrl;
+    }
+
+    const html = await response.text();
+    const fromHtml = extractMapsUrlFromHtml(html);
+    return fromHtml || finalUrl;
+  } catch {
+    return startUrl;
+  }
+}
+
+async function followRedirects(startUrl) {
+  const cleaned = sanitizeUrl(startUrl);
+
+  for (const userAgent of USER_AGENTS) {
+    const manual = await fetchWithManualRedirects(cleaned, userAgent);
+    if (extractCoordinatesFromUrl(manual)) return manual;
+
+    const automatic = await fetchWithAutoRedirects(cleaned, userAgent);
+    if (extractCoordinatesFromUrl(automatic)) return automatic;
+  }
+
+  return unwrapGoogleUrlWrapper(cleaned);
 }
 
 exports.handler = async (event) => {
@@ -128,7 +276,7 @@ exports.handler = async (event) => {
     return jsonResponse(status, corsHeaders, { error: auth.error || 'Forbidden' });
   }
 
-  const inputUrl = typeof body.url === 'string' ? body.url.trim() : '';
+  const inputUrl = sanitizeUrl(body.url);
   if (!inputUrl) {
     return jsonResponse(400, corsHeaders, { error: 'Missing url parameter' });
   }
@@ -141,12 +289,18 @@ exports.handler = async (event) => {
 
   try {
     const expandedUrl = await followRedirects(inputUrl);
+    const coords = extractCoordinatesFromUrl(expandedUrl);
+
     return jsonResponse(200, corsHeaders, {
       expandedUrl,
       originalUrl: inputUrl,
+      ...(coords ? { latitude: coords.latitude, longitude: coords.longitude } : {}),
     });
   } catch (error) {
     console.error('resolve-maps-link error:', error);
     return jsonResponse(500, corsHeaders, { error: 'Failed to resolve link' });
   }
 };
+
+// Exported for quick node smoke tests
+exports.extractCoordinatesFromUrl = extractCoordinatesFromUrl;
