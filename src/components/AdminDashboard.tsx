@@ -4,6 +4,14 @@ import { useAuth } from '@/contexts/AuthContext';
 import { ensureAdminSupabaseSession } from '@/lib/auth';
 import { normalizeCustomerAddress } from '@/lib/customer-address';
 import { ensureSupabaseSessionForWrite, resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
+import {
+  extractMapsUrlFromText,
+  isGoogleMapsShortLink,
+  isGoogleMapsUrl,
+  loadGoogleMapsGeocoderScript,
+  resolveGoogleMapsInputToCoords,
+  sanitizeGoogleMapsInput,
+} from '@/lib/googleMapsLink';
 import { useResumeSync } from '@/hooks/useResumeSync';
 import AdminHeader from '@/components/AdminHeader';
 import { WebsiteBookingIntentBanner } from '@/components/admin/WebsiteBookingIntentBanner';
@@ -3939,38 +3947,58 @@ const AdminDashboard = () => {
 
   // Function to fetch address from Google Maps location link
   const fetchAddressFromGoogleLocation = async () => {
-    const googleLocation = editFormData?.google_location || '';
-    
-    if (!googleLocation.trim()) {
+    const googleLocation =
+      extractMapsUrlFromText(editFormData?.google_location || '') ||
+      sanitizeGoogleMapsInput(editFormData?.google_location || '');
+
+    if (!googleLocation) {
       toast.error('Please enter a Google Maps link first');
       return;
     }
 
-    // Check if it's a valid Google Maps link
-    if (!googleLocation.includes('google.com/maps') && !googleLocation.includes('maps.app.goo.gl') && !googleLocation.includes('goo.gl/maps')) {
+    if (!isGoogleMapsUrl(googleLocation)) {
       toast.error('Please enter a valid Google Maps link');
       return;
     }
 
-    // Extract coordinates from the link
-    const coords = extractCoordinatesFromGoogleMapsLink(googleLocation);
-    if (!coords) {
-      toast.error('Could not extract coordinates from this link. Short links may not work.');
-      return;
-    }
-
     try {
-      // Show loading toast
-      const loadingToast = toast.loading('Fetching address from Google Maps...');
-
-      // Ensure Google Maps is loaded before reverse geocoding
-      const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-      if (apiKey && (!window.google || !window.google.maps || !window.google.maps.Geocoder)) {
-        // Load Google Maps if not already loaded
-        await loadGoogleMapsScript();
+      let loadingToast: string | number | undefined;
+      if (isGoogleMapsShortLink(googleLocation)) {
+        loadingToast = toast.loading('Resolving short link...');
       }
 
-      // Extract address from coordinates using reverse geocoding
+      const token = await resolveSupabaseAccessTokenForApi();
+      const resolved = await resolveGoogleMapsInputToCoords(googleLocation, {
+        shareText: editFormData?.google_location || '',
+        addressHint: editFormData?.address?.street || '',
+        accessToken: token,
+      });
+
+      if (loadingToast !== undefined) {
+        toast.dismiss(loadingToast);
+      }
+
+      if (!resolved.ok) {
+        toast.error(resolved.error, { duration: 8000 });
+        return;
+      }
+
+      const { coords, didExpandShortLink, placeHintUsed, resolvedLocation } = resolved;
+      if (didExpandShortLink) {
+        setEditFormData((prev) => ({ ...prev, google_location: resolvedLocation }));
+        toast.info('Short link expanded');
+      }
+      if (placeHintUsed) {
+        toast.info(`Found location from place name: ${placeHintUsed}`);
+      }
+
+      loadingToast = toast.loading('Fetching address from Google Maps...');
+
+      const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+      if (apiKey && (!window.google || !window.google.maps || !window.google.maps.Geocoder)) {
+        await loadGoogleMapsGeocoderScript();
+      }
+
       const address = await reverseGeocode(coords.latitude, coords.longitude);
       
       // Extract location keyword from address

@@ -398,7 +398,19 @@ exports.handler = async (event) => {
   }
 
   try {
-    let { expandedUrl, coords, stillShort, placeName } = await resolveMapsUrl(inputUrl);
+    let expandedUrl = inputUrl;
+    let coords = null;
+    let stillShort = true;
+    let placeName = null;
+
+    try {
+      ({ expandedUrl, coords, stillShort, placeName } = await resolveMapsUrl(inputUrl));
+    } catch (resolveError) {
+      console.error('resolve-maps-link follow error:', resolveError);
+      expandedUrl = sanitizeUrl(inputUrl);
+      stillShort = expandedUrl.includes('maps.app.goo.gl') || expandedUrl.includes('goo.gl/maps');
+      placeName = extractPlaceNameFromUrl(expandedUrl);
+    }
 
     // Named places (museums, apartment listings) often expand without lat/lng in the URL.
     if (!coords && !stillShort && placeName) {
@@ -424,7 +436,13 @@ exports.handler = async (event) => {
     });
   } catch (error) {
     console.error('resolve-maps-link error:', error);
-    return jsonResponse(500, corsHeaders, { error: 'Failed to resolve link' });
+    const placeName = extractPlaceNameFromUrl(inputUrl);
+    return jsonResponse(422, corsHeaders, {
+      error: 'Could not resolve this link. Try pasting the full Google Maps share (place name + link).',
+      expandedUrl: inputUrl,
+      originalUrl: inputUrl,
+      ...(placeName ? { placeName } : {}),
+    });
   }
 };
 

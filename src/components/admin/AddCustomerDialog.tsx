@@ -18,13 +18,11 @@ import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmen
 import PhoneSwapButton from '@/components/admin/PhoneSwapButton';
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import {
-  collectPlaceHints,
   extractCoordinatesFromGoogleMapsLink,
   extractMapsUrlFromText,
-  geocodePlaceHintViaApi,
   isGoogleMapsShortLink,
   isGoogleMapsUrl,
-  resolveGoogleMapsLinkViaApi,
+  resolveGoogleMapsInputToCoords,
   sanitizeGoogleMapsInput,
 } from '@/lib/googleMapsLink';
 
@@ -732,83 +730,37 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       }
 
       let resolvedLocation = googleLocation;
-      let coords = extractCoordinatesFromGoogleMapsLink(resolvedLocation);
 
-      if (!coords && isGoogleMapsShortLink(resolvedLocation)) {
+      const token = await resolveSupabaseAccessTokenForApi();
+      if (isGoogleMapsShortLink(resolvedLocation)) {
         loadingToast = toast.loading('Resolving short link...');
-        const resolveResult = await resolveGoogleMapsLinkViaApi(resolvedLocation);
-        if (loadingToast !== undefined) toast.dismiss(loadingToast);
+      }
+
+      const resolved = await resolveGoogleMapsInputToCoords(googleLocation, {
+        shareText: mapsShareTextRef.current,
+        addressHint: addFormData.address,
+        accessToken: token,
+      });
+
+      if (loadingToast !== undefined) {
+        toast.dismiss(loadingToast);
         loadingToast = undefined;
+      }
 
-        if (resolveResult.ok) {
-          const resolved = resolveResult.data;
-          resolvedLocation = resolved.expandedUrl;
-          setAddFormData((prev) => ({ ...prev, google_location: resolved.expandedUrl }));
-          googleLocationRef.current = resolved.expandedUrl;
-          coords =
-            resolved.latitude !== undefined && resolved.longitude !== undefined
-              ? { latitude: resolved.latitude, longitude: resolved.longitude }
-              : extractCoordinatesFromGoogleMapsLink(resolved.expandedUrl);
-          if (coords) toast.info('Short link expanded');
-        }
+      if (!resolved.ok) {
+        toast.error(resolved.error, { duration: 8000 });
+        return;
+      }
 
-        if (!coords) {
-          const token = await resolveSupabaseAccessTokenForApi();
-          const placeHints = collectPlaceHints(
-            mapsShareTextRef.current,
-            googleLocationRef.current,
-            addFormData.address
-          );
-
-          for (const hint of placeHints) {
-            if (!token) break;
-            loadingToast = toast.loading('Looking up address from place name...');
-            const geocoded = await geocodePlaceHintViaApi(hint, token);
-            if (loadingToast !== undefined) toast.dismiss(loadingToast);
-            loadingToast = undefined;
-            if (geocoded) {
-              coords = { latitude: geocoded.latitude, longitude: geocoded.longitude };
-              toast.info(`Found location from place name: ${hint.split(',')[0]}`);
-              break;
-            }
-          }
-        }
-
-        if (!coords) {
-          const apiError = resolveResult.ok ? null : resolveResult.error;
-          toast.error(
-            apiError ||
-              'Could not resolve this link. Copy the full share from Google Maps (place name + link), paste here, and try again.',
-            { duration: 8000 }
-          );
-          return;
-        }
-      } else if (!coords) {
-        // Full URL with a place name but no embedded coordinates (museums, apartments, etc.)
-        const token = await resolveSupabaseAccessTokenForApi();
-        const placeHints = collectPlaceHints(
-          mapsShareTextRef.current,
-          resolvedLocation,
-          addFormData.address
-        );
-
-        for (const hint of placeHints) {
-          if (!token) break;
-          loadingToast = toast.loading('Looking up address from place name...');
-          const geocoded = await geocodePlaceHintViaApi(hint, token);
-          if (loadingToast !== undefined) toast.dismiss(loadingToast);
-          loadingToast = undefined;
-          if (geocoded) {
-            coords = { latitude: geocoded.latitude, longitude: geocoded.longitude };
-            toast.info(`Found location from place name: ${hint.split(',')[0]}`);
-            break;
-          }
-        }
-
-        if (!coords) {
-          toast.error('Could not extract coordinates from this link.');
-          return;
-        }
+      const { coords, didExpandShortLink, placeHintUsed } = resolved;
+      resolvedLocation = resolved.resolvedLocation;
+      if (didExpandShortLink) {
+        setAddFormData((prev) => ({ ...prev, google_location: resolvedLocation }));
+        googleLocationRef.current = resolvedLocation;
+        toast.info('Short link expanded');
+      }
+      if (placeHintUsed) {
+        toast.info(`Found location from place name: ${placeHintUsed}`);
       }
 
       loadingToast = toast.loading('Fetching address from Google Maps...');

@@ -6,7 +6,13 @@ export interface GoogleMapsResolvedLink {
 
 export type ResolveGoogleMapsLinkResult =
   | { ok: true; data: GoogleMapsResolvedLink }
-  | { ok: false; error: string; status?: number };
+  | {
+      ok: false;
+      error: string;
+      status?: number;
+      expandedUrl?: string;
+      placeName?: string;
+    };
 
 export interface GeocodedPlaceHint {
   latitude: number;
@@ -191,6 +197,7 @@ function geocodeEndpoint(): string {
 async function parseResolveResponse(response: Response): Promise<ResolveGoogleMapsLinkResult> {
   let data: {
     expandedUrl?: string;
+    placeName?: string;
     latitude?: number;
     longitude?: number;
     error?: string;
@@ -202,6 +209,13 @@ async function parseResolveResponse(response: Response): Promise<ResolveGoogleMa
     data = {};
   }
 
+  const expandedUrl =
+    typeof data.expandedUrl === 'string' && data.expandedUrl.trim()
+      ? data.expandedUrl.trim()
+      : undefined;
+  const placeName =
+    typeof data.placeName === 'string' && data.placeName.trim() ? data.placeName.trim() : undefined;
+
   if (!response.ok) {
     return {
       ok: false,
@@ -210,13 +224,11 @@ async function parseResolveResponse(response: Response): Promise<ResolveGoogleMa
           ? data.error.trim()
           : 'Could not resolve this short link.',
       status: response.status,
+      ...(expandedUrl ? { expandedUrl } : {}),
+      ...(placeName ? { placeName } : {}),
     };
   }
 
-  const expandedUrl =
-    typeof data.expandedUrl === 'string' && data.expandedUrl.trim()
-      ? data.expandedUrl.trim()
-      : null;
   if (!expandedUrl) {
     return { ok: false, error: 'Could not resolve this short link.', status: response.status };
   }
@@ -313,4 +325,198 @@ export function collectPlaceHints(...texts: Array<string | null | undefined>): s
     if (fromUrl) hints.add(fromUrl);
   }
   return [...hints];
+}
+
+let googleMapsScriptPromise: Promise<void> | null = null;
+
+/** Load Maps JS for client geocoder (works on mobile without staff API token). */
+export function loadGoogleMapsGeocoderScript(): Promise<void> {
+  if (typeof window === 'undefined') {
+    return Promise.reject(new Error('Google Maps is only available in the browser'));
+  }
+  if (window.google?.maps?.Geocoder) {
+    return Promise.resolve();
+  }
+
+  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+  if (!apiKey) {
+    return Promise.reject(new Error('Google Maps API key not configured'));
+  }
+
+  if (!googleMapsScriptPromise) {
+    googleMapsScriptPromise = new Promise((resolve, reject) => {
+      const existing = document.querySelector('script[src*="maps.googleapis.com/maps/api/js"]');
+      if (existing) {
+        existing.addEventListener('load', () => resolve(), { once: true });
+        existing.addEventListener('error', () => reject(new Error('Failed to load Google Maps')), {
+          once: true,
+        });
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`;
+      script.async = true;
+      script.defer = true;
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error('Failed to load Google Maps'));
+      document.head.appendChild(script);
+    });
+  }
+
+  return googleMapsScriptPromise;
+}
+
+/** Forward-geocode via browser Google Maps JS — no login token (mobile-safe). */
+export async function geocodePlaceHintWithGoogleMapsJs(
+  query: string
+): Promise<GeocodedPlaceHint | null> {
+  const q = query.trim();
+  if (!q) return null;
+
+  try {
+    await loadGoogleMapsGeocoderScript();
+  } catch {
+    return null;
+  }
+
+  if (!window.google?.maps?.Geocoder) return null;
+
+  return new Promise((resolve) => {
+    const geocoder = new window.google.maps.Geocoder();
+    geocoder.geocode({ address: q, region: 'in' }, (results, status) => {
+      if (status === window.google.maps.GeocoderStatus.OK && results?.[0]?.geometry?.location) {
+        const loc = results[0].geometry.location;
+        resolve({
+          latitude: loc.lat(),
+          longitude: loc.lng(),
+          address: results[0].formatted_address || q,
+        });
+      } else {
+        resolve(null);
+      }
+    });
+  });
+}
+
+/** Try client Google geocoder first, then staff server geocode. */
+export async function geocodeFromPlaceHints(
+  hints: string[],
+  accessToken: string | null
+): Promise<{ geocoded: GeocodedPlaceHint; hint: string } | null> {
+  for (const hint of hints) {
+    const fromClient = await geocodePlaceHintWithGoogleMapsJs(hint);
+    if (fromClient) return { geocoded: fromClient, hint };
+    if (accessToken) {
+      const fromServer = await geocodePlaceHintViaApi(hint, accessToken);
+      if (fromServer) return { geocoded: fromServer, hint };
+    }
+  }
+  return null;
+}
+
+export type ResolveGoogleMapsInputResult =
+  | {
+      ok: true;
+      coords: { latitude: number; longitude: number };
+      resolvedLocation: string;
+      didExpandShortLink: boolean;
+      placeHintUsed?: string;
+    }
+  | { ok: false; error: string };
+
+/**
+ * Resolve pasted Maps URL / short link to coordinates.
+ * Named places (no lat/lng in URL) use client Google geocoder so mobile works without staff API.
+ */
+export async function resolveGoogleMapsInputToCoords(
+  rawInput: string,
+  options: {
+    shareText?: string | null;
+    addressHint?: string | null;
+    accessToken?: string | null;
+  } = {}
+): Promise<ResolveGoogleMapsInputResult> {
+  const googleLocation =
+    extractMapsUrlFromText(rawInput) || sanitizeGoogleMapsInput(rawInput);
+
+  if (!googleLocation || !isGoogleMapsUrl(googleLocation)) {
+    return { ok: false, error: 'Please enter a valid Google Maps link' };
+  }
+
+  let resolvedLocation = googleLocation;
+  let coords = extractCoordinatesFromGoogleMapsLink(resolvedLocation);
+  let didExpandShortLink = false;
+  const accessToken = options.accessToken ?? null;
+
+  if (!coords && isGoogleMapsShortLink(resolvedLocation)) {
+    const resolveResult = await resolveGoogleMapsLinkViaApi(resolvedLocation);
+
+    if (resolveResult.ok) {
+      const resolved = resolveResult.data;
+      resolvedLocation = resolved.expandedUrl;
+      didExpandShortLink = true;
+      coords =
+        resolved.latitude !== undefined && resolved.longitude !== undefined
+          ? { latitude: resolved.latitude, longitude: resolved.longitude }
+          : extractCoordinatesFromGoogleMapsLink(resolved.expandedUrl);
+    } else {
+      if (resolveResult.expandedUrl) {
+        resolvedLocation = resolveResult.expandedUrl;
+        didExpandShortLink = true;
+        coords = extractCoordinatesFromGoogleMapsLink(resolveResult.expandedUrl);
+      }
+    }
+
+    if (!coords) {
+      const placeHints = collectPlaceHints(
+        options.shareText,
+        resolvedLocation,
+        options.addressHint
+      );
+      if (!resolveResult.ok && resolveResult.placeName) {
+        placeHints.unshift(resolveResult.placeName);
+      }
+      const geocoded = await geocodeFromPlaceHints(placeHints, accessToken);
+      if (geocoded) {
+        coords = { latitude: geocoded.geocoded.latitude, longitude: geocoded.geocoded.longitude };
+        return {
+          ok: true,
+          coords,
+          resolvedLocation,
+          didExpandShortLink,
+          placeHintUsed: geocoded.hint.split(',')[0],
+        };
+      }
+
+      if (!resolveResult.ok) {
+        return {
+          ok: false,
+          error:
+            resolveResult.error ||
+            'Could not resolve this link. Copy the full share from Google Maps (place name + link), paste here, and try again.',
+        };
+      }
+    }
+  } else if (!coords) {
+    const placeHints = collectPlaceHints(
+      options.shareText,
+      resolvedLocation,
+      options.addressHint
+    );
+    const geocoded = await geocodeFromPlaceHints(placeHints, accessToken);
+    if (geocoded) {
+      coords = { latitude: geocoded.geocoded.latitude, longitude: geocoded.geocoded.longitude };
+      return {
+        ok: true,
+        coords,
+        resolvedLocation,
+        didExpandShortLink: false,
+        placeHintUsed: geocoded.hint.split(',')[0],
+      };
+    }
+    return { ok: false, error: 'Could not extract coordinates from this link.' };
+  }
+
+  return { ok: true, coords, resolvedLocation, didExpandShortLink };
 }
