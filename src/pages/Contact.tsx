@@ -6,8 +6,11 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Phone, Mail, MapPin, Clock, AlertCircle } from 'lucide-react';
 import { openPublicPhoneCall } from '@/lib/publicPhone';
+import { buildPublicLocalBusinessJsonLd, getBrandSeoProfile } from '@/lib/publicSiteSeo';
+import { getPublicSiteKey } from '@/lib/websiteSiteKey';
 
 const Contact = () => {
+  const brand = getBrandSeoProfile(getPublicSiteKey());
   const [showCallOptions, setShowCallOptions] = useState(false);
 
   const handleCall = (number: string) => {
@@ -16,42 +19,23 @@ const Contact = () => {
   };
 
   const handleWhatsApp = () => {
-    window.open('https://wa.me/918884944288', '_blank', 'noopener,noreferrer');
+    const wa = brand.phones[0]?.replace(/\D/g, '') ?? '';
+    window.open(`https://wa.me/${wa}`, '_blank', 'noopener,noreferrer');
   };
 
   const handleEmail = () => {
-    window.open('mailto:info@hydrogenro.com', '_self');
+    window.open(`mailto:${brand.email}`, '_self');
   };
 
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground">
-      {/* SEO Meta Tags - These will be handled by the main index.html */}
       <script type="application/ld+json">
         {JSON.stringify({
           "@context": "https://schema.org",
           "@type": "ContactPage",
-          "name": "Contact Hydrogen RO",
-          "description": "Contact Hydrogen RO for RO water purifier installation, repair, and maintenance services in Bengaluru",
-          "mainEntity": {
-            "@type": "LocalBusiness",
-            "name": "Hydrogen RO",
-            "address": {
-              "@type": "PostalAddress",
-              "streetAddress": "MG Road",
-              "addressLocality": "Bengaluru",
-              "addressRegion": "Karnataka",
-              "postalCode": "560001",
-              "addressCountry": "IN"
-            },
-            "telephone": "+91-8884944288",
-            "email": "info@hydrogenro.com",
-            "url": "https://hydrogenro.com",
-            "openingHours": "Mo-Su 08:00-20:00",
-            "areaServed": {
-              "@type": "City",
-              "name": "Bengaluru"
-            }
-          }
+          "name": `Contact ${brand.brandName}`,
+          "description": `Contact ${brand.brandName} for RO water purifier installation, repair, and maintenance services in Bengaluru`,
+          "mainEntity": buildPublicLocalBusinessJsonLd(),
         })}
       </script>
 
@@ -59,7 +43,7 @@ const Contact = () => {
 
       <main className="flex-1">
         <PageHero 
-          title="Contact Hydrogen RO"
+          title={`Contact ${brand.brandName}`}
           description="Get in touch with us for professional RO water purifier services in Bengaluru. We're here to help 24/7!"
         />
 
@@ -73,12 +57,11 @@ const Contact = () => {
                     <Phone className="w-8 h-8 text-sky-600 dark:text-sky-400" />
                   </div>
                   <h3 className="text-2xl font-semibold mb-4 text-foreground">Phone</h3>
-                  <p className="text-foreground mb-2">
-                    <a href="tel:+918884944288" className="hover:underline cursor-pointer">+91-8884944288</a>
-                  </p>
-                  <p className="text-foreground mb-4">
-                    <a href="tel:+919886944288" className="hover:underline cursor-pointer">+91-9886944288</a>
-                  </p>
+                  {brand.phones.map((phone) => (
+                    <p key={phone} className="text-foreground mb-2">
+                      <a href={`tel:${phone.replace(/\s/g, '')}`} className="hover:underline cursor-pointer">{phone}</a>
+                    </p>
+                  ))}
                   <p className="text-sm text-muted-foreground">Call us for immediate assistance</p>
                 </CardContent>
               </Card>
@@ -89,7 +72,7 @@ const Contact = () => {
                     <Mail className="w-8 h-8 text-sky-600 dark:text-sky-400" />
                   </div>
                   <h3 className="text-2xl font-semibold mb-4 text-foreground">Email</h3>
-                  <p className="text-foreground mb-4">info@hydrogenro.com</p>
+                  <p className="text-foreground mb-4">{brand.email}</p>
                   <p className="text-sm text-muted-foreground">Send us an email anytime</p>
                 </CardContent>
               </Card>
@@ -135,7 +118,7 @@ const Contact = () => {
                       Need urgent RO repair? We provide 24/7 emergency service across Bengaluru.
                     </p>
                     <p className="text-lg font-semibold text-red-600 dark:text-red-400 mb-2">Emergency Contact</p>
-                    <p className="text-foreground font-medium">+91-8884944288</p>
+                    <p className="text-foreground font-medium">{brand.primaryPhone}</p>
                     <p className="text-sm text-muted-foreground">Available 24/7 for emergency RO repairs</p>
                   </div>
                 </div>

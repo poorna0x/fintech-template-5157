@@ -5,71 +5,39 @@ import PageHero from '@/components/PageHero';
 import { Card, CardContent } from '@/components/ui/card';
 import { Shield, Clock, DollarSign, Users, Award, Heart } from 'lucide-react';
 
+import { buildPublicLocalBusinessJsonLd, getBrandSeoProfile } from '@/lib/publicSiteSeo';
+import { getPublicSiteKey } from '@/lib/websiteSiteKey';
+
 const About = () => {
+  const brand = getBrandSeoProfile(getPublicSiteKey());
 
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground">
-      {/* SEO Meta Tags - These will be handled by the main index.html */}
       <script type="application/ld+json">
         {JSON.stringify({
           "@context": "https://schema.org",
           "@type": "AboutPage",
-          "name": "About Hydrogen RO",
-          "description": "Learn about Hydrogen RO, your trusted partner for RO water purifier services in Bengaluru, Karnataka",
+          "name": `About ${brand.brandName}`,
+          "description": `Learn about ${brand.brandName}, your trusted partner for RO water purifier services in Bengaluru, Karnataka`,
           "mainEntity": {
-            "@type": "LocalBusiness",
-            "name": "Hydrogen RO",
-            "description": "Professional RO water purifier installation, repair, and maintenance services in Bengaluru, Karnataka",
-            "image": "https://hydrogenro.com/og-image.jpg",
-            "foundingDate": "2019",
-            "address": {
-              "@type": "PostalAddress",
-              "streetAddress": "MG Road",
-              "addressLocality": "Bengaluru",
-              "addressRegion": "Karnataka",
-              "postalCode": "560001",
-              "addressCountry": "IN"
-            },
-            "telephone": "+91-8884944288",
-            "email": "info@hydrogenro.com",
-            "url": "https://hydrogenro.com",
-            "areaServed": {
-              "@type": "City",
-              "name": "Bengaluru"
-            },
-            "numberOfEmployees": "15-20",
-            "aggregateRating": {
+            ...buildPublicLocalBusinessJsonLd(),
+            description: `Professional RO water purifier installation, repair, and maintenance services in Bengaluru, Karnataka`,
+            foundingDate: "2019",
+            numberOfEmployees: "15-20",
+            aggregateRating: {
               "@type": "AggregateRating",
               "ratingValue": "5",
               "reviewCount": "2300",
               "bestRating": "5",
               "worstRating": "1"
             },
-            "hasOfferCatalog": {
+            hasOfferCatalog: {
               "@type": "OfferCatalog",
               "name": "RO Water Purifier Services",
               "itemListElement": [
-                {
-                  "@type": "Offer",
-                  "itemOffered": {
-                    "@type": "Service",
-                    "name": "RO Installation"
-                  }
-                },
-                {
-                  "@type": "Offer",
-                  "itemOffered": {
-                    "@type": "Service",
-                    "name": "RO Repair"
-                  }
-                },
-                {
-                  "@type": "Offer",
-                  "itemOffered": {
-                    "@type": "Service",
-                    "name": "Filter Replacement"
-                  }
-                }
+                { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "RO Installation" } },
+                { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "RO Repair" } },
+                { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "Filter Replacement" } },
               ]
             }
           }
@@ -80,8 +48,8 @@ const About = () => {
 
       <main className="flex-1">
         <PageHero 
-          title="About Hydrogen RO Leading RO Service Provider"
-          description="Hydrogen RO is your trusted partner for clean water solutions in Bengaluru, Karnataka. We've been serving the community with professional RO water purifier services since 2019."
+          title={`About ${brand.brandName} Leading RO Service Provider`}
+          description={`${brand.brandName} is your trusted partner for clean water solutions in Bengaluru, Karnataka. We've been serving the community with professional RO water purifier services since 2019.`}
         />
 
         {/* Our Mission & Story */}
@@ -102,7 +70,7 @@ const About = () => {
                 <CardContent className="p-8">
                   <h2 className="text-2xl font-semibold mb-4 text-foreground">Our Story</h2>
                   <p className="text-muted-foreground">
-                    Founded in 2019, Hydrogen RO started as a small team of certified technicians with a 
+                    Founded in 2019, {brand.brandName} started as a small team of certified technicians with a 
                     passion for water purification technology. Over the years, we've grown to become one 
                     of the most trusted RO service providers in Bengaluru, serving over 3000+ satisfied customers.
                   </p>
@@ -223,8 +191,8 @@ const About = () => {
                 <div className="text-center">
                   <h3 className="text-2xl font-semibold mb-6 text-foreground">Contact Us</h3>
                   <div className="space-y-3 text-foreground">
-                    <p>Phone: +91-8884944288, +91-9886944288</p>
-                    <p>Email: info@hydrogenro.com</p>
+                    <p>Phone: {brand.phones.join(', ')}</p>
+                    <p>Email: {brand.email}</p>
                   </div>
                 </div>
               </CardContent>

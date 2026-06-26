@@ -5,45 +5,22 @@ import PageHero from '@/components/PageHero';
 import { Card, CardContent } from '@/components/ui/card';
 import { Filter, Wrench, RefreshCw, CheckCircle, DollarSign, Clock, Shield, Settings } from 'lucide-react';
 
+import { buildPublicLocalBusinessJsonLd, getBrandSeoProfile } from '@/lib/publicSiteSeo';
+import { getPublicSiteKey } from '@/lib/websiteSiteKey';
+
 const Services = () => {
+  const brand = getBrandSeoProfile(getPublicSiteKey());
+
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground">
-      {/* SEO Meta Tags - These will be handled by the main index.html */}
       <script type="application/ld+json">
         {JSON.stringify({
           "@context": "https://schema.org",
           "@type": "Service",
           "name": "RO Water Purifier Services",
-          "description": "Professional RO water purifier installation, repair, and maintenance services in Bengaluru, Karnataka",
-          "image": "https://hydrogenro.com/og-image.jpg",
-          "provider": {
-            "@type": "LocalBusiness",
-            "name": "Hydrogen RO",
-            "address": {
-              "@type": "PostalAddress",
-              "streetAddress": "MG Road",
-              "addressLocality": "Bengaluru",
-              "addressRegion": "Karnataka",
-              "postalCode": "560001",
-              "addressCountry": "IN"
-            },
-            "telephone": "+91-8884944288",
-            "email": "info@hydrogenro.com",
-            "url": "https://hydrogenro.com",
-            "areaServed": {
-              "@type": "City",
-              "name": "Bengaluru"
-            },
-            "serviceArea": {
-              "@type": "GeoCircle",
-              "geoMidpoint": {
-                "@type": "GeoCoordinates",
-                "latitude": 12.9716,
-                "longitude": 77.5946
-              },
-              "geoRadius": "50000"
-            }
-          },
+          "description": `Professional RO water purifier installation, repair, and maintenance services in Bengaluru, Karnataka by ${brand.brandName}`,
+          "image": brand.ogImage,
+          "provider": buildPublicLocalBusinessJsonLd(),
           "offers": [
             {
               "@type": "Offer",

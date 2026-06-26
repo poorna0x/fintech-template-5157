@@ -33,8 +33,8 @@
         'Eleven RO - trusted RO water purifier service in Bengaluru, Karnataka. Professional RO installation, repair, maintenance and filter replacement. Same-day service across Bangalore including Anjanapura, JP Nagar, Bannerghatta and South Bangalore. Call 9880693311.',
       keywords:
         'Eleven RO, Eleven RO service Bengaluru, RO service Electronic City, RO service Bommanahalli, RO service Sarjapur, RO service Attibele, RO service Chandapura, RO service Bommasandra, RO service Jigani, RO service Hosur Road, RO installation Anjanapura, RO repair South Bangalore, same day RO service Eleven RO',
-      ogImage: 'https://elevenro.com/og-image.jpg',
-      logoPath: 'https://elevenro.com/fulllogo.png',
+      ogImage: 'https://elevenro.com/elevenro-og.webp',
+      logoPath: 'https://elevenro.com/elevenrofulloogo.webp',
       phones: ['+91-9880693311', '+91-8792467611'],
       primaryPhone: '+91-9880693311',
       email: 'mail@elevenro.com',

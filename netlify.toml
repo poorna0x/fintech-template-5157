@@ -77,6 +77,37 @@
   status = 200
   conditions = {Host = ["elevenro.com", "www.elevenro.com"]}
 
+# ElevenRO must never serve Hydrogen-branded social / logo assets (shared static deploy).
+[[redirects]]
+  from = "/og-image.jpg"
+  to = "/elevenro-og.webp"
+  status = 200
+  conditions = {Host = ["elevenro.com", "www.elevenro.com"]}
+
+[[redirects]]
+  from = "/fulllogo.png"
+  to = "/elevenrofulloogo.webp"
+  status = 200
+  conditions = {Host = ["elevenro.com", "www.elevenro.com"]}
+
+[[redirects]]
+  from = "/fulllogo.webp"
+  to = "/elevenrofulloogo.webp"
+  status = 200
+  conditions = {Host = ["elevenro.com", "www.elevenro.com"]}
+
+[[redirects]]
+  from = "/HydrogenROSeal.webp"
+  to = "/elevenroseal.webp"
+  status = 200
+  conditions = {Host = ["elevenro.com", "www.elevenro.com"]}
+
+[[redirects]]
+  from = "/hydrogenro-seal-sign.webp"
+  to = "/elevenro-seal-sign.webp"
+  status = 200
+  conditions = {Host = ["elevenro.com", "www.elevenro.com"]}
+
 # Redirect old pages to main site with 301 status
 [[redirects]]
   from = "/go"

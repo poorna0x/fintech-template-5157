@@ -66,8 +66,8 @@ const ELEVEN_SEO: BrandSeoProfile = {
     'Eleven RO - trusted RO water purifier service in Bengaluru, Karnataka. Professional RO installation, repair, maintenance and filter replacement. Same-day service across Bangalore including Anjanapura, JP Nagar, Bannerghatta and South Bangalore. Call 9880693311.',
   keywords:
     'Eleven RO, Eleven RO service Bengaluru, RO water purifier Bangalore, RO service Electronic City, RO service Bommanahalli, RO service Sarjapur, RO service Attibele, RO service Chandapura, RO service Bommasandra, RO service Jigani, RO service Hosur Road, RO service Silk Board, RO installation Anjanapura, RO repair South Bangalore, RO maintenance Karnataka, same day RO service Eleven RO, Kent Aquaguard RO service Bangalore',
-  ogImage: 'https://elevenro.com/og-image.jpg',
-  logoPath: 'https://elevenro.com/fulllogo.png',
+  ogImage: 'https://elevenro.com/elevenro-og.webp',
+  logoPath: 'https://elevenro.com/elevenrofulloogo.webp',
   phones: ['+91-9880693311', '+91-8792467611'],
   primaryPhone: '+91-9880693311',
   email: 'mail@elevenro.com',
@@ -86,6 +86,33 @@ export function getPublicSiteOrigin(siteKey?: PublicSiteKey): string {
 export function getBrandSeoProfile(siteKey?: PublicSiteKey): BrandSeoProfile {
   const key = siteKey ?? getPublicSiteKey();
   return key === 'elevenro' ? ELEVEN_SEO : HYDROGEN_SEO;
+}
+
+/** Shared LocalBusiness fields for per-page JSON-LD on public marketing pages. */
+export function buildPublicLocalBusinessJsonLd(siteKey?: PublicSiteKey) {
+  const profile = getBrandSeoProfile(siteKey);
+  return {
+    '@type': 'LocalBusiness',
+    name: profile.brandName,
+    image: profile.ogImage,
+    logo: profile.logoPath,
+    address: {
+      '@type': 'PostalAddress',
+      streetAddress: profile.streetAddress,
+      addressLocality: profile.city,
+      addressRegion: profile.state,
+      postalCode: profile.pincode,
+      addressCountry: 'IN',
+    },
+    telephone: profile.primaryPhone,
+    email: profile.email,
+    url: profile.origin,
+    openingHours: 'Mo-Su 08:00-20:00',
+    areaServed: {
+      '@type': 'City',
+      name: profile.city,
+    },
+  };
 }
 
 export const NO_INDEX_PREFIXES = [

@@ -11,8 +11,11 @@ import {
   buildLocationDescription,
   buildLocationIntro,
 } from '@/data/locationSeo';
+import { getBrandSeoProfile } from '@/lib/publicSiteSeo';
+import { getPublicSiteKey } from '@/lib/websiteSiteKey';
 
 const ServiceAreas = () => {
+  const brand = getBrandSeoProfile(getPublicSiteKey());
   const { pathname } = useLocation();
   const loc = getLocationSeo(pathname);
 
@@ -54,7 +57,7 @@ const ServiceAreas = () => {
           "description": loc
             ? buildLocationDescription(loc)
             : "Professional RO water purifier services across all areas of Bengaluru, Karnataka",
-          "image": "https://hydrogenro.com/og-image.jpg",
+          "image": brand.ogImage,
           "provider": {
             "@type": "LocalBusiness",
             "name": "Hydrogen RO",
@@ -108,7 +111,7 @@ const ServiceAreas = () => {
           "@type": "Product",
           "name": "RO Water Purifier Service",
           "description": "Professional RO water purifier installation, repair, and maintenance services in Bengaluru, Karnataka",
-          "image": "https://hydrogenro.com/og-image.jpg",
+          "image": brand.ogImage,
           "brand": {
             "@type": "Brand",
             "name": "Hydrogen RO"

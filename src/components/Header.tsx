@@ -9,6 +9,7 @@ import { Switch } from '@/components/ui/switch';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTheme } from '@/contexts/ThemeContext';
 import { openPublicPhoneCall } from '@/lib/publicPhone';
+import { getPublicSiteLabel, getPublicSiteKey } from '@/lib/websiteSiteKey';
 
 const Header = () => {
   const [activePage, setActivePage] = useState('home');
@@ -112,7 +113,7 @@ const Header = () => {
     <div className="sticky top-0 z-50 pt-8 px-4 bg-sky-50/80 dark:bg-sky-950/30 backdrop-blur-md border-b border-sky-100/80 dark:border-sky-500/15">
       <header className="w-full max-w-7xl mx-auto py-3 px-6 md:px-8 flex items-center justify-between">
         <div className={`p-3 ${mobileMenuOpen ? 'hidden md:block' : 'block'}`}>
-          <Logo />
+          <Logo brandName={getPublicSiteLabel(getPublicSiteKey())} />
         </div>
         
         {/* Mobile menu button */}

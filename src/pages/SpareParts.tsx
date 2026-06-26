@@ -4,6 +4,8 @@ import Footer from '@/components/Footer';
 import PageHero from '@/components/PageHero';
 import { Card, CardContent } from '@/components/ui/card';
 import { Filter } from 'lucide-react';
+import { getBrandSeoProfile } from '@/lib/publicSiteSeo';
+import { getPublicSiteKey } from '@/lib/websiteSiteKey';
 
 interface SparePart {
   id: string;
@@ -157,6 +159,7 @@ const SPARE_PARTS: SparePart[] = [
 ];
 
 const SpareParts = () => {
+  const brand = getBrandSeoProfile(getPublicSiteKey());
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
@@ -174,7 +177,7 @@ const SpareParts = () => {
           "@type": "Product",
           "name": "RO Spare Parts",
           "description": "Genuine RO water purifier spare parts and filters at competitive prices. All brands supported.",
-          "image": "https://hydrogenro.com/og-image.jpg",
+          "image": brand.ogImage,
           "offers": {
             "@type": "AggregateOffer",
             "priceCurrency": "INR",

@@ -1,8 +1,11 @@
 import React from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Award, Clock, DollarSign, CheckCircle } from 'lucide-react';
+import { getBrandSeoProfile } from '@/lib/publicSiteSeo';
+import { getPublicSiteKey } from '@/lib/websiteSiteKey';
 
 const WhyChooseSection = () => {
+  const brand = getBrandSeoProfile(getPublicSiteKey());
   const reasons = [
     {
       icon: Award,
@@ -31,7 +34,7 @@ const WhyChooseSection = () => {
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-12">
           <span className="inline-block text-sm font-semibold text-sky-700 dark:text-sky-400 mb-3">
-            Why Hydrogen RO
+            Why {brand.brandName}
           </span>
           <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
             Why 3000+ homes trust us
