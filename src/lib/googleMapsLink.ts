@@ -2,6 +2,7 @@ export interface GoogleMapsResolvedLink {
   expandedUrl: string;
   latitude?: number;
   longitude?: number;
+  placeName?: string;
 }
 
 export type ResolveGoogleMapsLinkResult =
@@ -241,6 +242,7 @@ async function parseResolveResponse(response: Response): Promise<ResolveGoogleMa
     data: {
       expandedUrl,
       ...(lat !== undefined && lng !== undefined ? { latitude: lat, longitude: lng } : {}),
+      ...(placeName ? { placeName } : {}),
     },
   };
 }
@@ -474,8 +476,11 @@ export async function resolveGoogleMapsInputToCoords(
         resolvedLocation,
         options.addressHint
       );
-      if (!resolveResult.ok && resolveResult.placeName) {
-        placeHints.unshift(resolveResult.placeName);
+      const placeNameHint = resolveResult.ok
+        ? resolveResult.data.placeName
+        : resolveResult.placeName;
+      if (placeNameHint) {
+        placeHints.unshift(placeNameHint);
       }
       const geocoded = await geocodeFromPlaceHints(placeHints, accessToken);
       if (geocoded) {
@@ -489,14 +494,12 @@ export async function resolveGoogleMapsInputToCoords(
         };
       }
 
-      if (!resolveResult.ok) {
-        return {
-          ok: false,
-          error:
-            resolveResult.error ||
-            'Could not resolve this link. Copy the full share from Google Maps (place name + link), paste here, and try again.',
-        };
-      }
+      return {
+        ok: false,
+        error:
+          (!resolveResult.ok ? resolveResult.error : null) ||
+          'Could not resolve this link. Copy the full share from Google Maps (place name + link), paste here, and try again.',
+      };
     }
   } else if (!coords) {
     const placeHints = collectPlaceHints(
@@ -515,6 +518,10 @@ export async function resolveGoogleMapsInputToCoords(
         placeHintUsed: geocoded.hint.split(',')[0],
       };
     }
+    return { ok: false, error: 'Could not extract coordinates from this link.' };
+  }
+
+  if (!coords) {
     return { ok: false, error: 'Could not extract coordinates from this link.' };
   }
 

@@ -193,17 +193,45 @@ function extractContinueUrlFromHtml(html) {
   return null;
 }
 
+function isShortMapsUrl(url) {
+  const value = String(url || '');
+  return value.includes('maps.app.goo.gl') || value.includes('goo.gl/maps');
+}
+
+function pickBetterExpandedUrl(current, candidate) {
+  if (!candidate) return current;
+  const wrapped = unwrapGoogleUrlWrapper(candidate);
+  if (isShortMapsUrl(wrapped)) return current;
+  if (!current || isShortMapsUrl(current)) return wrapped;
+  if (wrapped.includes('/place/') && wrapped.length > String(current).length) return wrapped;
+  return current;
+}
+
+function matchPatternAll(html, pattern) {
+  if (pattern.global) return [...html.matchAll(pattern)];
+  const single = html.match(pattern);
+  return single ? [single] : [];
+}
+
 function extractMapsUrlFromHtml(html) {
   if (!html || typeof html !== 'string') return null;
+
+  const es5Match = html.match(/ES5DGURL\s*=\s*['"](\/maps\/[^'"]+)['"]/i);
+  if (es5Match) {
+    const fromEs5 = decodeHtmlEntities(
+      `https://www.google.com${es5Match[1].replace(/\\x3d/g, '=').replace(/\\\//g, '/')}`
+    );
+    if (fromEs5.includes('google.com/maps')) return fromEs5;
+  }
 
   const continueUrl = extractContinueUrlFromHtml(html);
   if (continueUrl && extractCoordinatesFromUrl(continueUrl)) return continueUrl;
 
   const candidates = [];
   const patterns = [
-    /property="og:url"\s+content="([^"]+)"/i,
-    /content="([^"]+)"\s+property="og:url"/i,
-    /rel="canonical"\s+href="([^"]+)"/i,
+    /property="og:url"\s+content="([^"]+)"/gi,
+    /content="([^"]+)"\s+property="og:url"/gi,
+    /rel="canonical"\s+href="([^"]+)"/gi,
     /href="(https:\/\/(?:www\.)?google\.com\/maps[^"]+)"/gi,
     /"(https:\/\/(?:www\.)?google\.com\/maps[^"]+)"/gi,
     /\[(null,null,)?(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)(?:,\d+)?\]/g,
@@ -211,7 +239,7 @@ function extractMapsUrlFromHtml(html) {
 
   for (let i = 0; i < 4; i += 1) {
     const pattern = patterns[i];
-    const matches = html.matchAll(pattern);
+    const matches = matchPatternAll(html, pattern);
     for (const match of matches) {
       const candidate = decodeHtmlEntities(match[1] || match[0] || '');
       if (candidate.includes('google.com/maps')) {
@@ -220,7 +248,7 @@ function extractMapsUrlFromHtml(html) {
     }
   }
 
-  const coordMatches = [...html.matchAll(patterns[4])];
+  const coordMatches = [...html.matchAll(patterns[5])];
   if (coordMatches.length > 0) {
     const last = coordMatches[coordMatches.length - 1];
     const lat = last[2] || last[1];
@@ -309,18 +337,31 @@ async function fetchWithAutoRedirects(startUrl, userAgent) {
 async function followRedirects(startUrl) {
   const cleaned = sanitizeUrl(startUrl);
   const variants = [cleaned, `${cleaned}?_imcp=1`];
+  let best = unwrapGoogleUrlWrapper(cleaned);
 
   for (const variant of variants) {
     for (const userAgent of USER_AGENTS) {
-      const manual = await fetchWithManualRedirects(variant, userAgent);
-      if (extractCoordinatesFromUrl(manual)) return manual;
+      try {
+        const automatic = await fetchWithAutoRedirects(variant, userAgent);
+        best = pickBetterExpandedUrl(best, automatic);
+        if (extractCoordinatesFromUrl(automatic)) return automatic;
+        if (!isShortMapsUrl(automatic) && automatic.includes('/place/')) return automatic;
+      } catch {
+        // try next strategy
+      }
 
-      const automatic = await fetchWithAutoRedirects(variant, userAgent);
-      if (extractCoordinatesFromUrl(automatic)) return automatic;
+      try {
+        const manual = await fetchWithManualRedirects(variant, userAgent);
+        best = pickBetterExpandedUrl(best, manual);
+        if (extractCoordinatesFromUrl(manual)) return manual;
+        if (!isShortMapsUrl(manual) && manual.includes('/place/')) return manual;
+      } catch {
+        // try next strategy
+      }
     }
   }
 
-  return unwrapGoogleUrlWrapper(cleaned);
+  return best;
 }
 
 function extractPlaceNameFromUrl(url) {
@@ -338,8 +379,7 @@ function extractPlaceNameFromUrl(url) {
 async function resolveMapsUrl(inputUrl) {
   const expandedUrl = await followRedirects(inputUrl);
   const coords = extractCoordinatesFromUrl(expandedUrl);
-  const stillShort =
-    expandedUrl.includes('maps.app.goo.gl') || expandedUrl.includes('goo.gl/maps');
+  const stillShort = isShortMapsUrl(expandedUrl);
   const placeName = extractPlaceNameFromUrl(expandedUrl);
 
   return { expandedUrl, coords, stillShort, placeName };
@@ -408,7 +448,7 @@ exports.handler = async (event) => {
     } catch (resolveError) {
       console.error('resolve-maps-link follow error:', resolveError);
       expandedUrl = sanitizeUrl(inputUrl);
-      stillShort = expandedUrl.includes('maps.app.goo.gl') || expandedUrl.includes('goo.gl/maps');
+      stillShort = isShortMapsUrl(expandedUrl);
       placeName = extractPlaceNameFromUrl(expandedUrl);
     }
 
@@ -418,6 +458,15 @@ exports.handler = async (event) => {
     }
 
     if (!coords || stillShort) {
+      // Expanded to a named place — let the client geocode even when server geocode fails.
+      if (!stillShort && placeName) {
+        return jsonResponse(200, corsHeaders, {
+          expandedUrl,
+          originalUrl: inputUrl,
+          placeName,
+        });
+      }
+
       return jsonResponse(422, corsHeaders, {
         error:
           'Could not expand this short link from Google. If you shared from Maps, copy the whole share text (place name + link), not just the URL.',
