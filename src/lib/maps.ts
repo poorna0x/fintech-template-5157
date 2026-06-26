@@ -17,19 +17,13 @@ export interface AddressData {
   fullAddress?: string;
 }
 
-import { buildGoogleMapsOpenUrl } from '@/lib/googleMapsLink';
-
 /**
  * Generate Google Maps URL for a location
  */
 export const generateGoogleMapsUrl = (location: LocationData, address?: string): string => {
   const { latitude, longitude } = location;
   if (latitude && longitude) {
-    return buildGoogleMapsOpenUrl('', {
-      address,
-      latitude,
-      longitude,
-    });
+    return `https://www.google.com/maps/place/${latitude},${longitude}`;
   }
   const query = address || 'Unknown Location';
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;

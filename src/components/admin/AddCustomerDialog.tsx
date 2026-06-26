@@ -18,12 +18,10 @@ import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmen
 import PhoneSwapButton from '@/components/admin/PhoneSwapButton';
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import {
-  buildGoogleMapsOpenUrl,
   collectPlaceHints,
   extractCoordinatesFromGoogleMapsLink,
   extractMapsUrlFromText,
   geocodePlaceHintViaApi,
-  isCoordinateOnlyMapsUrl,
   isGoogleMapsShortLink,
   isGoogleMapsUrl,
   resolveGoogleMapsLinkViaApi,
@@ -837,25 +835,6 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
           ? capitalizeFirstLetter(extractedLocation).substring(0, 20)
           : prev.visible_address,
       }));
-
-      if (
-        address &&
-        (isCoordinateOnlyMapsUrl(resolvedLocation) || isGoogleMapsShortLink(resolvedLocation))
-      ) {
-        const upgradedLink = buildGoogleMapsOpenUrl(resolvedLocation, {
-          address,
-          latitude: coords.latitude,
-          longitude: coords.longitude,
-        });
-        setAddFormData((prev) => ({ ...prev, google_location: upgradedLink }));
-        googleLocationRef.current = upgradedLink;
-        if (isCoordinateOnlyMapsUrl(resolvedLocation)) {
-          toast.info(
-            'This was a dropped pin (no place name). Saved an address-based Maps link for better mobile navigation.',
-            { duration: 6000 }
-          );
-        }
-      }
 
       if (extractedLocation) {
         locationManuallyEditedRef.current = false;
