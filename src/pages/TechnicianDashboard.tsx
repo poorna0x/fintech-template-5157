@@ -9811,18 +9811,18 @@ const TechnicianDashboard = () => {
                             <div className="space-y-3 mt-4 pt-4 border-t border-gray-200">
                               {/* Bill Amount */}
                               {(actualCost || paymentAmount) && (
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm font-medium text-gray-700 w-32">Amount:</span>
-                                  <span className="text-sm text-gray-900">₹{actualCost || paymentAmount}</span>
+                                <div className="flex items-start gap-2">
+                                  <span className="text-sm font-medium text-gray-700 w-36 shrink-0">Amount:</span>
+                                  <span className="text-sm text-gray-900 flex-1 min-w-0 break-words">₹{actualCost || paymentAmount}</span>
                                 </div>
                               )}
                               
                               {/* Payment Mode - Only show if payment method exists (not null) */}
                               {/* For zero amount jobs, payment method will be null and this section won't display */}
                               {paymentMethod && (
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm font-medium text-gray-700 w-32">Payment Mode:</span>
-                                  <span className="text-sm text-gray-900">{
+                                <div className="flex items-start gap-2">
+                                  <span className="text-sm font-medium text-gray-700 w-36 shrink-0">Payment Mode:</span>
+                                  <span className="text-sm text-gray-900 flex-1 min-w-0 break-words">{
                                     paymentMethod === 'CASH' ? 'Cash' : 
                                     paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER' ? 'Online' : 
                                     paymentMethod
@@ -9835,9 +9835,9 @@ const TechnicianDashboard = () => {
                                 const brand = normalizeServiceBrand(rawBrand);
                                 if (!brand) return null;
                                 return (
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-sm font-medium text-gray-700 w-32">Service Brand:</span>
-                                    <span className="text-sm text-gray-900">{getServiceBrandLabel(brand)}</span>
+                                  <div className="flex items-start gap-2">
+                                    <span className="text-sm font-medium text-gray-700 w-36 shrink-0">Service Brand:</span>
+                                    <span className="text-sm text-gray-900 flex-1 min-w-0 break-words">{getServiceBrandLabel(brand)}</span>
                                   </div>
                                 );
                               })()}
@@ -9870,9 +9870,9 @@ const TechnicianDashboard = () => {
                                 
                                 if (leadSource && leadSource !== 'Website') {
                                   return (
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-sm font-medium text-gray-700 w-32">Lead Source:</span>
-                                      <span className="text-sm text-gray-900">{leadSource}</span>
+                                    <div className="flex items-start gap-2">
+                                      <span className="text-sm font-medium text-gray-700 w-36 shrink-0">Lead Source:</span>
+                                      <span className="text-sm text-gray-900 flex-1 min-w-0 break-words">{leadSource}</span>
                                     </div>
                                   );
                                 }
@@ -9881,9 +9881,9 @@ const TechnicianDashboard = () => {
                                   if (bookedAt) {
                                     const formatted = new Date(bookedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
                                     return (
-                                      <div className="flex items-center gap-2">
-                                        <span className="text-sm font-medium text-gray-700 w-32">Booked at:</span>
-                                        <span className="text-sm text-gray-900">{formatted}</span>
+                                      <div className="flex items-start gap-2">
+                                        <span className="text-sm font-medium text-gray-700 w-36 shrink-0">Booked at:</span>
+                                        <span className="text-sm text-gray-900 flex-1 min-w-0 break-words">{formatted}</span>
                                       </div>
                                     );
                                   }
@@ -9893,24 +9893,24 @@ const TechnicianDashboard = () => {
 
                               {/* Raw Water TDS - from selectedCustomerForReport (jobs from getByCustomerId don't have customer) */}
                               {((selectedCustomerForReport as any)?.raw_water_tds != null && (selectedCustomerForReport as any)?.raw_water_tds > 0) && (
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm font-medium text-gray-700 w-32">Raw Water TDS:</span>
-                                  <span className="text-sm text-gray-900">{(selectedCustomerForReport as any).raw_water_tds} ppm</span>
+                                <div className="flex items-start gap-2">
+                                  <span className="text-sm font-medium text-gray-700 w-36 shrink-0">Raw Water TDS:</span>
+                                  <span className="text-sm text-gray-900 flex-1 min-w-0 break-words">{(selectedCustomerForReport as any).raw_water_tds} ppm</span>
                                 </div>
                               )}
                               
                               {/* QR Code */}
                               {(paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && qrPhotos?.selected_qr_code_name && (
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm font-medium text-gray-700 w-32">QR Code:</span>
-                                  <span className="text-sm text-gray-900">{qrPhotos.selected_qr_code_name}</span>
+                                <div className="flex items-start gap-2">
+                                  <span className="text-sm font-medium text-gray-700 w-36 shrink-0">QR Code:</span>
+                                  <span className="text-sm text-gray-900 flex-1 min-w-0 break-words">{qrPhotos.selected_qr_code_name}</span>
                                 </div>
                               )}
 
                               {equipmentDisplay && (
-                                <div className="flex items-center gap-2">
-                                  <span className="text-sm font-medium text-gray-700 w-32">{equipmentDisplay.label}:</span>
-                                  <span className="text-sm text-gray-900">{equipmentDisplay.value}</span>
+                                <div className="flex items-start gap-2">
+                                  <span className="text-sm font-medium text-gray-700 w-36 shrink-0">{equipmentDisplay.label}:</span>
+                                  <span className="text-sm text-gray-900 flex-1 min-w-0 break-words">{equipmentDisplay.value}</span>
                                 </div>
                               )}
                               

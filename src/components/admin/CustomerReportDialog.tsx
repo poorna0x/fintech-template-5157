@@ -246,16 +246,16 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                       
                       <div className="space-y-3 mt-4 pt-4 border-t border-border">
                         {(actualCost || paymentAmount) && (
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium text-foreground/90 w-32">Amount:</span>
-                            <span className="text-sm text-foreground">₹{actualCost || paymentAmount}</span>
+                          <div className="flex items-start gap-2">
+                            <span className="text-sm font-medium text-foreground/90 w-36 shrink-0">Amount:</span>
+                            <span className="text-sm text-foreground flex-1 min-w-0 break-words">₹{actualCost || paymentAmount}</span>
                           </div>
                         )}
                         
                         {paymentMethod && (
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium text-foreground/90 w-32">Payment Mode:</span>
-                            <span className="text-sm text-foreground">{
+                          <div className="flex items-start gap-2">
+                            <span className="text-sm font-medium text-foreground/90 w-36 shrink-0">Payment Mode:</span>
+                            <span className="text-sm text-foreground flex-1 min-w-0 break-words">{
                               paymentMethod === 'CASH' ? 'Cash' : 
                               paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER' ? 'Online' : 
                               paymentMethod
@@ -268,9 +268,9 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                           const brand = normalizeDocumentBrand(rawBrand);
                           if (!brand) return null;
                           return (
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium text-foreground/90 w-32">Service Brand:</span>
-                              <span className="text-sm text-foreground">{getDocumentBrandLabel(brand)}</span>
+                            <div className="flex items-start gap-2">
+                              <span className="text-sm font-medium text-foreground/90 w-36 shrink-0">Service Brand:</span>
+                              <span className="text-sm text-foreground flex-1 min-w-0 break-words">{getDocumentBrandLabel(brand)}</span>
                             </div>
                           );
                         })()}
@@ -297,9 +297,9 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                           
                           if (leadSource) {
                             return (
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-medium text-foreground/90 w-32">Lead Source:</span>
-                                <span className="text-sm text-foreground">{leadSource}</span>
+                              <div className="flex items-start gap-2">
+                                <span className="text-sm font-medium text-foreground/90 w-36 shrink-0">Lead Source:</span>
+                                <span className="text-sm text-foreground flex-1 min-w-0 break-words">{leadSource}</span>
                               </div>
                             );
                           }
@@ -309,24 +309,24 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                         {(() => {
                           const tds = (customer as any).raw_water_tds ?? (customer as any).rawWaterTds;
                           return tds != null && tds > 0 ? (
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium text-foreground/90 w-32">Raw Water TDS:</span>
-                              <span className="text-sm text-foreground">{tds} ppm</span>
+                            <div className="flex items-start gap-2">
+                              <span className="text-sm font-medium text-foreground/90 w-36 shrink-0">Raw Water TDS:</span>
+                              <span className="text-sm text-foreground flex-1 min-w-0 break-words">{tds} ppm</span>
                             </div>
                           ) : null;
                         })()}
                         
                         {(paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER') && qrPhotos?.selected_qr_code_name && (
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium text-foreground/90 w-32">QR Code:</span>
-                            <span className="text-sm text-foreground">{qrPhotos.selected_qr_code_name}</span>
+                          <div className="flex items-start gap-2">
+                            <span className="text-sm font-medium text-foreground/90 w-36 shrink-0">QR Code:</span>
+                            <span className="text-sm text-foreground flex-1 min-w-0 break-words">{qrPhotos.selected_qr_code_name}</span>
                           </div>
                         )}
 
                         {equipmentDisplay && (
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium text-foreground/90 w-32">{equipmentDisplay.label}:</span>
-                            <span className="text-sm text-foreground">{equipmentDisplay.value}</span>
+                          <div className="flex items-start gap-2">
+                            <span className="text-sm font-medium text-foreground/90 w-36 shrink-0">{equipmentDisplay.label}:</span>
+                            <span className="text-sm text-foreground flex-1 min-w-0 break-words">{equipmentDisplay.value}</span>
                           </div>
                         )}
                         

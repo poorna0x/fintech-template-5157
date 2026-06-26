@@ -111,8 +111,8 @@ const Header = () => {
 
   return (
     <div className="sticky top-0 z-50 pt-8 px-4 bg-sky-50/80 dark:bg-sky-950/30 backdrop-blur-md border-b border-sky-100/80 dark:border-sky-500/15">
-      <header className="w-full max-w-7xl mx-auto py-3 px-6 md:px-8 flex items-center justify-between">
-        <div className={`p-3 ${mobileMenuOpen ? 'hidden md:block' : 'block'}`}>
+      <header className="w-full max-w-7xl mx-auto py-3 px-6 md:px-8 flex items-center gap-3 md:gap-4">
+        <div className={`shrink-0 ${mobileMenuOpen ? 'hidden md:block' : 'block'}`}>
           <Logo brandName={getPublicSiteLabel(getPublicSiteKey())} />
         </div>
         
@@ -120,7 +120,7 @@ const Header = () => {
         {!mobileMenuOpen && (
           <button
             type="button"
-            className="md:hidden p-3 rounded-2xl text-muted-foreground hover:text-foreground bg-background/80 backdrop-blur-sm border border-border/50"
+            className="md:hidden ml-auto p-3 rounded-2xl text-muted-foreground hover:text-foreground bg-background/80 backdrop-blur-sm border border-border/50"
             onClick={toggleMobileMenu}
             aria-label="Open menu"
             aria-expanded={false}
@@ -131,14 +131,17 @@ const Header = () => {
           </button>
         )}
         
-        {/* Desktop navigation */}
-        <nav className="hidden md:flex items-center absolute left-1/2 transform -translate-x-1/2" aria-label="Main navigation">
-          <div className="rounded-full px-1 py-1 backdrop-blur-md bg-white/70 dark:bg-card/70 border border-sky-100 dark:border-sky-500/15 shadow-lg shadow-sky-900/5">
+        {/* Desktop navigation — flex center (no absolute) so it never overlaps theme/CTA */}
+        <nav
+          className="hidden md:flex flex-1 justify-center min-w-0 px-2"
+          aria-label="Main navigation"
+        >
+          <div className="rounded-full px-1 py-1 backdrop-blur-md bg-white/70 dark:bg-card/70 border border-sky-100 dark:border-sky-500/15 shadow-lg shadow-sky-900/5 max-w-full overflow-x-auto">
             <ToggleGroup type="single" value={activePage} onValueChange={(value) => value && setActivePage(value)}>
               <ToggleGroupItem 
                 value="home"
                 className={cn(
-                  "px-4 py-2 rounded-full transition-all duration-300 ease-in-out relative transform data-[state=on]:bg-sky-700 dark:data-[state=on]:bg-sky-500 data-[state=on]:text-white",
+                  "px-3 lg:px-4 py-2 rounded-full transition-all duration-300 ease-in-out relative transform data-[state=on]:bg-sky-700 dark:data-[state=on]:bg-sky-500 data-[state=on]:text-white whitespace-nowrap",
                   activePage === 'home' ? 'text-white bg-sky-700 dark:bg-sky-500 scale-105 shadow-md shadow-sky-600/20' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
                 )}
                 onClick={handleNavClick('home')}
@@ -148,7 +151,7 @@ const Header = () => {
               <ToggleGroupItem 
                 value="about" 
                 className={cn(
-                  "px-4 py-2 rounded-full transition-all duration-300 ease-in-out relative transform data-[state=on]:bg-sky-700 dark:data-[state=on]:bg-sky-500 data-[state=on]:text-white",
+                  "px-3 lg:px-4 py-2 rounded-full transition-all duration-300 ease-in-out relative transform data-[state=on]:bg-sky-700 dark:data-[state=on]:bg-sky-500 data-[state=on]:text-white whitespace-nowrap",
                   activePage === 'about' ? 'text-white bg-sky-700 dark:bg-sky-500 scale-105 shadow-md shadow-sky-600/20' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
                 )}
                 onClick={handleNavClick('about')}
@@ -158,7 +161,7 @@ const Header = () => {
               <ToggleGroupItem 
                 value="services"
                 className={cn(
-                  "px-4 py-2 rounded-full transition-all duration-300 ease-in-out relative transform data-[state=on]:bg-sky-700 dark:data-[state=on]:bg-sky-500 data-[state=on]:text-white",
+                  "px-3 lg:px-4 py-2 rounded-full transition-all duration-300 ease-in-out relative transform data-[state=on]:bg-sky-700 dark:data-[state=on]:bg-sky-500 data-[state=on]:text-white whitespace-nowrap",
                   activePage === 'services' ? 'text-white bg-sky-700 dark:bg-sky-500 scale-105 shadow-md shadow-sky-600/20' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
                 )}
                 onClick={handleNavClick('services')}
@@ -168,7 +171,7 @@ const Header = () => {
               <ToggleGroupItem 
                 value="booking"
                 className={cn(
-                  "px-4 py-2 rounded-full transition-all duration-300 ease-in-out relative transform data-[state=on]:bg-sky-700 dark:data-[state=on]:bg-sky-500 data-[state=on]:text-white",
+                  "px-3 lg:px-4 py-2 rounded-full transition-all duration-300 ease-in-out relative transform data-[state=on]:bg-sky-700 dark:data-[state=on]:bg-sky-500 data-[state=on]:text-white whitespace-nowrap",
                   activePage === 'booking' ? 'text-white bg-sky-700 dark:bg-sky-500 scale-105 shadow-md shadow-sky-600/20' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
                 )}
                 onClick={handleNavClick('booking')}
@@ -178,7 +181,7 @@ const Header = () => {
               <ToggleGroupItem 
                 value="contact"
                 className={cn(
-                  "px-4 py-2 rounded-full transition-all duration-300 ease-in-out relative transform data-[state=on]:bg-sky-700 dark:data-[state=on]:bg-sky-500 data-[state=on]:text-white",
+                  "px-3 lg:px-4 py-2 rounded-full transition-all duration-300 ease-in-out relative transform data-[state=on]:bg-sky-700 dark:data-[state=on]:bg-sky-500 data-[state=on]:text-white whitespace-nowrap",
                   activePage === 'contact' ? 'text-white bg-sky-700 dark:bg-sky-500 scale-105 shadow-md shadow-sky-600/20' : 'text-muted-foreground hover:text-foreground hover:bg-muted hover:scale-102'
                 )}
                 onClick={handleNavClick('contact')}
@@ -309,42 +312,34 @@ const Header = () => {
           </div>
         )}
         
-        <div className="hidden md:flex items-center gap-4">
-          {/* Theme toggle for desktop */}
-          
-          <div className="flex items-center gap-2 rounded-full px-3 py-2 bg-white/70 dark:bg-card/70 backdrop-blur-sm border border-sky-100 dark:border-sky-500/15">
-            <Moon size={18} className={`${isDarkMode ? 'text-primary' : 'text-muted-foreground'}`} aria-hidden="true" />
-            <Switch
-              checked={!isDarkMode}
-              onCheckedChange={toggleTheme}
-              className="data-[state=checked]:bg-primary"
-              aria-label="Toggle light and dark theme"
-            />
-            <Sun size={18} className={`${!isDarkMode ? 'text-primary' : 'text-muted-foreground'}`} aria-hidden="true" />
-          </div>
+        <div className="hidden md:flex items-center gap-3 shrink-0 ml-auto">
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-white/70 dark:bg-card/70 backdrop-blur-sm border border-sky-100 dark:border-sky-500/15 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+            aria-label={isDarkMode ? 'Switch to light theme' : 'Switch to dark theme'}
+          >
+            {isDarkMode ? <Sun size={18} aria-hidden="true" /> : <Moon size={18} aria-hidden="true" />}
+          </button>
           
           {/* Show phone number on booking page, Book Service button on other pages */}
           {location.pathname === '/book' ? (
-            <div className="rounded-2xl">
-              <Button 
-                onClick={() => openPublicPhoneCall('+918884944288', 'header_booking_page')}
-                className="bg-sky-700 text-white hover:bg-sky-800 shadow-lg flex items-center gap-2"
-              >
-                <Phone size={18} />
-                +91-8884944288
-              </Button>
-            </div>
+            <Button 
+              onClick={() => openPublicPhoneCall('+918884944288', 'header_booking_page')}
+              className="bg-sky-700 text-white hover:bg-sky-800 shadow-lg flex items-center gap-2 whitespace-nowrap"
+            >
+              <Phone size={18} />
+              +91-8884944288
+            </Button>
           ) : (
-            <div className="rounded-2xl">
-              <Button 
-                onClick={() => {
-                  navigate('/book');
-                }}
-                className="bg-sky-700 text-white hover:bg-sky-800 shadow-lg"
-              >
-                Book Service
-              </Button>
-            </div>
+            <Button 
+              onClick={() => {
+                navigate('/book');
+              }}
+              className="bg-sky-700 text-white hover:bg-sky-800 shadow-lg whitespace-nowrap"
+            >
+              Book Service
+            </Button>
           )}
         </div>
       </header>
