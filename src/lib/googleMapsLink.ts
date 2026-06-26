@@ -169,6 +169,72 @@ export function isGoogleMapsShortLink(url: string): boolean {
   return value.includes('maps.app.goo.gl') || value.includes('goo.gl/maps');
 }
 
+/**
+ * Dropped-pin links resolve to lat/lng only (no Google Place listing).
+ * Mobile Maps often shows these as "Unknown location".
+ */
+export function isCoordinateOnlyMapsUrl(url: string): boolean {
+  const value = normalizeUrlForParsing(url);
+  if (!value || isGoogleMapsShortLink(value)) return false;
+
+  if (extractPlaceNameFromMapsUrl(value)) return false;
+
+  const placePath = value.match(/\/place\/([^/@?]+)/);
+  if (placePath) {
+    const raw = decodeURIComponent(placePath[1].replace(/\+/g, ' ')).trim();
+    if (/^-?\d+(?:\.\d+)?,-?\d+(?:\.\d+)?$/.test(raw)) return true;
+  }
+
+  if (/!1s0(?:!|$)/.test(value) && extractCoordinatesFromGoogleMapsLink(value)) {
+    return true;
+  }
+
+  return false;
+}
+
+export interface BuildGoogleMapsOpenUrlOptions {
+  address?: string;
+  latitude?: number;
+  longitude?: number;
+}
+
+/**
+ * Pick a Maps URL that opens reliably on mobile — use address search for dropped pins.
+ */
+export function buildGoogleMapsOpenUrl(
+  url: string,
+  options: BuildGoogleMapsOpenUrlOptions = {}
+): string {
+  const cleaned = sanitizeGoogleMapsInput(url);
+  if (!cleaned) return cleaned;
+
+  const namedPlace = extractPlaceNameFromMapsUrl(cleaned);
+  if (namedPlace && !isCoordinateOnlyMapsUrl(cleaned)) {
+    return cleaned;
+  }
+
+  const coordsFromUrl = extractCoordinatesFromGoogleMapsLink(cleaned);
+  const latitude =
+    options.latitude !== undefined && Number.isFinite(options.latitude)
+      ? options.latitude
+      : coordsFromUrl?.latitude;
+  const longitude =
+    options.longitude !== undefined && Number.isFinite(options.longitude)
+      ? options.longitude
+      : coordsFromUrl?.longitude;
+
+  const address = options.address?.trim();
+  if (address && address.length > 5) {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+  }
+
+  if (latitude !== undefined && longitude !== undefined) {
+    return `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
+  }
+
+  return cleaned;
+}
+
 export function isMobileDevice(): boolean {
   if (typeof navigator === 'undefined') return false;
   return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
@@ -265,7 +331,7 @@ export async function resolveGoogleMapsLinkViaApi(
   }
 }
 
-/** Fallback when short-link expansion fails — geocode place name from share text. */
+/** Geocode place name from share text when short-link expansion fails (Google via server). */
 export async function geocodePlaceHintViaApi(
   query: string,
   accessToken: string | null

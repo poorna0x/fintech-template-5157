@@ -1,8 +1,20 @@
 /** Shared job/customer location helpers for admin assign/reassign/measure flows (slim + full rows). */
 
+import {
+  buildGoogleMapsOpenUrl,
+  extractCoordinatesFromGoogleMapsLink,
+  extractPlaceNameFromMapsUrl,
+  isCoordinateOnlyMapsUrl,
+  isGoogleMapsShortLink,
+} from '@/lib/googleMapsLink';
+
 function getCompactGoogleMapsLink(url: string): string {
   const value = url.trim();
   if (!value) return '';
+
+  if (extractPlaceNameFromMapsUrl(value)) {
+    return value;
+  }
 
   if (value.includes('maps.app.goo.gl') || value.includes('goo.gl/maps')) {
     return value;
@@ -29,15 +41,48 @@ function getCompactGoogleMapsLink(url: string): string {
       longitude >= -180 &&
       longitude <= 180
     ) {
-      return `https://www.google.com/maps?q=${latitude},${longitude}`;
+      return buildGoogleMapsOpenUrl(value, { latitude, longitude });
     }
   }
 
   return value;
 }
 
+function getAddressFromLocationObject(location: any): string {
+  if (!location) return '';
+  const candidates = [
+    location.formattedAddress,
+    location.formatted_address,
+    location.address,
+    location.fullAddress,
+    location.full_address,
+  ];
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.trim().length > 5) return c.trim();
+  }
+  return '';
+}
+
+function getCoordOptionsFromLocationObject(location: any) {
+  const lat = location?.latitude ?? location?.lat;
+  const lng = location?.longitude ?? location?.lng;
+  const latitude = typeof lat === 'number' ? lat : parseFloat(String(lat ?? ''));
+  const longitude = typeof lng === 'number' ? lng : parseFloat(String(lng ?? ''));
+  if (
+    Number.isFinite(latitude) &&
+    Number.isFinite(longitude) &&
+    (latitude !== 0 || longitude !== 0)
+  ) {
+    return { latitude, longitude };
+  }
+  return undefined;
+}
+
 export function getLocationLinkFromObject(location: any): string {
   if (!location) return '';
+
+  const address = getAddressFromLocationObject(location);
+  const coordOpts = getCoordOptionsFromLocationObject(location);
 
   if (location.googleLocation || location.google_location) {
     const googleLoc = location.googleLocation || location.google_location;
@@ -50,11 +95,25 @@ export function getLocationLinkFromObject(location: any): string {
       !googleLoc.includes('localhost') &&
       !googleLoc.includes('127.0.0.1')
     ) {
+      if (
+        extractPlaceNameFromMapsUrl(googleLoc) &&
+        !isCoordinateOnlyMapsUrl(googleLoc)
+      ) {
+        return getCompactGoogleMapsLink(googleLoc);
+      }
+      if (isCoordinateOnlyMapsUrl(googleLoc) || isGoogleMapsShortLink(googleLoc)) {
+        const coordsFromUrl = extractCoordinatesFromGoogleMapsLink(googleLoc);
+        return buildGoogleMapsOpenUrl(googleLoc, {
+          address,
+          latitude: coordOpts?.latitude ?? coordsFromUrl?.latitude,
+          longitude: coordOpts?.longitude ?? coordsFromUrl?.longitude,
+        });
+      }
       return getCompactGoogleMapsLink(googleLoc);
     }
   }
-  if (location.latitude && location.longitude && location.latitude !== 0 && location.longitude !== 0) {
-    return `https://www.google.com/maps?q=${location.latitude},${location.longitude}`;
+  if (coordOpts) {
+    return buildGoogleMapsOpenUrl('', coordOpts);
   }
   if (
     location.formattedAddress &&

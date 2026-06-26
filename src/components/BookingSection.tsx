@@ -43,52 +43,62 @@ const BookingSection = () => {
     images: [] as string[]
   });
 
-  // No Google Places initialization needed - using free services
+  // No Google Places initialization needed — autocomplete uses Google client-side when configured
 
-  const handleInputChange = (field: string, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-    
-    // Handle address autocomplete
-    if (field === 'address' && value.length > 2) {
-      handleAddressInput(value);
-    } else if (field === 'address' && value.length <= 2) {
-      setAddressSuggestions([]);
-      setShowSuggestions(false);
-    }
+  const loadGoogleMapsScript = (): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      if (window.google?.maps?.places) {
+        resolve();
+        return;
+      }
+      const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+      if (!apiKey) {
+        reject(new Error('Google Maps API key not configured'));
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`;
+      script.async = true;
+      script.defer = true;
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error('Failed to load Google Maps'));
+      document.head.appendChild(script);
+    });
   };
 
   const handleAddressInput = async (input: string) => {
     setIsLoadingPlaces(true);
-    
+
     try {
-      // Use OpenStreetMap Nominatim for free address autocomplete
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(input)}&countrycodes=in&limit=5&addressdetails=1`
+      await loadGoogleMapsScript();
+      const service = new window.google.maps.places.AutocompleteService();
+      service.getPlacePredictions(
+        {
+          input,
+          componentRestrictions: { country: 'in' },
+        },
+        (predictions, status) => {
+          setIsLoadingPlaces(false);
+          if (
+            status !== window.google.maps.places.PlacesServiceStatus.OK ||
+            !predictions?.length
+          ) {
+            setAddressSuggestions([]);
+            setShowSuggestions(false);
+            return;
+          }
+
+          const suggestions = predictions.map((prediction) => ({
+            place_id: prediction.place_id,
+            description: prediction.description,
+            structured_formatting: prediction.structured_formatting,
+            types: prediction.types,
+          }));
+
+          setAddressSuggestions(suggestions);
+          setShowSuggestions(true);
+        }
       );
-      
-      const data = await response.json();
-      setIsLoadingPlaces(false);
-      
-      if (data && data.length > 0) {
-        const suggestions = data.map((item: any) => ({
-          place_id: item.place_id,
-          description: item.display_name,
-          structured_formatting: {
-            main_text: item.display_name.split(',')[0] || item.display_name,
-            secondary_text: item.display_name.split(',').slice(1).join(',').trim()
-          },
-          types: ['geocode'],
-          lat: parseFloat(item.lat),
-          lon: parseFloat(item.lon),
-          address: item.address
-        }));
-        
-        setAddressSuggestions(suggestions);
-        setShowSuggestions(true);
-      } else {
-        setAddressSuggestions([]);
-        setShowSuggestions(false);
-      }
     } catch (error) {
       console.error('Error getting place predictions:', error);
       setIsLoadingPlaces(false);
@@ -97,44 +107,62 @@ const BookingSection = () => {
     }
   };
 
+  const handleInputChange = (field: string, value: string) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+
+    if (field === 'address' && value.length > 2) {
+      handleAddressInput(value);
+    } else if (field === 'address' && value.length <= 2) {
+      setAddressSuggestions([]);
+      setShowSuggestions(false);
+    }
+  };
+
   const handleAddressSelect = (suggestion: any) => {
-    // Extract address components from the suggestion
-    const pincode = suggestion.address?.postcode || '';
-    const city = suggestion.address?.city || suggestion.address?.town || suggestion.address?.village || '';
-    const state = suggestion.address?.state || '';
-    const area = suggestion.address?.suburb || suggestion.address?.neighbourhood || '';
-    const street = suggestion.address?.road || '';
-    const houseNumber = suggestion.address?.house_number || '';
+    const applySelection = (address: string, lat: number, lng: number) => {
+      setFormData((prev) => ({
+        ...prev,
+        address,
+        coordinates: { lat, lng },
+      }));
+      setAddressSuggestions([]);
+      setShowSuggestions(false);
+      toast.success(`📍 Location selected: ${address}`, { duration: 4000 });
+    };
 
-    // Update form data with complete address and coordinates
-    setFormData(prev => ({
-      ...prev,
-      address: suggestion.description || '',
-      coordinates: {
-        lat: suggestion.lat || 0,
-        lng: suggestion.lon || 0
-      }
-    }));
+    if (!suggestion.place_id) {
+      applySelection(suggestion.description || '', suggestion.lat || 0, suggestion.lon || 0);
+      return;
+    }
 
-    setAddressSuggestions([]);
-    setShowSuggestions(false);
-    
-    // Show detailed location information
-    const locationDetails = [];
-    if (houseNumber) locationDetails.push(houseNumber);
-    if (street) locationDetails.push(street);
-    if (area) locationDetails.push(area);
-    if (city) locationDetails.push(city);
-    if (state) locationDetails.push(state);
-    if (pincode) locationDetails.push(pincode);
-    
-    const lat = (suggestion.lat || 0).toFixed(6);
-    const lng = (suggestion.lon || 0).toFixed(6);
-    
-    toast.success(
-      `📍 Exact Location Selected!\n${locationDetails.join(', ')}\nCoordinates: ${lat}, ${lng}`,
-      { duration: 5000 }
-    );
+    loadGoogleMapsScript()
+      .then(() => {
+        const host = document.createElement('div');
+        const service = new window.google.maps.places.PlacesService(host);
+        service.getDetails(
+          {
+            placeId: suggestion.place_id,
+            fields: ['formatted_address', 'geometry'],
+          },
+          (place, status) => {
+            if (
+              status === window.google.maps.places.PlacesServiceStatus.OK &&
+              place?.geometry?.location
+            ) {
+              applySelection(
+                place.formatted_address || suggestion.description || '',
+                place.geometry.location.lat(),
+                place.geometry.location.lng()
+              );
+            } else {
+              applySelection(suggestion.description || '', 0, 0);
+            }
+          }
+        );
+      })
+      .catch(() => {
+        applySelection(suggestion.description || '', 0, 0);
+      });
   };
 
   const handleImagesChange = (images: string[]) => {
@@ -171,97 +199,63 @@ const BookingSection = () => {
         const { latitude, longitude, accuracy } = position.coords;
         console.log('Location obtained:', { latitude, longitude, accuracy });
         
-        // Use free reverse geocoding services
-        const geocodingPromises = [
-          
-          // Fallback: BigDataCloud (free, good accuracy)
-        fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`)
-          .then(response => response.json())
-          .then(data => {
-              // Extract pincode from the data
-              const pincode = data.postcode || '';
-              const city = data.locality || data.city || '';
-              const state = data.principalSubdivision || data.principalSubdivisionCode || '';
-              const area = data.localityInfo?.administrative?.[0]?.name || '';
-              
-              // Create a more detailed address
+        // Reverse geocode with Google; fall back to BigDataCloud if needed
+        const geocodingPromises: Array<Promise<{
+          address: string;
+        } | null>> = [
+          loadGoogleMapsScript()
+            .then(
+              () =>
+                new Promise<{ address: string } | null>((resolve) => {
+                  const geocoder = new window.google.maps.Geocoder();
+                  geocoder.geocode(
+                    { location: { lat: latitude, lng: longitude } },
+                    (results, status) => {
+                      if (
+                        status === window.google.maps.GeocoderStatus.OK &&
+                        results?.[0]?.formatted_address
+                      ) {
+                        resolve({ address: results[0].formatted_address });
+                      } else {
+                        resolve(null);
+                      }
+                    }
+                  );
+                })
+            )
+            .catch(() => null),
+          fetch(
+            `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`
+          )
+            .then((response) => response.json())
+            .then((data) => {
               const addressParts = [];
               if (data.locality) addressParts.push(data.locality);
               if (data.principalSubdivision) addressParts.push(data.principalSubdivision);
               if (data.countryName) addressParts.push(data.countryName);
-              if (pincode) addressParts.push(pincode);
-              
-              return {
-                service: 'bigdatacloud',
-                address: addressParts.join(', '),
-                pincode,
-                city,
-                state,
-                area,
-                street: '',
-                houseNumber: '',
-                details: data
-              };
+              if (data.postcode) addressParts.push(data.postcode);
+              const address = addressParts.join(', ');
+              return address ? { address } : null;
             })
             .catch(() => null),
-          
-          // Fallback: OpenStreetMap Nominatim (free, good for detailed addresses)
-          fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1`)
-            .then(response => response.json())
-            .then(data => {
-              const pincode = data.address?.postcode || '';
-              const city = data.address?.city || data.address?.town || data.address?.village || '';
-              const state = data.address?.state || '';
-              const area = data.address?.suburb || data.address?.neighbourhood || '';
-              const street = data.address?.road || '';
-              const houseNumber = data.address?.house_number || '';
-              
-              return {
-                service: 'nominatim',
-                address: data.display_name || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
-                pincode,
-                city,
-                state,
-                area,
-                street,
-                houseNumber,
-                details: data
-              };
-            })
-            .catch(() => null)
         ];
 
-        // Try the first successful geocoding result
-        Promise.race(geocodingPromises.filter(p => p !== null))
-          .then(result => {
-            if (result) {
-              console.log('Geocoding result:', result);
-              
-              // Update form data with complete address and coordinates
-              console.log('Setting form data with address:', result.address);
-            setFormData(prev => ({ 
-              ...prev, 
+        Promise.race(geocodingPromises.filter((p) => p !== null))
+          .then((result) => {
+            if (result?.address) {
+              setFormData((prev) => ({
+                ...prev,
                 address: result.address,
                 coordinates: {
                   lat: latitude,
-                  lng: longitude
-                }
+                  lng: longitude,
+                },
               }));
 
-              // Show detailed location information
-              const locationDetails = [];
-              if (result.houseNumber) locationDetails.push(result.houseNumber);
-              if (result.street) locationDetails.push(result.street);
-              if (result.area) locationDetails.push(result.area);
-              if (result.city) locationDetails.push(result.city);
-              if (result.state) locationDetails.push(result.state);
-              if (result.pincode) locationDetails.push(result.pincode);
-              
               const lat = latitude.toFixed(6);
               const lng = longitude.toFixed(6);
-              
               toast.success(
-                `📍 Current Location Detected!\n${locationDetails.join(', ')}\nCoordinates: ${lat}, ${lng}`,
+                `📍 Current Location Detected!\n${result.address}\nCoordinates: ${lat}, ${lng}`,
                 { duration: 5000 }
               );
             } else {

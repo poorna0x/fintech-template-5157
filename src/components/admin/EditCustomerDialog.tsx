@@ -612,41 +612,15 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
               if (status === window.google.maps.GeocoderStatus.OK && results && results[0]) {
                 resolve(results[0].formatted_address);
               } else {
-                resolve(reverseGeocodeOpenStreetMap(lat, lng));
+                resolve(null);
               }
             }
           );
         });
-      } else {
-        return reverseGeocodeOpenStreetMap(lat, lng);
-      }
-    } catch (error) {
-      console.error('Reverse geocoding error:', error);
-      return reverseGeocodeOpenStreetMap(lat, lng);
-    }
-  };
-
-  // Fallback: Reverse geocode using OpenStreetMap
-  const reverseGeocodeOpenStreetMap = async (lat: number, lng: number): Promise<string | null> => {
-    try {
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`,
-        {
-          headers: {
-            'User-Agent': 'RO-Service-Management-App'
-          }
-        }
-      );
-      
-      if (!response.ok) return null;
-      
-      const data = await response.json();
-      if (data && data.display_name) {
-        return data.display_name;
       }
       return null;
     } catch (error) {
-      console.error('OpenStreetMap reverse geocoding error:', error);
+      console.error('Reverse geocoding error:', error);
       return null;
     }
   };

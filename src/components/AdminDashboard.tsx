@@ -3915,7 +3915,6 @@ const AdminDashboard = () => {
   // Reverse geocode coordinates to get address using Google Maps Geocoder API
   const reverseGeocode = async (lat: number, lng: number): Promise<string | null> => {
     try {
-      // First try Google Maps Geocoder API if available
       if (window.google && window.google.maps && window.google.maps.Geocoder) {
         return new Promise((resolve) => {
           const geocoder = new window.google.maps.Geocoder();
@@ -3925,44 +3924,15 @@ const AdminDashboard = () => {
               if (status === window.google.maps.GeocoderStatus.OK && results && results[0]) {
                 resolve(results[0].formatted_address);
               } else {
-                // Fallback to OpenStreetMap if Google fails
-                resolve(reverseGeocodeOpenStreetMap(lat, lng));
+                resolve(null);
               }
             }
           );
         });
-      } else {
-        // Fallback to OpenStreetMap if Google Maps not loaded
-        return reverseGeocodeOpenStreetMap(lat, lng);
-      }
-    } catch (error) {
-      console.error('Reverse geocoding error:', error);
-      // Fallback to OpenStreetMap on error
-      return reverseGeocodeOpenStreetMap(lat, lng);
-    }
-  };
-
-  // Fallback: Reverse geocode using OpenStreetMap Nominatim (free)
-  const reverseGeocodeOpenStreetMap = async (lat: number, lng: number): Promise<string | null> => {
-    try {
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`,
-        {
-          headers: {
-            'User-Agent': 'RO-Service-Management-App' // Required by Nominatim
-          }
-        }
-      );
-      
-      if (!response.ok) return null;
-      
-      const data = await response.json();
-      if (data && data.display_name) {
-        return data.display_name;
       }
       return null;
     } catch (error) {
-      console.error('OpenStreetMap reverse geocoding error:', error);
+      console.error('Reverse geocoding error:', error);
       return null;
     }
   };
@@ -4077,7 +4047,7 @@ const AdminDashboard = () => {
 
       const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
       if (!apiKey) {
-        // No API key, skip loading (will use OpenStreetMap fallback)
+        // No API key, skip loading Google Maps script
         resolve();
         return;
       }

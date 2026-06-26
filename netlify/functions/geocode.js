@@ -1,4 +1,4 @@
-// Netlify Function for geocoding (Nominatim proxy) — staff-only, rate-limited.
+// Netlify Function for geocoding via Google Geocoding API — staff-only, rate-limited.
 const { getCorsHeaders, isOriginAllowed, shouldRejectMissingOrigin } = require('./cors-helper');
 const { checkRateLimit } = require('./rate-limiter');
 const { addSecurityHeaders } = require('./security-headers');
@@ -6,12 +6,72 @@ const { verifyStaffBearerToken, readAccessTokenFromEvent } = require('./admin-au
 
 const MAX_QUERY_LEN = 300;
 
+const trim = (s) => (s && typeof s === 'string' ? s.trim() : '');
+
+function getGoogleMapsServerKey() {
+  return trim(process.env.GOOGLE_MAPS_API_KEY) || trim(process.env.VITE_GOOGLE_MAPS_API_KEY) || null;
+}
+
 function jsonResponse(statusCode, corsHeaders, body) {
   return {
     statusCode,
     headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
     body: JSON.stringify(body),
   };
+}
+
+function parseCoord(value) {
+  const n = parseFloat(String(value ?? '').trim());
+  if (!Number.isFinite(n)) return null;
+  return n;
+}
+
+function isValidLatLng(lat, lon) {
+  return (
+    typeof lat === 'number' &&
+    typeof lon === 'number' &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lon >= -180 &&
+    lon <= 180
+  );
+}
+
+/** Nominatim-compatible shape for existing callers: [{ lat, lon, display_name }] */
+function mapGoogleResults(results) {
+  if (!Array.isArray(results)) return [];
+  return results.map((r) => ({
+    lat: String(r.geometry.location.lat),
+    lon: String(r.geometry.location.lng),
+    display_name: r.formatted_address,
+    place_id: r.place_id,
+  }));
+}
+
+async function googleGeocodeRequest(params) {
+  const apiKey = getGoogleMapsServerKey();
+  if (!apiKey) {
+    throw new Error('Geocoding is not configured (set GOOGLE_MAPS_API_KEY on Netlify)');
+  }
+
+  const url = new URL('https://maps.googleapis.com/maps/api/geocode/json');
+  for (const [key, value] of Object.entries(params)) {
+    url.searchParams.set(key, value);
+  }
+  url.searchParams.set('key', apiKey);
+
+  const response = await fetch(url.toString());
+  if (!response.ok) {
+    throw new Error(`Google Geocoding API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  if (data.status === 'ZERO_RESULTS') return [];
+  if (data.status !== 'OK') {
+    throw new Error(data.error_message || `Google Geocoding status: ${data.status}`);
+  }
+
+  return mapGoogleResults(data.results);
 }
 
 exports.handler = async (event) => {
@@ -68,11 +128,14 @@ exports.handler = async (event) => {
 
     if (event.httpMethod === 'GET') {
       const params = event.queryStringParameters || {};
-      lat = params.lat;
-      lon = params.lon;
+      lat = parseCoord(params.lat);
+      lon = parseCoord(params.lon);
 
-      if (!lat || !lon) {
-        return jsonResponse(400, corsHeaders, { error: 'Missing lat or lon parameters' });
+      if (lat === null || lon === null) {
+        return jsonResponse(400, corsHeaders, { error: 'Missing or invalid lat/lon parameters' });
+      }
+      if (!isValidLatLng(lat, lon)) {
+        return jsonResponse(400, corsHeaders, { error: 'Invalid lat/lon range' });
       }
     } else {
       query = typeof body.query === 'string' ? body.query.trim() : '';
@@ -84,24 +147,10 @@ exports.handler = async (event) => {
       }
     }
 
-    let url;
-    if (lat && lon) {
-      url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&zoom=18&addressdetails=1&extratags=1&namedetails=1&accept-language=en`;
-    } else {
-      url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=in&limit=5&addressdetails=1`;
-    }
-
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'HydrogenRO/1.0 (contact@hydrogenro.com)',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`Nominatim API error: ${response.status}`);
-    }
-
-    const data = await response.json();
+    const data =
+      lat !== undefined && lon !== undefined
+        ? await googleGeocodeRequest({ latlng: `${lat},${lon}`, region: 'in' })
+        : await googleGeocodeRequest({ address: query, region: 'in' });
 
     return {
       statusCode: 200,
@@ -110,9 +159,10 @@ exports.handler = async (event) => {
     };
   } catch (error) {
     console.error('Geocoding error:', error);
-
-    return jsonResponse(500, corsHeaders, {
-      error: 'Geocoding failed',
-    });
+    const message = error instanceof Error ? error.message : 'Geocoding failed';
+    if (message.includes('not configured')) {
+      return jsonResponse(503, corsHeaders, { error: message });
+    }
+    return jsonResponse(500, corsHeaders, { error: 'Geocoding failed' });
   }
 };

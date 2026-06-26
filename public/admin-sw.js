@@ -65,7 +65,6 @@ self.addEventListener('fetch', (event) => {
     url.hostname.includes('cloudinary.com') ||
     url.hostname.includes('bigdatacloud.net') ||
     url.hostname.includes('api-bdc.io') ||
-    url.hostname.includes('nominatim.openstreetmap.org') ||
     request.headers.get('X-Requested-With') === 'XMLHttpRequest';
 
   if (isAPIRequest) {

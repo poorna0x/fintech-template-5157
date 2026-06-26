@@ -83,6 +83,7 @@ import {
   TechnicianQrSnapshotV1,
 } from '@/lib/qrCodeManager';
 import { extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
+import { getLocationLinkFromObject } from '@/lib/jobLocationHelpers';
 import ImageUpload from '@/components/ImageUpload';
 import { Label } from '@/components/ui/label';
 import { processQueuedPhotos, startRetryProcessing, setupOnlineListener, stopRetryProcessing } from '@/lib/retryPhotoUpload';
@@ -170,25 +171,11 @@ const calculateSimilarity = (str1: string, str2: string): number => {
   return 1 - distance / maxLen;
 };
 
-const isValidGoogleMapsLink = (value: unknown): value is string => {
-  return (
-    typeof value === 'string' &&
-    (value.includes('google.com/maps') || value.includes('maps.app.goo.gl') || value.includes('goo.gl/maps')) &&
-    !value.includes('localhost') &&
-    !value.includes('127.0.0.1')
-  );
-};
 
 const openLocationInGoogleMaps = (location: any): boolean => {
-  const googleLoc = location?.googleLocation || location?.google_location;
-  if (isValidGoogleMapsLink(googleLoc)) {
-    window.open(googleLoc, '_blank', 'noopener,noreferrer');
-    return true;
-  }
-
-  const coords = extractCoordinates(location);
-  if (coords && coords.latitude !== 0 && coords.longitude !== 0) {
-    window.open(`https://www.google.com/maps/place/${coords.latitude},${coords.longitude}`, '_blank', 'noopener,noreferrer');
+  const link = getLocationLinkFromObject(location);
+  if (link) {
+    window.open(link, '_blank', 'noopener,noreferrer');
     return true;
   }
 
