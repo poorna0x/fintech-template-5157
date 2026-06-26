@@ -5,21 +5,18 @@ import { getCachedQrCodes, cacheQrCodes, CommonQrCode } from '@/lib/qrCodeManage
 export const useQrCodes = () => {
   const [commonQrCodes, setCommonQrCodes] = useState<CommonQrCode[]>([]);
 
-  const loadQrCodes = useCallback(async () => {
+  const loadQrCodes = useCallback(async (force = false) => {
     try {
       console.log('Loading QR codes...');
-      
-      // Check cache first - use it if available and not expired
+
       const cachedCommon = getCachedQrCodes();
-      if (cachedCommon && cachedCommon.length > 0) {
+      if (!force && cachedCommon && cachedCommon.length > 0) {
         console.log('Using cached QR codes:', cachedCommon.length, 'items');
         setCommonQrCodes(cachedCommon);
-        // Don't fetch from DB if we have valid cache
         return;
       }
 
-      // Only fetch from database if cache is missing or expired
-      console.log('Cache miss or expired, fetching from database...');
+      console.log('Fetching QR codes from database...');
       const commonResult = await db.commonQrCodes.getAll();
 
       if (commonResult.error) {

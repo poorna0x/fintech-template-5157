@@ -1201,22 +1201,19 @@ const AdminDashboard = () => {
   // Technicians will be loaded when handleAssignJob is called (which opens the dialog)
   // and when user clicks refresh button in the dialog
 
-  // Load QR codes with localStorage caching
-  const loadQrCodes = useCallback(async () => {
+  // Load QR codes with localStorage caching (pass force=true when completing a job — list must be fresh)
+  const loadQrCodes = useCallback(async (force = false) => {
       try {
-      console.log('Loading QR codes in AdminDashboard...');
-      
-      // Check cache first - use it if available and not expired
-          const cachedCommon = getCachedQrCodes();
-      if (cachedCommon && cachedCommon.length > 0) {
+      console.log('Loading QR codes in AdminDashboard...', force ? '(force refresh)' : '');
+
+      const cachedCommon = getCachedQrCodes();
+      if (!force && cachedCommon && cachedCommon.length > 0) {
         console.log('Using cached QR codes:', cachedCommon.length, 'items');
             setCommonQrCodes(cachedCommon);
-        // Don't fetch from DB if we have valid cache
         return;
         }
 
-      // Only fetch from database if cache is missing or expired
-      console.log('Cache miss or expired, fetching from database...');
+      console.log('Fetching QR codes from database...');
         const commonResult = await db.commonQrCodes.getAll();
 
       if (commonResult.error) {
@@ -1283,6 +1280,15 @@ const AdminDashboard = () => {
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
+  }, [loadQrCodes]);
+
+  // Refresh when Settings adds/edits/deletes a common QR code (same browser)
+  useEffect(() => {
+    const onQrCodesUpdated = () => {
+      void loadQrCodes(true);
+    };
+    window.addEventListener('qrCodesUpdated', onQrCodesUpdated);
+    return () => window.removeEventListener('qrCodesUpdated', onQrCodesUpdated);
   }, [loadQrCodes]);
 
   // OPTIMIZATION: Load unique brands and models from database in parallel
@@ -8122,16 +8128,8 @@ const AdminDashboard = () => {
       }
     }
 
-    // OPTIMIZATION: Load QR codes only when completing a job (deferred loading)
-    // Check cache first, then load if needed
-    const cachedQrCodes = getCachedQrCodes();
-    if (!cachedQrCodes || cachedQrCodes.length === 0) {
-      // Load QR codes in background - don't block dialog opening
-      loadQrCodes().catch(err => console.error('Error loading QR codes:', err));
-    } else {
-      // Use cached QR codes immediately
-      setCommonQrCodes(cachedQrCodes);
-    }
+    // Always fetch fresh QR codes when completing a job (cache can miss newly created codes)
+    void loadQrCodes(true).catch((err) => console.error('Error loading QR codes:', err));
 
     // Note: We don't update the job assignment here anymore
     // The CompleteJobDialog will handle assigning the technician when completing the job

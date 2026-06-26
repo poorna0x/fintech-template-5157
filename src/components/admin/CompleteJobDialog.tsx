@@ -11,7 +11,7 @@ import ImageUpload from '@/components/ImageUpload';
 import { Job, Technician } from '@/types';
 import { db, supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { getCachedQrCodes, CommonQrCode } from '@/lib/qrCodeManager';
+import { CommonQrCode } from '@/lib/qrCodeManager';
 import { useAuth } from '@/contexts/AuthContext';
 import { RefreshCw } from 'lucide-react';
 import { customerNameClassName } from '@/lib/customerDisplay';
@@ -23,7 +23,7 @@ interface CompleteJobDialogProps {
   job: Job | null;
   technicians: Technician[];
   commonQrCodes: CommonQrCode[];
-  onLoadQrCodes: () => Promise<void>;
+  onLoadQrCodes: (force?: boolean) => Promise<void>;
   selectedTechnicianId?: string; // Technician who completed the job (from admin page)
   onJobCompleted: (completedJobId?: string) => void;
 }
@@ -47,6 +47,15 @@ const normalizeServiceBrand = (value: unknown): ServiceBrand | null => {
 };
 
 const getServiceBrandLabel = (brand: ServiceBrand) => (brand === 'elevenro' ? 'ElevenRO' : 'HydrogenRO');
+
+/** Remote URL / Cloudinary — local placeholders are not persisted until upload finishes. */
+const isUploadedMediaUrl = (u: unknown): u is string =>
+  typeof u === 'string' &&
+  u.trim().length > 0 &&
+  (u.startsWith('http://') || u.startsWith('https://') || u.includes('cloudinary.com'));
+
+const hasPendingLocalOrUploadingPhoto = (u: unknown) =>
+  typeof u === 'string' && u.trim() !== '' && !isUploadedMediaUrl(u);
 
 export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
   open,
@@ -154,18 +163,11 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
     setAmcEndDate(endDate.toISOString().split('T')[0]);
   };
 
-  // Load QR codes when dialog opens
+  // Load QR codes when dialog opens (always refresh — stale cache hides newly added codes)
   useEffect(() => {
     if (open && job) {
-      const cachedQrCodes = getCachedQrCodes();
-      if (!cachedQrCodes || cachedQrCodes.length === 0) {
-        onLoadQrCodes().then(() => {
-          const updated = getCachedQrCodes();
-          if (updated) setLocalCommonQrCodes(updated);
-        }).catch(err => console.error('Error loading QR codes:', err));
-      } else {
-        setLocalCommonQrCodes(cachedQrCodes);
-      }
+      onLoadQrCodes(true)
+        .catch((err) => console.error('Error loading QR codes:', err));
     }
   }, [open, job, onLoadQrCodes]);
 
@@ -272,9 +274,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
 
   // Sync commonQrCodes prop with local state
   useEffect(() => {
-    if (commonQrCodes.length > 0) {
-      setLocalCommonQrCodes(commonQrCodes);
-    }
+    setLocalCommonQrCodes(commonQrCodes);
   }, [commonQrCodes]);
 
   const handleClose = () => {
@@ -324,9 +324,27 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
       }
     }
     
+    if (
+      isBillPhotosUploading ||
+      isPaymentScreenshotUploading ||
+      billPhotos.some(hasPendingLocalOrUploadingPhoto) ||
+      (typeof paymentScreenshot === 'string' &&
+        paymentScreenshot.trim() !== '' &&
+        !isUploadedMediaUrl(paymentScreenshot))
+    ) {
+      toast.error('Photos are still uploading. Please wait before completing.');
+      return;
+    }
+
+    const uploadedBillPhotos = billPhotos.filter(isUploadedMediaUrl);
+
     // Determine payment mode - if bill is zero, payment mode should be empty
     const finalPaymentMode = isBillAmountZero() ? '' : (paymentMode as 'CASH' | 'ONLINE' | 'PARTIAL' | '');
-    const finalPaymentScreenshot = isBillAmountZero() ? '' : paymentScreenshot;
+    const finalPaymentScreenshot = isBillAmountZero()
+      ? ''
+      : isUploadedMediaUrl(paymentScreenshot)
+        ? paymentScreenshot
+        : '';
     const finalQrCodeType = isBillAmountZero() ? '' : qrCodeType;
     const finalSelectedQrCodeId = isBillAmountZero() ? '' : selectedQrCodeId;
     
@@ -438,8 +456,22 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
         requirements.push({ completed_by_office: true });
       }
 
-      if (billPhotos.length > 0) {
-        requirements.push({ bill_photos: billPhotos });
+      if (uploadedBillPhotos.length > 0) {
+        requirements.push({ bill_photos: uploadedBillPhotos });
+      }
+
+      const allAfterPhotos = [...uploadedBillPhotos];
+      if (finalPaymentScreenshot) {
+        const normalizedPayment = finalPaymentScreenshot.split('?')[0].split('#')[0].trim().toLowerCase();
+        const alreadyIncluded = allAfterPhotos.some(
+          (url) => (url || '').split('?')[0].split('#')[0].trim().toLowerCase() === normalizedPayment
+        );
+        if (!alreadyIncluded) {
+          allAfterPhotos.push(finalPaymentScreenshot);
+        }
+      }
+      if (allAfterPhotos.length > 0) {
+        updateData.after_photos = allAfterPhotos;
       }
 
       if (!isBillAmountZero() && (finalPaymentMode === 'ONLINE' || finalPaymentMode === 'PARTIAL') && finalSelectedQrCodeId) {
@@ -499,7 +531,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
         });
       }
 
-      if (billPhotos.length > 0 || (!isBillAmountZero() && (finalPaymentMode === 'ONLINE' || finalPaymentMode === 'PARTIAL') && finalSelectedQrCodeId) || finalPaymentMode === 'PARTIAL' || (effectiveHasAMC && amcDateGiven && amcEndDate) || isOfficeCompletion) {
+      if (uploadedBillPhotos.length > 0 || (!isBillAmountZero() && (finalPaymentMode === 'ONLINE' || finalPaymentMode === 'PARTIAL') && finalSelectedQrCodeId) || finalPaymentMode === 'PARTIAL' || (effectiveHasAMC && amcDateGiven && amcEndDate) || isOfficeCompletion) {
         updateData.requirements = JSON.stringify(requirements);
       }
 
@@ -628,6 +660,15 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
 
     // Step 2: Bill Photo (optional) - move to next step
     if (completeJobStep === 2) {
+      if (isBillPhotosUploading || billPhotos.some(hasPendingLocalOrUploadingPhoto)) {
+        toast.error(
+          isBillPhotosUploading
+            ? 'Bill photo(s) are still uploading.'
+            : 'Bill photo(s) must finish uploading before continuing.'
+        );
+        return;
+      }
+
       // Check if we should skip AMC step (step 3)
       const billIsZero = isBillAmountZero();
       const isSoftener = isSoftenerService();
@@ -793,6 +834,20 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
 
     // Step 5: Payment Screenshot (optional) - move to step 7 (OTP) if required, or step 6 (Prefilter)
     if (completeJobStep === 5) {
+      if (
+        isPaymentScreenshotUploading ||
+        (typeof paymentScreenshot === 'string' &&
+          paymentScreenshot.trim() !== '' &&
+          !isUploadedMediaUrl(paymentScreenshot))
+      ) {
+        toast.error(
+          isPaymentScreenshotUploading
+            ? 'Payment screenshot is still uploading.'
+            : 'Payment screenshot must finish uploading before continuing.'
+        );
+        return;
+      }
+
       // Check if OTP is required
       const needsOtp = requiresOtp();
       if (needsOtp) {
@@ -1116,6 +1171,8 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                     onImagesChange={(images) => {
                       setBillPhotos(images);
                     }}
+                    initialImages={billPhotos}
+                    onUploadStateChange={setIsBillPhotosUploading}
                     maxImages={5}
                     folder="bills"
                     title=""
@@ -1123,8 +1180,8 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                     maxWidth={1024}
                     quality={0.5}
                     aggressiveCompression={true}
-                    onUploadStart={() => setIsBillPhotosUploading(true)}
-                    onUploadEnd={() => setIsBillPhotosUploading(false)}
+                    jobId={job?.id}
+                    photoType="bill"
                   />
                 </div>
               </div>
@@ -1489,6 +1546,8 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                     onImagesChange={(images) => {
                       setPaymentScreenshot(images[0] || '');
                     }}
+                    initialImages={paymentScreenshot ? [paymentScreenshot] : []}
+                    onUploadStateChange={setIsPaymentScreenshotUploading}
                     maxImages={1}
                     folder="payment-receipts"
                     title=""
@@ -1497,8 +1556,8 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                     quality={0.3}
                     aggressiveCompression={true}
                     useSecondaryAccount={true}
-                    onUploadStart={() => setIsPaymentScreenshotUploading(true)}
-                    onUploadEnd={() => setIsPaymentScreenshotUploading(false)}
+                    jobId={job?.id}
+                    photoType="payment"
                   />
                 </div>
               </div>
@@ -1703,7 +1762,11 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                     setCompleteJobStep(nextStep);
                   }
                 }}
-                disabled={isSubmittingJobCompletion}
+                disabled={
+                  isSubmittingJobCompletion ||
+                  isBillPhotosUploading ||
+                  billPhotos.some(hasPendingLocalOrUploadingPhoto)
+                }
               >
                 Skip
               </Button>
@@ -1732,6 +1795,13 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
               disabled={
                 isSubmittingJobCompletion || 
                 (completeJobStep === 1 && !serviceBrand) ||
+                (completeJobStep === 2 &&
+                  (isBillPhotosUploading || billPhotos.some(hasPendingLocalOrUploadingPhoto))) ||
+                (completeJobStep === 5 &&
+                  (isPaymentScreenshotUploading ||
+                    (typeof paymentScreenshot === 'string' &&
+                      paymentScreenshot.trim() !== '' &&
+                      !isUploadedMediaUrl(paymentScreenshot)))) ||
                 (completeJobStep === 6 && (isBillPhotosUploading || isPaymentScreenshotUploading)) ||
                 // Step 6 validation: Raw water TDS required for RO jobs
                 (completeJobStep === 6 && !isSoftenerService() && !rawWaterTds.trim()) ||
@@ -1746,7 +1816,15 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                 (completeJobStep === 7 && otpInput.join('').length !== 4)
               }
             >
-              {isSubmittingJobCompletion || (completeJobStep === 6 && (isBillPhotosUploading || isPaymentScreenshotUploading)) ? (
+              {isSubmittingJobCompletion ||
+              (completeJobStep === 2 &&
+                (isBillPhotosUploading || billPhotos.some(hasPendingLocalOrUploadingPhoto))) ||
+              (completeJobStep === 5 &&
+                (isPaymentScreenshotUploading ||
+                  (typeof paymentScreenshot === 'string' &&
+                    paymentScreenshot.trim() !== '' &&
+                    !isUploadedMediaUrl(paymentScreenshot)))) ||
+              (completeJobStep === 6 && (isBillPhotosUploading || isPaymentScreenshotUploading)) ? (
                 <>
                   <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
                   {isSubmittingJobCompletion ? 'Completing...' : 'Uploading...'}

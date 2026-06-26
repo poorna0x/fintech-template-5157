@@ -49,7 +49,7 @@ import { buildTechnicianSalaryPayload, getCurrentMonthKey } from '@/lib/technici
 import { Technician } from '@/types';
 import ImageUpload from '@/components/ImageUpload';
 import { TechnicianIdCardLinks } from '@/components/admin/TechnicianIdCardLinks';
-import { CommonQrCode, invalidateQrCodesCache, normalizeTechnicianAssignedCommonQrIds } from '@/lib/qrCodeManager';
+import { CommonQrCode, invalidateQrCodesCache, cacheQrCodes, normalizeTechnicianAssignedCommonQrIds } from '@/lib/qrCodeManager';
 // NOTE: `jszip` and `qr-code-styling` are heavy and only used by specific
 // button actions (data export ZIP, styled QR image). They are dynamically
 // imported at their call sites so they stay out of the main Settings chunk.
@@ -684,9 +684,11 @@ const Settings = () => {
         }));
         console.log('Transformed QR codes:', transformed);
         setCommonQrCodes(transformed);
+        cacheQrCodes(transformed);
       } else {
         console.log('No QR codes found in database');
         setCommonQrCodes([]);
+        cacheQrCodes([]);
       }
     } catch (error) {
       console.error('Error loading common QR codes:', error);
