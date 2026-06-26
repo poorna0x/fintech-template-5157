@@ -786,8 +786,31 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
           return;
         }
       } else if (!coords) {
-        toast.error('Could not extract coordinates from this link.');
-        return;
+        // Full URL with a place name but no embedded coordinates (museums, apartments, etc.)
+        const token = await resolveSupabaseAccessTokenForApi();
+        const placeHints = collectPlaceHints(
+          mapsShareTextRef.current,
+          resolvedLocation,
+          addFormData.address
+        );
+
+        for (const hint of placeHints) {
+          if (!token) break;
+          loadingToast = toast.loading('Looking up address from place name...');
+          const geocoded = await geocodePlaceHintViaApi(hint, token);
+          if (loadingToast !== undefined) toast.dismiss(loadingToast);
+          loadingToast = undefined;
+          if (geocoded) {
+            coords = { latitude: geocoded.latitude, longitude: geocoded.longitude };
+            toast.info(`Found location from place name: ${hint.split(',')[0]}`);
+            break;
+          }
+        }
+
+        if (!coords) {
+          toast.error('Could not extract coordinates from this link.');
+          return;
+        }
       }
 
       loadingToast = toast.loading('Fetching address from Google Maps...');

@@ -6,6 +6,35 @@ const { addSecurityHeaders } = require('./security-headers');
 const MAX_URL_LEN = 2048;
 const MAX_REDIRECTS = 12;
 
+const trim = (s) => (s && typeof s === 'string' ? s.trim() : '');
+
+function getGoogleMapsServerKey() {
+  return trim(process.env.GOOGLE_MAPS_API_KEY) || trim(process.env.VITE_GOOGLE_MAPS_API_KEY) || null;
+}
+
+/** Geocode a named /place/... URL when it has no !3d/!4d coordinates (common for museums, apartments). */
+async function geocodePlaceNameWithGoogle(placeName) {
+  const apiKey = getGoogleMapsServerKey();
+  if (!apiKey || !placeName) return null;
+
+  const url = new URL('https://maps.googleapis.com/maps/api/geocode/json');
+  url.searchParams.set('address', placeName);
+  url.searchParams.set('region', 'in');
+  url.searchParams.set('key', apiKey);
+
+  try {
+    const response = await fetch(url.toString());
+    if (!response.ok) return null;
+    const data = await response.json();
+    if (data.status !== 'OK' || !data.results?.[0]?.geometry?.location) return null;
+    const { lat, lng } = data.results[0].geometry.location;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    return { latitude: lat, longitude: lng };
+  } catch {
+    return null;
+  }
+}
+
 const USER_AGENTS = [
   'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
   'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
@@ -369,7 +398,12 @@ exports.handler = async (event) => {
   }
 
   try {
-    const { expandedUrl, coords, stillShort, placeName } = await resolveMapsUrl(inputUrl);
+    let { expandedUrl, coords, stillShort, placeName } = await resolveMapsUrl(inputUrl);
+
+    // Named places (museums, apartment listings) often expand without lat/lng in the URL.
+    if (!coords && !stillShort && placeName) {
+      coords = await geocodePlaceNameWithGoogle(placeName);
+    }
 
     if (!coords || stillShort) {
       return jsonResponse(422, corsHeaders, {
