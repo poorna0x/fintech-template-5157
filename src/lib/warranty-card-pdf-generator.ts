@@ -8,7 +8,6 @@ import {
 } from './document-pdf-brand';
 import {
   addDays,
-  categoryDef,
   durationToDays,
   formatWarrantyDate,
   type DurationUnit,
@@ -51,15 +50,6 @@ export interface WarrantyDraftItemInput {
   covered: boolean;
 }
 
-const CATEGORY_PILL_STYLE: Record<string, { bg: string; color: string }> = {
-  ELECTRICAL: { bg: '#fef3c7', color: '#92400e' },
-  MEMBRANE: { bg: '#ede9fe', color: '#5b21b6' },
-  CONSUMABLE: { bg: '#d1fae5', color: '#047857' },
-  OUTSIDE_FILTER: { bg: '#e0f2fe', color: '#0369a1' },
-  BODY: { bg: '#f1f5f9', color: '#334155' },
-  OTHER: { bg: '#f3f4f6', color: '#374151' },
-};
-
 function resolveBrand(data: WarrantyCardPDFData): DocumentBrand {
   return resolvePdfDocumentBrand(data);
 }
@@ -68,12 +58,6 @@ function formatLongIndianDate(dateStr: string): string {
   const d = new Date(`${dateStr}T12:00:00`);
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' });
-}
-
-function renderCategoryPill(category: string): string {
-  const cat = categoryDef(category);
-  const style = CATEGORY_PILL_STYLE[category] || CATEGORY_PILL_STYLE.OTHER;
-  return `<span class="cat-pill" style="background:${style.bg};color:${style.color}">${sanitizeForTemplate(cat.label)}</span>`;
 }
 
 export function buildWarrantyFromFormDraft(options: {
@@ -144,13 +128,11 @@ function renderCoverageTable(warranty: PublicWarranty): string {
   return warranty.items
     .map((it) => {
       const notCovered = it.covered === false;
-      const showCat = it.label.trim().toLowerCase() !== categoryDef(it.category).label.toLowerCase();
 
       return `
         <tr class="${notCovered ? 'row-muted' : ''}">
           <td class="col-part">
             <div class="part-name">${sanitizeForTemplate(it.label)}</div>
-            ${showCat ? `<div class="part-meta">${renderCategoryPill(it.category)}</div>` : ''}
           </td>
           <td class="col-from">${notCovered ? '—' : sanitizeForTemplate(formatWarrantyDate(it.start_date))}</td>
           <td class="col-until">${notCovered ? 'Not covered' : sanitizeForTemplate(formatWarrantyDate(it.end_date))}</td>
@@ -507,18 +489,6 @@ export function generateWarrantyCardHTML(data: WarrantyCardPDFData): string {
     .row-muted .part-name { color: #94a3b8; }
 
     .part-name { font-weight: 600; color: #0f172a; }
-
-    .part-meta { margin-top: 5px; }
-
-    .cat-pill {
-      display: inline-block;
-      font-size: 8px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      padding: 2px 7px;
-      border-radius: 999px;
-    }
 
     .col-from {
       width: 24%;

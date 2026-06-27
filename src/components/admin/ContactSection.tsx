@@ -9,6 +9,11 @@ import { getAdminEmailComposerUrl, getAdminWhatsAppComposerUrl, getValidCustomer
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import WhatsAppActionDialog from '@/components/admin/WhatsAppActionDialog';
 import PhoneNumbersDialog from '@/components/admin/PhoneNumbersDialog';
+import {
+  geolocationFailureMessage,
+  getDeviceLocation,
+  isGeolocationPositionError,
+} from '@/lib/geolocation';
 
 interface ContactSectionProps {
   customer: Customer;
@@ -87,56 +92,26 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
     setWhatsappChoiceOpen(true);
   };
 
-  // Mirror the booking page's forgiving geolocation: longer timeout + allow a recent cached
-  // fix, then retry with even more relaxed settings. Strict settings (10s, maximumAge: 0)
-  // fail on desktops with no GPS, even when the booking page succeeds on the same device.
-  const captureCurrentLocation = () => {
-    if (currentLocation) return;
+  const captureCurrentLocation = async () => {
+    if (currentLocation || isGettingLocation) return;
     if (!navigator.geolocation) {
       toast.error('Geolocation is not supported by your browser');
       return;
     }
 
     setIsGettingLocation(true);
-
-    const onSuccess = (position: GeolocationPosition) => {
-      setCurrentLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
-      setIsGettingLocation(false);
-    };
-
-    const reportError = (error: GeolocationPositionError) => {
-      setIsGettingLocation(false);
-      let msg = 'Failed to get your location';
-      switch (error.code) {
-        case error.PERMISSION_DENIED:
-          msg = 'Permission denied. Allow location access for this site.';
-          break;
-        case error.POSITION_UNAVAILABLE:
-          msg = 'Location information unavailable. Please check your location settings.';
-          break;
-        case error.TIMEOUT:
-          msg = 'Location request timed out. Please try again.';
-          break;
+    try {
+      const location = await getDeviceLocation();
+      setCurrentLocation({ lat: location.lat, lng: location.lng });
+    } catch (error) {
+      if (isGeolocationPositionError(error)) {
+        toast.error(geolocationFailureMessage(error));
+      } else {
+        toast.error(error instanceof Error ? error.message : 'Failed to get your location');
       }
-      toast.error(msg);
-    };
-
-    navigator.geolocation.getCurrentPosition(
-      onSuccess,
-      () => {
-        // Fallback with relaxed settings (longer timeout, allow older cached fix).
-        navigator.geolocation.getCurrentPosition(onSuccess, reportError, {
-          enableHighAccuracy: true,
-          timeout: 45000,
-          maximumAge: 300000,
-        });
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 30000,
-        maximumAge: 60000,
-      }
-    );
+    } finally {
+      setIsGettingLocation(false);
+    }
   };
 
   return (

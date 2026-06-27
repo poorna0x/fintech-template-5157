@@ -2,7 +2,6 @@ import React from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { ShieldCheck, CheckCircle2, XCircle, BadgeCheck } from 'lucide-react';
 import {
-  categoryDef,
   warrantyStatus,
   formatWarrantyDate,
   GENERAL_WARRANTY_POLICY,
@@ -38,22 +37,22 @@ export const WarrantyCard: React.FC<{ warranty: PublicWarranty; actions?: React.
 
   return (
     <Card>
-      <CardContent className="p-5 sm:p-6 space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="w-5 h-5 text-sky-600" />
-            <div>
+      <CardContent className="p-4 sm:p-6 space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex items-center gap-2 min-w-0">
+            <ShieldCheck className="w-5 h-5 text-sky-600 shrink-0" />
+            <div className="min-w-0">
               <p className="font-semibold">Warranty</p>
               <p className="text-xs text-muted-foreground">
                 From {formatWarrantyDate(warranty.start_date)}
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center justify-between gap-2 sm:justify-end flex-wrap w-full sm:w-auto">
             <span className={`rounded-full px-3 py-1 text-xs font-semibold ${overall.toneClass}`}>
               {overall.label}
             </span>
-            {actions}
+            {actions ? <div className="flex items-center gap-0.5 flex-wrap justify-end">{actions}</div> : null}
           </div>
         </div>
 
@@ -64,31 +63,24 @@ export const WarrantyCard: React.FC<{ warranty: PublicWarranty; actions?: React.
         ) : (
           <div className="divide-y rounded-lg border">
             {warranty.items.map((it) => {
-              const cat = categoryDef(it.category);
               const notCovered = it.covered === false;
               const st = warrantyStatus(it.end_date);
-              // Hide the category badge when the label is just the category name (no new info).
-              const showBadge = it.label.trim().toLowerCase() !== cat.label.toLowerCase();
               return (
-                <div key={it.id} className="flex items-center justify-between gap-3 p-3">
+                <div
+                  key={it.id}
+                  className="flex flex-col gap-1.5 p-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+                >
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`text-sm font-medium truncate ${notCovered ? 'text-muted-foreground' : ''}`}>
-                        {it.label}
-                      </span>
-                      {showBadge && (
-                        <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${cat.badgeClass}`}>
-                          {cat.label}
-                        </span>
-                      )}
-                    </div>
+                    <span className={`text-sm font-medium break-words ${notCovered ? 'text-muted-foreground' : ''}`}>
+                      {it.label}
+                    </span>
                     {!notCovered && (
                       <p className="text-xs text-muted-foreground mt-0.5">
                         Until {formatWarrantyDate(it.end_date)}
                       </p>
                     )}
                   </div>
-                  <span className="shrink-0 inline-flex items-center gap-1 text-xs font-medium">
+                  <span className="shrink-0 inline-flex items-center gap-1 text-xs font-medium self-start sm:self-center">
                     {notCovered ? (
                       <>
                         <XCircle className="w-4 h-4 text-muted-foreground" />

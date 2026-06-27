@@ -89,6 +89,11 @@ import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { isIOS, isPWA, shouldUseFileInputFallback, requestCameraAccess, createVideoElement, checkCameraPermission } from '@/lib/cameraUtils';
 import { getCachedQrCodes, cacheQrCodes, shouldUseCache, CommonQrCode } from '@/lib/qrCodeManager';
 import { openInGoogleMaps, extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
+import {
+  geolocationFailureMessage,
+  getDeviceLocation,
+  isGeolocationPositionError,
+} from '@/lib/geolocation';
 import { normalizePhoneForSearch, cn } from '@/lib/utils';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import FollowUpModal from '@/components/FollowUpModal';
@@ -4143,43 +4148,26 @@ const AdminDashboard = () => {
       return;
     }
 
+    if (isGettingLocation) return;
+
     setIsGettingLocation(true);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const location = {
-          lat: position.coords.latitude,
-          lng: position.coords.longitude
-        };
-        setCurrentLocation(location);
-        setIsGettingLocation(false);
+    void getDeviceLocation()
+      .then((location) => {
+        setCurrentLocation({ lat: location.lat, lng: location.lng });
         toast.success('Location captured!');
-        
-        // Don't calculate distances automatically - user will click button in dialog
-      },
-      (error) => {
-        setIsGettingLocation(false);
-        let errorMsg = 'Failed to get your location';
-        switch (error.code) {
-          case error.PERMISSION_DENIED:
-            errorMsg = 'Permission denied. Please allow location access.';
-            break;
-          case error.POSITION_UNAVAILABLE:
-            errorMsg = 'Location information unavailable.';
-            break;
-          case error.TIMEOUT:
-            errorMsg = 'Location request timed out.';
-            break;
+      })
+      .catch((error) => {
+        if (isGeolocationPositionError(error)) {
+          toast.error(geolocationFailureMessage(error));
+        } else {
+          toast.error(error instanceof Error ? error.message : 'Failed to get your location');
         }
-        toast.error(errorMsg);
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0,
-      }
-    );
+      })
+      .finally(() => {
+        setIsGettingLocation(false);
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customers]);
+  }, [customers, isGettingLocation]);
 
   const confirmDelete = (customer: Customer) => {
     if (isManager) {

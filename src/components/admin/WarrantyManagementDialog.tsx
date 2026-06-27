@@ -967,10 +967,10 @@ export default function WarrantyManagementDialog({
               <>
                 {/* ===== Existing warranties ===== */}
                 <section className="space-y-2">
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <p className="text-sm font-semibold">Existing warranties</p>
                     {formMode === 'closed' && (
-                      <Button type="button" size="sm" onClick={openAddForm}>
+                      <Button type="button" size="sm" className="w-full sm:w-auto" onClick={openAddForm}>
                         <Plus className="h-4 w-4 mr-1" /> Add warranty
                       </Button>
                     )}
@@ -985,7 +985,7 @@ export default function WarrantyManagementDialog({
                           key={w.id}
                           warranty={w as unknown as PublicWarranty}
                           actions={
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-0.5 flex-wrap justify-end">
                               <Button
                                 type="button"
                                 variant="ghost"
