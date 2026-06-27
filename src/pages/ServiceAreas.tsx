@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import PageHero from '@/components/PageHero';
@@ -10,6 +10,11 @@ import {
   buildLocationTitle,
   buildLocationDescription,
   buildLocationIntro,
+  buildLocationFaqItems,
+  buildLocationFaqJsonLd,
+  resolveLocationForNearby,
+  LOCATION_HUB_GROUPS,
+  getLocationBySlug,
 } from '@/data/locationSeo';
 import { getBrandSeoProfile } from '@/lib/publicSiteSeo';
 import { getPublicSiteKey } from '@/lib/websiteSiteKey';
@@ -27,7 +32,7 @@ const ServiceAreas = () => {
 
   const heroTitle = loc ? `RO Service in ${loc.name}` : 'Service Areas in Bengaluru';
   const heroDescription = loc
-    ? buildLocationDescription(loc)
+    ? buildLocationDescription(loc, brand.brandName, brand.primaryPhone)
     : 'We provide professional RO water purifier services across all areas of Bengaluru. Find your area and book service today!';
 
   // Set a UNIQUE document title + meta description per location route so each
@@ -35,17 +40,24 @@ const ServiceAreas = () => {
   useEffect(() => {
     if (!loc) return;
     const prevTitle = document.title;
-    document.title = buildLocationTitle(loc);
+    document.title = buildLocationTitle(loc, brand.brandName);
 
     const metaDesc = document.querySelector('meta[name="description"]');
     const prevDesc = metaDesc?.getAttribute('content') ?? null;
-    if (metaDesc) metaDesc.setAttribute('content', buildLocationDescription(loc));
+    if (metaDesc) {
+      metaDesc.setAttribute('content', buildLocationDescription(loc, brand.brandName, brand.primaryPhone));
+    }
 
     return () => {
       document.title = prevTitle;
       if (metaDesc && prevDesc !== null) metaDesc.setAttribute('content', prevDesc);
     };
-  }, [loc]);
+  }, [loc, brand.brandName, brand.primaryPhone]);
+
+  const faqItems = loc ? buildLocationFaqItems(loc, brand.brandName, brand.primaryPhone) : [];
+
+  const nearbyPillClass =
+    'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300 border border-sky-200/60 dark:border-sky-500/20 hover:bg-sky-200/80 dark:hover:bg-sky-500/25 transition-colors';
 
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground">
@@ -55,23 +67,23 @@ const ServiceAreas = () => {
           "@type": "Service",
           "name": loc ? `RO Service in ${loc.name}` : "RO Service Areas in Bengaluru",
           "description": loc
-            ? buildLocationDescription(loc)
+            ? buildLocationDescription(loc, brand.brandName, brand.primaryPhone)
             : "Professional RO water purifier services across all areas of Bengaluru, Karnataka",
           "image": brand.ogImage,
           "provider": {
             "@type": "LocalBusiness",
-            "name": "Hydrogen RO",
+            "name": brand.brandName,
             "address": {
               "@type": "PostalAddress",
-              "streetAddress": "MG Road",
-              "addressLocality": "Bengaluru",
-              "addressRegion": "Karnataka",
-              "postalCode": "560001",
+              "streetAddress": brand.streetAddress,
+              "addressLocality": brand.city,
+              "addressRegion": brand.state,
+              "postalCode": brand.pincode,
               "addressCountry": "IN"
             },
-            "telephone": "+91-8884944288",
-            "email": "info@hydrogenro.com",
-            "url": "https://hydrogenro.com",
+            "telephone": brand.primaryPhone,
+            "email": brand.email,
+            "url": brand.origin,
             "areaServed": {
               "@type": loc && loc.region !== 'Bengaluru' ? "City" : "Place",
               "name": loc ? loc.name : "Bengaluru"
@@ -80,8 +92,8 @@ const ServiceAreas = () => {
               "@type": "GeoCircle",
               "geoMidpoint": {
                 "@type": "GeoCoordinates",
-                "latitude": 12.9716,
-                "longitude": 77.5946
+                "latitude": brand.geo.latitude,
+                "longitude": brand.geo.longitude
               },
               "geoRadius": {
                 "@type": "Distance",
@@ -114,17 +126,17 @@ const ServiceAreas = () => {
           "image": brand.ogImage,
           "brand": {
             "@type": "Brand",
-            "name": "Hydrogen RO"
+            "name": brand.brandName
           },
           "offers": {
             "@type": "Offer",
             "price": "500",
             "priceCurrency": "INR",
-            "priceValidUntil": "2025-12-31",
+            "priceValidUntil": "2026-12-31",
             "availability": "https://schema.org/InStock",
             "seller": {
               "@type": "Organization",
-              "name": "Hydrogen RO"
+              "name": brand.brandName
             },
             "areaServed": {
               "@type": "City",
@@ -181,6 +193,12 @@ const ServiceAreas = () => {
         })}
       </script>
 
+      {loc && (
+        <script type="application/ld+json">
+          {JSON.stringify(buildLocationFaqJsonLd(loc, brand.brandName, brand.primaryPhone))}
+        </script>
+      )}
+
       <Header />
 
       <main className="flex-1">
@@ -198,17 +216,86 @@ const ServiceAreas = () => {
                 RO Water Purifier Service in {loc.name}
               </h2>
               <p className="text-muted-foreground leading-relaxed mb-6">
-                {buildLocationIntro(loc)}
+                {buildLocationIntro(loc, brand.brandName)}
               </p>
               <div className="flex flex-wrap justify-center gap-2">
-                {loc.nearby.map((n) => (
-                  <span
-                    key={n}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300 border border-sky-200/60 dark:border-sky-500/20"
+                {loc.nearby.map((n) => {
+                  const linked = resolveLocationForNearby(n);
+                  const label = `RO service ${n}`;
+                  if (linked && linked.slug !== loc.slug) {
+                    return (
+                      <Link key={n} to={`/${linked.slug}`} className={nearbyPillClass}>
+                        <MapPin className="w-3.5 h-3.5" />
+                        {label}
+                      </Link>
+                    );
+                  }
+                  return (
+                    <span key={n} className={nearbyPillClass}>
+                      <MapPin className="w-3.5 h-3.5" />
+                      {label}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {loc && faqItems.length > 0 && (
+          <section className="py-12 px-4 md:px-12 bg-background border-t border-sky-100/60 dark:border-sky-500/10">
+            <div className="max-w-3xl mx-auto">
+              <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-6 text-center">
+                RO Service in {loc.name} — FAQs
+              </h2>
+              <div className="space-y-4">
+                {faqItems.map((item) => (
+                  <details
+                    key={item.question}
+                    className="group rounded-xl border border-sky-100 dark:border-sky-500/15 bg-card p-4"
                   >
-                    <MapPin className="w-3.5 h-3.5" />
-                    RO service {n}
-                  </span>
+                    <summary className="cursor-pointer font-medium text-foreground list-none flex justify-between items-center gap-2">
+                      {item.question}
+                      <span className="text-sky-600 dark:text-sky-400 text-sm group-open:rotate-180 transition-transform">▼</span>
+                    </summary>
+                    <p className="mt-3 text-muted-foreground text-sm leading-relaxed">{item.answer}</p>
+                  </details>
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {!loc && (
+          <section className="py-12 px-4 md:px-12 bg-background">
+            <div className="max-w-6xl mx-auto">
+              <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-2 text-center">
+                RO Service by Area in Bengaluru
+              </h2>
+              <p className="text-center text-muted-foreground mb-10 max-w-2xl mx-auto">
+                Browse RO installation, repair and AMC pages for your locality. Each area has dedicated
+                same-day service coverage across Bangalore.
+              </p>
+              <div className="space-y-10">
+                {LOCATION_HUB_GROUPS.map((group) => (
+                  <div key={group.title}>
+                    <h3 className="text-lg font-semibold text-foreground mb-4">{group.title}</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {group.slugs.map((slug) => {
+                        const area = getLocationBySlug(slug);
+                        if (!area) return null;
+                        return (
+                          <Link
+                            key={slug}
+                            to={`/${slug}`}
+                            className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm bg-sky-50 text-sky-800 dark:bg-sky-500/10 dark:text-sky-300 border border-sky-100 dark:border-sky-500/20 hover:bg-sky-100 dark:hover:bg-sky-500/20 transition-colors"
+                          >
+                            RO service {area.name}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
@@ -230,6 +317,10 @@ const ServiceAreas = () => {
                 { area: 'Electronic City', pincode: '560100', time: '45 minutes' },
                 { area: 'Koramangala', pincode: '560034', time: '25 minutes' },
                 { area: 'HSR Layout', pincode: '560102', time: '35 minutes' },
+                { area: 'Yelahanka', pincode: '560064', time: '40 minutes' },
+                { area: 'Sarjapur', pincode: '562125', time: '45 minutes' },
+                { area: 'Budigere Cross', pincode: '562110', time: '50 minutes' },
+                { area: 'Devanahalli', pincode: '562110', time: '55 minutes' },
                 { area: 'Indiranagar', pincode: '560038', time: '20 minutes' },
                 { area: 'Marathahalli', pincode: '560037', time: '40 minutes' },
                 { area: 'BTM Layout', pincode: '560076', time: '30 minutes' },

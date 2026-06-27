@@ -18,11 +18,15 @@ export interface LocationSEO {
 
 /** South & southeast Bengaluru corridor — high-intent local search terms */
 export const SOUTH_CORRIDOR_KEYWORDS =
-  'RO service Electronic City, RO service Bommanahalli, RO service Sarjapur, RO service Attibele, RO service Chandapura, RO service Bommasandra, RO service Jigani, RO service Hosur Road, RO service Silk Board, RO service Sarjapur Road, RO service Bellandur, RO service HSR Layout, RO service Anekal, RO service Singasandra, RO repair Electronic City Phase 1, RO repair Electronic City Phase 2, RO installation Bommanahalli, RO service near Electronic City, RO service South Bangalore';
+  'RO service Electronic City, RO service Bommanahalli, RO service Sarjapur, RO service Sarjapura, RO service Attibele, RO service Chandapura, RO service Bommasandra, RO service Jigani, RO service Hosur Road, RO service Silk Board, RO service Sarjapur Road, RO service Bellandur, RO service HSR Layout, RO service Anekal, RO service Singasandra, RO service Haralur, RO service Varthur, RO service Kadubeesanahalli, RO service Panathur, RO repair Electronic City Phase 1, RO repair Electronic City Phase 2, RO installation Bommanahalli, RO service near Electronic City, RO service South Bangalore';
+
+/** North & northeast Bengaluru corridor — Yelahanka, Devanahalli, airport belt */
+export const NORTH_CORRIDOR_KEYWORDS =
+  'RO service Yelahanka, RO service Thanisandra, RO service Jakkur, RO service Bagalur, RO service Budigere Cross, RO service Devanahalli, RO service Kempegowda Airport, RO service Manyata Tech Park, RO service RT Nagar, RO service Nagawara, RO service Hebbal, RO service Hoskote, RO service ITPL, RO repair North Bangalore, RO installation Yelahanka, RO service Doddaballapur Road';
 
 export const locationSeoList: LocationSEO[] = [
   // ---- Bengaluru areas ----
-  { slug: 'ro-service-whitefield', name: 'Whitefield', pincode: '560066', region: 'Bengaluru', nearby: ['ITPL', 'Kadugodi', 'Brookefield', 'Hoodi', 'Varthur', 'Kundalahalli'] },
+  { slug: 'ro-service-whitefield', name: 'Whitefield', pincode: '560066', region: 'Bengaluru', nearby: ['ITPL', 'Kadugodi', 'Brookefield', 'Hoodi', 'Varthur', 'Kundalahalli', 'Mahadevapura'], extraKeywords: ['RO service ITPL Whitefield', 'RO service Varthur Whitefield', 'RO service Kadugodi', '560066 RO service'] },
   {
     slug: 'ro-service-electronic-city',
     name: 'Electronic City',
@@ -58,8 +62,24 @@ export const locationSeoList: LocationSEO[] = [
   { slug: 'ro-service-jayanagar', name: 'Jayanagar', pincode: '560011', region: 'Bengaluru', nearby: ['JP Nagar', 'Banashankari', 'Basavanagudi', 'BTM Layout', 'Wilson Garden', 'Tilak Nagar'] },
   { slug: 'ro-service-malleshwaram', name: 'Malleshwaram', pincode: '560003', region: 'Bengaluru', nearby: ['Rajajinagar', 'Seshadripuram', 'Yeshwanthpur', 'Sadashivanagar', 'Sandal Soap Factory', 'Mahalakshmi Layout'] },
   { slug: 'ro-service-rajajinagar', name: 'Rajajinagar', pincode: '560010', region: 'Bengaluru', nearby: ['Malleshwaram', 'Vijayanagar', 'Basaveshwaranagar', 'Mahalakshmi Layout', 'Yeshwanthpur', 'Magadi Road'] },
-  { slug: 'ro-service-hebbal', name: 'Hebbal', pincode: '560024', region: 'Bengaluru', nearby: ['Yelahanka', 'Sahakar Nagar', 'RT Nagar', 'Nagawara', 'Manyata Tech Park', 'Hennur'] },
-  { slug: 'ro-service-yelahanka', name: 'Yelahanka', pincode: '560064', region: 'Bengaluru', nearby: ['Hebbal', 'Sahakar Nagar', 'Jakkur', 'Kogilu', 'Doddaballapur Road', 'Bagalur'] },
+  { slug: 'ro-service-hebbal', name: 'Hebbal', pincode: '560024', region: 'Bengaluru', nearby: ['Yelahanka', 'Sahakar Nagar', 'RT Nagar', 'Nagawara', 'Manyata Tech Park', 'Hennur', 'Thanisandra'], extraKeywords: ['RO service Manyata Tech Park', 'RO service Nagawara Hebbal', 'RO service RT Nagar Hebbal'] },
+  {
+    slug: 'ro-service-yelahanka',
+    name: 'Yelahanka',
+    pincode: '560064',
+    region: 'Bengaluru',
+    nearby: ['Hebbal', 'Sahakar Nagar', 'Jakkur', 'Kogilu', 'Doddaballapur Road', 'Bagalur', 'Thanisandra', 'RT Nagar'],
+    extraKeywords: [
+      'RO service Yelahanka New Town',
+      'RO service Yelahanka Old Town',
+      'RO repair Yelahanka Bangalore',
+      'RO service Thanisandra Yelahanka',
+      'RO service Jakkur Yelahanka',
+      'RO service Bagalur Yelahanka',
+      'RO service Doddaballapur Road Yelahanka',
+      '560064 RO service',
+    ],
+  },
   {
     slug: 'ro-service-sarjapur',
     name: 'Sarjapur',
@@ -68,13 +88,17 @@ export const locationSeoList: LocationSEO[] = [
     nearby: ['Sarjapur Road', 'Bellandur', 'Wipro Gate', 'Kodathi', 'Dommasandra', 'Carmelaram', 'HSR Layout', 'Outer Ring Road'],
     extraKeywords: [
       'RO service Sarjapur Road',
+      'RO service Sarjapura',
       'RO repair Sarjapur Bangalore',
+      'RO repair Sarjapura Bangalore',
       'RO installation Sarjapur Road',
       'RO service Kodathi',
       'RO service Dommasandra',
       'RO service Carmelaram',
       'RO service Wipro Gate Sarjapur',
       'RO service Outer Ring Road Sarjapur',
+      'RO service Haralur Sarjapur',
+      'RO service Attibele Road Sarjapur',
       '562125 RO service',
     ],
   },
@@ -131,6 +155,8 @@ export const locationSeoList: LocationSEO[] = [
       'RO service Chandapura Attibele',
       'RO service Bommasandra Attibele',
       'RO service Anekal Attibele',
+      'RO service Sarjapura Attibele',
+      'RO service Hosur border Attibele',
       '562107 RO service',
     ],
   },
@@ -193,6 +219,168 @@ export const locationSeoList: LocationSEO[] = [
   { slug: 'ro-service-ulsoor', name: 'Ulsoor', pincode: '560008', region: 'Bengaluru', nearby: ['Indiranagar', 'Halasuru', 'Domlur', 'MG Road', 'Cox Town'] },
   { slug: 'ro-service-frazer-town', name: 'Frazer Town', pincode: '560005', region: 'Bengaluru', nearby: ['Ulsoor', 'Cox Town', 'Benson Town', 'Richmond Town', 'Shivajinagar'] },
 
+  // ---- High-traffic Bengaluru localities (expanded coverage) ----
+  {
+    slug: 'ro-service-budigere-cross',
+    name: 'Budigere Cross',
+    pincode: '562110',
+    region: 'Bengaluru',
+    nearby: ['Devanahalli', 'Bagalur', 'Hoskote', 'Whitefield', 'Mahadevapura', 'Old Madras Road', 'Budigere'],
+    extraKeywords: ['RO service Budigere', 'RO service Budigere Cross Bangalore', 'RO repair Budigere Cross', '562110 RO service', 'RO service near Devanahalli Budigere'],
+  },
+  {
+    slug: 'ro-service-varthur',
+    name: 'Varthur',
+    pincode: '560087',
+    region: 'Bengaluru',
+    nearby: ['Whitefield', 'Marathahalli', 'Bellandur', 'Kadubeesanahalli', 'Panathur', 'Sarjapur Road', 'HAL'],
+    extraKeywords: ['RO service Varthur Road', 'RO service Varthur Lake', 'RO repair Varthur Bangalore', '560087 RO service'],
+  },
+  {
+    slug: 'ro-service-kadubeesanahalli',
+    name: 'Kadubeesanahalli',
+    pincode: '560103',
+    region: 'Bengaluru',
+    nearby: ['Bellandur', 'Panathur', 'Marathahalli', 'Sarjapur Road', 'Outer Ring Road', 'Varthur'],
+    extraKeywords: ['RO service Kadubeesanahalli ORR', 'RO repair Kadubeesanahalli', 'RO service Outer Ring Road Kadubeesanahalli'],
+  },
+  {
+    slug: 'ro-service-panathur',
+    name: 'Panathur',
+    pincode: '560103',
+    region: 'Bengaluru',
+    nearby: ['Kadubeesanahalli', 'Bellandur', 'Sarjapur Road', 'Marathahalli', 'Varthur', 'Outer Ring Road'],
+    extraKeywords: ['RO service Panathur Bangalore', 'RO repair Panathur', 'RO service Panathur ORR'],
+  },
+  {
+    slug: 'ro-service-haralur',
+    name: 'Haralur',
+    pincode: '560102',
+    region: 'Bengaluru',
+    nearby: ['HSR Layout', 'Sarjapur Road', 'Bellandur', 'Kasavanahalli', 'Kaikondrahalli', 'Agara'],
+    extraKeywords: ['RO service Haralur Road', 'RO service Haralur HSR', 'RO repair Haralur Bangalore', 'RO service Kasavanahalli'],
+  },
+  {
+    slug: 'ro-service-thanisandra',
+    name: 'Thanisandra',
+    pincode: '560077',
+    region: 'Bengaluru',
+    nearby: ['Hebbal', 'Yelahanka', 'Nagawara', 'Hennur', 'Kalyan Nagar', 'Manyata Tech Park', 'Banaswadi'],
+    extraKeywords: ['RO service Thanisandra Main Road', 'RO repair Thanisandra Bangalore', '560077 RO service', 'RO service near Manyata Thanisandra'],
+  },
+  {
+    slug: 'ro-service-jakkur',
+    name: 'Jakkur',
+    pincode: '560064',
+    region: 'Bengaluru',
+    nearby: ['Yelahanka', 'Hebbal', 'Sahakar Nagar', 'Thanisandra', 'Bagalur', 'Kogilu'],
+    extraKeywords: ['RO service Jakkur Bangalore', 'RO repair Jakkur', 'RO service Jakkur Lake area'],
+  },
+  {
+    slug: 'ro-service-bagalur',
+    name: 'Bagalur',
+    pincode: '560064',
+    region: 'Bengaluru',
+    nearby: ['Yelahanka', 'Devanahalli', 'Budigere Cross', 'Jakkur', 'Hosur border', 'Kempegowda Airport'],
+    extraKeywords: ['RO service Bagalur Bangalore', 'RO repair Bagalur', 'RO service near Airport Bagalur', 'RO service Bagalur Main Road'],
+  },
+  {
+    slug: 'ro-service-manyata-tech-park',
+    name: 'Manyata Tech Park',
+    pincode: '560045',
+    region: 'Bengaluru',
+    nearby: ['Hebbal', 'Nagawara', 'Thanisandra', 'RT Nagar', 'Hennur', 'Kalyan Nagar'],
+    extraKeywords: ['RO service Manyata Embassy Business Park', 'RO service Nagawara Manyata', 'RO repair Manyata Tech Park', 'RO service Hebbal Manyata'],
+  },
+  {
+    slug: 'ro-service-rt-nagar',
+    name: 'RT Nagar',
+    pincode: '560032',
+    region: 'Bengaluru',
+    nearby: ['Hebbal', 'Yelahanka', 'Sahakar Nagar', 'Manyata Tech Park', 'Sanjaynagar', 'Ganganagar'],
+    extraKeywords: ['RO service RT Nagar Bangalore', 'RO repair RT Nagar', '560032 RO service'],
+  },
+  {
+    slug: 'ro-service-nagawara',
+    name: 'Nagawara',
+    pincode: '560045',
+    region: 'Bengaluru',
+    nearby: ['Hebbal', 'Manyata Tech Park', 'Thanisandra', 'Hennur', 'Kalyan Nagar', 'Banaswadi'],
+    extraKeywords: ['RO service Nagawara Bangalore', 'RO repair Nagawara', 'RO service Outer Ring Road Nagawara'],
+  },
+  {
+    slug: 'ro-service-hoskote',
+    name: 'Hoskote',
+    pincode: '562114',
+    region: 'Karnataka',
+    nearby: ['Whitefield', 'Budigere Cross', 'Mahadevapura', 'Old Madras Road', 'K R Puram', 'Devanahalli'],
+    extraKeywords: ['RO service Hoskote Bangalore', 'RO repair Hoskote', 'RO service near Whitefield Hoskote', '562114 RO service'],
+  },
+  {
+    slug: 'ro-service-itpl',
+    name: 'ITPL',
+    pincode: '560066',
+    region: 'Bengaluru',
+    nearby: ['Whitefield', 'Brookefield', 'Kadugodi', 'Hoodi', 'Mahadevapura', 'Varthur'],
+    extraKeywords: ['RO service ITPL Road', 'RO service International Tech Park', 'RO repair ITPL Whitefield', 'RO service near ITPL Bangalore'],
+  },
+  {
+    slug: 'ro-service-domlur',
+    name: 'Domlur',
+    pincode: '560071',
+    region: 'Bengaluru',
+    nearby: ['Indiranagar', 'Ulsoor', 'HAL', 'Old Airport Road', 'Koramangala', 'MG Road'],
+    extraKeywords: ['RO service Domlur Bangalore', 'RO repair Domlur', 'RO service Old Airport Road Domlur', '560071 RO service'],
+  },
+  {
+    slug: 'ro-service-banaswadi',
+    name: 'Banaswadi',
+    pincode: '560043',
+    region: 'Bengaluru',
+    nearby: ['Kalyan Nagar', 'Kammanahalli', 'Hennur', 'Ramamurthy Nagar', 'Thanisandra', 'HRBR Layout'],
+    extraKeywords: ['RO service Banaswadi Bangalore', 'RO repair Banaswadi', 'RO service Horamavu Banaswadi'],
+  },
+  {
+    slug: 'ro-service-ramamurthy-nagar',
+    name: 'Ramamurthy Nagar',
+    pincode: '560016',
+    region: 'Bengaluru',
+    nearby: ['Banaswadi', 'Kalyan Nagar', 'Hennur', 'KR Puram', 'Mahadevapura', 'Benson Town'],
+    extraKeywords: ['RO service Ramamurthy Nagar Bangalore', 'RO repair Ramamurthy Nagar', '560016 RO service'],
+  },
+  {
+    slug: 'ro-service-silk-board',
+    name: 'Silk Board',
+    pincode: '560068',
+    region: 'Bengaluru',
+    nearby: ['Bommanahalli', 'HSR Layout', 'BTM Layout', 'Madiwala', 'Koramangala', 'Electronic City', 'Singasandra'],
+    extraKeywords: ['RO service Silk Board Junction', 'RO repair Silk Board Bangalore', 'RO service near Silk Board', 'RO service Hosur Road Silk Board'],
+  },
+  {
+    slug: 'ro-service-rr-nagar',
+    name: 'RR Nagar',
+    pincode: '560098',
+    region: 'Bengaluru',
+    nearby: ['Kengeri', 'Nagarbhavi', 'Uttarahalli', 'Banashankari', 'Kumbalgodu', 'Mysore Road'],
+    extraKeywords: ['RO service Rajarajeshwari Nagar', 'RO repair RR Nagar Bangalore', '560098 RO service', 'RO service Mysore Road RR Nagar'],
+  },
+  {
+    slug: 'ro-service-arekere',
+    name: 'Arekere',
+    pincode: '560076',
+    region: 'Bengaluru',
+    nearby: ['Bannerghatta Road', 'JP Nagar', 'BTM Layout', 'Hulimavu', 'Bilekahalli', 'Gottigere'],
+    extraKeywords: ['RO service Arekere Bannerghatta', 'RO repair Arekere Bangalore', 'RO service Arekere Mico Layout'],
+  },
+  {
+    slug: 'ro-service-gottigere',
+    name: 'Gottigere',
+    pincode: '560083',
+    region: 'Bengaluru',
+    nearby: ['Bannerghatta Road', 'JP Nagar', 'Anjanapura', 'Arekere', 'Hulimavu', 'Konanakunte'],
+    extraKeywords: ['RO service Gottigere Bangalore', 'RO repair Gottigere', 'RO service Bannerghatta Gottigere', '560083 RO service'],
+  },
+
   // ---- Nearby cities & towns (Greater Bengaluru / Karnataka) ----
   { slug: 'ro-service-tumakuru', name: 'Tumakuru', region: 'Karnataka', nearby: ['Tumkur', 'Sira', 'Gubbi', 'Kunigal', 'Tiptur', 'Tumkur Road'] },
   { slug: 'ro-service-hosur', name: 'Hosur', region: 'Tamil Nadu (Bengaluru border)', nearby: ['Electronic City', 'Attibele', 'Anekal', 'Bommasandra', 'Chandapura', 'Bagalur'] },
@@ -200,7 +388,7 @@ export const locationSeoList: LocationSEO[] = [
   { slug: 'ro-service-ramanagara', name: 'Ramanagara', region: 'Karnataka', nearby: ['Channapatna', 'Bidadi', 'Kanakapura', 'Magadi', 'Harohalli', 'Mysore Road'] },
   { slug: 'ro-service-nelamangala', name: 'Nelamangala', region: 'Karnataka', nearby: ['Dabaspete', 'Tumkur Road', 'Doddaballapur', 'Sompura', 'Bashettihalli', 'Solur'] },
   { slug: 'ro-service-doddaballapur', name: 'Doddaballapur', region: 'Karnataka', nearby: ['Yelahanka', 'Devanahalli', 'Nelamangala', 'Bashettihalli', 'Rajanukunte', 'Chikkaballapur'] },
-  { slug: 'ro-service-devanahalli', name: 'Devanahalli', region: 'Karnataka', nearby: ['Kempegowda Airport', 'Yelahanka', 'Doddaballapur', 'Vijayapura', 'Bagalur', 'Budigere'] },
+  { slug: 'ro-service-devanahalli', name: 'Devanahalli', region: 'Karnataka', nearby: ['Kempegowda Airport', 'Yelahanka', 'Doddaballapur', 'Vijayapura', 'Bagalur', 'Budigere Cross', 'Budigere'], extraKeywords: ['RO service Kempegowda International Airport', 'RO service near Airport Devanahalli', 'RO repair Devanahalli Bangalore', 'RO service Budigere Cross Devanahalli', 'RO service Vijayapura Devanahalli'] },
   {
     slug: 'ro-service-anekal',
     name: 'Anekal',
@@ -211,6 +399,142 @@ export const locationSeoList: LocationSEO[] = [
 ];
 
 const SERVICES_LABEL = 'RO installation, repair, filter replacement & water softener';
+
+/** Maps nearby-area labels to a location page when names differ slightly */
+const NEARBY_ALIASES: Record<string, string> = {
+  'sarjapur road': 'Sarjapur',
+  sarjapura: 'Sarjapur',
+  budigere: 'Budigere Cross',
+  'kempegowda airport': 'Devanahalli',
+  'kempegowda international airport': 'Devanahalli',
+  bannerghatta: 'Bannerghatta Road',
+  'itpl road': 'ITPL',
+  'international tech park': 'ITPL',
+  'rajarajeshwari nagar': 'RR Nagar',
+  'silk board junction': 'Silk Board',
+  'manyata embassy business park': 'Manyata Tech Park',
+  tumkur: 'Tumakuru',
+  'kr puram': 'Mahadevapura',
+  'k r puram': 'Mahadevapura',
+};
+
+function normalizeLocationKey(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+export function resolveLocationForNearby(nearby: string): LocationSEO | null {
+  const aliasTarget = NEARBY_ALIASES[nearby.toLowerCase()] ?? nearby;
+  const key = normalizeLocationKey(aliasTarget);
+  return (
+    locationSeoList.find((l) => normalizeLocationKey(l.name) === key) ??
+    locationSeoList.find((l) => l.slug === `ro-service-${aliasTarget.toLowerCase().replace(/\s+/g, '-')}`) ??
+    null
+  );
+}
+
+export interface LocationFaqItem {
+  question: string;
+  answer: string;
+}
+
+export function buildLocationFaqItems(
+  loc: LocationSEO,
+  brandName: string,
+  phone: string
+): LocationFaqItem[] {
+  const place = loc.region === 'Bengaluru' ? `${loc.name}, Bengaluru` : loc.name;
+  const pincodeText = loc.pincode ? ` (pincode ${loc.pincode})` : '';
+  const nearbyText = loc.nearby.slice(0, 5).join(', ');
+  return [
+    {
+      question: `How do I book RO service in ${loc.name}?`,
+      answer: `Book online on our website or call ${phone}. ${brandName} offers same-day RO installation, repair, filter replacement and AMC in ${place}${pincodeText}.`,
+    },
+    {
+      question: `Which RO brands do you service in ${loc.name}?`,
+      answer: `${brandName} services Kent, Aquaguard, Pureit, Livpure, Blue Star, Eureka Forbes, Havells, AO Smith, LG, Samsung and all major RO brands in ${place}.`,
+    },
+    {
+      question: `What is the RO repair cost in ${loc.name}?`,
+      answer: `RO repair in ${place} typically starts from ₹300. RO installation costs ₹1500–3000, filter replacement ₹500–2000, and AMC plans are available. Transparent pricing with no hidden charges.`,
+    },
+    {
+      question: `Is same-day RO service available in ${loc.name}?`,
+      answer: `Yes. ${brandName} provides same-day RO installation and emergency repair in ${place}${pincodeText}. We also cover nearby areas including ${nearbyText}.`,
+    },
+    {
+      question: `Do you provide RO AMC in ${loc.name}?`,
+      answer: `Yes. Annual Maintenance Contract (AMC) plans are available in ${place} with scheduled filter replacement, sanitization and priority support from ${brandName}.`,
+    },
+  ];
+}
+
+export function buildLocationFaqJsonLd(
+  loc: LocationSEO,
+  brandName: string,
+  phone: string
+): object {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: buildLocationFaqItems(loc, brandName, phone).map((item) => ({
+      '@type': 'Question',
+      name: item.question,
+      acceptedAnswer: { '@type': 'Answer', text: item.answer },
+    })),
+  };
+}
+
+/** Grouped links for /service-areas hub page internal linking */
+export const LOCATION_HUB_GROUPS: { title: string; slugs: string[] }[] = [
+  {
+    title: 'South & Southeast Bengaluru',
+    slugs: [
+      'ro-service-electronic-city', 'ro-service-bommanahalli', 'ro-service-bommasandra',
+      'ro-service-sarjapur', 'ro-service-attibele', 'ro-service-chandapura', 'ro-service-jigani',
+      'ro-service-singasandra', 'ro-service-anekal', 'ro-service-bellandur', 'ro-service-hsr-layout',
+      'ro-service-btm-layout', 'ro-service-bannerghatta', 'ro-service-anjanapura', 'ro-service-haralur',
+      'ro-service-varthur', 'ro-service-kadubeesanahalli', 'ro-service-panathur', 'ro-service-silk-board',
+      'ro-service-jp-nagar', 'ro-service-banashankari', 'ro-service-arekere', 'ro-service-gottigere',
+    ],
+  },
+  {
+    title: 'North & Northeast Bengaluru',
+    slugs: [
+      'ro-service-yelahanka', 'ro-service-hebbal', 'ro-service-thanisandra', 'ro-service-jakkur',
+      'ro-service-bagalur', 'ro-service-budigere-cross', 'ro-service-devanahalli', 'ro-service-manyata-tech-park',
+      'ro-service-rt-nagar', 'ro-service-nagawara', 'ro-service-hoskote', 'ro-service-hennur',
+      'ro-service-kalyan-nagar', 'ro-service-kammanahalli', 'ro-service-jalahalli',
+    ],
+  },
+  {
+    title: 'East Bengaluru',
+    slugs: [
+      'ro-service-whitefield', 'ro-service-itpl', 'ro-service-mahadevapura', 'ro-service-hoodi',
+      'ro-service-brookefield', 'ro-service-marathahalli', 'ro-service-indiranagar', 'ro-service-domlur',
+      'ro-service-ulsoor', 'ro-service-frazer-town', 'ro-service-banaswadi', 'ro-service-ramamurthy-nagar',
+    ],
+  },
+  {
+    title: 'Central & West Bengaluru',
+    slugs: [
+      'ro-service-koramangala', 'ro-service-jayanagar', 'ro-service-malleshwaram', 'ro-service-rajajinagar',
+      'ro-service-yeshwanthpur', 'ro-service-peenya', 'ro-service-vijayanagar', 'ro-service-basavanagudi',
+      'ro-service-nagarbhavi', 'ro-service-kengeri', 'ro-service-rr-nagar',
+    ],
+  },
+  {
+    title: 'Greater Bengaluru & Nearby Towns',
+    slugs: [
+      'ro-service-tumakuru', 'ro-service-hosur', 'ro-service-kolar', 'ro-service-ramanagara',
+      'ro-service-nelamangala', 'ro-service-doddaballapur',
+    ],
+  },
+];
+
+export function getLocationBySlug(slug: string): LocationSEO | undefined {
+  return locationSeoList.find((l) => l.slug === slug);
+}
 
 export function getLocationSeo(pathname: string): LocationSEO | null {
   const slug = pathname.replace(/^\/+/, '').replace(/\/+$/, '');

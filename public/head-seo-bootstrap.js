@@ -1,6 +1,6 @@
 (function () {
   var SHARED_AREAS =
-    'Whitefield, Electronic City, Electronic City Phase 1, Electronic City Phase 2, Bommanahalli, Bommasandra, Sarjapur, Sarjapur Road, Attibele, Chandapura, Jigani, Anekal, Singasandra, Hosur Road, Silk Board, BTM Layout, HSR Layout, Koramangala, Bellandur, JP Nagar, Banashankari, Anjanapura, Tumakuru, Nelamangala, Devanahalli';
+    'Whitefield, ITPL, Electronic City, Bommanahalli, Bommasandra, Sarjapur, Sarjapura, Sarjapur Road, Attibele, Chandapura, Jigani, Anekal, Singasandra, Hosur Road, Silk Board, BTM Layout, HSR Layout, Koramangala, Bellandur, Varthur, Kadubeesanahalli, Panathur, Haralur, Yelahanka, Thanisandra, Jakkur, Bagalur, Budigere Cross, Devanahalli, Manyata Tech Park, RT Nagar, Nagawara, Hebbal, Hoskote, JP Nagar, Banashankari, Anjanapura, Tumakuru, Nelamangala';
 
   var SITE_PROFILES = {
     hydrogenro: {
@@ -232,15 +232,20 @@
       return { title: profile.defaultTitle, description: profile.defaultDescription, keywords: profile.keywords };
     }
     if (clean.indexOf('/ro-service-') === 0) {
-      var area = titleCaseSlug(clean.replace('/ro-service-', ''));
-      var southAreas = ['electronic-city', 'bommanahalli', 'sarjapur', 'attibele', 'chandapura', 'bommasandra', 'jigani', 'singasandra', 'anekal', 'bellandur', 'hsr-layout'];
-      var southExtra = southAreas.indexOf(clean.replace('/ro-service-', '')) >= 0
-        ? ' Serving Electronic City, Bommanahalli, Sarjapur Road, Attibele, Chandapura, Bommasandra, Hosur Road, Silk Board and South Bangalore corridor.'
-        : '';
+      var slug = clean.replace('/ro-service-', '');
+      var area = titleCaseSlug(slug);
+      var southAreas = ['electronic-city', 'bommanahalli', 'sarjapur', 'attibele', 'chandapura', 'bommasandra', 'jigani', 'singasandra', 'anekal', 'bellandur', 'hsr-layout', 'haralur', 'varthur', 'kadubeesanahalli', 'panathur', 'silk-board'];
+      var northAreas = ['yelahanka', 'thanisandra', 'jakkur', 'bagalur', 'budigere-cross', 'devanahalli', 'manyata-tech-park', 'rt-nagar', 'nagawara', 'hebbal', 'hoskote', 'itpl'];
+      var corridorExtra = '';
+      if (southAreas.indexOf(slug) >= 0) {
+        corridorExtra = ' Serving Electronic City, Bommanahalli, Sarjapur, Sarjapura, Attibele, Chandapura, Bommasandra, Hosur Road, Silk Board and South Bangalore corridor.';
+      } else if (northAreas.indexOf(slug) >= 0) {
+        corridorExtra = ' Serving Yelahanka, Thanisandra, Jakkur, Bagalur, Budigere Cross, Devanahalli, Manyata Tech Park, Hebbal and North Bangalore corridor.';
+      }
       return {
         title: 'RO Service in ' + area + ' Bengaluru | Installation & Repair | ' + profile.brandName,
-        description: 'Best RO water purifier service in ' + area + ', Bengaluru by ' + profile.brandName + '. Same-day RO installation, repair, filter replacement and AMC.' + southExtra + ' Call ' + profile.primaryPhone + '.',
-        keywords: 'RO service ' + area + ', RO repair ' + area + ', RO installation ' + area + ' Bangalore, ' + profile.brandName + ' ' + area + ', RO service Electronic City, RO service Bommanahalli, RO service Sarjapur, RO service Attibele',
+        description: 'Best RO water purifier service in ' + area + ', Bengaluru by ' + profile.brandName + '. Same-day RO installation, repair, filter replacement and AMC.' + corridorExtra + ' Call ' + profile.primaryPhone + '.',
+        keywords: 'RO service ' + area + ', RO repair ' + area + ', RO installation ' + area + ' Bangalore, ' + profile.brandName + ' ' + area + ', RO service Yelahanka, RO service Sarjapur, RO service Budigere Cross, RO service Devanahalli, RO service Attibele',
       };
     }
     var serviceTitles = {

@@ -7,6 +7,7 @@ import {
   resolveRouteSeo,
   type RouteSeo,
 } from '@/lib/publicSeoPages';
+import { buildLocationFaqJsonLd, getLocationSeo } from '@/data/locationSeo';
 
 export type { RouteSeo };
 
@@ -31,7 +32,7 @@ export interface BrandSeoProfile {
 }
 
 const SHARED_SERVICE_AREAS =
-  'Whitefield, Electronic City, Electronic City Phase 1, Electronic City Phase 2, Bommanahalli, Bommasandra, Sarjapur, Sarjapur Road, Attibele, Chandapura, Jigani, Anekal, Singasandra, Hosur Road, Silk Board, BTM Layout, HSR Layout, Koramangala, Indiranagar, Marathahalli, Jayanagar, Malleshwaram, Hebbal, Yelahanka, Bellandur, JP Nagar, Banashankari, Anjanapura, Tumakuru, Nelamangala, Devanahalli';
+  'Whitefield, ITPL, Electronic City, Bommanahalli, Bommasandra, Sarjapur, Sarjapura, Sarjapur Road, Attibele, Chandapura, Jigani, Anekal, Singasandra, Hosur Road, Silk Board, BTM Layout, HSR Layout, Koramangala, Indiranagar, Marathahalli, Jayanagar, Malleshwaram, Hebbal, Yelahanka, Thanisandra, Jakkur, Bagalur, Budigere Cross, Devanahalli, Manyata Tech Park, RT Nagar, Nagawara, Bellandur, Varthur, Kadubeesanahalli, Panathur, Haralur, Hoskote, JP Nagar, Banashankari, Anjanapura, Tumakuru, Nelamangala';
 
 const HYDROGEN_SEO: BrandSeoProfile = {
   siteKey: 'hydrogenro',
@@ -386,19 +387,29 @@ export function buildServiceJsonLd(
 export function buildLocationServiceJsonLd(
   profile: BrandSeoProfile,
   areaName: string,
-  pageUrl: string
+  pageUrl: string,
+  locData?: ReturnType<typeof getLocationSeo>
 ): object {
+  const pincode = locData?.pincode;
+  const nearbySnippet = locData?.nearby.slice(0, 6).join(', ');
   return {
     '@context': 'https://schema.org',
     '@type': 'Service',
     name: `RO Water Purifier Service in ${areaName}, Bengaluru`,
-    description: `Professional RO installation, repair and maintenance in ${areaName}, Bengaluru by ${profile.brandName}.`,
+    description: `Professional RO installation, repair, filter replacement and AMC in ${areaName}, Bengaluru by ${profile.brandName}.${nearbySnippet ? ` Also serving ${nearbySnippet}.` : ''}`,
     url: pageUrl,
     provider: {
       '@type': 'LocalBusiness',
       name: profile.brandName,
       telephone: profile.primaryPhone,
       url: profile.origin,
+      address: {
+        '@type': 'PostalAddress',
+        addressLocality: profile.city,
+        addressRegion: profile.state,
+        postalCode: profile.pincode,
+        addressCountry: 'IN',
+      },
     },
     areaServed: {
       '@type': 'Place',
@@ -407,10 +418,18 @@ export function buildLocationServiceJsonLd(
         '@type': 'PostalAddress',
         addressLocality: areaName,
         addressRegion: 'Karnataka',
+        ...(pincode ? { postalCode: pincode } : {}),
         addressCountry: 'IN',
       },
     },
     serviceType: 'RO Water Purifier Service',
+    offers: {
+      '@type': 'Offer',
+      price: '300',
+      priceCurrency: 'INR',
+      availability: 'https://schema.org/InStock',
+      areaServed: { '@type': 'City', name: 'Bengaluru', alternateName: 'Bangalore' },
+    },
   };
 }
 
@@ -471,7 +490,12 @@ export function buildRouteOnlyJsonLd(siteKey: PublicSiteKey, pathname: string): 
 
   const locationPage = findLocationPage(clean);
   if (locationPage) {
-    schemas.push(buildLocationServiceJsonLd(profile, locationPage.areaName, pageUrl));
+    const slug = clean.replace(/^\//, '');
+    const locData = getLocationSeo(slug);
+    schemas.push(buildLocationServiceJsonLd(profile, locationPage.areaName, pageUrl, locData));
+    if (locData) {
+      schemas.push(buildLocationFaqJsonLd(locData, profile.brandName, profile.primaryPhone));
+    }
     return schemas;
   }
 
