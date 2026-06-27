@@ -179,6 +179,31 @@ async function launchBrowser() {
   throw lastError || new Error('Could not launch a local browser for PDF generation');
 }
 
+async function waitForDocumentFonts(page) {
+  await page
+    .evaluate(async () => {
+      if (document.fonts?.ready) {
+        await document.fonts.ready;
+      }
+      const families = ['Poppins', 'Inter'];
+      const weights = [300, 400, 500, 600, 700];
+      for (const family of families) {
+        for (const weight of weights) {
+          try {
+            await document.fonts.load(`${weight} 16px "${family}"`);
+          } catch {
+            /* ignore missing family */
+          }
+        }
+      }
+      if (document.fonts?.ready) {
+        await document.fonts.ready;
+      }
+    })
+    .catch(() => undefined);
+  await new Promise((resolve) => setTimeout(resolve, 300));
+}
+
 async function renderHtmlToPdf(html) {
   let browser;
   try {
@@ -201,10 +226,10 @@ async function renderHtmlToPdf(html) {
 
     await page.setViewport({ width: 794, height: 1123, deviceScaleFactor: 1 });
     await page.setContent(html, {
-      waitUntil: 'load',
-      timeout: 30000,
+      waitUntil: 'networkidle0',
+      timeout: 45000,
     });
-    await page.evaluate(() => document.fonts.ready).catch(() => undefined);
+    await waitForDocumentFonts(page);
     await page.emulateMediaType('print');
 
     const pdfBuffer = await page.pdf({

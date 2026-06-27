@@ -1333,11 +1333,11 @@ export const db = {
       return { data, error };
     },
 
-    /** Tiny fetch: just the address jsonb (e.g. warranty dialog summary). */
+    /** Tiny fetch: address + email (e.g. warranty dialog). */
     async getAddressById(id: string) {
       const { data, error } = await supabase
         .from('customers')
-        .select('address')
+        .select('address, email')
         .eq('id', id)
         .single();
       return { data, error };

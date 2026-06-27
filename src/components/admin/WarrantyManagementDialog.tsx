@@ -33,6 +33,9 @@ import {
   Boxes,
   Tags,
   BadgeCheck,
+  Download,
+  Printer,
+  Mail,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db } from '@/lib/supabase';
@@ -53,6 +56,21 @@ import {
   type PublicWarranty,
 } from '@/lib/warranty';
 import { WarrantyCard } from '@/components/warranty/WarrantyCard';
+import WarrantyCardEmailSendDialog from '@/components/warranty/WarrantyCardEmailSendDialog';
+import { getValidCustomerEmail } from '@/lib/customer-email';
+import { downloadWarrantyCardPdf, buildWarrantyFromFormDraft, generateWarrantyCardPDF } from '@/lib/warranty-card-pdf-generator';
+import {
+  documentGenerateBtnClass,
+  documentOutlineBtnClass,
+} from '@/components/DocumentGeneratorPageHeader';
+import {
+  getCompanyInfoForBrand,
+  getDocumentBrandLabel,
+  type DocumentBrand,
+} from '@/lib/service-brands';
+import { resolveCustomerSendBrand } from '@/lib/admin-email-sources';
+
+const DEFAULT_WARRANTY_CARD_BRAND: DocumentBrand = 'elevenro';
 
 interface CustomerPick {
   id: string;
@@ -73,6 +91,7 @@ interface WarrantyManagementDialogProps {
 
 interface SelectedCustomer extends CustomerPick {
   addressText: string;
+  email?: string | null;
 }
 
 interface JobRow {
@@ -200,6 +219,12 @@ export default function WarrantyManagementDialog({
   const [invLoaded, setInvLoaded] = useState(false);
   const [invList, setInvList] = useState<InventoryRow[]>([]);
   const [invQuery, setInvQuery] = useState('');
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [generatingId, setGeneratingId] = useState<string | null>(null);
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [emailWarranty, setEmailWarranty] = useState<PublicWarranty | null>(null);
+  const [documentBrand, setDocumentBrand] = useState<DocumentBrand>(DEFAULT_WARRANTY_CARD_BRAND);
+  const [lastServiceBrand, setLastServiceBrand] = useState<DocumentBrand | null>(null);
 
   const resetForm = useCallback(() => {
     setFormMode('closed');
@@ -228,6 +253,10 @@ export default function WarrantyManagementDialog({
     setSaving(false);
     setInvLoaded(false);
     setInvList([]);
+    setDocumentBrand(DEFAULT_WARRANTY_CARD_BRAND);
+    setLastServiceBrand(null);
+    setEmailOpen(false);
+    setEmailWarranty(null);
     resetForm();
   }, [resetForm]);
 
@@ -288,6 +317,7 @@ export default function WarrantyManagementDialog({
       setCustomer({
         ...pick,
         addressText: buildAddressText(addrRow.address) || pick.visible_address,
+        email: typeof addrRow.email === 'string' ? addrRow.email : null,
       });
 
       if (warrantiesRes.error) {
@@ -309,6 +339,13 @@ export default function WarrantyManagementDialog({
       } else {
         setAmc(null);
       }
+
+      const { sendBrand, lastServiceBrand: servedBrand } = await resolveCustomerSendBrand(
+        pick.id,
+        DEFAULT_WARRANTY_CARD_BRAND
+      );
+      setDocumentBrand(sendBrand);
+      setLastServiceBrand(servedBrand);
     } catch {
       toast.error('Could not load customer warranty info.');
     } finally {
@@ -488,6 +525,39 @@ export default function WarrantyManagementDialog({
 
   const includedItems = useMemo(() => items.filter((it) => it.include), [items]);
 
+  const brandCompany = useMemo(() => getCompanyInfoForBrand(documentBrand), [documentBrand]);
+
+  const warrantyBrandHint = useMemo(() => {
+    if (!customer) {
+      return `Defaults to ${getDocumentBrandLabel(DEFAULT_WARRANTY_CARD_BRAND)} when no prior service brand is on file.`;
+    }
+    if (lastServiceBrand) {
+      const lastLabel = getDocumentBrandLabel(lastServiceBrand);
+      if (documentBrand === lastServiceBrand) {
+        return `Using last brand served (${lastLabel}). You can change below.`;
+      }
+      return `Last brand served: ${lastLabel}. You can change below.`;
+    }
+    return `No completed service brand on file — using ${getDocumentBrandLabel(DEFAULT_WARRANTY_CARD_BRAND)}. You can change below.`;
+  }, [customer, lastServiceBrand, documentBrand]);
+
+  const warrantyPdfPayload = useCallback(
+    (warranty: PublicWarranty) => ({
+      documentBrand,
+      customer: {
+        name: customer!.full_name,
+        customer_id: customer!.customer_id,
+        phone: customer!.phone,
+        address: customer!.addressText,
+        brand: customer!.brand,
+        model: customer!.model,
+      },
+      warranty,
+      amc: amc?.active ? { active: true, start_date: null, end_date: amc.end_date } : null,
+    }),
+    [customer, documentBrand, amc]
+  );
+
   const filteredInventory = useMemo(() => {
     const q = invQuery.trim().toLowerCase();
     const base = q
@@ -605,6 +675,143 @@ export default function WarrantyManagementDialog({
     [editingId, resetForm]
   );
 
+  const handleDownloadWarrantyCard = useCallback(
+    async (warranty: ExistingWarranty) => {
+      if (!customer) return;
+      setDownloadingId(warranty.id);
+      const toastId = toast.loading('Generating warranty card PDF…');
+      try {
+        await downloadWarrantyCardPdf(warrantyPdfPayload(warranty as unknown as PublicWarranty));
+        toast.success('Warranty card downloaded', { id: toastId });
+      } catch (error) {
+        console.error(error);
+        toast.error('Could not download warranty card', { id: toastId });
+      } finally {
+        setDownloadingId(null);
+      }
+    },
+    [customer, warrantyPdfPayload]
+  );
+
+  const handleGenerateWarrantyCard = useCallback(
+    (warranty: ExistingWarranty) => {
+      if (!customer) return;
+      setGeneratingId(warranty.id);
+      try {
+        generateWarrantyCardPDF(warrantyPdfPayload(warranty as unknown as PublicWarranty), 'print');
+      } catch (error) {
+        console.error(error);
+        toast.error('Could not open warranty card preview');
+      } finally {
+        setGeneratingId(null);
+      }
+    },
+    [customer, warrantyPdfPayload]
+  );
+
+  const buildDraftWarranty = useCallback(() => {
+    const cleaned = includedItems
+      .map((it) => ({ ...it, label: it.label.trim() }))
+      .filter((it) => it.label.length > 0);
+    if (cleaned.length === 0) return null;
+    return buildWarrantyFromFormDraft({
+      startDate,
+      defaultValue,
+      defaultUnit,
+      items: cleaned,
+      notes: joinNotes(selectedPresets, customNotes) || null,
+      warrantyId: formMode === 'edit' && editingId ? editingId : 'draft',
+    });
+  }, [
+    includedItems,
+    startDate,
+    defaultValue,
+    defaultUnit,
+    selectedPresets,
+    customNotes,
+    formMode,
+    editingId,
+  ]);
+
+  const handleDownloadDraftWarrantyCard = useCallback(async () => {
+    if (!customer) return;
+    const warranty = buildDraftWarranty();
+    if (!warranty) {
+      toast.error('Add at least one item before generating the warranty card.');
+      return;
+    }
+
+    setDownloadingId('draft');
+    const toastId = toast.loading('Generating warranty card PDF…');
+    try {
+      await downloadWarrantyCardPdf(warrantyPdfPayload(warranty));
+      toast.success(
+        formMode === 'edit' ? 'Warranty card downloaded' : 'Draft warranty card downloaded',
+        { id: toastId }
+      );
+    } catch (error) {
+      console.error(error);
+      toast.error('Could not download warranty card', { id: toastId });
+    } finally {
+      setDownloadingId(null);
+    }
+  }, [customer, buildDraftWarranty, formMode, warrantyPdfPayload]);
+
+  const handleGenerateDraftWarrantyCard = useCallback(() => {
+    if (!customer) return;
+    const warranty = buildDraftWarranty();
+    if (!warranty) {
+      toast.error('Add at least one item before generating the warranty card.');
+      return;
+    }
+
+    setGeneratingId('draft');
+    try {
+      generateWarrantyCardPDF(warrantyPdfPayload(warranty), 'print');
+    } catch (error) {
+      console.error(error);
+      toast.error('Could not open warranty card preview');
+    } finally {
+      setGeneratingId(null);
+    }
+  }, [customer, buildDraftWarranty, warrantyPdfPayload]);
+
+  const handleSaveCustomerEmail = useCallback(
+    async (email: string) => {
+      if (!customer) return { ok: false as const, error: 'No customer selected' };
+      const trimmed = email.trim();
+      const { error } = await db.customers.update(customer.id, { email: trimmed });
+      if (error) {
+        return { ok: false as const, error: error.message || 'Could not save email' };
+      }
+      setCustomer((prev) => (prev ? { ...prev, email: trimmed } : prev));
+      return { ok: true as const };
+    },
+    [customer]
+  );
+
+  const openWarrantyEmail = useCallback((warranty: PublicWarranty) => {
+    setEmailWarranty(warranty);
+    setEmailOpen(true);
+  }, []);
+
+  const openDraftWarrantyEmail = useCallback(() => {
+    const warranty = buildDraftWarranty();
+    if (!warranty) {
+      toast.error('Add at least one item before emailing the warranty card.');
+      return;
+    }
+    setEmailWarranty(warranty);
+    setEmailOpen(true);
+  }, [buildDraftWarranty]);
+
+  const emailPdfData = useMemo(() => {
+    if (!customer || !emailWarranty) return null;
+    return warrantyPdfPayload(emailWarranty);
+  }, [customer, emailWarranty, warrantyPdfPayload]);
+
+  const customerEmail = customer ? getValidCustomerEmail(customer.email) : null;
+
   const canSearch = query.trim().length >= 2 && !searching;
 
   return (
@@ -712,11 +919,44 @@ export default function WarrantyManagementDialog({
                     </p>
                   )}
                 </div>
-                <Button type="button" variant="ghost" size="sm" className="shrink-0" onClick={() => setCustomer(null)}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => {
+                    setCustomer(null);
+                    setDocumentBrand(DEFAULT_WARRANTY_CARD_BRAND);
+                    setLastServiceBrand(null);
+                    setEmailOpen(false);
+                    setEmailWarranty(null);
+                    resetForm();
+                    setExisting([]);
+                    setJobs([]);
+                    setAmc(null);
+                  }}
+                >
                   <ChevronLeft className="h-4 w-4 sm:mr-1" />
                   <span className="hidden sm:inline">Change</span>
                 </Button>
               </div>
+            </section>
+
+            <section className="rounded-lg border p-3 space-y-2">
+              <Label className="text-xs font-semibold">Warranty card brand</Label>
+              <Select value={documentBrand} onValueChange={(v) => setDocumentBrand(v as DocumentBrand)}>
+                <SelectTrigger className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="hydrogenro">Hydrogen RO</SelectItem>
+                  <SelectItem value="elevenro">Eleven RO</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground leading-snug">
+                {warrantyBrandHint} PDF uses {getDocumentBrandLabel(documentBrand)} branding —{' '}
+                {brandCompany.phone} · {brandCompany.email}
+              </p>
             </section>
 
             {loadingCustomer ? (
@@ -746,6 +986,51 @@ export default function WarrantyManagementDialog({
                           warranty={w as unknown as PublicWarranty}
                           actions={
                             <div className="flex items-center gap-1">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 p-0"
+                                title={
+                                  customerEmail
+                                    ? 'Email warranty card PDF'
+                                    : 'Email warranty card (add customer email)'
+                                }
+                                disabled={generatingId === w.id || downloadingId === w.id}
+                                onClick={() => openWarrantyEmail(w as unknown as PublicWarranty)}
+                              >
+                                <Mail className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 p-0"
+                                title="Generate warranty card"
+                                disabled={generatingId === w.id || downloadingId === w.id}
+                                onClick={() => handleGenerateWarrantyCard(w)}
+                              >
+                                {generatingId === w.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Printer className="h-4 w-4" />
+                                )}
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 p-0"
+                                title="Download warranty card PDF"
+                                disabled={downloadingId === w.id || generatingId === w.id}
+                                onClick={() => void handleDownloadWarrantyCard(w)}
+                              >
+                                {downloadingId === w.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Download className="h-4 w-4" />
+                                )}
+                              </Button>
                               <Button
                                 type="button"
                                 variant="ghost"
@@ -1078,23 +1363,83 @@ export default function WarrantyManagementDialog({
                       />
                     </div>
 
-                    {/* Save */}
-                    <div className="flex flex-col-reverse sm:flex-row gap-2">
-                      <Button type="button" variant="outline" className="sm:flex-1" disabled={saving} onClick={resetForm}>
-                        Cancel
-                      </Button>
-                      <Button
-                        type="button"
-                        className="sm:flex-1"
-                        disabled={saving || includedItems.length === 0}
-                        onClick={() => void handleSave()}
-                      >
-                        {saving ? (
-                          <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Saving…</>
-                        ) : (
-                          <><ShieldCheck className="h-4 w-4 mr-2" /> {formMode === 'edit' ? 'Update warranty' : 'Save warranty'}</>
-                        )}
-                      </Button>
+                    {/* Generate / Download */}
+                    <div className="flex flex-col gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <Button
+                          type="button"
+                          className={documentGenerateBtnClass}
+                          disabled={
+                            saving ||
+                            generatingId === 'draft' ||
+                            downloadingId === 'draft' ||
+                            includedItems.length === 0
+                          }
+                          onClick={() => handleGenerateDraftWarrantyCard()}
+                        >
+                          {generatingId === 'draft' ? (
+                            <>
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              Opening…
+                            </>
+                          ) : (
+                            <>
+                              <Printer className="h-4 w-4 mr-2" />
+                              Generate
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className={documentOutlineBtnClass}
+                          disabled={
+                            saving ||
+                            downloadingId === 'draft' ||
+                            generatingId === 'draft' ||
+                            includedItems.length === 0
+                          }
+                          onClick={() => void handleDownloadDraftWarrantyCard()}
+                        >
+                          {downloadingId === 'draft' ? (
+                            <>
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              Downloading…
+                            </>
+                          ) : (
+                            <>
+                              <Download className="h-4 w-4 mr-2" />
+                              Download
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          type="button"
+                          className="h-10 w-full justify-center bg-violet-700 hover:bg-violet-800 text-white"
+                          disabled={saving || includedItems.length === 0}
+                          onClick={() => openDraftWarrantyEmail()}
+                        >
+                          <Mail className="h-4 w-4 mr-2" />
+                          Email PDF
+                        </Button>
+                      </div>
+                      <div className="flex flex-col-reverse sm:flex-row gap-2">
+                        <Button type="button" variant="outline" className="sm:flex-1" disabled={saving} onClick={resetForm}>
+                          Cancel
+                        </Button>
+                        <Button
+                          type="button"
+                          className="sm:flex-1"
+                          disabled={saving || includedItems.length === 0}
+                          onClick={() => void handleSave()}
+                        >
+                          {saving ? (
+                            <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Saving…</>
+                          ) : (
+                            <><ShieldCheck className="h-4 w-4 mr-2" /> {formMode === 'edit' ? 'Update warranty' : 'Save warranty'}</>
+                          )}
+                        </Button>
+                      </div>
                     </div>
                   </section>
                 )}
@@ -1103,6 +1448,16 @@ export default function WarrantyManagementDialog({
           </div>
         )}
       </DialogContent>
+
+      <WarrantyCardEmailSendDialog
+        open={emailOpen}
+        onOpenChange={setEmailOpen}
+        pdfData={emailPdfData}
+        brand={documentBrand}
+        customerEmailOnFile={customer?.email}
+        customerId={customer?.id}
+        onSaveCustomerEmail={handleSaveCustomerEmail}
+      />
     </Dialog>
   );
 }

@@ -22,6 +22,7 @@ import {
 export type AdminEmailTemplateType =
   | 'booking_confirmation'
   | 'amc_document'
+  | 'warranty_document'
   | 'invoice'
   | 'quotation'
   | 'service_reminder'
@@ -71,6 +72,14 @@ export const ADMIN_EMAIL_TEMPLATE_META: Record<AdminEmailTemplateType, AdminEmai
     description: 'Send an AMC PDF or agreement to the customer.',
     showDocumentRef: true,
     showAmount: true,
+    showDueDate: true,
+    showCustomSubject: false,
+  },
+  warranty_document: {
+    label: 'Warranty card',
+    description: 'Send a warranty card PDF to the customer.',
+    showDocumentRef: true,
+    showAmount: false,
     showDueDate: true,
     showCustomSubject: false,
   },
@@ -337,6 +346,8 @@ function templateHeadline(type: AdminEmailTemplateType): string {
   switch (type) {
     case 'amc_document':
       return 'AMC Agreement';
+    case 'warranty_document':
+      return 'Warranty Card';
     case 'invoice':
       return 'Tax Invoice';
     case 'quotation':
@@ -354,6 +365,8 @@ function templateEyebrow(type: AdminEmailTemplateType): string {
   switch (type) {
     case 'amc_document':
       return 'Annual maintenance';
+    case 'warranty_document':
+      return 'Your coverage';
     case 'invoice':
       return 'Billing';
     case 'quotation':
@@ -376,6 +389,8 @@ function buildSubject(
   switch (type) {
     case 'amc_document':
       return ref ? `AMC Agreement — ${brandLabel} (${ref})` : `AMC Agreement — ${brandLabel}`;
+    case 'warranty_document':
+      return ref ? `Warranty Card — ${brandLabel} (${ref})` : `Warranty Card — ${brandLabel}`;
     case 'invoice':
       return ref ? `Tax Invoice — ${brandLabel} (${ref})` : `Tax Invoice — ${brandLabel}`;
     case 'quotation':
@@ -405,14 +420,21 @@ function buildDetailsRows(
           ? 'Quote no.'
           : type === 'job_completion'
             ? 'Job no.'
-            : 'Reference';
+            : type === 'warranty_document'
+              ? 'Card no.'
+              : 'Reference';
     rows.push(detailRow(refLabel, data.documentRef.trim()));
   }
   if (meta.showAmount && data.amount.trim()) {
     rows.push(detailRow('Amount', data.amount.trim()));
   }
   if (meta.showDueDate && data.dueDate.trim()) {
-    const dueLabel = type === 'service_reminder' ? 'Suggested date' : 'Valid / due date';
+    const dueLabel =
+      type === 'service_reminder'
+        ? 'Suggested date'
+        : type === 'warranty_document'
+          ? 'Latest coverage until'
+          : 'Valid / due date';
     rows.push(detailRow(dueLabel, formatDisplayDate(data.dueDate.trim()), true));
   }
   if (!rows.length) return '';
@@ -598,6 +620,8 @@ export function getDefaultDocumentMessage(type: AdminEmailTemplateType): string 
   switch (type) {
     case 'amc_document':
       return 'Please find your Annual Maintenance Contract attached. Review the terms and let us know if you have any questions.';
+    case 'warranty_document':
+      return 'Please find your RO warranty card attached. Keep it safe and present it when you need warranty service.';
     case 'invoice':
       return 'Please find your tax invoice attached. Payment details are included in the document.';
     case 'quotation':
