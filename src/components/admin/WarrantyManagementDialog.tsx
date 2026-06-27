@@ -46,11 +46,14 @@ import {
   categoryDef,
   guessCategory,
   formatWarrantyDate,
-  addDays,
+  addDuration,
+  daysBetween,
   durationToDays,
   deriveDuration,
   todayDateOnly,
   DEFAULT_WARRANTY_MONTHS,
+  DAYS_PER_MONTH,
+  durationLabel,
   type WarrantyCategory,
   type DurationUnit,
   type PublicWarranty,
@@ -385,8 +388,11 @@ export default function WarrantyManagementDialog({
     setSelectedJobId('');
     setItems(
       w.items.map((it) => {
-        const days = it.duration_days ?? (it.months ?? DEFAULT_WARRANTY_MONTHS) * 30;
-        const { value, unit } = deriveDuration(days);
+        const storedMonths = it.months ?? 0;
+        const { value, unit } =
+          storedMonths > 0
+            ? { value: storedMonths, unit: 'months' as DurationUnit }
+            : deriveDuration(it.duration_days ?? DEFAULT_WARRANTY_MONTHS * DAYS_PER_MONTH);
         return {
           key: `existing-${it.id}`,
           category: (it.category as WarrantyCategory) || 'OTHER',
@@ -583,16 +589,17 @@ export default function WarrantyManagementDialog({
     setSaving(true);
     try {
       const itemRows = cleaned.map((it) => {
-        const days = it.covered ? durationToDays(it.durValue, it.durUnit) : 0;
+        const endDate = it.covered ? addDuration(startDate, it.durValue, it.durUnit) : startDate;
+        const durationDays = it.covered ? daysBetween(startDate, endDate) : 0;
         return {
           category: it.category,
           label: it.label,
           inventory_id: it.inventory_id,
           job_part_id: it.job_part_id,
           months: it.covered && it.durUnit === 'months' ? Math.min(120, it.durValue) : 0,
-          duration_days: days,
+          duration_days: durationDays,
           start_date: startDate,
-          end_date: it.covered ? addDays(startDate, days) : startDate,
+          end_date: endDate,
           covered: it.covered,
         };
       });
@@ -601,7 +608,7 @@ export default function WarrantyManagementDialog({
         (max, end) => (end > max ? end : max),
         coveredEnds.length > 0
           ? coveredEnds[0]
-          : addDays(startDate, durationToDays(defaultValue, defaultUnit))
+          : addDuration(startDate, defaultValue, defaultUnit)
       );
       const notes = joinNotes(selectedPresets, customNotes) || null;
       const defaultMonthsForHeader =
@@ -1105,9 +1112,9 @@ export default function WarrantyManagementDialog({
                             </SelectContent>
                           </Select>
                         </div>
-                        {defaultUnit === 'months' && (
+                        {defaultUnit === 'months' && defaultValue > 0 && (
                           <p className="text-[10px] text-muted-foreground">
-                            {defaultValue} month{defaultValue === 1 ? '' : 's'} = {durationToDays(defaultValue, 'months')} days
+                            {durationLabel(defaultValue, 'months', startDate)}
                           </p>
                         )}
                       </div>
@@ -1300,7 +1307,7 @@ export default function WarrantyManagementDialog({
                                     </SelectContent>
                                   </Select>
                                   <span className="text-[10px] text-muted-foreground hidden sm:inline">
-                                    → {formatWarrantyDate(addDays(startDate, durationToDays(it.durValue, it.durUnit)))}
+                                    → {formatWarrantyDate(addDuration(startDate, it.durValue, it.durUnit))}
                                   </span>
                                 </div>
                               ) : (

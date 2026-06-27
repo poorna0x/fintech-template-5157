@@ -7,8 +7,7 @@ import {
   resolvePdfDocumentBrand,
 } from './document-pdf-brand';
 import {
-  addDays,
-  durationToDays,
+  addDuration,
   formatWarrantyDate,
   type DurationUnit,
   type PublicAmcInfo,
@@ -73,14 +72,14 @@ export function buildWarrantyFromFormDraft(options: {
     .filter((it) => it.label.length > 0);
 
   const warrantyItems: PublicWarrantyItem[] = itemRows.map((it) => {
-    const days = it.covered ? durationToDays(it.durValue, it.durUnit) : 0;
+    const endDate = it.covered ? addDuration(options.startDate, it.durValue, it.durUnit) : options.startDate;
     return {
       id: it.key,
       category: it.category,
       label: it.label,
       covered: it.covered,
       start_date: options.startDate,
-      end_date: it.covered ? addDays(options.startDate, days) : options.startDate,
+      end_date: endDate,
     };
   });
 
@@ -89,7 +88,7 @@ export function buildWarrantyFromFormDraft(options: {
     (max, end) => (end > max ? end : max),
     coveredEnds.length > 0
       ? coveredEnds[0]
-      : addDays(options.startDate, durationToDays(options.defaultValue, options.defaultUnit))
+      : addDuration(options.startDate, options.defaultValue, options.defaultUnit)
   );
 
   return {

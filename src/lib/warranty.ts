@@ -74,19 +74,18 @@ export function categoryLabel(category: string | null | undefined): string {
 
 export const DEFAULT_WARRANTY_MONTHS = 3;
 
-// We treat a "month" as a fixed 30 days so durations are predictable: 3 months = 90 days
-// (not 89–92 depending on the calendar). Warranties are stored/compared by exact days.
+/** Approximate month length for legacy day counts and general-policy text (3 months ≈ 90 days). */
 export const DAYS_PER_MONTH = 30;
 
 export type DurationUnit = 'months' | 'days';
 
-/** Convert a duration value + unit into a whole number of days (30-day months). */
+/** Rough day count (30-day months). Prefer {@link addDuration} for warranty end dates. */
 export function durationToDays(value: number, unit: DurationUnit): number {
   const v = Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0;
   return unit === 'months' ? v * DAYS_PER_MONTH : v;
 }
 
-/** Derive a friendly {value, unit} from a day count: exact multiples of 30 show as months. */
+/** Derive a friendly {value, unit} from a stored day count (legacy 30-day multiples → months). */
 export function deriveDuration(days: number): { value: number; unit: DurationUnit } {
   const d = Number.isFinite(days) ? Math.max(0, Math.round(days)) : 0;
   if (d > 0 && d % DAYS_PER_MONTH === 0) {
@@ -102,13 +101,57 @@ export function addDays(dateStr: string, days: number): string {
   return toDateOnly(d);
 }
 
-/** Short human label for a duration, e.g. "3 months (90 days)" or "45 days". */
-export function durationLabel(value: number, unit: DurationUnit): string {
-  const days = durationToDays(value, unit);
+/** Add a warranty duration: calendar months or whole days from the start date. */
+export function addDuration(dateStr: string, value: number, unit: DurationUnit): string {
+  const v = Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0;
+  return unit === 'months' ? addMonths(dateStr, v) : addDays(dateStr, v);
+}
+
+/** Whole calendar days between two YYYY-MM-DD dates (end − start). */
+export function daysBetween(startDate: string, endDate: string): number {
+  const start = parseDateOnly(startDate);
+  const end = parseDateOnly(endDate);
+  if (!start || !end) return 0;
+  return Math.round((end.getTime() - start.getTime()) / MS_PER_DAY);
+}
+
+/** Short human label for a duration shown in admin forms. */
+export function durationLabel(value: number, unit: DurationUnit, startDate?: string): string {
   if (unit === 'months') {
-    return `${value} month${value === 1 ? '' : 's'} (${days} days)`;
+    if (startDate) {
+      return `${value} month${value === 1 ? '' : 's'} (until ${formatWarrantyDate(addMonths(startDate, value))})`;
+    }
+    if (value === 12) return '12 months (1 year)';
+    if (value > 0 && value % 12 === 0) return `${value} months (${value / 12} years)`;
+    return `${value} month${value === 1 ? '' : 's'}`;
   }
+  const days = Math.max(0, Math.round(value));
   return `${days} day${days === 1 ? '' : 's'}`;
+}
+
+const MS_PER_DAY = 86_400_000;
+
+/** Friendly remaining-time label for warranty cards (e.g. "1 year left", "3 months left"). */
+export function formatWarrantyTimeLeft(daysLeft: number): string {
+  if (daysLeft < 0) return 'Expired';
+  if (daysLeft === 0) return 'Expires today';
+  if (daysLeft <= 14) {
+    return `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`;
+  }
+
+  const years = Math.floor(daysLeft / 365);
+  const months = Math.floor((daysLeft % 365) / 30);
+
+  if (years >= 1 && months === 0) {
+    return `${years} year${years === 1 ? '' : 's'} left`;
+  }
+  if (years >= 1) {
+    return `${years} yr${years === 1 ? '' : 's'} ${months} mo left`;
+  }
+  if (months >= 1) {
+    return `${months} month${months === 1 ? '' : 's'} left`;
+  }
+  return `${daysLeft} days left`;
 }
 
 // Standard, professionally-worded note presets the admin can toggle on when adding a
@@ -237,8 +280,7 @@ export function warrantyStatus(endDate: string): WarrantyStatus {
   }
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const msPerDay = 86_400_000;
-  const daysLeft = Math.round((end.getTime() - today.getTime()) / msPerDay);
+  const daysLeft = Math.round((end.getTime() - today.getTime()) / MS_PER_DAY);
 
   if (daysLeft < 0) {
     return { active: false, daysLeft, label: 'Expired', toneClass: 'bg-red-100 text-red-700' };
@@ -246,18 +288,15 @@ export function warrantyStatus(endDate: string): WarrantyStatus {
   if (daysLeft === 0) {
     return { active: true, daysLeft, label: 'Expires today', toneClass: 'bg-amber-100 text-amber-800' };
   }
+
+  const label = formatWarrantyTimeLeft(daysLeft);
   if (daysLeft <= 14) {
-    return {
-      active: true,
-      daysLeft,
-      label: `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`,
-      toneClass: 'bg-amber-100 text-amber-800',
-    };
+    return { active: true, daysLeft, label, toneClass: 'bg-amber-100 text-amber-800' };
   }
   return {
     active: true,
     daysLeft,
-    label: `${daysLeft} days left`,
+    label,
     toneClass: 'bg-emerald-100 text-emerald-700',
   };
 }
