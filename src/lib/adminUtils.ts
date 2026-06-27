@@ -331,7 +331,19 @@ export const bangaloreAreas = [
   'Nayandahalli', 'Kumbalgodu', 'Uttarahalli Hobli', 'Jalahalli', 'Dasarahalli',
   'Nagasandra', 'Peenya Industrial', 'Rajajinagar Industrial', 'Basaveshwara Nagar',
   'Vijayanagar Extension', 'Attiguppe', 'Gokula', 'Sanjay Nagar', 'Nagarbhavi',
-  'Vidyaranyapura', 'Yelahanka New Town', 'Jakkur', 'Sahakar Nagar'
+  'Vidyaranyapura', 'Yelahanka New Town', 'Jakkur', 'Sahakar Nagar',
+  // Sarjapur Road corridor — common localities (fetch location / visible address)
+  'Vibuthipura', 'Vibhuthipura', 'Kalahalli', 'Kallahalli',
+  'Carmelaram', 'Dommasandra', 'Doddakannelli', 'Kodathi', 'Haralur',
+  'Chikkakannalli', 'Handenahalli', 'Halanayakanahalli', 'Attibele', 'Muthanallur',
+  'Iblur', 'Ambalipura', 'Kudlu', 'Kudlu Gate', 'Sarjapur', 'Sarjapur Road',
+  'Kaikondrahalli', 'Kasavanahalli', 'Harlur', 'Hosa Road Junction',
+  // Yelahanka / North Bangalore — common localities (fetch location / visible address)
+  'Allalasandra', 'Attur Layout', 'Singanayakanahalli', 'Rajanukunte', 'Rachenahalli',
+  'Chikkabettahalli', 'Dodda Bettahalli', 'Kogilu', 'Kogilu Cross', 'Nagenahalli',
+  'Giddenahalli', 'Maruthinagar', 'Puttanahalli', 'Judicial Layout', 'Doddabommasandra',
+  'Agrahara Badavane', 'Sir M Visvesvaraya Layout', 'Yelahanka Satellite Town',
+  'Yelahanka Old Town', 'Attur', 'Alahalli', 'Doddaballapura Road'
 ];
 
 /** Single photo entry from DB / JSON (string, Cloudinary object, etc.) → usable https URL or null. */
