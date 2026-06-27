@@ -12,13 +12,12 @@ export function getValidCustomerEmail(email: unknown): string | null {
   return isValidCustomerEmail(email) ? email.trim() : null;
 }
 
-/** True when the entered email should be written to the customer record. */
+/** True when the entered email should be written to the customer record (missing email only). */
 export function customerEmailNeedsSave(existing: unknown, next: string): boolean {
   const trimmedNext = next.trim();
   if (!trimmedNext) return false;
-  const validExisting = getValidCustomerEmail(existing);
-  if (!validExisting) return true;
-  return validExisting.toLowerCase() !== trimmedNext.toLowerCase();
+  // One-off send addresses must not overwrite an email already on the customer record.
+  return !getValidCustomerEmail(existing);
 }
 
 export function getAdminEmailComposerUrl(

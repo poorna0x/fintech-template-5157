@@ -57,7 +57,10 @@ export default function WarrantyCardEmailSendDialog({
   const [sending, setSending] = useState(false);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setRecipientEmail('');
+      return;
+    }
     const seeded = getValidCustomerEmail(customerEmailOnFile);
     setRecipientEmail(seeded || '');
     setMessage(getDefaultDocumentMessage('warranty_document'));
@@ -65,6 +68,7 @@ export default function WarrantyCardEmailSendDialog({
 
   const brandLabel = brand ? getDocumentBrandLabel(brand) : '';
   const canSend = Boolean(pdfData && brand);
+  const customerEmailOnRecord = getValidCustomerEmail(customerEmailOnFile);
 
   const recipientValid = useMemo(() => {
     const trimmed = recipientEmail.trim();
@@ -155,6 +159,12 @@ export default function WarrantyCardEmailSendDialog({
               placeholder="customer@example.com"
               autoComplete="email"
             />
+            {customerEmailOnRecord && recipientEmail.trim().toLowerCase() !== customerEmailOnRecord.toLowerCase() && (
+              <p className="text-[11px] text-muted-foreground leading-snug">
+                Sending to a different address for this email only — the customer record stays{' '}
+                {customerEmailOnRecord}.
+              </p>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="warranty-email-message">Message</Label>
