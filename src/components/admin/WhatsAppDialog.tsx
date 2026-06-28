@@ -13,6 +13,7 @@ interface WhatsAppDialogProps {
   customerName: string;
   location?: string;
   leadSource?: string;
+  customTime?: string;
 }
 
 const WhatsAppDialog: React.FC<WhatsAppDialogProps> = ({
@@ -23,11 +24,14 @@ const WhatsAppDialog: React.FC<WhatsAppDialogProps> = ({
   serviceSubType,
   customerName,
   location,
-  leadSource
+  leadSource,
+  customTime
 }) => {
   const locationText = location?.trim() ?? '';
   const leadSourceText = leadSource?.trim() ?? '';
-  const message = `New ${serviceSubType.toLowerCase()} assigned - ${customerName}${locationText ? ` - ${locationText}` : ''}${leadSourceText ? ` - ${leadSourceText}` : ''}`;
+  const customTimeText = customTime?.trim() ?? '';
+  const mainLine = `New ${serviceSubType.toLowerCase()} assigned - ${customerName}${locationText ? ` - ${locationText}` : ''}${leadSourceText ? ` - ${leadSourceText}` : ''}`;
+  const message = customTimeText ? `${mainLine} ,\n\nTime : ${customTimeText}` : mainLine;
   
   // Format phone number for WhatsApp (remove any non-digit characters except +)
   const formatPhoneForWhatsApp = (phone: string): string => {
@@ -77,7 +81,7 @@ const WhatsAppDialog: React.FC<WhatsAppDialogProps> = ({
             <div className="text-sm text-muted-foreground">
               <strong>Message:</strong>
             </div>
-            <div className="bg-card border border-border rounded p-3 text-sm">
+            <div className="bg-card border border-border rounded p-3 text-sm whitespace-pre-wrap">
               {message}
             </div>
           </div>

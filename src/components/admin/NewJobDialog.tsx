@@ -12,7 +12,7 @@ import { Customer } from '@/types';
 import { toast } from 'sonner';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
-import { generateJobNumber } from '@/lib/adminUtils';
+import { generateJobNumber, formatCustomTimeLabel } from '@/lib/adminUtils';
 import { db } from '@/lib/supabase';
 import { createJobAssignedNotification, sendNotification } from '@/lib/notifications';
 import type { JobAssignedToTechnicianPayload } from './AddCustomerDialog';
@@ -470,6 +470,10 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
         newJobFormData.lead_source === 'Other'
           ? newJobFormData.lead_source_custom || 'Other'
           : newJobFormData.lead_source;
+      const customTimeToNotify =
+        newJobFormData.scheduled_time_slot === 'CUSTOM' && newJobFormData.scheduled_time_custom
+          ? formatCustomTimeLabel(newJobFormData.scheduled_time_custom) || undefined
+          : undefined;
 
       handleClose();
 
@@ -497,6 +501,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
           visibleAddress: customerVisible,
           address: customer.address as { area?: string; city?: string } | undefined,
           leadSource: leadSourceToNotify,
+          customTime: customTimeToNotify,
         });
       }
     } catch (error) {

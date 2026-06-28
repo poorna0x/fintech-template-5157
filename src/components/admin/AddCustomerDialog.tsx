@@ -12,7 +12,7 @@ import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { MapPin, Download, ExternalLink, Loader2, ChevronDown } from 'lucide-react';
-import { generateJobNumber, extractLocationFromAddressString, bangaloreAreas } from '@/lib/adminUtils';
+import { generateJobNumber, extractLocationFromAddressString, bangaloreAreas, formatCustomTimeLabel } from '@/lib/adminUtils';
 import ImageUpload from '@/components/ImageUpload';
 import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmentTimeSelect';
 import PhoneSwapButton from '@/components/admin/PhoneSwapButton';
@@ -89,6 +89,7 @@ export interface JobAssignedToTechnicianPayload {
   visibleAddress?: string;
   address?: { area?: string; city?: string };
   leadSource?: string;
+  customTime?: string;
 }
 
 // Keep unsaved Add Customer input in localStorage so closing the dialog (or a refresh)
@@ -1324,6 +1325,10 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
             step5JobData.lead_source === 'Other'
               ? step5JobData.lead_source_custom || 'Other'
               : step5JobData.lead_source,
+          customTime:
+            step5JobData.scheduled_time_slot === 'CUSTOM' && step5JobData.scheduled_time_custom
+              ? formatCustomTimeLabel(step5JobData.scheduled_time_custom) || undefined
+              : undefined,
         });
       }
 

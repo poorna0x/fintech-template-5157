@@ -478,6 +478,26 @@ export const formatTimeTo12Hour = (timeString: string | null): string | null => 
   return `${normalizedHour}:${minutes.padEnd(2, '0')} ${suffix}`;
 };
 
+/** Short custom visit time for WhatsApp (e.g. "9 AM", "10:30 AM"), or null if none. */
+export function formatCustomTimeLabel(timeString: string | null | undefined): string | null {
+  if (!timeString || !String(timeString).trim()) return null;
+  const formatted = formatTimeTo12Hour(String(timeString).trim());
+  if (!formatted) return String(timeString).trim();
+  return formatted.replace(/:00 /, ' ');
+}
+
+/** Custom visit time from job requirements for WhatsApp, or null if none. */
+export function getJobCustomTimeLabel(job: Record<string, unknown> | null | undefined): string | null {
+  if (!job) return null;
+  try {
+    const requirements = parseJobRequirements(job.requirements);
+    const customTime = requirements.find((r: any) => r?.custom_time)?.custom_time;
+    return formatCustomTimeLabel(typeof customTime === 'string' ? customTime : null);
+  } catch {
+    return null;
+  }
+}
+
 // Get formatted time slot from job requirements
 export const getFormattedTimeSlot = (job: any, requirements: any[]): string => {
   // Check if there's a custom time in requirements
