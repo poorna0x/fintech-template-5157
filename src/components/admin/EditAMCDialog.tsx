@@ -21,6 +21,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { db } from '@/lib/supabase';
+import {
+  applyAmcAmountToMetadata,
+  getAmcAmountFromContract,
+  parseAmcAdditionalInfoMetadata,
+} from '@/lib/amc-contract-metadata';
 import { toast } from 'sonner';
 import { Star } from 'lucide-react';
 
@@ -77,19 +82,7 @@ const deriveServicePeriodKind = (
   return { kind: 'custom', custom: Math.max(1, months) };
 };
 
-const parseAdditionalInfoMetadata = (raw: any): Record<string, any> => {
-  if (!raw) return {};
-  if (typeof raw === 'object') return { ...raw };
-  if (typeof raw === 'string') {
-    try {
-      const parsed = JSON.parse(raw);
-      return typeof parsed === 'object' && parsed !== null ? { ...parsed } : { notes: raw };
-    } catch {
-      return { notes: raw };
-    }
-  }
-  return {};
-};
+const parseAdditionalInfoMetadata = parseAmcAdditionalInfoMetadata;
 
 const EditAMCDialog: React.FC<EditAMCDialogProps> = ({
   open,
@@ -108,6 +101,7 @@ const EditAMCDialog: React.FC<EditAMCDialogProps> = ({
     servicePeriodKind: '4' as ServicePeriodKind,
     servicePeriodCustomMonths: 4,
     givenByTechnicianId: 'NONE',
+    amount: '',
   });
 
   useEffect(() => {
@@ -118,6 +112,7 @@ const EditAMCDialog: React.FC<EditAMCDialogProps> = ({
       (typeof meta.notes === 'string' && meta.notes) ||
       '';
     const sp = deriveServicePeriodKind(amcContract.service_period_months);
+    const amount = getAmcAmountFromContract(amcContract);
     setForm({
       startDate: toIsoDateOnly(amcContract.start_date),
       endDate: toIsoDateOnly(amcContract.end_date),
@@ -127,6 +122,7 @@ const EditAMCDialog: React.FC<EditAMCDialogProps> = ({
       servicePeriodKind: sp.kind,
       servicePeriodCustomMonths: sp.custom,
       givenByTechnicianId: amcContract.given_by_technician_id || 'NONE',
+      amount: amount != null ? String(amount) : '',
     });
   }, [open, amcContract]);
 
@@ -138,6 +134,11 @@ const EditAMCDialog: React.FC<EditAMCDialogProps> = ({
     }
     if (!form.years || form.years < 1) {
       toast.error('Duration (years) must be at least 1');
+      return;
+    }
+    const parsedAmount = form.amount.trim() === '' ? null : parseFloat(form.amount.replace(/,/g, ''));
+    if (form.amount.trim() !== '' && (!Number.isFinite(parsedAmount) || parsedAmount! < 0)) {
+      toast.error('AMC amount must be a valid number');
       return;
     }
     setSaving(true);
@@ -152,6 +153,7 @@ const EditAMCDialog: React.FC<EditAMCDialogProps> = ({
       const metadata = parseAdditionalInfoMetadata(current.additional_info);
       metadata.description = form.additionalNotes || null;
       metadata.notes = form.additionalNotes || null;
+      const metadataWithAmount = applyAmcAmountToMetadata(metadata, parsedAmount);
 
       const servicePeriodMonths =
         form.servicePeriodKind === 'no_auto'
@@ -167,7 +169,7 @@ const EditAMCDialog: React.FC<EditAMCDialogProps> = ({
         end_date: endDate,
         years: form.years,
         includes_prefilter: form.includesPrefilter,
-        additional_info: JSON.stringify(metadata),
+        additional_info: JSON.stringify(metadataWithAmount),
         service_period_months: servicePeriodMonths,
         given_by_technician_id:
           form.givenByTechnicianId === 'NONE' ? null : form.givenByTechnicianId,
@@ -188,7 +190,7 @@ const EditAMCDialog: React.FC<EditAMCDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[95vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Star className="w-5 h-5 text-green-600" />
@@ -225,6 +227,7 @@ const EditAMCDialog: React.FC<EditAMCDialogProps> = ({
                   type="number"
                   min={1}
                   value={form.years}
+                  className="mt-1"
                   onChange={(e) => {
                     const years = Math.max(1, parseInt(e.target.value, 10) || 1);
                     setForm((prev) => ({
@@ -235,6 +238,20 @@ const EditAMCDialog: React.FC<EditAMCDialogProps> = ({
                         : prev.endDate,
                     }));
                   }}
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-amc-amount">AMC Amount (₹)</Label>
+                <Input
+                  id="edit-amc-amount"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  inputMode="decimal"
+                  value={form.amount}
+                  className="mt-1"
+                  placeholder="e.g. 7000"
+                  onChange={(e) => setForm((prev) => ({ ...prev, amount: e.target.value }))}
                 />
               </div>
               <div className="sm:col-span-2">
@@ -342,11 +359,11 @@ const EditAMCDialog: React.FC<EditAMCDialogProps> = ({
           </div>
         )}
 
-        <DialogFooter className="gap-2">
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+        <DialogFooter className="flex-col-reverse sm:flex-row gap-2">
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving} className="w-full sm:w-auto">
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={saving || !amcContract}>
+          <Button onClick={handleSave} disabled={saving || !amcContract} className="w-full sm:w-auto">
             {saving ? 'Saving…' : 'Save Changes'}
           </Button>
         </DialogFooter>

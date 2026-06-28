@@ -39,6 +39,11 @@ import {
   getDefaultAmcServicePeriodMonths,
 } from '@/lib/amcAutoJobSchedule';
 import { getLocalCalendarDateYmd } from '@/lib/pendingPaymentReminder';
+import {
+  applyAmcAmountToMetadata,
+  getAmcAmountFromContract,
+  parseAmcAdditionalInfoMetadata,
+} from '@/lib/amc-contract-metadata';
 
 interface AMCRecord {
   id: string;
@@ -98,6 +103,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
     servicePeriodKind: '4' as '4' | '6' | 'custom' | 'no_auto',
     servicePeriodCustomMonths: 4,
     givenByTechnicianId: 'NONE',
+    amount: '',
   });
 
   useEffect(() => {
@@ -541,6 +547,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
       servicePeriodKind: kind,
       servicePeriodCustomMonths: customMonths,
       givenByTechnicianId: amc.givenByTechnicianId || 'NONE',
+      amount: amc.amount != null ? String(amc.amount) : '',
     });
     setEditDialogOpen(true);
   };
@@ -561,6 +568,13 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
   const handleSaveEdit = async () => {
     if (!selectedAMC) return;
 
+    const parsedAmount =
+      editFormData.amount.trim() === '' ? null : parseFloat(editFormData.amount.replace(/,/g, ''));
+    if (editFormData.amount.trim() !== '' && (!Number.isFinite(parsedAmount) || parsedAmount! < 0)) {
+      toast.error('AMC amount must be a valid number');
+      return;
+    }
+
     try {
       // Calculate end date if years changed
       const endDate = editFormData.endDate || calculateEndDate(editFormData.dateGiven, editFormData.years);
@@ -572,23 +586,12 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
       }
 
       // Parse existing additional_info to preserve metadata
-      let metadata: any = {};
-      if (currentAMC.additional_info) {
-        try {
-          if (typeof currentAMC.additional_info === 'string') {
-            metadata = JSON.parse(currentAMC.additional_info);
-          } else {
-            metadata = currentAMC.additional_info;
-        }
-      } catch (e) {
-          // If parsing fails, create new metadata
-          metadata = {};
-        }
-      }
+      let metadata: Record<string, unknown> = parseAmcAdditionalInfoMetadata(currentAMC.additional_info);
 
       // Update description/notes in metadata
       metadata.description = editFormData.additionalNotes || null;
       metadata.notes = editFormData.additionalNotes || null;
+      metadata = applyAmcAmountToMetadata(metadata, parsedAmount);
 
       const servicePeriodMonths =
         editFormData.servicePeriodKind === 'no_auto' ? 0
@@ -1047,7 +1050,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
 
         {/* Edit AMC Dialog */}
         <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="w-[95vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Edit AMC</DialogTitle>
               <DialogDescription>
@@ -1056,7 +1059,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
             </DialogHeader>
             {selectedAMC && (
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="edit-date-given">Start Date *</Label>
                     <DatePicker
@@ -1090,7 +1093,23 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
                       required
                     />
                   </div>
-                  <div className="col-span-2">
+                  <div>
+                    <Label htmlFor="edit-amc-amount">AMC Amount (₹)</Label>
+                    <Input
+                      id="edit-amc-amount"
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      inputMode="decimal"
+                      value={editFormData.amount}
+                      className="mt-1"
+                      placeholder="e.g. 7000"
+                      onChange={(e) =>
+                        setEditFormData({ ...editFormData, amount: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
                     <Label htmlFor="edit-end-date">End Date</Label>
                     <DatePicker
                         value={editFormData.endDate || undefined}
@@ -1102,7 +1121,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
                       Automatically calculated from start date and duration. You can override it manually.
                     </p>
                   </div>
-                  <div className="col-span-2">
+                  <div className="sm:col-span-2">
                     <div className="flex items-center space-x-2">
                       <Checkbox
                         id="edit-includes-prefilter"
@@ -1116,7 +1135,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
                       </Label>
                     </div>
                   </div>
-                  <div className="col-span-2">
+                  <div className="sm:col-span-2">
                     <Label className="text-sm font-medium">AMC Given By</Label>
                     <Select
                       value={editFormData.givenByTechnicianId}
@@ -1138,7 +1157,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
                       Use this for manually created AMCs. Job-linked AMCs can still be corrected here.
                     </p>
                   </div>
-                  <div className="col-span-2">
+                  <div className="sm:col-span-2">
                     <Label htmlFor="edit-additional-notes">Description / Summary</Label>
                     <Textarea
                       id="edit-additional-notes"
@@ -1152,7 +1171,7 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
                       Add a description or summary to help identify and understand this AMC contract in the future.
                     </p>
                   </div>
-                  <div className="col-span-2">
+                  <div className="sm:col-span-2">
                     <Label className="text-sm font-medium">AMC service period (auto job creation)</Label>
                     <Select
                       value={editFormData.servicePeriodKind}
@@ -1188,12 +1207,12 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
                     )}
                   </div>
                 </div>
-                <div className="flex gap-2 pt-4">
-                  <Button onClick={handleSaveEdit} className="flex-1">
-                    Save Changes
-                  </Button>
-                  <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
+                <div className="flex flex-col-reverse sm:flex-row gap-2 pt-4">
+                  <Button variant="outline" onClick={() => setEditDialogOpen(false)} className="w-full sm:w-auto">
                     Cancel
+                  </Button>
+                  <Button onClick={handleSaveEdit} className="w-full sm:flex-1">
+                    Save Changes
                   </Button>
                 </div>
               </div>

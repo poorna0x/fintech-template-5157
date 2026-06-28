@@ -12,6 +12,11 @@ import { db } from '@/lib/supabase';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  applyAmcAmountToMetadata,
+  getAmcAmountFromContract,
+  parseAmcAdditionalInfoMetadata,
+} from '@/lib/amc-contract-metadata';
 
 interface AMCContract {
   id: string;
@@ -52,6 +57,7 @@ export default function AMCPage() {
   const [editYears, setEditYears] = useState<number>(1);
   const [editIncludesPrefilter, setEditIncludesPrefilter] = useState(false);
   const [editAdditionalInfo, setEditAdditionalInfo] = useState('');
+  const [editAmcAmount, setEditAmcAmount] = useState('');
   const [editStatus, setEditStatus] = useState<'ACTIVE' | 'EXPIRED' | 'CANCELLED' | 'RENEWED'>('ACTIVE');
   // Customer details edit state
   const [editCustomerPhone, setEditCustomerPhone] = useState('');
@@ -105,7 +111,16 @@ export default function AMCPage() {
     setEditEndDate(amc.end_date);
     setEditYears(amc.years);
     setEditIncludesPrefilter(amc.includes_prefilter);
-    setEditAdditionalInfo(amc.additional_info || '');
+    const meta = parseAmcAdditionalInfoMetadata(amc.additional_info);
+    const notes =
+      (typeof meta.description === 'string' && meta.description) ||
+      (typeof meta.notes === 'string' && meta.notes) ||
+      (typeof amc.additional_info === 'string' && !amc.additional_info.trim().startsWith('{')
+        ? amc.additional_info
+        : '');
+    setEditAdditionalInfo(notes);
+    const amount = getAmcAmountFromContract(amc);
+    setEditAmcAmount(amount != null ? String(amount) : '');
     setEditStatus(amc.status);
     const sp = amc.service_period_months;
     if (sp == null || sp === undefined) {
@@ -162,6 +177,13 @@ export default function AMCPage() {
       return;
     }
 
+    const parsedAmount =
+      editAmcAmount.trim() === '' ? null : parseFloat(editAmcAmount.replace(/,/g, ''));
+    if (editAmcAmount.trim() !== '' && (!Number.isFinite(parsedAmount) || parsedAmount! < 0)) {
+      toast.error('AMC amount must be a valid number');
+      return;
+    }
+
     try {
       setIsSaving(true);
       
@@ -171,13 +193,18 @@ export default function AMCPage() {
           : editServicePeriodKind === '6' ? 6
           : Math.max(1, editServicePeriodCustomMonths);
 
+      let metadata = parseAmcAdditionalInfoMetadata(selectedAMC.additional_info);
+      metadata.description = editAdditionalInfo || null;
+      metadata.notes = editAdditionalInfo || null;
+      metadata = applyAmcAmountToMetadata(metadata, parsedAmount);
+
       // Update AMC contract
       const { error: amcError } = await db.amcContracts.update(selectedAMC.id, {
         start_date: editStartDate,
         end_date: editEndDate,
         years: editYears,
         includes_prefilter: editIncludesPrefilter,
-        additional_info: editAdditionalInfo || null,
+        additional_info: JSON.stringify(metadata),
         service_period_months: editServicePeriodKind === 'no_auto' ? 0 : editServicePeriodMonths,
         status: editStatus
       });
@@ -451,7 +478,7 @@ export default function AMCPage() {
 
       {/* Edit Dialog */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[95vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit AMC Contract</DialogTitle>
             <DialogDescription>
@@ -463,7 +490,7 @@ export default function AMCPage() {
             {/* Customer Details Section */}
             <div className="border-b pb-4">
               <h3 className="font-semibold text-lg mb-3">Customer Details</h3>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="customerPhone">Phone *</Label>
                   <Input
@@ -510,7 +537,7 @@ export default function AMCPage() {
             {/* AMC Details Section */}
             <div>
               <h3 className="font-semibold text-lg mb-3">AMC Details</h3>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="startDate">Start Date *</Label>
                   <DatePicker
@@ -551,22 +578,38 @@ export default function AMCPage() {
                 />
               </div>
               
-              <div className="mt-4">
-                <Label htmlFor="status">Status *</Label>
-                <Select
-                  value={editStatus}
-                  onValueChange={(value) => setEditStatus(value as any)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ACTIVE">Active</SelectItem>
-                    <SelectItem value="EXPIRED">Expired</SelectItem>
-                    <SelectItem value="CANCELLED">Cancelled</SelectItem>
-                    <SelectItem value="RENEWED">Renewed</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="amcAmount">AMC Amount (₹)</Label>
+                  <Input
+                    id="amcAmount"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    inputMode="decimal"
+                    value={editAmcAmount}
+                    onChange={(e) => setEditAmcAmount(e.target.value)}
+                    placeholder="e.g. 7000"
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="status">Status *</Label>
+                  <Select
+                    value={editStatus}
+                    onValueChange={(value) => setEditStatus(value as any)}
+                  >
+                    <SelectTrigger className="mt-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ACTIVE">Active</SelectItem>
+                      <SelectItem value="EXPIRED">Expired</SelectItem>
+                      <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                      <SelectItem value="RENEWED">Renewed</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               
               <div className="mt-4 flex items-center space-x-2">
@@ -624,7 +667,7 @@ export default function AMCPage() {
             </div>
           </div>
           
-          <DialogFooter>
+          <DialogFooter className="flex-col-reverse sm:flex-row gap-2">
             <Button
               variant="outline"
               onClick={() => {
@@ -632,12 +675,14 @@ export default function AMCPage() {
                 setSelectedAMC(null);
               }}
               disabled={isSaving}
+              className="w-full sm:w-auto"
             >
               Cancel
             </Button>
             <Button
               onClick={handleSave}
               disabled={isSaving}
+              className="w-full sm:w-auto"
             >
               {isSaving ? 'Saving...' : 'Save Changes'}
             </Button>

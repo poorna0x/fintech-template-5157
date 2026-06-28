@@ -1661,6 +1661,83 @@ const AdminDashboard = () => {
     }
   }, [loadedCompletedJobDetails, loadingCompletedJobDetails]);
 
+  /** Keep embedded job.customer in sync after Edit Customer (completed tab reads email from job rows). */
+  const patchCustomerContactOnJobs = useCallback(
+    (
+      customerId: string,
+      contact: {
+        email?: string | null;
+        phone?: string | null;
+        alternate_phone?: string | null;
+        full_name?: string | null;
+      },
+    ) => {
+      const mergeCustomer = (existing: any) => {
+        if (!existing) return existing;
+        const next = { ...existing };
+        if (contact.email !== undefined) next.email = contact.email;
+        if (contact.phone !== undefined) next.phone = contact.phone;
+        if (contact.alternate_phone !== undefined) {
+          next.alternate_phone = contact.alternate_phone;
+          next.alternatePhone = contact.alternate_phone;
+        }
+        if (contact.full_name !== undefined) {
+          next.full_name = contact.full_name;
+          next.fullName = contact.full_name;
+        }
+        return next;
+      };
+
+      setJobs((prev) =>
+        prev.map((job) => {
+          const cid = String((job as any).customer_id || job.customerId || '');
+          if (cid !== customerId) return job;
+          const embedded = (job as any).customer || job.customer;
+          if (!embedded) return job;
+          return { ...job, customer: mergeCustomer(embedded) };
+        }),
+      );
+
+      setLoadedCompletedJobDetails((prev) => {
+        let touched = false;
+        const next = { ...prev };
+        for (const [jobId, row] of Object.entries(prev)) {
+          const cid = String((row as any).customer_id || (row as any).customerId || '');
+          if (cid !== customerId) continue;
+          const embedded = (row as any).customer;
+          if (!embedded) continue;
+          next[jobId] = { ...row, customer: mergeCustomer(embedded) };
+          touched = true;
+        }
+        return touched ? next : prev;
+      });
+    },
+    [],
+  );
+
+  const applyListCustomerContactToCachedJob = (cached: any, listJob: any) => {
+    const listCustomer = listJob?.customer;
+    if (!listCustomer) return cached;
+    const mergedCustomer = cached.customer
+      ? {
+          ...cached.customer,
+          email: listCustomer.email ?? cached.customer.email,
+          phone: listCustomer.phone ?? cached.customer.phone,
+          alternate_phone:
+            listCustomer.alternate_phone ??
+            listCustomer.alternatePhone ??
+            cached.customer.alternate_phone,
+          alternatePhone:
+            listCustomer.alternatePhone ??
+            listCustomer.alternate_phone ??
+            cached.customer.alternatePhone,
+          full_name: listCustomer.full_name ?? listCustomer.fullName ?? cached.customer.full_name,
+          fullName: listCustomer.fullName ?? listCustomer.full_name ?? cached.customer.fullName,
+        }
+      : listCustomer;
+    return { ...cached, customer: mergedCustomer };
+  };
+
   const applyAdminSnapshot = useCallback((snap: AdminDashboardSnapshot) => {
     const jobList = (snap.jobs as Job[]) ?? [];
     setJobs(jobList);
@@ -3213,6 +3290,16 @@ const AdminDashboard = () => {
         setCustomers(prevCustomers => 
           prevCustomers.map(c => c.id === editingCustomer.id ? transformedCustomer : c)
         );
+        patchCustomerContactOnJobs(editingCustomer.id, {
+          email: transformedCustomer.email ?? null,
+          phone: transformedCustomer.phone ?? null,
+          alternate_phone:
+            (transformedCustomer as any).alternate_phone ??
+            transformedCustomer.alternatePhone ??
+            null,
+          full_name:
+            (transformedCustomer as any).full_name ?? transformedCustomer.fullName ?? null,
+        });
       } else {
         // Fallback: update local state manually if DB doesn't return updated data
         setCustomers(prevCustomers => {
@@ -6095,6 +6182,8 @@ const AdminDashboard = () => {
     hapticTap();
     await invalidateAdminDashboardCaches();
     jobsListCacheRef.current.clear();
+    clearModuleJobsListCache();
+    setLoadedCompletedJobDetails({});
     setModuleDashboardSessionReady(true);
     try {
       const sessionReady = await ensureAdminSupabaseSession();
@@ -10887,7 +10976,7 @@ const AdminDashboard = () => {
                           ? (() => {
                               const c = cachedCompleted as any;
                               const j = job as any;
-                              const out = { ...c };
+                              let out = { ...c };
                               for (const k of [
                                 'lead_cost',
                                 'parts_cost_total',
@@ -10899,6 +10988,7 @@ const AdminDashboard = () => {
                                   out[k] = j[k];
                                 }
                               }
+                              out = applyListCustomerContactToCachedJob(out, j);
                               return out;
                             })()
                           : job;
@@ -11851,9 +11941,16 @@ const AdminDashboard = () => {
         dbModels={dbModels}
         onCustomerUpdated={(updatedCustomer) => {
           setCustomers(customers.map(c => c.id === updatedCustomer.id ? updatedCustomer : c));
+          patchCustomerContactOnJobs(updatedCustomer.id, {
+            email: updatedCustomer.email ?? null,
+            phone: updatedCustomer.phone ?? null,
+            alternate_phone:
+              (updatedCustomer as any).alternate_phone ?? updatedCustomer.alternatePhone ?? null,
+            full_name: (updatedCustomer as any).full_name ?? updatedCustomer.fullName ?? null,
+          });
           setEditingCustomer(null);
           setEditDialogOpen(false);
-          loadDashboardData();
+          void loadFilteredJobs(statusFilter, currentPage, { silent: true });
         }}
         onLoadBrandsAndModels={loadBrandsAndModels}
         onCustomerDeleted={(customerId) => {
