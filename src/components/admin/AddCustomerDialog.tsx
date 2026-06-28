@@ -88,6 +88,7 @@ export interface JobAssignedToTechnicianPayload {
   customerName: string;
   visibleAddress?: string;
   address?: { area?: string; city?: string };
+  leadSource?: string;
 }
 
 // Keep unsaved Add Customer input in localStorage so closing the dialog (or a refresh)
@@ -1319,6 +1320,10 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
             'Customer',
           visibleAddress: formData.visible_address,
           address: customerData.address,
+          leadSource:
+            step5JobData.lead_source === 'Other'
+              ? step5JobData.lead_source_custom || 'Other'
+              : step5JobData.lead_source,
         });
       }
 

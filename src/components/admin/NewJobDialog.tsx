@@ -466,6 +466,10 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
         newJobFormData.service_sub_type === 'Other'
           ? newJobFormData.service_sub_type_custom
           : newJobFormData.service_sub_type;
+      const leadSourceToNotify =
+        newJobFormData.lead_source === 'Other'
+          ? newJobFormData.lead_source_custom || 'Other'
+          : newJobFormData.lead_source;
 
       handleClose();
 
@@ -492,6 +496,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
           customerName,
           visibleAddress: customerVisible,
           address: customer.address as { area?: string; city?: string } | undefined,
+          leadSource: leadSourceToNotify,
         });
       }
     } catch (error) {

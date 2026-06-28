@@ -122,7 +122,7 @@ const TechnicianPayments = lazyDefault(() => import('./TechnicianPayments'));
 const BillingStats = lazyDefault(() => import('./BillingStats'));
 const Analytics = lazyDefault(() => import('./Analytics'));
 const InventoryManagement = lazyDefault(() => import('./InventoryManagement'));
-import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, levenshteinDistance, calculateSimilarity, extractPhotoUrls, normalizePhotoUrl, parseJobRequirements, getFormattedTimeSlot, findLeadSource, normalizeLeadType, normalizeServiceSubType, completedJobMatchesDashboardClientFilters, isOfficeCompletedJob } from '@/lib/adminUtils';
+import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, levenshteinDistance, calculateSimilarity, extractPhotoUrls, normalizePhotoUrl, parseJobRequirements, getFormattedTimeSlot, findLeadSource, getLeadSourceFromJob, normalizeLeadType, normalizeServiceSubType, completedJobMatchesDashboardClientFilters, isOfficeCompletedJob } from '@/lib/adminUtils';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { getLocationLinkFromObject } from '@/lib/jobLocationHelpers';
 import { enrichJobsWithAfterPhotosIfNeeded } from '@/lib/jobReportPhotos';
@@ -937,6 +937,7 @@ const AdminDashboard = () => {
   const [whatsappServiceSubType, setWhatsappServiceSubType] = useState<string>('');
   const [whatsappCustomerName, setWhatsappCustomerName] = useState<string>('');
   const [whatsappLocation, setWhatsappLocation] = useState<string>('');
+  const [whatsappLeadSource, setWhatsappLeadSource] = useState<string>('');
   const [jobToEdit, setJobToEdit] = useState<Job | null>(null);
   const [editJobDialogOpen, setEditJobDialogOpen] = useState(false);
   const [photoToDelete, setPhotoToDelete] = useState<{jobId: string, photoIndex: number, photoUrl: string} | null>(null);
@@ -6220,6 +6221,7 @@ const AdminDashboard = () => {
         const addr = customerForWhatsApp?.address || (jobToAssign as any).service_address;
         const vis = customerForWhatsApp?.visible_address;
         const locationText = (vis && String(vis).trim()) ? String(vis).trim() : (addr?.area || addr?.city || '');
+        const leadSource = getLeadSourceFromJob(jobToAssign as Record<string, unknown>);
         setWhatsappTechnician({
           name: assignedTechnician.fullName,
           phone: assignedTechnician.phone
@@ -6227,6 +6229,7 @@ const AdminDashboard = () => {
         setWhatsappServiceSubType(serviceSubType);
         setWhatsappCustomerName(customerName);
         setWhatsappLocation(locationText || '');
+        setWhatsappLeadSource(leadSource);
         setWhatsappDialogOpen(true);
       }
       
@@ -6451,6 +6454,7 @@ const AdminDashboard = () => {
         const addr = customerForWhatsApp?.address || (jobToReassign as any).service_address;
         const vis = customerForWhatsApp?.visible_address;
         const locationText = (vis && String(vis).trim()) ? String(vis).trim() : (addr?.area || addr?.city || '');
+        const leadSource = getLeadSourceFromJob(jobToReassign as Record<string, unknown>);
         setWhatsappTechnician({
           name: reassignedTechnician.fullName,
           phone: reassignedTechnician.phone
@@ -6458,6 +6462,7 @@ const AdminDashboard = () => {
         setWhatsappServiceSubType(serviceSubType);
         setWhatsappCustomerName(customerName);
         setWhatsappLocation(locationText || '');
+        setWhatsappLeadSource(leadSource);
         setWhatsappDialogOpen(true);
       }
       
@@ -11787,6 +11792,7 @@ const AdminDashboard = () => {
           setWhatsappServiceSubType(payload.serviceSubType);
           setWhatsappCustomerName(payload.customerName);
           setWhatsappLocation(locationText || '');
+          setWhatsappLeadSource(payload.leadSource || '');
           setWhatsappDialogOpen(true);
         }}
         onCheckExistingCustomer={checkExistingCustomer}
@@ -12130,6 +12136,7 @@ const AdminDashboard = () => {
           setWhatsappServiceSubType(payload.serviceSubType);
           setWhatsappCustomerName(payload.customerName);
           setWhatsappLocation(locationText || '');
+          setWhatsappLeadSource(payload.leadSource || '');
           setWhatsappDialogOpen(true);
         }}
       />
@@ -13421,6 +13428,7 @@ const AdminDashboard = () => {
           serviceSubType={whatsappServiceSubType}
           customerName={whatsappCustomerName}
           location={whatsappLocation}
+          leadSource={whatsappLeadSource}
         />
       )}
 

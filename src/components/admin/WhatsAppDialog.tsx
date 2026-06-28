@@ -12,6 +12,7 @@ interface WhatsAppDialogProps {
   serviceSubType: string;
   customerName: string;
   location?: string;
+  leadSource?: string;
 }
 
 const WhatsAppDialog: React.FC<WhatsAppDialogProps> = ({
@@ -21,10 +22,12 @@ const WhatsAppDialog: React.FC<WhatsAppDialogProps> = ({
   technicianPhone,
   serviceSubType,
   customerName,
-  location
+  location,
+  leadSource
 }) => {
   const locationText = location?.trim() ?? '';
-  const message = `New ${serviceSubType.toLowerCase()} assigned - ${customerName}${locationText ? ` - ${locationText}` : ''}`;
+  const leadSourceText = leadSource?.trim() ?? '';
+  const message = `New ${serviceSubType.toLowerCase()} assigned - ${customerName}${locationText ? ` - ${locationText}` : ''}${leadSourceText ? ` - ${leadSourceText}` : ''}`;
   
   // Format phone number for WhatsApp (remove any non-digit characters except +)
   const formatPhoneForWhatsApp = (phone: string): string => {
