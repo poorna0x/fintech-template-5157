@@ -90,8 +90,8 @@ function getJobServiceAddress(job: Record<string, unknown>): string {
   return '';
 }
 
-function getJobDocumentBrand(job: Record<string, unknown>): DocumentBrand {
-  return normalizeDocumentBrand(job.service_brand) || 'hydrogenro';
+function getJobDocumentBrand(job: Record<string, unknown>): DocumentBrand | undefined {
+  return normalizeDocumentBrand(job.service_brand) ?? undefined;
 }
 
 function getInvoiceDocumentBrand(companyInfo: unknown): DocumentBrand {
