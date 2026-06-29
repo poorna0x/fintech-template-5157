@@ -9900,6 +9900,15 @@ const TechnicianDashboard = () => {
                                   <span className="text-sm text-gray-900 flex-1 min-w-0 break-words">{equipmentDisplay.value}</span>
                                 </div>
                               )}
+
+                              {completionNotes && (
+                                <div className="rounded-lg border border-violet-200 bg-violet-50/90 px-3 py-2.5">
+                                  <div className="text-xs font-semibold uppercase tracking-wide text-violet-800 mb-1">
+                                    Notes
+                                  </div>
+                                  <div className="text-sm text-violet-950/90 whitespace-pre-wrap">{completionNotes}</div>
+                                </div>
+                              )}
                               
                               {/* Payment Screenshot & Bill Photos - Combined Section */}
                               {reportBillAllPhotos.length > 0 ? (
@@ -10045,14 +10054,6 @@ const TechnicianDashboard = () => {
                                 </div>
                                 );
                               })()}
-                              
-                              {/* Completion Notes */}
-                              {completionNotes && (
-                                <div className="mt-3 pt-3 border-t border-gray-200">
-                                  <div className="font-medium text-gray-900 mb-1">Notes:</div>
-                                  <div className="text-sm text-gray-700 whitespace-pre-wrap">{completionNotes}</div>
-                                </div>
-                              )}
                               
                               {/* Completed By */}
                               {completedByName && (

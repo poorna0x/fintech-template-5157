@@ -1617,6 +1617,28 @@ export const db = {
       return { data: enriched, error: null };
     },
 
+    /** Admin customer search: jobs whose job_number matches the query (incl. customer embed). */
+    async searchByJobNumberForAdmin(query: string, limit = 20) {
+      const trimmed = (query ?? '').trim();
+      if (trimmed.length < 2) return { data: [], error: null };
+      const escaped = escapeForLike(trimmed);
+      const cols = [
+        ...JOB_BY_CUSTOMER_SLIM_COLS,
+        'description',
+        'completion_notes',
+        `customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`,
+      ].join(', ');
+
+      const { data, error } = await supabase
+        .from('jobs')
+        .select(cols)
+        .ilike('job_number', `%${escaped}%`)
+        .order('completed_at', { ascending: false, nullsFirst: false })
+        .limit(Math.min(Math.max(limit, 1), 30));
+
+      return { data: data || [], error };
+    },
+
     /**
      * Gallery / delete-photo flows: only fields used to aggregate or mutate photo URLs.
      * Much smaller than getByCustomerIdFull (*).

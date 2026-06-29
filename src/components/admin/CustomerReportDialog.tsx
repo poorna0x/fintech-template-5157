@@ -17,6 +17,8 @@ interface CustomerReportDialogProps {
   technicians: Technician[];
   onPhotoClick?: (url: string, index: number, total: number) => void;
   onBillPhotosClick?: (photos: string[], index: number) => void;
+  /** Admin: jump to Completed tab for this job's completion date. */
+  onNavigateToCompletedJob?: (customer: Customer, job: Job) => void;
 }
 
 const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
@@ -25,7 +27,8 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
   customer,
   technicians,
   onPhotoClick,
-  onBillPhotosClick
+  onBillPhotosClick,
+  onNavigateToCompletedJob,
 }) => {
   const [customerReportJobs, setCustomerReportJobs] = useState<any[]>([]);
   const [loadingCustomerReportJobs, setLoadingCustomerReportJobs] = useState(false);
@@ -236,9 +239,19 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                             {(job as any).service_type || job.serviceType} - {(job as any).service_sub_type || job.serviceSubType}
                           </div>
                           {completedWhenLabel && (
-                            <div className="text-xs text-muted-foreground mt-1">
-                              Completed {completedWhenLabel}
-                            </div>
+                            onNavigateToCompletedJob ? (
+                              <button
+                                type="button"
+                                className="text-xs text-muted-foreground hover:underline mt-1 text-left cursor-pointer"
+                                onClick={() => onNavigateToCompletedJob(customer, job as Job)}
+                              >
+                                Completed {completedWhenLabel}
+                              </button>
+                            ) : (
+                              <div className="text-xs text-muted-foreground mt-1">
+                                Completed {completedWhenLabel}
+                              </div>
+                            )
                           )}
                         </div>
                         <Badge className="bg-green-100 text-green-800">Completed</Badge>
@@ -327,6 +340,15 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                           <div className="flex items-start gap-2">
                             <span className="text-sm font-medium text-foreground/90 w-36 shrink-0">{equipmentDisplay.label}:</span>
                             <span className="text-sm text-foreground flex-1 min-w-0 break-words">{equipmentDisplay.value}</span>
+                          </div>
+                        )}
+
+                        {completionNotes && (
+                          <div className="rounded-lg border border-violet-200 bg-violet-50/90 px-3 py-2.5">
+                            <div className="text-xs font-semibold uppercase tracking-wide text-violet-800 mb-1">
+                              Notes
+                            </div>
+                            <div className="text-sm text-violet-950/90 whitespace-pre-wrap">{completionNotes}</div>
                           </div>
                         )}
                         
@@ -457,13 +479,6 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                           </div>
                         )}
                         
-                        {completionNotes && (
-                          <div className="mt-3 pt-3 border-t border-border">
-                            <div className="font-medium text-foreground mb-1">Notes:</div>
-                            <div className="text-sm text-foreground/90 whitespace-pre-wrap">{completionNotes}</div>
-                          </div>
-                        )}
-                        
                         {completedByName && (
                           <div className="mt-3 pt-3 border-t border-border">
                             <div className="flex items-center gap-2">
@@ -472,7 +487,7 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                             </div>
                           </div>
                         )}
-                        
+
                         {job.description && (
                           <div className="mt-3 pt-3 border-t border-border">
                             <div className="font-medium text-foreground mb-1">Description:</div>

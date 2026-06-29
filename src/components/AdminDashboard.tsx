@@ -122,7 +122,7 @@ const TechnicianPayments = lazyDefault(() => import('./TechnicianPayments'));
 const BillingStats = lazyDefault(() => import('./BillingStats'));
 const Analytics = lazyDefault(() => import('./Analytics'));
 const InventoryManagement = lazyDefault(() => import('./InventoryManagement'));
-import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, levenshteinDistance, calculateSimilarity, extractPhotoUrls, normalizePhotoUrl, parseJobRequirements, getFormattedTimeSlot, findLeadSource, getLeadSourceFromJob, getJobCustomTimeLabel, normalizeLeadType, normalizeServiceSubType, completedJobMatchesDashboardClientFilters, isOfficeCompletedJob } from '@/lib/adminUtils';
+import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, levenshteinDistance, calculateSimilarity, extractPhotoUrls, normalizePhotoUrl, parseJobRequirements, getFormattedTimeSlot, findLeadSource, getLeadSourceFromJob, getJobCustomTimeLabel, normalizeLeadType, normalizeServiceSubType, completedJobMatchesDashboardClientFilters, isOfficeCompletedJob, jobCompletionLocalDateIso } from '@/lib/adminUtils';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { getLocationLinkFromObject } from '@/lib/jobLocationHelpers';
 import { enrichJobsWithAfterPhotosIfNeeded } from '@/lib/jobReportPhotos';
@@ -813,6 +813,7 @@ const AdminDashboard = () => {
   const [commonQrCodes, setCommonQrCodes] = useState<CommonQrCode[]>([]);
   const [customerReportDialogOpen, setCustomerReportDialogOpen] = useState(false);
   const [selectedCustomerForReport, setSelectedCustomerForReport] = useState<Customer | null>(null);
+  const [highlightCompletedJobId, setHighlightCompletedJobId] = useState<string | null>(null);
   const [loadedCompletedJobDetails, setLoadedCompletedJobDetails] = useState<Record<string, any>>({});
   const [loadingCompletedJobDetails, setLoadingCompletedJobDetails] = useState<Record<string, boolean>>({});
   const [editCompletedJobDialogOpen, setEditCompletedJobDialogOpen] = useState(false);
@@ -2998,6 +2999,50 @@ const AdminDashboard = () => {
     setSelectedCustomerForReport(c);
     setCustomerReportDialogOpen(true);
   };
+
+  const handleNavigateToCompletedJobFromReport = useCallback((customer: Customer, job: Job) => {
+    const dateStr = jobCompletionLocalDateIso(job as Record<string, unknown>);
+    if (!dateStr) {
+      toast.error('This job has no completion date');
+      return;
+    }
+
+    setCustomerReportDialogOpen(false);
+    setSearchQuery('');
+    setSearchTerm('');
+    setSearchResults(null);
+    setCompletedDatePreset('day');
+    setCompletedDateFilter(dateStr);
+    setCompletedRangeStartDate(dateStr);
+    setCompletedRangeEndDate(dateStr);
+    setCompletedLeadTypeFilter('all');
+    setCompletedServiceSubTypeFilter('all');
+    setCompletedByFilter('all');
+    setCurrentPage(1);
+    setStatusFilter('COMPLETED');
+    setHighlightCompletedJobId(job.id);
+
+    requestAnimationFrame(() => {
+      document.querySelector('[data-admin-customer-list]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!highlightCompletedJobId || statusFilter !== 'COMPLETED') return;
+    const hasJob = jobs.some((j) => j.id === highlightCompletedJobId);
+    if (!hasJob) return;
+
+    const timer = window.setTimeout(() => {
+      const el = document.querySelector(`[data-completed-job-id="${highlightCompletedJobId}"]`);
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 350);
+
+    const clearTimer = window.setTimeout(() => setHighlightCompletedJobId(null), 5000);
+    return () => {
+      window.clearTimeout(timer);
+      window.clearTimeout(clearTimer);
+    };
+  }, [highlightCompletedJobId, jobs, statusFilter]);
 
   const handleEditCustomer = async (customer: Customer) => {
     const c = await loadFullCustomerForAction(customer);
@@ -5971,14 +6016,60 @@ const AdminDashboard = () => {
     setSearchTerm(trimmedQuery);
     setSearchQuery(trimmedQuery);
     if (trimmedQuery) {
-      const { data, error } = await db.customers.searchSlim(trimmedQuery, 50, {
-        includeAddressAndLocation: true,
-      });
-      if (error) {
+      const [{ data, error }, { data: jobHits, error: jobSearchError }] = await Promise.all([
+        db.customers.searchSlim(trimmedQuery, 50, { includeAddressAndLocation: true }),
+        db.jobs.searchByJobNumberForAdmin(trimmedQuery, 25),
+      ]);
+
+      if (error || jobSearchError) {
         toast.error('Search failed');
         setSearchResults([]);
       } else {
-        setSearchResults((data || []).map((row: any) => transformCustomerData(row)));
+        const customerMap = new Map<string, Record<string, unknown>>();
+        for (const row of data || []) {
+          customerMap.set(String((row as { id: string }).id), row as Record<string, unknown>);
+        }
+
+        for (const job of jobHits || []) {
+          const embedded = (job as { customer?: Record<string, unknown> }).customer;
+          const customerId = String(
+            (job as { customer_id?: string }).customer_id || embedded?.id || ''
+          );
+          if (customerId && !customerMap.has(customerId) && embedded?.id) {
+            customerMap.set(customerId, embedded);
+          }
+        }
+
+        const missingIds = [
+          ...new Set(
+            (jobHits || [])
+              .map((job) => String((job as { customer_id?: string }).customer_id || ''))
+              .filter((id) => id && !customerMap.has(id))
+          ),
+        ];
+        if (missingIds.length) {
+          await Promise.all(
+            missingIds.map(async (id) => {
+              const { data: cust } = await db.customers.getById(id);
+              if (cust) customerMap.set(id, cust as Record<string, unknown>);
+            })
+          );
+        }
+
+        setSearchResults(
+          Array.from(customerMap.values()).map((row) => transformCustomerData(row))
+        );
+
+        if (jobHits?.length) {
+          setJobs((prev) => {
+            const byId = new Map(prev.map((j) => [j.id, j]));
+            for (const hit of jobHits) {
+              const id = String((hit as { id: string }).id);
+              byId.set(id, { ...byId.get(id), ...hit });
+            }
+            return Array.from(byId.values());
+          });
+        }
       }
     } else {
       setSearchResults(null);
@@ -10771,7 +10862,7 @@ const AdminDashboard = () => {
           )}
           
           {/* Customer Cards with Jobs */}
-          <div className="space-y-6">
+          <div className="space-y-6" data-admin-customer-list>
             {showJobsListLoader ? (
               <AdminInlineLoader message={`Loading ${jobsListRefreshLabel} jobs...`} />
             ) : displayedCustomers.length === 0 ? (
@@ -11211,7 +11302,15 @@ const AdminDashboard = () => {
                         const paymentPhotosFromReq = paymentPhotosReq?.payment_photos || [];
                         
                         return (
-                          <div key={job.id}>
+                          <div
+                            key={job.id}
+                            data-completed-job-id={job.id}
+                            className={
+                              highlightCompletedJobId === job.id
+                                ? 'rounded-xl ring-2 ring-blue-500 ring-offset-2 transition-shadow'
+                                : undefined
+                            }
+                          >
                             <CompletedJobSection
                               job={fullJob}
                               technicians={techniciansForReports.length > 0 ? techniciansForReports : technicians}
@@ -13105,6 +13204,7 @@ const AdminDashboard = () => {
           setPhotoDownloadMeta({ customerName: selectedCustomerForReport?.fullName, type: 'bill' });
           setPhotoViewerOpen(true);
         }}
+        onNavigateToCompletedJob={handleNavigateToCompletedJobFromReport}
       />
 
       {/* Edit Completed Job Dialog */}

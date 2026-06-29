@@ -636,6 +636,21 @@ export function getJobEquipmentDisplay(
   return { label: getEquipmentModelLabel(jobServiceType), value };
 }
 
+/** Local calendar date (yyyy-mm-dd) for a job's completion timestamp. */
+export function jobCompletionLocalDateIso(
+  job: Record<string, unknown>
+): string | null {
+  const raw =
+    job.completed_at ??
+    job.completedAt ??
+    job.end_time ??
+    job.endTime;
+  if (!raw) return null;
+  const d = new Date(String(raw));
+  if (Number.isNaN(d.getTime())) return null;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 const SERVICE_SUB_TYPE_NORMALIZE_MAP: Record<string, string> = {
   service: 'Service',
   installation: 'Installation',
