@@ -16,7 +16,7 @@ interface SparePart {
 // Hardcoded RO filter spare parts - only name and price (Premium Pricing)
 const SPARE_PARTS: SparePart[] = [
   // Service Charges
-  { id: 'service-001', name: 'Inspection/Visiting Charge', price: 200 },
+  { id: 'service-001', name: 'Inspection/Visiting Charge', price: 300 },
   { id: 'service-002', name: 'Service Charge', price: 400 },
 
   // Sediment Filters
@@ -206,7 +206,7 @@ const SpareParts = () => {
                       Important Note:
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      Inspection charge (₹200) does not include service. Service charge is ₹400. You pay either ₹200 for inspection only or ₹400 for service.
+                      Inspection charge (₹300) does not include service. Service charge is ₹400. You pay either ₹300 for inspection only or ₹400 for service.
                     </p>
                   </div>
                 </div>
