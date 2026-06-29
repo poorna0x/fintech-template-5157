@@ -136,15 +136,15 @@ async function sendBookingAdminNotification(details = {}) {
       )
       .join('');
 
-    const html = `<!DOCTYPE html><html><body style="margin:0;padding:16px;background:#f6f7f9;font-family:Arial,Helvetica,sans-serif;">
-      <div style="max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
-        <div style="background:#0f172a;color:#fff;padding:16px 20px;font-size:16px;font-weight:700;">
+    const html = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f6f7f9;font-family:Arial,Helvetica,sans-serif;">
+      <div style="width:100%;background:#ffffff;border:0;border-radius:0;overflow:hidden;">
+        <div style="background:#0f172a;color:#fff;padding:16px 16px;font-size:16px;font-weight:700;">
           New ${escapeHtml(brand)} Booking Confirmed
         </div>
         <div style="padding:8px 8px 16px;">
           <table style="width:100%;border-collapse:collapse;font-size:14px;">${htmlRows}</table>
         </div>
-        <div style="padding:12px 20px;color:#6b7280;font-size:12px;border-top:1px solid #eee;">
+        <div style="padding:12px 16px;color:#6b7280;font-size:12px;border-top:1px solid #eee;">
           Automated notification from the ${escapeHtml(brand)} booking system.
         </div>
       </div>

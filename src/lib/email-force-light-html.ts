@@ -16,6 +16,18 @@ export const EMAIL_DARK_BODY = '#a1a1aa';
 export const EMAIL_DARK_LABEL = '#8e8e93';
 export const EMAIL_DARK_BORDER = '#3a3a3c';
 
+/** Full-bleed customer email shell — no side gutters; 16px inner padding. */
+export const EMAIL_LAYOUT = {
+  outerCellPadding: 'padding:0;',
+  cardTableBase:
+    'width:100%;border:0;border-radius:0;overflow:hidden;box-shadow:none;',
+  headerPadding: 'padding:24px 16px 20px',
+  heroBodyPadding: 'padding:24px 16px 8px',
+  mainBodyPadding: 'padding:8px 16px 24px',
+  sectionPadding: (top: string, bottom: string) => `padding:${top} 16px ${bottom}`,
+  footerPadding: 'padding:18px 16px 22px',
+} as const;
+
 function sel(prefix: string): string {
   return prefix ? `${prefix} ` : '';
 }

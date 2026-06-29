@@ -17,6 +17,7 @@ import {
   EMAIL_PAGE_BG,
   EMAIL_CARD_BG,
   EMAIL_FOOTER_BG,
+  EMAIL_LAYOUT,
 } from '@/lib/email-force-light-html';
 
 export type AdminEmailTemplateType =
@@ -514,15 +515,15 @@ function buildAdminDocumentEmail(
 <body ${buildEmailForceLightBodyAttrs(`background-color:${C.pageBg};font-family:${EMAIL_FONT};`)}>
   <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="email-force-light-page" bgcolor="${EMAIL_PAGE_BG}" style="background-color:${C.pageBg};">
     <tr>
-      <td align="center" style="padding:24px 16px;">
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="email-force-light-card" bgcolor="${EMAIL_CARD_BG}" style="max-width:560px;background-color:${C.cardBg};border:1px solid ${C.border};border-radius:14px;overflow:hidden;box-shadow:${C.cardShadow};">
+      <td align="center" style="${EMAIL_LAYOUT.outerCellPadding}">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="email-force-light-card" bgcolor="${EMAIL_CARD_BG}" style="${EMAIL_LAYOUT.cardTableBase}background-color:${C.cardBg};font-family:${EMAIL_FONT};">
           <tr>
-            <td align="center" class="email-force-light-header" bgcolor="${EMAIL_CARD_BG}" style="padding:28px 28px 22px;background-color:${C.cardBg};border-bottom:1px solid ${C.border};">
+            <td align="center" class="email-force-light-header" bgcolor="${EMAIL_CARD_BG}" style="${EMAIL_LAYOUT.headerPadding};background-color:${C.cardBg};border-bottom:1px solid ${C.border};">
               ${buildEmailLogoHeaderBlock(logoUrls, brandName)}
             </td>
           </tr>
           <tr>
-            <td class="email-force-light-body" bgcolor="${EMAIL_CARD_BG}" style="padding:28px 28px 8px;text-align:center;background-color:${C.cardBg};">
+            <td class="email-force-light-body" bgcolor="${EMAIL_CARD_BG}" style="${EMAIL_LAYOUT.heroBodyPadding};text-align:center;background-color:${C.cardBg};">
               <p class="email-force-light-muted" style="margin:0 0 8px;font-family:${EMAIL_FONT};font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1.2px;">${escapeHtml(eyebrow)}</p>
               <h1 class="email-force-light-heading" style="margin:0 0 14px;font-family:${EMAIL_FONT};font-size:24px;font-weight:700;letter-spacing:-0.03em;">${escapeHtml(headline)}</h1>
               <p class="email-body-text" style="margin:0;font-family:${EMAIL_FONT};font-size:15px;line-height:1.6;">
@@ -531,7 +532,7 @@ function buildAdminDocumentEmail(
             </td>
           </tr>
           <tr>
-            <td class="email-force-light-body" bgcolor="${EMAIL_CARD_BG}" style="padding:8px 28px 24px;background-color:${C.cardBg};">
+            <td class="email-force-light-body" bgcolor="${EMAIL_CARD_BG}" style="${EMAIL_LAYOUT.mainBodyPadding};background-color:${C.cardBg};">
               ${type === 'job_completion' ? messageBlock : `${detailsBlock}${messageBlock}`}
               <p class="email-section-label" style="margin:0 0 10px;font-family:${EMAIL_FONT};font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;text-align:center;">Need help?</p>
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
@@ -544,7 +545,7 @@ function buildAdminDocumentEmail(
             </td>
           </tr>
           <tr>
-            <td align="center" class="email-force-light-footer" bgcolor="${EMAIL_FOOTER_BG}" style="padding:18px 24px 22px;background-color:${C.footerBg};border-top:1px solid ${C.border};">
+            <td align="center" class="email-force-light-footer" bgcolor="${EMAIL_FOOTER_BG}" style="${EMAIL_LAYOUT.footerPadding};background-color:${C.footerBg};border-top:1px solid ${C.border};">
               <p class="email-details-title" style="margin:0 0 6px;font-family:${EMAIL_FONT};font-size:13px;font-weight:600;text-align:center;">${escapeHtml(brandName)}</p>
               <p class="email-footer-muted" style="margin:0 0 4px;font-family:${EMAIL_FONT};font-size:12px;text-align:center;">${preventAutoLinkText(contact.phoneDisplay)} &middot; ${preventAutoLinkText(contact.email)}</p>
               <p class="email-footer-muted" style="margin:0;font-family:${EMAIL_FONT};font-size:11px;text-align:center;">${preventAutoLinkText(contact.website)}</p>
