@@ -802,6 +802,13 @@ const AdminDashboard = () => {
   const [selectedJobForComplete, setSelectedJobForComplete] = useState<Job | null>(null);
   const [technicianSelectDialogOpen, setTechnicianSelectDialogOpen] = useState(false);
   const [selectedTechnicianForComplete, setSelectedTechnicianForComplete] = useState<string>('');
+  const completeFlowSnapshotRef = useRef<{
+    jobId: string;
+    assignedTechnicianId: string | null;
+    status: string;
+    assignedDate: string | null;
+  } | null>(null);
+  const suppressCompleteFlowRevertRef = useRef(false);
   // Complete job state moved to CompleteJobDialog component
   const [commonQrCodes, setCommonQrCodes] = useState<CommonQrCode[]>([]);
   const [customerReportDialogOpen, setCustomerReportDialogOpen] = useState(false);
@@ -8166,6 +8173,94 @@ const AdminDashboard = () => {
   // calculateAMCEndDate moved to CompleteJobDialog component
 
   // Handle job completion - first show technician selection
+  const snapshotJobAssignmentForCompleteFlow = (job: Job) => {
+    const assignedTechnicianId =
+      (job as any).assigned_technician_id ?? job.assignedTechnicianId ?? null;
+    completeFlowSnapshotRef.current = {
+      jobId: job.id,
+      assignedTechnicianId: assignedTechnicianId ? String(assignedTechnicianId) : null,
+      status: job.status,
+      assignedDate: (job as any).assigned_date ?? job.assignedDate ?? null,
+    };
+  };
+
+  const clearCompleteFlowSnapshot = () => {
+    completeFlowSnapshotRef.current = null;
+  };
+
+  const revertIncompleteCompleteFlow = useCallback(async () => {
+    const snapshot = completeFlowSnapshotRef.current;
+    if (!snapshot) return;
+    completeFlowSnapshotRef.current = null;
+
+    const applyLocalRevert = () => {
+      setJobs((prev) =>
+        prev.map((job) =>
+          job.id === snapshot.jobId
+            ? {
+                ...job,
+                assigned_technician_id: snapshot.assignedTechnicianId,
+                assignedTechnicianId: snapshot.assignedTechnicianId,
+                assigned_date: snapshot.assignedDate,
+                assignedDate: snapshot.assignedDate,
+                status: snapshot.status as Job['status'],
+              }
+            : job
+        )
+      );
+      setCustomerJobs((prev) => {
+        const updated = { ...prev };
+        Object.keys(updated).forEach((customerId) => {
+          updated[customerId] = updated[customerId].map((job) =>
+            job.id === snapshot.jobId
+              ? {
+                  ...job,
+                  assigned_technician_id: snapshot.assignedTechnicianId,
+                  assignedTechnicianId: snapshot.assignedTechnicianId,
+                  assigned_date: snapshot.assignedDate,
+                  assignedDate: snapshot.assignedDate,
+                  status: snapshot.status as Job['status'],
+                }
+              : job
+          );
+        });
+        return updated;
+      });
+    };
+
+    applyLocalRevert();
+
+    try {
+      const { data, error } = await db.jobs.getById(snapshot.jobId);
+      if (error || !data) return;
+
+      const row = data as Record<string, unknown>;
+      const status = String(row.status || '');
+      if (status === 'COMPLETED') return;
+
+      const currentAssign = row.assigned_technician_id ? String(row.assigned_technician_id) : null;
+      if (currentAssign === snapshot.assignedTechnicianId) return;
+
+      const { error: updateError } = await db.jobs.update(snapshot.jobId, {
+        assigned_technician_id: snapshot.assignedTechnicianId,
+        assigned_date: snapshot.assignedDate,
+        status: snapshot.status,
+      });
+      if (updateError) {
+        console.warn(
+          '[AdminDashboard] Could not revert assignment after cancelled complete flow:',
+          updateError
+        );
+        return;
+      }
+
+      const techIds = [currentAssign, snapshot.assignedTechnicianId].filter(Boolean) as string[];
+      if (techIds.length) broadcastTechnicianJobListRefresh(techIds);
+    } catch (err) {
+      console.warn('[AdminDashboard] Revert complete-flow assignment failed:', err);
+    }
+  }, []);
+
   const handleCompleteJob = async (job: Job) => {
     // Fetch full job data with customer if not already loaded
     let jobWithCustomer = job;
@@ -8182,6 +8277,7 @@ const AdminDashboard = () => {
     }
     
     setSelectedJobForComplete(jobWithCustomer);
+    snapshotJobAssignmentForCompleteFlow(jobWithCustomer);
     setSelectedTechnicianForComplete('');
     setTechnicianSelectDialogOpen(true);
   };
@@ -8216,18 +8312,10 @@ const AdminDashboard = () => {
     // Always fetch fresh QR codes when completing a job (cache can miss newly created codes)
     void loadQrCodes(true).catch((err) => console.error('Error loading QR codes:', err));
 
-    // Note: We don't update the job assignment here anymore
-    // The CompleteJobDialog will handle assigning the technician when completing the job
-    // This avoids the 400 error that can occur with the select query
-    // Just update local state for UI consistency (office completions keep no technician)
-    if (!isOfficeCompletion && selectedJobForComplete.assigned_technician_id !== selectedTechnicianForComplete) {
-      setJobs(prev => prev.map(job => 
-        job.id === selectedJobForComplete.id 
-          ? { ...job, assigned_technician_id: selectedTechnicianForComplete }
-          : job
-      ));
-    }
+    // Assignment is applied only when the job is actually completed.
+    // If the dialog is closed early, revertIncompleteCompleteFlow restores the prior assignment.
 
+    suppressCompleteFlowRevertRef.current = true;
     setTechnicianSelectDialogOpen(false);
     setCompleteDialogOpen(true);
   };
@@ -12826,7 +12914,21 @@ const AdminDashboard = () => {
       />
 
       {/* Technician Selection Dialog for Job Completion */}
-      <Dialog open={technicianSelectDialogOpen} onOpenChange={setTechnicianSelectDialogOpen}>
+      <Dialog
+        open={technicianSelectDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            if (suppressCompleteFlowRevertRef.current) {
+              suppressCompleteFlowRevertRef.current = false;
+            } else {
+              void revertIncompleteCompleteFlow();
+              setSelectedJobForComplete(null);
+              setSelectedTechnicianForComplete('');
+            }
+          }
+          setTechnicianSelectDialogOpen(open);
+        }}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Select Technician</DialogTitle>
@@ -12873,8 +12975,6 @@ const AdminDashboard = () => {
               variant="outline"
               onClick={() => {
                 setTechnicianSelectDialogOpen(false);
-                setSelectedTechnicianForComplete('');
-                setSelectedJobForComplete(null);
               }}
             >
               Cancel
@@ -12895,9 +12995,10 @@ const AdminDashboard = () => {
         open={completeDialogOpen}
         onOpenChange={(open) => {
           setCompleteDialogOpen(open);
-        if (!open) {
-          setSelectedJobForComplete(null);
-          setSelectedTechnicianForComplete('');
+          if (!open) {
+            void revertIncompleteCompleteFlow();
+            setSelectedJobForComplete(null);
+            setSelectedTechnicianForComplete('');
           }
         }}
         job={selectedJobForComplete}
@@ -12906,6 +13007,7 @@ const AdminDashboard = () => {
         onLoadQrCodes={loadQrCodes}
         selectedTechnicianId={selectedTechnicianForComplete}
         onJobCompleted={async (completedJobId?: string) => {
+          clearCompleteFlowSnapshot();
           // Mark this job as completed by admin so polling handler doesn't play sound for it
           if (completedJobId) {
             jobIdsCompletedByAdminRef.current.add(completedJobId);

@@ -625,8 +625,8 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
       });
 
       toast.success('Job completed successfully');
-      handleClose();
       onJobCompleted(job?.id);
+      handleClose();
     } catch (error: any) {
       console.error('❌ [CompleteJobDialog] Exception during job completion:', {
         error,
