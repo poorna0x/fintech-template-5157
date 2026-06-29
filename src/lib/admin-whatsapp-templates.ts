@@ -125,7 +125,13 @@ function buildDocumentWhatsApp(
   const detailLines: string[] = [];
   if (meta.showDocumentRef && data.documentRef.trim()) {
     const refLabel =
-      type === 'invoice' ? 'Invoice no.' : type === 'quotation' ? 'Quote no.' : 'Reference';
+      type === 'invoice'
+        ? 'Invoice no.'
+        : type === 'service_bill'
+          ? 'Bill no.'
+          : type === 'quotation'
+            ? 'Quote no.'
+            : 'Reference';
     detailLines.push(`${refLabel}: ${data.documentRef.trim()}`);
   }
   if (meta.showAmount && data.amount.trim()) {
@@ -141,7 +147,9 @@ function buildDocumentWhatsApp(
       ? 'AMC agreement'
       : type === 'invoice'
         ? 'Tax invoice'
-        : type === 'quotation'
+        : type === 'service_bill'
+          ? 'Service bill'
+          : type === 'quotation'
           ? 'Quotation'
           : type === 'service_reminder'
             ? 'Service reminder'

@@ -25,6 +25,7 @@ export type AdminEmailTemplateType =
   | 'amc_document'
   | 'warranty_document'
   | 'invoice'
+  | 'service_bill'
   | 'quotation'
   | 'service_reminder'
   | 'job_completion'
@@ -57,6 +58,8 @@ export interface AdminEmailTemplateMeta {
   showAmount: boolean;
   showDueDate: boolean;
   showCustomSubject: boolean;
+  /** PDF is generated from CRM record when sending (invoice / service bill). */
+  autoAttachPdf?: boolean;
 }
 
 export const ADMIN_EMAIL_TEMPLATE_META: Record<AdminEmailTemplateType, AdminEmailTemplateMeta> = {
@@ -86,11 +89,21 @@ export const ADMIN_EMAIL_TEMPLATE_META: Record<AdminEmailTemplateType, AdminEmai
   },
   invoice: {
     label: 'Tax invoice',
-    description: 'Send an invoice PDF with payment details.',
+    description: 'Send a GST tax invoice PDF — auto-attached from saved invoices.',
     showDocumentRef: true,
     showAmount: true,
     showDueDate: true,
     showCustomSubject: false,
+    autoAttachPdf: true,
+  },
+  service_bill: {
+    label: 'Service bill',
+    description: 'Send a normal service bill PDF from a completed job.',
+    showDocumentRef: true,
+    showAmount: true,
+    showDueDate: false,
+    showCustomSubject: false,
+    autoAttachPdf: true,
   },
   quotation: {
     label: 'Quotation',
@@ -351,6 +364,8 @@ function templateHeadline(type: AdminEmailTemplateType): string {
       return 'Warranty Card';
     case 'invoice':
       return 'Tax Invoice';
+    case 'service_bill':
+      return 'Service Bill';
     case 'quotation':
       return 'Quotation';
     case 'service_reminder':
@@ -370,6 +385,8 @@ function templateEyebrow(type: AdminEmailTemplateType): string {
       return 'Your coverage';
     case 'invoice':
       return 'Billing';
+    case 'service_bill':
+      return 'Service bill';
     case 'quotation':
       return 'Estimate';
     case 'service_reminder':
@@ -394,6 +411,8 @@ function buildSubject(
       return ref ? `Warranty Card — ${brandLabel} (${ref})` : `Warranty Card — ${brandLabel}`;
     case 'invoice':
       return ref ? `Tax Invoice — ${brandLabel} (${ref})` : `Tax Invoice — ${brandLabel}`;
+    case 'service_bill':
+      return ref ? `Service Bill — ${brandLabel} (${ref})` : `Service Bill — ${brandLabel}`;
     case 'quotation':
       return ref ? `Quotation — ${brandLabel} (${ref})` : `Quotation — ${brandLabel}`;
     case 'service_reminder':
@@ -417,7 +436,9 @@ function buildDetailsRows(
     const refLabel =
       type === 'invoice'
         ? 'Invoice no.'
-        : type === 'quotation'
+        : type === 'service_bill'
+          ? 'Bill no.'
+          : type === 'quotation'
           ? 'Quote no.'
           : type === 'job_completion'
             ? 'Job no.'
@@ -456,11 +477,124 @@ function buildDetailsRows(
               </table>`;
 }
 
+function buildGeneralAdminEmail(
+  data: AdminDocumentEmailData,
+  options?: AdminEmailBuildOptions
+): BookingConfirmationEmailResult {
+  const brand = data.documentBrand;
+  const assetOriginOpts = { allowLocalhost: options?.allowLocalhostAssets, brand };
+  const siteOrigin = options?.siteOrigin;
+  const brandName = getDocumentBrandLabel(brand);
+  const contact = BRAND_CONTACT[brand];
+  const logoUrls = getEmailLogoUrls(siteOrigin, brand, assetOriginOpts);
+  const whatsappIconUrl = getEmailWhatsappIconUrl(siteOrigin, brand, assetOriginOpts);
+  const phoneIconUrl = getEmailPhoneIconUrl(siteOrigin, brand, assetOriginOpts);
+  const customerName = data.customerName.trim() || 'Customer';
+  const message = data.message.trim();
+  const subject = buildSubject('general', brandName, data);
+  const attachmentBlock = attachmentNoticeBlock(options?.attachmentNames || []);
+
+  const messageBlock = message
+    ? `<p class="email-body-text" style="margin:0 0 24px;font-family:${EMAIL_FONT};font-size:15px;line-height:1.7;color:${C.body};white-space:pre-wrap;">${escapeHtml(message).replace(/\n/g, '<br>')}</p>`
+    : '';
+
+  const whatsappButton = actionButton(
+    `https://wa.me/${contact.whatsapp}`,
+    whatsappIconUrl,
+    'WhatsApp',
+    '#86efac',
+    '#15803d',
+    '#f0fdf4',
+    'whatsapp'
+  );
+  const callButton = actionButton(
+    `tel:${contact.phoneTel}`,
+    phoneIconUrl,
+    'Call us',
+    C.border,
+    C.heading,
+    '#fafafa',
+    'call'
+  );
+
+  const html = `<!DOCTYPE html>
+<html lang="en" style="color-scheme:light dark;">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="format-detection" content="telephone=no, date=no, email=no, address=no">
+  <title>${escapeHtml(subject)}</title>
+  ${buildEmailForceLightHead()}
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body ${buildEmailForceLightBodyAttrs(`background-color:${C.pageBg};font-family:${EMAIL_FONT};`)}>
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="email-force-light-page" bgcolor="${EMAIL_PAGE_BG}" style="background-color:${C.pageBg};">
+    <tr>
+      <td align="center" class="${EMAIL_LAYOUT.classes.outer}" style="${EMAIL_LAYOUT.outerCellPadding}">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="email-force-light-card ${EMAIL_LAYOUT.classes.card}" bgcolor="${EMAIL_CARD_BG}" style="${EMAIL_LAYOUT.cardTableBase}${EMAIL_LAYOUT.cardBorder(C.border)}${EMAIL_LAYOUT.cardShadow}background-color:${C.cardBg};font-family:${EMAIL_FONT};">
+          <tr>
+            <td align="center" class="email-force-light-header ${EMAIL_LAYOUT.classes.header}" bgcolor="${EMAIL_CARD_BG}" style="${EMAIL_LAYOUT.headerPadding};background-color:${C.cardBg};border-bottom:1px solid ${C.border};">
+              ${buildEmailLogoHeaderBlock(logoUrls, brandName)}
+            </td>
+          </tr>
+          <tr>
+            <td class="email-force-light-body ${EMAIL_LAYOUT.classes.main}" bgcolor="${EMAIL_CARD_BG}" style="${EMAIL_LAYOUT.mainBodyPadding};background-color:${C.cardBg};text-align:left;">
+              <p class="email-body-text" style="margin:0 0 16px;font-family:${EMAIL_FONT};font-size:16px;line-height:1.6;color:${C.heading};">
+                Hi <strong class="email-text-strong">${escapeHtml(customerName)}</strong>,
+              </p>
+              ${messageBlock}
+              <p class="email-section-label" style="margin:24px 0 10px;font-family:${EMAIL_FONT};font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;color:${C.label};">Need help?</p>
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                <tr>
+                  <td width="50%" style="padding-right:6px;vertical-align:top;">${whatsappButton}</td>
+                  <td width="50%" style="padding-left:6px;vertical-align:top;">${callButton}</td>
+                </tr>
+              </table>
+              ${attachmentBlock}
+            </td>
+          </tr>
+          <tr>
+            <td align="center" class="email-force-light-footer ${EMAIL_LAYOUT.classes.footer}" bgcolor="${EMAIL_FOOTER_BG}" style="${EMAIL_LAYOUT.footerPadding};background-color:${C.footerBg};border-top:1px solid ${C.border};">
+              <p class="email-details-title" style="margin:0 0 6px;font-family:${EMAIL_FONT};font-size:13px;font-weight:600;text-align:center;">${escapeHtml(brandName)}</p>
+              <p class="email-footer-muted" style="margin:0 0 4px;font-family:${EMAIL_FONT};font-size:12px;text-align:center;">${preventAutoLinkText(contact.phoneDisplay)} &middot; ${preventAutoLinkText(contact.email)}</p>
+              <p class="email-footer-muted" style="margin:0;font-family:${EMAIL_FONT};font-size:11px;text-align:center;">${preventAutoLinkText(contact.website)}</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  const textLines = [
+    subject,
+    '',
+    `Hi ${customerName},`,
+    '',
+    ...(message ? [message, ''] : []),
+    `WhatsApp: https://wa.me/${contact.whatsapp}`,
+    `Phone: ${contact.phoneDisplay}`,
+    `Email: ${contact.email}`,
+    ...(options?.attachmentNames?.length
+      ? ['', 'Attachments:', ...options.attachmentNames.map((n) => `- ${n}`)]
+      : []),
+    '',
+    brandName,
+  ];
+
+  return { subject, html, text: textLines.join('\n') };
+}
+
 function buildAdminDocumentEmail(
   type: AdminEmailTemplateType,
   data: AdminDocumentEmailData,
   options?: AdminEmailBuildOptions
 ): BookingConfirmationEmailResult {
+  if (type === 'general') {
+    return buildGeneralAdminEmail(data, options);
+  }
+
   const brand = data.documentBrand;
   const assetOriginOpts = { allowLocalhost: options?.allowLocalhostAssets, brand };
   const siteOrigin = options?.siteOrigin;
@@ -625,6 +759,8 @@ export function getDefaultDocumentMessage(type: AdminEmailTemplateType): string 
       return 'Please find your RO warranty card attached. Keep it safe and present it when you need warranty service.';
     case 'invoice':
       return 'Please find your tax invoice attached. Payment details are included in the document.';
+    case 'service_bill':
+      return 'Please find your service bill attached for your recent visit. Let us know if you have any questions.';
     case 'quotation':
       return 'Please find our quotation attached. Contact us to confirm or if you need any changes.';
     case 'service_reminder':

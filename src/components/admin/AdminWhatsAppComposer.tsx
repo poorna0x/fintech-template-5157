@@ -46,8 +46,9 @@ interface SentWhatsAppSummary {
 
 const TEMPLATE_ORDER: AdminEmailTemplateType[] = [
   'booking_confirmation',
-  'amc_document',
+  'service_bill',
   'invoice',
+  'amc_document',
   'quotation',
   'service_reminder',
   'general',

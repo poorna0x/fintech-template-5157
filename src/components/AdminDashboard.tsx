@@ -2079,6 +2079,7 @@ const AdminDashboard = () => {
       const templateParam = searchParams.get('emailTemplate') as AdminEmailTemplateType | null;
       const allowedTemplates: AdminEmailTemplateType[] = [
         'booking_confirmation',
+        'service_bill',
         'amc_document',
         'invoice',
         'quotation',
@@ -2110,6 +2111,7 @@ const AdminDashboard = () => {
       const templateParam = searchParams.get('whatsappTemplate') as AdminEmailTemplateType | null;
       const allowedTemplates: AdminEmailTemplateType[] = [
         'booking_confirmation',
+        'service_bill',
         'amc_document',
         'invoice',
         'quotation',

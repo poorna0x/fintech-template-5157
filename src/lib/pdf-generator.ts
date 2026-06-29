@@ -10,6 +10,7 @@ import {
   renderPdfSignatureHtml,
   resolvePdfDocumentBrand,
 } from './document-pdf-brand';
+import type { DocumentSealVariant } from './service-brands';
 import { downloadDocumentPdf } from './server-pdf-download';
 
 export interface PDFBillData {
@@ -54,6 +55,8 @@ export interface PDFBillData {
   terms?: string;
   hideGstInHeader?: boolean;
   documentBrand?: 'hydrogenro' | 'elevenro';
+  /** Signatory seal (default) or round stamp — matches AMC / quotation. */
+  sealVariant?: DocumentSealVariant;
 }
 
 // Global flag to prevent multiple print operations
@@ -777,7 +780,7 @@ function createBillContent(data: PDFBillData): string {
   const companyDetails = renderPdfCompanyDetailsHtml(data.company, brand, {
     hideGstInHeader: data.hideGstInHeader,
   });
-  const signatureBlock = renderPdfSignatureHtml(brand, data.billDate);
+  const signatureBlock = renderPdfSignatureHtml(brand, data.billDate, data.sealVariant ?? 'sign');
   const footerBlock = renderPdfFooterHtml(brand, data.company);
 
   return `

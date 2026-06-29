@@ -60,7 +60,7 @@ export function renderPdfSignatureHtml(
   const sealLabel = getDocumentBrandLabel(brand);
   const resolvedVariant =
     sealVariant === undefined || sealVariant === null
-      ? 'stamp'
+      ? 'sign'
       : normalizeDocumentSealVariant(sealVariant);
   const sealSrc = resolveBrandSealSrc(brand, resolvedVariant);
   const seal = `<img src="${sealSrc}" alt="${sealLabel} Seal" class="signature-seal" />`;

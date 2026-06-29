@@ -16,6 +16,7 @@ export type SentEmailLogTemplateFilter =
   | 'amc_document'
   | 'admin_composer'
   | 'invoice'
+  | 'service_bill'
   | 'quotation'
   | 'service_reminder'
   | 'general';

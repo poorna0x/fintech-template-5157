@@ -81,6 +81,7 @@ function formatTemplateType(type: string): string {
     amc_document: 'AMC document',
     admin_composer: 'Admin email',
     invoice: 'Invoice',
+    service_bill: 'Service bill',
     quotation: 'Quotation',
     service_reminder: 'Reminder',
     general: 'General',
@@ -520,6 +521,7 @@ export function EmailSentLogDialog({ open, onOpenChange }: EmailSentLogDialogPro
                   <SelectItem value="amc_document">AMC</SelectItem>
                   <SelectItem value="admin_composer">Admin email</SelectItem>
                   <SelectItem value="invoice">Invoice</SelectItem>
+                  <SelectItem value="service_bill">Service bill</SelectItem>
                   <SelectItem value="quotation">Quotation</SelectItem>
                   <SelectItem value="service_reminder">Reminder</SelectItem>
                   <SelectItem value="general">General</SelectItem>
@@ -723,6 +725,7 @@ export function EmailSentLogDialog({ open, onOpenChange }: EmailSentLogDialogPro
                         <SelectItem value="amc_document">AMC</SelectItem>
                         <SelectItem value="admin_composer">Admin email</SelectItem>
                         <SelectItem value="invoice">Invoice</SelectItem>
+                  <SelectItem value="service_bill">Service bill</SelectItem>
                         <SelectItem value="quotation">Quotation</SelectItem>
                         <SelectItem value="service_reminder">Reminder</SelectItem>
                         <SelectItem value="general">General</SelectItem>

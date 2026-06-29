@@ -41,6 +41,10 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import {
+  buildComposerAutoAttachments,
+  getPredictedAutoAttachmentNames,
+} from '@/lib/admin-composer-auto-attachments';
+import {
   formatAttachmentSize,
   stripAttachmentPayload,
   type EmailAttachmentItem,
@@ -78,8 +82,9 @@ interface SentEmailSummary {
 
 const TEMPLATE_ORDER: AdminEmailTemplateType[] = [
   'booking_confirmation',
-  'amc_document',
+  'service_bill',
   'invoice',
+  'amc_document',
   'quotation',
   'service_reminder',
   'general',
@@ -148,12 +153,23 @@ export function AdminEmailComposerPanel({
   const activeBrandInfo = useMemo(() => getCompanyInfoForBrand(activeBrand), [activeBrand]);
   const activeBrandLabel = getDocumentBrandLabel(activeBrand);
 
+  const predictedAutoAttachments = useMemo(
+    () =>
+      templateMeta.autoAttachPdf && selectedSourceId
+        ? getPredictedAutoAttachmentNames(templateType, documentForm.documentRef)
+        : [],
+    [templateMeta.autoAttachPdf, selectedSourceId, templateType, documentForm.documentRef]
+  );
+
   const emailPreview = useMemo(
     () =>
       buildAdminEmail(templateType, bookingForm, documentForm, {
-        attachmentNames: attachments.map((a) => a.filename),
+        attachmentNames: [
+          ...predictedAutoAttachments,
+          ...attachments.map((a) => a.filename),
+        ],
       }),
-    [templateType, bookingForm, documentForm, attachments]
+    [templateType, bookingForm, documentForm, attachments, predictedAutoAttachments]
   );
   const attachmentBytes = useMemo(
     () => attachments.reduce((sum, file) => sum + file.size, 0),
@@ -326,7 +342,11 @@ export function AdminEmailComposerPanel({
       try {
         const result = await applyEmailSourceForCustomer(tpl, customerId);
         if (!result) {
-          toast.error('Could not load customer for email');
+          toast.error(
+            tpl === 'service_bill'
+              ? 'No completed job found for this customer'
+              : 'Could not load customer for email'
+          );
           return;
         }
 
@@ -471,6 +491,31 @@ export function AdminEmailComposerPanel({
 
     setSendPhase('sending');
     setSending(true);
+
+    let sendAttachments = attachments.map(stripAttachmentPayload);
+    if (templateMeta.autoAttachPdf && selectedSourceId) {
+      try {
+        const autoAttachments = await buildComposerAutoAttachments({
+          templateType,
+          sourceRecordId: selectedSourceId,
+          documentBrand: activeBrand,
+        });
+        const existingNames = new Set(sendAttachments.map((a) => a.filename.toLowerCase()));
+        for (const attachment of autoAttachments) {
+          if (!existingNames.has(attachment.filename.toLowerCase())) {
+            sendAttachments = [...sendAttachments, attachment];
+          }
+        }
+      } catch (error) {
+        setSending(false);
+        setSendPhase('confirm');
+        toast.error(
+          error instanceof Error ? error.message : 'Could not generate PDF attachment'
+        );
+        return;
+      }
+    }
+
     const result = await emailService.sendAdminComposerEmail(
       {
         templateType,
@@ -479,7 +524,7 @@ export function AdminEmailComposerPanel({
         subject: emailPreview.subject,
         html: emailPreview.html,
         text: emailPreview.text,
-        attachments: attachments.map(stripAttachmentPayload),
+        attachments: sendAttachments,
         jobId: linkedJobId,
         customerId: linkedCustomerId,
       },
@@ -492,14 +537,14 @@ export function AdminEmailComposerPanel({
         to: sendTo.trim(),
         subject: emailPreview.subject,
         brandLabel: getDocumentBrandLabel(activeBrand),
-        attachmentCount: attachments.length,
-        attachmentBytes,
+        attachmentCount: sendAttachments.length,
+        attachmentBytes: sendAttachments.reduce((sum, file) => sum + file.size, 0),
       };
       setSentSummary(summary);
       setSendPhase('sent');
       toast.success(
-        attachments.length
-          ? `Email sent from ${activeBrandLabel} to ${sendTo.trim()} with ${attachments.length} attachment(s)`
+        sendAttachments.length
+          ? `Email sent from ${activeBrandLabel} to ${sendTo.trim()} with ${sendAttachments.length} attachment(s)`
           : `Email sent from ${activeBrandLabel} to ${sendTo.trim()}`
       );
       if (isCompletedJobComposer && linkedJobId && onCompletionMailSent) {
@@ -1019,7 +1064,11 @@ export function AdminEmailComposerPanel({
 
               <div className="space-y-2">
                 <Label>
-                  {templateType === 'job_completion' ? 'Personal note' : 'Message'}
+                  {templateType === 'job_completion'
+                    ? 'Personal note'
+                    : templateType === 'general'
+                      ? 'Email body'
+                      : 'Cover note'}
                 </Label>
                 <Textarea
                   rows={templateType === 'job_completion' ? 3 : 5}
@@ -1043,10 +1092,22 @@ export function AdminEmailComposerPanel({
         <CardHeader className="pb-3">
           <CardTitle className="text-base sm:text-lg">Attachments</CardTitle>
           <CardDescription className="text-xs sm:text-sm">
-            Drag & drop a PDF or photo — attached when you send (AMC, invoice, quotation, etc.).
+            {templateMeta.autoAttachPdf
+              ? 'The PDF is generated automatically when you send. You can add extra files below if needed.'
+              : 'Drag & drop a PDF or photo — attached when you send (AMC, quotation, etc.).'}
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-3">
+          {predictedAutoAttachments.length > 0 && (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-900">
+              <p className="font-medium">Auto-attached on send</p>
+              <ul className="mt-1 text-xs text-emerald-800 list-disc pl-4">
+                {predictedAutoAttachments.map((name) => (
+                  <li key={name}>{name}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           <EmailAttachmentDropzone
             attachments={attachments}
             onChange={setAttachments}

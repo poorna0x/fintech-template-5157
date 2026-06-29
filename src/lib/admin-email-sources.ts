@@ -214,6 +214,8 @@ export function getCrmSourceLabel(templateType: AdminEmailTemplateType): string 
       return 'Active AMC';
     case 'invoice':
       return 'Saved invoice';
+    case 'service_bill':
+      return 'Completed job';
     case 'quotation':
     case 'general':
       return 'Customer';
@@ -235,6 +237,8 @@ export function getEmailSourceSearchHint(templateType: AdminEmailTemplateType): 
       return 'Enter customer details, then click Search to find their active AMC.';
     case 'invoice':
       return 'Enter invoice # or customer details, then click Search.';
+    case 'service_bill':
+      return 'Enter customer name, phone, or job #, then click Search to find a completed job.';
     case 'quotation':
     case 'general':
       return 'Enter customer name, phone, or ID, then click Search.';
@@ -296,6 +300,8 @@ export async function fetchEmailSourceOptions(
       return searchActiveAmcByCustomer(templateType, q);
     case 'invoice':
       return searchInvoiceOptions(q);
+    case 'service_bill':
+      return searchCompletedJobsByCustomer(q);
     case 'quotation':
     case 'general':
       return fetchCustomerSearchOptions(q);
@@ -580,6 +586,14 @@ export async function applyEmailSourceForCustomer(
       }
       return applyCustomerRecord(customerId, 'quotation');
     }
+    case 'service_bill': {
+      const jobId = await findLatestCompletedJobIdForCustomer(customerId);
+      if (jobId) {
+        const result = await applyServiceBillRecord(jobId);
+        return result ? { ...result, sourceRecordId: jobId } : null;
+      }
+      return null;
+    }
     case 'quotation':
     case 'general':
       return applyCustomerRecord(customerId, templateType);
@@ -609,6 +623,8 @@ export async function applyEmailSourceRecord(
       return applyAmcRecord('service_reminder', recordId);
     case 'invoice':
       return applyInvoiceRecord(recordId);
+    case 'service_bill':
+      return applyServiceBillRecord(recordId);
     case 'quotation':
       return applyCustomerRecord(recordId, 'quotation');
     case 'general':
@@ -730,6 +746,44 @@ async function applyAmcRecord(
     },
     recipientEmail,
     ...getCustomerPhones(customers),
+  };
+}
+
+async function applyServiceBillRecord(jobId: string): Promise<EmailSourceApplyResult | null> {
+  const { data, error } = await db.jobs.getByIdFull(jobId);
+  if (error || !data) return null;
+
+  const job = data as Record<string, unknown>;
+  const status = String(job.status || '').toUpperCase();
+  if (status !== 'COMPLETED') return null;
+
+  const customer = job.customer as Record<string, unknown> | undefined;
+  const customerId = String(job.customer_id || customer?.id || '');
+  const amount =
+    typeof job.actual_cost === 'number'
+      ? job.actual_cost
+      : parseFloat(String(job.actual_cost ?? job.payment_amount ?? '').replace(/[^\d.-]/g, '')) || 0;
+
+  const { sendBrand, lastServiceBrand } = await resolveSendBrand(
+    customerId,
+    getJobDocumentBrand(job)
+  );
+
+  return {
+    sendBrand,
+    lastServiceBrand,
+    customerId,
+    sourceRecordId: jobId,
+    documentForm: {
+      documentBrand: sendBrand,
+      customerName: String(customer?.full_name || ''),
+      documentRef: String(job.job_number || ''),
+      amount: formatInr(amount),
+      dueDate: '',
+      message: getDefaultDocumentMessage('service_bill'),
+    },
+    recipientEmail: getValidCustomerEmail(customer?.email) ?? undefined,
+    ...getCustomerPhones(customer),
   };
 }
 
