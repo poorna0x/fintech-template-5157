@@ -16,17 +16,51 @@ export const EMAIL_DARK_BODY = '#a1a1aa';
 export const EMAIL_DARK_LABEL = '#8e8e93';
 export const EMAIL_DARK_BORDER = '#3a3a3c';
 
-/** Full-bleed customer email shell — no side gutters; 16px inner padding. */
+/** Customer email shell — desktop-centered card; full-bleed on mobile via @media in head CSS. */
 export const EMAIL_LAYOUT = {
-  outerCellPadding: 'padding:0;',
+  outerCellPadding: 'padding:24px 16px;',
   cardTableBase:
-    'width:100%;border:0;border-radius:0;overflow:hidden;box-shadow:none;',
-  headerPadding: 'padding:24px 16px 20px',
-  heroBodyPadding: 'padding:24px 16px 8px',
-  mainBodyPadding: 'padding:8px 16px 24px',
-  sectionPadding: (top: string, bottom: string) => `padding:${top} 16px ${bottom}`,
-  footerPadding: 'padding:18px 16px 22px',
+    'max-width:560px;width:100%;border-radius:14px;overflow:hidden;',
+  cardBorder: (borderColor: string) => `border:1px solid ${borderColor};`,
+  cardShadow: 'box-shadow:0 1px 2px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.06);',
+  headerPadding: 'padding:28px 28px 22px',
+  heroBodyPadding: 'padding:28px 28px 8px',
+  mainBodyPadding: 'padding:8px 28px 24px',
+  sectionPadding: (top: string, bottom: string) => `padding:${top} 28px ${bottom}`,
+  footerPadding: 'padding:18px 24px 22px',
+  classes: {
+    outer: 'email-shell-outer',
+    card: 'email-shell-card',
+    header: 'email-shell-header',
+    hero: 'email-shell-hero',
+    main: 'email-shell-main',
+    footer: 'email-shell-footer',
+    section: 'email-shell-section',
+  },
 } as const;
+
+export function buildEmailResponsiveShellCss(): string {
+  const c = EMAIL_LAYOUT.classes;
+  return `
+    @media screen and (max-width: 599px) {
+      .${c.outer} { padding: 0 !important; }
+      .${c.card} {
+        max-width: 100% !important;
+        width: 100% !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+      }
+      .${c.header} { padding: 24px 16px 20px !important; }
+      .${c.hero} { padding: 24px 16px 8px !important; }
+      .${c.main} { padding: 8px 16px 24px !important; }
+      .${c.footer} { padding: 18px 16px 22px !important; }
+      .${c.section} {
+        padding-left: 16px !important;
+        padding-right: 16px !important;
+      }
+    }`;
+}
 
 function sel(prefix: string): string {
   return prefix ? `${prefix} ` : '';
@@ -357,6 +391,7 @@ export function buildEmailForceLightHead(): string {
       letter-spacing: -0.01em !important;
     }
     ${buildEmailLightSurfaceCss()}
+    ${buildEmailResponsiveShellCss()}
     @media (prefers-color-scheme: dark) {
       ${buildEmailDarkSurfaceCss()}
     }

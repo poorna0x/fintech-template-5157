@@ -427,17 +427,17 @@ export function buildBookingConfirmationEmail(
 
   <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="email-force-light-page" bgcolor="${EMAIL_PAGE_BG}" style="background-color:${c.pageBg};font-family:${EMAIL_FONT};">
     <tr>
-      <td align="center" style="${EMAIL_LAYOUT.outerCellPadding}">
-        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="email-force-light-card" bgcolor="${EMAIL_CARD_BG}" style="${EMAIL_LAYOUT.cardTableBase}background-color:${c.cardBg};font-family:${EMAIL_FONT};">
+      <td align="center" class="${EMAIL_LAYOUT.classes.outer}" style="${EMAIL_LAYOUT.outerCellPadding}">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="email-force-light-card ${EMAIL_LAYOUT.classes.card}" bgcolor="${EMAIL_CARD_BG}" style="${EMAIL_LAYOUT.cardTableBase}${EMAIL_LAYOUT.cardBorder(c.border)}${EMAIL_LAYOUT.cardShadow}background-color:${c.cardBg};font-family:${EMAIL_FONT};">
 
           <tr>
-            <td align="center" class="email-force-light-header" bgcolor="${EMAIL_CARD_BG}" style="${EMAIL_LAYOUT.headerPadding};background-color:${c.headerBg};border-bottom:1px solid ${c.border};text-align:center;">
+            <td align="center" class="email-force-light-header ${EMAIL_LAYOUT.classes.header}" bgcolor="${EMAIL_CARD_BG}" style="${EMAIL_LAYOUT.headerPadding};background-color:${c.headerBg};border-bottom:1px solid ${c.border};text-align:center;">
               ${headerLogoBlock}
             </td>
           </tr>
 
           <tr>
-            <td align="center" class="email-force-light-body email-surface-body" bgcolor="${EMAIL_CARD_BG}" style="${EMAIL_LAYOUT.heroBodyPadding};text-align:center;background-color:${c.cardBg};">
+            <td align="center" class="email-force-light-body email-surface-body ${EMAIL_LAYOUT.classes.hero}" bgcolor="${EMAIL_CARD_BG}" style="${EMAIL_LAYOUT.heroBodyPadding};text-align:center;background-color:${c.cardBg};">
               ${buildSuccessIconBlock()}
               <p class="email-force-light-muted" style="margin:0 0 8px;font-family:${EMAIL_FONT};font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1.4px;text-align:center;">Service booking</p>
               <h1 class="email-force-light-heading" style="margin:0 0 14px;font-family:${EMAIL_FONT};font-size:26px;line-height:1.2;font-weight:700;text-align:center;letter-spacing:-0.03em;">Booking Confirmed</h1>
@@ -448,7 +448,7 @@ export function buildBookingConfirmationEmail(
           </tr>
 
           <tr>
-            <td align="center" class="email-surface-body" style="${EMAIL_LAYOUT.sectionPadding('8px', '24px')};text-align:center;background-color:${c.cardBg};">
+            <td align="center" class="email-surface-body ${EMAIL_LAYOUT.classes.section}" style="${EMAIL_LAYOUT.sectionPadding('8px', '24px')};text-align:center;background-color:${c.cardBg};">
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:0 auto;">
                 <tr>
                   <td class="email-badge" style="border:1px solid ${c.border};border-radius:999px;padding:9px 20px;font-family:${EMAIL_FONT};font-size:13px;font-weight:500;text-align:center;">
@@ -460,7 +460,7 @@ export function buildBookingConfirmationEmail(
           </tr>
 
           <tr>
-            <td class="email-surface-body" style="${EMAIL_LAYOUT.sectionPadding('0', '22px')};background-color:${c.cardBg};">
+            <td class="email-surface-body ${EMAIL_LAYOUT.classes.section}" style="${EMAIL_LAYOUT.sectionPadding('0', '22px')};background-color:${c.cardBg};">
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="email-force-light-details" style="background-color:${c.detailsBg};border:1px solid ${c.border};border-radius:12px;border-left:3px solid ${c.heading};">
                 <tr>
                   <td style="padding:16px 18px 8px;">
@@ -483,13 +483,13 @@ export function buildBookingConfirmationEmail(
           </tr>
 
           <tr>
-            <td class="email-surface-body" style="${EMAIL_LAYOUT.sectionPadding('0', '8px')};background-color:${c.cardBg};">
+            <td class="email-surface-body ${EMAIL_LAYOUT.classes.section}" style="${EMAIL_LAYOUT.sectionPadding('0', '8px')};background-color:${c.cardBg};">
               <p class="email-section-label" style="margin:0 0 10px;font-family:${EMAIL_FONT};font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.8px;text-align:center;">Need help?</p>
             </td>
           </tr>
 
           <tr>
-            <td class="email-surface-body" style="${EMAIL_LAYOUT.sectionPadding('0', '22px')};background-color:${c.cardBg};">
+            <td class="email-surface-body ${EMAIL_LAYOUT.classes.section}" style="${EMAIL_LAYOUT.sectionPadding('0', '22px')};background-color:${c.cardBg};">
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
                 <tr>
                   <td width="50%" style="width:50%;padding-right:6px;vertical-align:top;">${whatsappButton}</td>
@@ -500,7 +500,7 @@ export function buildBookingConfirmationEmail(
           </tr>
 
           <tr>
-            <td class="email-surface-body" style="${EMAIL_LAYOUT.sectionPadding('0', '26px')};background-color:${c.cardBg};">
+            <td class="email-surface-body ${EMAIL_LAYOUT.classes.section}" style="${EMAIL_LAYOUT.sectionPadding('0', '26px')};background-color:${c.cardBg};">
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="email-info-box" style="background-color:${c.footerBg};border:1px solid ${c.border};border-radius:12px;">
                 <tr>
                   <td style="padding:18px 20px;">
@@ -515,7 +515,7 @@ export function buildBookingConfirmationEmail(
           </tr>
 
           <tr>
-            <td align="center" class="email-force-light-footer email-surface-footer" bgcolor="${EMAIL_FOOTER_BG}" style="${EMAIL_LAYOUT.footerPadding};background-color:${c.footerBg};border-top:1px solid ${c.border};text-align:center;">
+            <td align="center" class="email-force-light-footer email-surface-footer ${EMAIL_LAYOUT.classes.footer}" bgcolor="${EMAIL_FOOTER_BG}" style="${EMAIL_LAYOUT.footerPadding};background-color:${c.footerBg};border-top:1px solid ${c.border};text-align:center;">
               <p class="email-details-title" style="margin:0 0 6px;font-family:${EMAIL_FONT};font-size:13px;font-weight:600;text-align:center;">${escapeHtml(brandName)}</p>
               <p class="email-footer-muted" style="margin:0 0 4px;font-family:${EMAIL_FONT};font-size:12px;line-height:1.5;text-align:center;font-weight:400;">
                 <span style="text-decoration:none !important;">${footerContactLine}</span>
