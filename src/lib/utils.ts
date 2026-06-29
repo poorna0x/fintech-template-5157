@@ -50,6 +50,32 @@ export function normalizePhoneForSearch(input: string | undefined | null): strin
 }
 
 /**
+ * Whether admin search should run the extra jobs-by-number query.
+ * Phone/email/name-only searches use customers.searchSlim alone (same egress as before).
+ */
+export function shouldRunAdminJobNumberSearch(query: string): boolean {
+  const trimmed = query.trim();
+  if (trimmed.length < 2) return false;
+  if (trimmed.includes('@')) return false;
+
+  const normPhone = normalizePhoneForSearch(trimmed);
+  const digitOnly = trimmed.replace(/\D/g, '');
+  const looksLikePhone =
+    normPhone.length >= 10 &&
+    /^[\d\s+\-().]+$/.test(trimmed) &&
+    !/[a-zA-Z]/.test(trimmed);
+  if (looksLikePhone) return false;
+
+  if (/^ro[\s\-_]?\d/i.test(trimmed)) return true;
+
+  if (/^\d+$/.test(digitOnly)) {
+    return digitOnly.length !== 10;
+  }
+
+  return /[a-zA-Z]/.test(trimmed) && /\d/.test(trimmed);
+}
+
+/**
  * Normalize pasted/typed Indian mobile for form inputs (+91, spaces, leading 0 → 10 digits).
  */
 export function normalizeIndianMobileInput(input: string): string {

@@ -94,7 +94,12 @@ import {
   getDeviceLocation,
   isGeolocationPositionError,
 } from '@/lib/geolocation';
-import { normalizePhoneForSearch, cn } from '@/lib/utils';
+import {
+  cn,
+  formatPhoneForWhatsApp,
+  normalizePhoneForSearch,
+  shouldRunAdminJobNumberSearch,
+} from '@/lib/utils';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import FollowUpModal from '@/components/FollowUpModal';
 import { sendNotification, createJobAssignedNotification, createJobCompletedNotification, createJobCancelledNotification, createJobAssignmentRequestNotification } from '@/lib/notifications';
@@ -123,7 +128,6 @@ const BillingStats = lazyDefault(() => import('./BillingStats'));
 const Analytics = lazyDefault(() => import('./Analytics'));
 const InventoryManagement = lazyDefault(() => import('./InventoryManagement'));
 import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, levenshteinDistance, calculateSimilarity, extractPhotoUrls, normalizePhotoUrl, parseJobRequirements, getFormattedTimeSlot, findLeadSource, getLeadSourceFromJob, getJobCustomTimeLabel, normalizeLeadType, normalizeServiceSubType, completedJobMatchesDashboardClientFilters, isOfficeCompletedJob, jobCompletionLocalDateIso } from '@/lib/adminUtils';
-import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { getLocationLinkFromObject } from '@/lib/jobLocationHelpers';
 import { enrichJobsWithAfterPhotosIfNeeded } from '@/lib/jobReportPhotos';
 import {
@@ -6016,10 +6020,15 @@ const AdminDashboard = () => {
     setSearchTerm(trimmedQuery);
     setSearchQuery(trimmedQuery);
     if (trimmedQuery) {
-      const [{ data, error }, { data: jobHits, error: jobSearchError }] = await Promise.all([
+      const runJobSearch = shouldRunAdminJobNumberSearch(trimmedQuery);
+      const [{ data, error }, jobSearchResult] = await Promise.all([
         db.customers.searchSlim(trimmedQuery, 50, { includeAddressAndLocation: true }),
-        db.jobs.searchByJobNumberForAdmin(trimmedQuery, 25),
+        runJobSearch
+          ? db.jobs.searchByJobNumberForAdmin(trimmedQuery, 25)
+          : Promise.resolve({ data: [] as Record<string, unknown>[], error: null }),
       ]);
+      const jobHits = jobSearchResult.data;
+      const jobSearchError = jobSearchResult.error;
 
       if (error || jobSearchError) {
         toast.error('Search failed');

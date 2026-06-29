@@ -191,6 +191,23 @@ const JOB_BY_CUSTOMER_SLIM_COLS = [
   'requirements',
 ] as const;
 
+/** Admin job-number search — no requirements JSON (keeps egress low). */
+const JOB_ADMIN_SEARCH_COLS = [
+  'id',
+  'job_number',
+  'customer_id',
+  'status',
+  'service_type',
+  'service_sub_type',
+  'service_brand',
+  'completed_at',
+  'end_time',
+  'completed_by',
+  'payment_amount',
+  'actual_cost',
+  'payment_method',
+] as const;
+
 /** Full customer row for getById / getByPhone / getByCustomerId (no `*`). */
 export const CUSTOMER_ROW_COLUMNS = [
   'id',
@@ -1617,15 +1634,13 @@ export const db = {
       return { data: enriched, error: null };
     },
 
-    /** Admin customer search: jobs whose job_number matches the query (incl. customer embed). */
+    /** Admin customer search: jobs whose job_number matches the query (slim — no requirements/photos). */
     async searchByJobNumberForAdmin(query: string, limit = 20) {
       const trimmed = (query ?? '').trim();
       if (trimmed.length < 2) return { data: [], error: null };
       const escaped = escapeForLike(trimmed);
       const cols = [
-        ...JOB_BY_CUSTOMER_SLIM_COLS,
-        'description',
-        'completion_notes',
+        ...JOB_ADMIN_SEARCH_COLS,
         `customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`,
       ].join(', ');
 
