@@ -17,7 +17,12 @@ import { toast } from 'sonner';
 import EmailAttachmentDropzone from '@/components/admin/EmailAttachmentDropzone';
 import EmailSourcePicker from '@/components/admin/EmailSourcePicker';
 import type { EmailSourceMode } from '@/lib/admin-email-sources';
-import { applyEmailSourceForCustomer, applyEmailSourceRecord, resolveCustomerSendBrand } from '@/lib/admin-email-sources';
+import {
+  applyEmailSourceForCustomer,
+  applyEmailSourceRecord,
+  resolveCustomerSendBrand,
+  resolveDefaultEmailTemplateForCustomer,
+} from '@/lib/admin-email-sources';
 import { buildJobCompletionMessage } from '@/lib/job-completion-message';
 import { getValidCustomerEmail } from '@/lib/customer-email';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -129,7 +134,7 @@ export function AdminEmailComposerPanel({
   const [sourceMode, setSourceMode] = useState<EmailSourceMode>('crm');
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
   const [crmDataLoaded, setCrmDataLoaded] = useState(false);
-  const [sendBrand, setSendBrand] = useState<DocumentBrand>('hydrogenro');
+  const [sendBrand, setSendBrand] = useState<DocumentBrand>('elevenro');
   const [lastServiceBrand, setLastServiceBrand] = useState<DocumentBrand | null>(null);
   const [linkedCustomerId, setLinkedCustomerId] = useState<string | null>(initialCustomerId ?? null);
   const [linkedJobId, setLinkedJobId] = useState<string | null>(initialJobId ?? null);
@@ -216,9 +221,9 @@ export function AdminEmailComposerPanel({
       return `Last brand served: ${lastLabel}. Currently ${activeBrandLabel} — change below if needed.`;
     }
     if (linkedCustomerId) {
-      return `No completed service brand on file — using ${activeBrandLabel}. You can change below.`;
+      return `No completed service brand on file — defaulted to ${activeBrandLabel}. You can change below.`;
     }
-    return 'Load a customer to auto-pick their last served brand, or choose below.';
+    return `Default send brand is ${activeBrandLabel}. Load a customer to use their last served brand.`;
   }, [lastServiceBrand, linkedCustomerId, sendBrand, activeBrandLabel]);
 
   const handleApplySource = useCallback(
@@ -388,14 +393,19 @@ export function AdminEmailComposerPanel({
     if (composerContext === 'completed_job') return;
     if (!initialCustomerId) return;
 
-    const tpl = TEMPLATE_ORDER.includes(initialTemplate) ? initialTemplate : 'general';
-    const loadKey = `${initialCustomerId}:${tpl}`;
+    const loadKey = `${initialCustomerId}:${initialTemplate}`;
     if (loadedCustomerRef.current === loadKey) return;
     loadedCustomerRef.current = loadKey;
 
+    const tpl = TEMPLATE_ORDER.includes(initialTemplate) ? initialTemplate : 'general';
+
     void (async () => {
-      setTemplateType(tpl);
-      await loadCustomerSource(initialCustomerId, tpl);
+      let resolvedTpl = tpl;
+      if (resolvedTpl === 'general') {
+        resolvedTpl = await resolveDefaultEmailTemplateForCustomer(initialCustomerId);
+      }
+      setTemplateType(resolvedTpl);
+      await loadCustomerSource(initialCustomerId, resolvedTpl);
     })();
   }, [composerContext, initialCustomerId, initialTemplate, loadCustomerSource]);
 

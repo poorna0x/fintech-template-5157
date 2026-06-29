@@ -136,7 +136,7 @@ export const SAMPLE_ADMIN_DOCUMENT_EMAIL: AdminDocumentEmailData = {
   customSubject: 'Message from Hydrogen RO',
 };
 
-export function createEmptyBookingForm(brand: DocumentBrand = 'hydrogenro'): BookingConfirmationEmailData {
+export function createEmptyBookingForm(brand: DocumentBrand = 'elevenro'): BookingConfirmationEmailData {
   return {
     customerName: '',
     jobNumber: '',
@@ -153,7 +153,7 @@ export function createEmptyBookingForm(brand: DocumentBrand = 'hydrogenro'): Boo
   };
 }
 
-export function createEmptyDocumentForm(brand: DocumentBrand = 'hydrogenro'): AdminDocumentEmailData {
+export function createEmptyDocumentForm(brand: DocumentBrand = 'elevenro'): AdminDocumentEmailData {
   return {
     documentBrand: brand,
     customerName: '',

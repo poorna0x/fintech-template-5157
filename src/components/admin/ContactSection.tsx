@@ -53,7 +53,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
 
   const handleEmailClick = () => {
     if (!customerEmail) return;
-    navigate(getAdminEmailComposerUrl(customer.id, 'general'));
+    navigate(getAdminEmailComposerUrl(customer.id));
   };
 
   const openWhatsAppDirect = () => {

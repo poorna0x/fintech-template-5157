@@ -149,7 +149,7 @@ async function resolveSendBrand(
   customerId: string | undefined,
   recordFallback?: DocumentBrand
 ): Promise<{ sendBrand: DocumentBrand; lastServiceBrand: DocumentBrand | null }> {
-  const fallback = recordFallback || 'hydrogenro';
+  const fallback = recordFallback || 'elevenro';
   if (!customerId) {
     return { sendBrand: fallback, lastServiceBrand: null };
   }
@@ -172,6 +172,14 @@ export async function resolveCustomerSendBrand(
   recordFallback?: DocumentBrand
 ): Promise<{ sendBrand: DocumentBrand; lastServiceBrand: DocumentBrand | null }> {
   return resolveSendBrand(customerId, recordFallback);
+}
+
+/** Default compose template: booking confirmation when customer has an ongoing job, else general. */
+export async function resolveDefaultEmailTemplateForCustomer(
+  customerId: string
+): Promise<'booking_confirmation' | 'general'> {
+  const jobId = await findLatestOngoingJobIdForCustomer(customerId);
+  return jobId ? 'booking_confirmation' : 'general';
 }
 
 async function withSendBrand(
