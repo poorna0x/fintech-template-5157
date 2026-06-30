@@ -41,8 +41,41 @@ async function findActiveAmcIdByAgreementNumber(admin, customerId, agreementNumb
   return null;
 }
 
+function istCalendarDay(date = new Date()) {
+  return date.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+}
+
+function isCreatedOnIstDay(createdAt, dayIst) {
+  const targetDay = dayIst || istCalendarDay();
+  const rowDay = new Date(createdAt).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  return rowDay === targetDay;
+}
+
+async function findActiveAmcIdCreatedTodayIst(admin, customerId) {
+  const { data, error } = await admin
+    .from('amc_contracts')
+    .select('id, created_at')
+    .eq('customer_id', customerId)
+    .eq('status', 'ACTIVE')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    throw error;
+  }
+
+  const todayIst = istCalendarDay();
+  for (const row of data || []) {
+    if (row.created_at && isCreatedOnIstDay(row.created_at, todayIst)) {
+      return row.id;
+    }
+  }
+
+  return null;
+}
+
 module.exports = {
   parseAgreementNumberFromAdditionalInfo,
   normalizeAgreementNumber,
   findActiveAmcIdByAgreementNumber,
+  findActiveAmcIdCreatedTodayIst,
 };

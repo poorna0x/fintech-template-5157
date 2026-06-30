@@ -8388,12 +8388,6 @@ const TechnicianDashboard = () => {
                             onPersistBeforeAction={() =>
                               persistTechnicianAmcForShare({ sharedVia: 'technician_download' })
                             }
-                            onPersistBeforeEmail={(recipients) =>
-                              persistTechnicianAmcForShare({
-                                sharedVia: 'technician_complete_job',
-                                customerEmailOverride: recipients[0],
-                              })
-                            }
                             onPersistAfterEmail={(recipients) =>
                               persistTechnicianAmcForShare({
                                 sharedVia: 'technician_email',

@@ -8,6 +8,7 @@ import { isMissingServiceBrandColumnError } from './amc-brand';
 import {
   normalizeAmcAgreementNumber,
   parseAmcAgreementNumberFromAdditionalInfo,
+  amcCreatedOnIstDay,
 } from './amc-agreement-number';
 import type { PublicSiteKey } from './websiteSiteKey';
 import {
@@ -4526,6 +4527,26 @@ export const db = {
         if (existingByNumber?.id) {
           return updateExisting(existingByNumber.id);
         }
+      }
+
+      const { data: activeForToday, error: todayLookupErr } = await supabase
+        .from('amc_contracts')
+        .select('id, created_at')
+        .eq('customer_id', amc.customer_id)
+        .eq('status', 'ACTIVE')
+        .order('created_at', { ascending: false });
+
+      if (todayLookupErr) {
+        return { data: null, error: todayLookupErr };
+      }
+
+      const todayIst = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+      const createdTodayRow = (activeForToday || []).find(
+        (row) => row.created_at && amcCreatedOnIstDay(row.created_at, todayIst)
+      );
+
+      if (createdTodayRow?.id) {
+        return updateExisting(createdTodayRow.id);
       }
 
       await renewExistingActiveAmcs();

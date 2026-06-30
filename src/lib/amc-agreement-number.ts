@@ -39,3 +39,11 @@ export function normalizeAmcAgreementNumber(value: string): string {
 export function amcAgreementNumbersMatch(a: string, b: string): boolean {
   return normalizeAmcAgreementNumber(a) === normalizeAmcAgreementNumber(b);
 }
+
+/** Calendar day in Asia/Kolkata for AMC "created today" upsert. */
+export function amcCreatedOnIstDay(createdAt: string, dayIst?: string): boolean {
+  const targetDay =
+    dayIst ?? new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  const rowDay = new Date(createdAt).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  return rowDay === targetDay;
+}

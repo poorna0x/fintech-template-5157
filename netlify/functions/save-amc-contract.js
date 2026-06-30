@@ -3,7 +3,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const { authorizeStaffAmcEmailRequest } = require('./admin-auth-guard');
 const { verifyTechnicianAmcSaveAccess } = require('./staff-access');
-const { findActiveAmcIdByAgreementNumber, parseAgreementNumberFromAdditionalInfo } = require('./amc-agreement-number');
+const { findActiveAmcIdByAgreementNumber, parseAgreementNumberFromAdditionalInfo, findActiveAmcIdCreatedTodayIst } = require('./amc-agreement-number');
 
 function jsonResponse(statusCode, headers, body) {
   return {
@@ -212,6 +212,15 @@ async function upsertAmcContract(admin, payload) {
     } catch (lookupErr) {
       return { error: lookupErr };
     }
+  }
+
+  try {
+    const createdTodayId = await findActiveAmcIdCreatedTodayIst(admin, payload.customer_id);
+    if (createdTodayId) {
+      return updateExistingAmcRow(admin, payload, createdTodayId, insertBase, withBrand);
+    }
+  } catch (lookupErr) {
+    return { error: lookupErr };
   }
 
   await renewExistingActiveAmcs(admin, payload.customer_id);
