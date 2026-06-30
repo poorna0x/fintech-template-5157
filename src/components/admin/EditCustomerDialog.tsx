@@ -22,6 +22,10 @@ import {
   resolveGoogleMapsInputToCoords,
   sanitizeGoogleMapsInput,
 } from '@/lib/googleMapsLink';
+import {
+  hasPendingTechnicianChangeRequest,
+  listTechnicianChangeRequests,
+} from '@/lib/technicianCustomerChangeRequest';
 
 // Brand and model data - RO and Softener brands including local (Aqua Grand, Aqua Smart, Dolphin, etc.)
 const brandData = {
@@ -222,6 +226,11 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
       area.toLowerCase().includes(searchTerm)
     ).slice(0, 12);
   }, [editFormData?.visible_address]);
+
+  const technicianChangeRequests = useMemo(
+    () => listTechnicianChangeRequests(editFormData?.notes),
+    [editFormData?.notes]
+  );
 
   // Initialize form when customer changes - fetch fresh data from database
   useEffect(() => {
@@ -1526,6 +1535,42 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
                 />
               </div>
             </div>
+          </div>
+        </div>
+
+        <div className="space-y-3 border-t pt-4 mt-2">
+          {hasPendingTechnicianChangeRequest(editFormData?.notes) && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 space-y-2">
+              <p className="text-sm font-semibold text-amber-950">Technician change request</p>
+              <p className="text-xs text-amber-900/90">
+                A technician asked you to review name or phone. Update the fields above, then clear or edit
+                the note below once done.
+              </p>
+              <div className="space-y-2 max-h-40 overflow-y-auto">
+                {technicianChangeRequests.map((block) => (
+                  <pre
+                    key={block.slice(0, 48)}
+                    className="text-xs whitespace-pre-wrap font-mono text-amber-950 bg-white/70 rounded p-2 border border-amber-200"
+                  >
+                    {block}
+                  </pre>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="space-y-2">
+            <Label htmlFor="edit-customer-notes">Internal notes</Label>
+            <Textarea
+              id="edit-customer-notes"
+              value={editFormData?.notes ?? ''}
+              onChange={(e) => handleEditFormChange('notes', e.target.value)}
+              placeholder="Admin notes, technician change requests, etc."
+              rows={4}
+              className="resize-y min-h-[96px] font-mono text-sm"
+            />
+            <p className="text-xs text-muted-foreground">
+              Technician name/phone change requests appear here automatically.
+            </p>
           </div>
         </div>
 

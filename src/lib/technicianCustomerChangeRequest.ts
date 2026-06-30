@@ -22,3 +22,15 @@ export function appendCustomerNote(existing: string | null | undefined, addition
   const prev = (existing ?? '').trim();
   return prev ? `${prev}\n\n${addition}` : addition;
 }
+
+export function hasPendingTechnicianChangeRequest(notes: string | null | undefined): boolean {
+  return String(notes || '').includes('[TECH CHANGE REQUEST');
+}
+
+/** Split notes into technician change-request blocks for admin display. */
+export function listTechnicianChangeRequests(notes: string | null | undefined): string[] {
+  const text = String(notes || '').trim();
+  if (!text.includes('[TECH CHANGE REQUEST')) return [];
+  const parts = text.split(/\n\n(?=\[TECH CHANGE REQUEST)/);
+  return parts.map((p) => p.trim()).filter((p) => p.startsWith('[TECH CHANGE REQUEST'));
+}

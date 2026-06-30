@@ -3307,7 +3307,9 @@ const TechnicianDashboard = () => {
   );
 
   const openCustomerUpdateDialog = useCallback((job: Job) => {
-    setCustomerUpdateDialogJob(job);
+    window.setTimeout(() => {
+      setCustomerUpdateDialogJob(job);
+    }, 120);
   }, []);
 
   // Handle completing job - opens completion dialog
