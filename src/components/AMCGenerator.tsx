@@ -50,6 +50,7 @@ import {
 } from '@/lib/customer-address';
 import AmcEmailSendDialog from '@/components/amc/AmcEmailSendDialog';
 import AmcDocumentPreview from '@/components/amc/AmcDocumentPreview';
+import { runAfterDialogClose } from '@/lib/document-preview-utils';
 import {
   Dialog,
   DialogContent,
@@ -627,16 +628,8 @@ export default function AMCGenerator({ customer, onPrint, onAMCSaved, embedded =
     if (!previewBill) return;
     const brand =
       (previewBill as Bill & { documentBrand?: DocumentBrand }).documentBrand ?? documentBrand;
-    const { endDate } = calculateDates();
-    const defaultRecipients = normalizeRecipientList(customerEmail ? [customerEmail] : []);
     setPreviewOpen(false);
-    setEmailSendContext({
-      bill: previewBill,
-      brand,
-      endDateIso: endDate,
-      defaultRecipients,
-    });
-    setEmailDialogOpen(true);
+    runAfterDialogClose(() => openEmailSendDialog(brand));
   };
 
   const customerEmail = getValidCustomerEmail(editableCustomer.email);
@@ -1640,7 +1633,7 @@ export default function AMCGenerator({ customer, onPrint, onAMCSaved, embedded =
               Same layout as the PDF — review before saving or exporting.
             </DialogDescription>
           </DialogHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto bg-slate-100/80 px-2 py-2 sm:px-3">
+          <div className="min-h-0 flex-1 overflow-auto bg-slate-100/80 px-2 py-2 sm:overflow-y-auto sm:overflow-x-hidden sm:px-3">
             {previewBill ? (
               <AmcDocumentPreview
                 bill={previewBill}
@@ -1678,11 +1671,11 @@ export default function AMCGenerator({ customer, onPrint, onAMCSaved, embedded =
               disabled={!previewBill}
               onClick={() => {
                 if (!previewBill) return;
+                const brand =
+                  (previewBill as Bill & { documentBrand?: DocumentBrand }).documentBrand ??
+                  documentBrand;
                 setPreviewOpen(false);
-                void executePrint(
-                  (previewBill as Bill & { documentBrand?: DocumentBrand }).documentBrand ?? documentBrand,
-                  'pdf'
-                );
+                runAfterDialogClose(() => void executePrint(brand, 'pdf'));
               }}
             >
               <Download className="w-4 h-4 shrink-0" />
@@ -1694,11 +1687,11 @@ export default function AMCGenerator({ customer, onPrint, onAMCSaved, embedded =
               disabled={!previewBill}
               onClick={() => {
                 if (!previewBill) return;
+                const brand =
+                  (previewBill as Bill & { documentBrand?: DocumentBrand }).documentBrand ??
+                  documentBrand;
                 setPreviewOpen(false);
-                void executePrint(
-                  (previewBill as Bill & { documentBrand?: DocumentBrand }).documentBrand ?? documentBrand,
-                  'print'
-                );
+                runAfterDialogClose(() => void executePrint(brand, 'print'));
               }}
             >
               <Printer className="w-4 h-4 shrink-0" />

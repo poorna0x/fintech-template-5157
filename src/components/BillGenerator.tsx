@@ -5,7 +5,7 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Plus, Trash2, Download, Edit, X, FileText, Printer } from 'lucide-react';
+import { Plus, Trash2, Download, Edit, X, FileText, Printer, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { Bill, BillItem, CompanyInfo, Customer } from '@/types';
 import DocumentBrandPickerDialog from '@/components/DocumentBrandPickerDialog';
@@ -22,6 +22,8 @@ import DocumentGeneratorPageHeader, {
   documentOutlineBtnClass,
 } from '@/components/DocumentGeneratorPageHeader';
 import { mergeEditableCustomer } from '@/lib/document-drafts';
+import { billToPreviewHtml, runAfterDialogClose } from '@/lib/document-preview-utils';
+import DocumentPreviewDialog from '@/components/document/DocumentPreviewDialog';
 
 interface BillGeneratorProps {
   customer?: Customer;
@@ -87,7 +89,10 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [hideGstInHeader, setHideGstInHeader] = useState(false);
   const [brandPickerOpen, setBrandPickerOpen] = useState(false);
-  const [pendingPrintAction, setPendingPrintAction] = useState<'print' | 'pdf'>('pdf');
+  const [pendingBrandAction, setPendingBrandAction] = useState<'print' | 'pdf' | 'preview'>('pdf');
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
+  const [previewBill, setPreviewBill] = useState<Bill | null>(null);
 
   // Editable customer information state
   const [isEditingCustomer, setIsEditingCustomer] = useState(false);
@@ -213,16 +218,16 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
   const termsList = terms.split('\n').filter(line => line.trim());
   const notesList = notes; // notes is already an array now
 
-  const executePrintWithBrand = (brand: DocumentBrand, action: 'print' | 'pdf') => {
+  const buildBillDocument = (brand: DocumentBrand): Bill | null => {
     if (!customer) {
       toast.error('Please select a customer first');
-      return;
+      return null;
     }
 
     const brandCompany = getCompanyInfoForBrand(brand);
     setCompany(brandCompany);
 
-    const bill: Bill = {
+    return {
       id: Date.now().toString(),
       billNumber,
       billDate,
@@ -252,9 +257,21 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
       documentBrand: brand,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
-    } as any;
+    } as Bill;
+  };
 
+  const executePrintWithBrand = (brand: DocumentBrand, action: 'print' | 'pdf') => {
+    const bill = buildBillDocument(brand);
+    if (!bill) return;
     onPrint?.(bill, action);
+  };
+
+  const openPreview = (brand: DocumentBrand) => {
+    const bill = buildBillDocument(brand);
+    if (!bill) return;
+    setPreviewBill(bill);
+    setPreviewHtml(billToPreviewHtml(bill));
+    setPreviewOpen(true);
   };
 
   const handlePrint = (action: 'print' | 'pdf' = 'print') => {
@@ -262,7 +279,16 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
       toast.error('Please select a customer first');
       return;
     }
-    setPendingPrintAction(action);
+    setPendingBrandAction(action);
+    setBrandPickerOpen(true);
+  };
+
+  const handlePreview = () => {
+    if (!customer) {
+      toast.error('Please select a customer first');
+      return;
+    }
+    setPendingBrandAction('preview');
     setBrandPickerOpen(true);
   };
 
@@ -312,11 +338,12 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
     >
       <DocumentGeneratorPageHeader
         title="Generate Bill"
-        description="Fill in customer and item details, then generate a print preview or download a PDF."
+        description="Fill in customer and item details — preview, then generate or download PDF."
         accent="green"
         embedded={embedded}
         actions={
           <DocumentGeneratorActionBar
+            primaryCols={4}
             draft={
               <DraftToolbar
                 kind="bill"
@@ -328,23 +355,36 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
               />
             }
             primary={
-              <>
-                <Button
-                  onClick={() => handlePrint('print')}
-                  className={documentGenerateBtnClass}
-                >
-                  <Printer className="w-4 h-4 mr-2 shrink-0" />
-                  Generate Bill
-                </Button>
-                <Button
-                  onClick={() => handlePrint('pdf')}
-                  variant="outline"
-                  className={documentOutlineBtnClass}
-                >
-                  <Download className="w-4 h-4 mr-2 shrink-0" />
-                  Download Bill
-                </Button>
-              </>
+              <div className="col-span-full w-full">
+                <span className="mb-2 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  Review &amp; export
+                </span>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  <Button
+                    onClick={handlePreview}
+                    variant="outline"
+                    className={documentOutlineBtnClass}
+                  >
+                    <Eye className="w-4 h-4 shrink-0" />
+                    <span className="truncate">Preview</span>
+                  </Button>
+                  <Button
+                    onClick={() => handlePrint('print')}
+                    className={documentGenerateBtnClass}
+                  >
+                    <Printer className="w-4 h-4 shrink-0" />
+                    <span className="truncate">Generate</span>
+                  </Button>
+                  <Button
+                    onClick={() => handlePrint('pdf')}
+                    variant="outline"
+                    className={documentOutlineBtnClass}
+                  >
+                    <Download className="w-4 h-4 shrink-0" />
+                    <span className="truncate">Download</span>
+                  </Button>
+                </div>
+              </div>
             }
           />
         }
@@ -870,9 +910,51 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
       <DocumentBrandPickerDialog
         open={brandPickerOpen}
         onOpenChange={setBrandPickerOpen}
-        title="Which brand is this bill for?"
-        description="Hydrogen RO includes GST on documents. Eleven RO does not use GST."
-        onSelect={(brand) => executePrintWithBrand(brand, pendingPrintAction)}
+        title={
+          pendingBrandAction === 'preview'
+            ? 'Which brand should this preview use?'
+            : 'Which brand is this bill for?'
+        }
+        description={
+          pendingBrandAction === 'preview'
+            ? 'The preview will show the bill with the selected brand logo and address.'
+            : 'Hydrogen RO includes GST on documents. Eleven RO does not use GST.'
+        }
+        onSelect={(brand) => {
+          if (pendingBrandAction === 'preview') {
+            openPreview(brand);
+          } else {
+            executePrintWithBrand(brand, pendingBrandAction);
+          }
+        }}
+      />
+      <DocumentPreviewDialog
+        open={previewOpen}
+        onOpenChange={(open) => {
+          setPreviewOpen(open);
+          if (!open) {
+            setPreviewHtml(null);
+            setPreviewBill(null);
+          }
+        }}
+        title="Bill Preview"
+        previewTitle={previewBill ? `Bill ${previewBill.billNumber}` : 'Bill preview'}
+        previewHtml={previewHtml}
+        accent="green"
+        onDownload={() => {
+          if (!previewBill) return;
+          const brand = (previewBill as Bill & { documentBrand?: DocumentBrand }).documentBrand;
+          if (!brand) return;
+          setPreviewOpen(false);
+          runAfterDialogClose(() => executePrintWithBrand(brand, 'pdf'));
+        }}
+        onPrint={() => {
+          if (!previewBill) return;
+          const brand = (previewBill as Bill & { documentBrand?: DocumentBrand }).documentBrand;
+          if (!brand) return;
+          setPreviewOpen(false);
+          runAfterDialogClose(() => executePrintWithBrand(brand, 'print'));
+        }}
       />
     </div>
   );

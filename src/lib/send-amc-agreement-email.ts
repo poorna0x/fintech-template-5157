@@ -84,9 +84,10 @@ export async function sendAmcAgreementEmail(
     filename = pdf.filename;
     size = pdf.size;
   } catch (error) {
+    const message = error instanceof Error ? error.message : 'PDF generation failed';
     return {
       ok: false,
-      error: error instanceof Error ? error.message : 'PDF generation failed',
+      error: `${message}. Run npm run dev locally for PDF email attachments, or use Generate to print/save the agreement.`,
     };
   }
 

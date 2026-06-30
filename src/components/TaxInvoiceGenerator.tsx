@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Trash2, Download, Edit, X, FileText, Save, Printer } from 'lucide-react';
+import { Plus, Trash2, Download, Edit, X, FileText, Save, Printer, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { Bill, BillItem, CompanyInfo, Customer } from '@/types';
 import {
@@ -42,6 +42,8 @@ import DocumentGeneratorPageHeader, {
   documentSaveBtnClass,
 } from '@/components/DocumentGeneratorPageHeader';
 import { mergeEditableCustomer } from '@/lib/document-drafts';
+import { taxInvoiceToPreviewHtml, runAfterDialogClose } from '@/lib/document-preview-utils';
+import DocumentPreviewDialog from '@/components/document/DocumentPreviewDialog';
 import {
   getDocumentSealVariantLabel,
   resolveBrandSealSrc,
@@ -265,6 +267,9 @@ export default function TaxInvoiceGenerator({
   const [transportMode, setTransportMode] = useState('');
   const [vehicleNo, setVehicleNo] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
+  const [previewBill, setPreviewBill] = useState<Bill | null>(null);
   const [roundOff, setRoundOff] = useState(true);
   const [customerGstRequired, setCustomerGstRequired] = useState(false);
   const [invoiceType, setInvoiceType] = useState<'B2B' | 'B2C'>('B2C'); // B2B = Business to Business, B2C = Business to Consumer
@@ -763,22 +768,20 @@ export default function TaxInvoiceGenerator({
     }
   };
 
-  const handlePrint = async (action: 'print' | 'pdf' = 'print') => {
+  const buildTaxInvoiceExportBill = (): Bill | null => {
     if (!customer) {
       toast.error('Please select a customer first');
-      return;
+      return null;
     }
 
-    // Validate B2B invoice requires customer GST
     if (invoiceType === 'B2B' && !editableCustomer.gst) {
       toast.error('Customer GSTIN is mandatory for B2B invoices. Please enter customer GST number.');
-      return;
+      return null;
     }
-    
-    // Validate PO Number if required (for government entities)
+
     if (showPONumber && poNumberRequired && !poNumber.trim()) {
       toast.error('PO Number / Work Order Number is required for government entities');
-      return;
+      return null;
     }
 
     const bill: Bill = {
@@ -809,10 +812,9 @@ export default function TaxInvoiceGenerator({
       serviceType: customerServiceType,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
-    } as any;
-    
-    // Add GST-specific data
-    (bill as any).gstData = {
+    } as Bill;
+
+    (bill as Bill & { gstData?: object }).gstData = {
       placeOfSupply,
       placeOfSupplyCode,
       companyStateCode,
@@ -826,22 +828,19 @@ export default function TaxInvoiceGenerator({
       roundOff: finalRoundOff,
       customerGstRequired: invoiceType === 'B2B'
     };
-    
-    // Add bank details only if showBankDetails is enabled
-    (bill as any).bankDetails = showBankDetails ? bankDetails : undefined;
-    
-    // Add PDF display options
-    (bill as any).pdfOptions = {
+
+    (bill as Bill & { bankDetails?: object }).bankDetails = showBankDetails ? bankDetails : undefined;
+
+    (bill as Bill & { pdfOptions?: object }).pdfOptions = {
       showComputerGeneratedText,
       showFooterText,
       showDigitallySignedText,
       signatureDate: signatureDate || billDate,
       sealVariant,
     };
-    
-    // Add DSC data if enabled
+
     if (useDSC) {
-      (bill as any).dscData = {
+      (bill as Bill & { dscData?: object }).dscData = {
         authorizedSignatory: dscAuthorizedSignatory,
         nameDesignation: dscNameDesignation,
         companyName: dscCompanyName,
@@ -850,9 +849,8 @@ export default function TaxInvoiceGenerator({
         boxHeight: dscBoxHeight
       };
     }
-    
-    // Add additional invoice details
-    (bill as any).invoiceDetails = {
+
+    (bill as Bill & { invoiceDetails?: object }).invoiceDetails = {
       invoiceType,
       poNumber: showPONumber ? poNumber : null,
       poNumberRequired,
@@ -861,8 +859,20 @@ export default function TaxInvoiceGenerator({
       totalDiscount
     };
 
-    // Don't save to database automatically - user must explicitly click "Save to Database" button
-    // This allows generating/previewing invoice without creating a record in the database
+    return bill;
+  };
+
+  const handlePreview = () => {
+    const bill = buildTaxInvoiceExportBill();
+    if (!bill) return;
+    setPreviewBill(bill);
+    setPreviewHtml(taxInvoiceToPreviewHtml(bill));
+    setPreviewOpen(true);
+  };
+
+  const handlePrint = async (action: 'print' | 'pdf' = 'print') => {
+    const bill = buildTaxInvoiceExportBill();
+    if (!bill) return;
     onPrint?.(bill, action);
   };
 
@@ -997,7 +1007,7 @@ export default function TaxInvoiceGenerator({
             ? 'Review saved invoice details — use Generate for print preview or Download for PDF.'
             : editInvoiceId
               ? 'Update GST invoice details, then save changes or export as PDF.'
-              : 'GST invoice with line items and summary — save to database or export as PDF.'
+              : 'GST invoice with line items and summary — preview, save to database, or export as PDF.'
         }
         accent="blue"
         embedded={embedded}
@@ -1020,51 +1030,64 @@ export default function TaxInvoiceGenerator({
             }
             primary={
               readOnly ? (
-                <>
-                  <Button
-                    onClick={() => handlePrint('print')}
-                    className={documentGenerateBtnClass}
-                  >
-                    <Printer className="w-4 h-4 shrink-0" />
-                    <span className="truncate">Generate</span>
-                  </Button>
-                  <Button
-                    onClick={() => handlePrint('pdf')}
-                    variant="outline"
-                    className={documentOutlineBtnClass}
-                  >
-                    <Download className="w-4 h-4 shrink-0" />
-                    <span className="truncate">Download</span>
-                  </Button>
-                </>
+                <div className="col-span-full w-full">
+                  <span className="mb-2 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Review &amp; export
+                  </span>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    <Button onClick={handlePreview} variant="outline" className={documentOutlineBtnClass}>
+                      <Eye className="w-4 h-4 shrink-0" />
+                      <span className="truncate">Preview</span>
+                    </Button>
+                    <Button onClick={() => handlePrint('print')} className={documentGenerateBtnClass}>
+                      <Printer className="w-4 h-4 shrink-0" />
+                      <span className="truncate">Generate</span>
+                    </Button>
+                    <Button onClick={() => handlePrint('pdf')} variant="outline" className={documentOutlineBtnClass}>
+                      <Download className="w-4 h-4 shrink-0" />
+                      <span className="truncate">Download</span>
+                    </Button>
+                  </div>
+                </div>
               ) : (
-                <>
-                  <Button
-                    onClick={handleSaveToDatabase}
-                    className={documentSaveBtnClass}
-                    disabled={!billNumber.trim() || isSaving || (!customer && !editInvoiceId)}
-                  >
-                    <Save className="w-4 h-4 shrink-0" />
-                    <span className="truncate">
-                      {isSaving ? 'Saving...' : editInvoiceId ? 'Update invoice' : 'Save to DB'}
+                <div className="col-span-full w-full space-y-3">
+                  <div>
+                    <span className="mb-2 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      Review &amp; save
                     </span>
-                  </Button>
-                  <Button
-                    onClick={() => handlePrint('print')}
-                    className={documentGenerateBtnClass}
-                  >
-                    <Printer className="w-4 h-4 shrink-0" />
-                    <span className="truncate">Generate</span>
-                  </Button>
-                  <Button
-                    onClick={() => handlePrint('pdf')}
-                    variant="outline"
-                    className={documentOutlineBtnClass}
-                  >
-                    <Download className="w-4 h-4 shrink-0" />
-                    <span className="truncate">Download</span>
-                  </Button>
-                </>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button onClick={handlePreview} variant="outline" className={documentOutlineBtnClass}>
+                        <Eye className="w-4 h-4 shrink-0" />
+                        <span className="truncate">Preview</span>
+                      </Button>
+                      <Button
+                        onClick={handleSaveToDatabase}
+                        className={documentSaveBtnClass}
+                        disabled={!billNumber.trim() || isSaving || (!customer && !editInvoiceId)}
+                      >
+                        <Save className="w-4 h-4 shrink-0" />
+                        <span className="truncate">
+                          {isSaving ? 'Saving...' : editInvoiceId ? 'Update invoice' : 'Save to DB'}
+                        </span>
+                      </Button>
+                    </div>
+                  </div>
+                  <div>
+                    <span className="mb-2 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      Export
+                    </span>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <Button onClick={() => handlePrint('print')} className={documentGenerateBtnClass}>
+                        <Printer className="w-4 h-4 shrink-0" />
+                        <span className="truncate">Generate</span>
+                      </Button>
+                      <Button onClick={() => handlePrint('pdf')} variant="outline" className={documentOutlineBtnClass}>
+                        <Download className="w-4 h-4 shrink-0" />
+                        <span className="truncate">Download</span>
+                      </Button>
+                    </div>
+                  </div>
+                </div>
               )
             }
           />
@@ -2209,6 +2232,28 @@ export default function TaxInvoiceGenerator({
         </CardContent>
       </Card>
       </fieldset>
+      <DocumentPreviewDialog
+        open={previewOpen}
+        onOpenChange={(open) => {
+          setPreviewOpen(open);
+          if (!open) {
+            setPreviewHtml(null);
+            setPreviewBill(null);
+          }
+        }}
+        title="Tax Invoice Preview"
+        previewTitle={previewBill ? `Tax invoice ${previewBill.billNumber}` : 'Tax invoice preview'}
+        previewHtml={previewHtml}
+        accent="blue"
+        onDownload={() => {
+          setPreviewOpen(false);
+          runAfterDialogClose(() => void handlePrint('pdf'));
+        }}
+        onPrint={() => {
+          setPreviewOpen(false);
+          runAfterDialogClose(() => void handlePrint('print'));
+        }}
+      />
     </div>
   );
 }

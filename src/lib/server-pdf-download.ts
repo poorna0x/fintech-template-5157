@@ -215,6 +215,30 @@ async function downloadViaServer(html: string, filename: string): Promise<void> 
   triggerFileDownload(buffer, resolvedFilename);
 }
 
+/** Open document HTML in a new window and trigger the browser print / Save-as-PDF flow. */
+export function openHtmlPrintFallback(html: string): boolean {
+  const printWindow = window.open('', '_blank', 'width=800,height=600,scrollbars=yes,resizable=yes');
+  if (!printWindow) {
+    return false;
+  }
+
+  printWindow.document.write(html);
+  printWindow.document.close();
+
+  printWindow.onload = () => {
+    window.setTimeout(() => {
+      printWindow.print();
+      window.setTimeout(() => {
+        if (!printWindow.closed) {
+          printWindow.close();
+        }
+      }, 1000);
+    }, 100);
+  };
+
+  return true;
+}
+
 export interface GenerateDocumentPdfBase64Result {
   pdfBase64: string;
   filename: string;
@@ -282,10 +306,16 @@ export async function downloadDocumentPdf(options: DownloadDocumentPdfOptions): 
     await downloadViaServer(html, filename);
     toast.success('PDF downloaded', { id: toastId });
   } catch (error) {
+    const opened = openHtmlPrintFallback(html);
+    if (opened) {
+      toast.info('Opened print preview — choose Save as PDF in the print dialog.', { id: toastId });
+      return;
+    }
+
     const message = error instanceof Error ? error.message : 'PDF generation failed';
     toast.error('Could not download PDF', {
       id: toastId,
-      description: `${message}. Ensure dev server is running (npm run dev) and a Chromium browser is installed.`,
+      description: `${message}. Allow popups, or run npm run dev for server-generated PDFs.`,
     });
     throw error;
   }

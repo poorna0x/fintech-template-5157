@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Trash2, Download, Edit, X, FileText, Printer } from 'lucide-react';
+import { Plus, Trash2, Download, Edit, X, FileText, Printer, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { Bill, BillItem, CompanyInfo, Customer } from '@/types';
 import {
@@ -39,6 +39,8 @@ import DocumentGeneratorPageHeader, {
   documentOutlineBtnClass,
 } from '@/components/DocumentGeneratorPageHeader';
 import { mergeEditableCustomer } from '@/lib/document-drafts';
+import { quotationToPreviewHtml, runAfterDialogClose } from '@/lib/document-preview-utils';
+import DocumentPreviewDialog from '@/components/document/DocumentPreviewDialog';
 
 interface QuotationGeneratorProps {
   customer?: Customer;
@@ -117,7 +119,10 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
   const [sealVariant, setSealVariant] = useState<'sign' | 'stamp'>('sign');
   const [bankDetails, setBankDetails] = useState(defaultBankDetails);
   const [brandPickerOpen, setBrandPickerOpen] = useState(false);
-  const [pendingPrintAction, setPendingPrintAction] = useState<'print' | 'pdf'>('pdf');
+  const [pendingBrandAction, setPendingBrandAction] = useState<'print' | 'pdf' | 'preview'>('pdf');
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
+  const [previewBill, setPreviewBill] = useState<Bill | null>(null);
   
   // Computed values for backward compatibility
   const includeGST = gstOption === 'include';
@@ -402,7 +407,7 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
     ? subtotal + totalTax + serviceCharge 
     : subtotal + serviceCharge;
 
-  const executePrintWithBrand = (brand: DocumentBrand, action: 'print' | 'pdf') => {
+  const buildQuotationDocument = (brand: DocumentBrand): Bill | null => {
     const companyInfo = getCompanyInfoForBrand(brand);
     const effectiveGstOption = brandHasGst(brand) ? gstOption : 'normal';
     const printTotalAmount =
@@ -422,7 +427,7 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
         toast.error(
           'Please select a valid place of supply (pick a state from the list or enter a 2-digit GST state code).'
         );
-        return;
+        return null;
       }
 
       setPlaceOfSupply(posForOutput.name);
@@ -466,15 +471,14 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
       ].filter(Boolean).join('\n\n'),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
-    } as any;
+    } as Bill;
 
-    (quotation as any).validUntil = validUntilDate;
+    (quotation as Bill & { validUntil?: string }).validUntil = validUntilDate;
+    (quotation as Bill & { gstOption?: string }).gstOption = effectiveGstOption;
+    (quotation as Bill & { documentBrand?: DocumentBrand }).documentBrand = brand;
+    (quotation as Bill & { sealVariant?: typeof sealVariant }).sealVariant = sealVariant;
+    (quotation as Bill & { includeGST?: boolean }).includeGST = effectiveGstOption === 'include';
 
-    // Add GST option and GST data
-    (quotation as any).gstOption = effectiveGstOption;
-    (quotation as any).documentBrand = brand;
-    (quotation as any).sealVariant = sealVariant;
-    (quotation as any).includeGST = effectiveGstOption === 'include'; // For backward compatibility
     if (effectiveGstOption === 'include') {
       const posForOutput = preparePlaceOfSupplyForSave({
         placeName: placeOfSupply,
@@ -490,7 +494,7 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
             : { cgst: 0, sgst: 0, igst: totalTax }
           : { cgst: 0, sgst: 0, igst: 0 };
 
-      (quotation as any).gstData = {
+      (quotation as Bill & { gstData?: object }).gstData = {
         placeOfSupply: posForOutput.name,
         placeOfSupplyCode: posForOutput.code,
         companyStateCode,
@@ -502,14 +506,33 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
     }
 
     if (showBankDetails && brand === 'hydrogenro') {
-      (quotation as any).bankDetails = bankDetails;
+      (quotation as Bill & { bankDetails?: object }).bankDetails = bankDetails;
     }
 
+    return quotation;
+  };
+
+  const executePrintWithBrand = (brand: DocumentBrand, action: 'print' | 'pdf') => {
+    const quotation = buildQuotationDocument(brand);
+    if (!quotation) return;
     onPrint?.(quotation, action);
   };
 
+  const openPreview = (brand: DocumentBrand) => {
+    const quotation = buildQuotationDocument(brand);
+    if (!quotation) return;
+    setPreviewBill(quotation);
+    setPreviewHtml(quotationToPreviewHtml(quotation));
+    setPreviewOpen(true);
+  };
+
   const handlePrint = (action: 'print' | 'pdf' = 'print') => {
-    setPendingPrintAction(action);
+    setPendingBrandAction(action);
+    setBrandPickerOpen(true);
+  };
+
+  const handlePreview = () => {
+    setPendingBrandAction('preview');
     setBrandPickerOpen(true);
   };
 
@@ -585,6 +608,7 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
         embedded={embedded}
         actions={
           <DocumentGeneratorActionBar
+            primaryCols={4}
             draft={
               <DraftToolbar
                 kind="quotation"
@@ -596,23 +620,36 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
               />
             }
             primary={
-              <>
-                <Button
-                  onClick={() => handlePrint('print')}
-                  className={documentGenerateBtnClass}
-                >
-                  <Printer className="w-4 h-4 mr-2 shrink-0" />
-                  Generate Quotation
-                </Button>
-                <Button
-                  onClick={() => handlePrint('pdf')}
-                  variant="outline"
-                  className={documentOutlineBtnClass}
-                >
-                  <Download className="w-4 h-4 mr-2 shrink-0" />
-                  Download Quotation
-                </Button>
-              </>
+              <div className="col-span-full w-full">
+                <span className="mb-2 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  Review &amp; export
+                </span>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  <Button
+                    onClick={handlePreview}
+                    variant="outline"
+                    className={documentOutlineBtnClass}
+                  >
+                    <Eye className="w-4 h-4 shrink-0" />
+                    <span className="truncate">Preview</span>
+                  </Button>
+                  <Button
+                    onClick={() => handlePrint('print')}
+                    className={documentGenerateBtnClass}
+                  >
+                    <Printer className="w-4 h-4 shrink-0" />
+                    <span className="truncate">Generate</span>
+                  </Button>
+                  <Button
+                    onClick={() => handlePrint('pdf')}
+                    variant="outline"
+                    className={documentOutlineBtnClass}
+                  >
+                    <Download className="w-4 h-4 shrink-0" />
+                    <span className="truncate">Download</span>
+                  </Button>
+                </div>
+              </div>
             }
           />
         }
@@ -1577,9 +1614,51 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
       <DocumentBrandPickerDialog
         open={brandPickerOpen}
         onOpenChange={setBrandPickerOpen}
-        title="Which brand is this quotation for?"
-        description="Hydrogen RO can show GST. Eleven RO issues quotations without GST."
-        onSelect={(brand) => executePrintWithBrand(brand, pendingPrintAction)}
+        title={
+          pendingBrandAction === 'preview'
+            ? 'Which brand should this preview use?'
+            : 'Which brand is this quotation for?'
+        }
+        description={
+          pendingBrandAction === 'preview'
+            ? 'The preview will show the quotation with the selected brand logo and address.'
+            : 'Hydrogen RO can show GST. Eleven RO issues quotations without GST.'
+        }
+        onSelect={(brand) => {
+          if (pendingBrandAction === 'preview') {
+            openPreview(brand);
+          } else {
+            executePrintWithBrand(brand, pendingBrandAction);
+          }
+        }}
+      />
+      <DocumentPreviewDialog
+        open={previewOpen}
+        onOpenChange={(open) => {
+          setPreviewOpen(open);
+          if (!open) {
+            setPreviewHtml(null);
+            setPreviewBill(null);
+          }
+        }}
+        title="Quotation Preview"
+        previewTitle={previewBill ? `Quotation ${previewBill.billNumber}` : 'Quotation preview'}
+        previewHtml={previewHtml}
+        accent="green"
+        onDownload={() => {
+          if (!previewBill) return;
+          const brand = (previewBill as Bill & { documentBrand?: DocumentBrand }).documentBrand;
+          if (!brand) return;
+          setPreviewOpen(false);
+          runAfterDialogClose(() => executePrintWithBrand(brand, 'pdf'));
+        }}
+        onPrint={() => {
+          if (!previewBill) return;
+          const brand = (previewBill as Bill & { documentBrand?: DocumentBrand }).documentBrand;
+          if (!brand) return;
+          setPreviewOpen(false);
+          runAfterDialogClose(() => executePrintWithBrand(brand, 'print'));
+        }}
       />
     </div>
   );
