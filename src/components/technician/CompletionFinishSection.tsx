@@ -1,5 +1,6 @@
 import React from 'react';
-import { Bell, Camera, MessageCircleOff, Pencil } from 'lucide-react';
+import { Bell, Camera, Pencil } from 'lucide-react';
+import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import ImageUpload from '@/components/ImageUpload';
@@ -73,7 +74,7 @@ const CompletionFinishSection: React.FC<CompletionFinishSectionProps> = ({
                 className="h-4 w-4 shrink-0 rounded border-gray-300 text-gray-900 focus:ring-gray-500"
               />
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white border border-gray-200">
-                <MessageCircleOff className="h-4 w-4 text-gray-600" />
+                <WhatsAppIcon className="h-4 w-4 text-gray-900" />
               </span>
               <span className="text-sm text-gray-700">Don&apos;t send completion message to customer</span>
             </label>

@@ -36,7 +36,7 @@ export interface DocumentGeneratorActionBarProps {
   primary: React.ReactNode;
   secondary?: React.ReactNode;
   /** Columns for the primary button row on sm+ screens */
-  primaryCols?: 2 | 3 | 4;
+  primaryCols?: 2 | 3 | 4 | 5;
   secondaryLabel?: string;
   /** Horizontal equal-width buttons without extra chrome */
   compact?: boolean;
@@ -47,17 +47,19 @@ function PrimaryButtonRow({
   cols,
 }: {
   primary: React.ReactNode;
-  cols: 2 | 3 | 4;
+  cols: 2 | 3 | 4 | 5;
 }) {
   return (
     <div
       className={cn(
         'grid w-full min-w-0 gap-2',
-        cols === 4
-          ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'
-          : cols === 3
-            ? 'grid-cols-1 sm:grid-cols-3'
-            : 'grid-cols-1 sm:grid-cols-2'
+        cols === 5
+          ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-5'
+          : cols === 4
+            ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'
+            : cols === 3
+              ? 'grid-cols-1 sm:grid-cols-3'
+              : 'grid-cols-1 sm:grid-cols-2'
       )}
     >
       {primary}
@@ -72,14 +74,16 @@ function UnifiedActionGrid({
 }: {
   draft?: React.ReactNode;
   primary: React.ReactNode;
-  primaryCols: 2 | 3 | 4;
+  primaryCols: 2 | 3 | 4 | 5;
 }) {
-  // 3–4 primary actions (AMC, tax invoice): two rows — drafts, then actions.
-  if (primaryCols === 3 || primaryCols === 4) {
+  const stackedCols = primaryCols === 5 ? 5 : primaryCols === 4 ? 4 : primaryCols === 3 ? 3 : 2;
+
+  // 3–5 primary actions (AMC, tax invoice): drafts row, then equal-width action grid.
+  if (stackedCols >= 3) {
     return (
       <div className="flex w-full min-w-0 flex-col gap-2">
         {draft}
-        <PrimaryButtonRow primary={primary} cols={primaryCols} />
+        <PrimaryButtonRow primary={primary} cols={stackedCols} />
       </div>
     );
   }
@@ -117,7 +121,13 @@ export function DocumentGeneratorActionBar({
       <div
         className={cn(
           'grid w-full min-w-0 gap-2',
-          primaryCols === 3 ? 'grid-cols-1 sm:grid-cols-3' : primaryCols === 4 ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4' : 'grid-cols-1 sm:grid-cols-2'
+          primaryCols === 3
+            ? 'grid-cols-1 sm:grid-cols-3'
+            : primaryCols === 4
+              ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'
+              : primaryCols === 5
+                ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-5'
+                : 'grid-cols-1 sm:grid-cols-2'
         )}
       >
         {primary}

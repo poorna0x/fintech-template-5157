@@ -12,6 +12,17 @@ import { Plus, Trash2, Download, Edit, X, FileText, Save, Printer } from 'lucide
 import { toast } from 'sonner';
 import { Bill, BillItem, CompanyInfo, Customer } from '@/types';
 import {
+  type EditableNumber,
+  displayEditableNumber,
+  num,
+  parseEditableNumberInput,
+} from '@/lib/editable-number-input';
+
+type EditableBillItem = Omit<BillItem, 'quantity' | 'unitPrice'> & {
+  quantity: EditableNumber;
+  unitPrice: EditableNumber;
+};
+import {
   getCompanyStateCode,
   getStateCodeFromGstin,
   getStateNameByCode,
@@ -208,7 +219,7 @@ export default function TaxInvoiceGenerator({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [billDate]);
-  const [items, setItems] = useState<BillItem[]>(defaultTaxInvoiceItems);
+  const [items, setItems] = useState<EditableBillItem[]>(defaultTaxInvoiceItems);
   const [notes, setNotes] = useState<string[]>([]);
   const [newNote, setNewNote] = useState('');
   const [editingNoteIndex, setEditingNoteIndex] = useState<number | null>(null);
@@ -221,7 +232,7 @@ export default function TaxInvoiceGenerator({
 5. Once the order placed cannot be cancelled and advance amount will not be returned.
 6. Charges of Rs. 500/- extra to be paid on collection of the cash against cheque return.
 7. Company is not responsible for any transactions done personally with the technicians.`);
-  const [serviceCharge, setServiceCharge] = useState(0);
+  const [serviceCharge, setServiceCharge] = useState<EditableNumber>(0);
   const [isEditingTerms, setIsEditingTerms] = useState(false);
   const [newTerm, setNewTerm] = useState('');
   const [isEditingNotes, setIsEditingNotes] = useState(false);
@@ -371,7 +382,7 @@ export default function TaxInvoiceGenerator({
 
   // Calculate totals with GST (after discounts)
   const subtotal = items.reduce((sum, item) => {
-    const baseAmount = item.quantity * item.unitPrice;
+    const baseAmount = num(item.quantity) * num(item.unitPrice);
     const discount = (item as any).discount || 0;
     return sum + Math.max(0, baseAmount - discount);
   }, 0); // Taxable amount after discounts
@@ -392,7 +403,7 @@ export default function TaxInvoiceGenerator({
     
     items.forEach(item => {
       if (item.taxRate > 0) {
-        const baseAmount = item.quantity * item.unitPrice;
+        const baseAmount = num(item.quantity) * num(item.unitPrice);
         const discount = (item as any).discount || 0;
         const taxableAmount = Math.max(0, baseAmount - discount);
         if (!gstByRate[item.taxRate]) {
@@ -430,7 +441,7 @@ export default function TaxInvoiceGenerator({
   const taxSplit = calculateTaxSplit();
   
   // Calculate total with round off
-  let calculatedTotal = subtotal + serviceCharge + totalTax;
+  let calculatedTotal = subtotal + num(serviceCharge) + totalTax;
   let finalRoundOff = 0;
   
   if (roundOff) {
@@ -443,17 +454,17 @@ export default function TaxInvoiceGenerator({
   // Invoice number generation is now handled by getNextInvoiceNumber() function
 
   const addItem = () => {
-    const newItem: BillItem = {
+    const newItem: EditableBillItem = {
       id: Date.now().toString(),
       description: '',
       quantity: 1,
-      unitPrice: 0,
+      unitPrice: '',
       total: 0,
       taxRate: 18, // Default 18% GST
       taxAmount: 0,
       hsnCode: '8421', // Default HSN code for water purification equipment
       discount: 0 // Default discount
-    } as any;
+    } as EditableBillItem & { hsnCode: string; discount: number };
     setItems([...items, newItem]);
   };
 
@@ -494,15 +505,18 @@ export default function TaxInvoiceGenerator({
     setNewNote('');
   };
 
-  const updateItem = (id: string, field: keyof BillItem, value: string | number) => {
+  const updateItem = (
+    id: string,
+    field: keyof EditableBillItem,
+    value: string | number | EditableNumber
+  ) => {
     setItems(items.map(item => {
       if (item.id === id) {
         const updatedItem = { ...item, [field]: value };
         
         // Recalculate totals when quantity, unitPrice, or taxRate changes
         if (field === 'quantity' || field === 'unitPrice' || field === 'taxRate') {
-          const baseTotal = updatedItem.quantity * updatedItem.unitPrice;
-          updatedItem.total = baseTotal;
+          const baseTotal = num(updatedItem.quantity) * num(updatedItem.unitPrice);
           updatedItem.taxAmount = Math.round((baseTotal * updatedItem.taxRate) / 100);
           updatedItem.total = baseTotal + updatedItem.taxAmount;
         }
@@ -512,6 +526,12 @@ export default function TaxInvoiceGenerator({
       return item;
     }));
   };
+
+  const normalizedItems: BillItem[] = items.map((item) => ({
+    ...item,
+    quantity: num(item.quantity),
+    unitPrice: num(item.unitPrice),
+  }));
 
   const addTerm = () => {
     if (newTerm.trim()) {
@@ -635,7 +655,7 @@ export default function TaxInvoiceGenerator({
         customer_email: editableCustomer.email || null,
         customer_gstin: editableCustomer.gst || null,
         company_info: company,
-        items: items,
+        items: normalizedItems,
         place_of_supply: posForSave.name,
         place_of_supply_code: posForSave.code,
         is_intra_state: saveIsIntraState,
@@ -645,7 +665,7 @@ export default function TaxInvoiceGenerator({
         vehicle_no: vehicleNo || null,
         subtotal: subtotal || 0,
         total_discount: totalDiscount || 0,
-        service_charge: serviceCharge || 0,
+        service_charge: num(serviceCharge),
         total_tax: totalTax || 0,
         cgst: saveTaxSplit.cgst || 0,
         sgst: saveTaxSplit.sgst || 0,
@@ -777,10 +797,10 @@ export default function TaxInvoiceGenerator({
         email: editableCustomer.email,
         gstNumber: editableCustomer.gst
       },
-      items,
+      items: normalizedItems,
       subtotal,
       totalTax,
-      serviceCharge,
+      serviceCharge: num(serviceCharge),
       totalAmount,
       paymentStatus: 'PENDING',
       paymentMethod: 'CASH',
@@ -1419,8 +1439,8 @@ export default function TaxInvoiceGenerator({
                 <Input
                   id="serviceCharge"
                   type="number"
-                  value={serviceCharge}
-                  onChange={(e) => setServiceCharge(parseFloat(e.target.value) || 0)}
+                  value={displayEditableNumber(serviceCharge)}
+                  onChange={(e) => setServiceCharge(parseEditableNumberInput(e.target.value))}
                   min="0"
                   step="0.01"
                   className="w-full sm:w-24"
@@ -1460,8 +1480,8 @@ export default function TaxInvoiceGenerator({
                     <Label>Qty</Label>
                     <Input
                       type="number"
-                      value={item.quantity}
-                      onChange={(e) => updateItem(item.id, 'quantity', parseFloat(e.target.value) || 0)}
+                      value={displayEditableNumber(item.quantity)}
+                      onChange={(e) => updateItem(item.id, 'quantity', parseEditableNumberInput(e.target.value))}
                       min="0"
                       step="0.01"
                       inputMode="decimal"
@@ -1471,8 +1491,8 @@ export default function TaxInvoiceGenerator({
                     <Label>Unit Price</Label>
                     <Input
                       type="number"
-                      value={item.unitPrice}
-                      onChange={(e) => updateItem(item.id, 'unitPrice', parseFloat(e.target.value) || 0)}
+                      value={displayEditableNumber(item.unitPrice)}
+                      onChange={(e) => updateItem(item.id, 'unitPrice', parseEditableNumberInput(e.target.value))}
                       min="0"
                       step="0.01"
                     />
@@ -1514,7 +1534,7 @@ export default function TaxInvoiceGenerator({
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 pt-2 border-t">
                   <div className="text-sm">
                     <span className="text-gray-500">Base Amount: </span>
-                    <span className="font-semibold">₹{(item.quantity * item.unitPrice).toLocaleString()}</span>
+                    <span className="font-semibold">₹{(num(item.quantity) * num(item.unitPrice)).toLocaleString()}</span>
                   </div>
                   {(item as any).discount > 0 && (
                     <div className="text-sm">
@@ -1524,7 +1544,7 @@ export default function TaxInvoiceGenerator({
                   )}
                   <div className="text-sm">
                     <span className="text-gray-500">Taxable: </span>
-                    <span className="font-semibold">₹{((item.quantity * item.unitPrice) - ((item as any).discount || 0)).toLocaleString()}</span>
+                    <span className="font-semibold">₹{((num(item.quantity) * num(item.unitPrice)) - ((item as any).discount || 0)).toLocaleString()}</span>
                   </div>
                   <div className="text-sm">
                     <span className="text-gray-500">GST ({item.taxRate}%): </span>
@@ -1579,7 +1599,7 @@ export default function TaxInvoiceGenerator({
           <div className="space-y-3 sm:space-y-4">
             <div className="flex justify-between text-lg">
               <span>Subtotal (Base Amount):</span>
-              <span>₹{(items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0)).toLocaleString()}</span>
+              <span>₹{(items.reduce((sum, item) => sum + (num(item.quantity) * num(item.unitPrice)), 0)).toLocaleString()}</span>
             </div>
             {totalDiscount > 0 && (
               <div className="flex justify-between text-lg text-red-600">
@@ -1612,10 +1632,10 @@ export default function TaxInvoiceGenerator({
               <span>Total GST:</span>
               <span>₹{totalTax.toLocaleString()}</span>
             </div>
-            {serviceCharge > 0 && (
+            {num(serviceCharge) > 0 && (
               <div className="flex justify-between text-lg">
                 <span>Service Charge:</span>
-                <span>₹{serviceCharge.toLocaleString()}</span>
+                <span>₹{num(serviceCharge).toLocaleString()}</span>
               </div>
             )}
             {roundOff && finalRoundOff !== 0 && (

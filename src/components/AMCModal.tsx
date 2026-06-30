@@ -51,7 +51,7 @@ export default function AMCModal({ isOpen, onClose, customer, onAMCSaved }: AMCM
                 {customer ? `AMC Agreement for ${customer.fullName}` : 'AMC Agreement'}
               </DialogTitle>
               <p className="mt-1 text-sm text-slate-600">
-                Fill in details below, then save or export the agreement.
+                Fill in details below, preview the agreement, then save or export.
               </p>
             </div>
             <Button

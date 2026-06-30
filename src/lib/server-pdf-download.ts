@@ -232,6 +232,44 @@ export async function generateDocumentPdfBase64(
   return { pdfBase64, filename: resolvedFilename, size };
 }
 
+export interface DocumentPdfObjectUrlResult {
+  objectUrl: string;
+  filename: string;
+  revoke: () => void;
+}
+
+/** Generate a PDF and return a blob URL for in-browser preview (same file as Download). */
+export async function fetchDocumentPdfObjectUrl(
+  options: DownloadDocumentPdfOptions
+): Promise<DocumentPdfObjectUrlResult> {
+  const html = withAbsoluteAssetUrls(options.html, options.origin);
+  const filename = sanitizeFilename(options.filename);
+  const { buffer, filename: resolvedFilename } = await fetchPdfFromServer(html, filename);
+  const blob = new Blob([buffer], { type: 'application/pdf' });
+  const objectUrl = URL.createObjectURL(blob);
+  return {
+    objectUrl,
+    filename: resolvedFilename,
+    revoke: () => URL.revokeObjectURL(objectUrl),
+  };
+}
+
+/**
+ * Open a generated PDF in a new browser tab (native PDF viewer).
+ */
+export async function openDocumentPdfInNewTab(
+  options: DownloadDocumentPdfOptions
+): Promise<void> {
+  const { objectUrl, revoke } = await fetchDocumentPdfObjectUrl(options);
+  const opened = window.open(objectUrl, '_blank', 'noopener,noreferrer');
+  if (!opened) {
+    revoke();
+    throw new Error('Please allow popups to open the PDF preview');
+  }
+  // Revoke after the tab has had time to load the blob URL
+  window.setTimeout(revoke, 60_000);
+}
+
 /**
  * Download a PDF via the Netlify Puppeteer function (same layout as Generate / print).
  */

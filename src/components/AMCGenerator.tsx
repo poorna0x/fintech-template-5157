@@ -9,10 +9,17 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Edit, Plus, Download, FileText, User, Phone, MapPin, Building, Droplets, Mail, Save, Printer } from 'lucide-react';
+import { Edit, Plus, Download, FileText, User, Phone, MapPin, Building, Droplets, Mail, Save, Printer, Eye } from 'lucide-react';
 import DocumentBrandLogo from '@/components/DocumentBrandLogo';
 import { toast } from 'sonner';
 import { Customer, Bill, BillItem, CompanyInfo } from '@/types';
+import {
+  type EditableNumber,
+  displayEditableNumber,
+  num,
+  parseEditableNumberInput,
+} from '@/lib/editable-number-input';
+import { cn } from '@/lib/utils';
 import { db } from '@/lib/supabase';
 import DocumentBrandPickerDialog from '@/components/DocumentBrandPickerDialog';
 import {
@@ -42,6 +49,15 @@ import {
   normalizeCustomerAddress,
 } from '@/lib/customer-address';
 import AmcEmailSendDialog from '@/components/amc/AmcEmailSendDialog';
+import AmcDocumentPreview from '@/components/amc/AmcDocumentPreview';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { normalizeRecipientList } from '@/lib/email-recipients';
 import { ensureSupabaseSessionForWrite } from '@/lib/ensureSupabaseSession';
 
@@ -92,15 +108,15 @@ export default function AMCGenerator({ customer, onPrint, onAMCSaved, embedded =
 
   const defaultServicePeriod = getDefaultServicePeriodFromStorage();
   const [servicePeriodKind, setServicePeriodKind] = useState<'4' | '6' | 'custom' | 'no_auto'>(defaultServicePeriod.kind);
-  const [servicePeriodCustomMonths, setServicePeriodCustomMonths] = useState<number>(defaultServicePeriod.customMonths);
+  const [servicePeriodCustomMonths, setServicePeriodCustomMonths] = useState<EditableNumber>(defaultServicePeriod.customMonths);
 
   const [terms, setTerms] = useState(() =>
     generateAmcTerms(false, defaultServicePeriod.kind, defaultServicePeriod.customMonths)
   );
-  const [amcCost, setAmcCost] = useState(7000);
-  const [serviceCharge, setServiceCharge] = useState(0);
+  const [amcCost, setAmcCost] = useState<EditableNumber>(7000);
+  const [serviceCharge, setServiceCharge] = useState<EditableNumber>(0);
   const [paymentStatus, setPaymentStatus] = useState<'PAID' | 'PARTIAL' | 'PENDING'>('PAID');
-  const [amountReceived, setAmountReceived] = useState(7000);
+  const [amountReceived, setAmountReceived] = useState<EditableNumber>(7000);
   const [isEditingTerms, setIsEditingTerms] = useState(false);
   const [newTerm, setNewTerm] = useState('');
   const [termSection, setTermSection] = useState<'services' | 'terms'>('services');
@@ -124,7 +140,10 @@ export default function AMCGenerator({ customer, onPrint, onAMCSaved, embedded =
     | { type: 'save' }
     | { type: 'document'; action: 'print' | 'pdf'; options?: { termsOnly?: boolean } }
     | { type: 'email' }
+    | { type: 'preview' }
   | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewBill, setPreviewBill] = useState<Bill | null>(null);
   const [documentBrand, setDocumentBrand] = useState<DocumentBrand>('hydrogenro');
   /** Skip one terms auto-regen after loading a draft (preserves custom/edited terms). */
   const skipTermsAutoGenRef = useRef(0);
@@ -135,7 +154,7 @@ export default function AMCGenerator({ customer, onPrint, onAMCSaved, embedded =
       skipTermsAutoGenRef.current -= 1;
       return;
     }
-    setTerms(generateAmcTerms(includesPreSedimentFiltration, servicePeriodKind, servicePeriodCustomMonths));
+    setTerms(generateAmcTerms(includesPreSedimentFiltration, servicePeriodKind, num(servicePeriodCustomMonths)));
   }, [includesPreSedimentFiltration, servicePeriodKind, servicePeriodCustomMonths]);
 
   // Auto-populate RO model from customer data (brand and/or model)
@@ -192,8 +211,8 @@ export default function AMCGenerator({ customer, onPrint, onAMCSaved, embedded =
   }, [customer, isEditingCustomer]);
 
   // Calculate totals - use direct AMC cost instead of items
-  const subtotal = amcCost;
-  const totalAmount = subtotal + serviceCharge;
+  const subtotal = num(amcCost);
+  const totalAmount = subtotal + num(serviceCharge);
 
   React.useEffect(() => {
     if (paymentStatus === 'PAID') {
@@ -208,7 +227,7 @@ export default function AMCGenerator({ customer, onPrint, onAMCSaved, embedded =
       ? totalAmount
       : paymentStatus === 'PENDING'
         ? 0
-        : Math.max(0, Math.min(amountReceived, totalAmount));
+        : Math.max(0, Math.min(num(amountReceived), totalAmount));
 
   const balanceDue = Math.max(0, totalAmount - resolvedAmountReceived);
 
@@ -353,8 +372,8 @@ export default function AMCGenerator({ customer, onPrint, onAMCSaved, embedded =
       const metadata = {
         agreement_number: billNumber.trim(),
         agreement_date: billDate,
-        amc_cost: amcCost,
-        service_charge: serviceCharge,
+        amc_cost: num(amcCost),
+        service_charge: num(serviceCharge),
         total_amount: totalAmount,
         ro_model: roModel.trim(),
         validity_period: validity,
@@ -383,7 +402,7 @@ export default function AMCGenerator({ customer, onPrint, onAMCSaved, embedded =
             ? 4
             : servicePeriodKind === '6'
               ? 6
-              : Math.max(1, servicePeriodCustomMonths);
+              : Math.max(1, num(servicePeriodCustomMonths));
 
       const { error: amcError, updated } = await db.amcContracts.create({
         customer_id: customer.id,
@@ -489,8 +508,8 @@ export default function AMCGenerator({ customer, onPrint, onAMCSaved, embedded =
       id: '1',
       description: 'AMC Agreement - 1 Year Service Contract',
       quantity: 1,
-      unitPrice: amcCost,
-      total: amcCost,
+      unitPrice: num(amcCost),
+      total: num(amcCost),
       taxRate: 0,
       taxAmount: 0,
     };
@@ -519,7 +538,7 @@ export default function AMCGenerator({ customer, onPrint, onAMCSaved, embedded =
       items: [amcItem],
       subtotal,
       totalTax: 0,
-      serviceCharge,
+      serviceCharge: num(serviceCharge),
       totalAmount,
       paymentStatus,
       amountPaid: resolvedAmountReceived,
@@ -578,6 +597,46 @@ export default function AMCGenerator({ customer, onPrint, onAMCSaved, embedded =
     }
     setPendingBrandAction({ type: 'document', action, options });
     setBrandPickerOpen(true);
+  };
+
+  const handlePreview = () => {
+    if (!billNumber.trim()) {
+      toast.error('Please enter an agreement number');
+      return;
+    }
+    if (!roModel.trim()) {
+      toast.error('Please enter RO Model/Brand before previewing AMC Agreement', {
+        description: 'RO Model is required to preview the agreement.',
+        duration: 6000,
+      });
+      return;
+    }
+    setPendingBrandAction({ type: 'preview' });
+    setBrandPickerOpen(true);
+  };
+
+  const openPreview = (brand: DocumentBrand) => {
+    applyBrandToForm(brand);
+    if (!validateAmcForm()) return;
+    const { bill } = buildAmcBill(brand);
+    setPreviewBill(bill);
+    setPreviewOpen(true);
+  };
+
+  const openEmailFromPreview = () => {
+    if (!previewBill) return;
+    const brand =
+      (previewBill as Bill & { documentBrand?: DocumentBrand }).documentBrand ?? documentBrand;
+    const { endDate } = calculateDates();
+    const defaultRecipients = normalizeRecipientList(customerEmail ? [customerEmail] : []);
+    setPreviewOpen(false);
+    setEmailSendContext({
+      bill: previewBill,
+      brand,
+      endDateIso: endDate,
+      defaultRecipients,
+    });
+    setEmailDialogOpen(true);
   };
 
   const customerEmail = getValidCustomerEmail(editableCustomer.email);
@@ -705,7 +764,7 @@ export default function AMCGenerator({ customer, onPrint, onAMCSaved, embedded =
 
       <DocumentGeneratorPageHeader
         title="AMC Agreement Generator"
-        description="Configure agreement details, payment, and terms — then save, print, or download."
+        description="Configure agreement details, payment, and terms — preview, then save, print, or download."
         accent="violet"
         embedded={embedded}
         actions={
@@ -723,44 +782,67 @@ export default function AMCGenerator({ customer, onPrint, onAMCSaved, embedded =
               />
             }
             primary={
-              <>
-                <Button
-                  onClick={handleSaveToDatabase}
-                  className={documentSaveBtnClass}
-                  disabled={!billNumber.trim() || isSaving}
-                >
-                  <Save className="w-4 h-4 shrink-0" />
-                  <span className="truncate">
-                    {isSaving ? 'Saving...' : 'Save to DB'}
+              <div className="col-span-full w-full space-y-3">
+                <div>
+                  <span className="mb-2 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Review &amp; save
                   </span>
-                </Button>
-                <Button
-                  onClick={() => handleDocument('print')}
-                  className={documentGenerateVioletBtnClass}
-                  disabled={!billNumber.trim()}
-                >
-                  <Printer className="w-4 h-4 shrink-0" />
-                  <span className="truncate">Generate</span>
-                </Button>
-                <Button
-                  onClick={() => handleDocument('pdf')}
-                  variant="outline"
-                  className={documentOutlineBtnClass}
-                  disabled={!billNumber.trim()}
-                >
-                  <Download className="w-4 h-4 shrink-0" />
-                  <span className="truncate">Download</span>
-                </Button>
-                <Button
-                  onClick={handleEmailCustomer}
-                  variant="outline"
-                  className={documentOutlineBtnClass}
-                  disabled={!billNumber.trim()}
-                >
-                  <Mail className="w-4 h-4 shrink-0" />
-                  <span className="truncate">Email PDF</span>
-                </Button>
-              </>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      onClick={handlePreview}
+                      variant="outline"
+                      className={documentOutlineBtnClass}
+                      disabled={!billNumber.trim()}
+                    >
+                      <Eye className="w-4 h-4 shrink-0" />
+                      <span className="truncate">Preview</span>
+                    </Button>
+                    <Button
+                      onClick={handleSaveToDatabase}
+                      className={documentSaveBtnClass}
+                      disabled={!billNumber.trim() || isSaving}
+                    >
+                      <Save className="w-4 h-4 shrink-0" />
+                      <span className="truncate">
+                        {isSaving ? 'Saving...' : 'Save to DB'}
+                      </span>
+                    </Button>
+                  </div>
+                </div>
+                <div>
+                  <span className="mb-2 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Export
+                  </span>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    <Button
+                      onClick={() => handleDocument('print')}
+                      className={documentGenerateVioletBtnClass}
+                      disabled={!billNumber.trim()}
+                    >
+                      <Printer className="w-4 h-4 shrink-0" />
+                      <span className="truncate">Generate</span>
+                    </Button>
+                    <Button
+                      onClick={() => handleDocument('pdf')}
+                      variant="outline"
+                      className={documentOutlineBtnClass}
+                      disabled={!billNumber.trim()}
+                    >
+                      <Download className="w-4 h-4 shrink-0" />
+                      <span className="truncate">Download</span>
+                    </Button>
+                    <Button
+                      onClick={handleEmailCustomer}
+                      variant="outline"
+                      className={documentOutlineBtnClass}
+                      disabled={!billNumber.trim()}
+                    >
+                      <Mail className="w-4 h-4 shrink-0" />
+                      <span className="truncate">Email PDF</span>
+                    </Button>
+                  </div>
+                </div>
+              </div>
             }
             secondary={
               <>
@@ -805,8 +887,8 @@ export default function AMCGenerator({ customer, onPrint, onAMCSaved, embedded =
                 <Input
                   id="amcCost"
                   type="number"
-                  value={amcCost}
-                  onChange={(e) => setAmcCost(parseFloat(e.target.value) || 0)}
+                  value={displayEditableNumber(amcCost)}
+                  onChange={(e) => setAmcCost(parseEditableNumberInput(e.target.value))}
                   placeholder="7000"
                   min="0"
                   step="1"
@@ -1108,8 +1190,8 @@ export default function AMCGenerator({ customer, onPrint, onAMCSaved, embedded =
                     type="number"
                     min={0}
                     max={totalAmount}
-                    value={amountReceived}
-                    onChange={(e) => setAmountReceived(parseFloat(e.target.value) || 0)}
+                    value={displayEditableNumber(amountReceived)}
+                    onChange={(e) => setAmountReceived(parseEditableNumberInput(e.target.value))}
                     className="mt-1"
                   />
                   <p className="text-xs text-gray-600 mt-1">
@@ -1239,8 +1321,8 @@ export default function AMCGenerator({ customer, onPrint, onAMCSaved, embedded =
                 <Input
                   id="serviceCharge"
                   type="number"
-                  value={serviceCharge}
-                  onChange={(e) => setServiceCharge(parseFloat(e.target.value) || 0)}
+                  value={displayEditableNumber(serviceCharge)}
+                  onChange={(e) => setServiceCharge(parseEditableNumberInput(e.target.value))}
                   placeholder="0"
                 />
               </div>
@@ -1424,12 +1506,12 @@ export default function AMCGenerator({ customer, onPrint, onAMCSaved, embedded =
               <div className="space-y-2">
                 <div className="flex justify-between text-sm sm:text-base">
                   <span>AMC Cost:</span>
-                  <span>₹{amcCost.toLocaleString()}</span>
+                  <span>₹{num(amcCost).toLocaleString()}</span>
                 </div>
-                {serviceCharge > 0 && (
+                {num(serviceCharge) > 0 && (
                   <div className="flex justify-between text-sm sm:text-base">
                     <span>Additional Charges:</span>
-                    <span>₹{serviceCharge.toLocaleString()}</span>
+                    <span>₹{num(serviceCharge).toLocaleString()}</span>
                   </div>
                 )}
                 <div className="flex justify-between font-bold text-base sm:text-lg border-t pt-2">
@@ -1475,8 +1557,17 @@ export default function AMCGenerator({ customer, onPrint, onAMCSaved, embedded =
                     type="number"
                     min={1}
                     max={24}
-                    value={servicePeriodCustomMonths}
-                    onChange={(e) => setServicePeriodCustomMonths(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                    value={displayEditableNumber(servicePeriodCustomMonths)}
+                    onChange={(e) => {
+                      const parsed = parseEditableNumberInput(e.target.value);
+                      if (parsed === '') {
+                        setServicePeriodCustomMonths('');
+                        return;
+                      }
+                      setServicePeriodCustomMonths(
+                        Math.max(1, Math.min(24, Math.floor(parsed)))
+                      );
+                    }}
                     className="mt-1"
                     placeholder="Months"
                   />
@@ -1484,7 +1575,7 @@ export default function AMCGenerator({ customer, onPrint, onAMCSaved, embedded =
                 <p className="text-xs text-gray-500">
                   {servicePeriodKind === 'no_auto'
                     ? 'No automatic AMC service jobs will be created for this contract.'
-                    : `An AMC service job is auto-created ${servicePeriodKind === '4' ? '4' : servicePeriodKind === '6' ? '6' : servicePeriodCustomMonths} months after the customer's last completed service (any type). If that next visit would be after the AMC end date, a final job is auto-created 10 days before the AMC expires instead.`}
+                    : `An AMC service job is auto-created ${servicePeriodKind === '4' ? '4' : servicePeriodKind === '6' ? '6' : num(servicePeriodCustomMonths)} months after the customer's last completed service (any type). If that next visit would be after the AMC end date, a final job is auto-created 10 days before the AMC expires instead.`}
                 </p>
               </div>
 
@@ -1507,14 +1598,18 @@ export default function AMCGenerator({ customer, onPrint, onAMCSaved, embedded =
             ? 'Which brand gave this AMC?'
             : pendingBrandAction?.type === 'email'
               ? 'Which brand is sending this AMC?'
-              : 'Which brand is this agreement for?'
+              : pendingBrandAction?.type === 'preview'
+                ? 'Which brand should this preview use?'
+                : 'Which brand is this agreement for?'
         }
         description={
           pendingBrandAction?.type === 'save'
             ? 'Select Hydrogen RO or Eleven RO. This brand is stored on the AMC contract when you save.'
             : pendingBrandAction?.type === 'email'
               ? 'The PDF attachment and email will use the selected brand address, logo, and sender.'
-              : 'The agreement PDF will use the selected brand address and logo.'
+              : pendingBrandAction?.type === 'preview'
+                ? 'The preview will show the agreement with the selected brand logo and address.'
+                : 'The agreement PDF will use the selected brand address and logo.'
         }
         onSelect={(brand) => {
           if (pendingBrandAction?.type === 'save') {
@@ -1523,10 +1618,95 @@ export default function AMCGenerator({ customer, onPrint, onAMCSaved, embedded =
             void executePrint(brand, pendingBrandAction.action, pendingBrandAction.options);
           } else if (pendingBrandAction?.type === 'email') {
             openEmailSendDialog(brand);
+          } else if (pendingBrandAction?.type === 'preview') {
+            openPreview(brand);
           }
           setPendingBrandAction(null);
         }}
       />
+      <Dialog
+        open={previewOpen}
+        onOpenChange={(open) => {
+          setPreviewOpen(open);
+          if (!open) setPreviewBill(null);
+        }}
+      >
+        <DialogContent className="flex max-h-[100dvh] w-[calc(100vw-1rem)] max-w-[min(100vw-1rem,52.5rem)] flex-col overflow-hidden p-0 sm:max-h-[96vh]">
+          <DialogHeader className="shrink-0 border-b bg-gradient-to-r from-violet-50/90 to-white px-4 py-3 sm:px-5">
+            <DialogTitle className="text-lg font-bold text-violet-950 sm:text-xl">
+              AMC Agreement Preview
+            </DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm">
+              Same layout as the PDF — review before saving or exporting.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto bg-slate-100/80 px-2 py-2 sm:px-3">
+            {previewBill ? (
+              <AmcDocumentPreview
+                bill={previewBill}
+                fillHeight
+                options={{
+                  includeDetails: true,
+                  showComputerGeneratedText,
+                }}
+              />
+            ) : null}
+          </div>
+          <DialogFooter className="shrink-0 grid grid-cols-2 gap-2 border-t bg-white px-3 py-3 sm:grid-cols-4 sm:px-4">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-10 w-full"
+              onClick={() => setPreviewOpen(false)}
+            >
+              Close
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className={cn(documentOutlineBtnClass, 'h-10 w-full')}
+              disabled={!previewBill}
+              onClick={openEmailFromPreview}
+            >
+              <Mail className="w-4 h-4 shrink-0" />
+              <span className="truncate">Email AMC</span>
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className={cn(documentOutlineBtnClass, 'h-10 w-full')}
+              disabled={!previewBill}
+              onClick={() => {
+                if (!previewBill) return;
+                setPreviewOpen(false);
+                void executePrint(
+                  (previewBill as Bill & { documentBrand?: DocumentBrand }).documentBrand ?? documentBrand,
+                  'pdf'
+                );
+              }}
+            >
+              <Download className="w-4 h-4 shrink-0" />
+              <span className="truncate">Download</span>
+            </Button>
+            <Button
+              type="button"
+              className={cn(documentGenerateVioletBtnClass, 'h-10 w-full')}
+              disabled={!previewBill}
+              onClick={() => {
+                if (!previewBill) return;
+                setPreviewOpen(false);
+                void executePrint(
+                  (previewBill as Bill & { documentBrand?: DocumentBrand }).documentBrand ?? documentBrand,
+                  'print'
+                );
+              }}
+            >
+              <Printer className="w-4 h-4 shrink-0" />
+              <span className="truncate">Print</span>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <AmcEmailSendDialog
         open={emailDialogOpen}
         onOpenChange={setEmailDialogOpen}
