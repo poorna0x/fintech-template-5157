@@ -1170,6 +1170,110 @@ export const db = {
 
       return { data: data?.[0] || null, error: null };
     },
+
+    /** Whitelisted customer patch for technicians on an active assigned job (prefer RPC). */
+    async updateByTechnician(
+      customerId: string,
+      jobId: string,
+      patch: {
+        email?: string;
+        alternate_phone?: string;
+        visible_address?: string;
+        address?: Record<string, unknown>;
+        location?: Record<string, unknown>;
+      }
+    ) {
+      const { sanitizeTechnicianCustomerPatch, isMissingRpcError } = await import(
+        '@/lib/technicianCustomerUpdate'
+      );
+      const sanitized = sanitizeTechnicianCustomerPatch(patch);
+      if ('error' in sanitized) {
+        return { data: null, error: { message: sanitized.error } };
+      }
+      if (Object.keys(sanitized).length === 0) {
+        return { data: null, error: { message: 'No valid fields to update' } };
+      }
+
+      const { data, error } = await supabase.rpc('technician_patch_customer', {
+        p_customer_id: customerId,
+        p_job_id: jobId,
+        p_email: sanitized.email ?? null,
+        p_alternate_phone: sanitized.alternate_phone ?? null,
+        p_visible_address: sanitized.visible_address ?? null,
+        p_address: sanitized.address ?? null,
+        p_location: sanitized.location ?? null,
+      });
+
+      if (!error) {
+        return { data: data as Database['public']['Tables']['customers']['Row'] | null, error: null };
+      }
+
+      if (!isMissingRpcError(error.message)) {
+        return { data: null, error };
+      }
+
+      // Pre-RPC fallback: still only send whitelisted columns (RLS must block other roles).
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('customers')
+        .update(sanitized as Database['public']['Tables']['customers']['Update'])
+        .eq('id', customerId)
+        .select();
+
+      if (fallbackError) {
+        return { data: null, error: fallbackError };
+      }
+      return { data: fallbackData?.[0] || null, error: null };
+    },
+
+    /** Append a structured change-request note for name/phone corrections. */
+    async appendChangeRequestByTechnician(customerId: string, jobId: string, note: string) {
+      const trimmed = note.trim();
+      if (!trimmed || trimmed.length > 2000) {
+        return { data: null, error: { message: 'Invalid change request note' } };
+      }
+
+      const { isMissingRpcError } = await import('@/lib/technicianCustomerUpdate');
+      const { data, error } = await supabase.rpc('technician_append_customer_change_request', {
+        p_customer_id: customerId,
+        p_job_id: jobId,
+        p_note: trimmed,
+      });
+
+      if (!error) {
+        return { data: data as Database['public']['Tables']['customers']['Row'] | null, error: null };
+      }
+
+      if (!isMissingRpcError(error.message)) {
+        return { data: null, error };
+      }
+
+      const { data: existing, error: readError } = await supabase
+        .from('customers')
+        .select('notes')
+        .eq('id', customerId)
+        .single();
+
+      if (readError) {
+        return { data: null, error: readError };
+      }
+
+      const { appendCustomerNote } = await import('@/lib/technicianCustomerChangeRequest');
+      const nextNotes = appendCustomerNote(
+        (existing as { notes?: string | null })?.notes,
+        trimmed
+      );
+
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('customers')
+        .update({ notes: nextNotes })
+        .eq('id', customerId)
+        .select();
+
+      if (fallbackError) {
+        return { data: null, error: fallbackError };
+      }
+      return { data: fallbackData?.[0] || null, error: null };
+    },
     
     async getAll(limit?: number) {
       let query = supabase

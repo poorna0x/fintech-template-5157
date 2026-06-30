@@ -50,6 +50,7 @@ import {
   ChevronLeft,
   ChevronRight,
   IndianRupee,
+  Pencil,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getAmcDocumentBrandLabel } from '@/lib/amc-brand';
@@ -126,6 +127,9 @@ import { normalizeCustomerAddress } from '@/lib/customer-address';
 import { normalizeDocumentBrand, getDocumentBrandLabel, type DocumentBrand } from '@/lib/service-brands';
 import { getTechnicianIdCardUrl } from '@/lib/technician-id-card';
 import type { Customer } from '@/types';
+import TechnicianCustomerUpdateDialog, {
+  type TechnicianCustomerUpdatePatch,
+} from '@/components/TechnicianCustomerUpdateDialog';
 
 /** Visible-tab poll (backup if postgres/broadcast miss). */
 const TECH_JOBS_POLL_MS = 12_000;
@@ -692,6 +696,7 @@ const TechnicianDashboard = () => {
   // Address dialog state
   const [addressDialogOpen, setAddressDialogOpen] = useState<{[jobId: string]: boolean}>({});
   const [selectedJobForAddress, setSelectedJobForAddress] = useState<Job | null>(null);
+  const [customerUpdateDialogJob, setCustomerUpdateDialogJob] = useState<Job | null>(null);
   const [mapOpeningByJobId, setMapOpeningByJobId] = useState<Record<string, boolean>>({});
 
   const openMapForJob = useCallback(
@@ -3205,7 +3210,12 @@ const TechnicianDashboard = () => {
         };
       }
 
-      const { error } = await db.customers.update(completeJobCustomerDoc.id, { email: trimmed });
+      const jobId = selectedJobForComplete?.id;
+      const { error } = jobId
+        ? await db.customers.updateByTechnician(completeJobCustomerDoc.id, jobId, {
+            email: trimmed,
+          })
+        : await db.customers.update(completeJobCustomerDoc.id, { email: trimmed });
       if (error) {
         return { ok: false, error: error.message || 'Could not save customer email' };
       }
@@ -3213,8 +3223,92 @@ const TechnicianDashboard = () => {
       setCompleteJobCustomerDoc((prev) => (prev ? { ...prev, email: trimmed } : prev));
       return { ok: true };
     },
+    [completeJobCustomerDoc?.id, selectedJobForComplete?.id]
+  );
+
+  const patchJobCustomerInState = useCallback(
+    (customerId: string, patch: TechnicianCustomerUpdatePatch) => {
+      const applyPatch = (customer: Record<string, unknown> | undefined) => {
+        if (!customer) return customer;
+        const cid = String(customer.id || '');
+        if (cid !== customerId) return customer;
+        const next = { ...customer };
+        if (patch.email !== undefined) next.email = patch.email;
+        if (patch.alternate_phone !== undefined) {
+          next.alternate_phone = patch.alternate_phone;
+          next.alternatePhone = patch.alternate_phone;
+        }
+        if (patch.visible_address !== undefined) {
+          next.visible_address = patch.visible_address;
+        }
+        if (patch.address) {
+          next.address = { ...(next.address as object), ...patch.address };
+        }
+        if (patch.location) {
+          next.location = { ...(next.location as object), ...patch.location };
+        }
+        return next;
+      };
+
+      setJobs((prev) =>
+        prev.map((job) => {
+          const patched = applyPatch(job.customer as Record<string, unknown> | undefined);
+          if (patched === job.customer) return job;
+          return { ...job, customer: patched as Job['customer'] };
+        })
+      );
+
+      setAssignmentRequests((prev) =>
+        prev.map((req) => {
+          const job = req.job as Job | undefined;
+          if (!job?.customer) return req;
+          const patched = applyPatch(job.customer as Record<string, unknown>);
+          if (patched === job.customer) return req;
+          return { ...req, job: { ...job, customer: patched as Job['customer'] } };
+        })
+      );
+
+      if (completeJobCustomerDoc?.id === customerId) {
+        setCompleteJobCustomerDoc((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            ...(patch.email !== undefined ? { email: String(patch.email) } : {}),
+            ...(patch.alternate_phone !== undefined
+              ? { alternatePhone: String(patch.alternate_phone), alternate_phone: String(patch.alternate_phone) }
+              : {}),
+            ...(patch.visible_address !== undefined
+              ? {
+                  address: {
+                    ...prev.address,
+                    visible_address: String(patch.visible_address),
+                  },
+                }
+              : {}),
+            ...(patch.location
+              ? {
+                  location: {
+                    ...prev.location,
+                    latitude: Number((patch.location as { latitude?: number }).latitude ?? prev.location.latitude),
+                    longitude: Number((patch.location as { longitude?: number }).longitude ?? prev.location.longitude),
+                    formattedAddress: String(
+                      (patch.location as { formattedAddress?: string }).formattedAddress ??
+                        prev.location.formattedAddress ??
+                        ''
+                    ),
+                  },
+                }
+              : {}),
+          };
+        });
+      }
+    },
     [completeJobCustomerDoc?.id]
   );
+
+  const openCustomerUpdateDialog = useCallback((job: Job) => {
+    setCustomerUpdateDialogJob(job);
+  }, []);
 
   // Handle completing job - opens completion dialog
   const handleCompleteJob = async (job: Job) => {
@@ -5977,6 +6071,7 @@ const TechnicianDashboard = () => {
                                     </div>
                                   </div>
                                 )}
+
                               </div>
 
 
@@ -6904,6 +6999,7 @@ const TechnicianDashboard = () => {
                               </div>
                               </div>
                           )}
+
                             </div>
                           </div>
 
@@ -9369,6 +9465,23 @@ const TechnicianDashboard = () => {
                 <FileText className="w-4 h-4 mr-2" />
                 Reports
               </Button>
+              {(normalizeJobStatus(selectedJobForOptions.status) === 'ASSIGNED' ||
+                normalizeJobStatus(selectedJobForOptions.status) === 'EN_ROUTE' ||
+                normalizeJobStatus(selectedJobForOptions.status) === 'IN_PROGRESS') && (
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={() => {
+                    const job = selectedJobForOptions;
+                    setOptionsDialogOpen(prev => ({ ...prev, [job.id]: false }));
+                    setSelectedJobForOptions(null);
+                    openCustomerUpdateDialog(job);
+                  }}
+                >
+                  <Pencil className="w-4 h-4 mr-2" />
+                  Update customer details
+                </Button>
+              )}
               {(normalizeJobStatus(selectedJobForOptions.status) === 'ASSIGNED' || normalizeJobStatus(selectedJobForOptions.status) === 'EN_ROUTE' || normalizeJobStatus(selectedJobForOptions.status) === 'IN_PROGRESS') && (
                 <Button
                   variant="outline"
@@ -10479,6 +10592,16 @@ const TechnicianDashboard = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <TechnicianCustomerUpdateDialog
+        open={customerUpdateDialogJob !== null}
+        onOpenChange={(open) => {
+          if (!open) setCustomerUpdateDialogJob(null);
+        }}
+        job={customerUpdateDialogJob}
+        technicianName={user?.fullName || 'Technician'}
+        onSaved={patchJobCustomerInState}
+      />
     </div>
   );
 };
