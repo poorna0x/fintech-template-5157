@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Trash2, Download, Edit, X, FileText, Printer, Eye } from 'lucide-react';
+import { Plus, Trash2, Download, Edit, X, FileText, Printer, Eye, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { Bill, BillItem, CompanyInfo, Customer } from '@/types';
 import {
@@ -41,6 +41,9 @@ import DocumentGeneratorPageHeader, {
 import { mergeEditableCustomer } from '@/lib/document-drafts';
 import { quotationToPreviewHtml, runAfterDialogClose } from '@/lib/document-preview-utils';
 import DocumentPreviewDialog from '@/components/document/DocumentPreviewDialog';
+import DocumentEmailSendDialog from '@/components/document/DocumentEmailSendDialog';
+import { normalizeRecipientList } from '@/lib/email-recipients';
+import { getValidCustomerEmail } from '@/lib/customer-email';
 
 interface QuotationGeneratorProps {
   customer?: Customer;
@@ -119,10 +122,17 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
   const [sealVariant, setSealVariant] = useState<'sign' | 'stamp'>('sign');
   const [bankDetails, setBankDetails] = useState(defaultBankDetails);
   const [brandPickerOpen, setBrandPickerOpen] = useState(false);
-  const [pendingBrandAction, setPendingBrandAction] = useState<'print' | 'pdf' | 'preview'>('pdf');
+  const [pendingBrandAction, setPendingBrandAction] = useState<'print' | 'pdf' | 'preview' | 'email'>('pdf');
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [previewBill, setPreviewBill] = useState<Bill | null>(null);
+  const [emailDialogOpen, setEmailDialogOpen] = useState(false);
+  const [emailSendContext, setEmailSendContext] = useState<{
+    bill: Bill;
+    brand: DocumentBrand;
+    defaultRecipients: string[];
+    dueDateIso: string;
+  } | null>(null);
   
   // Computed values for backward compatibility
   const includeGST = gstOption === 'include';
@@ -531,6 +541,30 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
     setBrandPickerOpen(true);
   };
 
+  const openEmailSendDialog = (brand: DocumentBrand) => {
+    const quotation = buildQuotationDocument(brand);
+    if (!quotation) return;
+    const defaultRecipients = normalizeRecipientList(
+      getValidCustomerEmail(editableCustomer.email) ? [editableCustomer.email] : []
+    );
+    setEmailSendContext({
+      bill: quotation,
+      brand,
+      defaultRecipients,
+      dueDateIso: validUntilDate,
+    });
+    setEmailDialogOpen(true);
+  };
+
+  const handleEmailCustomer = () => {
+    setPendingBrandAction('email');
+    setBrandPickerOpen(true);
+  };
+
+  const openEmailFromPreview = (brand: DocumentBrand) => {
+    openEmailSendDialog(brand);
+  };
+
   const handlePreview = () => {
     setPendingBrandAction('preview');
     setBrandPickerOpen(true);
@@ -624,7 +658,7 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
                 <span className="mb-2 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   Review &amp; export
                 </span>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
                   <Button
                     onClick={handlePreview}
                     variant="outline"
@@ -647,6 +681,14 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
                   >
                     <Download className="w-4 h-4 shrink-0" />
                     <span className="truncate">Download</span>
+                  </Button>
+                  <Button
+                    onClick={handleEmailCustomer}
+                    variant="outline"
+                    className={documentOutlineBtnClass}
+                  >
+                    <Mail className="w-4 h-4 shrink-0" />
+                    <span className="truncate">Email PDF</span>
                   </Button>
                 </div>
               </div>
@@ -1617,16 +1659,22 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
         title={
           pendingBrandAction === 'preview'
             ? 'Which brand should this preview use?'
-            : 'Which brand is this quotation for?'
+            : pendingBrandAction === 'email'
+              ? 'Which brand is sending this quotation?'
+              : 'Which brand is this quotation for?'
         }
         description={
           pendingBrandAction === 'preview'
             ? 'The preview will show the quotation with the selected brand logo and address.'
-            : 'Hydrogen RO can show GST. Eleven RO issues quotations without GST.'
+            : pendingBrandAction === 'email'
+              ? 'The PDF attachment and email will use the selected brand address, logo, and sender.'
+              : 'Hydrogen RO can show GST. Eleven RO issues quotations without GST.'
         }
         onSelect={(brand) => {
           if (pendingBrandAction === 'preview') {
             openPreview(brand);
+          } else if (pendingBrandAction === 'email') {
+            openEmailSendDialog(brand);
           } else {
             executePrintWithBrand(brand, pendingBrandAction);
           }
@@ -1659,6 +1707,22 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
           setPreviewOpen(false);
           runAfterDialogClose(() => executePrintWithBrand(brand, 'print'));
         }}
+        onEmail={() => {
+          if (!previewBill) return;
+          const brand = (previewBill as Bill & { documentBrand?: DocumentBrand }).documentBrand;
+          if (!brand) return;
+          setPreviewOpen(false);
+          runAfterDialogClose(() => openEmailFromPreview(brand));
+        }}
+      />
+      <DocumentEmailSendDialog
+        open={emailDialogOpen}
+        onOpenChange={setEmailDialogOpen}
+        kind="quotation"
+        bill={emailSendContext?.bill ?? null}
+        brand={emailSendContext?.brand ?? null}
+        defaultRecipients={emailSendContext?.defaultRecipients ?? []}
+        dueDateIso={emailSendContext?.dueDateIso}
       />
     </div>
   );

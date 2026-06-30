@@ -64,7 +64,6 @@ import { ensureSupabaseSessionForWrite } from '@/lib/ensureSupabaseSession';
 
 interface AMCGeneratorProps {
   customer: Customer;
-  onPrint?: (bill: Bill) => void;
   onAMCSaved?: () => void;
   embedded?: boolean;
 }
@@ -82,7 +81,7 @@ const defaultCompanyInfo: CompanyInfo = {
   website: "hydrogenro.com"
 };
 
-export default function AMCGenerator({ customer, onPrint, onAMCSaved, embedded = false }: AMCGeneratorProps) {
+export default function AMCGenerator({ customer, onAMCSaved, embedded = false }: AMCGeneratorProps) {
   const [billNumber, setBillNumber] = useState(() => suggestAmcAgreementNumber());
   const [billDate, setBillDate] = useState(new Date().toISOString().split('T')[0]);
   const [company, setCompany] = useState<CompanyInfo>(defaultCompanyInfo);
@@ -577,7 +576,6 @@ export default function AMCGenerator({ customer, onPrint, onAMCSaved, embedded =
         includeDetails: options?.termsOnly ? false : true,
         showComputerGeneratedText: showComputerGeneratedText,
       });
-      onPrint?.(bill);
     } catch (error) {
       console.error('Error generating PDF:', error);
       toast.error('Failed to generate AMC Agreement');
@@ -1720,9 +1718,6 @@ export default function AMCGenerator({ customer, onPrint, onAMCSaved, embedded =
             emailedTo: recipients,
             sharedVia: 'admin_email',
           });
-        }}
-        onSent={() => {
-          if (emailSendContext?.bill) onPrint?.(emailSendContext.bill);
         }}
       />
     </div>

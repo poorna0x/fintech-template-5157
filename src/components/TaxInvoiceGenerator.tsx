@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Trash2, Download, Edit, X, FileText, Save, Printer, Eye } from 'lucide-react';
+import { Plus, Trash2, Download, Edit, X, FileText, Save, Printer, Eye, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { Bill, BillItem, CompanyInfo, Customer } from '@/types';
 import {
@@ -44,10 +44,14 @@ import DocumentGeneratorPageHeader, {
 import { mergeEditableCustomer } from '@/lib/document-drafts';
 import { taxInvoiceToPreviewHtml, runAfterDialogClose } from '@/lib/document-preview-utils';
 import DocumentPreviewDialog from '@/components/document/DocumentPreviewDialog';
+import DocumentEmailSendDialog from '@/components/document/DocumentEmailSendDialog';
+import { normalizeRecipientList } from '@/lib/email-recipients';
+import { getValidCustomerEmail } from '@/lib/customer-email';
 import {
   getDocumentSealVariantLabel,
   resolveBrandSealSrc,
   resolveDocumentBrandFromData,
+  type DocumentBrand,
 } from '@/lib/service-brands';
 import type { TaxInvoiceEditSnapshot } from '@/lib/tax-invoice-edit-utils';
 
@@ -270,6 +274,13 @@ export default function TaxInvoiceGenerator({
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [previewBill, setPreviewBill] = useState<Bill | null>(null);
+  const [emailDialogOpen, setEmailDialogOpen] = useState(false);
+  const [emailSendContext, setEmailSendContext] = useState<{
+    bill: Bill;
+    brand: DocumentBrand;
+    defaultRecipients: string[];
+    dueDateIso: string;
+  } | null>(null);
   const [roundOff, setRoundOff] = useState(true);
   const [customerGstRequired, setCustomerGstRequired] = useState(false);
   const [invoiceType, setInvoiceType] = useState<'B2B' | 'B2C'>('B2C'); // B2B = Business to Business, B2C = Business to Consumer
@@ -876,6 +887,26 @@ export default function TaxInvoiceGenerator({
     onPrint?.(bill, action);
   };
 
+  const openEmailSendDialog = (bill: Bill) => {
+    const brand = resolveDocumentBrandFromData({ company });
+    const defaultRecipients = normalizeRecipientList(
+      getValidCustomerEmail(editableCustomer.email) ? [editableCustomer.email] : []
+    );
+    setEmailSendContext({
+      bill,
+      brand,
+      defaultRecipients,
+      dueDateIso: signatureDate || billDate,
+    });
+    setEmailDialogOpen(true);
+  };
+
+  const handleEmailCustomer = () => {
+    const bill = buildTaxInvoiceExportBill();
+    if (!bill) return;
+    openEmailSendDialog(bill);
+  };
+
   // ---- Draft snapshot / restore -----------------------------------------------
   // Snapshot ONLY the locally-edited fields. Networked state (e.g. nextInvoice
   // number reservation, "isSaving" flag) is intentionally excluded.
@@ -1034,7 +1065,7 @@ export default function TaxInvoiceGenerator({
                   <span className="mb-2 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                     Review &amp; export
                   </span>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
                     <Button onClick={handlePreview} variant="outline" className={documentOutlineBtnClass}>
                       <Eye className="w-4 h-4 shrink-0" />
                       <span className="truncate">Preview</span>
@@ -1046,6 +1077,10 @@ export default function TaxInvoiceGenerator({
                     <Button onClick={() => handlePrint('pdf')} variant="outline" className={documentOutlineBtnClass}>
                       <Download className="w-4 h-4 shrink-0" />
                       <span className="truncate">Download</span>
+                    </Button>
+                    <Button onClick={handleEmailCustomer} variant="outline" className={documentOutlineBtnClass}>
+                      <Mail className="w-4 h-4 shrink-0" />
+                      <span className="truncate">Email PDF</span>
                     </Button>
                   </div>
                 </div>
@@ -1076,7 +1111,7 @@ export default function TaxInvoiceGenerator({
                     <span className="mb-2 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                       Export
                     </span>
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                       <Button onClick={() => handlePrint('print')} className={documentGenerateBtnClass}>
                         <Printer className="w-4 h-4 shrink-0" />
                         <span className="truncate">Generate</span>
@@ -1084,6 +1119,10 @@ export default function TaxInvoiceGenerator({
                       <Button onClick={() => handlePrint('pdf')} variant="outline" className={documentOutlineBtnClass}>
                         <Download className="w-4 h-4 shrink-0" />
                         <span className="truncate">Download</span>
+                      </Button>
+                      <Button onClick={handleEmailCustomer} variant="outline" className={documentOutlineBtnClass}>
+                        <Mail className="w-4 h-4 shrink-0" />
+                        <span className="truncate">Email PDF</span>
                       </Button>
                     </div>
                   </div>
@@ -2253,6 +2292,19 @@ export default function TaxInvoiceGenerator({
           setPreviewOpen(false);
           runAfterDialogClose(() => void handlePrint('print'));
         }}
+        onEmail={() => {
+          setPreviewOpen(false);
+          runAfterDialogClose(() => handleEmailCustomer());
+        }}
+      />
+      <DocumentEmailSendDialog
+        open={emailDialogOpen}
+        onOpenChange={setEmailDialogOpen}
+        kind="invoice"
+        bill={emailSendContext?.bill ?? null}
+        brand={emailSendContext?.brand ?? null}
+        defaultRecipients={emailSendContext?.defaultRecipients ?? []}
+        dueDateIso={emailSendContext?.dueDateIso}
       />
     </div>
   );

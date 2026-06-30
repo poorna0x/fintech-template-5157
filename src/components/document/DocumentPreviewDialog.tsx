@@ -1,5 +1,5 @@
 import React from 'react';
-import { Download, Printer } from 'lucide-react';
+import { Download, Mail, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -43,6 +43,7 @@ type DocumentPreviewDialogProps = {
   generateBtnClass?: string;
   onDownload?: () => void;
   onPrint?: () => void;
+  onEmail?: () => void;
   extraFooter?: React.ReactNode;
 };
 
@@ -57,6 +58,7 @@ export default function DocumentPreviewDialog({
   generateBtnClass,
   onDownload,
   onPrint,
+  onEmail,
   extraFooter,
 }: DocumentPreviewDialogProps) {
   const printClass = generateBtnClass ?? (accent === 'violet' ? documentGenerateVioletBtnClass : documentGenerateBtnClass);
@@ -83,13 +85,26 @@ export default function DocumentPreviewDialog({
         <DialogFooter
           className={cn(
             'shrink-0 grid gap-2 border-t bg-white px-3 py-3 sm:px-4',
-            extraFooter ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-2 sm:grid-cols-3'
+            extraFooter || onEmail
+              ? 'grid-cols-2 sm:grid-cols-4'
+              : 'grid-cols-2 sm:grid-cols-3'
           )}
         >
           {extraFooter}
           <Button type="button" variant="outline" className="h-10 w-full" onClick={() => onOpenChange(false)}>
             Close
           </Button>
+          {onEmail ? (
+            <Button
+              type="button"
+              variant="outline"
+              className={cn(documentOutlineBtnClass, 'h-10 w-full')}
+              onClick={onEmail}
+            >
+              <Mail className="w-4 h-4 shrink-0" />
+              <span className="truncate">Email PDF</span>
+            </Button>
+          ) : null}
           {onDownload ? (
             <Button
               type="button"

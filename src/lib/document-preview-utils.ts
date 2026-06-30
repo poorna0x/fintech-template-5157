@@ -4,7 +4,7 @@ import { generateQuotationHTML } from '@/lib/quotation-pdf-generator';
 import { generateTaxInvoiceHTML } from '@/lib/tax-invoice-pdf-generator';
 import { withAbsoluteAssetUrls } from '@/lib/server-pdf-download';
 
-function billToBillPdfData(bill: Bill) {
+export function billToBillPdfData(bill: Bill) {
   return {
     billNumber: bill.billNumber,
     billDate: bill.billDate,
@@ -25,7 +25,7 @@ function billToBillPdfData(bill: Bill) {
   };
 }
 
-function billToQuotationPdfData(bill: Bill) {
+export function billToQuotationPdfData(bill: Bill) {
   const customer = bill.customer;
   const customerAddress = typeof customer.address === 'object' ? customer.address : {};
 
@@ -71,7 +71,7 @@ function billToQuotationPdfData(bill: Bill) {
   return pdfData;
 }
 
-function billToTaxInvoicePdfData(bill: Bill) {
+export function billToTaxInvoicePdfData(bill: Bill) {
   return {
     billNumber: bill.billNumber,
     billDate: bill.billDate,

@@ -5,7 +5,7 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Plus, Trash2, Download, Edit, X, FileText, Printer, Eye } from 'lucide-react';
+import { Plus, Trash2, Download, Edit, X, FileText, Printer, Eye, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { Bill, BillItem, CompanyInfo, Customer } from '@/types';
 import DocumentBrandPickerDialog from '@/components/DocumentBrandPickerDialog';
@@ -24,6 +24,9 @@ import DocumentGeneratorPageHeader, {
 import { mergeEditableCustomer } from '@/lib/document-drafts';
 import { billToPreviewHtml, runAfterDialogClose } from '@/lib/document-preview-utils';
 import DocumentPreviewDialog from '@/components/document/DocumentPreviewDialog';
+import DocumentEmailSendDialog from '@/components/document/DocumentEmailSendDialog';
+import { normalizeRecipientList } from '@/lib/email-recipients';
+import { getValidCustomerEmail } from '@/lib/customer-email';
 
 interface BillGeneratorProps {
   customer?: Customer;
@@ -89,10 +92,16 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [hideGstInHeader, setHideGstInHeader] = useState(false);
   const [brandPickerOpen, setBrandPickerOpen] = useState(false);
-  const [pendingBrandAction, setPendingBrandAction] = useState<'print' | 'pdf' | 'preview'>('pdf');
+  const [pendingBrandAction, setPendingBrandAction] = useState<'print' | 'pdf' | 'preview' | 'email'>('pdf');
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [previewBill, setPreviewBill] = useState<Bill | null>(null);
+  const [emailDialogOpen, setEmailDialogOpen] = useState(false);
+  const [emailSendContext, setEmailSendContext] = useState<{
+    bill: Bill;
+    brand: DocumentBrand;
+    defaultRecipients: string[];
+  } | null>(null);
 
   // Editable customer information state
   const [isEditingCustomer, setIsEditingCustomer] = useState(false);
@@ -283,6 +292,29 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
     setBrandPickerOpen(true);
   };
 
+  const openEmailSendDialog = (brand: DocumentBrand) => {
+    const bill = buildBillDocument(brand);
+    if (!bill) return;
+    const defaultRecipients = normalizeRecipientList(
+      getValidCustomerEmail(editableCustomer.email) ? [editableCustomer.email] : []
+    );
+    setEmailSendContext({ bill, brand, defaultRecipients });
+    setEmailDialogOpen(true);
+  };
+
+  const handleEmailCustomer = () => {
+    if (!customer) {
+      toast.error('Please select a customer first');
+      return;
+    }
+    setPendingBrandAction('email');
+    setBrandPickerOpen(true);
+  };
+
+  const openEmailFromPreview = (brand: DocumentBrand) => {
+    openEmailSendDialog(brand);
+  };
+
   const handlePreview = () => {
     if (!customer) {
       toast.error('Please select a customer first');
@@ -359,7 +391,7 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
                 <span className="mb-2 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   Review &amp; export
                 </span>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
                   <Button
                     onClick={handlePreview}
                     variant="outline"
@@ -382,6 +414,14 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
                   >
                     <Download className="w-4 h-4 shrink-0" />
                     <span className="truncate">Download</span>
+                  </Button>
+                  <Button
+                    onClick={handleEmailCustomer}
+                    variant="outline"
+                    className={documentOutlineBtnClass}
+                  >
+                    <Mail className="w-4 h-4 shrink-0" />
+                    <span className="truncate">Email PDF</span>
                   </Button>
                 </div>
               </div>
@@ -913,16 +953,22 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
         title={
           pendingBrandAction === 'preview'
             ? 'Which brand should this preview use?'
-            : 'Which brand is this bill for?'
+            : pendingBrandAction === 'email'
+              ? 'Which brand is sending this bill?'
+              : 'Which brand is this bill for?'
         }
         description={
           pendingBrandAction === 'preview'
             ? 'The preview will show the bill with the selected brand logo and address.'
-            : 'Hydrogen RO includes GST on documents. Eleven RO does not use GST.'
+            : pendingBrandAction === 'email'
+              ? 'The PDF attachment and email will use the selected brand address, logo, and sender.'
+              : 'Hydrogen RO includes GST on documents. Eleven RO does not use GST.'
         }
         onSelect={(brand) => {
           if (pendingBrandAction === 'preview') {
             openPreview(brand);
+          } else if (pendingBrandAction === 'email') {
+            openEmailSendDialog(brand);
           } else {
             executePrintWithBrand(brand, pendingBrandAction);
           }
@@ -955,6 +1001,22 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
           setPreviewOpen(false);
           runAfterDialogClose(() => executePrintWithBrand(brand, 'print'));
         }}
+        onEmail={() => {
+          if (!previewBill) return;
+          const brand = (previewBill as Bill & { documentBrand?: DocumentBrand }).documentBrand;
+          if (!brand) return;
+          setPreviewOpen(false);
+          runAfterDialogClose(() => openEmailFromPreview(brand));
+        }}
+      />
+      <DocumentEmailSendDialog
+        open={emailDialogOpen}
+        onOpenChange={setEmailDialogOpen}
+        kind="service_bill"
+        bill={emailSendContext?.bill ?? null}
+        brand={emailSendContext?.brand ?? null}
+        defaultRecipients={emailSendContext?.defaultRecipients ?? []}
+        dueDateIso={emailSendContext?.bill?.billDate}
       />
     </div>
   );

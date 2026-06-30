@@ -1,9 +1,8 @@
-import React, { lazy, Suspense, useState } from 'react';
+import React, { lazy, Suspense } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Loader2, X } from 'lucide-react';
-import { Customer, Bill } from '@/types';
-import { toast } from 'sonner';
+import { Customer } from '@/types';
 
 const AMCGenerator = lazy(() => import('@/components/AMCGenerator'));
 
@@ -15,26 +14,8 @@ interface AMCModalProps {
 }
 
 export default function AMCModal({ isOpen, onClose, customer, onAMCSaved }: AMCModalProps) {
-  const [isGenerating, setIsGenerating] = useState(false);
-
-  const handlePrintAMC = async (bill: Bill, action?: 'print' | 'pdf') => {
-    setIsGenerating(true);
-    
-    try {
-      const { generateAMCPDF } = await import('@/lib/amc-pdf-generator');
-      generateAMCPDF(bill, action ?? 'pdf');
-    } catch (error) {
-      console.error('Error generating AMC:', error);
-      toast.error('Failed to generate AMC Agreement');
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
   const handleClose = () => {
-    if (!isGenerating) {
-      onClose();
-    }
+    onClose();
   };
 
   return (
@@ -58,7 +39,6 @@ export default function AMCModal({ isOpen, onClose, customer, onAMCSaved }: AMCM
               variant="ghost"
               size="sm"
               onClick={handleClose}
-              disabled={isGenerating}
               className="h-8 w-8 shrink-0 p-0"
             >
               <X className="h-4 w-4" />
@@ -78,7 +58,6 @@ export default function AMCModal({ isOpen, onClose, customer, onAMCSaved }: AMCM
             >
               <AMCGenerator
                 customer={customer}
-                onPrint={handlePrintAMC}
                 onAMCSaved={onAMCSaved}
                 embedded
               />
