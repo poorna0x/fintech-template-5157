@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -25,8 +25,16 @@ import { mergeEditableCustomer } from '@/lib/document-drafts';
 import { billToPreviewHtml, runAfterDialogClose } from '@/lib/document-preview-utils';
 import DocumentPreviewDialog from '@/components/document/DocumentPreviewDialog';
 import DocumentEmailSendDialog from '@/components/document/DocumentEmailSendDialog';
+import DocumentTermsEditor from '@/components/document/DocumentTermsEditor';
 import { normalizeRecipientList } from '@/lib/email-recipients';
 import { getValidCustomerEmail } from '@/lib/customer-email';
+import {
+  coerceTermItemsFromSnapshot,
+  createDefaultServiceDocumentTerms,
+  formatServiceDocumentTermsForPdf,
+  serializeTermItems,
+  type ServiceDocumentTermItem,
+} from '@/lib/service-document-terms';
 
 interface BillGeneratorProps {
   customer?: Customer;
@@ -79,16 +87,11 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
   const [editingNoteIndex, setEditingNoteIndex] = useState<number | null>(null);
   const [validityNote, setValidityNote] = useState('This bill is valid for 30 days from the date of issue. Prices are subject to change without prior notice.');
   const [showValidityNote, setShowValidityNote] = useState(false);
-  const [terms, setTerms] = useState(`1. Goods once sold will not be taken back and refund or exchange.
-2. There is 60 Days warranty for RO & PUMP. No Warranty for other spare parts.
-3. Without the bill there will not be any warranty / free service given.
-4. There is no warranty on the water purifier used for more than 750 PPM water TDS level.
-5. Once the order placed cannot be cancelled and advance amount will not be returned.
-6. Charges of Rs. 500/- extra to be paid on collection of the cash against cheque return.
-7. Company is not responsible for any transactions done personally with the technicians.`);
+  const [termItems, setTermItems] = useState<ServiceDocumentTermItem[]>(() =>
+    createDefaultServiceDocumentTerms()
+  );
+  const termsForPdf = useMemo(() => formatServiceDocumentTermsForPdf(termItems), [termItems]);
   const [serviceCharge, setServiceCharge] = useState(0);
-  const [isEditingTerms, setIsEditingTerms] = useState(false);
-  const [newTerm, setNewTerm] = useState('');
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [hideGstInHeader, setHideGstInHeader] = useState(false);
   const [brandPickerOpen, setBrandPickerOpen] = useState(false);
@@ -200,31 +203,6 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
     }));
   };
 
-  const addTerm = () => {
-    if (newTerm.trim()) {
-      const currentTerms = terms.split('\n').filter(line => line.trim());
-      const termNumber = currentTerms.length + 1;
-      const formattedTerm = `${termNumber}. ${newTerm.trim()}`;
-      const updatedTerms = [...currentTerms, formattedTerm].join('\n');
-      setTerms(updatedTerms);
-      setNewTerm('');
-    }
-  };
-
-  const removeTerm = (index: number) => {
-    const currentTerms = terms.split('\n').filter(line => line.trim());
-    const updatedTerms = currentTerms.filter((_, i) => i !== index);
-    // Renumber the terms
-    const renumberedTerms = updatedTerms.map((term, i) => {
-      const termText = term.replace(/^\d+\.\s*/, ''); // Remove existing number
-      return `${i + 1}. ${termText}`;
-    });
-    setTerms(renumberedTerms.join('\n'));
-  };
-
-
-
-  const termsList = terms.split('\n').filter(line => line.trim());
   const notesList = notes; // notes is already an array now
 
   const buildBillDocument = (brand: DocumentBrand): Bill | null => {
@@ -260,7 +238,7 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
       paymentStatus: 'PENDING',
       paymentMethod: 'CASH',
       notes: notes.join('\n'),
-      terms: showValidityNote ? `${validityNote}\n\n${terms}` : terms,
+      terms: showValidityNote ? `${validityNote}\n\n${termsForPdf}` : termsForPdf,
       serviceType: customerServiceType,
       hideGstInHeader: !brandHasGst(brand) || hideGstInHeader,
       documentBrand: brand,
@@ -333,7 +311,8 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
     notes,
     validityNote,
     showValidityNote,
-    terms,
+    termItems: serializeTermItems(termItems),
+    terms: termsForPdf,
     serviceCharge,
     hideGstInHeader,
     editableCustomer,
@@ -347,7 +326,7 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
     if (Array.isArray(snap.notes)) setNotes(snap.notes as string[]);
     if (typeof snap.validityNote === 'string') setValidityNote(snap.validityNote);
     if (typeof snap.showValidityNote === 'boolean') setShowValidityNote(snap.showValidityNote);
-    if (typeof snap.terms === 'string') setTerms(snap.terms);
+    setTermItems(coerceTermItemsFromSnapshot(snap));
     if (typeof snap.serviceCharge === 'number') setServiceCharge(snap.serviceCharge);
     if (typeof snap.hideGstInHeader === 'boolean') setHideGstInHeader(snap.hideGstInHeader);
     if (snap.editableCustomer && typeof snap.editableCustomer === 'object')
@@ -810,84 +789,8 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
 
             {/* Terms & Conditions Section */}
             <div className="space-y-3 sm:space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-2">
-                <h3 className="text-base sm:text-lg font-semibold">Terms & Conditions</h3>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsEditingTerms(!isEditingTerms)}
-                  className="w-full sm:w-auto"
-                >
-                  <Edit className="w-4 h-4 mr-2" />
-                  {isEditingTerms ? 'View' : 'Edit'}
-                </Button>
-              </div>
-              
-              {isEditingTerms ? (
-                <div className="space-y-4">
-                  <div className="text-sm text-gray-600">
-                    Add new terms and conditions. Each term will be automatically numbered.
-                  </div>
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <Input
-                      value={newTerm}
-                      onChange={(e) => setNewTerm(e.target.value)}
-                      placeholder="Enter new term (e.g., 'Payment due within 30 days')"
-                      onKeyPress={(e) => e.key === 'Enter' && addTerm()}
-                      className="flex-1"
-                    />
-                    <Button onClick={addTerm} size="sm" disabled={!newTerm.trim()} className="w-full sm:w-auto">
-                      <Plus className="w-4 h-4 mr-2" />
-                      Add Term
-                    </Button>
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium">Current Terms & Conditions:</Label>
-                  <Textarea
-                    value={terms}
-                    onChange={(e) => setTerms(e.target.value)}
-                      placeholder="Terms will be automatically numbered..."
-                      rows={6}
-                    className="font-mono text-sm"
-                  />
-                    <div className="text-xs text-gray-500">
-                      💡 Tip: Each line will be treated as a separate numbered term. You can edit the full text above or add individual terms using the input above.
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <div className="text-sm text-gray-600">
-                    Current terms and conditions:
-                  </div>
-                  <div className="space-y-2">
-                    {termsList.map((term, index) => (
-                      <div key={`term-${index}-${term.slice(0, 10)}`} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
-                        <span className="text-gray-600 mt-1 font-medium text-sm">
-                          {term.match(/^\d+\./)?.[0] || `${index + 1}.`}
-                        </span>
-                        <span className="flex-1 text-sm">{term.replace(/^\d+\.\s*/, '')}</span>
-                        {isEditingTerms && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => removeTerm(index)}
-                            className="text-red-500 hover:text-red-700"
-                            title="Remove this term"
-                          >
-                            <X className="w-4 h-4" />
-                          </Button>
-                        )}
-                      </div>
-                    ))}
-                    {termsList.length === 0 && (
-                      <div className="text-center text-gray-500 py-4">
-                        No terms and conditions added yet. Click "Edit" to add some.
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
+              <h3 className="text-base sm:text-lg font-semibold">Terms & Conditions</h3>
+              <DocumentTermsEditor items={termItems} onChange={setTermItems} />
             </div>
 
             {/* Validity Note Section */}

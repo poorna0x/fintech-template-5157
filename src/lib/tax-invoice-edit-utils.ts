@@ -59,6 +59,7 @@ export type TaxInvoiceEditSnapshot = {
   validityNote: string;
   showValidityNote: boolean;
   terms: string;
+  termItems?: import('@/lib/service-document-terms').ServiceDocumentTermItem[];
   serviceCharge: number;
   placeOfSupply: string;
   placeOfSupplyCode: string;
