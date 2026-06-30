@@ -17,6 +17,7 @@ export function canTechnicianEditCustomerForJob(job: Job | null | undefined): bo
 }
 
 export type TechnicianCustomerFieldPatch = {
+  full_name?: string;
   email?: string;
   alternate_phone?: string;
   visible_address?: string;
@@ -24,15 +25,34 @@ export type TechnicianCustomerFieldPatch = {
   location?: Record<string, unknown>;
 };
 
+const NAME_MAX = 120;
 const EMAIL_MAX = 254;
 const PHONE_MAX = 20;
 const VISIBLE_ADDRESS_MAX = 40;
 const STREET_MAX = 500;
 
+/** Title-case each word: "raj kumar" → "Raj Kumar". */
+export function capitalizeCustomerName(name: string): string {
+  const trimmed = name.trim().replace(/\s+/g, ' ');
+  if (!trimmed) return '';
+  return trimmed
+    .split(' ')
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+}
+
 export function sanitizeTechnicianCustomerPatch(
   patch: TechnicianCustomerFieldPatch
 ): TechnicianCustomerFieldPatch | { error: string } {
   const out: TechnicianCustomerFieldPatch = {};
+
+  if (patch.full_name !== undefined) {
+    const name = capitalizeCustomerName(patch.full_name);
+    if (!name) return { error: 'Customer name is required' };
+    if (name.length > NAME_MAX) return { error: 'Name is too long' };
+    out.full_name = name;
+  }
 
   if (patch.email !== undefined) {
     const email = patch.email.trim();
@@ -98,7 +118,6 @@ export function isMissingRpcError(message: string | undefined): boolean {
   const m = message.toLowerCase();
   return (
     m.includes('could not find the function') ||
-    m.includes('function public.technician_patch_customer') ||
-    m.includes('function public.technician_append_customer_change_request')
+    m.includes('function public.technician_patch_customer')
   );
 }

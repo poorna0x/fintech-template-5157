@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, Loader2, MapPin, Navigation, Pencil } from 'lucide-react';
+import { Loader2, MapPin, Navigation, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import DraggableMap from '@/components/DraggableMap';
 import { db } from '@/lib/supabase';
@@ -19,17 +19,13 @@ import { ensureSupabaseSessionForWrite } from '@/lib/ensureSupabaseSession';
 import { normalizeCustomerAddress } from '@/lib/customer-address';
 import { extractLocationFromAddressString } from '@/lib/adminUtils';
 import { hasValidMapCoordinates, readLocationLatLng } from '@/lib/maps';
-import { customerNameClassName } from '@/lib/customerDisplay';
 import {
-  appendCustomerNote,
-  buildTechnicianChangeRequestNote,
-} from '@/lib/technicianCustomerChangeRequest';
-import { canTechnicianEditCustomerForJob } from '@/lib/technicianCustomerUpdate';
+  canTechnicianEditCustomerForJob,
+  capitalizeCustomerName,
+} from '@/lib/technicianCustomerUpdate';
 import type { Job } from '@/types';
 
 const DEFAULT_MAP_CENTER = { lat: 12.9716, lng: 77.5946 };
-
-type DialogView = 'main' | 'change-request';
 
 async function reverseGeocodeAddress(lat: number, lng: number): Promise<string | null> {
   if (!window.google?.maps?.Geocoder) return null;
@@ -46,6 +42,7 @@ async function reverseGeocodeAddress(lat: number, lng: number): Promise<string |
 }
 
 export type TechnicianCustomerUpdatePatch = {
+  full_name?: string;
   email?: string;
   alternate_phone?: string;
   visible_address?: string;
@@ -57,7 +54,6 @@ interface TechnicianCustomerUpdateDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   job: Job | null;
-  technicianName: string;
   onSaved?: (customerId: string, patch: TechnicianCustomerUpdatePatch) => void;
 }
 
@@ -76,13 +72,11 @@ const TechnicianCustomerUpdateDialog: React.FC<TechnicianCustomerUpdateDialogPro
   open,
   onOpenChange,
   job,
-  technicianName,
   onSaved,
 }) => {
   const jobSnapshotRef = useRef<Job | null>(null);
   const loadedSessionRef = useRef<string | null>(null);
 
-  const [view, setView] = useState<DialogView>('main');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [gpsLoading, setGpsLoading] = useState(false);
@@ -94,21 +88,16 @@ const TechnicianCustomerUpdateDialog: React.FC<TechnicianCustomerUpdateDialogPro
   const [alternatePhone, setAlternatePhone] = useState('');
   const [visibleAddress, setVisibleAddress] = useState('');
   const [addressStreet, setAddressStreet] = useState('');
-  const [existingNotes, setExistingNotes] = useState('');
   const [mapCenter, setMapCenter] = useState(DEFAULT_MAP_CENTER);
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [formattedAddress, setFormattedAddress] = useState('');
 
+  const [initialFullName, setInitialFullName] = useState('');
   const [initialEmail, setInitialEmail] = useState('');
   const [initialAlternatePhone, setInitialAlternatePhone] = useState('');
   const [initialVisibleAddress, setInitialVisibleAddress] = useState('');
   const [initialAddressStreet, setInitialAddressStreet] = useState('');
   const [initialCoords, setInitialCoords] = useState<{ lat: number; lng: number } | null>(null);
-
-  const [changeField, setChangeField] = useState<'name' | 'phone'>('name');
-  const [changeProposed, setChangeProposed] = useState('');
-  const [changeReason, setChangeReason] = useState('');
-  const [submittingChangeRequest, setSubmittingChangeRequest] = useState(false);
 
   const activeJob = jobSnapshotRef.current ?? job;
   const jobId = activeJob?.id;
@@ -129,7 +118,6 @@ const TechnicianCustomerUpdateDialog: React.FC<TechnicianCustomerUpdateDialogPro
   };
 
   const resetForm = useCallback(() => {
-    setView('main');
     setCustomerId('');
     setFullName('');
     setPrimaryPhone('');
@@ -137,22 +125,18 @@ const TechnicianCustomerUpdateDialog: React.FC<TechnicianCustomerUpdateDialogPro
     setAlternatePhone('');
     setVisibleAddress('');
     setAddressStreet('');
-    setExistingNotes('');
     setMapCenter(DEFAULT_MAP_CENTER);
     setCoords(null);
     setFormattedAddress('');
+    setInitialFullName('');
     setInitialEmail('');
     setInitialAlternatePhone('');
     setInitialVisibleAddress('');
     setInitialAddressStreet('');
     setInitialCoords(null);
-    setChangeProposed('');
-    setChangeReason('');
-    setChangeField('name');
     setLoading(false);
     setSaving(false);
     setGpsLoading(false);
-    setSubmittingChangeRequest(false);
   }, []);
 
   const hydrateFromRow = useCallback((row: Record<string, unknown>) => {
@@ -165,17 +149,18 @@ const TechnicianCustomerUpdateDialog: React.FC<TechnicianCustomerUpdateDialogPro
     const vis =
       String(row.visible_address || address.visible_address || '').trim() ||
       (street ? extractLocationFromAddressString(street)?.substring(0, 20) || '' : '');
+    const name = capitalizeCustomerName(String(row.full_name || 'Customer'));
 
     setCustomerId(String(row.id));
-    setFullName(String(row.full_name || 'Customer'));
+    setFullName(name);
     setPrimaryPhone(String(row.phone || ''));
     setEmail(String(row.email || ''));
     setAlternatePhone(String(row.alternate_phone || ''));
     setVisibleAddress(vis);
     setAddressStreet(street);
-    setExistingNotes(String(row.notes || ''));
     setFormattedAddress(String(location.formattedAddress || location.formatted_address || street || ''));
 
+    setInitialFullName(name);
     setInitialEmail(String(row.email || ''));
     setInitialAlternatePhone(String(row.alternate_phone || ''));
     setInitialVisibleAddress(vis);
@@ -229,7 +214,6 @@ const TechnicianCustomerUpdateDialog: React.FC<TechnicianCustomerUpdateDialogPro
         visible_address: embedded.visible_address,
         address: embedded.address,
         location: embedded.location,
-        notes: embedded.notes,
       });
     } else {
       setLoading(true);
@@ -238,7 +222,7 @@ const TechnicianCustomerUpdateDialog: React.FC<TechnicianCustomerUpdateDialogPro
     let cancelled = false;
 
     void (async () => {
-      const { data, error } = await db.customers.getById(String(id));
+      const { data, error } = await db.customers.getByIdForTechnicianUpdate(String(id));
       if (cancelled) return;
       setLoading(false);
 
@@ -256,7 +240,7 @@ const TechnicianCustomerUpdateDialog: React.FC<TechnicianCustomerUpdateDialogPro
     return () => {
       cancelled = true;
     };
-  }, [open, jobId, hydrateFromRow, onOpenChange]);
+  }, [open, jobId, hydrateFromRow, onOpenChange, job]);
 
   const applyMapCoords = useCallback(async (lat: number, lng: number) => {
     const next = { lat, lng };
@@ -302,60 +286,21 @@ const TechnicianCustomerUpdateDialog: React.FC<TechnicianCustomerUpdateDialogPro
     [applyMapCoords]
   );
 
-  const handleSubmitChangeRequest = async () => {
-    const proposed = changeProposed.trim();
-    if (!proposed) {
-      toast.error('Enter the corrected value');
-      return;
-    }
-    if (!customerId || !jobId) return;
-    if (!assertJobAllowed()) return;
-
-    const sessionReady = await ensureSupabaseSessionForWrite();
-    if (!sessionReady.ok) {
-      toast.error('Could not refresh your session. Please try again.');
-      return;
-    }
-
-    setSubmittingChangeRequest(true);
-    try {
-      const note = buildTechnicianChangeRequestNote({
-        technicianName,
-        field: changeField,
-        currentValue: changeField === 'name' ? fullName : primaryPhone,
-        proposedValue: proposed.slice(0, 120),
-        reason: changeReason.slice(0, 500),
-        jobNumber: jobNumber || undefined,
-      });
-
-      const { data, error } = await db.customers.appendChangeRequestByTechnician(
-        customerId,
-        jobId,
-        note
-      );
-
-      if (error) {
-        toast.error(error.message || 'Could not send change request');
-        return;
-      }
-
-      const savedNotes = (data as { notes?: string } | null)?.notes;
-      setExistingNotes(savedNotes ? String(savedNotes) : appendCustomerNote(existingNotes, note));
-      toast.success('Change request sent to admin');
-      setView('main');
-      setChangeProposed('');
-      setChangeReason('');
-    } finally {
-      setSubmittingChangeRequest(false);
-    }
+  const handleNameBlur = () => {
+    const capped = capitalizeCustomerName(fullName);
+    if (capped !== fullName) setFullName(capped);
   };
 
   const handleSave = async () => {
     if (!customerId || !jobId) return;
     if (!assertJobAllowed()) return;
 
+    const cappedName = capitalizeCustomerName(fullName);
+    if (cappedName !== fullName) setFullName(cappedName);
+
     const trimmedEmail = email.trim();
     const trimmedAlternate = alternatePhone.trim();
+    const nameChanged = cappedName !== initialFullName.trim();
     const locationChanged =
       coords &&
       (!initialCoords ||
@@ -367,6 +312,7 @@ const TechnicianCustomerUpdateDialog: React.FC<TechnicianCustomerUpdateDialogPro
     const alternateChanged = trimmedAlternate !== initialAlternatePhone.trim();
 
     if (
+      !nameChanged &&
       !emailChanged &&
       !alternateChanged &&
       !locationChanged &&
@@ -374,6 +320,11 @@ const TechnicianCustomerUpdateDialog: React.FC<TechnicianCustomerUpdateDialogPro
       !streetChanged
     ) {
       toast.info('No changes to save');
+      return;
+    }
+
+    if (nameChanged && !cappedName) {
+      toast.error('Customer name is required');
       return;
     }
 
@@ -392,6 +343,9 @@ const TechnicianCustomerUpdateDialog: React.FC<TechnicianCustomerUpdateDialogPro
     try {
       const updatePayload: Record<string, unknown> = {};
 
+      if (nameChanged) {
+        updatePayload.full_name = cappedName;
+      }
       if (emailChanged) {
         updatePayload.email = trimmedEmail;
       }
@@ -438,263 +392,175 @@ const TechnicianCustomerUpdateDialog: React.FC<TechnicianCustomerUpdateDialogPro
   const showMap = coords && hasValidMapCoordinates(coords);
 
   const handleDialogOpenChange = (next: boolean) => {
-    if (!next && (saving || submittingChangeRequest)) return;
+    if (!next && saving) return;
     onOpenChange(next);
   };
 
   return (
     <Dialog open={open} onOpenChange={handleDialogOpenChange}>
       <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
-        {view === 'change-request' ? (
-          <>
-            <DialogHeader>
-              <DialogTitle>Request {changeField === 'name' ? 'name' : 'phone'} change</DialogTitle>
-              <DialogDescription>
-                Admin will see this in Edit Customer → Internal notes. Current{' '}
-                {changeField === 'name' ? 'name' : 'phone'}:{' '}
-                <strong>{changeField === 'name' ? fullName : primaryPhone}</strong>
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-3 py-2">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Pencil className="w-5 h-5" />
+            Update customer details
+          </DialogTitle>
+          <DialogDescription asChild>
+            <span>
+              {jobNumber ? `Job #${jobNumber} · ` : ''}
+              Update name, contact, and location. Primary phone cannot be changed here.
+            </span>
+          </DialogDescription>
+        </DialogHeader>
+
+        {loading && !customerId ? (
+          <div className="flex items-center justify-center py-12 text-muted-foreground gap-2">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            Loading customer…
+          </div>
+        ) : !jobAllowed ? (
+          <div className="py-8 text-center text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-4">
+            Customer details can only be updated while this job is active and assigned to you.
+          </div>
+        ) : (
+          <div className="space-y-5 py-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-2">
-                <Label htmlFor="tech-change-proposed">
-                  Corrected {changeField === 'name' ? 'name' : 'phone'}
-                </Label>
+                <Label htmlFor="tech-cust-name">Customer name</Label>
                 <Input
-                  id="tech-change-proposed"
-                  value={changeProposed}
-                  onChange={(e) => setChangeProposed(e.target.value)}
-                  placeholder={changeField === 'name' ? 'Customer full name' : '10-digit phone'}
+                  id="tech-cust-name"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  onBlur={handleNameBlur}
+                  placeholder="Customer full name"
+                  maxLength={120}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="tech-change-reason">Reason (optional)</Label>
-                <Textarea
-                  id="tech-change-reason"
-                  value={changeReason}
-                  onChange={(e) => setChangeReason(e.target.value)}
-                  placeholder="Why should this be updated?"
-                  rows={2}
+                <Label htmlFor="tech-cust-primary-phone">Primary phone</Label>
+                <Input
+                  id="tech-cust-primary-phone"
+                  value={primaryPhone}
+                  readOnly
+                  className="bg-muted/50"
+                  tabIndex={-1}
                 />
               </div>
             </div>
-            <DialogFooter className="gap-2 sm:gap-0">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setView('main')}
-                disabled={submittingChangeRequest}
-              >
-                <ArrowLeft className="w-4 h-4 mr-2" />
-                Back
-              </Button>
-              <Button
-                type="button"
-                onClick={() => void handleSubmitChangeRequest()}
-                disabled={submittingChangeRequest}
-              >
-                {submittingChangeRequest ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Sending…
-                  </>
-                ) : (
-                  'Send to admin'
-                )}
-              </Button>
-            </DialogFooter>
-          </>
-        ) : (
-          <>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Pencil className="w-5 h-5" />
-                Update customer details
-              </DialogTitle>
-              <DialogDescription asChild>
-                <span>
-                  {jobNumber ? `Job #${jobNumber} · ` : ''}
-                  Update contact and location. Name and primary phone need admin approval.
-                </span>
-              </DialogDescription>
-            </DialogHeader>
 
-            {loading && !customerId ? (
-              <div className="flex items-center justify-center py-12 text-muted-foreground gap-2">
-                <Loader2 className="w-5 h-5 animate-spin" />
-                Loading customer…
-              </div>
-            ) : !jobAllowed ? (
-              <div className="py-8 text-center text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-4">
-                Customer details can only be updated while this job is active and assigned to you.
-              </div>
-            ) : (
-              <div className="space-y-5 py-1">
-                <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <Label className="text-xs text-muted-foreground">Customer name</Label>
-                      <p
-                        className={`font-semibold truncate ${customerNameClassName({ full_name: fullName } as any)}`}
-                      >
-                        {fullName || '—'}
-                      </p>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="shrink-0"
-                      onClick={() => {
-                        setChangeField('name');
-                        setChangeProposed('');
-                        setView('change-request');
-                      }}
-                    >
-                      Request change
-                    </Button>
-                  </div>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <Label className="text-xs text-muted-foreground">Primary phone</Label>
-                      <p className="font-medium">{primaryPhone || '—'}</p>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="shrink-0"
-                      onClick={() => {
-                        setChangeField('phone');
-                        setChangeProposed('');
-                        setView('change-request');
-                      }}
-                    >
-                      Request change
-                    </Button>
-                  </div>
-                </div>
+            <div className="space-y-2">
+              <Label htmlFor="tech-cust-email">Email</Label>
+              <Input
+                id="tech-cust-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="customer@email.com"
+              />
+            </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="tech-cust-email">Email</Label>
-                  <Input
-                    id="tech-cust-email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="customer@email.com"
-                  />
-                </div>
+            <div className="space-y-2">
+              <Label htmlFor="tech-cust-alt-phone">Alternate phone</Label>
+              <Input
+                id="tech-cust-alt-phone"
+                type="tel"
+                value={alternatePhone}
+                onChange={(e) => setAlternatePhone(e.target.value)}
+                placeholder="Secondary contact (optional)"
+              />
+            </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="tech-cust-alt-phone">Alternate phone</Label>
-                  <Input
-                    id="tech-cust-alt-phone"
-                    type="tel"
-                    value={alternatePhone}
-                    onChange={(e) => setAlternatePhone(e.target.value)}
-                    placeholder="Secondary contact (optional)"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Adds a secondary number — primary phone is not changed here.
-                  </p>
-                </div>
-
-                <div className="space-y-3 pt-1 border-t">
-                  <div className="flex items-center justify-between gap-2">
-                    <Label className="flex items-center gap-1.5">
-                      <MapPin className="w-4 h-4" />
-                      Location
-                    </Label>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={gpsLoading}
-                      onClick={handleUseCurrentLocation}
-                    >
-                      {gpsLoading ? (
-                        <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
-                      ) : (
-                        <Navigation className="w-4 h-4 mr-1.5" />
-                      )}
-                      Use current GPS
-                    </Button>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="tech-cust-visible-address">Area / locality</Label>
-                    <Input
-                      id="tech-cust-visible-address"
-                      value={visibleAddress}
-                      onChange={(e) => setVisibleAddress(e.target.value)}
-                      placeholder="e.g. HSR Layout"
-                      maxLength={20}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="tech-cust-street">House / flat / full address</Label>
-                    <Textarea
-                      id="tech-cust-street"
-                      value={addressStreet}
-                      onChange={(e) => setAddressStreet(e.target.value)}
-                      placeholder="Flat no., building, street…"
-                      rows={2}
-                    />
-                  </div>
-
-                  {showMap ? (
-                    <div className="space-y-2">
-                      <p className="text-xs text-muted-foreground">
-                        Drag the pin on the map to correct the exact location.
-                      </p>
-                      <div className="rounded-lg overflow-hidden border">
-                        <DraggableMap
-                          key={customerId || 'map'}
-                          center={mapCenter}
-                          onLocationChange={handleMapDrag}
-                          zoom={17}
-                          height="260px"
-                        />
-                      </div>
-                      {coords && (
-                        <p className="text-xs text-muted-foreground font-mono">
-                          {coords.lat.toFixed(6)}, {coords.lng.toFixed(6)}
-                        </p>
-                      )}
-                    </div>
+            <div className="space-y-3 pt-1 border-t">
+              <div className="flex items-center justify-between gap-2">
+                <Label className="flex items-center gap-1.5">
+                  <MapPin className="w-4 h-4" />
+                  Location
+                </Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={gpsLoading}
+                  onClick={handleUseCurrentLocation}
+                >
+                  {gpsLoading ? (
+                    <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
                   ) : (
-                    <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-3">
-                      Tap <strong>Use current GPS</strong> to open the map, then drag the pin to the correct
-                      spot.
+                    <Navigation className="w-4 h-4 mr-1.5" />
+                  )}
+                  Use current GPS
+                </Button>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="tech-cust-visible-address">Area / locality</Label>
+                <Input
+                  id="tech-cust-visible-address"
+                  value={visibleAddress}
+                  onChange={(e) => setVisibleAddress(e.target.value)}
+                  placeholder="e.g. HSR Layout"
+                  maxLength={20}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="tech-cust-street">House / flat / full address</Label>
+                <Textarea
+                  id="tech-cust-street"
+                  value={addressStreet}
+                  onChange={(e) => setAddressStreet(e.target.value)}
+                  placeholder="Flat no., building, street…"
+                  rows={2}
+                />
+              </div>
+
+              {showMap ? (
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">
+                    Drag the pin on the map to correct the exact location.
+                  </p>
+                  <div className="rounded-lg overflow-hidden border">
+                    <DraggableMap
+                      key={customerId || 'map'}
+                      center={mapCenter}
+                      onLocationChange={handleMapDrag}
+                      zoom={17}
+                      height="260px"
+                    />
+                  </div>
+                  {coords && (
+                    <p className="text-xs text-muted-foreground font-mono">
+                      {coords.lat.toFixed(6)}, {coords.lng.toFixed(6)}
                     </p>
                   )}
                 </div>
-              </div>
-            )}
-
-            <DialogFooter className="gap-2 sm:gap-0">
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                onClick={() => void handleSave()}
-                disabled={loading || saving || !jobAllowed || !customerId}
-              >
-                {saving ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Saving…
-                  </>
-                ) : (
-                  'Save changes'
-                )}
-              </Button>
-            </DialogFooter>
-          </>
+              ) : (
+                <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-3">
+                  Tap <strong>Use current GPS</strong> to open the map, then drag the pin to the correct spot.
+                </p>
+              )}
+            </div>
+          </div>
         )}
+
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={loading || saving || !jobAllowed || !customerId}
+          >
+            {saving ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Saving…
+              </>
+            ) : (
+              'Save changes'
+            )}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

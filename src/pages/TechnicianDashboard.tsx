@@ -130,6 +130,9 @@ import type { Customer } from '@/types';
 import TechnicianCustomerUpdateDialog, {
   type TechnicianCustomerUpdatePatch,
 } from '@/components/TechnicianCustomerUpdateDialog';
+import CompletionFinishSection, {
+  CompletionPhotoStep,
+} from '@/components/technician/CompletionFinishSection';
 
 /** Visible-tab poll (backup if postgres/broadcast miss). */
 const TECH_JOBS_POLL_MS = 12_000;
@@ -3233,6 +3236,10 @@ const TechnicianDashboard = () => {
         const cid = String(customer.id || '');
         if (cid !== customerId) return customer;
         const next = { ...customer };
+        if (patch.full_name !== undefined) {
+          next.full_name = patch.full_name;
+          next.fullName = patch.full_name;
+        }
         if (patch.email !== undefined) next.email = patch.email;
         if (patch.alternate_phone !== undefined) {
           next.alternate_phone = patch.alternate_phone;
@@ -3273,6 +3280,9 @@ const TechnicianDashboard = () => {
           if (!prev) return prev;
           return {
             ...prev,
+            ...(patch.full_name !== undefined
+              ? { fullName: String(patch.full_name), full_name: String(patch.full_name) }
+              : {}),
             ...(patch.email !== undefined ? { email: String(patch.email) } : {}),
             ...(patch.alternate_phone !== undefined
               ? { alternatePhone: String(patch.alternate_phone), alternate_phone: String(patch.alternate_phone) }
@@ -3311,6 +3321,21 @@ const TechnicianDashboard = () => {
       setCustomerUpdateDialogJob(job);
     }, 120);
   }, []);
+
+  const openCompletionSetReminder = useCallback(() => {
+    if (!selectedJobForComplete) return;
+    const customer = selectedJobForComplete.customer as Record<string, unknown> | undefined;
+    const customerId =
+      (customer?.id as string | undefined) ||
+      selectedJobForComplete.customer_id ||
+      (selectedJobForComplete as { customerId?: string }).customerId;
+    if (!customerId) return;
+    setReminderEntity({ type: 'customer', id: String(customerId) });
+    const name = String(customer?.full_name || customer?.fullName || 'Customer');
+    const code = String(customer?.customer_id || customer?.customerId || '');
+    setReminderContextLabel(code ? `${name} (${code})` : name);
+    setAddReminderDialogOpen(true);
+  }, [selectedJobForComplete]);
 
   // Handle completing job - opens completion dialog
   const handleCompleteJob = async (job: Job) => {
@@ -7884,31 +7909,18 @@ const TechnicianDashboard = () => {
                 <>
                   {/* Optional "Add photo" - only in step 1 when job has no existing photos; once user proceeds or skips, it does not show in later steps */}
                   {completeJobStep === 1 && jobHasZeroExistingPhotos && (
-                    <div className="rounded-xl border border-amber-200 bg-amber-50/90 p-3 sm:p-4 mb-4 w-full max-w-full">
-                      <div className="flex flex-col gap-2 sm:gap-3">
-                        <div className="flex items-start gap-2">
-                          <Camera className="w-4 h-4 sm:w-5 sm:h-5 text-amber-700 flex-shrink-0 mt-0.5" />
-                          <div>
-                            <p className="text-xs sm:text-sm font-medium text-amber-900 leading-snug">
-                              This job has no photos yet
-                            </p>
-                          </div>
-                        </div>
-                        <div className="min-w-0 w-full">
-                          <ImageUpload
-                            onImagesChange={(images) => setOptionalCompletionPhotos(images)}
-                            initialImages={optionalCompletionPhotos}
-                            onUploadStateChange={setIsOptionalCompletionPhotosUploading}
-                            maxImages={5}
-                            folder="job-photos"
-                            title=""
-                            description=""
-                            maxWidth={1024}
-                            quality={0.5}
-                            aggressiveCompression={true}
-                          />
-                        </div>
-                      </div>
+                    <div className="mb-4 w-full max-w-full">
+                      <CompletionPhotoStep
+                        label="Add job photos (optional)"
+                        hint="This job has no photos yet — capture the site or RO unit before you continue."
+                        images={optionalCompletionPhotos}
+                        onImagesChange={setOptionalCompletionPhotos}
+                        onUploadStateChange={setIsOptionalCompletionPhotosUploading}
+                        maxImages={5}
+                        folder="job-photos"
+                        jobId={selectedJobForComplete?.id}
+                        photoType="after"
+                      />
                     </div>
                   )}
 
@@ -8131,27 +8143,17 @@ const TechnicianDashboard = () => {
 
               {/* Step 2: Bill Photo */}
               {completeJobStep === 2 && (
-                <div className="space-y-4">
-                  <div>
-                    <Label>Upload bill photo (optional)</Label>
-                    <ImageUpload
-                      onImagesChange={(images) => {
-                        setBillPhotos(images);
-                      }}
-                      initialImages={billPhotos}
-                      onUploadStateChange={setIsBillPhotosUploading}
-                      maxImages={5}
-                      folder="bills"
-                      title=""
-                      description=""
-                      maxWidth={1024}
-                      quality={0.5}
-                      aggressiveCompression={true}
-                      jobId={selectedJobForComplete?.id}
-                      photoType="bill"
-                    />
-                  </div>
-                </div>
+                <CompletionPhotoStep
+                  label="Bill photo (optional)"
+                  hint="Photo of the signed bill or handwritten invoice."
+                  images={billPhotos}
+                  onImagesChange={setBillPhotos}
+                  onUploadStateChange={setIsBillPhotosUploading}
+                  maxImages={5}
+                  folder="bills"
+                  jobId={selectedJobForComplete?.id}
+                  photoType="bill"
+                />
               )}
 
               {/* Step 3: AMC Information (Optional - Can Skip) - only show if bill is not zero and not softener */}
@@ -8654,34 +8656,25 @@ const TechnicianDashboard = () => {
 
               {/* Step 5: Payment Screenshot (optional) - only show if bill amount is not zero */}
               {completeJobStep === 5 && !isBillAmountZero() && (
-                <div className="space-y-4">
-                  <div>
-                        <Label>Payment screenshot (optional)</Label>
-                    <p className="text-sm text-gray-500 mb-2">
-                      {paymentMode === 'ONLINE'
-                        ? 'Upload payment confirmation screenshot if available'
-                        : 'Upload payment screenshot if available'}
-                    </p>
-                        <ImageUpload
-                          onImagesChange={(images) => {
-                            setPaymentScreenshot(images[0] || '');
-                          }}
-                          initialImages={paymentScreenshot ? [paymentScreenshot] : []}
-                          onUploadStateChange={setIsPaymentScreenshotUploading}
-                          maxImages={1}
-                          folder="payment-receipts"
-                          title=""
-                          description=""
-                          maxWidth={800}
-                          quality={0.3}
-                          aggressiveCompression={true}
-                          useSecondaryAccount={true}
-                          jobId={selectedJobForComplete?.id}
-                          photoType="payment"
-                        />
-                      </div>
-                  </div>
-                )}
+                <CompletionPhotoStep
+                  label="Payment screenshot (optional)"
+                  hint={
+                    paymentMode === 'ONLINE'
+                      ? 'UPI or bank payment confirmation, if available.'
+                      : 'Payment proof screenshot, if available.'
+                  }
+                  images={paymentScreenshot ? [paymentScreenshot] : []}
+                  onImagesChange={(images) => setPaymentScreenshot(images[0] || '')}
+                  onUploadStateChange={setIsPaymentScreenshotUploading}
+                  maxImages={1}
+                  folder="payment-receipts"
+                  jobId={selectedJobForComplete?.id}
+                  photoType="payment"
+                  maxWidth={800}
+                  quality={0.3}
+                  useSecondaryAccount
+                />
+              )}
 
               {/* Step 7: OTP Verification */}
               {completeJobStep === 7 && requiresOtp() && (
@@ -8762,148 +8755,79 @@ const TechnicianDashboard = () => {
               )}
               {completeJobStep === 6 && isSoftenerService() && (
                 <div className="space-y-4">
-                  <div className="text-center py-4">
-                    <p className="text-gray-600">Review and complete below.</p>
-                  </div>
-                  <div className="rounded-xl border border-gray-200 bg-gray-50/80 dark:bg-gray-800/50 p-3 sm:p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Camera className="w-4 h-4 text-gray-600" />
-                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Add more photos (optional)</span>
-                    </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Store in job photos for this completion.</p>
-                    <ImageUpload
-                      onImagesChange={setExtraPhotosStep6}
-                      initialImages={extraPhotosStep6}
-                      onUploadStateChange={setIsExtraPhotosStep6Uploading}
-                      maxImages={5}
-                      folder="ro-service"
-                      title=""
-                      description=""
-                      maxWidth={1024}
-                      quality={0.5}
-                      aggressiveCompression={true}
-                    />
-                  </div>
+                  <p className="text-sm text-center text-gray-600">Review the options below, then complete the job.</p>
+                  <CompletionFinishSection
+                    job={selectedJobForComplete}
+                    extraPhotos={extraPhotosStep6}
+                    onExtraPhotosChange={setExtraPhotosStep6}
+                    onUploadStateChange={setIsExtraPhotosStep6Uploading}
+                    onSetReminder={openCompletionSetReminder}
+                    onUpdateCustomerInfo={() => {
+                      if (selectedJobForComplete) openCustomerUpdateDialog(selectedJobForComplete);
+                    }}
+                    dontSendMessage={dontSendMessageToCustomer}
+                    onDontSendMessageChange={setDontSendMessageToCustomer}
+                  />
                 </div>
               )}
               {completeJobStep === 6 && !isSoftenerService() && (
                 <div className="space-y-4">
-                  <div className="space-y-3">
-                    <Label className="text-base font-semibold">Does the customer have a prefilter?</Label>
-                    <div className="grid grid-cols-2 gap-4">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCustomerHasPrefilter(true);
-                        }}
-                        className={`p-4 rounded-lg border-2 transition-all duration-200 ${
-                          customerHasPrefilter === true
-                            ? 'border-black bg-black text-white shadow-md'
-                            : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
-                        }`}
-                      >
-                        <div className="flex flex-col items-center gap-2">
-                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                  <div className="rounded-xl border border-gray-200 bg-white shadow-sm p-4 space-y-4">
+                    <div className="space-y-3">
+                      <Label className="text-sm font-semibold text-gray-900">Does the customer have a prefilter?</Label>
+                      <div className="grid grid-cols-2 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setCustomerHasPrefilter(true)}
+                          className={`rounded-lg border-2 p-3 text-sm font-medium transition-all ${
                             customerHasPrefilter === true
-                              ? 'border-white bg-white'
-                              : 'border-gray-400'
-                          }`}>
-                            {customerHasPrefilter === true && (
-                              <div className="w-2.5 h-2.5 rounded-full bg-black"></div>
-                            )}
-                          </div>
-                          <span className="font-medium text-sm">Yes</span>
-                        </div>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCustomerHasPrefilter(false);
-                        }}
-                        className={`p-4 rounded-lg border-2 transition-all duration-200 ${
-                          customerHasPrefilter === false
-                            ? 'border-black bg-black text-white shadow-md'
-                            : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50'
-                        }`}
-                      >
-                        <div className="flex flex-col items-center gap-2">
-                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                              ? 'border-black bg-black text-white shadow-sm'
+                              : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                          }`}
+                        >
+                          Yes
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCustomerHasPrefilter(false)}
+                          className={`rounded-lg border-2 p-3 text-sm font-medium transition-all ${
                             customerHasPrefilter === false
-                              ? 'border-white bg-white'
-                              : 'border-gray-400'
-                          }`}>
-                            {customerHasPrefilter === false && (
-                              <div className="w-2.5 h-2.5 rounded-full bg-black"></div>
-                            )}
-                          </div>
-                          <span className="font-medium text-sm">No</span>
-                        </div>
-                      </button>
+                              ? 'border-black bg-black text-white shadow-sm'
+                              : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                          }`}
+                        >
+                          No
+                        </button>
+                      </div>
+                    </div>
+                    <div className="space-y-2 pt-1 border-t border-gray-100">
+                      <Label htmlFor="raw-water-tds" className="text-sm font-semibold text-gray-900">
+                        Raw water TDS (ppm) <span className="text-red-600">*</span>
+                      </Label>
+                      <Input
+                        id="raw-water-tds"
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="e.g. 500"
+                        value={rawWaterTds}
+                        onChange={(e) => setRawWaterTds(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                        className="max-w-[160px] h-11"
+                        required
+                      />
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label className="text-base font-semibold">Raw water TDS (ppm) <span className="text-red-600">*</span></Label>
-                    <Input
-                      type="text"
-                      inputMode="numeric"
-                      placeholder="e.g. 500"
-                      value={rawWaterTds}
-                      onChange={(e) => setRawWaterTds(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                      className="max-w-[140px]"
-                      required
-                    />
-                  </div>
-                  {selectedJobForComplete?.customer && (
-                    <div className="pt-2 border-t border-gray-200">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="text-gray-600 hover:text-gray-900"
-                        onClick={() => {
-                          const customerId = (selectedJobForComplete.customer as any)?.id ?? (selectedJobForComplete as any).customer_id;
-                          if (customerId) {
-                            setReminderEntity({ type: 'customer', id: customerId });
-                            const name = (selectedJobForComplete.customer as any)?.full_name || (selectedJobForComplete.customer as any)?.fullName || 'Customer';
-                            const code = (selectedJobForComplete.customer as any)?.customer_id || (selectedJobForComplete.customer as any)?.customerId || '';
-                            setReminderContextLabel(code ? `${name} (${code})` : name);
-                            setAddReminderDialogOpen(true);
-                          }
-                        }}
-                      >
-                        <Bell className="w-4 h-4 mr-2" />
-                        Set reminder for this customer
-                      </Button>
-                      <label className="flex items-center gap-2 cursor-pointer mt-2">
-                        <input
-                          type="checkbox"
-                          checked={dontSendMessageToCustomer}
-                          onChange={(e) => setDontSendMessageToCustomer(e.target.checked)}
-                          className="h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-500"
-                        />
-                        <span className="text-sm text-gray-700 dark:text-gray-300">Don&apos;t send message to customer</span>
-                      </label>
-                    </div>
-                  )}
-                  <div className="rounded-xl border border-gray-200 bg-gray-50/80 dark:bg-gray-800/50 p-3 sm:p-4 pt-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Camera className="w-4 h-4 text-gray-600" />
-                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Add more photos (optional)</span>
-                    </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Store in job photos for this completion.</p>
-                    <ImageUpload
-                      onImagesChange={setExtraPhotosStep6}
-                      initialImages={extraPhotosStep6}
-                      onUploadStateChange={setIsExtraPhotosStep6Uploading}
-                      maxImages={5}
-                      folder="ro-service"
-                      title=""
-                      description=""
-                      maxWidth={1024}
-                      quality={0.5}
-                      aggressiveCompression={true}
-                    />
-                  </div>
+                  <CompletionFinishSection
+                    job={selectedJobForComplete}
+                    extraPhotos={extraPhotosStep6}
+                    onExtraPhotosChange={setExtraPhotosStep6}
+                    onUploadStateChange={setIsExtraPhotosStep6Uploading}
+                    onSetReminder={openCompletionSetReminder}
+                    onUpdateCustomerInfo={() => {
+                      if (selectedJobForComplete) openCustomerUpdateDialog(selectedJobForComplete);
+                    }}
+                    dontSendMessage={dontSendMessageToCustomer}
+                    onDontSendMessageChange={setDontSendMessageToCustomer}
+                  />
                 </div>
               )}
 
@@ -10601,7 +10525,6 @@ const TechnicianDashboard = () => {
           if (!open) setCustomerUpdateDialogJob(null);
         }}
         job={customerUpdateDialogJob}
-        technicianName={user?.fullName || 'Technician'}
         onSaved={patchJobCustomerInState}
       />
     </div>

@@ -264,6 +264,18 @@ export const CUSTOMER_DOCUMENT_COLUMNS = [
   'updated_at',
 ].join(',');
 
+/** Technician customer-update dialog — contact + address only (no photos/notes/history). */
+export const CUSTOMER_TECHNICIAN_UPDATE_COLUMNS = [
+  'id',
+  'full_name',
+  'phone',
+  'alternate_phone',
+  'email',
+  'address',
+  'location',
+  'visible_address',
+].join(',');
+
 /** Assignment / map / calling: exclude INACTIVE; null treated as active (legacy rows). */
 const TECHNICIAN_ROSTER_ACTIVE_OR =
   'account_status.is.null,account_status.eq.ACTIVE,account_status.eq.SUSPENDED';
@@ -1065,6 +1077,17 @@ export const db = {
       return { data, error };
     },
 
+    /** Slim fetch for technician Update customer details — avoids photos/notes egress on open. */
+    async getByIdForTechnicianUpdate(id: string) {
+      const { data, error } = await supabase
+        .from('customers')
+        .select(CUSTOMER_TECHNICIAN_UPDATE_COLUMNS)
+        .eq('id', id)
+        .single();
+
+      return { data, error };
+    },
+
     /** Batch fetch by UUIDs – one query instead of N. Use for labels (id, full_name, customer_id). */
     async getByIds(ids: string[]) {
       if (!ids?.length) return { data: [] as { id: string; full_name: string | null; customer_id: string | null }[], error: null };
@@ -1176,6 +1199,7 @@ export const db = {
       customerId: string,
       jobId: string,
       patch: {
+        full_name?: string;
         email?: string;
         alternate_phone?: string;
         visible_address?: string;
@@ -1197,6 +1221,7 @@ export const db = {
       const { data, error } = await supabase.rpc('technician_patch_customer', {
         p_customer_id: customerId,
         p_job_id: jobId,
+        p_full_name: sanitized.full_name ?? null,
         p_email: sanitized.email ?? null,
         p_alternate_phone: sanitized.alternate_phone ?? null,
         p_visible_address: sanitized.visible_address ?? null,
@@ -1216,56 +1241,6 @@ export const db = {
       const { data: fallbackData, error: fallbackError } = await supabase
         .from('customers')
         .update(sanitized as Database['public']['Tables']['customers']['Update'])
-        .eq('id', customerId)
-        .select();
-
-      if (fallbackError) {
-        return { data: null, error: fallbackError };
-      }
-      return { data: fallbackData?.[0] || null, error: null };
-    },
-
-    /** Append a structured change-request note for name/phone corrections. */
-    async appendChangeRequestByTechnician(customerId: string, jobId: string, note: string) {
-      const trimmed = note.trim();
-      if (!trimmed || trimmed.length > 2000) {
-        return { data: null, error: { message: 'Invalid change request note' } };
-      }
-
-      const { isMissingRpcError } = await import('@/lib/technicianCustomerUpdate');
-      const { data, error } = await supabase.rpc('technician_append_customer_change_request', {
-        p_customer_id: customerId,
-        p_job_id: jobId,
-        p_note: trimmed,
-      });
-
-      if (!error) {
-        return { data: data as Database['public']['Tables']['customers']['Row'] | null, error: null };
-      }
-
-      if (!isMissingRpcError(error.message)) {
-        return { data: null, error };
-      }
-
-      const { data: existing, error: readError } = await supabase
-        .from('customers')
-        .select('notes')
-        .eq('id', customerId)
-        .single();
-
-      if (readError) {
-        return { data: null, error: readError };
-      }
-
-      const { appendCustomerNote } = await import('@/lib/technicianCustomerChangeRequest');
-      const nextNotes = appendCustomerNote(
-        (existing as { notes?: string | null })?.notes,
-        trimmed
-      );
-
-      const { data: fallbackData, error: fallbackError } = await supabase
-        .from('customers')
-        .update({ notes: nextNotes })
         .eq('id', customerId)
         .select();
 
