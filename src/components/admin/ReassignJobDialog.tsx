@@ -10,7 +10,7 @@ import { Job, Technician } from '@/types';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import { toast } from 'sonner';
 import { db } from '@/lib/supabase';
-import { getFreshGoogleMapsLinkForJobRow, getJobLatLngFromJobRow } from '@/lib/jobLocationHelpers';
+import { getFreshGoogleMapsLinkForJobRow, resolveJobLatLngFromRow } from '@/lib/jobLocationHelpers';
 
 interface ReassignJobDialogProps {
   open: boolean;
@@ -106,24 +106,21 @@ const ReassignJobDialog: React.FC<ReassignJobDialogProps> = ({
   const calculateDistances = useCallback(async () => {
     if (!job || !open) return;
 
-    let effectiveJob: any = job;
-    let jobLocation = getJobLatLngFromJobRow(effectiveJob);
-    if (!jobLocation) {
-      try {
-        const { data, error } = await db.jobs.getByIdFull(job.id);
-        if (!error && data) {
-          effectiveJob = data;
-          jobLocation = getJobLatLngFromJobRow(effectiveJob);
-        }
-      } catch (e) {
-        console.warn('[ReassignJobDialog] getByIdFull for distances failed:', e);
-      }
-    }
+    let loadingToast: string | number | undefined;
+    const resolved = await resolveJobLatLngFromRow(job, {
+      getJobByIdFull: db.jobs.getByIdFull,
+      onResolvingLink: () => {
+        loadingToast = toast.loading('Resolving map link...');
+      },
+    });
+    if (loadingToast !== undefined) toast.dismiss(loadingToast);
 
-    if (!jobLocation) {
+    if (!resolved) {
       toast.error('Job location not available. Try again after the address loads.');
       return;
     }
+
+    const jobLocation = { lat: resolved.lat, lng: resolved.lng };
 
     // Filter technicians with valid locations
     const techniciansWithLocation = technicians.filter((tech) => {
@@ -408,8 +405,6 @@ const ReassignJobDialog: React.FC<ReassignJobDialogProps> = ({
     }
     // Don't auto-calculate distances - only calculate when user clicks "Reassign by Distance" button
   }, [open]);
-
-  const jobLocation = job ? getJobLatLngFromJobRow(job) : null;
 
   const inactiveTechnicians = (techniciansWithDistances.length > 0 ? techniciansWithDistances : technicians).filter(
     (tech) => tech.account_status !== 'INACTIVE'

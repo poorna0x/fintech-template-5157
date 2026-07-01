@@ -128,7 +128,7 @@ const BillingStats = lazyDefault(() => import('./BillingStats'));
 const Analytics = lazyDefault(() => import('./Analytics'));
 const InventoryManagement = lazyDefault(() => import('./InventoryManagement'));
 import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, levenshteinDistance, calculateSimilarity, extractPhotoUrls, normalizePhotoUrl, parseJobRequirements, getFormattedTimeSlot, findLeadSource, getLeadSourceFromJob, getJobCustomTimeLabel, normalizeLeadType, normalizeServiceSubType, completedJobMatchesDashboardClientFilters, isOfficeCompletedJob, jobCompletionLocalDateIso } from '@/lib/adminUtils';
-import { getLocationLinkFromObject } from '@/lib/jobLocationHelpers';
+import { getLocationLinkFromObject, resolveJobDestinationCoordsSync, resolveJobLatLngFromRow } from '@/lib/jobLocationHelpers';
 import { enrichJobsWithAfterPhotosIfNeeded } from '@/lib/jobReportPhotos';
 import {
   consumeAdminDashboardPrefetch,
@@ -3733,39 +3733,8 @@ const AdminDashboard = () => {
   };
 
   /** Lat/lng for job destination (customer location preferred). Works on slim or full job rows. */
-  const resolveJobDestinationCoords = (jobRow: Job | any): { lat: number; lng: number } | null => {
-    const customer = (jobRow?.customer as any) || jobRow?.customer;
-    const customerLocation = customer?.location || {};
-    const jobLocation = jobRow?.serviceLocation || jobRow?.service_location;
-
-    if (
-      customerLocation?.latitude != null &&
-      customerLocation?.longitude != null &&
-      customerLocation.latitude !== 0 &&
-      customerLocation.longitude !== 0
-    ) {
-      return { lat: Number(customerLocation.latitude), lng: Number(customerLocation.longitude) };
-    }
-    const custGl = customerLocation?.googleLocation || customerLocation?.google_location;
-    if (custGl && typeof custGl === 'string' && custGl.trim() !== '') {
-      const extracted = extractCoordinatesFromGoogleMapsLink(custGl);
-      if (extracted) return { lat: extracted.latitude, lng: extracted.longitude };
-    }
-    if (
-      jobLocation?.latitude != null &&
-      jobLocation?.longitude != null &&
-      jobLocation.latitude !== 0 &&
-      jobLocation.longitude !== 0
-    ) {
-      return { lat: Number(jobLocation.latitude), lng: Number(jobLocation.longitude) };
-    }
-    const jobGl = jobLocation?.googleLocation || jobLocation?.google_location;
-    if (jobGl && typeof jobGl === 'string' && jobGl.trim() !== '') {
-      const extracted = extractCoordinatesFromGoogleMapsLink(jobGl);
-      if (extracted) return { lat: extracted.latitude, lng: extracted.longitude };
-    }
-    return null;
-  };
+  const resolveJobDestinationCoords = (jobRow: Job | any): { lat: number; lng: number } | null =>
+    resolveJobDestinationCoordsSync(jobRow);
 
   // Helper function to ensure Google Maps is loaded
   const ensureGoogleMapsLoaded = useCallback((): Promise<void> => {
@@ -7055,17 +7024,14 @@ const AdminDashboard = () => {
     });
   };
 
-  const resolveJobCoordsForMeasure = async (job: Job | any): Promise<{ lat: number; lng: number } | null> => {
-    let c = resolveJobDestinationCoords(job);
-    if (c) return c;
-    try {
-      const { data, error } = await db.jobs.getByIdFull(job.id);
-      if (!error && data) c = resolveJobDestinationCoords(data);
-    } catch {
-      /* ignore */
-    }
-    return c;
-  };
+  const resolveJobCoordsForMeasure = async (
+    job: Job | any,
+    onResolvingLink?: () => void
+  ): Promise<{ lat: number; lng: number; workingRow: any } | null> =>
+    resolveJobLatLngFromRow(job, {
+      getJobByIdFull: db.jobs.getByIdFull,
+      onResolvingLink,
+    });
 
   const calculateCustomDistanceBetweenStops = async () => {
     const workingJob = selectedJobForDistance;
@@ -7113,7 +7079,8 @@ const AdminDashboard = () => {
         toast.error('Could not find the From job.');
         return;
       }
-      origin = await resolveJobCoordsForMeasure(j);
+      const fromResolved = await resolveJobCoordsForMeasure(j);
+      origin = fromResolved ? { lat: fromResolved.lat, lng: fromResolved.lng } : null;
     }
 
     if (customDistanceToId === '__tech__') {
@@ -7128,7 +7095,8 @@ const AdminDashboard = () => {
         toast.error('Could not find the To job.');
         return;
       }
-      dest = await resolveJobCoordsForMeasure(j);
+      const toResolved = await resolveJobCoordsForMeasure(j);
+      dest = toResolved ? { lat: toResolved.lat, lng: toResolved.lng } : null;
     }
 
     if (!origin || !dest) {
@@ -7217,29 +7185,23 @@ const AdminDashboard = () => {
       jobNumber: job.jobNumber || (job as any).job_number
     });
 
-    let workingJob: Job | any = job;
-    let jobCoords = resolveJobDestinationCoords(workingJob);
+    let loadingToast: string | number | undefined;
+    const resolved = await resolveJobCoordsForMeasure(job, () => {
+      loadingToast = toast.loading('Resolving map link...');
+    });
+    if (loadingToast !== undefined) toast.dismiss(loadingToast);
 
-    if (!jobCoords) {
-      try {
-        const { data, error } = await db.jobs.getByIdFull(job.id);
-        if (!error && data) {
-          workingJob = data;
-          jobCoords = resolveJobDestinationCoords(workingJob);
-        }
-      } catch (e) {
-        console.warn('[AdminDashboard] getByIdFull for measure distance failed:', e);
-      }
-    }
-
-    setSelectedJobForDistance(workingJob as Job);
-    setCustomDistanceResult(null);
-
-    if (!jobCoords) {
+    if (!resolved) {
       console.error('❌ [AdminDashboard] No coordinates available for distance measurement');
       toast.error('Job location not available. Please ensure the job has valid coordinates or a Google Maps link.');
       return;
     }
+
+    const workingJob = resolved.workingRow as Job;
+    const jobCoords = { lat: resolved.lat, lng: resolved.lng };
+
+    setSelectedJobForDistance(workingJob);
+    setCustomDistanceResult(null);
 
     const assignedTechnicianId =
       (workingJob as any).assigned_technician_id || workingJob.assignedTechnicianId || null;
@@ -7496,20 +7458,12 @@ const AdminDashboard = () => {
 
   // Get ETA for share-technician-info dialog (reuses same job coords and distance logic)
   const getEtaForShareDialog = useCallback(async (job: Job): Promise<{ durationText?: string; estimatedArrival?: string } | null> => {
-    let workingJob: any = job;
-    let jobCoords = resolveJobDestinationCoords(workingJob);
-    if (!jobCoords) {
-      try {
-        const { data, error } = await db.jobs.getByIdFull(job.id);
-        if (!error && data) {
-          workingJob = data;
-          jobCoords = resolveJobDestinationCoords(workingJob);
-        }
-      } catch {
-        /* ignore */
-      }
-    }
-    if (!jobCoords) return null;
+    const resolved = await resolveJobCoordsForMeasure(job);
+    if (!resolved) return null;
+
+    const workingJob = resolved.workingRow;
+    const jobCoords = { lat: resolved.lat, lng: resolved.lng };
+
     const assignedTechnicianId =
       workingJob.assigned_technician_id || workingJob.assignedTechnicianId;
     if (!assignedTechnicianId) return null;

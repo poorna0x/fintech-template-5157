@@ -9,7 +9,7 @@ import { toast } from 'sonner';
 import { calculateHaversineDistance } from '@/lib/distance';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import { db } from '@/lib/supabase';
-import { getFreshGoogleMapsLinkForJobRow, getJobLatLngFromJobRow } from '@/lib/jobLocationHelpers';
+import { getFreshGoogleMapsLinkForJobRow, resolveJobLatLngFromRow } from '@/lib/jobLocationHelpers';
 
 interface AssignJobDialogProps {
   open: boolean;
@@ -107,24 +107,21 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
   const calculateDistances = useCallback(async () => {
     if (!job || !open) return;
 
-    let effectiveJob: any = job;
-    let jobLocation = getJobLatLngFromJobRow(effectiveJob);
-    if (!jobLocation) {
-      try {
-        const { data, error } = await db.jobs.getByIdFull(job.id);
-        if (!error && data) {
-          effectiveJob = data;
-          jobLocation = getJobLatLngFromJobRow(effectiveJob);
-        }
-      } catch (e) {
-        console.warn('[AssignJobDialog] getByIdFull for distances failed:', e);
-      }
-    }
+    let loadingToast: string | number | undefined;
+    const resolved = await resolveJobLatLngFromRow(job, {
+      getJobByIdFull: db.jobs.getByIdFull,
+      onResolvingLink: () => {
+        loadingToast = toast.loading('Resolving map link...');
+      },
+    });
+    if (loadingToast !== undefined) toast.dismiss(loadingToast);
 
-    if (!jobLocation) {
+    if (!resolved) {
       toast.error('Job location not available. Try again after the address loads.');
       return;
     }
+
+    const jobLocation = { lat: resolved.lat, lng: resolved.lng };
 
     // Filter technicians with valid locations
     const techniciansWithLocation = technicians.filter((tech) => {
