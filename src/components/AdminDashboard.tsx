@@ -128,7 +128,7 @@ const BillingStats = lazyDefault(() => import('./BillingStats'));
 const Analytics = lazyDefault(() => import('./Analytics'));
 const InventoryManagement = lazyDefault(() => import('./InventoryManagement'));
 import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, levenshteinDistance, calculateSimilarity, extractPhotoUrls, normalizePhotoUrl, parseJobRequirements, getFormattedTimeSlot, findLeadSource, getLeadSourceFromJob, getJobCustomTimeLabel, normalizeLeadType, normalizeServiceSubType, completedJobMatchesDashboardClientFilters, isOfficeCompletedJob, jobCompletionLocalDateIso } from '@/lib/adminUtils';
-import { getLocationLinkFromObject, resolveJobDestinationCoordsSync, resolveJobLatLngFromRow } from '@/lib/jobLocationHelpers';
+import { getLocationLinkFromObject, getLocationUnavailableMessage, resolveJobDestinationCoordsSync, resolveJobLatLngFromRow } from '@/lib/jobLocationHelpers';
 import { enrichJobsWithAfterPhotosIfNeeded } from '@/lib/jobReportPhotos';
 import {
   consumeAdminDashboardPrefetch,
@@ -7193,7 +7193,7 @@ const AdminDashboard = () => {
 
     if (!resolved) {
       console.error('❌ [AdminDashboard] No coordinates available for distance measurement');
-      toast.error('Job location not available. Please ensure the job has valid coordinates or a Google Maps link.');
+      toast.error(getLocationUnavailableMessage(job));
       return;
     }
 
@@ -13112,25 +13112,13 @@ const AdminDashboard = () => {
         customers={baseCustomers}
         currentLocation={currentLocation}
         customerDistances={customerDistances}
-        onCalculateDistance={async (customer) => {
+        onCalculateDistance={async (customer, destination) => {
           if (calculateDistanceAndTimeRef.current && currentLocation) {
-                      const customerLocation = extractCoordinates(customer.location);
-                      let finalCustomerLocation = customerLocation;
-                      
-                      if (!finalCustomerLocation || finalCustomerLocation.latitude === 0 || finalCustomerLocation.longitude === 0) {
-                        const googleMapsLink = customer.location?.formattedAddress;
-                        if (googleMapsLink && (googleMapsLink.includes('google.com/maps') || googleMapsLink.includes('maps.app.goo.gl'))) {
-                          finalCustomerLocation = extractCoordinates({ formattedAddress: googleMapsLink });
-                        }
-                      }
-                      
-                      if (finalCustomerLocation && finalCustomerLocation.latitude && finalCustomerLocation.longitude) {
-                          await calculateDistanceAndTimeRef.current(
-                            currentLocation,
-                            { lat: finalCustomerLocation.latitude, lng: finalCustomerLocation.longitude },
-                            customer.id
-                          );
-                        }
+            await calculateDistanceAndTimeRef.current(
+              currentLocation,
+              destination,
+              customer.id
+            );
           }
         }}
       />

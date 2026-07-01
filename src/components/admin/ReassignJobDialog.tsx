@@ -10,7 +10,7 @@ import { Job, Technician } from '@/types';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import { toast } from 'sonner';
 import { db } from '@/lib/supabase';
-import { getFreshGoogleMapsLinkForJobRow, resolveJobLatLngFromRow } from '@/lib/jobLocationHelpers';
+import { getFreshGoogleMapsLinkForJobRow, getLocationUnavailableMessage, jobRowNeedsMapsLinkResolve, resolveJobLatLngFromRow } from '@/lib/jobLocationHelpers';
 
 interface ReassignJobDialogProps {
   open: boolean;
@@ -116,7 +116,7 @@ const ReassignJobDialog: React.FC<ReassignJobDialogProps> = ({
     if (loadingToast !== undefined) toast.dismiss(loadingToast);
 
     if (!resolved) {
-      toast.error('Job location not available. Try again after the address loads.');
+      toast.error(getLocationUnavailableMessage(job));
       return;
     }
 
@@ -516,6 +516,11 @@ const ReassignJobDialog: React.FC<ReassignJobDialogProps> = ({
                 <MapPin className="w-4 h-4" />
                 Open in Google Maps
               </Button>
+              {jobRowNeedsMapsLinkResolve(job) && (
+                <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-1.5 mt-2">
+                  Short map link saved — use <strong>Reassign by Distance</strong> to resolve it for sorting.
+                </p>
+              )}
             </div>
           )}
 

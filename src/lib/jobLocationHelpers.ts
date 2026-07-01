@@ -320,3 +320,44 @@ export async function resolveJobLatLngFromRow(
   if (!resolved) return null;
   return { lat: resolved.lat, lng: resolved.lng, workingRow: row };
 }
+
+/** Wrap a customer record for shared job-location resolution helpers. */
+export function customerToLocationRow(customer: any): { id: string; customer: any } | null {
+  if (!customer?.id) return null;
+  return { id: customer.id, customer };
+}
+
+/** Resolve customer lat/lng (customer list / address dialog). */
+export async function resolveCustomerLatLngFromRow(
+  customer: any,
+  options: {
+    getCustomerById?: (id: string) => Promise<{ data: any; error: any }>;
+    accessToken?: string | null;
+    onResolvingLink?: () => void;
+  } = {}
+): Promise<ResolvedJobLatLng | null> {
+  const row = customerToLocationRow(customer);
+  if (!row) return null;
+
+  return resolveJobLatLngFromRow(row, {
+    accessToken: options.accessToken,
+    onResolvingLink: options.onResolvingLink,
+    getJobByIdFull: options.getCustomerById
+      ? async (id) => {
+          const { data, error } = await options.getCustomerById!(id);
+          return { data: data ? customerToLocationRow(data) : null, error };
+        }
+      : undefined,
+  });
+}
+
+/** Actionable copy when distance/assign flows cannot get map coordinates. */
+export function getLocationUnavailableMessage(row: any): string {
+  if (jobRowNeedsMapsLinkResolve(row)) {
+    return 'Could not resolve the Google Maps link. Edit the customer and tap Fetch location.';
+  }
+  if (collectMapsLinkCandidates(row).length > 0) {
+    return 'Map link found but coordinates are missing. Edit the customer and tap Fetch location.';
+  }
+  return 'No map location saved. Add a Google Maps link in customer edit and tap Fetch location.';
+}

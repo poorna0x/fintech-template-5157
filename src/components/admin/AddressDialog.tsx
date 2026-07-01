@@ -3,9 +3,11 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from '@/components/ui/button';
 import { MapPin } from 'lucide-react';
 import { Customer } from '@/types';
-import { formatAddressForDisplay, extractCoordinates } from '@/lib/maps';
+import { formatAddressForDisplay } from '@/lib/maps';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import { toast } from 'sonner';
+import { db } from '@/lib/supabase';
+import { getLocationUnavailableMessage, resolveCustomerLatLngFromRow } from '@/lib/jobLocationHelpers';
 
 interface AddressDialogProps {
   open: { [customerId: string]: boolean };
@@ -13,7 +15,10 @@ interface AddressDialogProps {
   customers: Customer[];
   currentLocation: { lat: number; lng: number } | null;
   customerDistances: Record<string, { distance: string; duration: string; isCalculating: boolean }>;
-  onCalculateDistance: (customer: Customer) => Promise<void>;
+  onCalculateDistance: (
+    customer: Customer,
+    destination: { lat: number; lng: number }
+  ) => Promise<void>;
 }
 
 const AddressDialog: React.FC<AddressDialogProps> = ({
@@ -93,32 +98,25 @@ const AddressDialog: React.FC<AddressDialogProps> = ({
                         toast.error('Your location is not available. Please enable location services.');
                         return;
                       }
-                      
-                      const customerLocation = extractCoordinates(customer.location);
-                      let finalCustomerLocation = customerLocation;
-                      
-                      // If no coordinates from location, try to extract from Google Maps link
-                      if (!finalCustomerLocation || finalCustomerLocation.latitude === 0 || finalCustomerLocation.longitude === 0) {
-                        const locAny = customer.location as any;
-                        const googleMapsLink =
-                          locAny?.formattedAddress ||
-                          locAny?.formatted_address ||
-                          (typeof locAny?.googleLocation === 'string' ? locAny.googleLocation : '');
-                        if (
-                          googleMapsLink &&
-                          (googleMapsLink.includes('google.com/maps') ||
-                            googleMapsLink.includes('maps.app.goo.gl') ||
-                            googleMapsLink.includes('goo.gl/maps'))
-                        ) {
-                          finalCustomerLocation = extractCoordinates({ formattedAddress: googleMapsLink });
-                        }
+
+                      let loadingToast: string | number | undefined;
+                      const resolved = await resolveCustomerLatLngFromRow(customer, {
+                        getCustomerById: db.customers.getById,
+                        onResolvingLink: () => {
+                          loadingToast = toast.loading('Resolving map link...');
+                        },
+                      });
+                      if (loadingToast !== undefined) toast.dismiss(loadingToast);
+
+                      if (!resolved) {
+                        toast.error(getLocationUnavailableMessage({ id: customer.id, customer }));
+                        return;
                       }
-                      
-                      if (finalCustomerLocation && finalCustomerLocation.latitude && finalCustomerLocation.longitude) {
-                        await onCalculateDistance(customer);
-                      } else {
-                        toast.error('Customer location coordinates are invalid');
-                      }
+
+                      await onCalculateDistance(customer, {
+                        lat: resolved.lat,
+                        lng: resolved.lng,
+                      });
                     }}
                     disabled={customerDistances[customer.id]?.isCalculating || !currentLocation}
                     className="bg-black hover:bg-gray-800 text-white text-xs h-7 px-2"

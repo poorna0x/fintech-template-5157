@@ -9,7 +9,7 @@ import { toast } from 'sonner';
 import { calculateHaversineDistance } from '@/lib/distance';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import { db } from '@/lib/supabase';
-import { getFreshGoogleMapsLinkForJobRow, resolveJobLatLngFromRow } from '@/lib/jobLocationHelpers';
+import { getFreshGoogleMapsLinkForJobRow, getLocationUnavailableMessage, jobRowNeedsMapsLinkResolve, resolveJobLatLngFromRow } from '@/lib/jobLocationHelpers';
 
 interface AssignJobDialogProps {
   open: boolean;
@@ -117,7 +117,7 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
     if (loadingToast !== undefined) toast.dismiss(loadingToast);
 
     if (!resolved) {
-      toast.error('Job location not available. Try again after the address loads.');
+      toast.error(getLocationUnavailableMessage(job));
       return;
     }
 
@@ -510,6 +510,11 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
               <MapPin className="w-4 h-4" />
               Open in Google Maps
             </Button>
+            {jobRowNeedsMapsLinkResolve(job) && (
+              <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-1.5 mt-2">
+                Short map link saved — use <strong>Assign by Distance</strong> to resolve it for sorting.
+              </p>
+            )}
           </div>
 
           {/* Technician Selection */}
