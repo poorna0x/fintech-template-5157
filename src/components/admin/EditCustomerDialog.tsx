@@ -22,60 +22,10 @@ import {
   resolveGoogleMapsInputToCoords,
   sanitizeGoogleMapsInput,
 } from '@/lib/googleMapsLink';
-
-// Brand and model data - RO and Softener brands including local (Aqua Grand, Aqua Smart, Dolphin, etc.)
-const brandData = {
-  'K': ['Kent'],
-  'A': ['Aquaguard', 'AO Smith', 'Aqua Fresh', 'Aqua Grand', 'Aqua Smart', 'Aquasure'],
-  'P': ['Pureit', 'Protek'],
-  'L': ['Livpure', 'LG'],
-  'B': ['Blue Star'],
-  'T': ['Tata Swach'],
-  'E': ['Eureka Forbes'],
-  'S': ['Samsung', 'Supreme'],
-  'W': ['Whirlpool'],
-  'H': ['Havells', 'Hindware', 'Hi-Tech'],
-  'D': ['Dolphin'],
-  'V': ['V-Guard'],
-  'I': ['iSpring'],
-  'N': ['Nasaka']
-};
-
-const modelData = {
-  'RO': {
-    'Kent': ['Ace Plus 8 L RO+UV+UF+TDS', 'Ace Copper 8 L RO+UV+UF+TDS', 'Ace 8 L', 'Pearl ZW 8 L RO+UV+UF+TDS', 'Pride Plus 8 L', 'Prime Plus 9 L RO+UV+UF+TDS', 'Sterling Plus 6 L', 'Grand 8 L RO', 'Grand Plus 9 L RO+UV+UF+TDS', 'Grand Star 9 L', 'Excell Plus 7 L RO+UV+UF+TDS', 'Elegant Copper 8 L', 'Marvel', 'Sapphire'],
-    'Aquaguard': ['Delight NXT RO+UV+UF Aquasaver', 'Delight RO+UV+UF 2X', 'Aura 2X RO+UV + Copper', 'Glory RO+UV+UF + Active Copper', 'Designo NXT Under-counter RO+UV Copper', 'Blaze Insta WS RO+UV Hot & Ambient', 'SlimGlass RO+UV'],
-    'Pureit': ['Marvella 10 L RO+UV', 'Eco Water Saver RO+UV+MF+Mineral', 'RO+UV+MF+Copper+Minerial', 'Classic RO variants'],
-    'Livpure': ['Pep Pro 7 L RO+UF', 'Glitz 7 L RO+UF', 'Glo Star RO+In-Tank UV+UF+Mineraliser', 'Allura Premia'],
-    'Blue Star': ['Aristo 7 L RO+UV+UF with Pre-Filter', 'Mid-range models with taste boosters'],
-    'Havells': ['Max Alkaline RO+UV', 'Fab Alkaline RO+UV'],
-    'AO Smith': ['Z9 Pro Instant Hot & Ambient Purifier', 'Models with SCMT'],
-    'Tata Swach': ['Cristella Plus RO Water Purifier', 'Other RO combo models'],
-    'LG': ['Puricare WW180EP RO model', 'Models with mineral booster'],
-    'Protek': ['Elite Plus 12 L RO+UV+UF'],
-    'Aqua Fresh': ['Swift 15 L RO+UV+TDS'],
-    'Samsung': ['PURE RO + UV + UF', 'PURE RO + UV + Mineral', 'PURE RO + UV + Alkaline'],
-    'Supreme': ['Supreme RO + UV', 'Supreme RO + UV + UF', 'Supreme RO + UV + Mineral'],
-    'Whirlpool': ['Whirlpool RO + UV', 'Whirlpool RO + UV + UF', 'Whirlpool RO + UV + Mineral'],
-    'Hindware': ['Hindware RO + UV', 'Hindware RO + UV + UF'],
-    'Eureka Forbes': ['Aquaguard RO + UV', 'Aquaguard RO + UV + UF'],
-    'Aqua Grand': ['Aqua Grand RO 8 L', 'Aqua Grand RO+UV 10 L', 'Aqua Grand RO+UV+UF', 'Aqua Grand Deluxe', 'Aqua Grand Prime'],
-    'Aqua Smart': ['Aqua Smart RO 7 L', 'Aqua Smart RO+UV 8 L', 'Aqua Smart RO+UV+UF', 'Aqua Smart Pro', 'Aqua Smart Elite'],
-    'Dolphin': ['Dolphin RO 8 L', 'Dolphin RO+UV', 'Dolphin RO+UV+UF', 'Dolphin Premium', 'Dolphin Smart RO'],
-    'Aquasure': ['Aquasure RO 7 L', 'Aquasure RO+UV+UF', 'Aquasure Amrit', 'Aquasure from Aquaguard'],
-    'V-Guard': ['V-Guard Zen RO', 'V-Guard Rocean RO+UV+UF', 'V-Guard Bliss RO', 'V-Guard Smart RO'],
-    'iSpring': ['iSpring RCC7', 'iSpring RO500', 'iSpring RO+UV models'],
-    'Nasaka': ['Nasaka RO 8 L', 'Nasaka RO+UV', 'Nasaka RO+UV+UF', 'Nasaka Mineral RO'],
-    'Hi-Tech': ['Hi-Tech RO 7 L', 'Hi-Tech RO+UV', 'Hi-Tech RO+UV+UF', 'Hi-Tech Alkaline RO']
-  },
-  'SOFTENER': {
-    'Kent': ['Grand Softener 25L', 'Grand Softener 50L'],
-    'Aquaguard': ['Supreme Softener 25L', 'Supreme Softener 50L'],
-    'Pureit': ['Pureit Softener 25L', 'Pureit Softener 50L'],
-    'Livpure': ['Livpure Softener 25L', 'Livpure Softener 50L'],
-    'Blue Star': ['Blue Star Softener 25L', 'Blue Star Softener 50L']
-  }
-};
+import {
+  EQUIPMENT_BRAND_DATA as brandData,
+  EQUIPMENT_MODEL_DATA as modelData,
+} from '@/lib/equipment-suggestions';
 
 // Parse database service_type value back to array
 const parseDbServiceType = (serviceType: string): string[] => {

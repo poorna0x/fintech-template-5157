@@ -3,6 +3,7 @@
 
 DROP FUNCTION IF EXISTS public.technician_append_customer_change_request(uuid, uuid, text);
 DROP FUNCTION IF EXISTS public.technician_patch_customer(uuid, uuid, text, text, text, jsonb, jsonb);
+DROP FUNCTION IF EXISTS public.technician_patch_customer(uuid, uuid, text, text, text, text, jsonb, jsonb);
 
 CREATE OR REPLACE FUNCTION public.technician_patch_customer(
   p_customer_id uuid,
@@ -12,7 +13,9 @@ CREATE OR REPLACE FUNCTION public.technician_patch_customer(
   p_alternate_phone text DEFAULT NULL,
   p_visible_address text DEFAULT NULL,
   p_address jsonb DEFAULT NULL,
-  p_location jsonb DEFAULT NULL
+  p_location jsonb DEFAULT NULL,
+  p_brand text DEFAULT NULL,
+  p_model text DEFAULT NULL
 )
 RETURNS public.customers
 LANGUAGE plpgsql
@@ -77,6 +80,14 @@ BEGIN
     RAISE EXCEPTION 'Area label too long';
   END IF;
 
+  IF p_brand IS NOT NULL AND length(trim(p_brand)) > 120 THEN
+    RAISE EXCEPTION 'Brand too long';
+  END IF;
+
+  IF p_model IS NOT NULL AND length(trim(p_model)) > 200 THEN
+    RAISE EXCEPTION 'Model too long';
+  END IF;
+
   UPDATE public.customers c
   SET
     full_name = CASE
@@ -94,6 +105,8 @@ BEGIN
     END,
     address = COALESCE(p_address, c.address),
     location = COALESCE(p_location, c.location),
+    brand = CASE WHEN p_brand IS NOT NULL THEN NULLIF(trim(p_brand), '') ELSE c.brand END,
+    model = CASE WHEN p_model IS NOT NULL THEN NULLIF(trim(p_model), '') ELSE c.model END,
     updated_at = now()
   WHERE c.id = p_customer_id
   RETURNING * INTO v_row;
@@ -106,5 +119,5 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.technician_patch_customer(uuid, uuid, text, text, text, text, jsonb, jsonb) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.technician_patch_customer(uuid, uuid, text, text, text, text, jsonb, jsonb) TO authenticated;
+REVOKE ALL ON FUNCTION public.technician_patch_customer(uuid, uuid, text, text, text, text, jsonb, jsonb, text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.technician_patch_customer(uuid, uuid, text, text, text, text, jsonb, jsonb, text, text) TO authenticated;

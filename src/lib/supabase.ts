@@ -265,7 +265,7 @@ export const CUSTOMER_DOCUMENT_COLUMNS = [
   'updated_at',
 ].join(',');
 
-/** Technician customer-update dialog — contact + address only (no photos/notes/history). */
+/** Technician customer-update dialog — contact + address + equipment (no photos/notes/history). */
 export const CUSTOMER_TECHNICIAN_UPDATE_COLUMNS = [
   'id',
   'full_name',
@@ -275,6 +275,9 @@ export const CUSTOMER_TECHNICIAN_UPDATE_COLUMNS = [
   'address',
   'location',
   'visible_address',
+  'service_type',
+  'brand',
+  'model',
 ].join(',');
 
 /** Assignment / map / calling: exclude INACTIVE; null treated as active (legacy rows). */
@@ -1206,6 +1209,8 @@ export const db = {
         visible_address?: string;
         address?: Record<string, unknown>;
         location?: Record<string, unknown>;
+        brand?: string;
+        model?: string;
       }
     ) {
       const { sanitizeTechnicianCustomerPatch, isMissingRpcError } = await import(
@@ -1228,6 +1233,8 @@ export const db = {
         p_visible_address: sanitized.visible_address ?? null,
         p_address: sanitized.address ?? null,
         p_location: sanitized.location ?? null,
+        p_brand: sanitized.brand ?? null,
+        p_model: sanitized.model ?? null,
       });
 
       if (!error) {

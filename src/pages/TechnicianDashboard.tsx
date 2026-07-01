@@ -3230,7 +3230,11 @@ const TechnicianDashboard = () => {
   );
 
   const patchJobCustomerInState = useCallback(
-    (customerId: string, patch: TechnicianCustomerUpdatePatch) => {
+    (
+      customerId: string,
+      patch: TechnicianCustomerUpdatePatch,
+      context?: { jobId: string; equipmentBrand: string; equipmentModel: string }
+    ) => {
       const applyPatch = (customer: Record<string, unknown> | undefined) => {
         if (!customer) return customer;
         const cid = String(customer.id || '');
@@ -3254,14 +3258,31 @@ const TechnicianDashboard = () => {
         if (patch.location) {
           next.location = { ...(next.location as object), ...patch.location };
         }
+        if (patch.brand !== undefined) {
+          next.brand = patch.brand;
+        }
+        if (patch.model !== undefined) {
+          next.model = patch.model;
+        }
         return next;
       };
 
       setJobs((prev) =>
         prev.map((job) => {
           const patched = applyPatch(job.customer as Record<string, unknown> | undefined);
-          if (patched === job.customer) return job;
-          return { ...job, customer: patched as Job['customer'] };
+          const customerChanged = patched !== job.customer;
+          const jobEquipmentChanged =
+            context &&
+            job.id === context.jobId &&
+            (patch.brand !== undefined || patch.model !== undefined);
+          if (!customerChanged && !jobEquipmentChanged) return job;
+          return {
+            ...job,
+            ...(customerChanged ? { customer: patched as Job['customer'] } : {}),
+            ...(jobEquipmentChanged
+              ? { brand: context.equipmentBrand, model: context.equipmentModel }
+              : {}),
+          };
         })
       );
 
@@ -3309,6 +3330,8 @@ const TechnicianDashboard = () => {
                   },
                 }
               : {}),
+            ...(patch.brand !== undefined ? { brand: String(patch.brand) } : {}),
+            ...(patch.model !== undefined ? { model: String(patch.model) } : {}),
           };
         });
       }

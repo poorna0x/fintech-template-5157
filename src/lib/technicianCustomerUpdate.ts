@@ -23,6 +23,8 @@ export type TechnicianCustomerFieldPatch = {
   visible_address?: string;
   address?: Record<string, unknown>;
   location?: Record<string, unknown>;
+  brand?: string;
+  model?: string;
 };
 
 const NAME_MAX = 120;
@@ -30,6 +32,8 @@ const EMAIL_MAX = 254;
 const PHONE_MAX = 20;
 const VISIBLE_ADDRESS_MAX = 40;
 const STREET_MAX = 500;
+const BRAND_MAX = 120;
+const MODEL_MAX = 200;
 
 /** Title-case each word: "raj kumar" → "Raj Kumar". */
 export function capitalizeCustomerName(name: string): string {
@@ -108,6 +112,18 @@ export function sanitizeTechnicianCustomerPatch(
       formattedAddress: String(loc.formattedAddress ?? '').slice(0, STREET_MAX),
       ...(loc.googleLocation ? { googleLocation: String(loc.googleLocation).slice(0, 500) } : {}),
     };
+  }
+
+  if (patch.brand !== undefined) {
+    const brand = patch.brand.trim();
+    if (brand.length > BRAND_MAX) return { error: 'Brand is too long' };
+    out.brand = brand;
+  }
+
+  if (patch.model !== undefined) {
+    const model = patch.model.trim();
+    if (model.length > MODEL_MAX) return { error: 'Model is too long' };
+    out.model = model;
   }
 
   return out;

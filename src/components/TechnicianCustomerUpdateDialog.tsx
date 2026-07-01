@@ -23,6 +23,14 @@ import {
   canTechnicianEditCustomerForJob,
   capitalizeCustomerName,
 } from '@/lib/technicianCustomerUpdate';
+import {
+  type EquipmentServiceType,
+  filterBrandSuggestions,
+  filterModelSuggestions,
+  getJobEquipmentServiceType,
+  mergeCustomerEquipmentPatch,
+  readCustomerEquipmentSlot,
+} from '@/lib/equipment-suggestions';
 import type { Job } from '@/types';
 
 const DEFAULT_MAP_CENTER = { lat: 12.9716, lng: 77.5946 };
@@ -48,13 +56,19 @@ export type TechnicianCustomerUpdatePatch = {
   visible_address?: string;
   address?: Record<string, unknown>;
   location?: Record<string, unknown>;
+  brand?: string;
+  model?: string;
 };
 
 interface TechnicianCustomerUpdateDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   job: Job | null;
-  onSaved?: (customerId: string, patch: TechnicianCustomerUpdatePatch) => void;
+  onSaved?: (
+    customerId: string,
+    patch: TechnicianCustomerUpdatePatch,
+    context?: { jobId: string; equipmentBrand: string; equipmentModel: string }
+  ) => void;
 }
 
 function readEmbeddedCustomerId(job: Job | null): string | null {
@@ -76,6 +90,11 @@ const TechnicianCustomerUpdateDialog: React.FC<TechnicianCustomerUpdateDialogPro
 }) => {
   const jobSnapshotRef = useRef<Job | null>(null);
   const loadedSessionRef = useRef<string | null>(null);
+  const customerEquipmentRef = useRef<{ brand: string; model: string; service_type: string }>({
+    brand: '',
+    model: '',
+    service_type: 'RO',
+  });
 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -88,6 +107,12 @@ const TechnicianCustomerUpdateDialog: React.FC<TechnicianCustomerUpdateDialogPro
   const [alternatePhone, setAlternatePhone] = useState('');
   const [visibleAddress, setVisibleAddress] = useState('');
   const [addressStreet, setAddressStreet] = useState('');
+  const [equipmentBrand, setEquipmentBrand] = useState('');
+  const [equipmentModel, setEquipmentModel] = useState('');
+  const [brandSuggestions, setBrandSuggestions] = useState<string[]>([]);
+  const [modelSuggestions, setModelSuggestions] = useState<string[]>([]);
+  const [showBrandSuggestions, setShowBrandSuggestions] = useState(false);
+  const [showModelSuggestions, setShowModelSuggestions] = useState(false);
   const [mapCenter, setMapCenter] = useState(DEFAULT_MAP_CENTER);
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [formattedAddress, setFormattedAddress] = useState('');
@@ -97,10 +122,17 @@ const TechnicianCustomerUpdateDialog: React.FC<TechnicianCustomerUpdateDialogPro
   const [initialAlternatePhone, setInitialAlternatePhone] = useState('');
   const [initialVisibleAddress, setInitialVisibleAddress] = useState('');
   const [initialAddressStreet, setInitialAddressStreet] = useState('');
+  const [initialEquipmentBrand, setInitialEquipmentBrand] = useState('');
+  const [initialEquipmentModel, setInitialEquipmentModel] = useState('');
   const [initialCoords, setInitialCoords] = useState<{ lat: number; lng: number } | null>(null);
 
   const activeJob = jobSnapshotRef.current ?? job;
   const jobId = activeJob?.id;
+  const equipmentServiceType = useMemo(
+    () => getJobEquipmentServiceType(activeJob),
+    [activeJob]
+  );
+  const equipmentLabel = equipmentServiceType === 'SOFTENER' ? 'Water softener' : 'RO';
 
   const jobNumber = useMemo(
     () => String(activeJob?.job_number || activeJob?.jobNumber || ''),
@@ -125,6 +157,12 @@ const TechnicianCustomerUpdateDialog: React.FC<TechnicianCustomerUpdateDialogPro
     setAlternatePhone('');
     setVisibleAddress('');
     setAddressStreet('');
+    setEquipmentBrand('');
+    setEquipmentModel('');
+    setBrandSuggestions([]);
+    setModelSuggestions([]);
+    setShowBrandSuggestions(false);
+    setShowModelSuggestions(false);
     setMapCenter(DEFAULT_MAP_CENTER);
     setCoords(null);
     setFormattedAddress('');
@@ -133,13 +171,16 @@ const TechnicianCustomerUpdateDialog: React.FC<TechnicianCustomerUpdateDialogPro
     setInitialAlternatePhone('');
     setInitialVisibleAddress('');
     setInitialAddressStreet('');
+    setInitialEquipmentBrand('');
+    setInitialEquipmentModel('');
     setInitialCoords(null);
+    customerEquipmentRef.current = { brand: '', model: '', service_type: 'RO' };
     setLoading(false);
     setSaving(false);
     setGpsLoading(false);
   }, []);
 
-  const hydrateFromRow = useCallback((row: Record<string, unknown>) => {
+  const hydrateFromRow = useCallback((row: Record<string, unknown>, equipType: EquipmentServiceType) => {
     const address = normalizeCustomerAddress(row.address, {
       visible_address: row.visible_address,
     });
@@ -150,6 +191,20 @@ const TechnicianCustomerUpdateDialog: React.FC<TechnicianCustomerUpdateDialogPro
       String(row.visible_address || address.visible_address || '').trim() ||
       (street ? extractLocationFromAddressString(street)?.substring(0, 20) || '' : '');
     const name = capitalizeCustomerName(String(row.full_name || 'Customer'));
+    const equipmentSlot = readCustomerEquipmentSlot(
+      {
+        brand: String(row.brand || ''),
+        model: String(row.model || ''),
+        service_type: String(row.service_type || equipType),
+      },
+      equipType
+    );
+
+    customerEquipmentRef.current = {
+      brand: String(row.brand || ''),
+      model: String(row.model || ''),
+      service_type: String(row.service_type || equipType),
+    };
 
     setCustomerId(String(row.id));
     setFullName(name);
@@ -158,6 +213,8 @@ const TechnicianCustomerUpdateDialog: React.FC<TechnicianCustomerUpdateDialogPro
     setAlternatePhone(String(row.alternate_phone || ''));
     setVisibleAddress(vis);
     setAddressStreet(street);
+    setEquipmentBrand(equipmentSlot.brand);
+    setEquipmentModel(equipmentSlot.model);
     setFormattedAddress(String(location.formattedAddress || location.formatted_address || street || ''));
 
     setInitialFullName(name);
@@ -165,6 +222,8 @@ const TechnicianCustomerUpdateDialog: React.FC<TechnicianCustomerUpdateDialogPro
     setInitialAlternatePhone(String(row.alternate_phone || ''));
     setInitialVisibleAddress(vis);
     setInitialAddressStreet(street);
+    setInitialEquipmentBrand(equipmentSlot.brand);
+    setInitialEquipmentModel(equipmentSlot.model);
     setInitialCoords(latLng);
 
     if (latLng) {
@@ -197,6 +256,7 @@ const TechnicianCustomerUpdateDialog: React.FC<TechnicianCustomerUpdateDialogPro
     const snapshot = jobSnapshotRef.current ?? job;
     const embedded = snapshot?.customer as Record<string, unknown> | undefined;
     const id = readEmbeddedCustomerId(snapshot);
+    const equipType = getJobEquipmentServiceType(snapshot);
 
     if (!id) {
       toast.error('Customer not found for this job');
@@ -214,7 +274,10 @@ const TechnicianCustomerUpdateDialog: React.FC<TechnicianCustomerUpdateDialogPro
         visible_address: embedded.visible_address,
         address: embedded.address,
         location: embedded.location,
-      });
+        brand: embedded.brand,
+        model: embedded.model,
+        service_type: embedded.service_type || embedded.serviceType,
+      }, equipType);
     } else {
       setLoading(true);
     }
@@ -234,13 +297,27 @@ const TechnicianCustomerUpdateDialog: React.FC<TechnicianCustomerUpdateDialogPro
         return;
       }
 
-      hydrateFromRow(data as Record<string, unknown>);
+      hydrateFromRow(data as Record<string, unknown>, equipType);
     })();
 
     return () => {
       cancelled = true;
     };
   }, [open, jobId, hydrateFromRow, onOpenChange, job]);
+
+  const handleBrandInput = (value: string) => {
+    setEquipmentBrand(value);
+    const filtered = filterBrandSuggestions(value);
+    setBrandSuggestions(filtered);
+    setShowBrandSuggestions(filtered.length > 0);
+  };
+
+  const handleModelInput = (value: string) => {
+    setEquipmentModel(value);
+    const filtered = filterModelSuggestions(equipmentServiceType, equipmentBrand, value);
+    setModelSuggestions(filtered);
+    setShowModelSuggestions(filtered.length > 0);
+  };
 
   const applyMapCoords = useCallback(async (lat: number, lng: number) => {
     const next = { lat, lng };
@@ -310,6 +387,8 @@ const TechnicianCustomerUpdateDialog: React.FC<TechnicianCustomerUpdateDialogPro
     const streetChanged = addressStreet.trim() !== initialAddressStreet.trim();
     const emailChanged = trimmedEmail !== initialEmail.trim();
     const alternateChanged = trimmedAlternate !== initialAlternatePhone.trim();
+    const brandChanged = equipmentBrand.trim() !== initialEquipmentBrand.trim();
+    const modelChanged = equipmentModel.trim() !== initialEquipmentModel.trim();
 
     if (
       !nameChanged &&
@@ -317,7 +396,9 @@ const TechnicianCustomerUpdateDialog: React.FC<TechnicianCustomerUpdateDialogPro
       !alternateChanged &&
       !locationChanged &&
       !visibleChanged &&
-      !streetChanged
+      !streetChanged &&
+      !brandChanged &&
+      !modelChanged
     ) {
       toast.info('No changes to save');
       return;
@@ -353,6 +434,17 @@ const TechnicianCustomerUpdateDialog: React.FC<TechnicianCustomerUpdateDialogPro
         updatePayload.alternate_phone = trimmedAlternate;
       }
 
+      if (brandChanged || modelChanged) {
+        const merged = mergeCustomerEquipmentPatch(
+          customerEquipmentRef.current,
+          equipmentServiceType,
+          equipmentBrand,
+          equipmentModel
+        );
+        updatePayload.brand = merged.brand;
+        updatePayload.model = merged.model;
+      }
+
       if (locationChanged || visibleChanged || streetChanged) {
         const street = addressStreet.trim() || formattedAddress.trim();
         const googleLocation = coords
@@ -381,8 +473,23 @@ const TechnicianCustomerUpdateDialog: React.FC<TechnicianCustomerUpdateDialogPro
         return;
       }
 
+      if (brandChanged || modelChanged) {
+        try {
+          await db.jobs.update(jobId, {
+            brand: equipmentBrand.trim(),
+            model: equipmentModel.trim(),
+          });
+        } catch {
+          toast.warning('Customer saved, but this job could not be updated with the new model');
+        }
+      }
+
       toast.success('Customer details updated');
-      onSaved?.(customerId, updatePayload as TechnicianCustomerUpdatePatch);
+      onSaved?.(customerId, updatePayload as TechnicianCustomerUpdatePatch, {
+        jobId,
+        equipmentBrand: equipmentBrand.trim(),
+        equipmentModel: equipmentModel.trim(),
+      });
       onOpenChange(false);
     } finally {
       setSaving(false);
@@ -407,7 +514,7 @@ const TechnicianCustomerUpdateDialog: React.FC<TechnicianCustomerUpdateDialogPro
           <DialogDescription asChild>
             <span>
               {jobNumber ? `Job #${jobNumber} · ` : ''}
-              Update name, contact, and location. Primary phone cannot be changed here.
+              Update name, contact, {equipmentLabel.toLowerCase()} equipment, and location. Primary phone cannot be changed here.
             </span>
           </DialogDescription>
         </DialogHeader>
@@ -467,6 +574,72 @@ const TechnicianCustomerUpdateDialog: React.FC<TechnicianCustomerUpdateDialogPro
                 onChange={(e) => setAlternatePhone(e.target.value)}
                 placeholder="Secondary contact (optional)"
               />
+            </div>
+
+            <div className="space-y-3 pt-1 border-t">
+              <Label className="text-sm font-medium">{equipmentLabel} equipment</Label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-2 relative">
+                  <Label htmlFor="tech-cust-brand">Brand</Label>
+                  <Input
+                    id="tech-cust-brand"
+                    value={equipmentBrand}
+                    onChange={(e) => handleBrandInput(e.target.value)}
+                    placeholder={`Enter ${equipmentLabel} brand`}
+                    onBlur={() => {
+                      window.setTimeout(() => setShowBrandSuggestions(false), 200);
+                    }}
+                  />
+                  {showBrandSuggestions && brandSuggestions.length > 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-40 overflow-y-auto">
+                      {brandSuggestions.map((brand) => (
+                        <button
+                          key={brand}
+                          type="button"
+                          className="w-full text-left px-3 py-2 hover:bg-accent hover:text-accent-foreground text-sm"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => {
+                            setEquipmentBrand(brand);
+                            setShowBrandSuggestions(false);
+                          }}
+                        >
+                          {brand}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="space-y-2 relative">
+                  <Label htmlFor="tech-cust-model">Model</Label>
+                  <Input
+                    id="tech-cust-model"
+                    value={equipmentModel}
+                    onChange={(e) => handleModelInput(e.target.value)}
+                    placeholder={`Enter ${equipmentLabel} model`}
+                    onBlur={() => {
+                      window.setTimeout(() => setShowModelSuggestions(false), 200);
+                    }}
+                  />
+                  {showModelSuggestions && modelSuggestions.length > 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-40 overflow-y-auto">
+                      {modelSuggestions.map((model) => (
+                        <button
+                          key={model}
+                          type="button"
+                          className="w-full text-left px-3 py-2 hover:bg-accent hover:text-accent-foreground text-sm"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => {
+                            setEquipmentModel(model);
+                            setShowModelSuggestions(false);
+                          }}
+                        >
+                          {model}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
 
             <div className="space-y-3 pt-1 border-t">
