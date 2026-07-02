@@ -331,6 +331,71 @@ export function collectPlaceHints(...texts: Array<string | null | undefined>): s
 
 let googleMapsScriptPromise: Promise<void> | null = null;
 
+function waitForGoogleMapsNamespace(timeoutMs = 15000): Promise<void> {
+  if (window.google?.maps) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve, reject) => {
+    const started = Date.now();
+    const tick = () => {
+      if (window.google?.maps) {
+        resolve();
+        return;
+      }
+      if (Date.now() - started >= timeoutMs) {
+        reject(new Error('Google Maps failed to load'));
+        return;
+      }
+      window.setTimeout(tick, 100);
+    };
+    tick();
+  });
+}
+
+async function waitForGoogleMapsMapConstructor(timeoutMs = 15000): Promise<void> {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    if (window.google?.maps?.Map) return;
+    if (window.google?.maps?.importLibrary) {
+      try {
+        await window.google.maps.importLibrary('maps');
+      } catch {
+        /* retry */
+      }
+      if (window.google?.maps?.Map) return;
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 100));
+  }
+  throw new Error('Google Maps Map API failed to load');
+}
+
+function injectGoogleMapsScript(apiKey: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[src*="maps.googleapis.com/maps/api/js"]');
+    if (existing) {
+      if (window.google?.maps) {
+        resolve();
+        return;
+      }
+      existing.addEventListener('load', () => resolve(), { once: true });
+      existing.addEventListener('error', () => reject(new Error('Failed to load Google Maps')), {
+        once: true,
+      });
+      void waitForGoogleMapsNamespace().then(resolve).catch(reject);
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`;
+    script.async = true;
+    script.defer = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('Failed to load Google Maps'));
+    document.head.appendChild(script);
+  });
+}
+
 /** Load Maps JS for client geocoder (works on mobile without staff API token). */
 export function loadGoogleMapsGeocoderScript(): Promise<void> {
   if (typeof window === 'undefined') {
@@ -346,27 +411,36 @@ export function loadGoogleMapsGeocoderScript(): Promise<void> {
   }
 
   if (!googleMapsScriptPromise) {
-    googleMapsScriptPromise = new Promise((resolve, reject) => {
-      const existing = document.querySelector('script[src*="maps.googleapis.com/maps/api/js"]');
-      if (existing) {
-        existing.addEventListener('load', () => resolve(), { once: true });
-        existing.addEventListener('error', () => reject(new Error('Failed to load Google Maps')), {
-          once: true,
-        });
-        return;
-      }
-
-      const script = document.createElement('script');
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`;
-      script.async = true;
-      script.defer = true;
-      script.onload = () => resolve();
-      script.onerror = () => reject(new Error('Failed to load Google Maps'));
-      document.head.appendChild(script);
-    });
+    googleMapsScriptPromise = injectGoogleMapsScript(apiKey).then(() =>
+      waitForGoogleMapsNamespace()
+    );
   }
 
   return googleMapsScriptPromise;
+}
+
+/** Load Maps JS including the Map constructor (for DraggableMap and similar). */
+export async function ensureGoogleMapsMapReady(): Promise<void> {
+  if (typeof window === 'undefined') {
+    throw new Error('Google Maps is only available in the browser');
+  }
+  if (window.google?.maps?.Map) {
+    return;
+  }
+
+  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+  if (!apiKey) {
+    throw new Error('Google Maps API key not configured');
+  }
+
+  if (!googleMapsScriptPromise) {
+    googleMapsScriptPromise = injectGoogleMapsScript(apiKey).then(() =>
+      waitForGoogleMapsNamespace()
+    );
+  }
+
+  await googleMapsScriptPromise;
+  await waitForGoogleMapsMapConstructor();
 }
 
 /** Forward-geocode via browser Google Maps JS — no login token (mobile-safe). */
