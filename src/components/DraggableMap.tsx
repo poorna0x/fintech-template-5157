@@ -1,12 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { ensureGoogleMapsMapReady } from '@/lib/googleMapsLink';
+import {
+  buildGoogleMapsEmbedUrl,
+  ensureGoogleMapsMapReady,
+  mapContainerShowsGoogleError,
+} from '@/lib/googleMapsLink';
 
 declare global {
   interface Window {
     google: typeof google;
-    initMap: () => void;
     gm_authFailure?: () => void;
   }
 }
@@ -17,6 +20,8 @@ interface DraggableMapProps {
   zoom?: number;
   height?: string;
 }
+
+type LoadState = 'loading' | 'interactive' | 'embed' | 'error';
 
 function triggerMapResize(map: google.maps.Map) {
   window.google.maps.event.trigger(map, 'resize');
@@ -38,6 +43,16 @@ function waitForMapIdle(map: google.maps.Map, timeoutMs = 20000): Promise<void> 
   });
 }
 
+async function waitForHealthyMap(map: google.maps.Map, container: HTMLElement): Promise<void> {
+  await waitForMapIdle(map);
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    if (mapContainerShowsGoogleError(container)) {
+      throw new Error('Google Maps auth error');
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 200));
+  }
+}
+
 const DraggableMap = ({ center, onLocationChange, zoom = 15, height = '400px' }: DraggableMapProps) => {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<google.maps.Map | null>(null);
@@ -45,7 +60,12 @@ const DraggableMap = ({ center, onLocationChange, zoom = 15, height = '400px' }:
   const onLocationChangeRef = useRef(onLocationChange);
   const centerRef = useRef(center);
   const zoomRef = useRef(zoom);
-  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [loadState, setLoadState] = useState<LoadState>('loading');
+
+  const embedUrl = useMemo(
+    () => buildGoogleMapsEmbedUrl(center.lat, center.lng, zoom),
+    [center.lat, center.lng, zoom]
+  );
 
   useEffect(() => {
     onLocationChangeRef.current = onLocationChange;
@@ -62,6 +82,7 @@ const DraggableMap = ({ center, onLocationChange, zoom = 15, height = '400px' }:
   useEffect(() => {
     let cancelled = false;
     let resizeObserver: ResizeObserver | null = null;
+    let resizeFrame = 0;
     const resizeTimers: ReturnType<typeof setTimeout>[] = [];
 
     const refreshMapLayout = () => {
@@ -73,8 +94,8 @@ const DraggableMap = ({ center, onLocationChange, zoom = 15, height = '400px' }:
     };
 
     const scheduleResize = () => {
-      resizeTimers.push(setTimeout(refreshMapLayout, 0));
-      resizeTimers.push(setTimeout(refreshMapLayout, 300));
+      resizeTimers.push(window.setTimeout(refreshMapLayout, 0));
+      resizeTimers.push(window.setTimeout(refreshMapLayout, 400));
     };
 
     const initMap = async () => {
@@ -87,8 +108,8 @@ const DraggableMap = ({ center, onLocationChange, zoom = 15, height = '400px' }:
         const mapInstance = new window.google.maps.Map(mapRef.current, {
           center: centerRef.current,
           zoom: zoomRef.current,
-          mapTypeControl: true,
-          streetViewControl: true,
+          mapTypeControl: false,
+          streetViewControl: false,
           fullscreenControl: true,
         });
 
@@ -113,26 +134,27 @@ const DraggableMap = ({ center, onLocationChange, zoom = 15, height = '400px' }:
         markerRef.current = markerInstance;
         scheduleResize();
 
-        await waitForMapIdle(mapInstance);
+        await waitForHealthyMap(mapInstance, mapRef.current);
         if (cancelled) return;
 
         if (typeof ResizeObserver !== 'undefined' && mapRef.current) {
           resizeObserver = new ResizeObserver(() => {
-            refreshMapLayout();
+            if (resizeFrame) window.cancelAnimationFrame(resizeFrame);
+            resizeFrame = window.requestAnimationFrame(refreshMapLayout);
           });
           resizeObserver.observe(mapRef.current);
         }
 
         if (!cancelled) {
-          setLoadState('ready');
+          setLoadState('interactive');
         }
       } catch (error) {
         console.error('Error loading Google Maps:', error);
         if (!cancelled) {
-          setLoadState('error');
-          const message =
-            error instanceof Error ? error.message : 'Failed to load Google Maps';
-          toast.error(message.includes('authorized') ? message : 'Map could not load. Check connection and try again.');
+          setLoadState('embed');
+          toast.message('Showing basic map view — drag pin unavailable on this device.', {
+            duration: 4000,
+          });
         }
       }
     };
@@ -141,7 +163,8 @@ const DraggableMap = ({ center, onLocationChange, zoom = 15, height = '400px' }:
 
     return () => {
       cancelled = true;
-      resizeTimers.forEach((timer) => clearTimeout(timer));
+      if (resizeFrame) window.cancelAnimationFrame(resizeFrame);
+      resizeTimers.forEach((timer) => window.clearTimeout(timer));
       resizeObserver?.disconnect();
       markerRef.current = null;
       mapInstanceRef.current = null;
@@ -151,48 +174,61 @@ const DraggableMap = ({ center, onLocationChange, zoom = 15, height = '400px' }:
   useEffect(() => {
     const marker = markerRef.current;
     const map = mapInstanceRef.current;
-    if (!marker || !map) return;
+    if (!marker || !map || loadState !== 'interactive') return;
 
     marker.setPosition(center);
-    map.setCenter(center);
-    triggerMapResize(map);
-  }, [center.lat, center.lng]);
+    map.panTo(center);
+  }, [center.lat, center.lng, loadState]);
 
   useEffect(() => {
     const map = mapInstanceRef.current;
-    if (!map) return;
+    if (!map || loadState !== 'interactive') return;
     map.setZoom(zoom);
-  }, [zoom]);
+  }, [zoom, loadState]);
 
   return (
     <div className="relative w-full rounded-lg overflow-hidden border-2 border-gray-300 shadow-lg">
-      <div
-        ref={mapRef}
-        style={{
-          height,
-          width: '100%',
-          minHeight: height,
-          position: 'relative',
-        }}
-      />
-      {loadState !== 'ready' && (
+      {loadState === 'embed' ? (
+        <iframe
+          title="Customer location map"
+          src={embedUrl}
+          style={{ height, width: '100%', minHeight: height, border: 0 }}
+          loading="lazy"
+          referrerPolicy="no-referrer-when-downgrade"
+          allowFullScreen
+        />
+      ) : (
+        <div
+          ref={mapRef}
+          style={{
+            height,
+            width: '100%',
+            minHeight: height,
+            position: 'relative',
+          }}
+        />
+      )}
+
+      {loadState === 'loading' && (
         <div
           className="absolute inset-0 flex items-center justify-center bg-gray-100 z-10"
           style={{ height }}
         >
           <div className="flex flex-col items-center gap-2 px-4 text-center">
-            {loadState === 'loading' ? (
-              <>
-                <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
-                <p className="text-sm text-gray-600">Loading map...</p>
-              </>
-            ) : (
-              <p className="text-sm text-gray-600">
-                Map could not load. If this keeps happening, ask admin to verify the Google Maps API key
-                and referrer settings for this site.
-              </p>
-            )}
+            <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+            <p className="text-sm text-gray-600">Loading map...</p>
           </div>
+        </div>
+      )}
+
+      {loadState === 'error' && (
+        <div
+          className="absolute inset-0 flex items-center justify-center bg-gray-100 z-10 px-4 text-center"
+          style={{ height }}
+        >
+          <p className="text-sm text-gray-600">
+            Map could not load. Use GPS or enter the address manually.
+          </p>
         </div>
       )}
     </div>
