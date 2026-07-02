@@ -329,115 +329,7 @@ export function collectPlaceHints(...texts: Array<string | null | undefined>): s
   return [...hints];
 }
 
-let googleMapsBootstrapPromise: Promise<void> | null = null;
-
-const GOOGLE_MAPS_AUTH_ERROR =
-  'Google Maps is not authorized for this app. Check API key and HTTP referrer settings.';
-
-function waitUntil(predicate: () => boolean, timeoutMs = 20000): Promise<void> {
-  if (predicate()) return Promise.resolve();
-
-  return new Promise((resolve, reject) => {
-    const started = Date.now();
-    const tick = () => {
-      if (predicate()) {
-        resolve();
-        return;
-      }
-      if (Date.now() - started >= timeoutMs) {
-        reject(new Error('Google Maps failed to load'));
-        return;
-      }
-      window.setTimeout(tick, 50);
-    };
-    tick();
-  });
-}
-
-function installGoogleMapsAuthFailureHandler(reject: (error: Error) => void) {
-  window.gm_authFailure = () => {
-    googleMapsBootstrapPromise = null;
-    reject(new Error(GOOGLE_MAPS_AUTH_ERROR));
-  };
-}
-
-/** Official Maps JS bootstrap (works with importLibrary; avoids loading=async races). */
-function installGoogleMapsBootstrap(apiKey: string): Promise<void> {
-  if (window.google?.maps?.importLibrary) {
-    return Promise.resolve();
-  }
-
-  if (googleMapsBootstrapPromise) {
-    return googleMapsBootstrapPromise;
-  }
-
-  googleMapsBootstrapPromise = new Promise((resolve, reject) => {
-    installGoogleMapsAuthFailureHandler(reject);
-
-    // Legacy script tag from older screens — wait for Map if bootstrap API is unavailable.
-    if (document.querySelector('script[src*="maps.googleapis.com/maps/api/js"]')) {
-      void waitUntil(() => Boolean(window.google?.maps?.Map))
-        .then(resolve)
-        .catch((error) => {
-          googleMapsBootstrapPromise = null;
-          reject(error);
-        });
-      return;
-    }
-
-    if (document.getElementById('hydrogenro-gmaps-bootstrap')) {
-      void waitUntil(() => Boolean(window.google?.maps?.importLibrary))
-        .then(resolve)
-        .catch((error) => {
-          googleMapsBootstrapPromise = null;
-          reject(error);
-        });
-      return;
-    }
-
-    const script = document.createElement('script');
-    script.id = 'hydrogenro-gmaps-bootstrap';
-    script.type = 'text/javascript';
-    script.text = `(g=>{var h,a,k,p="The Google Maps JavaScript API",c="google",l="importLibrary",q="__ib__",m=document,b=window;b=b[c]||(b[c]={});var d=b.maps||(b.maps={}),r=new Set,e=new URLSearchParams,u=()=>h||(h=new Promise(async(f,n)=>{await (a=m.createElement("script"));e.set("libraries",[...r]+"");for(k in g)e.set(k.replace(/[A-Z]/g,t=>"_"+t[0].toLowerCase()),g[k]);e.set("callback",c+".maps."+q);a.src=\`https://maps.\${c}apis.com/maps/api/js?\`+e;d[q]=f;a.onerror=()=>h=n(Error(p+" could not load."));a.nonce=m.querySelector("script[nonce]")?.nonce||"";m.head.append(a)}));d[l]?console.warn(p+" only loads once. Ignoring:",g):d[l]=(f,...n)=>r.add(f)&&u().then(()=>d[l](f,...n))})({key:${JSON.stringify(apiKey)},v:"weekly"});`;
-    script.onerror = () => {
-      googleMapsBootstrapPromise = null;
-      reject(new Error('Failed to load Google Maps'));
-    };
-    document.head.appendChild(script);
-
-    void waitUntil(() => Boolean(window.google?.maps?.importLibrary))
-      .then(resolve)
-      .catch((error) => {
-        googleMapsBootstrapPromise = null;
-        reject(error);
-      });
-  });
-
-  return googleMapsBootstrapPromise;
-}
-
-/** Load Maps JS including the Map constructor (for DraggableMap and similar). */
-export async function ensureGoogleMapsMapReady(): Promise<void> {
-  if (typeof window === 'undefined') {
-    throw new Error('Google Maps is only available in the browser');
-  }
-  if (window.google?.maps?.Map) {
-    return;
-  }
-
-  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-  if (!apiKey) {
-    throw new Error('Google Maps API key not configured');
-  }
-
-  await installGoogleMapsBootstrap(apiKey);
-
-  if (window.google?.maps?.importLibrary) {
-    await window.google.maps.importLibrary('maps');
-  }
-
-  await waitUntil(() => Boolean(window.google?.maps?.Map));
-}
+let googleMapsScriptPromise: Promise<void> | null = null;
 
 /** Load Maps JS for client geocoder (works on mobile without staff API token). */
 export function loadGoogleMapsGeocoderScript(): Promise<void> {
@@ -448,21 +340,33 @@ export function loadGoogleMapsGeocoderScript(): Promise<void> {
     return Promise.resolve();
   }
 
-  return ensureGoogleMapsMapReady().then(() =>
-    waitUntil(() => Boolean(window.google?.maps?.Geocoder))
-  );
-}
+  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+  if (!apiKey) {
+    return Promise.reject(new Error('Google Maps API key not configured'));
+  }
 
-export function buildGoogleMapsEmbedUrl(lat: number, lng: number, zoom = 17): string {
-  return `https://maps.google.com/maps?q=${lat},${lng}&hl=en&z=${zoom}&output=embed`;
-}
+  if (!googleMapsScriptPromise) {
+    googleMapsScriptPromise = new Promise((resolve, reject) => {
+      const existing = document.querySelector('script[src*="maps.googleapis.com/maps/api/js"]');
+      if (existing) {
+        existing.addEventListener('load', () => resolve(), { once: true });
+        existing.addEventListener('error', () => reject(new Error('Failed to load Google Maps')), {
+          once: true,
+        });
+        return;
+      }
 
-export function mapContainerShowsGoogleError(container: HTMLElement | null | undefined): boolean {
-  if (!container) return false;
-  return (
-    container.querySelector('.gm-err-container') !== null ||
-    /didn't load Google Maps correctly/i.test(container.textContent || '')
-  );
+      const script = document.createElement('script');
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`;
+      script.async = true;
+      script.defer = true;
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error('Failed to load Google Maps'));
+      document.head.appendChild(script);
+    });
+  }
+
+  return googleMapsScriptPromise;
 }
 
 /** Forward-geocode via browser Google Maps JS — no login token (mobile-safe). */

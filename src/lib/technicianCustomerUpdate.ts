@@ -9,7 +9,7 @@ export function normalizeJobStatusForTechnician(status: string | null | undefine
     .replace(/\s+/g, '_');
 }
 
-/** Technicians may edit customer contact/location only while an active job is assigned to them. */
+/** Technicians may edit customer email and alternate phone only while an active job is assigned to them. */
 export function canTechnicianEditCustomerForJob(job: Job | null | undefined): boolean {
   if (!job?.id) return false;
   const status = normalizeJobStatusForTechnician((job as { status?: string }).status);

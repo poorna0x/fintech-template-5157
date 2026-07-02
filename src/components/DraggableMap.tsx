@@ -1,16 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import {
-  buildGoogleMapsEmbedUrl,
-  ensureGoogleMapsMapReady,
-  mapContainerShowsGoogleError,
-} from '@/lib/googleMapsLink';
+
+// Global flag to track if Google Maps script is already loaded
+let googleMapsScriptLoaded = false;
+let googleMapsScriptLoading = false;
 
 declare global {
   interface Window {
     google: typeof google;
-    gm_authFailure?: () => void;
+    initMap: () => void;
   }
 }
 
@@ -21,214 +20,281 @@ interface DraggableMapProps {
   height?: string;
 }
 
-type LoadState = 'loading' | 'interactive' | 'embed' | 'error';
-
-function triggerMapResize(map: google.maps.Map) {
-  window.google.maps.event.trigger(map, 'resize');
-}
-
-function waitForMapIdle(map: google.maps.Map, timeoutMs = 20000): Promise<void> {
-  return new Promise((resolve, reject) => {
-    let idleListener: google.maps.MapsEventListener | null = null;
-    const timeout = window.setTimeout(() => {
-      if (idleListener) window.google.maps.event.removeListener(idleListener);
-      reject(new Error('Google Maps timed out while loading tiles'));
-    }, timeoutMs);
-
-    idleListener = map.addListener('idle', () => {
-      window.clearTimeout(timeout);
-      if (idleListener) window.google.maps.event.removeListener(idleListener);
-      resolve();
-    });
-  });
-}
-
-async function waitForHealthyMap(map: google.maps.Map, container: HTMLElement): Promise<void> {
-  await waitForMapIdle(map);
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    if (mapContainerShowsGoogleError(container)) {
-      throw new Error('Google Maps auth error');
-    }
-    await new Promise((resolve) => window.setTimeout(resolve, 200));
-  }
-}
-
 const DraggableMap = ({ center, onLocationChange, zoom = 15, height = '400px' }: DraggableMapProps) => {
   const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<google.maps.Map | null>(null);
-  const markerRef = useRef<google.maps.Marker | null>(null);
-  const onLocationChangeRef = useRef(onLocationChange);
-  const centerRef = useRef(center);
-  const zoomRef = useRef(zoom);
-  const [loadState, setLoadState] = useState<LoadState>('loading');
+  const [isMapLoaded, setIsMapLoaded] = useState(false);
+  const [isScriptLoaded, setIsScriptLoaded] = useState(false);
+  const [map, setMap] = useState<google.maps.Map | null>(null);
+  const [marker, setMarker] = useState<google.maps.Marker | null>(null);
 
-  const embedUrl = useMemo(
-    () => buildGoogleMapsEmbedUrl(center.lat, center.lng, zoom),
-    [center.lat, center.lng, zoom]
-  );
-
+  // Load Google Maps script only when component is visible (lazy loading)
   useEffect(() => {
-    onLocationChangeRef.current = onLocationChange;
-  }, [onLocationChange]);
+    // Check if already loaded globally
+    if (window.google && window.google.maps) {
+      googleMapsScriptLoaded = true;
+      setIsScriptLoaded(true);
+      return;
+    }
 
-  useEffect(() => {
-    centerRef.current = center;
-  }, [center]);
+    if (isScriptLoaded || googleMapsScriptLoaded) {
+      return;
+    }
 
-  useEffect(() => {
-    zoomRef.current = zoom;
-  }, [zoom]);
+    const loadGoogleMapsScript = () => {
+      const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+      
+      if (!apiKey) {
+        toast.error('Google Maps API key not configured');
+        return;
+      }
 
-  useEffect(() => {
-    let cancelled = false;
-    let resizeObserver: ResizeObserver | null = null;
-    let resizeFrame = 0;
-    const resizeTimers: ReturnType<typeof setTimeout>[] = [];
+      // Check if script is already loaded
+      if (window.google && window.google.maps) {
+        googleMapsScriptLoaded = true;
+        setIsScriptLoaded(true);
+        return;
+      }
 
-    const refreshMapLayout = () => {
-      const map = mapInstanceRef.current;
-      if (!map) return;
-      triggerMapResize(map);
-      map.setCenter(centerRef.current);
-      map.setZoom(zoomRef.current);
-    };
-
-    const scheduleResize = () => {
-      resizeTimers.push(window.setTimeout(refreshMapLayout, 0));
-      resizeTimers.push(window.setTimeout(refreshMapLayout, 400));
-    };
-
-    const initMap = async () => {
-      if (!mapRef.current) return;
-
-      try {
-        await ensureGoogleMapsMapReady();
-        if (cancelled || !mapRef.current) return;
-
-        const mapInstance = new window.google.maps.Map(mapRef.current, {
-          center: centerRef.current,
-          zoom: zoomRef.current,
-          mapTypeControl: false,
-          streetViewControl: false,
-          fullscreenControl: true,
-        });
-
-        const markerInstance = new window.google.maps.Marker({
-          position: centerRef.current,
-          map: mapInstance,
-          draggable: true,
-          title: 'Drag to select location',
-        });
-
-        markerInstance.addListener('dragend', () => {
-          const position = markerInstance.getPosition();
-          if (position && onLocationChangeRef.current) {
-            onLocationChangeRef.current({
-              lat: position.lat(),
-              lng: position.lng(),
-            });
+      // Check if script tag already exists
+      const existingScript = document.querySelector('script[src*="maps.googleapis.com"]');
+      if (existingScript) {
+        // Script is loading, wait for it
+        let checkInterval: NodeJS.Timeout | null = null;
+        let timeoutId: NodeJS.Timeout | null = null;
+        
+        checkInterval = setInterval(() => {
+          if (window.google && window.google.maps) {
+            if (checkInterval) clearInterval(checkInterval);
+            if (timeoutId) clearTimeout(timeoutId);
+            googleMapsScriptLoaded = true;
+            setIsScriptLoaded(true);
           }
-        });
+        }, 100);
+        
+        timeoutId = setTimeout(() => {
+          if (checkInterval) clearInterval(checkInterval);
+          // If still not loaded after timeout, try loading again
+          if (!window.google || !window.google.maps) {
+            console.warn('Existing script did not load, attempting new load');
+            googleMapsScriptLoading = false; // Reset flag to allow retry
+            loadGoogleMapsScript();
+          }
+        }, 10000); // Timeout after 10s
+        return;
+      }
 
-        mapInstanceRef.current = mapInstance;
-        markerRef.current = markerInstance;
-        scheduleResize();
+      // Prevent multiple simultaneous loads
+      if (googleMapsScriptLoading) return;
+      googleMapsScriptLoading = true;
 
-        await waitForHealthyMap(mapInstance, mapRef.current);
-        if (cancelled) return;
+      // Load the script
+      const script = document.createElement('script');
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`;
+      script.async = true;
+      script.defer = true;
+      
+      script.onload = () => {
+        googleMapsScriptLoaded = true;
+        googleMapsScriptLoading = false;
+        setIsScriptLoaded(true);
+      };
+      
+      script.onerror = () => {
+        googleMapsScriptLoading = false;
+        console.error('Google Maps script failed to load');
+        toast.error('Failed to load Google Maps. Please check your internet connection and refresh the page.');
+        setIsScriptLoaded(false);
+      };
+      
+      document.head.appendChild(script);
+    };
 
-        if (typeof ResizeObserver !== 'undefined' && mapRef.current) {
-          resizeObserver = new ResizeObserver(() => {
-            if (resizeFrame) window.cancelAnimationFrame(resizeFrame);
-            resizeFrame = window.requestAnimationFrame(refreshMapLayout);
-          });
-          resizeObserver.observe(mapRef.current);
-        }
-
-        if (!cancelled) {
-          setLoadState('interactive');
-        }
-      } catch (error) {
-        console.error('Error loading Google Maps:', error);
-        if (!cancelled) {
-          setLoadState('embed');
-          toast.message('Showing basic map view — drag pin unavailable on this device.', {
-            duration: 4000,
-          });
-        }
+    // Use Intersection Observer to load map only when visible
+    let observer: IntersectionObserver | null = null;
+    let timeoutId: NodeJS.Timeout | null = null;
+    
+    const checkAndLoad = () => {
+      if (!googleMapsScriptLoaded && !googleMapsScriptLoading) {
+        loadGoogleMapsScript();
       }
     };
-
-    void initMap();
+    
+    if (mapRef.current) {
+      // Check if already visible immediately
+      const rect = mapRef.current.getBoundingClientRect();
+      const isVisible = rect.top < window.innerHeight && rect.bottom > 0 && rect.width > 0;
+      
+      if (isVisible) {
+        // Already visible, load immediately
+        checkAndLoad();
+      } else {
+        // Use Intersection Observer for lazy loading (if supported)
+        if ('IntersectionObserver' in window) {
+          observer = new IntersectionObserver(
+            (entries) => {
+              entries.forEach((entry) => {
+                if (entry.isIntersecting && !googleMapsScriptLoaded && !googleMapsScriptLoading) {
+                  checkAndLoad();
+                  if (observer) {
+                    observer.disconnect();
+                  }
+                }
+              });
+            },
+            { threshold: 0.1, rootMargin: '50px' } // Load when 10% visible or within 50px
+          );
+          
+          observer.observe(mapRef.current);
+        }
+        
+        // Fallback: load after 2 seconds if still not visible (in case Intersection Observer doesn't work or not supported)
+        timeoutId = setTimeout(() => {
+          if (!googleMapsScriptLoaded && !googleMapsScriptLoading) {
+            checkAndLoad();
+          }
+        }, 2000);
+      }
+    } else {
+      // Ref not available yet, try again after a short delay
+      timeoutId = setTimeout(() => {
+        if (mapRef.current && !googleMapsScriptLoaded && !googleMapsScriptLoading) {
+          checkAndLoad();
+        }
+      }, 300);
+    }
 
     return () => {
-      cancelled = true;
-      if (resizeFrame) window.cancelAnimationFrame(resizeFrame);
-      resizeTimers.forEach((timer) => window.clearTimeout(timer));
-      resizeObserver?.disconnect();
-      markerRef.current = null;
-      mapInstanceRef.current = null;
+      if (observer) {
+        observer.disconnect();
+      }
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
     };
-  }, []);
+  }, [isScriptLoaded]);
 
+  // Initialize map when script is loaded - ONLY ONCE
   useEffect(() => {
-    const marker = markerRef.current;
-    const map = mapInstanceRef.current;
-    if (!marker || !map || loadState !== 'interactive') return;
+    if (!isScriptLoaded || !mapRef.current || map) {
+      return;
+    }
 
-    marker.setPosition(center);
-    map.panTo(center);
-  }, [center.lat, center.lng, loadState]);
+    let checkInterval: NodeJS.Timeout | null = null;
+    let timeoutId: NodeJS.Timeout | null = null;
+    let isMounted = true;
 
+    // Wait for Google Maps to be fully loaded with timeout
+    checkInterval = setInterval(() => {
+      if (window.google && window.google.maps && window.google.maps.Map) {
+        if (checkInterval) clearInterval(checkInterval);
+        if (timeoutId) clearTimeout(timeoutId);
+        
+        if (!isMounted || !mapRef.current) return;
+
+        try {
+          // Initialize map
+          const mapInstance = new window.google.maps.Map(mapRef.current, {
+            center,
+            zoom,
+            mapTypeControl: true,
+            streetViewControl: true,
+            fullscreenControl: true,
+          });
+
+          if (!isMounted) {
+            // Component unmounted, don't set state
+            return;
+          }
+
+          setMap(mapInstance);
+          setIsMapLoaded(true);
+
+          // Create draggable marker
+          const markerInstance = new window.google.maps.Marker({
+            position: center,
+            map: mapInstance,
+            draggable: true,
+            title: 'Drag to select location',
+          });
+
+          setMarker(markerInstance);
+
+          // Listen to marker drag events
+          markerInstance.addListener('dragend', () => {
+            const position = markerInstance.getPosition();
+            if (position && onLocationChange) {
+              onLocationChange({
+                lat: position.lat(),
+                lng: position.lng(),
+              });
+            }
+          });
+        } catch (error) {
+          console.error('Error initializing Google Maps:', error);
+          toast.error('Failed to initialize map. Please refresh the page.');
+          if (isMounted) {
+            setIsMapLoaded(false);
+          }
+        }
+      }
+    }, 100);
+
+    // Timeout after 15 seconds
+    timeoutId = setTimeout(() => {
+      if (checkInterval) clearInterval(checkInterval);
+      if (!isMounted) return;
+      
+      if (!window.google || !window.google.maps || !window.google.maps.Map) {
+        console.error('Google Maps API failed to load within timeout');
+        toast.error('Map loading timed out. Please check your internet connection and refresh.');
+        setIsMapLoaded(false);
+      }
+    }, 15000);
+
+    return () => {
+      isMounted = false;
+      if (checkInterval) clearInterval(checkInterval);
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [isScriptLoaded, center, zoom, onLocationChange]); // Include dependencies
+
+  // Update marker position when center changes
   useEffect(() => {
-    const map = mapInstanceRef.current;
-    if (!map || loadState !== 'interactive') return;
-    map.setZoom(zoom);
-  }, [zoom, loadState]);
+    if (marker && map) {
+      marker.setPosition(center);
+      map.setCenter(center);
+    }
+  }, [center.lat, center.lng, marker, map]);
+
+  // Separate effect for zoom to ensure it always updates
+  useEffect(() => {
+    if (map) {
+      map.setZoom(zoom);
+    }
+  }, [zoom, map]);
 
   return (
     <div className="relative w-full rounded-lg overflow-hidden border-2 border-gray-300 shadow-lg">
-      {loadState === 'embed' ? (
-        <iframe
-          title="Customer location map"
-          src={embedUrl}
-          style={{ height, width: '100%', minHeight: height, border: 0 }}
-          loading="lazy"
-          referrerPolicy="no-referrer-when-downgrade"
-          allowFullScreen
-        />
-      ) : (
-        <div
-          ref={mapRef}
-          style={{
-            height,
-            width: '100%',
-            minHeight: height,
-            position: 'relative',
-          }}
-        />
-      )}
-
-      {loadState === 'loading' && (
-        <div
+      <div 
+        ref={mapRef} 
+        style={{ 
+          height, 
+          width: '100%',
+          position: 'relative'
+        }}
+      />
+      {!isMapLoaded && (
+        <div 
           className="absolute inset-0 flex items-center justify-center bg-gray-100 z-10"
           style={{ height }}
         >
-          <div className="flex flex-col items-center gap-2 px-4 text-center">
+          <div className="flex flex-col items-center gap-2">
             <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
             <p className="text-sm text-gray-600">Loading map...</p>
+            {!isScriptLoaded && (
+              <p className="text-xs text-gray-500 mt-1">Initializing Google Maps...</p>
+            )}
           </div>
-        </div>
-      )}
-
-      {loadState === 'error' && (
-        <div
-          className="absolute inset-0 flex items-center justify-center bg-gray-100 z-10 px-4 text-center"
-          style={{ height }}
-        >
-          <p className="text-sm text-gray-600">
-            Map could not load. Use GPS or enter the address manually.
-          </p>
         </div>
       )}
     </div>
@@ -236,3 +302,4 @@ const DraggableMap = ({ center, onLocationChange, zoom = 15, height = '400px' }:
 };
 
 export default DraggableMap;
+

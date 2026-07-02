@@ -3230,39 +3230,16 @@ const TechnicianDashboard = () => {
   );
 
   const patchJobCustomerInState = useCallback(
-    (
-      customerId: string,
-      patch: TechnicianCustomerUpdatePatch,
-      context?: { jobId: string; equipmentBrand: string; equipmentModel: string }
-    ) => {
+    (customerId: string, patch: TechnicianCustomerUpdatePatch) => {
       const applyPatch = (customer: Record<string, unknown> | undefined) => {
         if (!customer) return customer;
         const cid = String(customer.id || '');
         if (cid !== customerId) return customer;
         const next = { ...customer };
-        if (patch.full_name !== undefined) {
-          next.full_name = patch.full_name;
-          next.fullName = patch.full_name;
-        }
         if (patch.email !== undefined) next.email = patch.email;
         if (patch.alternate_phone !== undefined) {
           next.alternate_phone = patch.alternate_phone;
           next.alternatePhone = patch.alternate_phone;
-        }
-        if (patch.visible_address !== undefined) {
-          next.visible_address = patch.visible_address;
-        }
-        if (patch.address) {
-          next.address = { ...(next.address as object), ...patch.address };
-        }
-        if (patch.location) {
-          next.location = { ...(next.location as object), ...patch.location };
-        }
-        if (patch.brand !== undefined) {
-          next.brand = patch.brand;
-        }
-        if (patch.model !== undefined) {
-          next.model = patch.model;
         }
         return next;
       };
@@ -3270,19 +3247,8 @@ const TechnicianDashboard = () => {
       setJobs((prev) =>
         prev.map((job) => {
           const patched = applyPatch(job.customer as Record<string, unknown> | undefined);
-          const customerChanged = patched !== job.customer;
-          const jobEquipmentChanged =
-            context &&
-            job.id === context.jobId &&
-            (patch.brand !== undefined || patch.model !== undefined);
-          if (!customerChanged && !jobEquipmentChanged) return job;
-          return {
-            ...job,
-            ...(customerChanged ? { customer: patched as Job['customer'] } : {}),
-            ...(jobEquipmentChanged
-              ? { brand: context.equipmentBrand, model: context.equipmentModel }
-              : {}),
-          };
+          if (patched === job.customer) return job;
+          return { ...job, customer: patched as Job['customer'] };
         })
       );
 
@@ -3301,37 +3267,10 @@ const TechnicianDashboard = () => {
           if (!prev) return prev;
           return {
             ...prev,
-            ...(patch.full_name !== undefined
-              ? { fullName: String(patch.full_name), full_name: String(patch.full_name) }
-              : {}),
             ...(patch.email !== undefined ? { email: String(patch.email) } : {}),
             ...(patch.alternate_phone !== undefined
               ? { alternatePhone: String(patch.alternate_phone), alternate_phone: String(patch.alternate_phone) }
               : {}),
-            ...(patch.visible_address !== undefined
-              ? {
-                  address: {
-                    ...prev.address,
-                    visible_address: String(patch.visible_address),
-                  },
-                }
-              : {}),
-            ...(patch.location
-              ? {
-                  location: {
-                    ...prev.location,
-                    latitude: Number((patch.location as { latitude?: number }).latitude ?? prev.location.latitude),
-                    longitude: Number((patch.location as { longitude?: number }).longitude ?? prev.location.longitude),
-                    formattedAddress: String(
-                      (patch.location as { formattedAddress?: string }).formattedAddress ??
-                        prev.location.formattedAddress ??
-                        ''
-                    ),
-                  },
-                }
-              : {}),
-            ...(patch.brand !== undefined ? { brand: String(patch.brand) } : {}),
-            ...(patch.model !== undefined ? { model: String(patch.model) } : {}),
           };
         });
       }
