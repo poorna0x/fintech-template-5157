@@ -20,6 +20,7 @@ import {
   parseEditableNumberInput,
 } from '@/lib/editable-number-input';
 import { cn } from '@/lib/utils';
+import { AMC_REMINDER_DAYS_BEFORE } from '@/lib/amcAutoJobSchedule';
 import { db } from '@/lib/supabase';
 import DocumentBrandPickerDialog from '@/components/DocumentBrandPickerDialog';
 import {
@@ -1566,7 +1567,7 @@ export default function AMCGenerator({ customer, onAMCSaved, embedded = false }:
                 <p className="text-xs text-gray-500">
                   {servicePeriodKind === 'no_auto'
                     ? 'No automatic AMC service jobs will be created for this contract.'
-                    : `An AMC service job is auto-created ${servicePeriodKind === '4' ? '4' : servicePeriodKind === '6' ? '6' : num(servicePeriodCustomMonths)} months after the customer's last completed service (any type). If that next visit would be after the AMC end date, a final job is auto-created 10 days before the AMC expires instead.`}
+                    : `An AMC service job is auto-created ${servicePeriodKind === '4' ? '4' : servicePeriodKind === '6' ? '6' : num(servicePeriodCustomMonths)} months after the customer's last completed service (any type). Jobs are created ${AMC_REMINDER_DAYS_BEFORE} days before the next due date. If that next visit would be after the AMC end date, a final job is auto-created ${AMC_REMINDER_DAYS_BEFORE} days before the AMC expires instead.`}
                 </p>
               </div>
 

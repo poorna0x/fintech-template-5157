@@ -4692,6 +4692,7 @@ export const db = {
         shouldRunAmcJobCreationNow,
         toDateOnly,
         withAmcJobCreationLock,
+        AMC_REMINDER_DAYS_BEFORE,
       } = await import('@/lib/amcAutoJobSchedule');
 
       if (!dryRun && !force) {
@@ -4923,7 +4924,7 @@ export const db = {
           const skipReason =
             endDateStr && nextDueStr > endDateStr && preExpiryWindowStart
               ? `Next service (${nextDueStr}) is after AMC ends (${endDateStr}); pre-expiry window starts ${preExpiryWindowStart}`
-              : `Not yet within 10-day window (next due ${nextDueStr}, window starts ${reminderStartStr})`;
+              : `Not yet within ${AMC_REMINDER_DAYS_BEFORE}-day window (next due ${nextDueStr}, window starts ${reminderStartStr})`;
           if (isDev) console.log(`  ❌ Skipping - ${skipReason}`);
           preview.push({
             customer_id: customer.customer_id || customer.id,
@@ -4957,7 +4958,7 @@ export const db = {
           const formattedEndDate = endDateStr ? formatAmcDateEnIN(endDateStr) : '';
           const description =
             createReason === 'pre_expiry'
-              ? `AMC Service - Final visit before AMC contract ends on ${formattedEndDate}. Last service was on ${formattedLastServiceDate}. The next scheduled service (${formatAmcDateEnIN(nextDueStr)}) would fall after the AMC end date, so this job was auto-created in the last 10 days before expiry.`
+              ? `AMC Service - Final visit before AMC contract ends on ${formattedEndDate}. Last service was on ${formattedLastServiceDate}. The next scheduled service (${formatAmcDateEnIN(nextDueStr)}) would fall after the AMC end date, so this job was auto-created in the last ${AMC_REMINDER_DAYS_BEFORE} days before expiry.`
               : `AMC Service - Scheduled maintenance service. Last service was on ${formattedLastServiceDate}. This is an automatic AMC service job created for regular maintenance.`;
 
           const jobData = {

@@ -36,10 +36,10 @@ export function toDateOnly(value: string | null | undefined): string | null {
  * AMC auto-create rule: next due = reference + period months (e.g. 4).
  * Reference is the customer's last completed job date (any service type — RO repair,
  * AMC visit, installation, etc.), not only jobs labelled "AMC Service".
- * Job is created when today is within 10 days before that due date (or later),
+ * Job is created when today is within 7 days before that due date (or later),
  * and the customer has no open AMC Service job yet.
  */
-export const AMC_REMINDER_DAYS_BEFORE = 10;
+export const AMC_REMINDER_DAYS_BEFORE = 7;
 
 export function computeAmcAutoCreateDue(
   referenceDateStr: string,
@@ -52,7 +52,7 @@ export function computeAmcAutoCreateDue(
   return { nextDue, reminderStart, shouldCreate };
 }
 
-/** When the next period-based service falls after AMC end, create one job in the last 10 days of the contract. */
+/** When the next period-based service falls after AMC end, create one job in the last 7 days of the contract. */
 export function computeAmcPreExpiryAutoCreate(
   endDateStr: string,
   todayStr: string
