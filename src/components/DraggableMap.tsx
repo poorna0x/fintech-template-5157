@@ -7,6 +7,7 @@ declare global {
   interface Window {
     google: typeof google;
     initMap: () => void;
+    gm_authFailure?: () => void;
   }
 }
 
@@ -19,6 +20,22 @@ interface DraggableMapProps {
 
 function triggerMapResize(map: google.maps.Map) {
   window.google.maps.event.trigger(map, 'resize');
+}
+
+function waitForMapIdle(map: google.maps.Map, timeoutMs = 20000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let idleListener: google.maps.MapsEventListener | null = null;
+    const timeout = window.setTimeout(() => {
+      if (idleListener) window.google.maps.event.removeListener(idleListener);
+      reject(new Error('Google Maps timed out while loading tiles'));
+    }, timeoutMs);
+
+    idleListener = map.addListener('idle', () => {
+      window.clearTimeout(timeout);
+      if (idleListener) window.google.maps.event.removeListener(idleListener);
+      resolve();
+    });
+  });
 }
 
 const DraggableMap = ({ center, onLocationChange, zoom = 15, height = '400px' }: DraggableMapProps) => {
@@ -96,6 +113,9 @@ const DraggableMap = ({ center, onLocationChange, zoom = 15, height = '400px' }:
         markerRef.current = markerInstance;
         scheduleResize();
 
+        await waitForMapIdle(mapInstance);
+        if (cancelled) return;
+
         if (typeof ResizeObserver !== 'undefined' && mapRef.current) {
           resizeObserver = new ResizeObserver(() => {
             refreshMapLayout();
@@ -110,7 +130,9 @@ const DraggableMap = ({ center, onLocationChange, zoom = 15, height = '400px' }:
         console.error('Error loading Google Maps:', error);
         if (!cancelled) {
           setLoadState('error');
-          toast.error('Failed to load Google Maps. Check your connection and try again.');
+          const message =
+            error instanceof Error ? error.message : 'Failed to load Google Maps';
+          toast.error(message.includes('authorized') ? message : 'Map could not load. Check connection and try again.');
         }
       }
     };
@@ -165,7 +187,10 @@ const DraggableMap = ({ center, onLocationChange, zoom = 15, height = '400px' }:
                 <p className="text-sm text-gray-600">Loading map...</p>
               </>
             ) : (
-              <p className="text-sm text-gray-600">Map could not load. Scroll down and try again, or refresh the page.</p>
+              <p className="text-sm text-gray-600">
+                Map could not load. If this keeps happening, ask admin to verify the Google Maps API key
+                and referrer settings for this site.
+              </p>
             )}
           </div>
         </div>

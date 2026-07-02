@@ -331,15 +331,15 @@ export function collectPlaceHints(...texts: Array<string | null | undefined>): s
 
 let googleMapsScriptPromise: Promise<void> | null = null;
 
-function waitForGoogleMapsNamespace(timeoutMs = 15000): Promise<void> {
-  if (window.google?.maps) {
-    return Promise.resolve();
-  }
+const GOOGLE_MAPS_CALLBACK = '__hydrogenroGoogleMapsReady';
+
+function waitUntil(predicate: () => boolean, timeoutMs = 20000): Promise<void> {
+  if (predicate()) return Promise.resolve();
 
   return new Promise((resolve, reject) => {
     const started = Date.now();
     const tick = () => {
-      if (window.google?.maps) {
+      if (predicate()) {
         resolve();
         return;
       }
@@ -347,53 +347,102 @@ function waitForGoogleMapsNamespace(timeoutMs = 15000): Promise<void> {
         reject(new Error('Google Maps failed to load'));
         return;
       }
-      window.setTimeout(tick, 100);
+      window.setTimeout(tick, 50);
     };
     tick();
   });
 }
 
-async function waitForGoogleMapsMapConstructor(timeoutMs = 15000): Promise<void> {
-  const started = Date.now();
-  while (Date.now() - started < timeoutMs) {
-    if (window.google?.maps?.Map) return;
-    if (window.google?.maps?.importLibrary) {
-      try {
-        await window.google.maps.importLibrary('maps');
-      } catch {
-        /* retry */
-      }
-      if (window.google?.maps?.Map) return;
+async function waitForGoogleMapsMapConstructor(): Promise<void> {
+  if (window.google?.maps?.Map) return;
+
+  if (window.google?.maps?.importLibrary) {
+    try {
+      await window.google.maps.importLibrary('maps');
+    } catch {
+      /* fall through to polling */
     }
-    await new Promise((resolve) => window.setTimeout(resolve, 100));
   }
-  throw new Error('Google Maps Map API failed to load');
+
+  await waitUntil(() => Boolean(window.google?.maps?.Map));
 }
 
-function injectGoogleMapsScript(apiKey: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const existing = document.querySelector('script[src*="maps.googleapis.com/maps/api/js"]');
-    if (existing) {
-      if (window.google?.maps) {
-        resolve();
-        return;
-      }
-      existing.addEventListener('load', () => resolve(), { once: true });
-      existing.addEventListener('error', () => reject(new Error('Failed to load Google Maps')), {
-        once: true,
+function resetGoogleMapsScriptPromise() {
+  googleMapsScriptPromise = null;
+}
+
+function loadGoogleMapsScriptOnce(apiKey: string): Promise<void> {
+  if (googleMapsScriptPromise) {
+    return googleMapsScriptPromise;
+  }
+
+  googleMapsScriptPromise = new Promise((resolve, reject) => {
+    const finish = () => {
+      waitForGoogleMapsMapConstructor().then(resolve).catch((error) => {
+        resetGoogleMapsScriptPromise();
+        reject(error);
       });
-      void waitForGoogleMapsNamespace().then(resolve).catch(reject);
+    };
+
+    if (window.google?.maps?.Map) {
+      resolve();
       return;
     }
 
+    const existing = document.querySelector<HTMLScriptElement>(
+      'script[src*="maps.googleapis.com/maps/api/js"]'
+    );
+
+    if (existing) {
+      if (window.google?.maps) {
+        finish();
+        return;
+      }
+      existing.addEventListener('load', () => finish(), { once: true });
+      existing.addEventListener(
+        'error',
+        () => {
+          resetGoogleMapsScriptPromise();
+          reject(new Error('Failed to load Google Maps'));
+        },
+        { once: true }
+      );
+      void waitUntil(() => Boolean(window.google?.maps))
+        .then(finish)
+        .catch((error) => {
+          resetGoogleMapsScriptPromise();
+          reject(error);
+        });
+      return;
+    }
+
+    const win = window as Window & Record<string, unknown>;
+    win[GOOGLE_MAPS_CALLBACK] = () => {
+      delete win[GOOGLE_MAPS_CALLBACK];
+      finish();
+    };
+
+    window.gm_authFailure = () => {
+      resetGoogleMapsScriptPromise();
+      reject(
+        new Error(
+          'Google Maps is not authorized for this app. Check API key and HTTP referrer settings.'
+        )
+      );
+    };
+
     const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places&callback=${GOOGLE_MAPS_CALLBACK}`;
     script.async = true;
     script.defer = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error('Failed to load Google Maps'));
+    script.onerror = () => {
+      resetGoogleMapsScriptPromise();
+      reject(new Error('Failed to load Google Maps'));
+    };
     document.head.appendChild(script);
   });
+
+  return googleMapsScriptPromise;
 }
 
 /** Load Maps JS for client geocoder (works on mobile without staff API token). */
@@ -410,13 +459,9 @@ export function loadGoogleMapsGeocoderScript(): Promise<void> {
     return Promise.reject(new Error('Google Maps API key not configured'));
   }
 
-  if (!googleMapsScriptPromise) {
-    googleMapsScriptPromise = injectGoogleMapsScript(apiKey).then(() =>
-      waitForGoogleMapsNamespace()
-    );
-  }
-
-  return googleMapsScriptPromise;
+  return loadGoogleMapsScriptOnce(apiKey).then(() =>
+    waitUntil(() => Boolean(window.google?.maps?.Geocoder))
+  );
 }
 
 /** Load Maps JS including the Map constructor (for DraggableMap and similar). */
@@ -433,13 +478,7 @@ export async function ensureGoogleMapsMapReady(): Promise<void> {
     throw new Error('Google Maps API key not configured');
   }
 
-  if (!googleMapsScriptPromise) {
-    googleMapsScriptPromise = injectGoogleMapsScript(apiKey).then(() =>
-      waitForGoogleMapsNamespace()
-    );
-  }
-
-  await googleMapsScriptPromise;
+  await loadGoogleMapsScriptOnce(apiKey);
   await waitForGoogleMapsMapConstructor();
 }
 
