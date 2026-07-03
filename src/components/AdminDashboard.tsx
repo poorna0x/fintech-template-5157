@@ -126,6 +126,7 @@ type LetterheadDocumentType =
   | 'custom_document'
   | 'letterhead';
 import { getAmcDocumentBrandLabel } from '@/lib/amc-brand';
+import { toDateOnly } from '@/lib/amcAutoJobSchedule';
 import ImageUpload from '@/components/ImageUpload';
 const TechnicianPayments = lazyDefault(() => import('./TechnicianPayments'));
 const BillingStats = lazyDefault(() => import('./BillingStats'));
@@ -13482,6 +13483,56 @@ const AdminDashboard = () => {
                     if (!technicianChanged) {
                       toast.success('Job updated successfully');
                     }
+
+                    if (completedJobEditData.amcInfo) {
+                      const customerId =
+                        (selectedCompletedJob as any).customer?.id ??
+                        (selectedCompletedJob as any).customer_id ??
+                        (selectedCompletedJob as Job).customerId;
+                      if (customerId) {
+                        try {
+                          const { data: activeAmc } = await db.amcContracts.getActiveByCustomerId(
+                            String(customerId)
+                          );
+                          if (activeAmc?.id) {
+                            const info = completedJobEditData.amcInfo;
+                            const amcPatch: {
+                              start_date?: string;
+                              end_date?: string;
+                              years?: number;
+                              includes_prefilter?: boolean;
+                              service_period_months?: number;
+                            } = {};
+                            const startDate = toDateOnly(info.date_given);
+                            const endDate = toDateOnly(info.end_date);
+                            if (startDate) amcPatch.start_date = startDate;
+                            if (endDate) amcPatch.end_date = endDate;
+                            if (info.years != null) amcPatch.years = Number(info.years) || 1;
+                            if (info.includes_prefilter !== undefined) {
+                              amcPatch.includes_prefilter = Boolean(info.includes_prefilter);
+                            }
+                            if (
+                              info.service_period_months !== undefined &&
+                              info.service_period_months !== null
+                            ) {
+                              amcPatch.service_period_months = Number(info.service_period_months);
+                            }
+                            if (Object.keys(amcPatch).length > 0) {
+                              const { error: amcErr } = await db.amcContracts.update(
+                                activeAmc.id,
+                                amcPatch
+                              );
+                              if (amcErr) {
+                                toast.warning('Job saved but AMC contract update failed');
+                              }
+                            }
+                          }
+                        } catch (amcSyncErr) {
+                          console.error('AMC contract sync failed:', amcSyncErr);
+                        }
+                      }
+                    }
+
                     setEditCompletedJobDialogOpen(false);
                     // Reload jobs
                     await loadFilteredJobs(statusFilter, currentPage);

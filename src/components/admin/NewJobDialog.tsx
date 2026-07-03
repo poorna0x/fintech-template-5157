@@ -12,7 +12,7 @@ import { Customer } from '@/types';
 import { toast } from 'sonner';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
-import { generateJobNumber, formatCustomTimeLabel } from '@/lib/adminUtils';
+import { generateJobNumber, formatCustomTimeLabel, getDefaultLeadCost, isHomeTriangleLeadSource } from '@/lib/adminUtils';
 import { db } from '@/lib/supabase';
 import { createJobAssignedNotification, sendNotification } from '@/lib/notifications';
 import type { JobAssignedToTechnicianPayload } from './AddCustomerDialog';
@@ -65,29 +65,6 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
   const [isCreatingJob, setIsCreatingJob] = useState(false);
   const [isUploadingPhotos, setIsUploadingPhotos] = useState(false);
   const pendingPhotoBatchesRef = useRef<{ startIndex: number; promise: Promise<string[]> }[]>([]);
-  // Get default lead cost based on lead source
-  const getDefaultLeadCost = (leadSource: string): string => {
-    switch (leadSource) {
-      case 'Home Triangle':
-        return '231';
-      case 'Home Triangle-Srujan':
-        return '231';
-      case 'Home Triangle-3':
-        return '231';
-      case 'Direct call':
-        return '0';
-      case 'RO care india':
-        return '400';
-      case 'Local Ramu':
-        return '500';
-      case 'Google-Leads':
-        return '0';
-      case 'Website':
-        return '0';
-      default:
-        return '0';
-    }
-  };
 
   const [newJobFormData, setNewJobFormData] = useState<NewJobFormData>({
     service_type: 'RO',
@@ -181,10 +158,21 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
       return;
     }
 
-    setNewJobFormData(prev => ({
-      ...prev,
-      [field]: value
-    }));
+    setNewJobFormData(prev => {
+      const next = { ...prev, [field]: value };
+      const shouldRecalcLeadCost =
+        field === 'service_sub_type' ||
+        field === 'service_sub_type_custom' ||
+        field === 'lead_source';
+      if (shouldRecalcLeadCost && next.lead_source && next.lead_source !== 'Other') {
+        next.lead_cost = getDefaultLeadCost(
+          next.lead_source,
+          next.service_sub_type,
+          next.service_sub_type_custom,
+        );
+      }
+      return next;
+    });
   };
 
   const handlePhotoUpload = (files: File[]) => {
@@ -798,15 +786,15 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                     handleFormChange('lead_source', selectedLeadSource);
                     // Auto-set default lead cost based on lead source
                     if (selectedLeadSource) {
-                      const defaultCost = getDefaultLeadCost(selectedLeadSource);
+                      const defaultCost = getDefaultLeadCost(
+                        selectedLeadSource,
+                        newJobFormData.service_sub_type,
+                        newJobFormData.service_sub_type_custom,
+                      );
                       handleFormChange('lead_cost', defaultCost);
                     }
                     // Auto-enable OTP for any Home Triangle variant
-                    if (
-                      selectedLeadSource === 'Home Triangle' ||
-                      selectedLeadSource === 'Home Triangle-Srujan' ||
-                      selectedLeadSource === 'Home Triangle-3'
-                    ) {
+                    if (isHomeTriangleLeadSource(selectedLeadSource)) {
                       handleFormChange('require_otp', true);
                     }
                   }}
@@ -850,7 +838,11 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                     required
                   />
                   <p className="text-xs text-muted-foreground">
-                    Default: ₹{getDefaultLeadCost(newJobFormData.lead_source)} (can be changed)
+                    Default: ₹{getDefaultLeadCost(
+                      newJobFormData.lead_source,
+                      newJobFormData.service_sub_type,
+                      newJobFormData.service_sub_type_custom,
+                    )} (can be changed)
                   </p>
                 </div>
               )}

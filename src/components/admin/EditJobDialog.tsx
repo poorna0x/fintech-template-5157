@@ -11,6 +11,7 @@ import { Job } from '@/types';
 import { toast } from 'sonner';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { db } from '@/lib/supabase';
+import { getDefaultLeadCost } from '@/lib/adminUtils';
 
 interface EditJobFormData {
   serviceType: 'RO' | 'SOFTENER';
@@ -43,29 +44,6 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
   const [forceOpen, setForceOpen] = useState(true);
   const allowCloseRef = useRef(false);
   const initialFormDataRef = useRef<EditJobFormData | null>(null);
-  // Get default lead cost based on lead source
-  const getDefaultLeadCost = (leadSource: string): string => {
-    switch (leadSource) {
-      case 'Home Triangle':
-        return '231';
-      case 'Home Triangle-Srujan':
-        return '231';
-      case 'Home Triangle-3':
-        return '231';
-      case 'Direct call':
-        return '0';
-      case 'RO care india':
-        return '400';
-      case 'Local Ramu':
-        return '500';
-      case 'Google-Leads':
-        return '0';
-      case 'Website':
-        return '0';
-      default:
-        return '0';
-    }
-  };
 
   const [editJobFormData, setEditJobFormData] = useState<EditJobFormData>({
     serviceType: 'RO',
@@ -216,9 +194,13 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
         costAgreed = estimatedCost.toString();
       }
 
-      // If no lead_cost found, set default based on lead source
+      // If no lead_cost found, set default based on lead source and service sub type
       if (leadCost === '0' && leadSource) {
-        leadCost = getDefaultLeadCost(leadSource);
+        leadCost = getDefaultLeadCost(
+          leadSource,
+          isCustomSubType ? 'Custom' : serviceSubType,
+          isCustomSubType ? serviceSubType : '',
+        );
       }
 
       const formData: EditJobFormData = {
@@ -512,7 +494,17 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
               <Label htmlFor="edit-service-subtype">Service Sub Type</Label>
               <Select 
                 value={editJobFormData.serviceSubType} 
-                onValueChange={(value) => setEditJobFormData(prev => ({ ...prev, serviceSubType: value }))}
+                onValueChange={(value) => setEditJobFormData(prev => {
+                  const next = { ...prev, serviceSubType: value };
+                  if (prev.lead_source && prev.lead_source !== 'Other') {
+                    next.lead_cost = getDefaultLeadCost(
+                      prev.lead_source,
+                      value,
+                      value === 'Custom' ? prev.serviceSubTypeCustom : '',
+                    );
+                  }
+                  return next;
+                })}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select service sub type" />
@@ -539,7 +531,14 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
                   className="mt-2"
                   placeholder="Enter custom service sub type"
                   value={editJobFormData.serviceSubTypeCustom}
-                  onChange={(e) => setEditJobFormData(prev => ({ ...prev, serviceSubTypeCustom: e.target.value }))}
+                  onChange={(e) => setEditJobFormData(prev => {
+                    const custom = e.target.value;
+                    const next = { ...prev, serviceSubTypeCustom: custom };
+                    if (prev.lead_source && prev.lead_source !== 'Other') {
+                      next.lead_cost = getDefaultLeadCost(prev.lead_source, 'Custom', custom);
+                    }
+                    return next;
+                  })}
                 />
               )}
             </div>
@@ -611,7 +610,11 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
               <Select 
                 value={editJobFormData.lead_source || ''} 
                 onValueChange={(value) => {
-                  const defaultCost = getDefaultLeadCost(value);
+                  const defaultCost = getDefaultLeadCost(
+                    value,
+                    editJobFormData.serviceSubType,
+                    editJobFormData.serviceSubTypeCustom,
+                  );
                   setEditJobFormData(prev => ({ 
                     ...prev, 
                     lead_source: value,

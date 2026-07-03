@@ -12,7 +12,7 @@ import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { MapPin, Download, ExternalLink, Loader2, ChevronDown } from 'lucide-react';
-import { generateJobNumber, extractLocationFromAddressString, bangaloreAreas, formatCustomTimeLabel } from '@/lib/adminUtils';
+import { generateJobNumber, extractLocationFromAddressString, bangaloreAreas, formatCustomTimeLabel, getDefaultLeadCost, isHomeTriangleLeadSource } from '@/lib/adminUtils';
 import ImageUpload from '@/components/ImageUpload';
 import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmentTimeSelect';
 import PhoneSwapButton from '@/components/admin/PhoneSwapButton';
@@ -905,10 +905,24 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     field: 'service_sub_type_custom' | 'lead_source_custom' | 'description',
     value: string
   ) => {
-    setStep5JobData(prev => ({
-      ...prev,
-      [field]: capitalizeFirstLetter(value)
-    }));
+    setStep5JobData(prev => {
+      const next = {
+        ...prev,
+        [field]: capitalizeFirstLetter(value),
+      };
+      if (
+        field === 'service_sub_type_custom' &&
+        prev.lead_source &&
+        prev.lead_source !== 'Other'
+      ) {
+        next.lead_cost = getDefaultLeadCost(
+          prev.lead_source,
+          prev.service_sub_type,
+          field === 'service_sub_type_custom' ? capitalizeFirstLetter(value) : prev.service_sub_type_custom,
+        );
+      }
+      return next;
+    });
   };
 
   const handleCreateCustomer = async () => {
@@ -1866,11 +1880,21 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                       <Label htmlFor="step5_service_sub_type">Service Sub Type *</Label>
                       <Select
                         value={step5JobData.service_sub_type || undefined}
-                        onValueChange={(value) => setStep5JobData(prev => ({ 
-                          ...prev, 
-                          service_sub_type: value === 'Custom' ? 'Custom' : value,
-                          service_sub_type_custom: value === 'Custom' ? prev.service_sub_type_custom : ''
-                        }))}
+                        onValueChange={(value) => setStep5JobData(prev => {
+                          const next = {
+                            ...prev,
+                            service_sub_type: value === 'Custom' ? 'Custom' : value,
+                            service_sub_type_custom: value === 'Custom' ? prev.service_sub_type_custom : '',
+                          };
+                          if (prev.lead_source && prev.lead_source !== 'Other') {
+                            next.lead_cost = getDefaultLeadCost(
+                              prev.lead_source,
+                              next.service_sub_type,
+                              next.service_sub_type_custom,
+                            );
+                          }
+                          return next;
+                        })}
                         required
                       >
                         <SelectTrigger>
@@ -1955,33 +1979,18 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                         value={step5JobData.lead_source || undefined}
                         onValueChange={(value) => {
                           const selectedLeadSource = value === 'Other' ? 'Other' : value;
-                          // Get default lead cost
-                          const getDefaultLeadCost = (leadSource: string): string => {
-                            switch (leadSource) {
-                              case 'Home Triangle': return '231';
-                              case 'Home Triangle-Srujan': return '231';
-                              case 'Home Triangle-3': return '231';
-                              case 'Direct call': return '0';
-                              case 'RO care india': return '400';
-                              case 'Local Ramu': return '500';
-                              case 'Google-Leads': return '0';
-                              case 'Website': return '0';
-                              default: return '0';
-                            }
-                          };
                           setStep5JobData(prev => {
                             const updated = {
                               ...prev,
                               lead_source: selectedLeadSource,
                               lead_source_custom: value === 'Other' ? prev.lead_source_custom : '',
-                              lead_cost: getDefaultLeadCost(selectedLeadSource)
+                              lead_cost: getDefaultLeadCost(
+                                selectedLeadSource,
+                                prev.service_sub_type,
+                                prev.service_sub_type_custom,
+                              ),
                             };
-                            // Auto-enable OTP for any Home Triangle variant
-                            if (
-                              selectedLeadSource === 'Home Triangle' ||
-                              selectedLeadSource === 'Home Triangle-Srujan' ||
-                              selectedLeadSource === 'Home Triangle-3'
-                            ) {
+                            if (isHomeTriangleLeadSource(selectedLeadSource)) {
                               updated.require_otp = true;
                             }
                             return updated;

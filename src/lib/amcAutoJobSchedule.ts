@@ -14,6 +14,34 @@ export function getDefaultAmcServicePeriodMonths(): number {
   return Number.isNaN(n) ? 4 : n;
 }
 
+export type AmcServicePeriodKind = '4' | '6' | 'custom' | 'no_auto';
+
+export function deriveAmcServicePeriodKind(
+  months: number | null | undefined,
+): { kind: AmcServicePeriodKind; custom: number } {
+  if (months == null) {
+    const def = getDefaultAmcServicePeriodMonths();
+    if (def === 0) return { kind: 'no_auto', custom: 4 };
+    if (def === 4) return { kind: '4', custom: 4 };
+    if (def === 6) return { kind: '6', custom: 6 };
+    return { kind: 'custom', custom: Math.max(1, def) };
+  }
+  if (months === 0) return { kind: 'no_auto', custom: 4 };
+  if (months === 4) return { kind: '4', custom: 4 };
+  if (months === 6) return { kind: '6', custom: 6 };
+  return { kind: 'custom', custom: Math.max(1, months) };
+}
+
+export function resolveAmcServicePeriodMonths(
+  kind: AmcServicePeriodKind,
+  customMonths: number,
+): number {
+  if (kind === 'no_auto') return 0;
+  if (kind === '4') return 4;
+  if (kind === '6') return 6;
+  return Math.max(1, customMonths);
+}
+
 export function addMonthsToDate(dateStr: string, months: number): string {
   const d = new Date(dateStr + 'T12:00:00');
   d.setMonth(d.getMonth() + months);

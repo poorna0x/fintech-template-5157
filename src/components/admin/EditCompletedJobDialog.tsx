@@ -13,6 +13,12 @@ import { toast } from 'sonner';
 import { ImagePlus, X, ChevronDown } from 'lucide-react';
 import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
 import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmentTimeSelect';
+import {
+  deriveAmcServicePeriodKind,
+  resolveAmcServicePeriodMonths,
+  type AmcServicePeriodKind,
+} from '@/lib/amcAutoJobSchedule';
+import { getDefaultLeadCost } from '@/lib/adminUtils';
 
 type ServiceBrand = 'elevenro' | 'hydrogenro';
 
@@ -394,25 +400,11 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
               value={editData.leadSource || 'Direct call'}
               onValueChange={(value) => {
                 const selectedLeadSource = value === 'Other' ? 'Other' : value;
-                // Get default lead cost for a source (used when switching to a non-Other source)
-                const getDefaultLeadCost = (leadSource: string): string => {
-                  switch (leadSource) {
-                    case 'Home Triangle': return '231';
-                    case 'Home Triangle-Srujan': return '231';
-                    case 'Home Triangle-3': return '231';
-                    case 'Direct call': return '0';
-                    case 'RO care india': return '400';
-                    case 'Local Ramu': return '500';
-                    case 'Google-Leads': return '0';
-                    case 'Website': return '0';
-                    default: return '0';
-                  }
-                };
-                // When switching to "Other" (custom lead source), preserve existing lead cost so
-                // editing custom lead source doesn't reset the value; only set default when switching to a named source.
+                const jobServiceSubType =
+                  (job as any)?.service_sub_type || (job as any)?.serviceSubType || '';
                 const newLeadCost = selectedLeadSource === 'Other'
-                  ? (editData.leadCost ?? getDefaultLeadCost(selectedLeadSource))
-                  : getDefaultLeadCost(selectedLeadSource);
+                  ? (editData.leadCost ?? getDefaultLeadCost(selectedLeadSource, jobServiceSubType))
+                  : getDefaultLeadCost(selectedLeadSource, jobServiceSubType);
                 onEditDataChange({ 
                   ...editData, 
                   leadSource: selectedLeadSource,
@@ -493,6 +485,7 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
           )}
 
           {/* AMC Details */}
+          {editData.amcInfo && (
           <div className="border-t pt-4">
             <Label className="text-base font-semibold">AMC Details</Label>
             <div className="space-y-3 mt-2">
@@ -558,8 +551,57 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
                   </Select>
                 </div>
               </div>
+              {(() => {
+                const sp = deriveAmcServicePeriodKind(editData.amcInfo.service_period_months);
+                return (
+                  <div>
+                    <Label className="text-sm font-medium">AMC service period (auto visit)</Label>
+                    <Select
+                      value={sp.kind}
+                      onValueChange={(v: AmcServicePeriodKind) => {
+                        const months = resolveAmcServicePeriodMonths(v, sp.custom);
+                        onEditDataChange({
+                          ...editData,
+                          amcInfo: { ...editData.amcInfo, service_period_months: months },
+                        });
+                      }}
+                    >
+                      <SelectTrigger className="mt-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="4">Every 4 months</SelectItem>
+                        <SelectItem value="6">Every 6 months</SelectItem>
+                        <SelectItem value="custom">Custom (months)</SelectItem>
+                        <SelectItem value="no_auto">No auto</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {sp.kind === 'custom' && (
+                      <Input
+                        type="number"
+                        min={1}
+                        max={24}
+                        value={sp.custom}
+                        onChange={(e) => {
+                          const customMonths = Math.max(1, parseInt(e.target.value, 10) || 1);
+                          onEditDataChange({
+                            ...editData,
+                            amcInfo: {
+                              ...editData.amcInfo,
+                              service_period_months: customMonths,
+                            },
+                          });
+                        }}
+                        className="mt-2"
+                        placeholder="Months"
+                      />
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           </div>
+          )}
 
           {/* Completion Notes */}
           <div>
