@@ -234,6 +234,23 @@
     if (clean.indexOf('/ro-service-') === 0) {
       var slug = clean.replace('/ro-service-', '');
       var area = titleCaseSlug(slug);
+      // AUTO:BENGALURU_LOCALITY_SLUGS
+      var BENGALURU_LOCALITY_SLUGS = new Set(["aecs-layout","agara","allalasandra","ambalipura","anjanapura","arekere","attibele","attur-layout","bagalur","banashankari","banaswadi","bannerghatta","basavanagudi","basaveshwaranagar","begur","bellandur","benson-town","bilekahalli","bommanahalli","bommasandra","bommasandra-industrial-area","brookefield","btm-layout","budigere-cross","carmelaram","chandapura","cox-town","cv-raman-nagar","dasarahalli","doddaballapur-road","doddakannelli","domlur","dommasandra","ejipura","electronic-city","frazer-town","girinagar","goraguntepalya","gottigere","graphite-india-road","hal","halasuru","haralur","hbr-layout","hebbal","hennur","hongasandra","hoodi","hope-farm","horamavu","hosa-road","hosur-road","hrbr-layout","hsr-layout","hulimavu","iblur","indiranagar","itpl","jakkur","jalahalli","jayanagar","jeevan-bima-nagar","jigani","jp-nagar","kacharakanahalli","kadubeesanahalli","kadugodi","kaikondrahalli","kalyan-nagar","kammanahalli","kannamangala","kasavanahalli","kathriguppe","kengeri","kodathi","kogilu","konanakunte","koramangala","kudlu-gate","kumaraswamy-layout","kundalahalli","laggere","lingarajapuram","madiwala","magadi-road","mahadevapura","mahalakshmi-layout","malleshwaram","manyata-tech-park","marathahalli","munnekollal","murugeshpalya","mysore-road","nagarbhavi","nagarbhavi-2nd-stage","nagasandra","nagawara","nallurahalli","nayandahalli","old-airport-road","outer-ring-road","padmanabhanagar","panathur","parappana-agrahara","peenya","pulakeshinagar","rajajinagar","rajanukunte","ramamurthy-nagar","richmond-town","rr-nagar","rt-nagar","sadashivanagar","sahakar-nagar","sanjaynagar","sarakki","sarjapur","seegehalli","silk-board","singasandra","sunkadakatte","thanisandra","tilak-nagar","ulsoor","uttarahalli","varthur","vidyapeeta","vijayanagar","whitefield","wilson-garden","wipro-gate","yelahanka","yelahanka-new-town","yeshwanthpur"]);
+      // END:BENGALURU_LOCALITY_SLUGS
+      if (slug === 'hosur') {
+        return {
+          title: 'RO Service in Hosur | Installation & Repair | ' + profile.brandName,
+          description: 'RO water purifier service in Hosur near Bengaluru border by ' + profile.brandName + '. Same-day installation, repair and AMC. Call ' + profile.primaryPhone + '.',
+          keywords: 'RO service Hosur, RO repair Hosur, ' + profile.brandName,
+        };
+      }
+      if (!BENGALURU_LOCALITY_SLUGS.has(slug)) {
+        return {
+          title: 'RO Service in ' + area + ' Karnataka | Installation & Repair | ' + profile.brandName,
+          description: 'Best RO water purifier service in ' + area + ', Karnataka by ' + profile.brandName + '. Same-day RO installation, repair, filter replacement and AMC. Call ' + profile.primaryPhone + '.',
+          keywords: 'RO service ' + area + ' Karnataka, RO repair ' + area + ', RO installation ' + area + ', water purifier service ' + area + ', ' + profile.brandName,
+        };
+      }
       var southAreas = ['electronic-city', 'bommanahalli', 'sarjapur', 'attibele', 'chandapura', 'bommasandra', 'jigani', 'singasandra', 'anekal', 'bellandur', 'hsr-layout', 'haralur', 'varthur', 'kadubeesanahalli', 'panathur', 'silk-board'];
       var northAreas = ['yelahanka', 'thanisandra', 'jakkur', 'bagalur', 'budigere-cross', 'devanahalli', 'manyata-tech-park', 'rt-nagar', 'nagawara', 'hebbal', 'hoskote', 'itpl'];
       var corridorExtra = '';
@@ -261,6 +278,14 @@
       '/ro-warranty': 'RO Warranty Service Bengaluru',
       '/emergency-ro-repair': 'Emergency RO Repair Bengaluru',
       '/same-day-ro-service': 'Same Day RO Service Bengaluru',
+      '/ro-amc': 'RO AMC Karnataka',
+      '/ro-service': 'RO Service Karnataka',
+      '/water-purifier-repair': 'Water Purifier Repair Karnataka',
+      '/commercial-ro-service': 'Commercial RO Service Karnataka',
+      '/industrial-ro-service': 'Industrial RO Service Karnataka',
+      '/ro-annual-maintenance': 'RO Annual Maintenance Karnataka',
+      '/membrane-replacement': 'RO Membrane Replacement Karnataka',
+      '/ro-sanitization': 'RO Sanitization Karnataka',
       '/services': 'RO Services in Bengaluru',
       '/service-areas': 'RO Service Areas in Bengaluru',
       '/book': 'Book RO Service in Bengaluru',

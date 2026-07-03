@@ -2,12 +2,16 @@ import React from 'react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import PageHero from '@/components/PageHero';
+import SeoBreadcrumbs from '@/components/SeoBreadcrumbs';
 import { Card, CardContent } from '@/components/ui/card';
 import { Clock, User, Calendar } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { getBrandSeoProfile } from '@/lib/publicSiteSeo';
+import { getPublicSiteKey } from '@/lib/websiteSiteKey';
 
 const Blog = () => {
   const navigate = useNavigate();
+  const brand = getBrandSeoProfile(getPublicSiteKey());
 
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground">
@@ -15,15 +19,15 @@ const Blog = () => {
         {JSON.stringify({
           "@context": "https://schema.org",
           "@type": "Blog",
-          "name": "Hydrogen RO Blog",
-          "description": "Expert insights, maintenance tips, and latest news on RO water purification technology in Bengaluru",
-          "url": "https://hydrogenro.com/blog",
+          "name": `${brand.brandName} Blog`,
+          "description": "Expert insights, maintenance tips, and latest news on RO water purification technology in Bengaluru and Karnataka",
+          "url": `${brand.origin}/blog`,
           "publisher": {
             "@type": "Organization",
-            "name": "Hydrogen RO",
+            "name": brand.brandName,
             "logo": {
               "@type": "ImageObject",
-              "url": "https://hydrogenro.com/logo.png"
+              "url": brand.logoPath
             }
           }
         })}
@@ -32,8 +36,9 @@ const Blog = () => {
       <Header />
 
       <main className="flex-1">
+        <SeoBreadcrumbs />
         <PageHero 
-          title="Hydrogen RO Blog"
+          title={`${brand.brandName} Blog`}
           description="Expert insights, maintenance tips, and the latest news on water purification technology in Bengaluru, Karnataka"
           showButtons={true}
         />

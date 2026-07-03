@@ -1,5 +1,5 @@
 import type { PublicSiteKey } from '@/lib/websiteSiteKey';
-import { buildLocationKeywords, getLocationSeo } from '@/data/locationSeo';
+import { buildLocationKeywords, getLocationSeo, locationSeoList } from '@/data/locationSeo';
 
 export interface RouteSeo {
   title: string;
@@ -87,77 +87,54 @@ export const SEO_SERVICE_PAGES: SeoServicePage[] = [
     serviceName: 'Same Day RO Service',
     shortDescription: 'Same-day RO water purifier service in Bengaluru — book today for installation or repair.',
   },
+  {
+    path: '/ro-amc',
+    serviceName: 'RO AMC',
+    shortDescription: 'RO Annual Maintenance Contract (AMC) in Karnataka — scheduled filter replacement, sanitization and priority technician visits.',
+  },
+  {
+    path: '/ro-service',
+    serviceName: 'RO Service',
+    shortDescription: 'Complete RO water purifier service in Karnataka — installation, repair, maintenance and filter replacement by certified technicians.',
+  },
+  {
+    path: '/water-purifier-repair',
+    serviceName: 'Water Purifier Repair',
+    shortDescription: 'Expert water purifier and RO repair across Karnataka — fix leakage, motor, pump, membrane and electrical faults.',
+  },
+  {
+    path: '/commercial-ro-service',
+    serviceName: 'Commercial RO Service',
+    shortDescription: 'Commercial RO plant installation, repair and AMC for offices, restaurants, schools and businesses across Karnataka.',
+  },
+  {
+    path: '/industrial-ro-service',
+    serviceName: 'Industrial RO Service',
+    shortDescription: 'Industrial RO system service and maintenance for factories, hospitals and large facilities across Karnataka.',
+  },
+  {
+    path: '/ro-annual-maintenance',
+    serviceName: 'RO Annual Maintenance',
+    shortDescription: 'RO annual maintenance plans in Karnataka with scheduled servicing, filter checks and performance optimization.',
+  },
+  {
+    path: '/membrane-replacement',
+    serviceName: 'Membrane Replacement',
+    shortDescription: 'Genuine RO membrane replacement in Karnataka for Kent, Aquaguard, Pureit, Livpure and all major brands.',
+  },
+  {
+    path: '/ro-sanitization',
+    serviceName: 'RO Sanitization',
+    shortDescription: 'Professional RO tank and pipeline sanitization in Karnataka to ensure safe, bacteria-free drinking water.',
+  },
 ];
 
-export const SEO_LOCATION_PAGES: SeoLocationPage[] = [
-  { path: '/ro-service-whitefield', areaName: 'Whitefield' },
-  { path: '/ro-service-electronic-city', areaName: 'Electronic City' },
-  { path: '/ro-service-koramangala', areaName: 'Koramangala' },
-  { path: '/ro-service-hsr-layout', areaName: 'HSR Layout' },
-  { path: '/ro-service-indiranagar', areaName: 'Indiranagar' },
-  { path: '/ro-service-marathahalli', areaName: 'Marathahalli' },
-  { path: '/ro-service-btm-layout', areaName: 'BTM Layout' },
-  { path: '/ro-service-jayanagar', areaName: 'Jayanagar' },
-  { path: '/ro-service-malleshwaram', areaName: 'Malleshwaram' },
-  { path: '/ro-service-rajajinagar', areaName: 'Rajajinagar' },
-  { path: '/ro-service-hebbal', areaName: 'Hebbal' },
-  { path: '/ro-service-yelahanka', areaName: 'Yelahanka' },
-  { path: '/ro-service-sarjapur', areaName: 'Sarjapur' },
-  { path: '/ro-service-bellandur', areaName: 'Bellandur' },
-  { path: '/ro-service-jp-nagar', areaName: 'JP Nagar' },
-  { path: '/ro-service-banashankari', areaName: 'Banashankari' },
-  { path: '/ro-service-bommanahalli', areaName: 'Bommanahalli' },
-  { path: '/ro-service-bannerghatta', areaName: 'Bannerghatta' },
-  { path: '/ro-service-anjanapura', areaName: 'Anjanapura' },
-  { path: '/ro-service-bommasandra', areaName: 'Bommasandra' },
-  { path: '/ro-service-jigani', areaName: 'Jigani' },
-  { path: '/ro-service-singasandra', areaName: 'Singasandra' },
-  { path: '/ro-service-yeshwanthpur', areaName: 'Yeshwanthpur' },
-  { path: '/ro-service-peenya', areaName: 'Peenya' },
-  { path: '/ro-service-vijayanagar', areaName: 'Vijayanagar' },
-  { path: '/ro-service-basavanagudi', areaName: 'Basavanagudi' },
-  { path: '/ro-service-attibele', areaName: 'Attibele' },
-  { path: '/ro-service-chandapura', areaName: 'Chandapura' },
-  { path: '/ro-service-mahadevapura', areaName: 'Mahadevapura' },
-  { path: '/ro-service-hoodi', areaName: 'Hoodi' },
-  { path: '/ro-service-brookefield', areaName: 'Brookefield' },
-  { path: '/ro-service-nagarbhavi', areaName: 'Nagarbhavi' },
-  { path: '/ro-service-kengeri', areaName: 'Kengeri' },
-  { path: '/ro-service-hennur', areaName: 'Hennur' },
-  { path: '/ro-service-kalyan-nagar', areaName: 'Kalyan Nagar' },
-  { path: '/ro-service-kammanahalli', areaName: 'Kammanahalli' },
-  { path: '/ro-service-jalahalli', areaName: 'Jalahalli' },
-  { path: '/ro-service-ulsoor', areaName: 'Ulsoor' },
-  { path: '/ro-service-frazer-town', areaName: 'Frazer Town' },
-  { path: '/ro-service-budigere-cross', areaName: 'Budigere Cross' },
-  { path: '/ro-service-varthur', areaName: 'Varthur' },
-  { path: '/ro-service-kadubeesanahalli', areaName: 'Kadubeesanahalli' },
-  { path: '/ro-service-panathur', areaName: 'Panathur' },
-  { path: '/ro-service-haralur', areaName: 'Haralur' },
-  { path: '/ro-service-thanisandra', areaName: 'Thanisandra' },
-  { path: '/ro-service-jakkur', areaName: 'Jakkur' },
-  { path: '/ro-service-bagalur', areaName: 'Bagalur' },
-  { path: '/ro-service-manyata-tech-park', areaName: 'Manyata Tech Park' },
-  { path: '/ro-service-rt-nagar', areaName: 'RT Nagar' },
-  { path: '/ro-service-nagawara', areaName: 'Nagawara' },
-  { path: '/ro-service-hoskote', areaName: 'Hoskote', localityType: 'nearby' },
-  { path: '/ro-service-itpl', areaName: 'ITPL' },
-  { path: '/ro-service-domlur', areaName: 'Domlur' },
-  { path: '/ro-service-banaswadi', areaName: 'Banaswadi' },
-  { path: '/ro-service-ramamurthy-nagar', areaName: 'Ramamurthy Nagar' },
-  { path: '/ro-service-silk-board', areaName: 'Silk Board' },
-  { path: '/ro-service-rr-nagar', areaName: 'RR Nagar' },
-  { path: '/ro-service-arekere', areaName: 'Arekere' },
-  { path: '/ro-service-gottigere', areaName: 'Gottigere' },
-  { path: '/ro-service-tumakuru', areaName: 'Tumakuru', localityType: 'nearby' },
-  { path: '/ro-service-hosur', areaName: 'Hosur', localityType: 'nearby' },
-  { path: '/ro-service-kolar', areaName: 'Kolar', localityType: 'nearby' },
-  { path: '/ro-service-ramanagara', areaName: 'Ramanagara', localityType: 'nearby' },
-  { path: '/ro-service-nelamangala', areaName: 'Nelamangala', localityType: 'nearby' },
-  { path: '/ro-service-doddaballapur', areaName: 'Doddaballapur', localityType: 'nearby' },
-  { path: '/ro-service-devanahalli', areaName: 'Devanahalli', localityType: 'nearby' },
-  { path: '/ro-service-anekal', areaName: 'Anekal', localityType: 'nearby' },
-];
+/** Derived from locationSeoList — single source of truth for location routes. */
+export const SEO_LOCATION_PAGES: SeoLocationPage[] = locationSeoList.map((loc) => ({
+  path: `/${loc.slug}`,
+  areaName: loc.name,
+  localityType: loc.region === 'Bengaluru' ? 'bangalore' : 'nearby',
+}));
 
 export const SEO_BLOG_ARTICLES: SeoBlogArticle[] = [
   {
@@ -337,10 +314,21 @@ export function buildServicePageSeo(
   primaryPhone: string
 ): RouteSeo {
   return {
-    title: `${page.serviceName} in Bengaluru | Same-Day Service | ${brandName}`,
-    description: `${page.shortDescription} Book with ${brandName}. Call ${primaryPhone}.`,
-    keywords: `${page.serviceName} Bengaluru, ${page.serviceName} Bangalore, RO water purifier ${page.serviceName.toLowerCase()}, ${brandName}`,
+    title: `${page.serviceName} in Karnataka | Bengaluru & All Districts | ${brandName}`,
+    description: `${page.shortDescription} Serving Bengaluru, Bangalore and all Karnataka districts. Book with ${brandName}. Call ${primaryPhone}.`,
+    keywords: `${page.serviceName} Karnataka, ${page.serviceName} Bangalore, ${page.serviceName} Bengaluru, RO water purifier ${page.serviceName.toLowerCase()}, Kent RO service Karnataka, Aquaguard service Karnataka, ${brandName}`,
   };
+}
+
+function locationPlaceLabel(locData: NonNullable<ReturnType<typeof getLocationSeo>>): string {
+  if (locData.region === 'Bengaluru') return `${locData.name}, Bengaluru`;
+  if (locData.region === 'Karnataka') return `${locData.name}, Karnataka`;
+  return locData.name;
+}
+
+function locationTitleSuffix(locData: NonNullable<ReturnType<typeof getLocationSeo>>): string {
+  if (locData.region === 'Bengaluru') return 'Bengaluru';
+  return 'Karnataka';
 }
 
 export function buildLocationPageSeo(
@@ -353,9 +341,12 @@ export function buildLocationPageSeo(
   const locData = getLocationSeo(slug);
   if (locData) {
     const nearbySnippet = locData.nearby.slice(0, 6).join(', ');
+    const suffix = locationTitleSuffix(locData);
+    const place = locationPlaceLabel(locData);
+    const districtNote = locData.district ? ` ${locData.district} district.` : '';
     return {
-      title: `RO Service in ${area} Bengaluru | Installation & Repair | ${brandName}`,
-      description: `Best RO water purifier service in ${area}, Bengaluru by ${brandName}. Same-day RO installation, repair, filter replacement and AMC.${nearbySnippet ? ` Serving ${nearbySnippet}.` : ''} Call ${primaryPhone}.`,
+      title: `RO Service in ${area} ${suffix} | Installation & Repair | ${brandName}`,
+      description: `Best RO water purifier service in ${place} by ${brandName}. Same-day RO installation, repair, filter replacement and AMC.${districtNote}${nearbySnippet ? ` Serving ${nearbySnippet}.` : ''} Call ${primaryPhone}.`,
       keywords: buildLocationKeywords(locData, brandName),
     };
   }

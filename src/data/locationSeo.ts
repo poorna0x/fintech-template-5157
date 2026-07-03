@@ -1,6 +1,9 @@
 // Per-location SEO data so each /ro-service-* route renders a UNIQUE
 // title, H1, description and localized content (avoids thin/duplicate pages).
 
+import { karnatakaSeedsToLocationSeo, KARNATAKA_LOCATION_SEEDS } from '@/data/karnatakaLocationSeeds';
+import { ALL_MICRO_AREA_SEEDS } from '@/data/karnatakaMicroAreas';
+
 export interface LocationSEO {
   /** URL path without leading slash, e.g. "ro-service-whitefield" */
   slug: string;
@@ -10,6 +13,8 @@ export interface LocationSEO {
   pincode?: string;
   /** "Bengaluru" for city areas, or "Karnataka" for nearby cities */
   region: string;
+  /** Karnataka district for local SEO schema */
+  district?: string;
   /** Nearby localities shown as visible, crawlable content */
   nearby: string[];
   /** Extra search phrases for meta keywords (optional) */
@@ -24,8 +29,7 @@ export const SOUTH_CORRIDOR_KEYWORDS =
 export const NORTH_CORRIDOR_KEYWORDS =
   'RO service Yelahanka, RO service Thanisandra, RO service Jakkur, RO service Bagalur, RO service Budigere Cross, RO service Devanahalli, RO service Kempegowda Airport, RO service Manyata Tech Park, RO service RT Nagar, RO service Nagawara, RO service Hebbal, RO service Hoskote, RO service ITPL, RO repair North Bangalore, RO installation Yelahanka, RO service Doddaballapur Road';
 
-export const locationSeoList: LocationSEO[] = [
-  // ---- Bengaluru areas ----
+const BENGALURU_LOCATION_PAGES: LocationSEO[] = [
   { slug: 'ro-service-whitefield', name: 'Whitefield', pincode: '560066', region: 'Bengaluru', nearby: ['ITPL', 'Kadugodi', 'Brookefield', 'Hoodi', 'Varthur', 'Kundalahalli', 'Mahadevapura'], extraKeywords: ['RO service ITPL Whitefield', 'RO service Varthur Whitefield', 'RO service Kadugodi', '560066 RO service'] },
   {
     slug: 'ro-service-electronic-city',
@@ -398,6 +402,25 @@ export const locationSeoList: LocationSEO[] = [
   },
 ];
 
+export const locationSeoList: LocationSEO[] = (() => {
+  const seen = new Set<string>();
+  const merged: LocationSEO[] = [];
+  const add = (loc: LocationSEO) => {
+    if (seen.has(loc.slug)) return;
+    seen.add(loc.slug);
+    merged.push(loc);
+  };
+  BENGALURU_LOCATION_PAGES.forEach(add);
+  karnatakaSeedsToLocationSeo(KARNATAKA_LOCATION_SEEDS).forEach(add);
+  karnatakaSeedsToLocationSeo(ALL_MICRO_AREA_SEEDS).forEach(add);
+  return merged;
+})();
+
+/** Bengaluru locality slugs for crawler bootstrap (non-Bengaluru defaults to Karnataka). */
+export const BENGALURU_LOCALITY_SLUGS: string[] = locationSeoList
+  .filter((loc) => loc.region === 'Bengaluru')
+  .map((loc) => loc.slug.replace(/^ro-service-/, ''));
+
 const SERVICES_LABEL = 'RO installation, repair, filter replacement & water softener';
 
 /** Maps nearby-area labels to a location page when names differ slightly */
@@ -442,7 +465,12 @@ export function buildLocationFaqItems(
   brandName: string,
   phone: string
 ): LocationFaqItem[] {
-  const place = loc.region === 'Bengaluru' ? `${loc.name}, Bengaluru` : loc.name;
+  const place =
+    loc.region === 'Bengaluru'
+      ? `${loc.name}, Bengaluru`
+      : loc.region === 'Karnataka'
+        ? `${loc.name}, Karnataka`
+        : loc.name;
   const pincodeText = loc.pincode ? ` (pincode ${loc.pincode})` : '';
   const nearbyText = loc.nearby.slice(0, 5).join(', ');
   return [
@@ -485,52 +513,36 @@ export function buildLocationFaqJsonLd(
   };
 }
 
-/** Grouped links for /service-areas hub page internal linking */
-export const LOCATION_HUB_GROUPS: { title: string; slugs: string[] }[] = [
-  {
-    title: 'South & Southeast Bengaluru',
-    slugs: [
-      'ro-service-electronic-city', 'ro-service-bommanahalli', 'ro-service-bommasandra',
-      'ro-service-sarjapur', 'ro-service-attibele', 'ro-service-chandapura', 'ro-service-jigani',
-      'ro-service-singasandra', 'ro-service-anekal', 'ro-service-bellandur', 'ro-service-hsr-layout',
-      'ro-service-btm-layout', 'ro-service-bannerghatta', 'ro-service-anjanapura', 'ro-service-haralur',
-      'ro-service-varthur', 'ro-service-kadubeesanahalli', 'ro-service-panathur', 'ro-service-silk-board',
-      'ro-service-jp-nagar', 'ro-service-banashankari', 'ro-service-arekere', 'ro-service-gottigere',
-    ],
-  },
-  {
-    title: 'North & Northeast Bengaluru',
-    slugs: [
-      'ro-service-yelahanka', 'ro-service-hebbal', 'ro-service-thanisandra', 'ro-service-jakkur',
-      'ro-service-bagalur', 'ro-service-budigere-cross', 'ro-service-devanahalli', 'ro-service-manyata-tech-park',
-      'ro-service-rt-nagar', 'ro-service-nagawara', 'ro-service-hoskote', 'ro-service-hennur',
-      'ro-service-kalyan-nagar', 'ro-service-kammanahalli', 'ro-service-jalahalli',
-    ],
-  },
-  {
-    title: 'East Bengaluru',
-    slugs: [
-      'ro-service-whitefield', 'ro-service-itpl', 'ro-service-mahadevapura', 'ro-service-hoodi',
-      'ro-service-brookefield', 'ro-service-marathahalli', 'ro-service-indiranagar', 'ro-service-domlur',
-      'ro-service-ulsoor', 'ro-service-frazer-town', 'ro-service-banaswadi', 'ro-service-ramamurthy-nagar',
-    ],
-  },
-  {
-    title: 'Central & West Bengaluru',
-    slugs: [
-      'ro-service-koramangala', 'ro-service-jayanagar', 'ro-service-malleshwaram', 'ro-service-rajajinagar',
-      'ro-service-yeshwanthpur', 'ro-service-peenya', 'ro-service-vijayanagar', 'ro-service-basavanagudi',
-      'ro-service-nagarbhavi', 'ro-service-kengeri', 'ro-service-rr-nagar',
-    ],
-  },
-  {
-    title: 'Greater Bengaluru & Nearby Towns',
-    slugs: [
-      'ro-service-tumakuru', 'ro-service-hosur', 'ro-service-kolar', 'ro-service-ramanagara',
-      'ro-service-nelamangala', 'ro-service-doddaballapur',
-    ],
-  },
-];
+/** Grouped links for /service-areas hub — auto-built by district for internal linking. */
+export const LOCATION_HUB_GROUPS: { title: string; slugs: string[] }[] = (() => {
+  const byDistrict = new Map<string, string[]>();
+  for (const loc of locationSeoList) {
+    const key =
+      loc.district ??
+      (loc.region === 'Bengaluru' ? 'Bengaluru Urban' : loc.region === 'Karnataka' ? 'Karnataka' : loc.region);
+    const list = byDistrict.get(key) ?? [];
+    list.push(loc.slug);
+    byDistrict.set(key, list);
+  }
+  const order = [
+    'Bengaluru Urban', 'Bengaluru Rural', 'Ramanagara', 'Chikkaballapura', 'Tumakuru', 'Kolar',
+    'Mysuru', 'Mandya', 'Hassan', 'Chamarajanagar', 'Chikkamagaluru', 'Kodagu',
+    'Dakshina Kannada', 'Udupi', 'Uttara Kannada',
+    'Belagavi', 'Dharwad', 'Gadag', 'Haveri', 'Shivamogga', 'Davanagere', 'Chitradurga',
+    'Ballari', 'Vijayanagara', 'Raichur', 'Koppal', 'Kalaburagi', 'Bidar', 'Yadgir', 'Vijayapura', 'Bagalkote',
+    'Karnataka', 'Tamil Nadu (Bengaluru border)',
+  ];
+  const groups: { title: string; slugs: string[] }[] = [];
+  for (const district of order) {
+    const slugs = byDistrict.get(district);
+    if (slugs?.length) groups.push({ title: `RO Service — ${district}`, slugs });
+    byDistrict.delete(district);
+  }
+  for (const [district, slugs] of byDistrict.entries()) {
+    groups.push({ title: `RO Service — ${district}`, slugs });
+  }
+  return groups;
+})();
 
 export function getLocationBySlug(slug: string): LocationSEO | undefined {
   return locationSeoList.find((l) => l.slug === slug);
@@ -546,22 +558,30 @@ export function buildLocationKeywords(loc: LocationSEO, brandName: string): stri
     `RO service ${loc.name}`,
     `RO repair ${loc.name}`,
     `RO installation ${loc.name}`,
-    `RO service ${loc.name} Bangalore`,
-    `RO service ${loc.name} Bengaluru`,
+    ...(loc.region === 'Bengaluru'
+      ? [`RO service ${loc.name} Bangalore`, `RO service ${loc.name} Bengaluru`]
+      : [`RO service ${loc.name} Karnataka`, `water purifier service ${loc.name}`]),
     `${brandName} ${loc.name}`,
     ...loc.nearby.flatMap((n) => [`RO service ${n}`, `RO repair ${n}`]),
     ...(loc.extraKeywords ?? []),
   ];
   if (loc.pincode) parts.push(`RO service ${loc.pincode}`, `${loc.pincode} RO repair`);
+  if (loc.district) parts.push(`RO service ${loc.district}`, `RO repair ${loc.district} Karnataka`);
   return [...new Set(parts)].join(', ');
 }
 
 export function buildLocationTitle(loc: LocationSEO, brandName = 'Hydrogen RO'): string {
-  return `RO Service in ${loc.name} | Installation, Repair & AMC - ${brandName}`;
+  const suffix = loc.region === 'Bengaluru' ? 'Bengaluru' : 'Karnataka';
+  return `RO Service in ${loc.name} ${suffix} | Installation, Repair & AMC - ${brandName}`;
 }
 
 export function buildLocationDescription(loc: LocationSEO, brandName = 'Hydrogen RO', phone = '+91-8884944288'): string {
-  const place = loc.region === 'Bengaluru' ? `${loc.name}, Bengaluru` : loc.name;
+  const place =
+    loc.region === 'Bengaluru'
+      ? `${loc.name}, Bengaluru`
+      : loc.region === 'Karnataka'
+        ? `${loc.name}, Karnataka`
+        : loc.name;
   const nearbyText = loc.nearby.length ? ` Also serving ${loc.nearby.slice(0, 5).join(', ')}.` : '';
   return `Looking for RO service in ${place}? ${brandName} offers same-day ${SERVICES_LABEL} by certified technicians${loc.pincode ? ` (pincode ${loc.pincode})` : ''}.${nearbyText} Genuine spare parts, transparent pricing, 24/7 support. Call ${phone}.`;
 }

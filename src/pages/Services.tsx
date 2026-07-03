@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import PageHero from '@/components/PageHero';
+import SeoBreadcrumbs from '@/components/SeoBreadcrumbs';
 import PublicAmcLearnMoreDialog from '@/components/PublicAmcLearnMoreDialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Filter, Wrench, CheckCircle, DollarSign, Clock, Shield, Settings, ShieldCheck } from 'lucide-react';
 
 import { buildPublicLocalBusinessJsonLd, getBrandSeoProfile } from '@/lib/publicSiteSeo';
+import { findServicePage } from '@/lib/publicSeoPages';
 import { PUBLIC_AMC_PLANS, formatPublicAmcInr, PUBLIC_AMC_TAGLINE } from '@/lib/public-amc-info';
 import { getPublicSiteKey } from '@/lib/websiteSiteKey';
 
@@ -16,6 +19,8 @@ const serviceCardClass =
 const serviceCardContentClass = 'p-8 flex flex-col h-full';
 
 const Services = () => {
+  const { pathname } = useLocation();
+  const servicePage = findServicePage(pathname);
   const siteKey = getPublicSiteKey();
   const isHydrogenRo = siteKey === 'hydrogenro';
   const brand = getBrandSeoProfile(siteKey);
@@ -82,9 +87,10 @@ const Services = () => {
       <Header />
 
       <main className="flex-1">
+        <SeoBreadcrumbs />
         <PageHero 
-          title="RO Water Purifier Services in Bengaluru"
-          description="Professional RO water purifier installation, repair, and maintenance services by certified technicians in Bengaluru, Karnataka. Same-day service, 24/7 emergency support across all areas of Bangalore."
+          title={servicePage ? `${servicePage.serviceName} in Karnataka` : 'RO Water Purifier Services in Bengaluru'}
+          description={servicePage?.shortDescription ?? 'Professional RO water purifier installation, repair, and maintenance services by certified technicians in Bengaluru, Karnataka. Same-day service, 24/7 emergency support across all areas of Bangalore.'}
         />
 
         {/* Why Choose Section */}

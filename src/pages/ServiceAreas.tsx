@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import PageHero from '@/components/PageHero';
+import SeoBreadcrumbs from '@/components/SeoBreadcrumbs';
 import { Card, CardContent } from '@/components/ui/card';
 import { MapPin, Clock, Check } from 'lucide-react';
 import {
@@ -30,7 +31,9 @@ const ServiceAreas = () => {
       : `${loc.name}, ${loc.region}`
     : 'Bengaluru';
 
-  const heroTitle = loc ? `RO Service in ${loc.name}` : 'Service Areas in Bengaluru';
+  const heroTitle = loc
+    ? `RO Service in ${loc.name}${loc.region === 'Karnataka' ? ', Karnataka' : ''}`
+    : 'Service Areas in Bengaluru';
   const heroDescription = loc
     ? buildLocationDescription(loc, brand.brandName, brand.primaryPhone)
     : 'We provide professional RO water purifier services across all areas of Bengaluru. Find your area and book service today!';
@@ -202,6 +205,7 @@ const ServiceAreas = () => {
       <Header />
 
       <main className="flex-1">
+        <SeoBreadcrumbs />
         <PageHero 
           badge={loc ? `RO service in ${placeLabel}` : 'Trusted by 3000+ customers'}
           title={heroTitle}

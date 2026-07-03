@@ -32,7 +32,14 @@ export interface BrandSeoProfile {
 }
 
 const SHARED_SERVICE_AREAS =
-  'Whitefield, ITPL, Electronic City, Bommanahalli, Bommasandra, Sarjapur, Sarjapura, Sarjapur Road, Attibele, Chandapura, Jigani, Anekal, Singasandra, Hosur Road, Silk Board, BTM Layout, HSR Layout, Koramangala, Indiranagar, Marathahalli, Jayanagar, Malleshwaram, Hebbal, Yelahanka, Thanisandra, Jakkur, Bagalur, Budigere Cross, Devanahalli, Manyata Tech Park, RT Nagar, Nagawara, Bellandur, Varthur, Kadubeesanahalli, Panathur, Haralur, Hoskote, JP Nagar, Banashankari, Anjanapura, Tumakuru, Nelamangala';
+  'Bengaluru, Bangalore, Whitefield, ITPL, Electronic City, Mysuru, Mangaluru, Hubballi, Belagavi, Tumakuru, Shivamogga, Hassan, Mandya, Davanagere, Ballari, Raichur, Kalaburagi, Bidar, Vijayapura, Bagalkote, Udupi, Karwar, Chikkamagaluru, Kodagu, Kolar, Ramanagara, Chikkaballapura, Chamarajanagar, Dakshina Kannada, Uttara Kannada, Vijayanagara, Gadag, Haveri, Koppal, Yadgir, Chitradurga, Dharwad';
+
+const KARNATAKA_DISTRICTS = [
+  'Bengaluru Urban', 'Bengaluru Rural', 'Mysuru', 'Dakshina Kannada', 'Udupi', 'Uttara Kannada',
+  'Belagavi', 'Dharwad', 'Shivamogga', 'Tumakuru', 'Hassan', 'Mandya', 'Kodagu', 'Chikkamagaluru',
+  'Chitradurga', 'Davanagere', 'Ballari', 'Vijayanagara', 'Raichur', 'Koppal', 'Kalaburagi', 'Bidar',
+  'Yadgir', 'Vijayapura', 'Bagalkote', 'Gadag', 'Haveri', 'Ramanagara', 'Kolar', 'Chikkaballapura', 'Chamarajanagar',
+];
 
 const HYDROGEN_SEO: BrandSeoProfile = {
   siteKey: 'hydrogenro',
@@ -43,7 +50,7 @@ const HYDROGEN_SEO: BrandSeoProfile = {
   defaultDescription:
     'Hydrogen RO - #1 best RO water purifier service in Bengaluru, Bangalore. 5★ rated with 2300+ reviews. Same-day RO installation, repair, maintenance and filter replacement across all Bangalore areas. Call +91-8884944288.',
   keywords:
-    'Hydrogen RO, best RO service Bengaluru, RO water purifier service Bangalore, RO installation Bengaluru, RO repair Bangalore, RO service Electronic City, RO service Bommanahalli, RO service Sarjapur, RO service Attibele, RO service Chandapura, RO service Bommasandra, RO service Jigani, RO service Hosur Road, RO service Silk Board, RO service Sarjapur Road, RO service Bellandur, RO service HSR Layout, RO service Anekal, RO service Singasandra, RO service Electronic City Phase 1, RO service Electronic City Phase 2, water softener Bangalore, RO maintenance Bengaluru, same day RO service South Bangalore',
+    'Hydrogen RO, RO service Karnataka, RO service Bangalore, RO service Bengaluru, water purifier service Karnataka, RO repair Karnataka, RO installation Karnataka, RO AMC Karnataka, RO maintenance Karnataka, RO technician Karnataka, Kent RO service, Aquaguard service, Livpure service, Pureit service, AO Smith service, best RO service near me, RO service Mysuru, RO service Mangaluru, RO service Hubballi, RO service Belagavi, same day RO service Karnataka',
   ogImage: 'https://hydrogenro.com/og-image.jpg',
   logoPath: 'https://hydrogenro.com/fulllogo.png',
   phones: ['+91-8884944288', '+91-9886944288'],
@@ -66,7 +73,7 @@ const ELEVEN_SEO: BrandSeoProfile = {
   defaultDescription:
     'Eleven RO - trusted RO water purifier service in Bengaluru, Karnataka. Professional RO installation, repair, maintenance and filter replacement. Same-day service across Bangalore including Anjanapura, JP Nagar, Bannerghatta and South Bangalore. Call 9880693311.',
   keywords:
-    'Eleven RO, Eleven RO service Bengaluru, RO water purifier Bangalore, RO service Electronic City, RO service Bommanahalli, RO service Sarjapur, RO service Attibele, RO service Chandapura, RO service Bommasandra, RO service Jigani, RO service Hosur Road, RO service Silk Board, RO installation Anjanapura, RO repair South Bangalore, RO maintenance Karnataka, same day RO service Eleven RO, Kent Aquaguard RO service Bangalore',
+    'Eleven RO, RO service Karnataka, RO service Bangalore, RO service Bengaluru, water purifier service Karnataka, RO repair Karnataka, RO installation Karnataka, RO AMC Karnataka, RO maintenance Karnataka, RO technician Karnataka, Kent RO service, Aquaguard service, Livpure service, Pureit service, AO Smith service, best RO service near me, RO service Anjanapura, RO service Mysuru, RO service Mangaluru, RO service Hubballi, same day RO service Eleven RO',
   ogImage: 'https://elevenro.com/elevenro-og.webp',
   logoPath: 'https://elevenro.com/elevenrofulloogo.webp',
   phones: ['+91-9880693311', '+91-8792467611'],
@@ -155,6 +162,16 @@ export function getRouteSeo(pathname: string, siteKey?: PublicSiteKey): RouteSeo
 function buildAreaServed(profile: BrandSeoProfile) {
   return [
     {
+      '@type': 'State',
+      name: profile.state,
+      alternateName: 'KA',
+    },
+    ...KARNATAKA_DISTRICTS.map((district) => ({
+      '@type': 'AdministrativeArea' as const,
+      name: district,
+      containedInPlace: { '@type': 'State' as const, name: profile.state },
+    })),
+    {
       '@type': 'City',
       name: profile.city,
       alternateName: 'Bangalore',
@@ -229,6 +246,18 @@ export function buildLocalBusinessJsonLd(profile: BrandSeoProfile, pageUrl: stri
         name: 'Filter Replacement',
         description: 'Genuine RO filter replacement and maintenance',
         url: `${profile.origin}/filter-replacement`,
+      },
+      {
+        '@type': 'Offer',
+        name: 'RO AMC',
+        description: 'RO Annual Maintenance Contract across Karnataka',
+        url: `${profile.origin}/ro-amc`,
+      },
+      {
+        '@type': 'Offer',
+        name: 'Commercial RO Service',
+        description: 'Commercial RO plant service for offices and businesses',
+        url: `${profile.origin}/commercial-ro-service`,
       },
     ],
     mainEntityOfPage: pageUrl,
@@ -315,10 +344,10 @@ export function buildFaqJsonLd(profile: BrandSeoProfile): object {
       },
       {
         '@type': 'Question',
-        name: `What areas in Bangalore does ${brand} cover?`,
+        name: `What areas in Karnataka does ${brand} cover?`,
         acceptedAnswer: {
           '@type': 'Answer',
-          text: `${brand} covers ${SHARED_SERVICE_AREAS} and all major pincodes across Bengaluru, Karnataka.`,
+          text: `${brand} covers all Karnataka districts including Bengaluru, Mysuru, Mangaluru, Hubballi, Belagavi, Tumakuru, Hassan, Mandya, Davanagere, Ballari, Raichur, Kalaburagi, Bidar, Vijayapura, Udupi, Karwar, Chikkamagaluru, Kodagu and ${SHARED_SERVICE_AREAS}.`,
         },
       },
       {
@@ -392,11 +421,13 @@ export function buildLocationServiceJsonLd(
 ): object {
   const pincode = locData?.pincode;
   const nearbySnippet = locData?.nearby.slice(0, 6).join(', ');
+  const isBengaluru = locData?.region === 'Bengaluru';
+  const placeName = isBengaluru ? `${areaName}, Bengaluru` : `${areaName}, Karnataka`;
   return {
     '@context': 'https://schema.org',
     '@type': 'Service',
-    name: `RO Water Purifier Service in ${areaName}, Bengaluru`,
-    description: `Professional RO installation, repair, filter replacement and AMC in ${areaName}, Bengaluru by ${profile.brandName}.${nearbySnippet ? ` Also serving ${nearbySnippet}.` : ''}`,
+    name: `RO Water Purifier Service in ${placeName}`,
+    description: `Professional RO installation, repair, filter replacement and AMC in ${placeName} by ${profile.brandName}.${nearbySnippet ? ` Also serving ${nearbySnippet}.` : ''}`,
     url: pageUrl,
     provider: {
       '@type': 'LocalBusiness',
@@ -413,7 +444,10 @@ export function buildLocationServiceJsonLd(
     },
     areaServed: {
       '@type': 'Place',
-      name: `${areaName}, Bengaluru`,
+      name: placeName,
+      ...(locData?.district
+        ? { containedInPlace: { '@type': 'AdministrativeArea', name: locData.district } }
+        : {}),
       address: {
         '@type': 'PostalAddress',
         addressLocality: areaName,

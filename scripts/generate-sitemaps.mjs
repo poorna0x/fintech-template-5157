@@ -1,9 +1,11 @@
 /**
  * Regenerate public/sitemap.xml and public/sitemap-elevenro.xml from SEO page registry.
- * Location pages are auto-read from src/data/locationSeo.ts (slug fields).
+ * Location pages: src/data/locationSeo.ts (slug fields)
+ * Service pages: src/lib/publicSeoPages.ts (path fields in SEO_SERVICE_PAGES)
  * Run: node scripts/generate-sitemaps.mjs
  */
 import { readFileSync, writeFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -11,9 +13,29 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
 const lastmod = new Date().toISOString().slice(0, 10);
 
-const locationSeoSrc = readFileSync(join(root, 'src/data/locationSeo.ts'), 'utf8');
-const locationPaths = [...locationSeoSrc.matchAll(/slug:\s*'(ro-service-[^']+)'/g)].map((m) => ({
-  path: `/${m[1]}`,
+function runTsx(expression) {
+  return execSync(`npx --yes tsx -e ${JSON.stringify(expression)}`, {
+    cwd: root,
+    encoding: 'utf8',
+    stdio: ['pipe', 'pipe', 'pipe'],
+  }).trim();
+}
+
+const locationSlugJson = runTsx(
+  "import { locationSeoList, BENGALURU_LOCALITY_SLUGS } from './src/data/locationSeo.ts'; console.log(JSON.stringify({ slugs: locationSeoList.map(l => l.slug), blr: BENGALURU_LOCALITY_SLUGS }));"
+);
+const { slugs: locationSlugList, blr: bengaluruLocalitySlugs } = JSON.parse(locationSlugJson);
+
+const locationPaths = locationSlugList.sort().map((slug) => ({
+  path: `/${slug}`,
+  priority: '0.9',
+  changefreq: 'weekly',
+}));
+
+const publicSeoSrc = readFileSync(join(root, 'src/lib/publicSeoPages.ts'), 'utf8');
+const serviceBlock = publicSeoSrc.match(/export const SEO_SERVICE_PAGES[\s\S]*?^\];/m)?.[0] ?? '';
+const servicePaths = [...serviceBlock.matchAll(/path:\s*'([^']+)'/g)].map((m) => ({
+  path: m[1],
   priority: '0.9',
   changefreq: 'weekly',
 }));
@@ -24,18 +46,6 @@ const staticPaths = [
   { path: '/service-areas', priority: '0.95', changefreq: 'weekly' },
   { path: '/book', priority: '0.95', changefreq: 'daily' },
   { path: '/booking', priority: '0.95', changefreq: 'daily' },
-  { path: '/ro-installation', priority: '0.9', changefreq: 'weekly' },
-  { path: '/ro-repair', priority: '0.9', changefreq: 'weekly' },
-  { path: '/filter-replacement', priority: '0.9', changefreq: 'weekly' },
-  { path: '/ro-maintenance', priority: '0.9', changefreq: 'weekly' },
-  { path: '/water-softener', priority: '0.9', changefreq: 'weekly' },
-  { path: '/ro-troubleshooting', priority: '0.85', changefreq: 'weekly' },
-  { path: '/emergency-ro-repair', priority: '0.9', changefreq: 'weekly' },
-  { path: '/same-day-ro-service', priority: '0.9', changefreq: 'weekly' },
-  { path: '/ro-spare-parts', priority: '0.85', changefreq: 'weekly' },
-  { path: '/ro-brands', priority: '0.85', changefreq: 'weekly' },
-  { path: '/ro-price-list', priority: '0.85', changefreq: 'weekly' },
-  { path: '/ro-warranty', priority: '0.8', changefreq: 'monthly' },
   { path: '/about', priority: '0.8', changefreq: 'monthly' },
   { path: '/contact', priority: '0.8', changefreq: 'monthly' },
   { path: '/blog', priority: '0.75', changefreq: 'weekly' },
@@ -54,7 +64,7 @@ const staticPaths = [
   { path: '/disclaimer', priority: '0.3', changefreq: 'monthly' },
 ];
 
-const paths = [...staticPaths, ...locationPaths];
+const paths = [...staticPaths, ...servicePaths, ...locationPaths];
 
 function buildSitemap(origin) {
   const urls = paths
@@ -82,4 +92,16 @@ ${urls}
 
 writeFileSync(join(root, 'public/sitemap.xml'), buildSitemap('https://hydrogenro.com'));
 writeFileSync(join(root, 'public/sitemap-elevenro.xml'), buildSitemap('https://elevenro.com'));
-console.log(`Generated sitemaps with ${paths.length} URLs (${locationPaths.length} location pages, lastmod ${lastmod})`);
+
+const bootstrapPath = join(root, 'public/head-seo-bootstrap.js');
+let bootstrap = readFileSync(bootstrapPath, 'utf8');
+const blrJson = JSON.stringify([...bengaluruLocalitySlugs].sort());
+bootstrap = bootstrap.replace(
+  /\/\/ AUTO:BENGALURU_LOCALITY_SLUGS[\s\S]*?\/\/ END:BENGALURU_LOCALITY_SLUGS/,
+  `// AUTO:BENGALURU_LOCALITY_SLUGS\n      var BENGALURU_LOCALITY_SLUGS = new Set(${blrJson});\n      // END:BENGALURU_LOCALITY_SLUGS`
+);
+writeFileSync(bootstrapPath, bootstrap);
+
+console.log(
+  `Generated sitemaps with ${paths.length} URLs (${servicePaths.length} service, ${locationPaths.length} location pages, ${bengaluruLocalitySlugs.length} Bengaluru localities, lastmod ${lastmod})`
+);
