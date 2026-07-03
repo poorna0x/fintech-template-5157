@@ -3,6 +3,7 @@
 
 import { karnatakaSeedsToLocationSeo, KARNATAKA_LOCATION_SEEDS } from '@/data/karnatakaLocationSeeds';
 import { ALL_MICRO_AREA_SEEDS } from '@/data/karnatakaMicroAreas';
+import { KARNATAKA_DISTRICT_EXPANSION_SEEDS } from '@/data/karnatakaDistrictExpansion';
 
 export interface LocationSEO {
   /** URL path without leading slash, e.g. "ro-service-whitefield" */
@@ -413,6 +414,7 @@ export const locationSeoList: LocationSEO[] = (() => {
   BENGALURU_LOCATION_PAGES.forEach(add);
   karnatakaSeedsToLocationSeo(KARNATAKA_LOCATION_SEEDS).forEach(add);
   karnatakaSeedsToLocationSeo(ALL_MICRO_AREA_SEEDS).forEach(add);
+  karnatakaSeedsToLocationSeo(KARNATAKA_DISTRICT_EXPANSION_SEEDS).forEach(add);
   return merged;
 })();
 
