@@ -428,8 +428,8 @@ const TechnicianPayments = () => {
   /** Refetch only business expenses (e.g. after add/edit/delete or when user clicks View). */
   const loadBusinessExpensesOnly = useCallback(async () => {
     const { startDate, endDate } = getMonthlyDateRange();
-    const periodStartStr = startDate.toISOString().split('T')[0];
-    const periodEndStr = endDate.toISOString().split('T')[0];
+    const periodStartStr = formatDateString(startDate);
+    const periodEndStr = formatDateString(endDate);
     const { data, error } = await db.businessExpenses.getAll(periodStartStr, periodEndStr);
     if (!error) setBusinessExpenses(data || []);
   }, [getMonthlyDateRange]);
@@ -445,8 +445,8 @@ const TechnicianPayments = () => {
   /** Refetch only other expenses. */
   const loadOtherExpensesOnly = useCallback(async () => {
     const { startDate, endDate } = getMonthlyDateRange();
-    const periodStartStr = startDate.toISOString().split('T')[0];
-    const periodEndStr = endDate.toISOString().split('T')[0];
+    const periodStartStr = formatDateString(startDate);
+    const periodEndStr = formatDateString(endDate);
     const { data, error } = await db.otherExpenses.getAll(periodStartStr, periodEndStr);
     if (!error) setOtherExpenses(data || []);
   }, [getMonthlyDateRange]);
