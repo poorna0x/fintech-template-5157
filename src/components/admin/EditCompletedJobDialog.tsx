@@ -12,7 +12,6 @@ import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { ImagePlus, X, ChevronDown } from 'lucide-react';
 import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
-import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmentTimeSelect';
 import {
   deriveAmcServicePeriodKind,
   resolveAmcServicePeriodMonths,
@@ -827,43 +826,47 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
           </div>
 
           {/* Completion Date */}
-          <div className="border-t pt-4">
-            <Label htmlFor="edit-completion-date" className="text-base font-semibold">Completion Date & Time</Label>
-            <div className="grid grid-cols-2 gap-3 mt-2">
-              <div>
-                <Label htmlFor="edit-completion-date" className="text-sm">Date</Label>
+          <div className="border-t pt-4 space-y-2">
+            <Label className="text-sm font-medium">Completion date & time</Label>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-completion-date" className="text-xs text-muted-foreground font-normal">
+                  Date
+                </Label>
                 <DatePicker
-                    value={editData.completedDate || undefined}
-                    onChange={(dateValue) => {
-                      if (dateValue) {
-                        const existingCompletedAt = editData.completedAt ? new Date(editData.completedAt) : new Date();
-                        const newDate = new Date(dateValue + 'T12:00:00');
-                        newDate.setHours(existingCompletedAt.getHours());
-                        newDate.setMinutes(existingCompletedAt.getMinutes());
-                        newDate.setSeconds(existingCompletedAt.getSeconds());
-                        const timeStr = editData.completedTime || existingCompletedAt.toTimeString().slice(0, 5);
-                        onEditDataChange({ 
-                          ...editData, 
-                          completedDate: dateValue,
-                          completedTime: timeStr,
-                          completedAt: newDate.toISOString()
-                        });
-                      } else {
-                        onEditDataChange({ ...editData, completedDate: '', completedAt: null });
-                      }
-                    }}
-                    placeholder="Pick date"
-                    className="mt-1"
-                  />
+                  value={editData.completedDate || undefined}
+                  onChange={(dateValue) => {
+                    if (dateValue) {
+                      const existingCompletedAt = editData.completedAt ? new Date(editData.completedAt) : new Date();
+                      const newDate = new Date(dateValue + 'T12:00:00');
+                      newDate.setHours(existingCompletedAt.getHours());
+                      newDate.setMinutes(existingCompletedAt.getMinutes());
+                      newDate.setSeconds(existingCompletedAt.getSeconds());
+                      const timeStr = editData.completedTime || existingCompletedAt.toTimeString().slice(0, 5);
+                      onEditDataChange({
+                        ...editData,
+                        completedDate: dateValue,
+                        completedTime: timeStr,
+                        completedAt: newDate.toISOString(),
+                      });
+                    } else {
+                      onEditDataChange({ ...editData, completedDate: '', completedAt: null });
+                    }
+                  }}
+                  placeholder="Pick date"
+                />
               </div>
-              <div>
-                <Label htmlFor="edit-completion-time" className="text-sm">Time</Label>
-                <CustomAppointmentTimeSelect
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-completion-time" className="text-xs text-muted-foreground font-normal">
+                  Time
+                </Label>
+                <Input
                   id="edit-completion-time"
-                  className="mt-1"
-                  optional
+                  type="time"
+                  step={60}
                   value={editData.completedTime || ''}
-                  onChange={(timeValue) => {
+                  onChange={(e) => {
+                    const timeValue = e.target.value;
                     const existingDate = editData.completedDate || new Date().toISOString().split('T')[0];
                     if (timeValue) {
                       const [hours, minutes] = timeValue.split(':');
@@ -872,7 +875,7 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
                         ...editData,
                         completedTime: timeValue,
                         completedDate: existingDate,
-                        completedAt: newDate.toISOString()
+                        completedAt: newDate.toISOString(),
                       });
                     } else {
                       onEditDataChange({ ...editData, completedTime: '', completedAt: null });
@@ -881,7 +884,7 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
                 />
               </div>
             </div>
-            <p className="text-xs text-muted-foreground mt-1">Leave empty to keep the original completion date</p>
+            <p className="text-xs text-muted-foreground">Leave empty to keep the original completion date</p>
           </div>
         </div>
 
