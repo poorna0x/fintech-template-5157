@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -66,7 +66,13 @@ import MergeCustomersDialog from '@/components/admin/MergeCustomersDialog';
 import WarrantyManagementDialog from '@/components/admin/WarrantyManagementDialog';
 import DirectSaleDialog from '@/components/admin/DirectSaleDialog';
 import { scrollToSettingsSection } from '@/lib/settingsSectionScroll';
-import { SETTINGS_SECTIONS, settingsPath } from '@/lib/settingsSections';
+import { SETTINGS_SECTIONS } from '@/lib/settingsSections';
+import {
+  buildSettingsSearch,
+  parseSettingsUrl,
+  settingsLocation,
+  type SettingsPanelSlug,
+} from '@/lib/settingsUrl';
 
 /** PostgREST error when a table was never created or was dropped (e.g. booking_abandonments). */
 const isMissingTableError = (error: { message?: string; code?: string } | null): boolean => {
@@ -133,17 +139,50 @@ const DATABASE_EXPORT_TABLES: {
   { name: 'website_booking_intent', orderBy: 'updated_at', label: 'Website Booking Intent' },
 ];
 
-function isCallingPageOpen(search: string): boolean {
-  const params = new URLSearchParams(search);
-  return params.get('section') === 'calling' && params.get('action') === 'open';
-}
-
 const Settings = () => {
   const { user, isAdmin, logout, authInitializing } = useAuth();
   const { isManager } = useAdminRole();
   const managerRestrictedTitle = 'Restricted for Manager role';
   const navigate = useNavigate();
   const location = useLocation();
+
+  const closeSettingsPanel = useCallback(() => {
+    navigate(
+      settingsLocation(buildSettingsSearch({ clearPanel: true }, location.search)),
+      { replace: true }
+    );
+  }, [navigate, location.search]);
+
+  const openSettingsPanel = useCallback(
+    (
+      panel: SettingsPanelSlug,
+      options?: { id?: string; action?: string }
+    ) => {
+      navigate(
+        settingsLocation(
+          buildSettingsSearch(
+            {
+              panel,
+              panelId: options?.id ?? null,
+              panelAction: options?.action ?? null,
+              section: null,
+            },
+            location.search
+          )
+        )
+      );
+    },
+    [navigate, location.search]
+  );
+
+  const onSettingsPanelOpenChange = useCallback(
+    (panel: SettingsPanelSlug, open: boolean) => {
+      if (!open && parseSettingsUrl(location.search).panel === panel) {
+        closeSettingsPanel();
+      }
+    },
+    [closeSettingsPanel, location.search]
+  );
 
   useEffect(() => {
     registerAdminPWA();
@@ -250,7 +289,9 @@ const Settings = () => {
   const [adjustingTrackerId, setAdjustingTrackerId] = useState<string | null>(null);
 
   // Calling view state
-  const [showCallingPage, setShowCallingPage] = useState(() => isCallingPageOpen(location.search));
+  const [showCallingPage, setShowCallingPage] = useState(
+    () => parseSettingsUrl(location.search).panel === 'calling'
+  );
 
   const [remindersDialogOpen, setRemindersDialogOpen] = useState(false);
   const [recurringServiceOpen, setRecurringServiceOpen] = useState(false);
@@ -272,19 +313,105 @@ const Settings = () => {
     loadAmountTrackers();
   }, []);
 
-  // Deep-link from admin Tools / notification bell: /settings?section=…
+  // Sync settings panels (?panel=) for mobile swipe-back.
   useEffect(() => {
-    setShowCallingPage(isCallingPageOpen(location.search));
-  }, [location.search]);
+    const parsed = parseSettingsUrl(location.search);
+    const panel = parsed.panel;
 
-  useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const section = params.get('section');
-    if (!section) return;
-
-    if (section === 'calling' && params.get('action') === 'open') {
-      return;
+    setShowCallingPage(panel === 'calling');
+    setRemindersDialogOpen(panel === 'reminders');
+    setRecurringServiceOpen(panel === 'recurring-service');
+    setAdvancedSearchDialogOpen(panel === 'advanced-search');
+    setAddGeneralReminderOpen(panel === 'add-general-reminder');
+    setAddCustomerReminderOpen(panel === 'add-customer-reminder');
+    setMergeCustomersOpen(panel === 'merge-customers');
+    setWarrantyDialogOpen(panel === 'warranty');
+    setDirectSaleOpen(panel === 'direct-sale');
+    setAddTechnicianDialogOpen(panel === 'add-technician');
+    setEditTechnicianDialogOpen(panel === 'edit-technician' && !!parsed.panelId);
+    setAddQrCodeDialogOpen(panel === 'add-payment-qr');
+    setEditQrCodeDialogOpen(panel === 'edit-payment-qr' && !!parsed.panelId);
+    setAddTechnicianCommonQrDialogOpen(panel === 'add-tech-qr');
+    setEditTechnicianCommonQrDialogOpen(panel === 'edit-tech-qr' && !!parsed.panelId);
+    setAddProductQrCodeDialogOpen(panel === 'add-product-qr');
+    setEditProductQrCodeDialogOpen(panel === 'edit-product-qr' && !!parsed.panelId);
+    setAddTodoDialogOpen(panel === 'add-todo');
+    setAddTrackerDialogOpen(panel === 'add-tracker');
+    setPendingPaymentsDialogOpen(panel === 'pending-payments');
+    if (panel === 'pending-payments') {
+      setPendingPaymentsInitialAction(parsed.panelAction === 'add' ? 'add' : 'list');
     }
+
+    if (panel === 'edit-technician' && parsed.panelId) {
+      const tech = technicians.find((t) => t.id === parsed.panelId);
+      if (tech && selectedTechnician?.id !== tech.id) {
+        setSelectedTechnician(tech);
+        setTechnicianFormData({
+          fullName: tech.fullName,
+          phone: tech.phone,
+          email: tech.email,
+          employeeId: tech.employeeId,
+          password: '',
+          qrCode: (tech as any).qrCode || '',
+          photo: (tech as any).photo || '',
+          baseSalary: tech.salary?.baseSalary || 0,
+          salaryEffectiveFromMonth: getCurrentMonthKey(),
+          visibleQrCodes: tech.visibleQrCodes || [],
+          commonQrCodeIds: (tech as any).commonQrCodeIds || [],
+          accountStatus: (tech.account_status as 'ACTIVE' | 'INACTIVE' | 'SUSPENDED') || 'ACTIVE',
+        });
+        setNewlyCreatedTechnicianId(null);
+      }
+    }
+
+    if (panel === 'edit-payment-qr' && parsed.panelId) {
+      const qr = commonQrCodes.find((q) => q.id === parsed.panelId);
+      if (qr && selectedQrCode?.id !== qr.id) {
+        setSelectedQrCode(qr);
+        setQrCodeFormData({ name: qr.name, qrCodeUrl: qr.qrCodeUrl || '' });
+      }
+    }
+
+    if (panel === 'edit-tech-qr' && parsed.panelId) {
+      const qr = technicianCommonQrCodes.find((q) => q.id === parsed.panelId);
+      if (qr && selectedTechnicianCommonQr?.id !== qr.id) {
+        setSelectedTechnicianCommonQr(qr);
+        setTechnicianCommonQrFormData({ name: qr.name, qrCodeUrl: qr.qrCodeUrl || '' });
+      }
+    }
+
+    if (panel === 'edit-product-qr' && parsed.panelId) {
+      const qr = productQrCodes.find((q) => q.id === parsed.panelId);
+      if (qr && selectedProductQrCode?.id !== qr.id) {
+        setSelectedProductQrCode(qr);
+        setProductQrCodeFormData({
+          name: qr.name || '',
+          qrCodeUrl: qr.qrCodeUrl || '',
+          productImageUrl: qr.productImageUrl || '',
+          productName: qr.productName || '',
+          productDescription: qr.productDescription || '',
+          productMrp: qr.productMrp != null ? String(qr.productMrp) : '',
+        });
+      }
+    }
+  }, [
+    location.search,
+    technicians,
+    commonQrCodes,
+    technicianCommonQrCodes,
+    productQrCodes,
+    selectedTechnician?.id,
+    selectedQrCode?.id,
+    selectedTechnicianCommonQr?.id,
+    selectedProductQrCode?.id,
+  ]);
+
+  useEffect(() => {
+    const parsed = parseSettingsUrl(location.search);
+    if (parsed.panel) return;
+
+    const section = parsed.section;
+    if (!section) return;
 
     if (!(section in SETTINGS_SECTIONS)) return;
 
@@ -362,8 +489,7 @@ const Settings = () => {
     }
     setTechnicianToDelete(technician);
     setDeleteTechnicianStep(1);
-    setEditTechnicianDialogOpen(false);
-    setAddTechnicianDialogOpen(false);
+    closeSettingsPanel();
     setSelectedTechnician(null);
   };
 
@@ -424,7 +550,7 @@ const Settings = () => {
       accountStatus: 'ACTIVE'
     });
     setNewlyCreatedTechnicianId(null);
-    setAddTechnicianDialogOpen(true);
+    openSettingsPanel('add-technician');
   };
 
   const handleEditTechnician = (technician: Technician) => {
@@ -448,7 +574,7 @@ const Settings = () => {
       accountStatus: (technician.account_status as 'ACTIVE' | 'INACTIVE' | 'SUSPENDED') || 'ACTIVE'
     });
     setNewlyCreatedTechnicianId(null);
-    setEditTechnicianDialogOpen(true);
+    openSettingsPanel('edit-technician', { id: technician.id });
   };
 
   const handleSaveTechnician = async () => {
@@ -658,9 +784,8 @@ const Settings = () => {
 
       // Don't close dialog if we just created a technician (to show ID card link)
       if (editTechnicianDialogOpen || !newlyCreatedTechnicianId) {
-      setAddTechnicianDialogOpen(false);
-      setEditTechnicianDialogOpen(false);
-      setSelectedTechnician(null);
+        closeSettingsPanel();
+        setSelectedTechnician(null);
         setNewlyCreatedTechnicianId(null);
       }
     } catch (error) {
@@ -706,7 +831,7 @@ const Settings = () => {
 
   const handleAddQrCode = () => {
     setQrCodeFormData({ name: '', qrCodeUrl: '' });
-    setAddQrCodeDialogOpen(true);
+    openSettingsPanel('add-payment-qr');
   };
 
   const handleEditQrCode = (qrCode: CommonQrCode) => {
@@ -715,7 +840,7 @@ const Settings = () => {
       name: qrCode.name,
       qrCodeUrl: qrCode.qrCodeUrl
     });
-    setEditQrCodeDialogOpen(true);
+    openSettingsPanel('edit-payment-qr', { id: qrCode.id });
   };
 
   const handleSaveQrCode = async () => {
@@ -785,9 +910,7 @@ const Settings = () => {
       console.log('Reloading QR codes...');
       await loadCommonQrCodes();
       
-      // Close dialogs and reset form
-      setAddQrCodeDialogOpen(false);
-      setEditQrCodeDialogOpen(false);
+      closeSettingsPanel();
       setSelectedQrCode(null);
       setQrCodeFormData({ name: '', qrCodeUrl: '' });
     } catch (error) {
@@ -899,13 +1022,13 @@ const Settings = () => {
 
   const handleAddTechnicianCommonQr = () => {
     setTechnicianCommonQrFormData({ name: '', qrCodeUrl: '' });
-    setAddTechnicianCommonQrDialogOpen(true);
+    openSettingsPanel('add-tech-qr');
   };
 
   const handleEditTechnicianCommonQr = (qrCode: CommonQrCode) => {
     setSelectedTechnicianCommonQr(qrCode);
     setTechnicianCommonQrFormData({ name: qrCode.name, qrCodeUrl: qrCode.qrCodeUrl });
-    setEditTechnicianCommonQrDialogOpen(true);
+    openSettingsPanel('edit-tech-qr', { id: qrCode.id });
   };
 
   const handleSaveTechnicianCommonQr = async () => {
@@ -934,8 +1057,7 @@ const Settings = () => {
         toast.success('Common QR created successfully');
       }
       await loadTechnicianCommonQrCodes();
-      setAddTechnicianCommonQrDialogOpen(false);
-      setEditTechnicianCommonQrDialogOpen(false);
+      closeSettingsPanel();
       setSelectedTechnicianCommonQr(null);
       setTechnicianCommonQrFormData({ name: '', qrCodeUrl: '' });
     } catch (error) {
@@ -995,7 +1117,7 @@ const Settings = () => {
 
   const handleAddProductQrCode = () => {
     setProductQrCodeFormData({ name: '', qrCodeUrl: '', productImageUrl: '', productName: '', productDescription: '', productMrp: '' });
-    setAddProductQrCodeDialogOpen(true);
+    openSettingsPanel('add-product-qr');
   };
 
   const handleEditProductQrCode = (qrCode: any) => {
@@ -1008,7 +1130,7 @@ const Settings = () => {
       productDescription: qrCode.productDescription || '',
       productMrp: qrCode.productMrp || ''
     });
-    setEditProductQrCodeDialogOpen(true);
+    openSettingsPanel('edit-product-qr', { id: qrCode.id });
   };
 
   const handleSaveProductQrCode = async () => {
@@ -1102,9 +1224,7 @@ const Settings = () => {
       console.log('Reloading product QR codes...');
       await loadProductQrCodes();
       
-      // Close dialogs and reset form
-      setAddProductQrCodeDialogOpen(false);
-      setEditProductQrCodeDialogOpen(false);
+      closeSettingsPanel();
       setSelectedProductQrCode(null);
       setProductQrCodeFormData({ name: '', qrCodeUrl: '', productImageUrl: '', productName: '', productDescription: '', productMrp: '' });
     } catch (error) {
@@ -1159,7 +1279,7 @@ const Settings = () => {
 
   const handleAddTodo = () => {
     setNewTodoText('');
-    setAddTodoDialogOpen(true);
+    openSettingsPanel('add-todo');
   };
 
   const handleSaveTodo = async () => {
@@ -1174,7 +1294,7 @@ const Settings = () => {
       
       toast.success('Task added successfully');
       await loadTodos();
-      setAddTodoDialogOpen(false);
+      closeSettingsPanel();
       setNewTodoText('');
     } catch (error: any) {
       console.error('Error saving todo:', error);
@@ -1246,7 +1366,7 @@ const Settings = () => {
   const handleAddTracker = () => {
     setNewTrackerName('');
     setNewTrackerAmount('');
-    setAddTrackerDialogOpen(true);
+    openSettingsPanel('add-tracker');
   };
 
   const handleSaveTracker = async () => {
@@ -1268,7 +1388,7 @@ const Settings = () => {
 
       toast.success('Tracker created');
       await loadAmountTrackers();
-      setAddTrackerDialogOpen(false);
+      closeSettingsPanel();
       setNewTrackerName('');
       setNewTrackerAmount('');
     } catch (error: any) {
@@ -1531,7 +1651,7 @@ const Settings = () => {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => navigate('/settings', { replace: true })}
+                onClick={closeSettingsPanel}
                 className="text-muted-foreground hover:text-foreground -ml-2"
               >
                 <ArrowLeft className="w-4 h-4 mr-1" />
@@ -1543,7 +1663,7 @@ const Settings = () => {
         <div className="container mx-auto px-4 py-4 sm:py-8">
           <CallingPage
             hideHeader={true}
-            onBack={() => navigate('/settings', { replace: true })}
+            onBack={closeSettingsPanel}
           />
         </div>
       </div>
@@ -1898,7 +2018,7 @@ const Settings = () => {
               <Button
                 type="button"
                 className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9 sm:shadow-sm"
-                onClick={() => setAdvancedSearchDialogOpen(true)}
+                onClick={() => openSettingsPanel('advanced-search')}
               >
                 <Users className="w-4 h-4 shrink-0" />
                 Open advanced search
@@ -1907,7 +2027,7 @@ const Settings = () => {
           />
           <AdvancedCustomerSearchDialog
             open={advancedSearchDialogOpen}
-            onOpenChange={setAdvancedSearchDialogOpen}
+            onOpenChange={(open) => onSettingsPanelOpenChange('advanced-search', open)}
           />
 
           {/* Reminders: add general / customer, then load list dialog */}
@@ -1921,7 +2041,7 @@ const Settings = () => {
                 <Button
                   type="button"
                   className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9 sm:shadow-sm"
-                  onClick={() => setAddGeneralReminderOpen(true)}
+                  onClick={() => openSettingsPanel('add-general-reminder')}
                 >
                   <Bell className="w-4 h-4 shrink-0" />
                   Add general reminder
@@ -1930,7 +2050,7 @@ const Settings = () => {
                   type="button"
                   variant="secondary"
                   className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9"
-                  onClick={() => setAddCustomerReminderOpen(true)}
+                  onClick={() => openSettingsPanel('add-customer-reminder')}
                 >
                   <User className="w-4 h-4 shrink-0" />
                   Add customer reminder
@@ -1939,7 +2059,7 @@ const Settings = () => {
                   type="button"
                   variant="outline"
                   className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9"
-                  onClick={() => setRemindersDialogOpen(true)}
+                  onClick={() => openSettingsPanel('reminders')}
                 >
                   <ListTodo className="w-4 h-4 shrink-0" />
                   Load reminders
@@ -1949,20 +2069,20 @@ const Settings = () => {
           />
           <AddReminderDialog
             open={addGeneralReminderOpen}
-            onOpenChange={setAddGeneralReminderOpen}
+            onOpenChange={(open) => onSettingsPanelOpenChange('add-general-reminder', open)}
             entity={{ type: 'general', id: null }}
             dialogTitle="Add general reminder"
           />
           <AddReminderDialog
             open={addCustomerReminderOpen}
-            onOpenChange={setAddCustomerReminderOpen}
+            onOpenChange={(open) => onSettingsPanelOpenChange('add-customer-reminder', open)}
             entity={{ type: 'general', id: null }}
             requireCustomerPick
             dialogTitle="Add customer reminder"
           />
           <SettingsRemindersDialog
             open={remindersDialogOpen}
-            onOpenChange={setRemindersDialogOpen}
+            onOpenChange={(open) => onSettingsPanelOpenChange('reminders', open)}
           />
 
           {/* Recurring service tracking */}
@@ -1974,7 +2094,7 @@ const Settings = () => {
               <Button
                 type="button"
                 className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9 sm:shadow-sm"
-                onClick={() => setRecurringServiceOpen(true)}
+                onClick={() => openSettingsPanel('recurring-service')}
               >
                 <Repeat className="w-4 h-4 shrink-0" />
                 Open reminder tracker
@@ -1983,7 +2103,7 @@ const Settings = () => {
           />
           <RecurringServiceTracker
             open={recurringServiceOpen}
-            onOpenChange={setRecurringServiceOpen}
+            onOpenChange={(open) => onSettingsPanelOpenChange('recurring-service', open)}
           />
 
           {/* Pending payments */}
@@ -2002,10 +2122,7 @@ const Settings = () => {
                 <Button
                   variant="outline"
                   className="w-full"
-                  onClick={() => {
-                    setPendingPaymentsInitialAction('list');
-                    setPendingPaymentsDialogOpen(true);
-                  }}
+                  onClick={() => openSettingsPanel('pending-payments')}
                 >
                   <DollarSign className="w-4 h-4 mr-2" />
                   Open Pending Payments
@@ -2013,10 +2130,7 @@ const Settings = () => {
                 <Button
                   variant="default"
                   className=" w-full"
-                  onClick={() => {
-                    setPendingPaymentsInitialAction('add');
-                    setPendingPaymentsDialogOpen(true);
-                  }}
+                  onClick={() => openSettingsPanel('pending-payments', { action: 'add' })}
                 >
                   <Plus className="w-4 h-4 mr-2" />
                   Add Pending Payment
@@ -2026,7 +2140,7 @@ const Settings = () => {
           </Card>
           <SettingsPendingPaymentsDialogV2
             open={pendingPaymentsDialogOpen}
-            onOpenChange={setPendingPaymentsDialogOpen}
+            onOpenChange={(open) => onSettingsPanelOpenChange('pending-payments', open)}
             initialAction={pendingPaymentsInitialAction}
           />
 
@@ -2139,7 +2253,7 @@ const Settings = () => {
                 type="button"
                 variant="outline"
                 className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9"
-                onClick={() => navigate(settingsPath('calling', 'open'))}
+                onClick={() => openSettingsPanel('calling')}
               >
                 <PhoneCall className="w-4 h-4 shrink-0" />
                 Open Calling Page
@@ -2161,7 +2275,7 @@ const Settings = () => {
                   </CardDescription>
                 </div>
                 <Button
-                  onClick={() => setMergeCustomersOpen(true)}
+                  onClick={() => openSettingsPanel('merge-customers')}
                   disabled={isManager}
                   title={isManager ? managerRestrictedTitle : undefined}
                   variant="outline"
@@ -2200,7 +2314,7 @@ const Settings = () => {
                   </CardDescription>
                 </div>
                 <Button
-                  onClick={() => setWarrantyDialogOpen(true)}
+                  onClick={() => openSettingsPanel('warranty')}
                   variant="outline"
                   className="w-full sm:w-auto"
                   size="sm"
@@ -2232,7 +2346,7 @@ const Settings = () => {
                   </CardDescription>
                 </div>
                 <Button
-                  onClick={() => setDirectSaleOpen(true)}
+                  onClick={() => openSettingsPanel('direct-sale')}
                   disabled={isManager}
                   title={isManager ? managerRestrictedTitle : undefined}
                   className="bg-green-600 hover:bg-green-700 w-full sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
@@ -2741,21 +2855,30 @@ const Settings = () => {
 
       <MergeCustomersDialog
         open={mergeCustomersOpen}
-        onOpenChange={setMergeCustomersOpen}
+        onOpenChange={(open) => onSettingsPanelOpenChange('merge-customers', open)}
         disabled={isManager}
         disabledTitle={managerRestrictedTitle}
       />
 
-      <WarrantyManagementDialog open={warrantyDialogOpen} onOpenChange={setWarrantyDialogOpen} />
+      <WarrantyManagementDialog
+        open={warrantyDialogOpen}
+        onOpenChange={(open) => onSettingsPanelOpenChange('warranty', open)}
+      />
 
-      <DirectSaleDialog open={directSaleOpen} onOpenChange={setDirectSaleOpen} />
+      <DirectSaleDialog
+        open={directSaleOpen}
+        onOpenChange={(open) => onSettingsPanelOpenChange('direct-sale', open)}
+      />
 
       {/* Add/Edit Technician Dialog */}
       <Dialog open={addTechnicianDialogOpen || editTechnicianDialogOpen} onOpenChange={(open) => {
         if (!open) {
-          setAddTechnicianDialogOpen(false);
-          setEditTechnicianDialogOpen(false);
+          const panel = parseSettingsUrl(location.search).panel;
+          if (panel === 'add-technician' || panel === 'edit-technician') {
+            onSettingsPanelOpenChange(panel, false);
+          }
           setSelectedTechnician(null);
+          setNewlyCreatedTechnicianId(null);
         }
       }}>
         <DialogContent
@@ -3159,9 +3282,9 @@ const Settings = () => {
             <Button
               variant="outline"
               onClick={() => {
-                setAddTechnicianDialogOpen(false);
-                setEditTechnicianDialogOpen(false);
+                closeSettingsPanel();
                 setSelectedTechnician(null);
+                setNewlyCreatedTechnicianId(null);
               }}
               className="w-full sm:w-auto"
             >
@@ -3191,8 +3314,7 @@ const Settings = () => {
               <Button
                 variant="outline"
                 onClick={() => {
-                  setAddTechnicianDialogOpen(false);
-                  setEditTechnicianDialogOpen(false);
+                  closeSettingsPanel();
                   setSelectedTechnician(null);
                   setNewlyCreatedTechnicianId(null);
                 }}
@@ -3208,8 +3330,10 @@ const Settings = () => {
       {/* Add/Edit Common QR Code Dialog */}
       <Dialog open={addQrCodeDialogOpen || editQrCodeDialogOpen} onOpenChange={(open) => {
         if (!open) {
-          setAddQrCodeDialogOpen(false);
-          setEditQrCodeDialogOpen(false);
+          const panel = parseSettingsUrl(location.search).panel;
+          if (panel === 'add-payment-qr' || panel === 'edit-payment-qr') {
+            onSettingsPanelOpenChange(panel, false);
+          }
           setSelectedQrCode(null);
           setQrCodeFormData({ name: '', qrCodeUrl: '' });
           setQrCodeUploading(false);
@@ -3287,8 +3411,7 @@ const Settings = () => {
             <Button
               variant="outline"
               onClick={() => {
-                setAddQrCodeDialogOpen(false);
-                setEditQrCodeDialogOpen(false);
+                closeSettingsPanel();
                 setSelectedQrCode(null);
                 setQrCodeFormData({ name: '', qrCodeUrl: '' });
               }}
@@ -3320,8 +3443,10 @@ const Settings = () => {
       {/* Add/Edit Common QR (non-payment) Dialog */}
       <Dialog open={addTechnicianCommonQrDialogOpen || editTechnicianCommonQrDialogOpen} onOpenChange={(open) => {
         if (!open) {
-          setAddTechnicianCommonQrDialogOpen(false);
-          setEditTechnicianCommonQrDialogOpen(false);
+          const panel = parseSettingsUrl(location.search).panel;
+          if (panel === 'add-tech-qr' || panel === 'edit-tech-qr') {
+            onSettingsPanelOpenChange(panel, false);
+          }
           setSelectedTechnicianCommonQr(null);
           setTechnicianCommonQrFormData({ name: '', qrCodeUrl: '' });
           setTechnicianCommonQrUploading(false);
@@ -3383,8 +3508,7 @@ const Settings = () => {
             <Button
               variant="outline"
               onClick={() => {
-                setAddTechnicianCommonQrDialogOpen(false);
-                setEditTechnicianCommonQrDialogOpen(false);
+                closeSettingsPanel();
                 setSelectedTechnicianCommonQr(null);
                 setTechnicianCommonQrFormData({ name: '', qrCodeUrl: '' });
               }}
@@ -3408,10 +3532,12 @@ const Settings = () => {
       </Dialog>
 
       {/* Add/Edit Product QR Code Dialog */}
-      <Dialog open={addProductQrCodeDialogOpen || editProductQrCodeDialogOpen}           onOpenChange={(open) => {
+      <Dialog open={addProductQrCodeDialogOpen || editProductQrCodeDialogOpen} onOpenChange={(open) => {
         if (!open) {
-          setAddProductQrCodeDialogOpen(false);
-          setEditProductQrCodeDialogOpen(false);
+          const panel = parseSettingsUrl(location.search).panel;
+          if (panel === 'add-product-qr' || panel === 'edit-product-qr') {
+            onSettingsPanelOpenChange(panel, false);
+          }
           setSelectedProductQrCode(null);
           setProductQrCodeFormData({ name: '', qrCodeUrl: '', productImageUrl: '', productName: '', productDescription: '', productMrp: '' });
         }
@@ -3537,8 +3663,7 @@ const Settings = () => {
             <Button
               variant="outline"
               onClick={() => {
-                setAddProductQrCodeDialogOpen(false);
-                setEditProductQrCodeDialogOpen(false);
+                closeSettingsPanel();
                 setSelectedProductQrCode(null);
                 setProductQrCodeFormData({ name: '', qrCodeUrl: '', productImageUrl: '', productName: '', productDescription: '', productMrp: '' });
               }}
@@ -3560,7 +3685,7 @@ const Settings = () => {
       {/* Add Todo Dialog */}
       <Dialog open={addTodoDialogOpen} onOpenChange={(open) => {
         if (!open) {
-          setAddTodoDialogOpen(false);
+          onSettingsPanelOpenChange('add-todo', false);
           setNewTodoText('');
         }
       }}>
@@ -3593,7 +3718,7 @@ const Settings = () => {
             <Button
               variant="outline"
               onClick={() => {
-                setAddTodoDialogOpen(false);
+                closeSettingsPanel();
                 setNewTodoText('');
               }}
               className="w-full sm:w-auto"
@@ -3652,7 +3777,7 @@ const Settings = () => {
         open={addTrackerDialogOpen}
         onOpenChange={(open) => {
           if (!open) {
-            setAddTrackerDialogOpen(false);
+            onSettingsPanelOpenChange('add-tracker', false);
             setNewTrackerName('');
             setNewTrackerAmount('');
           }
@@ -3698,7 +3823,7 @@ const Settings = () => {
             <Button
               variant="outline"
               onClick={() => {
-                setAddTrackerDialogOpen(false);
+                closeSettingsPanel();
                 setNewTrackerName('');
                 setNewTrackerAmount('');
               }}
