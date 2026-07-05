@@ -11516,6 +11516,8 @@ const AdminDashboard = () => {
                         const paymentPhotosReq = requirements.find((r: any) => r?.payment_photos);
                         const paymentPhotosFromReq = paymentPhotosReq?.payment_photos || [];
                         
+                        const parsedAdminUrl = parseAdminDashboardUrl(location.search);
+
                         return (
                           <div
                             key={job.id}
@@ -11565,6 +11567,26 @@ const AdminDashboard = () => {
                                   photoIdx: startIdx,
                                 });
                               }}
+                              onOpenJobParts={() =>
+                                openAdminModal('job-parts', { jobId: fullJob.id })
+                              }
+                              onJobPartsOpenChange={(open) =>
+                                onAdminModalOpenChange('job-parts', open)
+                              }
+                              jobPartsDialogOpen={
+                                parsedAdminUrl.modal === 'job-parts' &&
+                                parsedAdminUrl.jobId === fullJob.id
+                              }
+                              onOpenOfficeParts={() =>
+                                openAdminModal('office-parts', { jobId: fullJob.id })
+                              }
+                              onOfficePartsOpenChange={(open) =>
+                                onAdminModalOpenChange('office-parts', open)
+                              }
+                              officePartsDialogOpen={
+                                parsedAdminUrl.modal === 'office-parts' &&
+                                parsedAdminUrl.jobId === fullJob.id
+                              }
                               minimalMode={minimalCompletedMode}
                               detailsLoaded={detailsLoaded}
                               loadingDetails={isLoadingDetails}

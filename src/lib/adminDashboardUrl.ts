@@ -20,6 +20,8 @@ export const ADMIN_MODAL_SLUGS = [
   'deny',
   'move-ongoing',
   'send-message',
+  'job-parts',
+  'office-parts',
   'warranty',
   'ongoing-filters',
   'completed-filters',

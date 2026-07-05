@@ -79,6 +79,12 @@ interface CompletedJobSectionProps {
   setSelectedPhoto: (photo: { url: string; index: number; total: number }) => void;
   setPhotoViewerOpen?: (open: boolean) => void;
   onOpenPaymentBillPhotos?: (photos: string[], startIndex?: number) => void;
+  onOpenJobParts?: () => void;
+  onJobPartsOpenChange?: (open: boolean) => void;
+  jobPartsDialogOpen?: boolean;
+  onOpenOfficeParts?: () => void;
+  onOfficePartsOpenChange?: (open: boolean) => void;
+  officePartsDialogOpen?: boolean;
   minimalMode?: boolean;
   detailsLoaded?: boolean;
   loadingDetails?: boolean;
@@ -112,13 +118,25 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
   setSelectedPhoto,
   setPhotoViewerOpen,
   onOpenPaymentBillPhotos,
+  onOpenJobParts,
+  onJobPartsOpenChange,
+  jobPartsDialogOpen: jobPartsDialogOpenProp,
+  onOpenOfficeParts,
+  onOfficePartsOpenChange,
+  officePartsDialogOpen: officePartsDialogOpenProp,
   minimalMode,
   detailsLoaded,
   loadingDetails,
   onLoadDetails,
 }) => {
-  const [partsUsedDialogOpen, setPartsUsedDialogOpen] = useState(false);
-  const [officePartsDialogOpen, setOfficePartsDialogOpen] = useState(false);
+  const [partsUsedDialogLocal, setPartsUsedDialogLocal] = useState(false);
+  const [officePartsDialogLocal, setOfficePartsDialogLocal] = useState(false);
+  const partsUsedDialogOpen = onJobPartsOpenChange
+    ? (jobPartsDialogOpenProp ?? false)
+    : partsUsedDialogLocal;
+  const officePartsDialogOpen = onOfficePartsOpenChange
+    ? (officePartsDialogOpenProp ?? false)
+    : officePartsDialogLocal;
   const [officePartsOverride, setOfficePartsOverride] = useState<number | null>(null);
   const [sparePartsCost, setSparePartsCost] = useState<number>(0);
   const [sendMessageConfirmOpen, setSendMessageConfirmOpen] = useState(false);
@@ -691,7 +709,8 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
               variant="outline"
               onClick={() => {
                 if (!hasPartsCostTotal) fetchSparePartsCost();
-                setPartsUsedDialogOpen(true);
+                if (onOpenJobParts) onOpenJobParts();
+                else setPartsUsedDialogLocal(true);
               }}
               title="Add Parts"
               className="text-xs flex-1 min-w-0 justify-center py-2 px-2"
@@ -702,7 +721,10 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
             <Button
               size="sm"
               variant="outline"
-              onClick={() => setOfficePartsDialogOpen(true)}
+              onClick={() => {
+                if (onOpenOfficeParts) onOpenOfficeParts();
+                else setOfficePartsDialogLocal(true);
+              }}
               title="Spare Parts"
               className="text-xs flex-1 min-w-0 justify-center py-2 px-2"
             >
@@ -837,8 +859,11 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
         <JobPartsUsedDialog
           open={partsUsedDialogOpen}
           onOpenChange={(open) => {
-            setPartsUsedDialogOpen(open);
-            if (!open) fetchSparePartsCost();
+            if (!open) {
+              if (onJobPartsOpenChange) onJobPartsOpenChange(false);
+              else setPartsUsedDialogLocal(false);
+              fetchSparePartsCost();
+            }
           }}
           job={job}
           technician={assignedTechnician}
@@ -849,7 +874,12 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
       {!assignedTechnician && (
         <OfficeJobPartsDialog
           open={officePartsDialogOpen}
-          onOpenChange={setOfficePartsDialogOpen}
+          onOpenChange={(open) => {
+            if (!open) {
+              if (onOfficePartsOpenChange) onOfficePartsOpenChange(false);
+              else setOfficePartsDialogLocal(false);
+            }
+          }}
           job={job}
           onPartsChanged={(total) => setOfficePartsOverride(total)}
         />
