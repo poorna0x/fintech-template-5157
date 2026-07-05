@@ -82,6 +82,8 @@ export type ParsedAdminDashboardUrl = {
   view: string | null;
   tool: string | null;
   type: string | null;
+  search: string | null;
+  searchAction: 'photos' | null;
   modal: AdminModalSlug | null;
   jobId: string | null;
   customerId: string | null;
@@ -99,11 +101,14 @@ export function parseAdminDashboardUrl(search: string): ParsedAdminDashboardUrl 
     const n = parseInt(photoIdxRaw, 10);
     photoIdx = Number.isFinite(n) ? n : null;
   }
+  const actionRaw = sp.get('action');
   return {
     tab: isAdminJobTabSlug(sp.get('tab')) ? (sp.get('tab') as AdminJobTabSlug) : null,
     view: sp.get('view'),
     tool: sp.get('tool'),
     type: sp.get('type'),
+    search: sp.get('search'),
+    searchAction: actionRaw === 'photos' ? 'photos' : null,
     modal: isAdminModalSlug(modalRaw) ? modalRaw : null,
     jobId: sp.get('job'),
     customerId: sp.get('customer'),
@@ -117,6 +122,8 @@ export type AdminDashboardSearchPatch = {
   view?: string | null;
   tool?: string | null;
   type?: string | null;
+  search?: string | null;
+  searchAction?: 'photos' | null;
   modal?: AdminModalSlug | null;
   jobId?: string | null;
   customerId?: string | null;
@@ -125,6 +132,7 @@ export type AdminDashboardSearchPatch = {
   clearModal?: boolean;
   clearView?: boolean;
   clearTool?: boolean;
+  clearSearch?: boolean;
 };
 
 export function buildAdminDashboardSearch(
@@ -139,6 +147,10 @@ export function buildAdminDashboardSearch(
   }
   if (patch.clearTool) {
     sp.delete('tool');
+  }
+  if (patch.clearSearch) {
+    sp.delete('search');
+    sp.delete('action');
   }
   if (patch.clearModal) {
     for (const key of MODAL_PARAM_KEYS) {
@@ -164,6 +176,14 @@ export function buildAdminDashboardSearch(
   if (patch.view !== undefined) setOrDelete('view', patch.view);
   if (patch.tool !== undefined) setOrDelete('tool', patch.tool);
   if (patch.type !== undefined) setOrDelete('type', patch.type);
+  if (patch.search !== undefined) setOrDelete('search', patch.search);
+  if (patch.searchAction !== undefined) {
+    if (patch.searchAction === null) {
+      sp.delete('action');
+    } else {
+      sp.set('action', patch.searchAction);
+    }
+  }
   if (patch.modal !== undefined) setOrDelete('modal', patch.modal);
   if (patch.jobId !== undefined) setOrDelete('job', patch.jobId);
   if (patch.customerId !== undefined) setOrDelete('customer', patch.customerId);

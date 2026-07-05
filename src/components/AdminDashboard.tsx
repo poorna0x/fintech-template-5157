@@ -511,7 +511,7 @@ const AdminDashboard = () => {
     } else {
       navigate(
         adminDashboardLocation(
-          buildAdminDashboardSearch({ view, clearModal: true }, location.search)
+          buildAdminDashboardSearch({ view, clearModal: true, clearSearch: true }, location.search)
         )
       );
     }
@@ -573,6 +573,7 @@ const AdminDashboard = () => {
                 clearModal: true,
                 clearView: true,
                 clearTool: true,
+                clearSearch: true,
                 tab: null,
               },
               location.search
@@ -2187,15 +2188,15 @@ const AdminDashboard = () => {
     if (!location.pathname.startsWith('/admin')) return;
 
     const searchParams = new URLSearchParams(location.search);
-    const searchPrefill = searchParams.get('search');
 
-    // Full-page views (?view=…) are handled by the URL sync effect above.
+    // Full-page views (?view=…) and ?search= are handled by dedicated URL sync effects.
     const viewParam = searchParams.get('view');
     if (
       isAdminOverlayViewParam(viewParam) ||
       isAdminTabViewParam(viewParam) ||
       isAdminToolParam(searchParams.get('tool')) ||
-      isAdminModalSlug(searchParams.get('modal'))
+      isAdminModalSlug(searchParams.get('modal')) ||
+      searchParams.get('search')
     ) {
       return;
     }
@@ -2252,38 +2253,6 @@ const AdminDashboard = () => {
       }
       setWhatsappComposerOpen(true);
       navigate('/admin', { replace: true });
-    } else if (searchPrefill && searchPrefill.trim()) {
-      // Pre-fill the admin search box and trigger a search so deep-links from
-      // Settings → Advanced search → "Open in Admin" / "Photos" land directly on the result.
-      const trimmed = searchPrefill.trim();
-      const action = searchParams.get('action');
-      setSearchQuery(trimmed);
-      setSearchTerm(trimmed);
-      navigate('/admin', { replace: true });
-      void (async () => {
-        try {
-          const { data, error } = await db.customers.searchSlim(trimmed, 50, {
-            includeAddressAndLocation: true,
-          });
-          if (!error) {
-            const transformed = (data || []).map((row: any) => transformCustomerData(row));
-            setSearchResults(transformed);
-            if (action === 'photos' && transformed.length > 0) {
-              const match =
-                transformed.find(
-                  (c: any) =>
-                    String(c.phone || '').replace(/\D/g, '') ===
-                    trimmed.replace(/\D/g, '')
-                ) || transformed[0];
-              if (match) {
-                handleViewPhotos(match);
-              }
-            }
-          }
-        } catch {
-          /* swallow — user can hit Search button manually */
-        }
-      })();
     }
   }, [location.pathname, location.search, navigate]);
 
@@ -6099,12 +6068,36 @@ const AdminDashboard = () => {
     }
   };
 
-  const runCustomerSearch = useCallback(async (rawQuery: string) => {
+  const adminSearchSyncedRef = useRef<string | null>(null);
+
+  const runCustomerSearch = useCallback(async (rawQuery: string, opts?: { skipNavigate?: boolean }): Promise<Customer[]> => {
     const trimmedQuery = rawQuery.trim();
     hapticTap();
     setIsSearching(true);
     setSearchTerm(trimmedQuery);
     setSearchQuery(trimmedQuery);
+
+    if (!opts?.skipNavigate) {
+      const currentSearch = new URLSearchParams(location.search).get('search');
+      if (trimmedQuery) {
+        adminSearchSyncedRef.current = trimmedQuery;
+        navigate(
+          adminDashboardLocation(
+            buildAdminDashboardSearch({ search: trimmedQuery }, location.search)
+          ),
+          { replace: currentSearch === trimmedQuery }
+        );
+      } else {
+        adminSearchSyncedRef.current = null;
+        navigate(
+          adminDashboardLocation(
+            buildAdminDashboardSearch({ clearSearch: true }, location.search)
+          ),
+          { replace: true }
+        );
+      }
+    }
+
     if (trimmedQuery) {
       const runJobSearch = shouldRunAdminJobNumberSearch(trimmedQuery);
       const [{ data, error }, jobSearchResult] = await Promise.all([
@@ -6119,6 +6112,8 @@ const AdminDashboard = () => {
       if (error || jobSearchError) {
         toast.error('Search failed');
         setSearchResults([]);
+        setIsSearching(false);
+        return [];
       } else {
         const customerMap = new Map<string, Record<string, unknown>>();
         for (const row of data || []) {
@@ -6151,9 +6146,8 @@ const AdminDashboard = () => {
           );
         }
 
-        setSearchResults(
-          Array.from(customerMap.values()).map((row) => transformCustomerData(row))
-        );
+        const results = Array.from(customerMap.values()).map((row) => transformCustomerData(row));
+        setSearchResults(results);
 
         if (jobHits?.length) {
           setJobs((prev) => {
@@ -6165,12 +6159,15 @@ const AdminDashboard = () => {
             return Array.from(byId.values());
           });
         }
+        setIsSearching(false);
+        return results;
       }
     } else {
       setSearchResults(null);
     }
     setIsSearching(false);
-  }, []);
+    return [];
+  }, [location.search, navigate]);
 
   const handleSearch = useCallback(async () => {
     await runCustomerSearch(searchQuery);
@@ -6187,10 +6184,72 @@ const AdminDashboard = () => {
 
   const handleClearSearch = () => {
     hapticTap();
+    adminSearchSyncedRef.current = null;
+    if (new URLSearchParams(location.search).get('search')) {
+      navigate(
+        adminDashboardLocation(
+          buildAdminDashboardSearch({ clearSearch: true }, location.search)
+        ),
+        { replace: true }
+      );
+      return;
+    }
     setSearchQuery('');
     setSearchTerm('');
     setSearchResults(null);
   };
+
+  // Customer search (?search=) — swipe-back clears results instead of exiting the PWA.
+  useEffect(() => {
+    if (!location.pathname.startsWith('/admin')) return;
+
+    const parsed = parseAdminDashboardUrl(location.search);
+    const viewParam = parsed.view;
+
+    if (
+      isAdminOverlayViewParam(viewParam) ||
+      isAdminTabViewParam(viewParam) ||
+      isAdminToolParam(parsed.tool) ||
+      parsed.modal
+    ) {
+      return;
+    }
+
+    const searchParam = parsed.search?.trim() ?? '';
+
+    if (searchParam) {
+      if (adminSearchSyncedRef.current === searchParam) {
+        return;
+      }
+      adminSearchSyncedRef.current = searchParam;
+      void (async () => {
+        const results = await runCustomerSearch(searchParam, { skipNavigate: true });
+        if (parsed.searchAction === 'photos' && results.length > 0) {
+          const match =
+            results.find(
+              (c) =>
+                String(c.phone || '').replace(/\D/g, '') === searchParam.replace(/\D/g, '')
+            ) ?? results[0];
+          setSelectedCustomerForPhotos(match);
+          openAdminModal('customer-photos', { customerId: match.id });
+          navigate(
+            adminDashboardLocation(
+              buildAdminDashboardSearch({ searchAction: null }, location.search)
+            ),
+            { replace: true }
+          );
+        }
+      })();
+      return;
+    }
+
+    adminSearchSyncedRef.current = null;
+    if (searchTerm.trim()) {
+      setSearchQuery('');
+      setSearchTerm('');
+      setSearchResults(null);
+    }
+  }, [location.pathname, location.search, navigate, openAdminModal, runCustomerSearch, searchTerm]);
 
   const handleSearchKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
