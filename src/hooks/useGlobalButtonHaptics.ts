@@ -1,8 +1,11 @@
 import { useEffect } from 'react';
-import { canHaptic, hapticTap, isIOS } from '@/lib/haptics';
-
-const INTERACTIVE_SELECTOR =
-  'button:not([data-haptic-skip]),[role="button"]:not([data-haptic-skip]),a[role="button"]:not([data-haptic-skip])';
+import {
+  attachIOSHapticOverlay,
+  canHaptic,
+  hapticTap,
+  IOS_INTERACTIVE_SELECTOR,
+  isIOS,
+} from '@/lib/haptics';
 
 function isDisabled(el: HTMLElement): boolean {
   return (
@@ -12,24 +15,57 @@ function isDisabled(el: HTMLElement): boolean {
   );
 }
 
+function shouldHapticForTarget(target: EventTarget | null): HTMLElement | null {
+  const node = target as HTMLElement | null;
+  if (!node) return null;
+  if (node.closest('[data-haptic-skip]')) return null;
+  const el = node.closest(IOS_INTERACTIVE_SELECTOR) as HTMLElement | null;
+  if (!el || isDisabled(el)) return null;
+  return el;
+}
+
+function scanIOSInteractiveElements(root: ParentNode = document.body): void {
+  root.querySelectorAll(IOS_INTERACTIVE_SELECTOR).forEach((node) => {
+    attachIOSHapticOverlay(node as HTMLElement);
+  });
+}
+
 /**
  * Android / desktop: one short vibration per button click.
- * iOS: relies on invisible native switch overlays rendered inside <Button>.
+ * iOS: invisible native switch overlays on all interactive targets (buttons, role=button, etc.).
  */
 export function useGlobalButtonHaptics(enabled = true): void {
   useEffect(() => {
-    if (!enabled || !canHaptic() || isIOS()) return;
+    if (!enabled || !canHaptic()) return;
 
-    const shouldHapticForTarget = (target: EventTarget | null): HTMLElement | null => {
-      const node = target as HTMLElement | null;
-      if (!node) return null;
-      if (node.closest('[data-haptic-skip]')) return null;
-      const el = node.closest(INTERACTIVE_SELECTOR) as HTMLElement | null;
-      if (!el || isDisabled(el)) return null;
-      return el;
-    };
+    if (isIOS()) {
+      scanIOSInteractiveElements();
 
-    // Single click (capture) — avoids double fire from touchstart + onClick handler.
+      let debounceId: ReturnType<typeof setTimeout> | undefined;
+      const observer = new MutationObserver((mutations) => {
+        if (debounceId) clearTimeout(debounceId);
+        debounceId = setTimeout(() => {
+          for (const mutation of mutations) {
+            mutation.addedNodes.forEach((node) => {
+              if (node instanceof HTMLElement) {
+                if (node.matches(IOS_INTERACTIVE_SELECTOR)) {
+                  attachIOSHapticOverlay(node);
+                }
+                scanIOSInteractiveElements(node);
+              }
+            });
+          }
+        }, 50);
+      });
+
+      observer.observe(document.body, { childList: true, subtree: true });
+
+      return () => {
+        if (debounceId) clearTimeout(debounceId);
+        observer.disconnect();
+      };
+    }
+
     const onClick = (e: MouseEvent) => {
       if (e.button !== 0) return;
       if (!shouldHapticForTarget(e.target)) return;

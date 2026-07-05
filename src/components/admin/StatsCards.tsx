@@ -87,7 +87,15 @@ export const StatsCards: React.FC<StatsCardsProps> = ({
             ? 'bg-blue-50 border-blue-500 shadow-md' 
             : 'bg-white border-gray-200 hover:border-gray-300'
         }`}
+        role="button"
+        tabIndex={0}
         onClick={() => onFilterChange('ONGOING')}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onFilterChange('ONGOING');
+          }
+        }}
       >
         <div className="flex items-center justify-between mb-2">
           <Wrench className={`h-5 w-5 sm:h-4 sm:w-4 ${statusFilter === 'ONGOING' ? 'text-blue-600' : 'text-blue-600'}`} />
@@ -109,7 +117,15 @@ export const StatsCards: React.FC<StatsCardsProps> = ({
             ? 'bg-indigo-50 border-indigo-500 shadow-md' 
             : 'bg-white border-gray-200 hover:border-gray-300'
         }`}
+        role="button"
+        tabIndex={0}
         onClick={() => onFilterChange('RESCHEDULED')}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onFilterChange('RESCHEDULED');
+          }
+        }}
       >
         <div className="flex items-center justify-between mb-2">
           <CalendarPlus className={`h-5 w-5 sm:h-4 sm:w-4 ${statusFilter === 'RESCHEDULED' ? 'text-indigo-600' : 'text-indigo-600'}`} />
@@ -131,7 +147,15 @@ export const StatsCards: React.FC<StatsCardsProps> = ({
             ? 'bg-red-50 border-red-500 shadow-md' 
             : 'bg-white border-gray-200 hover:border-gray-300'
         }`}
+        role="button"
+        tabIndex={0}
         onClick={() => onFilterChange('CANCELLED')}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onFilterChange('CANCELLED');
+          }
+        }}
       >
         <div className="flex items-center justify-between mb-2">
           <XCircle className={`h-5 w-5 sm:h-4 sm:w-4 ${statusFilter === 'CANCELLED' ? 'text-red-600' : 'text-red-600'}`} />
@@ -153,7 +177,15 @@ export const StatsCards: React.FC<StatsCardsProps> = ({
             ? 'bg-green-50 border-green-500 shadow-md' 
             : 'bg-white border-gray-200 hover:border-gray-300'
         }`}
+        role="button"
+        tabIndex={0}
         onClick={() => onFilterChange('COMPLETED')}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onFilterChange('COMPLETED');
+          }
+        }}
       >
         <div className="flex items-center justify-between mb-2">
           <CheckCircle className={`h-5 w-5 sm:h-4 sm:w-4 ${statusFilter === 'COMPLETED' ? 'text-green-600' : 'text-green-600'}`} />

@@ -57,7 +57,6 @@ import { getAmcDocumentBrandLabel } from '@/lib/amc-brand';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { formatCompletedWhen } from '@/lib/relativeTime';
 import { getJobEquipmentDisplay, parseJobRequirements, isOfficeCompletedJob } from '@/lib/adminUtils';
-import { useGlobalButtonHaptics } from '@/hooks/useGlobalButtonHaptics';
 import { db, supabase, fetchCustomerIdsWithCompletedJobsMap } from '@/lib/supabase';
 import {
   ensureSupabaseSessionForWrite,
@@ -406,9 +405,6 @@ const TechnicianDashboard = () => {
     }
   }, []);
 
-  // Global haptics for button presses (Android: vibrate; iOS: invisible switch on <Button>).
-  useGlobalButtonHaptics(true);
-  
   const [jobs, setJobs] = useState<Job[]>([]);
   const [filteredJobs, setFilteredJobs] = useState<Job[]>([]);
   const [jobsLoading, setJobsLoading] = useState(false); // Start as false to prevent flash

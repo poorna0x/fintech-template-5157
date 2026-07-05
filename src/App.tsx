@@ -8,6 +8,7 @@ import { SecurityProvider } from "./contexts/SecurityContext";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { AuthPortalCoordinator } from "./components/AuthPortalCoordinator";
 import { Suspense, lazy, useEffect } from "react";
+import { useGlobalButtonHaptics } from "@/hooks/useGlobalButtonHaptics";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import PerformanceMonitor from "./components/PerformanceMonitor";
@@ -99,6 +100,11 @@ const PWARouteHandler = () => {
   return null;
 };
 
+const GlobalHaptics = () => {
+  useGlobalButtonHaptics(true);
+  return null;
+};
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider>
@@ -109,6 +115,7 @@ const App = () => (
             <Toaster />
             <Sonner />
             <BrowserRouter>
+              <GlobalHaptics />
               <AuthPortalCoordinator />
               <PublicSiteSeo />
               <PWARouteHandler />

@@ -115,3 +115,66 @@ export function hapticConfirm(): void {
   iosSwitchPulse();
   recordProgrammaticHaptic();
 }
+
+export const IOS_HAPTIC_ATTR = 'data-ios-haptic-attached';
+
+export const IOS_INTERACTIVE_SELECTOR =
+  'button:not([data-haptic-skip]),[role="button"]:not([data-haptic-skip]),[data-haptic-interactive]:not([data-haptic-skip]),a[role="button"]:not([data-haptic-skip])';
+
+function isHapticTargetDisabled(el: HTMLElement): boolean {
+  return (
+    (el as HTMLButtonElement).disabled === true ||
+    el.getAttribute('aria-disabled') === 'true' ||
+    el.getAttribute('data-disabled') === 'true'
+  );
+}
+
+export function hasIOSHapticOverlay(el: HTMLElement): boolean {
+  return (
+    el.getAttribute(IOS_HAPTIC_ATTR) === 'true' ||
+    Boolean(el.querySelector(':scope > input[type="checkbox"][switch]'))
+  );
+}
+
+/** Attach invisible iOS switch overlay so direct taps trigger Taptic Engine (Safari 17.4+). */
+export function attachIOSHapticOverlay(el: HTMLElement): boolean {
+  if (!isIOS() || typeof document === 'undefined') return false;
+  if (el.closest('[data-haptic-skip]')) return false;
+  if (hasIOSHapticOverlay(el)) return false;
+
+  const tag = el.tagName.toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return false;
+  if (tag === 'a' && el.hasAttribute('href')) return false;
+
+  el.setAttribute(IOS_HAPTIC_ATTR, 'true');
+
+  const computed = window.getComputedStyle(el);
+  if (computed.position === 'static') {
+    el.style.position = 'relative';
+  }
+
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.setAttribute('switch', '');
+  input.setAttribute('aria-hidden', 'true');
+  input.tabIndex = -1;
+  input.className = 'ios-haptic-overlay';
+  input.style.cssText =
+    'position:absolute;inset:0;z-index:1;margin:0;height:100%;width:100%;cursor:pointer;opacity:0;touch-action:manipulation;-webkit-tap-highlight-color:transparent;clip-path:inset(0 round 999px);';
+
+  input.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (isHapticTargetDisabled(el)) return;
+    el.click();
+  });
+
+  input.addEventListener('change', () => {
+    markNativeSwitchHaptic();
+    input.checked = false;
+    input.disabled = isHapticTargetDisabled(el);
+  });
+
+  input.disabled = isHapticTargetDisabled(el);
+  el.appendChild(input);
+  return true;
+}
