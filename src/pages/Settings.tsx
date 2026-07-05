@@ -66,7 +66,7 @@ import MergeCustomersDialog from '@/components/admin/MergeCustomersDialog';
 import WarrantyManagementDialog from '@/components/admin/WarrantyManagementDialog';
 import DirectSaleDialog from '@/components/admin/DirectSaleDialog';
 import { scrollToSettingsSection } from '@/lib/settingsSectionScroll';
-import { SETTINGS_SECTIONS } from '@/lib/settingsSections';
+import { SETTINGS_SECTIONS, settingsPath } from '@/lib/settingsSections';
 
 /** PostgREST error when a table was never created or was dropped (e.g. booking_abandonments). */
 const isMissingTableError = (error: { message?: string; code?: string } | null): boolean => {
@@ -132,6 +132,11 @@ const DATABASE_EXPORT_TABLES: {
   { name: 'warranty_items', orderBy: 'created_at', label: 'Warranty Items', optional: true },
   { name: 'website_booking_intent', orderBy: 'updated_at', label: 'Website Booking Intent' },
 ];
+
+function isCallingPageOpen(search: string): boolean {
+  const params = new URLSearchParams(search);
+  return params.get('section') === 'calling' && params.get('action') === 'open';
+}
 
 const Settings = () => {
   const { user, isAdmin, logout, authInitializing } = useAuth();
@@ -245,7 +250,7 @@ const Settings = () => {
   const [adjustingTrackerId, setAdjustingTrackerId] = useState<string | null>(null);
 
   // Calling view state
-  const [showCallingPage, setShowCallingPage] = useState(false);
+  const [showCallingPage, setShowCallingPage] = useState(() => isCallingPageOpen(location.search));
 
   const [remindersDialogOpen, setRemindersDialogOpen] = useState(false);
   const [recurringServiceOpen, setRecurringServiceOpen] = useState(false);
@@ -269,13 +274,15 @@ const Settings = () => {
 
   // Deep-link from admin Tools / notification bell: /settings?section=…
   useEffect(() => {
+    setShowCallingPage(isCallingPageOpen(location.search));
+  }, [location.search]);
+
+  useEffect(() => {
     const params = new URLSearchParams(location.search);
     const section = params.get('section');
     if (!section) return;
 
     if (section === 'calling' && params.get('action') === 'open') {
-      setShowCallingPage(true);
-      navigate('/settings', { replace: true });
       return;
     }
 
@@ -1524,17 +1531,20 @@ const Settings = () => {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => navigate('/admin')}
+                onClick={() => navigate('/settings', { replace: true })}
                 className="text-muted-foreground hover:text-foreground -ml-2"
               >
                 <ArrowLeft className="w-4 h-4 mr-1" />
-                Back to Home
+                Back
               </Button>
             </div>
           </div>
         </div>
         <div className="container mx-auto px-4 py-4 sm:py-8">
-          <CallingPage hideHeader={true} onBack={() => navigate('/admin')} />
+          <CallingPage
+            hideHeader={true}
+            onBack={() => navigate('/settings', { replace: true })}
+          />
         </div>
       </div>
     );
@@ -2129,7 +2139,7 @@ const Settings = () => {
                 type="button"
                 variant="outline"
                 className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9"
-                onClick={() => setShowCallingPage(true)}
+                onClick={() => navigate(settingsPath('calling', 'open'))}
               >
                 <PhoneCall className="w-4 h-4 shrink-0" />
                 Open Calling Page

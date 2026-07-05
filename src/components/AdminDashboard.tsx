@@ -270,6 +270,61 @@ function isAdminTabViewParam(view: string | null): view is AdminTabView {
   return Boolean(view && (ADMIN_TAB_VIEWS as readonly string[]).includes(view));
 }
 
+const ADMIN_OVERLAY_VIEWS = ['gst-invoices', 'amc-view', 'letterhead-documents'] as const;
+type AdminOverlayView = (typeof ADMIN_OVERLAY_VIEWS)[number];
+
+function isAdminOverlayViewParam(view: string | null): view is AdminOverlayView {
+  return Boolean(view && (ADMIN_OVERLAY_VIEWS as readonly string[]).includes(view));
+}
+
+const LETTERHEAD_DOCUMENT_TYPES: LetterheadDocumentType[] = [
+  'service_report',
+  'amc_report',
+  'custom_document',
+  'letterhead',
+];
+
+function readLetterheadTypeFromSearch(search: string): LetterheadDocumentType | undefined {
+  const typeParam = new URLSearchParams(search).get('type') as LetterheadDocumentType | null;
+  if (typeParam && LETTERHEAD_DOCUMENT_TYPES.includes(typeParam)) return typeParam;
+  return undefined;
+}
+
+function readAdminOverlayFromSearch(search: string): {
+  gst: boolean;
+  amc: boolean;
+  letterhead: boolean;
+  letterheadType?: LetterheadDocumentType;
+} {
+  const view = new URLSearchParams(search).get('view');
+  const letterhead = view === 'letterhead-documents';
+  return {
+    gst: view === 'gst-invoices',
+    amc: view === 'amc-view',
+    letterhead,
+    letterheadType: letterhead ? readLetterheadTypeFromSearch(search) : undefined,
+  };
+}
+
+const ADMIN_TOOL_DIALOGS = ['recent-accounts', 'direct-sale', 'amount-trackers', 'sent-email-log'] as const;
+type AdminToolDialog = (typeof ADMIN_TOOL_DIALOGS)[number];
+
+const MANAGER_BLOCKED_ADMIN_TOOLS = new Set<AdminToolDialog>(['direct-sale', 'amount-trackers']);
+
+function isAdminToolParam(tool: string | null): tool is AdminToolDialog {
+  return Boolean(tool && (ADMIN_TOOL_DIALOGS as readonly string[]).includes(tool));
+}
+
+function readAdminToolOpenStates(search: string) {
+  const tool = new URLSearchParams(search).get('tool');
+  return {
+    recentAccounts: tool === 'recent-accounts',
+    directSale: tool === 'direct-sale',
+    amountTrackers: tool === 'amount-trackers',
+    emailSentLog: tool === 'sent-email-log',
+  };
+}
+
 const AdminDashboard = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -350,12 +405,13 @@ const AdminDashboard = () => {
   const [amcEditDialogOpen, setAmcEditDialogOpen] = useState(false);
   const [taxInvoiceModalOpen, setTaxInvoiceModalOpen] = useState(false);
   const [selectedCustomerForTaxInvoice, setSelectedCustomerForTaxInvoice] = useState<Customer | null>(null);
-  const [showGSTInvoicesPage, setShowGSTInvoicesPage] = useState(false);
+  const initialOverlay = readAdminOverlayFromSearch(location.search);
+  const [showGSTInvoicesPage, setShowGSTInvoicesPage] = useState(initialOverlay.gst);
   const [gstInSubScreen, setGstInSubScreen] = useState(false);
-  const [showAMCViewPage, setShowAMCViewPage] = useState(false);
-  const [showLetterheadDocsPage, setShowLetterheadDocsPage] = useState(false);
+  const [showAMCViewPage, setShowAMCViewPage] = useState(initialOverlay.amc);
+  const [showLetterheadDocsPage, setShowLetterheadDocsPage] = useState(initialOverlay.letterhead);
   const [letterheadInitialType, setLetterheadInitialType] = useState<LetterheadDocumentType | undefined>(
-    undefined
+    initialOverlay.letterheadType
   );
   const [currentView, setCurrentView] = useState<AdminDashboardView>(() =>
     readAdminTabViewFromSearch(location.search)
@@ -429,10 +485,22 @@ const AdminDashboard = () => {
     }
   };
 
-  // Keep tab views in sync with ?view= so mobile back / swipe-back returns to dashboard.
+  // Keep full-page admin views in sync with ?view= for mobile back / swipe-back.
   useEffect(() => {
     if (!location.pathname.startsWith('/admin')) return;
+
     const viewParam = new URLSearchParams(location.search).get('view');
+    const overlay = readAdminOverlayFromSearch(location.search);
+
+    setShowGSTInvoicesPage(overlay.gst);
+    setShowAMCViewPage(overlay.amc);
+    setShowLetterheadDocsPage(overlay.letterhead);
+    setLetterheadInitialType(overlay.letterheadType);
+
+    if (isAdminOverlayViewParam(viewParam)) {
+      return;
+    }
+
     if (!isAdminTabViewParam(viewParam)) {
       setCurrentView('dashboard');
       return;
@@ -446,6 +514,56 @@ const AdminDashboard = () => {
     }
     setCurrentView(viewParam);
   }, [location.pathname, location.search, isManager, navigate]);
+
+  // Tools menu dialogs (?tool=) — swipe-back closes the dialog instead of exiting the PWA.
+  useEffect(() => {
+    if (!location.pathname.startsWith('/admin')) return;
+
+    const toolParam = new URLSearchParams(location.search).get('tool');
+    if (!isAdminToolParam(toolParam)) {
+      setRecentAccountsDialogOpen(false);
+      setDirectSaleOpen(false);
+      setAmountTrackersOpen(false);
+      setEmailSentLogOpen(false);
+      return;
+    }
+
+    if (isManager && MANAGER_BLOCKED_ADMIN_TOOLS.has(toolParam)) {
+      setRecentAccountsDialogOpen(false);
+      setDirectSaleOpen(false);
+      setAmountTrackersOpen(false);
+      setEmailSentLogOpen(false);
+      navigate('/admin', { replace: true });
+      return;
+    }
+
+    setRecentAccountsDialogOpen(toolParam === 'recent-accounts');
+    setDirectSaleOpen(toolParam === 'direct-sale');
+    setAmountTrackersOpen(toolParam === 'amount-trackers');
+    setEmailSentLogOpen(toolParam === 'sent-email-log');
+  }, [location.pathname, location.search, isManager, navigate]);
+
+  const openAdminTool = (tool: AdminToolDialog) => {
+    if (isManager && MANAGER_BLOCKED_ADMIN_TOOLS.has(tool)) return;
+    hapticTap();
+    navigate({ pathname: '/admin', search: `?tool=${tool}` });
+  };
+
+  const handleAdminToolOpenChange = (tool: AdminToolDialog, open: boolean) => {
+    if (open) {
+      openAdminTool(tool);
+      return;
+    }
+    if (new URLSearchParams(location.search).get('tool') === tool) {
+      navigate('/admin', { replace: true });
+    }
+  };
+
+  const closeAdminTool = () => {
+    if (new URLSearchParams(location.search).get('tool')) {
+      navigate('/admin', { replace: true });
+    }
+  };
 
   useEffect(() => {
     if (isManager && currentView !== 'dashboard') {
@@ -601,12 +719,13 @@ const AdminDashboard = () => {
   const [formErrors, setFormErrors] = useState<{[key: string]: string}>({});
   const [isCreating, setIsCreating] = useState(false);
   const [shouldCreateJob, setShouldCreateJob] = useState(false);
-  const [recentAccountsDialogOpen, setRecentAccountsDialogOpen] = useState(false);
-  const [emailSentLogOpen, setEmailSentLogOpen] = useState(false);
+  const initialToolState = readAdminToolOpenStates(location.search);
+  const [recentAccountsDialogOpen, setRecentAccountsDialogOpen] = useState(initialToolState.recentAccounts);
+  const [emailSentLogOpen, setEmailSentLogOpen] = useState(initialToolState.emailSentLog);
   const [recentAccountsToday, setRecentAccountsToday] = useState<Customer[]>([]);
   const [loadingRecentAccounts, setLoadingRecentAccounts] = useState(false);
-  const [directSaleOpen, setDirectSaleOpen] = useState(false);
-  const [amountTrackersOpen, setAmountTrackersOpen] = useState(false);
+  const [directSaleOpen, setDirectSaleOpen] = useState(initialToolState.directSale);
+  const [amountTrackersOpen, setAmountTrackersOpen] = useState(initialToolState.amountTrackers);
   const [step5JobData, setStep5JobData] = useState({
     service_type: 'RO' as 'RO' | 'SOFTENER',
     service_sub_type: 'Service',
@@ -1922,28 +2041,19 @@ const AdminDashboard = () => {
     if (!location.pathname.startsWith('/admin')) return;
 
     const searchParams = new URLSearchParams(location.search);
-    const view = searchParams.get('view');
     const searchPrefill = searchParams.get('search');
-    if (view === 'gst-invoices') {
-      setShowGSTInvoicesPage(true);
-      navigate('/admin', { replace: true });
-    } else if (view === 'amc-view') {
-      setShowAMCViewPage(true);
-      navigate('/admin', { replace: true });
-    } else if (view === 'letterhead-documents') {
-      const typeParam = searchParams.get('type') as LetterheadDocumentType | null;
-      const allowed: LetterheadDocumentType[] = [
-        'service_report',
-        'amc_report',
-        'custom_document',
-        'letterhead',
-      ];
-      if (typeParam && allowed.includes(typeParam)) {
-        setLetterheadInitialType(typeParam);
-      }
-      setShowLetterheadDocsPage(true);
-      navigate('/admin', { replace: true });
-    } else if (searchParams.get('composeEmail')) {
+
+    // Full-page views (?view=…) are handled by the URL sync effect above.
+    const viewParam = searchParams.get('view');
+    if (
+      isAdminOverlayViewParam(viewParam) ||
+      isAdminTabViewParam(viewParam) ||
+      isAdminToolParam(searchParams.get('tool'))
+    ) {
+      return;
+    }
+
+    if (searchParams.get('composeEmail')) {
       const customerId = searchParams.get('composeEmail');
       const templateParam = searchParams.get('emailTemplate') as AdminEmailTemplateType | null;
       const allowedTemplates: AdminEmailTemplateType[] = [
@@ -6166,19 +6276,19 @@ const AdminDashboard = () => {
   };
 
   const handleShowGSTInvoices = () => {
-    setShowGSTInvoicesPage(true);
+    navigate({ pathname: '/admin', search: '?view=gst-invoices' });
   };
 
   const handleHideGSTInvoices = () => {
-    setShowGSTInvoicesPage(false);
+    navigate('/admin', { replace: true });
   };
 
   const handleShowAMCView = () => {
-    setShowAMCViewPage(true);
+    navigate({ pathname: '/admin', search: '?view=amc-view' });
   };
 
   const handleHideAMCView = () => {
-    setShowAMCViewPage(false);
+    navigate('/admin', { replace: true });
     reloadAMCStatus(); // Refresh green dots when returning to dashboard
     reloadCustomerPriorServiceStatus();
   };
@@ -9747,10 +9857,7 @@ const AdminDashboard = () => {
       <Suspense fallback={<AdminScreenLoader message="Loading documents builder..." />}>
         <LetterheadDocumentsPage
           initialType={letterheadInitialType}
-          onBack={() => {
-            setShowLetterheadDocsPage(false);
-            setLetterheadInitialType(undefined);
-          }}
+          onBack={() => navigate('/admin', { replace: true })}
         />
       </Suspense>
     );
@@ -9960,10 +10067,7 @@ const AdminDashboard = () => {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-52">
                   <DropdownMenuItem
-                    onClick={() => {
-                      hapticTap();
-                      setRecentAccountsDialogOpen(true);
-                    }}
+                    onClick={() => openAdminTool('recent-accounts')}
                   >
                     <Clock className="w-4 h-4 mr-2" />
                     Recent Accounts
@@ -9990,8 +10094,7 @@ const AdminDashboard = () => {
                     disabled={isManager}
                     onClick={() => {
                       if (isManager) return;
-                      hapticTap();
-                      setDirectSaleOpen(true);
+                      openAdminTool('direct-sale');
                     }}
                   >
                     {isManager ? <Lock className="w-4 h-4 mr-2" /> : <ShoppingCart className="w-4 h-4 mr-2" />}
@@ -10001,19 +10104,13 @@ const AdminDashboard = () => {
                     disabled={isManager}
                     onClick={() => {
                       if (isManager) return;
-                      hapticTap();
-                      setAmountTrackersOpen(true);
+                      openAdminTool('amount-trackers');
                     }}
                   >
                     {isManager ? <Lock className="w-4 h-4 mr-2" /> : <DollarSign className="w-4 h-4 mr-2" />}
                     Amount Trackers
                   </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => {
-                      hapticTap();
-                      setEmailSentLogOpen(true);
-                    }}
-                  >
+                  <DropdownMenuItem onClick={() => openAdminTool('sent-email-log')}>
                     <Mail className="w-4 h-4 mr-2" />
                     Sent email log
                   </DropdownMenuItem>
@@ -13686,13 +13783,25 @@ const AdminDashboard = () => {
       {/* PIN Dialog */}
 
       {/* Direct / Office Sale Dialog – quick access from the Recent dropdown */}
-      <DirectSaleDialog open={directSaleOpen} onOpenChange={setDirectSaleOpen} />
+      <DirectSaleDialog
+        open={directSaleOpen}
+        onOpenChange={(open) => handleAdminToolOpenChange('direct-sale', open)}
+      />
 
-      <AmountTrackersDialog open={amountTrackersOpen} onOpenChange={setAmountTrackersOpen} />
-      <EmailSentLogDialog open={emailSentLogOpen} onOpenChange={setEmailSentLogOpen} />
+      <AmountTrackersDialog
+        open={amountTrackersOpen}
+        onOpenChange={(open) => handleAdminToolOpenChange('amount-trackers', open)}
+      />
+      <EmailSentLogDialog
+        open={emailSentLogOpen}
+        onOpenChange={(open) => handleAdminToolOpenChange('sent-email-log', open)}
+      />
 
       {/* Recent Accounts Dialog – scoped fetch when opened (no full customer list) */}
-      <Dialog open={recentAccountsDialogOpen} onOpenChange={setRecentAccountsDialogOpen}>
+      <Dialog
+        open={recentAccountsDialogOpen}
+        onOpenChange={(open) => handleAdminToolOpenChange('recent-accounts', open)}
+      >
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Recent Accounts - Today</DialogTitle>
@@ -13751,7 +13860,7 @@ const AdminDashboard = () => {
                             size="sm"
                             onClick={() => {
                               handleNewJob(customer);
-                              setRecentAccountsDialogOpen(false);
+                              closeAdminTool();
                             }}
                           >
                             <Plus className="w-4 h-4 mr-1" />
@@ -13763,7 +13872,7 @@ const AdminDashboard = () => {
                             onClick={() => {
                               setEditingCustomer(customer);
                               setEditDialogOpen(true);
-                              setRecentAccountsDialogOpen(false);
+                              closeAdminTool();
                             }}
                           >
                             <Edit className="w-4 h-4 mr-1" />
@@ -13778,7 +13887,7 @@ const AdminDashboard = () => {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRecentAccountsDialogOpen(false)}>
+            <Button variant="outline" onClick={closeAdminTool}>
               Close
             </Button>
           </DialogFooter>
