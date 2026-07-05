@@ -82,7 +82,7 @@ export const StatsCards: React.FC<StatsCardsProps> = ({
   return (
     <div className="grid grid-cols-2 gap-3 mb-6 sm:grid-cols-4 sm:gap-6">
       <Card 
-        className={`border-2 p-3 sm:p-6 cursor-pointer transition-all hover:shadow-md ${
+        className={`border-2 p-3 sm:p-6 cursor-pointer transition-all hover:shadow-md select-none touch-manipulation [-webkit-tap-highlight-color:transparent] ${
           statusFilter === 'ONGOING' 
             ? 'bg-blue-50 border-blue-500 shadow-md' 
             : 'bg-white border-gray-200 hover:border-gray-300'
@@ -104,7 +104,7 @@ export const StatsCards: React.FC<StatsCardsProps> = ({
       </Card>
 
       <Card 
-        className={`border-2 p-3 sm:p-6 cursor-pointer transition-all hover:shadow-md ${followUpGlowClass} ${
+        className={`border-2 p-3 sm:p-6 cursor-pointer transition-all hover:shadow-md select-none touch-manipulation [-webkit-tap-highlight-color:transparent] ${followUpGlowClass} ${
           statusFilter === 'RESCHEDULED' 
             ? 'bg-indigo-50 border-indigo-500 shadow-md' 
             : 'bg-white border-gray-200 hover:border-gray-300'
@@ -126,7 +126,7 @@ export const StatsCards: React.FC<StatsCardsProps> = ({
       </Card>
 
       <Card 
-        className={`border-2 p-3 sm:p-6 cursor-pointer transition-all hover:shadow-md ${
+        className={`border-2 p-3 sm:p-6 cursor-pointer transition-all hover:shadow-md select-none touch-manipulation [-webkit-tap-highlight-color:transparent] ${
           statusFilter === 'CANCELLED' 
             ? 'bg-red-50 border-red-500 shadow-md' 
             : 'bg-white border-gray-200 hover:border-gray-300'
@@ -148,7 +148,7 @@ export const StatsCards: React.FC<StatsCardsProps> = ({
       </Card>
 
       <Card 
-        className={`border-2 p-3 sm:p-6 cursor-pointer transition-all hover:shadow-md ${
+        className={`border-2 p-3 sm:p-6 cursor-pointer transition-all hover:shadow-md select-none touch-manipulation [-webkit-tap-highlight-color:transparent] ${
           statusFilter === 'COMPLETED' 
             ? 'bg-green-50 border-green-500 shadow-md' 
             : 'bg-white border-gray-200 hover:border-gray-300'

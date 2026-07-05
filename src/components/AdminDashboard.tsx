@@ -160,7 +160,6 @@ import {
   buildAdminDashboardSearch,
   jobTabSlugToStatusFilter,
   parseAdminDashboardUrl,
-  statusFilterToJobTabSlug,
   type AdminModalSlug,
   isAdminModalSlug,
 } from '@/lib/adminDashboardUrl';
@@ -477,6 +476,18 @@ const AdminDashboard = () => {
   
   // Preserve scroll position when WhatsApp dialog opens after assign/reassign (so page doesn't jump to top)
   const scrollPositionBeforeWhatsAppRef = useRef(0);
+  const adminListScrollYRef = useRef<number | null>(null);
+  const prevAdminModalRef = useRef<AdminModalSlug | null>(null);
+
+  const scheduleAdminScrollRestore = useCallback((y: number) => {
+    const restore = () => window.scrollTo({ top: y, behavior: 'auto' });
+    requestAnimationFrame(() => {
+      restore();
+      requestAnimationFrame(restore);
+    });
+    window.setTimeout(restore, 50);
+    window.setTimeout(restore, 200);
+  }, []);
   const handleViewChange = (view: AdminDashboardView) => {
     if (isManager && view !== 'dashboard') {
       // Manager role cannot enter payments / billing / analytics / inventory.
@@ -523,6 +534,8 @@ const AdminDashboard = () => {
         photoIdx?: number;
       } = {}
     ) => {
+      adminListScrollYRef.current =
+        window.scrollY ?? document.documentElement.scrollTop ?? 0;
       navigate(
         adminDashboardLocation(
           buildAdminDashboardSearch(
@@ -541,18 +554,30 @@ const AdminDashboard = () => {
     [navigate, location.search]
   );
 
-  const navigateJobTab = useCallback(
+  /** Tab switches stay in React state (no ?tab= history). Modals still use ?modal= for swipe-back. */
+  const switchJobTab = useCallback(
     (filter: AdminStatusFilter) => {
       hapticSwitch();
-      const tab = statusFilterToJobTabSlug(filter);
-      navigate(
-        adminDashboardLocation(
-          buildAdminDashboardSearch(
-            { tab: tab ?? null, clearModal: true, clearView: true, clearTool: true },
-            location.search
-          )
-        )
-      );
+      setStatusFilter(filter);
+      setCurrentPage(1);
+
+      const parsed = parseAdminDashboardUrl(location.search);
+      if (parsed.modal || parsed.tab || parsed.view || parsed.tool) {
+        navigate(
+          adminDashboardLocation(
+            buildAdminDashboardSearch(
+              {
+                clearModal: true,
+                clearView: true,
+                clearTool: true,
+                tab: null,
+              },
+              location.search
+            )
+          ),
+          { replace: true }
+        );
+      }
     },
     [navigate, location.search]
   );
@@ -573,11 +598,6 @@ const AdminDashboard = () => {
     const parsed = parseAdminDashboardUrl(location.search);
     const viewParam = parsed.view;
     const overlay = readAdminOverlayFromSearch(location.search);
-
-    if (!parsed.view && !parsed.tool && !parsed.modal) {
-      const sf = parsed.tab ? jobTabSlugToStatusFilter(parsed.tab) : 'ONGOING';
-      setStatusFilter((prev) => (prev !== sf ? sf : prev));
-    }
 
     setShowGSTInvoicesPage(overlay.gst);
     setShowAMCViewPage(overlay.amc);
@@ -608,6 +628,7 @@ const AdminDashboard = () => {
 
     const toolParam = new URLSearchParams(location.search).get('tool');
     if (!isAdminToolParam(toolParam)) {
+      setToolsMenuOpen(false);
       setRecentAccountsDialogOpen(false);
       setDirectSaleOpen(false);
       setAmountTrackersOpen(false);
@@ -632,6 +653,7 @@ const AdminDashboard = () => {
 
   const openAdminTool = (tool: AdminToolDialog) => {
     if (isManager && MANAGER_BLOCKED_ADMIN_TOOLS.has(tool)) return;
+    setToolsMenuOpen(false);
     hapticTap();
     navigate(
       adminDashboardLocation(
@@ -640,19 +662,25 @@ const AdminDashboard = () => {
     );
   };
 
+  const closeAdminTool = () => {
+    setToolsMenuOpen(false);
+    if (new URLSearchParams(location.search).get('tool')) {
+      navigate(
+        adminDashboardLocation(
+          buildAdminDashboardSearch({ clearTool: true }, location.search)
+        ),
+        { replace: true }
+      );
+    }
+  };
+
   const handleAdminToolOpenChange = (tool: AdminToolDialog, open: boolean) => {
     if (open) {
       openAdminTool(tool);
       return;
     }
     if (new URLSearchParams(location.search).get('tool') === tool) {
-      navigate('/admin', { replace: true });
-    }
-  };
-
-  const closeAdminTool = () => {
-    if (new URLSearchParams(location.search).get('tool')) {
-      navigate('/admin', { replace: true });
+      closeAdminTool();
     }
   };
 
@@ -817,6 +845,7 @@ const AdminDashboard = () => {
   const [loadingRecentAccounts, setLoadingRecentAccounts] = useState(false);
   const [directSaleOpen, setDirectSaleOpen] = useState(initialToolState.directSale);
   const [amountTrackersOpen, setAmountTrackersOpen] = useState(initialToolState.amountTrackers);
+  const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
   const [step5JobData, setStep5JobData] = useState({
     service_type: 'RO' as 'RO' | 'SOFTENER',
     service_sub_type: 'Service',
@@ -2242,6 +2271,17 @@ const AdminDashboard = () => {
 
     const parsed = parseAdminDashboardUrl(location.search);
     const modal = parsed.modal;
+    const prevModal = prevAdminModalRef.current;
+
+    if (prevModal && !modal) {
+      const y = adminListScrollYRef.current;
+      if (y != null) {
+        adminListScrollYRef.current = null;
+        scheduleAdminScrollRestore(y);
+      }
+    }
+    prevAdminModalRef.current = modal;
+
     const job =
       parsed.jobId != null ? jobs.find((j) => j.id === parsed.jobId) ?? null : null;
 
@@ -3231,10 +3271,12 @@ const AdminDashboard = () => {
     setCompletedServiceSubTypeFilter('all');
     setCompletedByFilter('all');
     setCurrentPage(1);
+    setStatusFilter('COMPLETED');
     navigate(
       adminDashboardLocation(
-        buildAdminDashboardSearch({ tab: 'completed', clearModal: true }, location.search)
-      )
+        buildAdminDashboardSearch({ clearModal: true, tab: null }, location.search)
+      ),
+      { replace: true }
     );
     setHighlightCompletedJobId(job.id);
 
@@ -10304,7 +10346,7 @@ const AdminDashboard = () => {
                 <Settings className="w-4 h-4" />
                 <span className="hidden sm:inline">Settings</span>
               </Button>
-              <DropdownMenu>
+              <DropdownMenu open={toolsMenuOpen} onOpenChange={setToolsMenuOpen}>
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="outline"
@@ -10499,7 +10541,7 @@ const AdminDashboard = () => {
         <StatsCards
           statusFilter={statusFilter}
           onFilterChange={(filter) => {
-            navigateJobTab(filter as AdminStatusFilter);
+            switchJobTab(filter as AdminStatusFilter);
           }}
           jobCounts={jobCounts}
           pendingJobs={pendingJobs}
