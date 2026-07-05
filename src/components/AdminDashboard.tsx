@@ -155,6 +155,15 @@ import {
   type AdminDashboardSnapshot,
   type AdminStatusFilter,
 } from '@/lib/adminDashboardCache';
+import {
+  adminDashboardLocation,
+  buildAdminDashboardSearch,
+  jobTabSlugToStatusFilter,
+  parseAdminDashboardUrl,
+  statusFilterToJobTabSlug,
+  type AdminModalSlug,
+  isAdminModalSlug,
+} from '@/lib/adminDashboardUrl';
 import { StatusBadge } from './admin/StatusBadge';
 import { CustomerCardHeader } from './admin/CustomerCardHeader';
 import WarrantyManagementDialog from './admin/WarrantyManagementDialog';
@@ -475,22 +484,100 @@ const AdminDashboard = () => {
     }
     hapticSwitch();
     if (view === 'dashboard') {
-      if (isAdminTabViewParam(new URLSearchParams(location.search).get('view'))) {
-        navigate('/admin', { replace: true });
+      if (
+        isAdminTabViewParam(new URLSearchParams(location.search).get('view')) ||
+        isAdminOverlayViewParam(new URLSearchParams(location.search).get('view'))
+      ) {
+        navigate(
+          adminDashboardLocation(
+            buildAdminDashboardSearch({ view: null, clearView: true }, location.search)
+          ),
+          { replace: true }
+        );
       } else {
         setCurrentView('dashboard');
       }
     } else {
-      navigate({ pathname: '/admin', search: `?view=${view}` });
+      navigate(
+        adminDashboardLocation(
+          buildAdminDashboardSearch({ view, clearModal: true }, location.search)
+        )
+      );
     }
   };
+
+  const closeAdminModal = useCallback(() => {
+    navigate(
+      adminDashboardLocation(buildAdminDashboardSearch({ clearModal: true }, location.search)),
+      { replace: true }
+    );
+  }, [navigate, location.search]);
+
+  const openAdminModal = useCallback(
+    (
+      modal: AdminModalSlug,
+      params: {
+        jobId?: string;
+        customerId?: string;
+        photoType?: 'before' | 'after';
+        photoIdx?: number;
+      } = {}
+    ) => {
+      navigate(
+        adminDashboardLocation(
+          buildAdminDashboardSearch(
+            {
+              modal,
+              jobId: params.jobId ?? null,
+              customerId: params.customerId ?? null,
+              photoType: params.photoType ?? null,
+              photoIdx: params.photoIdx ?? null,
+            },
+            location.search
+          )
+        )
+      );
+    },
+    [navigate, location.search]
+  );
+
+  const navigateJobTab = useCallback(
+    (filter: AdminStatusFilter) => {
+      hapticSwitch();
+      const tab = statusFilterToJobTabSlug(filter);
+      navigate(
+        adminDashboardLocation(
+          buildAdminDashboardSearch(
+            { tab: tab ?? null, clearModal: true, clearView: true, clearTool: true },
+            location.search
+          )
+        )
+      );
+    },
+    [navigate, location.search]
+  );
+
+  const onAdminModalOpenChange = useCallback(
+    (modal: AdminModalSlug, open: boolean) => {
+      if (!open && parseAdminDashboardUrl(location.search).modal === modal) {
+        closeAdminModal();
+      }
+    },
+    [closeAdminModal, location.search]
+  );
 
   // Keep full-page admin views in sync with ?view= for mobile back / swipe-back.
   useEffect(() => {
     if (!location.pathname.startsWith('/admin')) return;
 
-    const viewParam = new URLSearchParams(location.search).get('view');
+    const parsed = parseAdminDashboardUrl(location.search);
+    const viewParam = parsed.view;
     const overlay = readAdminOverlayFromSearch(location.search);
+
+    if (!parsed.view && !parsed.tool && !parsed.modal) {
+      const sf = parsed.tab ? jobTabSlugToStatusFilter(parsed.tab) : 'ONGOING';
+      setStatusFilter((prev) => (prev !== sf ? sf : prev));
+    }
 
     setShowGSTInvoicesPage(overlay.gst);
     setShowAMCViewPage(overlay.amc);
@@ -546,7 +633,11 @@ const AdminDashboard = () => {
   const openAdminTool = (tool: AdminToolDialog) => {
     if (isManager && MANAGER_BLOCKED_ADMIN_TOOLS.has(tool)) return;
     hapticTap();
-    navigate({ pathname: '/admin', search: `?tool=${tool}` });
+    navigate(
+      adminDashboardLocation(
+        buildAdminDashboardSearch({ tool, clearModal: true, clearView: true }, location.search)
+      )
+    );
   };
 
   const handleAdminToolOpenChange = (tool: AdminToolDialog, open: boolean) => {
@@ -838,9 +929,11 @@ const AdminDashboard = () => {
     visible_address: string;
   } | null>(null);
   const [messageSentFilter, setMessageSentFilter] = useState<'all' | 'sent' | 'not_sent'>('not_sent');
-  const [statusFilter, setStatusFilter] = useState<AdminStatusFilter>(
-    () => savedUi.statusFilter
-  );
+  const [statusFilter, setStatusFilter] = useState<AdminStatusFilter>(() => {
+    const tab = parseAdminDashboardUrl(location.search).tab;
+    if (tab) return jobTabSlugToStatusFilter(tab);
+    return savedUi.statusFilter;
+  });
   // Ongoing-only sub-filters (UI parity with completed filters, but only for ongoing section)
   const [ongoingAssignmentFilter, setOngoingAssignmentFilter] = useState<'all' | 'assigned' | 'unassigned'>('all');
   const [ongoingAssignedTechnicianFilter, setOngoingAssignedTechnicianFilter] = useState<string>('all');
@@ -2048,7 +2141,8 @@ const AdminDashboard = () => {
     if (
       isAdminOverlayViewParam(viewParam) ||
       isAdminTabViewParam(viewParam) ||
-      isAdminToolParam(searchParams.get('tool'))
+      isAdminToolParam(searchParams.get('tool')) ||
+      isAdminModalSlug(searchParams.get('modal'))
     ) {
       return;
     }
@@ -2139,6 +2233,137 @@ const AdminDashboard = () => {
       })();
     }
   }, [location.pathname, location.search, navigate]);
+
+  const assignTechLoadForJobRef = useRef<string | null>(null);
+
+  // Job-list modals (?modal=) — swipe-back closes overlay instead of exiting the PWA.
+  useEffect(() => {
+    if (!location.pathname.startsWith('/admin')) return;
+
+    const parsed = parseAdminDashboardUrl(location.search);
+    const modal = parsed.modal;
+    const job =
+      parsed.jobId != null ? jobs.find((j) => j.id === parsed.jobId) ?? null : null;
+
+    const resolveCustomer = (customerId: string | null): Customer | null => {
+      if (!customerId) return null;
+      const fromList = customers.find((c) => c.id === customerId);
+      if (fromList) return fromList;
+      for (const j of jobs) {
+        const raw = (j as any).customer || j.customer;
+        if (raw?.id === customerId) return transformCustomerData(raw);
+      }
+      return null;
+    };
+
+    setAssignJobDialogOpen(modal === 'assign' && !!job);
+    setReassignDialogOpen(modal === 'reassign' && !!job);
+    setEditJobDialogOpen(modal === 'edit-job' && !!job);
+    setEditCompletedJobDialogOpen(modal === 'edit-completed' && !!job);
+    setFollowUpModalOpen(modal === 'follow-up' && !!job);
+    setDenyDialogOpen(modal === 'deny' && !!job);
+    setMoveToOngoingDialogOpen(modal === 'move-ongoing' && !!job);
+    setSendMessageDialogOpen(modal === 'send-message' && !!job);
+    setDeleteJobDialogOpen(modal === 'delete-job' && !!job);
+    setOngoingFilterDialogOpen(modal === 'ongoing-filters');
+    setCompletedFilterDialogOpen(modal === 'completed-filters');
+    setPhotoGalleryOpen(modal === 'photos' && !!job);
+    setPhotoViewerOpen(modal === 'photo-viewer');
+    setCustomerPhotoGalleryOpen(modal === 'customer-photos' && !!resolveCustomer(parsed.customerId));
+    setCustomerReportDialogOpen(modal === 'report' && !!resolveCustomer(parsed.customerId));
+    setHistoryDialogOpen(modal === 'history' && !!resolveCustomer(parsed.customerId));
+    setBillModalOpen(modal === 'bill' && !!resolveCustomer(parsed.customerId));
+    setEditDialogOpen(modal === 'edit-customer' && !!resolveCustomer(parsed.customerId));
+    setNewJobDialogOpen(modal === 'new-job' && !!resolveCustomer(parsed.customerId));
+    setWhatsappDialogOpen(modal === 'whatsapp');
+
+    if (!modal) {
+      setTechnicianSelectDialogOpen(false);
+      setCompleteDialogOpen(false);
+    }
+
+    if (modal === 'assign' && job) {
+      setJobToAssign(job);
+      if (assignTechLoadForJobRef.current !== job.id) {
+        assignTechLoadForJobRef.current = job.id;
+        setAssignTechniciansRefreshing(true);
+        void reloadTechnicians({ transition: true }).finally(() =>
+          setAssignTechniciansRefreshing(false)
+        );
+      }
+    } else if (modal === 'reassign' && job) {
+      setJobToReassign(job);
+      if (assignTechLoadForJobRef.current !== job.id) {
+        assignTechLoadForJobRef.current = job.id;
+        setReassignTechniciansRefreshing(true);
+        void reloadTechnicians({ transition: true }).finally(() =>
+          setReassignTechniciansRefreshing(false)
+        );
+      }
+    } else if (modal !== 'assign' && modal !== 'reassign') {
+      assignTechLoadForJobRef.current = null;
+    }
+
+    if (modal === 'complete' && job) setSelectedJobForComplete(job);
+    if (modal === 'edit-job' && job) setJobToEdit(job);
+    if (modal === 'edit-completed' && job) setSelectedCompletedJob(job);
+    if (modal === 'follow-up' && job) setSelectedJobForFollowUp(job);
+    if (modal === 'deny' && job) setSelectedJobForDeny(job);
+    if (modal === 'move-ongoing' && job) setSelectedJobForMoveToOngoing(job);
+    if (modal === 'send-message' && job) setSelectedJobForMessage(job);
+    if (modal === 'delete-job' && job) setJobToDelete(job);
+
+    setWarrantyDialogOpen(modal === 'warranty' && !!resolveCustomer(parsed.customerId));
+
+    const customerForModal = resolveCustomer(parsed.customerId);
+    if (modal === 'customer-photos' && customerForModal) {
+      setSelectedCustomerForPhotos(customerForModal);
+      const customerCode = customerForModal.customer_id || customerForModal.customerId;
+      if (customerCode) void loadCustomerPhotos(customerCode);
+    }
+    if (modal === 'report' && customerForModal) {
+      setSelectedCustomerForReport(customerForModal);
+    }
+    if (modal === 'history' && customerForModal) {
+      setSelectedCustomerForHistory(customerForModal);
+      const customerCode = customerForModal.customer_id || customerForModal.customerId;
+      if (customerCode) void loadCustomerHistory(customerCode);
+    }
+    if (modal === 'bill' && customerForModal) {
+      void loadFullCustomerForAction(customerForModal).then(setSelectedCustomerForBill);
+    }
+    if (modal === 'edit-customer' && customerForModal) {
+      setEditingCustomer(customerForModal);
+    }
+    if (modal === 'new-job' && customerForModal) {
+      setSelectedCustomerForJob(customerForModal);
+    }
+    if (modal === 'warranty' && customerForModal) {
+      setWarrantyDialogCustomer({
+        id: customerForModal.id,
+        customer_id: customerForModal.customer_id || (customerForModal as any).customerId || '',
+        full_name: customerForModal.fullName || (customerForModal as any).full_name || '',
+        phone: customerForModal.phone || '',
+        model: (customerForModal as any).model || '',
+        brand: (customerForModal as any).brand || '',
+        visible_address: (customerForModal as any).visible_address || '',
+      });
+    }
+
+    if (modal === 'photos' && job && parsed.photoType) {
+      const requirements = parseJobRequirements((job as any).requirements || job.requirements);
+      const fromReq = requirements.find((r: any) => r?.[`${parsed.photoType}_photos`]);
+      const rawPhotos =
+        fromReq?.[`${parsed.photoType}_photos`] ??
+        (job as any)[`${parsed.photoType}_photos`] ??
+        (job as any)[`${parsed.photoType}Photos`] ??
+        [];
+      const validPhotos = extractPhotoUrls(Array.isArray(rawPhotos) ? rawPhotos : []);
+      if (validPhotos.length > 0) {
+        setSelectedJobPhotos({ jobId: job.id, photos: validPhotos, type: parsed.photoType });
+      }
+    }
+  }, [location.pathname, location.search, jobs, customers]);
 
   // Set initial last checked job ID after jobs are loaded
   useEffect(() => {
@@ -2975,7 +3200,7 @@ const AdminDashboard = () => {
       }
     }
     setSelectedCustomerForReport(c);
-    setCustomerReportDialogOpen(true);
+    openAdminModal('report', { customerId: c.id });
   };
 
   const handleNavigateToCompletedJobFromReport = useCallback((customer: Customer, job: Job) => {
@@ -2986,6 +3211,7 @@ const AdminDashboard = () => {
     }
 
     setCustomerReportDialogOpen(false);
+    closeAdminModal();
     setSearchQuery('');
     setSearchTerm('');
     setSearchResults(null);
@@ -2997,13 +3223,17 @@ const AdminDashboard = () => {
     setCompletedServiceSubTypeFilter('all');
     setCompletedByFilter('all');
     setCurrentPage(1);
-    setStatusFilter('COMPLETED');
+    navigate(
+      adminDashboardLocation(
+        buildAdminDashboardSearch({ tab: 'completed', clearModal: true }, location.search)
+      )
+    );
     setHighlightCompletedJobId(job.id);
 
     requestAnimationFrame(() => {
       document.querySelector('[data-admin-customer-list]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
-  }, []);
+  }, [navigate, location.search, closeAdminModal]);
 
   useEffect(() => {
     if (!highlightCompletedJobId || statusFilter !== 'COMPLETED') return;
@@ -4994,14 +5224,13 @@ const AdminDashboard = () => {
   // Photo management functions
   const handleViewPhotos = (customer: Customer) => {
     setSelectedCustomerForPhotos(customer);
-    setCustomerPhotoGalleryOpen(true);
-    // Always reload customer photos to get the latest data
+    openAdminModal('customer-photos', { customerId: customer.id });
     const customerId = customer.customer_id || customer.customerId;
     loadCustomerPhotos(customerId);
   };
 
   const handleClosePhotoGallery = () => {
-    setCustomerPhotoGalleryOpen(false);
+    closeAdminModal();
     setSelectedCustomerForPhotos(null);
   };
 
@@ -5697,10 +5926,9 @@ const AdminDashboard = () => {
   // History management functions
   const handleViewHistory = async (customer: Customer) => {
     setSelectedCustomerForHistory(customer);
-    setHistoryDialogOpen(true);
     setHistoryHasMore(false);
     setHistoryLoadingMore(false);
-    // Always reload first page of customer history to get the latest data
+    openAdminModal('history', { customerId: customer.id });
     const customerId = customer.customer_id || customer.customerId;
     await loadCustomerHistory(customerId);
   };
@@ -6146,11 +6374,11 @@ const AdminDashboard = () => {
   const handleGenerateBill = async (customer: Customer) => {
     const c = await loadFullCustomerForAction(customer);
     setSelectedCustomerForBill(c);
-    setBillModalOpen(true);
+    openAdminModal('bill', { customerId: c.id });
   };
 
   const handleBillModalClose = () => {
-    setBillModalOpen(false);
+    closeAdminModal();
     setSelectedCustomerForBill(null);
   };
 
@@ -6276,19 +6504,37 @@ const AdminDashboard = () => {
   };
 
   const handleShowGSTInvoices = () => {
-    navigate({ pathname: '/admin', search: '?view=gst-invoices' });
+    navigate(
+      adminDashboardLocation(
+        buildAdminDashboardSearch({ view: 'gst-invoices', clearModal: true }, location.search)
+      )
+    );
   };
 
   const handleHideGSTInvoices = () => {
-    navigate('/admin', { replace: true });
+    navigate(
+      adminDashboardLocation(
+        buildAdminDashboardSearch({ view: null, clearView: true }, location.search)
+      ),
+      { replace: true }
+    );
   };
 
   const handleShowAMCView = () => {
-    navigate({ pathname: '/admin', search: '?view=amc-view' });
+    navigate(
+      adminDashboardLocation(
+        buildAdminDashboardSearch({ view: 'amc-view', clearModal: true }, location.search)
+      )
+    );
   };
 
   const handleHideAMCView = () => {
-    navigate('/admin', { replace: true });
+    navigate(
+      adminDashboardLocation(
+        buildAdminDashboardSearch({ view: null, clearView: true }, location.search)
+      ),
+      { replace: true }
+    );
     reloadAMCStatus(); // Refresh green dots when returning to dashboard
     reloadCustomerPriorServiceStatus();
   };
@@ -6297,12 +6543,8 @@ const AdminDashboard = () => {
 
   // Job assignment functions
   const handleAssignJob = (job: Job) => {
-    setJobToAssign(job);
     setSelectedTechnicianId('');
-    setAssignJobDialogOpen(true);
-    // Full `current_location` for all technicians (assign-by-distance). Not fetched on dashboard load—only when this dialog opens.
-    setAssignTechniciansRefreshing(true);
-    void reloadTechnicians({ transition: true }).finally(() => setAssignTechniciansRefreshing(false));
+    openAdminModal('assign', { jobId: job.id });
   };
 
   const handleSaveJobAssignment = async () => {
@@ -6536,17 +6778,13 @@ const AdminDashboard = () => {
 
   // Handle job status update
   const handleReassignJob = (job: Job) => {
-    setJobToReassign(job);
-    // Check for assigned technician ID in multiple possible fields
-    const technicianId = 
-      (job as any).assigned_technician_id || 
+    const technicianId =
+      (job as any).assigned_technician_id ||
       job.assignedTechnicianId ||
       (job as any).assignedTechnician?.id ||
       '';
     setSelectedTechnicianForReassign(technicianId);
-    setReassignDialogOpen(true);
-    setReassignTechniciansRefreshing(true);
-    void reloadTechnicians({ transition: true }).finally(() => setReassignTechniciansRefreshing(false));
+    openAdminModal('reassign', { jobId: job.id });
   };
 
   const handleReassignSubmit = async () => {
@@ -6693,8 +6931,7 @@ const AdminDashboard = () => {
   };
 
   const handleEditJob = (job: Job) => {
-    setJobToEdit(job);
-    setEditJobDialogOpen(true);
+    openAdminModal('edit-job', { jobId: job.id });
   };
 
   // handleEditJobSubmit moved to EditJobDialog component
@@ -7544,8 +7781,7 @@ const AdminDashboard = () => {
 
   // Handle scheduling follow-up
   const handleScheduleFollowUp = (job: Job) => {
-    setSelectedJobForFollowUp(job);
-    setFollowUpModalOpen(true);
+    openAdminModal('follow-up', { jobId: job.id });
   };
 
   // Handle follow-up submission
@@ -7712,7 +7948,7 @@ const AdminDashboard = () => {
     setMoveToOngoingTimeSlot(defaultTimeSlot);
     setMoveToOngoingCustomTime(defaultTimeSlot === 'CUSTOM' ? defaultTime : '');
     setSelectedJobForMoveToOngoing(job);
-    setMoveToOngoingDialogOpen(true);
+    openAdminModal('move-ongoing', { jobId: job.id });
   };
 
   const handleAssignFromFollowUp = (job: Job) => {
@@ -7994,7 +8230,7 @@ const AdminDashboard = () => {
     
     setSelectedJobForDeny(jobWithCustomer);
     setDenyReason('');
-    setDenyDialogOpen(true);
+    openAdminModal('deny', { jobId: jobWithCustomer.id });
   };
 
   // Handle job denial submission
@@ -8309,6 +8545,7 @@ const AdminDashboard = () => {
     setSelectedJobForComplete(jobWithCustomer);
     snapshotJobAssignmentForCompleteFlow(jobWithCustomer);
     setSelectedTechnicianForComplete('');
+    openAdminModal('complete', { jobId: jobWithCustomer.id });
     setTechnicianSelectDialogOpen(true);
   };
 
@@ -8436,7 +8673,8 @@ const AdminDashboard = () => {
       }
       
       setSelectedJobPhotos({ jobId, photos: validPhotos, type: type as 'before' | 'after' });
-      setPhotoGalleryOpen(true);
+      const photoType = type === 'before' || type === 'after' ? type : 'after';
+      openAdminModal('photos', { jobId, photoType });
     } catch (error) {
       toast.error('Failed to open photo gallery');
     }
@@ -8449,9 +8687,13 @@ const AdminDashboard = () => {
   };
 
   // Open photo in full-screen viewer
-  const openPhotoViewer = (photoUrl: string, photoIndex: number, totalPhotos: number) => {
+  const openPhotoViewer = (photoUrl: string, photoIndex: number, totalPhotos: number, jobId?: string) => {
     setSelectedPhoto({ url: photoUrl, index: photoIndex, total: totalPhotos });
-    setPhotoViewerOpen(true);
+    const parsed = parseAdminDashboardUrl(location.search);
+    openAdminModal('photo-viewer', {
+      jobId: jobId ?? parsed.jobId ?? undefined,
+      photoIdx: photoIndex,
+    });
   };
 
   // Navigate to previous photo
@@ -10249,8 +10491,7 @@ const AdminDashboard = () => {
         <StatsCards
           statusFilter={statusFilter}
           onFilterChange={(filter) => {
-            hapticSwitch();
-            setStatusFilter(filter as typeof statusFilter);
+            navigateJobTab(filter as AdminStatusFilter);
           }}
           jobCounts={jobCounts}
           pendingJobs={pendingJobs}
@@ -10378,7 +10619,7 @@ const AdminDashboard = () => {
                 variant="outline"
                 size="sm"
                 type="button"
-                onClick={() => setCompletedFilterDialogOpen(true)}
+                onClick={() => openAdminModal('completed-filters')}
                 className="shrink-0 h-10 w-10 p-0 sm:w-auto sm:px-3"
                 aria-label="Completed jobs filters"
               >
@@ -10389,7 +10630,13 @@ const AdminDashboard = () => {
           </div>
         )}
         {statusFilter === 'COMPLETED' && (
-          <Dialog open={completedFilterDialogOpen} onOpenChange={setCompletedFilterDialogOpen}>
+          <Dialog
+            open={completedFilterDialogOpen}
+            onOpenChange={(open) => {
+              if (open) openAdminModal('completed-filters');
+              else onAdminModalOpenChange('completed-filters', false);
+            }}
+          >
             <DialogContent className="sm:max-w-2xl">
               <DialogHeader>
                 <DialogTitle>Completed Jobs Filters</DialogTitle>
@@ -10564,7 +10811,7 @@ const AdminDashboard = () => {
                     setCompletedLeadTypeFilter(draftCompletedLeadTypeFilter);
                     setCompletedServiceSubTypeFilter(draftCompletedServiceSubTypeFilter);
                     setCompletedByFilter(draftCompletedByFilter);
-                    setCompletedFilterDialogOpen(false);
+                    closeAdminModal();
                   }}
                 >
                   Apply
@@ -10597,7 +10844,7 @@ const AdminDashboard = () => {
                     clearOngoingFilters();
                     return;
                   }
-                  setOngoingFilterDialogOpen(true);
+                  openAdminModal('ongoing-filters');
                 }}
                 className="flex items-center gap-2 text-xs sm:text-sm px-2 sm:px-3 py-1.5 sm:py-2 whitespace-nowrap"
                 title={hasOngoingClientFilters ? 'Clear ongoing filters' : 'Filter ongoing jobs'}
@@ -10693,7 +10940,13 @@ const AdminDashboard = () => {
           )}
 
           {statusFilter === 'ONGOING' && ongoingFilterDialogOpen && (
-            <Dialog open={ongoingFilterDialogOpen} onOpenChange={setOngoingFilterDialogOpen}>
+            <Dialog
+              open={ongoingFilterDialogOpen}
+              onOpenChange={(open) => {
+                if (open) openAdminModal('ongoing-filters');
+                else onAdminModalOpenChange('ongoing-filters', false);
+              }}
+            >
               <DialogContent className="sm:max-w-lg">
                 <DialogHeader>
                   <DialogTitle>Ongoing Filters</DialogTitle>
@@ -10775,7 +11028,7 @@ const AdminDashboard = () => {
                       setOngoingAssignmentFilter(draftOngoingAssignmentFilter);
                       setOngoingAssignedTechnicianFilter(draftOngoingAssignedTechnicianFilter);
                       setOngoingServiceSubTypeFilter(draftOngoingServiceSubTypeFilter);
-                      setOngoingFilterDialogOpen(false);
+                      closeAdminModal();
                     }}
                   >
                     Apply
@@ -10873,19 +11126,7 @@ const AdminDashboard = () => {
                   }}
                   onViewReminders={(customer) => setViewRemindersCustomer(customer)}
                   onManageWarranty={(customer) => {
-                    setWarrantyDialogCustomer({
-                      id: customer.id,
-                      customer_id: (customer as any).customer_id || customer.customerId || '',
-                      full_name: (customer as any).full_name || customer.fullName || '',
-                      phone: customer.phone || '',
-                      model: customer.model || '',
-                      brand: customer.brand || '',
-                      visible_address:
-                        customer.address?.visible_address ||
-                        (customer as any).visible_address ||
-                        '',
-                    });
-                    setWarrantyDialogOpen(true);
+                    openAdminModal('warranty', { customerId: customer.id });
                   }}
                 />
 
@@ -11251,14 +11492,23 @@ const AdminDashboard = () => {
                               formattedCompletedAt={formattedCompletedAt}
                               setSelectedCompletedJob={setSelectedCompletedJob}
                               setCompletedJobEditData={setCompletedJobEditData}
-                              setEditCompletedJobDialogOpen={setEditCompletedJobDialogOpen}
+                              onEditCompletedReady={() =>
+                                openAdminModal('edit-completed', { jobId: fullJob.id })
+                              }
                               setSelectedJobForMessage={setSelectedJobForMessage}
-                              setSendMessageDialogOpen={setSendMessageDialogOpen}
+                              onOpenSendMessage={() =>
+                                openAdminModal('send-message', { jobId: fullJob.id })
+                              }
                               onSendCompletionEmail={sendCompletionEmailQuick}
                               onEditCompletionEmail={openCompletionEmailComposer}
                               setSelectedBillPhotos={setSelectedBillPhotos}
                               setSelectedPhoto={setSelectedPhoto}
-                              setPhotoViewerOpen={setPhotoViewerOpen}
+                              onOpenPaymentBillPhotos={(photos, startIdx = 0) => {
+                                openAdminModal('photo-viewer', {
+                                  jobId: fullJob.id,
+                                  photoIdx: startIdx,
+                                });
+                              }}
                               minimalMode={minimalCompletedMode}
                               detailsLoaded={detailsLoaded}
                               loadingDetails={isLoadingDetails}
@@ -12227,7 +12477,9 @@ const AdminDashboard = () => {
       {/* Photo Gallery Dialog */}
       <PhotoGalleryDialog
         open={photoGalleryOpen}
-        onOpenChange={setPhotoGalleryOpen}
+        onOpenChange={(open) => {
+          if (!open) onAdminModalOpenChange('photos', false);
+        }}
         selectedJobPhotos={selectedJobPhotos}
         onViewPhoto={openPhotoViewer}
         onDeletePhoto={handleDeletePhoto}
@@ -12236,7 +12488,9 @@ const AdminDashboard = () => {
       {/* Full-Screen Photo Viewer Modal */}
       <PhotoViewerDialog
         open={photoViewerOpen}
-        onOpenChange={setPhotoViewerOpen}
+        onOpenChange={(open) => {
+          if (!open) onAdminModalOpenChange('photo-viewer', false);
+        }}
         selectedPhoto={selectedPhoto}
         selectedBillPhotos={selectedBillPhotos}
         selectedJobPhotos={selectedJobPhotos}
@@ -12244,7 +12498,7 @@ const AdminDashboard = () => {
         onNext={goToNextPhoto}
         onDownload={downloadPhoto}
         onClose={() => {
-          setPhotoViewerOpen(false);
+          onAdminModalOpenChange('photo-viewer', false);
           setSelectedPhoto(null);
           setSelectedBillPhotos(null);
           setSelectedCustomerPhotos(null);
@@ -12256,7 +12510,7 @@ const AdminDashboard = () => {
       {/* Job Assignment Dialog */}
       <AssignJobDialog
         open={assignJobDialogOpen}
-        onOpenChange={setAssignJobDialogOpen}
+        onOpenChange={(open) => onAdminModalOpenChange('assign', open)}
         job={jobToAssign}
         technicians={technicians}
         techniciansRefreshing={assignTechniciansRefreshing}
@@ -12361,7 +12615,9 @@ const AdminDashboard = () => {
       {/* Customer Photo Gallery Dialog */}
       <CustomerPhotoGalleryDialog
         open={customerPhotoGalleryOpen}
-        onOpenChange={handleClosePhotoGallery}
+        onOpenChange={(open) => {
+          if (!open) handleClosePhotoGallery();
+        }}
         customer={selectedCustomerForPhotos}
         customerPhotos={customerPhotos}
         uploadingThumbnails={uploadingThumbnails}
@@ -12381,7 +12637,10 @@ const AdminDashboard = () => {
           const reversedPhotos = [...photos].reverse();
           setSelectedCustomerPhotos(reversedPhotos);
           setSelectedPhoto({ url: photo, index, total });
-          setPhotoViewerOpen(true);
+          openAdminModal('photo-viewer', {
+            customerId: selectedCustomerForPhotos?.id,
+            photoIdx: index,
+          });
         }}
         onDeletePhoto={(photoUrl, photoIndex) => {
           setCustomerPhotoToDelete({ photoUrl, photoIndex });
@@ -12499,7 +12758,7 @@ const AdminDashboard = () => {
       {/* Service History Dialog */}
       <ServiceHistoryDialog
         open={historyDialogOpen}
-        onOpenChange={setHistoryDialogOpen}
+        onOpenChange={(open) => onAdminModalOpenChange('history', open)}
         customer={selectedCustomerForHistory}
         history={selectedCustomerForHistory ? (customerHistory[selectedCustomerForHistory.customer_id || selectedCustomerForHistory.customerId || ''] || []) : []}
         hasMore={historyHasMore}
@@ -12527,7 +12786,7 @@ const AdminDashboard = () => {
       {/* Reassign Job Dialog */}
       <ReassignJobDialog
         open={reassignDialogOpen}
-        onOpenChange={setReassignDialogOpen}
+        onOpenChange={(open) => onAdminModalOpenChange('reassign', open)}
         job={jobToReassign}
         technicians={technicians}
         techniciansRefreshing={reassignTechniciansRefreshing}
@@ -12547,7 +12806,7 @@ const AdminDashboard = () => {
       {/* Edit Job Dialog */}
       <EditJobDialog
         open={editJobDialogOpen}
-        onOpenChange={setEditJobDialogOpen}
+        onOpenChange={(open) => onAdminModalOpenChange('edit-job', open)}
         job={jobToEdit}
         onJobUpdated={(updatedJob) => {
           if (!updatedJob?.id) {
@@ -12833,7 +13092,7 @@ const AdminDashboard = () => {
         <FollowUpModal
           isOpen={followUpModalOpen}
           onClose={() => {
-            setFollowUpModalOpen(false);
+            closeAdminModal();
             setSelectedJobForFollowUp(null);
           }}
           job={selectedJobForFollowUp}
@@ -12841,7 +13100,7 @@ const AdminDashboard = () => {
         />
 
         {/* Move to Ongoing Dialog */}
-        <Dialog open={moveToOngoingDialogOpen} onOpenChange={setMoveToOngoingDialogOpen}>
+        <Dialog open={moveToOngoingDialogOpen} onOpenChange={(open) => onAdminModalOpenChange('move-ongoing', open)}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Move to Ongoing</DialogTitle>
@@ -12931,7 +13190,7 @@ const AdminDashboard = () => {
       {/* Deny Job Dialog */}
       <DenyJobDialog
         open={denyDialogOpen}
-        onOpenChange={setDenyDialogOpen}
+        onOpenChange={(open) => onAdminModalOpenChange('deny', open)}
         job={selectedJobForDeny}
         denyReason={denyReason}
         onDenyReasonChange={setDenyReason}
@@ -12949,6 +13208,9 @@ const AdminDashboard = () => {
               void revertIncompleteCompleteFlow();
               setSelectedJobForComplete(null);
               setSelectedTechnicianForComplete('');
+            }
+            if (parseAdminDashboardUrl(location.search).modal === 'complete') {
+              closeAdminModal();
             }
           }
           setTechnicianSelectDialogOpen(open);
@@ -13019,11 +13281,14 @@ const AdminDashboard = () => {
       <CompleteJobDialog
         open={completeDialogOpen}
         onOpenChange={(open) => {
-          setCompleteDialogOpen(open);
           if (!open) {
+            closeAdminModal();
+            setCompleteDialogOpen(false);
             void revertIncompleteCompleteFlow();
             setSelectedJobForComplete(null);
             setSelectedTechnicianForComplete('');
+          } else {
+            setCompleteDialogOpen(true);
           }
         }}
         job={selectedJobForComplete}
@@ -13102,19 +13367,25 @@ const AdminDashboard = () => {
       {/* Customer Report Dialog */}
       <CustomerReportDialog
         open={customerReportDialogOpen}
-        onOpenChange={setCustomerReportDialogOpen}
+        onOpenChange={(open) => onAdminModalOpenChange('report', open)}
         customer={selectedCustomerForReport}
         technicians={techniciansForReports.length > 0 ? techniciansForReports : technicians}
         onPhotoClick={(url, index, total) => {
           setSelectedPhoto({ url, index, total });
           setPhotoDownloadMeta({ customerName: selectedCustomerForReport?.fullName, type: 'payment' });
-          setPhotoViewerOpen(true);
+          openAdminModal('photo-viewer', {
+            customerId: selectedCustomerForReport?.id,
+            photoIdx: index,
+          });
         }}
         onBillPhotosClick={(photos, index) => {
           setSelectedBillPhotos(photos);
           setSelectedPhoto({ url: photos[index], index, total: photos.length });
           setPhotoDownloadMeta({ customerName: selectedCustomerForReport?.fullName, type: 'bill' });
-          setPhotoViewerOpen(true);
+          openAdminModal('photo-viewer', {
+            customerId: selectedCustomerForReport?.id,
+            photoIdx: index,
+          });
         }}
         onNavigateToCompletedJob={handleNavigateToCompletedJobFromReport}
       />
@@ -13122,7 +13393,7 @@ const AdminDashboard = () => {
       {/* Edit Completed Job Dialog */}
       <EditCompletedJobDialog
         open={editCompletedJobDialogOpen}
-        onOpenChange={setEditCompletedJobDialogOpen}
+        onOpenChange={(open) => onAdminModalOpenChange('edit-completed', open)}
         job={selectedCompletedJob}
         editData={completedJobEditData}
         onEditDataChange={setCompletedJobEditData}
@@ -13670,7 +13941,7 @@ const AdminDashboard = () => {
                       }
                     }
 
-                    setEditCompletedJobDialogOpen(false);
+                    closeAdminModal();
                     // Reload jobs
                     await loadFilteredJobs(statusFilter, currentPage);
                     // Drop stale full-job cache so profit/amounts match DB (list row is fresh after reload).
@@ -13706,7 +13977,7 @@ const AdminDashboard = () => {
       {/* Send Message Dialog */}
       <SendMessageDialog
         open={sendMessageDialogOpen}
-        onOpenChange={setSendMessageDialogOpen}
+        onOpenChange={(open) => onAdminModalOpenChange('send-message', open)}
         job={selectedJobForMessage}
         onMessageSent={handleMessageSent}
       />

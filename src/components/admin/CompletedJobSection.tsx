@@ -68,14 +68,17 @@ interface CompletedJobSectionProps {
   formattedCompletedAt: string | null;
   setSelectedCompletedJob: (job: Job) => void;
   setCompletedJobEditData: (data: any) => void;
-  setEditCompletedJobDialogOpen: (open: boolean) => void;
+  setEditCompletedJobDialogOpen?: (open: boolean) => void;
+  onEditCompletedReady?: () => void;
   setSelectedJobForMessage: (job: Job) => void;
   setSendMessageDialogOpen: (open: boolean) => void;
+  onOpenSendMessage?: () => void;
   onSendCompletionEmail?: (job: Job, brand: DocumentBrand) => Promise<boolean>;
   onEditCompletionEmail?: (job: Job, brand: DocumentBrand) => void;
   setSelectedBillPhotos: (photos: string[]) => void;
   setSelectedPhoto: (photo: { url: string; index: number; total: number }) => void;
-  setPhotoViewerOpen: (open: boolean) => void;
+  setPhotoViewerOpen?: (open: boolean) => void;
+  onOpenPaymentBillPhotos?: (photos: string[], startIndex?: number) => void;
   minimalMode?: boolean;
   detailsLoaded?: boolean;
   loadingDetails?: boolean;
@@ -99,13 +102,16 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
   setSelectedCompletedJob,
   setCompletedJobEditData,
   setEditCompletedJobDialogOpen,
+  onEditCompletedReady,
   setSelectedJobForMessage,
   setSendMessageDialogOpen,
+  onOpenSendMessage,
   onSendCompletionEmail,
   onEditCompletionEmail,
   setSelectedBillPhotos,
   setSelectedPhoto,
   setPhotoViewerOpen,
+  onOpenPaymentBillPhotos,
   minimalMode,
   detailsLoaded,
   loadingDetails,
@@ -257,7 +263,11 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
       index: 0,
       total: allPhotos.length,
     });
-    setPhotoViewerOpen(true);
+    if (onOpenPaymentBillPhotos) {
+      onOpenPaymentBillPhotos(allPhotos, 0);
+    } else {
+      setPhotoViewerOpen?.(true);
+    }
   };
 
   const billCount = billPhotoUrls.length;
@@ -633,7 +643,11 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
                 paymentScreenshots: paymentScreenshot ? [paymentScreenshot] : [],
               };
               setCompletedJobEditData(editData);
-              setEditCompletedJobDialogOpen(true);
+              if (onEditCompletedReady) {
+                onEditCompletedReady();
+              } else {
+                setEditCompletedJobDialogOpen?.(true);
+              }
             }}
             title="Edit"
             className="text-xs flex-1 min-w-0 justify-center py-2 px-2"
@@ -648,7 +662,11 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
                 setSendMessageConfirmOpen(true);
               } else {
                 setSelectedJobForMessage(job);
-                setSendMessageDialogOpen(true);
+                if (onOpenSendMessage) {
+                  onOpenSendMessage();
+                } else {
+                  setSendMessageDialogOpen(true);
+                }
               }
             }}
             title={messageSent ? 'Send WhatsApp again' : 'Send WhatsApp message'}
