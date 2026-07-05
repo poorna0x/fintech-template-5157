@@ -160,7 +160,6 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
   const [showModelSuggestions, setShowModelSuggestions] = useState(false);
   const locationManuallyEditedRef = useRef(false);
   const lastSavedFormDataRef = useRef<string>('');
-  const hasUnsavedChangesRef = useRef(false);
 
   const filteredAddressSuggestions = useMemo(() => {
     if (!editFormData?.visible_address || editFormData.visible_address.trim().length === 0) {
@@ -308,7 +307,6 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
       };
       
       fetchFreshCustomerData();
-      hasUnsavedChangesRef.current = false;
       locationManuallyEditedRef.current = false;
     }
   }, [customer, open]);
@@ -907,7 +905,6 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
       await onLoadBrandsAndModels();
       
       lastSavedFormDataRef.current = JSON.stringify(editFormData);
-      hasUnsavedChangesRef.current = false;
       
       // Show success message
       if ((roBrandChanged || roModelChanged) && roServiceIndex >= 0) {
@@ -936,102 +933,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
     }
   };
 
-  // Track changes in form data
-  useEffect(() => {
-    if (!customer || !open) return;
-    
-    const currentFormDataString = JSON.stringify(editFormData);
-    const hasChanges = currentFormDataString !== lastSavedFormDataRef.current;
-    hasUnsavedChangesRef.current = hasChanges;
-  }, [editFormData, customer, open]);
-
-  // Function to auto-save customer (called on dialog close)
-  const autoSaveCustomer = async () => {
-    if (!customer || isUpdating || !hasUnsavedChangesRef.current) return;
-
-    try {
-      const updatedAddress = {
-        street: editFormData.address.street,
-        area: editFormData.address.area,
-        city: editFormData.address.city,
-        state: editFormData.address.state,
-        pincode: editFormData.address.pincode
-      };
-
-      const updatedLocation: any = {
-        latitude: editFormData.location.latitude || 0,
-        longitude: editFormData.location.longitude || 0,
-        formattedAddress: editFormData.address.street || editFormData.location.formattedAddress || '',
-      };
-      
-      if (editFormData.google_location && editFormData.google_location.trim()) {
-        updatedLocation.googleLocation = editFormData.google_location;
-      } else if ((editFormData.location as any)?.googleLocation) {
-        updatedLocation.googleLocation = (editFormData.location as any).googleLocation;
-      }
-
-      const brands: string[] = [];
-      const models: string[] = [];
-      
-      editFormData.service_types.forEach((serviceType: string) => {
-        const equipment = editFormData.equipment[serviceType];
-        if (equipment) {
-          brands.push(equipment.brand?.trim() || '');
-          models.push(equipment.model?.trim() || '');
-        } else {
-          brands.push('');
-          models.push('');
-        }
-      });
-
-      const { data: updatedCustomerFromDb, error } = await db.customers.update(customer.id, {
-        full_name: editFormData.full_name,
-        phone: editFormData.phone,
-        alternate_phone: editFormData.alternate_phone,
-        email: editFormData.email,
-        service_type: mapServiceTypesToDbValue(editFormData.service_types),
-        brand: brands.join(', '),
-        model: models.join(', '),
-        preferred_language: (editFormData.native_language || 'ENGLISH') as 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU',
-        preferred_time_slot: (customer as any).preferred_time_slot || customer.preferredTimeSlot || 'MORNING',
-        status: editFormData.status as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
-        notes: editFormData.notes,
-        visible_address: editFormData.visible_address ? editFormData.visible_address.trim() : '',
-        custom_time: editFormData.custom_time || null,
-        has_prefilter: editFormData.has_prefilter,
-        has_google_review: editFormData.has_google_review,
-        customer_tier: editFormData.customer_tier,
-        raw_water_tds: Math.max(0, parseInt(String(editFormData.raw_water_tds), 10) || 0),
-        address: updatedAddress,
-        location: updatedLocation
-      });
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      if (updatedCustomerFromDb) {
-        const transformedCustomer = transformCustomerData(updatedCustomerFromDb);
-        onCustomerUpdated(transformedCustomer);
-      }
-
-      lastSavedFormDataRef.current = JSON.stringify(editFormData);
-      hasUnsavedChangesRef.current = false;
-      
-      toast.success('Customer auto-saved successfully!');
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      console.error('Error auto-saving customer:', error);
-      toast.error(`Auto-save failed: ${errorMessage}`);
-    }
-  };
-
-  const handleDialogOpenChange = async (isOpen: boolean) => {
-    // If closing and there are unsaved changes, save first
-    if (!isOpen && customer && hasUnsavedChangesRef.current) {
-      await autoSaveCustomer();
-    }
-    // Then proceed with the normal close
+  const handleDialogOpenChange = (isOpen: boolean) => {
     onOpenChange(isOpen);
   };
 

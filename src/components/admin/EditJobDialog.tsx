@@ -223,11 +223,17 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
     }
   }, [job, open]);
 
-  // Reset close flag when dialog opens
+  // Reset close flag when dialog opens; discard unsaved edits when closed via back/URL.
   useEffect(() => {
     if (open) {
       allowCloseRef.current = false;
       setForceOpen(true);
+      return;
+    }
+    allowCloseRef.current = false;
+    setForceOpen(false);
+    if (initialFormDataRef.current) {
+      setEditJobFormData({ ...initialFormDataRef.current });
     }
   }, [open]);
 

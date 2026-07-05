@@ -113,6 +113,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                         const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(whatsappMessage)}`;
                         window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
                         await onMessageSent(job.id);
+                        onOpenChange(false);
                       }}
                     >
                       <WhatsAppIcon className="w-4 h-4 mr-2" />
@@ -126,6 +127,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                         const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(whatsappMessage)}`;
                         window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
                         await onMessageSent(job.id);
+                        onOpenChange(false);
                       }}
                     >
                       <WhatsAppIcon className="w-4 h-4 mr-2" />
@@ -142,6 +144,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                     const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(whatsappMessage)}`;
                     window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
                     await onMessageSent(job.id);
+                    onOpenChange(false);
                   }}
                 >
                   <WhatsAppIcon className="w-4 h-4 mr-2" />

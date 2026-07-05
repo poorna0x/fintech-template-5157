@@ -424,7 +424,6 @@ const AdminDashboard = () => {
   const [currentView, setCurrentView] = useState<AdminDashboardView>(() =>
     readAdminTabViewFromSearch(location.search)
   );
-  const [moreOptionsDialogOpen, setMoreOptionsDialogOpen] = useState<Record<string, boolean>>({});
   const [editFormData, setEditFormData] = useState({
     full_name: '',
     phone: '',
@@ -590,6 +589,11 @@ const AdminDashboard = () => {
       }
     },
     [closeAdminModal, location.search]
+  );
+
+  const adminModalUrl = useMemo(
+    () => parseAdminDashboardUrl(location.search),
+    [location.search]
   );
 
   // Keep full-page admin views in sync with ?view= for mobile back / swipe-back.
@@ -2417,10 +2421,10 @@ const AdminDashboard = () => {
       void loadFullCustomerForAction(customerForModal).then(setSelectedCustomerForBill);
     }
     if (modal === 'edit-customer' && customerForModal) {
-      setEditingCustomer(customerForModal);
+      void loadFullCustomerForAction(customerForModal).then(setEditingCustomer);
     }
     if (modal === 'new-job' && customerForModal) {
-      setSelectedCustomerForJob(customerForModal);
+      void loadFullCustomerForAction(customerForModal).then(setSelectedCustomerForJob);
     }
     if (modal === 'warranty' && customerForModal) {
       setWarrantyDialogCustomer({
@@ -3504,7 +3508,7 @@ const AdminDashboard = () => {
       clearTimeout(autoSaveTimerRef.current);
       autoSaveTimerRef.current = null;
     }
-    setEditDialogOpen(true);
+    openAdminModal('edit-customer', { customerId: c.id });
   };
 
   const handleUpdateCustomer = async () => {
@@ -4934,7 +4938,7 @@ const AdminDashboard = () => {
     };
     setNewJobFormData(initialFormData);
     setIsJobDialogReady(true);
-    setNewJobDialogOpen(true);
+    openAdminModal('new-job', { customerId: c.id });
   };
 
   const handleCreateJob = async () => {
@@ -5202,7 +5206,7 @@ const AdminDashboard = () => {
   };
 
   const handleCloseNewJobDialog = () => {
-    setNewJobDialogOpen(false);
+    closeAdminModal();
     setIsJobDialogReady(false);
     setSelectedCustomerForJob(null);
   };
@@ -8507,8 +8511,8 @@ const AdminDashboard = () => {
         toast.error('Failed to save message status: ' + error.message);
       } else {
         toast.success('Message sent confirmation saved');
-        // Close the dialog
-        setSendMessageDialogOpen(false);
+        closeAdminModal();
+        setSelectedJobForMessage(null);
         // Ensure the updated `requirements` are reflected in the Completed Jobs UI.
         // The main Completed filter list can be fetched in "slim" mode where `requirements` are omitted,
         // so we explicitly load the full job details for this job id.
@@ -11195,7 +11199,17 @@ const AdminDashboard = () => {
                   priorServiceFromJobs={priorServiceFromJobs}
                   isLoadingPhotos={isLoadingPhotos}
                   selectedCustomerForPhotos={selectedCustomerForPhotos}
-                  moreOptionsDialogOpen={moreOptionsDialogOpen}
+                  moreOptionsOpen={
+                    adminModalUrl.modal === 'more-options' &&
+                    adminModalUrl.customerId === customer.id
+                  }
+                  onMoreOptionsOpenChange={(open) => {
+                    if (open) {
+                      openAdminModal('more-options', { customerId: customer.id });
+                    } else {
+                      onAdminModalOpenChange('more-options', false);
+                    }
+                  }}
                   onEditCustomer={handleEditCustomer}
                   onNewJob={handleNewJob}
                   onViewPhotos={handleViewPhotos}
@@ -11204,7 +11218,6 @@ const AdminDashboard = () => {
                   onGenerateAMC={handleGenerateAMC}
                   onGenerateTaxInvoice={handleGenerateTaxInvoice}
                   onOpenCustomerReport={handleOpenCustomerReport}
-                  onSetMoreOptionsDialogOpen={setMoreOptionsDialogOpen}
                   onViewAMCInfo={handleViewAMCInfo}
                   onAddReminder={(customer) => {
                     setReminderEntity({ type: 'customer', id: customer.id });
@@ -12423,7 +12436,12 @@ const AdminDashboard = () => {
       {/* Edit Customer Dialog */}
       <EditCustomerDialog
         open={editDialogOpen}
-        onOpenChange={setEditDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditingCustomer(null);
+          }
+          onAdminModalOpenChange('edit-customer', open);
+        }}
         customer={editingCustomer}
         dbBrands={dbBrands}
         dbModels={dbModels}
@@ -12437,7 +12455,7 @@ const AdminDashboard = () => {
             full_name: (updatedCustomer as any).full_name ?? updatedCustomer.fullName ?? null,
           });
           setEditingCustomer(null);
-          setEditDialogOpen(false);
+          closeAdminModal();
           void loadFilteredJobs(statusFilter, currentPage, { silent: true });
         }}
         onLoadBrandsAndModels={loadBrandsAndModels}
@@ -12696,11 +12714,11 @@ const AdminDashboard = () => {
       <NewJobDialog
         open={newJobDialogOpen}
         onOpenChange={(open) => {
-          setNewJobDialogOpen(open);
           if (!open) {
             setIsJobDialogReady(false);
             setSelectedCustomerForJob(null);
           }
+          onAdminModalOpenChange('new-job', open);
         }}
         customer={selectedCustomerForJob}
         technicians={technicians}
@@ -14165,8 +14183,7 @@ const AdminDashboard = () => {
                             variant="outline"
                             size="sm"
                             onClick={() => {
-                              setEditingCustomer(customer);
-                              setEditDialogOpen(true);
+                              void handleEditCustomer(customer);
                               closeAdminTool();
                             }}
                           >

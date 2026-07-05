@@ -764,14 +764,15 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => {
+              onClick={(e) => {
+                e.preventDefault();
+                setSendMessageConfirmOpen(false);
                 setSelectedJobForMessage(job);
                 if (onOpenSendMessage) {
                   onOpenSendMessage();
                 } else {
                   setSendMessageDialogOpen(true);
                 }
-                setSendMessageConfirmOpen(false);
               }}
             >
               Send

@@ -1,10 +1,8 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Edit, Plus, Camera, FileText, MoreVertical, Receipt, Star, Bell, ShieldCheck } from 'lucide-react';
 import { Customer } from '@/types';
-import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import { customerNameClassName } from '@/lib/customerDisplay';
 
 interface CustomerCardHeaderProps {
@@ -14,7 +12,8 @@ interface CustomerCardHeaderProps {
   customerPriorServiceStatus: Record<string, boolean>;
   isLoadingPhotos: boolean;
   selectedCustomerForPhotos: Customer | null;
-  moreOptionsDialogOpen: Record<string, boolean>;
+  moreOptionsOpen: boolean;
+  onMoreOptionsOpenChange: (open: boolean) => void;
   onEditCustomer: (customer: Customer) => void;
   onNewJob: (customer: Customer) => void;
   onViewPhotos: (customer: Customer) => void;
@@ -24,7 +23,6 @@ interface CustomerCardHeaderProps {
   onGenerateTaxInvoice: (customer: Customer) => void;
   /** Hydrate full customer if needed, then set report state and open dialog (parent may be async). */
   onOpenCustomerReport: (customer: Customer) => void | Promise<void>;
-  onSetMoreOptionsDialogOpen: (updater: (prev: Record<string, boolean>) => Record<string, boolean>) => void;
   onViewAMCInfo?: (customer: Customer) => void;
   onAddReminder?: (customer: Customer) => void;
   onViewReminders?: (customer: Customer) => void;
@@ -39,7 +37,8 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
   customerPriorServiceStatus,
   isLoadingPhotos,
   selectedCustomerForPhotos,
-  moreOptionsDialogOpen,
+  moreOptionsOpen,
+  onMoreOptionsOpenChange,
   onEditCustomer,
   onNewJob,
   onViewPhotos,
@@ -48,7 +47,6 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
   onGenerateAMC,
   onGenerateTaxInvoice,
   onOpenCustomerReport,
-  onSetMoreOptionsDialogOpen,
   onViewAMCInfo,
   onAddReminder,
   onViewReminders,
@@ -182,159 +180,11 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
             variant="outline" 
             size="sm" 
             className="w-full flex items-center justify-center gap-2 h-10 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md text-sm"
-            onClick={() => {
-              onSetMoreOptionsDialogOpen(prev => ({
-                ...prev,
-                [customer.id]: true
-              }));
-            }}
+            onClick={() => onMoreOptionsOpenChange(true)}
           >
             <MoreVertical className="w-4 h-4" />
             More Options
           </Button>
-          
-          {/* More Options Dialog */}
-          <Dialog 
-            open={moreOptionsDialogOpen[customer.id] || false}
-            onOpenChange={(open) => {
-              onSetMoreOptionsDialogOpen(prev => ({
-                ...prev,
-                [customer.id]: open
-              }));
-            }}
-          >
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>More Options</DialogTitle>
-                <DialogDescription asChild>
-                  <span>
-                    Choose an action for{' '}
-                    <span className={customerNameClassName(customer)}>
-                      {customer.fullName || 'this customer'}
-                    </span>
-                  </span>
-                </DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-2 py-4">
-                <Button 
-                  variant="outline"
-                  className="w-full justify-start h-auto py-3 px-4 min-h-[44px]"
-                  onClick={() => {
-                    onSetMoreOptionsDialogOpen(prev => ({ ...prev, [customer.id]: false }));
-                    onAddReminder?.(customer);
-                  }}
-                >
-                  <Bell className="mr-3 h-5 w-5 shrink-0" />
-                  <div className="text-left">
-                    <div className="font-medium">Add reminder</div>
-                    <div className="text-xs text-muted-foreground">Add a reminder for this customer</div>
-                  </div>
-                </Button>
-                <Button 
-                  variant="outline"
-                  className="w-full justify-start h-auto py-3 px-4 min-h-[44px]"
-                  onClick={() => {
-                    onSetMoreOptionsDialogOpen(prev => ({ ...prev, [customer.id]: false }));
-                    onViewReminders?.(customer);
-                  }}
-                >
-                  <Bell className="mr-3 h-5 w-5 shrink-0" />
-                  <div className="text-left">
-                    <div className="font-medium">View reminders</div>
-                    <div className="text-xs text-muted-foreground">See and edit reminders for this customer</div>
-                  </div>
-                </Button>
-                <Button 
-                  variant="outline"
-                  className="w-full justify-start h-auto py-3 px-4 min-h-[44px]"
-                  onClick={() => {
-                    onSetMoreOptionsDialogOpen(prev => ({ ...prev, [customer.id]: false }));
-                    onGenerateBill(customer);
-                  }}
-                >
-                  <Receipt className="mr-3 h-5 w-5" />
-                  <div className="text-left">
-                    <div className="font-medium">Generate Bill</div>
-                    <div className="text-xs text-muted-foreground">Create a bill for this customer</div>
-                  </div>
-                </Button>
-                <Button 
-                  variant="outline"
-                  className="w-full justify-start h-auto py-3 px-4"
-                  onClick={() => {
-                    onSetMoreOptionsDialogOpen(prev => ({ ...prev, [customer.id]: false }));
-                    onGenerateQuotation(customer);
-                  }}
-                >
-                  <FileText className="mr-3 h-5 w-5" />
-                  <div className="text-left">
-                    <div className="font-medium">Generate Quotation</div>
-                    <div className="text-xs text-muted-foreground">Create a quotation for this customer</div>
-                  </div>
-                </Button>
-                <Button 
-                  variant="outline"
-                  className="w-full justify-start h-auto py-3 px-4"
-                  onClick={() => {
-                    onSetMoreOptionsDialogOpen(prev => ({ ...prev, [customer.id]: false }));
-                    onGenerateAMC(customer);
-                  }}
-                >
-                  <Star className="mr-3 h-5 w-5" />
-                  <div className="text-left">
-                    <div className="font-medium">Generate AMC</div>
-                    <div className="text-xs text-muted-foreground">Create full AMC or share terms only</div>
-                  </div>
-                </Button>
-                <Button 
-                  variant="outline"
-                  className="w-full justify-start h-auto py-3 px-4"
-                  onClick={() => {
-                    onSetMoreOptionsDialogOpen(prev => ({ ...prev, [customer.id]: false }));
-                    onGenerateTaxInvoice(customer);
-                  }}
-                >
-                  <Receipt className="mr-3 h-5 w-5" />
-                  <div className="text-left">
-                    <div className="font-medium">Generate Tax Invoice</div>
-                    <div className="text-xs text-muted-foreground">Create a tax invoice with GST for this customer</div>
-                  </div>
-                </Button>
-                {onManageWarranty && (
-                  <Button
-                    variant="outline"
-                    className="w-full justify-start h-auto py-3 px-4"
-                    onClick={() => {
-                      onSetMoreOptionsDialogOpen(prev => ({ ...prev, [customer.id]: false }));
-                      onManageWarranty(customer);
-                    }}
-                  >
-                    <ShieldCheck className="mr-3 h-5 w-5" />
-                    <div className="text-left">
-                      <div className="font-medium">Add / manage warranty</div>
-                      <div className="text-xs text-muted-foreground">Add or view product & part warranties</div>
-                    </div>
-                  </Button>
-                )}
-                {hasAmc && onViewAMCInfo && (
-                  <Button 
-                    variant="outline"
-                    className="w-full justify-start h-auto py-3 px-4 text-green-700 hover:text-green-800 hover:bg-green-50"
-                    onClick={() => {
-                      onSetMoreOptionsDialogOpen(prev => ({ ...prev, [customer.id]: false }));
-                      onViewAMCInfo(customer);
-                    }}
-                  >
-                    <Star className="mr-3 h-5 w-5" />
-                    <div className="text-left">
-                      <div className="font-medium">AMC Info</div>
-                      <div className="text-xs text-muted-foreground">View active AMC contract details</div>
-                    </div>
-                  </Button>
-                )}
-              </div>
-            </DialogContent>
-          </Dialog>
         </div>
       </div>
 
@@ -418,62 +268,152 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
             Reports
           </Button>
           
-          {/* Desktop 3 Dots Menu */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="flex items-center gap-2 h-8 px-3 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md text-xs"
-              >
-                <MoreVertical className="w-3 h-3" />
-                More
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuItem onClick={() => onAddReminder?.(customer)}>
-                <Bell className="mr-2 h-4 w-4" />
-                Add reminder
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onViewReminders?.(customer)}>
-                <Bell className="mr-2 h-4 w-4" />
-                View reminders
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onGenerateBill(customer)}>
-                <Receipt className="mr-2 h-4 w-4" />
-                Generate Bill
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onGenerateQuotation(customer)}>
-                <FileText className="mr-2 h-4 w-4" />
-                Generate Quotation
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onGenerateAMC(customer)}>
-                <Star className="mr-2 h-4 w-4" />
-                Generate AMC / Share Terms
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onGenerateTaxInvoice(customer)}>
-                <Receipt className="mr-2 h-4 w-4" />
-                Generate Tax Invoice
-              </DropdownMenuItem>
-              {onManageWarranty && (
-                <DropdownMenuItem onClick={() => onManageWarranty(customer)}>
-                  <ShieldCheck className="mr-2 h-4 w-4" />
-                  Add / manage warranty
-                </DropdownMenuItem>
-              )}
-              {hasAmc && onViewAMCInfo && (
-                <DropdownMenuItem 
-                  onClick={() => onViewAMCInfo(customer)}
-                  className="text-green-700 focus:text-green-800 focus:bg-green-50"
-                >
-                  <Star className="mr-2 h-4 w-4" />
-                  AMC Info
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="flex items-center gap-2 h-8 px-3 bg-white hover:bg-gray-50 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 transition-all duration-200 rounded-md text-xs"
+            onClick={() => onMoreOptionsOpenChange(true)}
+          >
+            <MoreVertical className="w-3 h-3" />
+            More
+          </Button>
         </div>
       </div>
+
+      {/* More Options Dialog — shared by mobile + desktop */}
+      <Dialog open={moreOptionsOpen} onOpenChange={onMoreOptionsOpenChange}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>More Options</DialogTitle>
+            <DialogDescription asChild>
+              <span>
+                Choose an action for{' '}
+                <span className={customerNameClassName(customer)}>
+                  {customer.fullName || 'this customer'}
+                </span>
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2 py-4">
+            <Button
+              variant="outline"
+              className="w-full justify-start h-auto py-3 px-4 min-h-[44px]"
+              onClick={() => {
+                onMoreOptionsOpenChange(false);
+                onAddReminder?.(customer);
+              }}
+            >
+              <Bell className="mr-3 h-5 w-5 shrink-0" />
+              <div className="text-left">
+                <div className="font-medium">Add reminder</div>
+                <div className="text-xs text-muted-foreground">Add a reminder for this customer</div>
+              </div>
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-start h-auto py-3 px-4 min-h-[44px]"
+              onClick={() => {
+                onMoreOptionsOpenChange(false);
+                onViewReminders?.(customer);
+              }}
+            >
+              <Bell className="mr-3 h-5 w-5 shrink-0" />
+              <div className="text-left">
+                <div className="font-medium">View reminders</div>
+                <div className="text-xs text-muted-foreground">See and edit reminders for this customer</div>
+              </div>
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-start h-auto py-3 px-4 min-h-[44px]"
+              onClick={() => {
+                onMoreOptionsOpenChange(false);
+                onGenerateBill(customer);
+              }}
+            >
+              <Receipt className="mr-3 h-5 w-5" />
+              <div className="text-left">
+                <div className="font-medium">Generate Bill</div>
+                <div className="text-xs text-muted-foreground">Create a bill for this customer</div>
+              </div>
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-start h-auto py-3 px-4"
+              onClick={() => {
+                onMoreOptionsOpenChange(false);
+                onGenerateQuotation(customer);
+              }}
+            >
+              <FileText className="mr-3 h-5 w-5" />
+              <div className="text-left">
+                <div className="font-medium">Generate Quotation</div>
+                <div className="text-xs text-muted-foreground">Create a quotation for this customer</div>
+              </div>
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-start h-auto py-3 px-4"
+              onClick={() => {
+                onMoreOptionsOpenChange(false);
+                onGenerateAMC(customer);
+              }}
+            >
+              <Star className="mr-3 h-5 w-5" />
+              <div className="text-left">
+                <div className="font-medium">Generate AMC</div>
+                <div className="text-xs text-muted-foreground">Create full AMC or share terms only</div>
+              </div>
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-start h-auto py-3 px-4"
+              onClick={() => {
+                onMoreOptionsOpenChange(false);
+                onGenerateTaxInvoice(customer);
+              }}
+            >
+              <Receipt className="mr-3 h-5 w-5" />
+              <div className="text-left">
+                <div className="font-medium">Generate Tax Invoice</div>
+                <div className="text-xs text-muted-foreground">Create a tax invoice with GST for this customer</div>
+              </div>
+            </Button>
+            {onManageWarranty && (
+              <Button
+                variant="outline"
+                className="w-full justify-start h-auto py-3 px-4"
+                onClick={() => {
+                  onMoreOptionsOpenChange(false);
+                  onManageWarranty(customer);
+                }}
+              >
+                <ShieldCheck className="mr-3 h-5 w-5" />
+                <div className="text-left">
+                  <div className="font-medium">Add / manage warranty</div>
+                  <div className="text-xs text-muted-foreground">Add or view product & part warranties</div>
+                </div>
+              </Button>
+            )}
+            {hasAmc && onViewAMCInfo && (
+              <Button
+                variant="outline"
+                className="w-full justify-start h-auto py-3 px-4 text-green-700 hover:text-green-800 hover:bg-green-50"
+                onClick={() => {
+                  onMoreOptionsOpenChange(false);
+                  onViewAMCInfo(customer);
+                }}
+              >
+                <Star className="mr-3 h-5 w-5" />
+                <div className="text-left">
+                  <div className="font-medium">AMC Info</div>
+                  <div className="text-xs text-muted-foreground">View active AMC contract details</div>
+                </div>
+              </Button>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

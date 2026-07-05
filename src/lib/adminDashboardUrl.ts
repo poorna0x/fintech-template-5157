@@ -32,6 +32,7 @@ export const ADMIN_MODAL_SLUGS = [
   'whatsapp',
   'edit-customer',
   'new-job',
+  'more-options',
   'delete-job',
 ] as const;
 export type AdminModalSlug = (typeof ADMIN_MODAL_SLUGS)[number];
