@@ -478,6 +478,7 @@ const AdminDashboard = () => {
   const scrollPositionBeforeWhatsAppRef = useRef(0);
   const adminListScrollYRef = useRef<number | null>(null);
   const prevAdminModalRef = useRef<AdminModalSlug | null>(null);
+  const completeDialogOpenRef = useRef(false);
 
   const scheduleAdminScrollRestore = useCallback((y: number) => {
     const restore = () => window.scrollTo({ top: y, behavior: 'auto' });
@@ -621,6 +622,22 @@ const AdminDashboard = () => {
     }
     setCurrentView(viewParam);
   }, [location.pathname, location.search, isManager, navigate]);
+
+  // Tab buttons use React state only; apply legacy ?tab= once then strip from URL.
+  useEffect(() => {
+    if (!location.pathname.startsWith('/admin')) return;
+    const parsed = parseAdminDashboardUrl(location.search);
+    if (!parsed.tab) return;
+    const sf = jobTabSlugToStatusFilter(parsed.tab);
+    setStatusFilter(sf);
+    setCurrentPage(1);
+    navigate(
+      adminDashboardLocation(
+        buildAdminDashboardSearch({ tab: null }, location.search)
+      ),
+      { replace: true }
+    );
+  }, [location.pathname, location.search, navigate]);
 
   // Tools menu dialogs (?tool=) — swipe-back closes the dialog instead of exiting the PWA.
   useEffect(() => {
@@ -2265,6 +2282,8 @@ const AdminDashboard = () => {
 
   const assignTechLoadForJobRef = useRef<string | null>(null);
 
+  completeDialogOpenRef.current = completeDialogOpen;
+
   // Job-list modals (?modal=) — swipe-back closes overlay instead of exiting the PWA.
   useEffect(() => {
     if (!location.pathname.startsWith('/admin')) return;
@@ -2305,6 +2324,8 @@ const AdminDashboard = () => {
     setMoveToOngoingDialogOpen(modal === 'move-ongoing' && !!job);
     setSendMessageDialogOpen(modal === 'send-message' && !!job);
     setDeleteJobDialogOpen(modal === 'delete-job' && !!job);
+    setShareTechnicianInfoDialogOpen(modal === 'share-job-info' && !!job);
+    setAddReminderDialogOpen(modal === 'add-reminder' && !!resolveCustomer(parsed.customerId));
     setOngoingFilterDialogOpen(modal === 'ongoing-filters');
     setCompletedFilterDialogOpen(modal === 'completed-filters');
     setPhotoGalleryOpen(modal === 'photos' && !!job);
@@ -2352,7 +2373,12 @@ const AdminDashboard = () => {
       assignTechLoadForJobRef.current = null;
     }
 
-    if (modal === 'complete' && job) setSelectedJobForComplete(job);
+    if (modal === 'complete' && job) {
+      setSelectedJobForComplete(job);
+      if (!completeDialogOpenRef.current) {
+        setTechnicianSelectDialogOpen(true);
+      }
+    }
     if (modal === 'edit-job' && job) setJobToEdit(job);
     if (modal === 'edit-completed' && job) setSelectedCompletedJob(job);
     if (modal === 'follow-up' && job) setSelectedJobForFollowUp(job);
@@ -2360,10 +2386,20 @@ const AdminDashboard = () => {
     if (modal === 'move-ongoing' && job) setSelectedJobForMoveToOngoing(job);
     if (modal === 'send-message' && job) setSelectedJobForMessage(job);
     if (modal === 'delete-job' && job) setJobToDelete(job);
+    if (modal === 'share-job-info' && job) setSelectedJobForShareInfo(job);
+    if (modal !== 'share-job-info') {
+      setSelectedJobForShareInfo(null);
+    }
 
     setWarrantyDialogOpen(modal === 'warranty' && !!resolveCustomer(parsed.customerId));
 
     const customerForModal = resolveCustomer(parsed.customerId);
+    if (modal === 'add-reminder' && customerForModal) {
+      setReminderEntity({ type: 'customer', id: customerForModal.id });
+      setReminderContextLabel(
+        `${(customerForModal as any).full_name || customerForModal.fullName || 'Customer'} (Customer)`
+      );
+    }
     if (modal === 'customer-photos' && customerForModal) {
       setSelectedCustomerForPhotos(customerForModal);
       const customerCode = customerForModal.customer_id || customerForModal.customerId;
@@ -8682,6 +8718,7 @@ const AdminDashboard = () => {
       }
 
       toast.success(`Job ${jobToDelete.job_number || jobToDelete.jobNumber} deleted successfully`);
+      closeAdminModal();
       setDeleteJobDialogOpen(false);
       setJobToDelete(null);
     } catch (error) {
@@ -11172,7 +11209,7 @@ const AdminDashboard = () => {
                   onAddReminder={(customer) => {
                     setReminderEntity({ type: 'customer', id: customer.id });
                     setReminderContextLabel(`${(customer as any).full_name || customer.fullName} (Customer)`);
-                    setAddReminderDialogOpen(true);
+                    openAdminModal('add-reminder', { customerId: customer.id });
                   }}
                   onViewReminders={(customer) => setViewRemindersCustomer(customer)}
                   onManageWarranty={(customer) => {
@@ -11585,6 +11622,16 @@ const AdminDashboard = () => {
                               }
                               officePartsDialogOpen={
                                 parsedAdminUrl.modal === 'office-parts' &&
+                                parsedAdminUrl.jobId === fullJob.id
+                              }
+                              onOpenCompletionEmail={() =>
+                                openAdminModal('completion-email', { jobId: fullJob.id })
+                              }
+                              onCompletionEmailOpenChange={(open) =>
+                                onAdminModalOpenChange('completion-email', open)
+                              }
+                              completionEmailOpen={
+                                parsedAdminUrl.modal === 'completion-email' &&
                                 parsedAdminUrl.jobId === fullJob.id
                               }
                               minimalMode={minimalCompletedMode}
@@ -12189,19 +12236,19 @@ const AdminDashboard = () => {
                                       {(() => {
                                         const assignedTechnicianId = (job as any).assigned_technician_id || (job as any).assignedTechnicianId;
                                         return assignedTechnicianId ? (
-                                          <DropdownMenuItem onClick={() => {
-                                            setSelectedJobForShareInfo(job);
-                                            setShareTechnicianInfoDialogOpen(true);
-                                          }}>
+                                          <DropdownMenuItem
+                                            onClick={() => {
+                                              openAdminModal('share-job-info', { jobId: job.id });
+                                            }}
+                                          >
                                             <Send className="mr-2 h-4 w-4" />
                                             Share info to customer
                                           </DropdownMenuItem>
                                         ) : null;
                                       })()}
-                                      <DropdownMenuItem 
+                                      <DropdownMenuItem
                                         onClick={() => {
-                                          setJobToDelete(job);
-                                          setDeleteJobDialogOpen(true);
+                                          openAdminModal('delete-job', { jobId: job.id });
                                         }}
                                         className="text-red-600"
                                       >
@@ -12428,7 +12475,10 @@ const AdminDashboard = () => {
       </AlertDialog>
 
       {/* Delete Job Confirmation Dialog */}
-      <AlertDialog open={deleteJobDialogOpen} onOpenChange={setDeleteJobDialogOpen}>
+      <AlertDialog
+        open={deleteJobDialogOpen}
+        onOpenChange={(open) => onAdminModalOpenChange('delete-job', open)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Job</AlertDialogTitle>
@@ -13994,10 +14044,7 @@ const AdminDashboard = () => {
 
       <ShareTechnicianInfoToCustomerDialog
         open={shareTechnicianInfoDialogOpen}
-        onOpenChange={(open) => {
-          setShareTechnicianInfoDialogOpen(open);
-          if (!open) setSelectedJobForShareInfo(null);
-        }}
+        onOpenChange={(open) => onAdminModalOpenChange('share-job-info', open)}
         job={selectedJobForShareInfo}
         customer={selectedJobForShareInfo ? ((selectedJobForShareInfo as any).customer || selectedJobForShareInfo.customer) : null}
         technicians={technicians}
@@ -14006,7 +14053,7 @@ const AdminDashboard = () => {
 
       <AddReminderDialog
         open={addReminderDialogOpen}
-        onOpenChange={setAddReminderDialogOpen}
+        onOpenChange={(open) => onAdminModalOpenChange('add-reminder', open)}
         entity={reminderEntity}
         contextLabel={reminderContextLabel || undefined}
       />

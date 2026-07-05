@@ -85,6 +85,9 @@ interface CompletedJobSectionProps {
   onOpenOfficeParts?: () => void;
   onOfficePartsOpenChange?: (open: boolean) => void;
   officePartsDialogOpen?: boolean;
+  onOpenCompletionEmail?: () => void;
+  onCompletionEmailOpenChange?: (open: boolean) => void;
+  completionEmailOpen?: boolean;
   minimalMode?: boolean;
   detailsLoaded?: boolean;
   loadingDetails?: boolean;
@@ -124,6 +127,9 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
   onOpenOfficeParts,
   onOfficePartsOpenChange,
   officePartsDialogOpen: officePartsDialogOpenProp,
+  onOpenCompletionEmail,
+  onCompletionEmailOpenChange,
+  completionEmailOpen: completionEmailOpenProp,
   minimalMode,
   detailsLoaded,
   loadingDetails,
@@ -140,7 +146,19 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
   const [officePartsOverride, setOfficePartsOverride] = useState<number | null>(null);
   const [sparePartsCost, setSparePartsCost] = useState<number>(0);
   const [sendMessageConfirmOpen, setSendMessageConfirmOpen] = useState(false);
-  const [completionEmailOpen, setCompletionEmailOpen] = useState(false);
+  const [completionEmailLocal, setCompletionEmailLocal] = useState(false);
+  const completionEmailOpen = onCompletionEmailOpenChange
+    ? (completionEmailOpenProp ?? false)
+    : completionEmailLocal;
+  const setCompletionEmailOpen = (open: boolean) => {
+    if (open && onOpenCompletionEmail) {
+      onOpenCompletionEmail();
+    } else if (!open && onCompletionEmailOpenChange) {
+      onCompletionEmailOpenChange(false);
+    } else {
+      setCompletionEmailLocal(open);
+    }
+  };
   const [completionEmailBrand, setCompletionEmailBrand] = useState<DocumentBrand>('hydrogenro');
   const [completionEmailSending, setCompletionEmailSending] = useState(false);
 
@@ -748,7 +766,11 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
             <AlertDialogAction
               onClick={() => {
                 setSelectedJobForMessage(job);
-                setSendMessageDialogOpen(true);
+                if (onOpenSendMessage) {
+                  onOpenSendMessage();
+                } else {
+                  setSendMessageDialogOpen(true);
+                }
                 setSendMessageConfirmOpen(false);
               }}
             >
@@ -758,7 +780,12 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
         </AlertDialogContent>
       </AlertDialog>
 
-      <Dialog open={completionEmailOpen} onOpenChange={setCompletionEmailOpen}>
+      <Dialog
+        open={completionEmailOpen}
+        onOpenChange={(open) => {
+          if (!open) setCompletionEmailOpen(false);
+        }}
+      >
         <DialogContent className={forceLightThemeClass('sm:max-w-md')}>
           <DialogHeader>
             <DialogTitle>Send completion email</DialogTitle>
