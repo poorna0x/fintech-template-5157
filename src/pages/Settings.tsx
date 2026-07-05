@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -74,6 +74,21 @@ import {
   type SettingsPanelSlug,
 } from '@/lib/settingsUrl';
 
+function readSettingsScrollY(): number {
+  return window.scrollY ?? document.documentElement.scrollTop ?? 0;
+}
+
+/** Restore list scroll after closing a settings panel (layout may settle over a few frames). */
+function scheduleSettingsScrollRestore(y: number) {
+  const restore = () => window.scrollTo({ top: y, behavior: 'auto' });
+  requestAnimationFrame(() => {
+    restore();
+    requestAnimationFrame(restore);
+  });
+  window.setTimeout(restore, 50);
+  window.setTimeout(restore, 200);
+}
+
 /** PostgREST error when a table was never created or was dropped (e.g. booking_abandonments). */
 const isMissingTableError = (error: { message?: string; code?: string } | null): boolean => {
   if (!error) return false;
@@ -146,9 +161,15 @@ const Settings = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
+  const panelReturnScrollYRef = useRef<number | null>(null);
+  const prevSettingsPanelRef = useRef<SettingsPanelSlug | null>(null);
+  const skipSectionScrollRef = useRef(false);
+
   const closeSettingsPanel = useCallback(() => {
     navigate(
-      settingsLocation(buildSettingsSearch({ clearPanel: true }, location.search)),
+      settingsLocation(
+        buildSettingsSearch({ clearPanel: true, section: null }, location.search)
+      ),
       { replace: true }
     );
   }, [navigate, location.search]);
@@ -158,6 +179,7 @@ const Settings = () => {
       panel: SettingsPanelSlug,
       options?: { id?: string; action?: string }
     ) => {
+      panelReturnScrollYRef.current = readSettingsScrollY();
       navigate(
         settingsLocation(
           buildSettingsSearch(
@@ -317,6 +339,18 @@ const Settings = () => {
   useEffect(() => {
     const parsed = parseSettingsUrl(location.search);
     const panel = parsed.panel;
+    const prevPanel = prevSettingsPanelRef.current;
+
+    if (prevPanel && !panel) {
+      skipSectionScrollRef.current = true;
+      const y = panelReturnScrollYRef.current;
+      if (y != null) {
+        panelReturnScrollYRef.current = null;
+        scheduleSettingsScrollRestore(y);
+      }
+    }
+
+    prevSettingsPanelRef.current = panel;
 
     setShowCallingPage(panel === 'calling');
     setRemindersDialogOpen(panel === 'reminders');
@@ -409,6 +443,11 @@ const Settings = () => {
   useEffect(() => {
     const parsed = parseSettingsUrl(location.search);
     if (parsed.panel) return;
+
+    if (skipSectionScrollRef.current) {
+      skipSectionScrollRef.current = false;
+      return;
+    }
 
     const section = parsed.section;
     if (!section) return;

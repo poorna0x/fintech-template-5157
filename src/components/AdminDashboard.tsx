@@ -2269,6 +2269,14 @@ const AdminDashboard = () => {
     setCompletedFilterDialogOpen(modal === 'completed-filters');
     setPhotoGalleryOpen(modal === 'photos' && !!job);
     setPhotoViewerOpen(modal === 'photo-viewer');
+    if (modal !== 'photo-viewer') {
+      setSelectedPhoto(null);
+      setSelectedBillPhotos(null);
+      setPhotoDownloadMeta(null);
+      if (modal !== 'customer-photos') {
+        setSelectedCustomerPhotos(null);
+      }
+    }
     setCustomerPhotoGalleryOpen(modal === 'customer-photos' && !!resolveCustomer(parsed.customerId));
     setCustomerReportDialogOpen(modal === 'report' && !!resolveCustomer(parsed.customerId));
     setHistoryDialogOpen(modal === 'history' && !!resolveCustomer(parsed.customerId));
@@ -11504,6 +11512,12 @@ const AdminDashboard = () => {
                               setSelectedBillPhotos={setSelectedBillPhotos}
                               setSelectedPhoto={setSelectedPhoto}
                               onOpenPaymentBillPhotos={(photos, startIdx = 0) => {
+                                setSelectedBillPhotos(photos);
+                                setSelectedPhoto({
+                                  url: photos[startIdx],
+                                  index: startIdx,
+                                  total: photos.length,
+                                });
                                 openAdminModal('photo-viewer', {
                                   jobId: fullJob.id,
                                   photoIdx: startIdx,
@@ -12489,7 +12503,13 @@ const AdminDashboard = () => {
       <PhotoViewerDialog
         open={photoViewerOpen}
         onOpenChange={(open) => {
-          if (!open) onAdminModalOpenChange('photo-viewer', false);
+          if (!open) {
+            onAdminModalOpenChange('photo-viewer', false);
+            setSelectedPhoto(null);
+            setSelectedBillPhotos(null);
+            setSelectedCustomerPhotos(null);
+            setPhotoDownloadMeta(null);
+          }
         }}
         selectedPhoto={selectedPhoto}
         selectedBillPhotos={selectedBillPhotos}
@@ -12647,113 +12667,6 @@ const AdminDashboard = () => {
           setDeleteCustomerPhotoDialogOpen(true);
         }}
       />
-
-      {/* Photo Viewer Dialog - Only show if photoViewerOpen is false (fallback for customer photos) */}
-      {!photoViewerOpen && (
-      <Dialog open={!!selectedPhoto && !!selectedBillPhotos && !photoViewerOpen} onOpenChange={(open) => {
-        if (!open) {
-          setSelectedPhoto(null);
-          setSelectedBillPhotos(null);
-        }
-      }}>
-        <DialogContent className="max-w-4xl max-h-[90vh] p-0">
-          <style dangerouslySetInnerHTML={{__html: `
-            [data-radix-dialog-content] button[data-radix-dialog-close] {
-              display: none !important;
-            }
-          `}} />
-          <DialogHeader className="sr-only">
-            <DialogTitle>Photo Viewer</DialogTitle>
-            <DialogDescription>View photo in full screen</DialogDescription>
-          </DialogHeader>
-          {selectedPhoto && (
-            <div className="relative">
-              {/* Previous button - only show if viewing bill photos with multiple photos */}
-              {selectedBillPhotos && selectedBillPhotos.length > 1 && selectedPhoto.index > 0 && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="absolute left-4 top-1/2 transform -translate-y-1/2 z-10 bg-black/50 text-white hover:bg-black/70 rounded-full w-10 h-10"
-                  onClick={() => {
-                    const newIndex = selectedPhoto.index - 1;
-                    setSelectedPhoto({
-                      url: selectedBillPhotos[newIndex],
-                      index: newIndex,
-                      total: selectedBillPhotos.length
-                    });
-                  }}
-                >
-                  <span className="text-2xl">‹</span>
-                </Button>
-              )}
-
-              {/* Next button - only show if viewing bill photos with multiple photos */}
-              {selectedBillPhotos && selectedBillPhotos.length > 1 && selectedPhoto.index < selectedBillPhotos.length - 1 && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="absolute right-4 top-1/2 transform -translate-y-1/2 z-10 bg-black/50 text-white hover:bg-black/70 rounded-full w-10 h-10"
-                  onClick={() => {
-                    const newIndex = selectedPhoto.index + 1;
-                    setSelectedPhoto({
-                      url: selectedBillPhotos[newIndex],
-                      index: newIndex,
-                      total: selectedBillPhotos.length
-                    });
-                  }}
-                >
-                  <span className="text-2xl">›</span>
-                </Button>
-              )}
-
-              <img
-                src={selectedPhoto.url}
-                alt={`Photo ${selectedPhoto.index + 1}`}
-                className="w-full h-auto max-h-[80vh] object-contain"
-              />
-              <div className="absolute top-4 right-4 flex gap-2">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => downloadPhoto(selectedPhoto.url, selectedPhoto.index)}
-                >
-                  <Download className="w-4 h-4 mr-2" />
-                  Download
-                </Button>
-                {selectedCustomerForPhotos && (
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={() => {
-                      setCustomerPhotoToDelete({ photoUrl: selectedPhoto.url, photoIndex: selectedPhoto.index });
-                      setDeleteCustomerPhotoDialogOpen(true);
-                    }}
-                  >
-                    <Trash2 className="w-4 h-4 mr-2" />
-                    Delete
-                  </Button>
-                )}
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => {
-                    setSelectedPhoto(null);
-                    setSelectedBillPhotos(null);
-                  }}
-                >
-                  Close
-                </Button>
-              </div>
-              {selectedPhoto.total > 1 && (
-              <div className="absolute bottom-4 left-4 bg-black bg-opacity-50 text-white px-3 py-1 rounded">
-                {selectedPhoto.index + 1} of {selectedPhoto.total}
-              </div>
-              )}
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-      )}
 
       {/* Service History Dialog */}
       <ServiceHistoryDialog
