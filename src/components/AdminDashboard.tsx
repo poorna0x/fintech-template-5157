@@ -2288,6 +2288,22 @@ const AdminDashboard = () => {
 
   completeDialogOpenRef.current = completeDialogOpen;
 
+  const resolveCustomerForModal = useCallback(
+    (customerId: string | null): Customer | null => {
+      if (!customerId) return null;
+      const fromSearch = searchResults?.find((c) => c.id === customerId);
+      if (fromSearch) return fromSearch;
+      const fromList = customers.find((c) => c.id === customerId);
+      if (fromList) return fromList;
+      for (const j of jobs) {
+        const raw = (j as any).customer || j.customer;
+        if (raw?.id === customerId) return transformCustomerData(raw);
+      }
+      return null;
+    },
+    [searchResults, customers, jobs]
+  );
+
   // Job-list modals (?modal=) — swipe-back closes overlay instead of exiting the PWA.
   useEffect(() => {
     if (!location.pathname.startsWith('/admin')) return;
@@ -2308,16 +2324,7 @@ const AdminDashboard = () => {
     const job =
       parsed.jobId != null ? jobs.find((j) => j.id === parsed.jobId) ?? null : null;
 
-    const resolveCustomer = (customerId: string | null): Customer | null => {
-      if (!customerId) return null;
-      const fromList = customers.find((c) => c.id === customerId);
-      if (fromList) return fromList;
-      for (const j of jobs) {
-        const raw = (j as any).customer || j.customer;
-        if (raw?.id === customerId) return transformCustomerData(raw);
-      }
-      return null;
-    };
+    const resolveCustomer = resolveCustomerForModal;
 
     setAssignJobDialogOpen(modal === 'assign' && !!job);
     setReassignDialogOpen(modal === 'reassign' && !!job);
@@ -2451,7 +2458,7 @@ const AdminDashboard = () => {
         setSelectedJobPhotos({ jobId: job.id, photos: validPhotos, type: parsed.photoType });
       }
     }
-  }, [location.pathname, location.search, jobs, customers]);
+  }, [location.pathname, location.search, jobs, customers, resolveCustomerForModal]);
 
   // Set initial last checked job ID after jobs are loaded
   useEffect(() => {
