@@ -33,32 +33,42 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
   const [customerReportJobs, setCustomerReportJobs] = useState<any[]>([]);
   const [loadingCustomerReportJobs, setLoadingCustomerReportJobs] = useState(false);
 
-  useEffect(() => {
-    if (open && customer) {
-      loadCustomerReportJobs();
-    } else {
-      // Reset when dialog closes
-      setCustomerReportJobs([]);
-    }
-  }, [open, customer]);
+  const customerId = customer?.id;
 
-  const loadCustomerReportJobs = async () => {
-    if (!customer) return;
-    
-    setLoadingCustomerReportJobs(true);
-    try {
-      const { data, error } = await db.jobs.getByCustomerIdForReportEnriched(customer.id);
-      if (error) {
-        console.error('Error loading customer report jobs:', error);
-        return;
-      }
-      setCustomerReportJobs(data || []);
-    } catch (error) {
-      console.error('Error loading customer report jobs:', error);
-    } finally {
-      setLoadingCustomerReportJobs(false);
+  useEffect(() => {
+    if (!open) {
+      setCustomerReportJobs([]);
+      return;
     }
-  };
+    if (!customerId) return;
+
+    let cancelled = false;
+    const loadCustomerReportJobs = async () => {
+      setLoadingCustomerReportJobs(true);
+      try {
+        const { data, error } = await db.jobs.getByCustomerIdForReportEnriched(customerId);
+        if (cancelled) return;
+        if (error) {
+          console.error('Error loading customer report jobs:', error);
+          return;
+        }
+        setCustomerReportJobs(data || []);
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Error loading customer report jobs:', error);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingCustomerReportJobs(false);
+        }
+      }
+    };
+
+    void loadCustomerReportJobs();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, customerId]);
 
   if (!customer) return null;
 

@@ -534,22 +534,25 @@ const AdminDashboard = () => {
         photoIdx?: number;
       } = {}
     ) => {
+      hapticTap();
       adminListScrollYRef.current =
         window.scrollY ?? document.documentElement.scrollTop ?? 0;
-      navigate(
-        adminDashboardLocation(
-          buildAdminDashboardSearch(
-            {
-              modal,
-              jobId: params.jobId ?? null,
-              customerId: params.customerId ?? null,
-              photoType: params.photoType ?? null,
-              photoIdx: params.photoIdx ?? null,
-            },
-            location.search
+      startTransition(() => {
+        navigate(
+          adminDashboardLocation(
+            buildAdminDashboardSearch(
+              {
+                modal,
+                jobId: params.jobId ?? null,
+                customerId: params.customerId ?? null,
+                photoType: params.photoType ?? null,
+                photoIdx: params.photoIdx ?? null,
+              },
+              location.search
+            )
           )
-        )
-      );
+        );
+      });
     },
     [navigate, location.search]
   );
@@ -2405,6 +2408,8 @@ const AdminDashboard = () => {
     setWarrantyDialogOpen(modal === 'warranty' && !!resolveCustomer(parsed.customerId));
 
     const customerForModal = resolveCustomer(parsed.customerId);
+    const openingModal = modal !== null && prevModal !== modal;
+
     if (modal === 'add-reminder' && customerForModal) {
       setReminderEntity({ type: 'customer', id: customerForModal.id });
       setReminderContextLabel(
@@ -2412,26 +2417,80 @@ const AdminDashboard = () => {
       );
     }
     if (modal === 'customer-photos' && customerForModal) {
-      setSelectedCustomerForPhotos(customerForModal);
-      const customerCode = customerForModal.customer_id || customerForModal.customerId;
-      if (customerCode) void loadCustomerPhotos(customerCode);
+      setSelectedCustomerForPhotos((prev) =>
+        prev?.id === customerForModal.id ? prev : customerForModal
+      );
+      if (openingModal) {
+        const customerCode = customerForModal.customer_id || customerForModal.customerId;
+        if (customerCode) void loadCustomerPhotos(customerCode);
+      }
     }
     if (modal === 'report' && customerForModal) {
-      setSelectedCustomerForReport(customerForModal);
+      setSelectedCustomerForReport((prev) =>
+        prev?.id === customerForModal.id ? prev : customerForModal
+      );
+      if (openingModal) {
+        void (async () => {
+          const c = await loadFullCustomerForAction(customerForModal);
+          setSelectedCustomerForReport(c);
+          const customerUuid = c.id;
+          if (!customerUuid) return;
+          try {
+            const { data: completedRows } = await db.jobs.getByCustomerIdForReport(customerUuid);
+            if (completedRows?.length) {
+              setCustomerPriorServiceStatus((prev) => ({ ...prev, [customerUuid]: true }));
+              setCustomers((prev) =>
+                prev.map((row) =>
+                  row.id === customerUuid
+                    ? {
+                        ...row,
+                        lastServiceDate:
+                          row.lastServiceDate ||
+                          (c as any).last_service_date ||
+                          new Date().toISOString().split('T')[0],
+                      }
+                    : row
+                )
+              );
+            }
+          } catch {
+            /* report dialog still opens */
+          }
+        })();
+      }
     }
     if (modal === 'history' && customerForModal) {
-      setSelectedCustomerForHistory(customerForModal);
-      const customerCode = customerForModal.customer_id || customerForModal.customerId;
-      if (customerCode) void loadCustomerHistory(customerCode);
+      setSelectedCustomerForHistory((prev) =>
+        prev?.id === customerForModal.id ? prev : customerForModal
+      );
+      if (openingModal) {
+        const customerCode = customerForModal.customer_id || customerForModal.customerId;
+        if (customerCode) void loadCustomerHistory(customerCode);
+      }
     }
     if (modal === 'bill' && customerForModal) {
-      void loadFullCustomerForAction(customerForModal).then(setSelectedCustomerForBill);
+      setSelectedCustomerForBill((prev) =>
+        prev?.id === customerForModal.id ? prev : customerForModal
+      );
+      if (openingModal) {
+        void loadFullCustomerForAction(customerForModal).then(setSelectedCustomerForBill);
+      }
     }
     if (modal === 'edit-customer' && customerForModal) {
-      void loadFullCustomerForAction(customerForModal).then(setEditingCustomer);
+      setEditingCustomer((prev) =>
+        prev?.id === customerForModal.id ? prev : customerForModal
+      );
+      if (openingModal) {
+        void loadFullCustomerForAction(customerForModal).then(setEditingCustomer);
+      }
     }
     if (modal === 'new-job' && customerForModal) {
-      void loadFullCustomerForAction(customerForModal).then(setSelectedCustomerForJob);
+      setSelectedCustomerForJob((prev) =>
+        prev?.id === customerForModal.id ? prev : customerForModal
+      );
+      if (openingModal) {
+        void loadFullCustomerForAction(customerForModal).then(setSelectedCustomerForJob);
+      }
     }
     if (modal === 'warranty' && customerForModal) {
       setWarrantyDialogCustomer({
@@ -3268,35 +3327,10 @@ const AdminDashboard = () => {
     }
   }, []);
 
-  const handleOpenCustomerReport = async (customer: Customer) => {
-    const c = await loadFullCustomerForAction(customer);
-    const customerUuid = c.id;
-    if (customerUuid) {
-      try {
-        const { data: completedRows } = await db.jobs.getByCustomerIdForReport(customerUuid);
-        if (completedRows?.length) {
-          setCustomerPriorServiceStatus((prev) => ({ ...prev, [customerUuid]: true }));
-          setCustomers((prev) =>
-            prev.map((row) =>
-              row.id === customerUuid
-                ? {
-                    ...row,
-                    lastServiceDate:
-                      row.lastServiceDate ||
-                      (c as any).last_service_date ||
-                      new Date().toISOString().split('T')[0],
-                  }
-                : row
-            )
-          );
-        }
-      } catch {
-        /* report dialog still opens */
-      }
-    }
-    setSelectedCustomerForReport(c);
-    openAdminModal('report', { customerId: c.id });
-  };
+  const handleOpenCustomerReport = useCallback((customer: Customer) => {
+    setSelectedCustomerForReport(customer);
+    openAdminModal('report', { customerId: customer.id });
+  }, [openAdminModal]);
 
   const handleNavigateToCompletedJobFromReport = useCallback((customer: Customer, job: Job) => {
     const dateStr = jobCompletionLocalDateIso(job as Record<string, unknown>);
@@ -3349,174 +3383,10 @@ const AdminDashboard = () => {
     };
   }, [highlightCompletedJobId, jobs, statusFilter]);
 
-  const handleEditCustomer = async (customer: Customer) => {
-    const c = await loadFullCustomerForAction(customer);
-    setEditingCustomer(c);
-
-    // Parse service types from the database value
-    const serviceTypes = parseDbServiceType(c.service_type || '');
-
-    // Parse equipment from brands and models
-    const equipment: { [serviceType: string]: { brand: string; model: string } } = {};
-
-    // Always initialize equipment for all service types, even if brand/model is empty
-    if (serviceTypes.length > 0) {
-      const brands = (c.brand || '').split(',').map((s: string) => s.trim());
-      const models = (c.model || '').split(',').map((s: string) => s.trim());
-
-      console.log('🔧 Initializing equipment from customer:', {
-        serviceTypes,
-        brand: c.brand,
-        model: c.model,
-        brandsArray: brands,
-        modelsArray: models,
-      });
-
-      serviceTypes.forEach((serviceType: string, index: number) => {
-        const brandValue = brands[index] || '';
-        const modelValue = models[index] || '';
-        equipment[serviceType] = {
-          brand: brandValue === 'Not specified' || brandValue.toLowerCase() === 'not specified' ? '' : brandValue,
-          model: modelValue === 'Not specified' || modelValue.toLowerCase() === 'not specified' ? '' : modelValue,
-        };
-        console.log(`  ${serviceType}: brand="${equipment[serviceType].brand}", model="${equipment[serviceType].model}"`);
-      });
-    } else {
-      console.log('⚠️ No service types found, initializing empty equipment');
-    }
-
-    setEditFormData({
-      full_name: c.full_name || c.fullName || '',
-      phone: c.phone || '',
-      alternate_phone: c.alternate_phone || c.alternatePhone || '',
-      email: c.email || '',
-      service_types: serviceTypes,
-      equipment: equipment,
-      behavior: c.behavior || '',
-      native_language: c.preferredLanguage || '',
-      status: c.status || '',
-      notes: c.notes || '',
-      has_prefilter: (() => {
-        const prefilterValue = (c as any).has_prefilter ?? null;
-        console.log('🔍 Loading prefilter for edit:', {
-          customerId: c.id,
-          customerName: c.full_name || c.fullName,
-          has_prefilter: prefilterValue,
-          type: typeof prefilterValue,
-        });
-        return prefilterValue;
-      })(),
-      google_location: (() => {
-        if ((c.location as any)?.googleLocation) {
-          const googleLoc = (c.location as any).googleLocation;
-          if (
-            googleLoc &&
-            typeof googleLoc === 'string' &&
-            (googleLoc.includes('google.com/maps') ||
-              googleLoc.includes('maps.app.goo.gl') ||
-              googleLoc.includes('goo.gl/maps')) &&
-            !googleLoc.includes('localhost') &&
-            !googleLoc.includes('127.0.0.1')
-          ) {
-            return googleLoc;
-          }
-        }
-        if (c.location?.latitude && c.location?.longitude && c.location.latitude !== 0 && c.location.longitude !== 0) {
-          return `https://www.google.com/maps/place/${c.location.latitude},${c.location.longitude}`;
-        }
-        if (
-          c.location?.formattedAddress &&
-          typeof c.location.formattedAddress === 'string' &&
-          (c.location.formattedAddress.includes('google.com/maps') || c.location.formattedAddress.includes('maps.app.goo.gl')) &&
-          !c.location.formattedAddress.includes('localhost') &&
-          !c.location.formattedAddress.includes('127.0.0.1')
-        ) {
-          return c.location.formattedAddress;
-        }
-        return '';
-      })(),
-      visible_address: (() => {
-        const existingLocation = (c as any).visible_address || (c.address as any)?.visible_address || '';
-        return existingLocation;
-      })(),
-      custom_time: c.customTime || (c as any).custom_time || '',
-      address: {
-        street: (() => {
-          const existingStreet = c.address?.street || '';
-          if (existingStreet.includes(',') || existingStreet.length > 30) {
-            return existingStreet;
-          }
-          const joined = [c.address?.street, c.address?.area, c.address?.city, c.address?.state, c.address?.pincode]
-            .filter(Boolean)
-            .join(', ');
-          return joined || existingStreet || '';
-        })(),
-        area: c.address?.area || '',
-        city: c.address?.city || '',
-        state: c.address?.state || '',
-        pincode: c.address?.pincode || '',
-      },
-      location: {
-        latitude: c.location?.latitude || 0,
-        longitude: c.location?.longitude || 0,
-        formattedAddress: c.location?.formattedAddress || '',
-      },
-      service_cost: c.serviceCost || 0,
-      cost_agreed: c.costAgreed || false,
-    });
-    lastSavedFormDataRef.current = JSON.stringify({
-      full_name: c.full_name || c.fullName || '',
-      phone: c.phone || '',
-      alternate_phone: c.alternate_phone || c.alternatePhone || '',
-      email: c.email || '',
-      service_types: serviceTypes,
-      equipment: equipment,
-      behavior: c.behavior || '',
-      native_language: c.preferredLanguage || '',
-      status: c.status || '',
-      notes: c.notes || '',
-      google_location: (() => {
-        if ((c.location as any)?.googleLocation) {
-          const googleLoc = (c.location as any).googleLocation;
-          if (
-            googleLoc &&
-            typeof googleLoc === 'string' &&
-            (googleLoc.includes('google.com/maps') ||
-              googleLoc.includes('maps.app.goo.gl') ||
-              googleLoc.includes('goo.gl/maps')) &&
-            !googleLoc.includes('localhost') &&
-            !googleLoc.includes('127.0.0.1')
-          ) {
-            return googleLoc;
-          }
-        }
-        if (c.location?.latitude && c.location?.longitude && c.location.latitude !== 0 && c.location.longitude !== 0) {
-          return `https://www.google.com/maps/place/${c.location.latitude},${c.location.longitude}`;
-        }
-        if (
-          c.location?.formattedAddress &&
-          typeof c.location.formattedAddress === 'string' &&
-          (c.location.formattedAddress.includes('google.com/maps') || c.location.formattedAddress.includes('maps.app.goo.gl')) &&
-          !c.location.formattedAddress.includes('localhost') &&
-          !c.location.formattedAddress.includes('127.0.0.1')
-        ) {
-          return c.location.formattedAddress;
-        }
-        return '';
-      })(),
-      visible_address: (() => {
-        const existingLocation = (c as any).visible_address || (c.address as any)?.visible_address || '';
-        return existingLocation;
-      })(),
-      custom_time: c.customTime || (c as any).custom_time || '',
-    });
-    hasUnsavedChangesRef.current = false;
-    if (autoSaveTimerRef.current) {
-      clearTimeout(autoSaveTimerRef.current);
-      autoSaveTimerRef.current = null;
-    }
-    openAdminModal('edit-customer', { customerId: c.id });
-  };
+  const handleEditCustomer = useCallback((customer: Customer) => {
+    setEditingCustomer(customer);
+    openAdminModal('edit-customer', { customerId: customer.id });
+  }, [openAdminModal]);
 
   const handleUpdateCustomer = async () => {
     if (!editingCustomer) return;
@@ -4894,59 +4764,11 @@ const AdminDashboard = () => {
   };
 
   // Job creation functions
-  const handleNewJob = async (customer: Customer) => {
-    const c = await loadFullCustomerForAction(customer);
-    setSelectedCustomerForJob(c);
-
-    // Get today's date in local timezone
-    const todayDateString = getTodayLocalDate();
-
-    // Get current time
-    const now = new Date();
-    const currentTime = now.toTimeString().slice(0, 5); // HH:MM format
-
-    let customerBrand = c.brand || '';
-    let customerModel = c.model || '';
-
-    if (customerBrand.includes(',')) {
-      const brands = customerBrand.split(',').map(b => b.trim());
-      const models = customerModel.split(',').map(m => m.trim());
-      const serviceTypes = parseDbServiceType(c.service_type || '');
-
-      customerBrand = brands[0] || '';
-      customerModel = models[0] || '';
-
-      const svcType = (c as any).service_type || c.serviceType;
-      const selectedServiceType = svcType === 'SOFTENER' ? 'SOFTENER' : 'RO';
-      const serviceTypeIndex = serviceTypes.indexOf(selectedServiceType);
-      if (serviceTypeIndex >= 0 && brands[serviceTypeIndex]) {
-        customerBrand = brands[serviceTypeIndex];
-        customerModel = models[serviceTypeIndex] || '';
-      }
-    }
-
-    const svcType = (c as any).service_type || c.serviceType;
-    const initialFormData = {
-      service_type: (svcType === 'SOFTENER' ? 'SOFTENER' : 'RO') as 'RO' | 'SOFTENER',
-      service_sub_type: 'Service',
-      service_sub_type_custom: '',
-      brand: customerBrand || 'Not specified',
-      model: customerModel || 'Not specified',
-      scheduled_date: todayDateString, // Set to today by default
-      scheduled_time_slot: 'MORNING' as 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM', // Set to morning by default
-      scheduled_time_custom: currentTime, // Set to current time by default
-      description: '',
-      priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
-      assigned_technician_id: '',
-      cost_agreed: '',
-      lead_source: 'Website',
-      lead_source_custom: '',
-      photos: [] as string[]
-    };
-    setNewJobFormData(initialFormData);
+  const handleNewJob = useCallback((customer: Customer) => {
+    setSelectedCustomerForJob(customer);
     setIsJobDialogReady(true);
-    openAdminModal('new-job', { customerId: c.id });
-  };
+    openAdminModal('new-job', { customerId: customer.id });
+  }, [openAdminModal]);
 
   const handleCreateJob = async () => {
     if (!selectedCustomerForJob) return;
@@ -5322,8 +5144,6 @@ const AdminDashboard = () => {
   const handleViewPhotos = (customer: Customer) => {
     setSelectedCustomerForPhotos(customer);
     openAdminModal('customer-photos', { customerId: customer.id });
-    const customerId = customer.customer_id || customer.customerId;
-    loadCustomerPhotos(customerId);
   };
 
   const handleClosePhotoGallery = () => {
@@ -6021,13 +5841,11 @@ const AdminDashboard = () => {
   };
 
   // History management functions
-  const handleViewHistory = async (customer: Customer) => {
+  const handleViewHistory = (customer: Customer) => {
     setSelectedCustomerForHistory(customer);
     setHistoryHasMore(false);
     setHistoryLoadingMore(false);
     openAdminModal('history', { customerId: customer.id });
-    const customerId = customer.customer_id || customer.customerId;
-    await loadCustomerHistory(customerId);
   };
 
 
@@ -6468,11 +6286,10 @@ const AdminDashboard = () => {
     return false;
   };
 
-  const handleGenerateBill = async (customer: Customer) => {
-    const c = await loadFullCustomerForAction(customer);
-    setSelectedCustomerForBill(c);
-    openAdminModal('bill', { customerId: c.id });
-  };
+  const handleGenerateBill = useCallback((customer: Customer) => {
+    setSelectedCustomerForBill(customer);
+    openAdminModal('bill', { customerId: customer.id });
+  }, [openAdminModal]);
 
   const handleBillModalClose = () => {
     closeAdminModal();
