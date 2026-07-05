@@ -254,6 +254,22 @@ function AdminInlineLoader({ message }: { message: string }) {
   );
 }
 
+const ADMIN_TAB_VIEWS = ['payments', 'billing', 'analytics', 'inventory'] as const;
+type AdminTabView = (typeof ADMIN_TAB_VIEWS)[number];
+type AdminDashboardView = 'dashboard' | AdminTabView;
+
+function readAdminTabViewFromSearch(search: string): AdminDashboardView {
+  const view = new URLSearchParams(search).get('view');
+  if (view && (ADMIN_TAB_VIEWS as readonly string[]).includes(view)) {
+    return view as AdminTabView;
+  }
+  return 'dashboard';
+}
+
+function isAdminTabViewParam(view: string | null): view is AdminTabView {
+  return Boolean(view && (ADMIN_TAB_VIEWS as readonly string[]).includes(view));
+}
+
 const AdminDashboard = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -341,7 +357,9 @@ const AdminDashboard = () => {
   const [letterheadInitialType, setLetterheadInitialType] = useState<LetterheadDocumentType | undefined>(
     undefined
   );
-  const [currentView, setCurrentView] = useState<'dashboard' | 'payments' | 'billing' | 'analytics' | 'inventory'>('dashboard');
+  const [currentView, setCurrentView] = useState<AdminDashboardView>(() =>
+    readAdminTabViewFromSearch(location.search)
+  );
   const [moreOptionsDialogOpen, setMoreOptionsDialogOpen] = useState<Record<string, boolean>>({});
   const [editFormData, setEditFormData] = useState({
     full_name: '',
@@ -394,14 +412,40 @@ const AdminDashboard = () => {
   
   // Preserve scroll position when WhatsApp dialog opens after assign/reassign (so page doesn't jump to top)
   const scrollPositionBeforeWhatsAppRef = useRef(0);
-  const handleViewChange = (view: 'dashboard' | 'payments' | 'billing' | 'analytics' | 'inventory') => {
+  const handleViewChange = (view: AdminDashboardView) => {
     if (isManager && view !== 'dashboard') {
       // Manager role cannot enter payments / billing / analytics / inventory.
       return;
     }
     hapticSwitch();
-    setCurrentView(view);
+    if (view === 'dashboard') {
+      if (isAdminTabViewParam(new URLSearchParams(location.search).get('view'))) {
+        navigate('/admin', { replace: true });
+      } else {
+        setCurrentView('dashboard');
+      }
+    } else {
+      navigate({ pathname: '/admin', search: `?view=${view}` });
+    }
   };
+
+  // Keep tab views in sync with ?view= so mobile back / swipe-back returns to dashboard.
+  useEffect(() => {
+    if (!location.pathname.startsWith('/admin')) return;
+    const viewParam = new URLSearchParams(location.search).get('view');
+    if (!isAdminTabViewParam(viewParam)) {
+      setCurrentView('dashboard');
+      return;
+    }
+    if (isManager) {
+      setCurrentView('dashboard');
+      if (isAdminTabViewParam(viewParam)) {
+        navigate('/admin', { replace: true });
+      }
+      return;
+    }
+    setCurrentView(viewParam);
+  }, [location.pathname, location.search, isManager, navigate]);
 
   useEffect(() => {
     if (isManager && currentView !== 'dashboard') {
@@ -1899,10 +1943,6 @@ const AdminDashboard = () => {
       }
       setShowLetterheadDocsPage(true);
       navigate('/admin', { replace: true });
-    } else if (view === 'analytics') {
-      setCurrentView('analytics');
-      const hash = location.hash;
-      navigate(`/admin${hash}`, { replace: true });
     } else if (searchParams.get('composeEmail')) {
       const customerId = searchParams.get('composeEmail');
       const templateParam = searchParams.get('emailTemplate') as AdminEmailTemplateType | null;
@@ -9726,7 +9766,7 @@ const AdminDashboard = () => {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setCurrentView('dashboard')}
+              onClick={() => handleViewChange('dashboard')}
               className="text-gray-600 hover:text-gray-900 -ml-2"
             >
               <ArrowLeft className="w-4 h-4 mr-1" />
@@ -9750,7 +9790,7 @@ const AdminDashboard = () => {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setCurrentView('dashboard')}
+              onClick={() => handleViewChange('dashboard')}
               className="text-gray-600 hover:text-gray-900 -ml-2"
             >
               <ArrowLeft className="w-4 h-4 mr-1" />
@@ -9774,7 +9814,7 @@ const AdminDashboard = () => {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setCurrentView('dashboard')}
+              onClick={() => handleViewChange('dashboard')}
               className="text-gray-600 hover:text-gray-900 -ml-2"
             >
               <ArrowLeft className="w-4 h-4 mr-1" />
@@ -9798,7 +9838,7 @@ const AdminDashboard = () => {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setCurrentView('dashboard')}
+              onClick={() => handleViewChange('dashboard')}
               className="text-gray-600 hover:text-gray-900 -ml-2"
             >
               <ArrowLeft className="w-4 h-4 mr-1" />
