@@ -31,6 +31,7 @@ export const ADMIN_MODAL_SLUGS = [
   'customer-photos',
   'whatsapp',
   'edit-customer',
+  'add-customer',
   'new-job',
   'more-options',
   'delete-job',

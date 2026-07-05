@@ -2324,6 +2324,7 @@ const AdminDashboard = () => {
     setHistoryDialogOpen(modal === 'history' && !!resolveCustomer(parsed.customerId));
     setBillModalOpen(modal === 'bill' && !!resolveCustomer(parsed.customerId));
     setEditDialogOpen(modal === 'edit-customer' && !!resolveCustomer(parsed.customerId));
+    setAddDialogOpen(modal === 'add-customer');
     setNewJobDialogOpen(modal === 'new-job' && !!resolveCustomer(parsed.customerId));
     setWhatsappDialogOpen(modal === 'whatsapp');
 
@@ -4433,26 +4434,7 @@ const AdminDashboard = () => {
   };
 
   const handleAddCustomer = () => {
-    hapticTap();
-    setAddFormData({
-      full_name: '',
-      phone: '',
-      alternate_phone: '',
-      email: '',
-      service_types: [],
-      equipment: {},
-      behavior: '',
-      native_language: '',
-      status: 'ACTIVE',
-      notes: '',
-      address: '',
-      google_location: '',
-      service_cost: 0,
-      cost_agreed: false
-    });
-    setCurrentStep(1);
-    setFormErrors({});
-    setAddDialogOpen(true);
+    openAdminModal('add-customer');
   };
 
   // Check if a customer with this phone or email already exists – single query, no need to load all customers.
@@ -4717,7 +4699,7 @@ const AdminDashboard = () => {
         priority: 'MEDIUM' as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'
       });
 
-      setAddDialogOpen(false);
+      closeAdminModal();
     } catch (error) {
       toast.error('Failed to create customer');
     } finally {
@@ -12239,7 +12221,7 @@ const AdminDashboard = () => {
       {/* Add Customer Dialog */}
       <AddCustomerDialog
         open={addDialogOpen}
-        onOpenChange={setAddDialogOpen}
+        onOpenChange={(open) => onAdminModalOpenChange('add-customer', open)}
         customers={customers}
         onCustomerCreated={async (newCustomer) => {
           if (newCustomer) {
@@ -12295,7 +12277,7 @@ const AdminDashboard = () => {
             <AlertDialogCancel onClick={() => {
               setOverrideDialogOpen(false);
               setExistingCustomer(null);
-              setAddDialogOpen(false);
+              closeAdminModal();
             }}>
               Cancel
             </AlertDialogCancel>
