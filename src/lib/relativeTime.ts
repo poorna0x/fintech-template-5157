@@ -1,8 +1,8 @@
-import { differenceInDays, differenceInMonths, differenceInYears } from 'date-fns';
+import { addMonths, differenceInDays, differenceInMonths, differenceInYears } from 'date-fns';
 
 /**
- * How long ago a past date was, e.g. "23 days before", "2 months before", "1 year before".
- * Under 30 calendar days → days; under 1 year → months; otherwise → years.
+ * How long ago a past date was, e.g. "23 days before", "2 months 5 days before", "1 year before".
+ * Under 30 calendar days → days; under 1 year → months (+ remaining days); otherwise → years.
  */
 export function formatTimeBefore(
   dateInput: Date | string,
@@ -25,7 +25,17 @@ export function formatTimeBefore(
 
   const months = differenceInMonths(referenceDate, date);
   const monthCount = Math.max(1, months);
-  return monthCount === 1 ? '1 month before' : `${monthCount} months before`;
+  const afterMonths = addMonths(date, monthCount);
+  const remainingDays = Math.max(0, differenceInDays(referenceDate, afterMonths));
+
+  const monthLabel =
+    monthCount === 1 ? '1 month' : `${monthCount} months`;
+  if (remainingDays === 0) {
+    return `${monthLabel} before`;
+  }
+  const dayLabel =
+    remainingDays === 1 ? '1 day' : `${remainingDays} days`;
+  return `${monthLabel} ${dayLabel} before`;
 }
 
 /** Full completion timestamp for tooltips, e.g. "May 15th 2026 at 12:31 PM". */
@@ -51,7 +61,7 @@ function getOrdinalSuffix(n: number): string {
   return s[(v - 20) % 10] || s[v] || s[0];
 }
 
-/** e.g. "13 days before · May 15th 2026 at 12:31 PM" */
+/** e.g. "4 months 5 days before · May 15th 2026 at 12:31 PM" */
 export function formatCompletedWhen(dateInput: Date | string): string | null {
   const before = formatTimeBefore(dateInput);
   const detailed = formatCompletedAtDetailed(dateInput);
