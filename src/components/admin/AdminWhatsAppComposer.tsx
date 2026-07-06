@@ -809,7 +809,7 @@ export function AdminWhatsAppComposerPanel({
               <span className="hidden sm:inline">Desktop</span>
             </Button>
             {onClose && (
-              <Button type="button" variant="ghost" size="icon" onClick={onClose} aria-label="Close">
+              <Button type="button" variant="ghost" size="icon" onClick={onClose} aria-label="Close" className="rounded-md hover:bg-muted/45 active:bg-muted/60 focus-visible:ring-0 focus-visible:ring-offset-0 [-webkit-tap-highlight-color:transparent]">
                 <X className="w-5 h-5" />
               </Button>
             )}

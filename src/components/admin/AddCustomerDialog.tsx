@@ -1375,7 +1375,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
               variant="ghost"
               size="icon"
               tabIndex={-1}
-              className="h-10 w-10 shrink-0 rounded-full text-muted-foreground touch-manipulation hover:bg-muted hover:text-foreground"
+              className="h-10 w-10 shrink-0 rounded-md text-muted-foreground touch-manipulation hover:bg-muted/45 hover:text-foreground active:bg-muted/60 focus-visible:ring-0 focus-visible:ring-offset-0 [-webkit-tap-highlight-color:transparent]"
               onClick={() => onOpenChange(false)}
               aria-label="Close"
             >
