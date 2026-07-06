@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -42,8 +42,16 @@ import { mergeEditableCustomer } from '@/lib/document-drafts';
 import { quotationToPreviewHtml, runAfterDialogClose } from '@/lib/document-preview-utils';
 import DocumentPreviewDialog from '@/components/document/DocumentPreviewDialog';
 import DocumentEmailSendDialog from '@/components/document/DocumentEmailSendDialog';
+import DocumentTermsEditor from '@/components/document/DocumentTermsEditor';
 import { normalizeRecipientList } from '@/lib/email-recipients';
 import { getValidCustomerEmail } from '@/lib/customer-email';
+import {
+  coerceTermItemsFromSnapshot,
+  createDefaultServiceDocumentTerms,
+  formatServiceDocumentTermsForPdf,
+  serializeTermItems,
+  type ServiceDocumentTermItem,
+} from '@/lib/service-document-terms';
 
 interface QuotationGeneratorProps {
   customer?: Customer;
@@ -113,9 +121,10 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
   const [editingNoteIndex, setEditingNoteIndex] = useState<number | null>(null);
   const [validityNote, setValidityNote] = useState('This quotation is valid for 30 days from the date of issue. Prices are subject to change without prior notice.');
   const [showValidityNote, setShowValidityNote] = useState(false);
-  const [termsConditions, setTermsConditions] = useState<string>('');
-  const [isEditingTerms, setIsEditingTerms] = useState(false);
-  const [newTerm, setNewTerm] = useState('');
+  const [termItems, setTermItems] = useState<ServiceDocumentTermItem[]>(() =>
+    createDefaultServiceDocumentTerms()
+  );
+  const termsForPdf = useMemo(() => formatServiceDocumentTermsForPdf(termItems), [termItems]);
   const [gstOption, setGstOption] = useState<'normal' | 'exclude' | 'include'>('include'); // Default to including GST
   const [addGSTNoteToNotes, setAddGSTNoteToNotes] = useState(false); // Option to add GST note to Additional Info
   const [showBankDetails, setShowBankDetails] = useState(false);
@@ -324,27 +333,6 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
     }));
   };
 
-  const addTerm = () => {
-    if (!newTerm.trim()) return;
-    const currentTerms = termsConditions.split('\n').filter(line => line.trim());
-    const termNumber = currentTerms.length + 1;
-    const formattedTerm = `${termNumber}. ${newTerm.trim()}`;
-    setTermsConditions([...currentTerms, formattedTerm].join('\n'));
-    setNewTerm('');
-  };
-
-  const removeTerm = (index: number) => {
-    const currentTerms = termsConditions.split('\n').filter(line => line.trim());
-    const updatedTerms = currentTerms.filter((_, i) => i !== index);
-    const renumberedTerms = updatedTerms.map((term, i) => {
-      const termText = term.replace(/^\d+\.\s*/, '');
-      return `${i + 1}. ${termText}`;
-    });
-    setTermsConditions(renumberedTerms.join('\n'));
-  };
-
-  const termsList = termsConditions.split('\n').filter(line => line.trim());
-
   const subtotal = items.reduce(
     (sum, item) => sum + item.quantity * item.unitPrice,
     0
@@ -475,10 +463,7 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
       paymentStatus: 'pending',
       paymentMethod: 'cash',
       notes: notes.join('\n'),
-      terms: [
-        showValidityNote ? validityNote : '',
-        termsConditions.trim() ? termsConditions : ''
-      ].filter(Boolean).join('\n\n'),
+      terms: showValidityNote ? `${validityNote}\n\n${termsForPdf}` : termsForPdf,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     } as Bill;
@@ -584,7 +569,8 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
     notes,
     validityNote,
     showValidityNote,
-    termsConditions,
+    termItems: serializeTermItems(termItems),
+    terms: termsForPdf,
     gstOption,
     addGSTNoteToNotes,
     showBankDetails,
@@ -607,7 +593,15 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
     if (Array.isArray(snap.notes)) setNotes(snap.notes as string[]);
     if (typeof snap.validityNote === 'string') setValidityNote(snap.validityNote);
     if (typeof snap.showValidityNote === 'boolean') setShowValidityNote(snap.showValidityNote);
-    if (typeof snap.termsConditions === 'string') setTermsConditions(snap.termsConditions);
+    setTermItems(
+      coerceTermItemsFromSnapshot({
+        termItems: snap.termItems,
+        terms:
+          typeof (snap as { termsConditions?: string }).termsConditions === 'string'
+            ? (snap as { termsConditions: string }).termsConditions
+            : snap.terms,
+      })
+    );
     if (snap.gstOption === 'normal' || snap.gstOption === 'exclude' || snap.gstOption === 'include')
       setGstOption(snap.gstOption);
     if (typeof snap.addGSTNoteToNotes === 'boolean') setAddGSTNoteToNotes(snap.addGSTNoteToNotes);
@@ -1348,86 +1342,10 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
       {/* Terms & Conditions Section */}
       <Card>
         <CardHeader>
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-2">
-            <CardTitle>Terms & Conditions</CardTitle>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsEditingTerms(!isEditingTerms)}
-              className="w-full sm:w-auto"
-            >
-              <Edit className="w-4 h-4 mr-2" />
-              {isEditingTerms ? 'View' : 'Edit'}
-            </Button>
-          </div>
+          <CardTitle>Terms & Conditions</CardTitle>
         </CardHeader>
-
         <CardContent>
-          {isEditingTerms ? (
-            <div className="space-y-4">
-              <div className="text-sm text-gray-600">
-                Add new terms and conditions. Each term will be automatically numbered.
-              </div>
-              <div className="flex flex-col sm:flex-row gap-2">
-                <Input
-                  value={newTerm}
-                  onChange={(e) => setNewTerm(e.target.value)}
-                  placeholder="Enter new term"
-                  onKeyPress={(e) => e.key === 'Enter' && addTerm()}
-                  className="flex-1"
-                />
-                <Button onClick={addTerm} size="sm" disabled={!newTerm.trim()} className="w-full sm:w-auto">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Term
-                </Button>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">Current Terms & Conditions:</Label>
-                <Textarea
-                  value={termsConditions}
-                  onChange={(e) => setTermsConditions(e.target.value)}
-                  placeholder="Terms will be automatically numbered..."
-                  rows={6}
-                  className="font-mono text-sm"
-                />
-                <div className="text-xs text-gray-500">
-                  💡 Tip: Each line will be treated as a separate numbered term. You can edit the full text above or add individual terms using the input above.
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <div className="text-sm text-gray-600">
-                Current terms and conditions:
-              </div>
-              <div className="space-y-2">
-                {termsList.map((term, index) => (
-                  <div key={`term-${index}-${term.slice(0, 10)}`} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
-                    <span className="text-gray-600 mt-1 font-medium text-sm">
-                      {term.match(/^\d+\./)?.[0] || `${index + 1}.`}
-                    </span>
-                    <span className="flex-1 text-sm">{term.replace(/^\d+\.\s*/, '')}</span>
-                    {isEditingTerms && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => removeTerm(index)}
-                        className="text-red-500 hover:text-red-700"
-                        title="Remove this term"
-                      >
-                        <X className="w-4 h-4" />
-                      </Button>
-                    )}
-                  </div>
-                ))}
-                {termsList.length === 0 && (
-                  <div className="text-center text-gray-500 py-4">
-                    No terms and conditions added yet. Click "Edit" to add some.
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
+          <DocumentTermsEditor items={termItems} onChange={setTermItems} />
         </CardContent>
       </Card>
 
