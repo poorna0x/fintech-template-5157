@@ -30,7 +30,7 @@ export const generateGoogleMapsUrl = (location: LocationData, address?: string):
 };
 
 /**
- * Generate Google Maps directions URL
+ * Generate Google Maps directions URL (destination only — navigation from current location).
  */
 export const generateGoogleMapsDirections = (destination: LocationData, address?: string): string => {
   const { latitude, longitude } = destination;
@@ -41,6 +41,38 @@ export const generateGoogleMapsDirections = (destination: LocationData, address?
   // Fallback to address if no coordinates available
   const query = address || 'Unknown Location';
   return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(query)}`;
+};
+
+type LatLngPoint = { lat: number; lng: number };
+
+/**
+ * Google Maps directions URL from a fixed origin to destination (driving).
+ * @see https://developers.google.com/maps/documentation/urls/get-started#directions-action
+ */
+export const generateGoogleMapsDirectionsBetween = (
+  origin: LatLngPoint,
+  destination: LatLngPoint,
+  travelMode: 'driving' | 'walking' | 'bicycling' | 'transit' = 'driving'
+): string => {
+  const params = new URLSearchParams({
+    api: '1',
+    origin: `${origin.lat},${origin.lng}`,
+    destination: `${destination.lat},${destination.lng}`,
+    travelmode: travelMode,
+  });
+  return `https://www.google.com/maps/dir/?${params.toString()}`;
+};
+
+/**
+ * Open Google Maps directions between two coordinates in a new tab (or Maps app on mobile).
+ */
+export const openGoogleMapsDirectionsBetween = (
+  origin: LatLngPoint,
+  destination: LatLngPoint,
+  travelMode?: 'driving' | 'walking' | 'bicycling' | 'transit'
+): void => {
+  const url = generateGoogleMapsDirectionsBetween(origin, destination, travelMode);
+  window.open(url, '_blank', 'noopener,noreferrer');
 };
 
 /**

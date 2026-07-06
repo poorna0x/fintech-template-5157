@@ -89,7 +89,7 @@ import { toast } from 'sonner';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { isIOS, isPWA, shouldUseFileInputFallback, requestCameraAccess, createVideoElement, checkCameraPermission } from '@/lib/cameraUtils';
 import { getCachedQrCodes, cacheQrCodes, shouldUseCache, CommonQrCode } from '@/lib/qrCodeManager';
-import { openInGoogleMaps, extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
+import { openInGoogleMaps, extractCoordinates, formatAddressForDisplay, openGoogleMapsDirectionsBetween } from '@/lib/maps';
 import {
   geolocationFailureMessage,
   getDeviceLocation,
@@ -844,6 +844,11 @@ const AdminDashboard = () => {
     isApproximate?: boolean; // True when distance is straight-line fallback (Google route unavailable)
   } | null>(null);
   const [isLoadingCustomDistance, setIsLoadingCustomDistance] = useState(false);
+  const [isOpeningCustomDistanceMaps, setIsOpeningCustomDistanceMaps] = useState(false);
+  const [measureTechToJobCoords, setMeasureTechToJobCoords] = useState<{
+    origin: { lat: number; lng: number };
+    destination: { lat: number; lng: number };
+  } | null>(null);
   
   // Authentication state hooks - MUST be declared before any conditional returns
 
@@ -7235,15 +7240,20 @@ const AdminDashboard = () => {
       onResolvingLink,
     });
 
-  const calculateCustomDistanceBetweenStops = async () => {
+  const resolveCustomDistanceStops = async (): Promise<{
+    origin: { lat: number; lng: number };
+    dest: { lat: number; lng: number };
+    fromLabel: string;
+    toLabel: string;
+  } | null> => {
     const workingJob = selectedJobForDistance;
     if (!workingJob || !customDistanceFromId || !customDistanceToId) {
       toast.error('Choose both From and To.');
-      return;
+      return null;
     }
     if (customDistanceFromId === customDistanceToId) {
       toast.error('From and To must be different.');
-      return;
+      return null;
     }
 
     const assignedTechnicianId =
@@ -7272,14 +7282,14 @@ const AdminDashboard = () => {
     if (customDistanceFromId === '__tech__') {
       if (!techLocation?.latitude || !techLocation?.longitude) {
         toast.error('Technician location not available.');
-        return;
+        return null;
       }
       origin = { lat: Number(techLocation.latitude), lng: Number(techLocation.longitude) };
     } else {
       const j = jobById(customDistanceFromId);
       if (!j) {
         toast.error('Could not find the From job.');
-        return;
+        return null;
       }
       const fromResolved = await resolveJobCoordsForMeasure(j);
       origin = fromResolved ? { lat: fromResolved.lat, lng: fromResolved.lng } : null;
@@ -7288,14 +7298,14 @@ const AdminDashboard = () => {
     if (customDistanceToId === '__tech__') {
       if (!techLocation?.latitude || !techLocation?.longitude) {
         toast.error('Technician location not available.');
-        return;
+        return null;
       }
       dest = { lat: Number(techLocation.latitude), lng: Number(techLocation.longitude) };
     } else {
       const j = jobById(customDistanceToId);
       if (!j) {
         toast.error('Could not find the To job.');
-        return;
+        return null;
       }
       const toResolved = await resolveJobCoordsForMeasure(j);
       dest = toResolved ? { lat: toResolved.lat, lng: toResolved.lng } : null;
@@ -7303,8 +7313,22 @@ const AdminDashboard = () => {
 
     if (!origin || !dest) {
       toast.error('Map coordinates missing for one of the stops. Check addresses or map links.');
-      return;
+      return null;
     }
+
+    return {
+      origin,
+      dest,
+      fromLabel: labelForStop(customDistanceFromId),
+      toLabel: labelForStop(customDistanceToId),
+    };
+  };
+
+  const calculateCustomDistanceBetweenStops = async () => {
+    const stops = await resolveCustomDistanceStops();
+    if (!stops) return;
+
+    const { origin, dest, fromLabel, toLabel } = stops;
 
     setIsLoadingCustomDistance(true);
     setCustomDistanceResult(null);
@@ -7316,8 +7340,6 @@ const AdminDashboard = () => {
       }
 
       const distanceMatrix = new (window as any).google.maps.DistanceMatrixService();
-      const fromL = labelForStop(customDistanceFromId);
-      const toL = labelForStop(customDistanceToId);
 
       distanceMatrix.getDistanceMatrix(
         {
@@ -7338,18 +7360,18 @@ const AdminDashboard = () => {
               }
               const durationText = el.duration?.text || '';
               setCustomDistanceResult({
-                fromLabel: fromL,
-                toLabel: toL,
+                fromLabel,
+                toLabel,
                 distance: distanceText,
                 duration: durationText,
               });
               return;
             }
           }
-          const m = haversineDistanceMeters(origin!, dest!);
+          const m = haversineDistanceMeters(origin, dest);
           setCustomDistanceResult({
-            fromLabel: fromL,
-            toLabel: toL,
+            fromLabel,
+            toLabel,
             distance: formatDistanceKm(m) || '',
             duration: '',
             isApproximate: true,
@@ -7363,6 +7385,31 @@ const AdminDashboard = () => {
         `Failed to calculate: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
     }
+  };
+
+  const openCustomDistanceInGoogleMaps = async () => {
+    setIsOpeningCustomDistanceMaps(true);
+    try {
+      const stops = await resolveCustomDistanceStops();
+      if (!stops) return;
+      openGoogleMapsDirectionsBetween(stops.origin, stops.dest, 'driving');
+      toast.success('Opening route in Google Maps');
+    } finally {
+      setIsOpeningCustomDistanceMaps(false);
+    }
+  };
+
+  const openAssignedTechToJobInGoogleMaps = () => {
+    if (!measureTechToJobCoords) {
+      toast.error('Route coordinates not available.');
+      return;
+    }
+    openGoogleMapsDirectionsBetween(
+      measureTechToJobCoords.origin,
+      measureTechToJobCoords.destination,
+      'driving'
+    );
+    toast.success('Opening route in Google Maps');
   };
 
   const getMeasureStopSelectOptions = (): { value: string; label: string }[] => {
@@ -7404,6 +7451,7 @@ const AdminDashboard = () => {
 
     setSelectedJobForDistance(workingJob);
     setCustomDistanceResult(null);
+    setMeasureTechToJobCoords(null);
 
     const assignedTechnicianId =
       (workingJob as any).assigned_technician_id || workingJob.assignedTechnicianId || null;
@@ -7479,6 +7527,14 @@ const AdminDashboard = () => {
     }
     setCustomDistanceFromId(fromId);
     setCustomDistanceToId(toId);
+
+    setMeasureTechToJobCoords({
+      origin: {
+        lat: Number(techLocation!.latitude),
+        lng: Number(techLocation!.longitude),
+      },
+      destination: jobCoords,
+    });
 
     setDistanceMeasurementDialogOpen(true);
     setIsCalculatingDistances(true);
@@ -14160,7 +14216,11 @@ const AdminDashboard = () => {
         open={distanceMeasurementDialogOpen}
         onOpenChange={(open) => {
           setDistanceMeasurementDialogOpen(open);
-          if (!open) setIsLoadingCustomDistance(false);
+          if (!open) {
+            setIsLoadingCustomDistance(false);
+            setIsOpeningCustomDistanceMaps(false);
+            setMeasureTechToJobCoords(null);
+          }
         }}
       >
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto w-[calc(100vw-2rem)] sm:w-full">
@@ -14170,8 +14230,21 @@ const AdminDashboard = () => {
               Measure distance
             </DialogTitle>
             <p className="text-sm text-muted-foreground pt-1">
-              Driving distance from this technician&apos;s last location to this job.
+              Driving distance from this technician&apos;s last location to this job. Compare other
+              stops below or open the route in Google Maps.
             </p>
+            {measureTechToJobCoords && !isCalculatingDistances && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mt-2 w-full sm:w-auto"
+                onClick={openAssignedTechToJobInGoogleMaps}
+              >
+                <ExternalLink className="h-4 w-4 mr-2 shrink-0" />
+                Open technician → job in Google Maps
+              </Button>
+            )}
           </DialogHeader>
 
           <div className="mt-4 min-w-0">
@@ -14347,28 +14420,58 @@ const AdminDashboard = () => {
                 </Select>
               </div>
             </div>
-            <Button
-              type="button"
-              size="default"
-              className="w-full justify-center shrink-0"
-              disabled={
-                isCalculatingDistances ||
-                isLoadingCustomDistance ||
-                !customDistanceFromId ||
-                !customDistanceToId ||
-                customDistanceFromId === customDistanceToId
-              }
-              onClick={() => void calculateCustomDistanceBetweenStops()}
-            >
-              {isLoadingCustomDistance ? (
-                <>
-                  <RefreshCw className="h-4 w-4 mr-2 animate-spin shrink-0" />
-                  Calculating…
-                </>
-              ) : (
-                'Calculate driving distance'
-              )}
-            </Button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <Button
+                type="button"
+                size="default"
+                className="w-full justify-center shrink-0"
+                disabled={
+                  isCalculatingDistances ||
+                  isLoadingCustomDistance ||
+                  isOpeningCustomDistanceMaps ||
+                  !customDistanceFromId ||
+                  !customDistanceToId ||
+                  customDistanceFromId === customDistanceToId
+                }
+                onClick={() => void calculateCustomDistanceBetweenStops()}
+              >
+                {isLoadingCustomDistance ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin shrink-0" />
+                    Calculating…
+                  </>
+                ) : (
+                  'Calculate in app'
+                )}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="default"
+                className="w-full justify-center shrink-0"
+                disabled={
+                  isCalculatingDistances ||
+                  isLoadingCustomDistance ||
+                  isOpeningCustomDistanceMaps ||
+                  !customDistanceFromId ||
+                  !customDistanceToId ||
+                  customDistanceFromId === customDistanceToId
+                }
+                onClick={() => void openCustomDistanceInGoogleMaps()}
+              >
+                {isOpeningCustomDistanceMaps ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin shrink-0" />
+                    Opening…
+                  </>
+                ) : (
+                  <>
+                    <ExternalLink className="h-4 w-4 mr-2 shrink-0" />
+                    Open route in Google Maps
+                  </>
+                )}
+              </Button>
+            </div>
             {customDistanceResult && (
               <div className="rounded-md border border-blue-200 bg-blue-50/90 p-3 text-sm">
                 <div className="font-medium text-gray-900 break-words">

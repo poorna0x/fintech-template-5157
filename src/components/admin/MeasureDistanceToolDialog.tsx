@@ -23,6 +23,7 @@ import {
   Check,
   ChevronsUpDown,
   Clock,
+  ExternalLink,
   Loader2,
   MapPin,
   Navigation,
@@ -31,6 +32,7 @@ import {
 import { cn } from '@/lib/utils';
 import { db } from '@/lib/supabase';
 import { resolveJobLatLngFromRow } from '@/lib/jobLocationHelpers';
+import { openGoogleMapsDirectionsBetween } from '@/lib/maps';
 import { calculateDrivingDistance } from '@/lib/googleMapsDistance';
 import { toast } from 'sonner';
 import type { Job } from '@/types';
@@ -219,6 +221,7 @@ const MeasureDistanceToolDialog: React.FC<MeasureDistanceToolDialogProps> = ({
   const [fromSearch, setFromSearch] = useState('');
   const [toSearch, setToSearch] = useState('');
   const [calculating, setCalculating] = useState(false);
+  const [openingMaps, setOpeningMaps] = useState(false);
   const [result, setResult] = useState<DistanceResult | null>(null);
 
   const resetForm = useCallback(() => {
@@ -284,25 +287,18 @@ const MeasureDistanceToolDialog: React.FC<MeasureDistanceToolDialogProps> = ({
     setResult(null);
   };
 
-  const handleCalculate = async () => {
-    if (!fromJobId || !toJobId) {
-      toast.error('Choose both From and To jobs.');
-      return;
-    }
-    if (fromJobId === toJobId) {
-      toast.error('From and To must be different jobs.');
-      return;
+  const resolveSelectedJobCoords = async () => {
+    if (!fromJobId || !toJobId || fromJobId === toJobId) {
+      toast.error('Choose two different jobs first.');
+      return null;
     }
 
     const fromJob = jobsById.get(fromJobId);
     const toJob = jobsById.get(toJobId);
     if (!fromJob || !toJob) {
       toast.error('Selected job not found. Search again.');
-      return;
+      return null;
     }
-
-    setCalculating(true);
-    setResult(null);
 
     let resolvingToast: string | number | undefined;
     try {
@@ -329,27 +325,46 @@ const MeasureDistanceToolDialog: React.FC<MeasureDistanceToolDialogProps> = ({
 
       if (!fromResolved || !toResolved) {
         toast.error('Map coordinates missing for one or both jobs. Check customer map links.');
-        return;
+        return null;
       }
 
-      const driving = await calculateDrivingDistance(
-        { lat: fromResolved.lat, lng: fromResolved.lng },
-        { lat: toResolved.lat, lng: toResolved.lng }
+      return {
+        fromJob,
+        toJob,
+        origin: { lat: fromResolved.lat, lng: fromResolved.lng },
+        destination: { lat: toResolved.lat, lng: toResolved.lng },
+      };
+    } catch (error) {
+      if (resolvingToast !== undefined) toast.dismiss(resolvingToast);
+      toast.error(
+        `Failed to resolve locations: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
+      return null;
+    }
+  };
+
+  const handleCalculate = async () => {
+    setCalculating(true);
+    setResult(null);
+
+    try {
+      const resolved = await resolveSelectedJobCoords();
+      if (!resolved) return;
+
+      const driving = await calculateDrivingDistance(resolved.origin, resolved.destination);
 
       if (driving.isApproximate) {
         toast.warning('Showing approximate distance (route unavailable)');
       }
 
       setResult({
-        fromLabel: formatJobStopLabel(fromJob),
-        toLabel: formatJobStopLabel(toJob),
+        fromLabel: formatJobStopLabel(resolved.fromJob),
+        toLabel: formatJobStopLabel(resolved.toJob),
         distance: driving.distance,
         duration: driving.duration,
         isApproximate: driving.isApproximate,
       });
     } catch (error) {
-      if (resolvingToast !== undefined) toast.dismiss(resolvingToast);
       toast.error(
         `Failed to calculate: ${error instanceof Error ? error.message : 'Unknown error'}`
       );
@@ -358,8 +373,24 @@ const MeasureDistanceToolDialog: React.FC<MeasureDistanceToolDialogProps> = ({
     }
   };
 
+  const handleOpenInGoogleMaps = async () => {
+    setOpeningMaps(true);
+    try {
+      const resolved = await resolveSelectedJobCoords();
+      if (!resolved) return;
+
+      openGoogleMapsDirectionsBetween(resolved.origin, resolved.destination, 'driving');
+      toast.success('Opening route in Google Maps');
+    } finally {
+      setOpeningMaps(false);
+    }
+  };
+
   const canCalculate =
-    Boolean(fromJobId && toJobId && fromJobId !== toJobId) && !calculating && !loadingJobs;
+    Boolean(fromJobId && toJobId && fromJobId !== toJobId) &&
+    !calculating &&
+    !openingMaps &&
+    !loadingJobs;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -370,7 +401,7 @@ const MeasureDistanceToolDialog: React.FC<MeasureDistanceToolDialogProps> = ({
             Measure distance
           </DialogTitle>
           <DialogDescription>
-            Driving distance between ongoing jobs using Google Maps. Same list as the Ongoing section.
+            Compare two ongoing jobs in-app, or open the driving route in Google Maps.
           </DialogDescription>
         </DialogHeader>
 
@@ -427,24 +458,46 @@ const MeasureDistanceToolDialog: React.FC<MeasureDistanceToolDialogProps> = ({
                 />
               </div>
 
-              <Button
-                type="button"
-                className="w-full"
-                disabled={!canCalculate}
-                onClick={() => void handleCalculate()}
-              >
-                {calculating ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin shrink-0" />
-                    Calculating…
-                  </>
-                ) : (
-                  <>
-                    <MapPin className="h-4 w-4 mr-2 shrink-0" />
-                    Calculate driving distance
-                  </>
-                )}
-              </Button>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  className="w-full"
+                  disabled={!canCalculate}
+                  onClick={() => void handleCalculate()}
+                >
+                  {calculating ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin shrink-0" />
+                      Calculating…
+                    </>
+                  ) : (
+                    <>
+                      <MapPin className="h-4 w-4 mr-2 shrink-0" />
+                      Calculate in app
+                    </>
+                  )}
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  disabled={!canCalculate}
+                  onClick={() => void handleOpenInGoogleMaps()}
+                >
+                  {openingMaps ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin shrink-0" />
+                      Opening…
+                    </>
+                  ) : (
+                    <>
+                      <ExternalLink className="h-4 w-4 mr-2 shrink-0" />
+                      Open route in Google Maps
+                    </>
+                  )}
+                </Button>
+              </div>
 
               {result && (
                 <div className="rounded-lg border border-sky-200 bg-sky-50/90 p-4 text-sm space-y-2">
