@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,7 +11,8 @@ import { Customer } from '@/types';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
-import { MapPin, Download, ExternalLink, Loader2, ChevronDown } from 'lucide-react';
+import { MapPin, Download, ExternalLink, Loader2, ChevronDown, X, Check } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { generateJobNumber, extractLocationFromAddressString, bangaloreAreas, formatCustomTimeLabel, getDefaultLeadCost, isHomeTriangleLeadSource } from '@/lib/adminUtils';
 import ImageUpload from '@/components/ImageUpload';
 import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmentTimeSelect';
@@ -119,6 +120,8 @@ const draftHasData = (draft: ReturnType<typeof loadAddCustomerDraft>): boolean =
       (Array.isArray(f.service_types) && f.service_types.length > 0)
   );
 };
+
+const ADD_CUSTOMER_STEPS = ['Personal', 'Address', 'Services', 'Review', 'Job'] as const;
 
 interface AddCustomerDialogProps {
   open: boolean;
@@ -1344,33 +1347,76 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       </AlertDialogContent>
     </AlertDialog>
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent dismissible={false} className="w-[95vw] sm:w-[90vw] md:w-[80vw] lg:w-[60vw] xl:w-[50vw] max-w-2xl h-[90vh] max-h-[90vh] overflow-hidden flex flex-col">
-        <DialogHeader className="flex-shrink-0">
-          <DialogTitle className="flex items-center gap-2 sm:gap-3">
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold text-xs sm:text-sm">
-                {currentStep}
-              </div>
-              <span className="text-sm sm:text-base">Add New Customer</span>
-            </div>
-            <div className="flex gap-1 ml-auto">
-              {[1, 2, 3, 4, 5].map((step) => (
-                <div
-                  key={step}
-                  className={`w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${
-                    step <= currentStep ? 'bg-blue-600' : 'bg-gray-300'
-                  }`}
-                />
-              ))}
-            </div>
-          </DialogTitle>
-          <DialogDescription className="text-xs sm:text-sm">
-            {currentStep === 1 && "Enter customer's personal information"}
-            {currentStep === 2 && "Enter customer's address details"}
-            {currentStep === 3 && "Select services and equipment details"}
-            {currentStep === 4 && "Review and confirm customer information"}
-            {currentStep === 5 && "Create a new job for this customer?"}
-          </DialogDescription>
+      <DialogContent
+        dismissible={false}
+        hideCloseButton
+        className="w-[95vw] sm:w-[90vw] md:w-[80vw] lg:w-[60vw] xl:w-[50vw] max-w-2xl h-[90vh] max-h-[90vh] overflow-hidden flex flex-col"
+      >
+        <DialogHeader className="shrink-0 space-y-0 border-b pb-4 text-left">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <DialogTitle className="text-lg font-semibold tracking-tight">
+              Add New Customer
+            </DialogTitle>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-10 w-10 shrink-0 rounded-full text-muted-foreground touch-manipulation hover:bg-muted hover:text-foreground"
+              onClick={() => onOpenChange(false)}
+              aria-label="Close"
+            >
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
+
+          <div
+            className="flex w-full items-start"
+            role="progressbar"
+            aria-valuenow={currentStep}
+            aria-valuemin={1}
+            aria-valuemax={ADD_CUSTOMER_STEPS.length}
+            aria-label={`Step ${currentStep} of ${ADD_CUSTOMER_STEPS.length}`}
+          >
+            {ADD_CUSTOMER_STEPS.map((stepLabel, index) => {
+              const stepNumber = index + 1;
+              const isComplete = stepNumber < currentStep;
+              const isCurrent = stepNumber === currentStep;
+              return (
+                <React.Fragment key={stepLabel}>
+                  <div className="flex w-8 shrink-0 flex-col items-center gap-1 sm:w-10">
+                    <div
+                      className={cn(
+                        'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold transition-colors sm:h-8 sm:w-8',
+                        isComplete && 'bg-sky-600 text-white',
+                        isCurrent && 'bg-sky-600 text-white ring-2 ring-sky-200 ring-offset-2',
+                        !isComplete && !isCurrent && 'bg-muted text-muted-foreground'
+                      )}
+                    >
+                      {isComplete ? <Check className="h-3.5 w-3.5" strokeWidth={2.5} /> : stepNumber}
+                    </div>
+                    <span
+                      className={cn(
+                        'hidden w-full text-center text-[10px] font-medium leading-tight sm:block',
+                        isCurrent ? 'text-sky-700' : 'text-muted-foreground'
+                      )}
+                    >
+                      {stepLabel}
+                    </span>
+                  </div>
+                  {index < ADD_CUSTOMER_STEPS.length - 1 && (
+                    <div className="mt-3.5 flex flex-1 items-center px-0.5 sm:mt-4 sm:px-1" aria-hidden>
+                      <div
+                        className={cn(
+                          'h-0.5 w-full rounded-full transition-colors',
+                          stepNumber < currentStep ? 'bg-sky-600' : 'bg-muted'
+                        )}
+                      />
+                    </div>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </div>
         </DialogHeader>
         
         <div className="py-6 px-2 sm:px-4 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
@@ -1392,45 +1438,48 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                 )}
               </div>
 
-              <div className="space-y-2 sm:col-span-2">
-                <div className="flex flex-col sm:flex-row sm:items-end gap-1 sm:gap-1.5">
-                  <div className="flex-1 space-y-2 min-w-0">
-                    <Label htmlFor="add_phone" className="text-sm font-medium">Primary Phone *</Label>
-                    <Input
-                      id="add_phone"
-                      value={addFormData.phone}
-                      onChange={(e) => { handlePhoneChange(e.target.value); setDuplicateFoundOnBlur(null); }}
-                      placeholder="Enter 10-digit phone number"
-                      className={`text-sm ${formErrors.phone ? 'border-red-500' : ''}`}
-                      required
-                    />
-                    {formErrors?.phone && (
-                      <p className="text-xs text-red-500">{formErrors.phone}</p>
-                    )}
-                    {duplicateFoundOnBlur && (
-                      <p className="text-xs text-amber-600">A customer with this number or email already exists.</p>
-                    )}
-                  </div>
-
-                  {canSwapPhones && (
-                    <div className="flex justify-center sm:pb-2 shrink-0">
-                      <PhoneSwapButton onSwap={handleSwapPhones} />
-                    </div>
+              <div
+                className={cn(
+                  'grid items-start gap-4',
+                  canSwapPhones ? 'grid-cols-1 sm:grid-cols-[1fr_auto_1fr]' : 'grid-cols-1 sm:grid-cols-2'
+                )}
+              >
+                <div className="space-y-2">
+                  <Label htmlFor="add_phone" className="text-sm font-medium">Primary Phone *</Label>
+                  <Input
+                    id="add_phone"
+                    value={addFormData.phone}
+                    onChange={(e) => { handlePhoneChange(e.target.value); setDuplicateFoundOnBlur(null); }}
+                    placeholder="Enter 10-digit phone number"
+                    className={`text-sm ${formErrors.phone ? 'border-red-500' : ''}`}
+                    required
+                  />
+                  {formErrors?.phone && (
+                    <p className="text-xs text-red-500">{formErrors.phone}</p>
                   )}
+                  {duplicateFoundOnBlur && (
+                    <p className="text-xs text-amber-600">A customer with this number or email already exists.</p>
+                  )}
+                </div>
 
-                  <div className="flex-1 space-y-2 min-w-0">
-                    <Label htmlFor="add_alternate_phone" className="text-sm font-medium">Alternate Phone</Label>
-                    <Input
-                      id="add_alternate_phone"
-                      value={addFormData.alternate_phone}
-                      onChange={(e) => handleAlternatePhoneChange(e.target.value)}
-                      placeholder="Enter 10-digit phone number (optional)"
-                      className={`text-sm ${formErrors.alternate_phone ? 'border-red-500' : ''}`}
-                    />
-                    {formErrors?.alternate_phone && (
-                      <p className="text-xs text-red-500">{formErrors.alternate_phone}</p>
-                    )}
+                {canSwapPhones && (
+                  <div className="flex justify-center sm:mt-8">
+                    <PhoneSwapButton onSwap={handleSwapPhones} />
                   </div>
+                )}
+
+                <div className="space-y-2">
+                  <Label htmlFor="add_alternate_phone" className="text-sm font-medium">Alternate Phone</Label>
+                  <Input
+                    id="add_alternate_phone"
+                    value={addFormData.alternate_phone}
+                    onChange={(e) => handleAlternatePhoneChange(e.target.value)}
+                    placeholder="Enter 10-digit phone number (optional)"
+                    className={`text-sm ${formErrors.alternate_phone ? 'border-red-500' : ''}`}
+                  />
+                  {formErrors?.alternate_phone && (
+                    <p className="text-xs text-red-500">{formErrors.alternate_phone}</p>
+                  )}
                 </div>
               </div>
 
