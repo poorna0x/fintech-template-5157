@@ -491,9 +491,9 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                         
                         {completedByName && (
                           <div className="mt-3 pt-3 border-t border-border">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium text-foreground/90 w-32">Completed By:</span>
-                              <span className="text-sm text-foreground">{completedByName}</span>
+                            <div className="flex items-start gap-2">
+                              <span className="text-sm font-medium text-foreground/90 w-36 shrink-0">Completed By:</span>
+                              <span className="text-sm text-foreground flex-1 min-w-0 break-words">{completedByName}</span>
                             </div>
                           </div>
                         )}

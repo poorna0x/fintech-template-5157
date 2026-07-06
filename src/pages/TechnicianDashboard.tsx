@@ -10066,9 +10066,9 @@ const TechnicianDashboard = () => {
                               {/* Completed By */}
                               {completedByName && (
                                 <div className="mt-3 pt-3 border-t border-gray-200">
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-sm font-medium text-gray-700 w-32">Completed By:</span>
-                                    <span className="text-sm text-gray-900">{completedByName}</span>
+                                  <div className="flex items-start gap-2">
+                                    <span className="text-sm font-medium text-gray-700 w-36 shrink-0">Completed By:</span>
+                                    <span className="text-sm text-gray-900 flex-1 min-w-0 break-words">{completedByName}</span>
                                   </div>
                                 </div>
                               )}
