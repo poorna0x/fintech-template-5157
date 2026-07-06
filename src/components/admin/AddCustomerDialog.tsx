@@ -191,6 +191,13 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   const [isWaitingForPhotos, setIsWaitingForPhotos] = useState(false);
   const addFormDataRef = useRef(addFormData);
   addFormDataRef.current = addFormData;
+  const fullNameInputRef = useRef<HTMLInputElement>(null);
+
+  const focusStepOneName = useCallback(() => {
+    requestAnimationFrame(() => {
+      fullNameInputRef.current?.focus({ preventScroll: true });
+    });
+  }, []);
 
   const handleEquipmentUploadState = useCallback((serviceType: string, uploading: boolean) => {
     equipmentUploadingRef.current[serviceType] = uploading;
@@ -223,6 +230,12 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       setAnyEquipmentUploading(false);
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!open || currentStep !== 1 || showResumePrompt) return;
+    const timer = window.setTimeout(focusStepOneName, 150);
+    return () => window.clearTimeout(timer);
+  }, [open, currentStep, showResumePrompt, focusStepOneName]);
 
   // On open, if there's an uncreated draft, ask the admin to resume or start new.
   useEffect(() => {
@@ -1361,6 +1374,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
               type="button"
               variant="ghost"
               size="icon"
+              tabIndex={-1}
               className="h-10 w-10 shrink-0 rounded-full text-muted-foreground touch-manipulation hover:bg-muted hover:text-foreground"
               onClick={() => onOpenChange(false)}
               aria-label="Close"
@@ -1426,10 +1440,12 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
               <div className="space-y-2">
                 <Label htmlFor="add_full_name" className="text-sm font-medium">Full Name</Label>
                 <Input
+                  ref={fullNameInputRef}
                   id="add_full_name"
                   value={addFormData.full_name}
                   onChange={(e) => handleAddFormChange('full_name', e.target.value)}
                   autoCapitalize="sentences"
+                  autoComplete="name"
                   placeholder="Enter full name"
                   className={`text-sm ${formErrors.full_name ? 'border-red-500' : ''}`}
                 />
@@ -1451,6 +1467,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                     value={addFormData.phone}
                     onChange={(e) => { handlePhoneChange(e.target.value); setDuplicateFoundOnBlur(null); }}
                     placeholder="Enter 10-digit phone number"
+                    autoComplete="tel"
+                    inputMode="tel"
                     className={`text-sm ${formErrors.phone ? 'border-red-500' : ''}`}
                     required
                   />
@@ -1464,7 +1482,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
                 {canSwapPhones && (
                   <div className="flex justify-center sm:mt-8">
-                    <PhoneSwapButton onSwap={handleSwapPhones} />
+                    <PhoneSwapButton onSwap={handleSwapPhones} tabIndex={-1} />
                   </div>
                 )}
 
@@ -1475,6 +1493,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                     value={addFormData.alternate_phone}
                     onChange={(e) => handleAlternatePhoneChange(e.target.value)}
                     placeholder="Enter 10-digit phone number (optional)"
+                    autoComplete="tel"
+                    inputMode="tel"
                     className={`text-sm ${formErrors.alternate_phone ? 'border-red-500' : ''}`}
                   />
                   {formErrors?.alternate_phone && (
@@ -1491,6 +1511,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                   value={addFormData.email}
                   onChange={(e) => { handleAddFormChange('email', e.target.value); setDuplicateFoundOnBlur(null); }}
                   placeholder="Enter email address"
+                  autoComplete="email"
                   className={`text-sm ${formErrors.email ? 'border-red-500' : ''}`}
                 />
                 {formErrors?.email && (

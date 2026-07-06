@@ -7,6 +7,7 @@ type PhoneSwapButtonProps = {
   disabled?: boolean;
   saving?: boolean;
   className?: string;
+  tabIndex?: number;
 };
 
 /** Small icon button — swap primary ↔ alternate when both numbers are set. */
@@ -15,6 +16,7 @@ const PhoneSwapButton: React.FC<PhoneSwapButtonProps> = ({
   disabled,
   saving,
   className,
+  tabIndex = -1,
 }) => (
   <Button
     type="button"
@@ -23,6 +25,7 @@ const PhoneSwapButton: React.FC<PhoneSwapButtonProps> = ({
     className={`h-7 w-7 shrink-0 text-muted-foreground hover:bg-transparent hover:text-muted-foreground ${className ?? ''}`}
     onClick={onSwap}
     disabled={disabled || saving}
+    tabIndex={tabIndex}
     title={saving ? 'Saving…' : 'Swap primary and alternate'}
     aria-label={saving ? 'Saving…' : 'Swap primary and alternate numbers'}
   >
