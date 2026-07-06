@@ -845,10 +845,6 @@ const AdminDashboard = () => {
   } | null>(null);
   const [isLoadingCustomDistance, setIsLoadingCustomDistance] = useState(false);
   const [isOpeningCustomDistanceMaps, setIsOpeningCustomDistanceMaps] = useState(false);
-  const [measureTechToJobCoords, setMeasureTechToJobCoords] = useState<{
-    origin: { lat: number; lng: number };
-    destination: { lat: number; lng: number };
-  } | null>(null);
   
   // Authentication state hooks - MUST be declared before any conditional returns
 
@@ -7399,19 +7395,6 @@ const AdminDashboard = () => {
     }
   };
 
-  const openAssignedTechToJobInGoogleMaps = () => {
-    if (!measureTechToJobCoords) {
-      toast.error('Route coordinates not available.');
-      return;
-    }
-    openGoogleMapsDirectionsBetween(
-      measureTechToJobCoords.origin,
-      measureTechToJobCoords.destination,
-      'driving'
-    );
-    toast.success('Opening route in Google Maps');
-  };
-
   const getMeasureStopSelectOptions = (): { value: string; label: string }[] => {
     const wj = selectedJobForDistance;
     if (!wj) return [];
@@ -7451,7 +7434,6 @@ const AdminDashboard = () => {
 
     setSelectedJobForDistance(workingJob);
     setCustomDistanceResult(null);
-    setMeasureTechToJobCoords(null);
 
     const assignedTechnicianId =
       (workingJob as any).assigned_technician_id || workingJob.assignedTechnicianId || null;
@@ -7527,14 +7509,6 @@ const AdminDashboard = () => {
     }
     setCustomDistanceFromId(fromId);
     setCustomDistanceToId(toId);
-
-    setMeasureTechToJobCoords({
-      origin: {
-        lat: Number(techLocation!.latitude),
-        lng: Number(techLocation!.longitude),
-      },
-      destination: jobCoords,
-    });
 
     setDistanceMeasurementDialogOpen(true);
     setIsCalculatingDistances(true);
@@ -14219,7 +14193,6 @@ const AdminDashboard = () => {
           if (!open) {
             setIsLoadingCustomDistance(false);
             setIsOpeningCustomDistanceMaps(false);
-            setMeasureTechToJobCoords(null);
           }
         }}
       >
@@ -14230,21 +14203,9 @@ const AdminDashboard = () => {
               Measure distance
             </DialogTitle>
             <p className="text-sm text-muted-foreground pt-1">
-              Driving distance from this technician&apos;s last location to this job. Compare other
-              stops below or open the route in Google Maps.
+              Driving distance from this technician&apos;s last location to this job. Use custom
+              distance below to compare other stops or open a route in Google Maps.
             </p>
-            {measureTechToJobCoords && !isCalculatingDistances && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="mt-2 w-full sm:w-auto"
-                onClick={openAssignedTechToJobInGoogleMaps}
-              >
-                <ExternalLink className="h-4 w-4 mr-2 shrink-0" />
-                Open technician → job in Google Maps
-              </Button>
-            )}
           </DialogHeader>
 
           <div className="mt-4 min-w-0">
