@@ -53,7 +53,7 @@ export default function BillModal({ isOpen, onClose, customer }: BillModalProps)
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={handleClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) handleClose(); }}>
       <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto p-0">
         <DialogHeader className="sticky top-0 z-10 border-b bg-gradient-to-r from-emerald-50/90 to-white px-4 py-4 sm:px-6">
           <div className="flex items-start justify-between gap-3">

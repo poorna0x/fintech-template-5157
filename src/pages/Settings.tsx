@@ -206,6 +206,17 @@ const Settings = () => {
     [closeSettingsPanel, location.search]
   );
 
+  const bindSettingsPanelDismiss = useCallback(
+    (panel: SettingsPanelSlug, reset?: () => void) =>
+      (open: boolean) => {
+        if (!open) {
+          reset?.();
+          onSettingsPanelOpenChange(panel, false);
+        }
+      },
+    [onSettingsPanelOpenChange]
+  );
+
   useEffect(() => {
     registerAdminPWA();
   }, []);
@@ -2066,7 +2077,7 @@ const Settings = () => {
           />
           <AdvancedCustomerSearchDialog
             open={advancedSearchDialogOpen}
-            onOpenChange={(open) => onSettingsPanelOpenChange('advanced-search', open)}
+            onOpenChange={bindSettingsPanelDismiss('advanced-search', () => setAdvancedSearchDialogOpen(false))}
           />
 
           {/* Reminders: add general / customer, then load list dialog */}
@@ -2108,20 +2119,20 @@ const Settings = () => {
           />
           <AddReminderDialog
             open={addGeneralReminderOpen}
-            onOpenChange={(open) => onSettingsPanelOpenChange('add-general-reminder', open)}
+            onOpenChange={bindSettingsPanelDismiss('add-general-reminder', () => setAddGeneralReminderOpen(false))}
             entity={{ type: 'general', id: null }}
             dialogTitle="Add general reminder"
           />
           <AddReminderDialog
             open={addCustomerReminderOpen}
-            onOpenChange={(open) => onSettingsPanelOpenChange('add-customer-reminder', open)}
+            onOpenChange={bindSettingsPanelDismiss('add-customer-reminder', () => setAddCustomerReminderOpen(false))}
             entity={{ type: 'general', id: null }}
             requireCustomerPick
             dialogTitle="Add customer reminder"
           />
           <SettingsRemindersDialog
             open={remindersDialogOpen}
-            onOpenChange={(open) => onSettingsPanelOpenChange('reminders', open)}
+            onOpenChange={bindSettingsPanelDismiss('reminders', () => setRemindersDialogOpen(false))}
           />
 
           {/* Recurring service tracking */}
@@ -2142,7 +2153,7 @@ const Settings = () => {
           />
           <RecurringServiceTracker
             open={recurringServiceOpen}
-            onOpenChange={(open) => onSettingsPanelOpenChange('recurring-service', open)}
+            onOpenChange={bindSettingsPanelDismiss('recurring-service', () => setRecurringServiceOpen(false))}
           />
 
           {/* Pending payments */}
@@ -2179,7 +2190,7 @@ const Settings = () => {
           </Card>
           <SettingsPendingPaymentsDialogV2
             open={pendingPaymentsDialogOpen}
-            onOpenChange={(open) => onSettingsPanelOpenChange('pending-payments', open)}
+            onOpenChange={bindSettingsPanelDismiss('pending-payments', () => setPendingPaymentsDialogOpen(false))}
             initialAction={pendingPaymentsInitialAction}
           />
 
@@ -2894,24 +2905,26 @@ const Settings = () => {
 
       <MergeCustomersDialog
         open={mergeCustomersOpen}
-        onOpenChange={(open) => onSettingsPanelOpenChange('merge-customers', open)}
+        onOpenChange={bindSettingsPanelDismiss('merge-customers', () => setMergeCustomersOpen(false))}
         disabled={isManager}
         disabledTitle={managerRestrictedTitle}
       />
 
       <WarrantyManagementDialog
         open={warrantyDialogOpen}
-        onOpenChange={(open) => onSettingsPanelOpenChange('warranty', open)}
+        onOpenChange={bindSettingsPanelDismiss('warranty', () => setWarrantyDialogOpen(false))}
       />
 
       <DirectSaleDialog
         open={directSaleOpen}
-        onOpenChange={(open) => onSettingsPanelOpenChange('direct-sale', open)}
+        onOpenChange={bindSettingsPanelDismiss('direct-sale', () => setDirectSaleOpen(false))}
       />
 
       {/* Add/Edit Technician Dialog */}
       <Dialog open={addTechnicianDialogOpen || editTechnicianDialogOpen} onOpenChange={(open) => {
         if (!open) {
+          setAddTechnicianDialogOpen(false);
+          setEditTechnicianDialogOpen(false);
           const panel = parseSettingsUrl(location.search).panel;
           if (panel === 'add-technician' || panel === 'edit-technician') {
             onSettingsPanelOpenChange(panel, false);
@@ -3369,6 +3382,8 @@ const Settings = () => {
       {/* Add/Edit Common QR Code Dialog */}
       <Dialog open={addQrCodeDialogOpen || editQrCodeDialogOpen} onOpenChange={(open) => {
         if (!open) {
+          setAddQrCodeDialogOpen(false);
+          setEditQrCodeDialogOpen(false);
           const panel = parseSettingsUrl(location.search).panel;
           if (panel === 'add-payment-qr' || panel === 'edit-payment-qr') {
             onSettingsPanelOpenChange(panel, false);
@@ -3482,6 +3497,8 @@ const Settings = () => {
       {/* Add/Edit Common QR (non-payment) Dialog */}
       <Dialog open={addTechnicianCommonQrDialogOpen || editTechnicianCommonQrDialogOpen} onOpenChange={(open) => {
         if (!open) {
+          setAddTechnicianCommonQrDialogOpen(false);
+          setEditTechnicianCommonQrDialogOpen(false);
           const panel = parseSettingsUrl(location.search).panel;
           if (panel === 'add-tech-qr' || panel === 'edit-tech-qr') {
             onSettingsPanelOpenChange(panel, false);
@@ -3573,6 +3590,8 @@ const Settings = () => {
       {/* Add/Edit Product QR Code Dialog */}
       <Dialog open={addProductQrCodeDialogOpen || editProductQrCodeDialogOpen} onOpenChange={(open) => {
         if (!open) {
+          setAddProductQrCodeDialogOpen(false);
+          setEditProductQrCodeDialogOpen(false);
           const panel = parseSettingsUrl(location.search).panel;
           if (panel === 'add-product-qr' || panel === 'edit-product-qr') {
             onSettingsPanelOpenChange(panel, false);
@@ -3724,6 +3743,7 @@ const Settings = () => {
       {/* Add Todo Dialog */}
       <Dialog open={addTodoDialogOpen} onOpenChange={(open) => {
         if (!open) {
+          setAddTodoDialogOpen(false);
           onSettingsPanelOpenChange('add-todo', false);
           setNewTodoText('');
         }
@@ -3816,6 +3836,7 @@ const Settings = () => {
         open={addTrackerDialogOpen}
         onOpenChange={(open) => {
           if (!open) {
+            setAddTrackerDialogOpen(false);
             onSettingsPanelOpenChange('add-tracker', false);
             setNewTrackerName('');
             setNewTrackerAmount('');

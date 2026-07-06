@@ -586,6 +586,18 @@ const AdminDashboard = () => {
     [closeAdminModal, location.search]
   );
 
+  /** Outside tap / Escape: clear local open state immediately, then strip ?modal= */
+  const bindAdminModalDismiss = useCallback(
+    (modal: AdminModalSlug, reset?: () => void) =>
+      (open: boolean) => {
+        if (!open) {
+          reset?.();
+          onAdminModalOpenChange(modal, false);
+        }
+      },
+    [onAdminModalOpenChange]
+  );
+
   useClearAdminModalOnIOSBackground(() => setMoreOptionsCustomerId(null));
 
   // Legacy ?modal=more-options — strip from URL without reopening (iOS PWA restore).
@@ -5102,6 +5114,7 @@ const AdminDashboard = () => {
   };
 
   const handleClosePhotoGallery = () => {
+    setCustomerPhotoGalleryOpen(false);
     closeAdminModal();
     setSelectedCustomerForPhotos(null);
   };
@@ -6337,6 +6350,7 @@ const AdminDashboard = () => {
   }, [openAdminModal]);
 
   const handleBillModalClose = () => {
+    setBillModalOpen(false);
     closeAdminModal();
     setSelectedCustomerForBill(null);
   };
@@ -10597,7 +10611,10 @@ const AdminDashboard = () => {
             open={completedFilterDialogOpen}
             onOpenChange={(open) => {
               if (open) openAdminModal('completed-filters');
-              else onAdminModalOpenChange('completed-filters', false);
+              else {
+                setCompletedFilterDialogOpen(false);
+                onAdminModalOpenChange('completed-filters', false);
+              }
             }}
           >
             <DialogContent className="sm:max-w-2xl">
@@ -10907,7 +10924,10 @@ const AdminDashboard = () => {
               open={ongoingFilterDialogOpen}
               onOpenChange={(open) => {
                 if (open) openAdminModal('ongoing-filters');
-                else onAdminModalOpenChange('ongoing-filters', false);
+                else {
+                  setOngoingFilterDialogOpen(false);
+                  onAdminModalOpenChange('ongoing-filters', false);
+                }
               }}
             >
               <DialogContent className="sm:max-w-lg">
@@ -12223,7 +12243,7 @@ const AdminDashboard = () => {
       {/* Add Customer Dialog */}
       <AddCustomerDialog
         open={addDialogOpen}
-        onOpenChange={(open) => onAdminModalOpenChange('add-customer', open)}
+        onOpenChange={bindAdminModalDismiss('add-customer', () => setAddDialogOpen(false))}
         customers={customers}
         onCustomerCreated={async (newCustomer) => {
           if (newCustomer) {
@@ -12301,12 +12321,10 @@ const AdminDashboard = () => {
       {/* Edit Customer Dialog */}
       <EditCustomerDialog
         open={editDialogOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            setEditingCustomer(null);
-          }
-          onAdminModalOpenChange('edit-customer', open);
-        }}
+        onOpenChange={bindAdminModalDismiss('edit-customer', () => {
+          setEditDialogOpen(false);
+          setEditingCustomer(null);
+        })}
         customer={editingCustomer}
         dbBrands={dbBrands}
         dbModels={dbModels}
@@ -12360,7 +12378,10 @@ const AdminDashboard = () => {
       {/* Delete Job Confirmation Dialog */}
       <AlertDialog
         open={deleteJobDialogOpen}
-        onOpenChange={(open) => onAdminModalOpenChange('delete-job', open)}
+        onOpenChange={bindAdminModalDismiss('delete-job', () => {
+          setDeleteJobDialogOpen(false);
+          setJobToDelete(null);
+        })}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -12488,9 +12509,7 @@ const AdminDashboard = () => {
       {/* Photo Gallery Dialog */}
       <PhotoGalleryDialog
         open={photoGalleryOpen}
-        onOpenChange={(open) => {
-          if (!open) onAdminModalOpenChange('photos', false);
-        }}
+        onOpenChange={bindAdminModalDismiss('photos', () => setPhotoGalleryOpen(false))}
         selectedJobPhotos={selectedJobPhotos}
         onViewPhoto={openPhotoViewer}
         onDeletePhoto={handleDeletePhoto}
@@ -12499,15 +12518,13 @@ const AdminDashboard = () => {
       {/* Full-Screen Photo Viewer Modal */}
       <PhotoViewerDialog
         open={photoViewerOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            onAdminModalOpenChange('photo-viewer', false);
-            setSelectedPhoto(null);
-            setSelectedBillPhotos(null);
-            setSelectedCustomerPhotos(null);
-            setPhotoDownloadMeta(null);
-          }
-        }}
+        onOpenChange={bindAdminModalDismiss('photo-viewer', () => {
+          setPhotoViewerOpen(false);
+          setSelectedPhoto(null);
+          setSelectedBillPhotos(null);
+          setSelectedCustomerPhotos(null);
+          setPhotoDownloadMeta(null);
+        })}
         selectedPhoto={selectedPhoto}
         selectedBillPhotos={selectedBillPhotos}
         selectedJobPhotos={selectedJobPhotos}
@@ -12527,14 +12544,11 @@ const AdminDashboard = () => {
       {/* Job Assignment Dialog */}
       <AssignJobDialog
         open={assignJobDialogOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            setAssignJobDialogOpen(false);
-            setJobToAssign(null);
-            setSelectedTechnicianId('');
-            onAdminModalOpenChange('assign', false);
-          }
-        }}
+        onOpenChange={bindAdminModalDismiss('assign', () => {
+          setAssignJobDialogOpen(false);
+          setJobToAssign(null);
+          setSelectedTechnicianId('');
+        })}
         job={jobToAssign}
         technicians={technicians}
         techniciansRefreshing={assignTechniciansRefreshing}
@@ -12586,13 +12600,11 @@ const AdminDashboard = () => {
       {/* New Job Dialog */}
       <NewJobDialog
         open={newJobDialogOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            setIsJobDialogReady(false);
-            setSelectedCustomerForJob(null);
-          }
-          onAdminModalOpenChange('new-job', open);
-        }}
+        onOpenChange={bindAdminModalDismiss('new-job', () => {
+          setNewJobDialogOpen(false);
+          setIsJobDialogReady(false);
+          setSelectedCustomerForJob(null);
+        })}
         customer={selectedCustomerForJob}
         technicians={technicians}
         onJobCreated={(newJob) => {
@@ -12676,7 +12688,7 @@ const AdminDashboard = () => {
       {/* Service History Dialog */}
       <ServiceHistoryDialog
         open={historyDialogOpen}
-        onOpenChange={(open) => onAdminModalOpenChange('history', open)}
+        onOpenChange={bindAdminModalDismiss('history', () => setHistoryDialogOpen(false))}
         customer={selectedCustomerForHistory}
         history={selectedCustomerForHistory ? (customerHistory[selectedCustomerForHistory.customer_id || selectedCustomerForHistory.customerId || ''] || []) : []}
         hasMore={historyHasMore}
@@ -12704,14 +12716,11 @@ const AdminDashboard = () => {
       {/* Reassign Job Dialog */}
       <ReassignJobDialog
         open={reassignDialogOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            setReassignDialogOpen(false);
-            setJobToReassign(null);
-            setSelectedTechnicianForReassign('');
-            onAdminModalOpenChange('reassign', false);
-          }
-        }}
+        onOpenChange={bindAdminModalDismiss('reassign', () => {
+          setReassignDialogOpen(false);
+          setJobToReassign(null);
+          setSelectedTechnicianForReassign('');
+        })}
         job={jobToReassign}
         technicians={technicians}
         techniciansRefreshing={reassignTechniciansRefreshing}
@@ -12732,7 +12741,10 @@ const AdminDashboard = () => {
       {/* Edit Job Dialog */}
       <EditJobDialog
         open={editJobDialogOpen}
-        onOpenChange={(open) => onAdminModalOpenChange('edit-job', open)}
+        onOpenChange={bindAdminModalDismiss('edit-job', () => {
+          setEditJobDialogOpen(false);
+          setJobToEdit(null);
+        })}
         job={jobToEdit}
         onJobUpdated={(updatedJob) => {
           if (!updatedJob?.id) {
@@ -13018,15 +13030,22 @@ const AdminDashboard = () => {
         <FollowUpModal
           isOpen={followUpModalOpen}
           onClose={() => {
-            closeAdminModal();
+            setFollowUpModalOpen(false);
             setSelectedJobForFollowUp(null);
+            closeAdminModal();
           }}
           job={selectedJobForFollowUp}
           onScheduleFollowUp={handleFollowUpSubmit}
         />
 
         {/* Move to Ongoing Dialog */}
-        <Dialog open={moveToOngoingDialogOpen} onOpenChange={(open) => onAdminModalOpenChange('move-ongoing', open)}>
+        <Dialog open={moveToOngoingDialogOpen} onOpenChange={bindAdminModalDismiss('move-ongoing', () => {
+          setMoveToOngoingDialogOpen(false);
+          setSelectedJobForMoveToOngoing(null);
+          setMoveToOngoingDate('');
+          setMoveToOngoingTimeSlot('MORNING');
+          setMoveToOngoingCustomTime('');
+        })}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Move to Ongoing</DialogTitle>
@@ -13097,6 +13116,7 @@ const AdminDashboard = () => {
                   setMoveToOngoingDate('');
                   setMoveToOngoingTimeSlot('MORNING');
                   setMoveToOngoingCustomTime('');
+                  onAdminModalOpenChange('move-ongoing', false);
                 }}
                 disabled={isUpdating}
               >
@@ -13116,7 +13136,11 @@ const AdminDashboard = () => {
       {/* Deny Job Dialog */}
       <DenyJobDialog
         open={denyDialogOpen}
-        onOpenChange={(open) => onAdminModalOpenChange('deny', open)}
+        onOpenChange={bindAdminModalDismiss('deny', () => {
+          setDenyDialogOpen(false);
+          setSelectedJobForDeny(null);
+          setDenyReason('');
+        })}
         job={selectedJobForDeny}
         denyReason={denyReason}
         onDenyReasonChange={setDenyReason}
@@ -13293,7 +13317,7 @@ const AdminDashboard = () => {
       {/* Customer Report Dialog */}
       <CustomerReportDialog
         open={customerReportDialogOpen}
-        onOpenChange={(open) => onAdminModalOpenChange('report', open)}
+        onOpenChange={bindAdminModalDismiss('report', () => setCustomerReportDialogOpen(false))}
         customer={selectedCustomerForReport}
         technicians={techniciansForReports.length > 0 ? techniciansForReports : technicians}
         onPhotoClick={(url, index, total) => {
@@ -13319,7 +13343,10 @@ const AdminDashboard = () => {
       {/* Edit Completed Job Dialog */}
       <EditCompletedJobDialog
         open={editCompletedJobDialogOpen}
-        onOpenChange={(open) => onAdminModalOpenChange('edit-completed', open)}
+        onOpenChange={bindAdminModalDismiss('edit-completed', () => {
+          setEditCompletedJobDialogOpen(false);
+          setSelectedCompletedJob(null);
+        })}
         job={selectedCompletedJob}
         editData={completedJobEditData}
         onEditDataChange={setCompletedJobEditData}
@@ -13903,7 +13930,10 @@ const AdminDashboard = () => {
       {/* Send Message Dialog */}
       <SendMessageDialog
         open={sendMessageDialogOpen}
-        onOpenChange={(open) => onAdminModalOpenChange('send-message', open)}
+        onOpenChange={bindAdminModalDismiss('send-message', () => {
+          setSendMessageDialogOpen(false);
+          setSelectedJobForMessage(null);
+        })}
         job={selectedJobForMessage}
         onMessageSent={handleMessageSent}
       />
@@ -13943,7 +13973,10 @@ const AdminDashboard = () => {
 
       <ShareTechnicianInfoToCustomerDialog
         open={shareTechnicianInfoDialogOpen}
-        onOpenChange={(open) => onAdminModalOpenChange('share-job-info', open)}
+        onOpenChange={bindAdminModalDismiss('share-job-info', () => {
+          setShareTechnicianInfoDialogOpen(false);
+          setSelectedJobForShareInfo(null);
+        })}
         job={selectedJobForShareInfo}
         customer={selectedJobForShareInfo ? ((selectedJobForShareInfo as any).customer || selectedJobForShareInfo.customer) : null}
         technicians={technicians}
@@ -13952,7 +13985,7 @@ const AdminDashboard = () => {
 
       <AddReminderDialog
         open={addReminderDialogOpen}
-        onOpenChange={(open) => onAdminModalOpenChange('add-reminder', open)}
+        onOpenChange={bindAdminModalDismiss('add-reminder', () => setAddReminderDialogOpen(false))}
         entity={reminderEntity}
         contextLabel={reminderContextLabel || undefined}
       />
@@ -13960,8 +13993,11 @@ const AdminDashboard = () => {
       <WarrantyManagementDialog
         open={warrantyDialogOpen}
         onOpenChange={(open) => {
-          setWarrantyDialogOpen(open);
-          if (!open) setWarrantyDialogCustomer(null);
+          if (!open) {
+            setWarrantyDialogOpen(false);
+            setWarrantyDialogCustomer(null);
+            onAdminModalOpenChange('warranty', false);
+          }
         }}
         initialCustomer={warrantyDialogCustomer}
       />
