@@ -188,6 +188,7 @@ import RecentAccountsDialog from './admin/RecentAccountsDialog';
 import DirectSaleDialog from './admin/DirectSaleDialog';
 import AmountTrackersDialog from './admin/AmountTrackersDialog';
 import { EmailSentLogDialog } from './admin/EmailSentLogDialog';
+import MeasureDistanceToolDialog from './admin/MeasureDistanceToolDialog';
 import { settingsPath } from '@/lib/settingsSections';
 import ServiceHistoryDialog from './admin/ServiceHistoryDialog';
 import PhotoGalleryDialog from './admin/PhotoGalleryDialog';
@@ -314,7 +315,7 @@ function readAdminOverlayFromSearch(search: string): {
   };
 }
 
-const ADMIN_TOOL_DIALOGS = ['recent-accounts', 'direct-sale', 'amount-trackers', 'sent-email-log'] as const;
+const ADMIN_TOOL_DIALOGS = ['recent-accounts', 'direct-sale', 'amount-trackers', 'sent-email-log', 'measure-distance'] as const;
 type AdminToolDialog = (typeof ADMIN_TOOL_DIALOGS)[number];
 
 const MANAGER_BLOCKED_ADMIN_TOOLS = new Set<AdminToolDialog>(['direct-sale', 'amount-trackers']);
@@ -890,6 +891,7 @@ const AdminDashboard = () => {
   const emailSentLogOpen = activeAdminTool === 'sent-email-log';
   const directSaleOpen = activeAdminTool === 'direct-sale';
   const amountTrackersOpen = activeAdminTool === 'amount-trackers';
+  const measureDistanceOpen = activeAdminTool === 'measure-distance';
 
   // Close Tools dropdown before paint when URL changes (gesture back / in-app navigate).
   useLayoutEffect(() => {
@@ -10347,6 +10349,10 @@ const AdminDashboard = () => {
                     <Mail className="w-4 h-4 mr-2" />
                     Sent email log
                   </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => openAdminTool('measure-distance')}>
+                    <Navigation className="w-4 h-4 mr-2" />
+                    Measure distance
+                  </DropdownMenuItem>
                   <DropdownMenuItem
                     disabled={isManager}
                     onClick={() => {
@@ -14045,6 +14051,12 @@ const AdminDashboard = () => {
       <EmailSentLogDialog
         open={emailSentLogOpen}
         onOpenChange={(open) => handleAdminToolOpenChange('sent-email-log', open)}
+      />
+
+      <MeasureDistanceToolDialog
+        open={measureDistanceOpen}
+        onOpenChange={(open) => handleAdminToolOpenChange('measure-distance', open)}
+        initialJobs={jobs}
       />
 
       {/* Recent Accounts Dialog – scoped fetch when opened (no full customer list) */}
