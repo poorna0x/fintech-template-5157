@@ -7,12 +7,14 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Calendar } from '@/components/ui/calendar';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { X, Calendar as CalendarIcon, Plus, CheckCircle2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Job } from '@/types';
 import { supabase, FOLLOW_UP_ROW_COLUMNS } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { hasAutoMoveToOngoingOnDate } from '@/lib/followUpToOngoing';
 
 interface FollowUp {
   id: string;
@@ -39,6 +41,7 @@ interface FollowUpModalProps {
     followUpReason: string;
     parentFollowUpId?: string;
     rescheduleFollowUpId?: string;
+    autoMoveToOngoingOnDate?: boolean;
   }) => void;
 }
 
@@ -50,6 +53,7 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
   const [loadingFollowUps, setLoadingFollowUps] = useState(false);
   const [selectedParentFollowUp, setSelectedParentFollowUp] = useState<string | null>(null);
   const [rescheduleFollowUpId, setRescheduleFollowUpId] = useState<string | null>(null);
+  const [autoMoveToOngoingOnDate, setAutoMoveToOngoingOnDate] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const reasonInputRef = useRef<HTMLInputElement>(null);
 
@@ -84,10 +88,12 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
       setReason('');
       setSelectedParentFollowUp(null);
       setRescheduleFollowUpId(null);
+      setAutoMoveToOngoingOnDate(hasAutoMoveToOngoingOnDate((job as any).requirements));
     } else {
       setExistingFollowUps([]);
       setSelectedParentFollowUp(null);
       setRescheduleFollowUpId(null);
+      setAutoMoveToOngoingOnDate(false);
     }
   }, [isOpen, job]);
 
@@ -234,7 +240,8 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
         followUpDate: formattedDate,
         followUpReason: reason.trim(),
         parentFollowUpId: selectedParentFollowUp || undefined,
-        rescheduleFollowUpId: rescheduleFollowUpId || undefined
+        rescheduleFollowUpId: rescheduleFollowUpId || undefined,
+        autoMoveToOngoingOnDate: selectedParentFollowUp ? undefined : autoMoveToOngoingOnDate,
       };
 
       await onScheduleFollowUp(job.id, followUpData);
@@ -244,6 +251,7 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
       setReason('');
       setSelectedParentFollowUp(null);
       setRescheduleFollowUpId(null);
+      setAutoMoveToOngoingOnDate(false);
       
       // Reload follow-ups
       await loadFollowUps();
@@ -454,6 +462,25 @@ export default function FollowUpModal({ isOpen, onClose, job, onScheduleFollowUp
                   )}
                 </div>
               </div>
+
+              {!selectedParentFollowUp && (
+                <div className="flex items-start gap-3 rounded-md border border-border bg-muted/40 px-3 py-3">
+                  <Checkbox
+                    id="auto-move-to-ongoing"
+                    checked={autoMoveToOngoingOnDate}
+                    onCheckedChange={(checked) => setAutoMoveToOngoingOnDate(checked === true)}
+                    className="mt-0.5"
+                  />
+                  <div className="space-y-1">
+                    <Label htmlFor="auto-move-to-ongoing" className="text-sm font-medium leading-snug cursor-pointer">
+                      Auto move to Ongoing on follow-up day
+                    </Label>
+                    <p className="text-xs text-muted-foreground leading-snug">
+                      When checked, this job moves to Ongoing as unassigned on the follow-up date when you open admin.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <div className="flex justify-end space-x-2 pt-2">
                   <Button

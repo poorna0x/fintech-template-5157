@@ -84,6 +84,7 @@ import {
 } from '@/lib/qrCodeManager';
 import { extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
 import { getLocationLinkFromObject } from '@/lib/jobLocationHelpers';
+import { applyAutoMoveToOngoingOnDateFlag } from '@/lib/followUpToOngoing';
 import ImageUpload from '@/components/ImageUpload';
 import { Label } from '@/components/ui/label';
 import { processQueuedPhotos, startRetryProcessing, setupOnlineListener, stopRetryProcessing } from '@/lib/retryPhotoUpload';
@@ -3655,20 +3656,33 @@ const TechnicianDashboard = () => {
     followUpReason: string;
     parentFollowUpId?: string;
     rescheduleFollowUpId?: string;
+    autoMoveToOngoingOnDate?: boolean;
   }) => {
     try {
-      // Update job status and follow-up info
+      const existingJob = jobs.find((j) => j.id === jobId);
+      const isRootFollowUp = !followUpData.parentFollowUpId;
+      const requirements = isRootFollowUp
+        ? applyAutoMoveToOngoingOnDateFlag(
+            (existingJob as any)?.requirements,
+            Boolean(followUpData.autoMoveToOngoingOnDate)
+          )
+        : (existingJob as any)?.requirements;
+
+      // Update job status and follow-up info (root follow-ups only)
+      if (isRootFollowUp) {
       // Use technician's user ID (UUID) - database expects UUID, not name
       const { error: jobError } = await db.jobs.update(jobId, {
         status: 'FOLLOW_UP',
         follow_up_date: followUpData.followUpDate,
         follow_up_notes: followUpData.followUpReason || '',
         follow_up_scheduled_by: user?.id || null,
-        follow_up_scheduled_at: new Date().toISOString()
+        follow_up_scheduled_at: new Date().toISOString(),
+        requirements,
       });
 
       if (jobError) {
         throw new Error(jobError.message);
+      }
       }
 
       // Create or update follow-up record in follow_ups table
@@ -3708,6 +3722,7 @@ const TechnicianDashboard = () => {
       }
 
       // Update local state
+      if (isRootFollowUp) {
       setJobs(prev => prev.map(job => 
         job.id === jobId 
           ? { 
@@ -3716,10 +3731,12 @@ const TechnicianDashboard = () => {
               followUpDate: followUpData.followUpDate,
               followUpNotes: followUpData.followUpReason || '',
               followUpScheduledBy: user?.id || 'technician',
-              followUpScheduledAt: new Date().toISOString()
+              followUpScheduledAt: new Date().toISOString(),
+              requirements,
             }
           : job
       ));
+      }
       
       // Follow-up scheduled silently
       setFollowUpModalOpen(false);

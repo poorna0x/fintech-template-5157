@@ -2985,6 +2985,40 @@ export const db = {
       return { data: data || [], error };
     },
 
+    /**
+     * Promote follow-up jobs whose follow_up_date is today or earlier to ongoing (PENDING).
+     * Mirrors manual "Move to ongoing" — clears follow-up fields and assignment.
+     */
+    async promoteDueFollowUpsToOngoing(asOfDate?: string) {
+      const { getLocalTodayYmd, buildPromoteFollowUpJobPatch } = await import('@/lib/followUpToOngoing');
+      const today = asOfDate || getLocalTodayYmd();
+
+      const { data, error } = await supabase
+        .from('jobs')
+        .select('id, follow_up_date, follow_up_time, requirements')
+        .in('status', ['FOLLOW_UP', 'RESCHEDULED'])
+        .not('follow_up_date', 'is', null)
+        .lte('follow_up_date', today)
+        .limit(100);
+
+      if (error) return { promoted: 0, jobIds: [] as string[], error };
+      if (!data?.length) return { promoted: 0, jobIds: [] as string[], error: null };
+
+      const jobIds: string[] = [];
+      for (const row of data) {
+        const patch = buildPromoteFollowUpJobPatch(row);
+        if (!patch) continue;
+        const { error: updateError } = await supabase.from('jobs').update(patch).eq('id', row.id);
+        if (!updateError) jobIds.push(row.id);
+      }
+
+      if (jobIds.length > 0) {
+        cacheInvalidate('job_counts_v1');
+      }
+
+      return { promoted: jobIds.length, jobIds, error: null };
+    },
+
     /** Analytics only: selective columns. Omit `limit` to fetch every job (paginated). Pass `limit` for capped on-demand reports. */
     async getForAnalytics(limit?: number) {
       const cols = ANALYTICS_JOB_COLUMNS;

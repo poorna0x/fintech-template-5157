@@ -134,6 +134,7 @@ const Analytics = lazyDefault(() => import('./Analytics'));
 const InventoryManagement = lazyDefault(() => import('./InventoryManagement'));
 import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, levenshteinDistance, calculateSimilarity, extractPhotoUrls, normalizePhotoUrl, parseJobRequirements, getFormattedTimeSlot, findLeadSource, getLeadSourceFromJob, getJobCustomTimeLabel, normalizeLeadType, normalizeServiceSubType, completedJobMatchesDashboardClientFilters, isOfficeCompletedJob, jobCompletionLocalDateIso } from '@/lib/adminUtils';
 import { getLocationLinkFromObject, getLocationUnavailableMessage, resolveJobDestinationCoordsSync, resolveJobLatLngFromRow } from '@/lib/jobLocationHelpers';
+import { applyAutoMoveToOngoingOnDateFlag } from '@/lib/followUpToOngoing';
 import { enrichJobsWithAfterPhotosIfNeeded } from '@/lib/jobReportPhotos';
 import {
   consumeAdminDashboardPrefetch,
@@ -1959,6 +1960,43 @@ const AdminDashboard = () => {
   }, []);
 
   const amcAutoCreateAttemptedRef = useRef(false);
+  const followUpPromoteDayRef = useRef<string | null>(null);
+
+  const scheduleFollowUpPromotion = useCallback(() => {
+    const today = getTodayLocalDate();
+    if (followUpPromoteDayRef.current === today) return;
+    followUpPromoteDayRef.current = today;
+
+    supabase.auth
+      .getSession()
+      .then(({ data: { session } }) => {
+        if (!session) {
+          followUpPromoteDayRef.current = null;
+          return;
+        }
+        db.jobs.promoteDueFollowUpsToOngoing(today).then((result) => {
+          if (result.error) {
+            console.error('Error promoting due follow-up jobs:', result.error);
+            followUpPromoteDayRef.current = null;
+            return;
+          }
+          if (result.promoted > 0) {
+            toast.success(
+              `${result.promoted} follow-up job${result.promoted > 1 ? 's' : ''} moved to ongoing`
+            );
+            invalidateAdminDashboardCaches();
+            clearModuleJobsListCache();
+            loadFilteredJobs(statusFilter, currentPage, { silent: true });
+            db.jobs.getFollowUpForGlow().then(({ data }) => {
+              if (data) setAllFollowUpJobs(data as Job[]);
+            }).catch(() => {});
+          }
+        });
+      })
+      .catch(() => {
+        followUpPromoteDayRef.current = null;
+      });
+  }, [statusFilter, currentPage, loadFilteredJobs]);
 
   const scheduleAmcJobCreation = useCallback(() => {
     if (amcAutoCreateAttemptedRef.current) return;
@@ -2013,6 +2051,7 @@ const AdminDashboard = () => {
       }
 
       scheduleAmcJobCreation();
+      scheduleFollowUpPromotion();
 
       const [techniciansResult, jobCountsResult, ongoingResult] = await Promise.all([
         skipTechniciansFetch
@@ -7811,6 +7850,7 @@ const AdminDashboard = () => {
     followUpReason: string;
     parentFollowUpId?: string;
     rescheduleFollowUpId?: string;
+    autoMoveToOngoingOnDate?: boolean;
   }) => {
     try {
       // If rescheduling, check if the old follow-up is a root (no parent) before deleting
@@ -7872,12 +7912,23 @@ const AdminDashboard = () => {
       // If this is a root follow-up (no parent) OR if we're rescheduling a root follow-up, update job status
       // Store null for admin scheduling so UI consistently renders "Admin" even if a technician session exists in another tab.
       if (!followUpData.parentFollowUpId || wasRootFollowUp) {
+        const existingJob =
+          jobs.find((j) => j.id === jobId) ||
+          Object.values(customerJobs)
+            .flat()
+            .find((j) => j.id === jobId);
+        const requirements = applyAutoMoveToOngoingOnDateFlag(
+          (existingJob as any)?.requirements,
+          Boolean(followUpData.autoMoveToOngoingOnDate)
+        );
+
         const { error: jobError } = await db.jobs.update(jobId, {
           status: 'FOLLOW_UP',
           follow_up_date: followUpData.followUpDate,
           follow_up_notes: followUpData.followUpReason,
           follow_up_scheduled_by: null,
-          follow_up_scheduled_at: new Date().toISOString()
+          follow_up_scheduled_at: new Date().toISOString(),
+          requirements,
         } as any);
 
         if (jobError) {
@@ -7892,7 +7943,8 @@ const AdminDashboard = () => {
             followUpDate: followUpData.followUpDate,
             followUpNotes: followUpData.followUpReason,
             followUpScheduledBy: 'admin',
-            followUpScheduledAt: new Date().toISOString()
+            followUpScheduledAt: new Date().toISOString(),
+            requirements,
           } : job
         ));
 
@@ -7906,7 +7958,8 @@ const AdminDashboard = () => {
                 followUpDate: followUpData.followUpDate,
                 followUpNotes: followUpData.followUpReason + ((followUpData as any).followUpNotes ? ` - ${(followUpData as any).followUpNotes}` : ''),
                 followUpScheduledBy: 'admin',
-                followUpScheduledAt: new Date().toISOString()
+                followUpScheduledAt: new Date().toISOString(),
+                requirements,
               } : job
             );
           });
