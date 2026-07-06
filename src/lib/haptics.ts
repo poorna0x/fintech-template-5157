@@ -1,3 +1,5 @@
+import { shouldSuppressIOSTap } from '@/lib/iosScrollTapGuard';
+
 export type VibrationPattern = number | number[];
 
 const HAPTIC_COOLDOWN_MS = 220;
@@ -118,8 +120,9 @@ export function hapticConfirm(): void {
 
 export const IOS_HAPTIC_ATTR = 'data-ios-haptic-attached';
 
+/** Native <button> gets IOSSwitchHapticOverlay in button.tsx — global scan targets other controls only. */
 export const IOS_INTERACTIVE_SELECTOR =
-  'button:not([data-haptic-skip]),[role="button"]:not([data-haptic-skip]),[data-haptic-interactive]:not([data-haptic-skip]),a[role="button"]:not([data-haptic-skip])';
+  '[role="button"]:not(button):not([data-haptic-skip]),[data-haptic-interactive]:not([data-haptic-skip]),a[role="button"]:not([data-haptic-skip])';
 
 function isHapticTargetDisabled(el: HTMLElement): boolean {
   return (
@@ -164,7 +167,7 @@ export function attachIOSHapticOverlay(el: HTMLElement): boolean {
 
   input.addEventListener('click', (e) => {
     e.stopPropagation();
-    if (isHapticTargetDisabled(el)) return;
+    if (shouldSuppressIOSTap() || isHapticTargetDisabled(el)) return;
     el.click();
   });
 

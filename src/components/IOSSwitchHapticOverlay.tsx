@@ -1,5 +1,6 @@
 import React from 'react';
 import { isIOS, markNativeSwitchHaptic } from '@/lib/haptics';
+import { shouldSuppressIOSTap } from '@/lib/iosScrollTapGuard';
 
 type Props = {
   disabled?: boolean;
@@ -14,7 +15,7 @@ export function IOSSwitchHapticOverlay({ disabled }: Props) {
 
   const handleClick = (e: React.MouseEvent<HTMLInputElement>) => {
     e.stopPropagation();
-    if (disabled) return;
+    if (disabled || shouldSuppressIOSTap()) return;
     const host = e.currentTarget.parentElement as HTMLElement | null;
     host?.click();
   };

@@ -6,6 +6,7 @@ import {
   IOS_INTERACTIVE_SELECTOR,
   isIOS,
 } from '@/lib/haptics';
+import { initIOSScrollTapGuard } from '@/lib/iosScrollTapGuard';
 
 function isDisabled(el: HTMLElement): boolean {
   return (
@@ -39,6 +40,7 @@ export function useGlobalButtonHaptics(enabled = true): void {
     if (!enabled || !canHaptic()) return;
 
     if (isIOS()) {
+      const removeScrollGuard = initIOSScrollTapGuard();
       scanIOSInteractiveElements();
 
       let debounceId: ReturnType<typeof setTimeout> | undefined;
@@ -63,6 +65,7 @@ export function useGlobalButtonHaptics(enabled = true): void {
       return () => {
         if (debounceId) clearTimeout(debounceId);
         observer.disconnect();
+        removeScrollGuard();
       };
     }
 

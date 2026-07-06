@@ -13,6 +13,7 @@ import {
   sanitizeGoogleMapsInput,
 } from '@/lib/googleMapsLink';
 import { useResumeSync } from '@/hooks/useResumeSync';
+import { useClearAdminModalOnIOSBackground } from '@/hooks/useClearAdminModalOnIOSBackground';
 import AdminHeader from '@/components/AdminHeader';
 import { WebsiteBookingIntentBanner } from '@/components/admin/WebsiteBookingIntentBanner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -392,6 +393,8 @@ const AdminDashboard = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<Customer[] | null>(null); // API search results (find any customer in DB)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  /** Local state only — URL sync caused iOS PWA to reopen this menu after app restart. */
+  const [moreOptionsCustomerId, setMoreOptionsCustomerId] = useState<string | null>(null);
   const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -592,6 +595,21 @@ const AdminDashboard = () => {
     },
     [closeAdminModal, location.search]
   );
+
+  useClearAdminModalOnIOSBackground(() => setMoreOptionsCustomerId(null));
+
+  // Legacy ?modal=more-options — strip from URL without reopening (iOS PWA restore).
+  useEffect(() => {
+    if (!location.pathname.startsWith('/admin')) return;
+    const parsed = parseAdminDashboardUrl(location.search);
+    if (parsed.modal !== 'more-options') return;
+    navigate(
+      adminDashboardLocation(
+        buildAdminDashboardSearch({ clearModal: true }, location.search)
+      ),
+      { replace: true }
+    );
+  }, [location.pathname, location.search, navigate]);
 
   const adminModalUrl = useMemo(
     () => parseAdminDashboardUrl(location.search),
@@ -11062,16 +11080,9 @@ const AdminDashboard = () => {
                   priorServiceFromJobs={priorServiceFromJobs}
                   isLoadingPhotos={isLoadingPhotos}
                   selectedCustomerForPhotos={selectedCustomerForPhotos}
-                  moreOptionsOpen={
-                    adminModalUrl.modal === 'more-options' &&
-                    adminModalUrl.customerId === customer.id
-                  }
+                  moreOptionsOpen={moreOptionsCustomerId === customer.id}
                   onMoreOptionsOpenChange={(open) => {
-                    if (open) {
-                      openAdminModal('more-options', { customerId: customer.id });
-                    } else {
-                      onAdminModalOpenChange('more-options', false);
-                    }
+                    setMoreOptionsCustomerId(open ? customer.id : null);
                   }}
                   onEditCustomer={handleEditCustomer}
                   onNewJob={handleNewJob}
