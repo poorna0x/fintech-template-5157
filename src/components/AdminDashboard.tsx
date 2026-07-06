@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef, startTransition, lazy as lazyDefault, Suspense } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, startTransition, lazy as lazyDefault, Suspense } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { ensureAdminSupabaseSession } from '@/lib/auth';
@@ -321,16 +321,6 @@ const MANAGER_BLOCKED_ADMIN_TOOLS = new Set<AdminToolDialog>(['direct-sale', 'am
 
 function isAdminToolParam(tool: string | null): tool is AdminToolDialog {
   return Boolean(tool && (ADMIN_TOOL_DIALOGS as readonly string[]).includes(tool));
-}
-
-function readAdminToolOpenStates(search: string) {
-  const tool = new URLSearchParams(search).get('tool');
-  return {
-    recentAccounts: tool === 'recent-accounts',
-    directSale: tool === 'direct-sale',
-    amountTrackers: tool === 'amount-trackers',
-    emailSentLog: tool === 'sent-email-log',
-  };
 }
 
 const AdminDashboard = () => {
@@ -663,33 +653,26 @@ const AdminDashboard = () => {
     );
   }, [location.pathname, location.search, navigate]);
 
-  // Tools menu dialogs (?tool=) — swipe-back closes the dialog instead of exiting the PWA.
+  // Tools menu dialogs (?tool=) — open state derived from URL so swipe-back closes instantly.
+  const activeAdminTool = useMemo((): AdminToolDialog | null => {
+    if (!location.pathname.startsWith('/admin')) return null;
+    const toolParam = new URLSearchParams(location.search).get('tool');
+    if (!isAdminToolParam(toolParam)) return null;
+    if (isManager && MANAGER_BLOCKED_ADMIN_TOOLS.has(toolParam)) return null;
+    return toolParam;
+  }, [location.pathname, location.search, isManager]);
+
   useEffect(() => {
     if (!location.pathname.startsWith('/admin')) return;
-
     const toolParam = new URLSearchParams(location.search).get('tool');
-    if (!isAdminToolParam(toolParam)) {
-      setToolsMenuOpen(false);
-      setRecentAccountsDialogOpen(false);
-      setDirectSaleOpen(false);
-      setAmountTrackersOpen(false);
-      setEmailSentLogOpen(false);
-      return;
+    if (isManager && isAdminToolParam(toolParam) && MANAGER_BLOCKED_ADMIN_TOOLS.has(toolParam)) {
+      navigate(
+        adminDashboardLocation(
+          buildAdminDashboardSearch({ clearTool: true }, location.search)
+        ),
+        { replace: true }
+      );
     }
-
-    if (isManager && MANAGER_BLOCKED_ADMIN_TOOLS.has(toolParam)) {
-      setRecentAccountsDialogOpen(false);
-      setDirectSaleOpen(false);
-      setAmountTrackersOpen(false);
-      setEmailSentLogOpen(false);
-      navigate('/admin', { replace: true });
-      return;
-    }
-
-    setRecentAccountsDialogOpen(toolParam === 'recent-accounts');
-    setDirectSaleOpen(toolParam === 'direct-sale');
-    setAmountTrackersOpen(toolParam === 'amount-trackers');
-    setEmailSentLogOpen(toolParam === 'sent-email-log');
   }, [location.pathname, location.search, isManager, navigate]);
 
   const openAdminTool = (tool: AdminToolDialog) => {
@@ -879,14 +862,19 @@ const AdminDashboard = () => {
   const [formErrors, setFormErrors] = useState<{[key: string]: string}>({});
   const [isCreating, setIsCreating] = useState(false);
   const [shouldCreateJob, setShouldCreateJob] = useState(false);
-  const initialToolState = readAdminToolOpenStates(location.search);
-  const [recentAccountsDialogOpen, setRecentAccountsDialogOpen] = useState(initialToolState.recentAccounts);
-  const [emailSentLogOpen, setEmailSentLogOpen] = useState(initialToolState.emailSentLog);
   const [recentAccountsToday, setRecentAccountsToday] = useState<Customer[]>([]);
   const [loadingRecentAccounts, setLoadingRecentAccounts] = useState(false);
-  const [directSaleOpen, setDirectSaleOpen] = useState(initialToolState.directSale);
-  const [amountTrackersOpen, setAmountTrackersOpen] = useState(initialToolState.amountTrackers);
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
+  const recentAccountsDialogOpen = activeAdminTool === 'recent-accounts';
+  const emailSentLogOpen = activeAdminTool === 'sent-email-log';
+  const directSaleOpen = activeAdminTool === 'direct-sale';
+  const amountTrackersOpen = activeAdminTool === 'amount-trackers';
+
+  // Close Tools dropdown before paint when URL changes (gesture back / in-app navigate).
+  useLayoutEffect(() => {
+    setToolsMenuOpen(false);
+  }, [location.pathname, location.search]);
+
   const [step5JobData, setStep5JobData] = useState({
     service_type: 'RO' as 'RO' | 'SOFTENER',
     service_sub_type: 'Service',
@@ -6492,6 +6480,7 @@ const AdminDashboard = () => {
   };
 
   const handleShowAMCView = () => {
+    setToolsMenuOpen(false);
     navigate(
       adminDashboardLocation(
         buildAdminDashboardSearch({ view: 'amc-view', clearModal: true }, location.search)
@@ -10279,7 +10268,7 @@ const AdminDashboard = () => {
                     <span className="hidden sm:inline">Tools</span>
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-52">
+                <DropdownMenuContent align="start" className="w-52 data-[state=closed]:duration-75 data-[state=open]:duration-100 max-sm:data-[state=closed]:animate-none">
                   <DropdownMenuItem
                     onClick={() => openAdminTool('recent-accounts')}
                   >
@@ -10289,6 +10278,7 @@ const AdminDashboard = () => {
                   <DropdownMenuItem
                     onClick={() => {
                       hapticTap();
+                      setToolsMenuOpen(false);
                       navigate(settingsPath('calling', 'open'));
                     }}
                   >
@@ -10332,6 +10322,7 @@ const AdminDashboard = () => {
                     disabled={isManager}
                     onClick={() => {
                       if (isManager) return;
+                      setToolsMenuOpen(false);
                       hapticTap();
                       navigate(settingsPath('technician-management'));
                     }}
