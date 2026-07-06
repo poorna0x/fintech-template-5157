@@ -12527,7 +12527,14 @@ const AdminDashboard = () => {
       {/* Job Assignment Dialog */}
       <AssignJobDialog
         open={assignJobDialogOpen}
-        onOpenChange={(open) => onAdminModalOpenChange('assign', open)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setAssignJobDialogOpen(false);
+            setJobToAssign(null);
+            setSelectedTechnicianId('');
+            onAdminModalOpenChange('assign', false);
+          }
+        }}
         job={jobToAssign}
         technicians={technicians}
         techniciansRefreshing={assignTechniciansRefreshing}
@@ -12539,6 +12546,7 @@ const AdminDashboard = () => {
           setAssignJobDialogOpen(false);
           setJobToAssign(null);
           setSelectedTechnicianId('');
+          onAdminModalOpenChange('assign', false);
         }}
       />
 
@@ -12696,7 +12704,14 @@ const AdminDashboard = () => {
       {/* Reassign Job Dialog */}
       <ReassignJobDialog
         open={reassignDialogOpen}
-        onOpenChange={(open) => onAdminModalOpenChange('reassign', open)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setReassignDialogOpen(false);
+            setJobToReassign(null);
+            setSelectedTechnicianForReassign('');
+            onAdminModalOpenChange('reassign', false);
+          }
+        }}
         job={jobToReassign}
         technicians={technicians}
         techniciansRefreshing={reassignTechniciansRefreshing}
@@ -12708,6 +12723,7 @@ const AdminDashboard = () => {
           setReassignDialogOpen(false);
           setJobToReassign(null);
           setSelectedTechnicianForReassign('');
+          onAdminModalOpenChange('reassign', false);
         }}
       />
       
