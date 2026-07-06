@@ -303,9 +303,11 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
   }, [filteredInventory, selectedTechnicianId, selectedTechnician]);
 
   const resolveAssignTechnicianId = useCallback((): string => {
-    if (assignTargetMode === 'all') return ASSIGN_ALL_TECHNICIANS;
-    return formData.technician_id || selectedTechnicianId || '';
-  }, [assignTargetMode, formData.technician_id, selectedTechnicianId]);
+    if (assignTargetMode === 'all' || formData.technician_id === ASSIGN_ALL_TECHNICIANS) {
+      return ASSIGN_ALL_TECHNICIANS;
+    }
+    return formData.technician_id || '';
+  }, [assignTargetMode, formData.technician_id]);
 
   const getTargetTechnicianIds = useCallback(
     (technicianId: string): string[] => {
@@ -355,10 +357,9 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
 
   // Handle add inventory
   const handleAddInventory = () => {
-    const preselected = selectedTechnicianId || '';
     setAssignTargetMode('individual');
     setFormData({
-      technician_id: preselected,
+      technician_id: '',
       inventory_id: '',
       quantity: '1',
     });
@@ -374,10 +375,7 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
     } else {
       setFormData((prev) => ({
         ...prev,
-        technician_id:
-          prev.technician_id === ASSIGN_ALL_TECHNICIANS
-            ? selectedTechnicianId || ''
-            : prev.technician_id || selectedTechnicianId || '',
+        technician_id: prev.technician_id === ASSIGN_ALL_TECHNICIANS ? '' : prev.technician_id,
       }));
     }
   };
@@ -589,7 +587,7 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
       : resolveAssignTechnicianId();
 
     if (!assignTechnicianId || !formData.inventory_id || !formData.quantity) {
-      toast.error('Please fill in all required fields');
+      toast.error('Select a technician (or All technicians) and fill in product and quantity');
       return;
     }
 
@@ -1178,7 +1176,7 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
             <DialogDescription className="text-xs sm:text-sm text-left">
               {selectedItem
                 ? 'Update the quantity for this inventory item.'
-                : 'Pick who receives stock, then search products below and tap + for quick assign (1 unit each).'}
+                : 'Choose a technician (or All technicians), then assign one product or use quick add / assign all items.'}
             </DialogDescription>
           </DialogHeader>
           <div
@@ -1193,7 +1191,11 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
                   Technician *
                 </Label>
                 <Select
-                  value={formData.technician_id || ASSIGN_ALL_TECHNICIANS}
+                  value={
+                    formData.technician_id === ASSIGN_ALL_TECHNICIANS
+                      ? ASSIGN_ALL_TECHNICIANS
+                      : formData.technician_id || undefined
+                  }
                   onValueChange={handleAssignTechnicianSelect}
                 >
                   <SelectTrigger id="assign-technician" className={assignFieldClass}>
@@ -1232,14 +1234,14 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
                   <p className="text-xs text-[#757575] mt-1">
                     {resolveAssignTechnicianId()
                       ? assignTargetMode === 'all'
-                        ? `Search and click + to assign 1 qty to each of the ${technicians.length} technicians.`
+                        ? `Tap + to assign 1 qty of a product to each technician, or use “Assign all items” below for every product.`
                         : 'Search and click + to assign 1 qty to the selected technician.'
-                      : 'Select a technician above, then search and tap + on a product.'}
+                      : 'Select a technician or All technicians above to enable assignment.'}
                   </p>
                 </div>
                 {!resolveAssignTechnicianId() && (
                   <p className="text-xs text-[#757575] bg-[#EBEBEB] border border-[#DDDDDD] rounded-md px-3 py-2">
-                    Select a technician to enable quick add.
+                    Select a technician or All technicians to enable quick add.
                   </p>
                 )}
                 <div className="relative shrink-0">
