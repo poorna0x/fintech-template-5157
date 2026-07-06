@@ -6,10 +6,8 @@
  * ONE jobs query; the resulting customer-id set is then intersected via
  * `customers.id IN (...)` to keep egress tight.
  */
-// Use the lightweight auth client — this module talks to PostgREST directly via
-// `supabase.from(...)` and never touches the `db` helper. Avoid pulling in the
-// admin-data chunk just to type the client.
 import { supabase } from './supabaseClient';
+import { completedJobLeadSourceContainVariants } from './adminUtils';
 import { escapeForLike, normalizePhoneForSearch } from './utils';
 
 /**
@@ -67,6 +65,10 @@ export type AdvancedSearchFilters = {
   billMin?: number | '';
   /** Job-side: only customers whose past job's payment_amount is <= this. */
   billMax?: number | '';
+  /** Customer raw water TDS (ppm) >= this. */
+  tdsMin?: number | '';
+  /** Customer raw water TDS (ppm) <= this. */
+  tdsMax?: number | '';
   sort?: 'last_service_desc' | 'created_desc' | 'name_asc';
   limit?: number;
 };
@@ -91,22 +93,63 @@ export type AdvancedSearchRow = {
 
 const MAX_LIMIT = 500;
 const DEFAULT_LIMIT = 200;
-/** Cap for `id IN (uuid,...)` to keep PostgREST URLs sane. */
-const MAX_ID_FILTER = 1000;
-/** Job-side queries that build a customer-id set are capped to keep egress predictable. */
-const MAX_JOB_LOOKUP_ROWS = 5000;
+/** Keep PostgREST URLs short — large `in.(uuid,...)` lists cause 414 / network failures. */
+const ID_IN_CHUNK = 100;
+const FETCH_PAGE_SIZE = 1000;
+const MAX_JOB_LOOKUP_ROWS = 20_000;
+const MAX_LOCATION_TOKENS = 12;
+const MAX_OR_PARTS = 48;
+
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+function postgrestEqValue(value: string): string {
+  if (/^[a-zA-Z0-9_-]+$/.test(value)) return value;
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
+function formatSearchError(error: unknown): string {
+  const msg =
+    error && typeof error === 'object' && 'message' in error
+      ? String((error as { message: string }).message)
+      : error instanceof Error
+        ? error.message
+        : 'Search failed';
+  const lower = msg.toLowerCase();
+  if (lower.includes('abort') || lower.includes('timeout')) {
+    return 'Search timed out — try fewer filters or a smaller max results';
+  }
+  if (lower.includes('414') || lower.includes('uri') || lower.includes('too long')) {
+    return 'Search query too large — try fewer location terms or narrower filters';
+  }
+  if (lower.includes('failed to fetch') || lower.includes('network')) {
+    return 'Network error — check your connection and try again';
+  }
+  return msg || 'Search failed';
+}
 
 function tokenize(input: string): string[] {
   return input
     .split(/[,\n]+/)
     .map((t) => t.trim())
-    .filter((t) => t.length >= 2);
+    .filter((t) => t.length >= 2)
+    .slice(0, MAX_LOCATION_TOKENS);
 }
 
 function billBounds(filters: AdvancedSearchFilters) {
   return {
     min: typeof filters.billMin === 'number' ? filters.billMin : null,
     max: typeof filters.billMax === 'number' ? filters.billMax : null,
+  };
+}
+
+function tdsBounds(filters: AdvancedSearchFilters) {
+  return {
+    min: typeof filters.tdsMin === 'number' ? filters.tdsMin : null,
+    max: typeof filters.tdsMax === 'number' ? filters.tdsMax : null,
   };
 }
 
@@ -131,6 +174,61 @@ function unionSets(...sets: Array<Set<string> | null | undefined>): Set<string> 
   return out;
 }
 
+function sortRows(rows: AdvancedSearchRow[], sort: AdvancedSearchFilters['sort']): void {
+  const mode = sort ?? 'last_service_desc';
+  if (mode === 'created_desc') {
+    rows.sort((a, b) => (b as { created_at?: string }).created_at?.localeCompare(
+      (a as { created_at?: string }).created_at ?? ''
+    ) ?? 0);
+    return;
+  }
+  if (mode === 'name_asc') {
+    rows.sort((a, b) => (a.full_name ?? '').localeCompare(b.full_name ?? '', 'en', { sensitivity: 'base' }));
+    return;
+  }
+  rows.sort((a, b) => {
+    const at = a.last_service_date ? new Date(a.last_service_date).getTime() : 0;
+    const bt = b.last_service_date ? new Date(b.last_service_date).getTime() : 0;
+    return bt - at;
+  });
+}
+
+function applyLeadSourceJobFilter(q: ReturnType<typeof supabase.from>, leadSource: string) {
+  const variants = completedJobLeadSourceContainVariants(leadSource);
+  if (variants.length === 0) return q;
+  if (variants.length === 1) {
+    const v = variants[0];
+    return q.or(
+      `lead_source.eq.${postgrestEqValue(v)},requirements.cs.${JSON.stringify([{ lead_source: v }])}`
+    );
+  }
+  const orParts = variants.flatMap((v) => [
+    `lead_source.eq.${postgrestEqValue(v)}`,
+    `requirements.cs.${JSON.stringify([{ lead_source: v }])}`,
+  ]);
+  return q.or(orParts.join(','));
+}
+
+async function paginateJobCustomerIds(
+  build: (from: number, to: number) => ReturnType<ReturnType<typeof supabase.from>['select']>
+): Promise<{ ids: Set<string>; error: unknown | null }> {
+  const ids = new Set<string>();
+  let from = 0;
+  while (from < MAX_JOB_LOOKUP_ROWS) {
+    const to = from + FETCH_PAGE_SIZE - 1;
+    const { data, error } = await build(from, to);
+    if (error) return { ids: new Set(), error };
+    const page = data ?? [];
+    for (const row of page) {
+      const cid = (row as { customer_id?: string | null }).customer_id;
+      if (cid) ids.add(cid);
+    }
+    if (page.length < FETCH_PAGE_SIZE) break;
+    from += FETCH_PAGE_SIZE;
+  }
+  return { ids, error: null };
+}
+
 /**
  * Fetch customer ids that match ALL provided job-side filters (single query).
  * Returns null if no job-side filter is active (caller skips the constraint).
@@ -151,28 +249,22 @@ async function fetchCustomerIdsForJobFilters(
     applyJobBrand;
   if (!hasJobFilter) return null;
 
-  let q = supabase.from('jobs').select('customer_id').limit(MAX_JOB_LOOKUP_ROWS);
-  if (filters.serviceSubType) q = q.eq('service_sub_type', filters.serviceSubType);
-  if (filters.completedByTechnicianId) {
-    q = q.eq('completed_by', filters.completedByTechnicianId).eq('status', 'COMPLETED');
-  }
-  if (filters.leadSource) {
-    q = q.contains('requirements', JSON.stringify([{ lead_source: filters.leadSource }]));
-  }
-  if (billMin != null) q = q.gte('payment_amount', billMin);
-  if (billMax != null) q = q.lte('payment_amount', billMax);
-  if (applyJobBrand && jobBrandIfAny)
-    q = q.ilike('brand', `%${escapeForLike(jobBrandIfAny)}%`);
+  const { ids, error } = await paginateJobCustomerIds((from, to) => {
+    let q = supabase.from('jobs').select('customer_id').range(from, to);
+    if (filters.serviceSubType) q = q.eq('service_sub_type', filters.serviceSubType);
+    if (filters.completedByTechnicianId) {
+      q = q.eq('completed_by', filters.completedByTechnicianId).eq('status', 'COMPLETED');
+    }
+    if (filters.leadSource) q = applyLeadSourceJobFilter(q, filters.leadSource);
+    if (billMin != null) q = q.gte('payment_amount', billMin);
+    if (billMax != null) q = q.lte('payment_amount', billMax);
+    if (applyJobBrand && jobBrandIfAny) q = q.ilike('brand', `%${escapeForLike(jobBrandIfAny)}%`);
+    return q;
+  });
 
-  const { data, error } = await q;
   if (error) {
     console.warn('[advancedCustomerSearch] job-filter fetch failed', error);
     return new Set();
-  }
-  const ids = new Set<string>();
-  for (const row of data ?? []) {
-    const cid = (row as { customer_id?: string | null }).customer_id;
-    if (cid) ids.add(cid);
   }
   return ids;
 }
@@ -182,23 +274,25 @@ async function fetchCustomerIdsWithProfileBrand(
   baseJobIds: Set<string>,
   brand: string
 ): Promise<Set<string>> {
-  const ids = Array.from(baseJobIds).slice(0, MAX_ID_FILTER);
+  const ids = Array.from(baseJobIds);
   if (ids.length === 0) return new Set();
   const e = escapeForLike(brand);
-  const { data, error } = await supabase
-    .from('customers')
-    .select('id')
-    .in('id', ids)
-    .ilike('brand', `%${e}%`)
-    .limit(MAX_ID_FILTER);
-  if (error) {
-    console.warn('[advancedCustomerSearch] customer-brand fetch failed', error);
-    return new Set();
-  }
   const out = new Set<string>();
-  for (const row of data ?? []) {
-    const id = (row as { id?: string | null }).id;
-    if (id) out.add(id);
+  for (const chunk of chunkArray(ids, ID_IN_CHUNK)) {
+    const { data, error } = await supabase
+      .from('customers')
+      .select('id')
+      .in('id', chunk)
+      .ilike('brand', `%${e}%`)
+      .limit(ID_IN_CHUNK);
+    if (error) {
+      console.warn('[advancedCustomerSearch] customer-brand fetch failed', error);
+      return new Set();
+    }
+    for (const row of data ?? []) {
+      const id = (row as { id?: string | null }).id;
+      if (id) out.add(id);
+    }
   }
   return out;
 }
@@ -206,69 +300,218 @@ async function fetchCustomerIdsWithProfileBrand(
 /**
  * Fill in `last_service_date` for rows where the customers row never had it written
  * (legacy data — only completions since the recent fix populate the column directly).
- *
- * Cheap: ONE jobs query for just the missing customer ids, aggregated client-side.
  */
 async function enrichLastServiceDates(rows: AdvancedSearchRow[]): Promise<void> {
-  const missingIds = rows
-    .filter((r) => !r.last_service_date && r.id)
-    .map((r) => r.id);
+  const missingIds = rows.filter((r) => !r.last_service_date && r.id).map((r) => r.id);
   if (missingIds.length === 0) return;
 
-  const ids = missingIds.slice(0, MAX_ID_FILTER);
-  const { data, error } = await supabase
-    .from('jobs')
-    .select('customer_id, completed_at, end_time')
-    .eq('status', 'COMPLETED')
-    .in('customer_id', ids)
-    .limit(MAX_JOB_LOOKUP_ROWS);
-  if (error || !data) return;
-
   const latestByCustomer = new Map<string, string>();
-  for (const row of data as Array<{
-    customer_id: string;
-    completed_at: string | null;
-    end_time: string | null;
-  }>) {
-    const cid = row.customer_id;
-    const ts = row.completed_at || row.end_time;
-    if (!cid || !ts) continue;
-    const existing = latestByCustomer.get(cid);
-    if (!existing || new Date(ts).getTime() > new Date(existing).getTime()) {
-      latestByCustomer.set(cid, ts);
+  for (const chunk of chunkArray(missingIds, ID_IN_CHUNK)) {
+    const { data, error } = await supabase
+      .from('jobs')
+      .select('customer_id, completed_at, end_time')
+      .eq('status', 'COMPLETED')
+      .in('customer_id', chunk)
+      .limit(FETCH_PAGE_SIZE);
+    if (error || !data) continue;
+
+    for (const row of data as Array<{
+      customer_id: string;
+      completed_at: string | null;
+      end_time: string | null;
+    }>) {
+      const cid = row.customer_id;
+      const ts = row.completed_at || row.end_time;
+      if (!cid || !ts) continue;
+      const existing = latestByCustomer.get(cid);
+      if (!existing || new Date(ts).getTime() > new Date(existing).getTime()) {
+        latestByCustomer.set(cid, ts);
+      }
     }
   }
+
   for (const r of rows) {
     if (!r.last_service_date && r.id) {
       const ts = latestByCustomer.get(r.id);
-      if (ts) {
-        // Store as YYYY-MM-DD to match the column shape used by formatLastService.
-        r.last_service_date = ts.slice(0, 10);
-      }
+      if (ts) r.last_service_date = ts.slice(0, 10);
     }
   }
 }
 
-/**
- * Fetch the set of customer ids with at least one active AMC contract.
- * Used for `hasAMC: 'yes' | 'no'`.
- */
+/** Fetch the set of customer ids with at least one active AMC contract. */
 async function fetchActiveAMCCustomerIds(): Promise<Set<string>> {
-  const { data, error } = await supabase
-    .from('amc_contracts')
-    .select('customer_id')
-    .eq('status', 'ACTIVE')
-    .limit(MAX_JOB_LOOKUP_ROWS);
-  if (error) {
-    console.warn('[advancedCustomerSearch] active-AMC fetch failed', error);
-    return new Set();
-  }
   const ids = new Set<string>();
-  for (const row of data ?? []) {
-    const cid = (row as { customer_id?: string | null }).customer_id;
-    if (cid) ids.add(cid);
+  let from = 0;
+  while (from < MAX_JOB_LOOKUP_ROWS) {
+    const to = from + FETCH_PAGE_SIZE - 1;
+    const { data, error } = await supabase
+      .from('amc_contracts')
+      .select('customer_id')
+      .eq('status', 'ACTIVE')
+      .range(from, to);
+    if (error) {
+      console.warn('[advancedCustomerSearch] active-AMC fetch failed', error);
+      return new Set();
+    }
+    const page = data ?? [];
+    for (const row of page) {
+      const cid = (row as { customer_id?: string | null }).customer_id;
+      if (cid) ids.add(cid);
+    }
+    if (page.length < FETCH_PAGE_SIZE) break;
+    from += FETCH_PAGE_SIZE;
   }
   return ids;
+}
+
+type CustomerQueryOptions = {
+  filters: AdvancedSearchFilters;
+  brand: string;
+  brandSource: 'customer' | 'jobs' | 'either';
+  restrictive: boolean;
+  jobIdSet: Set<string> | null;
+  activeAMCIds: Set<string>;
+  /** When set, restrict to these customer ids (already intersected with job filters). */
+  restrictToIds: string[] | null;
+  /** Brand-either without restrictive: also match profile brand (second query path). */
+  brandProfileMatch?: boolean;
+  limit: number;
+};
+
+function applySharedCustomerFilters(q: ReturnType<typeof supabase.from>, opts: CustomerQueryOptions) {
+  const { filters } = opts;
+
+  const free = (filters.freeText ?? '').trim();
+  if (free) {
+    const e = escapeForLike(free);
+    const orParts = [
+      `customer_id.ilike.%${e}%`,
+      `full_name.ilike.%${e}%`,
+      `phone.ilike.%${e}%`,
+      `alternate_phone.ilike.%${e}%`,
+      `email.ilike.%${e}%`,
+      `notes.ilike.%${e}%`,
+    ];
+    const norm = normalizePhoneForSearch(free);
+    if (norm.length >= 10) {
+      orParts.push(`phone.ilike.%${norm}%`, `alternate_phone.ilike.%${norm}%`);
+    }
+    q = q.or(orParts.join(','));
+  }
+
+  const locTokens = tokenize(filters.locationContains ?? '');
+  if (locTokens.length > 0) {
+    const orParts = locTokens.flatMap((token) => {
+      const tokenE = escapeForLike(token);
+      return [
+        `visible_address.ilike.%${tokenE}%`,
+        `address->>street.ilike.%${tokenE}%`,
+        `address->>area.ilike.%${tokenE}%`,
+        `address->>city.ilike.%${tokenE}%`,
+      ];
+    });
+    if (orParts.length > MAX_OR_PARTS) {
+      throw new Error(
+        `Too many location terms (${locTokens.length}) — use at most ${MAX_LOCATION_TOKENS} areas`
+      );
+    }
+    q = q.or(orParts.join(','));
+  }
+
+  if (opts.brandProfileMatch && opts.brand) {
+    q = q.ilike('brand', `%${escapeForLike(opts.brand)}%`);
+  } else if (opts.brand && opts.brandSource === 'customer') {
+    q = q.ilike('brand', `%${escapeForLike(opts.brand)}%`);
+  }
+
+  if (filters.serviceType) q = q.eq('service_type', filters.serviceType);
+  if (filters.status) q = q.eq('status', filters.status);
+
+  if (filters.hasPrefilter === 'yes') q = q.eq('has_prefilter', true);
+  else if (filters.hasPrefilter === 'no') q = q.or('has_prefilter.is.null,has_prefilter.eq.false');
+
+  if (filters.hasGoogleReview === 'yes') q = q.eq('has_google_review', true);
+  else if (filters.hasGoogleReview === 'no')
+    q = q.or('has_google_review.is.null,has_google_review.eq.false');
+
+  if (filters.hasAMC === 'yes' && opts.activeAMCIds.size <= ID_IN_CHUNK) {
+    const list = Array.from(opts.activeAMCIds);
+    if (list.length === 0) return null;
+    q = q.in('id', list);
+  }
+
+  if (filters.lastServiceFrom) q = q.gte('last_service_date', filters.lastServiceFrom);
+  if (filters.lastServiceTo) q = q.lte('last_service_date', filters.lastServiceTo);
+  if (filters.createdSinceFrom) q = q.gte('customer_since', filters.createdSinceFrom);
+  if (filters.createdSinceTo) q = q.lte('customer_since', filters.createdSinceTo);
+
+  const { min: tdsMin, max: tdsMax } = tdsBounds(filters);
+  if (tdsMin != null) q = q.gte('raw_water_tds', tdsMin);
+  if (tdsMax != null) q = q.lte('raw_water_tds', tdsMax);
+
+  if (filters.sort === 'created_desc') {
+    q = q.order('created_at', { ascending: false });
+  } else if (filters.sort === 'name_asc') {
+    q = q.order('full_name', { ascending: true });
+  } else {
+    q = q
+      .order('last_service_date', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false });
+  }
+
+  return q;
+}
+
+async function runCustomerQuery(opts: CustomerQueryOptions): Promise<{
+  rows: AdvancedSearchRow[];
+  error: { message: string } | null;
+}> {
+  const { filters, limit, restrictToIds } = opts;
+  const amcExcludeClientSide =
+    filters.hasAMC === 'no' && opts.activeAMCIds.size > ID_IN_CHUNK;
+  const amcIncludeClientSide =
+    filters.hasAMC === 'yes' && opts.activeAMCIds.size > ID_IN_CHUNK;
+  const fetchLimit =
+    amcExcludeClientSide || amcIncludeClientSide
+      ? Math.min(Math.max(limit * 3, limit), MAX_LIMIT)
+      : limit;
+
+  const runSingle = async (idChunk: string[] | null) => {
+    let q = supabase.from('customers').select(SLIM_COLS);
+    const built = applySharedCustomerFilters(q, opts);
+    if (built === null) return { data: [] as AdvancedSearchRow[], error: null };
+    q = built;
+    if (idChunk && idChunk.length > 0) q = q.in('id', idChunk);
+    q = q.limit(fetchLimit);
+    return q;
+  };
+
+  let merged = new Map<string, AdvancedSearchRow>();
+
+  if (restrictToIds && restrictToIds.length > 0) {
+    for (const chunk of chunkArray(restrictToIds, ID_IN_CHUNK)) {
+      const { data, error } = await runSingle(chunk);
+      if (error) return { rows: [], error: { message: formatSearchError(error) } };
+      for (const row of (data ?? []) as AdvancedSearchRow[]) merged.set(row.id, row);
+    }
+  } else if (restrictToIds && restrictToIds.length === 0) {
+    return { rows: [], error: null };
+  } else {
+    const { data, error } = await runSingle(null);
+    if (error) return { rows: [], error: { message: formatSearchError(error) } };
+    for (const row of (data ?? []) as AdvancedSearchRow[]) merged.set(row.id, row);
+  }
+
+  let rows = Array.from(merged.values());
+
+  if (filters.hasAMC === 'no') {
+    rows = rows.filter((r) => !opts.activeAMCIds.has(r.id));
+  } else if (amcIncludeClientSide) {
+    rows = rows.filter((r) => opts.activeAMCIds.has(r.id));
+  }
+
+  sortRows(rows, filters.sort);
+  return { rows: rows.slice(0, limit), error: null };
 }
 
 export async function advancedCustomerSearch(
@@ -277,18 +520,12 @@ export async function advancedCustomerSearch(
   try {
     const limit = Math.min(Math.max(filters.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
     const brandSource = filters.brandSource ?? 'either';
-
-    // For 'jobs' / 'either' brand source, the brand match is folded into the
-    // single combined jobs query so we don't fire two extra fetches.
     const brand = (filters.brandContains ?? '').trim();
     const jobBrandValue =
       brand && (brandSource === 'jobs' || brandSource === 'either') ? brand : null;
     const restrictive = hasRestrictiveJobFilter(filters);
-
     const needsAmcSet = filters.hasAMC === 'yes' || filters.hasAMC === 'no';
 
-    // Brand "either" + technician (etc.): union job-brand matches with profile-brand
-    // matches, but only within customers that satisfy the restrictive job filters.
     let jobIdSet: Set<string> | null;
     let activeAMCIds: Set<string>;
     if (brand && brandSource === 'either' && restrictive) {
@@ -312,126 +549,63 @@ export async function advancedCustomerSearch(
       activeAMCIds = amcIds;
     }
 
-    let q = supabase.from('customers').select(SLIM_COLS);
-
-    // Free text
-    const free = (filters.freeText ?? '').trim();
-    if (free) {
-      const e = escapeForLike(free);
-      const orParts = [
-        `customer_id.ilike.%${e}%`,
-        `full_name.ilike.%${e}%`,
-        `phone.ilike.%${e}%`,
-        `alternate_phone.ilike.%${e}%`,
-        `email.ilike.%${e}%`,
-        `notes.ilike.%${e}%`,
-      ];
-      const norm = normalizePhoneForSearch(free);
-      if (norm.length >= 10) {
-        orParts.push(`phone.ilike.%${norm}%`, `alternate_phone.ilike.%${norm}%`);
-      }
-      q = q.or(orParts.join(','));
+    if (filters.hasAMC === 'yes' && activeAMCIds.size === 0) {
+      return { data: [], error: null };
     }
 
-    // Location: multi-token OR, each token matched across visible_address + address->>street/area/city
-    const locTokens = tokenize(filters.locationContains ?? '');
-    if (locTokens.length > 0) {
-      const orParts = locTokens.flatMap((token) => {
-        const e = escapeForLike(token);
-        return [
-          `visible_address.ilike.%${e}%`,
-          `address->>street.ilike.%${e}%`,
-          `address->>area.ilike.%${e}%`,
-          `address->>city.ilike.%${e}%`,
-        ];
-      });
-      q = q.or(orParts.join(','));
-    }
-
-    // Brand on customer record (profile); job-side brand is handled via jobIdSet.
-    if (brand) {
-      const e = escapeForLike(brand);
-      if (brandSource === 'customer') {
-        q = q.ilike('brand', `%${e}%`);
-      } else if (brandSource === 'either' && !restrictive) {
-        // either without technician/etc.: brand on customer OR id ∈ job-brand set
-        const ids = jobIdSet ? Array.from(jobIdSet).slice(0, MAX_ID_FILTER) : [];
-        const orParts: string[] = [`brand.ilike.%${e}%`];
-        if (ids.length > 0) orParts.push(`id.in.(${ids.join(',')})`);
-        q = q.or(orParts.join(','));
-      }
-      // 'jobs' / either+restrictive: enforced via jobIdSet `.in('id', …)` below.
-    }
-
-    // Intersect with job-side customer ids (technician, lead source, bills, job brand, …).
     const brandFoldedIntoOr = brandSource === 'either' && !!brand && !restrictive;
-    if (jobIdSet && !brandFoldedIntoOr) {
-      const ids = Array.from(jobIdSet).slice(0, MAX_ID_FILTER);
-      if (ids.length === 0) return { data: [], error: null };
-      q = q.in('id', ids);
+    const restrictFromJobs =
+      jobIdSet && !brandFoldedIntoOr ? Array.from(jobIdSet) : null;
+
+    if (restrictFromJobs && restrictFromJobs.length === 0) {
+      return { data: [], error: null };
     }
 
-    if (filters.serviceType) q = q.eq('service_type', filters.serviceType);
-    if (filters.status) q = q.eq('status', filters.status);
+    const baseOpts: CustomerQueryOptions = {
+      filters,
+      brand,
+      brandSource,
+      restrictive,
+      jobIdSet,
+      activeAMCIds,
+      restrictToIds: restrictFromJobs,
+      limit,
+    };
 
-    if (filters.hasPrefilter === 'yes') q = q.eq('has_prefilter', true);
-    else if (filters.hasPrefilter === 'no')
-      q = q.or('has_prefilter.is.null,has_prefilter.eq.false');
+    let allRows: AdvancedSearchRow[] = [];
 
-    if (filters.hasGoogleReview === 'yes') q = q.eq('has_google_review', true);
-    else if (filters.hasGoogleReview === 'no')
-      q = q.or('has_google_review.is.null,has_google_review.eq.false');
-
-    if (filters.hasAMC === 'yes') {
-      const list = Array.from(activeAMCIds).slice(0, MAX_ID_FILTER);
-      if (list.length === 0) return { data: [], error: null };
-      q = q.in('id', list);
-    } else if (filters.hasAMC === 'no') {
-      const list = Array.from(activeAMCIds).slice(0, MAX_ID_FILTER);
-      if (list.length > 0) {
-        q = q.not('id', 'in', `(${list.join(',')})`);
-      }
-    }
-
-    if (filters.lastServiceFrom) q = q.gte('last_service_date', filters.lastServiceFrom);
-    if (filters.lastServiceTo) q = q.lte('last_service_date', filters.lastServiceTo);
-    if (filters.createdSinceFrom) q = q.gte('customer_since', filters.createdSinceFrom);
-    if (filters.createdSinceTo) q = q.lte('customer_since', filters.createdSinceTo);
-
-    if (filters.sort === 'created_desc') {
-      q = q.order('created_at', { ascending: false });
-    } else if (filters.sort === 'name_asc') {
-      q = q.order('full_name', { ascending: true });
+    if (brandFoldedIntoOr && brand) {
+      const jobIds = jobIdSet ? Array.from(jobIdSet) : [];
+      const [profileResult, jobBrandResult] = await Promise.all([
+        runCustomerQuery({ ...baseOpts, restrictToIds: null, brandProfileMatch: true }),
+        jobIds.length > 0
+          ? runCustomerQuery({ ...baseOpts, restrictToIds: jobIds, brandProfileMatch: false })
+          : Promise.resolve({ rows: [] as AdvancedSearchRow[], error: null }),
+      ]);
+      if (profileResult.error) return { data: [], error: profileResult.error };
+      if (jobBrandResult.error) return { data: [], error: jobBrandResult.error };
+      const merged = new Map<string, AdvancedSearchRow>();
+      for (const row of [...profileResult.rows, ...jobBrandResult.rows]) merged.set(row.id, row);
+      allRows = Array.from(merged.values());
+      sortRows(allRows, filters.sort);
+      allRows = allRows.slice(0, limit);
     } else {
-      q = q
-        .order('last_service_date', { ascending: false, nullsFirst: false })
-        .order('created_at', { ascending: false });
+      const result = await runCustomerQuery(baseOpts);
+      if (result.error) return { data: [], error: result.error };
+      allRows = result.rows;
     }
 
-    q = q.limit(limit);
+    await enrichLastServiceDates(allRows);
 
-    const { data, error } = await q;
-    if (error) return { data: [], error: { message: error.message } };
-    const rows = (data || []) as unknown as AdvancedSearchRow[];
-
-    // Backfill last_service_date for legacy customers whose column was never written.
-    await enrichLastServiceDates(rows);
-
-    // Server already sorted, but enrichment may have moved nulls into real dates —
-    // re-sort client-side when the user picked "last service desc" so they see truth.
     if ((filters.sort ?? 'last_service_desc') === 'last_service_desc') {
-      rows.sort((a, b) => {
-        const at = a.last_service_date ? new Date(a.last_service_date).getTime() : 0;
-        const bt = b.last_service_date ? new Date(b.last_service_date).getTime() : 0;
-        return bt - at;
-      });
+      sortRows(allRows, 'last_service_desc');
     }
 
-    return { data: rows, error: null };
+    return { data: allRows, error: null };
   } catch (err) {
     return {
       data: [],
-      error: { message: err instanceof Error ? err.message : 'Search failed' },
+      error: { message: formatSearchError(err) },
     };
   }
 }

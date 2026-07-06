@@ -29,10 +29,8 @@ import {
   ChevronUp,
   FileText,
   Image as ImageIcon,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
+  ArrowLeft,
+  ArrowRight,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -72,6 +70,8 @@ const EMPTY_FILTERS: AdvancedSearchFilters = {
   completedByTechnicianId: '',
   billMin: '',
   billMax: '',
+  tdsMin: '',
+  tdsMax: '',
   sort: 'last_service_desc',
   limit: 200,
 };
@@ -254,8 +254,11 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
         if (data.length === 0) toast.info('No customers matched these filters');
       }
       setHasSearched(true);
-      // New result set — always restart at page 1 so the user lands on the
-      // most relevant rows and a stale "page 5" can't render an empty list.
+      setPage(1);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Search failed');
+      setResults([]);
+      setHasSearched(true);
       setPage(1);
     } finally {
       setIsSearching(false);
@@ -640,6 +643,40 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
                 />
               </div>
               <div className="space-y-1.5">
+                <Label htmlFor="adv_tds_min" className="text-xs sm:text-sm">
+                  Raw water TDS min (ppm)
+                </Label>
+                <Input
+                  id="adv_tds_min"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  placeholder="Any"
+                  value={filters.tdsMin === '' || filters.tdsMin == null ? '' : filters.tdsMin}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    update('tdsMin', raw === '' ? '' : Math.max(0, Number(raw) || 0));
+                  }}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="adv_tds_max" className="text-xs sm:text-sm">
+                  Raw water TDS max (ppm)
+                </Label>
+                <Input
+                  id="adv_tds_max"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  placeholder="Any"
+                  value={filters.tdsMax === '' || filters.tdsMax == null ? '' : filters.tdsMax}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    update('tdsMax', raw === '' ? '' : Math.max(0, Number(raw) || 0));
+                  }}
+                />
+              </div>
+              <div className="space-y-1.5">
                 <Label htmlFor="adv_limit" className="text-xs sm:text-sm">
                   Max results
                 </Label>
@@ -745,78 +782,76 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
                     ))}
                   </div>
 
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-3 border-t">
-                    <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground">
-                      <span>Per page</span>
-                      <Select
-                        value={String(pageSize)}
-                        onValueChange={(v) => {
-                          const next = (parseInt(v, 10) as 25 | 50 | 100) || 25;
-                          setPageSize(next);
-                          // Keep the user near the row they were looking at
-                          // when changing page size — recompute which page
-                          // contains the current first-visible row.
-                          const firstVisibleIndex = sliceStart;
-                          setPage(Math.floor(firstVisibleIndex / next) + 1);
-                        }}
-                      >
-                        <SelectTrigger className="h-8 w-[80px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="25">25</SelectItem>
-                          <SelectItem value="50">50</SelectItem>
-                          <SelectItem value="100">100</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <span className="hidden sm:inline">·</span>
-                      <span>
-                        Page {safePage} of {totalPages}
-                      </span>
+                  <div className="mt-3 pt-3 border-t space-y-3">
+                    <p className="text-xs sm:text-sm text-muted-foreground text-center sm:text-left">
+                      Showing {sliceStart + 1}–{sliceEnd} of {totalResults}
+                    </p>
+
+                    <div className="space-y-1.5">
+                      <span className="text-[11px] font-medium text-muted-foreground">Per page</span>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {([25, 50, 100] as const).map((size) => (
+                          <Button
+                            key={size}
+                            type="button"
+                            size="sm"
+                            variant={pageSize === size ? 'default' : 'outline'}
+                            className="h-8 text-xs w-full touch-manipulation"
+                            disabled={isSearching}
+                            onClick={() => {
+                              if (pageSize === size) return;
+                              const firstVisibleIndex = sliceStart;
+                              setPageSize(size);
+                              setPage(Math.floor(firstVisibleIndex / size) + 1);
+                            }}
+                          >
+                            {size}
+                          </Button>
+                        ))}
+                      </div>
                     </div>
 
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 w-8 p-0"
-                        onClick={() => setPage(1)}
-                        disabled={safePage === 1}
-                        title="First page"
-                      >
-                        <ChevronsLeft className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 w-8 p-0"
-                        onClick={() => setPage((p) => Math.max(1, p - 1))}
-                        disabled={safePage === 1}
-                        title="Previous page"
-                      >
-                        <ChevronLeft className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 w-8 p-0"
-                        onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                        disabled={safePage >= totalPages}
-                        title="Next page"
-                      >
-                        <ChevronRight className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 w-8 p-0"
-                        onClick={() => setPage(totalPages)}
-                        disabled={safePage >= totalPages}
-                        title="Last page"
-                      >
-                        <ChevronsRight className="w-4 h-4" />
-                      </Button>
-                    </div>
+                    {totalPages > 1 && (
+                      <div className="w-full min-w-0 max-w-full">
+                        <div className="flex flex-col items-center gap-2">
+                          <div className="flex flex-wrap items-center justify-center gap-2 w-full max-w-full">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-9 shrink-0 touch-manipulation"
+                              disabled={safePage <= 1 || isSearching}
+                              onClick={() => {
+                                if (safePage > 1) {
+                                  setPage(safePage - 1);
+                                }
+                              }}
+                            >
+                              <ArrowLeft className="h-4 w-4 sm:mr-1" />
+                              <span className="hidden sm:inline">Previous</span>
+                            </Button>
+                            <span className="text-sm text-foreground/90 tabular-nums px-2 text-center min-w-[5.5rem]">
+                              {safePage} / {totalPages}
+                            </span>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-9 shrink-0 touch-manipulation"
+                              disabled={safePage >= totalPages || isSearching}
+                              onClick={() => {
+                                if (safePage < totalPages) {
+                                  setPage(safePage + 1);
+                                }
+                              }}
+                            >
+                              <span className="hidden sm:inline">Next</span>
+                              <ArrowRight className="h-4 w-4 sm:ml-1" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </>
               )}
@@ -972,6 +1007,12 @@ const ResultRow: React.FC<ResultRowProps> = ({
               ) : (
                 <span className="italic text-muted-foreground/80">Never serviced</span>
               )}
+            </div>
+            <div className="truncate">
+              <span className="font-medium">Raw water TDS:</span>{' '}
+              {row.raw_water_tds != null && row.raw_water_tds > 0
+                ? `${row.raw_water_tds} ppm`
+                : '—'}
             </div>
           </div>
         </div>
