@@ -37,6 +37,13 @@ import type { Job } from '@/types';
 
 type JobRow = Job | Record<string, unknown>;
 
+const ONGOING_JOB_STATUSES = new Set(['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS']);
+
+function isOngoingJob(job: JobRow): boolean {
+  const status = String((job as any).status || (job as Job).status || '').toUpperCase();
+  return ONGOING_JOB_STATUSES.has(status);
+}
+
 interface MeasureDistanceToolDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -52,36 +59,49 @@ type DistanceResult = {
   isApproximate?: boolean;
 };
 
-function jobNumberOf(job: JobRow): string {
-  return String((job as any).job_number || (job as Job).jobNumber || '').trim();
-}
-
 function customerNameOf(job: JobRow): string {
   const cust = (job as any).customer;
   return String(cust?.full_name || cust?.fullName || 'Customer').trim() || 'Customer';
 }
 
+function jobNumberOf(job: JobRow): string {
+  return String((job as any).job_number || (job as Job).jobNumber || '').trim();
+}
+
+/** Customer "Location" field (`visible_address`) — one-word identifier from add/edit customer form. */
+function getJobLocationWord(job: JobRow): string {
+  const cust = (job as any).customer;
+  const customerAddress =
+    typeof cust?.address === 'object' && cust?.address ? cust.address : {};
+  const serviceAddress = (job as any).service_address || (job as Job).serviceAddress || {};
+
+  const raw =
+    cust?.visible_address ||
+    cust?.visibleAddress ||
+    customerAddress?.visible_address ||
+    customerAddress?.visibleAddress ||
+    serviceAddress?.visible_address ||
+    serviceAddress?.visibleAddress ||
+    '';
+
+  return String(raw).replace(/[\s\u00a0\u2000-\u200B\uFEFF]+/g, ' ').trim();
+}
+
 function formatJobStopLabel(job: JobRow): string {
-  const num = jobNumberOf(job);
   const name = customerNameOf(job);
-  const status = String((job as any).status || (job as Job).status || '').trim();
-  const base = num ? `${num} · ${name}` : name;
-  return status ? `${base} (${status})` : base;
+  const loc = getJobLocationWord(job);
+  return loc ? `${name} (${loc})` : `${name} (—)`;
 }
 
 function jobSearchHaystack(job: JobRow): string {
-  const cust = (job as any).customer;
-  const addr = cust?.address || (job as any).service_address || (job as Job).serviceAddress || {};
-  const area = [addr?.area, addr?.visible_address, addr?.visibleAddress, addr?.city]
-    .filter(Boolean)
-    .join(' ');
-  return [jobNumberOf(job), customerNameOf(job), area].join(' ').toLowerCase();
+  return [jobNumberOf(job), customerNameOf(job), getJobLocationWord(job)].join(' ').toLowerCase();
 }
 
 function mergeJobsIntoMap(prev: Map<string, JobRow>, rows: JobRow[]): Map<string, JobRow> {
   if (!rows.length) return prev;
   const next = new Map(prev);
   for (const row of rows) {
+    if (!isOngoingJob(row)) continue;
     const id = String((row as any).id || '');
     if (id) next.set(id, row);
   }
@@ -98,7 +118,6 @@ interface JobStopPickerProps {
   search: string;
   onSearchChange: (value: string) => void;
   onSelect: (jobId: string) => void;
-  loading?: boolean;
 }
 
 function JobStopPicker({
@@ -111,11 +130,10 @@ function JobStopPicker({
   search,
   onSearchChange,
   onSelect,
-  loading,
 }: JobStopPickerProps) {
   const [open, setOpen] = useState(false);
   const selected = value ? jobsById.get(value) : undefined;
-  const display = selected ? formatJobStopLabel(selected) : 'Search job number or customer…';
+  const display = selected ? formatJobStopLabel(selected) : 'Search customer or location…';
 
   return (
     <div className="space-y-1.5 min-w-0">
@@ -141,24 +159,17 @@ function JobStopPicker({
         >
           <Command shouldFilter={false}>
             <CommandInput
-              placeholder="Job #, customer, area…"
+              placeholder="Customer or location…"
               value={search}
               onValueChange={onSearchChange}
               className="h-11 text-sm"
             />
             <CommandList className="max-h-[min(280px,50vh)]">
-              {loading ? (
-                <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Searching…
-                </div>
-              ) : (
-                <>
-                  <CommandEmpty className="py-6 text-center text-sm text-muted-foreground">
-                    No jobs found. Try a job number.
-                  </CommandEmpty>
-                  <CommandGroup>
-                    {options.map((job) => {
+              <CommandEmpty className="py-6 text-center text-sm text-muted-foreground">
+                No ongoing jobs found. Try customer name or location.
+              </CommandEmpty>
+              <CommandGroup>
+                {options.map((job) => {
                       const jobId = String((job as any).id);
                       return (
                         <CommandItem
@@ -185,9 +196,7 @@ function JobStopPicker({
                         </CommandItem>
                       );
                     })}
-                  </CommandGroup>
-                </>
-              )}
+              </CommandGroup>
             </CommandList>
           </Command>
         </PopoverContent>
@@ -209,18 +218,14 @@ const MeasureDistanceToolDialog: React.FC<MeasureDistanceToolDialogProps> = ({
   const [toJobId, setToJobId] = useState('');
   const [fromSearch, setFromSearch] = useState('');
   const [toSearch, setToSearch] = useState('');
-  const [remoteMatches, setRemoteMatches] = useState<JobRow[]>([]);
-  const [searchingRemote, setSearchingRemote] = useState(false);
   const [calculating, setCalculating] = useState(false);
   const [result, setResult] = useState<DistanceResult | null>(null);
-  const searchRequestRef = useRef(0);
 
   const resetForm = useCallback(() => {
     setFromJobId('');
     setToJobId('');
     setFromSearch('');
     setToSearch('');
-    setRemoteMatches([]);
     setResult(null);
     setCalculating(false);
   }, []);
@@ -240,7 +245,7 @@ const MeasureDistanceToolDialog: React.FC<MeasureDistanceToolDialogProps> = ({
     (async () => {
       setLoadingJobs(true);
       try {
-        const { data, error } = await db.jobs.getOngoing(150);
+        const { data, error } = await db.jobs.getOngoing(200);
         if (cancelled) return;
         if (error) {
           toast.error('Could not load ongoing jobs');
@@ -257,58 +262,17 @@ const MeasureDistanceToolDialog: React.FC<MeasureDistanceToolDialogProps> = ({
     };
   }, [open, resetForm]);
 
-  const activeSearch = fromSearch.trim() || toSearch.trim();
-
-  useEffect(() => {
-    if (!open) return;
-
-    const query = activeSearch;
-    if (query.length < 2) {
-      setRemoteMatches([]);
-      setSearchingRemote(false);
-      return;
-    }
-
-    const requestId = ++searchRequestRef.current;
-    const timer = window.setTimeout(async () => {
-      setSearchingRemote(true);
-      try {
-        const { data, error } = await db.jobs.searchByJobNumberForAdmin(query, 25);
-        if (requestId !== searchRequestRef.current) return;
-        if (error) {
-          setRemoteMatches([]);
-          return;
-        }
-        const rows = (data || []) as JobRow[];
-        setRemoteMatches(rows);
-        setJobsById((prev) => mergeJobsIntoMap(prev, rows));
-      } finally {
-        if (requestId === searchRequestRef.current) setSearchingRemote(false);
-      }
-    }, 280);
-
-    return () => window.clearTimeout(timer);
-  }, [open, activeSearch]);
-
   const buildOptions = useCallback(
     (localSearch: string): JobRow[] => {
       const q = localSearch.trim().toLowerCase();
-      const all = Array.from(jobsById.values());
+      const all = Array.from(jobsById.values()).filter(isOngoingJob);
       const filtered = q
         ? all.filter((job) => jobSearchHaystack(job).includes(q))
         : all;
 
-      const merged = new Map<string, JobRow>();
-      for (const job of filtered) merged.set(String((job as any).id), job);
-      if (q.length >= 2) {
-        for (const job of remoteMatches) merged.set(String((job as any).id), job);
-      }
-
-      return Array.from(merged.values())
-        .sort((a, b) => jobNumberOf(b).localeCompare(jobNumberOf(a)))
-        .slice(0, 30);
+      return filtered.sort((a, b) => customerNameOf(a).localeCompare(customerNameOf(b)));
     },
-    [jobsById, remoteMatches]
+    [jobsById]
   );
 
   const fromOptions = useMemo(() => buildOptions(fromSearch), [buildOptions, fromSearch]);
@@ -406,8 +370,7 @@ const MeasureDistanceToolDialog: React.FC<MeasureDistanceToolDialogProps> = ({
             Measure distance
           </DialogTitle>
           <DialogDescription>
-            Driving distance between any two jobs using Google Maps. Search by job number or customer
-            name.
+            Driving distance between ongoing jobs using Google Maps. Same list as the Ongoing section.
           </DialogDescription>
         </DialogHeader>
 
@@ -432,7 +395,6 @@ const MeasureDistanceToolDialog: React.FC<MeasureDistanceToolDialogProps> = ({
                     setFromJobId(id);
                     setResult(null);
                   }}
-                  loading={searchingRemote && Boolean(fromSearch.trim())}
                   disabled={calculating}
                 />
 
@@ -461,7 +423,6 @@ const MeasureDistanceToolDialog: React.FC<MeasureDistanceToolDialogProps> = ({
                     setToJobId(id);
                     setResult(null);
                   }}
-                  loading={searchingRemote && Boolean(toSearch.trim())}
                   disabled={calculating}
                 />
               </div>
