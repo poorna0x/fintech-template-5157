@@ -55,6 +55,7 @@ const WhatsAppDialog: React.FC<WhatsAppDialogProps> = ({
     const encodedMessage = encodeURIComponent(message);
     const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodedMessage}`;
     window.open(whatsappUrl, '_blank');
+    onOpenChange(false);
   };
 
   return (

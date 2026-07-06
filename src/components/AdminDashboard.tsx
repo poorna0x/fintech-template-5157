@@ -548,6 +548,15 @@ const AdminDashboard = () => {
     [navigate, location.search]
   );
 
+  const openAdminWhatsappModal = useCallback(() => {
+    navigate(
+      adminDashboardLocation(
+        buildAdminDashboardSearch({ clearModal: true, modal: 'whatsapp' }, location.search)
+      ),
+      { replace: true }
+    );
+  }, [navigate, location.search]);
+
   /** Tab switches stay in React state (no ?tab= history). Modals still use ?modal= for swipe-back. */
   const switchJobTab = useCallback(
     (filter: AdminStatusFilter) => {
@@ -6564,7 +6573,7 @@ const AdminDashboard = () => {
       }
 
       setAssignJobDialogOpen(false);
-      
+
       // Show WhatsApp dialog
       if (assignedTechnician && assignedTechnician.phone) {
         scrollPositionBeforeWhatsAppRef.current = scrollY;
@@ -6591,6 +6600,9 @@ const AdminDashboard = () => {
         setWhatsappLeadSource(leadSource);
         setWhatsappCustomTime(customTime);
         setWhatsappDialogOpen(true);
+        openAdminWhatsappModal();
+      } else {
+        closeAdminModal();
       }
       
       setJobToAssign(null);
@@ -6794,7 +6806,7 @@ const AdminDashboard = () => {
 
       toast.success('Job reassigned successfully');
       setReassignDialogOpen(false);
-      
+
       // Show WhatsApp dialog
       const reassignedTechnician = technicians.find(t => t.id === selectedTechnicianForReassign);
       if (reassignedTechnician && reassignedTechnician.phone) {
@@ -6822,6 +6834,9 @@ const AdminDashboard = () => {
         setWhatsappLeadSource(leadSource);
         setWhatsappCustomTime(customTime);
         setWhatsappDialogOpen(true);
+        openAdminWhatsappModal();
+      } else {
+        closeAdminModal();
       }
       
       setJobToReassign(null);
@@ -12276,6 +12291,7 @@ const AdminDashboard = () => {
           setWhatsappLeadSource(payload.leadSource || '');
           setWhatsappCustomTime(payload.customTime || '');
           setWhatsappDialogOpen(true);
+          openAdminWhatsappModal();
         }}
         onCheckExistingCustomer={checkExistingCustomer}
         onExistingCustomerFound={(customer) => {
@@ -12646,6 +12662,7 @@ const AdminDashboard = () => {
           setWhatsappLeadSource(payload.leadSource || '');
           setWhatsappCustomTime(payload.customTime || '');
           setWhatsappDialogOpen(true);
+          openAdminWhatsappModal();
         }}
       />
 
@@ -13916,7 +13933,10 @@ const AdminDashboard = () => {
       {whatsappTechnician && (
         <WhatsAppDialog
           open={whatsappDialogOpen}
-          onOpenChange={setWhatsappDialogOpen}
+          onOpenChange={bindAdminModalDismiss('whatsapp', () => {
+            setWhatsappDialogOpen(false);
+            setWhatsappTechnician(null);
+          })}
           technicianName={whatsappTechnician.name}
           technicianPhone={whatsappTechnician.phone}
           serviceSubType={whatsappServiceSubType}
