@@ -113,6 +113,9 @@ import {
   getDefaultAdminMoveToOngoingSchedule,
   performAdminMoveToOngoing,
 } from '@/lib/adminMoveToOngoing';
+import { removeAdminTeamMember, saveAdminTeamMember } from '@/lib/adminJobTeam';
+import { submitAdminJobReassign, unassignAdminJob } from '@/lib/adminJobReassign';
+import { prepareAdminDenyJob, submitAdminJobDeny } from '@/lib/adminJobDeny';
 import {
   calculateAdminCustomDistanceBetweenStops,
   getAdminJobEtaForShareDialog,
@@ -4697,7 +4700,7 @@ const AdminDashboard = () => {
     });
   };
 
-    const handleAddTeam = async (job: Job) => {
+  const handleAddTeam = async (job: Job) => {
     setJobForTeam(job);
     setSelectedTeamMemberId('');
     setAddTeamDialogOpen(true);
@@ -4707,59 +4710,17 @@ const AdminDashboard = () => {
   };
 
   const handleSaveTeamMember = async () => {
-    if (!jobForTeam || !selectedTeamMemberId) return;
-
-    try {
-      // Get current team_members from job
-      const currentTeamMembers = (jobForTeam as any).team_members || [];
-      const teamMembersArray = Array.isArray(currentTeamMembers) ? currentTeamMembers : [];
-      
-      // Check if technician is already in team
-      if (teamMembersArray.includes(selectedTeamMemberId)) {
-        toast.error('This technician is already in the team');
-        return;
-      }
-
-      // Check if technician is the primary assigned technician
-      if ((jobForTeam as any).assigned_technician_id === selectedTeamMemberId) {
-        toast.error('This technician is already the primary assigned technician');
-        return;
-      }
-
-      // Add new team member
-      const updatedTeamMembers = [...teamMembersArray, selectedTeamMemberId];
-
-      const { error } = await db.jobs.update(jobForTeam.id, {
-        team_members: updatedTeamMembers
-      } as any);
-
-      if (error) throw error;
-
-      broadcastTechnicianJobListRefresh([selectedTeamMemberId]);
-
-      // Send notification to team member
-      const teamMember = technicians.find(t => t.id === selectedTeamMemberId);
-      if (teamMember) {
-        const notification = createJobAssignedNotification(
-          (jobForTeam as any).job_number || jobForTeam.jobNumber || 'Job',
-          (jobForTeam.customer as any)?.full_name || (jobForTeam.customer as any)?.fullName || 'Customer',
-          teamMember.fullName,
-          jobForTeam.id,
-          teamMember.id
-        );
-        await sendNotification(notification);
-      }
-
-      toast.success('Team member added successfully');
-      setAddTeamDialogOpen(false);
-      setJobForTeam(null);
-      setSelectedTeamMemberId('');
-
-      await loadFilteredJobs(statusFilter, currentPage, { silent: true });
-    } catch (error: any) {
-      console.error('Error adding team member:', error);
-      toast.error(error.message || 'Failed to add team member');
-    }
+    await saveAdminTeamMember({
+      jobForTeam,
+      selectedTeamMemberId,
+      technicians,
+      statusFilter,
+      currentPage,
+      setAddTeamDialogOpen,
+      setJobForTeam,
+      setSelectedTeamMemberId,
+      loadFilteredJobs,
+    });
   };
 
   const handleRemoveTeam = async (job: Job) => {
@@ -4772,34 +4733,16 @@ const AdminDashboard = () => {
   };
 
   const handleSaveTeamMemberRemoval = async () => {
-    if (!jobForRemoveTeam || !selectedTeamMemberToRemove) return;
-
-    try {
-      // Get current team_members from job
-      const currentTeamMembers = (jobForRemoveTeam as any).team_members || [];
-      const teamMembersArray = Array.isArray(currentTeamMembers) ? currentTeamMembers : [];
-      
-      // Remove the selected team member
-      const updatedTeamMembers = teamMembersArray.filter((id: string) => id !== selectedTeamMemberToRemove);
-
-      const { error } = await db.jobs.update(jobForRemoveTeam.id, {
-        team_members: updatedTeamMembers
-      } as any);
-
-      if (error) throw error;
-
-      broadcastTechnicianJobListRefresh([selectedTeamMemberToRemove]);
-
-      toast.success('Team member removed successfully');
-      setRemoveTeamDialogOpen(false);
-      setJobForRemoveTeam(null);
-      setSelectedTeamMemberToRemove('');
-
-      await loadFilteredJobs(statusFilter, currentPage, { silent: true });
-    } catch (error: any) {
-      console.error('Error removing team member:', error);
-      toast.error(error.message || 'Failed to remove team member');
-    }
+    await removeAdminTeamMember({
+      jobForRemoveTeam,
+      selectedTeamMemberToRemove,
+      statusFilter,
+      currentPage,
+      setRemoveTeamDialogOpen,
+      setJobForRemoveTeam,
+      setSelectedTeamMemberToRemove,
+      loadFilteredJobs,
+    });
   };
 
   // Bulk assignment removed - not needed
@@ -4846,149 +4789,32 @@ const AdminDashboard = () => {
   };
 
   const handleReassignSubmit = async () => {
-    if (!jobToReassign || !selectedTechnicianForReassign) return;
-
-    // Save scroll position so we can restore after refresh (page stays where user was)
-    const scrollY = window.scrollY;
-
-    try {
-      const { error } = await db.jobs.update(jobToReassign.id, {
-        assigned_technician_id: selectedTechnicianForReassign
-      });
-
-      if (error) {
-        console.error('Reassign job error:', error);
-        toast.error(`Failed to reassign job: ${error.message || 'Unknown error'}`);
-        return;
-      }
-
-      const previousTechnicianId =
-        (jobToReassign as any).assigned_technician_id || jobToReassign.assignedTechnicianId;
-      broadcastTechnicianJobListRefresh([
-        previousTechnicianId,
-        selectedTechnicianForReassign,
-      ]);
-
-      // Update local state
-      setJobs(prev => prev.map(job => 
-        job.id === jobToReassign.id 
-          ? { ...job, assigned_technician_id: selectedTechnicianForReassign }
-          : job
-      ));
-
-      toast.success('Job reassigned successfully');
-      setReassignDialogOpen(false);
-
-      // Show WhatsApp dialog
-      const reassignedTechnician = technicians.find(t => t.id === selectedTechnicianForReassign);
-      if (reassignedTechnician && reassignedTechnician.phone) {
-        scrollPositionBeforeWhatsAppRef.current = scrollY;
-        const serviceSubType = (jobToReassign as any).service_sub_type || jobToReassign.serviceSubType || 'Service';
-        let customerForWhatsApp = (jobToReassign.customer as any) || {};
-        const customerId = customerForWhatsApp?.id || (jobToReassign as any).customer_id;
-        if (customerId) {
-          const { data: freshCustomer } = await db.customers.getById(String(customerId));
-          if (freshCustomer) customerForWhatsApp = freshCustomer;
-        }
-        const customerName = customerForWhatsApp?.full_name || customerForWhatsApp?.fullName || 'Customer';
-        const addr = customerForWhatsApp?.address || (jobToReassign as any).service_address;
-        const vis = customerForWhatsApp?.visible_address;
-        const locationText = (vis && String(vis).trim()) ? String(vis).trim() : (addr?.area || addr?.city || '');
-        const leadSource = getLeadSourceFromJob(jobToReassign as Record<string, unknown>);
-        const customTime = getJobCustomTimeLabel(jobToReassign as Record<string, unknown>) || '';
-        setWhatsappTechnician({
-          name: reassignedTechnician.fullName,
-          phone: reassignedTechnician.phone
-        });
-        setWhatsappServiceSubType(serviceSubType);
-        setWhatsappCustomerName(customerName);
-        setWhatsappLocation(locationText || '');
-        setWhatsappLeadSource(leadSource);
-        setWhatsappCustomTime(customTime);
-        setWhatsappDialogOpen(true);
-        openAdminWhatsappModal();
-      } else {
-        closeAdminModal();
-      }
-      
-      setJobToReassign(null);
-      setSelectedTechnicianForReassign('');
-
-      queueMicrotask(() => {
-        void loadFilteredJobs(statusFilter, currentPage, { silent: true }).finally(() => {
-          requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-              window.scrollTo(0, scrollY);
-            });
-          });
-        });
-      });
-    } catch (error: any) {
-      console.error('Reassign job exception:', error);
-      toast.error(`Failed to reassign job: ${error?.message || 'Unknown error'}`);
-    }
+    await submitAdminJobReassign({
+      jobToReassign,
+      selectedTechnicianForReassign,
+      technicians,
+      statusFilter,
+      currentPage,
+      scrollPositionBeforeWhatsAppRef,
+      setJobs,
+      setReassignDialogOpen,
+      setWhatsappTechnician,
+      setWhatsappServiceSubType,
+      setWhatsappCustomerName,
+      setWhatsappLocation,
+      setWhatsappLeadSource,
+      setWhatsappCustomTime,
+      setWhatsappDialogOpen,
+      openAdminWhatsappModal,
+      closeAdminModal,
+      setJobToReassign,
+      setSelectedTechnicianForReassign,
+      loadFilteredJobs,
+    });
   };
 
   const handleUnassignJob = async (job: Job) => {
-    try {
-      const previousTechnicianId =
-        (job as any).assigned_technician_id || job.assignedTechnicianId;
-      const teamMemberIds = Array.isArray((job as any).team_members)
-        ? ((job as any).team_members as string[])
-        : [];
-
-      const { error } = await db.jobs.update(job.id, {
-        assigned_technician_id: null,
-        assigned_date: null,
-        status: 'PENDING'
-      });
-
-      if (error) {
-        toast.error('Failed to unassign job');
-        return;
-      }
-
-      broadcastTechnicianJobListRefresh([previousTechnicianId, ...teamMemberIds]);
-
-      // Update local state
-      setJobs(prev => prev.map(j => 
-        j.id === job.id 
-          ? { 
-              ...j, 
-              assigned_technician_id: null,
-              assignedTechnicianId: null,
-              assigned_date: null,
-              assignedDate: null,
-              status: 'PENDING' as const
-            }
-          : j
-      ));
-
-      // Update customer jobs state
-      setCustomerJobs(prev => {
-        const updated = { ...prev };
-        Object.keys(updated).forEach(customerId => {
-          updated[customerId] = updated[customerId].map(j => 
-            j.id === job.id 
-              ? { 
-                  ...j, 
-                  assigned_technician_id: null,
-                  assignedTechnicianId: null,
-                  assigned_date: null,
-                  assignedDate: null,
-                  status: 'PENDING' as any
-                }
-              : j
-          );
-        });
-        return updated;
-      });
-
-      toast.success('Technician unassigned successfully. Job status set to PENDING.');
-    } catch (error) {
-      console.error('Error unassigning job:', error);
-      toast.error('Failed to unassign job');
-    }
+    await unassignAdminJob(job, { setJobs, setCustomerJobs });
   };
 
   const handleEditJob = (job: Job) => {
@@ -5124,93 +4950,23 @@ const AdminDashboard = () => {
     });
   };
 
-  // Handle job denial
   const handleDenyJob = async (job: Job) => {
-    // Fetch full job data with customer if not already loaded
-    let jobWithCustomer = job;
-    if (!job.customer || !(job.customer as any)?.full_name && !job.customer?.fullName) {
-      try {
-        const { data: fullJob, error } = await db.jobs.getByIdFull(job.id);
-        if (!error && fullJob) {
-          jobWithCustomer = fullJob as Job;
-        }
-      } catch (error) {
-        console.error('Error fetching job details:', error);
-        // Continue with the job data we have
-      }
-    }
-    
+    const jobWithCustomer = await prepareAdminDenyJob(job);
     setSelectedJobForDeny(jobWithCustomer);
     setDenyReason('');
     openAdminModal('deny', { jobId: jobWithCustomer.id });
   };
 
-  // Handle job denial submission
   const handleDenyJobSubmit = async () => {
-    if (!selectedJobForDeny || !denyReason.trim()) {
-      toast.error('Please provide a reason for denial');
-      return;
-    }
-
-    try {
-      // Store "Admin" instead of admin name for admin denials
-      const deniedByValue = 'Admin';
-      
-      const { error } = await db.jobs.update(selectedJobForDeny.id, {
-        status: 'DENIED',
-        denial_reason: denyReason.trim(),
-        denied_by: deniedByValue,
-        denied_at: new Date().toISOString()
-      } as any);
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      // Update local state
-      setJobs(prev => prev.map(job => 
-        job.id === selectedJobForDeny.id ? { 
-          ...job, 
-          status: 'DENIED',
-          denialReason: denyReason.trim(),
-          deniedBy: 'Admin',
-          deniedAt: new Date().toISOString()
-        } : job
-      ));
-
-      setCustomerJobs(prev => {
-        const updated = { ...prev };
-        Object.keys(updated).forEach(customerId => {
-          updated[customerId] = updated[customerId].map(job => 
-            job.id === selectedJobForDeny.id ? { 
-              ...job, 
-              status: 'DENIED',
-              denialReason: denyReason.trim(),
-              deniedBy: 'Admin',
-              deniedAt: new Date().toISOString()
-            } : job
-          );
-        });
-        return updated;
-      });
-
-      toast.success('Job denied successfully');
-      setDenyDialogOpen(false);
-      setSelectedJobForDeny(null);
-      setDenyReason('');
-    } catch (error: any) {
-      console.error('Error denying job:', error);
-      const errorMessage = error?.message || 'Failed to deny job';
-      
-      // Check if it's a column missing error
-      if (errorMessage.includes('denial_reason') || errorMessage.includes('denied_by') || errorMessage.includes('denied_at') || errorMessage.includes('400')) {
-        toast.error('Database columns missing. Please run the migration: add-denial-fields-to-jobs.sql', {
-          duration: 8000,
-        });
-      } else {
-        toast.error(errorMessage);
-      }
-    }
+    await submitAdminJobDeny({
+      selectedJobForDeny,
+      denyReason,
+      setJobs,
+      setCustomerJobs,
+      setDenyDialogOpen,
+      setSelectedJobForDeny,
+      setDenyReason,
+    });
   };
 
   // Handle completion email sent (separate from WhatsApp message_sent)
