@@ -10,6 +10,9 @@ interface RecentAccountsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   customers: Customer[];
+  loading?: boolean;
+  /** When true, render `customers` as-is (e.g. server-scoped fetch). Otherwise filter to today locally. */
+  useCustomersAsIs?: boolean;
   onNewJob: (customer: Customer) => void;
   onEditCustomer: (customer: Customer) => void;
 }
@@ -18,10 +21,14 @@ const RecentAccountsDialog: React.FC<RecentAccountsDialogProps> = ({
   open,
   onOpenChange,
   customers,
+  loading = false,
+  useCustomersAsIs = false,
   onNewJob,
   onEditCustomer
 }) => {
-  const todayCustomers = customers
+  const todayCustomers = useCustomersAsIs
+    ? customers
+    : customers
     .filter(customer => {
       const customerSince = customer.customer_since || (customer as any).customerSince;
       if (!customerSince) return false;
@@ -46,7 +53,11 @@ const RecentAccountsDialog: React.FC<RecentAccountsDialogProps> = ({
         </DialogHeader>
         
         <div className="space-y-4">
-          {todayCustomers.length === 0 ? (
+          {loading ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <p>Loading…</p>
+            </div>
+          ) : todayCustomers.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               <p>No accounts created today.</p>
             </div>

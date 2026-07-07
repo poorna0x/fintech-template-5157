@@ -1,5 +1,18 @@
 // Admin Dashboard Utility Functions
 
+import type { Job } from '@/types';
+
+/** Technician employee id used for zero-commission (office) completions. */
+export const ZERO_COMMISSION_EMPLOYEE_ID = 'TECH851703400';
+
+const ONGOING_JOB_STATUSES = new Set(['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS']);
+
+/** True when the job list belongs on the Ongoing tab (or is empty). */
+export function jobsMatchOngoingTab(jobs: Job[]): boolean {
+  if (jobs.length === 0) return true;
+  return jobs.some((job) => ONGOING_JOB_STATUSES.has(job.status));
+}
+
 // Generate job number utility
 export const generateJobNumber = (serviceType: 'RO' | 'SOFTENER'): string => {
   const prefix = serviceType === 'RO' ? 'RO' : 'WS';

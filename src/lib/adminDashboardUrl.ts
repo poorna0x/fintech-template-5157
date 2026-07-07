@@ -205,3 +205,79 @@ export function adminDashboardLocation(search: string): { pathname: string; sear
   const normalized = search.startsWith('?') ? search : search ? `?${search}` : '';
   return { pathname: '/admin', search: normalized };
 }
+
+/** Full-screen tab views on /admin (payments, billing, etc.). */
+export const ADMIN_TAB_VIEWS = ['payments', 'billing', 'analytics', 'inventory'] as const;
+export type AdminTabView = (typeof ADMIN_TAB_VIEWS)[number];
+export type AdminDashboardView = 'dashboard' | AdminTabView;
+
+export function readAdminTabViewFromSearch(search: string): AdminDashboardView {
+  const view = new URLSearchParams(search).get('view');
+  if (view && (ADMIN_TAB_VIEWS as readonly string[]).includes(view)) {
+    return view as AdminTabView;
+  }
+  return 'dashboard';
+}
+
+export function isAdminTabViewParam(view: string | null): view is AdminTabView {
+  return Boolean(view && (ADMIN_TAB_VIEWS as readonly string[]).includes(view));
+}
+
+/** Full-screen overlay views (GST invoices, AMC view, letterhead builder). */
+export const ADMIN_OVERLAY_VIEWS = ['gst-invoices', 'amc-view', 'letterhead-documents'] as const;
+export type AdminOverlayView = (typeof ADMIN_OVERLAY_VIEWS)[number];
+
+export function isAdminOverlayViewParam(view: string | null): view is AdminOverlayView {
+  return Boolean(view && (ADMIN_OVERLAY_VIEWS as readonly string[]).includes(view));
+}
+
+export type LetterheadDocumentType =
+  | 'service_report'
+  | 'amc_report'
+  | 'custom_document'
+  | 'letterhead';
+
+export const LETTERHEAD_DOCUMENT_TYPES: LetterheadDocumentType[] = [
+  'service_report',
+  'amc_report',
+  'custom_document',
+  'letterhead',
+];
+
+export function readLetterheadTypeFromSearch(search: string): LetterheadDocumentType | undefined {
+  const typeParam = new URLSearchParams(search).get('type') as LetterheadDocumentType | null;
+  if (typeParam && LETTERHEAD_DOCUMENT_TYPES.includes(typeParam)) return typeParam;
+  return undefined;
+}
+
+export function readAdminOverlayFromSearch(search: string): {
+  gst: boolean;
+  amc: boolean;
+  letterhead: boolean;
+  letterheadType?: LetterheadDocumentType;
+} {
+  const view = new URLSearchParams(search).get('view');
+  const letterhead = view === 'letterhead-documents';
+  return {
+    gst: view === 'gst-invoices',
+    amc: view === 'amc-view',
+    letterhead,
+    letterheadType: letterhead ? readLetterheadTypeFromSearch(search) : undefined,
+  };
+}
+
+/** Tool dialogs opened via ?tool=… on the admin dashboard. */
+export const ADMIN_TOOL_DIALOGS = [
+  'recent-accounts',
+  'direct-sale',
+  'amount-trackers',
+  'sent-email-log',
+  'measure-distance',
+] as const;
+export type AdminToolDialog = (typeof ADMIN_TOOL_DIALOGS)[number];
+
+export const MANAGER_BLOCKED_ADMIN_TOOLS = new Set<AdminToolDialog>(['direct-sale', 'amount-trackers']);
+
+export function isAdminToolParam(tool: string | null): tool is AdminToolDialog {
+  return Boolean(tool && (ADMIN_TOOL_DIALOGS as readonly string[]).includes(tool));
+}

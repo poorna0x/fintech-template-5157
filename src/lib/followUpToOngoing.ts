@@ -40,7 +40,7 @@ export function deriveScheduleFromFollowUpTime(followUpTime: unknown): {
   return { scheduled_time_slot: 'CUSTOM', custom_time: hm };
 }
 
-function parseRequirements(raw: unknown): Record<string, unknown>[] {
+export function parseRequirements(raw: unknown): Record<string, unknown>[] {
   if (!raw) return [];
   if (Array.isArray(raw)) return raw.filter((r) => r && typeof r === 'object') as Record<string, unknown>[];
   if (typeof raw === 'string') {
@@ -58,7 +58,7 @@ function parseRequirements(raw: unknown): Record<string, unknown>[] {
   return [];
 }
 
-function upsertCustomTimeInRequirements(
+export function upsertCustomTimeInRequirements(
   requirements: Record<string, unknown>[],
   customTime: string
 ): Record<string, unknown>[] {

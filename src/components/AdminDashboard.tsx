@@ -3,17 +3,11 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { ensureAdminSupabaseSession } from '@/lib/auth';
 import { normalizeCustomerAddress } from '@/lib/customer-address';
-import { CustomerLocationVariant, getJobLocationLabelForWhatsApp } from '@/lib/customer-locations';
-import { ensureSupabaseSessionForWrite, resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
-import {
-  extractMapsUrlFromText,
-  isGoogleMapsShortLink,
-  isGoogleMapsUrl,
-  loadGoogleMapsGeocoderScript,
-  resolveGoogleMapsInputToCoords,
-  sanitizeGoogleMapsInput,
-} from '@/lib/googleMapsLink';
+import { CustomerLocationVariant } from '@/lib/customer-locations';
+import { ensureSupabaseSessionForWrite } from '@/lib/ensureSupabaseSession';
 import { useResumeSync } from '@/hooks/useResumeSync';
+import { useAdminAlertSounds } from '@/hooks/useAdminAlertSounds';
+import { useAdminJobsRealtime } from '@/hooks/useAdminJobsRealtime';
 import { useClearAdminModalOnIOSBackground } from '@/hooks/useClearAdminModalOnIOSBackground';
 import AdminHeader from '@/components/AdminHeader';
 import { WebsiteBookingIntentBanner } from '@/components/admin/WebsiteBookingIntentBanner';
@@ -82,8 +76,86 @@ import {
 } from 'lucide-react';
 import { db, supabase, fetchCustomerIdsWithCompletedJobsMap, CUSTOMER_ROW_COLUMNS, CUSTOMER_ADMIN_LIST_PATCH_COLUMNS } from '@/lib/supabase';
 import { scheduleDocumentGeneratorPreload } from '@/lib/document-generator-preload';
-import { useAdminRole } from '@/lib/useAdminRole';
 import { registerAdminPWA } from '@/lib/pwa';
+import { useAdminRole } from '@/lib/useAdminRole';
+import { saveAdminCompletedJobEdit } from '@/lib/adminSaveCompletedJobEdit';
+import { transformCustomerData, transformTechnicianData } from '@/lib/adminDashboardTransforms';
+import {
+  followUpDateToStr,
+  getJobCompletionDate,
+  getTodayLocalDate,
+  getTomorrowLocalDate,
+  completedDateToStr,
+  isDateWithinCompletedRange,
+} from '@/lib/adminDashboardDateHelpers';
+import {
+  buildCustomersWithJobs,
+  getFilteredCustomersForDashboard,
+  resolveDisplayedCustomers,
+} from '@/lib/adminDashboardCustomerFilters';
+import { loadFilteredJobsForAdmin } from '@/lib/adminLoadFilteredJobs';
+import {
+  applyAdminDashboardSnapshot,
+  loadAdminDashboardData,
+  loadAdminDashboardSecondary,
+} from '@/lib/adminLoadDashboardData';
+import {
+  scheduleAdminAmcJobCreation,
+  scheduleAdminFollowUpPromotion,
+} from '@/lib/adminDashboardSchedulers';
+import { updateAdminJobStatus } from '@/lib/adminJobStatusUpdate';
+import {
+  submitAdminFollowUp,
+  type AdminFollowUpSubmitData,
+} from '@/lib/adminFollowUpSubmit';
+import { saveAdminJobAssignment } from '@/lib/adminSaveJobAssignment';
+import {
+  getDefaultAdminMoveToOngoingSchedule,
+  performAdminMoveToOngoing,
+} from '@/lib/adminMoveToOngoing';
+import { removeAdminTeamMember, saveAdminTeamMember } from '@/lib/adminJobTeam';
+import { submitAdminJobReassign, unassignAdminJob } from '@/lib/adminJobReassign';
+import { prepareAdminDenyJob, submitAdminJobDeny } from '@/lib/adminJobDeny';
+import {
+  markAdminJobMailSent,
+  markAdminJobMessageSent,
+} from '@/lib/adminJobCompletionMessaging';
+import { deleteAdminJob } from '@/lib/adminDeleteJob';
+import { updateAdminCustomerStatus } from '@/lib/adminCustomerStatus';
+import { deleteAdminCustomer } from '@/lib/adminDeleteCustomer';
+import {
+  clearAdminCompleteJobSnapshot,
+  fetchAdminJobForComplete,
+  revertIncompleteAdminCompleteFlow,
+  snapshotAdminCompleteJobAssignment,
+  validateAdminCompleteTechnicianSelection,
+} from '@/lib/adminCompleteJobFlow';
+import { deleteAdminCustomerPhoto } from '@/lib/adminCustomerPhotoDelete';
+import { deleteAdminJobPhoto } from '@/lib/adminJobPhotoDelete';
+import {
+  copyAdminPhotoLink,
+  downloadAdminPhoto,
+  filterValidJobGalleryPhotos,
+} from '@/lib/adminPhotoHelpers';
+import {
+  buildAdminPhotoViewerSelection,
+  resolveAdminPhotoViewerSources,
+} from '@/lib/adminPhotoViewerNav';
+import {
+  calculateAdminCustomDistanceBetweenStops,
+  getAdminJobEtaForShareDialog,
+  getAdminMeasureStopSelectOptions,
+  openAdminCustomDistanceInGoogleMaps,
+  openAdminJobDistanceMeasure,
+  type AdminJobDistanceMeasureCtx,
+} from '@/lib/adminJobDistanceMeasure';
+import { runAdminDashboardSessionBootstrap } from '@/lib/adminDashboardSessionBootstrap';
+import {
+  buildCompletedProfitSummary,
+  shouldShowCompletedProfitSummary as shouldShowAdminCompletedProfitSummary,
+} from '@/lib/adminCompletedJobProfit';
+import { calculateAdminCustomerDistance } from '@/lib/adminGoogleMapsDistance';
+
 import { Customer, Job, Technician } from '@/types';
 import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
 import { toast } from 'sonner';
@@ -106,7 +178,6 @@ import {
   EQUIPMENT_BRAND_DATA as brandData,
   EQUIPMENT_MODEL_DATA as modelData,
 } from '@/lib/equipment-suggestions';
-import { customerNameClassName } from '@/lib/customerDisplay';
 import FollowUpModal from '@/components/FollowUpModal';
 import { sendNotification, createJobAssignedNotification, createJobCompletedNotification, createJobCancelledNotification, createJobAssignmentRequestNotification } from '@/lib/notifications';
 import { hapticSwitch, hapticTap } from '@/lib/haptics';
@@ -116,35 +187,19 @@ const BillModal = lazyDefault(() => import('./BillModal'));
 const AMCModal = lazyDefault(() => import('./AMCModal'));
 const QuotationModal = lazyDefault(() => import('./QuotationModal'));
 const TaxInvoiceModal = lazyDefault(() => import('./TaxInvoiceModal'));
-const GSTInvoicesPage = lazyDefault(() => import('./GSTInvoicesPage'));
-const AMCViewPage = lazyDefault(() => import('./AMCViewPage'));
 // Letterhead builder is heavy (rich text + sanitizer + preview iframe) and only
 // used on demand. Code-split it so the main admin bundle stays lean.
-const LetterheadDocumentsPage = lazyDefault(() => import('./LetterheadDocumentsPage'));
-type LetterheadDocumentType =
-  | 'service_report'
-  | 'amc_report'
-  | 'custom_document'
-  | 'letterhead';
-import { getAmcDocumentBrandLabel } from '@/lib/amc-brand';
 import { toDateOnly } from '@/lib/amcAutoJobSchedule';
 import ImageUpload from '@/components/ImageUpload';
-const TechnicianPayments = lazyDefault(() => import('./TechnicianPayments'));
-const BillingStats = lazyDefault(() => import('./BillingStats'));
-const Analytics = lazyDefault(() => import('./Analytics'));
-const InventoryManagement = lazyDefault(() => import('./InventoryManagement'));
-import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, levenshteinDistance, calculateSimilarity, extractPhotoUrls, normalizePhotoUrl, parseJobRequirements, getFormattedTimeSlot, findLeadSource, getLeadSourceFromJob, getJobCustomTimeLabel, normalizeLeadType, normalizeServiceSubType, completedJobMatchesDashboardClientFilters, isOfficeCompletedJob, jobCompletionLocalDateIso } from '@/lib/adminUtils';
-import { getLocationLinkFromObject, getLocationUnavailableMessage, resolveJobDestinationCoordsSync, resolveJobLatLngFromRow } from '@/lib/jobLocationHelpers';
+import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, levenshteinDistance, calculateSimilarity, extractPhotoUrls, normalizePhotoUrl, parseJobRequirements, getFormattedTimeSlot, findLeadSource, getLeadSourceFromJob, getJobCustomTimeLabel, normalizeLeadType, normalizeServiceSubType, completedJobMatchesDashboardClientFilters, isOfficeCompletedJob, jobCompletionLocalDateIso, ZERO_COMMISSION_EMPLOYEE_ID, jobsMatchOngoingTab } from '@/lib/adminUtils';
+import { getLocationLinkFromObject } from '@/lib/jobLocationHelpers';
 import { applyAutoMoveToOngoingOnDateFlag } from '@/lib/followUpToOngoing';
 import { enrichJobsWithAfterPhotosIfNeeded } from '@/lib/jobReportPhotos';
 import {
-  consumeAdminDashboardPrefetch,
   readAdminDashboardCache,
-  writeAdminDashboardCache,
   clearAdminDashboardCache,
   invalidateAdminDashboardCaches,
   getModuleOngoingJobsSnapshot,
-  setModuleOngoingJobsSnapshot,
   getModuleJobsListCache,
   setModuleJobsListCache,
   clearModuleJobsListCache,
@@ -164,15 +219,17 @@ import {
   parseAdminDashboardUrl,
   type AdminModalSlug,
   isAdminModalSlug,
+  readAdminTabViewFromSearch,
+  isAdminTabViewParam,
+  isAdminOverlayViewParam,
+  readAdminOverlayFromSearch,
+  isAdminToolParam,
+  MANAGER_BLOCKED_ADMIN_TOOLS,
+  type AdminDashboardView,
+  type AdminToolDialog,
+  type LetterheadDocumentType,
 } from '@/lib/adminDashboardUrl';
-import { StatusBadge } from './admin/StatusBadge';
-import { CustomerCardHeader } from './admin/CustomerCardHeader';
 import WarrantyManagementDialog from './admin/WarrantyManagementDialog';
-import { WhatsAppIcon } from './WhatsAppIcon';
-import { ContactSection } from './admin/ContactSection';
-import { CompletedJobSection } from './admin/CompletedJobSection';
-import { DeniedJobSection } from './admin/DeniedJobSection';
-import { FollowUpJobSection } from './admin/FollowUpJobSection';
 import { CompleteJobDialog } from './admin/CompleteJobDialog';
 import { StatsCards } from './admin/StatsCards';
 import EditCustomerDialog from './admin/EditCustomerDialog';
@@ -204,7 +261,6 @@ import { AddReminderDialog } from './reminders/AddReminderDialog';
 import { TodayRemindersPopup } from './reminders/TodayRemindersPopup';
 import { CustomerRemindersDialog } from './reminders/CustomerRemindersDialog';
 import EditJobDialog from './admin/EditJobDialog';
-import { CustomAppointmentTimeSelect } from './admin/CustomAppointmentTimeSelect';
 import PhoneNumbersDialog from './admin/PhoneNumbersDialog';
 import DescriptionDialog from './admin/DescriptionDialog';
 import JobAddressDialog from './admin/JobAddressDialog';
@@ -214,19 +270,33 @@ import ReassignJobDialog from './admin/ReassignJobDialog';
 import EditCompletedJobDialog from './admin/EditCompletedJobDialog';
 import EditAMCDialog from './admin/EditAMCDialog';
 import WhatsAppDialog from './admin/WhatsAppDialog';
+import { AdminScreenLoader, AdminInlineLoader } from './admin/AdminLoaders';
+import { AdminDeleteConfirmDialogs } from './admin/AdminDeleteConfirmDialogs';
+import { AdminOverrideExistingCustomerDialog } from './admin/AdminOverrideExistingCustomerDialog';
+import AmcInfoDialog from './admin/AmcInfoDialog';
+import MoveToOngoingDialog from './admin/MoveToOngoingDialog';
+import CompleteTechnicianSelectDialog from './admin/CompleteTechnicianSelectDialog';
+import { AdminDashboardHeader } from './admin/AdminDashboardHeader';
+import { AdminSearchResultsBar } from './admin/AdminSearchResultsBar';
+import { DeniedJobsDateFilter } from './admin/DeniedJobsDateFilter';
+import { CompletedJobsFiltersSection } from './admin/CompletedJobsFiltersSection';
+import JobDistanceMeasurementDialog, {
+  type JobCustomDistanceResult,
+  type JobTechnicianDistanceRow,
+} from './admin/JobDistanceMeasurementDialog';
+import { OngoingJobsFiltersDialog } from './admin/OngoingJobsFiltersDialog';
+import AdminDashboardOverlayViews, {
+  hasAdminDashboardOverlayView,
+} from './admin/AdminDashboardOverlayViews';
+import { AdminCustomerJobsList } from './admin/AdminCustomerJobsList';
+import {
+  AdminDashboardListProvider,
+  type AdminDashboardListActions,
+} from '@/contexts/AdminDashboardListContext';
 import {
   broadcastTechnicianJobListRefresh,
   broadcastTechnicianJobListRefreshForJob,
 } from '@/lib/technicianJobListSync';
-
-const ZERO_COMMISSION_EMPLOYEE_ID = 'TECH851703400';
-
-const ONGOING_JOB_STATUSES = new Set(['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS']);
-
-function jobsMatchOngoingTab(jobs: Job[]): boolean {
-  if (jobs.length === 0) return true;
-  return jobs.some((job) => ONGOING_JOB_STATUSES.has(job.status));
-}
 
 declare global {
   interface Window {
@@ -236,95 +306,6 @@ declare global {
 }
 
 // Utility functions moved to @/lib/adminUtils
-
-function AdminScreenLoader({ message }: { message: string }) {
-  return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-50">
-      <div className="text-center">
-        <div className="flex items-center justify-center space-x-1 mb-4">
-          <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-          <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-          <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-        </div>
-        <p className="text-gray-600">{message}</p>
-      </div>
-    </div>
-  );
-}
-
-function AdminInlineLoader({ message }: { message: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-16 text-center">
-      <div className="flex items-center justify-center space-x-1 mb-3">
-        <div className="w-2.5 h-2.5 bg-black rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-        <div className="w-2.5 h-2.5 bg-black rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-        <div className="w-2.5 h-2.5 bg-black rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-      </div>
-      <p className="text-sm text-gray-600">{message}</p>
-    </div>
-  );
-}
-
-const ADMIN_TAB_VIEWS = ['payments', 'billing', 'analytics', 'inventory'] as const;
-type AdminTabView = (typeof ADMIN_TAB_VIEWS)[number];
-type AdminDashboardView = 'dashboard' | AdminTabView;
-
-function readAdminTabViewFromSearch(search: string): AdminDashboardView {
-  const view = new URLSearchParams(search).get('view');
-  if (view && (ADMIN_TAB_VIEWS as readonly string[]).includes(view)) {
-    return view as AdminTabView;
-  }
-  return 'dashboard';
-}
-
-function isAdminTabViewParam(view: string | null): view is AdminTabView {
-  return Boolean(view && (ADMIN_TAB_VIEWS as readonly string[]).includes(view));
-}
-
-const ADMIN_OVERLAY_VIEWS = ['gst-invoices', 'amc-view', 'letterhead-documents'] as const;
-type AdminOverlayView = (typeof ADMIN_OVERLAY_VIEWS)[number];
-
-function isAdminOverlayViewParam(view: string | null): view is AdminOverlayView {
-  return Boolean(view && (ADMIN_OVERLAY_VIEWS as readonly string[]).includes(view));
-}
-
-const LETTERHEAD_DOCUMENT_TYPES: LetterheadDocumentType[] = [
-  'service_report',
-  'amc_report',
-  'custom_document',
-  'letterhead',
-];
-
-function readLetterheadTypeFromSearch(search: string): LetterheadDocumentType | undefined {
-  const typeParam = new URLSearchParams(search).get('type') as LetterheadDocumentType | null;
-  if (typeParam && LETTERHEAD_DOCUMENT_TYPES.includes(typeParam)) return typeParam;
-  return undefined;
-}
-
-function readAdminOverlayFromSearch(search: string): {
-  gst: boolean;
-  amc: boolean;
-  letterhead: boolean;
-  letterheadType?: LetterheadDocumentType;
-} {
-  const view = new URLSearchParams(search).get('view');
-  const letterhead = view === 'letterhead-documents';
-  return {
-    gst: view === 'gst-invoices',
-    amc: view === 'amc-view',
-    letterhead,
-    letterheadType: letterhead ? readLetterheadTypeFromSearch(search) : undefined,
-  };
-}
-
-const ADMIN_TOOL_DIALOGS = ['recent-accounts', 'direct-sale', 'amount-trackers', 'sent-email-log', 'measure-distance'] as const;
-type AdminToolDialog = (typeof ADMIN_TOOL_DIALOGS)[number];
-
-const MANAGER_BLOCKED_ADMIN_TOOLS = new Set<AdminToolDialog>(['direct-sale', 'amount-trackers']);
-
-function isAdminToolParam(tool: string | null): tool is AdminToolDialog {
-  return Boolean(tool && (ADMIN_TOOL_DIALOGS as readonly string[]).includes(tool));
-}
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -418,38 +399,7 @@ const AdminDashboard = () => {
   const [currentView, setCurrentView] = useState<AdminDashboardView>(() =>
     readAdminTabViewFromSearch(location.search)
   );
-  const [editFormData, setEditFormData] = useState({
-    full_name: '',
-    phone: '',
-    alternate_phone: '',
-    email: '',
-    service_types: [] as string[],
-    equipment: {} as {[serviceType: string]: {brand: string, model: string}},
-    behavior: '',
-    native_language: '',
-    status: '',
-    notes: '',
-    google_location: '',
-    visible_address: '',
-    custom_time: '',
-    has_prefilter: null as boolean | null,
-    address: {
-      street: '',
-      area: '',
-      city: '',
-      state: '',
-      pincode: ''
-    },
-    location: {
-      latitude: 0,
-      longitude: 0,
-      formattedAddress: ''
-    },
-    service_cost: 0,
-    cost_agreed: false
-  });
   const [isUpdating, setIsUpdating] = useState(false);
-  const [visibleAddressSuggestions, setVisibleAddressSuggestions] = useState(false);
   const [addressDialogOpen, setAddressDialogOpen] = useState<{[customerId: string]: boolean}>({});
   const [addressLocationVariant, setAddressLocationVariant] = useState<
     Record<string, CustomerLocationVariant>
@@ -459,13 +409,6 @@ const AdminDashboard = () => {
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [customerDistances, setCustomerDistances] = useState<Record<string, { distance: string; duration: string; isCalculating: boolean }>>({});
   const [isGettingLocation, setIsGettingLocation] = useState(false);
-  
-  // Auto-save refs
-  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const lastSavedFormDataRef = useRef<string>('');
-  const hasUnsavedChangesRef = useRef(false);
-  const locationManuallyEditedRef = useRef(false); // Track if user manually edited location field
-  const previousAddressRef = useRef<string>(''); // Track previous address to detect changes
   
   // Ref to store calculateDistanceAndTime function to avoid circular dependency
   const calculateDistanceAndTimeRef = useRef<((origin: { lat: number; lng: number }, destination: { lat: number; lng: number }, customerId: string) => Promise<void>) | null>(null);
@@ -741,26 +684,6 @@ const AdminDashboard = () => {
     }
   }, [isManager, currentView]);
 
-  // bangaloreAreas imported from @/lib/adminUtils
-
-  // Extract location keywords from complete address and match with location array (for edit form)
-  const extractLocationFromAddress = useMemo(() => {
-    const completeAddress = editFormData?.address?.street || '';
-    return extractLocationFromAddressString(completeAddress);
-  }, [editFormData?.address?.street]);
-
-  const filteredAddressSuggestions = useMemo(() => {
-    if (!editFormData?.visible_address || editFormData.visible_address.trim().length === 0) {
-      return [];
-    }
-    const searchTerm = editFormData.visible_address.toLowerCase();
-    // Remove duplicates and filter
-    const uniqueAreas = [...new Set(bangaloreAreas)];
-    return uniqueAreas.filter(area => 
-      area.toLowerCase().includes(searchTerm)
-    ).slice(0, 12); // Limit to 12 suggestions
-  }, [editFormData?.visible_address]);
-
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [newJobDialogOpen, setNewJobDialogOpen] = useState(false);
   const [selectedCustomerForJob, setSelectedCustomerForJob] = useState<Customer | null>(null);
@@ -817,37 +740,20 @@ const AdminDashboard = () => {
   const [jobAddressDialogOpen, setJobAddressDialogOpen] = useState<{[jobId: string]: boolean}>({});
   const [lastCheckedJobId, setLastCheckedJobId] = useState<string | null>(null);
   const [isPollingEnabled, setIsPollingEnabled] = useState(true);
-  const audioContextRef = React.useRef<AudioContext | null>(null);
+  const { playNotificationSound, stopNotificationSound, playCompletedJobSound } =
+    useAdminAlertSounds();
   // Job IDs just completed by admin in this session - don't play sound for these (only for technician completions)
   const jobIdsCompletedByAdminRef = React.useRef<Set<string>>(new Set());
   
   // Distance measurement dialog state
   const [distanceMeasurementDialogOpen, setDistanceMeasurementDialogOpen] = useState(false);
   const [selectedJobForDistance, setSelectedJobForDistance] = useState<Job | null>(null);
-  const [technicianDistances, setTechnicianDistances] = useState<Array<{
-    technician: Technician;
-    distance: string;
-    duration: string;
-    distanceValue?: number; // Distance in meters for comparison
-    durationValue?: number; // Duration in seconds for calculation
-    estimatedArrival?: string; // Estimated arrival time in 12-hour format
-    lastUpdated?: string; // Last updated time in 12-hour format
-    hasLocation: boolean;
-    isCalculating: boolean;
-    isAssigned?: boolean; // Whether this technician is assigned to the job
-    isApproximate?: boolean; // True when distance is straight-line fallback (Google route unavailable)
-  }>>([]);
+  const [technicianDistances, setTechnicianDistances] = useState<JobTechnicianDistanceRow[]>([]);
   const [isCalculatingDistances, setIsCalculatingDistances] = useState(false);
   /** Manual pair: technician (`__tech__`) or job id — driving distance only when user clicks Calculate */
   const [customDistanceFromId, setCustomDistanceFromId] = useState<string>('');
   const [customDistanceToId, setCustomDistanceToId] = useState<string>('');
-  const [customDistanceResult, setCustomDistanceResult] = useState<{
-    fromLabel: string;
-    toLabel: string;
-    distance: string;
-    duration: string;
-    isApproximate?: boolean; // True when distance is straight-line fallback (Google route unavailable)
-  } | null>(null);
+  const [customDistanceResult, setCustomDistanceResult] = useState<JobCustomDistanceResult | null>(null);
   const [isLoadingCustomDistance, setIsLoadingCustomDistance] = useState(false);
   const [isOpeningCustomDistanceMaps, setIsOpeningCustomDistanceMaps] = useState(false);
   
@@ -1029,26 +935,12 @@ const AdminDashboard = () => {
   const [draftOngoingAssignmentFilter, setDraftOngoingAssignmentFilter] = useState<'all' | 'assigned' | 'unassigned'>('all');
   const [draftOngoingAssignedTechnicianFilter, setDraftOngoingAssignedTechnicianFilter] = useState<string>('all');
   const [draftOngoingServiceSubTypeFilter, setDraftOngoingServiceSubTypeFilter] = useState<string>('all');
-  const [loadingCustomerJobs, setLoadingCustomerJobs] = useState<{[customerId: string]: boolean}>({});
   const [showAllFollowups, setShowAllFollowups] = useState<boolean>(false);
   // Pagination state
   const [currentPage, setCurrentPage] = useState<number>(() => savedUi.currentPage);
   const [pageSize] = useState<number>(20);
   const [totalPages, setTotalPages] = useState<number>(0);
   const [totalCount, setTotalCount] = useState<number>(0);
-  // Helper function to get today's date in local timezone (YYYY-MM-DD format)
-  const getTodayLocalDate = () => {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    const day = String(today.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
-  const getTomorrowLocalDate = () => {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    return `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
-  };
 
   // Date filter for denied jobs (default to today)
   const [deniedDateFilter, setDeniedDateFilter] = useState<string>(() => {
@@ -1203,26 +1095,6 @@ const AdminDashboard = () => {
     return `${prefix}${timestamp}${random}`;
   };
 
-  // Transform technician data from database format to frontend format
-  const transformTechnicianData = (tech: any) => ({
-    id: tech.id,
-    fullName: tech.full_name,
-    phone: tech.phone,
-    email: tech.email,
-    employeeId: tech.employee_id,
-    status: tech.status || 'AVAILABLE',
-    skills: tech.skills,
-    serviceAreas: tech.service_areas,
-    currentLocation: tech.current_location,
-    workSchedule: tech.work_schedule,
-    performance: tech.performance,
-    vehicle: tech.vehicle,
-    salary: tech.salary,
-    qrCode: tech.qr_code || tech.qrCode || '',
-    createdAt: tech.created_at,
-    updatedAt: tech.updated_at
-  });
-
   // Reload technicians to get latest location data
   const reloadTechnicians = useCallback(async (options?: { transition?: boolean }) => {
     try {
@@ -1266,83 +1138,6 @@ const AdminDashboard = () => {
     }
   }, []);
 
-  // Transform customer data from database format to frontend format
-  const transformCustomerData = (customer: any): Customer => ({
-    id: customer.id,
-    customerId: customer.customer_id,
-    fullName: customer.full_name,
-    phone: customer.phone,
-    alternatePhone: customer.alternate_phone,
-    email: customer.email,
-    address: (() => {
-      const normalized = normalizeCustomerAddress(customer.address, {
-        visible_address: customer.visible_address || customer.address?.visible_address,
-        formattedAddress: customer.location?.formatted_address || customer.location?.formattedAddress,
-      });
-      return {
-        ...normalized,
-        visible_address:
-          normalized.visible_address ||
-          customer.visible_address ||
-          customer.address?.visible_address ||
-          '',
-      };
-    })(),
-    location: {
-      latitude: customer.location?.latitude || 0,
-      longitude: customer.location?.longitude || 0,
-      formattedAddress: customer.location?.formatted_address || customer.location?.formattedAddress || '',
-      googlePlaceId: customer.location?.google_place_id,
-      googleLocation:
-        customer.location?.googleLocation || customer.location?.google_location || null
-    } as any,
-    alternateAddress: customer.alternate_address ?? undefined,
-    alternate_address: customer.alternate_address ?? undefined,
-    alternateLocation: customer.alternate_location
-      ? {
-          latitude: customer.alternate_location?.latitude || 0,
-          longitude: customer.alternate_location?.longitude || 0,
-          formattedAddress:
-            customer.alternate_location?.formatted_address ||
-            customer.alternate_location?.formattedAddress ||
-            '',
-          googlePlaceId: customer.alternate_location?.google_place_id,
-          googleLocation:
-            customer.alternate_location?.googleLocation ||
-            customer.alternate_location?.google_location ||
-            null,
-        }
-      : undefined,
-    alternate_location: customer.alternate_location ?? undefined,
-    alternateVisibleAddress: customer.alternate_visible_address ?? undefined,
-    alternate_visible_address: customer.alternate_visible_address ?? undefined,
-    alternateBrand: customer.alternate_brand ?? undefined,
-    alternate_brand: customer.alternate_brand ?? undefined,
-    alternateModel: customer.alternate_model ?? undefined,
-    alternate_model: customer.alternate_model ?? undefined,
-    alternateServiceType: customer.alternate_service_type ?? undefined,
-    alternate_service_type: customer.alternate_service_type ?? undefined,
-    serviceType: customer.service_type,
-    brand: customer.brand,
-    model: customer.model,
-    installationDate: customer.installation_date,
-    warrantyExpiry: customer.warranty_expiry,
-    status: customer.status,
-    customerSince: customer.customer_since,
-    lastServiceDate: customer.last_service_date,
-    notes: customer.notes,
-    preferredTimeSlot: customer.preferred_time_slot,
-    customTime: (customer as any).custom_time || null,
-    preferredLanguage: customer.preferred_language,
-    serviceCost: customer.service_cost,
-    costAgreed: customer.cost_agreed,
-    has_prefilter: customer.has_prefilter ?? null,
-    has_google_review: customer.has_google_review ?? null,
-    customer_tier: (customer as any).customer_tier ?? null,
-    raw_water_tds: (customer as any).raw_water_tds ?? 0,
-    createdAt: customer.created_at,
-    updatedAt: customer.updated_at
-  });
 
   // Slim job lists embed customers without address/location JSON; hydrate full row when address dialog opens.
   useEffect(() => {
@@ -1617,237 +1412,47 @@ const AdminDashboard = () => {
     completedRangeEndDate,
   ]);
 
-  // Load jobs based on current filter (optimized)
-  const loadFilteredJobs = useCallback(async (
-    filter: typeof statusFilter,
-    page: number = 1,
-    opts?: { silent?: boolean; cacheOnly?: boolean }
-  ) => {
-    const silent = opts?.silent === true;
-    const cacheOnly = opts?.cacheOnly === true;
-    // Only non-silent (user-visible) loads bump the request id. Background resume sync must
-    // not supersede an in-flight tab switch or loading stays stuck forever.
-    const requestId = silent ? loadJobsRequestRef.current : ++loadJobsRequestRef.current;
-    const commitJobs = (data: Job[]) => {
-      if (!cacheOnly) {
-        setJobs(data);
-        setTabCachesStale(false);
-      } else if (filter === 'COMPLETED') {
-        // Realtime warm: Completed tab can open instantly after completion sound.
-        setTabCachesStale(false);
-      }
-      if (filter === 'ONGOING') {
-        ongoingJobsSnapshotRef.current = data;
-        setModuleOngoingJobsSnapshot(data);
-      } else if (filter === 'COMPLETED' || filter === 'RESCHEDULED') {
-        const cacheKey = getJobsListCacheKey(filter, page);
-        jobsListCacheRef.current.set(cacheKey, data);
-        setModuleJobsListCache(cacheKey, data);
-      }
-    };
-    try {
-      if (!silent) {
-        setLoading(true);
-      }
-      
-      if (filter === 'ALL') {
-        // For ALL, we need customers with their jobs - load ongoing jobs only for display
-        const { data, error } = await db.jobs.getOngoing();
-        if (requestId !== loadJobsRequestRef.current) return;
-        if (error) {
-          if (!cacheOnly) setJobs([]);
-        } else {
-          if (!cacheOnly) setJobs(data || []);
-        }
-      } else if (filter === 'ONGOING') {
-        // Load all ongoing jobs (usually not too many)
-        const { data, error } = await db.jobs.getOngoing();
-        if (requestId !== loadJobsRequestRef.current) return;
-        if (error) {
-          if (!cacheOnly) setJobs([]);
-        } else {
-          commitJobs(data || []);
-          if (!cacheOnly) {
-            setTotalCount(data?.length || 0);
-            setTotalPages(1);
-          }
-        }
-      } else if (filter === 'COMPLETED' || filter === 'CANCELLED') {
-        // Use pagination for completed and denied jobs
-        const statuses = filter === 'COMPLETED' ? ['COMPLETED'] : ['DENIED', 'CANCELLED'];
-        // Pass date/day-range filter for completed jobs and day filter for denied jobs
-        let dateFilter: string | { startDate: string; endDate: string } | undefined = undefined;
-        if (filter === 'COMPLETED') {
-          if (completedDatePreset === 'day') {
-            dateFilter = completedDateFilter;
-          } else {
-            const start = completedRangeStartDate <= completedRangeEndDate ? completedRangeStartDate : completedRangeEndDate;
-            const end = completedRangeStartDate <= completedRangeEndDate ? completedRangeEndDate : completedRangeStartDate;
-            dateFilter = {
-              startDate: start,
-              endDate: end
-            };
-          }
-        } else if (filter === 'CANCELLED') {
-          dateFilter = deniedDateFilter;
-        }
-
-        let data: any[] = [];
-        let error: any = null;
-        let count = 0;
-        let pages = 0;
-
-        const completedClientFiltersActive =
-          filter === 'COMPLETED' &&
-          (completedLeadTypeFilter !== 'all' ||
-            completedServiceSubTypeFilter !== 'all' ||
-            completedByFilter !== 'all');
-
-        // When lead / service / completed-by filters are on, server pagination is by raw job count but the UI
-        // hides non-matching rows — so page 1 can look empty while "1/4" still shows. Load a bounded batch,
-        // apply the same client filters as the list, then paginate the filtered rows.
-        const COMPLETED_CLIENT_FILTER_BATCH = 5000;
-
-        let slimResult: Awaited<ReturnType<typeof db.jobs.getByStatusPaginatedSlim>>;
-        if (completedClientFiltersActive) {
-          slimResult = await db.jobs.getByStatusPaginatedSlim(
-            statuses,
-            1,
-            COMPLETED_CLIENT_FILTER_BATCH,
-            dateFilter
-          );
-        } else {
-          slimResult = await db.jobs.getByStatusPaginatedSlim(statuses, page, pageSize, dateFilter);
-        }
-        data = slimResult.data || [];
-        error = slimResult.error;
-        count = slimResult.count || 0;
-        pages = slimResult.totalPages || 0;
-
-        if (error) {
-          const fallbackPage = completedClientFiltersActive ? 1 : page;
-          const fallbackSize = completedClientFiltersActive ? COMPLETED_CLIENT_FILTER_BATCH : pageSize;
-          const fallback = await db.jobs.getByStatusPaginated(statuses, fallbackPage, fallbackSize, dateFilter);
-          data = fallback.data || [];
-          error = fallback.error;
-          count = fallback.count || 0;
-          pages = fallback.totalPages || 0;
-        }
-        if (requestId !== loadJobsRequestRef.current) return;
-        if (error) {
-          if (!cacheOnly) setJobs([]);
-        } else {
-          let finalData = data || [];
-          // Jobs without embedded customer (RLS/orphan rows) still need customer for grouping cards.
-          if ((filter === 'COMPLETED' || filter === 'CANCELLED') && finalData.length > 0) {
-            const missingIds = [
-              ...new Set(
-                finalData
-                  .filter((j: any) => j.customer_id && !(j as any).customer)
-                  .map((j: any) => j.customer_id as string)
-              ),
-            ];
-            if (missingIds.length > 0) {
-              const { data: custRows } = await supabase
-                .from('customers')
-                .select(CUSTOMER_ADMIN_LIST_PATCH_COLUMNS)
-                .in('id', missingIds);
-              const byId = new Map((custRows || []).map((row: any) => [row.id, row]));
-              finalData = finalData.map((j: any) =>
-                (j as any).customer || !j.customer_id ? j : { ...j, customer: byId.get(j.customer_id) ?? null }
-              );
-            }
-          }
-
-          if (completedClientFiltersActive) {
-            const filterPayload = {
-              leadType: completedLeadTypeFilter,
-              serviceSubType: completedServiceSubTypeFilter,
-              completedBy: completedByFilter,
-            };
-            const filtered = finalData.filter((j: any) =>
-              completedJobMatchesDashboardClientFilters(
-                j,
-                filterPayload,
-                techniciansRef.current as any
-              )
-            );
-            const filteredCount = filtered.length;
-            const filteredPages =
-              filteredCount > 0 ? Math.ceil(filteredCount / pageSize) : 0;
-            let effectivePage = page;
-            if (filteredPages > 0 && page > filteredPages) effectivePage = filteredPages;
-            if (filteredPages === 0) effectivePage = 1;
-            finalData = filtered.slice((effectivePage - 1) * pageSize, effectivePage * pageSize);
-            count = filteredCount;
-            pages = filteredPages;
-            if (effectivePage !== page && !cacheOnly) {
-              setCurrentPage(effectivePage);
-            }
-          }
-
-          if (filter === 'COMPLETED' && finalData.length > 0) {
-            finalData = await enrichJobsWithAfterPhotosIfNeeded(finalData);
-          }
-
-          commitJobs(finalData);
-          if (!cacheOnly) {
-            setTotalCount(count || 0);
-            setTotalPages(pages || 0);
-          }
-        }
-      } else if (filter === 'RESCHEDULED') {
-        // Follow-up / rescheduled: slim query + photo fields + full customer embed (low egress vs jobs.*)
-        let data: any[] = [];
-        let error: any = null;
-        let count = 0;
-        let pages = 0;
-        const slimFu = await db.jobs.getByStatusPaginatedSlim(['FOLLOW_UP', 'RESCHEDULED'], page, pageSize, undefined, {
-          includePhotoFields: true,
-        });
-        data = slimFu.data || [];
-        error = slimFu.error;
-        count = slimFu.count || 0;
-        pages = slimFu.totalPages || 0;
-        if (error) {
-          const fallback = await db.jobs.getByStatusPaginated(['FOLLOW_UP', 'RESCHEDULED'], page, pageSize);
-          data = fallback.data || [];
-          error = fallback.error;
-          count = fallback.count || 0;
-          pages = fallback.totalPages || 0;
-        }
-        if (requestId !== loadJobsRequestRef.current) return;
-        if (error) {
-          if (!cacheOnly) setJobs([]);
-        } else {
-          commitJobs(data || []);
-          if (!cacheOnly) {
-            setTotalCount(count || 0);
-            setTotalPages(pages || 0);
-          }
-        }
-      }
-    } catch (error) {
-      if (requestId === loadJobsRequestRef.current && !cacheOnly) {
-        setJobs([]);
-      }
-    } finally {
-      if (!silent && requestId === loadJobsRequestRef.current) {
-        setLoading(false);
-      }
-    }
-  }, [
-    pageSize,
-    getJobsListCacheKey,
-    deniedDateFilter,
-    completedDateFilter,
-    completedDatePreset,
-    completedRangeStartDate,
-    completedRangeEndDate,
-    completedLeadTypeFilter,
-    completedServiceSubTypeFilter,
-    completedByFilter,
-  ]);
+  const loadFilteredJobs = useCallback(
+    (
+      filter: typeof statusFilter,
+      page: number = 1,
+      opts?: { silent?: boolean; cacheOnly?: boolean }
+    ) =>
+      loadFilteredJobsForAdmin(filter, page, opts, {
+        pageSize,
+        deniedDateFilter,
+        completedDateFilter,
+        completedDatePreset,
+        completedRangeStartDate,
+        completedRangeEndDate,
+        completedLeadTypeFilter,
+        completedServiceSubTypeFilter,
+        completedByFilter,
+        loadJobsRequestRef,
+        jobsListCacheRef,
+        ongoingJobsSnapshotRef,
+        techniciansRef,
+        getJobsListCacheKey,
+        setJobs,
+        setLoading,
+        setTabCachesStale,
+        setTotalCount,
+        setTotalPages,
+        setCurrentPage,
+      }),
+    [
+      pageSize,
+      getJobsListCacheKey,
+      deniedDateFilter,
+      completedDateFilter,
+      completedDatePreset,
+      completedRangeStartDate,
+      completedRangeEndDate,
+      completedLeadTypeFilter,
+      completedServiceSubTypeFilter,
+      completedByFilter,
+    ]
+  );
 
   const loadCompletedJobDetails = useCallback(async (jobId: string) => {
     if (!jobId) return;
@@ -1944,220 +1549,86 @@ const AdminDashboard = () => {
   };
 
   const applyAdminSnapshot = useCallback((snap: AdminDashboardSnapshot) => {
-    const jobList = (snap.jobs as Job[]) ?? [];
-    setJobs(jobList);
-    ongoingJobsSnapshotRef.current = jobList;
-    setModuleOngoingJobsSnapshot(jobList);
-    setTotalCount(jobList.length);
-    setTotalPages(1);
-    const transformed = (snap.technicianRows as any[]).map(transformTechnicianData);
-    techniciansRef.current = transformed;
-    setTechnicians(transformed);
-    setJobCounts(snap.jobCounts);
+    applyAdminDashboardSnapshot(snap, {
+      setJobs,
+      setTotalCount,
+      setTotalPages,
+      setTechnicians,
+      setJobCounts,
+      ongoingJobsSnapshotRef,
+      techniciansRef,
+    });
   }, []);
 
-  const loadDashboardSecondary = useCallback(async () => {
-    try {
-      const [techniciansAllResult, amcContractsResult, priorCompletedMap] = await Promise.all([
-        db.technicians.getList(500, { activeRosterOnly: false }),
-        supabase.from('amc_contracts').select('customer_id, status').eq('status', 'ACTIVE'),
-        fetchCustomerIdsWithCompletedJobsMap(),
-      ]);
-
-      const amcStatusMap: Record<string, boolean> = {};
-      if (amcContractsResult.data) {
-        amcContractsResult.data.forEach((amc: any) => {
-          amcStatusMap[amc.customer_id] = true;
-        });
-      }
-      setCustomerAMCStatus(amcStatusMap);
-      setCustomerPriorServiceStatus((prev) => ({ ...prev, ...priorCompletedMap }));
-
-      if (techniciansAllResult?.data) {
-        setTechniciansForReports(techniciansAllResult.data.map(transformTechnicianData));
-      }
-
-      void loadBrandsAndModels();
-      void db.jobs
-        .getFollowUpForGlow()
-        .then(({ data }) => {
-          if (data) setAllFollowUpJobs(data as Job[]);
-        })
-        .catch(() => setAllFollowUpJobs([]));
-    } catch (e) {
-      console.warn('[AdminDashboard] Secondary load failed:', e);
-    }
-  }, []);
+  const loadDashboardSecondary = useCallback(
+    () =>
+      loadAdminDashboardSecondary({
+        setCustomerAMCStatus,
+        setCustomerPriorServiceStatus,
+        setTechniciansForReports,
+        setAllFollowUpJobs,
+        loadBrandsAndModels,
+      }),
+    [loadBrandsAndModels]
+  );
 
   const amcAutoCreateAttemptedRef = useRef(false);
   const followUpPromoteDayRef = useRef<string | null>(null);
 
-  const scheduleFollowUpPromotion = useCallback(() => {
-    const today = getTodayLocalDate();
-    if (followUpPromoteDayRef.current === today) return;
-    followUpPromoteDayRef.current = today;
+  const scheduleFollowUpPromotion = useCallback(
+    () =>
+      scheduleAdminFollowUpPromotion({
+        followUpPromoteDayRef,
+        statusFilter,
+        currentPage,
+        loadFilteredJobs,
+        setAllFollowUpJobs,
+      }),
+    [statusFilter, currentPage, loadFilteredJobs]
+  );
 
-    supabase.auth
-      .getSession()
-      .then(({ data: { session } }) => {
-        if (!session) {
-          followUpPromoteDayRef.current = null;
-          return;
-        }
-        db.jobs.promoteDueFollowUpsToOngoing(today).then((result) => {
-          if (result.error) {
-            console.error('Error promoting due follow-up jobs:', result.error);
-            followUpPromoteDayRef.current = null;
-            return;
-          }
-          if (result.promoted > 0) {
-            toast.success(
-              `${result.promoted} follow-up job${result.promoted > 1 ? 's' : ''} moved to ongoing`
-            );
-            invalidateAdminDashboardCaches();
-            clearModuleJobsListCache();
-            loadFilteredJobs(statusFilter, currentPage, { silent: true });
-            db.jobs.getFollowUpForGlow().then(({ data }) => {
-              if (data) setAllFollowUpJobs(data as Job[]);
-            }).catch(() => {});
-          }
-        });
-      })
-      .catch(() => {
-        followUpPromoteDayRef.current = null;
-      });
-  }, [statusFilter, currentPage, loadFilteredJobs]);
+  const scheduleAmcJobCreation = useCallback(
+    () =>
+      scheduleAdminAmcJobCreation({
+        amcAutoCreateAttemptedRef,
+        statusFilter,
+        currentPage,
+        loadFilteredJobs,
+      }),
+    [statusFilter, currentPage, loadFilteredJobs]
+  );
 
-  const scheduleAmcJobCreation = useCallback(() => {
-    if (amcAutoCreateAttemptedRef.current) return;
-    amcAutoCreateAttemptedRef.current = true;
-
-    supabase.auth
-      .getSession()
-      .then(({ data: { session } }) => {
-        if (!session) {
-          amcAutoCreateAttemptedRef.current = false;
-          return;
-        }
-        db.amcContracts.createAMCServiceJobs().then((result) => {
-          if (result.error) {
-            console.error('Error creating AMC service jobs:', result.error);
-            amcAutoCreateAttemptedRef.current = false;
-          } else if (result.created > 0) {
-            toast.success(
-              `Created ${result.created} AMC service job${result.created > 1 ? 's' : ''} automatically`
-            );
-            loadFilteredJobs(statusFilter, currentPage);
-          }
-        });
-      })
-      .catch(() => {
-        amcAutoCreateAttemptedRef.current = false;
-      });
-  }, [statusFilter, currentPage, loadFilteredJobs]);
-
-  const loadDashboardData = async (options?: {
-    silent?: boolean;
-    skipOngoingFetch?: boolean;
-    skipTechniciansFetch?: boolean;
-  }) => {
-    const silent = options?.silent === true;
-    const skipOngoingFetch = options?.skipOngoingFetch === true;
-    // When the roster was just applied from a fresh live prefetch, skip the
-    // immediate re-fetch — the `get_technicians_for_admin` RPC otherwise runs
-    // twice on every cold boot (once in the prefetch, once here).
-    const skipTechniciansFetch = options?.skipTechniciansFetch === true;
-    try {
-      if (!silent) {
-        setLoading(true);
-      }
-
-      if (!silent) {
-        const sessionReady = await ensureAdminSupabaseSession();
-        if (!sessionReady) {
-          console.warn('[AdminDashboard] Skipping load — admin Supabase session not ready yet');
-          return;
-        }
-      }
-
-      scheduleAmcJobCreation();
-      scheduleFollowUpPromotion();
-
-      const [techniciansResult, jobCountsResult, ongoingResult] = await Promise.all([
-        skipTechniciansFetch
-          ? Promise.resolve({ data: null as Technician[] | null, error: null })
-          : db.technicians.getAllForDashboard(100),
-        db.jobs.getCounts(),
-        skipOngoingFetch && statusFilter === 'ONGOING'
-          ? Promise.resolve({ data: null as Job[] | null, error: null })
-          : statusFilter === 'ONGOING'
-            ? db.jobs.getOngoing(100)
-            : Promise.resolve({ data: null, error: null }),
-      ]);
-
-      if (jobCountsResult.data) {
-        setJobCounts(jobCountsResult.data);
-      }
-
-      if (techniciansResult.data) {
-        const transformedTechnicians = techniciansResult.data.map(transformTechnicianData);
-        techniciansRef.current = transformedTechnicians;
-        setTechnicians(transformedTechnicians);
-      } else if (techniciansResult.error) {
-        console.error('Failed to load technicians:', techniciansResult.error);
-        techniciansRef.current = [];
-        setTechnicians([]);
-      }
-
-      if (!skipOngoingFetch && statusFilter === 'ONGOING' && ongoingResult) {
-        if (ongoingResult.error) {
-          setJobs([]);
-        } else {
-          const list = ongoingResult.data || [];
-          setJobs(list);
-          ongoingJobsSnapshotRef.current = list;
-          setModuleOngoingJobsSnapshot(list);
-          setTotalCount(list.length);
-          setTotalPages(1);
-        }
-      } else if (!skipOngoingFetch && statusFilter !== 'ONGOING') {
-        await loadFilteredJobs(statusFilter, currentPage, { silent: true });
-      }
-
-      const jobsForCache =
-        skipOngoingFetch && statusFilter === 'ONGOING'
-          ? undefined
-          : statusFilter === 'ONGOING'
-            ? ongoingResult?.data ?? []
-            : undefined;
-
-      if (jobsForCache && techniciansResult.data) {
-        writeAdminDashboardCache({
-          savedAt: Date.now(),
-          jobs: jobsForCache,
-          technicianRows: techniciansResult.data,
-          jobCounts: jobCountsResult.data ?? {
-            ongoing: 0,
-            followup: 0,
-            denied: 0,
-            completed: 0,
-          },
-        });
-      }
-
-      void loadDashboardSecondary();
-    } catch (error) {
-      if (!silent) {
-        toast.error(
-          `Failed to load dashboard data: ${error instanceof Error ? error.message : 'Unknown error'}`
-        );
-      }
-    } finally {
-      if (!silent) {
-        setLoading(false);
-      }
-    }
-  };
+  const loadDashboardData = useCallback(
+    (options?: {
+      silent?: boolean;
+      skipOngoingFetch?: boolean;
+      skipTechniciansFetch?: boolean;
+    }) =>
+      loadAdminDashboardData(options, {
+        statusFilter,
+        currentPage,
+        scheduleAmcJobCreation,
+        scheduleFollowUpPromotion,
+        loadFilteredJobs,
+        loadDashboardSecondary,
+        techniciansRef,
+        ongoingJobsSnapshotRef,
+        setLoading,
+        setJobCounts,
+        setTechnicians,
+        setJobs,
+        setTotalCount,
+        setTotalPages,
+      }),
+    [
+      statusFilter,
+      currentPage,
+      scheduleAmcJobCreation,
+      scheduleFollowUpPromotion,
+      loadFilteredJobs,
+      loadDashboardSecondary,
+    ]
+  );
 
   const [isInitialLoad, setIsInitialLoad] = useState(
     () =>
@@ -2167,85 +1638,21 @@ const AdminDashboard = () => {
       initialOngoingJobs.length === 0
   );
   const dashboardLoadedWithSessionRef = useRef(false);
-  const adminRealtimeStatusRef = useRef<string | null>(null);
   const loadDashboardDataRef = useRef(loadDashboardData);
   loadDashboardDataRef.current = loadDashboardData;
 
-  const runDashboardLoadOnceSessionReady = useCallback(async () => {
-    if (dashboardLoadedWithSessionRef.current) return;
-
-    if (getModuleDashboardSessionReady()) {
-      const cached = readAdminDashboardCache();
-      if (cached) {
-        applyAdminSnapshot(cached);
-      }
-      setIsInitialLoad(false);
-      setLoading(false);
-      dashboardLoadedWithSessionRef.current = true;
-      try {
-        await loadDashboardDataRef.current({
-          silent: true,
-          skipOngoingFetch: statusFilter === 'ONGOING',
-          skipTechniciansFetch: Boolean(cached?.technicianRows?.length),
-        });
-      } catch (error) {
-        console.error('[AdminDashboard] Resume load failed:', error);
-      }
-      return;
-    }
-
-    let showedInstantData = false;
-    // True only when the roster/jobs came from the live prefetch (fresh, <1s old)
-    // rather than the sessionStorage snapshot (which can be up to 5 min stale and
-    // therefore must still be refreshed by loadDashboardData).
-    let appliedFreshPrefetch = false;
-    const cached = readAdminDashboardCache();
-    if (cached) {
-      applyAdminSnapshot(cached);
-      showedInstantData = true;
-      setIsInitialLoad(false);
-      setLoading(false);
-    } else {
-      setLoading(true);
-      setIsInitialLoad(true);
-    }
-
-    const sessionOk = await ensureAdminSupabaseSession(1_500);
-    if (!sessionOk) {
-      toast.error('Could not start your session. Please try again or refresh the page.');
-      setLoading(false);
-      setIsInitialLoad(false);
-      return;
-    }
-
-    if (!showedInstantData) {
-      const prefetched = await consumeAdminDashboardPrefetch();
-      if (prefetched) {
-        applyAdminSnapshot(prefetched);
-        showedInstantData = true;
-        appliedFreshPrefetch = true;
-        setIsInitialLoad(false);
-        setLoading(false);
-      }
-    }
-
-    try {
-      await loadDashboardDataRef.current({
-        silent: true,
-        skipOngoingFetch: showedInstantData && statusFilter === 'ONGOING',
-        // Roster is identical to what the prefetch just fetched — skip the
-        // duplicate get_technicians_for_admin RPC on this cold boot.
-        skipTechniciansFetch: appliedFreshPrefetch,
-      });
-      dashboardLoadedWithSessionRef.current = true;
-      setModuleDashboardSessionReady(true);
-    } catch (error) {
-      console.error('[AdminDashboard] Initial load failed:', error);
-    } finally {
-      setIsInitialLoad(false);
-      setLoading(false);
-    }
-  }, [applyAdminSnapshot, statusFilter]);
+  const runDashboardLoadOnceSessionReady = useCallback(
+    () =>
+      runAdminDashboardSessionBootstrap({
+        dashboardLoadedWithSessionRef,
+        statusFilter,
+        applyAdminSnapshot,
+        loadDashboardDataRef,
+        setIsInitialLoad,
+        setLoading,
+      }),
+    [applyAdminSnapshot, statusFilter]
+  );
 
   // Load dashboard only after admin JWT is ready (RLS on customers requires authenticated admin)
   useEffect(() => {
@@ -2753,6 +2160,22 @@ const AdminDashboard = () => {
     onResume: () => resumeAdminSync({ invalidateTabCaches: true }),
   });
 
+  useAdminJobsRealtime({
+    isInitialLoad,
+    isPollingEnabled,
+    statusFilter,
+    currentPage,
+    loadFilteredJobs,
+    loadJobCounts,
+    playCompletedJobSound,
+    setLastCheckedJobId,
+    setJobCounts,
+    setCustomerPriorServiceStatus,
+    jobIdsCompletedByAdminRef,
+    onRealtimeResubscribed: () =>
+      resumeAdminSyncRef.current({ invalidateTabCaches: false }),
+  });
+
   // Reload jobs when denied date filter changes
   useEffect(() => {
     if (isInitialLoad) return;
@@ -2946,376 +2369,22 @@ const AdminDashboard = () => {
     }
   }, [currentPage, statusFilter, loadFilteredJobs]);
 
-  // Initialize audio context on first user interaction (required for sound on hosted)
-  useEffect(() => {
-    const handleUserInteraction = async () => {
-      try {
-        const Ac = window.AudioContext || (window as any).webkitAudioContext;
-        if (!Ac) return;
-        if (audioContextRef.current?.state === 'closed') {
-          audioContextRef.current = null;
-        }
-        if (!audioContextRef.current) {
-          audioContextRef.current = new Ac();
-        }
-        const ctx = audioContextRef.current;
-        if (ctx.state === 'suspended') {
-          await ctx.resume();
-        }
-      } catch {
-        // ignore
-      }
-      document.removeEventListener('click', handleUserInteraction);
-      document.removeEventListener('keydown', handleUserInteraction);
-      document.removeEventListener('pointerdown', handleUserInteraction);
-      document.removeEventListener('touchstart', handleUserInteraction);
-    };
-    document.addEventListener('click', handleUserInteraction, { once: true });
-    document.addEventListener('keydown', handleUserInteraction, { once: true });
-    // Mobile/PWA: click may not fire reliably; prime on pointer/touch too.
-    document.addEventListener('pointerdown', handleUserInteraction, { once: true });
-    document.addEventListener('touchstart', handleUserInteraction, { once: true });
-    return () => {
-      document.removeEventListener('click', handleUserInteraction);
-      document.removeEventListener('keydown', handleUserInteraction);
-      document.removeEventListener('pointerdown', handleUserInteraction);
-      document.removeEventListener('touchstart', handleUserInteraction);
-    };
-  }, []);
-
-  // Track EVERY scheduled alert oscillator (not just the latest). Rapid intent
-  // events can start several plays; if we only kept the last one, earlier
-  // oscillators became orphans that beeped for their full duration with nothing
-  // able to stop them. A Set lets stop()/mute kill all of them at once.
-  type AlertNode = { ctx: AudioContext; osc: OscillatorNode; gain: GainNode };
-  const activeAlertsRef = React.useRef<Set<AlertNode>>(new Set());
-  // Monotonic token: bumped on every stop AND every play start. An in-flight
-  // (async) play compares its captured token after `await ctx.resume()`; if it
-  // no longer matches, a stop/newer play happened and it aborts.
-  const alertTokenRef = React.useRef(0);
-
-  // Pure teardown: silence + stop + disconnect ALL active alert oscillators.
-  const teardownActiveAlert = useCallback(() => {
-    const nodes = activeAlertsRef.current;
-    if (nodes.size === 0) return;
-    nodes.forEach((node) => {
-      const now = node.ctx.currentTime;
-      try {
-        node.gain.gain.cancelScheduledValues(now);
-      } catch {
-        /* ignore */
-      }
-      try {
-        // Fast ramp down to avoid clicks.
-        node.gain.gain.setValueAtTime(Math.max(node.gain.gain.value, 0.0001), now);
-        node.gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.03);
-      } catch {
-        /* ignore */
-      }
-      try {
-        node.osc.stop(now + 0.04);
-      } catch {
-        /* ignore */
-      }
-      try {
-        node.osc.disconnect();
-        node.gain.disconnect();
-      } catch {
-        /* ignore */
-      }
-    });
-    nodes.clear();
-  }, []);
-
-  const stopNotificationSound = useCallback(() => {
-    // Invalidate any in-flight play that is still awaiting ctx.resume().
-    alertTokenRef.current++;
-    teardownActiveAlert();
-  }, [teardownActiveAlert]);
-
-  // Play alert sound (used by live booking intent banner).
-  const playNotificationSound = useCallback(async () => {
-    // Claim this playback. If a stop (mute/dismiss) or a newer play happens while
-    // we await ctx.resume() below, the token changes and we abort before starting.
-    const myToken = ++alertTokenRef.current;
-    try {
-      const Ac = window.AudioContext || (window as any).webkitAudioContext;
-      if (!Ac) return;
-      if (audioContextRef.current?.state === 'closed') {
-        audioContextRef.current = null;
-      }
-      if (!audioContextRef.current) {
-        audioContextRef.current = new Ac();
-      }
-      const ctx = audioContextRef.current;
-      if (ctx.state === 'suspended') {
-        await ctx.resume();
-      }
-      if (ctx.state !== 'running') {
-        toast.info('Click anywhere on this page once to enable sound', { duration: 5000 });
-        return;
-      }
-      // Aborted while awaiting resume (e.g. user hit Mute/Done) — do not start.
-      if (myToken !== alertTokenRef.current) return;
-      // If a previous alert is still playing, stop it first (no token bump).
-      teardownActiveAlert();
-      const t = ctx.currentTime;
-      // Short attention beep (was 20s, which felt like it "wouldn't stop").
-      const durationSec = 4;
-      const beepDuration = 0.5;
-      const gap = 0.25;
-      const cycleSec = beepDuration + gap;
-      const beepCount = Math.max(1, Math.ceil((durationSec + gap) / cycleSec));
-      const endsAt = t + durationSec;
-
-      // Most efficient: single oscillator, scheduled gain envelope for beeps.
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.frequency.value = 800;
-      osc.type = 'sine';
-
-      // Default silence.
-      gain.gain.setValueAtTime(0.0001, t);
-
-      for (let i = 0; i < beepCount; i++) {
-        const start = t + i * cycleSec;
-        if (start >= endsAt) break;
-        const end = Math.min(start + beepDuration, endsAt);
-
-        // Match old per-beep envelope: 0.25 -> 0.01 exponential by beep end.
-        gain.gain.setValueAtTime(0.25, start);
-        gain.gain.exponentialRampToValueAtTime(0.01, end);
-
-        // Ensure the gap is silent (otherwise tail can bleed into next beep).
-        const after = Math.min(end + 0.001, endsAt);
-        gain.gain.setValueAtTime(0.0001, after);
-      }
-
-      // Safety: ensure we end silent.
-      gain.gain.setValueAtTime(0.0001, endsAt);
-
-      const entry: AlertNode = { ctx, osc, gain };
-      activeAlertsRef.current.add(entry);
-      // Self-remove from the active set once it finishes naturally, so the Set
-      // never grows unbounded and stop() only iterates what's truly playing.
-      osc.onended = () => {
-        activeAlertsRef.current.delete(entry);
-      };
-
-      osc.start(t);
-      osc.stop(endsAt + 0.05);
-    } catch (e) {
-      console.warn('Notification sound failed:', e);
-    }
-  }, [teardownActiveAlert]);
-
-  // Completed job sound: restore the older short multi-beep pattern.
-  const playCompletedJobSound = useCallback(async () => {
-    try {
-      const Ac = window.AudioContext || (window as any).webkitAudioContext;
-      if (!Ac) return;
-      if (audioContextRef.current?.state === 'closed') {
-        audioContextRef.current = null;
-      }
-      if (!audioContextRef.current) {
-        audioContextRef.current = new Ac();
-      }
-      const ctx = audioContextRef.current;
-      if (ctx.state === 'suspended') {
-        await ctx.resume();
-      }
-      if (ctx.state !== 'running') {
-        toast.info('Click anywhere on this page once to enable sound', { duration: 5000 });
-        return;
-      }
-
-      const t = ctx.currentTime;
-      const beepDuration = 0.25;
-      const gap = 0.25;
-
-      for (let i = 0; i < 5; i++) {
-        const start = t + i * (beepDuration + gap);
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.frequency.value = 800;
-        osc.type = 'sine';
-        gain.gain.setValueAtTime(0.25, start);
-        gain.gain.exponentialRampToValueAtTime(0.01, start + beepDuration);
-        osc.start(start);
-        osc.stop(start + beepDuration);
-      }
-    } catch (e) {
-      console.warn('Completed job sound failed:', e);
-    }
-  }, []);
-
-
-
-  // Single channel: new job INSERT (when polling enabled) + COMPLETED UPDATE (completion sound)
-  useEffect(() => {
-    if (isInitialLoad) return;
-
-    const seedCompletedIds = async () => {
-      try {
-        const { data: rows, error } = await supabase
-          .from('jobs')
-          .select('id')
-          .eq('status', 'COMPLETED')
-          .order('created_at', { ascending: false })
-          .limit(15);
-        if (!error && rows?.length) {
-          rows.forEach((j: { id: string }) => jobIdsCompletedByAdminRef.current.add(j.id));
-        }
-      } catch {
-        // ignore
-      }
-    };
-    const seedTimeout = setTimeout(seedCompletedIds, 2000);
-
-    let channel = supabase.channel('admin-jobs-realtime');
-    if (isPollingEnabled) {
-      channel = channel.on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'jobs' },
-        (payload: { new: Record<string, unknown> }) => {
-          const row = payload.new as { id: string; status?: string };
-          if (row.id) setLastCheckedJobId(row.id);
-          const status = (row.status || 'PENDING') as string;
-          if (['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(status)) {
-            setJobCounts((prev) => ({ ...prev, ongoing: (prev.ongoing || 0) + 1 }));
-          }
-          loadFilteredJobs(statusFilter, 1);
-        }
-      );
-    }
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'jobs',
-          filter: 'status=eq.COMPLETED',
-        },
-        (payload: { new: Record<string, unknown> }) => {
-          const row = payload.new as {
-            id: string;
-            customer_id?: string | null;
-            completed_at?: string | null;
-            end_time?: string | null;
-          };
-          // Flip the returning-customer map immediately so the blue indicator turns on
-          // without waiting for a manual refresh of the admin dashboard.
-          if (row.customer_id) {
-            setCustomerPriorServiceStatus((prev) =>
-              prev[row.customer_id as string] ? prev : { ...prev, [row.customer_id as string]: true }
-            );
-          }
-          if (jobIdsCompletedByAdminRef.current.has(row.id)) return;
-          const completedAt = row.completed_at || row.end_time;
-          if (completedAt) {
-            const t = new Date(completedAt).getTime();
-            if (Date.now() - t > 60000) return;
-          }
-          jobIdsCompletedByAdminRef.current.add(row.id);
-          playCompletedJobSound();
-          void loadJobCounts();
-          if (statusFilter === 'COMPLETED') {
-            void loadFilteredJobs('COMPLETED', currentPage, { silent: true });
-          } else {
-            // Warm page-1 cache so opening Completed after the sound is instant.
-            void loadFilteredJobs('COMPLETED', 1, { silent: true, cacheOnly: true });
-            if (statusFilter === 'ONGOING') {
-              void loadFilteredJobs('ONGOING', 1, { silent: true });
-            }
-          }
-        }
-      )
-      .subscribe((status) => {
-        const prev = adminRealtimeStatusRef.current;
-        adminRealtimeStatusRef.current = status;
-        if (status === 'SUBSCRIBED' && prev != null && prev !== 'SUBSCRIBED') {
-          void resumeAdminSyncRef.current({ invalidateTabCaches: false });
-        }
-      });
-
-    return () => {
-      clearTimeout(seedTimeout);
-      supabase.removeChannel(channel);
-    };
-  }, [isInitialLoad, isPollingEnabled, statusFilter, currentPage, loadFilteredJobs, loadJobCounts, playCompletedJobSound]);
-
   const handleDeleteCustomer = async () => {
-    if (!customerToDelete) return;
-    if (isManager) {
-      toast.error(managerRestrictedTitle);
-      return;
-    }
-
-    try {
-      const { error, data } = await db.customers.delete(customerToDelete.id);
-      
-      if (error) {
-        console.error('Delete customer error details:', {
-          error,
-          customerId: customerToDelete.id,
-          customer_id: customerToDelete.customer_id || customerToDelete.customerId,
-          errorCode: error.code,
-          errorMessage: error.message,
-          errorDetails: error.details,
-          errorHint: error.hint
-        });
-        throw new Error(error.message || 'Failed to delete customer. Check RLS policies.');
-      }
-      
-      // Verify deletion succeeded
-      if (data === null || data === undefined) {
-        // Check if customer still exists
-        const { data: verifyData } = await db.customers.getById(customerToDelete.id);
-        if (verifyData) {
-          throw new Error('Customer deletion failed - customer still exists. Check RLS policies.');
-        }
-      }
-      
-      toast.success(`Customer ${customerToDelete.customer_id || customerToDelete.customerId} deleted successfully`);
-      
-      // Remove from local state
-      setCustomers(customers.filter(c => c.id !== customerToDelete.id));
-      
-      // Also remove jobs for this customer from local state
-      // (Database should cascade delete, but we'll also clean up local state)
-      setJobs(prevJobs => prevJobs.filter(job => {
-        const jobCustomerId = (job as any).customer_id || job.customerId;
-        return jobCustomerId !== customerToDelete.id;
-      }));
-      
-      // Clear customer jobs cache
-      setCustomerJobs(prev => {
-        const updated = { ...prev };
-        delete updated[customerToDelete.id];
-        return updated;
-      });
-      
-      setDeleteDialogOpen(false);
-      setCustomerToDelete(null);
-      
-      // Reload dashboard data to ensure consistency
-      await loadDashboardData();
-      
-      // Also reload filtered jobs if we're viewing a filtered view
-      // This ensures jobs for deleted customers are removed from the view
-      if (statusFilter === 'COMPLETED' || statusFilter === 'CANCELLED') {
-        await loadFilteredJobs(statusFilter, currentPage);
-      }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      console.error('Error deleting customer:', error);
-      toast.error(`Failed to delete customer: ${errorMessage}`);
-    }
+    await deleteAdminCustomer({
+      customerToDelete,
+      isManager,
+      managerRestrictedTitle,
+      customers,
+      statusFilter,
+      currentPage,
+      setCustomers,
+      setJobs,
+      setCustomerJobs,
+      setDeleteDialogOpen,
+      setCustomerToDelete,
+      loadDashboardData,
+      loadFilteredJobs,
+    });
   };
 
   // Parse database service_type value back to array of service types
@@ -3455,1045 +2524,19 @@ const AdminDashboard = () => {
     openAdminModal('edit-customer', { customerId: customer.id });
   }, [openAdminModal]);
 
-  const handleUpdateCustomer = async () => {
-    if (!editingCustomer) return;
-
-    setIsUpdating(true);
-    try {
-      // Update address and location with Google location if provided
-      // Store complete address in street field, keep other fields for compatibility
-      const updatedAddress = {
-        street: editFormData.address.street, // Complete address
-        area: editFormData.address.area,
-        city: editFormData.address.city,
-        state: editFormData.address.state,
-        pincode: editFormData.address.pincode
-      };
-
-      // Save location - include googleLocation if provided
-      const updatedLocation: any = {
-        latitude: editFormData.location.latitude || 0,
-        longitude: editFormData.location.longitude || 0,
-        formattedAddress: editFormData.address.street || editFormData.location.formattedAddress || '',
-      };
-      
-      // Always include googleLocation if it exists in editFormData or previous location
-      if (editFormData.google_location && editFormData.google_location.trim()) {
-        updatedLocation.googleLocation = editFormData.google_location;
-      } else if ((editFormData.location as any)?.googleLocation) {
-        // Preserve existing googleLocation if not being updated
-        updatedLocation.googleLocation = (editFormData.location as any).googleLocation;
-      }
-
-      // Prepare brand and model values - ensure we have equipment data
-      console.log('🔍 Equipment data before processing:', {
-        equipment: editFormData.equipment,
-        equipmentKeys: Object.keys(editFormData.equipment || {}),
-        equipmentValues: Object.values(editFormData.equipment || {}),
-        serviceTypes: editFormData.service_types
-      });
-
-      // Build brand and model arrays based on service types order
-      const brands: string[] = [];
-      const models: string[] = [];
-      
-      editFormData.service_types.forEach((serviceType: string) => {
-        const equipment = editFormData.equipment[serviceType];
-        if (equipment) {
-          const brand = equipment.brand?.trim() || '';
-          const model = equipment.model?.trim() || '';
-          brands.push(brand);
-          models.push(model);
-          console.log(`  ${serviceType}: brand="${brand}", model="${model}"`);
-        } else {
-          brands.push('');
-          models.push('');
-          console.log(`  ${serviceType}: no equipment data`);
-        }
-      });
-
-      const brandValue = brands.join(', ');
-      const modelValue = models.join(', ');
-      
-      console.log('📦 Final brand/model values:', {
-        customerId: editingCustomer.id,
-        brandValue,
-        modelValue,
-        brandLength: brandValue.length,
-        modelLength: modelValue.length,
-        brandsArray: brands,
-        modelsArray: models
-      });
-
-      const updateData = {
-        full_name: editFormData.full_name,
-        phone: editFormData.phone,
-        alternate_phone: editFormData.alternate_phone,
-        email: editFormData.email,
-        service_type: mapServiceTypesToDbValue(editFormData.service_types),
-        brand: brandValue,
-        model: modelValue,
-        preferred_language: (editFormData.native_language || 'ENGLISH') as 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU',
-        preferred_time_slot: (editingCustomer as any).preferred_time_slot || editingCustomer.preferredTimeSlot || 'MORNING',
-        status: editFormData.status as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
-        notes: editFormData.notes,
-        visible_address: editFormData.visible_address ? editFormData.visible_address.trim() : '',
-        custom_time: editFormData.custom_time || null,
-        has_prefilter: editFormData.has_prefilter,
-        address: updatedAddress,
-        location: updatedLocation
-      };
-
-      console.log('Update payload:', updateData);
-      console.log('🔍 Prefilter being saved:', {
-        fromFormData: editFormData.has_prefilter,
-        inUpdatePayload: updateData.has_prefilter,
-        type: typeof editFormData.has_prefilter
-      });
-      console.log('📍 visible_address being saved:', {
-        fromFormData: editFormData.visible_address,
-        inUpdatePayload: updateData.visible_address,
-        manuallyEdited: locationManuallyEditedRef.current
-      });
-
-      const { data: updatedCustomerFromDb, error } = await db.customers.update(editingCustomer.id, updateData);
-
-      if (error) {
-        console.error('Database update error:', error);
-        throw new Error(error.message);
-      }
-      
-      console.log('✅ Updated customer from DB:', updatedCustomerFromDb);
-      console.log('🔍 Prefilter in DB response:', {
-        has_prefilter: updatedCustomerFromDb?.has_prefilter,
-        type: typeof updatedCustomerFromDb?.has_prefilter
-      });
-      console.log('📍 visible_address after save:', updatedCustomerFromDb?.visible_address);
-      console.log('📋 Brand/Model in DB response:', {
-        brand: updatedCustomerFromDb?.brand,
-        model: updatedCustomerFromDb?.model,
-        brandType: typeof updatedCustomerFromDb?.brand,
-        modelType: typeof updatedCustomerFromDb?.model
-      });
-
-      // Update local state using the data returned from DB update (ensures location.googleLocation is included)
-      if (updatedCustomerFromDb) {
-        const transformedCustomer = transformCustomerData(updatedCustomerFromDb);
-        console.log('🔄 Transformed customer:', {
-          brand: transformedCustomer.brand,
-          model: transformedCustomer.model
-        });
-        setCustomers(prevCustomers => 
-          prevCustomers.map(c => c.id === editingCustomer.id ? transformedCustomer : c)
-        );
-        patchCustomerContactOnJobs(editingCustomer.id, {
-          email: transformedCustomer.email ?? null,
-          phone: transformedCustomer.phone ?? null,
-          alternate_phone:
-            (transformedCustomer as any).alternate_phone ??
-            transformedCustomer.alternatePhone ??
-            null,
-          full_name:
-            (transformedCustomer as any).full_name ?? transformedCustomer.fullName ?? null,
-        });
-      } else {
-        // Fallback: update local state manually if DB doesn't return updated data
-        setCustomers(prevCustomers => {
-          return prevCustomers.map(c => {
-            if (c.id === editingCustomer.id) {
-              // Create a completely new location object with googleLocation
-              const newLocation = {
-                latitude: updatedLocation.latitude,
-                longitude: updatedLocation.longitude,
-                formattedAddress: updatedLocation.formattedAddress,
-                googlePlaceId: c.location?.googlePlaceId,
-                googleLocation: updatedLocation.googleLocation || null
-              };
-              
-              // Create a new customer object with updated location
-              return { 
-                ...c, 
-                full_name: editFormData.full_name,
-                alternatePhone: editFormData.alternate_phone,
-                service_type: mapServiceTypesToDbValue(editFormData.service_types),
-                brand: Object.values(editFormData.equipment).map(eq => eq.brand).join(', '),
-                model: Object.values(editFormData.equipment).map(eq => eq.model).join(', '),
-                behavior: editFormData.behavior,
-                preferredLanguage: (editFormData.native_language || 'ENGLISH') as 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU',
-                status: editFormData.status as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
-                notes: editFormData.notes,
-                address: updatedAddress,
-                location: newLocation as any
-              };
-            }
-            return c;
-          });
-        });
-      }
-
-      // Reload brands/models from DB after update
-      await loadBrandsAndModels();
-      
-      // Update last saved form data and clear auto-save timer
-      lastSavedFormDataRef.current = JSON.stringify(editFormData);
-      hasUnsavedChangesRef.current = false;
-      if (autoSaveTimerRef.current) {
-        clearTimeout(autoSaveTimerRef.current);
-        autoSaveTimerRef.current = null;
-      }
-      
-      toast.success('Customer updated successfully!');
-      setEditDialogOpen(false);
-      setEditingCustomer(null);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      console.error('Error updating customer:', error);
-      toast.error(`Failed to update customer: ${errorMessage}`);
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
-  const handleEditFormChange = (field: string, value: string | string[] | boolean | null) => {
-    setEditFormData(prev => ({
-      ...prev,
-      [field]: value
-    }));
-  };
-
-  // Manual function to extract location from address (only called when user clicks "Fetch Location")
-  const handleFetchLocationFromAddress = () => {
-    const address = editFormData?.address?.street || '';
-    const currentAddress = address.trim();
-    const currentLocation = editFormData?.visible_address || '';
-    
-    if (!currentAddress || currentAddress.length === 0) {
-      toast.error('Please enter a complete address first');
-      return;
-    }
-    
-    // Only extract if location is empty - don't overwrite manual changes
-    if (currentLocation && currentLocation.trim().length > 0) {
-      toast.info('Location already set. Clear it first if you want to fetch a new one.');
-      return;
-    }
-    
-    const extracted = extractLocationFromAddressString(currentAddress);
-    if (extracted) {
-      handleEditFormChange('visible_address', extracted);
-      locationManuallyEditedRef.current = false; // Reset flag since we're extracting
-      toast.success(`Location extracted: ${extracted}`);
-      console.log('✅ Extracted location from address:', extracted, 'from:', currentAddress);
-    } else {
-      toast.warning('Could not extract location from address. Please enter manually.');
-      console.log('⚠️ Could not extract location from address:', currentAddress);
-    }
-  };
-
-  const handleEditServiceTypeToggle = (serviceType: string) => {
-    setEditFormData(prev => {
-      const newServiceTypes = prev.service_types.includes(serviceType)
-        ? prev.service_types.filter(type => type !== serviceType)
-        : [...prev.service_types, serviceType];
-      
-      // Initialize equipment for new service types
-      const newEquipment = { ...prev.equipment };
-      if (!prev.service_types.includes(serviceType)) {
-        newEquipment[serviceType] = { brand: '', model: '' };
-      } else {
-        // Remove equipment data when service type is deselected
-        delete newEquipment[serviceType];
-      }
-      
-      return {
-        ...prev,
-        service_types: newServiceTypes,
-        equipment: newEquipment
-      };
-    });
-  };
-
-  const handleEditEquipmentChange = (serviceType: string, field: 'brand' | 'model', value: string, showSuggestions: boolean = true) => {
-    console.log(`🔄 Equipment change: ${serviceType}.${field} = "${value}"`);
-    setEditFormData(prev => {
-      const updatedEquipment = {
-        ...prev.equipment,
-        [serviceType]: {
-          ...(prev.equipment[serviceType] || { brand: '', model: '' }),
-          [field]: value
-        }
-      };
-      console.log(`  Updated equipment for ${serviceType}:`, updatedEquipment[serviceType]);
-      return {
-        ...prev,
-        equipment: updatedEquipment
-      };
-    });
-    
-    // Show suggestions if field is brand or model and showSuggestions is true
-    if (showSuggestions) {
-      if (field === 'brand') {
-        handleEditBrandInput(serviceType, value);
-      } else if (field === 'model') {
-        handleEditModelInput(serviceType, value);
-      }
-    }
-  };
-
-  // Handle brand input with suggestions for edit customer form
-  const handleEditBrandInput = (serviceType: string, value: string) => {
-    if (value.trim() === '') {
-      setShowBrandSuggestions(false);
-      return;
-    }
-    
-    const searchTerm = value.toLowerCase();
-    
-    // Combine local brands and DB brands
-    const allLocalBrands: string[] = [];
-    Object.values(brandData).forEach(brands => {
-      allLocalBrands.push(...brands);
-    });
-    
-    const allBrands = [...new Set([...allLocalBrands, ...dbBrands])];
-    
-    // Filter brands that match the search term
-    const filtered = allBrands.filter(brand => 
-      brand.toLowerCase().includes(searchTerm) && 
-      brand.toLowerCase() !== searchTerm.toLowerCase()
-    ).slice(0, 10);
-    
-    setBrandSuggestions(filtered);
-    setShowBrandSuggestions(filtered.length > 0);
-  };
-
-  // Handle model input with suggestions for edit customer form
-  const handleEditModelInput = (serviceType: string, value: string) => {
-    if (value.trim() === '') {
-      setShowModelSuggestions(false);
-      return;
-    }
-    
-    const searchTerm = value.toLowerCase();
-    const brand = editFormData.equipment[serviceType]?.brand || '';
-    
-    // Get models from local data
-    const localModels: string[] = [];
-    if (serviceType && brand && modelData[serviceType as keyof typeof modelData]) {
-      const brandKey = Object.keys(modelData[serviceType as keyof typeof modelData]).find(key => 
-        key.toLowerCase() === brand.toLowerCase()
-      );
-      if (brandKey && modelData[serviceType as keyof typeof modelData][brandKey as keyof typeof modelData[typeof serviceType]]) {
-        localModels.push(...(modelData[serviceType as keyof typeof modelData][brandKey as keyof typeof modelData[typeof serviceType]] || []));
-      }
-    }
-    
-    // Combine local models and DB models
-    const allModels = [...new Set([...localModels, ...dbModels])];
-    
-    // Filter models that match the search term
-    const filtered = allModels.filter(model => 
-      model.toLowerCase().includes(searchTerm) && 
-      model.toLowerCase() !== searchTerm.toLowerCase()
-    ).slice(0, 10);
-    
-    setModelSuggestions(filtered);
-    setShowModelSuggestions(filtered.length > 0);
-  };
-
-  // Select brand from suggestions for edit customer form
-  const selectEditBrand = (serviceType: string, brand: string) => {
-    // If "Not specified" is selected, clear the field
-    if (brand === 'Not specified' || brand.toLowerCase() === 'not specified') {
-      handleEditEquipmentChange(serviceType, 'brand', '', false);
-    } else {
-      handleEditEquipmentChange(serviceType, 'brand', brand, false);
-    }
-    setShowBrandSuggestions(false);
-  };
-
-  // Select model from suggestions for edit customer form
-  const selectEditModel = (serviceType: string, model: string) => {
-    // If "Not specified" is selected, clear the field
-    if (model === 'Not specified' || model.toLowerCase() === 'not specified') {
-      handleEditEquipmentChange(serviceType, 'model', '', false);
-    } else {
-      handleEditEquipmentChange(serviceType, 'model', model, false);
-    }
-    setShowModelSuggestions(false);
-  };
-
-  // Function to geocode address and update coordinates
-  const geocodeAddress = async (address: string) => {
-    if (!address.trim()) return;
-    
-    try {
-      const token = await resolveSupabaseAccessTokenForApi();
-      if (!token) {
-        toast.error('Please sign in again to geocode addresses.');
-        return;
-      }
-
-      const response = await fetch(`/.netlify/functions/geocode`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ query: address })
-      });
-      
-      if (!response.ok) {
-        throw new Error('Geocoding failed');
-      }
-      
-      const data = await response.json();
-      
-      if (data && data.length > 0) {
-        const result = data[0]; // Get the first result
-        const lat = parseFloat(result.lat);
-        const lng = parseFloat(result.lon);
-        
-        if (!isNaN(lat) && !isNaN(lng)) {
-          // Update location with new coordinates
-          setEditFormData(prev => ({
-            ...prev,
-            location: {
-              latitude: lat,
-              longitude: lng,
-              formattedAddress: result.display_name || address
-            }
-          }));
-          
-          toast.success('Address geocoded successfully!');
-        } else {
-          throw new Error('Invalid coordinates received');
-        }
-      } else {
-        throw new Error('No location found for this address');
-      }
-    } catch (error) {
-      toast.error('Failed to geocode address. Please check the address or enter coordinates manually.');
-    }
-  };
-
-  // Function to handle address field changes
-  const handleAddressFieldChange = (field: string, value: string) => {
-    setEditFormData(prev => ({
-      ...prev,
-      address: {
-        ...prev.address,
-        [field]: value
-      }
-    }));
-    
-    // If Complete Address (street) changed, try to extract location immediately
-    // Note: Location extraction is now handled in the useEffect that watches address.street
-    // This ensures it only extracts when address actually changes, not on every keystroke
-  };
-
-  // Function to extract coordinates from Google Maps link
-  // Prioritizes more precise coordinates (!3d!4d format) over less precise ones (@ format)
-  const extractCoordinatesFromGoogleMapsLink = (url: string): { latitude: number; longitude: number } | null => {
-    try {
-      // Handle different Google Maps URL formats
-      let lat: number | null = null;
-      let lng: number | null = null;
-      
-      // Format 1 (HIGHEST PRIORITY): !3d!4d format - Most precise coordinates
-      // Example: /data=!3d12.8998394!4d77.6507961
-      // This format contains the exact location coordinates
-      const preciseMatch = url.match(/!3d([0-9.-]+)!4d([0-9.-]+)/);
-      if (preciseMatch) {
-        lat = parseFloat(preciseMatch[1]);
-        lng = parseFloat(preciseMatch[2]);
-        if (lat && lng && !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-          return { latitude: lat, longitude: lng };
-        }
-      }
-      
-      // Format 2: https://www.google.com/maps/place/12.9716,77.5946
-      const placeMatch = url.match(/\/place\/([0-9.-]+),([0-9.-]+)/);
-      if (placeMatch) {
-        lat = parseFloat(placeMatch[1]);
-        lng = parseFloat(placeMatch[2]);
-        if (lat && lng && !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-          return { latitude: lat, longitude: lng };
-        }
-      }
-      
-      // Format 3: https://www.google.com/maps/search/12.914741,+77.551615
-      // This is a search URL with coordinates directly in the path
-      const searchPathMatch = url.match(/\/search\/([0-9.-]+),\+?([0-9.-]+)/);
-      if (searchPathMatch) {
-        lat = parseFloat(searchPathMatch[1]);
-        lng = parseFloat(searchPathMatch[2]);
-        if (lat && lng && !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-          return { latitude: lat, longitude: lng };
-        }
-      }
-      
-      // Format 4: https://www.google.com/maps/@12.9716,77.5946,15z
-      // Note: This is less precise than !3d!4d format, so we check it after
-      const atMatch = url.match(/@([0-9.-]+),([0-9.-]+)/);
-      if (atMatch) {
-        lat = parseFloat(atMatch[1]);
-        lng = parseFloat(atMatch[2]);
-        if (lat && lng && !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-          return { latitude: lat, longitude: lng };
-        }
-      }
-      
-      // Format 5: https://maps.google.com/maps?q=12.9716,77.5946
-      const queryMatch = url.match(/[?&]q=([0-9.-]+),([0-9.-]+)/);
-      if (queryMatch) {
-        lat = parseFloat(queryMatch[1]);
-        lng = parseFloat(queryMatch[2]);
-        if (lat && lng && !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-          return { latitude: lat, longitude: lng };
-        }
-      }
-      
-      // Format 6: https://www.google.com/maps/search/?api=1&query=12.9716,77.5946
-      const searchMatch = url.match(/[?&]query=([0-9.-]+),([0-9.-]+)/);
-      if (searchMatch) {
-        lat = parseFloat(searchMatch[1]);
-        lng = parseFloat(searchMatch[2]);
-        if (lat && lng && !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-          return { latitude: lat, longitude: lng };
-        }
-      }
-      
-      return null;
-    } catch (error) {
-      return null;
-    }
-  };
-
-  /** Lat/lng for job destination (customer location preferred). Works on slim or full job rows. */
-  const resolveJobDestinationCoords = (jobRow: Job | any): { lat: number; lng: number } | null =>
-    resolveJobDestinationCoordsSync(jobRow);
-
-  // Helper function to ensure Google Maps is loaded
-  const ensureGoogleMapsLoaded = useCallback((): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      // Check if already loaded
-      if ((window as any).google && (window as any).google.maps && (window as any).google.maps.DistanceMatrixService) {
-        resolve();
-        return;
-      }
-
-      const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-      if (!apiKey) {
-        reject(new Error('Google Maps API key not configured'));
-        return;
-      }
-
-      // Check if script is already being loaded
-      const existingScript = document.querySelector('script[src*="maps.googleapis.com"]');
-      if (existingScript) {
-        // Wait for it to load
-        const checkInterval = setInterval(() => {
-          if ((window as any).google && (window as any).google.maps && (window as any).google.maps.DistanceMatrixService) {
-            clearInterval(checkInterval);
-            resolve();
-          }
-        }, 100);
-
-        // Timeout after 10 seconds
-        setTimeout(() => {
-          clearInterval(checkInterval);
-          if ((window as any).google && (window as any).google.maps && (window as any).google.maps.DistanceMatrixService) {
-            resolve();
-          } else {
-            reject(new Error('Google Maps failed to load'));
-          }
-        }, 10000);
-        return;
-      }
-
-      // Load the script
-      const script = document.createElement('script');
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`;
-      script.async = true;
-      script.defer = true;
-      
-      script.onload = () => {
-        console.log('Google Maps script loaded, waiting for DistanceMatrixService...');
-        // Wait a bit for DistanceMatrixService to be available
-        let attempts = 0;
-        const maxAttempts = 50; // 5 seconds max
-        const checkInterval = setInterval(() => {
-          attempts++;
-          if ((window as any).google && (window as any).google.maps && (window as any).google.maps.DistanceMatrixService) {
-            console.log('DistanceMatrixService is now available');
-            clearInterval(checkInterval);
-            resolve();
-          } else if (attempts >= maxAttempts) {
-            console.error('DistanceMatrixService not available after waiting');
-            clearInterval(checkInterval);
-            reject(new Error('DistanceMatrixService not available after loading'));
-          }
-        }, 100);
-      };
-      
-      script.onerror = () => {
-        reject(new Error('Failed to load Google Maps'));
-      };
-      
-      document.head.appendChild(script);
-    });
-  }, []);
-
-  const haversineDistanceMeters = (a: { lat: number; lng: number }, b: { lat: number; lng: number }): number => {
-    const toRad = (deg: number) => (deg * Math.PI) / 180;
-    const R = 6371000; // meters
-    const dLat = toRad(b.lat - a.lat);
-    const dLng = toRad(b.lng - a.lng);
-    const lat1 = toRad(a.lat);
-    const lat2 = toRad(b.lat);
-    const s1 = Math.sin(dLat / 2);
-    const s2 = Math.sin(dLng / 2);
-    const h = s1 * s1 + Math.cos(lat1) * Math.cos(lat2) * s2 * s2;
-    const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
-    return R * c;
-  };
-
-  const formatDistanceKm = (meters: number): string => {
-    if (!Number.isFinite(meters) || meters <= 0) return '';
-    const km = meters / 1000;
-    if (km < 1) return `${km.toFixed(2)} km`;
-    if (km < 10) return `${km.toFixed(2)} km`;
-    return `${km.toFixed(1)} km`;
-  };
-
-  // Calculate distance and time using Google Maps Distance Matrix API
-  const calculateDistanceAndTime = useCallback(async (
-    origin: { lat: number; lng: number },
-    destination: { lat: number; lng: number },
-    customerId: string
-  ) => {
-    console.log('Starting distance calculation:', { origin, destination, customerId });
-    
-    // Validate coordinates
-    if (!origin || !destination) {
-      console.error('Invalid origin or destination');
-      setCustomerDistances(prev => ({
-        ...prev,
-        [customerId]: { ...prev[customerId], isCalculating: false }
-      }));
-      toast.error('Invalid location coordinates');
-      return;
-    }
-
-    // Validate coordinate ranges
-    if (
-      !origin.lat || !origin.lng || 
-      !destination.lat || !destination.lng ||
-      origin.lat === 0 && origin.lng === 0 ||
-      destination.lat === 0 && destination.lng === 0 ||
-      origin.lat < -90 || origin.lat > 90 ||
-      origin.lng < -180 || origin.lng > 180 ||
-      destination.lat < -90 || destination.lat > 90 ||
-      destination.lng < -180 || destination.lng > 180
-    ) {
-      console.error('Invalid coordinate values:', { origin, destination });
-      setCustomerDistances(prev => ({
-        ...prev,
-        [customerId]: { ...prev[customerId], isCalculating: false }
-      }));
-      toast.error('Invalid location coordinates. Please check the customer location.');
-      return;
-    }
-    
-    // Set calculating state
-    setCustomerDistances(prev => ({
-      ...prev,
-      [customerId]: { ...prev[customerId], isCalculating: true }
-    }));
-
-    try {
-      // Ensure Google Maps is loaded
-      console.log('Ensuring Google Maps is loaded...');
-      await ensureGoogleMapsLoaded();
-      console.log('Google Maps loaded');
-
-      // Now safely use DistanceMatrixService
-      if (!(window as any).google?.maps?.DistanceMatrixService) {
-        throw new Error('DistanceMatrixService not available');
-      }
-
-      console.log('Creating DistanceMatrixService...');
-      const distanceMatrix = new (window as any).google.maps.DistanceMatrixService();
-      
-      console.log('Calling getDistanceMatrix...', { 
-        origin: { lat: origin.lat, lng: origin.lng }, 
-        destination: { lat: destination.lat, lng: destination.lng }
-      });
-      
-      // Set a timeout to prevent getting stuck
-      const timeoutId = setTimeout(() => {
-        console.error('Distance calculation timeout');
-        setCustomerDistances(prev => ({
-          ...prev,
-          [customerId]: { ...prev[customerId], isCalculating: false }
-        }));
-        toast.error('Distance calculation timed out. Please try again.');
-      }, 15000); // 15 second timeout
-      
-      // Try DRIVING first (motor bike/scooty), fallback to BICYCLING only if needed
-      const tryCalculateDistance = (travelMode: any, modeName: string, isRetry: boolean = false) => {
-        const originCoords = { lat: Number(origin.lat), lng: Number(origin.lng) };
-        const destCoords = { lat: Number(destination.lat), lng: Number(destination.lng) };
-        
-        console.log(`Trying ${modeName} mode:`, { origin: originCoords, destination: destCoords });
-        
-        distanceMatrix.getDistanceMatrix(
-          {
-            origins: [originCoords],
-            destinations: [destCoords],
-            travelMode: travelMode,
-            unitSystem: (window as any).google.maps.UnitSystem.METRIC,
-          },
-          (response, status) => {
-            console.log(`Distance Matrix callback (${modeName}):`, { status, response });
-            
-            if (status === (window as any).google.maps.DistanceMatrixStatus.OK && response) {
-              const result = response.rows[0].elements[0];
-              console.log('Distance Matrix result:', result);
-              
-              if (result.status === window.google.maps.DistanceMatrixElementStatus.OK) {
-                clearTimeout(timeoutId);
-                // Convert distance to km if needed
-                let distanceText = result.distance.text;
-                if (result.distance.value < 1000) {
-                  distanceText = `${(result.distance.value / 1000).toFixed(2)} km`;
-                }
-
-                // If duration is not available, show only distance
-                const durationText = result.duration?.text || null;
-
-                console.log('Setting distance:', { distance: distanceText, duration: durationText, mode: modeName });
-                setCustomerDistances(prev => ({
-                  ...prev,
-                  [customerId]: {
-                    distance: distanceText,
-                    duration: durationText || '',
-                    isCalculating: false,
-                    mode: modeName
-                  }
-                }));
-              } else if (result.status === window.google.maps.DistanceMatrixElementStatus.ZERO_RESULTS) {
-                console.error(`Distance Matrix ZERO_RESULTS with ${modeName} mode:`, { origin: originCoords, destination: destCoords });
-                
-                // Try fallback: DRIVING -> BICYCLING (motor bike -> bicycle)
-                if (travelMode === window.google.maps.TravelMode.DRIVING && !isRetry) {
-                  console.log('DRIVING returned ZERO_RESULTS, trying BICYCLING mode as fallback...');
-                  tryCalculateDistance(window.google.maps.TravelMode.BICYCLING, 'BICYCLING', true);
-                } else {
-                  clearTimeout(timeoutId);
-                  setCustomerDistances(prev => ({
-                    ...prev,
-                    [customerId]: { ...prev[customerId], isCalculating: false }
-                  }));
-                  toast.error('No route found. Please check if the location coordinates are valid.');
-                }
-              } else {
-                clearTimeout(timeoutId);
-                console.error('Distance Matrix element status error:', result.status);
-                setCustomerDistances(prev => ({
-                  ...prev,
-                  [customerId]: { ...prev[customerId], isCalculating: false }
-                }));
-                toast.error(`Could not calculate distance: ${result.status}`);
-              }
-            } else {
-              clearTimeout(timeoutId);
-              console.error('Distance Matrix status error:', status);
-              // Mobile-safe fallback: show approximate straight-line distance when Maps route fails (API blocked, quota, referrer, etc.)
-              try {
-                const approxMeters = haversineDistanceMeters(originCoords, destCoords);
-                const approxText = formatDistanceKm(approxMeters);
-                if (approxText) {
-                  setCustomerDistances(prev => ({
-                    ...prev,
-                    [customerId]: {
-                      distance: approxText,
-                      duration: '',
-                      isCalculating: false,
-                    }
-                  }));
-                  toast.warning('Showing approximate distance (route unavailable)');
-                  return;
-                }
-              } catch {
-                // ignore
-              }
-              setCustomerDistances(prev => ({
-                ...prev,
-                [customerId]: { ...prev[customerId], isCalculating: false }
-              }));
-              toast.error(`Distance calculation failed: ${status}`);
-            }
-          }
-        );
-      };
-      
-      // Start with DRIVING mode (motor bike/scooty), fallback to BICYCLING if needed
-      tryCalculateDistance(window.google.maps.TravelMode.DRIVING, 'DRIVING', false);
-    } catch (error) {
-      console.error('Error calculating distance:', error);
-      // Mobile-safe fallback: approximate straight-line distance when Maps fails to load/call.
-      try {
-        const approxMeters = haversineDistanceMeters(origin, destination);
-        const approxText = formatDistanceKm(approxMeters);
-        if (approxText) {
-          setCustomerDistances(prev => ({
-            ...prev,
-            [customerId]: {
-              distance: approxText,
-              duration: '',
-              isCalculating: false,
-            }
-          }));
-          toast.warning('Showing approximate distance (route unavailable)');
-          return;
-        }
-      } catch {
-        // ignore
-      }
-      setCustomerDistances(prev => ({
-        ...prev,
-        [customerId]: { ...prev[customerId], isCalculating: false }
-      }));
-      toast.error(`Failed to calculate distance: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }, [ensureGoogleMapsLoaded]);
+  const calculateDistanceAndTime = useCallback(
+    (
+      origin: { lat: number; lng: number },
+      destination: { lat: number; lng: number },
+      customerId: string
+    ) => calculateAdminCustomerDistance(origin, destination, customerId, setCustomerDistances),
+    []
+  );
 
   // Store the function in ref whenever it changes
   useEffect(() => {
     calculateDistanceAndTimeRef.current = calculateDistanceAndTime;
   }, [calculateDistanceAndTime]);
-
-  // Don't calculate distance automatically when address dialog opens
-  // User will click button to calculate manually
-
-
-  // Reverse geocode coordinates to get address using Google Maps Geocoder API
-  const reverseGeocode = async (lat: number, lng: number): Promise<string | null> => {
-    try {
-      if (window.google && window.google.maps && window.google.maps.Geocoder) {
-        return new Promise((resolve) => {
-          const geocoder = new window.google.maps.Geocoder();
-          geocoder.geocode(
-            { location: { lat, lng } },
-            (results, status) => {
-              if (status === window.google.maps.GeocoderStatus.OK && results && results[0]) {
-                resolve(results[0].formatted_address);
-              } else {
-                resolve(null);
-              }
-            }
-          );
-        });
-      }
-      return null;
-    } catch (error) {
-      console.error('Reverse geocoding error:', error);
-      return null;
-    }
-  };
-
-  // Function to fetch address from Google Maps location link
-  const fetchAddressFromGoogleLocation = async () => {
-    const googleLocation =
-      extractMapsUrlFromText(editFormData?.google_location || '') ||
-      sanitizeGoogleMapsInput(editFormData?.google_location || '');
-
-    if (!googleLocation) {
-      toast.error('Please enter a Google Maps link first');
-      return;
-    }
-
-    if (!isGoogleMapsUrl(googleLocation)) {
-      toast.error('Please enter a valid Google Maps link');
-      return;
-    }
-
-    try {
-      let loadingToast: string | number | undefined;
-      if (isGoogleMapsShortLink(googleLocation)) {
-        loadingToast = toast.loading('Resolving short link...');
-      }
-
-      const token = await resolveSupabaseAccessTokenForApi();
-      const resolved = await resolveGoogleMapsInputToCoords(googleLocation, {
-        shareText: editFormData?.google_location || '',
-        addressHint: editFormData?.address?.street || '',
-        accessToken: token,
-      });
-
-      if (loadingToast !== undefined) {
-        toast.dismiss(loadingToast);
-      }
-
-      if (!resolved.ok) {
-        toast.error(resolved.error, { duration: 8000 });
-        return;
-      }
-
-      const { coords, didExpandShortLink, placeHintUsed, resolvedLocation } = resolved;
-      if (didExpandShortLink) {
-        setEditFormData((prev) => ({ ...prev, google_location: resolvedLocation }));
-        toast.info('Short link expanded');
-      }
-      if (placeHintUsed) {
-        toast.info(`Found location from place name: ${placeHintUsed}`);
-      }
-
-      loadingToast = toast.loading('Fetching address from Google Maps...');
-
-      const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-      if (apiKey && (!window.google || !window.google.maps || !window.google.maps.Geocoder)) {
-        await loadGoogleMapsGeocoderScript();
-      }
-
-      const address = await reverseGeocode(coords.latitude, coords.longitude);
-      
-      // Extract location keyword from address
-      const extractedLocation = address ? extractLocationFromAddressString(address) : null;
-      
-      // When fetching a new address, replace the entire address object to avoid duplication
-      // Don't merge with previous address components
-      setEditFormData(prev => ({
-        ...prev,
-        location: {
-          ...prev.location,
-          latitude: coords.latitude,
-          longitude: coords.longitude,
-          formattedAddress: address || prev.location.formattedAddress || ''
-        },
-        address: {
-          street: address || prev.address.street || '',
-          area: '', // Clear individual components when fetching full address
-          city: '',
-          state: '',
-          pincode: ''
-        },
-        visible_address: (!locationManuallyEditedRef.current && extractedLocation) 
-          ? extractedLocation.substring(0, 20) 
-          : prev.visible_address
-      }));
-      
-      toast.dismiss(loadingToast);
-      
-      if (address) {
-        toast.success(`Address fetched: ${address.substring(0, 50)}${address.length > 50 ? '...' : ''}`);
-        if (extractedLocation && !locationManuallyEditedRef.current) {
-          toast.info(`Location identified: ${extractedLocation}`);
-        }
-      } else {
-        toast.success(`Coordinates extracted: ${coords.latitude}, ${coords.longitude}`);
-        toast.warning('Could not fetch address. Coordinates saved.');
-      }
-    } catch (error) {
-      console.error('Error fetching address:', error);
-      toast.error('Failed to fetch address. Please try again.');
-    }
-  };
-
-  const handleGoogleMapsLinkChange = async (value: string) => {
-    // Only update the google_location field - do NOT extract coordinates or geocode automatically
-    setEditFormData(prev => ({
-      ...prev,
-      google_location: value
-    }));
-
-    if (!value.trim()) {
-      // Clear location data when link is removed
-      setEditFormData(prev => ({
-        ...prev,
-        location: {
-          ...prev.location,
-          latitude: 0,
-          longitude: 0,
-          formattedAddress: ''
-        }
-      }));
-    }
-  };
-
-  // Load Google Maps script if not already loaded
-  const loadGoogleMapsScript = (): Promise<void> => {
-    return new Promise((resolve) => {
-      // Check if already loaded
-      if (window.google && window.google.maps && window.google.maps.Geocoder) {
-        resolve();
-        return;
-      }
-
-      const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-      if (!apiKey) {
-        // No API key, skip loading Google Maps script
-        resolve();
-        return;
-      }
-
-      // Check if script is already being loaded
-      const existingScript = document.querySelector('script[src*="maps.googleapis.com"]');
-      if (existingScript) {
-        // Wait for it to load
-        const checkInterval = setInterval(() => {
-          if ((window as any).google && (window as any).google.maps && (window as any).google.maps.Geocoder) {
-            clearInterval(checkInterval);
-            resolve();
-          }
-        }, 100);
-
-        // Timeout after 10 seconds
-        setTimeout(() => {
-          clearInterval(checkInterval);
-          if ((window as any).google && (window as any).google.maps && (window as any).google.maps.Geocoder) {
-            resolve();
-          } else {
-            // Resolve anyway, will use fallback
-            resolve();
-          }
-        }, 10000);
-        return;
-      }
-
-      // Load the script
-      const script = document.createElement('script');
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`;
-      script.async = true;
-      script.defer = true;
-      
-      script.onload = () => {
-        // Wait for Geocoder to be available
-        let attempts = 0;
-        const maxAttempts = 50; // 5 seconds max
-        const checkInterval = setInterval(() => {
-          attempts++;
-          if ((window as any).google && (window as any).google.maps && (window as any).google.maps.Geocoder) {
-            clearInterval(checkInterval);
-            resolve();
-          } else if (attempts >= maxAttempts) {
-            clearInterval(checkInterval);
-            // Resolve anyway, will use fallback
-            resolve();
-          }
-        }, 100);
-      };
-      
-      script.onerror = () => {
-        // Resolve anyway, will use fallback
-        resolve();
-      };
-      
-      document.head.appendChild(script);
-    });
-  };
 
   // Get current location
   const getCurrentLocation = useCallback(() => {
@@ -6604,99 +4647,32 @@ const AdminDashboard = () => {
   };
 
   const handleSaveJobAssignment = async () => {
-    if (!jobToAssign || !selectedTechnicianId) return;
-
-    // Save scroll position so we can restore after refresh (page stays where user was)
-    const scrollY = window.scrollY;
-
-    try {
-      // Follow-up flow: pick technician first, then ask date/time (move to ongoing), then auto-assign.
-      if (followUpAssignFlow) {
-        setFollowUpAssignFlow(false);
-        setFollowUpAssignTechnicianId(selectedTechnicianId);
-        setAssignJobDialogOpen(false);
-        setAssignAfterMoveToOngoing(true);
-        handleMoveToOngoing(jobToAssign);
-        return;
-      }
-
-      const { error } = await db.jobs.update(jobToAssign.id, {
-        assigned_technician_id: selectedTechnicianId,
-        status: 'ASSIGNED',
-        assigned_date: new Date().toISOString()
-      } as any);
-
-      if (error) throw error;
-
-      broadcastTechnicianJobListRefresh([selectedTechnicianId]);
-
-      // Send notification to technician
-      const assignedTechnician = technicians.find(t => t.id === selectedTechnicianId);
-      if (assignedTechnician) {
-        const notification = createJobAssignedNotification(
-          (jobToAssign as any).job_number || jobToAssign.jobNumber || 'Job',
-          (jobToAssign.customer as any)?.full_name || (jobToAssign.customer as any)?.fullName || 'Customer',
-          assignedTechnician.fullName,
-          jobToAssign.id,
-          assignedTechnician.id
-        );
-        await sendNotification(notification);
-      } else {
-        toast.success(`Job assigned to ${assignedTechnician?.fullName || 'technician'} for ${(jobToAssign.customer as any)?.full_name || (jobToAssign.customer as any)?.fullName || 'customer'}`);
-      }
-
-      setAssignJobDialogOpen(false);
-
-      // Show WhatsApp dialog
-      if (assignedTechnician && assignedTechnician.phone) {
-        scrollPositionBeforeWhatsAppRef.current = scrollY;
-        const serviceSubType = (jobToAssign as any).service_sub_type || jobToAssign.serviceSubType || 'Service';
-        let customerForWhatsApp = (jobToAssign.customer as any) || {};
-        const customerId = customerForWhatsApp?.id || (jobToAssign as any).customer_id;
-        if (customerId) {
-          const { data: freshCustomer } = await db.customers.getById(String(customerId));
-          if (freshCustomer) customerForWhatsApp = freshCustomer;
-        }
-        const customerName = customerForWhatsApp?.full_name || customerForWhatsApp?.fullName || 'Customer';
-        const locationText = getJobLocationLabelForWhatsApp(
-          jobToAssign as { service_site?: string; service_address?: unknown },
-          customerForWhatsApp
-        );
-        const leadSource = getLeadSourceFromJob(jobToAssign as Record<string, unknown>);
-        const customTime = getJobCustomTimeLabel(jobToAssign as Record<string, unknown>) || '';
-        setWhatsappTechnician({
-          name: assignedTechnician.fullName,
-          phone: assignedTechnician.phone
-        });
-        setWhatsappServiceSubType(serviceSubType);
-        setWhatsappCustomerName(customerName);
-        setWhatsappLocation(locationText || '');
-        setWhatsappLeadSource(leadSource);
-        setWhatsappCustomTime(customTime);
-        setWhatsappDialogOpen(true);
-        openAdminWhatsappModal();
-      } else {
-        closeAdminModal();
-      }
-      
-      setJobToAssign(null);
-      setSelectedTechnicianId('');
-
-      // Defer refetch so dialog close/layout flush first; silent load avoids global spinner.
-      queueMicrotask(() => {
-        void loadFilteredJobs(statusFilter, currentPage, { silent: true }).finally(() => {
-          requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-              window.scrollTo(0, scrollY);
-            });
-          });
-        });
-      });
-    } catch (error) {
-      toast.error('Failed to assign job');
-      setFollowUpAssignFlow(false);
-      setFollowUpAssignTechnicianId('');
-    }
+    await saveAdminJobAssignment({
+      jobToAssign,
+      selectedTechnicianId,
+      followUpAssignFlow,
+      statusFilter,
+      currentPage,
+      technicians,
+      setFollowUpAssignFlow,
+      setFollowUpAssignTechnicianId,
+      setAssignJobDialogOpen,
+      setAssignAfterMoveToOngoing,
+      handleMoveToOngoing,
+      scrollPositionBeforeWhatsAppRef,
+      setWhatsappTechnician,
+      setWhatsappServiceSubType,
+      setWhatsappCustomerName,
+      setWhatsappLocation,
+      setWhatsappLeadSource,
+      setWhatsappCustomTime,
+      setWhatsappDialogOpen,
+      openAdminWhatsappModal,
+      closeAdminModal,
+      setJobToAssign,
+      setSelectedTechnicianId,
+      loadFilteredJobs,
+    });
   };
 
   const handleAddTeam = async (job: Job) => {
@@ -6709,59 +4685,17 @@ const AdminDashboard = () => {
   };
 
   const handleSaveTeamMember = async () => {
-    if (!jobForTeam || !selectedTeamMemberId) return;
-
-    try {
-      // Get current team_members from job
-      const currentTeamMembers = (jobForTeam as any).team_members || [];
-      const teamMembersArray = Array.isArray(currentTeamMembers) ? currentTeamMembers : [];
-      
-      // Check if technician is already in team
-      if (teamMembersArray.includes(selectedTeamMemberId)) {
-        toast.error('This technician is already in the team');
-        return;
-      }
-
-      // Check if technician is the primary assigned technician
-      if ((jobForTeam as any).assigned_technician_id === selectedTeamMemberId) {
-        toast.error('This technician is already the primary assigned technician');
-        return;
-      }
-
-      // Add new team member
-      const updatedTeamMembers = [...teamMembersArray, selectedTeamMemberId];
-
-      const { error } = await db.jobs.update(jobForTeam.id, {
-        team_members: updatedTeamMembers
-      } as any);
-
-      if (error) throw error;
-
-      broadcastTechnicianJobListRefresh([selectedTeamMemberId]);
-
-      // Send notification to team member
-      const teamMember = technicians.find(t => t.id === selectedTeamMemberId);
-      if (teamMember) {
-        const notification = createJobAssignedNotification(
-          (jobForTeam as any).job_number || jobForTeam.jobNumber || 'Job',
-          (jobForTeam.customer as any)?.full_name || (jobForTeam.customer as any)?.fullName || 'Customer',
-          teamMember.fullName,
-          jobForTeam.id,
-          teamMember.id
-        );
-        await sendNotification(notification);
-      }
-
-      toast.success('Team member added successfully');
-      setAddTeamDialogOpen(false);
-      setJobForTeam(null);
-      setSelectedTeamMemberId('');
-
-      await loadFilteredJobs(statusFilter, currentPage, { silent: true });
-    } catch (error: any) {
-      console.error('Error adding team member:', error);
-      toast.error(error.message || 'Failed to add team member');
-    }
+    await saveAdminTeamMember({
+      jobForTeam,
+      selectedTeamMemberId,
+      technicians,
+      statusFilter,
+      currentPage,
+      setAddTeamDialogOpen,
+      setJobForTeam,
+      setSelectedTeamMemberId,
+      loadFilteredJobs,
+    });
   };
 
   const handleRemoveTeam = async (job: Job) => {
@@ -6774,67 +4708,20 @@ const AdminDashboard = () => {
   };
 
   const handleSaveTeamMemberRemoval = async () => {
-    if (!jobForRemoveTeam || !selectedTeamMemberToRemove) return;
-
-    try {
-      // Get current team_members from job
-      const currentTeamMembers = (jobForRemoveTeam as any).team_members || [];
-      const teamMembersArray = Array.isArray(currentTeamMembers) ? currentTeamMembers : [];
-      
-      // Remove the selected team member
-      const updatedTeamMembers = teamMembersArray.filter((id: string) => id !== selectedTeamMemberToRemove);
-
-      const { error } = await db.jobs.update(jobForRemoveTeam.id, {
-        team_members: updatedTeamMembers
-      } as any);
-
-      if (error) throw error;
-
-      broadcastTechnicianJobListRefresh([selectedTeamMemberToRemove]);
-
-      toast.success('Team member removed successfully');
-      setRemoveTeamDialogOpen(false);
-      setJobForRemoveTeam(null);
-      setSelectedTeamMemberToRemove('');
-
-      await loadFilteredJobs(statusFilter, currentPage, { silent: true });
-    } catch (error: any) {
-      console.error('Error removing team member:', error);
-      toast.error(error.message || 'Failed to remove team member');
-    }
+    await removeAdminTeamMember({
+      jobForRemoveTeam,
+      selectedTeamMemberToRemove,
+      statusFilter,
+      currentPage,
+      setRemoveTeamDialogOpen,
+      setJobForRemoveTeam,
+      setSelectedTeamMemberToRemove,
+      loadFilteredJobs,
+    });
   };
 
   // Bulk assignment removed - not needed
 
-
-  // Load jobs for a specific customer
-  const loadCustomerJobs = async (customerId: string) => {
-    if (customerJobs[customerId] || loadingCustomerJobs[customerId]) return; // Already loaded or loading
-    
-    setLoadingCustomerJobs(prev => ({
-      ...prev,
-      [customerId]: true
-    }));
-
-    try {
-      const { data, error } = await db.jobs.getByCustomerId(customerId);
-      
-      if (error) {
-        return;
-      }
-
-      setCustomerJobs(prev => ({
-        ...prev,
-        [customerId]: data?.slice(0, 3) || [] // Only keep 3 most recent jobs
-      }));
-    } catch (error) {
-    } finally {
-      setLoadingCustomerJobs(prev => ({
-        ...prev,
-        [customerId]: false
-      }));
-    }
-  };
 
   // Handle job status update
   const handleReassignJob = (job: Job) => {
@@ -6848,150 +4735,32 @@ const AdminDashboard = () => {
   };
 
   const handleReassignSubmit = async () => {
-    if (!jobToReassign || !selectedTechnicianForReassign) return;
-
-    // Save scroll position so we can restore after refresh (page stays where user was)
-    const scrollY = window.scrollY;
-
-    try {
-      const { error } = await db.jobs.update(jobToReassign.id, {
-        assigned_technician_id: selectedTechnicianForReassign
-      });
-
-      if (error) {
-        console.error('Reassign job error:', error);
-        toast.error(`Failed to reassign job: ${error.message || 'Unknown error'}`);
-        return;
-      }
-
-      const previousTechnicianId =
-        (jobToReassign as any).assigned_technician_id || jobToReassign.assignedTechnicianId;
-      broadcastTechnicianJobListRefresh([
-        previousTechnicianId,
-        selectedTechnicianForReassign,
-      ]);
-
-      // Update local state
-      setJobs(prev => prev.map(job => 
-        job.id === jobToReassign.id 
-          ? { ...job, assigned_technician_id: selectedTechnicianForReassign }
-          : job
-      ));
-
-      toast.success('Job reassigned successfully');
-      setReassignDialogOpen(false);
-
-      // Show WhatsApp dialog
-      const reassignedTechnician = technicians.find(t => t.id === selectedTechnicianForReassign);
-      if (reassignedTechnician && reassignedTechnician.phone) {
-        scrollPositionBeforeWhatsAppRef.current = scrollY;
-        const serviceSubType = (jobToReassign as any).service_sub_type || jobToReassign.serviceSubType || 'Service';
-        let customerForWhatsApp = (jobToReassign.customer as any) || {};
-        const customerId = customerForWhatsApp?.id || (jobToReassign as any).customer_id;
-        if (customerId) {
-          const { data: freshCustomer } = await db.customers.getById(String(customerId));
-          if (freshCustomer) customerForWhatsApp = freshCustomer;
-        }
-        const customerName = customerForWhatsApp?.full_name || customerForWhatsApp?.fullName || 'Customer';
-        const locationText = getJobLocationLabelForWhatsApp(
-          jobToReassign as { service_site?: string; service_address?: unknown },
-          customerForWhatsApp
-        );
-        const leadSource = getLeadSourceFromJob(jobToReassign as Record<string, unknown>);
-        const customTime = getJobCustomTimeLabel(jobToReassign as Record<string, unknown>) || '';
-        setWhatsappTechnician({
-          name: reassignedTechnician.fullName,
-          phone: reassignedTechnician.phone
-        });
-        setWhatsappServiceSubType(serviceSubType);
-        setWhatsappCustomerName(customerName);
-        setWhatsappLocation(locationText || '');
-        setWhatsappLeadSource(leadSource);
-        setWhatsappCustomTime(customTime);
-        setWhatsappDialogOpen(true);
-        openAdminWhatsappModal();
-      } else {
-        closeAdminModal();
-      }
-      
-      setJobToReassign(null);
-      setSelectedTechnicianForReassign('');
-
-      queueMicrotask(() => {
-        void loadFilteredJobs(statusFilter, currentPage, { silent: true }).finally(() => {
-          requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-              window.scrollTo(0, scrollY);
-            });
-          });
-        });
-      });
-    } catch (error: any) {
-      console.error('Reassign job exception:', error);
-      toast.error(`Failed to reassign job: ${error?.message || 'Unknown error'}`);
-    }
+    await submitAdminJobReassign({
+      jobToReassign,
+      selectedTechnicianForReassign,
+      technicians,
+      statusFilter,
+      currentPage,
+      scrollPositionBeforeWhatsAppRef,
+      setJobs,
+      setReassignDialogOpen,
+      setWhatsappTechnician,
+      setWhatsappServiceSubType,
+      setWhatsappCustomerName,
+      setWhatsappLocation,
+      setWhatsappLeadSource,
+      setWhatsappCustomTime,
+      setWhatsappDialogOpen,
+      openAdminWhatsappModal,
+      closeAdminModal,
+      setJobToReassign,
+      setSelectedTechnicianForReassign,
+      loadFilteredJobs,
+    });
   };
 
   const handleUnassignJob = async (job: Job) => {
-    try {
-      const previousTechnicianId =
-        (job as any).assigned_technician_id || job.assignedTechnicianId;
-      const teamMemberIds = Array.isArray((job as any).team_members)
-        ? ((job as any).team_members as string[])
-        : [];
-
-      const { error } = await db.jobs.update(job.id, {
-        assigned_technician_id: null,
-        assigned_date: null,
-        status: 'PENDING'
-      });
-
-      if (error) {
-        toast.error('Failed to unassign job');
-        return;
-      }
-
-      broadcastTechnicianJobListRefresh([previousTechnicianId, ...teamMemberIds]);
-
-      // Update local state
-      setJobs(prev => prev.map(j => 
-        j.id === job.id 
-          ? { 
-              ...j, 
-              assigned_technician_id: null,
-              assignedTechnicianId: null,
-              assigned_date: null,
-              assignedDate: null,
-              status: 'PENDING' as const
-            }
-          : j
-      ));
-
-      // Update customer jobs state
-      setCustomerJobs(prev => {
-        const updated = { ...prev };
-        Object.keys(updated).forEach(customerId => {
-          updated[customerId] = updated[customerId].map(j => 
-            j.id === job.id 
-              ? { 
-                  ...j, 
-                  assigned_technician_id: null,
-                  assignedTechnicianId: null,
-                  assigned_date: null,
-                  assignedDate: null,
-                  status: 'PENDING' as any
-                }
-              : j
-          );
-        });
-        return updated;
-      });
-
-      toast.success('Technician unassigned successfully. Job status set to PENDING.');
-    } catch (error) {
-      console.error('Error unassigning job:', error);
-      toast.error('Failed to unassign job');
-    }
+    await unassignAdminJob(job, { setJobs, setCustomerJobs });
   };
 
   const handleEditJob = (job: Job) => {
@@ -7000,1801 +4769,257 @@ const AdminDashboard = () => {
 
   // handleEditJobSubmit moved to EditJobDialog component
 
-  // Helper function to format time in 12-hour format
-  const formatTime12Hour = (date: Date | string): string => {
-    const d = typeof date === 'string' ? new Date(date) : date;
-    const hours = d.getHours();
-    const minutes = d.getMinutes();
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    const displayHours = hours % 12 || 12;
-    const displayMinutes = minutes.toString().padStart(2, '0');
-    return `${displayHours}:${displayMinutes} ${ampm}`;
-  };
-
-  const getJobScheduledDateKey = (jobRow: Job | any): string | null => {
-    const raw = jobRow?.scheduled_date ?? jobRow?.scheduledDate;
-    if (!raw) return null;
-    if (typeof raw === 'string') return raw.split('T')[0];
-    try {
-      const d = new Date(raw);
-      if (isNaN(d.getTime())) return null;
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    } catch {
-      return null;
-    }
-  };
-
-  const parseCustomTimeMinutesFromJob = (jobRow: Job | any): number | null => {
-    let reqs = jobRow?.requirements;
-    if (typeof reqs === 'string') {
-      try {
-        reqs = JSON.parse(reqs);
-      } catch {
-        return null;
-      }
-    }
-    if (!Array.isArray(reqs)) return null;
-    const withTime = reqs.find((r: any) => r && typeof r === 'object' && r.custom_time);
-    const t = withTime?.custom_time;
-    if (!t || typeof t !== 'string') return null;
-    const parts = t.trim().split(':');
-    const h = parseInt(parts[0], 10);
-    const m = parseInt(parts[1] || '0', 10);
-    if (isNaN(h) || h < 0 || h > 23) return null;
-    if (isNaN(m) || m < 0 || m > 59) return null;
-    return h * 60 + m;
-  };
-
-  /** Visit order: CUSTOM with HH:MM first (by time), then MORNING→…→FLEXIBLE, then CUSTOM without time (by created). */
-  const routeSortKeyForJob = (jobRow: Job | any): string => {
-    const slot = String(jobRow?.scheduled_time_slot || jobRow?.scheduledTimeSlot || 'MORNING').toUpperCase();
-    const created = new Date(jobRow?.created_at || jobRow?.createdAt || 0).getTime();
-    if (slot === 'CUSTOM') {
-      const mins = parseCustomTimeMinutesFromJob(jobRow);
-      if (mins != null) return `A-${String(mins).padStart(5, '0')}-${String(created).padStart(13, '0')}`;
-      return `C-${String(created).padStart(13, '0')}`;
-    }
-    const slotRank: Record<string, number> = {
-      MORNING: 1,
-      AFTERNOON: 2,
-      EVENING: 3,
-      FLEXIBLE: 4,
-    };
-    const r = slotRank[slot] ?? 50;
-    return `B-${String(r).padStart(2, '0')}-${String(created).padStart(13, '0')}`;
-  };
-
-  /**
-   * Location for route labels — from DB-shaped job row: `jobs.service_address` (jsonb),
-   * embedded `customer.address`, `customer.visible_address`, and `service_location` when needed.
-   * Normalizes all whitespace so multi-word areas (e.g. "HSR Layout") and odd spacing still show.
-   */
-  const getRouteLocationWord = (jobRow: Job | any): string => {
-    const str = (v: unknown): string => {
-      if (v == null) return '';
-      if (typeof v === 'string') return v;
-      if (typeof v === 'number' && !Number.isNaN(v)) return String(v);
-      return '';
-    };
-    const normalizeWs = (s: string) =>
-      str(s).replace(/[\s\u00a0\u2000-\u200B\uFEFF]+/g, ' ').trim();
-
-    const genericToken = (w: string) => {
-      const t = w.toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (!t || t.length < 2) return true;
-      if (t === 'bengaluru' || t === 'bangalore' || t === 'banglore') return true;
-      if (t === 'karnataka' || t === 'india') return true;
-      return false;
-    };
-
-    /** Entire phrase is only generic tokens (e.g. "Bangalore" or "Bangalore Karnataka"). */
-    const phraseIsOnlyGeneric = (s: string) => {
-      const n = normalizeWs(s);
-      if (!n) return true;
-      const parts = n.split(/\s+/).filter(Boolean);
-      return parts.length > 0 && parts.every((p) => genericToken(p));
-    };
-
-    /** Prefer full short phrase when it contains any non-generic word (multi-word areas). */
-    const pickPhraseOrEmpty = (raw: string, maxLen = 48): string => {
-      const n = normalizeWs(raw);
-      if (!n) return '';
-      if (phraseIsOnlyGeneric(n)) return '';
-      return n.length > maxLen ? `${n.slice(0, Math.max(0, maxLen - 1))}…` : n;
-    };
-
-    const firstNonGenericWord = (s: string): string => {
-      for (const raw of normalizeWs(s).split(/[\s,]+/)) {
-        const w = raw.trim();
-        if (!w) continue;
-        if (!genericToken(w)) return w;
-      }
-      return '';
-    };
-
-    /** DB/Google often store "Frazer, Town, Bangalore" — must not use only the first comma segment. */
-    const localityBeforeCity = (raw: string): string => {
-      const parts = raw.split(',').map((p) => normalizeWs(p)).filter(Boolean);
-      const kept: string[] = [];
-      for (const p of parts) {
-        const lower = p.toLowerCase();
-        const first = lower.split(/\s+/)[0] || '';
-        if (/^\d{6}$/.test(p)) break;
-        if (
-          first === 'bengaluru' ||
-          first === 'bangalore' ||
-          first === 'banglore' ||
-          first === 'karnataka' ||
-          first === 'india'
-        ) {
-          break;
-        }
-        if (lower === 'in') break;
-        kept.push(p);
-      }
-      return normalizeWs(kept.join(' '));
-    };
-
-    const cust = jobRow?.customer as any;
-    const customerAddress = cust?.address || {};
-    const serviceAddress = jobRow?.service_address || jobRow?.serviceAddress || {};
-
-    let visibleLocation =
-      normalizeWs(
-        str(customerAddress?.visible_address) ||
-          str(customerAddress?.visibleAddress) ||
-          str(cust?.visible_address) ||
-          str(serviceAddress?.visible_address) ||
-          str(serviceAddress?.visibleAddress)
-      );
-
-    if (visibleLocation.includes(',')) {
-      visibleLocation = localityBeforeCity(visibleLocation);
-    }
-
-    if (!visibleLocation) {
-      visibleLocation = normalizeWs(
-        str(customerAddress?.area) || str(serviceAddress?.area)
-      );
-      if (visibleLocation.includes(',')) {
-        visibleLocation = localityBeforeCity(visibleLocation);
-      }
-    }
-
-    let phrase = pickPhraseOrEmpty(visibleLocation);
-    if (phrase) return phrase;
-
-    const landmark = normalizeWs(str(customerAddress?.landmark) || str(serviceAddress?.landmark));
-    phrase = pickPhraseOrEmpty(landmark);
-    if (phrase) return phrase;
-
-    const street = normalizeWs(str(customerAddress?.street) || str(serviceAddress?.street));
-    phrase = pickPhraseOrEmpty(street);
-    if (phrase) return phrase;
-
-    const city = normalizeWs(str(customerAddress?.city) || str(serviceAddress?.city));
-    let w = firstNonGenericWord(city);
-    if (w) return w;
-
-    const pin = normalizeWs(str(customerAddress?.pincode) || str(serviceAddress?.pincode));
-    if (pin) return pin;
-
-    const svcLoc = cust?.location || jobRow?.service_location || jobRow?.serviceLocation || {};
-    const formatted = normalizeWs(str(svcLoc?.formattedAddress) || str(svcLoc?.formatted_address));
-    if (formatted) {
-      const joined = localityBeforeCity(formatted);
-      phrase = pickPhraseOrEmpty(joined);
-      if (phrase) return phrase;
-      for (const part of formatted.split(',')) {
-        const chunk = pickPhraseOrEmpty(normalizeWs(part));
-        if (chunk) return chunk;
-        w = firstNonGenericWord(part);
-        if (w) return w;
-      }
-    }
-
-    return '';
-  };
-
-  /** Route row: `Customer name (location)` — distinct stops even when area text repeats. */
-  const formatRouteStopLabel = (jobRow: Job | any): string => {
-    const cust = jobRow?.customer as any;
-    const displayName = (cust?.full_name || cust?.fullName || 'Customer').trim() || 'Customer';
-    const loc = getRouteLocationWord(jobRow);
-    if (loc) return `${displayName} (${loc})`;
-    return `${displayName} (—)`;
-  };
-
-  const handleShareJobWhatsApp = async (job: Job) => {
-    const assignedTechnicianId = (job as any).assigned_technician_id || job.assignedTechnicianId;
-    if (!assignedTechnicianId) {
-      toast.error('No technician assigned to this job');
-      return;
-    }
-    const technician = technicians.find(t => t.id === assignedTechnicianId);
-    if (!technician?.phone) {
-      toast.error('Technician phone number not found');
-      return;
-    }
-
-    const embeddedCustomer = ((job as any).customer || job.customer) as any;
-    const customerId = embeddedCustomer?.id || (job as any).customer_id;
-    let freshCustomer: any = null;
-    if (customerId) {
-      const { data, error } = await db.customers.getById(String(customerId));
-      if (!error && data) {
-        freshCustomer = data;
-      }
-    }
-
-    const customer = freshCustomer || embeddedCustomer;
-    const name = customer?.full_name || customer?.fullName || 'N/A';
-    const phone = customer?.phone || 'N/A';
-    const altPhone = customer?.alternate_phone || customer?.alternatePhone;
-    const serviceType = (job as any).service_type || job.serviceType || 'N/A';
-    const serviceSubType = (job as any).service_sub_type || job.serviceSubType || '';
-    let requirements: any[] = (job as any).requirements;
-    if (typeof requirements === 'string') {
-      try {
-        requirements = JSON.parse(requirements);
-      } catch {
-        requirements = [];
-      }
-    }
-    if (requirements && !Array.isArray(requirements)) {
-      requirements = requirements && typeof requirements === 'object' ? [requirements] : [];
-    }
-    const leadSource = findLeadSource(requirements || []) || 'N/A';
-    const serviceLocation = customer?.location || (job as any).service_location || job.serviceLocation || {};
-    const formattedAddress = serviceLocation?.formattedAddress || serviceLocation?.formatted_address || '';
-    const googleMapLink = getLocationLinkFromObject(serviceLocation) ||
-      (formattedAddress ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formattedAddress)}` : '');
-    const serviceAddress = customer?.address || (job as any).service_address || job.serviceAddress || {};
-    const addressParts = [
-      serviceAddress?.visible_address || serviceAddress?.visibleAddress,
-      serviceAddress?.street,
-      serviceAddress?.area,
-      serviceAddress?.city,
-      serviceAddress?.state,
-      serviceAddress?.pincode,
-      serviceAddress?.landmark ? `Landmark: ${serviceAddress.landmark}` : null,
-    ].filter(Boolean);
-    const fullAddressLine = addressParts.length > 0 ? addressParts.join(', ') : (formattedAddress || '');
-    const lines = [
-      `*Job: ${(job as any).job_number || job.jobNumber || job.id}*`,
-      `Service: ${serviceType}${serviceSubType ? ` - ${serviceSubType}` : ''}`,
-      `Name: ${name}`,
-      `Phone: ${phone}`,
-      ...(altPhone ? [`Alt. phone: ${altPhone}`] : []),
-      `Lead source: ${leadSource}`,
-      ...(googleMapLink ? [`Location: ${googleMapLink}`] : []),
-      ...(fullAddressLine ? ['', '_Full address:_', fullAddressLine] : []),
-    ];
-    const text = lines.join('\n');
-    const url = `https://wa.me/${formatPhoneForWhatsApp(technician.phone)}?text=${encodeURIComponent(text)}`;
-    window.open(url, '_blank', 'noopener,noreferrer');
-    toast.success('Opening WhatsApp to share job details');
-  };
-
-  /** Active route jobs for this technician (assigned / en route / in progress), any scheduled day — not only today. */
-  const collectOngoingJobsForMeasure = (workingJob: Job | any): Job[] => {
-    const assignedTechnicianId =
-      (workingJob as any).assigned_technician_id || workingJob.assignedTechnicianId || null;
-    if (!assignedTechnicianId) return [workingJob as Job];
-    const ROUTE_STATUSES = new Set(['ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS']);
-    let routeJobs = jobs.filter((j) => {
-      const tid = (j as any).assigned_technician_id || j.assignedTechnicianId;
-      if (String(tid) !== String(assignedTechnicianId)) return false;
-      const st = (j as any).status || j.status;
-      return ROUTE_STATUSES.has(st);
-    });
-    if (!routeJobs.some((j) => j.id === workingJob.id)) {
-      routeJobs = [...routeJobs, workingJob as Job];
-    }
-    return [...routeJobs].sort((a, b) => {
-      const da = getJobScheduledDateKey(a) || '9999-12-31';
-      const db = getJobScheduledDateKey(b) || '9999-12-31';
-      if (da !== db) return da.localeCompare(db);
-      return routeSortKeyForJob(a).localeCompare(routeSortKeyForJob(b));
-    });
-  };
-
-  const resolveJobCoordsForMeasure = async (
-    job: Job | any,
-    onResolvingLink?: () => void
-  ): Promise<{ lat: number; lng: number; workingRow: any } | null> =>
-    resolveJobLatLngFromRow(job, {
-      getJobByIdFull: db.jobs.getByIdFull,
-      onResolvingLink,
-    });
-
-  const resolveCustomDistanceStops = async (): Promise<{
-    origin: { lat: number; lng: number };
-    dest: { lat: number; lng: number };
-    fromLabel: string;
-    toLabel: string;
-  } | null> => {
-    const workingJob = selectedJobForDistance;
-    if (!workingJob || !customDistanceFromId || !customDistanceToId) {
-      toast.error('Choose both From and To.');
-      return null;
-    }
-    if (customDistanceFromId === customDistanceToId) {
-      toast.error('From and To must be different.');
-      return null;
-    }
-
-    const assignedTechnicianId =
-      (workingJob as any).assigned_technician_id || workingJob.assignedTechnicianId || null;
-    const assignedTechnician = technicians.find((t) => t.id === assignedTechnicianId);
-    const techLocation =
-      assignedTechnician?.currentLocation || (assignedTechnician as any)?.current_location;
-
-    const ongoingJobsForRoute = collectOngoingJobsForMeasure(workingJob);
-    const jobById = (id: string) =>
-      ongoingJobsForRoute.find((j) => j.id === id) || jobs.find((j) => j.id === id);
-
-    const labelForStop = (stopId: string): string => {
-      if (stopId === '__tech__') {
-        return assignedTechnician
-          ? `${assignedTechnician.fullName} (last location)`
-          : 'Technician';
-      }
-      const j = jobById(stopId);
-      return j ? formatRouteStopLabel(j) : stopId;
-    };
-
-    let origin: { lat: number; lng: number } | null = null;
-    let dest: { lat: number; lng: number } | null = null;
-
-    if (customDistanceFromId === '__tech__') {
-      if (!techLocation?.latitude || !techLocation?.longitude) {
-        toast.error('Technician location not available.');
-        return null;
-      }
-      origin = { lat: Number(techLocation.latitude), lng: Number(techLocation.longitude) };
-    } else {
-      const j = jobById(customDistanceFromId);
-      if (!j) {
-        toast.error('Could not find the From job.');
-        return null;
-      }
-      const fromResolved = await resolveJobCoordsForMeasure(j);
-      origin = fromResolved ? { lat: fromResolved.lat, lng: fromResolved.lng } : null;
-    }
-
-    if (customDistanceToId === '__tech__') {
-      if (!techLocation?.latitude || !techLocation?.longitude) {
-        toast.error('Technician location not available.');
-        return null;
-      }
-      dest = { lat: Number(techLocation.latitude), lng: Number(techLocation.longitude) };
-    } else {
-      const j = jobById(customDistanceToId);
-      if (!j) {
-        toast.error('Could not find the To job.');
-        return null;
-      }
-      const toResolved = await resolveJobCoordsForMeasure(j);
-      dest = toResolved ? { lat: toResolved.lat, lng: toResolved.lng } : null;
-    }
-
-    if (!origin || !dest) {
-      toast.error('Map coordinates missing for one of the stops. Check addresses or map links.');
-      return null;
-    }
-
-    return {
-      origin,
-      dest,
-      fromLabel: labelForStop(customDistanceFromId),
-      toLabel: labelForStop(customDistanceToId),
-    };
-  };
-
-  const calculateCustomDistanceBetweenStops = async () => {
-    const stops = await resolveCustomDistanceStops();
-    if (!stops) return;
-
-    const { origin, dest, fromLabel, toLabel } = stops;
-
-    setIsLoadingCustomDistance(true);
-    setCustomDistanceResult(null);
-
-    try {
-      await ensureGoogleMapsLoaded();
-      if (!(window as any).google?.maps?.DistanceMatrixService) {
-        throw new Error('DistanceMatrixService not available');
-      }
-
-      const distanceMatrix = new (window as any).google.maps.DistanceMatrixService();
-
-      distanceMatrix.getDistanceMatrix(
-        {
-          origins: [origin],
-          destinations: [dest],
-          travelMode: (window as any).google.maps.TravelMode.DRIVING,
-          unitSystem: (window as any).google.maps.UnitSystem.METRIC,
-        },
-        (response: any, status: any) => {
-          setIsLoadingCustomDistance(false);
-          if (status === (window as any).google.maps.DistanceMatrixStatus.OK && response) {
-            const el = response.rows[0]?.elements[0];
-            if (el && el.status === (window as any).google.maps.DistanceMatrixElementStatus.OK) {
-              const distanceValueM = el.distance?.value ?? 0;
-              let distanceText = el.distance?.text || '';
-              if (distanceValueM < 1000) {
-                distanceText = `${(distanceValueM / 1000).toFixed(2)} km`;
-              }
-              const durationText = el.duration?.text || '';
-              setCustomDistanceResult({
-                fromLabel,
-                toLabel,
-                distance: distanceText,
-                duration: durationText,
-              });
-              return;
-            }
-          }
-          const m = haversineDistanceMeters(origin, dest);
-          setCustomDistanceResult({
-            fromLabel,
-            toLabel,
-            distance: formatDistanceKm(m) || '',
-            duration: '',
-            isApproximate: true,
-          });
-          toast.warning('Showing approximate distance (route unavailable)');
-        }
-      );
-    } catch (error) {
-      setIsLoadingCustomDistance(false);
-      toast.error(
-        `Failed to calculate: ${error instanceof Error ? error.message : 'Unknown error'}`
-      );
-    }
-  };
-
-  const openCustomDistanceInGoogleMaps = async () => {
-    setIsOpeningCustomDistanceMaps(true);
-    try {
-      const stops = await resolveCustomDistanceStops();
-      if (!stops) return;
-      openGoogleMapsDirectionsBetween(stops.origin, stops.dest, 'driving');
-      toast.success('Opening route in Google Maps');
-    } finally {
-      setIsOpeningCustomDistanceMaps(false);
-    }
-  };
-
-  const getMeasureStopSelectOptions = (): { value: string; label: string }[] => {
-    const wj = selectedJobForDistance;
-    if (!wj) return [];
-    const tid = (wj as any).assigned_technician_id || wj.assignedTechnicianId;
-    const tech = tid ? technicians.find((t) => t.id === tid) : null;
-    const tl = tech?.currentLocation || (tech as any)?.current_location;
-    const out: { value: string; label: string }[] = [];
-    if (tech && tl?.latitude && tl?.longitude) {
-      out.push({ value: '__tech__', label: `${tech.fullName} (last location)` });
-    }
-    for (const j of collectOngoingJobsForMeasure(wj)) {
-      out.push({ value: j.id, label: formatRouteStopLabel(j) });
-    }
-    return out;
-  };
-
-  const handleMeasureDistance = async (job: Job) => {
-    console.log('🔍 [AdminDashboard] handleMeasureDistance called for job:', {
-      jobId: job.id,
-      jobNumber: job.jobNumber || (job as any).job_number
-    });
-
-    let loadingToast: string | number | undefined;
-    const resolved = await resolveJobCoordsForMeasure(job, () => {
-      loadingToast = toast.loading('Resolving map link...');
-    });
-    if (loadingToast !== undefined) toast.dismiss(loadingToast);
-
-    if (!resolved) {
-      console.error('❌ [AdminDashboard] No coordinates available for distance measurement');
-      toast.error(getLocationUnavailableMessage(job));
-      return;
-    }
-
-    const workingJob = resolved.workingRow as Job;
-    const jobCoords = { lat: resolved.lat, lng: resolved.lng };
-
-    setSelectedJobForDistance(workingJob);
-    setCustomDistanceResult(null);
-
-    const assignedTechnicianId =
-      (workingJob as any).assigned_technician_id || workingJob.assignedTechnicianId || null;
-
-    if (!assignedTechnicianId) {
-      toast.error('No technician assigned to this job.');
-      return;
-    }
-
-    let assignedTechnician = technicians.find((t) => t.id === assignedTechnicianId);
-    try {
-      const { data: freshRow, error: freshErr } = await db.technicians.getById(assignedTechnicianId);
-      if (!freshErr && freshRow) {
-        const fresh = transformTechnicianData(freshRow);
-        assignedTechnician = fresh;
-        setTechnicians((prev) => {
-          const idx = prev.findIndex((t) => t.id === assignedTechnicianId);
-          if (idx === -1) return [...prev, fresh];
-          const next = [...prev];
-          next[idx] = fresh;
-          return next;
-        });
-      }
-    } catch (e) {
-      console.warn('[AdminDashboard] getById for measure distance (refresh technician location) failed:', e);
-    }
-
-    if (!assignedTechnician) {
-      toast.error('Assigned technician not found.');
-      return;
-    }
-
-    const techLocation =
-      assignedTechnician.currentLocation ||
-      (assignedTechnician as any).current_location;
-    const hasLocation = !!(techLocation && techLocation.latitude && techLocation.longitude);
-
-    if (!hasLocation) {
-      toast.error('Assigned technician does not have location data available.');
-      return;
-    }
-
-    let lastUpdatedFormatted: string | undefined;
-    if (techLocation?.lastUpdated) {
-      try {
-        lastUpdatedFormatted = formatTime12Hour(techLocation.lastUpdated);
-      } catch (e) {
-        console.warn('Failed to format lastUpdated time:', e);
-      }
-    }
-
-    const initialDistances = [{
-      technician: assignedTechnician,
-      distance: '',
-      duration: '',
-      distanceValue: undefined,
-      durationValue: undefined,
-      estimatedArrival: undefined,
-      lastUpdated: lastUpdatedFormatted,
-      hasLocation: true,
-      isCalculating: true,
-      isAssigned: true
-    }];
-
-    setTechnicianDistances(initialDistances);
-
-    const ongoingStops = collectOngoingJobsForMeasure(workingJob as Job);
-    const fromId = '__tech__';
-    let toId = workingJob.id;
-    if (fromId === toId) {
-      const alt = ongoingStops.find((j) => j.id !== fromId);
-      if (alt) toId = alt.id;
-    }
-    setCustomDistanceFromId(fromId);
-    setCustomDistanceToId(toId);
-
-    setDistanceMeasurementDialogOpen(true);
-    setIsCalculatingDistances(true);
-
-    const origin = {
-      lat: Number(techLocation!.latitude),
-      lng: Number(techLocation!.longitude)
-    };
-    const destination = { lat: Number(jobCoords.lat), lng: Number(jobCoords.lng) };
-
-    const applySingleLegResult = (
-      distanceText: string,
-      durationText: string,
-      distanceValue: number,
-      durationValue: number
-    ) => {
-      let estimatedArrival: string | undefined;
-      if (techLocation?.lastUpdated && durationValue > 0 && distanceValue > 1000) {
-        try {
-          const lastUpdatedDate = new Date(techLocation.lastUpdated);
-          estimatedArrival = formatTime12Hour(
-            new Date(lastUpdatedDate.getTime() + durationValue * 1000)
-          );
-        } catch {
-          estimatedArrival = undefined;
-        }
-      }
-      setTechnicianDistances([{
-        technician: assignedTechnician,
-        distance: distanceText,
-        duration: durationText,
-        distanceValue,
-        durationValue,
-        estimatedArrival,
-        lastUpdated: lastUpdatedFormatted,
-        hasLocation: true,
-        isCalculating: false,
-        isAssigned: true
-      }]);
-    };
-
-    try {
-      await ensureGoogleMapsLoaded();
-
-      if (!(window as any).google?.maps?.DistanceMatrixService) {
-        throw new Error('DistanceMatrixService not available');
-      }
-
-      const distanceMatrix = new (window as any).google.maps.DistanceMatrixService();
-      distanceMatrix.getDistanceMatrix(
-        {
-          origins: [origin],
-          destinations: [destination],
-          travelMode: (window as any).google.maps.TravelMode.DRIVING,
-          unitSystem: (window as any).google.maps.UnitSystem.METRIC,
-        },
-        (response: any, status: any) => {
-          setIsCalculatingDistances(false);
-
-          if (status === (window as any).google.maps.DistanceMatrixStatus.OK && response) {
-            const result = response.rows[0]?.elements[0];
-
-            if (result && result.status === window.google.maps.DistanceMatrixElementStatus.OK) {
-              const distanceValue = result.distance.value || 0;
-              let distanceText = result.distance.text;
-              if (distanceValue < 1000) {
-                distanceText = `${(distanceValue / 1000).toFixed(2)} km`;
-              }
-              const durationText = result.duration?.text || '';
-              const durationValue = result.duration?.value || 0;
-              applySingleLegResult(distanceText, durationText, distanceValue, durationValue);
-            } else if (result?.status === window.google.maps.DistanceMatrixElementStatus.ZERO_RESULTS) {
-              const bicyclingMatrix = new (window as any).google.maps.DistanceMatrixService();
-              bicyclingMatrix.getDistanceMatrix(
-                {
-                  origins: [origin],
-                  destinations: [destination],
-                  travelMode: (window as any).google.maps.TravelMode.BICYCLING,
-                  unitSystem: (window as any).google.maps.UnitSystem.METRIC,
-                },
-                (bikeResponse: any, bikeStatus: any) => {
-                  setIsCalculatingDistances(false);
-                  if (bikeStatus === (window as any).google.maps.DistanceMatrixStatus.OK && bikeResponse) {
-                    const bikeResult = bikeResponse.rows[0]?.elements[0];
-                    if (bikeResult && bikeResult.status === window.google.maps.DistanceMatrixElementStatus.OK) {
-                      const distanceValue = bikeResult.distance.value || 0;
-                      let distanceText = bikeResult.distance.text;
-                      if (distanceValue < 1000) {
-                        distanceText = `${(distanceValue / 1000).toFixed(2)} km`;
-                      }
-                      const durationText = bikeResult.duration?.text || '';
-                      const durationValue = bikeResult.duration?.value || 0;
-                      applySingleLegResult(distanceText, durationText, distanceValue, distanceValue);
-                    } else {
-                      setTechnicianDistances([{
-                        technician: assignedTechnician,
-                        distance: '',
-                        duration: '',
-                        distanceValue: undefined,
-                        durationValue: undefined,
-                        estimatedArrival: undefined,
-                        lastUpdated: lastUpdatedFormatted,
-                        hasLocation: true,
-                        isCalculating: false,
-                        isAssigned: true
-                      }]);
-                    }
-                  } else {
-                    setTechnicianDistances([{
-                      technician: assignedTechnician,
-                      distance: '',
-                      duration: '',
-                      distanceValue: undefined,
-                      durationValue: undefined,
-                      estimatedArrival: undefined,
-                      lastUpdated: lastUpdatedFormatted,
-                      hasLocation: true,
-                      isCalculating: false,
-                      isAssigned: true
-                    }]);
-                  }
-                }
-              );
-            } else {
-              setTechnicianDistances([{
-                technician: assignedTechnician,
-                distance: '',
-                duration: '',
-                distanceValue: undefined,
-                durationValue: undefined,
-                estimatedArrival: undefined,
-                lastUpdated: lastUpdatedFormatted,
-                hasLocation: true,
-                isCalculating: false,
-                isAssigned: true
-              }]);
-            }
-          } else {
-            setIsCalculatingDistances(false);
-            toast.error(`Distance calculation failed: ${status}`);
-          }
-        }
-      );
-    } catch (error) {
-      console.error('Error calculating distances:', error);
-      setIsCalculatingDistances(false);
-      try {
-        const techLoc: any = assignedTechnician.currentLocation || (assignedTechnician as any)?.current_location;
-        if (techLoc?.latitude && techLoc?.longitude && jobCoords?.lat && jobCoords?.lng) {
-          const approxMeters = haversineDistanceMeters(
-            { lat: Number(techLoc.latitude), lng: Number(techLoc.longitude) },
-            { lat: Number(jobCoords.lat), lng: Number(jobCoords.lng) }
-          );
-          const approxText = formatDistanceKm(approxMeters);
-          if (approxText) {
-            setTechnicianDistances([{
-              technician: assignedTechnician,
-              distance: approxText,
-              duration: '',
-              distanceValue: approxMeters,
-              durationValue: undefined,
-              estimatedArrival: undefined,
-              lastUpdated: techLoc?.lastUpdated ? new Date(techLoc.lastUpdated).toLocaleString('en-IN') : '',
-              hasLocation: true,
-              isCalculating: false,
-              isAssigned: true,
-              isApproximate: true,
-            } as any]);
-            toast.warning('Showing approximate distance (route unavailable)');
-            return;
-          }
-        }
-      } catch {
-        // ignore
-      }
-      toast.error(`Failed to calculate distances: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  };
-
-  // Get ETA for share-technician-info dialog (reuses same job coords and distance logic)
-  const getEtaForShareDialog = useCallback(async (job: Job): Promise<{ durationText?: string; estimatedArrival?: string } | null> => {
-    const resolved = await resolveJobCoordsForMeasure(job);
-    if (!resolved) return null;
-
-    const workingJob = resolved.workingRow;
-    const jobCoords = { lat: resolved.lat, lng: resolved.lng };
-
-    const assignedTechnicianId =
-      workingJob.assigned_technician_id || workingJob.assignedTechnicianId;
-    if (!assignedTechnicianId) return null;
-    const assignedTechnician = technicians.find(t => t.id === assignedTechnicianId);
-    const techLocation = assignedTechnician?.currentLocation || (assignedTechnician as any)?.current_location;
-    if (!techLocation?.latitude || !techLocation?.longitude) return null;
-    try {
-      await ensureGoogleMapsLoaded();
-      const distanceMatrix = new (window as any).google.maps.DistanceMatrixService();
-      const origin = { lat: Number(techLocation.latitude), lng: Number(techLocation.longitude) };
-      const destination = { lat: jobCoords.lat, lng: jobCoords.lng };
-      return new Promise((resolve) => {
-        distanceMatrix.getDistanceMatrix(
-          {
-            origins: [origin],
-            destinations: [destination],
-            travelMode: (window as any).google.maps.TravelMode.DRIVING,
-            unitSystem: (window as any).google.maps.UnitSystem.METRIC,
-          },
-          (response: any, status: any) => {
-            if (status !== (window as any).google.maps.DistanceMatrixStatus.OK || !response) {
-              resolve(null);
-              return;
-            }
-            const result = response.rows?.[0]?.elements?.[0];
-            if (!result || result.status !== (window as any).google.maps.DistanceMatrixElementStatus.OK) {
-              resolve(null);
-              return;
-            }
-            const durationText = result.duration?.text || '';
-            const durationValue = result.duration?.value ?? 0;
-            let estimatedArrival: string | undefined;
-            if (techLocation?.lastUpdated && durationValue > 0) {
-              try {
-                const lastUpdatedDate = new Date((techLocation as any).lastUpdated);
-                const arrivalDate = new Date(lastUpdatedDate.getTime() + durationValue * 1000);
-                estimatedArrival = formatTime12Hour(arrivalDate);
-              } catch {
-                estimatedArrival = undefined;
-              }
-            }
-            resolve({ durationText, estimatedArrival: estimatedArrival || undefined });
-          }
-        );
-      });
-    } catch {
-      return null;
-    }
-  }, [technicians, ensureGoogleMapsLoaded, formatTime12Hour]);
-
-  const handleJobStatusUpdate = async (jobId: string, newStatus: string) => {
-    try {
-      const { error } = await db.jobs.update(jobId, { status: newStatus as 'PENDING' | 'ASSIGNED' | 'EN_ROUTE' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED' });
-      
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      // Update local state
-      setCustomerJobs(prev => {
-        const updated = { ...prev };
-        Object.keys(updated).forEach(customerId => {
-          updated[customerId] = updated[customerId].map(job => 
-            job.id === jobId ? { ...job, status: newStatus } : job
-          );
-        });
-        return updated;
-      });
-
-      // Also update the main jobs state
-      setJobs(prev => prev.map(job => 
-        job.id === jobId ? { ...job, status: newStatus } : job
-      ));
-
-      toast.success(`Job status updated to ${newStatus}`);
-
-      // Send notifications for specific status changes
-      const job = jobs.find(j => j.id === jobId);
-      if (job) {
-        const customer = job.customer;
-        const technician = technicians.find(t => t.id === (job.assigned_technician_id || job.assignedTechnicianId));
-        
-        if (newStatus === 'COMPLETED' && technician) {
-          const notification = createJobCompletedNotification(
-            job.job_number || job.jobNumber,
-            customer?.full_name || customer?.fullName || 'Customer',
-            technician.fullName,
-            jobId
-          );
-          await sendNotification(notification);
-        } else if (newStatus === 'CANCELLED') {
-          const notification = createJobCancelledNotification(
-            job.job_number || job.jobNumber,
-            customer?.full_name || customer?.fullName || 'Customer',
-            jobId
-          );
-          await sendNotification(notification);
-        }
-      }
-    } catch (error) {
-      toast.error('Failed to update job status');
-    }
-  };
+  const handleShareJobWhatsApp = (job: Job) => shareAdminJobViaWhatsApp(job, technicians);
+
+  const jobDistanceMeasureCtx = useMemo(
+    (): AdminJobDistanceMeasureCtx => ({
+      technicians,
+      jobs,
+      setTechnicians,
+      selectedJobForDistance,
+      customDistanceFromId,
+      customDistanceToId,
+      setSelectedJobForDistance,
+      setCustomDistanceResult,
+      setIsLoadingCustomDistance,
+      setIsOpeningCustomDistanceMaps,
+      setCustomDistanceFromId,
+      setCustomDistanceToId,
+      setDistanceMeasurementDialogOpen,
+      setTechnicianDistances,
+      setIsCalculatingDistances,
+    }),
+    [
+      technicians,
+      jobs,
+      selectedJobForDistance,
+      customDistanceFromId,
+      customDistanceToId,
+    ]
+  );
+
+  const handleMeasureDistance = useCallback(
+    (job: Job) => openAdminJobDistanceMeasure(job, jobDistanceMeasureCtx),
+    [jobDistanceMeasureCtx]
+  );
+
+  const calculateCustomDistanceBetweenStops = useCallback(
+    () => calculateAdminCustomDistanceBetweenStops(jobDistanceMeasureCtx),
+    [jobDistanceMeasureCtx]
+  );
+
+  const openCustomDistanceInGoogleMaps = useCallback(
+    () => openAdminCustomDistanceInGoogleMaps(jobDistanceMeasureCtx),
+    [jobDistanceMeasureCtx]
+  );
+
+  const getMeasureStopSelectOptions = useCallback(
+    () => getAdminMeasureStopSelectOptions(jobDistanceMeasureCtx),
+    [jobDistanceMeasureCtx]
+  );
+
+  const getEtaForShareDialog = useCallback(
+    (job: Job) => getAdminJobEtaForShareDialog(job, technicians),
+    [technicians]
+  );
+
+  const handleJobStatusUpdate = useCallback(
+    (jobId: string, newStatus: string) =>
+      updateAdminJobStatus(jobId, newStatus, {
+        jobs,
+        technicians,
+        setCustomerJobs,
+        setJobs,
+      }),
+    [jobs, technicians]
+  );
 
   // Handle scheduling follow-up
   const handleScheduleFollowUp = (job: Job) => {
     openAdminModal('follow-up', { jobId: job.id });
   };
 
-  // Handle follow-up submission
-  const handleFollowUpSubmit = async (jobId: string, followUpData: {
-    followUpDate: string;
-    followUpReason: string;
-    parentFollowUpId?: string;
-    rescheduleFollowUpId?: string;
-    autoMoveToOngoingOnDate?: boolean;
-  }) => {
-    try {
-      // If rescheduling, check if the old follow-up is a root (no parent) before deleting
-      let wasRootFollowUp = false;
-      if (followUpData.rescheduleFollowUpId) {
-        // Get the old follow-up to check if it's a root
-        const { data: oldFollowUp } = await supabase
-          .from('follow_ups')
-          .select('parent_follow_up_id')
-          .eq('id', followUpData.rescheduleFollowUpId)
-          .single();
-        
-        wasRootFollowUp = !oldFollowUp?.parent_follow_up_id;
-        
-        const { error: deleteError } = await supabase
-          .from('follow_ups')
-          .delete()
-          .eq('id', followUpData.rescheduleFollowUpId);
+  const handleFollowUpSubmit = useCallback(
+    (jobId: string, followUpData: AdminFollowUpSubmitData) =>
+      submitAdminFollowUp(jobId, followUpData, {
+        jobs,
+        customerJobs,
+        statusFilter,
+        currentPage,
+        setJobs,
+        setCustomerJobs,
+        setAllFollowUpJobs,
+        loadFilteredJobs,
+      }),
+    [jobs, customerJobs, statusFilter, currentPage, loadFilteredJobs]
+  );
 
-      if (deleteError) {
-        if (process.env.NODE_ENV === 'development') {
-          console.error('Delete follow-up error details:', deleteError);
-        }
-        // Provide more helpful error message for 401 errors
-        if (deleteError.code === 'PGRST301' || deleteError.message?.includes('401') || deleteError.message?.includes('unauthorized')) {
-          throw new Error('Authentication failed. Please check your login status and try again.');
-        }
-        throw new Error(deleteError.message || 'Failed to delete follow-up record');
-      }
-      }
-
-      // Create follow-up record in follow_ups table
-      // Store null for admin scheduling so UI consistently renders "Admin" even if a technician session exists in another tab.
-      const { data: followUpRecord, error: followUpError } = await supabase
-        .from('follow_ups')
-        .insert({
-          job_id: jobId,
-          parent_follow_up_id: followUpData.parentFollowUpId || null,
-          follow_up_date: followUpData.followUpDate,
-          reason: followUpData.followUpReason,
-          notes: null,
-          scheduled_by: null,
-          completed: false
-        } as any)
-        .select()
-        .single();
-
-      if (followUpError) {
-        if (process.env.NODE_ENV === 'development') {
-          console.error('Follow-up error details:', followUpError);
-        }
-        // Provide more helpful error message for 401 errors
-        if (followUpError.code === 'PGRST301' || followUpError.message?.includes('401') || followUpError.message?.includes('unauthorized')) {
-          throw new Error('Authentication failed. Please check your login status and try again.');
-        }
-        throw new Error(followUpError.message || 'Failed to create follow-up record');
-      }
-
-      // If this is a root follow-up (no parent) OR if we're rescheduling a root follow-up, update job status
-      // Store null for admin scheduling so UI consistently renders "Admin" even if a technician session exists in another tab.
-      if (!followUpData.parentFollowUpId || wasRootFollowUp) {
-        const existingJob =
-          jobs.find((j) => j.id === jobId) ||
-          Object.values(customerJobs)
-            .flat()
-            .find((j) => j.id === jobId);
-        const requirements = applyAutoMoveToOngoingOnDateFlag(
-          (existingJob as any)?.requirements,
-          Boolean(followUpData.autoMoveToOngoingOnDate)
-        );
-
-        const { error: jobError } = await db.jobs.update(jobId, {
-          status: 'FOLLOW_UP',
-          follow_up_date: followUpData.followUpDate,
-          follow_up_notes: followUpData.followUpReason,
-          follow_up_scheduled_by: null,
-          follow_up_scheduled_at: new Date().toISOString(),
-          requirements,
-        } as any);
-
-        if (jobError) {
-          throw new Error(jobError.message);
-        }
-
-        // Update local state
-        setJobs(prev => prev.map(job => 
-          job.id === jobId ? { 
-            ...job, 
-            status: 'FOLLOW_UP',
-            followUpDate: followUpData.followUpDate,
-            followUpNotes: followUpData.followUpReason,
-            followUpScheduledBy: 'admin',
-            followUpScheduledAt: new Date().toISOString(),
-            requirements,
-          } : job
-        ));
-
-        setCustomerJobs(prev => {
-          const updated = { ...prev };
-          Object.keys(updated).forEach(customerId => {
-            updated[customerId] = updated[customerId].map(job => 
-              job.id === jobId ? { 
-                ...job, 
-                status: 'FOLLOW_UP',
-                followUpDate: followUpData.followUpDate,
-                followUpNotes: followUpData.followUpReason + ((followUpData as any).followUpNotes ? ` - ${(followUpData as any).followUpNotes}` : ''),
-                followUpScheduledBy: 'admin',
-                followUpScheduledAt: new Date().toISOString(),
-                requirements,
-              } : job
-            );
-          });
-          return updated;
-        });
-      }
-
-      toast.success(
-        followUpData.rescheduleFollowUpId 
-          ? 'Follow-up rescheduled successfully' 
-          : followUpData.parentFollowUpId 
-            ? 'Nested follow-up added successfully' 
-            : 'Follow-up scheduled successfully'
-      );
-      
-      // Reload follow-up jobs for glow (minimal: today/tomorrow only)
-      db.jobs.getFollowUpForGlow().then(({ data }) => {
-        if (data) setAllFollowUpJobs(data as Job[]);
-      }).catch(() => {});
-      
-      // Reload filtered jobs if currently viewing follow-up jobs to show updated date
-      if (statusFilter === 'RESCHEDULED') {
-        loadFilteredJobs('RESCHEDULED', currentPage);
-      }
-    } catch (error: any) {
-      const errorMessage = error?.message || 'Failed to schedule follow-up';
-      if (process.env.NODE_ENV === 'development') {
-        console.error('Follow-up submission error:', error);
-      }
-      toast.error(errorMessage);
-    }
-  };
-
-  // Handle moving follow-up job to ongoing
   const handleMoveToOngoing = (job: Job) => {
-    // Set default values to current date and time
-    const now = new Date();
-    const today = getTodayLocalDate();
-    const currentHour = now.getHours();
-    
-    // Determine time slot based on current time
-    let defaultTimeSlot: 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM' = 'MORNING';
-    let defaultTime = '09:00'; // Default to 9 AM for MORNING
-    
-    if (currentHour >= 5 && currentHour < 12) {
-      defaultTimeSlot = 'MORNING';
-      defaultTime = '09:00';
-    } else if (currentHour >= 12 && currentHour < 17) {
-      defaultTimeSlot = 'AFTERNOON';
-      defaultTime = '14:00';
-    } else if (currentHour >= 17 && currentHour < 20) {
-      defaultTimeSlot = 'EVENING';
-      defaultTime = '17:00';
-    } else {
-      defaultTimeSlot = 'CUSTOM';
-      defaultTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    }
-    
-    setMoveToOngoingDate(today);
-    setMoveToOngoingTimeSlot(defaultTimeSlot);
-    setMoveToOngoingCustomTime(defaultTimeSlot === 'CUSTOM' ? defaultTime : '');
+    const { date, timeSlot, customTime } = getDefaultAdminMoveToOngoingSchedule();
+    setMoveToOngoingDate(date);
+    setMoveToOngoingTimeSlot(timeSlot);
+    setMoveToOngoingCustomTime(customTime);
     setSelectedJobForMoveToOngoing(job);
     openAdminModal('move-ongoing', { jobId: job.id });
   };
 
   const handleAssignFromFollowUp = (job: Job) => {
-    // Step 1: pick technician
     setFollowUpAssignFlow(true);
     handleAssignJob(job);
   };
 
-  // Actually perform the move to ongoing action with date and time
   const performMoveToOngoing = async () => {
-    if (!selectedJobForMoveToOngoing) return;
-
-    if (!moveToOngoingDate) {
-      toast.error('Please select a date', TOAST_VALIDATION);
-      return;
-    }
-
-    if (moveToOngoingTimeSlot === 'CUSTOM' && !moveToOngoingCustomTime) {
-      toast.error('Please choose a visit time (list or exact time)', TOAST_VALIDATION);
-      return;
-    }
-
-    try {
-      setIsUpdating(true);
-      
-      // Determine the time to use based on time slot
-      let timeToUse: string;
-      if (moveToOngoingTimeSlot === 'CUSTOM') {
-        timeToUse = moveToOngoingCustomTime;
-      } else if (moveToOngoingTimeSlot === 'MORNING') {
-        timeToUse = '09:00';
-      } else if (moveToOngoingTimeSlot === 'AFTERNOON') {
-        timeToUse = '14:00';
-      } else { // EVENING
-        timeToUse = '17:00';
-      }
-      
-      // Combine date and time into ISO string for assigned_date
-      const dateTimeString = `${moveToOngoingDate}T${timeToUse}:00`;
-      const assignedDateTime = new Date(dateTimeString).toISOString();
-
-      // Update job with new scheduled date, time slot, and status
-      // If CUSTOM is selected, convert to appropriate time slot and store custom time in requirements
-      let timeSlotToUse: 'MORNING' | 'AFTERNOON' | 'EVENING' = moveToOngoingTimeSlot as any;
-      let customTimeInRequirements: string | null = null;
-      
-      if (moveToOngoingTimeSlot === 'CUSTOM' && moveToOngoingCustomTime) {
-        // Parse the custom time to determine time slot
-        const [hours] = moveToOngoingCustomTime.split(':').map(Number);
-        if (hours < 13) {
-          timeSlotToUse = 'MORNING';
-        } else if (hours < 18) {
-          timeSlotToUse = 'AFTERNOON';
-        } else {
-          timeSlotToUse = 'EVENING';
-        }
-        customTimeInRequirements = moveToOngoingCustomTime;
-      }
-      
-      // Get current requirements to preserve existing data
-      const currentJob = jobs.find(j => j.id === selectedJobForMoveToOngoing.id);
-      let requirements: any[] = [];
-      try {
-        // Handle requirements - could be array, object, or JSON string
-        const reqData = currentJob?.requirements || (currentJob as any)?.requirements;
-        if (reqData) {
-          if (typeof reqData === 'string') {
-            requirements = JSON.parse(reqData);
-          } else if (Array.isArray(reqData)) {
-            requirements = [...reqData];
-          } else if (typeof reqData === 'object') {
-            requirements = [reqData];
-          }
-        }
-        // Ensure it's an array
-        if (!Array.isArray(requirements)) {
-          requirements = [];
-        }
-      } catch (e) {
-        console.error('Error parsing requirements:', e);
-        requirements = [];
-      }
-      
-      // Update or add custom_time in requirements if CUSTOM time slot
-      if (customTimeInRequirements) {
-        // Find or create a requirement object to store custom_time
-        let found = false;
-        for (let i = 0; i < requirements.length; i++) {
-          if (requirements[i] && typeof requirements[i] === 'object' && !Array.isArray(requirements[i])) {
-            requirements[i].custom_time = customTimeInRequirements;
-            found = true;
-            break;
-          }
-        }
-        if (!found) {
-          // If requirements is empty, create first object, otherwise append
-          if (requirements.length === 0) {
-            requirements.push({ custom_time: customTimeInRequirements });
-          } else {
-            // Try to add to first object, or create new one
-            const firstReq = requirements[0];
-            if (firstReq && typeof firstReq === 'object' && !Array.isArray(firstReq)) {
-              firstReq.custom_time = customTimeInRequirements;
-            } else {
-              requirements.push({ custom_time: customTimeInRequirements });
-            }
-          }
-        }
-      }
-      
-      const shouldAssign = assignAfterMoveToOngoing && !!followUpAssignTechnicianId;
-      const updateData: any = {
-        status: shouldAssign ? 'ASSIGNED' : 'PENDING',
-        scheduled_date: moveToOngoingDate, // Already in YYYY-MM-DD format from date input
-        scheduled_time_slot: timeSlotToUse,
-        // Clear follow-up related fields when moving to ongoing
-        follow_up_date: null,
-        follow_up_time: null,
-        follow_up_notes: null,
-        follow_up_scheduled_by: null,
-        follow_up_scheduled_at: null,
-        // Assign immediately if coming from follow-up "Assign" flow, else clear for normal move-to-ongoing
-        assigned_technician_id: shouldAssign ? followUpAssignTechnicianId : null,
-        assigned_date: shouldAssign ? new Date().toISOString() : null,
-        assigned_by: shouldAssign ? (user?.id || null) : null,
-        // Drop team so the next primary assignee is the only link (avoids stale team_members vs new assignee).
-        team_members: [],
-      };
-
-      // Only update requirements if we have custom time or if requirements exist
-      if (requirements.length > 0) {
-        updateData.requirements = requirements;
-      }
-
-      console.log('Admin updating job with data:', { 
-        id: selectedJobForMoveToOngoing.id, 
-        scheduled_date: moveToOngoingDate,
-        scheduled_time_slot: timeSlotToUse,
-        status: 'PENDING'
-      });
-
-      const { error, data: updatedJob } = await db.jobs.update(selectedJobForMoveToOngoing.id, updateData);
-
-      if (error) {
-        console.error('Error updating job:', error);
-        throw new Error(error.message);
-      }
-
-      console.log('Job updated successfully:', updatedJob);
-
-      if (shouldAssign) {
-        broadcastTechnicianJobListRefresh([followUpAssignTechnicianId]);
-      }
-
-      // Update local state
-      setJobs(prev => prev.map(j => {
-        if (j.id === selectedJobForMoveToOngoing.id) {
-          const updatedJob = { 
-            ...j, 
-            status: 'PENDING', 
-            assignedDate: null,
-            assignedTechnicianId: null,
-            assigned_technician_id: null,
-            team_members: [] as string[],
-            scheduledDate: moveToOngoingDate,
-            scheduledTimeSlot: timeSlotToUse,
-            requirements: requirements,
-            // Clear all followup-related fields
-            followUpDate: null,
-            follow_up_date: null,
-            followUpTime: null,
-            follow_up_time: null,
-            followUpNotes: null,
-            follow_up_notes: null,
-            followUpScheduledBy: null,
-            follow_up_scheduled_by: null,
-            followUpScheduledAt: null,
-            follow_up_scheduled_at: null
-          };
-          return updatedJob;
-        }
-        return j;
-      }));
-
-      // Update customer jobs state
-      setCustomerJobs(prev => {
-        const updated = { ...prev };
-        Object.keys(updated).forEach(customerId => {
-          updated[customerId] = updated[customerId].map(job => {
-            if (job.id === selectedJobForMoveToOngoing.id) {
-              return { 
-                ...job, 
-                status: 'PENDING', 
-                assignedDate: null,
-                assignedTechnicianId: null,
-                assigned_technician_id: null,
-                team_members: [] as string[],
-                scheduledDate: moveToOngoingDate,
-                scheduledTimeSlot: timeSlotToUse,
-                requirements: requirements,
-                // Clear all followup-related fields
-                followUpDate: null,
-                follow_up_date: null,
-                followUpTime: null,
-                follow_up_time: null,
-                followUpNotes: null,
-                follow_up_notes: null,
-                followUpScheduledBy: null,
-                follow_up_scheduled_by: null,
-                followUpScheduledAt: null,
-                follow_up_scheduled_at: null
-              };
-            }
-            return job;
-          });
-        });
-        return updated;
-      });
-
-      // Reload jobs to ensure everything is updated everywhere
-      await loadFilteredJobs(statusFilter, currentPage);
-
-      // Refresh the follow-up glow (red/yellow) so the stats card updates immediately
-      // now that this job is no longer a today/tomorrow follow-up.
-      db.jobs.getFollowUpForGlow().then(({ data }) => {
-        if (data) setAllFollowUpJobs(data as Job[]);
-      }).catch(() => {});
-
-      toast.success('Job moved to ongoing with updated schedule');
-
-      // If this was a follow-up "Assign" flow, assignment was applied as part of the move-to-ongoing update.
-      if (assignAfterMoveToOngoing) {
-        const assignedTechnician = technicians.find((t) => t.id === followUpAssignTechnicianId);
-        if (assignedTechnician) {
-          const notification = createJobAssignedNotification(
-            (selectedJobForMoveToOngoing as any).job_number || (selectedJobForMoveToOngoing as any).jobNumber || 'Job',
-            ((selectedJobForMoveToOngoing as any).customer as any)?.full_name || ((selectedJobForMoveToOngoing as any).customer as any)?.fullName || 'Customer',
-            assignedTechnician.fullName,
-            (selectedJobForMoveToOngoing as any).id,
-            assignedTechnician.id
-          );
-          await sendNotification(notification);
-        }
-        setAssignAfterMoveToOngoing(false);
-        setFollowUpAssignTechnicianId('');
-      }
-
-      // Close dialog and reset state
-      setMoveToOngoingDialogOpen(false);
-      setSelectedJobForMoveToOngoing(null);
-      setMoveToOngoingDate('');
-      setMoveToOngoingTimeSlot('MORNING');
-      setMoveToOngoingCustomTime('');
-    } catch (error) {
-      console.error('Error moving job to ongoing:', error);
-      toast.error('Failed to move job to ongoing');
-      setAssignAfterMoveToOngoing(false);
-      setFollowUpAssignTechnicianId('');
-    } finally {
-      setIsUpdating(false);
-    }
+    await performAdminMoveToOngoing({
+      selectedJob: selectedJobForMoveToOngoing,
+      moveToOngoingDate,
+      moveToOngoingTimeSlot,
+      moveToOngoingCustomTime,
+      assignAfterMoveToOngoing,
+      followUpAssignTechnicianId,
+      jobs,
+      statusFilter,
+      currentPage,
+      technicians,
+      userId: user?.id,
+      setIsUpdating,
+      setJobs,
+      setCustomerJobs,
+      setAllFollowUpJobs,
+      setAssignAfterMoveToOngoing,
+      setFollowUpAssignTechnicianId,
+      setMoveToOngoingDialogOpen,
+      setSelectedJobForMoveToOngoing,
+      setMoveToOngoingDate,
+      setMoveToOngoingTimeSlot,
+      setMoveToOngoingCustomTime,
+      loadFilteredJobs,
+    });
   };
 
-  // Handle job denial
   const handleDenyJob = async (job: Job) => {
-    // Fetch full job data with customer if not already loaded
-    let jobWithCustomer = job;
-    if (!job.customer || !(job.customer as any)?.full_name && !job.customer?.fullName) {
-      try {
-        const { data: fullJob, error } = await db.jobs.getByIdFull(job.id);
-        if (!error && fullJob) {
-          jobWithCustomer = fullJob as Job;
-        }
-      } catch (error) {
-        console.error('Error fetching job details:', error);
-        // Continue with the job data we have
-      }
-    }
-    
+    const jobWithCustomer = await prepareAdminDenyJob(job);
     setSelectedJobForDeny(jobWithCustomer);
     setDenyReason('');
     openAdminModal('deny', { jobId: jobWithCustomer.id });
   };
 
-  // Handle job denial submission
   const handleDenyJobSubmit = async () => {
-    if (!selectedJobForDeny || !denyReason.trim()) {
-      toast.error('Please provide a reason for denial');
-      return;
-    }
-
-    try {
-      // Store "Admin" instead of admin name for admin denials
-      const deniedByValue = 'Admin';
-      
-      const { error } = await db.jobs.update(selectedJobForDeny.id, {
-        status: 'DENIED',
-        denial_reason: denyReason.trim(),
-        denied_by: deniedByValue,
-        denied_at: new Date().toISOString()
-      } as any);
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      // Update local state
-      setJobs(prev => prev.map(job => 
-        job.id === selectedJobForDeny.id ? { 
-          ...job, 
-          status: 'DENIED',
-          denialReason: denyReason.trim(),
-          deniedBy: 'Admin',
-          deniedAt: new Date().toISOString()
-        } : job
-      ));
-
-      setCustomerJobs(prev => {
-        const updated = { ...prev };
-        Object.keys(updated).forEach(customerId => {
-          updated[customerId] = updated[customerId].map(job => 
-            job.id === selectedJobForDeny.id ? { 
-              ...job, 
-              status: 'DENIED',
-              denialReason: denyReason.trim(),
-              deniedBy: 'Admin',
-              deniedAt: new Date().toISOString()
-            } : job
-          );
-        });
-        return updated;
-      });
-
-      toast.success('Job denied successfully');
-      setDenyDialogOpen(false);
-      setSelectedJobForDeny(null);
-      setDenyReason('');
-    } catch (error: any) {
-      console.error('Error denying job:', error);
-      const errorMessage = error?.message || 'Failed to deny job';
-      
-      // Check if it's a column missing error
-      if (errorMessage.includes('denial_reason') || errorMessage.includes('denied_by') || errorMessage.includes('denied_at') || errorMessage.includes('400')) {
-        toast.error('Database columns missing. Please run the migration: add-denial-fields-to-jobs.sql', {
-          duration: 8000,
-        });
-      } else {
-        toast.error(errorMessage);
-      }
-    }
+    await submitAdminJobDeny({
+      selectedJobForDeny,
+      denyReason,
+      setJobs,
+      setCustomerJobs,
+      setDenyDialogOpen,
+      setSelectedJobForDeny,
+      setDenyReason,
+    });
   };
 
-  // Handle completion email sent (separate from WhatsApp message_sent)
   const handleMailSent = async (jobId: string) => {
-    try {
-      const job = jobs.find(j => j.id === jobId);
-      if (!job) return;
-
-      let requirements: any[] = [];
-      try {
-        const reqData = (job as any).requirements || job.requirements;
-        if (typeof reqData === 'string') {
-          requirements = JSON.parse(reqData);
-        } else if (Array.isArray(reqData)) {
-          requirements = reqData;
-        } else if (reqData && typeof reqData === 'object') {
-          requirements = [reqData];
-        }
-      } catch (e) {
-        requirements = [];
-      }
-
-      const mailIndex = requirements.findIndex((r: any) => r?.mail_sent !== undefined);
-      if (mailIndex >= 0) {
-        requirements[mailIndex].mail_sent = true;
-        requirements[mailIndex].mail_sent_at = new Date().toISOString();
-      } else {
-        let added = false;
-        for (let i = 0; i < requirements.length; i++) {
-          if (requirements[i] && typeof requirements[i] === 'object' && !Array.isArray(requirements[i])) {
-            requirements[i].mail_sent = true;
-            requirements[i].mail_sent_at = new Date().toISOString();
-            added = true;
-            break;
-          }
-        }
-        if (!added) {
-          requirements.push({
-            mail_sent: true,
-            mail_sent_at: new Date().toISOString(),
-          });
-        }
-      }
-
-      const { error } = await db.jobs.update(jobId, {
-        requirements: JSON.stringify(requirements),
-      } as any);
-
-      if (error) {
-        console.error('Error marking mail as sent:', error);
-        toast.error('Failed to save mail status: ' + error.message);
-      } else {
-        await loadCompletedJobDetails(jobId);
-        await loadFilteredJobs(statusFilter, currentPage);
-      }
-    } catch (error: any) {
-      console.error('Error marking mail as sent:', error);
-    }
+    await markAdminJobMailSent(jobId, {
+      jobs,
+      statusFilter,
+      currentPage,
+      loadCompletedJobDetails,
+      loadFilteredJobs,
+    });
   };
 
-  // Handle message sent
   const handleMessageSent = async (jobId: string) => {
-    try {
-      // Get current job
-      const job = jobs.find(j => j.id === jobId);
-      if (!job) return;
-
-      // Update requirements to mark message as sent
-      let requirements: any[] = [];
-      try {
-        const reqData = (job as any).requirements || job.requirements;
-        if (typeof reqData === 'string') {
-          requirements = JSON.parse(reqData);
-        } else if (Array.isArray(reqData)) {
-          requirements = reqData;
-        } else if (reqData && typeof reqData === 'object') {
-          requirements = [reqData];
-        }
-      } catch (e) {
-        requirements = [];
-      }
-
-      // Add or update message_sent flag
-      // Check if message_sent already exists in any requirement object
-      const messageIndex = requirements.findIndex((r: any) => r?.message_sent !== undefined);
-      if (messageIndex >= 0) {
-        // Update existing message_sent entry
-        requirements[messageIndex].message_sent = true;
-        requirements[messageIndex].message_sent_at = new Date().toISOString();
-      } else {
-        // Find the first object that can hold message_sent, or create new one
-        // Prefer adding to an existing object rather than creating a new array entry
-        let added = false;
-        for (let i = 0; i < requirements.length; i++) {
-          if (requirements[i] && typeof requirements[i] === 'object' && !Array.isArray(requirements[i])) {
-            requirements[i].message_sent = true;
-            requirements[i].message_sent_at = new Date().toISOString();
-            added = true;
-            break;
-          }
-        }
-        if (!added) {
-          // Create a new entry for message_sent
-          requirements.push({
-            message_sent: true,
-            message_sent_at: new Date().toISOString()
-          });
-        }
-      }
-      
-      console.log('Updated requirements with message_sent:', JSON.stringify(requirements, null, 2));
-
-      // Update job in database
-      const { error } = await db.jobs.update(jobId, {
-        requirements: JSON.stringify(requirements)
-      } as any);
-
-      if (error) {
-        console.error('Error marking message as sent:', error);
-        toast.error('Failed to save message status: ' + error.message);
-      } else {
-        toast.success('Message sent confirmation saved');
-        closeAdminModal();
-        setSelectedJobForMessage(null);
-        // Ensure the updated `requirements` are reflected in the Completed Jobs UI.
-        // The main Completed filter list can be fetched in "slim" mode where `requirements` are omitted,
-        // so we explicitly load the full job details for this job id.
-        await loadCompletedJobDetails(jobId);
-        // Reload jobs to reflect the change - pass current filter and page
-        await loadFilteredJobs(statusFilter, currentPage);
-      }
-    } catch (error: any) {
-      console.error('Error marking message as sent:', error);
-    }
+    await markAdminJobMessageSent(jobId, {
+      jobs,
+      statusFilter,
+      currentPage,
+      loadCompletedJobDetails,
+      loadFilteredJobs,
+      closeAdminModal,
+      setSelectedJobForMessage,
+    });
   };
 
   // Calculate AMC end date: agreement date + years - 1 day
   // calculateAMCEndDate moved to CompleteJobDialog component
 
-  // Handle job completion - first show technician selection
-  const snapshotJobAssignmentForCompleteFlow = (job: Job) => {
-    const assignedTechnicianId =
-      (job as any).assigned_technician_id ?? job.assignedTechnicianId ?? null;
-    completeFlowSnapshotRef.current = {
-      jobId: job.id,
-      assignedTechnicianId: assignedTechnicianId ? String(assignedTechnicianId) : null,
-      status: job.status,
-      assignedDate: (job as any).assigned_date ?? job.assignedDate ?? null,
-    };
-  };
-
-  const clearCompleteFlowSnapshot = () => {
-    completeFlowSnapshotRef.current = null;
-  };
-
-  const revertIncompleteCompleteFlow = useCallback(async () => {
-    const snapshot = completeFlowSnapshotRef.current;
-    if (!snapshot) return;
-    completeFlowSnapshotRef.current = null;
-
-    const applyLocalRevert = () => {
-      setJobs((prev) =>
-        prev.map((job) =>
-          job.id === snapshot.jobId
-            ? {
-                ...job,
-                assigned_technician_id: snapshot.assignedTechnicianId,
-                assignedTechnicianId: snapshot.assignedTechnicianId,
-                assigned_date: snapshot.assignedDate,
-                assignedDate: snapshot.assignedDate,
-                status: snapshot.status as Job['status'],
-              }
-            : job
-        )
-      );
-      setCustomerJobs((prev) => {
-        const updated = { ...prev };
-        Object.keys(updated).forEach((customerId) => {
-          updated[customerId] = updated[customerId].map((job) =>
-            job.id === snapshot.jobId
-              ? {
-                  ...job,
-                  assigned_technician_id: snapshot.assignedTechnicianId,
-                  assignedTechnicianId: snapshot.assignedTechnicianId,
-                  assigned_date: snapshot.assignedDate,
-                  assignedDate: snapshot.assignedDate,
-                  status: snapshot.status as Job['status'],
-                }
-              : job
-          );
-        });
-        return updated;
-      });
-    };
-
-    applyLocalRevert();
-
-    try {
-      const { data, error } = await db.jobs.getById(snapshot.jobId);
-      if (error || !data) return;
-
-      const row = data as Record<string, unknown>;
-      const status = String(row.status || '');
-      if (status === 'COMPLETED') return;
-
-      const currentAssign = row.assigned_technician_id ? String(row.assigned_technician_id) : null;
-      if (currentAssign === snapshot.assignedTechnicianId) return;
-
-      const { error: updateError } = await db.jobs.update(snapshot.jobId, {
-        assigned_technician_id: snapshot.assignedTechnicianId,
-        assigned_date: snapshot.assignedDate,
-        status: snapshot.status,
-      });
-      if (updateError) {
-        console.warn(
-          '[AdminDashboard] Could not revert assignment after cancelled complete flow:',
-          updateError
-        );
-        return;
-      }
-
-      const techIds = [currentAssign, snapshot.assignedTechnicianId].filter(Boolean) as string[];
-      if (techIds.length) broadcastTechnicianJobListRefresh(techIds);
-    } catch (err) {
-      console.warn('[AdminDashboard] Revert complete-flow assignment failed:', err);
-    }
-  }, []);
+  const revertIncompleteCompleteFlow = useCallback(
+    () =>
+      revertIncompleteAdminCompleteFlow({
+        snapshotRef: completeFlowSnapshotRef,
+        setJobs,
+        setCustomerJobs,
+      }),
+    []
+  );
 
   const handleCompleteJob = async (job: Job) => {
-    // Fetch full job data with customer if not already loaded
-    let jobWithCustomer = job;
-    if (!job.customer || !job.serviceType) {
-      try {
-        const { data: fullJob, error } = await db.jobs.getByIdFull(job.id);
-        if (!error && fullJob) {
-          jobWithCustomer = fullJob as Job;
-        }
-      } catch (error) {
-        console.error('Error fetching job details:', error);
-        // Continue with the job data we have
-      }
-    }
-    
+    const jobWithCustomer = await fetchAdminJobForComplete(job);
     setSelectedJobForComplete(jobWithCustomer);
-    snapshotJobAssignmentForCompleteFlow(jobWithCustomer);
+    snapshotAdminCompleteJobAssignment(jobWithCustomer, completeFlowSnapshotRef);
     setSelectedTechnicianForComplete('');
     openAdminModal('complete', { jobId: jobWithCustomer.id });
     setTechnicianSelectDialogOpen(true);
   };
 
-  // Handle technician selection for job completion
   const handleTechnicianSelectedForComplete = async () => {
-    if (!selectedTechnicianForComplete || !selectedJobForComplete) {
-      toast.error('Please select who completed the job');
+    if (
+      !validateAdminCompleteTechnicianSelection(
+        selectedTechnicianForComplete,
+        selectedJobForComplete,
+        technicians
+      )
+    ) {
       return;
     }
 
-    const isOfficeCompletion = selectedTechnicianForComplete === 'office';
-
-    if (!isOfficeCompletion) {
-      // Validate technician ID format (should be a valid UUID)
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      if (!uuidRegex.test(selectedTechnicianForComplete)) {
-        console.error('Invalid technician ID format:', selectedTechnicianForComplete);
-        toast.error('Invalid technician selected. Please try again.');
-        return;
-      }
-
-      // Verify technician exists in the technicians list
-      const selectedTechnician = technicians.find(t => t.id === selectedTechnicianForComplete);
-      if (!selectedTechnician) {
-        console.error('Technician not found in list:', selectedTechnicianForComplete);
-        toast.error('Selected technician not found. Please refresh and try again.');
-        return;
-      }
-    }
-
-    // Always fetch fresh QR codes when completing a job (cache can miss newly created codes)
     void loadQrCodes(true).catch((err) => console.error('Error loading QR codes:', err));
-
-    // Assignment is applied only when the job is actually completed.
-    // If the dialog is closed early, revertIncompleteCompleteFlow restores the prior assignment.
 
     suppressCompleteFlowRevertRef.current = true;
     setTechnicianSelectDialogOpen(false);
     setCompleteDialogOpen(true);
   };
 
-  // Handle job deletion
   const handleDeleteJob = async () => {
-    if (!jobToDelete) return;
-    
-    try {
-      broadcastTechnicianJobListRefreshForJob(jobToDelete);
-      const { error } = await db.jobs.delete(jobToDelete.id);
-      
-      if (error) {
-        const msg = error.message || 'Failed to delete job';
-        if (error.code === '409' || /409|conflict|foreign key|23503/i.test(msg)) {
-          throw new Error(
-            'Could not delete this job. Re-run scripts/delete-job-admin-rpc.sql and scripts/technician-job-sync-realtime.sql in Supabase SQL Editor.'
-          );
-        }
-        throw new Error(msg);
-      }
-
-      const deletedId = jobToDelete.id;
-      // Update local state
-      setJobs(prev => prev.filter(job => job.id !== deletedId));
-      setCustomerJobs(prev => {
-        const updated = { ...prev };
-        Object.keys(updated).forEach(customerId => {
-          updated[customerId] = updated[customerId].filter(job => job.id !== deletedId);
-        });
-        return updated;
-      });
-      setLoadedCompletedJobDetails((prev) => {
-        if (!prev[deletedId]) return prev;
-        const next = { ...prev };
-        delete next[deletedId];
-        return next;
-      });
-      setLoadingCompletedJobDetails((prev) => {
-        if (!prev[deletedId]) return prev;
-        const next = { ...prev };
-        delete next[deletedId];
-        return next;
-      });
-      if (statusFilter === 'COMPLETED' || statusFilter === 'CANCELLED') {
-        setTotalCount((prev) => Math.max(0, prev - 1));
-      }
-
-      toast.success(`Job ${jobToDelete.job_number || jobToDelete.jobNumber} deleted successfully`);
-      closeAdminModal();
-      setDeleteJobDialogOpen(false);
-      setJobToDelete(null);
-    } catch (error) {
-      toast.error('Failed to delete job');
-    }
+    await deleteAdminJob(jobToDelete, {
+      statusFilter,
+      setJobs,
+      setCustomerJobs,
+      setLoadedCompletedJobDetails,
+      setLoadingCompletedJobDetails,
+      setTotalCount,
+      closeAdminModal,
+      setDeleteJobDialogOpen,
+      setJobToDelete,
+    });
   };
 
-  // Handle customer status update
-  const handleCustomerStatusUpdate = async (customerId: string, newStatus: 'ACTIVE' | 'INACTIVE' | 'BLOCKED') => {
-    try {
-      const { error } = await db.customers.update(customerId, { status: newStatus });
-      
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      // Update local state
-      setCustomers(prev => prev.map(customer => 
-        customer.id === customerId ? { ...customer, status: newStatus } : customer
-      ));
-
-      toast.success(`Customer status updated to ${newStatus}`);
-    } catch (error) {
-      toast.error('Failed to update customer status');
-    }
+  const handleCustomerStatusUpdate = async (
+    customerId: string,
+    newStatus: 'ACTIVE' | 'INACTIVE' | 'BLOCKED'
+  ) => {
+    await updateAdminCustomerStatus(customerId, newStatus, setCustomers);
   };
 
-  // Open photo gallery
   const openPhotoGallery = (jobId: string, photos: string[], type: 'before' | 'after' | 'photos') => {
     try {
-      // Ensure photos is an array and filter out invalid entries
-      const validPhotos = Array.isArray(photos) 
-        ? photos.filter(photo => photo && typeof photo === 'string' && photo.trim() !== '')
-        : [];
-      
+      const validPhotos = filterValidJobGalleryPhotos(photos);
+
       if (validPhotos.length === 0) {
         toast.info('No photos available for this job');
         return;
       }
-      
+
       setSelectedJobPhotos({ jobId, photos: validPhotos, type: type as 'before' | 'after' });
       const photoType = type === 'before' || type === 'after' ? type : 'after';
       openAdminModal('photos', { jobId, photoType });
-    } catch (error) {
+    } catch {
       toast.error('Failed to open photo gallery');
     }
   };
 
-  // Handle photo deletion
   const handleDeletePhoto = (jobId: string, photoIndex: number, photoUrl: string) => {
     setPhotoToDelete({ jobId, photoIndex, photoUrl });
     setDeletePhotoDialogOpen(true);
   };
 
-  // Open photo in full-screen viewer
   const openPhotoViewer = (photoUrl: string, photoIndex: number, totalPhotos: number, jobId?: string) => {
     setSelectedPhoto({ url: photoUrl, index: photoIndex, total: totalPhotos });
     const parsed = parseAdminDashboardUrl(location.search);
@@ -8804,575 +5029,62 @@ const AdminDashboard = () => {
     });
   };
 
-  // Navigate to previous photo
   const goToPreviousPhoto = () => {
     if (!selectedPhoto) return;
-    
-    // Use selectedBillPhotos if available (for combined payment + bill photos)
-    if (selectedBillPhotos && selectedBillPhotos.length > 0) {
-      const newIndex = selectedPhoto.index > 0 ? selectedPhoto.index - 1 : selectedBillPhotos.length - 1;
-      setSelectedPhoto({ 
-        url: selectedBillPhotos[newIndex], 
-        index: newIndex, 
-        total: selectedBillPhotos.length 
-      });
-      return;
-    }
-    
-    // Use selectedCustomerPhotos if available (for customer photos)
-    if (selectedCustomerPhotos && selectedCustomerPhotos.length > 0) {
-      const newIndex = selectedPhoto.index > 0 ? selectedPhoto.index - 1 : selectedCustomerPhotos.length - 1;
-      setSelectedPhoto({ 
-        url: selectedCustomerPhotos[newIndex], 
-        index: newIndex, 
-        total: selectedCustomerPhotos.length 
-      });
-      return;
-    }
-    
-    // Fallback to selectedJobPhotos
-    if (selectedJobPhotos && selectedJobPhotos.photos) {
-      const newIndex = selectedPhoto.index > 0 ? selectedPhoto.index - 1 : selectedJobPhotos.photos.length - 1;
-      setSelectedPhoto({ 
-        url: selectedJobPhotos.photos[newIndex], 
-        index: newIndex, 
-        total: selectedJobPhotos.photos.length 
-      });
-    }
+    const photos = resolveAdminPhotoViewerSources({
+      selectedBillPhotos,
+      selectedCustomerPhotos,
+      selectedJobPhotos,
+    });
+    if (!photos?.length) return;
+    setSelectedPhoto(buildAdminPhotoViewerSelection(photos, 'prev', selectedPhoto));
   };
 
-  // Navigate to next photo
   const goToNextPhoto = () => {
     if (!selectedPhoto) return;
-    
-    // Use selectedBillPhotos if available (for combined payment + bill photos)
-    if (selectedBillPhotos && selectedBillPhotos.length > 0) {
-      const newIndex = selectedPhoto.index < selectedBillPhotos.length - 1 ? selectedPhoto.index + 1 : 0;
-      setSelectedPhoto({ 
-        url: selectedBillPhotos[newIndex], 
-        index: newIndex, 
-        total: selectedBillPhotos.length 
-      });
-      return;
-    }
-    
-    // Use selectedCustomerPhotos if available (for customer photos)
-    if (selectedCustomerPhotos && selectedCustomerPhotos.length > 0) {
-      const newIndex = selectedPhoto.index < selectedCustomerPhotos.length - 1 ? selectedPhoto.index + 1 : 0;
-      setSelectedPhoto({ 
-        url: selectedCustomerPhotos[newIndex], 
-        index: newIndex, 
-        total: selectedCustomerPhotos.length 
-      });
-      return;
-    }
-    
-    // Fallback to selectedJobPhotos
-    if (selectedJobPhotos && selectedJobPhotos.photos) {
-      const newIndex = selectedPhoto.index < selectedJobPhotos.photos.length - 1 ? selectedPhoto.index + 1 : 0;
-      setSelectedPhoto({ 
-        url: selectedJobPhotos.photos[newIndex], 
-        index: newIndex, 
-        total: selectedJobPhotos.photos.length 
-      });
-    }
+    const photos = resolveAdminPhotoViewerSources({
+      selectedBillPhotos,
+      selectedCustomerPhotos,
+      selectedJobPhotos,
+    });
+    if (!photos?.length) return;
+    setSelectedPhoto(buildAdminPhotoViewerSelection(photos, 'next', selectedPhoto));
   };
 
-  // Download photo
   const downloadPhoto = async (photoUrl: string, photoIndex: number) => {
-    // Fetch as a blob so cross-origin (Cloudinary) images actually save to the device.
-    // The anchor `download` attribute is ignored for cross-origin URLs, which is why a
-    // plain link just opened/redirected instead of downloading.
-    try {
-      let fetchUrl = photoUrl;
-      if (photoUrl.includes('cloudinary.com')) {
-        // Strip transformations to get the original asset.
-        fetchUrl = photoUrl.replace(/\/upload\/[^/]*\//, '/upload/');
-      }
-
-      const response = await fetch(fetchUrl);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const blob = await response.blob();
-
-      // Pick an extension from the blob's mime type when available.
-      const ext = blob.type && blob.type.includes('/') ? blob.type.split('/')[1].split('+')[0] : 'jpg';
-
-      // Build a meaningful filename: "<Customer> <bill|payment> <n>" when we know the
-      // context (e.g. opened from a customer report), otherwise fall back to "photo-<n>".
-      const sanitize = (s: string) => s.replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '');
-      let baseName = `photo-${photoIndex + 1}`;
-      if (photoDownloadMeta?.customerName || photoDownloadMeta?.type) {
-        const parts = [
-          photoDownloadMeta.customerName ? sanitize(photoDownloadMeta.customerName) : '',
-          photoDownloadMeta.type === 'bill' ? 'bill' : photoDownloadMeta.type === 'payment' ? 'payment' : sanitize(photoDownloadMeta.type || ''),
-          String(photoIndex + 1),
-        ].filter(Boolean);
-        baseName = parts.join('_');
-      }
-
-      const objectUrl = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = objectUrl;
-      link.download = `${baseName}.${ext}`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(objectUrl);
-
-      toast.success('Photo downloaded');
-    } catch (error) {
-      // Fallback - open in new tab for manual save (e.g. if fetch is blocked by CORS).
-      try {
-        const newWindow = window.open(photoUrl, '_blank', 'noopener,noreferrer');
-        if (newWindow) {
-          toast.info('Photo opened in new tab. Right-click and "Save image as" to download.');
-        } else {
-          throw new Error('Popup blocked');
-        }
-      } catch (fallbackError) {
-        toast.error('Unable to download. Please right-click the photo and select "Save image as"');
-      }
-    }
+    await downloadAdminPhoto(photoUrl, photoIndex, photoDownloadMeta);
   };
 
-  // Copy photo link to clipboard
   const copyPhotoLink = async (photoUrl: string) => {
-    try {
-      await navigator.clipboard.writeText(photoUrl);
-      toast.success('Photo link copied to clipboard');
-    } catch (error) {
-      toast.error('Failed to copy link');
-    }
+    await copyAdminPhotoLink(photoUrl);
   };
 
-  // Confirm photo deletion
   const confirmDeletePhoto = async () => {
-    if (!photoToDelete) return;
-    
-    setIsDeletingPhoto(true);
-    try {
-      // Find the job and determine if it's a before or after photo
-      const job = jobs.find(j => j.id === photoToDelete.jobId);
-      if (!job) {
-        throw new Error('Job not found');
-      }
-
-      // Get current photos
-      const beforePhotos = Array.isArray(job.before_photos || job.beforePhotos) ? (job.before_photos || job.beforePhotos) : [];
-      const afterPhotos = Array.isArray(job.after_photos || job.afterPhotos) ? (job.after_photos || job.afterPhotos) : [];
-      
-      // Determine which array contains the photo to delete
-      const updatedBeforePhotos = [...beforePhotos];
-      const updatedAfterPhotos = [...afterPhotos];
-      let isBeforePhoto = false;
-      
-      // Check if photo exists in before_photos
-      const beforePhotoIndex = beforePhotos.findIndex(photo => {
-        const url = typeof photo === 'string' ? photo : photo?.secure_url;
-        return url === photoToDelete.photoUrl;
-      });
-      
-      if (beforePhotoIndex !== -1) {
-        updatedBeforePhotos.splice(beforePhotoIndex, 1);
-        isBeforePhoto = true;
-      } else {
-        // Check if photo exists in after_photos
-        const afterPhotoIndex = afterPhotos.findIndex(photo => {
-          const url = typeof photo === 'string' ? photo : photo?.secure_url;
-          return url === photoToDelete.photoUrl;
-        });
-        
-        if (afterPhotoIndex !== -1) {
-          updatedAfterPhotos.splice(afterPhotoIndex, 1);
-        } else {
-          throw new Error('Photo not found in job');
-        }
-      }
-
-      // Delete from Cloudinary if it's a Cloudinary URL
-      let cloudinaryDeleted = false;
-      let cloudinaryErrorMsg: string | undefined;
-      try {
-        const publicIdInfo = cloudinaryService.extractPublicId(photoToDelete.photoUrl);
-        if (publicIdInfo) {
-          const result = await cloudinaryService.deleteImage(publicIdInfo.publicId, publicIdInfo.useSecondary);
-          if (result.success) {
-            console.log(`✅ Photo deleted from Cloudinary: ${publicIdInfo.publicId}`);
-            cloudinaryDeleted = true;
-          } else {
-            cloudinaryErrorMsg = result.error;
-            console.warn(`⚠️ Failed to delete photo from Cloudinary: ${publicIdInfo.publicId}`, result.error);
-          }
-        } else {
-          console.warn('Could not extract public_id from URL:', photoToDelete.photoUrl);
-        }
-      } catch (cloudinaryError) {
-        cloudinaryErrorMsg = cloudinaryError instanceof Error ? cloudinaryError.message : 'Request failed';
-        console.error('Error deleting photo from Cloudinary:', cloudinaryError);
-      }
-
-      // Update the job in the database
-      const { error } = await db.jobs.update(photoToDelete.jobId, {
-        before_photos: updatedBeforePhotos,
-        after_photos: updatedAfterPhotos
-      });
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      // Update local state
-      setJobs(prev => prev.map(j => 
-        j.id === photoToDelete.jobId 
-          ? { ...j, before_photos: updatedBeforePhotos, after_photos: updatedAfterPhotos }
-          : j
-      ));
-
-      // Update customer jobs state
-      setCustomerJobs(prev => {
-        const updated = { ...prev };
-        Object.keys(updated).forEach(customerId => {
-          updated[customerId] = updated[customerId].map(job => 
-            job.id === photoToDelete.jobId 
-              ? { ...job, before_photos: updatedBeforePhotos, after_photos: updatedAfterPhotos }
-              : job
-          );
-        });
-        return updated;
-      });
-
-      // Update selected photos if this job is currently being viewed
-      if (selectedJobPhotos && selectedJobPhotos.jobId === photoToDelete.jobId) {
-        const updatedPhotos = selectedJobPhotos.photos.filter((_, index) => index !== photoToDelete.photoIndex);
-        setSelectedJobPhotos({ ...selectedJobPhotos, photos: updatedPhotos });
-        
-        // Close gallery if no photos left
-        if (updatedPhotos.length === 0) {
-          setPhotoGalleryOpen(false);
-        }
-      }
-
-      // Show appropriate success message
-      if (cloudinaryDeleted) {
-        toast.success('Photo deleted successfully from both database and Cloudinary');
-      } else {
-        toast.success(cloudinaryErrorMsg ? `Photo removed from database. Cloudinary: ${cloudinaryErrorMsg}` : 'Photo removed from database. Cloudinary delete failed.');
-      }
-      setDeletePhotoDialogOpen(false);
-      setPhotoToDelete(null);
-    } catch (error) {
-      toast.error('Failed to delete photo');
-    } finally {
-      setIsDeletingPhoto(false);
-    }
+    await deleteAdminJobPhoto(photoToDelete, {
+      jobs,
+      selectedJobPhotos,
+      setIsDeletingPhoto,
+      setJobs,
+      setCustomerJobs,
+      setSelectedJobPhotos,
+      setPhotoGalleryOpen,
+      setDeletePhotoDialogOpen,
+      setPhotoToDelete,
+    });
   };
 
-  // Helper function to normalize URLs for comparison
-  const normalizeUrl = (url: string): string => {
-    if (!url || typeof url !== 'string') return '';
-    // Remove trailing slashes, normalize to lowercase, remove query params for comparison
-    return url.trim().toLowerCase().replace(/\/+$/, '').split('?')[0].split('#')[0];
-  };
-
-  // Helper function to extract URL from photo (handles strings and objects)
-  const extractPhotoUrl = (photo: any): string => {
-    if (typeof photo === 'string') {
-      return photo;
-    } else if (photo && typeof photo === 'object') {
-      return photo.secure_url || photo.url || photo.public_id || '';
-    }
-    return '';
-  };
-
-  // Delete customer photo from all possible sources
   const confirmDeleteCustomerPhoto = async () => {
-    if (!customerPhotoToDelete || !selectedCustomerForPhotos) return;
-    
-    setIsDeletingCustomerPhoto(true);
-    try {
-      const customerId = selectedCustomerForPhotos.customer_id || selectedCustomerForPhotos.customerId;
-      if (!customerId) {
-        throw new Error('Customer ID not found');
-      }
-
-      // Get customer UUID
-      const { data: customer, error: customerError } = await db.customers.getByCustomerId(customerId);
-      if (customerError || !customer) {
-        throw new Error('Customer not found');
-      }
-
-      const { data: customerJobsData, error: jobsError } = await db.jobs.getByCustomerIdForPhotoAggregation(
-        customer.id
-      );
-      if (jobsError) {
-        throw new Error(jobsError.message);
-      }
-      const customerJobs = customerJobsData || [];
-
-      let photoFound = false;
-      const photoUrl = customerPhotoToDelete.photoUrl;
-      const normalizedPhotoUrl = normalizeUrl(photoUrl);
-      
-      console.log('Deleting photo:', { original: photoUrl, normalized: normalizedPhotoUrl });
-
-      // Search through all jobs to find and remove the photo
-      for (const job of customerJobs) {
-        let needsUpdate = false;
-        const updateData: any = {};
-
-        // Check before_photos
-        const beforePhotos = Array.isArray(job.before_photos || job.beforePhotos) 
-          ? (job.before_photos || job.beforePhotos) 
-          : [];
-        const beforePhotoIndex = beforePhotos.findIndex((photo: any) => {
-          const url = extractPhotoUrl(photo);
-          return normalizeUrl(url) === normalizedPhotoUrl;
-        });
-        
-        if (beforePhotoIndex !== -1) {
-          const updatedBeforePhotos = [...beforePhotos];
-          updatedBeforePhotos.splice(beforePhotoIndex, 1);
-          updateData.before_photos = updatedBeforePhotos;
-          needsUpdate = true;
-          photoFound = true;
-        }
-
-        // Check after_photos
-        const afterPhotos = Array.isArray(job.after_photos || job.afterPhotos) 
-          ? (job.after_photos || job.afterPhotos) 
-          : [];
-        const afterPhotoIndex = afterPhotos.findIndex((photo: any) => {
-          const url = extractPhotoUrl(photo);
-          return normalizeUrl(url) === normalizedPhotoUrl;
-        });
-        
-        if (afterPhotoIndex !== -1) {
-          const updatedAfterPhotos = [...afterPhotos];
-          updatedAfterPhotos.splice(afterPhotoIndex, 1);
-          updateData.after_photos = updatedAfterPhotos;
-          needsUpdate = true;
-          photoFound = true;
-        }
-
-        // Check images field
-        const images = Array.isArray(job.images) ? job.images : [];
-        const imageIndex = images.findIndex((photo: any) => {
-          const url = extractPhotoUrl(photo);
-          return normalizeUrl(url) === normalizedPhotoUrl;
-        });
-        
-        if (imageIndex !== -1) {
-          const updatedImages = [...images];
-          updatedImages.splice(imageIndex, 1);
-          updateData.images = updatedImages;
-          needsUpdate = true;
-          photoFound = true;
-        }
-
-        // Check requirements (bill_photos, payment_photos, qr_photos)
-        if (job.requirements) {
-          try {
-            const requirements = typeof job.requirements === 'string' 
-              ? JSON.parse(job.requirements) 
-              : job.requirements;
-            
-            let updatedRequirements = Array.isArray(requirements) ? [...requirements] : [];
-            
-            // Check if it's an object format
-            if (!Array.isArray(requirements) && typeof requirements === 'object') {
-              updatedRequirements = Object.keys(requirements).map(key => ({ [key]: requirements[key] }));
-            }
-
-            let requirementsChanged = false;
-
-            // Remove from bill_photos
-            updatedRequirements = updatedRequirements.map((req: any) => {
-              if (req.bill_photos && Array.isArray(req.bill_photos)) {
-                const filtered = req.bill_photos.filter((photo: any) => {
-                  const url = extractPhotoUrl(photo);
-                  return normalizeUrl(url) !== normalizedPhotoUrl;
-                });
-                if (filtered.length !== req.bill_photos.length) {
-                  requirementsChanged = true;
-                  photoFound = true;
-                  return { ...req, bill_photos: filtered };
-                }
-              }
-              return req;
-            });
-
-            // Remove from payment_photos
-            updatedRequirements = updatedRequirements.map((req: any) => {
-              if (req.payment_photos && Array.isArray(req.payment_photos)) {
-                const filtered = req.payment_photos.filter((photo: any) => {
-                  const url = extractPhotoUrl(photo);
-                  return normalizeUrl(url) !== normalizedPhotoUrl;
-                });
-                if (filtered.length !== req.payment_photos.length) {
-                  requirementsChanged = true;
-                  photoFound = true;
-                  return { ...req, payment_photos: filtered };
-                }
-              }
-              return req;
-            });
-
-            // Remove from qr_photos.payment_screenshot
-            updatedRequirements = updatedRequirements.map((req: any) => {
-              if (req.qr_photos && typeof req.qr_photos === 'object') {
-                const screenshotUrl = extractPhotoUrl(req.qr_photos.payment_screenshot);
-                const normalizedScreenshot = normalizeUrl(screenshotUrl);
-                if (normalizedScreenshot === normalizedPhotoUrl || screenshotUrl === photoUrl) {
-                  console.log(`Found photo in qr_photos.payment_screenshot for job ${job.id}`);
-                  requirementsChanged = true;
-                  photoFound = true;
-                  const { payment_screenshot, ...restQrPhotos } = req.qr_photos;
-                  return { ...req, qr_photos: restQrPhotos };
-                }
-              }
-              return req;
-            });
-
-            if (requirementsChanged) {
-              updateData.requirements = JSON.stringify(updatedRequirements);
-              needsUpdate = true;
-            }
-          } catch (e) {
-            console.error('Error parsing requirements:', e);
-          }
-        }
-
-        // Update job if photo was found
-        if (needsUpdate) {
-          const { error: updateError } = await db.jobs.update(job.id, updateData);
-          if (updateError) {
-            console.error(`Error updating job ${job.id}:`, updateError);
-          }
-        }
-      }
-
-      // If photo wasn't found in any job, check customer-level photos (photos added without a job)
-      if (!photoFound) {
-        const customerPhotosList = Array.isArray((customer as any).photos) ? (customer as any).photos : [];
-        const customerPhotoIndex = customerPhotosList.findIndex((p: any) => normalizeUrl(extractPhotoUrl(p)) === normalizedPhotoUrl);
-        if (customerPhotoIndex !== -1) {
-          const updatedCustomerPhotos = customerPhotosList.filter((_: any, i: number) => i !== customerPhotoIndex);
-          const { error: updateError } = await db.customers.update(customer.id, { photos: updatedCustomerPhotos } as any);
-          if (updateError) {
-            console.error('Error updating customer photos:', updateError);
-            throw new Error(updateError.message || 'Failed to remove photo from customer');
-          }
-          photoFound = true;
-        }
-      }
-
-      // Delete from Cloudinary if it's a Cloudinary URL (always attempt, even if not found in DB)
-      let cloudinaryDeleted = false;
-      let cloudinaryErrorMsg: string | undefined;
-      try {
-        const publicIdInfo = cloudinaryService.extractPublicId(photoUrl);
-        if (publicIdInfo) {
-          const result = await cloudinaryService.deleteImage(publicIdInfo.publicId, publicIdInfo.useSecondary);
-          if (result.success) {
-            console.log(`✅ Photo deleted from Cloudinary: ${publicIdInfo.publicId}`);
-            cloudinaryDeleted = true;
-          } else {
-            cloudinaryErrorMsg = result.error;
-            console.warn(`⚠️ Failed to delete photo from Cloudinary: ${publicIdInfo.publicId}`, result.error);
-          }
-        } else {
-          console.warn('Could not extract public_id from URL:', photoUrl);
-        }
-      } catch (cloudinaryError) {
-        cloudinaryErrorMsg = cloudinaryError instanceof Error ? cloudinaryError.message : 'Request failed';
-        console.error('Error deleting photo from Cloudinary:', cloudinaryError);
-      }
-
-      // If photo wasn't found in database
-      if (!photoFound) {
-        // Log debugging info
-        console.warn('Photo not found in any job. Searching for:', normalizedPhotoUrl);
-        console.warn('Original URL:', photoUrl);
-        
-        // Check requirements more thoroughly for payment screenshots
-        console.log('Checking requirements for payment screenshots...');
-        for (const job of customerJobs) {
-          if (job.requirements) {
-            try {
-              const reqs = typeof job.requirements === 'string' ? JSON.parse(job.requirements) : job.requirements;
-              const reqsArray = Array.isArray(reqs) ? reqs : [reqs];
-              reqsArray.forEach((req: any) => {
-                if (req.qr_photos?.payment_screenshot) {
-                  const screenshotUrl = extractPhotoUrl(req.qr_photos.payment_screenshot);
-                  console.log(`Job ${job.job_number} has payment_screenshot:`, screenshotUrl);
-                  console.log(`  Normalized:`, normalizeUrl(screenshotUrl));
-                  console.log(`  Matches:`, normalizeUrl(screenshotUrl) === normalizedPhotoUrl);
-                }
-              });
-            } catch (e) {
-              console.error('Error checking requirements:', e);
-            }
-          }
-        }
-        
-        // Still update UI even if not found in database
-        // Photo might be orphaned or stored differently
-        console.warn('Photo not found in database. Updating UI anyway. Photo may need manual deletion from Cloudinary if API secret is not configured.');
-        photoFound = true; // Allow UI update to proceed
-      }
-
-      // Reload customer photos
-      await loadCustomerPhotos(customerId);
-
-      // Update local state
-      const customerIdKey = customerId;
-      setCustomerPhotos(prev => {
-        const updated = { ...prev };
-        if (updated[customerIdKey]) {
-          updated[customerIdKey] = updated[customerIdKey].filter(url => url !== photoUrl);
-        }
-        return updated;
-      });
-
-      // Update photo viewer to show next photo or previous if deleted photo was being viewed
-      // Keep viewer open - just update the photo if needed
-      if (selectedPhoto && selectedPhoto.url === photoUrl) {
-        const customerIdKey = customerId;
-        const remainingPhotos = customerPhotos[customerIdKey]?.filter(url => url !== photoUrl) || [];
-        if (remainingPhotos.length > 0) {
-          // Show next photo, or previous if at the end
-          const currentIndex = customerPhotos[customerIdKey]?.indexOf(photoUrl) || 0;
-          const newIndex = currentIndex < remainingPhotos.length ? currentIndex : remainingPhotos.length - 1;
-          setSelectedPhoto({
-            url: remainingPhotos[newIndex],
-            index: newIndex,
-            total: remainingPhotos.length
-          });
-        } else {
-          // No photos left - close viewer
-          setSelectedPhoto(null);
-        }
-      }
-
-      // Show appropriate success message
-      if (cloudinaryDeleted) {
-        toast.success('Photo deleted successfully from both database and Cloudinary');
-      } else if (photoFound || !cloudinaryErrorMsg) {
-        toast.success(cloudinaryErrorMsg ? `Photo removed from database. Cloudinary: ${cloudinaryErrorMsg}` : 'Photo removed from database.');
-      } else {
-        toast.warning(`Photo removed from UI. Cloudinary: ${cloudinaryErrorMsg}`);
-      }
-      
-      setDeleteCustomerPhotoDialogOpen(false);
-      setCustomerPhotoToDelete(null);
-    } catch (error) {
-      console.error('Error deleting customer photo:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to delete photo');
-    } finally {
-      setIsDeletingCustomerPhoto(false);
-    }
+    await deleteAdminCustomerPhoto(customerPhotoToDelete, selectedCustomerForPhotos, {
+      customerPhotos,
+      selectedPhoto,
+      setIsDeletingCustomerPhoto,
+      setCustomerPhotos,
+      setSelectedPhoto,
+      setDeleteCustomerPhotoDialogOpen,
+      setCustomerPhotoToDelete,
+      loadCustomerPhotos,
+    });
   };
-
 
   // When user has searched, use API results (find any customer in DB); otherwise use derived list (customers with jobs)
   const baseCustomers = searchTerm.trim() ? (searchResults ?? []) : customers;
@@ -9382,336 +5094,22 @@ const AdminDashboard = () => {
     ? baseCustomers
     : customers;
 
-  // Helper function to get completion date for a job
-  const getJobCompletionDate = (job: Job): number => {
-    const completedAt = (job as any).completed_at || job.completedAt;
-    const endTime = (job as any).end_time || job.endTime;
-    const completionDate = completedAt || endTime;
-    if (completionDate) {
-      return new Date(completionDate).getTime();
-    }
-    // Fallback to scheduled date or created date if no completion date
-    const scheduledDate = (job as any).scheduled_date || job.scheduledDate;
-    if (scheduledDate) {
-      return new Date(scheduledDate).getTime();
-    }
-    return new Date(job.createdAt).getTime();
-  };
-  function doesCompletedJobMatchFilters(job: any): boolean {
+  const doesCompletedJobMatchFilters = useCallback((job: any): boolean => {
     return completedJobMatchesDashboardClientFilters(job, {
       leadType: completedLeadTypeFilter,
       serviceSubType: completedServiceSubTypeFilter,
       completedBy: completedByFilter,
     }, technicians as any);
-  }
-
-  // Group customers with their jobs (uses baseCustomers so search results get their jobs from current view)
-  const customersWithJobs = baseCustomers.map(customer => {
-    const customerJobs = jobs
-      .filter(job => {
-        // Check both possible field names for customer ID
-        const jobCustomerId = (job as any).customer_id || job.customerId || (job as any).customerId;
-        const customerUuid = customer.id;
-        
-        // Customer Jobs Match - silently continue
-        
-        return jobCustomerId === customerUuid;
-      })
-      .sort((a, b) => {
-        const aDate = new Date((a as any).scheduled_date || a.scheduledDate).getTime();
-        const bDate = new Date((b as any).scheduled_date || b.scheduledDate).getTime();
-        return bDate - aDate; // Most recent first
-      });
-    
-    // Sort completed jobs by completion date (latest first)
-    const completedJobs = customerJobs
-      .filter(job => job.status === 'COMPLETED')
-      .sort((a, b) => {
-        const aCompletionDate = getJobCompletionDate(a);
-        const bCompletionDate = getJobCompletionDate(b);
-        return bCompletionDate - aCompletionDate; // Latest completed first
-      });
-    
-    return {
-      customer,
-      allJobs: customerJobs,
-      upcomingJobs: customerJobs.filter(job => ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(job.status)),                                                    
-      completedJobs: completedJobs,
-      cancelledJobs: customerJobs.filter(job => job.status === 'CANCELLED')
-    };
-  });
-  
-  // Customers with Jobs processing complete
-
-  // Filter customers based on status filter
-  const getFilteredCustomers = () => {
-    // For COMPLETED and CANCELLED, use jobs directly since they're paginated
-    if (statusFilter === 'COMPLETED' || statusFilter === 'CANCELLED') {
-      // Group loaded jobs by customer
-      const customerMap = new Map<string, { customer: Customer; todayJobs: Job[] }>();
-      
-      // First, collect all customers who have jobs for the selected date/range.
-      // Note: jobs array is paginated, so if there are multiple pages,
-      // we only see customers from the current page. This is intentional for performance.
-
-      jobs.forEach(job => {
-        let customer = (job as any).customer || job.customer;
-        const fallbackCustomerId = (job as any).customer_id || (job as any).customerId;
-        if (!customer) {
-          if (!fallbackCustomerId) {
-            if (import.meta.env.DEV) {
-              console.warn('Job missing customer relationship:', {
-                jobId: job.id,
-                jobNumber: job.job_number || job.jobNumber,
-                hasCustomerField: !!(job as any).customer || !!job.customer,
-                status: job.status,
-                completedAt: (job as any).completed_at || job.completedAt,
-                endTime: (job as any).end_time || job.endTime
-              });
-            }
-            return;
-          }
-          // Orphan job or embed failed: still show the row so pagination is not a blank page.
-          customer = {
-            id: fallbackCustomerId,
-            customer_id: null,
-            full_name: 'Customer record unavailable',
-            phone: '',
-            alternate_phone: null,
-            email: null,
-            visible_address: '',
-            address: {},
-            location: null,
-            service_type: null,
-            brand: null,
-            model: null,
-            installation_date: null,
-            warranty_expiry: null,
-            status: null,
-            customer_since: null,
-            last_service_date: null,
-            notes: null,
-            preferred_time_slot: null,
-            preferred_language: null,
-            has_prefilter: null,
-            has_google_review: null,
-            customer_tier: null,
-            raw_water_tds: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          };
-        }
-        
-        const customerId = customer.id;
-        if (!customerId) {
-          if (import.meta.env.DEV) {
-            console.warn('Customer missing ID:', customer);
-          }
-          return;
-        }
-        
-        if (!customerMap.has(customerId)) {
-          customerMap.set(customerId, {
-            customer: transformCustomerData(customer),
-            todayJobs: []
-          });
-        }
-        customerMap.get(customerId)!.todayJobs.push(job);
-      });
-      
-      // Debug logging for COMPLETED filter
-      if (import.meta.env.DEV && statusFilter === 'COMPLETED') {
-        console.log('Completed jobs filter - customer grouping:', {
-          totalJobs: jobs.length,
-          uniqueCustomers: customerMap.size,
-          dateFilter: completedDateFilter,
-          currentPage,
-          totalPages,
-          totalCount,
-          customers: Array.from(customerMap.entries()).map(([id, { customer, todayJobs }]) => ({
-            customerId: id,
-            customer_id: (customer as any).customer_id || customer.customerId,
-            name: customer.fullName || (customer as any).full_name,
-            jobCount: todayJobs.length,
-            jobNumbers: todayJobs.map(j => j.job_number || j.jobNumber)
-          }))
-        });
-      }
-      
-      // For each customer, use the jobs from the paginated query for the selected date
-      // Don't use customerHistory here as it might contain jobs from other dates
-      // The database query already filtered by date, so todayJobs contains the correct filtered jobs
-      return Array.from(customerMap.values())
-        .map(({ customer, todayJobs }) => {
-          // For COMPLETED filter with date selection, use only the paginated jobs for that date
-          // This ensures we show only customers who have jobs on the selected date
-          const allJobs = statusFilter === 'COMPLETED'
-            ? todayJobs.filter((job) => job.status === 'COMPLETED' && doesCompletedJobMatchFilters(job))
-            : todayJobs;
-          
-          // Sort completed jobs by completion date (latest first)
-          const completedJobs = allJobs
-            .filter(job => job.status === 'COMPLETED')
-            .sort((a, b) => {
-              const aCompletionDate = getJobCompletionDate(a);
-              const bCompletionDate = getJobCompletionDate(b);
-              return bCompletionDate - aCompletionDate; // Latest completed first
-            });
-          
-          return {
-            customer,
-            allJobs, // Use only jobs from the paginated query (filtered by date)
-            upcomingJobs: allJobs.filter(job => ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(job.status)),
-            completedJobs: completedJobs,
-            cancelledJobs: allJobs.filter(job => job.status === 'CANCELLED' || job.status === 'DENIED')
-          };
-        })
-        .filter((entry) => statusFilter !== 'COMPLETED' || entry.completedJobs.length > 0)
-        .sort((a, b) => {
-          // Sort customers by their most recent completed job date (latest first)
-          const aMostRecentCompleted = a.completedJobs.length > 0 
-            ? getJobCompletionDate(a.completedJobs[0]) 
-            : 0;
-          const bMostRecentCompleted = b.completedJobs.length > 0 
-            ? getJobCompletionDate(b.completedJobs[0]) 
-            : 0;
-          return bMostRecentCompleted - aMostRecentCompleted;
-        });
-    }
-    
-    let filteredCustomers = customersWithJobs;
-    
-    // Apply status filter
-    if (statusFilter === 'ALL') {
-      // Show all customers regardless of job status (including those with no jobs)
-      filteredCustomers = customersWithJobs;
-    } else if (statusFilter === 'ONGOING') {
-      // Show customers with ongoing jobs (pending, assigned, in-progress)
-      filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
-        allJobs.some((job: any) => doesOngoingJobMatchFilters(job))
-      );
-    } else if (statusFilter === 'RESCHEDULED') {
-      // For RESCHEDULED, use jobs if loaded via pagination, otherwise filter customersWithJobs
-      if (jobs.length > 0 && jobs.some(j => ['FOLLOW_UP', 'RESCHEDULED'].includes(j.status))) {
-        const customerMap = new Map<string, { customer: Customer; allJobs: Job[] }>();
-        // Filter out customers that have been deleted (verify customer still exists)
-        const existingCustomerIds = new Set(baseCustomers.map(c => c.id));
-
-        jobs.forEach(job => {
-          const customer = (job as any).customer || job.customer;
-          if (!customer) return;
-          const customerId = customer.id;
-
-          // IMPORTANT: Filter out customers that have been deleted
-          if (!existingCustomerIds.has(customerId)) {
-            if (import.meta.env.DEV) {
-              console.warn('Skipping RESCHEDULED job with deleted customer:', {
-                jobId: job.id,
-                jobNumber: job.job_number || job.jobNumber,
-                customerId: customerId
-              });
-            }
-            return; // Skip jobs for deleted customers
-          }
-          
-          if (!customerMap.has(customerId)) {
-            customerMap.set(customerId, {
-              customer: transformCustomerData(customer),
-              allJobs: []
-            });
-          }
-          customerMap.get(customerId)!.allJobs.push(job);
-        });
-        
-        let customersList = Array.from(customerMap.values()).map(({ customer, allJobs }) => {
-          // Sort completed jobs by completion date (latest first)
-          const completedJobs = allJobs
-            .filter(job => job.status === 'COMPLETED')
-            .sort((a, b) => {
-              const aCompletionDate = getJobCompletionDate(a);
-              const bCompletionDate = getJobCompletionDate(b);
-              return bCompletionDate - aCompletionDate; // Latest completed first
-            });
-          
-          return {
-            customer,
-            allJobs,
-            upcomingJobs: allJobs.filter(job => ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(job.status)),
-            completedJobs: completedJobs,
-            cancelledJobs: allJobs.filter(job => job.status === 'CANCELLED' || job.status === 'DENIED')
-          };
-        });
-        
-        // Filter customers by followup date (within 7 days) if not showing all
-        if (!showAllFollowups) {
-          const now = new Date();
-          const weekFromNow = new Date(now);
-          weekFromNow.setDate(weekFromNow.getDate() + 7);
-          
-          customersList = customersList.filter(({ allJobs }) => {
-            const followUpJobs = allJobs.filter(job => ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status));
-            // Check if customer has at least one followup within 7 days
-            return followUpJobs.some((job: any) => {
-              const followUpDate = job.follow_up_date || job.followUpDate;
-              if (!followUpDate) return true; // Show customers with jobs without date
-              const followUpDateObj = new Date(followUpDate);
-              if (isNaN(followUpDateObj.getTime())) return true;
-              return followUpDateObj <= weekFromNow;
-            });
-          });
-        }
-        
-        return customersList;
-      }
-      // Filter for follow-up jobs (FOLLOW_UP and RESCHEDULED status)
-      filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
-        allJobs.some(job => ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status))
-      );
-      
-      // Filter customers by followup date (within 7 days) if not showing all
-      if (!showAllFollowups) {
-        const now = new Date();
-        const weekFromNow = new Date(now);
-        weekFromNow.setDate(weekFromNow.getDate() + 7);
-        
-        filteredCustomers = filteredCustomers.filter(({ allJobs }) => {
-          const followUpJobs = allJobs.filter(job => ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status));
-          // Check if customer has at least one followup within 7 days
-          return followUpJobs.some((job: any) => {
-            const followUpDate = job.follow_up_date || job.followUpDate;
-            if (!followUpDate) return true; // Show customers with jobs without date
-            const followUpDateObj = new Date(followUpDate);
-            if (isNaN(followUpDateObj.getTime())) return true;
-            return followUpDateObj <= weekFromNow;
-          });
-        });
-      }
-    } else if (statusFilter === 'CANCELLED') {
-      // Already handled above
-      filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
-        allJobs.some(job => ['DENIED', 'CANCELLED'].includes(job.status as any))
-      );
-    } else {
-      // Filter by specific job status
-      filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
-        allJobs.some(job => job.status === statusFilter)
-      );
-    }
-    
-    return filteredCustomers;
-  };
+  }, [
+    completedLeadTypeFilter,
+    completedServiceSubTypeFilter,
+    completedByFilter,
+    technicians,
+  ]);
 
   // Get today's and tomorrow's date strings for filtering followups (local YYYY-MM-DD)
   const todayDateStr = getTodayLocalDate();
   const tomorrowDateStr = getTomorrowLocalDate();
-  const followUpDateToStr = (followUpDate: string | null | undefined): string | null => {
-    if (!followUpDate) return null;
-    if (followUpDate.includes('T')) {
-      const d = new Date(followUpDate);
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    }
-    return followUpDate.split('T')[0].trim();
-  };
 
   const getJobServiceSubTypeLabel = (job: any): string => {
     return normalizeServiceSubType(String(job?.service_sub_type ?? job?.serviceSubType ?? '').trim()) || '';
@@ -9747,6 +5145,65 @@ const AdminDashboard = () => {
 
     return true;
   }, [ongoingAssignmentFilter, ongoingAssignedTechnicianFilter, ongoingServiceSubTypeFilter]);
+
+  const customersWithJobs = useMemo(
+    () => buildCustomersWithJobs(baseCustomers, jobs),
+    [baseCustomers, jobs]
+  );
+
+  const getFilteredCustomers = useCallback(
+    () =>
+      getFilteredCustomersForDashboard({
+        statusFilter,
+        jobs,
+        baseCustomers,
+        customersWithJobs,
+        showAllFollowups,
+        completedDateFilter,
+        currentPage,
+        totalPages,
+        totalCount,
+        doesCompletedJobMatchFilters,
+        doesOngoingJobMatchFilters,
+      }),
+    [
+      statusFilter,
+      jobs,
+      baseCustomers,
+      customersWithJobs,
+      showAllFollowups,
+      completedDateFilter,
+      currentPage,
+      totalPages,
+      totalCount,
+      doesCompletedJobMatchFilters,
+      doesOngoingJobMatchFilters,
+    ]
+  );
+
+  const displayedCustomers = useMemo(
+    () =>
+      resolveDisplayedCustomers({
+        searchTerm,
+        statusFilter,
+        searchFilteredCustomers: filteredCustomers,
+        customersWithJobs,
+        todayDateStr,
+        tomorrowDateStr,
+        doesOngoingJobMatchFilters,
+        getFilteredCustomers,
+      }),
+    [
+      searchTerm,
+      statusFilter,
+      filteredCustomers,
+      customersWithJobs,
+      todayDateStr,
+      tomorrowDateStr,
+      doesOngoingJobMatchFilters,
+      getFilteredCustomers,
+    ]
+  );
 
   const ongoingServiceSubTypeOptions = useMemo(() => {
     if (statusFilter !== 'ONGOING') return [] as string[];
@@ -9803,210 +5260,130 @@ const AdminDashboard = () => {
     ongoingAssignedTechnicianFilter,
     ongoingServiceSubTypeFilter,
   ]);
-  const completedDateToStr = (dateValue: string | null | undefined): string | null => {
-    if (!dateValue) return null;
-    const d = new Date(dateValue);
-    if (Number.isNaN(d.getTime())) return null;
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  };
-  const isDateWithinCompletedRange = (dateStr: string | null): boolean => {
-    if (!dateStr) return false;
-    if (completedDatePreset === 'day') {
-      return dateStr === completedDateFilter;
-    }
-    const start = completedRangeStartDate <= completedRangeEndDate ? completedRangeStartDate : completedRangeEndDate;
-    const end = completedRangeStartDate <= completedRangeEndDate ? completedRangeEndDate : completedRangeStartDate;
-    return dateStr >= start && dateStr <= end;
-  };
-
-  const isZeroCommissionCompletedJob = useCallback((job: any): boolean => {
-    const completedBy = String(job?.completed_by || job?.completedBy || '').trim();
-    if (completedBy === ZERO_COMMISSION_EMPLOYEE_ID) return true;
-
-    const technicianPool = techniciansForReports.length > 0 ? techniciansForReports : technicians;
-    return technicianPool.some((tech: any) => {
-      const technicianId = String(tech.id || '').trim();
-      const employeeId = String(tech.employee_id || tech.employeeId || '').trim();
-      return (
-        employeeId === ZERO_COMMISSION_EMPLOYEE_ID &&
-        (completedBy === technicianId || completedBy === employeeId)
-      );
-    });
-  }, [technicians, techniciansForReports]);
-
-  const getCompletedJobBillAmount = useCallback((job: any): number => {
-    const paymentAmount = Number(job?.payment_amount ?? job?.paymentAmount ?? 0) || 0;
-    const actualCost = Number(job?.actual_cost ?? job?.actualCost ?? 0) || 0;
-    let billAmount = paymentAmount > 0 ? paymentAmount : actualCost;
-
-    if (billAmount <= 0 && (job?.payment_method || job?.paymentMethod) === 'PARTIAL') {
-      const requirements = parseJobRequirements(job?.requirements || []);
-      const partialReq = requirements.find(
-        (r: any) => r?.partial_cash_amount != null || r?.partial_online_amount != null
-      );
-      if (partialReq) {
-        const cash = Number(partialReq.partial_cash_amount) || 0;
-        const online = Number(partialReq.partial_online_amount) || 0;
-        if (cash + online > 0) billAmount = cash + online;
-      }
-    }
-
-    return billAmount;
-  }, []);
-
-  const calculateCompletedJobProfit = useCallback((job: any) => {
-    const revenue = getCompletedJobBillAmount(job);
-    const sparePartsCost = Number(job?.parts_cost_total ?? job?.partsCostTotal ?? 0) || 0;
-    const leadCost = Number(job?.lead_cost ?? job?.leadCost ?? 0) || 0;
-    const commission = isZeroCommissionCompletedJob(job) ? 0 : revenue * 0.1;
-    return {
-      revenue,
-      sparePartsCost,
-      leadCost,
-      commission,
-      profit: revenue - sparePartsCost - leadCost - commission,
-    };
-  }, [getCompletedJobBillAmount, isZeroCommissionCompletedJob]);
-
-  const displayedCustomers = !searchTerm.trim()
-    ? (() => {
-        const filtered = getFilteredCustomers();
-        // For COMPLETED filter, sort by most recent completed job date (latest first)
-        if (statusFilter === 'COMPLETED') {
-          return filtered.sort((a, b) => {
-            const aMostRecentCompleted = a.completedJobs.length > 0 
-              ? getJobCompletionDate(a.completedJobs[0]) 
-              : 0;
-            const bMostRecentCompleted = b.completedJobs.length > 0 
-              ? getJobCompletionDate(b.completedJobs[0]) 
-              : 0;
-            return bMostRecentCompleted - aMostRecentCompleted;
-          });
-        }
-        // For ONGOING filter, sort by most recently created ongoing job (newest first)
-        if (statusFilter === 'ONGOING') {
-          return filtered.sort((a, b) => {
-            // Get most recently created ongoing job for each customer
-            const getMostRecentOngoingJobDate = (customer: typeof filtered[0]): number => {
-              const ongoingJobs = customer.allJobs.filter((job: any) => doesOngoingJobMatchFilters(job));
-              if (ongoingJobs.length === 0) return 0;
-              
-              const dates = ongoingJobs
-                .map(job => {
-                  const createdAt = (job as any).created_at || job.createdAt;
-                  return createdAt ? new Date(createdAt).getTime() : 0;
-                })
-                .filter((d): d is number => d !== 0)
-                .sort((x, y) => y - x); // Sort descending (newest first)
-              
-              return dates.length > 0 ? dates[0] : 0;
-            };
-            
-            const aMostRecent = getMostRecentOngoingJobDate(a);
-            const bMostRecent = getMostRecentOngoingJobDate(b);
-            
-            // Sort by most recently created ongoing job (descending - newest first)
-            return bMostRecent - aMostRecent;
-          });
-        }
-        // For RESCHEDULED filter, sort by follow-up date: today first, tomorrow next, then later by date
-        if (statusFilter === 'RESCHEDULED') {
-          return filtered.sort((a, b) => {
-            const getClosestFollowUpRankAndTime = (customer: typeof filtered[0]): { rank: number; time: number } | null => {
-              const followUpJobs = customer.allJobs.filter(job =>
-                ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status)
-              );
-              if (followUpJobs.length === 0) return null;
-              const withRank = followUpJobs
-                .map(job => {
-                  const fd = job.followUpDate || (job as any).follow_up_date;
-                  const dateStr = fd ? followUpDateToStr(fd) : null;
-                  if (!dateStr) return null;
-                  const rank = dateStr === todayDateStr ? 0 : dateStr === tomorrowDateStr ? 1 : 2;
-                  const time = new Date(fd).getTime();
-                  return { rank, time };
-                })
-                .filter((d): d is { rank: number; time: number } => d !== null)
-                .sort((x, y) => x.rank !== y.rank ? x.rank - y.rank : x.time - y.time);
-              return withRank.length > 0 ? withRank[0] : null;
-            };
-            const aVal = getClosestFollowUpRankAndTime(a);
-            const bVal = getClosestFollowUpRankAndTime(b);
-            if (aVal === null && bVal === null) return 0;
-            if (aVal === null) return 1;
-            if (bVal === null) return -1;
-            return aVal.rank !== bVal.rank ? aVal.rank - bVal.rank : aVal.time - bVal.time;
-          });
-        }
-        // For other filters, sort by customer creation date
-        return filtered.sort((a, b) => {
-          const aDate = new Date(a.customer.createdAt).getTime();
-          const bDate = new Date(b.customer.createdAt).getTime();
-          return bDate - aDate;
-        });
-      })()
-    : filteredCustomers.map((customer: Customer) => {
-        // Find the customer in customersWithJobs to get their jobs
-        const customerWithJobs = customersWithJobs.find(cwj => cwj.customer.id === customer.id);
-        // If found, return it; otherwise create a new entry with empty jobs
-        return customerWithJobs || {
-          customer,
-          allJobs: [],
-          upcomingJobs: [],
-          completedJobs: [],
-          cancelledJobs: []
-        };
-      }).sort((a, b) => {
-        // For COMPLETED filter, sort by most recent completed job date (latest first)
-        if (statusFilter === 'COMPLETED') {
-          const aMostRecentCompleted = a.completedJobs.length > 0 
-            ? getJobCompletionDate(a.completedJobs[0]) 
-            : 0;
-          const bMostRecentCompleted = b.completedJobs.length > 0 
-            ? getJobCompletionDate(b.completedJobs[0]) 
-            : 0;
-          return bMostRecentCompleted - aMostRecentCompleted;
-        }
-        // For other filters, sort by customer creation date
-        const aDate = new Date(a.customer.createdAt).getTime();
-        const bDate = new Date(b.customer.createdAt).getTime();
-        return bDate - aDate;
-      });
-
-  const shouldShowCompletedProfitSummary =
-    statusFilter === 'COMPLETED' &&
-    completedDatePreset === 'day' &&
-    completedDateFilter === getTodayLocalDate() &&
-    completedLeadTypeFilter === 'all' &&
-    completedServiceSubTypeFilter === 'all' &&
-    completedByFilter === 'all' &&
-    !searchTerm.trim();
+  const shouldShowCompletedProfitSummary = shouldShowAdminCompletedProfitSummary({
+    statusFilter,
+    completedDatePreset,
+    completedDateFilter,
+    completedLeadTypeFilter,
+    completedServiceSubTypeFilter,
+    completedByFilter,
+    searchTerm,
+  });
 
   const completedProfitSummary = shouldShowCompletedProfitSummary
-    ? displayedCustomers
-        .flatMap(({ completedJobs }) => completedJobs)
-        .reduce(
-          (totals, job) => {
-            const financials = calculateCompletedJobProfit(job);
-            totals.jobCount += 1;
-            totals.revenue += financials.revenue;
-            totals.sparePartsCost += financials.sparePartsCost;
-            totals.leadCost += financials.leadCost;
-            totals.commission += financials.commission;
-            totals.profit += financials.profit;
-            return totals;
-          },
-          {
-            jobCount: 0,
-            revenue: 0,
-            sparePartsCost: 0,
-            leadCost: 0,
-            commission: 0,
-            profit: 0,
-          }
-        )
+    ? buildCompletedProfitSummary(displayedCustomers, technicians, techniciansForReports)
     : null;
 
+  const adminListData = useMemo(
+    () => ({
+      displayedCustomers,
+      statusFilter,
+      todayDateStr,
+      tomorrowDateStr,
+      followUpDateToStr,
+      customerAMCStatus,
+      customerPriorServiceStatus,
+      isLoadingPhotos,
+      selectedCustomerForPhotos,
+      currentLocation,
+      isGettingLocation,
+      customerDistances,
+      technicians,
+      techniciansForReports,
+      location,
+      completedDatePreset,
+      completedDateFilter,
+      completedLeadTypeFilter,
+      completedServiceSubTypeFilter,
+      completedByFilter,
+      loadedCompletedJobDetails,
+      loadingCompletedJobDetails,
+      highlightCompletedJobId,
+      doesOngoingJobMatchFilters,
+      getJobCompletionDate,
+      applyListCustomerContactToCachedJob,
+    }),
+    [
+      displayedCustomers,
+      statusFilter,
+      todayDateStr,
+      tomorrowDateStr,
+      followUpDateToStr,
+      customerAMCStatus,
+      customerPriorServiceStatus,
+      isLoadingPhotos,
+      selectedCustomerForPhotos,
+      currentLocation,
+      isGettingLocation,
+      customerDistances,
+      technicians,
+      techniciansForReports,
+      location,
+      completedDatePreset,
+      completedDateFilter,
+      completedLeadTypeFilter,
+      completedServiceSubTypeFilter,
+      completedByFilter,
+      loadedCompletedJobDetails,
+      loadingCompletedJobDetails,
+      highlightCompletedJobId,
+      doesOngoingJobMatchFilters,
+      getJobCompletionDate,
+      applyListCustomerContactToCachedJob,
+    ]
+  );
+
+  const adminListActionsRef = useRef<AdminDashboardListActions>({} as AdminDashboardListActions);
+  adminListActionsRef.current = {
+    moreOptionsCustomerId,
+    setMoreOptionsCustomerId,
+    handleEditCustomer,
+    handleNewJob,
+    handleViewPhotos,
+    handleGenerateBill,
+    handleGenerateQuotation,
+    handleGenerateAMC,
+    handleGenerateTaxInvoice,
+    handleOpenCustomerReport,
+    handleViewAMCInfo,
+    setReminderEntity,
+    setReminderContextLabel,
+    openAdminModal,
+    setViewRemindersCustomer,
+    handlePhoneClick,
+    handleWhatsAppClick,
+    setCurrentLocation,
+    setIsGettingLocation,
+    setAddressDialogOpen,
+    setAddressLocationVariant,
+    hydrateCustomerForMaps,
+    setSelectedCompletedJob,
+    setCompletedJobEditData,
+    setSelectedJobForMessage,
+    sendCompletionEmailQuick,
+    openCompletionEmailComposer,
+    setSelectedBillPhotos,
+    setSelectedPhoto,
+    onAdminModalOpenChange,
+    loadCompletedJobDetails,
+    setSelectedJobDescription,
+    setDescriptionDialogOpen,
+    openPhotoGallery,
+    handleAssignJob,
+    handleCompleteJob,
+    handleJobStatusUpdate,
+    handleAddTeam,
+    handleRemoveTeam,
+    handleScheduleFollowUp,
+    handleDenyJob,
+    handleAssignFromFollowUp,
+    handleMoveToOngoing,
+    handleEditJob,
+    handleReassignJob,
+    handleUnassignJob,
+    handleMeasureDistance,
+    handleShareJobWhatsApp,
+  };
 
   const filteredJobs = jobs.filter(job => {
     if (!searchTerm.trim()) return true; // Show all jobs if search is empty
@@ -10058,7 +5435,12 @@ const AdminDashboard = () => {
     ? completedFilterSourceJobs
     : completedJobs.filter((job) => {
         const completionDate = (job as any).completed_at || job.completedAt || (job as any).end_time || job.endTime;
-        return isDateWithinCompletedRange(completedDateToStr(completionDate));
+        return isDateWithinCompletedRange(completedDateToStr(completionDate), {
+          completedDatePreset,
+          completedDateFilter,
+          completedRangeStartDate,
+          completedRangeEndDate,
+        });
       });
   const MASTER_LEAD_TYPES = [
     'Website',
@@ -10109,6 +5491,25 @@ const AdminDashboard = () => {
     completedLeadTypeFilter !== 'all' ||
     completedServiceSubTypeFilter !== 'all' ||
     completedByFilter !== 'all';
+
+  const handleSaveEditedCompletedJob = useCallback(async () => {
+    await saveAdminCompletedJobEdit({
+      selectedCompletedJob,
+      completedJobEditData,
+      statusFilter,
+      currentPage,
+      closeAdminModal,
+      loadFilteredJobs,
+      setLoadedCompletedJobDetails,
+    });
+  }, [
+    selectedCompletedJob,
+    completedJobEditData,
+    statusFilter,
+    currentPage,
+    closeAdminModal,
+    loadFilteredJobs,
+  ]);
   
   // New stats for the dashboard cards (filtered by today)
   const ongoingJobs = jobs.filter(job => {
@@ -10160,156 +5561,39 @@ const AdminDashboard = () => {
     return <AdminScreenLoader message="Loading dashboard..." />;
   }
 
-  // Show GST Invoices page if requested
-  if (showGSTInvoicesPage) {
+  if (
+    hasAdminDashboardOverlayView({
+      showGSTInvoicesPage,
+      gstInSubScreen,
+      onHideGSTInvoices: handleHideGSTInvoices,
+      onGstSubScreenChange: setGstInSubScreen,
+      showAMCViewPage,
+      onHideAMCView: handleHideAMCView,
+      onAMCDeleted: reloadAMCStatus,
+      showLetterheadDocsPage,
+      letterheadInitialType,
+      onLetterheadBack: () => navigate('/admin', { replace: true }),
+      currentView,
+      onViewChange: handleViewChange,
+    })
+  ) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <AdminHeader />
-        <div
-          className={cn(
-            'container mx-auto px-3 sm:px-4',
-            gstInSubScreen ? 'py-2' : 'py-3 sm:py-5'
-          )}
-        >
-          {!gstInSubScreen ? (
-            <div className="mb-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleHideGSTInvoices}
-                className="h-8 text-gray-600 hover:text-gray-900 -ml-2"
-              >
-                <ArrowLeft className="w-4 h-4 mr-1" />
-                Back
-              </Button>
-            </div>
-          ) : null}
-          <Suspense fallback={<AdminScreenLoader message="Loading invoices..." />}>
-            <GSTInvoicesPage onSubScreenChange={setGstInSubScreen} />
-          </Suspense>
-        </div>
-      </div>
+      <AdminDashboardOverlayViews
+        showGSTInvoicesPage={showGSTInvoicesPage}
+        gstInSubScreen={gstInSubScreen}
+        onHideGSTInvoices={handleHideGSTInvoices}
+        onGstSubScreenChange={setGstInSubScreen}
+        showAMCViewPage={showAMCViewPage}
+        onHideAMCView={handleHideAMCView}
+        onAMCDeleted={reloadAMCStatus}
+        showLetterheadDocsPage={showLetterheadDocsPage}
+        letterheadInitialType={letterheadInitialType}
+        onLetterheadBack={() => navigate('/admin', { replace: true })}
+        currentView={currentView}
+        onViewChange={handleViewChange}
+      />
     );
   }
-
-  // Show AMC View page if requested
-  if (showAMCViewPage) {
-    return (
-      <Suspense fallback={<AdminScreenLoader message="Loading AMC..." />}>
-        <AMCViewPage onBack={handleHideAMCView} onAMCDeleted={reloadAMCStatus} />
-      </Suspense>
-    );
-  }
-
-  // Show Letterhead Documents / Service Reports builder if requested
-  if (showLetterheadDocsPage) {
-    return (
-      <Suspense fallback={<AdminScreenLoader message="Loading documents builder..." />}>
-        <LetterheadDocumentsPage
-          initialType={letterheadInitialType}
-          onBack={() => navigate('/admin', { replace: true })}
-        />
-      </Suspense>
-    );
-  }
-
-  // Show different views based on currentView state
-  if (currentView === 'payments') {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <AdminHeader />
-        <div className="container mx-auto px-4 py-4 sm:py-8">
-          <div className="mb-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handleViewChange('dashboard')}
-              className="text-gray-600 hover:text-gray-900 -ml-2"
-            >
-              <ArrowLeft className="w-4 h-4 mr-1" />
-              Back
-            </Button>
-          </div>
-          <Suspense fallback={<AdminScreenLoader message="Loading payments..." />}>
-            <TechnicianPayments />
-          </Suspense>
-        </div>
-      </div>
-    );
-  }
-
-  if (currentView === 'billing') {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <AdminHeader />
-        <div className="container mx-auto px-4 py-4 sm:py-8">
-          <div className="mb-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handleViewChange('dashboard')}
-              className="text-gray-600 hover:text-gray-900 -ml-2"
-            >
-              <ArrowLeft className="w-4 h-4 mr-1" />
-              Back
-            </Button>
-          </div>
-          <Suspense fallback={<AdminScreenLoader message="Loading billing..." />}>
-            <BillingStats />
-          </Suspense>
-        </div>
-      </div>
-    );
-  }
-
-  if (currentView === 'analytics') {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <AdminHeader />
-        <div className="container mx-auto px-4 py-4 sm:py-8">
-          <div className="mb-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handleViewChange('dashboard')}
-              className="text-gray-600 hover:text-gray-900 -ml-2"
-            >
-              <ArrowLeft className="w-4 h-4 mr-1" />
-              Back
-            </Button>
-          </div>
-          <Suspense fallback={<AdminScreenLoader message="Loading analytics..." />}>
-            <Analytics />
-          </Suspense>
-        </div>
-      </div>
-    );
-  }
-
-  if (currentView === 'inventory') {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <AdminHeader />
-        <div className="container mx-auto px-4 py-4 sm:py-8">
-          <div className="mb-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handleViewChange('dashboard')}
-              className="text-gray-600 hover:text-gray-900 -ml-2"
-            >
-              <ArrowLeft className="w-4 h-4 mr-1" />
-              Back
-            </Button>
-          </div>
-          <Suspense fallback={<AdminScreenLoader message="Loading inventory..." />}>
-            <InventoryManagement />
-          </Suspense>
-        </div>
-      </div>
-    );
-  }
-
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -10323,283 +5607,25 @@ const AdminDashboard = () => {
             onSearchCustomer={handleSearchFromBookingIntent}
           />
         )}
-        {/* Page Header */}
-        <div className="mb-6 sm:mb-8">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            
-            {/* Search Bar - visible on desktop only, replaces title */}
-            <div className="hidden sm:flex flex-1 max-w-2xl items-center gap-1.5 sm:gap-2 flex-wrap" data-admin-search>
-              <div className="relative flex-1 min-w-[12rem]">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
-                <Input
-                  placeholder="Search by customer ID, name, phone, alternate number, or email..."
-                  value={searchQuery}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setSearchQuery(value);
-                  }}
-                  onPaste={handleSearchPaste}
-                  onBlur={(e) => {
-                    const trimmed = e.target.value.trim();
-                    if (trimmed !== e.target.value) {
-                      setSearchQuery(trimmed);
-                    }
-                  }}
-                  onKeyPress={handleSearchKeyPress}
-                  className="pl-10 h-9 bg-white border-gray-400 focus:border-blue-500 focus:ring-blue-500 text-sm"
-                />
-            </div>
-              <Button
-                onClick={handleSearch}
-                disabled={isSearching || !searchQuery.trim()}
-                size="sm"
-                className="h-9 shrink-0 bg-blue-600 hover:bg-blue-700 text-white px-2.5 sm:px-3"
-              >
-                {isSearching ? (
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span className="hidden md:inline text-xs sm:text-sm">Searching...</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1">
-                    <Search className="w-4 h-4 shrink-0" />
-                    <span className="hidden sm:inline text-sm">Search</span>
-                  </div>
-                )}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-9 px-2.5 shrink-0"
-                title="Refresh data (no full page reload)"
-                onClick={() => void handleManualRefresh()}
-              >
-                <RefreshCw className="w-4 h-4" />
-              </Button>
-              {searchQuery && (
-                <Button
-                  onClick={handleClearSearch}
-                  variant="outline"
-                  size="sm"
-                  className="h-9 px-2.5 shrink-0"
-                  title="Clear"
-                >
-                  <X className="w-4 h-4" />
-                </Button>
-              )}
-            </div>
-            <div className="flex flex-col sm:flex-row gap-3 sm:flex-wrap">
-              {/* All 6 buttons in a 3x2 grid on mobile, flex on desktop */}
-              <div className="grid grid-cols-3 gap-2 sm:flex sm:gap-2 w-full sm:w-auto">
-                {/* Row 1: Settings, Recent, Payments */}
-              <Button 
-                variant="outline"
-                className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
-                title="Settings"
-                onClick={() => {
-                  hapticTap();
-                  navigate('/settings');
-                }}
-              >
-                <Settings className="w-4 h-4" />
-                <span className="hidden sm:inline">Settings</span>
-              </Button>
-              <DropdownMenu open={toolsMenuOpen} onOpenChange={setToolsMenuOpen}>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
-                    title="Tools"
-                  >
-                    <Wrench className="w-4 h-4" />
-                    <span className="hidden sm:inline">Tools</span>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-52 data-[state=closed]:duration-75 data-[state=open]:duration-100 max-sm:data-[state=closed]:animate-none">
-                  <DropdownMenuItem
-                    onClick={() => openAdminTool('recent-accounts')}
-                  >
-                    <Clock className="w-4 h-4 mr-2" />
-                    Recent Accounts
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => {
-                      hapticTap();
-                      setToolsMenuOpen(false);
-                      navigate(settingsPath('calling', 'open'));
-                    }}
-                  >
-                    <PhoneCall className="w-4 h-4 mr-2" />
-                    Calling Page
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => {
-                      hapticTap();
-                      handleShowAMCView();
-                    }}
-                  >
-                    <Star className="w-4 h-4 mr-2" />
-                    View AMC
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={isManager}
-                    onClick={() => {
-                      if (isManager) return;
-                      openAdminTool('direct-sale');
-                    }}
-                  >
-                    {isManager ? <Lock className="w-4 h-4 mr-2" /> : <ShoppingCart className="w-4 h-4 mr-2" />}
-                    Direct / Office Sales
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={isManager}
-                    onClick={() => {
-                      if (isManager) return;
-                      openAdminTool('amount-trackers');
-                    }}
-                  >
-                    {isManager ? <Lock className="w-4 h-4 mr-2" /> : <DollarSign className="w-4 h-4 mr-2" />}
-                    Amount Trackers
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => openAdminTool('sent-email-log')}>
-                    <Mail className="w-4 h-4 mr-2" />
-                    Sent email log
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => openAdminTool('measure-distance')}>
-                    <Navigation className="w-4 h-4 mr-2" />
-                    Measure distance
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={isManager}
-                    onClick={() => {
-                      if (isManager) return;
-                      setToolsMenuOpen(false);
-                      hapticTap();
-                      navigate(settingsPath('technician-management'));
-                    }}
-                  >
-                    {isManager ? <Lock className="w-4 h-4 mr-2" /> : <UserPlus className="w-4 h-4 mr-2" />}
-                    Edit Technician
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-                <Button
-                  variant={(currentView as string) === 'payments' ? 'default' : 'outline'}
-                  onClick={() => handleViewChange('payments')}
-                  disabled={isManager}
-                  className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
-                  title={isManager ? managerRestrictedTitle : 'Payments'}
-                >
-                  {isManager ? <Lock className="w-4 h-4" /> : <DollarSign className="w-4 h-4" />}
-                  <span className="hidden sm:inline">Payments</span>
-                </Button>
-                
-                {/* Row 2: Billing, Analytics, Inventory */}
-                <Button
-                  variant={(currentView as string) === 'billing' ? 'default' : 'outline'}
-                  onClick={() => handleViewChange('billing')}
-                  disabled={isManager}
-                  className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
-                  title={isManager ? managerRestrictedTitle : 'Billing'}
-                >
-                  {isManager ? <Lock className="w-4 h-4" /> : <Receipt className="w-4 h-4" />}
-                  <span className="hidden sm:inline">Billing</span>
-                </Button>
-                <Button
-                  variant={(currentView as string) === 'analytics' ? 'default' : 'outline'}
-                  onClick={() => handleViewChange('analytics')}
-                  disabled={isManager}
-                  className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
-                  title={isManager ? managerRestrictedTitle : 'Analytics'}
-                >
-                  {isManager ? <Lock className="w-4 h-4" /> : <BarChart3 className="w-4 h-4" />}
-                  <span className="hidden sm:inline">Analytics</span>
-                </Button>
-                <Button
-                  variant={(currentView as string) === 'inventory' ? 'default' : 'outline'}
-                  onClick={() => handleViewChange('inventory')}
-                  disabled={isManager}
-                  className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
-                  title={isManager ? managerRestrictedTitle : 'Inventory'}
-                >
-                  {isManager ? <Lock className="w-4 h-4" /> : <ShoppingCart className="w-4 h-4" />}
-                  <span className="hidden sm:inline">Inventory</span>
-                </Button>
-              </div>
-              
-              {/* Add Customer button */}
-              <Button
-                variant="brand"
-                onClick={handleAddCustomer}
-                className="w-full sm:w-auto px-4 py-2 text-sm sm:text-base"
-              >
-                <Users className="w-4 h-4 mr-2" />
-                <span className="hidden sm:inline">Add Customer</span>
-                <span className="sm:hidden">Add</span>
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        {/* Search Bar - visible on mobile only (desktop version is in header) */}
-        <div className="mb-4 sm:mb-6 sm:hidden" data-admin-search>
-          <div className="flex flex-wrap gap-1.5 w-full max-w-2xl items-center">
-            <div className="relative flex-1 min-w-0 basis-[min(100%,12rem)]">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
-              <Input
-                placeholder="Search by customer ID, name, phone, alternate number, or email..."
-                value={searchQuery}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setSearchQuery(value);
-                }}
-                onPaste={handleSearchPaste}
-                onBlur={(e) => {
-                  const trimmed = e.target.value.trim();
-                  if (trimmed !== e.target.value) {
-                    setSearchQuery(trimmed);
-                  }
-                }}
-                onKeyPress={handleSearchKeyPress}
-              className="pl-10 h-9 bg-white border-gray-300 focus:border-blue-500 focus:ring-blue-500 text-sm"
-            />
-          </div>
-            <Button
-              onClick={handleSearch}
-              disabled={isSearching || !searchQuery.trim()}
-              size="sm"
-              className="h-9 shrink-0 bg-blue-600 hover:bg-blue-700 text-white px-2.5"
-            >
-              {isSearching ? (
-                <div className="flex items-center gap-1.5">
-                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                </div>
-              ) : (
-                <Search className="w-4 h-4" />
-              )}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-9 px-2.5 shrink-0"
-              title="Refresh data (no full page reload)"
-              onClick={() => void handleManualRefresh()}
-            >
-              <RefreshCw className="w-4 h-4" />
-            </Button>
-            {searchQuery && (
-              <Button
-                onClick={handleClearSearch}
-                variant="outline"
-                size="sm"
-                className="h-9 px-2.5 shrink-0"
-                title="Clear"
-              >
-                <X className="w-4 h-4" />
-              </Button>
-            )}
-          </div>
-        </div>
+        <AdminDashboardHeader
+          searchQuery={searchQuery}
+          onSearchQueryChange={setSearchQuery}
+          onSearchPaste={handleSearchPaste}
+          onSearchKeyPress={handleSearchKeyPress}
+          onSearch={handleSearch}
+          onClearSearch={handleClearSearch}
+          isSearching={isSearching}
+          onManualRefresh={() => void handleManualRefresh()}
+          toolsMenuOpen={toolsMenuOpen}
+          onToolsMenuOpenChange={setToolsMenuOpen}
+          onOpenAdminTool={openAdminTool}
+          onShowAmcView={handleShowAMCView}
+          isManager={isManager}
+          managerRestrictedTitle={managerRestrictedTitle}
+          currentView={currentView}
+          onViewChange={handleViewChange}
+          onAddCustomer={handleAddCustomer}
+        />
 
         {/* Stats Cards - Clickable Filter Buttons */}
         <StatsCards
@@ -10614,328 +5640,108 @@ const AdminDashboard = () => {
         />
 
         {searchTerm.trim() && displayedCustomers.length > 0 && !showJobsListLoader && (
-          <div className="mb-4 hidden sm:flex flex-wrap items-center justify-between gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2 text-sm text-gray-700">
-            <div>
-              Showing results for: <span className="font-medium text-gray-900">"{searchTerm}"</span>
-              <span className="ml-2 text-gray-500">
-                ({displayedCustomers.length} customer{displayedCustomers.length !== 1 ? 's' : ''} found)
-              </span>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 shrink-0 text-gray-600 hover:text-gray-900"
-              onClick={handleClearSearch}
-            >
-              <X className="w-4 h-4 mr-1" />
-              Clear search
-            </Button>
-          </div>
+          <AdminSearchResultsBar
+            searchTerm={searchTerm}
+            resultCount={displayedCustomers.length}
+            onClearSearch={handleClearSearch}
+          />
         )}
 
-        {/* Date Filter for Denied Jobs */}
         {statusFilter === 'CANCELLED' && (
-          <div className="mb-4 rounded-lg border border-input bg-muted/20 px-2 py-1.5 sm:px-3 sm:py-2">
-            <div className="flex flex-nowrap items-center gap-1.5 sm:gap-2 min-w-0 w-full">
-              <Label className="text-xs sm:text-sm font-medium text-muted-foreground shrink-0 whitespace-nowrap">
-                <span className="sm:hidden">Denied for</span>
-                <span className="hidden sm:inline">Show denied jobs for</span>
-              </Label>
-              <DatePicker
-                value={deniedDateFilter}
-                onChange={(v) => setDeniedDateFilter(v ?? getTodayLocalDate())}
-                placeholder="Pick date"
-                className="h-9 w-auto shrink-0 px-2 text-xs min-w-[6.75rem] sm:h-10 sm:min-w-[140px] sm:px-3 sm:text-sm"
-              />
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-9 shrink-0 whitespace-nowrap px-2.5 text-xs sm:h-10 sm:px-4 sm:text-sm"
-                onClick={() => setDeniedDateFilter(getTodayLocalDate())}
-              >
-                Today
-              </Button>
-            </div>
-          </div>
+          <DeniedJobsDateFilter
+            value={deniedDateFilter}
+            onChange={(v) => setDeniedDateFilter(v)}
+            onToday={() => setDeniedDateFilter(getTodayLocalDate())}
+          />
         )}
 
-        {/* Completed Jobs quick filters: range preset shows only switch-to-day + filters (no inline range label). */}
         {statusFilter === 'COMPLETED' && (
-          <div className="mb-4 rounded-lg border border-input bg-muted/20 px-3 py-2">
-            <div className="flex items-center justify-between gap-2 min-w-0">
-              <div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
-                {completedDatePreset === 'day' ? (
-                  <>
-                    <div className="min-w-0">
-                      <DatePicker
-                        value={completedDateFilter}
-                        onChange={(v) => {
-                          const next = v ?? getTodayLocalDate();
-                          setCompletedDatePreset('day');
-                          setCompletedDateFilter(next);
-                          setCompletedRangeStartDate(next);
-                          setCompletedRangeEndDate(next);
-                          // Quick single-day pick should behave like date-only mode
-                          setCompletedLeadTypeFilter('all');
-                          setCompletedServiceSubTypeFilter('all');
-                          setCompletedByFilter('all');
-                        }}
-                        placeholder="Pick date"
-                        className="w-auto min-w-[140px]"
-                      />
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      type="button"
-                      className="h-10 shrink-0 px-3 sm:px-4"
-                      onClick={() => {
-                        const today = getTodayLocalDate();
-                        setCompletedDatePreset('day');
-                        setCompletedDateFilter(today);
-                        setCompletedRangeStartDate(today);
-                        setCompletedRangeEndDate(today);
-                        // Quick Today should clear advanced completed filters
-                        setCompletedLeadTypeFilter('all');
-                        setCompletedServiceSubTypeFilter('all');
-                        setCompletedByFilter('all');
-                      }}
-                    >
-                      Today
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      type="button"
-                      className="h-10 shrink-0 px-3 text-xs sm:px-4 sm:text-sm"
-                      onClick={() => {
-                        const today = getTodayLocalDate();
-                        setCompletedDatePreset('day');
-                        setCompletedDateFilter(today);
-                        setCompletedRangeStartDate(today);
-                        setCompletedRangeEndDate(today);
-                        // Switching back to single day should reset hidden advanced filters
-                        setCompletedLeadTypeFilter('all');
-                        setCompletedServiceSubTypeFilter('all');
-                        setCompletedByFilter('all');
-                      }}
-                    >
-                      <span className="sm:hidden">Single day</span>
-                      <span className="hidden sm:inline">Switch to single day</span>
-                    </Button>
-                  </>
-                )}
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                type="button"
-                onClick={() => openAdminModal('completed-filters')}
-                className="shrink-0 h-10 w-10 p-0 sm:w-auto sm:px-3"
-                aria-label="Completed jobs filters"
-              >
-                <Filter className="h-4 w-4 sm:mr-1.5" aria-hidden />
-                <span className="hidden sm:inline">Filters</span>
-              </Button>
-            </div>
-          </div>
-        )}
-        {statusFilter === 'COMPLETED' && (
-          <Dialog
-            open={completedFilterDialogOpen}
-            onOpenChange={(open) => {
+          <CompletedJobsFiltersSection
+            completedDatePreset={completedDatePreset}
+            completedDateFilter={completedDateFilter}
+            onPickDay={(next) => {
+              setCompletedDatePreset('day');
+              setCompletedDateFilter(next);
+              setCompletedRangeStartDate(next);
+              setCompletedRangeEndDate(next);
+              setCompletedLeadTypeFilter('all');
+              setCompletedServiceSubTypeFilter('all');
+              setCompletedByFilter('all');
+            }}
+            onQuickToday={() => {
+              const today = getTodayLocalDate();
+              setCompletedDatePreset('day');
+              setCompletedDateFilter(today);
+              setCompletedRangeStartDate(today);
+              setCompletedRangeEndDate(today);
+              setCompletedLeadTypeFilter('all');
+              setCompletedServiceSubTypeFilter('all');
+              setCompletedByFilter('all');
+            }}
+            onSwitchToSingleDay={() => {
+              const today = getTodayLocalDate();
+              setCompletedDatePreset('day');
+              setCompletedDateFilter(today);
+              setCompletedRangeStartDate(today);
+              setCompletedRangeEndDate(today);
+              setCompletedLeadTypeFilter('all');
+              setCompletedServiceSubTypeFilter('all');
+              setCompletedByFilter('all');
+            }}
+            onOpenFilters={() => openAdminModal('completed-filters')}
+            dialogOpen={completedFilterDialogOpen}
+            onDialogOpenChange={(open) => {
               if (open) openAdminModal('completed-filters');
               else {
                 setCompletedFilterDialogOpen(false);
                 onAdminModalOpenChange('completed-filters', false);
               }
             }}
-          >
-            <DialogContent className="sm:max-w-2xl">
-              <DialogHeader>
-                <DialogTitle>Completed Jobs Filters</DialogTitle>
-                <DialogDescription>Choose filters to narrow completed jobs.</DialogDescription>
-              </DialogHeader>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 py-1">
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Date Filter</Label>
-                  <Select
-                    value={draftCompletedDatePreset}
-                    onValueChange={(value: 'day' | 'week' | 'month' | 'custom') => {
-                      const today = new Date();
-                      const todayStr = getTodayLocalDate();
-                      setDraftCompletedDatePreset(value);
-                      if (value === 'day') {
-                        setDraftCompletedDateFilter(todayStr);
-                      } else if (value === 'week') {
-                        const weekStart = new Date(today);
-                        weekStart.setDate(today.getDate() - 6);
-                        const start = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
-                        setDraftCompletedRangeStartDate(start);
-                        setDraftCompletedRangeEndDate(todayStr);
-                      } else if (value === 'month') {
-                        const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-                        const start = `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, '0')}-${String(monthStart.getDate()).padStart(2, '0')}`;
-                        setDraftCompletedRangeStartDate(start);
-                        setDraftCompletedRangeEndDate(todayStr);
-                      } else if (value === 'custom') {
-                        if (!draftCompletedRangeStartDate) setDraftCompletedRangeStartDate(todayStr);
-                        if (!draftCompletedRangeEndDate) setDraftCompletedRangeEndDate(todayStr);
-                      }
-                    }}
-                  >
-                    <SelectTrigger className="h-10">
-                      <SelectValue placeholder="Select period" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="day">Single day</SelectItem>
-                      <SelectItem value="week">Last 7 days</SelectItem>
-                      <SelectItem value="month">This month</SelectItem>
-                      <SelectItem value="custom">Custom range</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {draftCompletedDatePreset === 'day' ? (
-                  <div className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">Completed On</Label>
-                    <div className="inline-flex w-full items-center gap-2">
-                      <DatePicker
-                        value={draftCompletedDateFilter}
-                        onChange={(v) => setDraftCompletedDateFilter(v ?? getTodayLocalDate())}
-                        placeholder="Pick date"
-                        className="flex-1 w-full"
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="space-y-1 min-w-0">
-                      <Label className="text-xs text-muted-foreground">From</Label>
-                      <DatePicker
-                        value={draftCompletedRangeStartDate}
-                        onChange={(v) => {
-                          const nextStart = v ?? draftCompletedRangeStartDate;
-                          if (!nextStart) return;
-                          setDraftCompletedRangeStartDate(nextStart);
-                          if (draftCompletedRangeEndDate && nextStart > draftCompletedRangeEndDate) {
-                            setDraftCompletedRangeEndDate(nextStart);
-                          }
-                        }}
-                        placeholder="Start date"
-                        className="w-full"
-                      />
-                    </div>
-                    <div className="space-y-1 min-w-0">
-                      <Label className="text-xs text-muted-foreground">To</Label>
-                      <DatePicker
-                        value={draftCompletedRangeEndDate}
-                        onChange={(v) => {
-                          const nextEnd = v ?? draftCompletedRangeEndDate;
-                          if (!nextEnd) return;
-                          setDraftCompletedRangeEndDate(nextEnd);
-                          if (draftCompletedRangeStartDate && nextEnd < draftCompletedRangeStartDate) {
-                            setDraftCompletedRangeStartDate(nextEnd);
-                          }
-                        }}
-                        placeholder="End date"
-                        className="w-full"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Lead Type</Label>
-                  <Select value={draftCompletedLeadTypeFilter} onValueChange={setDraftCompletedLeadTypeFilter}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="All lead types" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All lead types</SelectItem>
-                      {completedLeadTypeOptions.map((leadType) => (
-                        <SelectItem key={leadType} value={leadType}>{leadType}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Service Sub Type</Label>
-                  <Select value={draftCompletedServiceSubTypeFilter} onValueChange={setDraftCompletedServiceSubTypeFilter}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="All service sub types" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All service sub types</SelectItem>
-                      {completedServiceSubTypeOptions.map((subType) => (
-                        <SelectItem key={subType} value={subType}>{subType}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Completed By</Label>
-                  <Select value={draftCompletedByFilter} onValueChange={setDraftCompletedByFilter}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="All technicians" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All technicians</SelectItem>
-                      {completedByOptions.map((completedBy) => (
-                        <SelectItem key={completedBy} value={completedBy}>{completedBy}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-              </div>
-              <DialogFooter>
-                <Button
-                  variant="outline"
-                  type="button"
-                  onClick={() => {
-                    const today = getTodayLocalDate();
-                    setCompletedDatePreset('day');
-                    setCompletedDateFilter(today);
-                    setCompletedRangeStartDate(today);
-                    setCompletedRangeEndDate(today);
-                    setCompletedLeadTypeFilter('all');
-                    setCompletedServiceSubTypeFilter('all');
-                    setCompletedByFilter('all');
-                    setDraftCompletedDatePreset('day');
-                    setDraftCompletedDateFilter(today);
-                    setDraftCompletedRangeStartDate(today);
-                    setDraftCompletedRangeEndDate(today);
-                    setDraftCompletedLeadTypeFilter('all');
-                    setDraftCompletedServiceSubTypeFilter('all');
-                    setDraftCompletedByFilter('all');
-                  }}
-                >
-                  Reset Filters
-                </Button>
-                <Button
-                  type="button"
-                  onClick={() => {
-                    setCompletedDatePreset(draftCompletedDatePreset);
-                    setCompletedDateFilter(draftCompletedDateFilter);
-                    setCompletedRangeStartDate(draftCompletedRangeStartDate);
-                    setCompletedRangeEndDate(draftCompletedRangeEndDate);
-                    setCompletedLeadTypeFilter(draftCompletedLeadTypeFilter);
-                    setCompletedServiceSubTypeFilter(draftCompletedServiceSubTypeFilter);
-                    setCompletedByFilter(draftCompletedByFilter);
-                    closeAdminModal();
-                  }}
-                >
-                  Apply
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+            draftDatePreset={draftCompletedDatePreset}
+            onDraftDatePresetChange={setDraftCompletedDatePreset}
+            draftDateFilter={draftCompletedDateFilter}
+            onDraftDateFilterChange={setDraftCompletedDateFilter}
+            draftRangeStartDate={draftCompletedRangeStartDate}
+            onDraftRangeStartDateChange={setDraftCompletedRangeStartDate}
+            draftRangeEndDate={draftCompletedRangeEndDate}
+            onDraftRangeEndDateChange={setDraftCompletedRangeEndDate}
+            draftLeadTypeFilter={draftCompletedLeadTypeFilter}
+            onDraftLeadTypeFilterChange={setDraftCompletedLeadTypeFilter}
+            draftServiceSubTypeFilter={draftCompletedServiceSubTypeFilter}
+            onDraftServiceSubTypeFilterChange={setDraftCompletedServiceSubTypeFilter}
+            draftCompletedByFilter={draftCompletedByFilter}
+            onDraftCompletedByFilterChange={setDraftCompletedByFilter}
+            leadTypeOptions={completedLeadTypeOptions}
+            serviceSubTypeOptions={completedServiceSubTypeOptions}
+            completedByOptions={completedByOptions}
+            onResetFilters={() => {
+              const today = getTodayLocalDate();
+              setCompletedDatePreset('day');
+              setCompletedDateFilter(today);
+              setCompletedRangeStartDate(today);
+              setCompletedRangeEndDate(today);
+              setCompletedLeadTypeFilter('all');
+              setCompletedServiceSubTypeFilter('all');
+              setCompletedByFilter('all');
+              setDraftCompletedDatePreset('day');
+              setDraftCompletedDateFilter(today);
+              setDraftCompletedRangeStartDate(today);
+              setDraftCompletedRangeEndDate(today);
+              setDraftCompletedLeadTypeFilter('all');
+              setDraftCompletedServiceSubTypeFilter('all');
+              setDraftCompletedByFilter('all');
+            }}
+            onApplyFilters={() => {
+              setCompletedDatePreset(draftCompletedDatePreset);
+              setCompletedDateFilter(draftCompletedDateFilter);
+              setCompletedRangeStartDate(draftCompletedRangeStartDate);
+              setCompletedRangeEndDate(draftCompletedRangeEndDate);
+              setCompletedLeadTypeFilter(draftCompletedLeadTypeFilter);
+              setCompletedServiceSubTypeFilter(draftCompletedServiceSubTypeFilter);
+              setCompletedByFilter(draftCompletedByFilter);
+              closeAdminModal();
+            }}
+          />
         )}
 
         {/* Customers with Jobs */}
@@ -11057,7 +5863,7 @@ const AdminDashboard = () => {
           )}
 
           {statusFilter === 'ONGOING' && ongoingFilterDialogOpen && (
-            <Dialog
+            <OngoingJobsFiltersDialog
               open={ongoingFilterDialogOpen}
               onOpenChange={(open) => {
                 if (open) openAdminModal('ongoing-filters');
@@ -11066,96 +5872,29 @@ const AdminDashboard = () => {
                   onAdminModalOpenChange('ongoing-filters', false);
                 }
               }}
-            >
-              <DialogContent className="sm:max-w-lg">
-                <DialogHeader>
-                  <DialogTitle>Ongoing Filters</DialogTitle>
-                  <DialogDescription>Filter ongoing jobs by assignment, technician, and service type.</DialogDescription>
-                </DialogHeader>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 py-2">
-                  <div className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">Assignment</Label>
-                    <Select value={draftOngoingAssignmentFilter} onValueChange={(v) => setDraftOngoingAssignmentFilter(v as any)}>
-                      <SelectTrigger className="h-9">
-                        <SelectValue placeholder="All" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All</SelectItem>
-                        <SelectItem value="assigned">Assigned</SelectItem>
-                        <SelectItem value="unassigned">Unassigned</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">Assigned Technician</Label>
-                    <Select
-                      value={draftOngoingAssignedTechnicianFilter}
-                      onValueChange={setDraftOngoingAssignedTechnicianFilter}
-                      disabled={draftOngoingAssignmentFilter === 'unassigned'}
-                    >
-                      <SelectTrigger className="h-9">
-                        <SelectValue placeholder="All technicians" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All technicians</SelectItem>
-                        {technicians.map((t) => (
-                          <SelectItem key={t.id} value={String(t.id)}>
-                            {t.fullName || (t as any).full_name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">Service Sub Type</Label>
-                    <Select value={draftOngoingServiceSubTypeFilter} onValueChange={setDraftOngoingServiceSubTypeFilter}>
-                      <SelectTrigger className="h-9">
-                        <SelectValue placeholder="All service sub types" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All service sub types</SelectItem>
-                        {ongoingServiceSubTypeOptions.map((st) => (
-                          <SelectItem key={st} value={st}>
-                            {st}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <DialogFooter>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      setOngoingAssignmentFilter('all');
-                      setOngoingAssignedTechnicianFilter('all');
-                      setOngoingServiceSubTypeFilter('all');
-                      setDraftOngoingAssignmentFilter('all');
-                      setDraftOngoingAssignedTechnicianFilter('all');
-                      setDraftOngoingServiceSubTypeFilter('all');
-                    }}
-                  >
-                    Reset
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={() => {
-                      setOngoingAssignmentFilter(draftOngoingAssignmentFilter);
-                      setOngoingAssignedTechnicianFilter(draftOngoingAssignedTechnicianFilter);
-                      setOngoingServiceSubTypeFilter(draftOngoingServiceSubTypeFilter);
-                      closeAdminModal();
-                    }}
-                  >
-                    Apply
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+              draftAssignmentFilter={draftOngoingAssignmentFilter}
+              onDraftAssignmentFilterChange={setDraftOngoingAssignmentFilter}
+              draftAssignedTechnicianFilter={draftOngoingAssignedTechnicianFilter}
+              onDraftAssignedTechnicianFilterChange={setDraftOngoingAssignedTechnicianFilter}
+              draftServiceSubTypeFilter={draftOngoingServiceSubTypeFilter}
+              onDraftServiceSubTypeFilterChange={setDraftOngoingServiceSubTypeFilter}
+              technicians={technicians}
+              serviceSubTypeOptions={ongoingServiceSubTypeOptions}
+              onReset={() => {
+                setOngoingAssignmentFilter('all');
+                setOngoingAssignedTechnicianFilter('all');
+                setOngoingServiceSubTypeFilter('all');
+                setDraftOngoingAssignmentFilter('all');
+                setDraftOngoingAssignedTechnicianFilter('all');
+                setDraftOngoingServiceSubTypeFilter('all');
+              }}
+              onApply={() => {
+                setOngoingAssignmentFilter(draftOngoingAssignmentFilter);
+                setOngoingAssignedTechnicianFilter(draftOngoingAssignedTechnicianFilter);
+                setOngoingServiceSubTypeFilter(draftOngoingServiceSubTypeFilter);
+                closeAdminModal();
+              }}
+            />
           )}
           
           {/* Customer Cards with Jobs */}
@@ -11191,1123 +5930,9 @@ const AdminDashboard = () => {
                 )}
               </div>
             ) : (
-            displayedCustomers.map(({ customer, allJobs, upcomingJobs, completedJobs, cancelledJobs }) => {
-              // Check if this customer has followup jobs scheduled for today or tomorrow (for card border)
-              const hasTodayFollowup = statusFilter === 'RESCHEDULED' && allJobs.some(job => {
-                if (!['FOLLOW_UP', 'RESCHEDULED'].includes(job.status)) return false;
-                const dateStr = followUpDateToStr(job.followUpDate || (job as any).follow_up_date);
-                return dateStr === todayDateStr;
-              });
-              const hasTomorrowFollowup = statusFilter === 'RESCHEDULED' && !hasTodayFollowup && allJobs.some(job => {
-                if (!['FOLLOW_UP', 'RESCHEDULED'].includes(job.status)) return false;
-                const dateStr = followUpDateToStr(job.followUpDate || (job as any).follow_up_date);
-                return dateStr === tomorrowDateStr;
-              });
-              // Check if this customer has any job with lead source Website
-              const hasWebsiteLead = allJobs.some(job => {
-                const reqs = (job as any).requirements;
-                const arr = Array.isArray(reqs) ? reqs : reqs && typeof reqs === 'object' ? [reqs] : [];
-                const lead = (findLeadSource(arr) || '').toLowerCase();
-                return lead.includes('website');
-              });
-              const borderClass = hasTodayFollowup ? 'border-red-400 border-2' : hasTomorrowFollowup ? 'border-yellow-400 border-2' : hasWebsiteLead ? 'border-red-400 border-2' : 'border-gray-300';
-              const hoverBorderClass = hasWebsiteLead ? 'hover:border-green-400' : 'hover:border-gray-400';
-              const priorServiceFromJobs =
-                completedJobs.length > 0 ||
-                allJobs.some(
-                  (job) =>
-                    job.status === 'COMPLETED' || (job as any).status === 'COMPLETED'
-                );
-
-              return (
-                <Card key={customer.id} className={`bg-white border ${borderClass} ${hoverBorderClass} hover:shadow-md transition-all duration-200 overflow-hidden mb-6 rounded-lg group`}>
-                <CustomerCardHeader
-                  customer={customer}
-                  customerAMCStatus={customerAMCStatus}
-                  customerPriorServiceStatus={customerPriorServiceStatus}
-                  priorServiceFromJobs={priorServiceFromJobs}
-                  isLoadingPhotos={isLoadingPhotos}
-                  selectedCustomerForPhotos={selectedCustomerForPhotos}
-                  moreOptionsOpen={moreOptionsCustomerId === customer.id}
-                  onMoreOptionsOpenChange={(open) => {
-                    setMoreOptionsCustomerId(open ? customer.id : null);
-                  }}
-                  onEditCustomer={handleEditCustomer}
-                  onNewJob={handleNewJob}
-                  onViewPhotos={handleViewPhotos}
-                  onGenerateBill={handleGenerateBill}
-                  onGenerateQuotation={handleGenerateQuotation}
-                  onGenerateAMC={handleGenerateAMC}
-                  onGenerateTaxInvoice={handleGenerateTaxInvoice}
-                  onOpenCustomerReport={handleOpenCustomerReport}
-                  onViewAMCInfo={handleViewAMCInfo}
-                  onAddReminder={(customer) => {
-                    setReminderEntity({ type: 'customer', id: customer.id });
-                    setReminderContextLabel(`${(customer as any).full_name || customer.fullName} (Customer)`);
-                    openAdminModal('add-reminder', { customerId: customer.id });
-                  }}
-                  onViewReminders={(customer) => setViewRemindersCustomer(customer)}
-                  onManageWarranty={(customer) => {
-                    openAdminModal('warranty', { customerId: customer.id });
-                  }}
-                />
-
-                {/* Contact & Communication - Mobile First */}
-                <ContactSection
-                  customer={customer}
-                  handlePhoneClick={handlePhoneClick}
-                  handleWhatsAppClick={handleWhatsAppClick}
-                  currentLocation={currentLocation}
-                  isGettingLocation={isGettingLocation}
-                  customerDistances={customerDistances}
-                  setCurrentLocation={setCurrentLocation}
-                  setIsGettingLocation={setIsGettingLocation}
-                  setAddressDialogOpen={setAddressDialogOpen}
-                  setAddressLocationVariant={setAddressLocationVariant}
-                  hydrateCustomerForMaps={hydrateCustomerForMaps}
-                />
-
-                                {/* Services Section - Always show, even if no jobs */}
-                <div className="p-4 bg-gray-50">
-                  <div className="mb-4">
-                    <h3 className="text-xl font-semibold text-gray-900 flex items-center gap-3">                                                              
-                      <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">                                                       
-                        <Wrench className="w-4 h-4 text-gray-600" />
-                      </div>
-                      Service History ({allJobs.length})
-                    </h3>
-                    <p className="text-sm text-gray-600 mt-1">All service requests and job details</p>                                                        
-                  </div>
-                  
-                  {allJobs.length === 0 ? (
-                    <div className="text-center py-8 text-gray-500">
-                      <Wrench className="w-12 h-12 mx-auto mb-3 text-gray-400" />
-                      <p className="text-sm">No service history found for this customer</p>
-                    </div>
-                  ) : (
-
-                                        <div className="space-y-4">
-                      {(() => {
-                        // Show jobs based on current filter
-                        let jobsToShow = allJobs;
-                        if (statusFilter === 'ALL') {
-                          // Show all jobs when filter is 'ALL'
-                          jobsToShow = allJobs;
-                        } else if (statusFilter === 'ONGOING') {
-                          // Show ongoing jobs (pending, assigned, in-progress)
-                          jobsToShow = allJobs.filter((job: any) => doesOngoingJobMatchFilters(job));
-                          // Sort by created_at (newest/recently created first)
-                          jobsToShow.sort((a, b) => {
-                            const aCreated = new Date((a as any).created_at || a.createdAt || 0).getTime();
-                            const bCreated = new Date((b as any).created_at || b.createdAt || 0).getTime();
-                            return bCreated - aCreated; // Newest first
-                          });
-                        } else if (statusFilter === 'RESCHEDULED') {
-                          // Show follow-up jobs (FOLLOW_UP and RESCHEDULED)
-                          jobsToShow = allJobs.filter(job => ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status));
-                          // Sort by follow-up date: today first, tomorrow next, then by date ascending
-                          jobsToShow.sort((a, b) => {
-                            const aStr = followUpDateToStr((a as any).follow_up_date || a.followUpDate);
-                            const bStr = followUpDateToStr((b as any).follow_up_date || b.followUpDate);
-                            if (!aStr && !bStr) return 0;
-                            if (!aStr) return 1;
-                            if (!bStr) return -1;
-                            const aRank = aStr === todayDateStr ? 0 : aStr === tomorrowDateStr ? 1 : 2;
-                            const bRank = bStr === todayDateStr ? 0 : bStr === tomorrowDateStr ? 1 : 2;
-                            if (aRank !== bRank) return aRank - bRank;
-                            return new Date((a as any).follow_up_date || a.followUpDate).getTime() - new Date((b as any).follow_up_date || b.followUpDate).getTime();
-                          });
-                        } else if (statusFilter === 'CANCELLED') {
-                          // Show denied jobs (DENIED status)
-                          jobsToShow = allJobs.filter(job => job.status === 'DENIED');
-                        } else if (statusFilter === 'COMPLETED') {
-                          // For completed view, customer grouping already applied completed filters.
-                          // Avoid re-filtering here to keep rendering fast on large result sets.
-                          jobsToShow = [...completedJobs].sort((a, b) => getJobCompletionDate(b) - getJobCompletionDate(a));
-                        } else {
-                          jobsToShow = allJobs.filter(job => job.status === statusFilter);
-                          // Sort follow-up jobs by closest date first
-                          if (statusFilter === 'FOLLOW_UP') {
-                            jobsToShow.sort((a, b) => {
-                              const aFollowUpDate = (a as any).follow_up_date || a.followUpDate;
-                              const bFollowUpDate = (b as any).follow_up_date || b.followUpDate;
-                              if (!aFollowUpDate && !bFollowUpDate) return 0;
-                              if (!aFollowUpDate) return 1; // No date goes to end
-                              if (!bFollowUpDate) return -1; // No date goes to end
-                              return new Date(aFollowUpDate).getTime() - new Date(bFollowUpDate).getTime();
-                            });
-                          }
-                        }
-                        
-                        // Debug logging (optional)
-                        if (import.meta.env.DEV) {
-                          // dev-only logging can go here
-                        }
-                        
-                                                return jobsToShow.length === 0 ? (
-                          <div key="no-jobs" className="text-center py-8 text-gray-500">
-                            <p className="text-sm">No jobs match the current filter</p>
-                          </div>
-                        ) : jobsToShow.map((job) => {
-                        const beforePhotos = Array.isArray(job.before_photos || job.beforePhotos) ? (job.before_photos || job.beforePhotos) : [];               
-                        const afterPhotos = Array.isArray(job.after_photos || job.afterPhotos) ? (job.after_photos || job.afterPhotos) : [];                    
-                        
-                        const allPhotos = [...extractPhotoUrls(beforePhotos), ...extractPhotoUrls(afterPhotos)];                                                
-                        const followUpDate = (job as any).follow_up_date || job.followUpDate || null;
-                        const followUpTime = (job as any).follow_up_time || job.followUpTime || null;
-                        const followUpNotes = (job as any).follow_up_notes || job.followUpNotes || '';
-                        const followUpScheduledAt = (job as any).follow_up_scheduled_at || job.followUpScheduledAt || null;
-                        const followUpScheduledBy = (job as any).follow_up_scheduled_by || job.followUpScheduledBy || null;
-                        const formattedFollowUpDate = followUpDate ? (() => {
-                          const date = new Date(followUpDate);
-                          const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
-                          const dateStr = date.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
-                          return `${dayName}, ${dateStr}`;
-                        })() : null;
-                        const formattedFollowUpTime = followUpTime ? (() => {
-                          const timeString = String(followUpTime);
-                          const [hours, minutes] = timeString.split(':');
-                          if (!hours || !minutes) {
-                            return timeString;
-                          }
-                          const hourNum = parseInt(hours, 10);
-                          if (Number.isNaN(hourNum)) {
-                            return timeString;
-                          }
-                          const normalizedHour = ((hourNum % 12) + 12) % 12 || 12;
-                          const suffix = hourNum >= 12 ? 'PM' : 'AM';
-                          return `${normalizedHour}:${minutes.padEnd(2, '0')} ${suffix}`;
-                        })() : null;
-                        const formattedFollowUpScheduledAt = followUpScheduledAt ? new Date(followUpScheduledAt).toLocaleString() : null;
-                        // Determine who scheduled the follow-up
-                        // Both admins and technicians now store UUID
-                        // Check if UUID is in technicians list → show technician name
-                        // If UUID is NOT in technicians list → show "Admin" (admins aren't technicians)
-                        // If it's a string (old data) → show that string for backward compatibility
-                        const isUUID = followUpScheduledBy && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(followUpScheduledBy);
-                        let followUpScheduledByName = 'Admin';
-                        
-                        if (isUUID) {
-                          // It's a UUID - check if it's a technician ID
-                          const followUpScheduledByTechnician = technicians.find(tech => tech.id === followUpScheduledBy);
-                          followUpScheduledByName = followUpScheduledByTechnician?.fullName || 'Admin';
-                        } else if (followUpScheduledBy) {
-                          // It's a string (old data format) - show it directly for backward compatibility
-                          followUpScheduledByName = followUpScheduledBy;
-                        } else if (followUpScheduledBy === 'admin') {
-                          followUpScheduledByName = 'Admin';
-                        } else if (followUpScheduledBy === 'technician') {
-                          followUpScheduledByName = 'Technician';
-                        }
-                        
-                        const denialReason = (job as any).denial_reason || job.denialReason || '';
-                        const deniedBy = (job as any).denied_by || job.deniedBy || '';
-                        const deniedAt = (job as any).denied_at || job.deniedAt || null;
-                        const formattedDeniedAt = deniedAt ? new Date(deniedAt).toLocaleString() : null;
-                        
-                        // Extract completion details
-                        const completionNotes = (job as any).completion_notes || job.completionNotes || '';
-                        const completedAt = (job as any).completed_at || job.completedAt || null;
-                        // Format date as "January 5th 2026" with 12-hour time format
-                        const formattedCompletedAt = completedAt ? (() => {
-                          const date = new Date(completedAt);
-                          const day = date.getDate();
-                          const month = date.toLocaleString('en-US', { month: 'long' });
-                          const year = date.getFullYear();
-                          // Get ordinal suffix (1st, 2nd, 3rd, 4th, etc.)
-                          const getOrdinalSuffix = (n: number) => {
-                            const s = ['th', 'st', 'nd', 'rd'];
-                            const v = n % 100;
-                            return s[(v - 20) % 10] || s[v] || s[0];
-                          };
-                          // Format time as 12-hour format (5:30 PM)
-                          const hours = date.getHours();
-                          const minutes = date.getMinutes();
-                          const ampm = hours >= 12 ? 'PM' : 'AM';
-                          const displayHours = hours % 12 || 12;
-                          const displayMinutes = minutes.toString().padStart(2, '0');
-                          const timeStr = `${displayHours}:${displayMinutes} ${ampm}`;
-                          return `${month} ${day}${getOrdinalSuffix(day)} ${year} at ${timeStr}`;
-                        })() : null;
-                        const isDefaultCompletedDateFilter =
-                          completedDatePreset === 'day' &&
-                          completedDateFilter === getTodayLocalDate();
-                        const hasAnyCompletedFilterSelected =
-                          !isDefaultCompletedDateFilter ||
-                          completedLeadTypeFilter !== 'all' ||
-                          completedServiceSubTypeFilter !== 'all' ||
-                          completedByFilter !== 'all';
-                        const minimalCompletedMode = hasAnyCompletedFilterSelected;
-                        // Cached "full" job is only fetched once per id; list rows refresh after edits.
-                        // Overlay list financial columns so lead_cost / parts / payment stay accurate on the card.
-                        const cachedCompleted = loadedCompletedJobDetails[job.id];
-                        const fullJob = cachedCompleted
-                          ? (() => {
-                              const c = cachedCompleted as any;
-                              const j = job as any;
-                              let out = { ...c };
-                              for (const k of [
-                                'lead_cost',
-                                'parts_cost_total',
-                                'payment_amount',
-                                'actual_cost',
-                                'payment_method',
-                              ] as const) {
-                                if (j[k] !== undefined && j[k] !== null) {
-                                  out[k] = j[k];
-                                }
-                              }
-                              out = applyListCustomerContactToCachedJob(out, j);
-                              return out;
-                            })()
-                          : job;
-                        const detailsLoaded = Boolean(loadedCompletedJobDetails[job.id]);
-                        const isLoadingDetails = Boolean(loadingCompletedJobDetails[job.id]);
-
-                        const completedBy = (fullJob as any).completed_by || (fullJob as any).completedBy || null;
-                        const actualCost = (fullJob as any).actual_cost || (fullJob as any).actualCost || null;
-                        const paymentAmount = (fullJob as any).payment_amount || (fullJob as any).paymentAmount || null;
-                        const paymentMethod = (fullJob as any).payment_method || (fullJob as any).paymentMethod || null;
-                        
-                        // Get technician name who completed the job
-                        const isDirectSale = ((fullJob as any).service_sub_type || (fullJob as any).serviceSubType) === 'Direct Sale';
-                        let completedByName = 'Unknown';
-                        if (isDirectSale || isOfficeCompletedJob(fullJob)) {
-                          completedByName = 'Office';
-                        } else if (completedBy) {
-                          if (completedBy === 'admin' || completedBy === 'Admin') {
-                            completedByName = 'Admin';
-                          } else {
-                            const completedByTechnician = (techniciansForReports.length > 0 ? techniciansForReports : technicians).find(
-                              (tech: any) => (tech.id || (tech as any).id) === completedBy
-                            );
-                            completedByName =
-                              completedByTechnician?.fullName ||
-                              (completedByTechnician as any)?.full_name ||
-                              'Technician';
-                          }
-                        }
-                        
-                        // Parse requirements to get AMC info, bill photos, payment screenshot
-                        // IMPORTANT: In minimal mode, don't parse anything until user clicks "Load details".
-                        const requirements = minimalCompletedMode && !detailsLoaded
-                          ? []
-                          : parseJobRequirements((fullJob as any).requirements || (fullJob as any).requirements || []);
-
-                        const amcInfo = minimalCompletedMode && !detailsLoaded
-                          ? null
-                          : requirements.find((r: any) => r?.amc_info)?.amc_info || null;
-
-                        const qrPhotos = minimalCompletedMode && !detailsLoaded
-                          ? null
-                          : requirements.find((r: any) => r?.qr_photos)?.qr_photos || null;
-                        
-                        // Extract payment screenshot from multiple sources:
-                        // 1. qr_photos.payment_screenshot (for ONLINE payments)
-                        // 2. requirements.payment_photos (for CASH payments with payment screenshot)
-                        // 3. after_photos (fallback - payment screenshot should be there)
-                        let paymentScreenshot: string | null = null;
-                        
-                        // First, try to get from qr_photos (ONLINE payments)
-                        if (qrPhotos?.payment_screenshot) {
-                          paymentScreenshot = normalizePhotoUrl(qrPhotos.payment_screenshot);
-                        }
-
-                        // If not found in qr_photos, check payment_photos in requirements (CASH payments)
-                        if (!paymentScreenshot) {
-                          const paymentPhotosReq = requirements.find((r: any) => r?.payment_photos);
-                          if (paymentPhotosReq?.payment_photos && Array.isArray(paymentPhotosReq.payment_photos) && paymentPhotosReq.payment_photos.length > 0) {
-                            paymentScreenshot = normalizePhotoUrl(paymentPhotosReq.payment_photos[0]);
-                          }
-                        }
-                        
-                        // Extract all photos from after_photos field (includes both bill photos and payment screenshot)
-                        const afterPhotosExtracted = minimalCompletedMode && !detailsLoaded ? [] : extractPhotoUrls(afterPhotos);
-
-                        // Also get bill photos from requirements (for backward compatibility)
-                        const billPhotosFromRequirements = minimalCompletedMode && !detailsLoaded
-                          ? []
-                          : extractPhotoUrls(requirements.find((r: any) => r?.bill_photos)?.bill_photos || []);
-                        
-                        // Use after_photos as primary source (it contains all photos including payment screenshot)
-                        // If after_photos is empty, fallback to requirements.bill_photos
-                        let billPhotos: string[] = [];
-                        
-                        // Helper function to normalize URLs for comparison
-                        const normalizeUrl = (url: string) => url.split('?')[0].split('#')[0].trim().toLowerCase();
-                        
-                        if (afterPhotosExtracted.length > 0) {
-                          // If we have a payment screenshot from qr_photos, exclude it from bill photos
-                          if (paymentScreenshot) {
-                            const normalizedPaymentScreenshot = normalizeUrl(paymentScreenshot);
-                            
-                            billPhotos = afterPhotosExtracted.filter(url => {
-                              const normalizedUrl = normalizeUrl(url);
-                              return normalizedUrl !== normalizedPaymentScreenshot;
-                            });
-                          } else {
-                            // If no payment screenshot found in qr_photos or payment_photos, try to find it in after_photos
-                            // If we have more photos in after_photos than in bill_photos requirements, 
-                            // the extra photo(s) might be payment screenshot(s)
-                            if (afterPhotosExtracted.length > billPhotosFromRequirements.length) {
-                              // Find photos that are not in billPhotosFromRequirements - these are likely payment screenshots
-                              const potentialPaymentScreenshots = afterPhotosExtracted.filter(url => {
-                                const normalizedUrl = normalizeUrl(url);
-                                return !billPhotosFromRequirements.some(billUrl => normalizeUrl(billUrl) === normalizedUrl);
-                              });
-                              
-                              // If we found potential payment screenshots, use the first one as payment screenshot
-                              // This works for both ONLINE and CASH payments
-                              if (potentialPaymentScreenshots.length > 0) {
-                                paymentScreenshot = potentialPaymentScreenshots[0];
-                                // Remove payment screenshot(s) from bill photos
-                                billPhotos = afterPhotosExtracted.filter(url => {
-                                  const normalizedUrl = normalizeUrl(url);
-                                  return !potentialPaymentScreenshots.some(ps => normalizeUrl(ps) === normalizedUrl);
-                                });
-                              } else {
-                                // No extra photos found, treat all as bill photos
-                                billPhotos = afterPhotosExtracted;
-                              }
-                            } else {
-                              // Same count or fewer - all photos are bill photos
-                              billPhotos = afterPhotosExtracted;
-                            }
-                          }
-                        } else {
-                          // Fallback to requirements.bill_photos if after_photos is empty
-                          billPhotos = billPhotosFromRequirements;
-                        }
-                        
-                        // Final validation: ensure payment screenshot is a valid URL
-                        if (paymentScreenshot && (!paymentScreenshot.startsWith('http://') && !paymentScreenshot.startsWith('https://'))) {
-                          console.warn('⚠️ Invalid payment screenshot URL format:', paymentScreenshot);
-                          paymentScreenshot = null;
-                        }
-                        
-                        // Check for payment_photos in requirements
-                        const paymentPhotosReq = requirements.find((r: any) => r?.payment_photos);
-                        const paymentPhotosFromReq = paymentPhotosReq?.payment_photos || [];
-                        
-                        const parsedAdminUrl = parseAdminDashboardUrl(location.search);
-
-                        return (
-                          <div
-                            key={job.id}
-                            data-completed-job-id={job.id}
-                            className={
-                              highlightCompletedJobId === job.id
-                                ? 'rounded-xl ring-2 ring-blue-500 ring-offset-2 transition-shadow'
-                                : undefined
-                            }
-                          >
-                            <CompletedJobSection
-                              job={fullJob}
-                              technicians={techniciansForReports.length > 0 ? techniciansForReports : technicians}
-                              requirements={requirements}
-                              actualCost={actualCost}
-                              paymentAmount={paymentAmount}
-                              paymentMethod={paymentMethod}
-                              qrPhotos={qrPhotos}
-                              billPhotos={billPhotos}
-                              paymentScreenshot={paymentScreenshot}
-                              amcInfo={amcInfo}
-                              completionNotes={completionNotes}
-                              completedByName={completedByName}
-                              formattedCompletedAt={formattedCompletedAt}
-                              setSelectedCompletedJob={setSelectedCompletedJob}
-                              setCompletedJobEditData={setCompletedJobEditData}
-                              onEditCompletedReady={() =>
-                                openAdminModal('edit-completed', { jobId: fullJob.id })
-                              }
-                              setSelectedJobForMessage={setSelectedJobForMessage}
-                              onOpenSendMessage={() =>
-                                openAdminModal('send-message', { jobId: fullJob.id })
-                              }
-                              onSendCompletionEmail={sendCompletionEmailQuick}
-                              onEditCompletionEmail={openCompletionEmailComposer}
-                              setSelectedBillPhotos={setSelectedBillPhotos}
-                              setSelectedPhoto={setSelectedPhoto}
-                              onOpenPaymentBillPhotos={(photos, startIdx = 0) => {
-                                setSelectedBillPhotos(photos);
-                                setSelectedPhoto({
-                                  url: photos[startIdx],
-                                  index: startIdx,
-                                  total: photos.length,
-                                });
-                                openAdminModal('photo-viewer', {
-                                  jobId: fullJob.id,
-                                  photoIdx: startIdx,
-                                });
-                              }}
-                              onOpenJobParts={() =>
-                                openAdminModal('job-parts', { jobId: fullJob.id })
-                              }
-                              onJobPartsOpenChange={(open) =>
-                                onAdminModalOpenChange('job-parts', open)
-                              }
-                              jobPartsDialogOpen={
-                                parsedAdminUrl.modal === 'job-parts' &&
-                                parsedAdminUrl.jobId === fullJob.id
-                              }
-                              onOpenOfficeParts={() =>
-                                openAdminModal('office-parts', { jobId: fullJob.id })
-                              }
-                              onOfficePartsOpenChange={(open) =>
-                                onAdminModalOpenChange('office-parts', open)
-                              }
-                              officePartsDialogOpen={
-                                parsedAdminUrl.modal === 'office-parts' &&
-                                parsedAdminUrl.jobId === fullJob.id
-                              }
-                              onOpenCompletionEmail={() =>
-                                openAdminModal('completion-email', { jobId: fullJob.id })
-                              }
-                              onCompletionEmailOpenChange={(open) =>
-                                onAdminModalOpenChange('completion-email', open)
-                              }
-                              completionEmailOpen={
-                                parsedAdminUrl.modal === 'completion-email' &&
-                                parsedAdminUrl.jobId === fullJob.id
-                              }
-                              minimalMode={minimalCompletedMode}
-                              detailsLoaded={detailsLoaded}
-                              loadingDetails={isLoadingDetails}
-                              onLoadDetails={() => loadCompletedJobDetails(job.id)}
-                            />
-                            <DeniedJobSection
-                              job={job}
-                              denialReason={denialReason}
-                              deniedBy={deniedBy}
-                              formattedDeniedAt={formattedDeniedAt}
-                            />
-                            <FollowUpJobSection
-                              job={job}
-                              formattedFollowUpDate={formattedFollowUpDate}
-                              formattedFollowUpTime={formattedFollowUpTime}
-                              followUpNotes={followUpNotes}
-                              formattedFollowUpScheduledAt={formattedFollowUpScheduledAt}
-                              followUpScheduledByName={followUpScheduledByName}
-                            />
-                            {(() => {
-                              const jobFollowUpDateStr = followUpDateToStr(followUpDate);
-                              const isFollowUpToday = statusFilter === 'RESCHEDULED' && ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status) && jobFollowUpDateStr === todayDateStr;
-                              const isFollowUpTomorrow = statusFilter === 'RESCHEDULED' && ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status) && jobFollowUpDateStr === tomorrowDateStr;
-                              const jobBorderClass = isFollowUpToday ? 'border-red-400 border-2' : isFollowUpTomorrow ? 'border-yellow-400 border-2' : job.status === 'PENDING' && !(job.assigned_technician_id || job.assignedTechnicianId) ? 'border-blue-500 border-2' : 'border-gray-300';
-                              return (
-                            <div className={`bg-white rounded-lg border ${jobBorderClass} hover:border-gray-400 hover:shadow-sm transition-all duration-200 overflow-hidden group`}>
-                            <div className="p-3 sm:p-4">
-                              <div className="flex items-start justify-between mb-4">
-                                <div className="flex-1 min-w-0">
-                                  {/* Mobile: Stack badges vertically, Desktop: Horizontal */}
-                                  <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-3">
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                      <Badge className="bg-blue-100 text-blue-800 border-0">
-                                        {job.service_type || job.serviceType} {job.service_sub_type || job.serviceSubType}
-                                      </Badge>
-                                      <StatusBadge status={job.status} />
-                                    </div>
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                      {allPhotos.length > 0 && (
-                                        <div className="flex items-center gap-1 text-xs text-gray-600 bg-gray-50 px-2 py-1 rounded-md">
-                                          <Camera className="w-3 h-3" />
-                                          {allPhotos.length} photos
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                  
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 text-sm">
-                                    <div className="flex items-start gap-2 sm:items-center">
-                                      <Calendar className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
-                                      <div className="min-w-0 flex-1">
-                                        <div className="text-xs text-gray-500">Scheduled</div>
-                                        <div className="font-medium text-gray-900 break-words">
-                                          {new Date(job.scheduled_date || job.scheduledDate).toLocaleDateString()}
-                                        </div>
-                                        <div className="text-xs text-gray-600">
-                                          {(() => {
-                                            // Handle requirements - could be array, object, or string
-                                            let requirements = (job as any).requirements;
-                                            
-                                            // If it's a string, parse it
-                                            if (typeof requirements === 'string') {
-                                              try {
-                                                requirements = JSON.parse(requirements);
-                                              } catch (e) {
-                                                requirements = [];
-                                              }
-                                            }
-                                            
-                                            // If it's an object (not array), convert to array
-                                            if (requirements && typeof requirements === 'object' && !Array.isArray(requirements)) {
-                                              requirements = [requirements];
-                                            }
-                                            
-                                            // Ensure it's an array
-                                            if (!Array.isArray(requirements)) {
-                                              requirements = [];
-                                            }
-                                            
-                                            // Check if there's a custom time in requirements
-                                            const customTime = requirements.find((r: any) => r?.custom_time)?.custom_time;
-                                            
-                                            if (customTime) {
-                                              // Format the time nicely (e.g., "14:30" -> "2:30 PM")
-                                              const [hours, minutes] = customTime.split(':');
-                                              const hour24 = parseInt(hours);
-                                              const hour12 = hour24 > 12 ? hour24 - 12 : (hour24 === 0 ? 12 : hour24);
-                                              const ampm = hour24 >= 12 ? 'PM' : 'AM';
-                                              return `${hour12}:${minutes} ${ampm}`;
-                                            }
-                                            
-                                            // Check for flexible time
-                                            const isFlexible = requirements.find((r: any) => r?.flexible_time)?.flexible_time;
-                                            if (isFlexible) {
-                                              return 'Flexible';
-                                            }
-                                            
-                                            // Otherwise show the time slot
-                                            const timeSlot = job.scheduled_time_slot || job.scheduledTimeSlot || 'Time not specified';
-                                            // Map time slots to readable format
-                                            const timeSlotMap: { [key: string]: string } = {
-                                              'MORNING': 'Morning (9 AM - 1 PM)',
-                                              'AFTERNOON': 'Afternoon (1 PM - 6 PM)',
-                                              'EVENING': 'Evening (6 PM - 9 PM)'
-                                            };
-                                            return timeSlotMap[timeSlot] || timeSlot;
-                                          })()}
-                                        </div>
-                                      </div>
-                                    </div>
-                                    
-                                    {/* Agreed Price - Only show if it exists and is greater than 0 */}
-                                    {(() => {
-                                      // Handle requirements - could be array, object, or string
-                                      let requirements = (job as any).requirements;
-                                      
-                                      // If it's a string, parse it
-                                      if (typeof requirements === 'string') {
-                                        try {
-                                          requirements = JSON.parse(requirements);
-                                        } catch (e) {
-                                          requirements = [];
-                                        }
-                                      }
-                                      
-                                      // If it's an object (not array), convert to array
-                                      if (requirements && typeof requirements === 'object' && !Array.isArray(requirements)) {
-                                        requirements = [requirements];
-                                      }
-                                      
-                                      // Ensure it's an array
-                                      if (!Array.isArray(requirements)) {
-                                        requirements = [];
-                                      }
-                                      
-                                      const costRange = requirements.find((r: any) => r?.cost_range)?.cost_range;
-                                      const estimatedCost = (job as any).estimated_cost;
-                                      const hasCost = estimatedCost && parseFloat(String(estimatedCost)) > 0;
-                                      
-                                      if (!hasCost) return null;
-                                      
-                                      return (
-                                        <div className="flex items-start gap-2 sm:items-center">
-                                          <div className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0 font-bold text-lg">₹</div>
-                                          <div className="min-w-0 flex-1">
-                                            <div className="text-xs text-gray-500">Agreed Price</div>
-                                            <div className="font-medium text-gray-900 break-words">
-                                              {costRange && typeof costRange === 'string' && costRange.includes('-') 
-                                                ? `₹${costRange}` 
-                                                : `₹${estimatedCost ? String(estimatedCost) : '0'}`}
-                                              {(job as any).actual_cost && String((job as any).actual_cost) !== String(estimatedCost) && (
-                                                <span className="text-xs text-gray-500 ml-1">
-                                                  (Est: ₹{estimatedCost ? String(estimatedCost) : '0'})
-                                                </span>
-                                              )}
-                                            </div>
-                                            {(job as any).actual_cost && parseFloat(String((job as any).actual_cost)) > 0 && (
-                                              <div className="text-xs text-green-600">
-                                                Final: ₹{String((job as any).actual_cost)}
-                                              </div>
-                                            )}
-                                          </div>
-                                        </div>
-                                      );
-                                    })()}
-                                    
-                                            {(() => {
-                                      // Get assigned technician info (prefer technicians state so refresh shows latest location)
-                                      const assignedTechnicianId = (job as any).assigned_technician_id || (job as any).assignedTechnicianId;
-                                      const assignedTechnician = (assignedTechnicianId ? technicians.find(t => t.id === assignedTechnicianId) : null) || job.assignedTechnician;
-                                      
-                                      // Get technician name from various possible fields
-                                      const technicianName = assignedTechnician?.fullName || 
-                                        (job as any).technician_name ||
-                                        (assignedTechnicianId ? technicians.find(t => t.id === assignedTechnicianId)?.fullName : null);
-                                      
-                                      // Get brand/model for display
-                                      const jobBrand = (job as any).brand || job.brand;
-                                      const jobModel = (job as any).model || job.model;
-                                      const customerBrand = customer.brand || '';
-                                      const customerModel = customer.model || '';
-                                      
-                                      const isValidValue = (val: string) => {
-                                        return val && 
-                                          val !== 'Not specified' && 
-                                          val.toLowerCase() !== 'not specified' && 
-                                          val.trim() !== '';
-                                      };
-                                      
-                                      const hasValidJobBrand = isValidValue(jobBrand);
-                                      const hasValidJobModel = isValidValue(jobModel);
-                                      
-                                      let brand = hasValidJobBrand ? jobBrand : '';
-                                      let model = hasValidJobModel ? jobModel : '';
-                                      
-                                      // Fallback to customer if job doesn't have valid values
-                                      if (!brand || !model) {
-                                        if (customerBrand && customerBrand.includes(',')) {
-                                          const brands = customerBrand.split(',').map((b: string) => b.trim());
-                                          const models = customerModel ? customerModel.split(',').map((m: string) => m.trim()) : [];
-                                          const jobServiceType = ((job.service_type || job.serviceType || '') as string).toUpperCase();
-                                          
-                                          if (jobServiceType === 'RO' || jobServiceType === '') {
-                                            if (!brand) brand = brands[0] || '';
-                                            if (!model) model = models[0] || '';
-                                          } else if (jobServiceType === 'SOFTENER' && brands.length > 1) {
-                                            if (!brand) brand = brands[1] || brands[0] || '';
-                                            if (!model) model = models[1] || models[0] || '';
-                                              } else {
-                                            if (!brand) brand = brands[0] || '';
-                                            if (!model) model = models[0] || '';
-                                          }
-                                        } else {
-                                          if (!brand && isValidValue(customerBrand)) brand = customerBrand;
-                                          if (!model && isValidValue(customerModel)) model = customerModel;
-                                        }
-                                      }
-                                      
-                                      const validBrand = isValidValue(brand) ? brand : '';
-                                      const validModel = isValidValue(model) ? model : '';
-                                      
-                                      // Show both Equipment and Assigned To if they exist
-                                      const hasEquipment = validBrand || validModel;
-                                      const hasTechnician = technicianName || assignedTechnicianId;
-                                      
-                                      if (!hasEquipment && !hasTechnician) {
-                                        return null;
-                                      }
-                                      
-                                      return (
-                                        <>
-                                          {/* Show Equipment section with brand and/or model */}
-                                          {hasEquipment && (
-                                            <div className="flex items-start gap-2 sm:items-center">
-                                              <Wrench className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
-                                              <div className="min-w-0 flex-1">
-                                                <div className="text-xs text-gray-500">Equipment</div>
-                                                <div className="font-medium text-gray-900 break-words">
-                                                  {validBrand && validModel 
-                                                    ? `${validBrand} - ${validModel}` 
-                                                    : validBrand || validModel}
-                                          </div>
-                                        </div>
-                                      </div>
-                                    )}
-                                          
-                                          {/* Show Assigned To section if technician is assigned */}
-                                          {hasTechnician && (
-                                            <div className="flex items-start gap-2 sm:items-center">
-                                              <User className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
-                                              <div className="min-w-0 flex-1">
-                                                <div className="text-xs text-gray-500">Assigned To</div>
-                                                <div className="font-medium text-gray-900 break-words">
-                                                  {technicianName || 'Unassigned'}
-                                                </div>
-                                              </div>
-                                            </div>
-                                          )}
-                                        </>
-                                      );
-                                    })()}
-                                    
-                                    {job.description && job.description.trim() && job.description !== 'No description provided' && (() => {
-                                      const descriptionLength = job.description.length;
-                                      const maxLength = 150; // Show expand option if longer than 150 characters
-                                      const shouldShowExpand = descriptionLength > maxLength;
-                                      const displayText = shouldShowExpand 
-                                        ? job.description.substring(0, maxLength) + '...' 
-                                        : job.description;
-                                      
-                                      return (
-                                        <div className="flex items-start gap-2 sm:items-center">
-                                          <FileText className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
-                                          <div className="min-w-0 flex-1">
-                                            <div className="text-xs text-gray-500">Description</div>
-                                            <div className="font-medium text-gray-900 break-words">
-                                              {displayText}
-                                            </div>
-                                            {shouldShowExpand && (
-                                              <button
-                                                onClick={() => {
-                                                  setSelectedJobDescription({
-                                                    jobId: job.id || '',
-                                                    description: job.description
-                                                  });
-                                                  setDescriptionDialogOpen(true);
-                                                }}
-                                                className="text-xs text-blue-600 hover:text-blue-800 mt-1 font-medium"
-                                              >
-                                                Show more
-                                              </button>
-                                            )}
-                                          </div>
-                                        </div>
-                                      );
-                                    })()}
-                                    
-                                    {/* Lead Source */}
-                                    {(() => {
-                                      // Handle requirements - could be array, object, or string
-                                      let requirements = (job as any).requirements;
-                                      
-                                      
-                                      // If it's a string, parse it
-                                      if (typeof requirements === 'string') {
-                                        try {
-                                          requirements = JSON.parse(requirements);
-                                        } catch (e) {
-                                          requirements = [];
-                                        }
-                                      }
-                                      
-                                      // If it's null or undefined, set to empty array
-                                      if (!requirements) {
-                                        requirements = [];
-                                      }
-                                      
-                                      // If it's an object (not array), convert to array
-                                      if (requirements && typeof requirements === 'object' && !Array.isArray(requirements)) {
-                                        // Check if it has lead_source directly
-                                        if (requirements.lead_source) {
-                                          const ls = requirements.lead_source;
-                                          const bookedAt = (job as any).created_at || (job as any).createdAt;
-                                          const isWebsite = ls === 'Website';
-                                          return (
-                                            <div className="flex items-start gap-2 sm:items-center">
-                                              <Tag className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
-                                              <div className="min-w-0 flex-1">
-                                                <div className="text-xs text-gray-500">Lead Source</div>
-                                                <div className="font-medium text-gray-900 break-words">{ls}</div>
-                                                {isWebsite && bookedAt && (
-                                                  <div className="text-xs text-gray-500 mt-0.5">Booked at: {new Date(bookedAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}</div>
-                                                )}
-                                              </div>
-                                            </div>
-                                          );
-                                        }
-                                        // Otherwise convert to array
-                                        requirements = [requirements];
-                                      }
-                                      
-                                      // Ensure it's an array
-                                      if (!Array.isArray(requirements)) {
-                                        requirements = [];
-                                      }
-                                      
-                                      // Find lead_source in the array
-                                      let leadSource: string | null = null;
-                                      
-                                      // Try to find lead_source in the array
-                                      for (const req of requirements) {
-                                        if (req && typeof req === 'object') {
-                                          if (req.lead_source) {
-                                            leadSource = req.lead_source;
-                                            break;
-                                          }
-                                        }
-                                      }
-                                      
-                                      // If still no lead_source found, check if requirements array has objects with nested properties
-                                      if (!leadSource && requirements.length > 0) {
-                                        // Sometimes Supabase returns it as an array with numeric keys
-                                        const flatReq = requirements.flat();
-                                        for (const req of flatReq) {
-                                          if (req && typeof req === 'object' && req.lead_source) {
-                                            leadSource = req.lead_source;
-                                            break;
-                                          }
-                                        }
-                                      }
-                                      
-                                      // Fallback to new source-tracking columns when requirements.lead_source is missing
-                                      const bookingSource = ((job as any).booking_source || '').toString().toLowerCase();
-                                      const bookingDomain = (job as any).booking_domain || '';
-                                      if (leadSource === 'Website') {
-                                        if (bookingSource === 'elevenro') {
-                                          leadSource = 'Website (ElevenRO)';
-                                        } else if (bookingSource === 'hydrogenro') {
-                                          leadSource = 'Website (HydrogenRO)';
-                                        } else if (bookingDomain) {
-                                          leadSource = `Website (${bookingDomain})`;
-                                        }
-                                      }
-                                      if (!leadSource) {
-                                        if (bookingSource === 'elevenro') {
-                                          leadSource = 'Website (ElevenRO)';
-                                        } else if (bookingSource === 'hydrogenro') {
-                                          leadSource = 'Website (HydrogenRO)';
-                                        } else if (bookingDomain) {
-                                          leadSource = `Website (${bookingDomain})`;
-                                        }
-                                      }
-
-                                      const isWebsiteLead =
-                                        typeof leadSource === 'string' &&
-                                        leadSource.toLowerCase().includes('website');
-
-                                      if (leadSource && !isWebsiteLead) {
-                                        return (
-                                          <div className="flex items-start gap-2 sm:items-center">
-                                            <Tag className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
-                                            <div className="min-w-0 flex-1">
-                                              <div className="text-xs text-gray-500">Lead Source</div>
-                                              <div className="font-medium text-gray-900 break-words">{leadSource}</div>
-                                            </div>
-                                          </div>
-                                        );
-                                      }
-                                      if (isWebsiteLead) {
-                                        const bookedAt = (job as any).created_at || (job as any).createdAt;
-                                        if (bookedAt) {
-                                          const d = new Date(bookedAt);
-                                          const formatted = d.toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
-                                          return (
-                                            <div className="flex items-start gap-2 sm:items-center">
-                                              <Tag className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
-                                              <div className="min-w-0 flex-1">
-                                                <div className="text-xs text-gray-500">Lead Source</div>
-                                                <div className="font-medium text-gray-900 break-words">{leadSource}</div>
-                                                <div className="text-xs text-gray-500 mt-0.5">Booked at: {formatted}</div>
-                                              </div>
-                                            </div>
-                                          );
-                                        }
-                                      }
-                                      return null;
-                                    })()}
-
-                                    {/* Service Brand */}
-                                    {job.status === 'COMPLETED' && (job as any).service_brand && (
-                                      <div className="flex items-start gap-2 sm:items-center">
-                                        <Tag className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5 sm:mt-0" />
-                                        <div className="min-w-0 flex-1">
-                                          <div className="text-xs text-gray-500">Served As</div>
-                                          <div className="font-medium text-gray-900 break-words">
-                                            {(job as any).service_brand === 'elevenro' ? 'ElevenRO' : (job as any).service_brand === 'hydrogenro' ? 'HydrogenRO' : (job as any).service_brand}
-                                          </div>
-                                        </div>
-                                      </div>
-                                    )}
-                                    
-                                  </div>
-
-                                  {/* Photos Section - Mobile responsive */}
-                                  {allPhotos.length > 0 && (
-                                    <div className="mt-4 pt-4 border-t border-gray-200">
-                                      <button
-                                        onClick={() => openPhotoGallery(job.id, allPhotos, 'photos')}
-                                        className="w-full sm:w-auto text-sm text-gray-600 hover:text-gray-800 font-medium flex items-center justify-center sm:justify-start gap-2 bg-gray-50 hover:bg-gray-100 px-3 py-2 rounded-md transition-colors"
-                                      >
-                                        <Camera className="w-4 h-4 flex-shrink-0" />
-                                        <span className="truncate">View Photos ({allPhotos.length})</span>
-                                      </button>
-                                    </div>
-                                  )}
-                                </div>
-
-                                {/* Job Actions - Always in top-right */}
-                                <div className="flex items-center ml-2 flex-shrink-0">
-                                  <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                      <Button 
-                                        variant="ghost" 
-                                        size="sm" 
-                                        className="h-8 w-8 p-0 text-gray-400 hover:text-gray-600 flex-shrink-0"
-                                      >
-                                        <MoreVertical className="h-4 w-4" />
-                                      </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent
-                                      align="end"
-                                      className="w-48"
-                                      onCloseAutoFocus={(e) => e.preventDefault()}
-                                    >
-                                      {/* Assign to Technician - First option for PENDING status */}
-                                      {job.status === 'PENDING' && (
-                                        <DropdownMenuItem onClick={() => handleAssignJob(job)}>
-                                          <Wrench className="mr-2 h-4 w-4" />
-                                          Assign to Technician
-                                        </DropdownMenuItem>
-                                      )}
-                                      
-                                      {/* Complete Job - Second option for all active statuses */}
-                                      {(job.status === 'PENDING' || job.status === 'ASSIGNED' || job.status === 'EN_ROUTE' || job.status === 'IN_PROGRESS' || job.status === 'FOLLOW_UP' || job.status === 'RESCHEDULED') && (
-                                        <DropdownMenuItem onClick={() => handleCompleteJob(job)}>
-                                          <CheckCircle2 className="mr-2 h-4 w-4" />
-                                          Complete Job
-                                        </DropdownMenuItem>
-                                      )}
-                                      
-                                      {job.status === 'ASSIGNED' && (
-                                        <>
-                                          <DropdownMenuItem onClick={() => handleJobStatusUpdate(job.id, 'IN_PROGRESS')}>
-                                            <Clock className="mr-2 h-4 w-4" />
-                                            Start Job
-                                          </DropdownMenuItem>
-                                          <DropdownMenuItem onClick={() => handleAddTeam(job)}>
-                                            <UserPlus className="mr-2 h-4 w-4" />
-                                            Add Team
-                                          </DropdownMenuItem>
-                                          {(() => {
-                                            const currentTeamMembers = (job as any).team_members || [];
-                                            const teamMembersArray = Array.isArray(currentTeamMembers) ? currentTeamMembers : [];
-                                            return teamMembersArray.length > 0 ? (
-                                              <DropdownMenuItem onClick={() => handleRemoveTeam(job)}>
-                                                <User className="mr-2 h-4 w-4" />
-                                                Remove Team Member
-                                              </DropdownMenuItem>
-                                            ) : null;
-                                          })()}
-                                        </>
-                                      )}
-                                      {(job.status === 'PENDING' || job.status === 'ASSIGNED' || job.status === 'EN_ROUTE' || job.status === 'IN_PROGRESS') && (
-                                        <>
-                                          <DropdownMenuItem onClick={() => handleScheduleFollowUp(job)}>
-                                            <CalendarPlus className="mr-2 h-4 w-4" />
-                                            Schedule Follow-up
-                                          </DropdownMenuItem>
-                                          <DropdownMenuItem onClick={() => handleDenyJob(job)}>
-                                            <XCircle className="mr-2 h-4 w-4" />
-                                            Deny Job
-                                          </DropdownMenuItem>
-                                        </>
-                                      )}
-                                      {(job.status === 'FOLLOW_UP' || job.status === 'RESCHEDULED') && (
-                                        <>
-                                          <DropdownMenuItem onClick={() => handleAssignFromFollowUp(job)}>
-                                            <Wrench className="mr-2 h-4 w-4" />
-                                            Assign to Technician
-                                          </DropdownMenuItem>
-                                          <DropdownMenuItem onClick={() => handleMoveToOngoing(job)}>
-                                            <ArrowRight className="mr-2 h-4 w-4" />
-                                            Move to Ongoing
-                                          </DropdownMenuItem>
-                                          <DropdownMenuItem onClick={() => handleScheduleFollowUp(job)}>
-                                            <CalendarPlus className="mr-2 h-4 w-4" />
-                                            Schedule Follow-up
-                                          </DropdownMenuItem>
-                                        </>
-                                      )}
-                                      <DropdownMenuItem 
-                                        onClick={() => handleEditJob(job)}
-                                      >
-                                        <Edit className="mr-2 h-4 w-4" />
-                                        Edit Job
-                                      </DropdownMenuItem>
-                                      {(() => {
-                                        // Use the same logic as the technician name display above (prefer state for latest location)
-                                        const assignedTechnicianId = (job as any).assigned_technician_id || (job as any).assignedTechnicianId;
-                                        const assignedTechnician = (assignedTechnicianId ? technicians.find(t => t.id === assignedTechnicianId) : null) || job.assignedTechnician;
-                                        
-                                        // Show reassign option if there's an assigned technician or if status suggests one is assigned
-                                        const hasAssignedTechnician = 
-                                          assignedTechnicianId || 
-                                          assignedTechnician ||
-                                          job.status === 'ASSIGNED' || 
-                                          job.status === 'EN_ROUTE' ||
-                                          job.status === 'IN_PROGRESS';
-                                        
-                                        return hasAssignedTechnician ? (
-                                          <>
-                                            <DropdownMenuItem 
-                                              onClick={() => handleReassignJob(job)}
-                                            >
-                                              <User className="mr-2 h-4 w-4" />
-                                              Reassign Technician
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem 
-                                              onClick={() => handleUnassignJob(job)}
-                                              className="text-orange-600"
-                                            >
-                                              <X className="mr-2 h-4 w-4" />
-                                              Unassign Technician
-                                            </DropdownMenuItem>
-                                          </>
-                                        ) : null;
-                                      })()}
-                                      {(() => {
-                                        // Only show Measure Distance if job is assigned to a technician
-                                        const assignedTechnicianId = (job as any).assigned_technician_id || (job as any).assignedTechnicianId;
-                                        
-                                        return assignedTechnicianId ? (
-                                          <DropdownMenuItem 
-                                            onClick={() => handleMeasureDistance(job)}
-                                          >
-                                            <Navigation className="mr-2 h-4 w-4" />
-                                            Measure Distance
-                                          </DropdownMenuItem>
-                                        ) : null;
-                                      })()}
-                                      {(() => {
-                                        const assignedTechnicianId = (job as any).assigned_technician_id || (job as any).assignedTechnicianId;
-                                        return assignedTechnicianId ? (
-                                          <DropdownMenuItem onClick={() => handleShareJobWhatsApp(job)}>
-                                            <MessageSquare className="mr-2 h-4 w-4" />
-                                            Share job in WhatsApp
-                                          </DropdownMenuItem>
-                                        ) : null;
-                                      })()}
-                                      {(() => {
-                                        const assignedTechnicianId = (job as any).assigned_technician_id || (job as any).assignedTechnicianId;
-                                        return assignedTechnicianId ? (
-                                          <DropdownMenuItem
-                                            onClick={() => {
-                                              openAdminModal('share-job-info', { jobId: job.id });
-                                            }}
-                                          >
-                                            <Send className="mr-2 h-4 w-4" />
-                                            Share info to customer
-                                          </DropdownMenuItem>
-                                        ) : null;
-                                      })()}
-                                      <DropdownMenuItem
-                                        onClick={() => {
-                                          openAdminModal('delete-job', { jobId: job.id });
-                                        }}
-                                        className="text-red-600"
-                                      >
-                                        <Trash2 className="mr-2 h-4 w-4" />
-                                        Delete Job
-                                      </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                  </DropdownMenu>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        ); })()}
-                          </div>
-                        );
-                        });
-                      })()}
-                    </div>
-                  )}
-                </div>
-              </Card>
-            );
-              })
+              <AdminDashboardListProvider data={adminListData} actionsRef={adminListActionsRef}>
+                <AdminCustomerJobsList />
+              </AdminDashboardListProvider>
             )}
           </div>
 
@@ -12423,36 +6048,20 @@ const AdminDashboard = () => {
         }}
       />
 
-      {/* Override Dialog for Existing Customer */}
-      <AlertDialog open={overrideDialogOpen} onOpenChange={setOverrideDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Customer Already Exists</AlertDialogTitle>
-            <AlertDialogDescription>
-              A customer with this phone number or email already exists: {existingCustomer?.customer_id || existingCustomer?.customerId} - {existingCustomer?.fullName || existingCustomer?.full_name}
-              <br /><br />
-              Would you like to update the existing customer instead?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => {
-              setOverrideDialogOpen(false);
-              setExistingCustomer(null);
-              closeAdminModal();
-            }}>
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction onClick={() => {
-              setShouldUpdateExisting(true);
-              setOverrideDialogOpen(false);
-              // Move to step 2 to continue
-              setCurrentStep(2);
-            }}>
-              Update Existing
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <AdminOverrideExistingCustomerDialog
+        open={overrideDialogOpen}
+        onOpenChange={setOverrideDialogOpen}
+        existingCustomer={existingCustomer}
+        onCancel={() => {
+          handleCancelOverride();
+          closeAdminModal();
+        }}
+        onConfirmUpdate={() => {
+          setShouldUpdateExisting(true);
+          setOverrideDialogOpen(false);
+          setCurrentStep(2);
+        }}
+      />
 
       {/* Legacy Add Customer Dialog - REMOVED - Now using AddCustomerDialog component */}
 
@@ -12490,160 +6099,28 @@ const AdminDashboard = () => {
 
       {/* Legacy Edit Customer Dialog - REMOVED */}
 
-      {/* Delete Customer Confirmation Dialog */}
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Customer</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete customer <strong>{(customerToDelete as any)?.customer_id}</strong> - <strong>{(customerToDelete as any)?.full_name}</strong>?
-              <br />
-              <br />
-              This action cannot be undone and will permanently remove the customer and all associated data.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={handleDeleteCustomer}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              Delete Customer
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Delete Job Confirmation Dialog */}
-      <AlertDialog
-        open={deleteJobDialogOpen}
-        onOpenChange={bindAdminModalDismiss('delete-job', () => {
+      {/* Delete Customer / Job / Photo confirmation dialogs */}
+      <AdminDeleteConfirmDialogs
+        deleteCustomerOpen={deleteDialogOpen}
+        onDeleteCustomerOpenChange={setDeleteDialogOpen}
+        customerToDelete={customerToDelete}
+        onConfirmDeleteCustomer={handleDeleteCustomer}
+        deleteJobOpen={deleteJobDialogOpen}
+        onDeleteJobOpenChange={bindAdminModalDismiss('delete-job', () => {
           setDeleteJobDialogOpen(false);
           setJobToDelete(null);
         })}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Job</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete job <strong>{(jobToDelete as any)?.job_number}</strong>?
-              <br />
-              <br />
-              This action cannot be undone and will permanently remove the job and all associated data.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={handleDeleteJob}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              Delete Job
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Delete Photo Confirmation Dialog */}
-      <AlertDialog open={deletePhotoDialogOpen} onOpenChange={setDeletePhotoDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Photo</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete this photo?
-              <br />
-              <br />
-              This action cannot be undone and will permanently remove the photo from the job.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeletingPhoto}>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={confirmDeletePhoto}
-              disabled={isDeletingPhoto}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              {isDeletingPhoto ? (
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  Deleting...
-                </div>
-              ) : (
-                'Delete Photo'
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Delete Customer Photo Confirmation Dialog */}
-      <AlertDialog open={deleteCustomerPhotoDialogOpen} onOpenChange={setDeleteCustomerPhotoDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Photo</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete this photo?
-              <br />
-              <br />
-              This action cannot be undone and will permanently remove the photo from all associated jobs.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeletingCustomerPhoto}>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={confirmDeleteCustomerPhoto}
-              disabled={isDeletingCustomerPhoto}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              {isDeletingCustomerPhoto ? (
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  Deleting...
-                </div>
-              ) : (
-                'Delete Photo'
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Override Existing Customer Dialog */}
-      <AlertDialog open={overrideDialogOpen} onOpenChange={setOverrideDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Customer Already Exists</AlertDialogTitle>
-            <AlertDialogDescription>
-              A customer with this phone number or email already exists:
-              <br />
-              <br />
-              <strong>Customer ID:</strong> {(existingCustomer as any)?.customer_id ?? (existingCustomer as any)?.customerId ?? '—'}
-              <br />
-              <strong>Name:</strong> {(existingCustomer as any)?.full_name ?? (existingCustomer as any)?.fullName ?? '—'}
-              <br />
-              <strong>Phone:</strong> {existingCustomer?.phone ?? '—'}
-              <br />
-              <strong>Email:</strong> {existingCustomer?.email ?? '—'}
-              <br />
-              <br />
-              Do you want to continue and update this existing customer with the new information?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={handleCancelOverride}>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={() => {
-                setShouldUpdateExisting(true);
-                setOverrideDialogOpen(false);
-                setCurrentStep(2); // Move to next step
-              }}
-              className="bg-orange-600 hover:bg-orange-700"
-            >
-              Continue & Update
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        jobToDelete={jobToDelete}
+        onConfirmDeleteJob={handleDeleteJob}
+        deletePhotoOpen={deletePhotoDialogOpen}
+        onDeletePhotoOpenChange={setDeletePhotoDialogOpen}
+        isDeletingPhoto={isDeletingPhoto}
+        onConfirmDeletePhoto={confirmDeletePhoto}
+        deleteCustomerPhotoOpen={deleteCustomerPhotoDialogOpen}
+        onDeleteCustomerPhotoOpenChange={setDeleteCustomerPhotoDialogOpen}
+        isDeletingCustomerPhoto={isDeletingCustomerPhoto}
+        onConfirmDeleteCustomerPhoto={confirmDeleteCustomerPhoto}
+      />
 
       {/* Photo Gallery Dialog */}
       <PhotoGalleryDialog
@@ -12974,180 +6451,22 @@ const AdminDashboard = () => {
       )}
 
       {/* AMC Info Dialog */}
-      <Dialog open={amcInfoDialogOpen} onOpenChange={setAmcInfoDialogOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Star className="w-5 h-5 text-green-600" />
-              AMC Information
-            </DialogTitle>
-            <DialogDescription>
-              AMC details for {selectedCustomerForAMC?.fullName || 'customer'}
-            </DialogDescription>
-          </DialogHeader>
-          {loadingAMCInfo ? (
-            <div className="py-8 text-center">
-              <div className="flex items-center justify-center gap-2">
-                <RefreshCw className="w-5 h-5 animate-spin text-gray-400" />
-                <span className="text-gray-600">Loading AMC information...</span>
-              </div>
-            </div>
-          ) : amcInfo ? (
-            <div className="py-4 space-y-4">
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-700">Status:</span>
-                  <Badge className="bg-green-600 text-white border-0">
-                    {amcInfo.status}
-                  </Badge>
-                </div>
-
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600 font-medium">Service brand:</span>
-                  <span className="text-gray-900 font-semibold">
-                    {getAmcDocumentBrandLabel(amcInfo)}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-gray-600 font-medium">Start Date:</span>
-                    <p className="text-gray-900 font-semibold mt-1">
-                      {new Date(amcInfo.start_date).toLocaleDateString('en-IN', {
-                        day: 'numeric',
-                        month: 'short',
-                        year: 'numeric'
-                      })}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="text-gray-600 font-medium">End Date:</span>
-                    <p className="text-gray-900 font-semibold mt-1">
-                      {new Date(amcInfo.end_date).toLocaleDateString('en-IN', {
-                        day: 'numeric',
-                        month: 'short',
-                        year: 'numeric'
-                      })}
-                    </p>
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-gray-600 font-medium">Duration:</span>
-                    <p className="text-gray-900 font-semibold mt-1">
-                      {amcInfo.years} {amcInfo.years === 1 ? 'year' : 'years'}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="text-gray-600 font-medium">Includes Prefilter:</span>
-                    <p className="text-gray-900 font-semibold mt-1">
-                      {amcInfo.includes_prefilter ? 'Yes' : 'No'}
-                    </p>
-                  </div>
-                </div>
-                
-                {(() => {
-                  // Parse additional_info to extract description and AMC cost
-                  let description = '';
-                  let additionalInfo = '';
-                  let amcCost: number | null = null;
-                  let totalAmount: number | null = null;
-                  let agreedAmount: number | null = null;
-                  
-                  if (amcInfo.additional_info) {
-                    try {
-                      let parsed: any = {};
-                      if (typeof amcInfo.additional_info === 'string') {
-                        parsed = JSON.parse(amcInfo.additional_info);
-                      } else {
-                        parsed = amcInfo.additional_info;
-                      }
-                      
-                      description = parsed.description || parsed.notes || '';
-                      additionalInfo = parsed.notes || '';
-                      amcCost = parsed.amc_cost || null;
-                      totalAmount = parsed.total_amount || null;
-                      agreedAmount = parsed.agreed_amount || parsed.agreed || null;
-                    } catch (e) {
-                      additionalInfo = amcInfo.additional_info;
-                    }
-                  }
-                  
-                  // Display AMC amount - prioritize agreed_amount, then amc_cost/total_amount, then amcInfo.amount
-                  const displayAmount = agreedAmount || amcCost || totalAmount || amcInfo.amount;
-                  const amountLabel = agreedAmount ? 'Agreed Amount' : (amcCost || totalAmount ? 'AMC Amount' : 'AMC Cost');
-                  
-                  return (
-                    <>
-                      {displayAmount && (
-                        <div className="text-sm">
-                          <span className="text-gray-600 font-medium">{amountLabel}:</span>
-                          <p className="text-gray-900 font-semibold mt-1">
-                            ₹{parseFloat(displayAmount.toString()).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </p>
-                        </div>
-                      )}
-                      {description && (
-                        <div className="pt-3 border-t border-green-200">
-                          <span className="text-gray-600 font-medium text-sm">Description / Summary:</span>
-                          <p className="text-gray-900 mt-2 whitespace-pre-wrap break-words">
-                            {description}
-                          </p>
-                        </div>
-                      )}
-                      {additionalInfo && !description && (
-                        <div className="pt-3 border-t border-green-200">
-                          <span className="text-gray-600 font-medium text-sm">Additional Information:</span>
-                          <p className="text-gray-900 mt-2 whitespace-pre-wrap break-words">
-                            {additionalInfo}
-                          </p>
-                        </div>
-                      )}
-                    </>
-                  );
-                })()}
-                
-                <div className="pt-3 border-t border-green-200 text-xs text-gray-500">
-                  <p>Created: {new Date(amcInfo.created_at).toLocaleString('en-IN')}</p>
-                  {amcInfo.updated_at && amcInfo.updated_at !== amcInfo.created_at && (
-                    <p>Last Updated: {new Date(amcInfo.updated_at).toLocaleString('en-IN')}</p>
-                  )}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="py-8 text-center text-gray-500">
-              <AlertCircle className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-              <p>No active AMC contract found for this customer</p>
-            </div>
-          )}
-          <DialogFooter className="gap-2 sm:gap-2">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setAmcInfoDialogOpen(false);
-                setSelectedCustomerForAMC(null);
-                setAmcInfo(null);
-              }}
-            >
-              Close
-            </Button>
-            {amcInfo && !loadingAMCInfo && (
-              <Button
-                onClick={() => {
-                  setAmcInfoDialogOpen(false);
-                  setAmcEditDialogOpen(true);
-                }}
-                className="bg-green-600 hover:bg-green-700 text-white"
-              >
-                <Edit className="w-4 h-4 mr-2" />
-                Edit AMC
-              </Button>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AmcInfoDialog
+        open={amcInfoDialogOpen}
+        onOpenChange={setAmcInfoDialogOpen}
+        customer={selectedCustomerForAMC}
+        amcInfo={amcInfo}
+        loading={loadingAMCInfo}
+        onClose={() => {
+          setAmcInfoDialogOpen(false);
+          setSelectedCustomerForAMC(null);
+          setAmcInfo(null);
+        }}
+        onEdit={() => {
+          setAmcInfoDialogOpen(false);
+          setAmcEditDialogOpen(true);
+        }}
+      />
 
       {/* Edit AMC Dialog (opens from inside AMC Info) */}
       <EditAMCDialog
@@ -13179,99 +6498,32 @@ const AdminDashboard = () => {
         />
 
         {/* Move to Ongoing Dialog */}
-        <Dialog open={moveToOngoingDialogOpen} onOpenChange={bindAdminModalDismiss('move-ongoing', () => {
-          setMoveToOngoingDialogOpen(false);
-          setSelectedJobForMoveToOngoing(null);
-          setMoveToOngoingDate('');
-          setMoveToOngoingTimeSlot('MORNING');
-          setMoveToOngoingCustomTime('');
-        })}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Move to Ongoing</DialogTitle>
-              <DialogDescription>
-                Please select the new scheduled date and time slot for this job.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div>
-                <Label htmlFor="admin-ongoing-date">Scheduled Date *</Label>
-                <DatePicker
-                    value={moveToOngoingDate}
-                    onChange={(v) => v && setMoveToOngoingDate(v)}
-                    placeholder="Pick date"
-                    className="mt-1"
-                  />
-              </div>
-              <div>
-                <Label htmlFor="admin-ongoing-time-slot">Time Slot *</Label>
-                <Select
-                  value={moveToOngoingTimeSlot}
-                  onValueChange={(value: 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM') => {
-                    setMoveToOngoingTimeSlot(value);
-                    // Set default time based on time slot
-                    if (value === 'MORNING') {
-                      setMoveToOngoingCustomTime('');
-                    } else if (value === 'AFTERNOON') {
-                      setMoveToOngoingCustomTime('');
-                    } else if (value === 'EVENING') {
-                      setMoveToOngoingCustomTime('');
-                    } else {
-                      // CUSTOM - use current time
-                      const now = new Date();
-                      const customTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-                      setMoveToOngoingCustomTime(customTime);
-                    }
-                  }}
-                >
-                  <SelectTrigger id="admin-ongoing-time-slot" className="mt-1">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="MORNING">Morning (9 AM - 12 PM)</SelectItem>
-                    <SelectItem value="AFTERNOON">Afternoon (12 PM - 5 PM)</SelectItem>
-                    <SelectItem value="EVENING">Evening (5 PM - 8 PM)</SelectItem>
-                    <SelectItem value="CUSTOM">Custom Time</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {moveToOngoingTimeSlot === 'CUSTOM' && (
-                <div>
-                  <Label htmlFor="admin-ongoing-custom-time">Visit time *</Label>
-                  <CustomAppointmentTimeSelect
-                    id="admin-ongoing-custom-time"
-                    className="mt-1"
-                    value={moveToOngoingCustomTime}
-                    onChange={setMoveToOngoingCustomTime}
-                  />
-                </div>
-              )}
-            </div>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setMoveToOngoingDialogOpen(false);
-                  setSelectedJobForMoveToOngoing(null);
-                  setMoveToOngoingDate('');
-                  setMoveToOngoingTimeSlot('MORNING');
-                  setMoveToOngoingCustomTime('');
-                  onAdminModalOpenChange('move-ongoing', false);
-                }}
-                disabled={isUpdating}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={performMoveToOngoing}
-                disabled={isUpdating || !moveToOngoingDate || (moveToOngoingTimeSlot === 'CUSTOM' && !moveToOngoingCustomTime)}
-                className="bg-black hover:bg-gray-800 text-white"
-              >
-                {isUpdating ? 'Moving...' : 'Move to Ongoing'}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <MoveToOngoingDialog
+          open={moveToOngoingDialogOpen}
+          onOpenChange={bindAdminModalDismiss('move-ongoing', () => {
+            setMoveToOngoingDialogOpen(false);
+            setSelectedJobForMoveToOngoing(null);
+            setMoveToOngoingDate('');
+            setMoveToOngoingTimeSlot('MORNING');
+            setMoveToOngoingCustomTime('');
+          })}
+          date={moveToOngoingDate}
+          onDateChange={setMoveToOngoingDate}
+          timeSlot={moveToOngoingTimeSlot}
+          onTimeSlotChange={setMoveToOngoingTimeSlot}
+          customTime={moveToOngoingCustomTime}
+          onCustomTimeChange={setMoveToOngoingCustomTime}
+          isUpdating={isUpdating}
+          onCancel={() => {
+            setMoveToOngoingDialogOpen(false);
+            setSelectedJobForMoveToOngoing(null);
+            setMoveToOngoingDate('');
+            setMoveToOngoingTimeSlot('MORNING');
+            setMoveToOngoingCustomTime('');
+            onAdminModalOpenChange('move-ongoing', false);
+          }}
+          onSubmit={performMoveToOngoing}
+        />
 
       {/* Deny Job Dialog */}
       <DenyJobDialog
@@ -13288,7 +6540,7 @@ const AdminDashboard = () => {
       />
 
       {/* Technician Selection Dialog for Job Completion */}
-      <Dialog
+      <CompleteTechnicianSelectDialog
         open={technicianSelectDialogOpen}
         onOpenChange={(open) => {
           if (!open) {
@@ -13305,67 +6557,12 @@ const AdminDashboard = () => {
           }
           setTechnicianSelectDialogOpen(open);
         }}
-      >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Select Technician</DialogTitle>
-            <DialogDescription>
-              Select the technician who completed this job, or choose Office if no technician was involved
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4">
-            {selectedJobForComplete && (
-              <div className="p-3 bg-gray-50 rounded-md">
-                <p className="font-medium text-sm">Job: {(selectedJobForComplete as any).job_number || selectedJobForComplete.jobNumber}</p>
-                <p className="text-sm text-gray-600">
-                  {(selectedJobForComplete.serviceType || (selectedJobForComplete as any).service_type || 'N/A')} - {(selectedJobForComplete.serviceSubType || (selectedJobForComplete as any).service_sub_type || 'N/A')}
-                </p>
-              </div>
-            )}
-            
-            <div>
-              <Label htmlFor="technician-select-complete">Completed By *</Label>
-              <Select 
-                value={selectedTechnicianForComplete} 
-                onValueChange={setSelectedTechnicianForComplete}
-              >
-                <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Choose a technician" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="office">Office (no technician)</SelectItem>
-                  {technicians
-                    .filter(tech => !(tech as any).account_status || (tech as any).account_status === 'ACTIVE')
-                    .map((technician) => (
-                      <SelectItem key={technician.id} value={technician.id}>
-                        {technician.fullName || 'Unknown'} ({technician.employeeId || 'No ID'})
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setTechnicianSelectDialogOpen(false);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleTechnicianSelectedForComplete}
-              disabled={!selectedTechnicianForComplete}
-              className="bg-black hover:bg-gray-800 text-white"
-            >
-              Continue
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        job={selectedJobForComplete}
+        technicians={technicians}
+        selectedTechnicianId={selectedTechnicianForComplete}
+        onSelectedTechnicianChange={setSelectedTechnicianForComplete}
+        onContinue={handleTechnicianSelectedForComplete}
+      />
 
       {/* Complete Job Dialog */}
       <CompleteJobDialog
@@ -13387,7 +6584,7 @@ const AdminDashboard = () => {
         onLoadQrCodes={loadQrCodes}
         selectedTechnicianId={selectedTechnicianForComplete}
         onJobCompleted={async (completedJobId?: string) => {
-          clearCompleteFlowSnapshot();
+          clearAdminCompleteJobSnapshot(completeFlowSnapshotRef);
           // Mark this job as completed by admin so polling handler doesn't play sound for it
           if (completedJobId) {
             jobIdsCompletedByAdminRef.current.add(completedJobId);
@@ -13492,565 +6689,7 @@ const AdminDashboard = () => {
         editData={completedJobEditData}
         onEditDataChange={setCompletedJobEditData}
         technicians={techniciansForReports.length > 0 ? techniciansForReports : technicians}
-        onSave={async () => {
-                try {
-                  if (!selectedCompletedJob) return;
-
-                  const pm = completedJobEditData.paymentMethod || 'CASH';
-                  if (pm === 'PARTIAL') {
-                    const cashStr = String(completedJobEditData.partialCashAmount ?? '').trim();
-                    const onlineStr = String(completedJobEditData.partialOnlineAmount ?? '').trim();
-                    if (!cashStr || !onlineStr) {
-                      toast.error('Partial payment requires both cash and online amounts.');
-                      return;
-                    }
-                    const pc = parseFloat(cashStr);
-                    const po = parseFloat(onlineStr);
-                    if (!Number.isFinite(pc) || !Number.isFinite(po) || pc <= 0 || po <= 0) {
-                      toast.error('Cash and online amounts must be greater than zero.');
-                      return;
-                    }
-                    const totalShown = parseFloat(String(completedJobEditData.amount ?? '').trim());
-                    const sum = Math.round((pc + po) * 100) / 100;
-                    if (!Number.isFinite(totalShown) || Math.abs(totalShown - sum) > 0.02) {
-                      toast.error('Total amount must equal cash plus online amounts.');
-                      return;
-                    }
-                  } else {
-                    const amtStr = String(completedJobEditData.amount ?? '').trim();
-                    if (amtStr === '' || !Number.isFinite(parseFloat(amtStr)) || parseFloat(amtStr) < 0) {
-                      toast.error('Enter a valid bill amount.');
-                      return;
-                    }
-                  }
-
-                  // Update requirements with edited data
-                  let requirements: any[] = [];
-                  try {
-                    const reqData = (selectedCompletedJob as any).requirements || selectedCompletedJob.requirements;
-                    if (typeof reqData === 'string') {
-                      requirements = JSON.parse(reqData);
-                    } else if (Array.isArray(reqData)) {
-                      requirements = reqData;
-                    } else if (reqData && typeof reqData === 'object') {
-                      requirements = [reqData];
-                    }
-                  } catch (e) {
-                    requirements = [];
-                  }
-
-                  // Update or add AMC info
-                  const amcIndex = requirements.findIndex((r: any) => r?.amc_info);
-                  if (completedJobEditData.amcInfo) {
-                    if (amcIndex >= 0) {
-                      requirements[amcIndex].amc_info = completedJobEditData.amcInfo;
-                    } else {
-                      requirements.push({ amc_info: completedJobEditData.amcInfo });
-                    }
-                  }
-
-                  // When payment method is CASH, clear qr_photos and any partial amounts
-                  if (completedJobEditData.paymentMethod === 'CASH') {
-                    requirements.forEach((r: any) => {
-                      if (r && typeof r === 'object') {
-                        if (r.qr_photos) delete r.qr_photos;
-                        if (r.partial_cash_amount != null) delete r.partial_cash_amount;
-                        if (r.partial_online_amount != null) delete r.partial_online_amount;
-                      }
-                    });
-                  }
-
-                  // Update or add partial amounts when PARTIAL
-                  if (completedJobEditData.paymentMethod === 'PARTIAL') {
-                    const cash = parseFloat(completedJobEditData.partialCashAmount) || 0;
-                    const online = parseFloat(completedJobEditData.partialOnlineAmount) || 0;
-                    const partialIndex = requirements.findIndex((r: any) => r?.partial_cash_amount != null || r?.partial_online_amount != null);
-                    if (partialIndex >= 0) {
-                      requirements[partialIndex].partial_cash_amount = cash;
-                      requirements[partialIndex].partial_online_amount = online;
-                    } else {
-                      requirements.push({ partial_cash_amount: cash, partial_online_amount: online });
-                    }
-                  }
-
-                  // Update QR photos if QR code name changed (only for non-CASH / online / partial payments)
-                  if (completedJobEditData.paymentMethod !== 'CASH' && completedJobEditData.qrCodeName) {
-                    const qrIndex = requirements.findIndex((r: any) => r?.qr_photos);
-                    if (qrIndex >= 0) {
-                      requirements[qrIndex].qr_photos = {
-                        ...requirements[qrIndex].qr_photos,
-                        selected_qr_code_name: completedJobEditData.qrCodeName
-                      };
-                    } else {
-                      requirements.push({
-                        qr_photos: { selected_qr_code_name: completedJobEditData.qrCodeName }
-                      });
-                    }
-                  }
-
-                  // Update or add lead source
-                  if (completedJobEditData.leadSource) {
-                    const leadSourceIndex = requirements.findIndex((r: any) => r?.lead_source);
-                    const leadSourceValue = completedJobEditData.leadSource === 'Other' 
-                      ? (completedJobEditData.leadSourceCustom || 'Other')
-                      : completedJobEditData.leadSource;
-                    
-                    if (leadSourceIndex >= 0) {
-                      requirements[leadSourceIndex].lead_source = leadSourceValue;
-                      if (completedJobEditData.leadSource === 'Other' && completedJobEditData.leadSourceCustom) {
-                        requirements[leadSourceIndex].lead_source_custom = completedJobEditData.leadSourceCustom;
-                      } else {
-                        // Remove custom if not "Other"
-                        delete requirements[leadSourceIndex].lead_source_custom;
-                      }
-                    } else {
-                      // Add new lead source entry
-                      const newLeadSource: any = { lead_source: leadSourceValue };
-                      if (completedJobEditData.leadSource === 'Other' && completedJobEditData.leadSourceCustom) {
-                        newLeadSource.lead_source_custom = completedJobEditData.leadSourceCustom;
-                      }
-                      requirements.push(newLeadSource);
-                    }
-                  }
-
-                  // Update bill/completion photos (so they show in completed section and reports)
-                  if (completedJobEditData.billPhotos && Array.isArray(completedJobEditData.billPhotos)) {
-                    const otherReqs = requirements.filter((r: any) => !r?.bill_photos);
-                    requirements.length = 0;
-                    requirements.push(...otherReqs);
-                    if (completedJobEditData.billPhotos.length > 0) {
-                      requirements.push({ bill_photos: completedJobEditData.billPhotos });
-                    }
-                  }
-
-                  // Update payment screenshot(s) in requirements - store all so report shows all (no 1-photo limit)
-                  const paymentScreenshotsList = Array.isArray(completedJobEditData.paymentScreenshots)
-                    ? completedJobEditData.paymentScreenshots.filter((u: any) => typeof u === 'string' && (u as string).trim()).map((u: any) => (u as string).trim())
-                    : [];
-                  const firstPaymentScreenshot = paymentScreenshotsList.length > 0 ? paymentScreenshotsList[0] : null;
-                  if (completedJobEditData.paymentMethod !== 'CASH') {
-                    const qrIndex = requirements.findIndex((r: any) => r?.qr_photos);
-                    if (qrIndex >= 0) {
-                      requirements[qrIndex].qr_photos = {
-                        ...requirements[qrIndex].qr_photos,
-                        payment_screenshot: firstPaymentScreenshot || undefined
-                      };
-                    } else if (firstPaymentScreenshot) {
-                      requirements.push({ qr_photos: { payment_screenshot: firstPaymentScreenshot } });
-                    }
-                  }
-                  // Always set payment_photos to full list (for CASH and for report to show multiple payment screenshots)
-                  const payIdx = requirements.findIndex((r: any) => r?.payment_photos);
-                  if (paymentScreenshotsList.length > 0) {
-                    if (payIdx >= 0) {
-                      requirements[payIdx] = { payment_photos: paymentScreenshotsList };
-                    } else {
-                      requirements.push({ payment_photos: paymentScreenshotsList });
-                    }
-                  } else if (payIdx >= 0) {
-                    requirements.splice(payIdx, 1);
-                  }
-
-                  // Prepare update data
-                  let amount = parseFloat(completedJobEditData.amount) || 0;
-                  if (completedJobEditData.paymentMethod === 'PARTIAL') {
-                    const cash = parseFloat(completedJobEditData.partialCashAmount) || 0;
-                    const online = parseFloat(completedJobEditData.partialOnlineAmount) || 0;
-                    amount = cash + online;
-                  }
-                  const leadCost = parseFloat(completedJobEditData.leadCost) || 0;
-                  
-                  // Handle completion date
-                  let completedAt = null;
-                  if (completedJobEditData.completedAt) {
-                    // Use the ISO string if it's already set
-                    completedAt = completedJobEditData.completedAt;
-                  } else if (completedJobEditData.completedDate && completedJobEditData.completedTime) {
-                    // Combine date and time if provided separately
-                    const combinedDateTime = new Date(`${completedJobEditData.completedDate}T${completedJobEditData.completedTime}`);
-                    completedAt = combinedDateTime.toISOString();
-                  } else if (completedJobEditData.completedDate) {
-                    // If only date is provided, use noon of that date
-                    const dateOnly = new Date(`${completedJobEditData.completedDate}T12:00:00`);
-                    completedAt = dateOnly.toISOString();
-                  }
-                  
-                  // If completed_by is changed to a technician, also update assigned_technician_id.
-                  // "office" (and legacy "admin") means no technician — completed_by is a uuid
-                  // column, so we store null and tag requirements with completed_by_office instead.
-                  const rawCompletedBy = completedJobEditData.completedBy || 'office';
-                  const isOfficeCompletion = rawCompletedBy === 'office' || rawCompletedBy === 'admin' || rawCompletedBy === 'Admin';
-                  const oldAssignedTechnicianId = (selectedCompletedJob as any).assigned_technician_id;
-
-                  // Tag/untag office completion in requirements
-                  const reqsWithoutOfficeFlag = requirements.filter((r: any) => !r?.completed_by_office);
-                  requirements.length = 0;
-                  requirements.push(...reqsWithoutOfficeFlag);
-                  if (isOfficeCompletion) {
-                    requirements.push({ completed_by_office: true });
-                  }
-
-                  // Tag/untag "hide spare parts from technician top-up" (all + per-item)
-                  const reqsWithoutHidePartsFlag = requirements.filter(
-                    (r: any) => !r?.hide_parts_from_topup && !r?.topup_hidden_inventory_ids
-                  );
-                  requirements.length = 0;
-                  requirements.push(...reqsWithoutHidePartsFlag);
-                  if (completedJobEditData.hidePartsFromTopup) {
-                    requirements.push({ hide_parts_from_topup: true });
-                  } else if (
-                    Array.isArray(completedJobEditData.topupHiddenInventoryIds) &&
-                    completedJobEditData.topupHiddenInventoryIds.length > 0
-                  ) {
-                    // Per-item hide only applies when not hiding all.
-                    requirements.push({
-                      topup_hidden_inventory_ids: completedJobEditData.topupHiddenInventoryIds.map((id: any) => String(id)),
-                    });
-                  }
-
-                  // UI: CASH | ONLINE | PARTIAL → DB: CASH | UPI | PARTIAL
-                  const uiPaymentMethod = completedJobEditData.paymentMethod || 'CASH';
-                  const jobsPaymentMethod =
-                    uiPaymentMethod === 'ONLINE'
-                      ? 'UPI'
-                      : uiPaymentMethod === 'PARTIAL'
-                        ? 'PARTIAL'
-                        : 'CASH';
-                  
-                  const updateData: any = {
-                    actual_cost: amount,
-                    payment_amount: amount,
-                    payment_method: jobsPaymentMethod,
-                    payment_status: amount > 0 ? 'PAID' : 'PENDING',
-                    completion_notes: completedJobEditData.completionNotes || '',
-                    completed_by: isOfficeCompletion ? null : rawCompletedBy,
-                    lead_cost: leadCost,
-                    requirements: JSON.stringify(requirements),
-                    service_brand:
-                      completedJobEditData.serviceBrand === 'elevenro'
-                        ? 'elevenro'
-                        : 'hydrogenro'
-                  };
-                  const paymentScreenshotsUrls = Array.isArray(completedJobEditData.paymentScreenshots)
-                    ? completedJobEditData.paymentScreenshots.filter((u: any) => typeof u === 'string' && u.trim())
-                    : [];
-                  const billPhotosList = Array.isArray(completedJobEditData.billPhotos) ? completedJobEditData.billPhotos : [];
-                  if (paymentScreenshotsUrls.length > 0 || billPhotosList.length > 0) {
-                    updateData.after_photos = [...paymentScreenshotsUrls, ...billPhotosList].filter(Boolean);
-                  }
-                  
-                  // If completed_by is a technician ID, update assigned_technician_id so salary,
-                  // payment, and attendance records link to the correct technician. Office
-                  // completions clear the technician so no one is credited in analytics/payments.
-                  if (!isOfficeCompletion) {
-                    updateData.assigned_technician_id = rawCompletedBy;
-                  } else {
-                    updateData.assigned_technician_id = null;
-                  }
-                  
-                  // Only update completed_at and end_time if it's been explicitly set/changed
-                  // IMPORTANT: Both fields are used for salary calculations:
-                  // - completed_at: General completion timestamp
-                  // - end_time: Used by TechnicianPayments component to filter jobs by month for salary calculations
-                  // Updating both ensures the job appears in the correct month's salary when completion date is changed
-                  if (completedAt) {
-                    updateData.completed_at = completedAt;
-                    updateData.end_time = completedAt; // Update end_time so salary calculations use the new date
-                  }
-
-                  const { error } = await db.jobs.update(selectedCompletedJob.id, updateData);
-                  
-                  if (error) {
-                    toast.error('Failed to update job: ' + error.message);
-                  } else {
-                    // "Hide from top-up" inventory correction: a part hidden from top-up is treated
-                    // as taken directly from MAIN, so move it main → tech (subtract main, add tech).
-                    // Un-hiding reverses it. Diff is taken against the job's previously-saved hide
-                    // flags so it applies only to what actually changed in this save.
-                    try {
-                      const parseReqs = (raw: any): any[] => {
-                        if (typeof raw === 'string') { try { return JSON.parse(raw); } catch { return []; } }
-                        if (Array.isArray(raw)) return raw;
-                        if (raw && typeof raw === 'object') return [raw];
-                        return [];
-                      };
-                      const oldReqs = parseReqs((selectedCompletedJob as any).requirements);
-                      const oldHideAll = oldReqs.some((r: any) => r?.hide_parts_from_topup === true);
-                      const oldPerItemEntry = oldReqs.find((r: any) => Array.isArray(r?.topup_hidden_inventory_ids));
-                      const oldPerItem = new Set<string>(
-                        oldPerItemEntry ? oldPerItemEntry.topup_hidden_inventory_ids.map((x: any) => String(x)) : []
-                      );
-                      const newHideAll = !!completedJobEditData.hidePartsFromTopup;
-                      const newPerItem = new Set<string>(
-                        Array.isArray(completedJobEditData.topupHiddenInventoryIds)
-                          ? completedJobEditData.topupHiddenInventoryIds.map((x: any) => String(x))
-                          : []
-                      );
-
-                      // Skip the parts fetch entirely unless the hide settings actually changed.
-                      const perItemSame =
-                        oldPerItem.size === newPerItem.size &&
-                        Array.from(newPerItem).every((id) => oldPerItem.has(id));
-                      const hideChanged = oldHideAll !== newHideAll || (!oldHideAll && !newHideAll && !perItemSame);
-
-                      if (hideChanged) {
-                        const { data: jpRows } = await db.jobPartsUsed.getByJob(selectedCompletedJob.id);
-                        const rows = (jpRows || []) as any[];
-                        if (rows.length > 0) {
-                          const qtyByInv = new Map<string, number>();
-                          const techByInv = new Map<string, string>();
-                          rows.forEach((r) => {
-                            // Skip custom one-off parts: they have no inventory_id and aren't tracked in stock.
-                            if (!r.inventory_id) return;
-                            const inv = String(r.inventory_id);
-                            qtyByInv.set(inv, (qtyByInv.get(inv) || 0) + (Number(r.quantity_used) || 0));
-                            if (r.technician_id && !techByInv.has(inv)) techByInv.set(inv, String(r.technician_id));
-                          });
-                          const allInvIds = Array.from(qtyByInv.keys());
-
-                          const oldHidden = new Set<string>(oldHideAll ? allInvIds : Array.from(oldPerItem));
-                          const newHidden = new Set<string>(newHideAll ? allInvIds : Array.from(newPerItem));
-
-                          const newlyHidden = allInvIds.filter((id) => newHidden.has(id) && !oldHidden.has(id));
-                          const newlyUnhidden = allInvIds.filter((id) => !newHidden.has(id) && oldHidden.has(id));
-                          const moveFailures: string[] = [];
-
-                          // Newly hidden → subtract main, add tech (atomic via top-up RPC).
-                          for (const inv of newlyHidden) {
-                            const qty = qtyByInv.get(inv) || 0;
-                            const techId = techByInv.get(inv);
-                            if (qty <= 0 || !techId) continue;
-                            const { error: e } = await db.technicianInventory.topUpFromMain(inv, qty, techId);
-                            if (e) moveFailures.push((e as any).message || 'move failed');
-                          }
-
-                          // Newly un-hidden → reverse: subtract tech, add main. Cache each
-                          // technician's inventory so we fetch it at most once (parts usually share one tech).
-                          const techInvCache = new Map<string, any[]>();
-                          for (const inv of newlyUnhidden) {
-                            const qty = qtyByInv.get(inv) || 0;
-                            const techId = techByInv.get(inv);
-                            if (qty <= 0 || !techId) continue;
-                            let techRows = techInvCache.get(techId);
-                            if (!techRows) {
-                              const { data } = await db.technicianInventory.getByTechnician(techId);
-                              techRows = (data || []) as any[];
-                              techInvCache.set(techId, techRows);
-                            }
-                            const techRow = techRows.find((t: any) => String(t.inventory_id) === inv);
-                            if (!techRow || Number(techRow.quantity) < qty) {
-                              moveFailures.push('Not enough technician stock to reverse a part');
-                              continue;
-                            }
-                            const nextQty = Number(techRow.quantity) - qty;
-                            const { error: te } = await db.technicianInventory.update(techRow.id, {
-                              quantity: nextQty,
-                            });
-                            if (te) { moveFailures.push((te as any).message || 'reverse failed'); continue; }
-                            techRow.quantity = nextQty; // keep cache consistent for repeat items
-                            const { error: me } = await db.inventory.incrementForJob(inv, qty);
-                            if (me) moveFailures.push((me as any).message || 'reverse main failed');
-                          }
-
-                          if (moveFailures.length > 0) {
-                            toast.warning(`Some stock moves failed: ${moveFailures.slice(0, 2).join('; ')}`);
-                          } else if (newlyHidden.length > 0 || newlyUnhidden.length > 0) {
-                            toast.success('Hidden parts moved from main to technician stock.');
-                          }
-                        }
-                      }
-                    } catch (invErr: any) {
-                      console.error('Top-up hide inventory move failed:', invErr);
-                      toast.warning('Job saved, but stock move for hidden parts failed.');
-                    }
-
-                    // Office completion: remove any technician payment/commission for this job so
-                    // the previously-assigned technician is no longer credited.
-                    if (isOfficeCompletion && oldAssignedTechnicianId) {
-                      try {
-                        await supabase
-                          .from('technician_payments')
-                          .delete()
-                          .eq('job_id', selectedCompletedJob.id);
-                      } catch (e) {
-                        console.error('Error removing technician payment for office completion:', e);
-                      }
-                    }
-
-                    // Handle technician_payments updates when completed_by or assigned_technician_id changes
-                    const newTechnicianId = isOfficeCompletion ? null : (updateData.assigned_technician_id || oldAssignedTechnicianId);
-                    const technicianChanged = newTechnicianId !== oldAssignedTechnicianId;
-                    
-                    // Update technician_payments if job has an assigned technician or if technician changed
-                    if (newTechnicianId && (amount > 0 || technicianChanged)) {
-                      try {
-                        // Check if technician_payment record exists
-                        const { data: existingPayment, error: paymentCheckError } = await supabase
-                          .from('technician_payments')
-                          .select('id, technician_id, commission_percentage')
-                          .eq('job_id', selectedCompletedJob.id)
-                          .single();
-
-                        if (paymentCheckError && paymentCheckError.code !== 'PGRST116') {
-                          // Error other than "not found" - log but don't fail
-                          console.error('Error checking payment record:', paymentCheckError);
-                        } else if (existingPayment) {
-                          // Update existing payment record
-                          const commissionPercentage = existingPayment.commission_percentage || 10;
-                          const newCommissionAmount = amount * (commissionPercentage / 100);
-                          
-                          const updatePaymentData: any = {
-                            bill_amount: Math.round(amount * 100) / 100,
-                            commission_amount: Math.round(newCommissionAmount * 100) / 100,
-                            updated_at: new Date().toISOString()
-                          };
-                          
-                          // If technician changed, update technician_id in payment record
-                          // This ensures salary, commission, and attendance are attributed to the new technician
-                          if (technicianChanged) {
-                            updatePaymentData.technician_id = newTechnicianId;
-                          }
-                          
-                          const { error: paymentUpdateError } = await supabase
-                            .from('technician_payments')
-                            .update(updatePaymentData)
-                            .eq('id', existingPayment.id);
-
-                          if (paymentUpdateError) {
-                            console.error('Error updating payment record:', paymentUpdateError);
-                            toast.warning('Job updated but payment record update failed');
-                          } else if (technicianChanged) {
-                            toast.success('Job, technician assignment, and payment records updated successfully');
-                          }
-                        } else {
-                          // Create new payment record if job is completed and has technician
-                          if ((selectedCompletedJob as any).status === 'COMPLETED' && newTechnicianId) {
-                            const commissionPercentage = 10; // Default 10%
-                            const commissionAmount = amount * (commissionPercentage / 100);
-                            
-                            const { error: paymentCreateError } = await supabase
-                              .from('technician_payments')
-                              .insert({
-                                technician_id: newTechnicianId,
-                                job_id: selectedCompletedJob.id,
-                                bill_amount: Math.round(amount * 100) / 100,
-                                commission_percentage: commissionPercentage,
-                                commission_amount: Math.round(commissionAmount * 100) / 100,
-                                payment_status: 'PENDING'
-                              });
-
-                            if (paymentCreateError) {
-                              console.error('Error creating payment record:', paymentCreateError);
-                              toast.warning('Job updated but payment record creation failed');
-                            } else if (technicianChanged) {
-                              toast.success('Job, technician assignment, and payment records updated successfully');
-                            }
-                          }
-                        }
-                      } catch (paymentError: any) {
-                        console.error('Error updating technician payments:', paymentError);
-                        // Don't fail the whole operation, just log the error
-                      }
-                    } else if (technicianChanged && newTechnicianId) {
-                      // Even if amount is 0, if technician changed, update payment record technician_id
-                      // This ensures attendance records are correctly attributed
-                      try {
-                        const { data: existingPayment, error: paymentCheckError } = await supabase
-                          .from('technician_payments')
-                          .select('id, technician_id')
-                          .eq('job_id', selectedCompletedJob.id)
-                          .single();
-
-                        if (existingPayment) {
-                          // Update technician_id even if amount is 0
-                          const { error: paymentUpdateError } = await supabase
-                            .from('technician_payments')
-                            .update({
-                              technician_id: newTechnicianId,
-                              updated_at: new Date().toISOString()
-                            })
-                            .eq('id', existingPayment.id);
-
-                          if (paymentUpdateError) {
-                            console.error('Error updating payment record technician:', paymentUpdateError);
-                          } else {
-                            toast.success('Job and technician assignment updated successfully');
-                          }
-                        }
-                      } catch (paymentError: any) {
-                        console.error('Error updating technician payment:', paymentError);
-                      }
-                    }
-                    
-                    if (!technicianChanged) {
-                      toast.success('Job updated successfully');
-                    }
-
-                    if (completedJobEditData.amcInfo) {
-                      const customerId =
-                        (selectedCompletedJob as any).customer?.id ??
-                        (selectedCompletedJob as any).customer_id ??
-                        (selectedCompletedJob as Job).customerId;
-                      if (customerId) {
-                        try {
-                          const { data: activeAmc } = await db.amcContracts.getActiveByCustomerId(
-                            String(customerId)
-                          );
-                          if (activeAmc?.id) {
-                            const info = completedJobEditData.amcInfo;
-                            const amcPatch: {
-                              start_date?: string;
-                              end_date?: string;
-                              years?: number;
-                              includes_prefilter?: boolean;
-                              service_period_months?: number;
-                            } = {};
-                            const startDate = toDateOnly(info.date_given);
-                            const endDate = toDateOnly(info.end_date);
-                            if (startDate) amcPatch.start_date = startDate;
-                            if (endDate) amcPatch.end_date = endDate;
-                            if (info.years != null) amcPatch.years = Number(info.years) || 1;
-                            if (info.includes_prefilter !== undefined) {
-                              amcPatch.includes_prefilter = Boolean(info.includes_prefilter);
-                            }
-                            if (
-                              info.service_period_months !== undefined &&
-                              info.service_period_months !== null
-                            ) {
-                              amcPatch.service_period_months = Number(info.service_period_months);
-                            }
-                            if (Object.keys(amcPatch).length > 0) {
-                              const { error: amcErr } = await db.amcContracts.update(
-                                activeAmc.id,
-                                amcPatch
-                              );
-                              if (amcErr) {
-                                toast.warning('Job saved but AMC contract update failed');
-                              }
-                            }
-                          }
-                        } catch (amcSyncErr) {
-                          console.error('AMC contract sync failed:', amcSyncErr);
-                        }
-                      }
-                    }
-
-                    closeAdminModal();
-                    // Reload jobs
-                    await loadFilteredJobs(statusFilter, currentPage);
-                    // Drop stale full-job cache so profit/amounts match DB (list row is fresh after reload).
-                    const updatedId = selectedCompletedJob.id;
-                    setLoadedCompletedJobDetails((prev) => {
-                      if (!prev[updatedId]) return prev;
-                      const next = { ...prev };
-                      delete next[updatedId];
-                      return next;
-                    });
-                  }
-                } catch (error: any) {
-                  toast.error('Error updating job: ' + error.message);
-                }
-              }}
+        onSave={handleSaveEditedCompletedJob}
       />
 
       {/* WhatsApp Dialog */}
@@ -14178,103 +6817,23 @@ const AdminDashboard = () => {
       />
 
       {/* Recent Accounts Dialog – scoped fetch when opened (no full customer list) */}
-      <Dialog
+      <RecentAccountsDialog
         open={recentAccountsDialogOpen}
         onOpenChange={(open) => handleAdminToolOpenChange('recent-accounts', open)}
-      >
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Recent Accounts - Today</DialogTitle>
-            <DialogDescription>
-              All accounts created today ({new Date().toLocaleDateString()})
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4">
-            {loadingRecentAccounts ? (
-              <div className="text-center py-8 text-gray-500">
-                <p>Loading…</p>
-              </div>
-            ) : recentAccountsToday.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                <p>No accounts created today.</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {recentAccountsToday.map((customer) => (
-                    <div
-                      key={customer.id}
-                      className="border border-gray-300 rounded-lg p-4 hover:bg-gray-50 transition-colors"
-                    >
-                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="font-semibold text-gray-900">
-                              {customer.customer_id || (customer as any).customerId}
-                            </span>
-                            <Badge variant="outline" className={`text-xs ${customerNameClassName(customer)}`}>
-                              {customer.fullName || customer.full_name}
-                            </Badge>
-                          </div>
-                          <div className="text-sm text-gray-600 space-y-1">
-                            <p>
-                              <span className="font-medium">Phone:</span> {customer.phone}
-                              {customer.alternate_phone && ` / ${customer.alternate_phone}`}
-                            </p>
-                            <p>
-                              <span className="font-medium">Email:</span> {customer.email && customer.email.trim() && !customer.email.toLowerCase().includes('nomail') && !customer.email.toLowerCase().includes('no@mail') 
-                                ? customer.email 
-                                : 'nomail@mail'}
-                            </p>
-                            <p>
-                              <span className="font-medium">Service:</span> {customer.service_type || 'N/A'}
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              Created: {new Date((customer as any).customerSince || (customer as any).customer_since || '').toLocaleString()}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              handleNewJob(customer);
-                              closeAdminTool();
-                            }}
-                          >
-                            <Plus className="w-4 h-4 mr-1" />
-                            New Job
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              void handleEditCustomer(customer);
-                              closeAdminTool();
-                            }}
-                          >
-                            <Edit className="w-4 h-4 mr-1" />
-                            Edit
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            )}
-          </div>
+        customers={recentAccountsToday}
+        loading={loadingRecentAccounts}
+        useCustomersAsIs
+        onNewJob={(customer) => {
+          handleNewJob(customer);
+          closeAdminTool();
+        }}
+        onEditCustomer={(customer) => {
+          void handleEditCustomer(customer);
+          closeAdminTool();
+        }}
+      />
 
-          <DialogFooter>
-            <Button variant="outline" onClick={closeAdminTool}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Distance Measurement Dialog */}
-      <Dialog
+      <JobDistanceMeasurementDialog
         open={distanceMeasurementDialogOpen}
         onOpenChange={(open) => {
           setDistanceMeasurementDialogOpen(open);
@@ -14283,276 +6842,20 @@ const AdminDashboard = () => {
             setIsOpeningCustomDistanceMaps(false);
           }
         }}
-      >
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto w-[calc(100vw-2rem)] sm:w-full">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Navigation className="h-5 w-5 shrink-0" />
-              Measure distance
-            </DialogTitle>
-            <p className="text-sm text-muted-foreground pt-1">
-              Driving distance from this technician&apos;s last location to this job. Use custom
-              distance below to compare other stops or open a route in Google Maps.
-            </p>
-          </DialogHeader>
-
-          <div className="mt-4 min-w-0">
-            {isCalculatingDistances ? (
-              <div className="flex items-center justify-center py-8">
-                <RefreshCw className="h-6 w-6 animate-spin text-blue-600 mr-2" />
-                <span className="text-gray-600">Calculating distances...</span>
-              </div>
-            ) : technicianDistances.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                No technicians found
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <div className="grid grid-cols-1 gap-2">
-                  {technicianDistances.map((item, index) => (
-                    <div
-                      key={item.technician.id}
-                      className={`p-4 border rounded-lg ${
-                        item.isAssigned
-                          ? 'border-blue-500 bg-blue-50 hover:bg-blue-100'
-                          : item.hasLocation && item.distance
-                          ? 'border-gray-200 hover:border-blue-300 bg-white'
-                          : 'border-gray-100 bg-gray-50'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <h4 className={`font-semibold truncate ${
-                              item.isAssigned ? 'text-blue-900' : 'text-gray-900'
-                            }`}>
-                              {item.technician.fullName}
-                            </h4>
-                            {item.isAssigned && (
-                              <Badge className="bg-blue-600 text-white text-xs">
-                                Assigned
-                              </Badge>
-                            )}
-                          </div>
-                          <p className={`text-sm mt-1 ${
-                            item.isAssigned ? 'text-blue-700' : 'text-gray-500'
-                          }`}>
-                            {item.technician.employeeId}
-                          </p>
-                          {item.hasLocation ? (
-                            <div className="mt-2 space-y-2">
-                              {item.isCalculating ? (
-                                <div className="flex items-center gap-2 text-sm text-gray-500">
-                                  <RefreshCw className="h-4 w-4 animate-spin" />
-                                  Calculating...
-                                </div>
-                              ) : item.distance ? (
-                                <div className="flex flex-wrap items-center gap-4">
-                                  {item.distanceValue !== undefined && item.distanceValue <= 1000 ? (
-                                    // Technician is within 1 km (at customer's location)
-                                    <div className="flex items-center gap-2">
-                                      <MapPin className="h-4 w-4 text-green-600" />
-                                      <span className="font-medium text-green-600">
-                                        Technician is at customer's location
-                                      </span>
-                                    </div>
-                                  ) : (
-                                    <>
-                                      <div className="flex items-center gap-2">
-                                        <MapPin className="h-4 w-4 text-blue-600" />
-                                        <span className={`font-medium ${
-                                          item.isAssigned ? 'text-blue-900' : 'text-gray-900'
-                                        }`}>
-                                          {item.distance}
-                                        </span>
-                                        {item.isApproximate && (
-                                          <span className="text-[11px] text-gray-400 italic">
-                                            approximate (straight-line)
-                                          </span>
-                                        )}
-                                      </div>
-                                      {item.duration && (
-                                        <div className={`flex items-center gap-2 text-sm ${
-                                          item.isAssigned ? 'text-blue-700' : 'text-gray-600'
-                                        }`}>
-                                          <Clock className="h-4 w-4" />
-                                          {item.duration}
-                                        </div>
-                                      )}
-                                      {item.isAssigned && item.estimatedArrival && (
-                                        <div className="flex items-center gap-2 text-sm font-semibold text-blue-700">
-                                          <Clock className="h-4 w-4" />
-                                          Estimated arrival: {item.estimatedArrival}
-                                        </div>
-                                      )}
-                                    </>
-                                  )}
-                                </div>
-                              ) : (
-                                <span className="text-sm text-gray-500">
-                                  Distance calculation failed
-                                </span>
-                              )}
-                              {item.lastUpdated && (
-                                <div className={`flex items-center gap-2 text-xs ${
-                                  item.isAssigned ? 'text-blue-600' : 'text-gray-500'
-                                }`}>
-                                  <Clock className="h-3 w-3" />
-                                  Last updated: {item.lastUpdated}
-                                </div>
-                              )}
-                            </div>
-                          ) : (
-                            <div className="mt-2 space-y-2">
-                              <div className="text-sm text-gray-400 flex items-center gap-2">
-                                <MapPin className="h-4 w-4" />
-                                No location data available
-                              </div>
-                              {item.lastUpdated && (
-                                <div className={`flex items-center gap-2 text-xs ${
-                                  item.isAssigned ? 'text-blue-600' : 'text-gray-500'
-                                }`}>
-                                  <Clock className="h-3 w-3" />
-                                  Last updated: {item.lastUpdated}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="mt-6 pt-4 border-t border-gray-200 space-y-3 min-w-0">
-            <p className="text-sm font-medium text-gray-800">Custom distance</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-              <div className="space-y-1.5 min-w-0">
-                <Label htmlFor="measure-from">From</Label>
-                <Select
-                  value={customDistanceFromId}
-                  onValueChange={setCustomDistanceFromId}
-                  disabled={!selectedJobForDistance || isCalculatingDistances}
-                >
-                  <SelectTrigger id="measure-from" className="w-full max-w-full">
-                    <SelectValue placeholder="Choose start" />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-[min(280px,50vh)] max-w-[min(calc(100vw-2rem),36rem)]">
-                    {getMeasureStopSelectOptions().map((o) => (
-                      <SelectItem key={o.value} value={o.value}>
-                        {o.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5 min-w-0">
-                <Label htmlFor="measure-to">To</Label>
-                <Select
-                  value={customDistanceToId}
-                  onValueChange={setCustomDistanceToId}
-                  disabled={!selectedJobForDistance || isCalculatingDistances}
-                >
-                  <SelectTrigger id="measure-to" className="w-full max-w-full">
-                    <SelectValue placeholder="Choose end" />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-[min(280px,50vh)] max-w-[min(calc(100vw-2rem),36rem)]">
-                    {getMeasureStopSelectOptions().map((o) => (
-                      <SelectItem key={`to-${o.value}`} value={o.value}>
-                        {o.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <Button
-                type="button"
-                size="default"
-                className="w-full justify-center shrink-0"
-                disabled={
-                  isCalculatingDistances ||
-                  isLoadingCustomDistance ||
-                  isOpeningCustomDistanceMaps ||
-                  !customDistanceFromId ||
-                  !customDistanceToId ||
-                  customDistanceFromId === customDistanceToId
-                }
-                onClick={() => void calculateCustomDistanceBetweenStops()}
-              >
-                {isLoadingCustomDistance ? (
-                  <>
-                    <RefreshCw className="h-4 w-4 mr-2 animate-spin shrink-0" />
-                    Calculating…
-                  </>
-                ) : (
-                  'Calculate in app'
-                )}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="default"
-                className="w-full justify-center shrink-0"
-                disabled={
-                  isCalculatingDistances ||
-                  isLoadingCustomDistance ||
-                  isOpeningCustomDistanceMaps ||
-                  !customDistanceFromId ||
-                  !customDistanceToId ||
-                  customDistanceFromId === customDistanceToId
-                }
-                onClick={() => void openCustomDistanceInGoogleMaps()}
-              >
-                {isOpeningCustomDistanceMaps ? (
-                  <>
-                    <RefreshCw className="h-4 w-4 mr-2 animate-spin shrink-0" />
-                    Opening…
-                  </>
-                ) : (
-                  <>
-                    <ExternalLink className="h-4 w-4 mr-2 shrink-0" />
-                    Open route in Google Maps
-                  </>
-                )}
-              </Button>
-            </div>
-            {customDistanceResult && (
-              <div className="rounded-md border border-blue-200 bg-blue-50/90 p-3 text-sm">
-                <div className="font-medium text-gray-900 break-words">
-                  {customDistanceResult.fromLabel}
-                  <span className="text-gray-400 mx-1">→</span>
-                  {customDistanceResult.toLabel}
-                </div>
-                <div className="mt-2 flex flex-wrap items-center gap-3 text-gray-800">
-                  <span className="font-medium">{customDistanceResult.distance}</span>
-                  {customDistanceResult.isApproximate && (
-                    <span className="text-[11px] text-gray-400 italic">
-                      approximate (straight-line)
-                    </span>
-                  )}
-                  {customDistanceResult.duration ? (
-                    <span className="flex items-center gap-1">
-                      <Clock className="h-4 w-4 shrink-0" />
-                      {customDistanceResult.duration}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button variant="outline" onClick={() => setDistanceMeasurementDialogOpen(false)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        selectedJob={selectedJobForDistance}
+        technicianDistances={technicianDistances}
+        isCalculatingDistances={isCalculatingDistances}
+        measureStopOptions={getMeasureStopSelectOptions()}
+        customDistanceFromId={customDistanceFromId}
+        customDistanceToId={customDistanceToId}
+        onCustomDistanceFromChange={setCustomDistanceFromId}
+        onCustomDistanceToChange={setCustomDistanceToId}
+        isLoadingCustomDistance={isLoadingCustomDistance}
+        isOpeningCustomDistanceMaps={isOpeningCustomDistanceMaps}
+        customDistanceResult={customDistanceResult}
+        onCalculateCustomDistance={() => void calculateCustomDistanceBetweenStops()}
+        onOpenCustomDistanceInMaps={() => void openCustomDistanceInGoogleMaps()}
+      />
     </div>
   );
 };
