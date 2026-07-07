@@ -18,7 +18,6 @@ import {
   type ChartConfig,
 } from '@/components/ui/chart';
 import {
-  Area,
   Bar,
   BarChart,
   CartesianGrid,
@@ -102,10 +101,10 @@ const trendDashboardCache = new Map<string, { at: number; payload: TrendDashboar
 
 const chartConfig = {
   revenue: { label: 'Revenue', color: 'hsl(199 89% 48%)' },
-  jobs: { label: 'Jobs', color: 'hsl(200 98% 39%)' },
-  avgBill: { label: 'Avg bill', color: 'hsl(201 96% 32%)' },
+  jobs: { label: 'Jobs', color: 'hsl(25 95% 53%)' },
+  avgBill: { label: 'Avg bill', color: 'hsl(262 83% 58%)' },
   compareRevenue: { label: 'Compare revenue', color: 'hsl(215 16% 65%)' },
-  compareJobs: { label: 'Compare jobs', color: 'hsl(215 20% 75%)' },
+  compareJobs: { label: 'Compare jobs', color: 'hsl(25 55% 68%)' },
 } satisfies ChartConfig;
 
 type TrendFilters = {
@@ -337,6 +336,13 @@ function ChangeBadge({ value, size = 'sm' }: { value: number | null; size?: 'sm'
   );
 }
 
+function tooltipDotColor(dataKey: string, entryColor?: string): string {
+  const fromConfig = chartConfig[dataKey as keyof typeof chartConfig]?.color;
+  if (fromConfig) return fromConfig;
+  if (entryColor && !entryColor.startsWith('var(')) return entryColor;
+  return 'hsl(var(--muted-foreground))';
+}
+
 function RichTooltip({
   active,
   payload,
@@ -350,18 +356,28 @@ function RichTooltip({
 }) {
   if (!active || !payload?.length) return null;
   const row = payload[0]?.payload as Record<string, unknown> | undefined;
+  const seen = new Set<string>();
+  const items = payload.filter((entry) => {
+    const key = String(entry.dataKey ?? entry.name ?? '');
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
   return (
     <div className="rounded-xl border bg-background/95 backdrop-blur px-3 py-2.5 shadow-lg text-xs min-w-[180px]">
       <p className="font-semibold text-foreground mb-2">{label}</p>
       <div className="space-y-1.5">
-        {payload.map((entry) => {
+        {items.map((entry) => {
           const key = String(entry.dataKey ?? '');
           const val = Number(entry.value) || 0;
           const isMoney = key.includes('revenue') || key.includes('Bill');
           return (
             <div key={key} className="flex items-center justify-between gap-4">
               <span className="flex items-center gap-1.5 text-muted-foreground">
-                <span className="h-2 w-2 rounded-full" style={{ background: entry.color }} />
+                <span
+                  className="h-2 w-2 shrink-0 rounded-full"
+                  style={{ background: tooltipDotColor(key, entry.color) }}
+                />
                 {chartConfig[key as keyof typeof chartConfig]?.label ?? entry.name}
               </span>
               <span className="font-medium tabular-nums">
@@ -747,7 +763,7 @@ export function AnalyticsTrendGraph({
             <>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 <StatCard title="Total revenue" value={`₹ ${formatCurrency(summary.totalRevenue)}`} icon={<TrendingUp className="w-4 h-4 text-sky-600" />} sub={<ChangeBadge value={summary.overallTrendPct} size="md" />} />
-                <StatCard title="Total jobs" value={String(summary.totalJobs)} icon={<LineChart className="w-4 h-4 text-sky-600" />} sub={`Avg ₹ ${formatCurrency(summary.totalJobs > 0 ? summary.totalRevenue / summary.totalJobs : 0)} / job`} />
+                <StatCard title="Total jobs" value={String(summary.totalJobs)} icon={<LineChart className="w-4 h-4 text-orange-500" />} sub={`Avg ₹ ${formatCurrency(summary.totalJobs > 0 ? summary.totalRevenue / summary.totalJobs : 0)} / job`} />
                 <StatCard title="Best period" value={summary.bestPeriod ? `₹ ${formatCurrency(summary.bestPeriod.revenue)}` : '—'} icon={<TrendingUp className="w-4 h-4 text-emerald-600" />} sub={summary.bestPeriod?.label} />
                 <StatCard title="Lowest period" value={summary.worstPeriod ? `₹ ${formatCurrency(summary.worstPeriod.revenue)}` : '—'} icon={<TrendingDown className="w-4 h-4 text-red-500" />} sub={summary.worstPeriod?.label} />
               </div>
@@ -765,12 +781,6 @@ export function AnalyticsTrendGraph({
                 </div>
                 <ChartContainer config={chartConfig} className="aspect-[16/10] sm:aspect-[2.2/1] w-full min-h-[280px]">
                   <ComposedChart data={chartData} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="hsl(199 89% 48%)" stopOpacity={0.35} />
-                        <stop offset="100%" stopColor="hsl(199 89% 48%)" stopOpacity={0.02} />
-                      </linearGradient>
-                    </defs>
                     <CartesianGrid vertical={false} strokeDasharray="4 4" stroke="hsl(var(--border))" />
                     <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={10} minTickGap={20} />
                     {(filters.metric === 'combined' || filters.metric === 'jobs') && (
@@ -784,21 +794,60 @@ export function AnalyticsTrendGraph({
                       <ReferenceLine yAxisId="revenue" y={avgRevenue} stroke="hsl(199 89% 48%)" strokeDasharray="6 4" strokeOpacity={0.45} />
                     ) : null}
                     {(filters.metric === 'combined' || filters.metric === 'jobs') && (
-                      <Bar yAxisId="jobs" dataKey="jobs" fill="var(--color-jobs)" radius={[6, 6, 0, 0]} maxBarSize={36} fillOpacity={0.85} />
+                      <Line
+                        yAxisId="jobs"
+                        type="monotone"
+                        dataKey="jobs"
+                        name="Jobs"
+                        stroke="var(--color-jobs)"
+                        strokeWidth={2.5}
+                        dot={{ r: 3, fill: 'var(--color-jobs)' }}
+                        activeDot={{ r: 6, strokeWidth: 2 }}
+                      />
                     )}
                     {(filters.metric === 'combined' || filters.metric === 'revenue') && (
-                      <>
-                        <Area yAxisId="revenue" type="monotone" dataKey="revenue" stroke="none" fill="url(#revenueGradient)" />
-                        <Line yAxisId="revenue" type="monotone" dataKey="revenue" stroke="var(--color-revenue)" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 6, strokeWidth: 2 }} />
-                      </>
+                      <Bar
+                        yAxisId="revenue"
+                        dataKey="revenue"
+                        name="Revenue"
+                        fill="var(--color-revenue)"
+                        radius={[6, 6, 0, 0]}
+                        maxBarSize={36}
+                        fillOpacity={0.88}
+                      />
                     )}
                     {overlay !== 'none' && (filters.metric === 'combined' || filters.metric === 'revenue') && (
-                      <Line yAxisId="revenue" type="monotone" dataKey="compareRevenue" stroke="var(--color-compareRevenue)" strokeWidth={2} strokeDasharray="6 4" dot={false} connectNulls />
+                      <Line
+                        yAxisId="revenue"
+                        type="monotone"
+                        dataKey="compareRevenue"
+                        name="Compare revenue"
+                        stroke="var(--color-compareRevenue)"
+                        strokeWidth={2}
+                        strokeDasharray="6 4"
+                        dot={false}
+                        connectNulls
+                      />
+                    )}
+                    {overlay !== 'none' && (filters.metric === 'combined' || filters.metric === 'jobs') && (
+                      <Line
+                        yAxisId="jobs"
+                        type="monotone"
+                        dataKey="compareJobs"
+                        name="Compare jobs"
+                        stroke="var(--color-compareJobs)"
+                        strokeWidth={2}
+                        strokeDasharray="5 3"
+                        dot={false}
+                        connectNulls
+                      />
                     )}
                     {filters.metric === 'avgBill' && (
                       <Line yAxisId="revenue" type="monotone" dataKey="avgBill" stroke="var(--color-avgBill)" strokeWidth={2.5} dot={{ r: 3 }} />
                     )}
-                    {overlay !== 'none' ? <Legend wrapperStyle={{ fontSize: 12 }} /> : null}
+                    {filters.metric === 'combined' || overlay !== 'none' ? (
+                      <Legend wrapperStyle={{ fontSize: 12 }} />
+                    ) : null}
                   </ComposedChart>
                 </ChartContainer>
               </div>
@@ -842,8 +891,16 @@ export function AnalyticsTrendGraph({
                     <YAxis yAxisId="left" tickFormatter={(v) => formatCompactCurrency(Number(v))} width={52} />
                     <YAxis yAxisId="right" orientation="right" allowDecimals={false} width={32} />
                     <ChartTooltip content={<RichTooltip />} />
-                    <Bar yAxisId="left" dataKey="revenue" fill="var(--color-revenue)" radius={[8, 8, 0, 0]} maxBarSize={72} />
-                    <Bar yAxisId="right" dataKey="jobs" fill="var(--color-jobs)" radius={[8, 8, 0, 0]} maxBarSize={48} fillOpacity={0.75} />
+                    <Bar yAxisId="left" dataKey="revenue" name="Revenue" fill="var(--color-revenue)" radius={[8, 8, 0, 0]} maxBarSize={72} fillOpacity={0.88} />
+                    <Line
+                      yAxisId="right"
+                      type="monotone"
+                      dataKey="jobs"
+                      name="Jobs"
+                      stroke="var(--color-jobs)"
+                      strokeWidth={2.5}
+                      dot={{ r: 4, fill: 'var(--color-jobs)' }}
+                    />
                     <Legend />
                   </BarChart>
                 </ChartContainer>
