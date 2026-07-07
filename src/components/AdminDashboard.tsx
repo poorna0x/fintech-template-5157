@@ -231,6 +231,7 @@ import JobDistanceMeasurementDialog, {
   type JobTechnicianDistanceRow,
 } from './admin/JobDistanceMeasurementDialog';
 import { OngoingJobsFiltersDialog } from './admin/OngoingJobsFiltersDialog';
+import { AdminTabViewShell } from './admin/AdminTabViewShell';
 import {
   broadcastTechnicianJobListRefresh,
   broadcastTechnicianJobListRefreshForJob,
@@ -10124,100 +10125,35 @@ const AdminDashboard = () => {
     );
   }
 
-  // Show different views based on currentView state
   if (currentView === 'payments') {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <AdminHeader />
-        <div className="container mx-auto px-4 py-4 sm:py-8">
-          <div className="mb-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handleViewChange('dashboard')}
-              className="text-gray-600 hover:text-gray-900 -ml-2"
-            >
-              <ArrowLeft className="w-4 h-4 mr-1" />
-              Back
-            </Button>
-          </div>
-          <Suspense fallback={<AdminScreenLoader message="Loading payments..." />}>
-            <TechnicianPayments />
-          </Suspense>
-        </div>
-      </div>
+      <AdminTabViewShell loadingMessage="Loading payments..." onBack={() => handleViewChange('dashboard')}>
+        <TechnicianPayments />
+      </AdminTabViewShell>
     );
   }
 
   if (currentView === 'billing') {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <AdminHeader />
-        <div className="container mx-auto px-4 py-4 sm:py-8">
-          <div className="mb-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handleViewChange('dashboard')}
-              className="text-gray-600 hover:text-gray-900 -ml-2"
-            >
-              <ArrowLeft className="w-4 h-4 mr-1" />
-              Back
-            </Button>
-          </div>
-          <Suspense fallback={<AdminScreenLoader message="Loading billing..." />}>
-            <BillingStats />
-          </Suspense>
-        </div>
-      </div>
+      <AdminTabViewShell loadingMessage="Loading billing..." onBack={() => handleViewChange('dashboard')}>
+        <BillingStats />
+      </AdminTabViewShell>
     );
   }
 
   if (currentView === 'analytics') {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <AdminHeader />
-        <div className="container mx-auto px-4 py-4 sm:py-8">
-          <div className="mb-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handleViewChange('dashboard')}
-              className="text-gray-600 hover:text-gray-900 -ml-2"
-            >
-              <ArrowLeft className="w-4 h-4 mr-1" />
-              Back
-            </Button>
-          </div>
-          <Suspense fallback={<AdminScreenLoader message="Loading analytics..." />}>
-            <Analytics />
-          </Suspense>
-        </div>
-      </div>
+      <AdminTabViewShell loadingMessage="Loading analytics..." onBack={() => handleViewChange('dashboard')}>
+        <Analytics />
+      </AdminTabViewShell>
     );
   }
 
   if (currentView === 'inventory') {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <AdminHeader />
-        <div className="container mx-auto px-4 py-4 sm:py-8">
-          <div className="mb-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => handleViewChange('dashboard')}
-              className="text-gray-600 hover:text-gray-900 -ml-2"
-            >
-              <ArrowLeft className="w-4 h-4 mr-1" />
-              Back
-            </Button>
-          </div>
-          <Suspense fallback={<AdminScreenLoader message="Loading inventory..." />}>
-            <InventoryManagement />
-          </Suspense>
-        </div>
-      </div>
+      <AdminTabViewShell loadingMessage="Loading inventory..." onBack={() => handleViewChange('dashboard')}>
+        <InventoryManagement />
+      </AdminTabViewShell>
     );
   }
 
