@@ -10,8 +10,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Job, Technician } from '@/types';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { ImagePlus, X, ChevronDown } from 'lucide-react';
+import { ImagePlus, X, ChevronDown, RotateCw } from 'lucide-react';
 import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
+import { rotateImageUrlAndReupload } from '@/lib/imageRotate';
 import {
   deriveAmcServicePeriodKind,
   resolveAmcServicePeriodMonths,
@@ -48,6 +49,7 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
   const [showPerItemHide, setShowPerItemHide] = useState(false);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [uploadingPaymentPhoto, setUploadingPaymentPhoto] = useState(false);
+  const [rotatingPhotoKey, setRotatingPhotoKey] = useState<string | null>(null);
   const [dragOverPayment, setDragOverPayment] = useState(false);
   const [dragOverBill, setDragOverBill] = useState(false);
   const photoInputRef = useRef<HTMLInputElement>(null);
@@ -104,6 +106,72 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
       setUploadingPhotos(false);
     }
   }, [editData, onEditDataChange, uploadFiles]);
+
+  const handleRotatePhoto = useCallback(
+    async (field: 'paymentScreenshots' | 'billPhotos', index: number) => {
+      const list = [...(editData[field] || [])];
+      const url = list[index];
+      if (!url) return;
+
+      const key = `${field}-${index}`;
+      setRotatingPhotoKey(key);
+      try {
+        const newUrl = await rotateImageUrlAndReupload(url);
+        list[index] = newUrl;
+        onEditDataChange({ ...editData, [field]: list });
+        toast.success('Photo rotated');
+      } catch (err: any) {
+        console.error('Rotate photo failed:', err);
+        toast.error(err?.message || 'Failed to rotate photo');
+      } finally {
+        setRotatingPhotoKey(null);
+      }
+    },
+    [editData, onEditDataChange]
+  );
+
+  const renderEditablePhotoThumb = (
+    url: string,
+    idx: number,
+    field: 'paymentScreenshots' | 'billPhotos',
+    options: { alt: string; borderClass: string }
+  ) => {
+    const rotateKey = `${field}-${idx}`;
+    const isRotating = rotatingPhotoKey === rotateKey;
+
+    return (
+      <div key={`${field}-${idx}-${url}`} className="relative group">
+        <img
+          src={url}
+          alt={options.alt}
+          className={`w-20 h-20 object-cover rounded-lg ${options.borderClass} ${isRotating ? 'opacity-50' : ''}`}
+        />
+        <button
+          type="button"
+          onClick={() => void handleRotatePhoto(field, idx)}
+          disabled={isRotating || rotatingPhotoKey !== null}
+          className="absolute -bottom-1 -left-1 w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center opacity-90 hover:opacity-100 disabled:opacity-60"
+          aria-label="Rotate photo 90 degrees"
+          title="Rotate 90°"
+        >
+          <RotateCw className={`w-3 h-3 ${isRotating ? 'animate-spin' : ''}`} />
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            const list = [...(editData[field] || [])];
+            list.splice(idx, 1);
+            onEditDataChange({ ...editData, [field]: list });
+          }}
+          disabled={isRotating}
+          className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center opacity-90 hover:opacity-100 disabled:opacity-60"
+          aria-label="Remove photo"
+        >
+          <X className="w-3 h-3" />
+        </button>
+      </div>
+    );
+  };
 
   const loadQrCodeNames = useCallback(async () => {
     if (qrCodesFetched) return;
@@ -605,29 +673,16 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
           {/* Payment screenshots - multiple, always show add/drop zone */}
           <div className="border-t pt-4">
             <Label className="text-base font-semibold">Payment screenshots</Label>
-            <p className="text-xs text-muted-foreground mt-1 mb-2">Drag and drop or click to add. You can add more even if you already have some.</p>
+            <p className="text-xs text-muted-foreground mt-1 mb-2">
+              Drag and drop or click to add. Use the rotate button if a screenshot was uploaded sideways.
+            </p>
             <div className="flex flex-wrap gap-2 mb-2">
-              {(editData.paymentScreenshots || []).map((url: string, idx: number) => (
-                <div key={idx} className="relative group">
-                  <img
-                    src={url}
-                    alt={`Payment ${idx + 1}`}
-                    className="w-20 h-20 object-cover rounded-lg border-2 border-blue-200"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const list = [...(editData.paymentScreenshots || [])];
-                      list.splice(idx, 1);
-                      onEditDataChange({ ...editData, paymentScreenshots: list });
-                    }}
-                    className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center opacity-90 hover:opacity-100"
-                    aria-label="Remove payment screenshot"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </div>
-              ))}
+              {(editData.paymentScreenshots || []).map((url: string, idx: number) =>
+                renderEditablePhotoThumb(url, idx, 'paymentScreenshots', {
+                  alt: `Payment ${idx + 1}`,
+                  borderClass: 'border-2 border-blue-200',
+                })
+              )}
             </div>
             <input
               ref={paymentInputRef}
@@ -664,29 +719,16 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
           {/* Bill photos - multiple, always show add/drop zone */}
           <div>
             <Label className="text-base font-semibold">Bill photos</Label>
-            <p className="text-xs text-muted-foreground mt-1 mb-2">Drag and drop or click to add. You can add more even if you already have some.</p>
+            <p className="text-xs text-muted-foreground mt-1 mb-2">
+              Drag and drop or click to add. Use the rotate button if a photo was uploaded sideways.
+            </p>
             <div className="flex flex-wrap gap-2 mb-2">
-              {(editData.billPhotos || []).map((url: string, idx: number) => (
-                <div key={idx} className="relative group">
-                  <img
-                    src={url}
-                    alt={`Bill ${idx + 1}`}
-                    className="w-20 h-20 object-cover rounded-lg border border-border"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const list = [...(editData.billPhotos || [])];
-                      list.splice(idx, 1);
-                      onEditDataChange({ ...editData, billPhotos: list });
-                    }}
-                    className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center opacity-90 hover:opacity-100"
-                    aria-label="Remove photo"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </div>
-              ))}
+              {(editData.billPhotos || []).map((url: string, idx: number) =>
+                renderEditablePhotoThumb(url, idx, 'billPhotos', {
+                  alt: `Bill ${idx + 1}`,
+                  borderClass: 'border border-border',
+                })
+              )}
             </div>
             <input
               ref={photoInputRef}
