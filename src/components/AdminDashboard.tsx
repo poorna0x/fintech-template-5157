@@ -93,6 +93,8 @@ import {
   getJobCompletionDate,
   getTodayLocalDate,
   getTomorrowLocalDate,
+  completedDateToStr,
+  isDateWithinCompletedRange,
 } from '@/lib/adminDashboardDateHelpers';
 import {
   buildCustomersWithJobs,
@@ -109,7 +111,25 @@ import {
   scheduleAdminAmcJobCreation,
   scheduleAdminFollowUpPromotion,
 } from '@/lib/adminDashboardSchedulers';
+import { shareAdminJobViaWhatsApp } from '@/lib/adminShareJobWhatsApp';
 import { runAdminDashboardSessionBootstrap } from '@/lib/adminDashboardSessionBootstrap';
+import {
+  buildCompletedProfitSummary,
+  shouldShowCompletedProfitSummary as shouldShowAdminCompletedProfitSummary,
+} from '@/lib/adminCompletedJobProfit';
+import {
+  calculateAdminCustomerDistance,
+  ensureGoogleMapsLoaded,
+  formatDistanceKm,
+  haversineDistanceMeters,
+} from '@/lib/adminGoogleMapsDistance';
+import {
+  collectOngoingJobsForMeasure,
+  formatRouteStopLabel,
+  formatTime12Hour,
+  getJobScheduledDateKey,
+} from '@/lib/adminRouteMeasureHelpers';
+
 import { Customer, Job, Technician } from '@/types';
 import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
 import { toast } from 'sonner';
@@ -141,17 +161,10 @@ const BillModal = lazyDefault(() => import('./BillModal'));
 const AMCModal = lazyDefault(() => import('./AMCModal'));
 const QuotationModal = lazyDefault(() => import('./QuotationModal'));
 const TaxInvoiceModal = lazyDefault(() => import('./TaxInvoiceModal'));
-const GSTInvoicesPage = lazyDefault(() => import('./GSTInvoicesPage'));
-const AMCViewPage = lazyDefault(() => import('./AMCViewPage'));
 // Letterhead builder is heavy (rich text + sanitizer + preview iframe) and only
 // used on demand. Code-split it so the main admin bundle stays lean.
-const LetterheadDocumentsPage = lazyDefault(() => import('./LetterheadDocumentsPage'));
 import { toDateOnly } from '@/lib/amcAutoJobSchedule';
 import ImageUpload from '@/components/ImageUpload';
-const TechnicianPayments = lazyDefault(() => import('./TechnicianPayments'));
-const BillingStats = lazyDefault(() => import('./BillingStats'));
-const Analytics = lazyDefault(() => import('./Analytics'));
-const InventoryManagement = lazyDefault(() => import('./InventoryManagement'));
 import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, levenshteinDistance, calculateSimilarity, extractPhotoUrls, normalizePhotoUrl, parseJobRequirements, getFormattedTimeSlot, findLeadSource, getLeadSourceFromJob, getJobCustomTimeLabel, normalizeLeadType, normalizeServiceSubType, completedJobMatchesDashboardClientFilters, isOfficeCompletedJob, jobCompletionLocalDateIso, ZERO_COMMISSION_EMPLOYEE_ID, jobsMatchOngoingTab } from '@/lib/adminUtils';
 import { getLocationLinkFromObject, getLocationUnavailableMessage, resolveJobDestinationCoordsSync, resolveJobLatLngFromRow } from '@/lib/jobLocationHelpers';
 import { applyAutoMoveToOngoingOnDateFlag } from '@/lib/followUpToOngoing';
@@ -246,7 +259,9 @@ import JobDistanceMeasurementDialog, {
   type JobTechnicianDistanceRow,
 } from './admin/JobDistanceMeasurementDialog';
 import { OngoingJobsFiltersDialog } from './admin/OngoingJobsFiltersDialog';
-import { AdminTabViewShell } from './admin/AdminTabViewShell';
+import AdminDashboardOverlayViews, {
+  hasAdminDashboardOverlayView,
+} from './admin/AdminDashboardOverlayViews';
 import { AdminCustomerJobsList } from './admin/AdminCustomerJobsList';
 import {
   AdminDashboardListProvider,
@@ -3111,301 +3126,14 @@ const AdminDashboard = () => {
   const resolveJobDestinationCoords = (jobRow: Job | any): { lat: number; lng: number } | null =>
     resolveJobDestinationCoordsSync(jobRow);
 
-  // Helper function to ensure Google Maps is loaded
-  const ensureGoogleMapsLoaded = useCallback((): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      // Check if already loaded
-      if ((window as any).google && (window as any).google.maps && (window as any).google.maps.DistanceMatrixService) {
-        resolve();
-        return;
-      }
-
-      const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-      if (!apiKey) {
-        reject(new Error('Google Maps API key not configured'));
-        return;
-      }
-
-      // Check if script is already being loaded
-      const existingScript = document.querySelector('script[src*="maps.googleapis.com"]');
-      if (existingScript) {
-        // Wait for it to load
-        const checkInterval = setInterval(() => {
-          if ((window as any).google && (window as any).google.maps && (window as any).google.maps.DistanceMatrixService) {
-            clearInterval(checkInterval);
-            resolve();
-          }
-        }, 100);
-
-        // Timeout after 10 seconds
-        setTimeout(() => {
-          clearInterval(checkInterval);
-          if ((window as any).google && (window as any).google.maps && (window as any).google.maps.DistanceMatrixService) {
-            resolve();
-          } else {
-            reject(new Error('Google Maps failed to load'));
-          }
-        }, 10000);
-        return;
-      }
-
-      // Load the script
-      const script = document.createElement('script');
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`;
-      script.async = true;
-      script.defer = true;
-      
-      script.onload = () => {
-        console.log('Google Maps script loaded, waiting for DistanceMatrixService...');
-        // Wait a bit for DistanceMatrixService to be available
-        let attempts = 0;
-        const maxAttempts = 50; // 5 seconds max
-        const checkInterval = setInterval(() => {
-          attempts++;
-          if ((window as any).google && (window as any).google.maps && (window as any).google.maps.DistanceMatrixService) {
-            console.log('DistanceMatrixService is now available');
-            clearInterval(checkInterval);
-            resolve();
-          } else if (attempts >= maxAttempts) {
-            console.error('DistanceMatrixService not available after waiting');
-            clearInterval(checkInterval);
-            reject(new Error('DistanceMatrixService not available after loading'));
-          }
-        }, 100);
-      };
-      
-      script.onerror = () => {
-        reject(new Error('Failed to load Google Maps'));
-      };
-      
-      document.head.appendChild(script);
-    });
-  }, []);
-
-  const haversineDistanceMeters = (a: { lat: number; lng: number }, b: { lat: number; lng: number }): number => {
-    const toRad = (deg: number) => (deg * Math.PI) / 180;
-    const R = 6371000; // meters
-    const dLat = toRad(b.lat - a.lat);
-    const dLng = toRad(b.lng - a.lng);
-    const lat1 = toRad(a.lat);
-    const lat2 = toRad(b.lat);
-    const s1 = Math.sin(dLat / 2);
-    const s2 = Math.sin(dLng / 2);
-    const h = s1 * s1 + Math.cos(lat1) * Math.cos(lat2) * s2 * s2;
-    const c = 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
-    return R * c;
-  };
-
-  const formatDistanceKm = (meters: number): string => {
-    if (!Number.isFinite(meters) || meters <= 0) return '';
-    const km = meters / 1000;
-    if (km < 1) return `${km.toFixed(2)} km`;
-    if (km < 10) return `${km.toFixed(2)} km`;
-    return `${km.toFixed(1)} km`;
-  };
-
-  // Calculate distance and time using Google Maps Distance Matrix API
-  const calculateDistanceAndTime = useCallback(async (
-    origin: { lat: number; lng: number },
-    destination: { lat: number; lng: number },
-    customerId: string
-  ) => {
-    console.log('Starting distance calculation:', { origin, destination, customerId });
-    
-    // Validate coordinates
-    if (!origin || !destination) {
-      console.error('Invalid origin or destination');
-      setCustomerDistances(prev => ({
-        ...prev,
-        [customerId]: { ...prev[customerId], isCalculating: false }
-      }));
-      toast.error('Invalid location coordinates');
-      return;
-    }
-
-    // Validate coordinate ranges
-    if (
-      !origin.lat || !origin.lng || 
-      !destination.lat || !destination.lng ||
-      origin.lat === 0 && origin.lng === 0 ||
-      destination.lat === 0 && destination.lng === 0 ||
-      origin.lat < -90 || origin.lat > 90 ||
-      origin.lng < -180 || origin.lng > 180 ||
-      destination.lat < -90 || destination.lat > 90 ||
-      destination.lng < -180 || destination.lng > 180
-    ) {
-      console.error('Invalid coordinate values:', { origin, destination });
-      setCustomerDistances(prev => ({
-        ...prev,
-        [customerId]: { ...prev[customerId], isCalculating: false }
-      }));
-      toast.error('Invalid location coordinates. Please check the customer location.');
-      return;
-    }
-    
-    // Set calculating state
-    setCustomerDistances(prev => ({
-      ...prev,
-      [customerId]: { ...prev[customerId], isCalculating: true }
-    }));
-
-    try {
-      // Ensure Google Maps is loaded
-      console.log('Ensuring Google Maps is loaded...');
-      await ensureGoogleMapsLoaded();
-      console.log('Google Maps loaded');
-
-      // Now safely use DistanceMatrixService
-      if (!(window as any).google?.maps?.DistanceMatrixService) {
-        throw new Error('DistanceMatrixService not available');
-      }
-
-      console.log('Creating DistanceMatrixService...');
-      const distanceMatrix = new (window as any).google.maps.DistanceMatrixService();
-      
-      console.log('Calling getDistanceMatrix...', { 
-        origin: { lat: origin.lat, lng: origin.lng }, 
-        destination: { lat: destination.lat, lng: destination.lng }
-      });
-      
-      // Set a timeout to prevent getting stuck
-      const timeoutId = setTimeout(() => {
-        console.error('Distance calculation timeout');
-        setCustomerDistances(prev => ({
-          ...prev,
-          [customerId]: { ...prev[customerId], isCalculating: false }
-        }));
-        toast.error('Distance calculation timed out. Please try again.');
-      }, 15000); // 15 second timeout
-      
-      // Try DRIVING first (motor bike/scooty), fallback to BICYCLING only if needed
-      const tryCalculateDistance = (travelMode: any, modeName: string, isRetry: boolean = false) => {
-        const originCoords = { lat: Number(origin.lat), lng: Number(origin.lng) };
-        const destCoords = { lat: Number(destination.lat), lng: Number(destination.lng) };
-        
-        console.log(`Trying ${modeName} mode:`, { origin: originCoords, destination: destCoords });
-        
-        distanceMatrix.getDistanceMatrix(
-          {
-            origins: [originCoords],
-            destinations: [destCoords],
-            travelMode: travelMode,
-            unitSystem: (window as any).google.maps.UnitSystem.METRIC,
-          },
-          (response, status) => {
-            console.log(`Distance Matrix callback (${modeName}):`, { status, response });
-            
-            if (status === (window as any).google.maps.DistanceMatrixStatus.OK && response) {
-              const result = response.rows[0].elements[0];
-              console.log('Distance Matrix result:', result);
-              
-              if (result.status === window.google.maps.DistanceMatrixElementStatus.OK) {
-                clearTimeout(timeoutId);
-                // Convert distance to km if needed
-                let distanceText = result.distance.text;
-                if (result.distance.value < 1000) {
-                  distanceText = `${(result.distance.value / 1000).toFixed(2)} km`;
-                }
-
-                // If duration is not available, show only distance
-                const durationText = result.duration?.text || null;
-
-                console.log('Setting distance:', { distance: distanceText, duration: durationText, mode: modeName });
-                setCustomerDistances(prev => ({
-                  ...prev,
-                  [customerId]: {
-                    distance: distanceText,
-                    duration: durationText || '',
-                    isCalculating: false,
-                    mode: modeName
-                  }
-                }));
-              } else if (result.status === window.google.maps.DistanceMatrixElementStatus.ZERO_RESULTS) {
-                console.error(`Distance Matrix ZERO_RESULTS with ${modeName} mode:`, { origin: originCoords, destination: destCoords });
-                
-                // Try fallback: DRIVING -> BICYCLING (motor bike -> bicycle)
-                if (travelMode === window.google.maps.TravelMode.DRIVING && !isRetry) {
-                  console.log('DRIVING returned ZERO_RESULTS, trying BICYCLING mode as fallback...');
-                  tryCalculateDistance(window.google.maps.TravelMode.BICYCLING, 'BICYCLING', true);
-                } else {
-                  clearTimeout(timeoutId);
-                  setCustomerDistances(prev => ({
-                    ...prev,
-                    [customerId]: { ...prev[customerId], isCalculating: false }
-                  }));
-                  toast.error('No route found. Please check if the location coordinates are valid.');
-                }
-              } else {
-                clearTimeout(timeoutId);
-                console.error('Distance Matrix element status error:', result.status);
-                setCustomerDistances(prev => ({
-                  ...prev,
-                  [customerId]: { ...prev[customerId], isCalculating: false }
-                }));
-                toast.error(`Could not calculate distance: ${result.status}`);
-              }
-            } else {
-              clearTimeout(timeoutId);
-              console.error('Distance Matrix status error:', status);
-              // Mobile-safe fallback: show approximate straight-line distance when Maps route fails (API blocked, quota, referrer, etc.)
-              try {
-                const approxMeters = haversineDistanceMeters(originCoords, destCoords);
-                const approxText = formatDistanceKm(approxMeters);
-                if (approxText) {
-                  setCustomerDistances(prev => ({
-                    ...prev,
-                    [customerId]: {
-                      distance: approxText,
-                      duration: '',
-                      isCalculating: false,
-                    }
-                  }));
-                  toast.warning('Showing approximate distance (route unavailable)');
-                  return;
-                }
-              } catch {
-                // ignore
-              }
-              setCustomerDistances(prev => ({
-                ...prev,
-                [customerId]: { ...prev[customerId], isCalculating: false }
-              }));
-              toast.error(`Distance calculation failed: ${status}`);
-            }
-          }
-        );
-      };
-      
-      // Start with DRIVING mode (motor bike/scooty), fallback to BICYCLING if needed
-      tryCalculateDistance(window.google.maps.TravelMode.DRIVING, 'DRIVING', false);
-    } catch (error) {
-      console.error('Error calculating distance:', error);
-      // Mobile-safe fallback: approximate straight-line distance when Maps fails to load/call.
-      try {
-        const approxMeters = haversineDistanceMeters(origin, destination);
-        const approxText = formatDistanceKm(approxMeters);
-        if (approxText) {
-          setCustomerDistances(prev => ({
-            ...prev,
-            [customerId]: {
-              distance: approxText,
-              duration: '',
-              isCalculating: false,
-            }
-          }));
-          toast.warning('Showing approximate distance (route unavailable)');
-          return;
-        }
-      } catch {
-        // ignore
-      }
-      setCustomerDistances(prev => ({
-        ...prev,
-        [customerId]: { ...prev[customerId], isCalculating: false }
-      }));
-      toast.error(`Failed to calculate distance: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  }, [ensureGoogleMapsLoaded]);
+  const calculateDistanceAndTime = useCallback(
+    (
+      origin: { lat: number; lng: number },
+      destination: { lat: number; lng: number },
+      customerId: string
+    ) => calculateAdminCustomerDistance(origin, destination, customerId, setCustomerDistances),
+    []
+  );
 
   // Store the function in ref whenever it changes
   useEffect(() => {
@@ -6134,304 +5862,7 @@ const AdminDashboard = () => {
 
   // handleEditJobSubmit moved to EditJobDialog component
 
-  // Helper function to format time in 12-hour format
-  const formatTime12Hour = (date: Date | string): string => {
-    const d = typeof date === 'string' ? new Date(date) : date;
-    const hours = d.getHours();
-    const minutes = d.getMinutes();
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    const displayHours = hours % 12 || 12;
-    const displayMinutes = minutes.toString().padStart(2, '0');
-    return `${displayHours}:${displayMinutes} ${ampm}`;
-  };
-
-  const getJobScheduledDateKey = (jobRow: Job | any): string | null => {
-    const raw = jobRow?.scheduled_date ?? jobRow?.scheduledDate;
-    if (!raw) return null;
-    if (typeof raw === 'string') return raw.split('T')[0];
-    try {
-      const d = new Date(raw);
-      if (isNaN(d.getTime())) return null;
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    } catch {
-      return null;
-    }
-  };
-
-  const parseCustomTimeMinutesFromJob = (jobRow: Job | any): number | null => {
-    let reqs = jobRow?.requirements;
-    if (typeof reqs === 'string') {
-      try {
-        reqs = JSON.parse(reqs);
-      } catch {
-        return null;
-      }
-    }
-    if (!Array.isArray(reqs)) return null;
-    const withTime = reqs.find((r: any) => r && typeof r === 'object' && r.custom_time);
-    const t = withTime?.custom_time;
-    if (!t || typeof t !== 'string') return null;
-    const parts = t.trim().split(':');
-    const h = parseInt(parts[0], 10);
-    const m = parseInt(parts[1] || '0', 10);
-    if (isNaN(h) || h < 0 || h > 23) return null;
-    if (isNaN(m) || m < 0 || m > 59) return null;
-    return h * 60 + m;
-  };
-
-  /** Visit order: CUSTOM with HH:MM first (by time), then MORNING→…→FLEXIBLE, then CUSTOM without time (by created). */
-  const routeSortKeyForJob = (jobRow: Job | any): string => {
-    const slot = String(jobRow?.scheduled_time_slot || jobRow?.scheduledTimeSlot || 'MORNING').toUpperCase();
-    const created = new Date(jobRow?.created_at || jobRow?.createdAt || 0).getTime();
-    if (slot === 'CUSTOM') {
-      const mins = parseCustomTimeMinutesFromJob(jobRow);
-      if (mins != null) return `A-${String(mins).padStart(5, '0')}-${String(created).padStart(13, '0')}`;
-      return `C-${String(created).padStart(13, '0')}`;
-    }
-    const slotRank: Record<string, number> = {
-      MORNING: 1,
-      AFTERNOON: 2,
-      EVENING: 3,
-      FLEXIBLE: 4,
-    };
-    const r = slotRank[slot] ?? 50;
-    return `B-${String(r).padStart(2, '0')}-${String(created).padStart(13, '0')}`;
-  };
-
-  /**
-   * Location for route labels — from DB-shaped job row: `jobs.service_address` (jsonb),
-   * embedded `customer.address`, `customer.visible_address`, and `service_location` when needed.
-   * Normalizes all whitespace so multi-word areas (e.g. "HSR Layout") and odd spacing still show.
-   */
-  const getRouteLocationWord = (jobRow: Job | any): string => {
-    const str = (v: unknown): string => {
-      if (v == null) return '';
-      if (typeof v === 'string') return v;
-      if (typeof v === 'number' && !Number.isNaN(v)) return String(v);
-      return '';
-    };
-    const normalizeWs = (s: string) =>
-      str(s).replace(/[\s\u00a0\u2000-\u200B\uFEFF]+/g, ' ').trim();
-
-    const genericToken = (w: string) => {
-      const t = w.toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (!t || t.length < 2) return true;
-      if (t === 'bengaluru' || t === 'bangalore' || t === 'banglore') return true;
-      if (t === 'karnataka' || t === 'india') return true;
-      return false;
-    };
-
-    /** Entire phrase is only generic tokens (e.g. "Bangalore" or "Bangalore Karnataka"). */
-    const phraseIsOnlyGeneric = (s: string) => {
-      const n = normalizeWs(s);
-      if (!n) return true;
-      const parts = n.split(/\s+/).filter(Boolean);
-      return parts.length > 0 && parts.every((p) => genericToken(p));
-    };
-
-    /** Prefer full short phrase when it contains any non-generic word (multi-word areas). */
-    const pickPhraseOrEmpty = (raw: string, maxLen = 48): string => {
-      const n = normalizeWs(raw);
-      if (!n) return '';
-      if (phraseIsOnlyGeneric(n)) return '';
-      return n.length > maxLen ? `${n.slice(0, Math.max(0, maxLen - 1))}…` : n;
-    };
-
-    const firstNonGenericWord = (s: string): string => {
-      for (const raw of normalizeWs(s).split(/[\s,]+/)) {
-        const w = raw.trim();
-        if (!w) continue;
-        if (!genericToken(w)) return w;
-      }
-      return '';
-    };
-
-    /** DB/Google often store "Frazer, Town, Bangalore" — must not use only the first comma segment. */
-    const localityBeforeCity = (raw: string): string => {
-      const parts = raw.split(',').map((p) => normalizeWs(p)).filter(Boolean);
-      const kept: string[] = [];
-      for (const p of parts) {
-        const lower = p.toLowerCase();
-        const first = lower.split(/\s+/)[0] || '';
-        if (/^\d{6}$/.test(p)) break;
-        if (
-          first === 'bengaluru' ||
-          first === 'bangalore' ||
-          first === 'banglore' ||
-          first === 'karnataka' ||
-          first === 'india'
-        ) {
-          break;
-        }
-        if (lower === 'in') break;
-        kept.push(p);
-      }
-      return normalizeWs(kept.join(' '));
-    };
-
-    const cust = jobRow?.customer as any;
-    const customerAddress = cust?.address || {};
-    const serviceAddress = jobRow?.service_address || jobRow?.serviceAddress || {};
-
-    let visibleLocation =
-      normalizeWs(
-        str(customerAddress?.visible_address) ||
-          str(customerAddress?.visibleAddress) ||
-          str(cust?.visible_address) ||
-          str(serviceAddress?.visible_address) ||
-          str(serviceAddress?.visibleAddress)
-      );
-
-    if (visibleLocation.includes(',')) {
-      visibleLocation = localityBeforeCity(visibleLocation);
-    }
-
-    if (!visibleLocation) {
-      visibleLocation = normalizeWs(
-        str(customerAddress?.area) || str(serviceAddress?.area)
-      );
-      if (visibleLocation.includes(',')) {
-        visibleLocation = localityBeforeCity(visibleLocation);
-      }
-    }
-
-    let phrase = pickPhraseOrEmpty(visibleLocation);
-    if (phrase) return phrase;
-
-    const landmark = normalizeWs(str(customerAddress?.landmark) || str(serviceAddress?.landmark));
-    phrase = pickPhraseOrEmpty(landmark);
-    if (phrase) return phrase;
-
-    const street = normalizeWs(str(customerAddress?.street) || str(serviceAddress?.street));
-    phrase = pickPhraseOrEmpty(street);
-    if (phrase) return phrase;
-
-    const city = normalizeWs(str(customerAddress?.city) || str(serviceAddress?.city));
-    let w = firstNonGenericWord(city);
-    if (w) return w;
-
-    const pin = normalizeWs(str(customerAddress?.pincode) || str(serviceAddress?.pincode));
-    if (pin) return pin;
-
-    const svcLoc = cust?.location || jobRow?.service_location || jobRow?.serviceLocation || {};
-    const formatted = normalizeWs(str(svcLoc?.formattedAddress) || str(svcLoc?.formatted_address));
-    if (formatted) {
-      const joined = localityBeforeCity(formatted);
-      phrase = pickPhraseOrEmpty(joined);
-      if (phrase) return phrase;
-      for (const part of formatted.split(',')) {
-        const chunk = pickPhraseOrEmpty(normalizeWs(part));
-        if (chunk) return chunk;
-        w = firstNonGenericWord(part);
-        if (w) return w;
-      }
-    }
-
-    return '';
-  };
-
-  /** Route row: `Customer name (location)` — distinct stops even when area text repeats. */
-  const formatRouteStopLabel = (jobRow: Job | any): string => {
-    const cust = jobRow?.customer as any;
-    const displayName = (cust?.full_name || cust?.fullName || 'Customer').trim() || 'Customer';
-    const loc = getRouteLocationWord(jobRow);
-    if (loc) return `${displayName} (${loc})`;
-    return `${displayName} (—)`;
-  };
-
-  const handleShareJobWhatsApp = async (job: Job) => {
-    const assignedTechnicianId = (job as any).assigned_technician_id || job.assignedTechnicianId;
-    if (!assignedTechnicianId) {
-      toast.error('No technician assigned to this job');
-      return;
-    }
-    const technician = technicians.find(t => t.id === assignedTechnicianId);
-    if (!technician?.phone) {
-      toast.error('Technician phone number not found');
-      return;
-    }
-
-    const embeddedCustomer = ((job as any).customer || job.customer) as any;
-    const customerId = embeddedCustomer?.id || (job as any).customer_id;
-    let freshCustomer: any = null;
-    if (customerId) {
-      const { data, error } = await db.customers.getById(String(customerId));
-      if (!error && data) {
-        freshCustomer = data;
-      }
-    }
-
-    const customer = freshCustomer || embeddedCustomer;
-    const name = customer?.full_name || customer?.fullName || 'N/A';
-    const phone = customer?.phone || 'N/A';
-    const altPhone = customer?.alternate_phone || customer?.alternatePhone;
-    const serviceType = (job as any).service_type || job.serviceType || 'N/A';
-    const serviceSubType = (job as any).service_sub_type || job.serviceSubType || '';
-    let requirements: any[] = (job as any).requirements;
-    if (typeof requirements === 'string') {
-      try {
-        requirements = JSON.parse(requirements);
-      } catch {
-        requirements = [];
-      }
-    }
-    if (requirements && !Array.isArray(requirements)) {
-      requirements = requirements && typeof requirements === 'object' ? [requirements] : [];
-    }
-    const leadSource = findLeadSource(requirements || []) || 'N/A';
-    const serviceLocation = customer?.location || (job as any).service_location || job.serviceLocation || {};
-    const formattedAddress = serviceLocation?.formattedAddress || serviceLocation?.formatted_address || '';
-    const googleMapLink = getLocationLinkFromObject(serviceLocation) ||
-      (formattedAddress ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formattedAddress)}` : '');
-    const serviceAddress = customer?.address || (job as any).service_address || job.serviceAddress || {};
-    const addressParts = [
-      serviceAddress?.visible_address || serviceAddress?.visibleAddress,
-      serviceAddress?.street,
-      serviceAddress?.area,
-      serviceAddress?.city,
-      serviceAddress?.state,
-      serviceAddress?.pincode,
-      serviceAddress?.landmark ? `Landmark: ${serviceAddress.landmark}` : null,
-    ].filter(Boolean);
-    const fullAddressLine = addressParts.length > 0 ? addressParts.join(', ') : (formattedAddress || '');
-    const lines = [
-      `*Job: ${(job as any).job_number || job.jobNumber || job.id}*`,
-      `Service: ${serviceType}${serviceSubType ? ` - ${serviceSubType}` : ''}`,
-      `Name: ${name}`,
-      `Phone: ${phone}`,
-      ...(altPhone ? [`Alt. phone: ${altPhone}`] : []),
-      `Lead source: ${leadSource}`,
-      ...(googleMapLink ? [`Location: ${googleMapLink}`] : []),
-      ...(fullAddressLine ? ['', '_Full address:_', fullAddressLine] : []),
-    ];
-    const text = lines.join('\n');
-    const url = `https://wa.me/${formatPhoneForWhatsApp(technician.phone)}?text=${encodeURIComponent(text)}`;
-    window.open(url, '_blank', 'noopener,noreferrer');
-    toast.success('Opening WhatsApp to share job details');
-  };
-
-  /** Active route jobs for this technician (assigned / en route / in progress), any scheduled day — not only today. */
-  const collectOngoingJobsForMeasure = (workingJob: Job | any): Job[] => {
-    const assignedTechnicianId =
-      (workingJob as any).assigned_technician_id || workingJob.assignedTechnicianId || null;
-    if (!assignedTechnicianId) return [workingJob as Job];
-    const ROUTE_STATUSES = new Set(['ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS']);
-    let routeJobs = jobs.filter((j) => {
-      const tid = (j as any).assigned_technician_id || j.assignedTechnicianId;
-      if (String(tid) !== String(assignedTechnicianId)) return false;
-      const st = (j as any).status || j.status;
-      return ROUTE_STATUSES.has(st);
-    });
-    if (!routeJobs.some((j) => j.id === workingJob.id)) {
-      routeJobs = [...routeJobs, workingJob as Job];
-    }
-    return [...routeJobs].sort((a, b) => {
-      const da = getJobScheduledDateKey(a) || '9999-12-31';
-      const db = getJobScheduledDateKey(b) || '9999-12-31';
-      if (da !== db) return da.localeCompare(db);
-      return routeSortKeyForJob(a).localeCompare(routeSortKeyForJob(b));
-    });
-  };
+  const handleShareJobWhatsApp = (job: Job) => shareAdminJobViaWhatsApp(job, technicians);
 
   const resolveJobCoordsForMeasure = async (
     job: Job | any,
@@ -6464,7 +5895,7 @@ const AdminDashboard = () => {
     const techLocation =
       assignedTechnician?.currentLocation || (assignedTechnician as any)?.current_location;
 
-    const ongoingJobsForRoute = collectOngoingJobsForMeasure(workingJob);
+    const ongoingJobsForRoute = collectOngoingJobsForMeasure(workingJob, jobs);
     const jobById = (id: string) =>
       ongoingJobsForRoute.find((j) => j.id === id) || jobs.find((j) => j.id === id);
 
@@ -6611,7 +6042,7 @@ const AdminDashboard = () => {
     if (tech && tl?.latitude && tl?.longitude) {
       out.push({ value: '__tech__', label: `${tech.fullName} (last location)` });
     }
-    for (const j of collectOngoingJobsForMeasure(wj)) {
+    for (const j of collectOngoingJobsForMeasure(wj, jobs)) {
       out.push({ value: j.id, label: formatRouteStopLabel(j) });
     }
     return out;
@@ -6706,7 +6137,7 @@ const AdminDashboard = () => {
 
     setTechnicianDistances(initialDistances);
 
-    const ongoingStops = collectOngoingJobsForMeasure(workingJob as Job);
+    const ongoingStops = collectOngoingJobsForMeasure(workingJob as Job, jobs);
     const fromId = '__tech__';
     let toId = workingJob.id;
     if (fromId === toId) {
@@ -8682,103 +8113,18 @@ const AdminDashboard = () => {
     ongoingAssignedTechnicianFilter,
     ongoingServiceSubTypeFilter,
   ]);
-  const completedDateToStr = (dateValue: string | null | undefined): string | null => {
-    if (!dateValue) return null;
-    const d = new Date(dateValue);
-    if (Number.isNaN(d.getTime())) return null;
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  };
-  const isDateWithinCompletedRange = (dateStr: string | null): boolean => {
-    if (!dateStr) return false;
-    if (completedDatePreset === 'day') {
-      return dateStr === completedDateFilter;
-    }
-    const start = completedRangeStartDate <= completedRangeEndDate ? completedRangeStartDate : completedRangeEndDate;
-    const end = completedRangeStartDate <= completedRangeEndDate ? completedRangeEndDate : completedRangeStartDate;
-    return dateStr >= start && dateStr <= end;
-  };
-
-  const isZeroCommissionCompletedJob = useCallback((job: any): boolean => {
-    const completedBy = String(job?.completed_by || job?.completedBy || '').trim();
-    if (completedBy === ZERO_COMMISSION_EMPLOYEE_ID) return true;
-
-    const technicianPool = techniciansForReports.length > 0 ? techniciansForReports : technicians;
-    return technicianPool.some((tech: any) => {
-      const technicianId = String(tech.id || '').trim();
-      const employeeId = String(tech.employee_id || tech.employeeId || '').trim();
-      return (
-        employeeId === ZERO_COMMISSION_EMPLOYEE_ID &&
-        (completedBy === technicianId || completedBy === employeeId)
-      );
-    });
-  }, [technicians, techniciansForReports]);
-
-  const getCompletedJobBillAmount = useCallback((job: any): number => {
-    const paymentAmount = Number(job?.payment_amount ?? job?.paymentAmount ?? 0) || 0;
-    const actualCost = Number(job?.actual_cost ?? job?.actualCost ?? 0) || 0;
-    let billAmount = paymentAmount > 0 ? paymentAmount : actualCost;
-
-    if (billAmount <= 0 && (job?.payment_method || job?.paymentMethod) === 'PARTIAL') {
-      const requirements = parseJobRequirements(job?.requirements || []);
-      const partialReq = requirements.find(
-        (r: any) => r?.partial_cash_amount != null || r?.partial_online_amount != null
-      );
-      if (partialReq) {
-        const cash = Number(partialReq.partial_cash_amount) || 0;
-        const online = Number(partialReq.partial_online_amount) || 0;
-        if (cash + online > 0) billAmount = cash + online;
-      }
-    }
-
-    return billAmount;
-  }, []);
-
-  const calculateCompletedJobProfit = useCallback((job: any) => {
-    const revenue = getCompletedJobBillAmount(job);
-    const sparePartsCost = Number(job?.parts_cost_total ?? job?.partsCostTotal ?? 0) || 0;
-    const leadCost = Number(job?.lead_cost ?? job?.leadCost ?? 0) || 0;
-    const commission = isZeroCommissionCompletedJob(job) ? 0 : revenue * 0.1;
-    return {
-      revenue,
-      sparePartsCost,
-      leadCost,
-      commission,
-      profit: revenue - sparePartsCost - leadCost - commission,
-    };
-  }, [getCompletedJobBillAmount, isZeroCommissionCompletedJob]);
-
-  const shouldShowCompletedProfitSummary =
-    statusFilter === 'COMPLETED' &&
-    completedDatePreset === 'day' &&
-    completedDateFilter === getTodayLocalDate() &&
-    completedLeadTypeFilter === 'all' &&
-    completedServiceSubTypeFilter === 'all' &&
-    completedByFilter === 'all' &&
-    !searchTerm.trim();
+  const shouldShowCompletedProfitSummary = shouldShowAdminCompletedProfitSummary({
+    statusFilter,
+    completedDatePreset,
+    completedDateFilter,
+    completedLeadTypeFilter,
+    completedServiceSubTypeFilter,
+    completedByFilter,
+    searchTerm,
+  });
 
   const completedProfitSummary = shouldShowCompletedProfitSummary
-    ? displayedCustomers
-        .flatMap(({ completedJobs }) => completedJobs)
-        .reduce(
-          (totals, job) => {
-            const financials = calculateCompletedJobProfit(job);
-            totals.jobCount += 1;
-            totals.revenue += financials.revenue;
-            totals.sparePartsCost += financials.sparePartsCost;
-            totals.leadCost += financials.leadCost;
-            totals.commission += financials.commission;
-            totals.profit += financials.profit;
-            return totals;
-          },
-          {
-            jobCount: 0,
-            revenue: 0,
-            sparePartsCost: 0,
-            leadCost: 0,
-            commission: 0,
-            profit: 0,
-          }
-        )
+    ? buildCompletedProfitSummary(displayedCustomers, technicians, techniciansForReports)
     : null;
 
   const adminListData = useMemo(
@@ -8942,7 +8288,12 @@ const AdminDashboard = () => {
     ? completedFilterSourceJobs
     : completedJobs.filter((job) => {
         const completionDate = (job as any).completed_at || job.completedAt || (job as any).end_time || job.endTime;
-        return isDateWithinCompletedRange(completedDateToStr(completionDate));
+        return isDateWithinCompletedRange(completedDateToStr(completionDate), {
+          completedDatePreset,
+          completedDateFilter,
+          completedRangeStartDate,
+          completedRangeEndDate,
+        });
       });
   const MASTER_LEAD_TYPES = [
     'Website',
@@ -9063,91 +8414,39 @@ const AdminDashboard = () => {
     return <AdminScreenLoader message="Loading dashboard..." />;
   }
 
-  // Show GST Invoices page if requested
-  if (showGSTInvoicesPage) {
+  if (
+    hasAdminDashboardOverlayView({
+      showGSTInvoicesPage,
+      gstInSubScreen,
+      onHideGSTInvoices: handleHideGSTInvoices,
+      onGstSubScreenChange: setGstInSubScreen,
+      showAMCViewPage,
+      onHideAMCView: handleHideAMCView,
+      onAMCDeleted: reloadAMCStatus,
+      showLetterheadDocsPage,
+      letterheadInitialType,
+      onLetterheadBack: () => navigate('/admin', { replace: true }),
+      currentView,
+      onViewChange: handleViewChange,
+    })
+  ) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <AdminHeader />
-        <div
-          className={cn(
-            'container mx-auto px-3 sm:px-4',
-            gstInSubScreen ? 'py-2' : 'py-3 sm:py-5'
-          )}
-        >
-          {!gstInSubScreen ? (
-            <div className="mb-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleHideGSTInvoices}
-                className="h-8 text-gray-600 hover:text-gray-900 -ml-2"
-              >
-                <ArrowLeft className="w-4 h-4 mr-1" />
-                Back
-              </Button>
-            </div>
-          ) : null}
-          <Suspense fallback={<AdminScreenLoader message="Loading invoices..." />}>
-            <GSTInvoicesPage onSubScreenChange={setGstInSubScreen} />
-          </Suspense>
-        </div>
-      </div>
+      <AdminDashboardOverlayViews
+        showGSTInvoicesPage={showGSTInvoicesPage}
+        gstInSubScreen={gstInSubScreen}
+        onHideGSTInvoices={handleHideGSTInvoices}
+        onGstSubScreenChange={setGstInSubScreen}
+        showAMCViewPage={showAMCViewPage}
+        onHideAMCView={handleHideAMCView}
+        onAMCDeleted={reloadAMCStatus}
+        showLetterheadDocsPage={showLetterheadDocsPage}
+        letterheadInitialType={letterheadInitialType}
+        onLetterheadBack={() => navigate('/admin', { replace: true })}
+        currentView={currentView}
+        onViewChange={handleViewChange}
+      />
     );
   }
-
-  // Show AMC View page if requested
-  if (showAMCViewPage) {
-    return (
-      <Suspense fallback={<AdminScreenLoader message="Loading AMC..." />}>
-        <AMCViewPage onBack={handleHideAMCView} onAMCDeleted={reloadAMCStatus} />
-      </Suspense>
-    );
-  }
-
-  // Show Letterhead Documents / Service Reports builder if requested
-  if (showLetterheadDocsPage) {
-    return (
-      <Suspense fallback={<AdminScreenLoader message="Loading documents builder..." />}>
-        <LetterheadDocumentsPage
-          initialType={letterheadInitialType}
-          onBack={() => navigate('/admin', { replace: true })}
-        />
-      </Suspense>
-    );
-  }
-
-  if (currentView === 'payments') {
-    return (
-      <AdminTabViewShell loadingMessage="Loading payments..." onBack={() => handleViewChange('dashboard')}>
-        <TechnicianPayments />
-      </AdminTabViewShell>
-    );
-  }
-
-  if (currentView === 'billing') {
-    return (
-      <AdminTabViewShell loadingMessage="Loading billing..." onBack={() => handleViewChange('dashboard')}>
-        <BillingStats />
-      </AdminTabViewShell>
-    );
-  }
-
-  if (currentView === 'analytics') {
-    return (
-      <AdminTabViewShell loadingMessage="Loading analytics..." onBack={() => handleViewChange('dashboard')}>
-        <Analytics />
-      </AdminTabViewShell>
-    );
-  }
-
-  if (currentView === 'inventory') {
-    return (
-      <AdminTabViewShell loadingMessage="Loading inventory..." onBack={() => handleViewChange('dashboard')}>
-        <InventoryManagement />
-      </AdminTabViewShell>
-    );
-  }
-
 
   return (
     <div className="min-h-screen bg-gray-50">

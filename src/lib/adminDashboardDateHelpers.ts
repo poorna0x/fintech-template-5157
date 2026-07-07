@@ -38,3 +38,34 @@ export function getJobCompletionDate(job: Job): number {
   }
   return new Date(job.createdAt).getTime();
 }
+
+export function completedDateToStr(dateValue: string | null | undefined): string | null {
+  if (!dateValue) return null;
+  const d = new Date(dateValue);
+  if (Number.isNaN(d.getTime())) return null;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+export function isDateWithinCompletedRange(
+  dateStr: string | null,
+  params: {
+    completedDatePreset: string;
+    completedDateFilter: string;
+    completedRangeStartDate: string;
+    completedRangeEndDate: string;
+  }
+): boolean {
+  if (!dateStr) return false;
+  if (params.completedDatePreset === 'day') {
+    return dateStr === params.completedDateFilter;
+  }
+  const start =
+    params.completedRangeStartDate <= params.completedRangeEndDate
+      ? params.completedRangeStartDate
+      : params.completedRangeEndDate;
+  const end =
+    params.completedRangeStartDate <= params.completedRangeEndDate
+      ? params.completedRangeEndDate
+      : params.completedRangeStartDate;
+  return dateStr >= start && dateStr <= end;
+}
