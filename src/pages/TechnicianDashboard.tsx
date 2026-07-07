@@ -709,7 +709,6 @@ const TechnicianDashboard = () => {
   >({});
   const [selectedCustomerForLocations, setSelectedCustomerForLocations] = useState<Customer | null>(null);
   const [locationsDialogOpen, setLocationsDialogOpen] = useState(false);
-  const [locationsDialogMode, setLocationsDialogMode] = useState<'maps' | 'address'>('address');
   const [customerUpdateDialogJob, setCustomerUpdateDialogJob] = useState<Job | null>(null);
   const [mapOpeningByJobId, setMapOpeningByJobId] = useState<Record<string, boolean>>({});
 
@@ -736,7 +735,6 @@ const TechnicianDashboard = () => {
         setSelectedCustomerForLocations(customer);
         if (hasMultipleCustomerLocations(customer)) {
           setSelectedJobForAddress(job);
-          setLocationsDialogMode('address');
           setLocationsDialogOpen(true);
           return;
         }
@@ -764,7 +762,6 @@ const TechnicianDashboard = () => {
 
         if (hasMultipleCustomerLocations(customerRow)) {
           setSelectedJobForAddress(job);
-          setLocationsDialogMode('maps');
           setLocationsDialogOpen(true);
           return;
         }
@@ -9221,7 +9218,7 @@ const TechnicianDashboard = () => {
             if (!open) setSelectedCustomerForLocations(null);
           }}
           customer={selectedCustomerForLocations}
-          mode={locationsDialogMode === 'maps' ? 'maps' : 'address'}
+          mode="both"
           onViewAddress={(_customer, variant) => {
             if (selectedJobForAddress) {
               openJobAddressDialog(selectedJobForAddress, variant);

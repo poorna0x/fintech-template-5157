@@ -56,7 +56,6 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
   const [whatsappChoiceOpen, setWhatsappChoiceOpen] = useState(false);
   const [whatsappNumbersOpen, setWhatsappNumbersOpen] = useState(false);
   const [locationsDialogOpen, setLocationsDialogOpen] = useState(false);
-  const [locationsDialogMode, setLocationsDialogMode] = useState<'maps' | 'address'>('address');
   const [locationsDialogCustomer, setLocationsDialogCustomer] = useState<Customer | null>(null);
 
   const customerDisplayName =
@@ -154,7 +153,6 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
 
     if (hasMultipleCustomerLocations(c)) {
       setLocationsDialogCustomer(c);
-      setLocationsDialogMode('address');
       setLocationsDialogOpen(true);
       return;
     }
@@ -168,7 +166,6 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
 
       if (hasMultipleCustomerLocations(c)) {
         setLocationsDialogCustomer(c);
-        setLocationsDialogMode('maps');
         setLocationsDialogOpen(true);
         return;
       }
@@ -201,7 +198,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
         open={locationsDialogOpen}
         onOpenChange={setLocationsDialogOpen}
         customer={locationsDialogCustomer || customer}
-        mode={locationsDialogMode === 'maps' ? 'maps' : 'address'}
+        mode="both"
         onViewAddress={(_c, variant) => openAddressDialog(variant)}
       />
       <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
