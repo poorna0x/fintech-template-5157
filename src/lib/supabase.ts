@@ -7194,6 +7194,32 @@ export const db = {
       });
       return { data, error };
     },
+    async getMonthlyTrends(opts: {
+      startDate?: Date | null;
+      endDate?: Date | null;
+      granularity?: 'month' | 'week' | 'day';
+      serviceType?: string | null;
+      serviceSubType?: string | null;
+      equipmentBrand?: string | null;
+      serviceBrand?: string | null;
+      leadSourceKey?: string | null;
+      technicianId?: string | null;
+      paymentMethod?: string | null;
+    }) {
+      const { data, error } = await supabase.rpc('get_analytics_monthly_trends', {
+        p_start: opts.startDate?.toISOString() ?? null,
+        p_end: opts.endDate?.toISOString() ?? null,
+        p_granularity: opts.granularity ?? 'month',
+        p_service_type: opts.serviceType ?? null,
+        p_service_sub_type: opts.serviceSubType ?? null,
+        p_equipment_brand: opts.equipmentBrand ?? null,
+        p_service_brand: opts.serviceBrand ?? null,
+        p_lead_source_key: opts.leadSourceKey ?? null,
+        p_technician_id: opts.technicianId ?? null,
+        p_payment_method: opts.paymentMethod ?? null,
+      });
+      return { data, error };
+    },
   },
 
   /** Admin Settings — sent email log (Hostinger SMTP + open pixel). Slim columns, head count. */

@@ -351,3 +351,285 @@ export function parseAnalyticsCalendarSalaryTotalsRpc(data: unknown): {
       Number(row.total_salary_before_advance_including_all) || 0,
   };
 }
+
+export type AnalyticsMonthlyTrendsRpc = {
+  granularity: 'month' | 'week' | 'day';
+  total_jobs: number;
+  total_revenue: number;
+  best_period: { period_key: string; revenue: number; jobs: number } | null;
+  worst_period: { period_key: string; revenue: number; jobs: number } | null;
+  rows: Array<{
+    period_key: string;
+    jobs: number;
+    revenue: number;
+    avg_bill: number;
+  }>;
+};
+
+export type AnalyticsTrendPeriodRow = {
+  periodKey: string;
+  label: string;
+  jobs: number;
+  revenue: number;
+  avgBill: number;
+  revenueChangePct: number | null;
+  jobsChangePct: number | null;
+};
+
+export type AnalyticsTrendSummary = {
+  granularity: 'month' | 'week' | 'day';
+  totalJobs: number;
+  totalRevenue: number;
+  overallTrendPct: number | null;
+  bestPeriod: { periodKey: string; label: string; revenue: number; jobs: number } | null;
+  worstPeriod: { periodKey: string; label: string; revenue: number; jobs: number } | null;
+  rows: AnalyticsTrendPeriodRow[];
+};
+
+function formatTrendPeriodLabel(periodKey: string, granularity: 'month' | 'week' | 'day'): string {
+  if (granularity === 'day') {
+    const d = new Date(periodKey + 'T12:00:00');
+    if (!Number.isNaN(d.getTime())) {
+      return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' });
+    }
+    return periodKey;
+  }
+  if (granularity === 'week') {
+    const match = periodKey.match(/^(\d{4})-W(\d{1,2})$/);
+    if (match) return `W${match[2]} ${match[1]}`;
+    return periodKey;
+  }
+  const [y, m] = periodKey.split('-').map(Number);
+  if (!y || !m) return periodKey;
+  return new Date(y, m - 1, 1).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+}
+
+function pctChange(current: number, previous: number): number | null {
+  if (previous === 0) return current > 0 ? 100 : null;
+  return ((current - previous) / previous) * 100;
+}
+
+export function parseAnalyticsMonthlyTrendsRpc(data: unknown): AnalyticsMonthlyTrendsRpc | null {
+  if (!data || typeof data !== 'object') return null;
+  return data as AnalyticsMonthlyTrendsRpc;
+}
+
+export function mapMonthlyTrendsFromRpc(rpc: AnalyticsMonthlyTrendsRpc): AnalyticsTrendSummary {
+  const granularity =
+    rpc.granularity === 'week' ? 'week' : rpc.granularity === 'day' ? 'day' : 'month';
+  const sortedRows = [...(rpc.rows || [])].sort((a, b) =>
+    a.period_key.localeCompare(b.period_key)
+  );
+
+  const rows: AnalyticsTrendPeriodRow[] = sortedRows.map((row, index) => {
+    const prev = index > 0 ? sortedRows[index - 1] : null;
+    const jobs = Number(row.jobs) || 0;
+    const revenue = Number(row.revenue) || 0;
+    const avgBill = Number(row.avg_bill) || (jobs > 0 ? revenue / jobs : 0);
+    return {
+      periodKey: row.period_key,
+      label: formatTrendPeriodLabel(row.period_key, granularity),
+      jobs,
+      revenue,
+      avgBill,
+      revenueChangePct: prev ? pctChange(revenue, Number(prev.revenue) || 0) : null,
+      jobsChangePct: prev ? pctChange(jobs, Number(prev.jobs) || 0) : null,
+    };
+  });
+
+  const firstRevenue = rows[0]?.revenue ?? 0;
+  const lastRevenue = rows[rows.length - 1]?.revenue ?? 0;
+  const overallTrendPct =
+    rows.length >= 2 ? pctChange(lastRevenue, firstRevenue) : null;
+
+  const mapExtreme = (
+    extreme: AnalyticsMonthlyTrendsRpc['best_period']
+  ): AnalyticsTrendSummary['bestPeriod'] => {
+    if (!extreme?.period_key) return null;
+    return {
+      periodKey: extreme.period_key,
+      label: formatTrendPeriodLabel(extreme.period_key, granularity),
+      revenue: Number(extreme.revenue) || 0,
+      jobs: Number(extreme.jobs) || 0,
+    };
+  };
+
+  return {
+    granularity,
+    totalJobs: Number(rpc.total_jobs) || 0,
+    totalRevenue: Number(rpc.total_revenue) || 0,
+    overallTrendPct,
+    bestPeriod: mapExtreme(rpc.best_period),
+    worstPeriod: mapExtreme(rpc.worst_period),
+    rows,
+  };
+}
+
+/** Roll up daily dashboard stats into monthly rows (RPC fallback, filters not supported). */
+export function rollupDailyStatsToMonthlyTrends(
+  daily: Array<{ date: string; jobs: number; revenue: number }>
+): AnalyticsTrendSummary {
+  const bucket = new Map<string, { jobs: number; revenue: number }>();
+  for (const day of daily) {
+    const key = (day.date || '').slice(0, 7);
+    if (!key || key.length < 7) continue;
+    const prev = bucket.get(key) ?? { jobs: 0, revenue: 0 };
+    bucket.set(key, {
+      jobs: prev.jobs + (Number(day.jobs) || 0),
+      revenue: prev.revenue + (Number(day.revenue) || 0),
+    });
+  }
+
+  const rpcLike: AnalyticsMonthlyTrendsRpc = {
+    granularity: 'month',
+    total_jobs: 0,
+    total_revenue: 0,
+    best_period: null,
+    worst_period: null,
+    rows: [...bucket.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([period_key, v]) => ({
+        period_key,
+        jobs: v.jobs,
+        revenue: v.revenue,
+        avg_bill: v.jobs > 0 ? v.revenue / v.jobs : 0,
+      })),
+  };
+
+  rpcLike.total_jobs = rpcLike.rows.reduce((s, r) => s + r.jobs, 0);
+  rpcLike.total_revenue = rpcLike.rows.reduce((s, r) => s + r.revenue, 0);
+
+  if (rpcLike.rows.length > 0) {
+    const best = [...rpcLike.rows].sort((a, b) => b.revenue - a.revenue)[0];
+    const worst = [...rpcLike.rows].sort((a, b) => a.revenue - b.revenue)[0];
+    rpcLike.best_period = {
+      period_key: best.period_key,
+      revenue: best.revenue,
+      jobs: best.jobs,
+    };
+    rpcLike.worst_period = {
+      period_key: worst.period_key,
+      revenue: worst.revenue,
+      jobs: worst.jobs,
+    };
+  }
+
+  return mapMonthlyTrendsFromRpc(rpcLike);
+}
+
+export type TrendTimelinePreset = '6m' | '12m' | '24m' | 'ytd' | 'custom';
+
+export function resolveTrendTimelineRange(
+  preset: TrendTimelinePreset,
+  customStart?: string,
+  customEnd?: string
+): { startDate: Date; endDate: Date } {
+  const endDate = new Date();
+  endDate.setHours(23, 59, 59, 999);
+  const startDate = new Date();
+
+  if (preset === 'custom' && customStart && customEnd) {
+    const start = new Date(customStart);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(customEnd);
+    end.setHours(23, 59, 59, 999);
+    return { startDate: start, endDate: end };
+  }
+
+  switch (preset) {
+    case 'ytd':
+      startDate.setMonth(0, 1);
+      break;
+    case '24m':
+      startDate.setMonth(startDate.getMonth() - 24);
+      break;
+    case '6m':
+      startDate.setMonth(startDate.getMonth() - 6);
+      break;
+    case '12m':
+    default:
+      startDate.setMonth(startDate.getMonth() - 12);
+      break;
+  }
+  startDate.setHours(0, 0, 0, 0);
+  return { startDate, endDate };
+}
+
+export function getShiftedTrendRange(
+  startDate: Date,
+  endDate: Date,
+  mode: 'previous_period' | 'previous_year'
+): { startDate: Date; endDate: Date } {
+  if (mode === 'previous_year') {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    start.setFullYear(start.getFullYear() - 1);
+    end.setFullYear(end.getFullYear() - 1);
+    return { startDate: start, endDate: end };
+  }
+  const ms = endDate.getTime() - startDate.getTime() + 1;
+  const end = new Date(startDate.getTime() - 1);
+  end.setHours(23, 59, 59, 999);
+  const start = new Date(end.getTime() - ms + 1);
+  start.setHours(0, 0, 0, 0);
+  return { startDate: start, endDate: end };
+}
+
+export function pickTrendGranularity(startDate: Date, endDate: Date): 'month' | 'week' | 'day' {
+  const days = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+  if (days <= 45) return 'day';
+  if (days <= 120) return 'week';
+  return 'month';
+}
+
+export function alignTrendSeriesByIndex(
+  primary: AnalyticsTrendPeriodRow[],
+  secondary: AnalyticsTrendPeriodRow[]
+): Array<{
+  indexLabel: string;
+  primaryLabel: string;
+  secondaryLabel: string;
+  revenue: number;
+  jobs: number;
+  compareRevenue: number;
+  compareJobs: number;
+}> {
+  const maxLen = Math.max(primary.length, secondary.length);
+  const rows: ReturnType<typeof alignTrendSeriesByIndex> = [];
+  for (let i = 0; i < maxLen; i++) {
+    const a = primary[i];
+    const b = secondary[i];
+    rows.push({
+      indexLabel: `P${i + 1}`,
+      primaryLabel: a?.label ?? '—',
+      secondaryLabel: b?.label ?? '—',
+      revenue: a?.revenue ?? 0,
+      jobs: a?.jobs ?? 0,
+      compareRevenue: b?.revenue ?? 0,
+      compareJobs: b?.jobs ?? 0,
+    });
+  }
+  return rows;
+}
+
+export function compareTrendMonths(
+  a: AnalyticsTrendPeriodRow | undefined,
+  b: AnalyticsTrendPeriodRow | undefined
+) {
+  const revenueA = a?.revenue ?? 0;
+  const revenueB = b?.revenue ?? 0;
+  const jobsA = a?.jobs ?? 0;
+  const jobsB = b?.jobs ?? 0;
+  const avgA = jobsA > 0 ? revenueA / jobsA : 0;
+  const avgB = jobsB > 0 ? revenueB / jobsB : 0;
+  return {
+    a,
+    b,
+    revenueDelta: revenueA - revenueB,
+    revenueDeltaPct: pctChange(revenueA, revenueB),
+    jobsDelta: jobsA - jobsB,
+    jobsDeltaPct: pctChange(jobsA, jobsB),
+    avgBillDelta: avgA - avgB,
+    avgBillDeltaPct: pctChange(avgA, avgB),
+  };
+}

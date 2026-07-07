@@ -64,6 +64,10 @@ import {
   ANALYTICS_LIST_SCROLL_ANCHOR_CLASS,
 } from '@/components/admin/AnalyticsListPagination';
 import { AnalyticsLoadSection } from '@/components/admin/AnalyticsLoadSection';
+import {
+  AnalyticsTrendGraph,
+  buildTrendFilterOptions,
+} from '@/components/admin/AnalyticsTrendGraph';
 
 interface AnalyticsData {
   totalJobs: number;
@@ -665,6 +669,7 @@ const Analytics = () => {
   const [brandPage, setBrandPage] = useState(1);
   const [brandPerPage, setBrandPerPage] = useState(10);
   const [brandsLoaded, setBrandsLoaded] = useState(false);
+  const [trendGraphLoaded, setTrendGraphLoaded] = useState(false);
 
   useEffect(() => {
     loadAnalytics();
@@ -2718,6 +2723,30 @@ const Analytics = () => {
           </CardContent>
         </Card>
       )}
+
+      {/* Business performance trend - load on demand */}
+      <AnalyticsLoadSection
+        title="Business performance trend"
+        description="Compare revenue and jobs across months, weeks, or custom timelines. Overlay previous period or year, compare any two months, or compare two date ranges."
+        icon={<TrendingUp />}
+        loadLabel="Open trend graph"
+        loadingLabel="Opening…"
+        onLoad={() => setTrendGraphLoaded(true)}
+        loaded={trendGraphLoaded}
+        keepActionVisible
+        emptyHint="Load the trend graph to explore monthly performance, compare any two months, or compare custom date ranges."
+      >
+        {analytics ? (
+          <AnalyticsTrendGraph
+            filterOptions={buildTrendFilterOptions(analytics)}
+            dailyStatsFallback={analytics.dailyStats}
+            initialRange={{
+              startDate: getDateRange().startDate,
+              endDate: getDateRange().endDate,
+            }}
+          />
+        ) : null}
+      </AnalyticsLoadSection>
 
       {/* Top locations - load on demand */}
       <AnalyticsLoadSection
