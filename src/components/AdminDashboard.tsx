@@ -14,6 +14,7 @@ import {
   sanitizeGoogleMapsInput,
 } from '@/lib/googleMapsLink';
 import { useResumeSync } from '@/hooks/useResumeSync';
+import { useAdminAlertSounds } from '@/hooks/useAdminAlertSounds';
 import { useClearAdminModalOnIOSBackground } from '@/hooks/useClearAdminModalOnIOSBackground';
 import AdminHeader from '@/components/AdminHeader';
 import { WebsiteBookingIntentBanner } from '@/components/admin/WebsiteBookingIntentBanner';
@@ -736,7 +737,8 @@ const AdminDashboard = () => {
   const [jobAddressDialogOpen, setJobAddressDialogOpen] = useState<{[jobId: string]: boolean}>({});
   const [lastCheckedJobId, setLastCheckedJobId] = useState<string | null>(null);
   const [isPollingEnabled, setIsPollingEnabled] = useState(true);
-  const audioContextRef = React.useRef<AudioContext | null>(null);
+  const { playNotificationSound, stopNotificationSound, playCompletedJobSound } =
+    useAdminAlertSounds();
   // Job IDs just completed by admin in this session - don't play sound for these (only for technician completions)
   const jobIdsCompletedByAdminRef = React.useRef<Set<string>>(new Set());
   
@@ -2749,216 +2751,7 @@ const AdminDashboard = () => {
     }
   }, [currentPage, statusFilter, loadFilteredJobs]);
 
-  // Initialize audio context on first user interaction (required for sound on hosted)
-  useEffect(() => {
-    const handleUserInteraction = async () => {
-      try {
-        const Ac = window.AudioContext || (window as any).webkitAudioContext;
-        if (!Ac) return;
-        if (audioContextRef.current?.state === 'closed') {
-          audioContextRef.current = null;
-        }
-        if (!audioContextRef.current) {
-          audioContextRef.current = new Ac();
-        }
-        const ctx = audioContextRef.current;
-        if (ctx.state === 'suspended') {
-          await ctx.resume();
-        }
-      } catch {
-        // ignore
-      }
-      document.removeEventListener('click', handleUserInteraction);
-      document.removeEventListener('keydown', handleUserInteraction);
-      document.removeEventListener('pointerdown', handleUserInteraction);
-      document.removeEventListener('touchstart', handleUserInteraction);
-    };
-    document.addEventListener('click', handleUserInteraction, { once: true });
-    document.addEventListener('keydown', handleUserInteraction, { once: true });
-    // Mobile/PWA: click may not fire reliably; prime on pointer/touch too.
-    document.addEventListener('pointerdown', handleUserInteraction, { once: true });
-    document.addEventListener('touchstart', handleUserInteraction, { once: true });
-    return () => {
-      document.removeEventListener('click', handleUserInteraction);
-      document.removeEventListener('keydown', handleUserInteraction);
-      document.removeEventListener('pointerdown', handleUserInteraction);
-      document.removeEventListener('touchstart', handleUserInteraction);
-    };
-  }, []);
-
-  // Track EVERY scheduled alert oscillator (not just the latest). Rapid intent
-  // events can start several plays; if we only kept the last one, earlier
-  // oscillators became orphans that beeped for their full duration with nothing
-  // able to stop them. A Set lets stop()/mute kill all of them at once.
-  type AlertNode = { ctx: AudioContext; osc: OscillatorNode; gain: GainNode };
-  const activeAlertsRef = React.useRef<Set<AlertNode>>(new Set());
-  // Monotonic token: bumped on every stop AND every play start. An in-flight
-  // (async) play compares its captured token after `await ctx.resume()`; if it
-  // no longer matches, a stop/newer play happened and it aborts.
-  const alertTokenRef = React.useRef(0);
-
-  // Pure teardown: silence + stop + disconnect ALL active alert oscillators.
-  const teardownActiveAlert = useCallback(() => {
-    const nodes = activeAlertsRef.current;
-    if (nodes.size === 0) return;
-    nodes.forEach((node) => {
-      const now = node.ctx.currentTime;
-      try {
-        node.gain.gain.cancelScheduledValues(now);
-      } catch {
-        /* ignore */
-      }
-      try {
-        // Fast ramp down to avoid clicks.
-        node.gain.gain.setValueAtTime(Math.max(node.gain.gain.value, 0.0001), now);
-        node.gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.03);
-      } catch {
-        /* ignore */
-      }
-      try {
-        node.osc.stop(now + 0.04);
-      } catch {
-        /* ignore */
-      }
-      try {
-        node.osc.disconnect();
-        node.gain.disconnect();
-      } catch {
-        /* ignore */
-      }
-    });
-    nodes.clear();
-  }, []);
-
-  const stopNotificationSound = useCallback(() => {
-    // Invalidate any in-flight play that is still awaiting ctx.resume().
-    alertTokenRef.current++;
-    teardownActiveAlert();
-  }, [teardownActiveAlert]);
-
-  // Play alert sound (used by live booking intent banner).
-  const playNotificationSound = useCallback(async () => {
-    // Claim this playback. If a stop (mute/dismiss) or a newer play happens while
-    // we await ctx.resume() below, the token changes and we abort before starting.
-    const myToken = ++alertTokenRef.current;
-    try {
-      const Ac = window.AudioContext || (window as any).webkitAudioContext;
-      if (!Ac) return;
-      if (audioContextRef.current?.state === 'closed') {
-        audioContextRef.current = null;
-      }
-      if (!audioContextRef.current) {
-        audioContextRef.current = new Ac();
-      }
-      const ctx = audioContextRef.current;
-      if (ctx.state === 'suspended') {
-        await ctx.resume();
-      }
-      if (ctx.state !== 'running') {
-        toast.info('Click anywhere on this page once to enable sound', { duration: 5000 });
-        return;
-      }
-      // Aborted while awaiting resume (e.g. user hit Mute/Done) — do not start.
-      if (myToken !== alertTokenRef.current) return;
-      // If a previous alert is still playing, stop it first (no token bump).
-      teardownActiveAlert();
-      const t = ctx.currentTime;
-      // Short attention beep (was 20s, which felt like it "wouldn't stop").
-      const durationSec = 4;
-      const beepDuration = 0.5;
-      const gap = 0.25;
-      const cycleSec = beepDuration + gap;
-      const beepCount = Math.max(1, Math.ceil((durationSec + gap) / cycleSec));
-      const endsAt = t + durationSec;
-
-      // Most efficient: single oscillator, scheduled gain envelope for beeps.
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.frequency.value = 800;
-      osc.type = 'sine';
-
-      // Default silence.
-      gain.gain.setValueAtTime(0.0001, t);
-
-      for (let i = 0; i < beepCount; i++) {
-        const start = t + i * cycleSec;
-        if (start >= endsAt) break;
-        const end = Math.min(start + beepDuration, endsAt);
-
-        // Match old per-beep envelope: 0.25 -> 0.01 exponential by beep end.
-        gain.gain.setValueAtTime(0.25, start);
-        gain.gain.exponentialRampToValueAtTime(0.01, end);
-
-        // Ensure the gap is silent (otherwise tail can bleed into next beep).
-        const after = Math.min(end + 0.001, endsAt);
-        gain.gain.setValueAtTime(0.0001, after);
-      }
-
-      // Safety: ensure we end silent.
-      gain.gain.setValueAtTime(0.0001, endsAt);
-
-      const entry: AlertNode = { ctx, osc, gain };
-      activeAlertsRef.current.add(entry);
-      // Self-remove from the active set once it finishes naturally, so the Set
-      // never grows unbounded and stop() only iterates what's truly playing.
-      osc.onended = () => {
-        activeAlertsRef.current.delete(entry);
-      };
-
-      osc.start(t);
-      osc.stop(endsAt + 0.05);
-    } catch (e) {
-      console.warn('Notification sound failed:', e);
-    }
-  }, [teardownActiveAlert]);
-
-  // Completed job sound: restore the older short multi-beep pattern.
-  const playCompletedJobSound = useCallback(async () => {
-    try {
-      const Ac = window.AudioContext || (window as any).webkitAudioContext;
-      if (!Ac) return;
-      if (audioContextRef.current?.state === 'closed') {
-        audioContextRef.current = null;
-      }
-      if (!audioContextRef.current) {
-        audioContextRef.current = new Ac();
-      }
-      const ctx = audioContextRef.current;
-      if (ctx.state === 'suspended') {
-        await ctx.resume();
-      }
-      if (ctx.state !== 'running') {
-        toast.info('Click anywhere on this page once to enable sound', { duration: 5000 });
-        return;
-      }
-
-      const t = ctx.currentTime;
-      const beepDuration = 0.25;
-      const gap = 0.25;
-
-      for (let i = 0; i < 5; i++) {
-        const start = t + i * (beepDuration + gap);
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.frequency.value = 800;
-        osc.type = 'sine';
-        gain.gain.setValueAtTime(0.25, start);
-        gain.gain.exponentialRampToValueAtTime(0.01, start + beepDuration);
-        osc.start(start);
-        osc.stop(start + beepDuration);
-      }
-    } catch (e) {
-      console.warn('Completed job sound failed:', e);
-    }
-  }, []);
-
-
-
-  // Single channel: new job INSERT (when polling enabled) + COMPLETED UPDATE (completion sound)
+  // Single channel: new job INSERTew job INSERT (when polling enabled) + COMPLETED UPDATE (completion sound)
   useEffect(() => {
     if (isInitialLoad) return;
 
