@@ -110,6 +110,10 @@ import {
 } from '@/lib/adminFollowUpSubmit';
 import { saveAdminJobAssignment } from '@/lib/adminSaveJobAssignment';
 import {
+  getDefaultAdminMoveToOngoingSchedule,
+  performAdminMoveToOngoing,
+} from '@/lib/adminMoveToOngoing';
+import {
   calculateAdminCustomDistanceBetweenStops,
   getAdminJobEtaForShareDialog,
   getAdminMeasureStopSelectOptions,
@@ -5078,297 +5082,46 @@ const AdminDashboard = () => {
     [jobs, customerJobs, statusFilter, currentPage, loadFilteredJobs]
   );
 
-    // Handle moving follow-up job to ongoing
   const handleMoveToOngoing = (job: Job) => {
-    // Set default values to current date and time
-    const now = new Date();
-    const today = getTodayLocalDate();
-    const currentHour = now.getHours();
-    
-    // Determine time slot based on current time
-    let defaultTimeSlot: 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM' = 'MORNING';
-    let defaultTime = '09:00'; // Default to 9 AM for MORNING
-    
-    if (currentHour >= 5 && currentHour < 12) {
-      defaultTimeSlot = 'MORNING';
-      defaultTime = '09:00';
-    } else if (currentHour >= 12 && currentHour < 17) {
-      defaultTimeSlot = 'AFTERNOON';
-      defaultTime = '14:00';
-    } else if (currentHour >= 17 && currentHour < 20) {
-      defaultTimeSlot = 'EVENING';
-      defaultTime = '17:00';
-    } else {
-      defaultTimeSlot = 'CUSTOM';
-      defaultTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    }
-    
-    setMoveToOngoingDate(today);
-    setMoveToOngoingTimeSlot(defaultTimeSlot);
-    setMoveToOngoingCustomTime(defaultTimeSlot === 'CUSTOM' ? defaultTime : '');
+    const { date, timeSlot, customTime } = getDefaultAdminMoveToOngoingSchedule();
+    setMoveToOngoingDate(date);
+    setMoveToOngoingTimeSlot(timeSlot);
+    setMoveToOngoingCustomTime(customTime);
     setSelectedJobForMoveToOngoing(job);
     openAdminModal('move-ongoing', { jobId: job.id });
   };
 
   const handleAssignFromFollowUp = (job: Job) => {
-    // Step 1: pick technician
     setFollowUpAssignFlow(true);
     handleAssignJob(job);
   };
 
-  // Actually perform the move to ongoing action with date and time
   const performMoveToOngoing = async () => {
-    if (!selectedJobForMoveToOngoing) return;
-
-    if (!moveToOngoingDate) {
-      toast.error('Please select a date', TOAST_VALIDATION);
-      return;
-    }
-
-    if (moveToOngoingTimeSlot === 'CUSTOM' && !moveToOngoingCustomTime) {
-      toast.error('Please choose a visit time (list or exact time)', TOAST_VALIDATION);
-      return;
-    }
-
-    try {
-      setIsUpdating(true);
-      
-      // Determine the time to use based on time slot
-      let timeToUse: string;
-      if (moveToOngoingTimeSlot === 'CUSTOM') {
-        timeToUse = moveToOngoingCustomTime;
-      } else if (moveToOngoingTimeSlot === 'MORNING') {
-        timeToUse = '09:00';
-      } else if (moveToOngoingTimeSlot === 'AFTERNOON') {
-        timeToUse = '14:00';
-      } else { // EVENING
-        timeToUse = '17:00';
-      }
-      
-      // Combine date and time into ISO string for assigned_date
-      const dateTimeString = `${moveToOngoingDate}T${timeToUse}:00`;
-      const assignedDateTime = new Date(dateTimeString).toISOString();
-
-      // Update job with new scheduled date, time slot, and status
-      // If CUSTOM is selected, convert to appropriate time slot and store custom time in requirements
-      let timeSlotToUse: 'MORNING' | 'AFTERNOON' | 'EVENING' = moveToOngoingTimeSlot as any;
-      let customTimeInRequirements: string | null = null;
-      
-      if (moveToOngoingTimeSlot === 'CUSTOM' && moveToOngoingCustomTime) {
-        // Parse the custom time to determine time slot
-        const [hours] = moveToOngoingCustomTime.split(':').map(Number);
-        if (hours < 13) {
-          timeSlotToUse = 'MORNING';
-        } else if (hours < 18) {
-          timeSlotToUse = 'AFTERNOON';
-        } else {
-          timeSlotToUse = 'EVENING';
-        }
-        customTimeInRequirements = moveToOngoingCustomTime;
-      }
-      
-      // Get current requirements to preserve existing data
-      const currentJob = jobs.find(j => j.id === selectedJobForMoveToOngoing.id);
-      let requirements: any[] = [];
-      try {
-        // Handle requirements - could be array, object, or JSON string
-        const reqData = currentJob?.requirements || (currentJob as any)?.requirements;
-        if (reqData) {
-          if (typeof reqData === 'string') {
-            requirements = JSON.parse(reqData);
-          } else if (Array.isArray(reqData)) {
-            requirements = [...reqData];
-          } else if (typeof reqData === 'object') {
-            requirements = [reqData];
-          }
-        }
-        // Ensure it's an array
-        if (!Array.isArray(requirements)) {
-          requirements = [];
-        }
-      } catch (e) {
-        console.error('Error parsing requirements:', e);
-        requirements = [];
-      }
-      
-      // Update or add custom_time in requirements if CUSTOM time slot
-      if (customTimeInRequirements) {
-        // Find or create a requirement object to store custom_time
-        let found = false;
-        for (let i = 0; i < requirements.length; i++) {
-          if (requirements[i] && typeof requirements[i] === 'object' && !Array.isArray(requirements[i])) {
-            requirements[i].custom_time = customTimeInRequirements;
-            found = true;
-            break;
-          }
-        }
-        if (!found) {
-          // If requirements is empty, create first object, otherwise append
-          if (requirements.length === 0) {
-            requirements.push({ custom_time: customTimeInRequirements });
-          } else {
-            // Try to add to first object, or create new one
-            const firstReq = requirements[0];
-            if (firstReq && typeof firstReq === 'object' && !Array.isArray(firstReq)) {
-              firstReq.custom_time = customTimeInRequirements;
-            } else {
-              requirements.push({ custom_time: customTimeInRequirements });
-            }
-          }
-        }
-      }
-      
-      const shouldAssign = assignAfterMoveToOngoing && !!followUpAssignTechnicianId;
-      const updateData: any = {
-        status: shouldAssign ? 'ASSIGNED' : 'PENDING',
-        scheduled_date: moveToOngoingDate, // Already in YYYY-MM-DD format from date input
-        scheduled_time_slot: timeSlotToUse,
-        // Clear follow-up related fields when moving to ongoing
-        follow_up_date: null,
-        follow_up_time: null,
-        follow_up_notes: null,
-        follow_up_scheduled_by: null,
-        follow_up_scheduled_at: null,
-        // Assign immediately if coming from follow-up "Assign" flow, else clear for normal move-to-ongoing
-        assigned_technician_id: shouldAssign ? followUpAssignTechnicianId : null,
-        assigned_date: shouldAssign ? new Date().toISOString() : null,
-        assigned_by: shouldAssign ? (user?.id || null) : null,
-        // Drop team so the next primary assignee is the only link (avoids stale team_members vs new assignee).
-        team_members: [],
-      };
-
-      // Only update requirements if we have custom time or if requirements exist
-      if (requirements.length > 0) {
-        updateData.requirements = requirements;
-      }
-
-      console.log('Admin updating job with data:', { 
-        id: selectedJobForMoveToOngoing.id, 
-        scheduled_date: moveToOngoingDate,
-        scheduled_time_slot: timeSlotToUse,
-        status: 'PENDING'
-      });
-
-      const { error, data: updatedJob } = await db.jobs.update(selectedJobForMoveToOngoing.id, updateData);
-
-      if (error) {
-        console.error('Error updating job:', error);
-        throw new Error(error.message);
-      }
-
-      console.log('Job updated successfully:', updatedJob);
-
-      if (shouldAssign) {
-        broadcastTechnicianJobListRefresh([followUpAssignTechnicianId]);
-      }
-
-      // Update local state
-      setJobs(prev => prev.map(j => {
-        if (j.id === selectedJobForMoveToOngoing.id) {
-          const updatedJob = { 
-            ...j, 
-            status: 'PENDING', 
-            assignedDate: null,
-            assignedTechnicianId: null,
-            assigned_technician_id: null,
-            team_members: [] as string[],
-            scheduledDate: moveToOngoingDate,
-            scheduledTimeSlot: timeSlotToUse,
-            requirements: requirements,
-            // Clear all followup-related fields
-            followUpDate: null,
-            follow_up_date: null,
-            followUpTime: null,
-            follow_up_time: null,
-            followUpNotes: null,
-            follow_up_notes: null,
-            followUpScheduledBy: null,
-            follow_up_scheduled_by: null,
-            followUpScheduledAt: null,
-            follow_up_scheduled_at: null
-          };
-          return updatedJob;
-        }
-        return j;
-      }));
-
-      // Update customer jobs state
-      setCustomerJobs(prev => {
-        const updated = { ...prev };
-        Object.keys(updated).forEach(customerId => {
-          updated[customerId] = updated[customerId].map(job => {
-            if (job.id === selectedJobForMoveToOngoing.id) {
-              return { 
-                ...job, 
-                status: 'PENDING', 
-                assignedDate: null,
-                assignedTechnicianId: null,
-                assigned_technician_id: null,
-                team_members: [] as string[],
-                scheduledDate: moveToOngoingDate,
-                scheduledTimeSlot: timeSlotToUse,
-                requirements: requirements,
-                // Clear all followup-related fields
-                followUpDate: null,
-                follow_up_date: null,
-                followUpTime: null,
-                follow_up_time: null,
-                followUpNotes: null,
-                follow_up_notes: null,
-                followUpScheduledBy: null,
-                follow_up_scheduled_by: null,
-                followUpScheduledAt: null,
-                follow_up_scheduled_at: null
-              };
-            }
-            return job;
-          });
-        });
-        return updated;
-      });
-
-      // Reload jobs to ensure everything is updated everywhere
-      await loadFilteredJobs(statusFilter, currentPage);
-
-      // Refresh the follow-up glow (red/yellow) so the stats card updates immediately
-      // now that this job is no longer a today/tomorrow follow-up.
-      db.jobs.getFollowUpForGlow().then(({ data }) => {
-        if (data) setAllFollowUpJobs(data as Job[]);
-      }).catch(() => {});
-
-      toast.success('Job moved to ongoing with updated schedule');
-
-      // If this was a follow-up "Assign" flow, assignment was applied as part of the move-to-ongoing update.
-      if (assignAfterMoveToOngoing) {
-        const assignedTechnician = technicians.find((t) => t.id === followUpAssignTechnicianId);
-        if (assignedTechnician) {
-          const notification = createJobAssignedNotification(
-            (selectedJobForMoveToOngoing as any).job_number || (selectedJobForMoveToOngoing as any).jobNumber || 'Job',
-            ((selectedJobForMoveToOngoing as any).customer as any)?.full_name || ((selectedJobForMoveToOngoing as any).customer as any)?.fullName || 'Customer',
-            assignedTechnician.fullName,
-            (selectedJobForMoveToOngoing as any).id,
-            assignedTechnician.id
-          );
-          await sendNotification(notification);
-        }
-        setAssignAfterMoveToOngoing(false);
-        setFollowUpAssignTechnicianId('');
-      }
-
-      // Close dialog and reset state
-      setMoveToOngoingDialogOpen(false);
-      setSelectedJobForMoveToOngoing(null);
-      setMoveToOngoingDate('');
-      setMoveToOngoingTimeSlot('MORNING');
-      setMoveToOngoingCustomTime('');
-    } catch (error) {
-      console.error('Error moving job to ongoing:', error);
-      toast.error('Failed to move job to ongoing');
-      setAssignAfterMoveToOngoing(false);
-      setFollowUpAssignTechnicianId('');
-    } finally {
-      setIsUpdating(false);
-    }
+    await performAdminMoveToOngoing({
+      selectedJob: selectedJobForMoveToOngoing,
+      moveToOngoingDate,
+      moveToOngoingTimeSlot,
+      moveToOngoingCustomTime,
+      assignAfterMoveToOngoing,
+      followUpAssignTechnicianId,
+      jobs,
+      statusFilter,
+      currentPage,
+      technicians,
+      userId: user?.id,
+      setIsUpdating,
+      setJobs,
+      setCustomerJobs,
+      setAllFollowUpJobs,
+      setAssignAfterMoveToOngoing,
+      setFollowUpAssignTechnicianId,
+      setMoveToOngoingDialogOpen,
+      setSelectedJobForMoveToOngoing,
+      setMoveToOngoingDate,
+      setMoveToOngoingTimeSlot,
+      setMoveToOngoingCustomTime,
+      loadFilteredJobs,
+    });
   };
 
   // Handle job denial
