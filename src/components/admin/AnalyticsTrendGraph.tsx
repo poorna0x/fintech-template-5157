@@ -1040,7 +1040,6 @@ export function AnalyticsTrendGraph({
               {insights ? (
                 <TrendInsightsPanel
                   insights={insights}
-                  summary={summary}
                   technicianComparison={technicianTeamComparison}
                   leadSources={effectiveLeadSources}
                   leadSourcesFromRequirements={leadSourceInsights.length > 0}
@@ -1063,31 +1062,46 @@ export function AnalyticsTrendGraph({
                     {toDateInputValue(activeRange.startDate)} → {toDateInputValue(activeRange.endDate)}
                   </p>
                 </div>
-                <div className="flex flex-wrap items-end gap-2 mb-3">
-                  <div className="space-y-1">
-                    <Label className="text-[11px] text-muted-foreground">Monthly target (L)</Label>
-                    <div className="flex items-center gap-1.5">
-                      <Input
-                        type="number"
-                        inputMode="decimal"
-                        min={MIN_MONTHLY_TARGET_LAKHS}
-                        step={0.5}
-                        placeholder=""
-                        value={monthlyTargetLakhs}
-                        onChange={(e) => setMonthlyTargetLakhs(e.target.value)}
-                        onBlur={handleMonthlyTargetBlur}
-                        className="h-8 w-[88px] text-xs tabular-nums"
-                        aria-label="Monthly revenue target in lakhs"
-                      />
-                      <span className="text-[11px] text-muted-foreground pb-0.5">L · min {MIN_MONTHLY_TARGET_LAKHS}</span>
+                <div className="mb-3 rounded-lg border bg-muted/25 px-3 py-2.5 sm:px-4">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="monthly-target-lakhs" className="text-[11px] text-muted-foreground">
+                        Monthly target
+                      </Label>
+                      <div className="flex h-8 items-stretch overflow-hidden rounded-md border bg-background shadow-sm">
+                          <Input
+                            id="monthly-target-lakhs"
+                            type="number"
+                            inputMode="decimal"
+                            min={MIN_MONTHLY_TARGET_LAKHS}
+                            step={0.5}
+                            value={monthlyTargetLakhs}
+                            onChange={(e) => setMonthlyTargetLakhs(e.target.value)}
+                            onBlur={handleMonthlyTargetBlur}
+                            className="h-8 w-12 border-0 px-2 text-xs tabular-nums shadow-none focus-visible:ring-0"
+                            aria-label="Monthly revenue target in lakhs"
+                          />
+                          <span className="flex min-w-[3.25rem] items-center justify-center border-l bg-muted/50 px-2 text-[11px] font-medium text-muted-foreground">
+                            Lakh
+                          </span>
+                        </div>
                     </div>
+                    {proratedRevenueTarget > 0 ? (
+                      <div className="sm:text-right">
+                        <p className="text-[10px] text-muted-foreground">Green line on chart</p>
+                        <p className="text-sm font-semibold tabular-nums text-emerald-700">
+                          {formatLakhs(inrToLakhs(proratedRevenueTarget))} L
+                          <span className="ml-1 text-xs font-normal text-muted-foreground">
+                            {effectiveGranularity === 'day'
+                              ? 'per day'
+                              : effectiveGranularity === 'week'
+                                ? 'per week'
+                                : 'per month'}
+                          </span>
+                        </p>
+                      </div>
+                    ) : null}
                   </div>
-                  {proratedRevenueTarget > 0 ? (
-                    <p className="text-[11px] text-muted-foreground pb-1">
-                      Target line: {formatLakhs(inrToLakhs(proratedRevenueTarget))} L
-                      {effectiveGranularity === 'day' ? ' / day' : effectiveGranularity === 'week' ? ' / week' : ' / month'}
-                    </p>
-                  ) : null}
                 </div>
                 <ChartContainer config={chartConfig} className="aspect-[16/10] sm:aspect-[2.2/1] w-full min-h-[280px] cursor-pointer">
                   <ComposedChart data={chartData} margin={{ top: 12, right: 12, left: 0, bottom: 0 }} onClick={handleChartClick}>
@@ -1466,13 +1480,11 @@ function TechnicianTeamComparisonCard({
 
 function TrendInsightsPanel({
   insights,
-  summary,
   technicianComparison,
   leadSources,
   leadSourcesFromRequirements,
 }: {
   insights: AnalyticsTrendInsights;
-  summary: AnalyticsTrendSummary | null;
   technicianComparison: {
     techName: string;
     techJobs: number;
@@ -1503,16 +1515,6 @@ function TrendInsightsPanel({
       <div className="p-4 space-y-4">
         {technicianComparison ? (
           <TechnicianTeamComparisonCard comparison={technicianComparison} />
-        ) : null}
-
-        {summary?.overallMarginPct != null ? (
-          <div className="rounded-xl border px-3.5 py-3 bg-violet-50/40">
-            <p className="text-[11px] font-medium text-muted-foreground">Overall margin</p>
-            <p className="text-lg font-bold text-violet-700 tabular-nums">
-              {summary.overallMarginPct.toFixed(1)}%
-            </p>
-            <p className="text-[11px] text-muted-foreground">Across selected period (revenue − cost)</p>
-          </div>
         ) : null}
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
