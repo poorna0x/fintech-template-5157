@@ -105,6 +105,11 @@ import {
 } from '@/lib/adminDashboardSchedulers';
 import { updateAdminJobStatus } from '@/lib/adminJobStatusUpdate';
 import {
+  submitAdminFollowUp,
+  type AdminFollowUpSubmitData,
+} from '@/lib/adminFollowUpSubmit';
+import { saveAdminJobAssignment } from '@/lib/adminSaveJobAssignment';
+import {
   calculateAdminCustomDistanceBetweenStops,
   getAdminJobEtaForShareDialog,
   getAdminMeasureStopSelectOptions,
@@ -154,7 +159,7 @@ const TaxInvoiceModal = lazyDefault(() => import('./TaxInvoiceModal'));
 // used on demand. Code-split it so the main admin bundle stays lean.
 import { toDateOnly } from '@/lib/amcAutoJobSchedule';
 import ImageUpload from '@/components/ImageUpload';
-import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, levenshteinDistance, calculateSimilarity, extractPhotoUrls, normalizePhotoUrl, parseJobRequirements, getFormattedTimeSlot, findLeadSource, getLeadSourceFromJob, getJobCustomTimeLabel, normalizeLeadType, normalizeServiceSubType, completedJobMatchesDashboardClientFilters, isOfficeCompletedJob, jobCompletionLocalDateIso, ZERO_COMMISSION_EMPLOYEE_ID, jobsMatchOngoingTab } from '@/lib/adminUtils';
+import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, levenshteinDistance, calculateSimilarity, extractPhotoUrls, normalizePhotoUrl, parseJobRequirements, getFormattedTimeSlot, findLeadSource, getLeadSourceFromJob, getJobCustomTimeLabel, normalizeLeadType, normalizeServiceSubType, completedJobMatchesDashboardClientFilters, isOfficeCompletedJob, jobCompletionLocalDateIso, ZERO_COMMISSION_EMPLOYEE_ID, jobsMatchOngoingTab } from '@/lib/adminUtils';
 import { getLocationLinkFromObject } from '@/lib/jobLocationHelpers';
 import { applyAutoMoveToOngoingOnDateFlag } from '@/lib/followUpToOngoing';
 import { enrichJobsWithAfterPhotosIfNeeded } from '@/lib/jobReportPhotos';
@@ -362,38 +367,7 @@ const AdminDashboard = () => {
   const [currentView, setCurrentView] = useState<AdminDashboardView>(() =>
     readAdminTabViewFromSearch(location.search)
   );
-  const [editFormData, setEditFormData] = useState({
-    full_name: '',
-    phone: '',
-    alternate_phone: '',
-    email: '',
-    service_types: [] as string[],
-    equipment: {} as {[serviceType: string]: {brand: string, model: string}},
-    behavior: '',
-    native_language: '',
-    status: '',
-    notes: '',
-    google_location: '',
-    visible_address: '',
-    custom_time: '',
-    has_prefilter: null as boolean | null,
-    address: {
-      street: '',
-      area: '',
-      city: '',
-      state: '',
-      pincode: ''
-    },
-    location: {
-      latitude: 0,
-      longitude: 0,
-      formattedAddress: ''
-    },
-    service_cost: 0,
-    cost_agreed: false
-  });
   const [isUpdating, setIsUpdating] = useState(false);
-  const [visibleAddressSuggestions, setVisibleAddressSuggestions] = useState(false);
   const [addressDialogOpen, setAddressDialogOpen] = useState<{[customerId: string]: boolean}>({});
   const [addressLocationVariant, setAddressLocationVariant] = useState<
     Record<string, CustomerLocationVariant>
@@ -403,13 +377,6 @@ const AdminDashboard = () => {
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [customerDistances, setCustomerDistances] = useState<Record<string, { distance: string; duration: string; isCalculating: boolean }>>({});
   const [isGettingLocation, setIsGettingLocation] = useState(false);
-  
-  // Auto-save refs
-  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const lastSavedFormDataRef = useRef<string>('');
-  const hasUnsavedChangesRef = useRef(false);
-  const locationManuallyEditedRef = useRef(false); // Track if user manually edited location field
-  const previousAddressRef = useRef<string>(''); // Track previous address to detect changes
   
   // Ref to store calculateDistanceAndTime function to avoid circular dependency
   const calculateDistanceAndTimeRef = useRef<((origin: { lat: number; lng: number }, destination: { lat: number; lng: number }, customerId: string) => Promise<void>) | null>(null);
@@ -684,26 +651,6 @@ const AdminDashboard = () => {
       setCurrentView('dashboard');
     }
   }, [isManager, currentView]);
-
-  // bangaloreAreas imported from @/lib/adminUtils
-
-  // Extract location keywords from complete address and match with location array (for edit form)
-  const extractLocationFromAddress = useMemo(() => {
-    const completeAddress = editFormData?.address?.street || '';
-    return extractLocationFromAddressString(completeAddress);
-  }, [editFormData?.address?.street]);
-
-  const filteredAddressSuggestions = useMemo(() => {
-    if (!editFormData?.visible_address || editFormData.visible_address.trim().length === 0) {
-      return [];
-    }
-    const searchTerm = editFormData.visible_address.toLowerCase();
-    // Remove duplicates and filter
-    const uniqueAreas = [...new Set(bangaloreAreas)];
-    return uniqueAreas.filter(area => 
-      area.toLowerCase().includes(searchTerm)
-    ).slice(0, 12); // Limit to 12 suggestions
-  }, [editFormData?.visible_address]);
 
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [newJobDialogOpen, setNewJobDialogOpen] = useState(false);
@@ -2595,390 +2542,6 @@ const AdminDashboard = () => {
     setEditingCustomer(customer);
     openAdminModal('edit-customer', { customerId: customer.id });
   }, [openAdminModal]);
-
-  const handleUpdateCustomer = async () => {
-    if (!editingCustomer) return;
-
-    setIsUpdating(true);
-    try {
-      // Update address and location with Google location if provided
-      // Store complete address in street field, keep other fields for compatibility
-      const updatedAddress = {
-        street: editFormData.address.street, // Complete address
-        area: editFormData.address.area,
-        city: editFormData.address.city,
-        state: editFormData.address.state,
-        pincode: editFormData.address.pincode
-      };
-
-      // Save location - include googleLocation if provided
-      const updatedLocation: any = {
-        latitude: editFormData.location.latitude || 0,
-        longitude: editFormData.location.longitude || 0,
-        formattedAddress: editFormData.address.street || editFormData.location.formattedAddress || '',
-      };
-      
-      // Always include googleLocation if it exists in editFormData or previous location
-      if (editFormData.google_location && editFormData.google_location.trim()) {
-        updatedLocation.googleLocation = editFormData.google_location;
-      } else if ((editFormData.location as any)?.googleLocation) {
-        // Preserve existing googleLocation if not being updated
-        updatedLocation.googleLocation = (editFormData.location as any).googleLocation;
-      }
-
-      // Prepare brand and model values - ensure we have equipment data
-      console.log('🔍 Equipment data before processing:', {
-        equipment: editFormData.equipment,
-        equipmentKeys: Object.keys(editFormData.equipment || {}),
-        equipmentValues: Object.values(editFormData.equipment || {}),
-        serviceTypes: editFormData.service_types
-      });
-
-      // Build brand and model arrays based on service types order
-      const brands: string[] = [];
-      const models: string[] = [];
-      
-      editFormData.service_types.forEach((serviceType: string) => {
-        const equipment = editFormData.equipment[serviceType];
-        if (equipment) {
-          const brand = equipment.brand?.trim() || '';
-          const model = equipment.model?.trim() || '';
-          brands.push(brand);
-          models.push(model);
-          console.log(`  ${serviceType}: brand="${brand}", model="${model}"`);
-        } else {
-          brands.push('');
-          models.push('');
-          console.log(`  ${serviceType}: no equipment data`);
-        }
-      });
-
-      const brandValue = brands.join(', ');
-      const modelValue = models.join(', ');
-      
-      console.log('📦 Final brand/model values:', {
-        customerId: editingCustomer.id,
-        brandValue,
-        modelValue,
-        brandLength: brandValue.length,
-        modelLength: modelValue.length,
-        brandsArray: brands,
-        modelsArray: models
-      });
-
-      const updateData = {
-        full_name: editFormData.full_name,
-        phone: editFormData.phone,
-        alternate_phone: editFormData.alternate_phone,
-        email: editFormData.email,
-        service_type: mapServiceTypesToDbValue(editFormData.service_types),
-        brand: brandValue,
-        model: modelValue,
-        preferred_language: (editFormData.native_language || 'ENGLISH') as 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU',
-        preferred_time_slot: (editingCustomer as any).preferred_time_slot || editingCustomer.preferredTimeSlot || 'MORNING',
-        status: editFormData.status as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
-        notes: editFormData.notes,
-        visible_address: editFormData.visible_address ? editFormData.visible_address.trim() : '',
-        custom_time: editFormData.custom_time || null,
-        has_prefilter: editFormData.has_prefilter,
-        address: updatedAddress,
-        location: updatedLocation
-      };
-
-      console.log('Update payload:', updateData);
-      console.log('🔍 Prefilter being saved:', {
-        fromFormData: editFormData.has_prefilter,
-        inUpdatePayload: updateData.has_prefilter,
-        type: typeof editFormData.has_prefilter
-      });
-      console.log('📍 visible_address being saved:', {
-        fromFormData: editFormData.visible_address,
-        inUpdatePayload: updateData.visible_address,
-        manuallyEdited: locationManuallyEditedRef.current
-      });
-
-      const { data: updatedCustomerFromDb, error } = await db.customers.update(editingCustomer.id, updateData);
-
-      if (error) {
-        console.error('Database update error:', error);
-        throw new Error(error.message);
-      }
-      
-      console.log('✅ Updated customer from DB:', updatedCustomerFromDb);
-      console.log('🔍 Prefilter in DB response:', {
-        has_prefilter: updatedCustomerFromDb?.has_prefilter,
-        type: typeof updatedCustomerFromDb?.has_prefilter
-      });
-      console.log('📍 visible_address after save:', updatedCustomerFromDb?.visible_address);
-      console.log('📋 Brand/Model in DB response:', {
-        brand: updatedCustomerFromDb?.brand,
-        model: updatedCustomerFromDb?.model,
-        brandType: typeof updatedCustomerFromDb?.brand,
-        modelType: typeof updatedCustomerFromDb?.model
-      });
-
-      // Update local state using the data returned from DB update (ensures location.googleLocation is included)
-      if (updatedCustomerFromDb) {
-        const transformedCustomer = transformCustomerData(updatedCustomerFromDb);
-        console.log('🔄 Transformed customer:', {
-          brand: transformedCustomer.brand,
-          model: transformedCustomer.model
-        });
-        setCustomers(prevCustomers => 
-          prevCustomers.map(c => c.id === editingCustomer.id ? transformedCustomer : c)
-        );
-        patchCustomerContactOnJobs(editingCustomer.id, {
-          email: transformedCustomer.email ?? null,
-          phone: transformedCustomer.phone ?? null,
-          alternate_phone:
-            (transformedCustomer as any).alternate_phone ??
-            transformedCustomer.alternatePhone ??
-            null,
-          full_name:
-            (transformedCustomer as any).full_name ?? transformedCustomer.fullName ?? null,
-        });
-      } else {
-        // Fallback: update local state manually if DB doesn't return updated data
-        setCustomers(prevCustomers => {
-          return prevCustomers.map(c => {
-            if (c.id === editingCustomer.id) {
-              // Create a completely new location object with googleLocation
-              const newLocation = {
-                latitude: updatedLocation.latitude,
-                longitude: updatedLocation.longitude,
-                formattedAddress: updatedLocation.formattedAddress,
-                googlePlaceId: c.location?.googlePlaceId,
-                googleLocation: updatedLocation.googleLocation || null
-              };
-              
-              // Create a new customer object with updated location
-              return { 
-                ...c, 
-                full_name: editFormData.full_name,
-                alternatePhone: editFormData.alternate_phone,
-                service_type: mapServiceTypesToDbValue(editFormData.service_types),
-                brand: Object.values(editFormData.equipment).map(eq => eq.brand).join(', '),
-                model: Object.values(editFormData.equipment).map(eq => eq.model).join(', '),
-                behavior: editFormData.behavior,
-                preferredLanguage: (editFormData.native_language || 'ENGLISH') as 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU',
-                status: editFormData.status as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
-                notes: editFormData.notes,
-                address: updatedAddress,
-                location: newLocation as any
-              };
-            }
-            return c;
-          });
-        });
-      }
-
-      // Reload brands/models from DB after update
-      await loadBrandsAndModels();
-      
-      // Update last saved form data and clear auto-save timer
-      lastSavedFormDataRef.current = JSON.stringify(editFormData);
-      hasUnsavedChangesRef.current = false;
-      if (autoSaveTimerRef.current) {
-        clearTimeout(autoSaveTimerRef.current);
-        autoSaveTimerRef.current = null;
-      }
-      
-      toast.success('Customer updated successfully!');
-      setEditDialogOpen(false);
-      setEditingCustomer(null);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      console.error('Error updating customer:', error);
-      toast.error(`Failed to update customer: ${errorMessage}`);
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
-  const handleEditFormChange = (field: string, value: string | string[] | boolean | null) => {
-    setEditFormData(prev => ({
-      ...prev,
-      [field]: value
-    }));
-  };
-
-  // Manual function to extract location from address (only called when user clicks "Fetch Location")
-  const handleFetchLocationFromAddress = () => {
-    const address = editFormData?.address?.street || '';
-    const currentAddress = address.trim();
-    const currentLocation = editFormData?.visible_address || '';
-    
-    if (!currentAddress || currentAddress.length === 0) {
-      toast.error('Please enter a complete address first');
-      return;
-    }
-    
-    // Only extract if location is empty - don't overwrite manual changes
-    if (currentLocation && currentLocation.trim().length > 0) {
-      toast.info('Location already set. Clear it first if you want to fetch a new one.');
-      return;
-    }
-    
-    const extracted = extractLocationFromAddressString(currentAddress);
-    if (extracted) {
-      handleEditFormChange('visible_address', extracted);
-      locationManuallyEditedRef.current = false; // Reset flag since we're extracting
-      toast.success(`Location extracted: ${extracted}`);
-      console.log('✅ Extracted location from address:', extracted, 'from:', currentAddress);
-    } else {
-      toast.warning('Could not extract location from address. Please enter manually.');
-      console.log('⚠️ Could not extract location from address:', currentAddress);
-    }
-  };
-
-  const handleEditServiceTypeToggle = (serviceType: string) => {
-    setEditFormData(prev => {
-      const newServiceTypes = prev.service_types.includes(serviceType)
-        ? prev.service_types.filter(type => type !== serviceType)
-        : [...prev.service_types, serviceType];
-      
-      // Initialize equipment for new service types
-      const newEquipment = { ...prev.equipment };
-      if (!prev.service_types.includes(serviceType)) {
-        newEquipment[serviceType] = { brand: '', model: '' };
-      } else {
-        // Remove equipment data when service type is deselected
-        delete newEquipment[serviceType];
-      }
-      
-      return {
-        ...prev,
-        service_types: newServiceTypes,
-        equipment: newEquipment
-      };
-    });
-  };
-
-  const handleEditEquipmentChange = (serviceType: string, field: 'brand' | 'model', value: string, showSuggestions: boolean = true) => {
-    console.log(`🔄 Equipment change: ${serviceType}.${field} = "${value}"`);
-    setEditFormData(prev => {
-      const updatedEquipment = {
-        ...prev.equipment,
-        [serviceType]: {
-          ...(prev.equipment[serviceType] || { brand: '', model: '' }),
-          [field]: value
-        }
-      };
-      console.log(`  Updated equipment for ${serviceType}:`, updatedEquipment[serviceType]);
-      return {
-        ...prev,
-        equipment: updatedEquipment
-      };
-    });
-    
-    // Show suggestions if field is brand or model and showSuggestions is true
-    if (showSuggestions) {
-      if (field === 'brand') {
-        handleEditBrandInput(serviceType, value);
-      } else if (field === 'model') {
-        handleEditModelInput(serviceType, value);
-      }
-    }
-  };
-
-  // Handle brand input with suggestions for edit customer form
-  const handleEditBrandInput = (serviceType: string, value: string) => {
-    if (value.trim() === '') {
-      setShowBrandSuggestions(false);
-      return;
-    }
-    
-    const searchTerm = value.toLowerCase();
-    
-    // Combine local brands and DB brands
-    const allLocalBrands: string[] = [];
-    Object.values(brandData).forEach(brands => {
-      allLocalBrands.push(...brands);
-    });
-    
-    const allBrands = [...new Set([...allLocalBrands, ...dbBrands])];
-    
-    // Filter brands that match the search term
-    const filtered = allBrands.filter(brand => 
-      brand.toLowerCase().includes(searchTerm) && 
-      brand.toLowerCase() !== searchTerm.toLowerCase()
-    ).slice(0, 10);
-    
-    setBrandSuggestions(filtered);
-    setShowBrandSuggestions(filtered.length > 0);
-  };
-
-  // Handle model input with suggestions for edit customer form
-  const handleEditModelInput = (serviceType: string, value: string) => {
-    if (value.trim() === '') {
-      setShowModelSuggestions(false);
-      return;
-    }
-    
-    const searchTerm = value.toLowerCase();
-    const brand = editFormData.equipment[serviceType]?.brand || '';
-    
-    // Get models from local data
-    const localModels: string[] = [];
-    if (serviceType && brand && modelData[serviceType as keyof typeof modelData]) {
-      const brandKey = Object.keys(modelData[serviceType as keyof typeof modelData]).find(key => 
-        key.toLowerCase() === brand.toLowerCase()
-      );
-      if (brandKey && modelData[serviceType as keyof typeof modelData][brandKey as keyof typeof modelData[typeof serviceType]]) {
-        localModels.push(...(modelData[serviceType as keyof typeof modelData][brandKey as keyof typeof modelData[typeof serviceType]] || []));
-      }
-    }
-    
-    // Combine local models and DB models
-    const allModels = [...new Set([...localModels, ...dbModels])];
-    
-    // Filter models that match the search term
-    const filtered = allModels.filter(model => 
-      model.toLowerCase().includes(searchTerm) && 
-      model.toLowerCase() !== searchTerm.toLowerCase()
-    ).slice(0, 10);
-    
-    setModelSuggestions(filtered);
-    setShowModelSuggestions(filtered.length > 0);
-  };
-
-  // Select brand from suggestions for edit customer form
-  const selectEditBrand = (serviceType: string, brand: string) => {
-    // If "Not specified" is selected, clear the field
-    if (brand === 'Not specified' || brand.toLowerCase() === 'not specified') {
-      handleEditEquipmentChange(serviceType, 'brand', '', false);
-    } else {
-      handleEditEquipmentChange(serviceType, 'brand', brand, false);
-    }
-    setShowBrandSuggestions(false);
-  };
-
-  // Select model from suggestions for edit customer form
-  const selectEditModel = (serviceType: string, model: string) => {
-    // If "Not specified" is selected, clear the field
-    if (model === 'Not specified' || model.toLowerCase() === 'not specified') {
-      handleEditEquipmentChange(serviceType, 'model', '', false);
-    } else {
-      handleEditEquipmentChange(serviceType, 'model', model, false);
-    }
-    setShowModelSuggestions(false);
-  };
-
-  // Function to geocode address and update coordinates
-  // Function to handle address field changes
-  const handleAddressFieldChange = (field: string, value: string) => {
-    setEditFormData(prev => ({
-      ...prev,
-      address: {
-        ...prev.address,
-        [field]: value
-      }
-    }));
-    
-    // If Complete Address (street) changed, try to extract location immediately
-    // Note: Location extraction is now handled in the useEffect that watches address.street
-    // This ensures it only extracts when address actually changes, not on every keystroke
-  };
 
   const calculateDistanceAndTime = useCallback(
     (
@@ -5102,101 +4665,35 @@ const AdminDashboard = () => {
   };
 
   const handleSaveJobAssignment = async () => {
-    if (!jobToAssign || !selectedTechnicianId) return;
-
-    // Save scroll position so we can restore after refresh (page stays where user was)
-    const scrollY = window.scrollY;
-
-    try {
-      // Follow-up flow: pick technician first, then ask date/time (move to ongoing), then auto-assign.
-      if (followUpAssignFlow) {
-        setFollowUpAssignFlow(false);
-        setFollowUpAssignTechnicianId(selectedTechnicianId);
-        setAssignJobDialogOpen(false);
-        setAssignAfterMoveToOngoing(true);
-        handleMoveToOngoing(jobToAssign);
-        return;
-      }
-
-      const { error } = await db.jobs.update(jobToAssign.id, {
-        assigned_technician_id: selectedTechnicianId,
-        status: 'ASSIGNED',
-        assigned_date: new Date().toISOString()
-      } as any);
-
-      if (error) throw error;
-
-      broadcastTechnicianJobListRefresh([selectedTechnicianId]);
-
-      // Send notification to technician
-      const assignedTechnician = technicians.find(t => t.id === selectedTechnicianId);
-      if (assignedTechnician) {
-        const notification = createJobAssignedNotification(
-          (jobToAssign as any).job_number || jobToAssign.jobNumber || 'Job',
-          (jobToAssign.customer as any)?.full_name || (jobToAssign.customer as any)?.fullName || 'Customer',
-          assignedTechnician.fullName,
-          jobToAssign.id,
-          assignedTechnician.id
-        );
-        await sendNotification(notification);
-      } else {
-        toast.success(`Job assigned to ${assignedTechnician?.fullName || 'technician'} for ${(jobToAssign.customer as any)?.full_name || (jobToAssign.customer as any)?.fullName || 'customer'}`);
-      }
-
-      setAssignJobDialogOpen(false);
-
-      // Show WhatsApp dialog
-      if (assignedTechnician && assignedTechnician.phone) {
-        scrollPositionBeforeWhatsAppRef.current = scrollY;
-        const serviceSubType = (jobToAssign as any).service_sub_type || jobToAssign.serviceSubType || 'Service';
-        let customerForWhatsApp = (jobToAssign.customer as any) || {};
-        const customerId = customerForWhatsApp?.id || (jobToAssign as any).customer_id;
-        if (customerId) {
-          const { data: freshCustomer } = await db.customers.getById(String(customerId));
-          if (freshCustomer) customerForWhatsApp = freshCustomer;
-        }
-        const customerName = customerForWhatsApp?.full_name || customerForWhatsApp?.fullName || 'Customer';
-        const addr = customerForWhatsApp?.address || (jobToAssign as any).service_address;
-        const vis = customerForWhatsApp?.visible_address;
-        const locationText = (vis && String(vis).trim()) ? String(vis).trim() : (addr?.area || addr?.city || '');
-        const leadSource = getLeadSourceFromJob(jobToAssign as Record<string, unknown>);
-        const customTime = getJobCustomTimeLabel(jobToAssign as Record<string, unknown>) || '';
-        setWhatsappTechnician({
-          name: assignedTechnician.fullName,
-          phone: assignedTechnician.phone
-        });
-        setWhatsappServiceSubType(serviceSubType);
-        setWhatsappCustomerName(customerName);
-        setWhatsappLocation(locationText || '');
-        setWhatsappLeadSource(leadSource);
-        setWhatsappCustomTime(customTime);
-        setWhatsappDialogOpen(true);
-        openAdminWhatsappModal();
-      } else {
-        closeAdminModal();
-      }
-      
-      setJobToAssign(null);
-      setSelectedTechnicianId('');
-
-      // Defer refetch so dialog close/layout flush first; silent load avoids global spinner.
-      queueMicrotask(() => {
-        void loadFilteredJobs(statusFilter, currentPage, { silent: true }).finally(() => {
-          requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-              window.scrollTo(0, scrollY);
-            });
-          });
-        });
-      });
-    } catch (error) {
-      toast.error('Failed to assign job');
-      setFollowUpAssignFlow(false);
-      setFollowUpAssignTechnicianId('');
-    }
+    await saveAdminJobAssignment({
+      jobToAssign,
+      selectedTechnicianId,
+      followUpAssignFlow,
+      statusFilter,
+      currentPage,
+      technicians,
+      setFollowUpAssignFlow,
+      setFollowUpAssignTechnicianId,
+      setAssignJobDialogOpen,
+      setAssignAfterMoveToOngoing,
+      handleMoveToOngoing,
+      scrollPositionBeforeWhatsAppRef,
+      setWhatsappTechnician,
+      setWhatsappServiceSubType,
+      setWhatsappCustomerName,
+      setWhatsappLocation,
+      setWhatsappLeadSource,
+      setWhatsappCustomTime,
+      setWhatsappDialogOpen,
+      openAdminWhatsappModal,
+      closeAdminModal,
+      setJobToAssign,
+      setSelectedTechnicianId,
+      loadFilteredJobs,
+    });
   };
 
-  const handleAddTeam = async (job: Job) => {
+    const handleAddTeam = async (job: Job) => {
     setJobForTeam(job);
     setSelectedTeamMemberId('');
     setAddTeamDialogOpen(true);
@@ -5566,156 +5063,22 @@ const AdminDashboard = () => {
     openAdminModal('follow-up', { jobId: job.id });
   };
 
-  // Handle follow-up submission
-  const handleFollowUpSubmit = async (jobId: string, followUpData: {
-    followUpDate: string;
-    followUpReason: string;
-    parentFollowUpId?: string;
-    rescheduleFollowUpId?: string;
-    autoMoveToOngoingOnDate?: boolean;
-  }) => {
-    try {
-      // If rescheduling, check if the old follow-up is a root (no parent) before deleting
-      let wasRootFollowUp = false;
-      if (followUpData.rescheduleFollowUpId) {
-        // Get the old follow-up to check if it's a root
-        const { data: oldFollowUp } = await supabase
-          .from('follow_ups')
-          .select('parent_follow_up_id')
-          .eq('id', followUpData.rescheduleFollowUpId)
-          .single();
-        
-        wasRootFollowUp = !oldFollowUp?.parent_follow_up_id;
-        
-        const { error: deleteError } = await supabase
-          .from('follow_ups')
-          .delete()
-          .eq('id', followUpData.rescheduleFollowUpId);
+  const handleFollowUpSubmit = useCallback(
+    (jobId: string, followUpData: AdminFollowUpSubmitData) =>
+      submitAdminFollowUp(jobId, followUpData, {
+        jobs,
+        customerJobs,
+        statusFilter,
+        currentPage,
+        setJobs,
+        setCustomerJobs,
+        setAllFollowUpJobs,
+        loadFilteredJobs,
+      }),
+    [jobs, customerJobs, statusFilter, currentPage, loadFilteredJobs]
+  );
 
-      if (deleteError) {
-        if (process.env.NODE_ENV === 'development') {
-          console.error('Delete follow-up error details:', deleteError);
-        }
-        // Provide more helpful error message for 401 errors
-        if (deleteError.code === 'PGRST301' || deleteError.message?.includes('401') || deleteError.message?.includes('unauthorized')) {
-          throw new Error('Authentication failed. Please check your login status and try again.');
-        }
-        throw new Error(deleteError.message || 'Failed to delete follow-up record');
-      }
-      }
-
-      // Create follow-up record in follow_ups table
-      // Store null for admin scheduling so UI consistently renders "Admin" even if a technician session exists in another tab.
-      const { data: followUpRecord, error: followUpError } = await supabase
-        .from('follow_ups')
-        .insert({
-          job_id: jobId,
-          parent_follow_up_id: followUpData.parentFollowUpId || null,
-          follow_up_date: followUpData.followUpDate,
-          reason: followUpData.followUpReason,
-          notes: null,
-          scheduled_by: null,
-          completed: false
-        } as any)
-        .select()
-        .single();
-
-      if (followUpError) {
-        if (process.env.NODE_ENV === 'development') {
-          console.error('Follow-up error details:', followUpError);
-        }
-        // Provide more helpful error message for 401 errors
-        if (followUpError.code === 'PGRST301' || followUpError.message?.includes('401') || followUpError.message?.includes('unauthorized')) {
-          throw new Error('Authentication failed. Please check your login status and try again.');
-        }
-        throw new Error(followUpError.message || 'Failed to create follow-up record');
-      }
-
-      // If this is a root follow-up (no parent) OR if we're rescheduling a root follow-up, update job status
-      // Store null for admin scheduling so UI consistently renders "Admin" even if a technician session exists in another tab.
-      if (!followUpData.parentFollowUpId || wasRootFollowUp) {
-        const existingJob =
-          jobs.find((j) => j.id === jobId) ||
-          Object.values(customerJobs)
-            .flat()
-            .find((j) => j.id === jobId);
-        const requirements = applyAutoMoveToOngoingOnDateFlag(
-          (existingJob as any)?.requirements,
-          Boolean(followUpData.autoMoveToOngoingOnDate)
-        );
-
-        const { error: jobError } = await db.jobs.update(jobId, {
-          status: 'FOLLOW_UP',
-          follow_up_date: followUpData.followUpDate,
-          follow_up_notes: followUpData.followUpReason,
-          follow_up_scheduled_by: null,
-          follow_up_scheduled_at: new Date().toISOString(),
-          requirements,
-        } as any);
-
-        if (jobError) {
-          throw new Error(jobError.message);
-        }
-
-        // Update local state
-        setJobs(prev => prev.map(job => 
-          job.id === jobId ? { 
-            ...job, 
-            status: 'FOLLOW_UP',
-            followUpDate: followUpData.followUpDate,
-            followUpNotes: followUpData.followUpReason,
-            followUpScheduledBy: 'admin',
-            followUpScheduledAt: new Date().toISOString(),
-            requirements,
-          } : job
-        ));
-
-        setCustomerJobs(prev => {
-          const updated = { ...prev };
-          Object.keys(updated).forEach(customerId => {
-            updated[customerId] = updated[customerId].map(job => 
-              job.id === jobId ? { 
-                ...job, 
-                status: 'FOLLOW_UP',
-                followUpDate: followUpData.followUpDate,
-                followUpNotes: followUpData.followUpReason + ((followUpData as any).followUpNotes ? ` - ${(followUpData as any).followUpNotes}` : ''),
-                followUpScheduledBy: 'admin',
-                followUpScheduledAt: new Date().toISOString(),
-                requirements,
-              } : job
-            );
-          });
-          return updated;
-        });
-      }
-
-      toast.success(
-        followUpData.rescheduleFollowUpId 
-          ? 'Follow-up rescheduled successfully' 
-          : followUpData.parentFollowUpId 
-            ? 'Nested follow-up added successfully' 
-            : 'Follow-up scheduled successfully'
-      );
-      
-      // Reload follow-up jobs for glow (minimal: today/tomorrow only)
-      db.jobs.getFollowUpForGlow().then(({ data }) => {
-        if (data) setAllFollowUpJobs(data as Job[]);
-      }).catch(() => {});
-      
-      // Reload filtered jobs if currently viewing follow-up jobs to show updated date
-      if (statusFilter === 'RESCHEDULED') {
-        loadFilteredJobs('RESCHEDULED', currentPage);
-      }
-    } catch (error: any) {
-      const errorMessage = error?.message || 'Failed to schedule follow-up';
-      if (process.env.NODE_ENV === 'development') {
-        console.error('Follow-up submission error:', error);
-      }
-      toast.error(errorMessage);
-    }
-  };
-
-  // Handle moving follow-up job to ongoing
+    // Handle moving follow-up job to ongoing
   const handleMoveToOngoing = (job: Job) => {
     // Set default values to current date and time
     const now = new Date();
