@@ -932,3 +932,217 @@ export function mapTrendRangeCompareFromRpc(
     b: mapMonthlyTrendsFromRpc(rpc.range_b),
   };
 }
+
+export type TrendDrilldownFilterArgs = {
+  serviceType?: string | null;
+  serviceSubType?: string | null;
+  equipmentBrand?: string | null;
+  serviceBrand?: string | null;
+  leadSourceKey?: string | null;
+  technicianId?: string | null;
+  paymentMethod?: string | null;
+};
+
+function normKey(value: string | null | undefined): string {
+  const t = (value ?? '').trim().toLowerCase();
+  return t || '__unknown__';
+}
+
+function resolveJobEquipmentBrand(job: Record<string, unknown>): string {
+  const jobBrand = typeof job.brand === 'string' ? job.brand.trim() : '';
+  if (jobBrand) return jobBrand;
+  const customer = job.customer as { brand?: string } | null | undefined;
+  const customerBrand = typeof customer?.brand === 'string' ? customer.brand.trim() : '';
+  return customerBrand || 'Unknown';
+}
+
+export function matchesTrendDrilldownJob(
+  job: Record<string, unknown>,
+  filters: TrendDrilldownFilterArgs
+): boolean {
+  if (filters.serviceType) {
+    const st = typeof job.service_type === 'string' ? job.service_type.trim() : '';
+    if (st.toUpperCase() !== filters.serviceType.toUpperCase()) return false;
+  }
+  if (filters.serviceSubType) {
+    const sub = typeof job.service_sub_type === 'string' ? job.service_sub_type.trim() : '';
+    const label = sub || 'Unknown';
+    if (label !== filters.serviceSubType) return false;
+  }
+  if (filters.equipmentBrand) {
+    if (normKey(resolveJobEquipmentBrand(job)) !== normKey(filters.equipmentBrand)) return false;
+  }
+  if (filters.serviceBrand) {
+    const sb = typeof job.service_brand === 'string' ? job.service_brand.trim().toLowerCase() : '';
+    const brand = sb || 'hydrogenro';
+    if (brand !== filters.serviceBrand.toLowerCase()) return false;
+  }
+  if (filters.leadSourceKey) {
+    const key = normalizeLeadSourceKey(getLeadSourceFromJob(job));
+    if (key !== filters.leadSourceKey) return false;
+  }
+  if (filters.technicianId) {
+    if (job.assigned_technician_id !== filters.technicianId) return false;
+  }
+  if (filters.paymentMethod) {
+    const pm = typeof job.payment_method === 'string' ? job.payment_method.trim() : '';
+    const label = pm || 'Unknown';
+    if (label !== filters.paymentMethod) return false;
+  }
+  return true;
+}
+
+export function periodKeyToDateRange(periodKey: string): { startDate: Date; endDate: Date } | null {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(periodKey)) {
+    const startDate = new Date(periodKey + 'T00:00:00');
+    const endDate = new Date(periodKey + 'T23:59:59.999');
+    return { startDate, endDate };
+  }
+
+  if (/^\d{4}-\d{2}$/.test(periodKey)) {
+    const [year, month] = periodKey.split('-').map(Number);
+    if (!year || !month) return null;
+    const startDate = new Date(year, month - 1, 1, 0, 0, 0, 0);
+    const endDate = new Date(year, month, 0, 23, 59, 59, 999);
+    return { startDate, endDate };
+  }
+
+  const weekMatch = periodKey.match(/^(\d{4})-W(\d{1,2})$/i);
+  if (weekMatch) {
+    const year = Number(weekMatch[1]);
+    const week = Number(weekMatch[2]);
+    const jan4 = new Date(year, 0, 4);
+    const dayOfWeek = jan4.getDay() || 7;
+    const mondayWeek1 = new Date(jan4);
+    mondayWeek1.setDate(jan4.getDate() - dayOfWeek + 1);
+    const startDate = new Date(mondayWeek1);
+    startDate.setDate(mondayWeek1.getDate() + (week - 1) * 7);
+    startDate.setHours(0, 0, 0, 0);
+    const endDate = new Date(startDate);
+    endDate.setDate(startDate.getDate() + 6);
+    endDate.setHours(23, 59, 59, 999);
+    return { startDate, endDate };
+  }
+
+  return null;
+}
+
+export type WeekdayPatternRow = {
+  dayIndex: number;
+  label: string;
+  shortLabel: string;
+  daysSampled: number;
+  totalJobs: number;
+  totalRevenue: number;
+  avgJobs: number;
+  avgRevenue: number;
+};
+
+const WEEKDAY_META = [
+  { dayIndex: 1, label: 'Monday', shortLabel: 'Mon' },
+  { dayIndex: 2, label: 'Tuesday', shortLabel: 'Tue' },
+  { dayIndex: 3, label: 'Wednesday', shortLabel: 'Wed' },
+  { dayIndex: 4, label: 'Thursday', shortLabel: 'Thu' },
+  { dayIndex: 5, label: 'Friday', shortLabel: 'Fri' },
+  { dayIndex: 6, label: 'Saturday', shortLabel: 'Sat' },
+  { dayIndex: 0, label: 'Sunday', shortLabel: 'Sun' },
+];
+
+export function computeWeekdayPatternFromRows(
+  rows: AnalyticsTrendPeriodRow[]
+): WeekdayPatternRow[] | null {
+  const daily = rows.filter((r) => /^\d{4}-\d{2}-\d{2}$/.test(r.periodKey));
+  if (daily.length < 3) return null;
+
+  const totals = new Map<number, { days: number; jobs: number; revenue: number }>();
+  for (const meta of WEEKDAY_META) {
+    totals.set(meta.dayIndex, { days: 0, jobs: 0, revenue: 0 });
+  }
+
+  for (const row of daily) {
+    const d = new Date(row.periodKey + 'T12:00:00');
+    const dow = d.getDay();
+    const bucket = totals.get(dow);
+    if (!bucket) continue;
+    bucket.days += 1;
+    bucket.jobs += row.jobs;
+    bucket.revenue += row.revenue;
+  }
+
+  return WEEKDAY_META.map((meta) => {
+    const bucket = totals.get(meta.dayIndex)!;
+    return {
+      dayIndex: meta.dayIndex,
+      label: meta.label,
+      shortLabel: meta.shortLabel,
+      daysSampled: bucket.days,
+      totalJobs: bucket.jobs,
+      totalRevenue: bucket.revenue,
+      avgJobs: bucket.days > 0 ? bucket.jobs / bucket.days : 0,
+      avgRevenue: bucket.days > 0 ? bucket.revenue / bucket.days : 0,
+    };
+  });
+}
+
+export type AnalyticsPeriodSyncInput = {
+  period: string;
+  startDate: Date | null;
+  endDate: Date | null;
+  customMonthValue?: string;
+};
+
+export function mapAnalyticsPeriodToTrend(
+  input: AnalyticsPeriodSyncInput
+): {
+  preset: TrendTimelinePreset;
+  customMonth?: string;
+  customStart?: string;
+  customEnd?: string;
+} {
+  const toInput = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
+  switch (input.period) {
+    case 'thisMonth':
+      return { preset: 'this_month' };
+    case 'previousMonth':
+      return { preset: 'last_month' };
+    case 'customMonth':
+      return {
+        preset: 'custom_month',
+        customMonth: input.customMonthValue || undefined,
+      };
+    default:
+      break;
+  }
+
+  if (input.startDate && input.endDate) {
+    return {
+      preset: 'custom',
+      customStart: toInput(input.startDate),
+      customEnd: toInput(input.endDate),
+    };
+  }
+
+  return { preset: 'this_month' };
+}
+
+export function formatAnalyticsPeriodLabel(input: AnalyticsPeriodSyncInput): string {
+  if (!input.startDate || !input.endDate) return 'All time';
+  const fmt = (d: Date) =>
+    d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  return `${fmt(input.startDate)} – ${fmt(input.endDate)}`;
+}
+
+export function rangesMatchDay(
+  a: { startDate: Date; endDate: Date },
+  b: { startDate: Date; endDate: Date }
+): boolean {
+  const day = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return day(a.startDate) === day(b.startDate) && day(a.endDate) === day(b.endDate);
+}

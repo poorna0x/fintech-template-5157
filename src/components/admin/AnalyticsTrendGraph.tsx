@@ -39,6 +39,7 @@ import {
   LineChart,
   Loader2,
   Minus,
+  RefreshCw,
   Sparkles,
   TrendingDown,
   TrendingUp,
@@ -49,7 +50,10 @@ import { db } from '@/lib/supabase';
 import {
   alignTrendSeriesByIndex,
   compareTrendMonths,
+  computeWeekdayPatternFromRows,
+  formatAnalyticsPeriodLabel,
   getShiftedTrendRange,
+  mapAnalyticsPeriodToTrend,
   mapMonthlyTrendsFromRpc,
   mapTrendDashboardFromRpc,
   mapTrendRangeCompareFromRpc,
@@ -57,13 +61,17 @@ import {
   parseAnalyticsMonthlyTrendsRpc,
   parseAnalyticsTrendDashboardRpc,
   pickTrendGranularity,
+  rangesMatchDay,
   resolveTrendTimelineRange,
   rollupDailyStatsToMonthlyTrends,
+  type AnalyticsPeriodSyncInput,
   type AnalyticsTrendInsights,
   type AnalyticsTrendPeriodRow,
   type AnalyticsTrendSummary,
   type TrendTimelinePreset,
+  type WeekdayPatternRow,
 } from '@/lib/analyticsDashboard';
+import { TrendPeriodDrilldownDialog } from '@/components/admin/TrendPeriodDrilldownDialog';
 import { toast } from 'sonner';
 
 type TrendMetric = 'combined' | 'revenue' | 'jobs' | 'avgBill';
@@ -82,10 +90,21 @@ type AnalyticsTrendGraphProps = {
   filterOptions: AnalyticsTrendFilterOptions;
   dailyStatsFallback?: Array<{ date: string; jobs: number; revenue: number }>;
   initialRange?: { startDate: Date | null; endDate: Date | null };
+  analyticsPeriod?: AnalyticsPeriodSyncInput;
 };
 
 const ALL = '__all__';
 const TREND_CACHE_TTL_MS = 5 * 60 * 1000;
+const TREND_PREFS_KEY = 'hydrogenro-analytics-trend-prefs';
+
+type SavedTrendPrefs = {
+  timelinePreset: TrendTimelinePreset;
+  customMonth: string;
+  customStart: string;
+  customEnd: string;
+  overlay: TimelineOverlay;
+  filters: TrendFilters;
+};
 
 type TrendDashboardPayload = {
   primary: AnalyticsTrendSummary | null;
@@ -98,6 +117,39 @@ type TrendDashboardPayload = {
 };
 
 const trendDashboardCache = new Map<string, { at: number; payload: TrendDashboardPayload }>();
+
+function clearTrendDashboardCache() {
+  trendDashboardCache.clear();
+}
+
+function loadTrendPrefs(): SavedTrendPrefs | null {
+  try {
+    const raw = localStorage.getItem(TREND_PREFS_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as SavedTrendPrefs;
+  } catch {
+    return null;
+  }
+}
+
+function saveTrendPrefs(prefs: SavedTrendPrefs) {
+  try {
+    localStorage.setItem(TREND_PREFS_KEY, JSON.stringify(prefs));
+  } catch {
+    // ignore quota errors
+  }
+}
+
+function formatLoadedAgo(at: number | null): string {
+  if (!at) return '';
+  const secs = Math.floor((Date.now() - at) / 1000);
+  if (secs < 45) return 'Just now';
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} hr ago`;
+  return new Date(at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
 
 const chartConfig = {
   revenue: { label: 'Revenue', color: 'hsl(199 89% 48%)' },
@@ -236,12 +288,15 @@ async function fetchTrendDashboard(
   endDate: Date,
   filters: TrendFilters,
   overlay: TimelineOverlay,
-  dailyStatsFallback?: Array<{ date: string; jobs: number; revenue: number }>
+  dailyStatsFallback?: Array<{ date: string; jobs: number; revenue: number }>,
+  opts?: { skipCache?: boolean }
 ): Promise<TrendDashboardPayload> {
   const cacheKey = buildTrendCacheKey(startDate, endDate, filters, overlay);
-  const cached = trendDashboardCache.get(cacheKey);
-  if (cached && Date.now() - cached.at < TREND_CACHE_TTL_MS) {
-    return cached.payload;
+  if (!opts?.skipCache) {
+    const cached = trendDashboardCache.get(cacheKey);
+    if (cached && Date.now() - cached.at < TREND_CACHE_TTL_MS) {
+      return cached.payload;
+    }
   }
 
   const granularity =
@@ -404,7 +459,9 @@ export function AnalyticsTrendGraph({
   filterOptions,
   dailyStatsFallback,
   initialRange,
+  analyticsPeriod,
 }: AnalyticsTrendGraphProps) {
+  const [prefsReady, setPrefsReady] = useState(false);
   const [filters, setFilters] = useState<TrendFilters>(defaultFilters);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [timelinePreset, setTimelinePreset] = useState<TrendTimelinePreset>('this_month');
@@ -413,6 +470,7 @@ export function AnalyticsTrendGraph({
   const [customEnd, setCustomEnd] = useState('');
   const [overlay, setOverlay] = useState<TimelineOverlay>('none');
   const [loading, setLoading] = useState(true);
+  const [loadedAt, setLoadedAt] = useState<number | null>(null);
   const [summary, setSummary] = useState<AnalyticsTrendSummary | null>(null);
   const [compareSummary, setCompareSummary] = useState<AnalyticsTrendSummary | null>(null);
   const [insights, setInsights] = useState<AnalyticsTrendInsights | null>(null);
@@ -431,6 +489,9 @@ export function AnalyticsTrendGraph({
   const [rangeCompareLoading, setRangeCompareLoading] = useState(false);
 
   const [monthCatalog, setMonthCatalog] = useState<AnalyticsTrendPeriodRow[]>([]);
+  const [drilldownPeriodKey, setDrilldownPeriodKey] = useState<string | null>(null);
+  const [drilldownPeriodLabel, setDrilldownPeriodLabel] = useState<string | null>(null);
+  const [drilldownOpen, setDrilldownOpen] = useState(false);
 
   const activeRange = useMemo(() => {
     if (timelinePreset === 'custom_month') {
@@ -441,6 +502,37 @@ export function AnalyticsTrendGraph({
     }
     return resolveTrendTimelineRange(timelinePreset);
   }, [timelinePreset, customMonth, customStart, customEnd]);
+
+  useEffect(() => {
+    const saved = loadTrendPrefs();
+    if (saved) {
+      setTimelinePreset(saved.timelinePreset);
+      setCustomMonth(saved.customMonth || '');
+      setCustomStart(saved.customStart || '');
+      setCustomEnd(saved.customEnd || '');
+      setOverlay(saved.overlay);
+      setFilters(saved.filters);
+    } else if (analyticsPeriod) {
+      const mapped = mapAnalyticsPeriodToTrend(analyticsPeriod);
+      setTimelinePreset(mapped.preset);
+      if (mapped.customMonth) setCustomMonth(mapped.customMonth);
+      if (mapped.customStart) setCustomStart(mapped.customStart);
+      if (mapped.customEnd) setCustomEnd(mapped.customEnd);
+    }
+    setPrefsReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!prefsReady) return;
+    saveTrendPrefs({
+      timelinePreset,
+      customMonth,
+      customStart,
+      customEnd,
+      overlay,
+      filters,
+    });
+  }, [prefsReady, timelinePreset, customMonth, customStart, customEnd, overlay, filters]);
 
   useEffect(() => {
     if (timelinePreset === 'custom_month' && !customMonth) {
@@ -473,7 +565,7 @@ export function AnalyticsTrendGraph({
     return Array.from(labels).map((label) => ({ label }));
   }, [filterOptions.equipmentBrands, rpcEquipmentBrands]);
 
-  const loadTimeline = useCallback(async () => {
+  const loadTimeline = useCallback(async (opts?: { skipCache?: boolean }) => {
     setLoading(true);
     try {
       const dashboard = await fetchTrendDashboard(
@@ -481,7 +573,8 @@ export function AnalyticsTrendGraph({
         activeRange.endDate,
         filters,
         overlay,
-        dailyStatsFallback
+        dailyStatsFallback,
+        opts
       );
       if (!dashboard.primary && hasActiveFilters(filters)) {
         toast.error('Deploy scripts/add-analytics-trend-dashboard-rpc.sql for filtered trends.');
@@ -493,14 +586,46 @@ export function AnalyticsTrendGraph({
       setRpcEquipmentBrands(dashboard.rpcEquipmentBrands);
       setRpcLeadSources(dashboard.rpcLeadSources);
       setUsingFallback(dashboard.usingFallback);
+      setLoadedAt(Date.now());
     } finally {
       setLoading(false);
     }
   }, [activeRange, filters, overlay, dailyStatsFallback]);
 
-  useEffect(() => {
-    void loadTimeline();
+  const handleRefresh = useCallback(() => {
+    clearTrendDashboardCache();
+    void loadTimeline({ skipCache: true });
   }, [loadTimeline]);
+
+  const applyAnalyticsPeriod = useCallback(() => {
+    if (!analyticsPeriod) return;
+    const mapped = mapAnalyticsPeriodToTrend(analyticsPeriod);
+    setTimelinePreset(mapped.preset);
+    if (mapped.customMonth) setCustomMonth(mapped.customMonth);
+    if (mapped.customStart) setCustomStart(mapped.customStart);
+    if (mapped.customEnd) setCustomEnd(mapped.customEnd);
+  }, [analyticsPeriod]);
+
+  const openPeriodDrilldown = useCallback((periodKey: string, label: string) => {
+    setDrilldownPeriodKey(periodKey);
+    setDrilldownPeriodLabel(label);
+    setDrilldownOpen(true);
+  }, []);
+
+  const handleChartClick = useCallback(
+    (state: { activePayload?: Array<{ payload?: Record<string, unknown> }> } | null) => {
+      const row = state?.activePayload?.[0]?.payload;
+      const periodKey = typeof row?.periodKey === 'string' ? row.periodKey : null;
+      const label = typeof row?.label === 'string' ? row.label : periodKey;
+      if (periodKey && label) openPeriodDrilldown(periodKey, label);
+    },
+    [openPeriodDrilldown]
+  );
+
+  useEffect(() => {
+    if (!prefsReady) return;
+    void loadTimeline();
+  }, [loadTimeline, prefsReady]);
 
   useEffect(() => {
     const months = monthCatalog.map((m) => m.periodKey).filter((k) => /^\d{4}-\d{2}$/.test(k));
@@ -607,6 +732,25 @@ export function AnalyticsTrendGraph({
     return summary.totalRevenue / summary.rows.length;
   }, [summary]);
 
+  const weekdayPattern = useMemo(
+    () => (summary?.rows ? computeWeekdayPatternFromRows(summary.rows) : null),
+    [summary?.rows]
+  );
+
+  const analyticsPeriodLabel = analyticsPeriod
+    ? formatAnalyticsPeriodLabel(analyticsPeriod)
+    : null;
+
+  const showSyncAnalyticsPeriod = useMemo(() => {
+    if (!analyticsPeriod?.startDate || !analyticsPeriod?.endDate) return false;
+    return !rangesMatchDay(activeRange, {
+      startDate: analyticsPeriod.startDate,
+      endDate: analyticsPeriod.endDate,
+    });
+  }, [analyticsPeriod, activeRange]);
+
+  const drilldownFilters = useMemo(() => buildRpcFilterArgs(filters), [filters]);
+
   const rangeOverlayData = useMemo(() => {
     if (!rangeCompareA?.rows.length && !rangeCompareB?.rows.length) return [];
     return alignTrendSeriesByIndex(rangeCompareA?.rows ?? [], rangeCompareB?.rows ?? []);
@@ -700,10 +844,39 @@ export function AnalyticsTrendGraph({
             ]}
           />
         </div>
-        <Button type="button" variant="outline" size="sm" className="gap-1.5 self-start lg:self-auto" onClick={() => setFiltersOpen((o) => !o)}>
-          {filtersOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-          Filters {hasActiveFilters(filters) ? '(active)' : ''}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
+          {loadedAt && !loading ? (
+            <span className="text-[11px] text-muted-foreground hidden sm:inline">
+              Updated {formatLoadedAgo(loadedAt)}
+            </span>
+          ) : null}
+          {showSyncAnalyticsPeriod && analyticsPeriodLabel ? (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="gap-1.5 text-xs h-8"
+              onClick={applyAnalyticsPeriod}
+            >
+              Match analytics ({analyticsPeriodLabel})
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-1.5 h-8"
+            onClick={() => handleRefresh()}
+            disabled={loading}
+          >
+            {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+            Refresh
+          </Button>
+          <Button type="button" variant="outline" size="sm" className="gap-1.5 h-8" onClick={() => setFiltersOpen((o) => !o)}>
+            {filtersOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            Filters {hasActiveFilters(filters) ? '(active)' : ''}
+          </Button>
+        </div>
       </div>
 
       {filtersOpen ? (
@@ -770,24 +943,31 @@ export function AnalyticsTrendGraph({
 
               {insights ? <TrendInsightsPanel insights={insights} /> : null}
 
+              {weekdayPattern ? <WeekdayPatternPanel rows={weekdayPattern} /> : null}
+
               <div className="rounded-2xl border bg-gradient-to-b from-sky-50/80 to-background p-3 sm:p-5 shadow-sm">
                 <div className="flex items-center justify-between mb-3 gap-2">
-                  <p className="text-sm font-medium text-foreground">
-                    {effectiveGranularity === 'day' ? 'Daily' : effectiveGranularity === 'week' ? 'Weekly' : 'Monthly'} performance
-                  </p>
+                  <div>
+                    <p className="text-sm font-medium text-foreground">
+                      {effectiveGranularity === 'day' ? 'Daily' : effectiveGranularity === 'week' ? 'Weekly' : 'Monthly'} performance
+                    </p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      Click a bar or point to view completed jobs
+                    </p>
+                  </div>
                   <p className="text-xs text-muted-foreground">
                     {toDateInputValue(activeRange.startDate)} → {toDateInputValue(activeRange.endDate)}
                   </p>
                 </div>
-                <ChartContainer config={chartConfig} className="aspect-[16/10] sm:aspect-[2.2/1] w-full min-h-[280px]">
-                  <ComposedChart data={chartData} margin={{ top: 12, right: 12, left: 0, bottom: 0 }}>
+                <ChartContainer config={chartConfig} className="aspect-[16/10] sm:aspect-[2.2/1] w-full min-h-[280px] cursor-pointer">
+                  <ComposedChart data={chartData} margin={{ top: 12, right: 12, left: 0, bottom: 0 }} onClick={handleChartClick}>
                     <CartesianGrid vertical={false} strokeDasharray="4 4" stroke="hsl(var(--border))" />
                     <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={10} minTickGap={20} />
-                    {(filters.metric === 'combined' || filters.metric === 'jobs') && (
-                      <YAxis yAxisId="jobs" tickLine={false} axisLine={false} width={34} allowDecimals={false} />
-                    )}
                     {(filters.metric === 'combined' || filters.metric === 'revenue' || filters.metric === 'avgBill') && (
-                      <YAxis yAxisId="revenue" orientation="right" tickLine={false} axisLine={false} width={54} tickFormatter={(v) => formatCompactCurrency(Number(v))} />
+                      <YAxis yAxisId="revenue" tickLine={false} axisLine={false} width={54} tickFormatter={(v) => formatCompactCurrency(Number(v))} />
+                    )}
+                    {(filters.metric === 'combined' || filters.metric === 'jobs') && (
+                      <YAxis yAxisId="jobs" orientation="right" tickLine={false} axisLine={false} width={34} allowDecimals={false} />
                     )}
                     <ChartTooltip content={<RichTooltip overlay={overlay} />} />
                     {filters.metric !== 'jobs' && filters.metric !== 'avgBill' ? (
@@ -852,7 +1032,11 @@ export function AnalyticsTrendGraph({
                 </ChartContainer>
               </div>
 
-              <TrendTable rows={summary.rows} granularity={effectiveGranularity} />
+              <TrendTable
+                rows={summary.rows}
+                granularity={effectiveGranularity}
+                onPeriodClick={openPeriodDrilldown}
+              />
             </>
           )}
         </TabsContent>
@@ -976,6 +1160,14 @@ export function AnalyticsTrendGraph({
           ) : null}
         </TabsContent>
       </Tabs>
+
+      <TrendPeriodDrilldownDialog
+        open={drilldownOpen}
+        onOpenChange={setDrilldownOpen}
+        periodKey={drilldownPeriodKey}
+        periodLabel={drilldownPeriodLabel}
+        filters={drilldownFilters}
+      />
     </div>
   );
 }
@@ -1008,6 +1200,48 @@ function FilterSelect({
           ))}
         </SelectContent>
       </Select>
+    </div>
+  );
+}
+
+function WeekdayPatternPanel({ rows }: { rows: WeekdayPatternRow[] }) {
+  const maxAvgRevenue = Math.max(...rows.map((r) => r.avgRevenue), 1);
+  const best = [...rows].sort((a, b) => b.avgRevenue - a.avgRevenue)[0];
+
+  return (
+    <div className="rounded-2xl border bg-card shadow-sm overflow-hidden">
+      <div className="flex items-center gap-2 px-4 py-3 border-b bg-muted/20">
+        <CalendarRange className="w-4 h-4 text-sky-600" />
+        <p className="text-sm font-semibold text-foreground">Best days of the week</p>
+        {best ? (
+          <span className="text-[11px] text-muted-foreground ml-auto">
+            Top: {best.label} · ₹ {formatCurrency(Math.round(best.avgRevenue))} avg
+          </span>
+        ) : null}
+      </div>
+      <div className="p-4 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+        {rows.map((row) => {
+          const width = (row.avgRevenue / maxAvgRevenue) * 100;
+          const isBest = best?.dayIndex === row.dayIndex;
+          return (
+            <div
+              key={row.dayIndex}
+              className={cn(
+                'rounded-xl border px-2.5 py-2.5 text-center',
+                isBest ? 'border-sky-300 bg-sky-50/60' : 'bg-background'
+              )}
+            >
+              <p className="text-xs font-semibold text-foreground">{row.shortLabel}</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">{row.daysSampled}d sampled</p>
+              <p className="text-sm font-bold tabular-nums mt-1">₹ {formatCurrency(Math.round(row.avgRevenue))}</p>
+              <p className="text-[10px] text-muted-foreground">{row.avgJobs.toFixed(1)} jobs avg</p>
+              <div className="h-1 rounded-full bg-muted mt-2 overflow-hidden">
+                <div className="h-full bg-sky-500 rounded-full" style={{ width: `${width}%` }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -1271,7 +1505,15 @@ function RangePicker({
   );
 }
 
-function TrendTable({ rows, granularity }: { rows: AnalyticsTrendPeriodRow[]; granularity: string }) {
+function TrendTable({
+  rows,
+  granularity,
+  onPeriodClick,
+}: {
+  rows: AnalyticsTrendPeriodRow[];
+  granularity: string;
+  onPeriodClick?: (periodKey: string, label: string) => void;
+}) {
   return (
     <div className="overflow-x-auto rounded-xl border">
       <Table>
@@ -1287,7 +1529,11 @@ function TrendTable({ rows, granularity }: { rows: AnalyticsTrendPeriodRow[]; gr
         </TableHeader>
         <TableBody>
           {rows.map((row) => (
-            <TableRow key={row.periodKey}>
+            <TableRow
+              key={row.periodKey}
+              className={onPeriodClick ? 'cursor-pointer hover:bg-muted/40' : undefined}
+              onClick={() => onPeriodClick?.(row.periodKey, row.label)}
+            >
               <TableCell className="font-medium">{row.label}</TableCell>
               <TableCell className="text-right tabular-nums">{row.jobs}</TableCell>
               <TableCell className="text-right tabular-nums text-emerald-700">₹ {formatCurrency(row.revenue)}</TableCell>

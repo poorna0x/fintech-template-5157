@@ -474,6 +474,28 @@ const LEAD_BREAKDOWN_JOB_COLUMNS = [
   'end_time',
 ].join(', ');
 
+/** Trend graph period drill-down — slim columns with filter fields. */
+const TREND_DRILLDOWN_JOB_COLUMNS = [
+  'id',
+  'job_number',
+  'status',
+  'completed_at',
+  'end_time',
+  'payment_amount',
+  'actual_cost',
+  'payment_method',
+  'service_type',
+  'service_sub_type',
+  'lead_source',
+  'requirements',
+  'assigned_by',
+  'assigned_technician_id',
+  'brand',
+  'service_brand',
+  'technician:technicians(id, full_name)',
+  'customer:customers(id, customer_id, full_name, brand)',
+].join(', ');
+
 /** Conversion / attribution analytics — minimal columns, no requirements JSON. */
 const ANALYTICS_CONVERSION_JOB_COLUMNS = [
   'id',
@@ -3103,6 +3125,23 @@ export const db = {
         return bAt.localeCompare(aAt);
       });
       return { data: combined, error: null };
+    },
+
+    async getCompletedJobsForTrendDrilldown(startDate: Date, endDate: Date) {
+      const startISO = startDate.toISOString();
+      const endISO = endDate.toISOString();
+      const completedFilter = buildCompletedJobsDateOrFilter(startISO, endISO);
+
+      return fetchAnalyticsPages((from, to) =>
+        supabase
+          .from('jobs')
+          .select(TREND_DRILLDOWN_JOB_COLUMNS)
+          .eq('status', 'COMPLETED')
+          .or(completedFilter)
+          .order('end_time', { ascending: false, nullsFirst: false })
+          .order('completed_at', { ascending: false })
+          .range(from, to)
+      );
     },
 
     async getCompletedJobsForLeadBreakdownInRange(startDate: Date, endDate: Date) {

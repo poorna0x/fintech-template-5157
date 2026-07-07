@@ -803,6 +803,15 @@ const Analytics = () => {
     return { startDate, endDate };
   };
 
+  const trendAnalyticsPeriod = useMemo(
+    () => ({
+      period,
+      ...getDateRange(),
+      customMonthValue,
+    }),
+    [period, customStartDate, customEndDate, customMonthValue]
+  );
+
   const isDateInRange = (date: string | null | undefined, startDate: Date | null, endDate: Date | null): boolean => {
     if (!date) return false;
     if (!startDate || !endDate) return true; // All time
@@ -2635,6 +2644,7 @@ const Analytics = () => {
               startDate: getDateRange().startDate,
               endDate: getDateRange().endDate,
             }}
+            analyticsPeriod={trendAnalyticsPeriod}
           />
         ) : null}
       </AnalyticsLoadSection>
