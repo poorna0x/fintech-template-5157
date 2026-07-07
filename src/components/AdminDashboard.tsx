@@ -15,6 +15,7 @@ import {
 } from '@/lib/googleMapsLink';
 import { useResumeSync } from '@/hooks/useResumeSync';
 import { useAdminAlertSounds } from '@/hooks/useAdminAlertSounds';
+import { useAdminJobsRealtime } from '@/hooks/useAdminJobsRealtime';
 import { useClearAdminModalOnIOSBackground } from '@/hooks/useClearAdminModalOnIOSBackground';
 import AdminHeader from '@/components/AdminHeader';
 import { WebsiteBookingIntentBanner } from '@/components/admin/WebsiteBookingIntentBanner';
@@ -87,6 +88,12 @@ import { registerAdminPWA } from '@/lib/pwa';
 import { useAdminRole } from '@/lib/useAdminRole';
 import { saveAdminCompletedJobEdit } from '@/lib/adminSaveCompletedJobEdit';
 import { transformCustomerData, transformTechnicianData } from '@/lib/adminDashboardTransforms';
+import {
+  followUpDateToStr,
+  getJobCompletionDate,
+  getTodayLocalDate,
+  getTomorrowLocalDate,
+} from '@/lib/adminDashboardDateHelpers';
 import { Customer, Job, Technician } from '@/types';
 import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
 import { toast } from 'sonner';
@@ -939,19 +946,6 @@ const AdminDashboard = () => {
   const [pageSize] = useState<number>(20);
   const [totalPages, setTotalPages] = useState<number>(0);
   const [totalCount, setTotalCount] = useState<number>(0);
-  // Helper function to get today's date in local timezone (YYYY-MM-DD format)
-  const getTodayLocalDate = () => {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    const day = String(today.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
-  const getTomorrowLocalDate = () => {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    return `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
-  };
 
   // Date filter for denied jobs (default to today)
   const [deniedDateFilter, setDeniedDateFilter] = useState<string>(() => {
@@ -1972,7 +1966,6 @@ const AdminDashboard = () => {
       initialOngoingJobs.length === 0
   );
   const dashboardLoadedWithSessionRef = useRef(false);
-  const adminRealtimeStatusRef = useRef<string | null>(null);
   const loadDashboardDataRef = useRef(loadDashboardData);
   loadDashboardDataRef.current = loadDashboardData;
 
@@ -2558,6 +2551,22 @@ const AdminDashboard = () => {
     onResume: () => resumeAdminSync({ invalidateTabCaches: true }),
   });
 
+  useAdminJobsRealtime({
+    isInitialLoad,
+    isPollingEnabled,
+    statusFilter,
+    currentPage,
+    loadFilteredJobs,
+    loadJobCounts,
+    playCompletedJobSound,
+    setLastCheckedJobId,
+    setJobCounts,
+    setCustomerPriorServiceStatus,
+    jobIdsCompletedByAdminRef,
+    onRealtimeResubscribed: () =>
+      resumeAdminSyncRef.current({ invalidateTabCaches: false }),
+  });
+
   // Reload jobs when denied date filter changes
   useEffect(() => {
     if (isInitialLoad) return;
@@ -2750,100 +2759,6 @@ const AdminDashboard = () => {
       loadFilteredJobs(statusFilter, currentPage);
     }
   }, [currentPage, statusFilter, loadFilteredJobs]);
-
-  // Single channel: new job INSERTew job INSERT (when polling enabled) + COMPLETED UPDATE (completion sound)
-  useEffect(() => {
-    if (isInitialLoad) return;
-
-    const seedCompletedIds = async () => {
-      try {
-        const { data: rows, error } = await supabase
-          .from('jobs')
-          .select('id')
-          .eq('status', 'COMPLETED')
-          .order('created_at', { ascending: false })
-          .limit(15);
-        if (!error && rows?.length) {
-          rows.forEach((j: { id: string }) => jobIdsCompletedByAdminRef.current.add(j.id));
-        }
-      } catch {
-        // ignore
-      }
-    };
-    const seedTimeout = setTimeout(seedCompletedIds, 2000);
-
-    let channel = supabase.channel('admin-jobs-realtime');
-    if (isPollingEnabled) {
-      channel = channel.on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'jobs' },
-        (payload: { new: Record<string, unknown> }) => {
-          const row = payload.new as { id: string; status?: string };
-          if (row.id) setLastCheckedJobId(row.id);
-          const status = (row.status || 'PENDING') as string;
-          if (['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(status)) {
-            setJobCounts((prev) => ({ ...prev, ongoing: (prev.ongoing || 0) + 1 }));
-          }
-          loadFilteredJobs(statusFilter, 1);
-        }
-      );
-    }
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'jobs',
-          filter: 'status=eq.COMPLETED',
-        },
-        (payload: { new: Record<string, unknown> }) => {
-          const row = payload.new as {
-            id: string;
-            customer_id?: string | null;
-            completed_at?: string | null;
-            end_time?: string | null;
-          };
-          // Flip the returning-customer map immediately so the blue indicator turns on
-          // without waiting for a manual refresh of the admin dashboard.
-          if (row.customer_id) {
-            setCustomerPriorServiceStatus((prev) =>
-              prev[row.customer_id as string] ? prev : { ...prev, [row.customer_id as string]: true }
-            );
-          }
-          if (jobIdsCompletedByAdminRef.current.has(row.id)) return;
-          const completedAt = row.completed_at || row.end_time;
-          if (completedAt) {
-            const t = new Date(completedAt).getTime();
-            if (Date.now() - t > 60000) return;
-          }
-          jobIdsCompletedByAdminRef.current.add(row.id);
-          playCompletedJobSound();
-          void loadJobCounts();
-          if (statusFilter === 'COMPLETED') {
-            void loadFilteredJobs('COMPLETED', currentPage, { silent: true });
-          } else {
-            // Warm page-1 cache so opening Completed after the sound is instant.
-            void loadFilteredJobs('COMPLETED', 1, { silent: true, cacheOnly: true });
-            if (statusFilter === 'ONGOING') {
-              void loadFilteredJobs('ONGOING', 1, { silent: true });
-            }
-          }
-        }
-      )
-      .subscribe((status) => {
-        const prev = adminRealtimeStatusRef.current;
-        adminRealtimeStatusRef.current = status;
-        if (status === 'SUBSCRIBED' && prev != null && prev !== 'SUBSCRIBED') {
-          void resumeAdminSyncRef.current({ invalidateTabCaches: false });
-        }
-      });
-
-    return () => {
-      clearTimeout(seedTimeout);
-      supabase.removeChannel(channel);
-    };
-  }, [isInitialLoad, isPollingEnabled, statusFilter, currentPage, loadFilteredJobs, loadJobCounts, playCompletedJobSound]);
 
   const handleDeleteCustomer = async () => {
     if (!customerToDelete) return;
@@ -8975,21 +8890,6 @@ const AdminDashboard = () => {
     ? baseCustomers
     : customers;
 
-  // Helper function to get completion date for a job
-  const getJobCompletionDate = (job: Job): number => {
-    const completedAt = (job as any).completed_at || job.completedAt;
-    const endTime = (job as any).end_time || job.endTime;
-    const completionDate = completedAt || endTime;
-    if (completionDate) {
-      return new Date(completionDate).getTime();
-    }
-    // Fallback to scheduled date or created date if no completion date
-    const scheduledDate = (job as any).scheduled_date || job.scheduledDate;
-    if (scheduledDate) {
-      return new Date(scheduledDate).getTime();
-    }
-    return new Date(job.createdAt).getTime();
-  };
   function doesCompletedJobMatchFilters(job: any): boolean {
     return completedJobMatchesDashboardClientFilters(job, {
       leadType: completedLeadTypeFilter,
@@ -9297,14 +9197,6 @@ const AdminDashboard = () => {
   // Get today's and tomorrow's date strings for filtering followups (local YYYY-MM-DD)
   const todayDateStr = getTodayLocalDate();
   const tomorrowDateStr = getTomorrowLocalDate();
-  const followUpDateToStr = (followUpDate: string | null | undefined): string | null => {
-    if (!followUpDate) return null;
-    if (followUpDate.includes('T')) {
-      const d = new Date(followUpDate);
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    }
-    return followUpDate.split('T')[0].trim();
-  };
 
   const getJobServiceSubTypeLabel = (job: any): string => {
     return normalizeServiceSubType(String(job?.service_sub_type ?? job?.serviceSubType ?? '').trim()) || '';
