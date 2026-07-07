@@ -4,15 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { ensureAdminSupabaseSession } from '@/lib/auth';
 import { normalizeCustomerAddress } from '@/lib/customer-address';
 import { CustomerLocationVariant } from '@/lib/customer-locations';
-import { ensureSupabaseSessionForWrite, resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
-import {
-  extractMapsUrlFromText,
-  isGoogleMapsShortLink,
-  isGoogleMapsUrl,
-  loadGoogleMapsGeocoderScript,
-  resolveGoogleMapsInputToCoords,
-  sanitizeGoogleMapsInput,
-} from '@/lib/googleMapsLink';
+import { ensureSupabaseSessionForWrite } from '@/lib/ensureSupabaseSession';
 import { useResumeSync } from '@/hooks/useResumeSync';
 import { useAdminAlertSounds } from '@/hooks/useAdminAlertSounds';
 import { useAdminJobsRealtime } from '@/hooks/useAdminJobsRealtime';
@@ -111,7 +103,7 @@ import {
   scheduleAdminAmcJobCreation,
   scheduleAdminFollowUpPromotion,
 } from '@/lib/adminDashboardSchedulers';
-import { shareAdminJobViaWhatsApp } from '@/lib/adminShareJobWhatsApp';
+import { updateAdminJobStatus } from '@/lib/adminJobStatusUpdate';
 import {
   calculateAdminCustomDistanceBetweenStops,
   getAdminJobEtaForShareDialog,
@@ -163,7 +155,7 @@ const TaxInvoiceModal = lazyDefault(() => import('./TaxInvoiceModal'));
 import { toDateOnly } from '@/lib/amcAutoJobSchedule';
 import ImageUpload from '@/components/ImageUpload';
 import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, levenshteinDistance, calculateSimilarity, extractPhotoUrls, normalizePhotoUrl, parseJobRequirements, getFormattedTimeSlot, findLeadSource, getLeadSourceFromJob, getJobCustomTimeLabel, normalizeLeadType, normalizeServiceSubType, completedJobMatchesDashboardClientFilters, isOfficeCompletedJob, jobCompletionLocalDateIso, ZERO_COMMISSION_EMPLOYEE_ID, jobsMatchOngoingTab } from '@/lib/adminUtils';
-import { getLocationLinkFromObject, resolveJobDestinationCoordsSync } from '@/lib/jobLocationHelpers';
+import { getLocationLinkFromObject } from '@/lib/jobLocationHelpers';
 import { applyAutoMoveToOngoingOnDateFlag } from '@/lib/followUpToOngoing';
 import { enrichJobsWithAfterPhotosIfNeeded } from '@/lib/jobReportPhotos';
 import {
@@ -2973,59 +2965,6 @@ const AdminDashboard = () => {
   };
 
   // Function to geocode address and update coordinates
-  const geocodeAddress = async (address: string) => {
-    if (!address.trim()) return;
-    
-    try {
-      const token = await resolveSupabaseAccessTokenForApi();
-      if (!token) {
-        toast.error('Please sign in again to geocode addresses.');
-        return;
-      }
-
-      const response = await fetch(`/.netlify/functions/geocode`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ query: address })
-      });
-      
-      if (!response.ok) {
-        throw new Error('Geocoding failed');
-      }
-      
-      const data = await response.json();
-      
-      if (data && data.length > 0) {
-        const result = data[0]; // Get the first result
-        const lat = parseFloat(result.lat);
-        const lng = parseFloat(result.lon);
-        
-        if (!isNaN(lat) && !isNaN(lng)) {
-          // Update location with new coordinates
-          setEditFormData(prev => ({
-            ...prev,
-            location: {
-              latitude: lat,
-              longitude: lng,
-              formattedAddress: result.display_name || address
-            }
-          }));
-          
-          toast.success('Address geocoded successfully!');
-        } else {
-          throw new Error('Invalid coordinates received');
-        }
-      } else {
-        throw new Error('No location found for this address');
-      }
-    } catch (error) {
-      toast.error('Failed to geocode address. Please check the address or enter coordinates manually.');
-    }
-  };
-
   // Function to handle address field changes
   const handleAddressFieldChange = (field: string, value: string) => {
     setEditFormData(prev => ({
@@ -3041,88 +2980,6 @@ const AdminDashboard = () => {
     // This ensures it only extracts when address actually changes, not on every keystroke
   };
 
-  // Function to extract coordinates from Google Maps link
-  // Prioritizes more precise coordinates (!3d!4d format) over less precise ones (@ format)
-  const extractCoordinatesFromGoogleMapsLink = (url: string): { latitude: number; longitude: number } | null => {
-    try {
-      // Handle different Google Maps URL formats
-      let lat: number | null = null;
-      let lng: number | null = null;
-      
-      // Format 1 (HIGHEST PRIORITY): !3d!4d format - Most precise coordinates
-      // Example: /data=!3d12.8998394!4d77.6507961
-      // This format contains the exact location coordinates
-      const preciseMatch = url.match(/!3d([0-9.-]+)!4d([0-9.-]+)/);
-      if (preciseMatch) {
-        lat = parseFloat(preciseMatch[1]);
-        lng = parseFloat(preciseMatch[2]);
-        if (lat && lng && !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-          return { latitude: lat, longitude: lng };
-        }
-      }
-      
-      // Format 2: https://www.google.com/maps/place/12.9716,77.5946
-      const placeMatch = url.match(/\/place\/([0-9.-]+),([0-9.-]+)/);
-      if (placeMatch) {
-        lat = parseFloat(placeMatch[1]);
-        lng = parseFloat(placeMatch[2]);
-        if (lat && lng && !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-          return { latitude: lat, longitude: lng };
-        }
-      }
-      
-      // Format 3: https://www.google.com/maps/search/12.914741,+77.551615
-      // This is a search URL with coordinates directly in the path
-      const searchPathMatch = url.match(/\/search\/([0-9.-]+),\+?([0-9.-]+)/);
-      if (searchPathMatch) {
-        lat = parseFloat(searchPathMatch[1]);
-        lng = parseFloat(searchPathMatch[2]);
-        if (lat && lng && !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-          return { latitude: lat, longitude: lng };
-        }
-      }
-      
-      // Format 4: https://www.google.com/maps/@12.9716,77.5946,15z
-      // Note: This is less precise than !3d!4d format, so we check it after
-      const atMatch = url.match(/@([0-9.-]+),([0-9.-]+)/);
-      if (atMatch) {
-        lat = parseFloat(atMatch[1]);
-        lng = parseFloat(atMatch[2]);
-        if (lat && lng && !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-          return { latitude: lat, longitude: lng };
-        }
-      }
-      
-      // Format 5: https://maps.google.com/maps?q=12.9716,77.5946
-      const queryMatch = url.match(/[?&]q=([0-9.-]+),([0-9.-]+)/);
-      if (queryMatch) {
-        lat = parseFloat(queryMatch[1]);
-        lng = parseFloat(queryMatch[2]);
-        if (lat && lng && !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-          return { latitude: lat, longitude: lng };
-        }
-      }
-      
-      // Format 6: https://www.google.com/maps/search/?api=1&query=12.9716,77.5946
-      const searchMatch = url.match(/[?&]query=([0-9.-]+),([0-9.-]+)/);
-      if (searchMatch) {
-        lat = parseFloat(searchMatch[1]);
-        lng = parseFloat(searchMatch[2]);
-        if (lat && lng && !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
-          return { latitude: lat, longitude: lng };
-        }
-      }
-      
-      return null;
-    } catch (error) {
-      return null;
-    }
-  };
-
-  /** Lat/lng for job destination (customer location preferred). Works on slim or full job rows. */
-  const resolveJobDestinationCoords = (jobRow: Job | any): { lat: number; lng: number } | null =>
-    resolveJobDestinationCoordsSync(jobRow);
-
   const calculateDistanceAndTime = useCallback(
     (
       origin: { lat: number; lng: number },
@@ -3136,226 +2993,6 @@ const AdminDashboard = () => {
   useEffect(() => {
     calculateDistanceAndTimeRef.current = calculateDistanceAndTime;
   }, [calculateDistanceAndTime]);
-
-  // Don't calculate distance automatically when address dialog opens
-  // User will click button to calculate manually
-
-
-  // Reverse geocode coordinates to get address using Google Maps Geocoder API
-  const reverseGeocode = async (lat: number, lng: number): Promise<string | null> => {
-    try {
-      if (window.google && window.google.maps && window.google.maps.Geocoder) {
-        return new Promise((resolve) => {
-          const geocoder = new window.google.maps.Geocoder();
-          geocoder.geocode(
-            { location: { lat, lng } },
-            (results, status) => {
-              if (status === window.google.maps.GeocoderStatus.OK && results && results[0]) {
-                resolve(results[0].formatted_address);
-              } else {
-                resolve(null);
-              }
-            }
-          );
-        });
-      }
-      return null;
-    } catch (error) {
-      console.error('Reverse geocoding error:', error);
-      return null;
-    }
-  };
-
-  // Function to fetch address from Google Maps location link
-  const fetchAddressFromGoogleLocation = async () => {
-    const googleLocation =
-      extractMapsUrlFromText(editFormData?.google_location || '') ||
-      sanitizeGoogleMapsInput(editFormData?.google_location || '');
-
-    if (!googleLocation) {
-      toast.error('Please enter a Google Maps link first');
-      return;
-    }
-
-    if (!isGoogleMapsUrl(googleLocation)) {
-      toast.error('Please enter a valid Google Maps link');
-      return;
-    }
-
-    try {
-      let loadingToast: string | number | undefined;
-      if (isGoogleMapsShortLink(googleLocation)) {
-        loadingToast = toast.loading('Resolving short link...');
-      }
-
-      const token = await resolveSupabaseAccessTokenForApi();
-      const resolved = await resolveGoogleMapsInputToCoords(googleLocation, {
-        shareText: editFormData?.google_location || '',
-        addressHint: editFormData?.address?.street || '',
-        accessToken: token,
-      });
-
-      if (loadingToast !== undefined) {
-        toast.dismiss(loadingToast);
-      }
-
-      if (!resolved.ok) {
-        toast.error(resolved.error, { duration: 8000 });
-        return;
-      }
-
-      const { coords, didExpandShortLink, placeHintUsed, resolvedLocation } = resolved;
-      if (didExpandShortLink) {
-        setEditFormData((prev) => ({ ...prev, google_location: resolvedLocation }));
-        toast.info('Short link expanded');
-      }
-      if (placeHintUsed) {
-        toast.info(`Found location from place name: ${placeHintUsed}`);
-      }
-
-      loadingToast = toast.loading('Fetching address from Google Maps...');
-
-      const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-      if (apiKey && (!window.google || !window.google.maps || !window.google.maps.Geocoder)) {
-        await loadGoogleMapsGeocoderScript();
-      }
-
-      const address = await reverseGeocode(coords.latitude, coords.longitude);
-      
-      // Extract location keyword from address
-      const extractedLocation = address ? extractLocationFromAddressString(address) : null;
-      
-      // When fetching a new address, replace the entire address object to avoid duplication
-      // Don't merge with previous address components
-      setEditFormData(prev => ({
-        ...prev,
-        location: {
-          ...prev.location,
-          latitude: coords.latitude,
-          longitude: coords.longitude,
-          formattedAddress: address || prev.location.formattedAddress || ''
-        },
-        address: {
-          street: address || prev.address.street || '',
-          area: '', // Clear individual components when fetching full address
-          city: '',
-          state: '',
-          pincode: ''
-        },
-        visible_address: (!locationManuallyEditedRef.current && extractedLocation) 
-          ? extractedLocation.substring(0, 20) 
-          : prev.visible_address
-      }));
-      
-      toast.dismiss(loadingToast);
-      
-      if (address) {
-        toast.success(`Address fetched: ${address.substring(0, 50)}${address.length > 50 ? '...' : ''}`);
-        if (extractedLocation && !locationManuallyEditedRef.current) {
-          toast.info(`Location identified: ${extractedLocation}`);
-        }
-      } else {
-        toast.success(`Coordinates extracted: ${coords.latitude}, ${coords.longitude}`);
-        toast.warning('Could not fetch address. Coordinates saved.');
-      }
-    } catch (error) {
-      console.error('Error fetching address:', error);
-      toast.error('Failed to fetch address. Please try again.');
-    }
-  };
-
-  const handleGoogleMapsLinkChange = async (value: string) => {
-    // Only update the google_location field - do NOT extract coordinates or geocode automatically
-    setEditFormData(prev => ({
-      ...prev,
-      google_location: value
-    }));
-
-    if (!value.trim()) {
-      // Clear location data when link is removed
-      setEditFormData(prev => ({
-        ...prev,
-        location: {
-          ...prev.location,
-          latitude: 0,
-          longitude: 0,
-          formattedAddress: ''
-        }
-      }));
-    }
-  };
-
-  // Load Google Maps script if not already loaded
-  const loadGoogleMapsScript = (): Promise<void> => {
-    return new Promise((resolve) => {
-      // Check if already loaded
-      if (window.google && window.google.maps && window.google.maps.Geocoder) {
-        resolve();
-        return;
-      }
-
-      const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-      if (!apiKey) {
-        // No API key, skip loading Google Maps script
-        resolve();
-        return;
-      }
-
-      // Check if script is already being loaded
-      const existingScript = document.querySelector('script[src*="maps.googleapis.com"]');
-      if (existingScript) {
-        // Wait for it to load
-        const checkInterval = setInterval(() => {
-          if ((window as any).google && (window as any).google.maps && (window as any).google.maps.Geocoder) {
-            clearInterval(checkInterval);
-            resolve();
-          }
-        }, 100);
-
-        // Timeout after 10 seconds
-        setTimeout(() => {
-          clearInterval(checkInterval);
-          if ((window as any).google && (window as any).google.maps && (window as any).google.maps.Geocoder) {
-            resolve();
-          } else {
-            // Resolve anyway, will use fallback
-            resolve();
-          }
-        }, 10000);
-        return;
-      }
-
-      // Load the script
-      const script = document.createElement('script');
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`;
-      script.async = true;
-      script.defer = true;
-      
-      script.onload = () => {
-        // Wait for Geocoder to be available
-        let attempts = 0;
-        const maxAttempts = 50; // 5 seconds max
-        const checkInterval = setInterval(() => {
-          attempts++;
-          if ((window as any).google && (window as any).google.maps && (window as any).google.maps.Geocoder) {
-            clearInterval(checkInterval);
-            resolve();
-          } else if (attempts >= maxAttempts) {
-            clearInterval(checkInterval);
-            // Resolve anyway, will use fallback
-            resolve();
-          }
-        }, 100);
-      };
-      
-      script.onerror = () => {
-        // Resolve anyway, will use fallback
-        resolve();
-      };
-      
-      document.head.appendChild(script);
-    });
-  };
 
   // Get current location
   const getCurrentLocation = useCallback(() => {
@@ -5913,59 +5550,16 @@ const AdminDashboard = () => {
     [technicians]
   );
 
-  const handleJobStatusUpdate = async (jobId: string, newStatus: string) => {
-    try {
-      const { error } = await db.jobs.update(jobId, { status: newStatus as 'PENDING' | 'ASSIGNED' | 'EN_ROUTE' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED' });
-      
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      // Update local state
-      setCustomerJobs(prev => {
-        const updated = { ...prev };
-        Object.keys(updated).forEach(customerId => {
-          updated[customerId] = updated[customerId].map(job => 
-            job.id === jobId ? { ...job, status: newStatus } : job
-          );
-        });
-        return updated;
-      });
-
-      // Also update the main jobs state
-      setJobs(prev => prev.map(job => 
-        job.id === jobId ? { ...job, status: newStatus } : job
-      ));
-
-      toast.success(`Job status updated to ${newStatus}`);
-
-      // Send notifications for specific status changes
-      const job = jobs.find(j => j.id === jobId);
-      if (job) {
-        const customer = job.customer;
-        const technician = technicians.find(t => t.id === (job.assigned_technician_id || job.assignedTechnicianId));
-        
-        if (newStatus === 'COMPLETED' && technician) {
-          const notification = createJobCompletedNotification(
-            job.job_number || job.jobNumber,
-            customer?.full_name || customer?.fullName || 'Customer',
-            technician.fullName,
-            jobId
-          );
-          await sendNotification(notification);
-        } else if (newStatus === 'CANCELLED') {
-          const notification = createJobCancelledNotification(
-            job.job_number || job.jobNumber,
-            customer?.full_name || customer?.fullName || 'Customer',
-            jobId
-          );
-          await sendNotification(notification);
-        }
-      }
-    } catch (error) {
-      toast.error('Failed to update job status');
-    }
-  };
+  const handleJobStatusUpdate = useCallback(
+    (jobId: string, newStatus: string) =>
+      updateAdminJobStatus(jobId, newStatus, {
+        jobs,
+        technicians,
+        setCustomerJobs,
+        setJobs,
+      }),
+    [jobs, technicians]
+  );
 
   // Handle scheduling follow-up
   const handleScheduleFollowUp = (job: Job) => {
