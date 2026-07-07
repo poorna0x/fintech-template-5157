@@ -49,6 +49,7 @@ import { cn } from '@/lib/utils';
 import { db } from '@/lib/supabase';
 import {
   alignTrendSeriesByIndex,
+  buildTrendLeadSourceInsights,
   compareTrendMonths,
   computeWeekdayPatternFromRows,
   formatAnalyticsPeriodLabel,
@@ -64,6 +65,8 @@ import {
   rangesMatchDay,
   resolveTrendTimelineRange,
   rollupDailyStatsToMonthlyTrends,
+  getProratedRevenueTargetLine,
+  REVENUE_TARGET_PRESETS_INR,
   type AnalyticsPeriodSyncInput,
   type AnalyticsTrendInsights,
   type AnalyticsTrendPeriodRow,
@@ -72,6 +75,7 @@ import {
   type WeekdayPatternRow,
 } from '@/lib/analyticsDashboard';
 import { TrendPeriodDrilldownDialog } from '@/components/admin/TrendPeriodDrilldownDialog';
+import { isJobCompletedInRange } from '@/lib/jobAnalytics';
 import { toast } from 'sonner';
 
 type TrendMetric = 'combined' | 'revenue' | 'jobs' | 'avgBill';
@@ -96,6 +100,7 @@ type AnalyticsTrendGraphProps = {
 const ALL = '__all__';
 const TREND_CACHE_TTL_MS = 5 * 60 * 1000;
 const TREND_PREFS_KEY = 'hydrogenro-analytics-trend-prefs';
+const TREND_REVENUE_TARGET_KEY = 'hydrogenro-analytics-revenue-target';
 
 type SavedTrendPrefs = {
   timelinePreset: TrendTimelinePreset;
@@ -157,11 +162,14 @@ const chartConfig = {
   avgBill: { label: 'Avg bill', color: 'hsl(262 83% 58%)' },
   compareRevenue: { label: 'Compare revenue', color: 'hsl(215 16% 65%)' },
   compareJobs: { label: 'Compare jobs', color: 'hsl(25 55% 68%)' },
+  marginPct: { label: 'Margin %', color: 'hsl(262 83% 58%)' },
+  revenueTarget: { label: 'Revenue target', color: 'hsl(142 71% 40%)' },
 } satisfies ChartConfig;
 
 type TrendFilters = {
   granularity: TrendGranularity | 'auto';
   metric: TrendMetric;
+  showMarginTrend: boolean;
   serviceType: string;
   serviceSubType: string;
   equipmentBrand: string;
@@ -174,6 +182,7 @@ type TrendFilters = {
 const defaultFilters: TrendFilters = {
   granularity: 'auto',
   metric: 'combined',
+  showMarginTrend: true,
   serviceType: ALL,
   serviceSubType: ALL,
   equipmentBrand: ALL,
@@ -474,6 +483,9 @@ export function AnalyticsTrendGraph({
   const [summary, setSummary] = useState<AnalyticsTrendSummary | null>(null);
   const [compareSummary, setCompareSummary] = useState<AnalyticsTrendSummary | null>(null);
   const [insights, setInsights] = useState<AnalyticsTrendInsights | null>(null);
+  const [leadSourceInsights, setLeadSourceInsights] = useState<
+    Array<{ label: string; revenue: number; jobs: number; avgBill: number }>
+  >([]);
   const [usingFallback, setUsingFallback] = useState(false);
   const [rpcEquipmentBrands, setRpcEquipmentBrands] = useState<string[]>([]);
   const [rpcLeadSources, setRpcLeadSources] = useState<Array<{ key: string; label: string }>>([]);
@@ -492,6 +504,15 @@ export function AnalyticsTrendGraph({
   const [drilldownPeriodKey, setDrilldownPeriodKey] = useState<string | null>(null);
   const [drilldownPeriodLabel, setDrilldownPeriodLabel] = useState<string | null>(null);
   const [drilldownOpen, setDrilldownOpen] = useState(false);
+  const [monthlyRevenueTarget, setMonthlyRevenueTarget] = useState(() => {
+    try {
+      const raw = localStorage.getItem(TREND_REVENUE_TARGET_KEY);
+      const n = raw ? Number(raw) : 500000;
+      return Number.isFinite(n) && n > 0 ? n : 500000;
+    } catch {
+      return 500000;
+    }
+  });
 
   const activeRange = useMemo(() => {
     if (timelinePreset === 'custom_month') {
@@ -511,16 +532,34 @@ export function AnalyticsTrendGraph({
       setCustomStart(saved.customStart || '');
       setCustomEnd(saved.customEnd || '');
       setOverlay(saved.overlay);
-      setFilters(saved.filters);
+      setFilters({ ...defaultFilters, ...saved.filters, showMarginTrend: saved.filters.showMarginTrend ?? true });
     } else if (analyticsPeriod) {
       const mapped = mapAnalyticsPeriodToTrend(analyticsPeriod);
       setTimelinePreset(mapped.preset);
       if (mapped.customMonth) setCustomMonth(mapped.customMonth);
       if (mapped.customStart) setCustomStart(mapped.customStart);
       if (mapped.customEnd) setCustomEnd(mapped.customEnd);
+      if (mapped.preset === 'this_month') {
+        setOverlay('previous_period');
+      }
     }
     setPrefsReady(true);
   }, []);
+
+  useEffect(() => {
+    if (!prefsReady) return;
+    if (timelinePreset === 'this_month') {
+      setOverlay((prev) => (prev === 'none' ? 'previous_period' : prev));
+    }
+  }, [timelinePreset, prefsReady]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(TREND_REVENUE_TARGET_KEY, String(monthlyRevenueTarget));
+    } catch {
+      // ignore
+    }
+  }, [monthlyRevenueTarget]);
 
   useEffect(() => {
     if (!prefsReady) return;
@@ -568,14 +607,21 @@ export function AnalyticsTrendGraph({
   const loadTimeline = useCallback(async (opts?: { skipCache?: boolean }) => {
     setLoading(true);
     try {
-      const dashboard = await fetchTrendDashboard(
-        activeRange.startDate,
-        activeRange.endDate,
-        filters,
-        overlay,
-        dailyStatsFallback,
-        opts
-      );
+      const filterArgs = buildRpcFilterArgs(filters);
+      const [dashboard, jobsResult] = await Promise.all([
+        fetchTrendDashboard(
+          activeRange.startDate,
+          activeRange.endDate,
+          filters,
+          overlay,
+          dailyStatsFallback,
+          opts
+        ),
+        db.jobs.getCompletedJobsForTrendDrilldown(
+          activeRange.startDate,
+          activeRange.endDate
+        ),
+      ]);
       if (!dashboard.primary && hasActiveFilters(filters)) {
         toast.error('Deploy scripts/add-analytics-trend-dashboard-rpc.sql for filtered trends.');
       }
@@ -587,6 +633,17 @@ export function AnalyticsTrendGraph({
       setRpcLeadSources(dashboard.rpcLeadSources);
       setUsingFallback(dashboard.usingFallback);
       setLoadedAt(Date.now());
+
+      if (!jobsResult.error && jobsResult.data?.length) {
+        const inRange = jobsResult.data.filter((job) =>
+          isJobCompletedInRange(job, activeRange.startDate, activeRange.endDate)
+        );
+        setLeadSourceInsights(
+          buildTrendLeadSourceInsights(inRange as Array<Record<string, unknown>>, filterArgs)
+        );
+      } else {
+        setLeadSourceInsights([]);
+      }
     } finally {
       setLoading(false);
     }
@@ -718,6 +775,7 @@ export function AnalyticsTrendGraph({
         revenue: row.revenue,
         jobs: row.jobs,
         avgBill: Math.round(row.avgBill),
+        marginPct: row.marginPct,
         revenueChangePct: row.revenueChangePct,
         jobsChangePct: row.jobsChangePct,
         compareRevenue: compare?.revenue ?? null,
@@ -751,6 +809,43 @@ export function AnalyticsTrendGraph({
 
   const drilldownFilters = useMemo(() => buildRpcFilterArgs(filters), [filters]);
 
+  const effectiveLeadSources = useMemo(() => {
+    if (leadSourceInsights.length > 0) return leadSourceInsights;
+    return insights?.topLeadSources ?? [];
+  }, [leadSourceInsights, insights?.topLeadSources]);
+
+  const proratedRevenueTarget = useMemo(
+    () =>
+      getProratedRevenueTargetLine(monthlyRevenueTarget, effectiveGranularity, activeRange),
+    [monthlyRevenueTarget, effectiveGranularity, activeRange]
+  );
+
+  const hasMarginData = useMemo(
+    () => (summary?.rows ?? []).some((r) => r.marginPct != null && r.marginPct > 0),
+    [summary?.rows]
+  );
+
+  const technicianTeamComparison = useMemo(() => {
+    if (filters.technicianId === ALL || !summary || !insights) return null;
+    if (insights.teamBaselineJobs == null || insights.teamBaselineRevenue == null) return null;
+    const teamJobs = insights.teamBaselineJobs;
+    const teamRevenue = insights.teamBaselineRevenue;
+    if (teamJobs <= 0 && teamRevenue <= 0) return null;
+    const techName =
+      filterOptions.technicians.find((t) => t.id === filters.technicianId)?.name ?? 'Technician';
+    return {
+      techName,
+      techJobs: summary.totalJobs,
+      techRevenue: summary.totalRevenue,
+      teamJobs,
+      teamRevenue,
+      jobsSharePct: teamJobs > 0 ? (summary.totalJobs / teamJobs) * 100 : null,
+      revenueSharePct: teamRevenue > 0 ? (summary.totalRevenue / teamRevenue) * 100 : null,
+      avgBillTech: summary.totalJobs > 0 ? summary.totalRevenue / summary.totalJobs : 0,
+      avgBillTeam: teamJobs > 0 ? teamRevenue / teamJobs : 0,
+    };
+  }, [filters.technicianId, summary, insights, filterOptions.technicians]);
+
   const rangeOverlayData = useMemo(() => {
     if (!rangeCompareA?.rows.length && !rangeCompareB?.rows.length) return [];
     return alignTrendSeriesByIndex(rangeCompareA?.rows ?? [], rangeCompareB?.rows ?? []);
@@ -765,6 +860,7 @@ export function AnalyticsTrendGraph({
         jobs: rangeCompareA.totalJobs,
         revenue: rangeCompareA.totalRevenue,
         avgBill: rangeCompareA.totalJobs > 0 ? rangeCompareA.totalRevenue / rangeCompareA.totalJobs : 0,
+        marginPct: null,
         revenueChangePct: null,
         jobsChangePct: null,
       },
@@ -774,6 +870,7 @@ export function AnalyticsTrendGraph({
         jobs: rangeCompareB.totalJobs,
         revenue: rangeCompareB.totalRevenue,
         avgBill: rangeCompareB.totalJobs > 0 ? rangeCompareB.totalRevenue / rangeCompareB.totalJobs : 0,
+        marginPct: null,
         revenueChangePct: null,
         jobsChangePct: null,
       }
@@ -887,6 +984,9 @@ export function AnalyticsTrendGraph({
           <FilterSelect label="Chart" value={filters.metric} onValueChange={(v) => setFilters((f) => ({ ...f, metric: v as TrendMetric }))} options={[
             { value: 'combined', label: 'Revenue + jobs' }, { value: 'revenue', label: 'Revenue' }, { value: 'jobs', label: 'Jobs' }, { value: 'avgBill', label: 'Avg bill' },
           ]} />
+          <FilterSelect label="Margin trend" value={filters.showMarginTrend ? 'on' : 'off'} onValueChange={(v) => setFilters((f) => ({ ...f, showMarginTrend: v === 'on' }))} options={[
+            { value: 'on', label: 'Show margin %' }, { value: 'off', label: 'Hide margin %' },
+          ]} />
           <FilterSelect label="Category" value={filters.serviceType} onValueChange={(v) => setFilters((f) => ({ ...f, serviceType: v }))} options={[
             { value: ALL, label: 'All' }, { value: 'RO', label: 'RO' }, { value: 'SOFTENER', label: 'Softener' },
           ]} />
@@ -941,7 +1041,15 @@ export function AnalyticsTrendGraph({
                 <StatCard title="Lowest period" value={summary.worstPeriod ? `₹ ${formatCurrency(summary.worstPeriod.revenue)}` : '—'} icon={<TrendingDown className="w-4 h-4 text-red-500" />} sub={summary.worstPeriod?.label} />
               </div>
 
-              {insights ? <TrendInsightsPanel insights={insights} /> : null}
+              {insights ? (
+                <TrendInsightsPanel
+                  insights={insights}
+                  summary={summary}
+                  technicianComparison={technicianTeamComparison}
+                  leadSources={effectiveLeadSources}
+                  leadSourcesFromRequirements={leadSourceInsights.length > 0}
+                />
+              ) : null}
 
               {weekdayPattern ? <WeekdayPatternPanel rows={weekdayPattern} /> : null}
 
@@ -959,6 +1067,33 @@ export function AnalyticsTrendGraph({
                     {toDateInputValue(activeRange.startDate)} → {toDateInputValue(activeRange.endDate)}
                   </p>
                 </div>
+                <div className="flex flex-wrap items-end gap-2 mb-3">
+                  <div className="space-y-1">
+                    <Label className="text-[11px] text-muted-foreground">Monthly target (₹)</Label>
+                    <Select
+                      value={String(monthlyRevenueTarget)}
+                      onValueChange={(v) => setMonthlyRevenueTarget(Number(v))}
+                    >
+                      <SelectTrigger className="h-8 w-[130px] text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {REVENUE_TARGET_PRESETS_INR.map((amount) => (
+                          <SelectItem key={amount} value={String(amount)}>
+                            ₹ {(amount / 100000).toFixed(amount >= 100000 ? 1 : 0)}
+                            {amount >= 100000 ? 'L' : 'K'}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {proratedRevenueTarget > 0 ? (
+                    <p className="text-[11px] text-muted-foreground pb-1">
+                      Target line: ₹ {formatCurrency(Math.round(proratedRevenueTarget))}
+                      {effectiveGranularity === 'day' ? ' / day' : effectiveGranularity === 'week' ? ' / week' : ' / month'}
+                    </p>
+                  ) : null}
+                </div>
                 <ChartContainer config={chartConfig} className="aspect-[16/10] sm:aspect-[2.2/1] w-full min-h-[280px] cursor-pointer">
                   <ComposedChart data={chartData} margin={{ top: 12, right: 12, left: 0, bottom: 0 }} onClick={handleChartClick}>
                     <CartesianGrid vertical={false} strokeDasharray="4 4" stroke="hsl(var(--border))" />
@@ -970,6 +1105,21 @@ export function AnalyticsTrendGraph({
                       <YAxis yAxisId="jobs" orientation="right" tickLine={false} axisLine={false} width={34} allowDecimals={false} />
                     )}
                     <ChartTooltip content={<RichTooltip overlay={overlay} />} />
+                    {filters.metric !== 'jobs' && filters.metric !== 'avgBill' && proratedRevenueTarget > 0 ? (
+                      <ReferenceLine
+                        yAxisId="revenue"
+                        y={proratedRevenueTarget}
+                        stroke="hsl(142 71% 40%)"
+                        strokeDasharray="8 4"
+                        strokeWidth={2}
+                        label={{
+                          value: 'Target',
+                          position: 'insideTopRight',
+                          fill: 'hsl(142 40% 35%)',
+                          fontSize: 10,
+                        }}
+                      />
+                    ) : null}
                     {filters.metric !== 'jobs' && filters.metric !== 'avgBill' ? (
                       <ReferenceLine yAxisId="revenue" y={avgRevenue} stroke="hsl(199 89% 48%)" strokeDasharray="6 4" strokeOpacity={0.45} />
                     ) : null}
@@ -1030,6 +1180,10 @@ export function AnalyticsTrendGraph({
                     ) : null}
                   </ComposedChart>
                 </ChartContainer>
+
+                {filters.showMarginTrend && hasMarginData ? (
+                  <MarginTrendStrip rows={summary.rows} />
+                ) : null}
               </div>
 
               <TrendTable
@@ -1246,7 +1400,124 @@ function WeekdayPatternPanel({ rows }: { rows: WeekdayPatternRow[] }) {
   );
 }
 
-function TrendInsightsPanel({ insights }: { insights: AnalyticsTrendInsights }) {
+function MarginTrendStrip({ rows }: { rows: AnalyticsTrendPeriodRow[] }) {
+  const data = rows
+    .filter((r) => r.marginPct != null)
+    .map((r) => ({ label: r.label, marginPct: r.marginPct as number }));
+
+  if (data.length < 2) return null;
+
+  return (
+    <div className="mt-3 rounded-xl border bg-violet-50/30 px-3 py-3">
+      <p className="text-xs font-medium text-foreground mb-2">Margin % trend (revenue − cost)</p>
+      <ChartContainer config={chartConfig} className="aspect-[5/1] w-full min-h-[72px]">
+        <ComposedChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+          <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="hsl(var(--border))" />
+          <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 10 }} minTickGap={24} />
+          <YAxis
+            tickLine={false}
+            axisLine={false}
+            width={36}
+            tick={{ fontSize: 10 }}
+            tickFormatter={(v) => `${v}%`}
+            domain={[0, 'auto']}
+          />
+          <ChartTooltip
+            content={({ active, payload, label }) => {
+              if (!active || !payload?.length) return null;
+              return (
+                <div className="rounded-lg border bg-background px-2.5 py-2 text-xs shadow">
+                  <p className="font-medium mb-1">{label}</p>
+                  <p>Margin: {Number(payload[0]?.value).toFixed(1)}%</p>
+                </div>
+              );
+            }}
+          />
+          <Line
+            type="monotone"
+            dataKey="marginPct"
+            name="Margin %"
+            stroke="var(--color-marginPct)"
+            strokeWidth={2}
+            dot={{ r: 2.5, fill: 'var(--color-marginPct)' }}
+          />
+        </ComposedChart>
+      </ChartContainer>
+    </div>
+  );
+}
+
+function TechnicianTeamComparisonCard({
+  comparison,
+}: {
+  comparison: {
+    techName: string;
+    techJobs: number;
+    techRevenue: number;
+    teamJobs: number;
+    teamRevenue: number;
+    jobsSharePct: number | null;
+    revenueSharePct: number | null;
+    avgBillTech: number;
+    avgBillTeam: number;
+  };
+}) {
+  return (
+    <div className="rounded-xl border border-sky-200 bg-sky-50/40 px-4 py-3">
+      <p className="text-xs font-semibold text-foreground mb-2">
+        {comparison.techName} vs all technicians
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+        <div>
+          <p className="text-muted-foreground">Jobs</p>
+          <p className="font-bold tabular-nums">
+            {comparison.techJobs} ·{' '}
+            {comparison.jobsSharePct != null ? `${comparison.jobsSharePct.toFixed(1)}% of team` : '—'}
+          </p>
+          <p className="text-muted-foreground mt-0.5">Team total: {comparison.teamJobs}</p>
+        </div>
+        <div>
+          <p className="text-muted-foreground">Revenue</p>
+          <p className="font-bold tabular-nums">
+            ₹ {formatCurrency(comparison.techRevenue)} ·{' '}
+            {comparison.revenueSharePct != null ? `${comparison.revenueSharePct.toFixed(1)}% of team` : '—'}
+          </p>
+          <p className="text-muted-foreground mt-0.5">Team total: ₹ {formatCurrency(comparison.teamRevenue)}</p>
+        </div>
+        <div className="sm:col-span-2 pt-1 border-t border-sky-200/80">
+          <p className="text-muted-foreground">
+            Avg bill: ₹ {formatCurrency(Math.round(comparison.avgBillTech))} vs team ₹{' '}
+            {formatCurrency(Math.round(comparison.avgBillTeam))}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TrendInsightsPanel({
+  insights,
+  summary,
+  technicianComparison,
+  leadSources,
+  leadSourcesFromRequirements,
+}: {
+  insights: AnalyticsTrendInsights;
+  summary: AnalyticsTrendSummary | null;
+  technicianComparison: {
+    techName: string;
+    techJobs: number;
+    techRevenue: number;
+    teamJobs: number;
+    teamRevenue: number;
+    jobsSharePct: number | null;
+    revenueSharePct: number | null;
+    avgBillTech: number;
+    avgBillTeam: number;
+  } | null;
+  leadSources: Array<{ label: string; revenue: number; jobs: number; avgBill: number }>;
+  leadSourcesFromRequirements: boolean;
+}) {
   const totalJobs = insights.installationJobs + insights.serviceJobs;
   const installShare = totalJobs > 0 ? (insights.installationJobs / totalJobs) * 100 : 0;
   const totalMixRevenue = insights.installationRevenue + insights.serviceRevenue;
@@ -1261,6 +1532,20 @@ function TrendInsightsPanel({ insights }: { insights: AnalyticsTrendInsights }) 
       </div>
 
       <div className="p-4 space-y-4">
+        {technicianComparison ? (
+          <TechnicianTeamComparisonCard comparison={technicianComparison} />
+        ) : null}
+
+        {summary?.overallMarginPct != null ? (
+          <div className="rounded-xl border px-3.5 py-3 bg-violet-50/40">
+            <p className="text-[11px] font-medium text-muted-foreground">Overall margin</p>
+            <p className="text-lg font-bold text-violet-700 tabular-nums">
+              {summary.overallMarginPct.toFixed(1)}%
+            </p>
+            <p className="text-[11px] text-muted-foreground">Across selected period (revenue − cost)</p>
+          </div>
+        ) : null}
+
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <InsightMiniCard
             title="Recent momentum"
@@ -1314,13 +1599,15 @@ function TrendInsightsPanel({ insights }: { insights: AnalyticsTrendInsights }) 
             </div>
           </div>
 
-          <RankedInsightList
-            title="Top lead sources"
-            rows={insights.topLeadSources.map((r) => ({
+          <LeadSourceEfficiencyList
+            title="Lead source efficiency"
+            rows={leadSources.map((r) => ({
               label: r.label,
               revenue: r.revenue,
               jobs: r.jobs,
+              avgBill: r.avgBill,
             }))}
+            fromRequirements={leadSourcesFromRequirements}
           />
           <RankedInsightList
             title="Top service types"
@@ -1385,6 +1672,90 @@ function MixBar({
         <div className="h-full bg-sky-500 transition-all" style={{ width: `${installPct}%` }} />
         <div className="h-full bg-slate-300 transition-all" style={{ width: `${100 - installPct}%` }} />
       </div>
+    </div>
+  );
+}
+
+const LEAD_SOURCE_HINTS: Record<string, string> = {
+  'Admin Created': 'Booked manually in admin — no website/lead channel stored on the job.',
+  'Direct call': 'Customer called in directly (no tracked online lead).',
+};
+
+function LeadSourceEfficiencyList({
+  title,
+  rows,
+  fromRequirements,
+}: {
+  title: string;
+  rows: Array<{ label: string; revenue: number; jobs: number; avgBill: number }>;
+  fromRequirements?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const visibleLimit = 8;
+  const sorted = [...rows].sort((a, b) => b.avgBill - a.avgBill);
+  const visible = expanded ? sorted : sorted.slice(0, visibleLimit);
+  const hiddenCount = Math.max(0, sorted.length - visibleLimit);
+
+  if (!rows.length) {
+    return (
+      <div className="rounded-xl border p-4 bg-muted/10">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">{title}</p>
+        <p className="text-sm text-muted-foreground">No data for this selection.</p>
+      </div>
+    );
+  }
+  const maxAvg = Math.max(...rows.map((r) => r.avgBill), 1);
+  return (
+    <div className="rounded-xl border p-4 bg-muted/10">
+      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">
+        {title} ({sorted.length})
+      </p>
+      <p className="text-[10px] text-muted-foreground mb-3">
+        Sorted by avg revenue per job
+        {fromRequirements ? ' · resolved from job requirements' : ''}
+      </p>
+      <div className={cn('space-y-2.5', expanded && sorted.length > visibleLimit && 'max-h-72 overflow-y-auto pr-1')}>
+        {visible.map((row, i) => {
+          const width = (row.avgBill / maxAvg) * 100;
+          return (
+            <div key={`${title}-${row.label}`}>
+              <div className="flex items-center justify-between gap-2 text-xs mb-1">
+                <span className="font-medium truncate" title={LEAD_SOURCE_HINTS[row.label]}>
+                  <span className="text-muted-foreground mr-1.5">{i + 1}.</span>
+                  {row.label}
+                </span>
+                <span className="text-muted-foreground shrink-0">{row.jobs} jobs</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                  <div className="h-full bg-violet-500/80 rounded-full" style={{ width: `${width}%` }} />
+                </div>
+                <span className="text-xs font-semibold tabular-nums shrink-0">
+                  ₹ {formatCurrency(Math.round(row.avgBill))}/job
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {hiddenCount > 0 ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="mt-2 h-7 w-full text-xs text-sky-700"
+          onClick={() => setExpanded((e) => !e)}
+        >
+          {expanded ? 'Show less' : `Show all ${sorted.length} lead sources`}
+        </Button>
+      ) : null}
+      {sorted.some((r) => r.label === 'Admin Created') ? (
+        <p className="text-[10px] text-muted-foreground mt-2 leading-relaxed">
+          <span className="font-medium text-foreground">Admin Created</span> — jobs added from the admin
+          panel when no lead source was recorded (walk-in, phone without tracking, etc.). ₹0/job means
+          zero billed revenue on that job.
+        </p>
+      ) : null}
     </div>
   );
 }

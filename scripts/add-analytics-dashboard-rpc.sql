@@ -11,9 +11,26 @@ RETURNS text
 LANGUAGE sql
 IMMUTABLE
 AS $$
+  WITH from_requirements AS (
+    SELECT nullif(btrim(public.extract_job_lead_source(p_requirements)), '') AS label
+  ),
+  from_column AS (
+    SELECT nullif(btrim(p_lead_source), '') AS label
+  )
   SELECT coalesce(
-    nullif(btrim(p_lead_source), ''),
-    nullif(btrim(public.extract_job_lead_source(p_requirements)), ''),
+    CASE
+      WHEN (SELECT label FROM from_column) IS NULL THEN (SELECT label FROM from_requirements)
+      WHEN lower((SELECT label FROM from_column)) = 'direct call'
+        AND (SELECT label FROM from_requirements) IS NOT NULL
+        AND lower((SELECT label FROM from_requirements)) <> 'direct call'
+        THEN (SELECT label FROM from_requirements)
+      WHEN lower((SELECT label FROM from_column)) = 'other'
+        AND (SELECT label FROM from_requirements) IS NOT NULL
+        AND lower((SELECT label FROM from_requirements)) <> 'other'
+        THEN (SELECT label FROM from_requirements)
+      ELSE (SELECT label FROM from_column)
+    END,
+    (SELECT label FROM from_requirements),
     CASE WHEN p_assigned_by IS NOT NULL THEN 'Admin Created' ELSE 'Direct call' END
   );
 $$;

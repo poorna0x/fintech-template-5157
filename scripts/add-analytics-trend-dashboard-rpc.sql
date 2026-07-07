@@ -102,7 +102,7 @@ BEGIN
       AND public.analytics_job_completed_at(j.end_time, j.completed_at) >= v_scan_start
       AND public.analytics_job_completed_at(j.end_time, j.completed_at) <= v_scan_end
   ),
-  filtered AS (
+  filtered_base AS (
     SELECT r.*
     FROM completed_raw r
     WHERE (
@@ -125,15 +125,31 @@ BEGIN
       p_lead_source_key IS NULL
       OR public.analytics_norm_key(r.resolved_lead) = public.analytics_norm_key(p_lead_source_key)
     )
-    AND (p_technician_id IS NULL OR r.assigned_technician_id = p_technician_id)
     AND (
       p_payment_method IS NULL
       OR coalesce(nullif(btrim(r.payment_method), ''), 'Unknown') = p_payment_method
     )
   ),
+  filtered AS (
+    SELECT r.*
+    FROM filtered_base r
+    WHERE (p_technician_id IS NULL OR r.assigned_technician_id = p_technician_id)
+  ),
   primary_jobs AS (
     SELECT * FROM filtered
     WHERE completed_at_ts >= v_start AND completed_at_ts <= v_end
+  ),
+  team_baseline_jobs AS (
+    SELECT * FROM filtered_base
+    WHERE p_technician_id IS NOT NULL
+      AND completed_at_ts >= v_start
+      AND completed_at_ts <= v_end
+  ),
+  team_baseline AS (
+    SELECT
+      count(*)::integer AS jobs,
+      coalesce(sum(revenue), 0)::numeric AS revenue
+    FROM team_baseline_jobs
   ),
   compare_jobs AS (
     SELECT * FROM filtered
@@ -160,7 +176,8 @@ BEGIN
         ELSE to_char(pj.completed_at_ts AT TIME ZONE 'UTC', 'YYYY-MM')
       END AS period_key,
       count(*)::integer AS jobs,
-      coalesce(sum(pj.revenue), 0)::numeric AS revenue
+      coalesce(sum(pj.revenue), 0)::numeric AS revenue,
+      coalesce(sum(pj.revenue - coalesce(pj.actual_cost, 0)), 0)::numeric AS margin_amount
     FROM primary_jobs pj
     GROUP BY 1
   ),
@@ -172,7 +189,8 @@ BEGIN
         ELSE to_char(cj.completed_at_ts AT TIME ZONE 'UTC', 'YYYY-MM')
       END AS period_key,
       count(*)::integer AS jobs,
-      coalesce(sum(cj.revenue), 0)::numeric AS revenue
+      coalesce(sum(cj.revenue), 0)::numeric AS revenue,
+      coalesce(sum(cj.revenue - coalesce(cj.actual_cost, 0)), 0)::numeric AS margin_amount
     FROM compare_jobs cj
     GROUP BY 1
   ),
@@ -187,7 +205,12 @@ BEGIN
   primary_pack AS (
     SELECT public.get_analytics_monthly_trends_from_buckets(
       v_granularity,
-      coalesce((SELECT jsonb_agg(jsonb_build_object('period_key', b.period_key, 'jobs', b.jobs, 'revenue', b.revenue) ORDER BY b.period_key) FROM primary_bucket b), '[]'::jsonb)
+      coalesce((SELECT jsonb_agg(jsonb_build_object(
+        'period_key', b.period_key,
+        'jobs', b.jobs,
+        'revenue', b.revenue,
+        'margin_amount', b.margin_amount
+      ) ORDER BY b.period_key) FROM primary_bucket b), '[]'::jsonb)
     ) AS payload
   ),
   compare_pack AS (
@@ -195,7 +218,12 @@ BEGIN
       WHEN v_cmp_start IS NULL THEN NULL::jsonb
       ELSE public.get_analytics_monthly_trends_from_buckets(
         v_granularity,
-        coalesce((SELECT jsonb_agg(jsonb_build_object('period_key', b.period_key, 'jobs', b.jobs, 'revenue', b.revenue) ORDER BY b.period_key) FROM compare_bucket b), '[]'::jsonb)
+        coalesce((SELECT jsonb_agg(jsonb_build_object(
+          'period_key', b.period_key,
+          'jobs', b.jobs,
+          'revenue', b.revenue,
+          'margin_amount', b.margin_amount
+        ) ORDER BY b.period_key) FROM compare_bucket b), '[]'::jsonb)
       )
     END AS payload
   ),
@@ -221,9 +249,10 @@ BEGIN
       count(*)::integer AS jobs,
       coalesce(sum(pj.revenue), 0)::numeric AS revenue
     FROM primary_jobs pj
+    WHERE btrim(pj.resolved_lead) <> ''
     GROUP BY 1
     ORDER BY revenue DESC, jobs DESC
-    LIMIT 5
+    LIMIT 30
   ),
   service_top AS (
     SELECT
@@ -317,8 +346,15 @@ BEGIN
           ELSE NULL
         END,
         'growing_streak_months', 0,
-        'top_lead_sources', coalesce((SELECT jsonb_agg(jsonb_build_object('label', lt.label, 'jobs', lt.jobs, 'revenue', lt.revenue)) FROM lead_top lt), '[]'::jsonb),
-        'top_service_types', coalesce((SELECT jsonb_agg(jsonb_build_object('label', st.label, 'jobs', st.jobs, 'revenue', st.revenue)) FROM service_top st), '[]'::jsonb)
+        'top_lead_sources', coalesce((SELECT jsonb_agg(jsonb_build_object(
+          'label', lt.label,
+          'jobs', lt.jobs,
+          'revenue', lt.revenue,
+          'avg_bill', CASE WHEN lt.jobs > 0 THEN round(lt.revenue / lt.jobs, 2) ELSE 0 END
+        )) FROM lead_top lt), '[]'::jsonb),
+        'top_service_types', coalesce((SELECT jsonb_agg(jsonb_build_object('label', st.label, 'jobs', st.jobs, 'revenue', st.revenue)) FROM service_top st), '[]'::jsonb),
+        'team_baseline_jobs', CASE WHEN p_technician_id IS NULL THEN NULL ELSE (SELECT jobs FROM team_baseline) END,
+        'team_baseline_revenue', CASE WHEN p_technician_id IS NULL THEN NULL ELSE (SELECT revenue FROM team_baseline) END
       )
       FROM insight_base ib
       CROSS JOIN install_split ins
@@ -347,28 +383,48 @@ AS $$
     SELECT
       (elem->>'period_key') AS period_key,
       coalesce((elem->>'jobs')::integer, 0) AS jobs,
-      coalesce((elem->>'revenue')::numeric, 0) AS revenue
+      coalesce((elem->>'revenue')::numeric, 0) AS revenue,
+      coalesce((elem->>'margin_amount')::numeric, 0) AS margin_amount
     FROM jsonb_array_elements(coalesce(p_rows, '[]'::jsonb)) AS elem
+  ),
+  enriched AS (
+    SELECT
+      r.period_key,
+      r.jobs,
+      r.revenue,
+      r.margin_amount,
+      CASE
+        WHEN r.revenue > 0 THEN round((r.margin_amount / r.revenue) * 100, 2)
+        ELSE 0
+      END AS margin_pct
+    FROM rows r
   ),
   totals AS (
     SELECT
       coalesce(sum(jobs), 0)::integer AS total_jobs,
-      coalesce(sum(revenue), 0)::numeric AS total_revenue
-    FROM rows
+      coalesce(sum(revenue), 0)::numeric AS total_revenue,
+      coalesce(sum(margin_amount), 0)::numeric AS total_margin
+    FROM enriched
   ),
   ranked AS (
     SELECT
       r.period_key,
       r.jobs,
       r.revenue,
+      r.margin_pct,
       row_number() OVER (ORDER BY r.revenue DESC, r.period_key) AS best_rank,
       row_number() OVER (ORDER BY r.revenue ASC, r.period_key) AS worst_rank
-    FROM rows r
+    FROM enriched r
   )
   SELECT jsonb_build_object(
     'granularity', coalesce(nullif(btrim(p_granularity), ''), 'month'),
     'total_jobs', t.total_jobs,
     'total_revenue', t.total_revenue,
+    'total_margin', t.total_margin,
+    'overall_margin_pct', CASE
+      WHEN t.total_revenue > 0 THEN round((t.total_margin / t.total_revenue) * 100, 2)
+      ELSE 0
+    END,
     'best_period', (
       SELECT jsonb_build_object('period_key', r.period_key, 'revenue', r.revenue, 'jobs', r.jobs)
       FROM ranked r WHERE r.best_rank = 1 LIMIT 1
@@ -383,11 +439,12 @@ AS $$
           'period_key', r.period_key,
           'jobs', r.jobs,
           'revenue', r.revenue,
-          'avg_bill', CASE WHEN r.jobs > 0 THEN round(r.revenue / r.jobs, 2) ELSE 0 END
+          'avg_bill', CASE WHEN r.jobs > 0 THEN round(r.revenue / r.jobs, 2) ELSE 0 END,
+          'margin_pct', r.margin_pct
         )
         ORDER BY r.period_key
       )
-      FROM rows r
+      FROM enriched r
     ), '[]'::jsonb)
   )
   FROM totals t;

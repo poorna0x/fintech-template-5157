@@ -456,6 +456,22 @@ const ANALYTICS_JOB_COLUMNS = [
   'job_number',
 ].join(', ');
 
+/** Store requirements as jsonb array/object — never a JSON string scalar (breaks SQL extract). */
+function coerceJobRequirementsForDb(value: unknown): unknown {
+  if (value == null) return value;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed;
+      if (parsed && typeof parsed === 'object') return parsed;
+      return value;
+    } catch {
+      return value;
+    }
+  }
+  return value;
+}
+
 /** Completed jobs for lead-source breakdown (reads requirements JSON). */
 const LEAD_BREAKDOWN_JOB_COLUMNS = [
   'id',
@@ -1559,9 +1575,14 @@ export const db = {
       }
 
       // Return same shape as getOngoing (explicit columns + customer) so UI can prepend without refetch.
+      const insertRow = { ...job } as Database['public']['Tables']['jobs']['Insert'];
+      if (insertRow.requirements !== undefined) {
+        insertRow.requirements = coerceJobRequirementsForDb(insertRow.requirements) as typeof insertRow.requirements;
+      }
+
       const { data, error } = await supabase
         .from('jobs')
-        .insert(job)
+        .insert(insertRow)
         .select(`${JOB_SELECT_ONGOING_AND_TECH},${JOB_PHOTO_ARRAY_COLUMNS},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`)
         .single();
       
@@ -2202,7 +2223,7 @@ export const db = {
       const { data, error } = await supabase
         .from('jobs')
         .update({
-          requirements: JSON.stringify(reqs),
+          requirements: reqs,
           parts_cost_total: partsCostTotal,
         } as Database['public']['Tables']['jobs']['Update'])
         .eq('id', jobId)
@@ -2222,10 +2243,15 @@ export const db = {
       });
       
       try {
+        const payload = { ...updates } as Database['public']['Tables']['jobs']['Update'];
+        if (payload.requirements !== undefined) {
+          payload.requirements = coerceJobRequirementsForDb(payload.requirements) as typeof payload.requirements;
+        }
+
         // First, try update without select to avoid relationship query issues
         const { error: updateError } = await supabase
         .from('jobs')
-        .update(updates)
+        .update(payload)
           .eq('id', id);
         
         if (updateError) {

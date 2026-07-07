@@ -451,6 +451,7 @@ export type AnalyticsMonthlyTrendsRpc = {
     jobs: number;
     revenue: number;
     avg_bill: number;
+    margin_pct?: number;
   }>;
 };
 
@@ -460,6 +461,7 @@ export type AnalyticsTrendPeriodRow = {
   jobs: number;
   revenue: number;
   avgBill: number;
+  marginPct: number | null;
   revenueChangePct: number | null;
   jobsChangePct: number | null;
 };
@@ -468,6 +470,7 @@ export type AnalyticsTrendSummary = {
   granularity: 'month' | 'week' | 'day';
   totalJobs: number;
   totalRevenue: number;
+  overallMarginPct: number | null;
   overallTrendPct: number | null;
   bestPeriod: { periodKey: string; label: string; revenue: number; jobs: number } | null;
   worstPeriod: { periodKey: string; label: string; revenue: number; jobs: number } | null;
@@ -514,12 +517,15 @@ export function mapMonthlyTrendsFromRpc(rpc: AnalyticsMonthlyTrendsRpc): Analyti
     const jobs = Number(row.jobs) || 0;
     const revenue = Number(row.revenue) || 0;
     const avgBill = Number(row.avg_bill) || (jobs > 0 ? revenue / jobs : 0);
+    const marginPct =
+      row.margin_pct == null ? null : Number(row.margin_pct);
     return {
       periodKey: row.period_key,
       label: formatTrendPeriodLabel(row.period_key, granularity),
       jobs,
       revenue,
       avgBill,
+      marginPct: Number.isFinite(marginPct) ? marginPct : null,
       revenueChangePct: prev ? pctChange(revenue, Number(prev.revenue) || 0) : null,
       jobsChangePct: prev ? pctChange(jobs, Number(prev.jobs) || 0) : null,
     };
@@ -546,6 +552,10 @@ export function mapMonthlyTrendsFromRpc(rpc: AnalyticsMonthlyTrendsRpc): Analyti
     granularity,
     totalJobs: Number(rpc.total_jobs) || 0,
     totalRevenue: Number(rpc.total_revenue) || 0,
+    overallMarginPct:
+      (rpc as { overall_margin_pct?: number }).overall_margin_pct == null
+        ? null
+        : Number((rpc as { overall_margin_pct?: number }).overall_margin_pct),
     overallTrendPct,
     bestPeriod: mapExtreme(rpc.best_period),
     worstPeriod: mapExtreme(rpc.worst_period),
@@ -800,8 +810,10 @@ export type AnalyticsTrendInsights = {
   serviceRevenue: number;
   revenueSwingsPct: number | null;
   growingStreakMonths: number;
-  topLeadSources: Array<{ label: string; revenue: number; jobs: number }>;
+  topLeadSources: Array<{ label: string; revenue: number; jobs: number; avgBill: number }>;
   topServiceTypes: Array<{ label: string; revenue: number; jobs: number }>;
+  teamBaselineJobs: number | null;
+  teamBaselineRevenue: number | null;
 };
 
 export type AnalyticsTrendDashboardRpc = {
@@ -821,8 +833,10 @@ export type AnalyticsTrendDashboardRpc = {
     service_revenue: number;
     revenue_swings_pct: number | null;
     growing_streak_months: number;
-    top_lead_sources: Array<{ label: string; revenue: number; jobs: number }>;
+    top_lead_sources: Array<{ label: string; revenue: number; jobs: number; avg_bill?: number }>;
     top_service_types: Array<{ label: string; revenue: number; jobs: number }>;
+    team_baseline_jobs?: number | null;
+    team_baseline_revenue?: number | null;
   };
   filter_options: {
     equipment_brands: string[];
@@ -866,6 +880,7 @@ export function mapTrendDashboardFromRpc(rpc: AnalyticsTrendDashboardRpc): Analy
     jobs: Number(row.jobs) || 0,
     revenue: Number(row.revenue) || 0,
     avgBill: Number(row.avg_bill) || 0,
+    marginPct: null as number | null,
     revenueChangePct: null as number | null,
     jobsChangePct: null as number | null,
   }));
@@ -899,12 +914,18 @@ export function mapTrendDashboardFromRpc(rpc: AnalyticsTrendDashboardRpc): Analy
         label: r.label,
         revenue: Number(r.revenue) || 0,
         jobs: Number(r.jobs) || 0,
+        avgBill:
+          Number(r.avg_bill) || (Number(r.jobs) > 0 ? Number(r.revenue) / Number(r.jobs) : 0),
       })),
       topServiceTypes: (ins.top_service_types || []).map((r) => ({
         label: r.label,
         revenue: Number(r.revenue) || 0,
         jobs: Number(r.jobs) || 0,
       })),
+      teamBaselineJobs:
+        ins.team_baseline_jobs == null ? null : Number(ins.team_baseline_jobs) || 0,
+      teamBaselineRevenue:
+        ins.team_baseline_revenue == null ? null : Number(ins.team_baseline_revenue) || 0,
     },
     filterOptions: {
       equipmentBrands: rpc.filter_options?.equipment_brands || [],
@@ -990,6 +1011,22 @@ export function matchesTrendDrilldownJob(
     if (label !== filters.paymentMethod) return false;
   }
   return true;
+}
+
+export function buildTrendLeadSourceInsights(
+  completedJobs: Array<Record<string, unknown>>,
+  filters?: TrendDrilldownFilterArgs
+): Array<{ label: string; revenue: number; jobs: number; avgBill: number }> {
+  const filtered = filters
+    ? completedJobs.filter((job) => matchesTrendDrilldownJob(job, filters))
+    : completedJobs;
+
+  return buildLeadSourceBreakdownFromJobs(filtered).map((row) => ({
+    label: row.leadType,
+    jobs: row.count,
+    revenue: row.amount,
+    avgBill: row.count > 0 ? row.amount / row.count : 0,
+  }));
 }
 
 export function periodKeyToDateRange(periodKey: string): { startDate: Date; endDate: Date } | null {
@@ -1146,3 +1183,23 @@ export function rangesMatchDay(
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   return day(a.startDate) === day(b.startDate) && day(a.endDate) === day(b.endDate);
 }
+
+const REVENUE_TARGET_PRESETS_INR = [300000, 500000, 750000, 1000000];
+
+export function getProratedRevenueTargetLine(
+  monthlyTarget: number,
+  granularity: 'month' | 'week' | 'day',
+  activeRange: { startDate: Date; endDate: Date }
+): number {
+  if (monthlyTarget <= 0) return 0;
+  if (granularity === 'month') return monthlyTarget;
+
+  const start = activeRange.startDate;
+  const daysInMonth = new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate();
+  if (granularity === 'day') {
+    return monthlyTarget / daysInMonth;
+  }
+  return (monthlyTarget / daysInMonth) * 7;
+}
+
+export { REVENUE_TARGET_PRESETS_INR };
