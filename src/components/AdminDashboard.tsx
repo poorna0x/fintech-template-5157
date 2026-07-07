@@ -117,6 +117,12 @@ import { removeAdminTeamMember, saveAdminTeamMember } from '@/lib/adminJobTeam';
 import { submitAdminJobReassign, unassignAdminJob } from '@/lib/adminJobReassign';
 import { prepareAdminDenyJob, submitAdminJobDeny } from '@/lib/adminJobDeny';
 import {
+  markAdminJobMailSent,
+  markAdminJobMessageSent,
+} from '@/lib/adminJobCompletionMessaging';
+import { deleteAdminJob } from '@/lib/adminDeleteJob';
+import { updateAdminCustomerStatus } from '@/lib/adminCustomerStatus';
+import {
   calculateAdminCustomDistanceBetweenStops,
   getAdminJobEtaForShareDialog,
   getAdminMeasureStopSelectOptions,
@@ -910,7 +916,6 @@ const AdminDashboard = () => {
   const [draftOngoingAssignmentFilter, setDraftOngoingAssignmentFilter] = useState<'all' | 'assigned' | 'unassigned'>('all');
   const [draftOngoingAssignedTechnicianFilter, setDraftOngoingAssignedTechnicianFilter] = useState<string>('all');
   const [draftOngoingServiceSubTypeFilter, setDraftOngoingServiceSubTypeFilter] = useState<string>('all');
-  const [loadingCustomerJobs, setLoadingCustomerJobs] = useState<{[customerId: string]: boolean}>({});
   const [showAllFollowups, setShowAllFollowups] = useState<boolean>(false);
   // Pagination state
   const [currentPage, setCurrentPage] = useState<number>(() => savedUi.currentPage);
@@ -4748,35 +4753,6 @@ const AdminDashboard = () => {
   // Bulk assignment removed - not needed
 
 
-  // Load jobs for a specific customer
-  const loadCustomerJobs = async (customerId: string) => {
-    if (customerJobs[customerId] || loadingCustomerJobs[customerId]) return; // Already loaded or loading
-    
-    setLoadingCustomerJobs(prev => ({
-      ...prev,
-      [customerId]: true
-    }));
-
-    try {
-      const { data, error } = await db.jobs.getByCustomerId(customerId);
-      
-      if (error) {
-        return;
-      }
-
-      setCustomerJobs(prev => ({
-        ...prev,
-        [customerId]: data?.slice(0, 3) || [] // Only keep 3 most recent jobs
-      }));
-    } catch (error) {
-    } finally {
-      setLoadingCustomerJobs(prev => ({
-        ...prev,
-        [customerId]: false
-      }));
-    }
-  };
-
   // Handle job status update
   const handleReassignJob = (job: Job) => {
     const technicianId =
@@ -4969,138 +4945,26 @@ const AdminDashboard = () => {
     });
   };
 
-  // Handle completion email sent (separate from WhatsApp message_sent)
   const handleMailSent = async (jobId: string) => {
-    try {
-      const job = jobs.find(j => j.id === jobId);
-      if (!job) return;
-
-      let requirements: any[] = [];
-      try {
-        const reqData = (job as any).requirements || job.requirements;
-        if (typeof reqData === 'string') {
-          requirements = JSON.parse(reqData);
-        } else if (Array.isArray(reqData)) {
-          requirements = reqData;
-        } else if (reqData && typeof reqData === 'object') {
-          requirements = [reqData];
-        }
-      } catch (e) {
-        requirements = [];
-      }
-
-      const mailIndex = requirements.findIndex((r: any) => r?.mail_sent !== undefined);
-      if (mailIndex >= 0) {
-        requirements[mailIndex].mail_sent = true;
-        requirements[mailIndex].mail_sent_at = new Date().toISOString();
-      } else {
-        let added = false;
-        for (let i = 0; i < requirements.length; i++) {
-          if (requirements[i] && typeof requirements[i] === 'object' && !Array.isArray(requirements[i])) {
-            requirements[i].mail_sent = true;
-            requirements[i].mail_sent_at = new Date().toISOString();
-            added = true;
-            break;
-          }
-        }
-        if (!added) {
-          requirements.push({
-            mail_sent: true,
-            mail_sent_at: new Date().toISOString(),
-          });
-        }
-      }
-
-      const { error } = await db.jobs.update(jobId, {
-        requirements: JSON.stringify(requirements),
-      } as any);
-
-      if (error) {
-        console.error('Error marking mail as sent:', error);
-        toast.error('Failed to save mail status: ' + error.message);
-      } else {
-        await loadCompletedJobDetails(jobId);
-        await loadFilteredJobs(statusFilter, currentPage);
-      }
-    } catch (error: any) {
-      console.error('Error marking mail as sent:', error);
-    }
+    await markAdminJobMailSent(jobId, {
+      jobs,
+      statusFilter,
+      currentPage,
+      loadCompletedJobDetails,
+      loadFilteredJobs,
+    });
   };
 
-  // Handle message sent
   const handleMessageSent = async (jobId: string) => {
-    try {
-      // Get current job
-      const job = jobs.find(j => j.id === jobId);
-      if (!job) return;
-
-      // Update requirements to mark message as sent
-      let requirements: any[] = [];
-      try {
-        const reqData = (job as any).requirements || job.requirements;
-        if (typeof reqData === 'string') {
-          requirements = JSON.parse(reqData);
-        } else if (Array.isArray(reqData)) {
-          requirements = reqData;
-        } else if (reqData && typeof reqData === 'object') {
-          requirements = [reqData];
-        }
-      } catch (e) {
-        requirements = [];
-      }
-
-      // Add or update message_sent flag
-      // Check if message_sent already exists in any requirement object
-      const messageIndex = requirements.findIndex((r: any) => r?.message_sent !== undefined);
-      if (messageIndex >= 0) {
-        // Update existing message_sent entry
-        requirements[messageIndex].message_sent = true;
-        requirements[messageIndex].message_sent_at = new Date().toISOString();
-      } else {
-        // Find the first object that can hold message_sent, or create new one
-        // Prefer adding to an existing object rather than creating a new array entry
-        let added = false;
-        for (let i = 0; i < requirements.length; i++) {
-          if (requirements[i] && typeof requirements[i] === 'object' && !Array.isArray(requirements[i])) {
-            requirements[i].message_sent = true;
-            requirements[i].message_sent_at = new Date().toISOString();
-            added = true;
-            break;
-          }
-        }
-        if (!added) {
-          // Create a new entry for message_sent
-          requirements.push({
-            message_sent: true,
-            message_sent_at: new Date().toISOString()
-          });
-        }
-      }
-      
-      console.log('Updated requirements with message_sent:', JSON.stringify(requirements, null, 2));
-
-      // Update job in database
-      const { error } = await db.jobs.update(jobId, {
-        requirements: JSON.stringify(requirements)
-      } as any);
-
-      if (error) {
-        console.error('Error marking message as sent:', error);
-        toast.error('Failed to save message status: ' + error.message);
-      } else {
-        toast.success('Message sent confirmation saved');
-        closeAdminModal();
-        setSelectedJobForMessage(null);
-        // Ensure the updated `requirements` are reflected in the Completed Jobs UI.
-        // The main Completed filter list can be fetched in "slim" mode where `requirements` are omitted,
-        // so we explicitly load the full job details for this job id.
-        await loadCompletedJobDetails(jobId);
-        // Reload jobs to reflect the change - pass current filter and page
-        await loadFilteredJobs(statusFilter, currentPage);
-      }
-    } catch (error: any) {
-      console.error('Error marking message as sent:', error);
-    }
+    await markAdminJobMessageSent(jobId, {
+      jobs,
+      statusFilter,
+      currentPage,
+      loadCompletedJobDetails,
+      loadFilteredJobs,
+      closeAdminModal,
+      setSelectedJobForMessage,
+    });
   };
 
   // Calculate AMC end date: agreement date + years - 1 day
@@ -5255,77 +5119,25 @@ const AdminDashboard = () => {
     setCompleteDialogOpen(true);
   };
 
-  // Handle job deletion
   const handleDeleteJob = async () => {
-    if (!jobToDelete) return;
-    
-    try {
-      broadcastTechnicianJobListRefreshForJob(jobToDelete);
-      const { error } = await db.jobs.delete(jobToDelete.id);
-      
-      if (error) {
-        const msg = error.message || 'Failed to delete job';
-        if (error.code === '409' || /409|conflict|foreign key|23503/i.test(msg)) {
-          throw new Error(
-            'Could not delete this job. Re-run scripts/delete-job-admin-rpc.sql and scripts/technician-job-sync-realtime.sql in Supabase SQL Editor.'
-          );
-        }
-        throw new Error(msg);
-      }
-
-      const deletedId = jobToDelete.id;
-      // Update local state
-      setJobs(prev => prev.filter(job => job.id !== deletedId));
-      setCustomerJobs(prev => {
-        const updated = { ...prev };
-        Object.keys(updated).forEach(customerId => {
-          updated[customerId] = updated[customerId].filter(job => job.id !== deletedId);
-        });
-        return updated;
-      });
-      setLoadedCompletedJobDetails((prev) => {
-        if (!prev[deletedId]) return prev;
-        const next = { ...prev };
-        delete next[deletedId];
-        return next;
-      });
-      setLoadingCompletedJobDetails((prev) => {
-        if (!prev[deletedId]) return prev;
-        const next = { ...prev };
-        delete next[deletedId];
-        return next;
-      });
-      if (statusFilter === 'COMPLETED' || statusFilter === 'CANCELLED') {
-        setTotalCount((prev) => Math.max(0, prev - 1));
-      }
-
-      toast.success(`Job ${jobToDelete.job_number || jobToDelete.jobNumber} deleted successfully`);
-      closeAdminModal();
-      setDeleteJobDialogOpen(false);
-      setJobToDelete(null);
-    } catch (error) {
-      toast.error('Failed to delete job');
-    }
+    await deleteAdminJob(jobToDelete, {
+      statusFilter,
+      setJobs,
+      setCustomerJobs,
+      setLoadedCompletedJobDetails,
+      setLoadingCompletedJobDetails,
+      setTotalCount,
+      closeAdminModal,
+      setDeleteJobDialogOpen,
+      setJobToDelete,
+    });
   };
 
-  // Handle customer status update
-  const handleCustomerStatusUpdate = async (customerId: string, newStatus: 'ACTIVE' | 'INACTIVE' | 'BLOCKED') => {
-    try {
-      const { error } = await db.customers.update(customerId, { status: newStatus });
-      
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      // Update local state
-      setCustomers(prev => prev.map(customer => 
-        customer.id === customerId ? { ...customer, status: newStatus } : customer
-      ));
-
-      toast.success(`Customer status updated to ${newStatus}`);
-    } catch (error) {
-      toast.error('Failed to update customer status');
-    }
+  const handleCustomerStatusUpdate = async (
+    customerId: string,
+    newStatus: 'ACTIVE' | 'INACTIVE' | 'BLOCKED'
+  ) => {
+    await updateAdminCustomerStatus(customerId, newStatus, setCustomers);
   };
 
   // Open photo gallery
