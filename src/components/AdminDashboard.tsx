@@ -130,6 +130,17 @@ import {
   snapshotAdminCompleteJobAssignment,
   validateAdminCompleteTechnicianSelection,
 } from '@/lib/adminCompleteJobFlow';
+import { deleteAdminCustomerPhoto } from '@/lib/adminCustomerPhotoDelete';
+import { deleteAdminJobPhoto } from '@/lib/adminJobPhotoDelete';
+import {
+  copyAdminPhotoLink,
+  downloadAdminPhoto,
+  filterValidJobGalleryPhotos,
+} from '@/lib/adminPhotoHelpers';
+import {
+  buildAdminPhotoViewerSelection,
+  resolveAdminPhotoViewerSources,
+} from '@/lib/adminPhotoViewerNav';
 import {
   calculateAdminCustomDistanceBetweenStops,
   getAdminJobEtaForShareDialog,
@@ -4985,34 +4996,28 @@ const AdminDashboard = () => {
     await updateAdminCustomerStatus(customerId, newStatus, setCustomers);
   };
 
-  // Open photo gallery
   const openPhotoGallery = (jobId: string, photos: string[], type: 'before' | 'after' | 'photos') => {
     try {
-      // Ensure photos is an array and filter out invalid entries
-      const validPhotos = Array.isArray(photos) 
-        ? photos.filter(photo => photo && typeof photo === 'string' && photo.trim() !== '')
-        : [];
-      
+      const validPhotos = filterValidJobGalleryPhotos(photos);
+
       if (validPhotos.length === 0) {
         toast.info('No photos available for this job');
         return;
       }
-      
+
       setSelectedJobPhotos({ jobId, photos: validPhotos, type: type as 'before' | 'after' });
       const photoType = type === 'before' || type === 'after' ? type : 'after';
       openAdminModal('photos', { jobId, photoType });
-    } catch (error) {
+    } catch {
       toast.error('Failed to open photo gallery');
     }
   };
 
-  // Handle photo deletion
   const handleDeletePhoto = (jobId: string, photoIndex: number, photoUrl: string) => {
     setPhotoToDelete({ jobId, photoIndex, photoUrl });
     setDeletePhotoDialogOpen(true);
   };
 
-  // Open photo in full-screen viewer
   const openPhotoViewer = (photoUrl: string, photoIndex: number, totalPhotos: number, jobId?: string) => {
     setSelectedPhoto({ url: photoUrl, index: photoIndex, total: totalPhotos });
     const parsed = parseAdminDashboardUrl(location.search);
@@ -5022,575 +5027,62 @@ const AdminDashboard = () => {
     });
   };
 
-  // Navigate to previous photo
   const goToPreviousPhoto = () => {
     if (!selectedPhoto) return;
-    
-    // Use selectedBillPhotos if available (for combined payment + bill photos)
-    if (selectedBillPhotos && selectedBillPhotos.length > 0) {
-      const newIndex = selectedPhoto.index > 0 ? selectedPhoto.index - 1 : selectedBillPhotos.length - 1;
-      setSelectedPhoto({ 
-        url: selectedBillPhotos[newIndex], 
-        index: newIndex, 
-        total: selectedBillPhotos.length 
-      });
-      return;
-    }
-    
-    // Use selectedCustomerPhotos if available (for customer photos)
-    if (selectedCustomerPhotos && selectedCustomerPhotos.length > 0) {
-      const newIndex = selectedPhoto.index > 0 ? selectedPhoto.index - 1 : selectedCustomerPhotos.length - 1;
-      setSelectedPhoto({ 
-        url: selectedCustomerPhotos[newIndex], 
-        index: newIndex, 
-        total: selectedCustomerPhotos.length 
-      });
-      return;
-    }
-    
-    // Fallback to selectedJobPhotos
-    if (selectedJobPhotos && selectedJobPhotos.photos) {
-      const newIndex = selectedPhoto.index > 0 ? selectedPhoto.index - 1 : selectedJobPhotos.photos.length - 1;
-      setSelectedPhoto({ 
-        url: selectedJobPhotos.photos[newIndex], 
-        index: newIndex, 
-        total: selectedJobPhotos.photos.length 
-      });
-    }
+    const photos = resolveAdminPhotoViewerSources({
+      selectedBillPhotos,
+      selectedCustomerPhotos,
+      selectedJobPhotos,
+    });
+    if (!photos?.length) return;
+    setSelectedPhoto(buildAdminPhotoViewerSelection(photos, 'prev', selectedPhoto));
   };
 
-  // Navigate to next photo
   const goToNextPhoto = () => {
     if (!selectedPhoto) return;
-    
-    // Use selectedBillPhotos if available (for combined payment + bill photos)
-    if (selectedBillPhotos && selectedBillPhotos.length > 0) {
-      const newIndex = selectedPhoto.index < selectedBillPhotos.length - 1 ? selectedPhoto.index + 1 : 0;
-      setSelectedPhoto({ 
-        url: selectedBillPhotos[newIndex], 
-        index: newIndex, 
-        total: selectedBillPhotos.length 
-      });
-      return;
-    }
-    
-    // Use selectedCustomerPhotos if available (for customer photos)
-    if (selectedCustomerPhotos && selectedCustomerPhotos.length > 0) {
-      const newIndex = selectedPhoto.index < selectedCustomerPhotos.length - 1 ? selectedPhoto.index + 1 : 0;
-      setSelectedPhoto({ 
-        url: selectedCustomerPhotos[newIndex], 
-        index: newIndex, 
-        total: selectedCustomerPhotos.length 
-      });
-      return;
-    }
-    
-    // Fallback to selectedJobPhotos
-    if (selectedJobPhotos && selectedJobPhotos.photos) {
-      const newIndex = selectedPhoto.index < selectedJobPhotos.photos.length - 1 ? selectedPhoto.index + 1 : 0;
-      setSelectedPhoto({ 
-        url: selectedJobPhotos.photos[newIndex], 
-        index: newIndex, 
-        total: selectedJobPhotos.photos.length 
-      });
-    }
+    const photos = resolveAdminPhotoViewerSources({
+      selectedBillPhotos,
+      selectedCustomerPhotos,
+      selectedJobPhotos,
+    });
+    if (!photos?.length) return;
+    setSelectedPhoto(buildAdminPhotoViewerSelection(photos, 'next', selectedPhoto));
   };
 
-  // Download photo
   const downloadPhoto = async (photoUrl: string, photoIndex: number) => {
-    // Fetch as a blob so cross-origin (Cloudinary) images actually save to the device.
-    // The anchor `download` attribute is ignored for cross-origin URLs, which is why a
-    // plain link just opened/redirected instead of downloading.
-    try {
-      let fetchUrl = photoUrl;
-      if (photoUrl.includes('cloudinary.com')) {
-        // Strip transformations to get the original asset.
-        fetchUrl = photoUrl.replace(/\/upload\/[^/]*\//, '/upload/');
-      }
-
-      const response = await fetch(fetchUrl);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const blob = await response.blob();
-
-      // Pick an extension from the blob's mime type when available.
-      const ext = blob.type && blob.type.includes('/') ? blob.type.split('/')[1].split('+')[0] : 'jpg';
-
-      // Build a meaningful filename: "<Customer> <bill|payment> <n>" when we know the
-      // context (e.g. opened from a customer report), otherwise fall back to "photo-<n>".
-      const sanitize = (s: string) => s.replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '');
-      let baseName = `photo-${photoIndex + 1}`;
-      if (photoDownloadMeta?.customerName || photoDownloadMeta?.type) {
-        const parts = [
-          photoDownloadMeta.customerName ? sanitize(photoDownloadMeta.customerName) : '',
-          photoDownloadMeta.type === 'bill' ? 'bill' : photoDownloadMeta.type === 'payment' ? 'payment' : sanitize(photoDownloadMeta.type || ''),
-          String(photoIndex + 1),
-        ].filter(Boolean);
-        baseName = parts.join('_');
-      }
-
-      const objectUrl = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = objectUrl;
-      link.download = `${baseName}.${ext}`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(objectUrl);
-
-      toast.success('Photo downloaded');
-    } catch (error) {
-      // Fallback - open in new tab for manual save (e.g. if fetch is blocked by CORS).
-      try {
-        const newWindow = window.open(photoUrl, '_blank', 'noopener,noreferrer');
-        if (newWindow) {
-          toast.info('Photo opened in new tab. Right-click and "Save image as" to download.');
-        } else {
-          throw new Error('Popup blocked');
-        }
-      } catch (fallbackError) {
-        toast.error('Unable to download. Please right-click the photo and select "Save image as"');
-      }
-    }
+    await downloadAdminPhoto(photoUrl, photoIndex, photoDownloadMeta);
   };
 
-  // Copy photo link to clipboard
   const copyPhotoLink = async (photoUrl: string) => {
-    try {
-      await navigator.clipboard.writeText(photoUrl);
-      toast.success('Photo link copied to clipboard');
-    } catch (error) {
-      toast.error('Failed to copy link');
-    }
+    await copyAdminPhotoLink(photoUrl);
   };
 
-  // Confirm photo deletion
   const confirmDeletePhoto = async () => {
-    if (!photoToDelete) return;
-    
-    setIsDeletingPhoto(true);
-    try {
-      // Find the job and determine if it's a before or after photo
-      const job = jobs.find(j => j.id === photoToDelete.jobId);
-      if (!job) {
-        throw new Error('Job not found');
-      }
-
-      // Get current photos
-      const beforePhotos = Array.isArray(job.before_photos || job.beforePhotos) ? (job.before_photos || job.beforePhotos) : [];
-      const afterPhotos = Array.isArray(job.after_photos || job.afterPhotos) ? (job.after_photos || job.afterPhotos) : [];
-      
-      // Determine which array contains the photo to delete
-      const updatedBeforePhotos = [...beforePhotos];
-      const updatedAfterPhotos = [...afterPhotos];
-      let isBeforePhoto = false;
-      
-      // Check if photo exists in before_photos
-      const beforePhotoIndex = beforePhotos.findIndex(photo => {
-        const url = typeof photo === 'string' ? photo : photo?.secure_url;
-        return url === photoToDelete.photoUrl;
-      });
-      
-      if (beforePhotoIndex !== -1) {
-        updatedBeforePhotos.splice(beforePhotoIndex, 1);
-        isBeforePhoto = true;
-      } else {
-        // Check if photo exists in after_photos
-        const afterPhotoIndex = afterPhotos.findIndex(photo => {
-          const url = typeof photo === 'string' ? photo : photo?.secure_url;
-          return url === photoToDelete.photoUrl;
-        });
-        
-        if (afterPhotoIndex !== -1) {
-          updatedAfterPhotos.splice(afterPhotoIndex, 1);
-        } else {
-          throw new Error('Photo not found in job');
-        }
-      }
-
-      // Delete from Cloudinary if it's a Cloudinary URL
-      let cloudinaryDeleted = false;
-      let cloudinaryErrorMsg: string | undefined;
-      try {
-        const publicIdInfo = cloudinaryService.extractPublicId(photoToDelete.photoUrl);
-        if (publicIdInfo) {
-          const result = await cloudinaryService.deleteImage(publicIdInfo.publicId, publicIdInfo.useSecondary);
-          if (result.success) {
-            console.log(`✅ Photo deleted from Cloudinary: ${publicIdInfo.publicId}`);
-            cloudinaryDeleted = true;
-          } else {
-            cloudinaryErrorMsg = result.error;
-            console.warn(`⚠️ Failed to delete photo from Cloudinary: ${publicIdInfo.publicId}`, result.error);
-          }
-        } else {
-          console.warn('Could not extract public_id from URL:', photoToDelete.photoUrl);
-        }
-      } catch (cloudinaryError) {
-        cloudinaryErrorMsg = cloudinaryError instanceof Error ? cloudinaryError.message : 'Request failed';
-        console.error('Error deleting photo from Cloudinary:', cloudinaryError);
-      }
-
-      // Update the job in the database
-      const { error } = await db.jobs.update(photoToDelete.jobId, {
-        before_photos: updatedBeforePhotos,
-        after_photos: updatedAfterPhotos
-      });
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      // Update local state
-      setJobs(prev => prev.map(j => 
-        j.id === photoToDelete.jobId 
-          ? { ...j, before_photos: updatedBeforePhotos, after_photos: updatedAfterPhotos }
-          : j
-      ));
-
-      // Update customer jobs state
-      setCustomerJobs(prev => {
-        const updated = { ...prev };
-        Object.keys(updated).forEach(customerId => {
-          updated[customerId] = updated[customerId].map(job => 
-            job.id === photoToDelete.jobId 
-              ? { ...job, before_photos: updatedBeforePhotos, after_photos: updatedAfterPhotos }
-              : job
-          );
-        });
-        return updated;
-      });
-
-      // Update selected photos if this job is currently being viewed
-      if (selectedJobPhotos && selectedJobPhotos.jobId === photoToDelete.jobId) {
-        const updatedPhotos = selectedJobPhotos.photos.filter((_, index) => index !== photoToDelete.photoIndex);
-        setSelectedJobPhotos({ ...selectedJobPhotos, photos: updatedPhotos });
-        
-        // Close gallery if no photos left
-        if (updatedPhotos.length === 0) {
-          setPhotoGalleryOpen(false);
-        }
-      }
-
-      // Show appropriate success message
-      if (cloudinaryDeleted) {
-        toast.success('Photo deleted successfully from both database and Cloudinary');
-      } else {
-        toast.success(cloudinaryErrorMsg ? `Photo removed from database. Cloudinary: ${cloudinaryErrorMsg}` : 'Photo removed from database. Cloudinary delete failed.');
-      }
-      setDeletePhotoDialogOpen(false);
-      setPhotoToDelete(null);
-    } catch (error) {
-      toast.error('Failed to delete photo');
-    } finally {
-      setIsDeletingPhoto(false);
-    }
+    await deleteAdminJobPhoto(photoToDelete, {
+      jobs,
+      selectedJobPhotos,
+      setIsDeletingPhoto,
+      setJobs,
+      setCustomerJobs,
+      setSelectedJobPhotos,
+      setPhotoGalleryOpen,
+      setDeletePhotoDialogOpen,
+      setPhotoToDelete,
+    });
   };
 
-  // Helper function to normalize URLs for comparison
-  const normalizeUrl = (url: string): string => {
-    if (!url || typeof url !== 'string') return '';
-    // Remove trailing slashes, normalize to lowercase, remove query params for comparison
-    return url.trim().toLowerCase().replace(/\/+$/, '').split('?')[0].split('#')[0];
-  };
-
-  // Helper function to extract URL from photo (handles strings and objects)
-  const extractPhotoUrl = (photo: any): string => {
-    if (typeof photo === 'string') {
-      return photo;
-    } else if (photo && typeof photo === 'object') {
-      return photo.secure_url || photo.url || photo.public_id || '';
-    }
-    return '';
-  };
-
-  // Delete customer photo from all possible sources
   const confirmDeleteCustomerPhoto = async () => {
-    if (!customerPhotoToDelete || !selectedCustomerForPhotos) return;
-    
-    setIsDeletingCustomerPhoto(true);
-    try {
-      const customerId = selectedCustomerForPhotos.customer_id || selectedCustomerForPhotos.customerId;
-      if (!customerId) {
-        throw new Error('Customer ID not found');
-      }
-
-      // Get customer UUID
-      const { data: customer, error: customerError } = await db.customers.getByCustomerId(customerId);
-      if (customerError || !customer) {
-        throw new Error('Customer not found');
-      }
-
-      const { data: customerJobsData, error: jobsError } = await db.jobs.getByCustomerIdForPhotoAggregation(
-        customer.id
-      );
-      if (jobsError) {
-        throw new Error(jobsError.message);
-      }
-      const customerJobs = customerJobsData || [];
-
-      let photoFound = false;
-      const photoUrl = customerPhotoToDelete.photoUrl;
-      const normalizedPhotoUrl = normalizeUrl(photoUrl);
-      
-      console.log('Deleting photo:', { original: photoUrl, normalized: normalizedPhotoUrl });
-
-      // Search through all jobs to find and remove the photo
-      for (const job of customerJobs) {
-        let needsUpdate = false;
-        const updateData: any = {};
-
-        // Check before_photos
-        const beforePhotos = Array.isArray(job.before_photos || job.beforePhotos) 
-          ? (job.before_photos || job.beforePhotos) 
-          : [];
-        const beforePhotoIndex = beforePhotos.findIndex((photo: any) => {
-          const url = extractPhotoUrl(photo);
-          return normalizeUrl(url) === normalizedPhotoUrl;
-        });
-        
-        if (beforePhotoIndex !== -1) {
-          const updatedBeforePhotos = [...beforePhotos];
-          updatedBeforePhotos.splice(beforePhotoIndex, 1);
-          updateData.before_photos = updatedBeforePhotos;
-          needsUpdate = true;
-          photoFound = true;
-        }
-
-        // Check after_photos
-        const afterPhotos = Array.isArray(job.after_photos || job.afterPhotos) 
-          ? (job.after_photos || job.afterPhotos) 
-          : [];
-        const afterPhotoIndex = afterPhotos.findIndex((photo: any) => {
-          const url = extractPhotoUrl(photo);
-          return normalizeUrl(url) === normalizedPhotoUrl;
-        });
-        
-        if (afterPhotoIndex !== -1) {
-          const updatedAfterPhotos = [...afterPhotos];
-          updatedAfterPhotos.splice(afterPhotoIndex, 1);
-          updateData.after_photos = updatedAfterPhotos;
-          needsUpdate = true;
-          photoFound = true;
-        }
-
-        // Check images field
-        const images = Array.isArray(job.images) ? job.images : [];
-        const imageIndex = images.findIndex((photo: any) => {
-          const url = extractPhotoUrl(photo);
-          return normalizeUrl(url) === normalizedPhotoUrl;
-        });
-        
-        if (imageIndex !== -1) {
-          const updatedImages = [...images];
-          updatedImages.splice(imageIndex, 1);
-          updateData.images = updatedImages;
-          needsUpdate = true;
-          photoFound = true;
-        }
-
-        // Check requirements (bill_photos, payment_photos, qr_photos)
-        if (job.requirements) {
-          try {
-            const requirements = typeof job.requirements === 'string' 
-              ? JSON.parse(job.requirements) 
-              : job.requirements;
-            
-            let updatedRequirements = Array.isArray(requirements) ? [...requirements] : [];
-            
-            // Check if it's an object format
-            if (!Array.isArray(requirements) && typeof requirements === 'object') {
-              updatedRequirements = Object.keys(requirements).map(key => ({ [key]: requirements[key] }));
-            }
-
-            let requirementsChanged = false;
-
-            // Remove from bill_photos
-            updatedRequirements = updatedRequirements.map((req: any) => {
-              if (req.bill_photos && Array.isArray(req.bill_photos)) {
-                const filtered = req.bill_photos.filter((photo: any) => {
-                  const url = extractPhotoUrl(photo);
-                  return normalizeUrl(url) !== normalizedPhotoUrl;
-                });
-                if (filtered.length !== req.bill_photos.length) {
-                  requirementsChanged = true;
-                  photoFound = true;
-                  return { ...req, bill_photos: filtered };
-                }
-              }
-              return req;
-            });
-
-            // Remove from payment_photos
-            updatedRequirements = updatedRequirements.map((req: any) => {
-              if (req.payment_photos && Array.isArray(req.payment_photos)) {
-                const filtered = req.payment_photos.filter((photo: any) => {
-                  const url = extractPhotoUrl(photo);
-                  return normalizeUrl(url) !== normalizedPhotoUrl;
-                });
-                if (filtered.length !== req.payment_photos.length) {
-                  requirementsChanged = true;
-                  photoFound = true;
-                  return { ...req, payment_photos: filtered };
-                }
-              }
-              return req;
-            });
-
-            // Remove from qr_photos.payment_screenshot
-            updatedRequirements = updatedRequirements.map((req: any) => {
-              if (req.qr_photos && typeof req.qr_photos === 'object') {
-                const screenshotUrl = extractPhotoUrl(req.qr_photos.payment_screenshot);
-                const normalizedScreenshot = normalizeUrl(screenshotUrl);
-                if (normalizedScreenshot === normalizedPhotoUrl || screenshotUrl === photoUrl) {
-                  console.log(`Found photo in qr_photos.payment_screenshot for job ${job.id}`);
-                  requirementsChanged = true;
-                  photoFound = true;
-                  const { payment_screenshot, ...restQrPhotos } = req.qr_photos;
-                  return { ...req, qr_photos: restQrPhotos };
-                }
-              }
-              return req;
-            });
-
-            if (requirementsChanged) {
-              updateData.requirements = JSON.stringify(updatedRequirements);
-              needsUpdate = true;
-            }
-          } catch (e) {
-            console.error('Error parsing requirements:', e);
-          }
-        }
-
-        // Update job if photo was found
-        if (needsUpdate) {
-          const { error: updateError } = await db.jobs.update(job.id, updateData);
-          if (updateError) {
-            console.error(`Error updating job ${job.id}:`, updateError);
-          }
-        }
-      }
-
-      // If photo wasn't found in any job, check customer-level photos (photos added without a job)
-      if (!photoFound) {
-        const customerPhotosList = Array.isArray((customer as any).photos) ? (customer as any).photos : [];
-        const customerPhotoIndex = customerPhotosList.findIndex((p: any) => normalizeUrl(extractPhotoUrl(p)) === normalizedPhotoUrl);
-        if (customerPhotoIndex !== -1) {
-          const updatedCustomerPhotos = customerPhotosList.filter((_: any, i: number) => i !== customerPhotoIndex);
-          const { error: updateError } = await db.customers.update(customer.id, { photos: updatedCustomerPhotos } as any);
-          if (updateError) {
-            console.error('Error updating customer photos:', updateError);
-            throw new Error(updateError.message || 'Failed to remove photo from customer');
-          }
-          photoFound = true;
-        }
-      }
-
-      // Delete from Cloudinary if it's a Cloudinary URL (always attempt, even if not found in DB)
-      let cloudinaryDeleted = false;
-      let cloudinaryErrorMsg: string | undefined;
-      try {
-        const publicIdInfo = cloudinaryService.extractPublicId(photoUrl);
-        if (publicIdInfo) {
-          const result = await cloudinaryService.deleteImage(publicIdInfo.publicId, publicIdInfo.useSecondary);
-          if (result.success) {
-            console.log(`✅ Photo deleted from Cloudinary: ${publicIdInfo.publicId}`);
-            cloudinaryDeleted = true;
-          } else {
-            cloudinaryErrorMsg = result.error;
-            console.warn(`⚠️ Failed to delete photo from Cloudinary: ${publicIdInfo.publicId}`, result.error);
-          }
-        } else {
-          console.warn('Could not extract public_id from URL:', photoUrl);
-        }
-      } catch (cloudinaryError) {
-        cloudinaryErrorMsg = cloudinaryError instanceof Error ? cloudinaryError.message : 'Request failed';
-        console.error('Error deleting photo from Cloudinary:', cloudinaryError);
-      }
-
-      // If photo wasn't found in database
-      if (!photoFound) {
-        // Log debugging info
-        console.warn('Photo not found in any job. Searching for:', normalizedPhotoUrl);
-        console.warn('Original URL:', photoUrl);
-        
-        // Check requirements more thoroughly for payment screenshots
-        console.log('Checking requirements for payment screenshots...');
-        for (const job of customerJobs) {
-          if (job.requirements) {
-            try {
-              const reqs = typeof job.requirements === 'string' ? JSON.parse(job.requirements) : job.requirements;
-              const reqsArray = Array.isArray(reqs) ? reqs : [reqs];
-              reqsArray.forEach((req: any) => {
-                if (req.qr_photos?.payment_screenshot) {
-                  const screenshotUrl = extractPhotoUrl(req.qr_photos.payment_screenshot);
-                  console.log(`Job ${job.job_number} has payment_screenshot:`, screenshotUrl);
-                  console.log(`  Normalized:`, normalizeUrl(screenshotUrl));
-                  console.log(`  Matches:`, normalizeUrl(screenshotUrl) === normalizedPhotoUrl);
-                }
-              });
-            } catch (e) {
-              console.error('Error checking requirements:', e);
-            }
-          }
-        }
-        
-        // Still update UI even if not found in database
-        // Photo might be orphaned or stored differently
-        console.warn('Photo not found in database. Updating UI anyway. Photo may need manual deletion from Cloudinary if API secret is not configured.');
-        photoFound = true; // Allow UI update to proceed
-      }
-
-      // Reload customer photos
-      await loadCustomerPhotos(customerId);
-
-      // Update local state
-      const customerIdKey = customerId;
-      setCustomerPhotos(prev => {
-        const updated = { ...prev };
-        if (updated[customerIdKey]) {
-          updated[customerIdKey] = updated[customerIdKey].filter(url => url !== photoUrl);
-        }
-        return updated;
-      });
-
-      // Update photo viewer to show next photo or previous if deleted photo was being viewed
-      // Keep viewer open - just update the photo if needed
-      if (selectedPhoto && selectedPhoto.url === photoUrl) {
-        const customerIdKey = customerId;
-        const remainingPhotos = customerPhotos[customerIdKey]?.filter(url => url !== photoUrl) || [];
-        if (remainingPhotos.length > 0) {
-          // Show next photo, or previous if at the end
-          const currentIndex = customerPhotos[customerIdKey]?.indexOf(photoUrl) || 0;
-          const newIndex = currentIndex < remainingPhotos.length ? currentIndex : remainingPhotos.length - 1;
-          setSelectedPhoto({
-            url: remainingPhotos[newIndex],
-            index: newIndex,
-            total: remainingPhotos.length
-          });
-        } else {
-          // No photos left - close viewer
-          setSelectedPhoto(null);
-        }
-      }
-
-      // Show appropriate success message
-      if (cloudinaryDeleted) {
-        toast.success('Photo deleted successfully from both database and Cloudinary');
-      } else if (photoFound || !cloudinaryErrorMsg) {
-        toast.success(cloudinaryErrorMsg ? `Photo removed from database. Cloudinary: ${cloudinaryErrorMsg}` : 'Photo removed from database.');
-      } else {
-        toast.warning(`Photo removed from UI. Cloudinary: ${cloudinaryErrorMsg}`);
-      }
-      
-      setDeleteCustomerPhotoDialogOpen(false);
-      setCustomerPhotoToDelete(null);
-    } catch (error) {
-      console.error('Error deleting customer photo:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to delete photo');
-    } finally {
-      setIsDeletingCustomerPhoto(false);
-    }
+    await deleteAdminCustomerPhoto(customerPhotoToDelete, selectedCustomerForPhotos, {
+      customerPhotos,
+      selectedPhoto,
+      setIsDeletingCustomerPhoto,
+      setCustomerPhotos,
+      setSelectedPhoto,
+      setDeleteCustomerPhotoDialogOpen,
+      setCustomerPhotoToDelete,
+      loadCustomerPhotos,
+    });
   };
-
 
   // When user has searched, use API results (find any customer in DB); otherwise use derived list (customers with jobs)
   const baseCustomers = searchTerm.trim() ? (searchResults ?? []) : customers;
