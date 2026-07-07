@@ -223,6 +223,13 @@ import AmcInfoDialog from './admin/AmcInfoDialog';
 import MoveToOngoingDialog from './admin/MoveToOngoingDialog';
 import CompleteTechnicianSelectDialog from './admin/CompleteTechnicianSelectDialog';
 import { AdminDashboardHeader } from './admin/AdminDashboardHeader';
+import { AdminSearchResultsBar } from './admin/AdminSearchResultsBar';
+import { DeniedJobsDateFilter } from './admin/DeniedJobsDateFilter';
+import { CompletedJobsFiltersSection } from './admin/CompletedJobsFiltersSection';
+import JobDistanceMeasurementDialog, {
+  type JobCustomDistanceResult,
+  type JobTechnicianDistanceRow,
+} from './admin/JobDistanceMeasurementDialog';
 import {
   broadcastTechnicianJobListRefresh,
   broadcastTechnicianJobListRefreshForJob,
@@ -735,30 +742,12 @@ const AdminDashboard = () => {
   // Distance measurement dialog state
   const [distanceMeasurementDialogOpen, setDistanceMeasurementDialogOpen] = useState(false);
   const [selectedJobForDistance, setSelectedJobForDistance] = useState<Job | null>(null);
-  const [technicianDistances, setTechnicianDistances] = useState<Array<{
-    technician: Technician;
-    distance: string;
-    duration: string;
-    distanceValue?: number; // Distance in meters for comparison
-    durationValue?: number; // Duration in seconds for calculation
-    estimatedArrival?: string; // Estimated arrival time in 12-hour format
-    lastUpdated?: string; // Last updated time in 12-hour format
-    hasLocation: boolean;
-    isCalculating: boolean;
-    isAssigned?: boolean; // Whether this technician is assigned to the job
-    isApproximate?: boolean; // True when distance is straight-line fallback (Google route unavailable)
-  }>>([]);
+  const [technicianDistances, setTechnicianDistances] = useState<JobTechnicianDistanceRow[]>([]);
   const [isCalculatingDistances, setIsCalculatingDistances] = useState(false);
   /** Manual pair: technician (`__tech__`) or job id — driving distance only when user clicks Calculate */
   const [customDistanceFromId, setCustomDistanceFromId] = useState<string>('');
   const [customDistanceToId, setCustomDistanceToId] = useState<string>('');
-  const [customDistanceResult, setCustomDistanceResult] = useState<{
-    fromLabel: string;
-    toLabel: string;
-    distance: string;
-    duration: string;
-    isApproximate?: boolean; // True when distance is straight-line fallback (Google route unavailable)
-  } | null>(null);
+  const [customDistanceResult, setCustomDistanceResult] = useState<JobCustomDistanceResult | null>(null);
   const [isLoadingCustomDistance, setIsLoadingCustomDistance] = useState(false);
   const [isOpeningCustomDistanceMaps, setIsOpeningCustomDistanceMaps] = useState(false);
   
@@ -10258,328 +10247,108 @@ const AdminDashboard = () => {
         />
 
         {searchTerm.trim() && displayedCustomers.length > 0 && !showJobsListLoader && (
-          <div className="mb-4 hidden sm:flex flex-wrap items-center justify-between gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2 text-sm text-gray-700">
-            <div>
-              Showing results for: <span className="font-medium text-gray-900">"{searchTerm}"</span>
-              <span className="ml-2 text-gray-500">
-                ({displayedCustomers.length} customer{displayedCustomers.length !== 1 ? 's' : ''} found)
-              </span>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 shrink-0 text-gray-600 hover:text-gray-900"
-              onClick={handleClearSearch}
-            >
-              <X className="w-4 h-4 mr-1" />
-              Clear search
-            </Button>
-          </div>
+          <AdminSearchResultsBar
+            searchTerm={searchTerm}
+            resultCount={displayedCustomers.length}
+            onClearSearch={handleClearSearch}
+          />
         )}
 
-        {/* Date Filter for Denied Jobs */}
         {statusFilter === 'CANCELLED' && (
-          <div className="mb-4 rounded-lg border border-input bg-muted/20 px-2 py-1.5 sm:px-3 sm:py-2">
-            <div className="flex flex-nowrap items-center gap-1.5 sm:gap-2 min-w-0 w-full">
-              <Label className="text-xs sm:text-sm font-medium text-muted-foreground shrink-0 whitespace-nowrap">
-                <span className="sm:hidden">Denied for</span>
-                <span className="hidden sm:inline">Show denied jobs for</span>
-              </Label>
-              <DatePicker
-                value={deniedDateFilter}
-                onChange={(v) => setDeniedDateFilter(v ?? getTodayLocalDate())}
-                placeholder="Pick date"
-                className="h-9 w-auto shrink-0 px-2 text-xs min-w-[6.75rem] sm:h-10 sm:min-w-[140px] sm:px-3 sm:text-sm"
-              />
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-9 shrink-0 whitespace-nowrap px-2.5 text-xs sm:h-10 sm:px-4 sm:text-sm"
-                onClick={() => setDeniedDateFilter(getTodayLocalDate())}
-              >
-                Today
-              </Button>
-            </div>
-          </div>
+          <DeniedJobsDateFilter
+            value={deniedDateFilter}
+            onChange={(v) => setDeniedDateFilter(v)}
+            onToday={() => setDeniedDateFilter(getTodayLocalDate())}
+          />
         )}
 
-        {/* Completed Jobs quick filters: range preset shows only switch-to-day + filters (no inline range label). */}
         {statusFilter === 'COMPLETED' && (
-          <div className="mb-4 rounded-lg border border-input bg-muted/20 px-3 py-2">
-            <div className="flex items-center justify-between gap-2 min-w-0">
-              <div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
-                {completedDatePreset === 'day' ? (
-                  <>
-                    <div className="min-w-0">
-                      <DatePicker
-                        value={completedDateFilter}
-                        onChange={(v) => {
-                          const next = v ?? getTodayLocalDate();
-                          setCompletedDatePreset('day');
-                          setCompletedDateFilter(next);
-                          setCompletedRangeStartDate(next);
-                          setCompletedRangeEndDate(next);
-                          // Quick single-day pick should behave like date-only mode
-                          setCompletedLeadTypeFilter('all');
-                          setCompletedServiceSubTypeFilter('all');
-                          setCompletedByFilter('all');
-                        }}
-                        placeholder="Pick date"
-                        className="w-auto min-w-[140px]"
-                      />
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      type="button"
-                      className="h-10 shrink-0 px-3 sm:px-4"
-                      onClick={() => {
-                        const today = getTodayLocalDate();
-                        setCompletedDatePreset('day');
-                        setCompletedDateFilter(today);
-                        setCompletedRangeStartDate(today);
-                        setCompletedRangeEndDate(today);
-                        // Quick Today should clear advanced completed filters
-                        setCompletedLeadTypeFilter('all');
-                        setCompletedServiceSubTypeFilter('all');
-                        setCompletedByFilter('all');
-                      }}
-                    >
-                      Today
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      type="button"
-                      className="h-10 shrink-0 px-3 text-xs sm:px-4 sm:text-sm"
-                      onClick={() => {
-                        const today = getTodayLocalDate();
-                        setCompletedDatePreset('day');
-                        setCompletedDateFilter(today);
-                        setCompletedRangeStartDate(today);
-                        setCompletedRangeEndDate(today);
-                        // Switching back to single day should reset hidden advanced filters
-                        setCompletedLeadTypeFilter('all');
-                        setCompletedServiceSubTypeFilter('all');
-                        setCompletedByFilter('all');
-                      }}
-                    >
-                      <span className="sm:hidden">Single day</span>
-                      <span className="hidden sm:inline">Switch to single day</span>
-                    </Button>
-                  </>
-                )}
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                type="button"
-                onClick={() => openAdminModal('completed-filters')}
-                className="shrink-0 h-10 w-10 p-0 sm:w-auto sm:px-3"
-                aria-label="Completed jobs filters"
-              >
-                <Filter className="h-4 w-4 sm:mr-1.5" aria-hidden />
-                <span className="hidden sm:inline">Filters</span>
-              </Button>
-            </div>
-          </div>
-        )}
-        {statusFilter === 'COMPLETED' && (
-          <Dialog
-            open={completedFilterDialogOpen}
-            onOpenChange={(open) => {
+          <CompletedJobsFiltersSection
+            completedDatePreset={completedDatePreset}
+            completedDateFilter={completedDateFilter}
+            onPickDay={(next) => {
+              setCompletedDatePreset('day');
+              setCompletedDateFilter(next);
+              setCompletedRangeStartDate(next);
+              setCompletedRangeEndDate(next);
+              setCompletedLeadTypeFilter('all');
+              setCompletedServiceSubTypeFilter('all');
+              setCompletedByFilter('all');
+            }}
+            onQuickToday={() => {
+              const today = getTodayLocalDate();
+              setCompletedDatePreset('day');
+              setCompletedDateFilter(today);
+              setCompletedRangeStartDate(today);
+              setCompletedRangeEndDate(today);
+              setCompletedLeadTypeFilter('all');
+              setCompletedServiceSubTypeFilter('all');
+              setCompletedByFilter('all');
+            }}
+            onSwitchToSingleDay={() => {
+              const today = getTodayLocalDate();
+              setCompletedDatePreset('day');
+              setCompletedDateFilter(today);
+              setCompletedRangeStartDate(today);
+              setCompletedRangeEndDate(today);
+              setCompletedLeadTypeFilter('all');
+              setCompletedServiceSubTypeFilter('all');
+              setCompletedByFilter('all');
+            }}
+            onOpenFilters={() => openAdminModal('completed-filters')}
+            dialogOpen={completedFilterDialogOpen}
+            onDialogOpenChange={(open) => {
               if (open) openAdminModal('completed-filters');
               else {
                 setCompletedFilterDialogOpen(false);
                 onAdminModalOpenChange('completed-filters', false);
               }
             }}
-          >
-            <DialogContent className="sm:max-w-2xl">
-              <DialogHeader>
-                <DialogTitle>Completed Jobs Filters</DialogTitle>
-                <DialogDescription>Choose filters to narrow completed jobs.</DialogDescription>
-              </DialogHeader>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 py-1">
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Date Filter</Label>
-                  <Select
-                    value={draftCompletedDatePreset}
-                    onValueChange={(value: 'day' | 'week' | 'month' | 'custom') => {
-                      const today = new Date();
-                      const todayStr = getTodayLocalDate();
-                      setDraftCompletedDatePreset(value);
-                      if (value === 'day') {
-                        setDraftCompletedDateFilter(todayStr);
-                      } else if (value === 'week') {
-                        const weekStart = new Date(today);
-                        weekStart.setDate(today.getDate() - 6);
-                        const start = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`;
-                        setDraftCompletedRangeStartDate(start);
-                        setDraftCompletedRangeEndDate(todayStr);
-                      } else if (value === 'month') {
-                        const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-                        const start = `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, '0')}-${String(monthStart.getDate()).padStart(2, '0')}`;
-                        setDraftCompletedRangeStartDate(start);
-                        setDraftCompletedRangeEndDate(todayStr);
-                      } else if (value === 'custom') {
-                        if (!draftCompletedRangeStartDate) setDraftCompletedRangeStartDate(todayStr);
-                        if (!draftCompletedRangeEndDate) setDraftCompletedRangeEndDate(todayStr);
-                      }
-                    }}
-                  >
-                    <SelectTrigger className="h-10">
-                      <SelectValue placeholder="Select period" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="day">Single day</SelectItem>
-                      <SelectItem value="week">Last 7 days</SelectItem>
-                      <SelectItem value="month">This month</SelectItem>
-                      <SelectItem value="custom">Custom range</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {draftCompletedDatePreset === 'day' ? (
-                  <div className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">Completed On</Label>
-                    <div className="inline-flex w-full items-center gap-2">
-                      <DatePicker
-                        value={draftCompletedDateFilter}
-                        onChange={(v) => setDraftCompletedDateFilter(v ?? getTodayLocalDate())}
-                        placeholder="Pick date"
-                        className="flex-1 w-full"
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="space-y-1 min-w-0">
-                      <Label className="text-xs text-muted-foreground">From</Label>
-                      <DatePicker
-                        value={draftCompletedRangeStartDate}
-                        onChange={(v) => {
-                          const nextStart = v ?? draftCompletedRangeStartDate;
-                          if (!nextStart) return;
-                          setDraftCompletedRangeStartDate(nextStart);
-                          if (draftCompletedRangeEndDate && nextStart > draftCompletedRangeEndDate) {
-                            setDraftCompletedRangeEndDate(nextStart);
-                          }
-                        }}
-                        placeholder="Start date"
-                        className="w-full"
-                      />
-                    </div>
-                    <div className="space-y-1 min-w-0">
-                      <Label className="text-xs text-muted-foreground">To</Label>
-                      <DatePicker
-                        value={draftCompletedRangeEndDate}
-                        onChange={(v) => {
-                          const nextEnd = v ?? draftCompletedRangeEndDate;
-                          if (!nextEnd) return;
-                          setDraftCompletedRangeEndDate(nextEnd);
-                          if (draftCompletedRangeStartDate && nextEnd < draftCompletedRangeStartDate) {
-                            setDraftCompletedRangeStartDate(nextEnd);
-                          }
-                        }}
-                        placeholder="End date"
-                        className="w-full"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Lead Type</Label>
-                  <Select value={draftCompletedLeadTypeFilter} onValueChange={setDraftCompletedLeadTypeFilter}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="All lead types" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All lead types</SelectItem>
-                      {completedLeadTypeOptions.map((leadType) => (
-                        <SelectItem key={leadType} value={leadType}>{leadType}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Service Sub Type</Label>
-                  <Select value={draftCompletedServiceSubTypeFilter} onValueChange={setDraftCompletedServiceSubTypeFilter}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="All service sub types" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All service sub types</SelectItem>
-                      {completedServiceSubTypeOptions.map((subType) => (
-                        <SelectItem key={subType} value={subType}>{subType}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Completed By</Label>
-                  <Select value={draftCompletedByFilter} onValueChange={setDraftCompletedByFilter}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="All technicians" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All technicians</SelectItem>
-                      {completedByOptions.map((completedBy) => (
-                        <SelectItem key={completedBy} value={completedBy}>{completedBy}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-              </div>
-              <DialogFooter>
-                <Button
-                  variant="outline"
-                  type="button"
-                  onClick={() => {
-                    const today = getTodayLocalDate();
-                    setCompletedDatePreset('day');
-                    setCompletedDateFilter(today);
-                    setCompletedRangeStartDate(today);
-                    setCompletedRangeEndDate(today);
-                    setCompletedLeadTypeFilter('all');
-                    setCompletedServiceSubTypeFilter('all');
-                    setCompletedByFilter('all');
-                    setDraftCompletedDatePreset('day');
-                    setDraftCompletedDateFilter(today);
-                    setDraftCompletedRangeStartDate(today);
-                    setDraftCompletedRangeEndDate(today);
-                    setDraftCompletedLeadTypeFilter('all');
-                    setDraftCompletedServiceSubTypeFilter('all');
-                    setDraftCompletedByFilter('all');
-                  }}
-                >
-                  Reset Filters
-                </Button>
-                <Button
-                  type="button"
-                  onClick={() => {
-                    setCompletedDatePreset(draftCompletedDatePreset);
-                    setCompletedDateFilter(draftCompletedDateFilter);
-                    setCompletedRangeStartDate(draftCompletedRangeStartDate);
-                    setCompletedRangeEndDate(draftCompletedRangeEndDate);
-                    setCompletedLeadTypeFilter(draftCompletedLeadTypeFilter);
-                    setCompletedServiceSubTypeFilter(draftCompletedServiceSubTypeFilter);
-                    setCompletedByFilter(draftCompletedByFilter);
-                    closeAdminModal();
-                  }}
-                >
-                  Apply
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+            draftDatePreset={draftCompletedDatePreset}
+            onDraftDatePresetChange={setDraftCompletedDatePreset}
+            draftDateFilter={draftCompletedDateFilter}
+            onDraftDateFilterChange={setDraftCompletedDateFilter}
+            draftRangeStartDate={draftCompletedRangeStartDate}
+            onDraftRangeStartDateChange={setDraftCompletedRangeStartDate}
+            draftRangeEndDate={draftCompletedRangeEndDate}
+            onDraftRangeEndDateChange={setDraftCompletedRangeEndDate}
+            draftLeadTypeFilter={draftCompletedLeadTypeFilter}
+            onDraftLeadTypeFilterChange={setDraftCompletedLeadTypeFilter}
+            draftServiceSubTypeFilter={draftCompletedServiceSubTypeFilter}
+            onDraftServiceSubTypeFilterChange={setDraftCompletedServiceSubTypeFilter}
+            draftCompletedByFilter={draftCompletedByFilter}
+            onDraftCompletedByFilterChange={setDraftCompletedByFilter}
+            leadTypeOptions={completedLeadTypeOptions}
+            serviceSubTypeOptions={completedServiceSubTypeOptions}
+            completedByOptions={completedByOptions}
+            onResetFilters={() => {
+              const today = getTodayLocalDate();
+              setCompletedDatePreset('day');
+              setCompletedDateFilter(today);
+              setCompletedRangeStartDate(today);
+              setCompletedRangeEndDate(today);
+              setCompletedLeadTypeFilter('all');
+              setCompletedServiceSubTypeFilter('all');
+              setCompletedByFilter('all');
+              setDraftCompletedDatePreset('day');
+              setDraftCompletedDateFilter(today);
+              setDraftCompletedRangeStartDate(today);
+              setDraftCompletedRangeEndDate(today);
+              setDraftCompletedLeadTypeFilter('all');
+              setDraftCompletedServiceSubTypeFilter('all');
+              setDraftCompletedByFilter('all');
+            }}
+            onApplyFilters={() => {
+              setCompletedDatePreset(draftCompletedDatePreset);
+              setCompletedDateFilter(draftCompletedDateFilter);
+              setCompletedRangeStartDate(draftCompletedRangeStartDate);
+              setCompletedRangeEndDate(draftCompletedRangeEndDate);
+              setCompletedLeadTypeFilter(draftCompletedLeadTypeFilter);
+              setCompletedServiceSubTypeFilter(draftCompletedServiceSubTypeFilter);
+              setCompletedByFilter(draftCompletedByFilter);
+              closeAdminModal();
+            }}
+          />
         )}
 
         {/* Customers with Jobs */}
@@ -13410,8 +13179,7 @@ const AdminDashboard = () => {
         }}
       />
 
-      {/* Distance Measurement Dialog */}
-      <Dialog
+      <JobDistanceMeasurementDialog
         open={distanceMeasurementDialogOpen}
         onOpenChange={(open) => {
           setDistanceMeasurementDialogOpen(open);
@@ -13420,276 +13188,20 @@ const AdminDashboard = () => {
             setIsOpeningCustomDistanceMaps(false);
           }
         }}
-      >
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto w-[calc(100vw-2rem)] sm:w-full">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Navigation className="h-5 w-5 shrink-0" />
-              Measure distance
-            </DialogTitle>
-            <p className="text-sm text-muted-foreground pt-1">
-              Driving distance from this technician&apos;s last location to this job. Use custom
-              distance below to compare other stops or open a route in Google Maps.
-            </p>
-          </DialogHeader>
-
-          <div className="mt-4 min-w-0">
-            {isCalculatingDistances ? (
-              <div className="flex items-center justify-center py-8">
-                <RefreshCw className="h-6 w-6 animate-spin text-blue-600 mr-2" />
-                <span className="text-gray-600">Calculating distances...</span>
-              </div>
-            ) : technicianDistances.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                No technicians found
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <div className="grid grid-cols-1 gap-2">
-                  {technicianDistances.map((item, index) => (
-                    <div
-                      key={item.technician.id}
-                      className={`p-4 border rounded-lg ${
-                        item.isAssigned
-                          ? 'border-blue-500 bg-blue-50 hover:bg-blue-100'
-                          : item.hasLocation && item.distance
-                          ? 'border-gray-200 hover:border-blue-300 bg-white'
-                          : 'border-gray-100 bg-gray-50'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <h4 className={`font-semibold truncate ${
-                              item.isAssigned ? 'text-blue-900' : 'text-gray-900'
-                            }`}>
-                              {item.technician.fullName}
-                            </h4>
-                            {item.isAssigned && (
-                              <Badge className="bg-blue-600 text-white text-xs">
-                                Assigned
-                              </Badge>
-                            )}
-                          </div>
-                          <p className={`text-sm mt-1 ${
-                            item.isAssigned ? 'text-blue-700' : 'text-gray-500'
-                          }`}>
-                            {item.technician.employeeId}
-                          </p>
-                          {item.hasLocation ? (
-                            <div className="mt-2 space-y-2">
-                              {item.isCalculating ? (
-                                <div className="flex items-center gap-2 text-sm text-gray-500">
-                                  <RefreshCw className="h-4 w-4 animate-spin" />
-                                  Calculating...
-                                </div>
-                              ) : item.distance ? (
-                                <div className="flex flex-wrap items-center gap-4">
-                                  {item.distanceValue !== undefined && item.distanceValue <= 1000 ? (
-                                    // Technician is within 1 km (at customer's location)
-                                    <div className="flex items-center gap-2">
-                                      <MapPin className="h-4 w-4 text-green-600" />
-                                      <span className="font-medium text-green-600">
-                                        Technician is at customer's location
-                                      </span>
-                                    </div>
-                                  ) : (
-                                    <>
-                                      <div className="flex items-center gap-2">
-                                        <MapPin className="h-4 w-4 text-blue-600" />
-                                        <span className={`font-medium ${
-                                          item.isAssigned ? 'text-blue-900' : 'text-gray-900'
-                                        }`}>
-                                          {item.distance}
-                                        </span>
-                                        {item.isApproximate && (
-                                          <span className="text-[11px] text-gray-400 italic">
-                                            approximate (straight-line)
-                                          </span>
-                                        )}
-                                      </div>
-                                      {item.duration && (
-                                        <div className={`flex items-center gap-2 text-sm ${
-                                          item.isAssigned ? 'text-blue-700' : 'text-gray-600'
-                                        }`}>
-                                          <Clock className="h-4 w-4" />
-                                          {item.duration}
-                                        </div>
-                                      )}
-                                      {item.isAssigned && item.estimatedArrival && (
-                                        <div className="flex items-center gap-2 text-sm font-semibold text-blue-700">
-                                          <Clock className="h-4 w-4" />
-                                          Estimated arrival: {item.estimatedArrival}
-                                        </div>
-                                      )}
-                                    </>
-                                  )}
-                                </div>
-                              ) : (
-                                <span className="text-sm text-gray-500">
-                                  Distance calculation failed
-                                </span>
-                              )}
-                              {item.lastUpdated && (
-                                <div className={`flex items-center gap-2 text-xs ${
-                                  item.isAssigned ? 'text-blue-600' : 'text-gray-500'
-                                }`}>
-                                  <Clock className="h-3 w-3" />
-                                  Last updated: {item.lastUpdated}
-                                </div>
-                              )}
-                            </div>
-                          ) : (
-                            <div className="mt-2 space-y-2">
-                              <div className="text-sm text-gray-400 flex items-center gap-2">
-                                <MapPin className="h-4 w-4" />
-                                No location data available
-                              </div>
-                              {item.lastUpdated && (
-                                <div className={`flex items-center gap-2 text-xs ${
-                                  item.isAssigned ? 'text-blue-600' : 'text-gray-500'
-                                }`}>
-                                  <Clock className="h-3 w-3" />
-                                  Last updated: {item.lastUpdated}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="mt-6 pt-4 border-t border-gray-200 space-y-3 min-w-0">
-            <p className="text-sm font-medium text-gray-800">Custom distance</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-              <div className="space-y-1.5 min-w-0">
-                <Label htmlFor="measure-from">From</Label>
-                <Select
-                  value={customDistanceFromId}
-                  onValueChange={setCustomDistanceFromId}
-                  disabled={!selectedJobForDistance || isCalculatingDistances}
-                >
-                  <SelectTrigger id="measure-from" className="w-full max-w-full">
-                    <SelectValue placeholder="Choose start" />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-[min(280px,50vh)] max-w-[min(calc(100vw-2rem),36rem)]">
-                    {getMeasureStopSelectOptions().map((o) => (
-                      <SelectItem key={o.value} value={o.value}>
-                        {o.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5 min-w-0">
-                <Label htmlFor="measure-to">To</Label>
-                <Select
-                  value={customDistanceToId}
-                  onValueChange={setCustomDistanceToId}
-                  disabled={!selectedJobForDistance || isCalculatingDistances}
-                >
-                  <SelectTrigger id="measure-to" className="w-full max-w-full">
-                    <SelectValue placeholder="Choose end" />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-[min(280px,50vh)] max-w-[min(calc(100vw-2rem),36rem)]">
-                    {getMeasureStopSelectOptions().map((o) => (
-                      <SelectItem key={`to-${o.value}`} value={o.value}>
-                        {o.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <Button
-                type="button"
-                size="default"
-                className="w-full justify-center shrink-0"
-                disabled={
-                  isCalculatingDistances ||
-                  isLoadingCustomDistance ||
-                  isOpeningCustomDistanceMaps ||
-                  !customDistanceFromId ||
-                  !customDistanceToId ||
-                  customDistanceFromId === customDistanceToId
-                }
-                onClick={() => void calculateCustomDistanceBetweenStops()}
-              >
-                {isLoadingCustomDistance ? (
-                  <>
-                    <RefreshCw className="h-4 w-4 mr-2 animate-spin shrink-0" />
-                    Calculating…
-                  </>
-                ) : (
-                  'Calculate in app'
-                )}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="default"
-                className="w-full justify-center shrink-0"
-                disabled={
-                  isCalculatingDistances ||
-                  isLoadingCustomDistance ||
-                  isOpeningCustomDistanceMaps ||
-                  !customDistanceFromId ||
-                  !customDistanceToId ||
-                  customDistanceFromId === customDistanceToId
-                }
-                onClick={() => void openCustomDistanceInGoogleMaps()}
-              >
-                {isOpeningCustomDistanceMaps ? (
-                  <>
-                    <RefreshCw className="h-4 w-4 mr-2 animate-spin shrink-0" />
-                    Opening…
-                  </>
-                ) : (
-                  <>
-                    <ExternalLink className="h-4 w-4 mr-2 shrink-0" />
-                    Open route in Google Maps
-                  </>
-                )}
-              </Button>
-            </div>
-            {customDistanceResult && (
-              <div className="rounded-md border border-blue-200 bg-blue-50/90 p-3 text-sm">
-                <div className="font-medium text-gray-900 break-words">
-                  {customDistanceResult.fromLabel}
-                  <span className="text-gray-400 mx-1">→</span>
-                  {customDistanceResult.toLabel}
-                </div>
-                <div className="mt-2 flex flex-wrap items-center gap-3 text-gray-800">
-                  <span className="font-medium">{customDistanceResult.distance}</span>
-                  {customDistanceResult.isApproximate && (
-                    <span className="text-[11px] text-gray-400 italic">
-                      approximate (straight-line)
-                    </span>
-                  )}
-                  {customDistanceResult.duration ? (
-                    <span className="flex items-center gap-1">
-                      <Clock className="h-4 w-4 shrink-0" />
-                      {customDistanceResult.duration}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button variant="outline" onClick={() => setDistanceMeasurementDialogOpen(false)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        selectedJob={selectedJobForDistance}
+        technicianDistances={technicianDistances}
+        isCalculatingDistances={isCalculatingDistances}
+        measureStopOptions={getMeasureStopSelectOptions()}
+        customDistanceFromId={customDistanceFromId}
+        customDistanceToId={customDistanceToId}
+        onCustomDistanceFromChange={setCustomDistanceFromId}
+        onCustomDistanceToChange={setCustomDistanceToId}
+        isLoadingCustomDistance={isLoadingCustomDistance}
+        isOpeningCustomDistanceMaps={isOpeningCustomDistanceMaps}
+        customDistanceResult={customDistanceResult}
+        onCalculateCustomDistance={() => void calculateCustomDistanceBetweenStops()}
+        onOpenCustomDistanceInMaps={() => void openCustomDistanceInGoogleMaps()}
+      />
     </div>
   );
 };
