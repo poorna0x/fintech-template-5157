@@ -76,7 +76,6 @@ const EnhancedBookingForm = () => {
   const [locationLoading, setLocationLoading] = useState(false);
   const [bookingSuccess, setBookingSuccess] = useState(false);
   const [bookingId, setBookingId] = useState<string | null>(null);
-  const [showCallOptions, setShowCallOptions] = useState(false);
   const [showSuccessLoader, setShowSuccessLoader] = useState(false);
   const [isCaptchaVerified, setIsCaptchaVerified] = useState(false);
 
@@ -107,9 +106,8 @@ const EnhancedBookingForm = () => {
 
   const watchedValues = watch();
 
-  const handleCall = (number: string) => {
-    window.open(`tel:${number}`, '_self');
-    setShowCallOptions(false);
+  const handleCall = () => {
+    window.open('tel:+918884944288', '_self');
   };
 
   const handleWhatsApp = () => {
@@ -443,37 +441,13 @@ const EnhancedBookingForm = () => {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Call Button */}
             <div>
-              {!showCallOptions ? (
-                <Button 
-                  onClick={() => setShowCallOptions(true)}
-                  className="w-full bg-black dark:bg-white hover:scale-105 transition-transform duration-200 text-white dark:text-black"
-                >
-                  <Phone className="w-4 h-4 mr-2" />
-                  Call
-                </Button>
-              ) : (
-                <div className="space-y-2">
-                  <Button 
-                    onClick={() => handleCall('+918884944288')}
-                    className="w-full bg-black dark:bg-white hover:scale-105 transition-transform duration-200 text-white dark:text-black"
-                  >
-                    Call: +91-8884944288
-                  </Button>
-                  <Button 
-                    onClick={() => handleCall('+919448944288')}
-                    className="w-full bg-black dark:bg-white hover:scale-105 transition-transform duration-200 text-white dark:text-black"
-                  >
-                    Call: +91-9448944288
-                  </Button>
-                  <Button 
-                    onClick={() => setShowCallOptions(false)}
-                    variant="outline"
-                    className="w-full"
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              )}
+              <Button 
+                onClick={handleCall}
+                className="w-full bg-black dark:bg-white hover:scale-105 transition-transform duration-200 text-white dark:text-black"
+              >
+                <Phone className="w-4 h-4 mr-2" />
+                Call: +91-8884944288
+              </Button>
             </div>
 
             {/* WhatsApp Button */}
@@ -1011,37 +985,13 @@ const EnhancedBookingForm = () => {
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {/* Call Button */}
                     <div>
-                      {!showCallOptions ? (
-                        <Button 
-                          onClick={() => setShowCallOptions(true)}
-                          className="w-full bg-black dark:bg-white hover:scale-105 transition-transform duration-200 text-white dark:text-black"
-                        >
-                          <Phone className="w-4 h-4 mr-2" />
-                          Call
-                        </Button>
-                      ) : (
-                        <div className="space-y-2">
-                          <Button 
-                            onClick={() => handleCall('+918884944288')}
-                            className="w-full bg-black dark:bg-white hover:scale-105 transition-transform duration-200 text-white dark:text-black"
-                          >
-                            Call: +91-8884944288
-                          </Button>
-                          <Button 
-                            onClick={() => handleCall('+919448944288')}
-                            className="w-full bg-black dark:bg-white hover:scale-105 transition-transform duration-200 text-white dark:text-black"
-                          >
-                            Call: +91-9448944288
-                          </Button>
-                          <Button 
-                            onClick={() => setShowCallOptions(false)}
-                            variant="outline"
-                            className="w-full"
-                          >
-                            Cancel
-                          </Button>
-                        </div>
-                      )}
+                      <Button 
+                        onClick={handleCall}
+                        className="w-full bg-black dark:bg-white hover:scale-105 transition-transform duration-200 text-white dark:text-black"
+                      >
+                        <Phone className="w-4 h-4 mr-2" />
+                        Call: +91-8884944288
+                      </Button>
                     </div>
 
                     {/* WhatsApp Button */}
