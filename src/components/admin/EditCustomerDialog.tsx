@@ -14,7 +14,7 @@ import { useAdminRole } from '@/lib/useAdminRole';
 import { mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas } from '@/lib/adminUtils';
 import { normalizeIndianMobileInput } from '@/lib/utils';
 import PhoneSwapButton from '@/components/admin/PhoneSwapButton';
-import { hasAlternateLocation, SECONDARY_LOCATION_LABEL_PRESETS } from '@/lib/customer-locations';
+import { hasAlternateLocation } from '@/lib/customer-locations';
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import {
   extractMapsUrlFromText,
@@ -93,6 +93,12 @@ const transformCustomerData = (customer: any): Customer => ({
   alternate_location: customer.alternate_location ?? undefined,
   alternateVisibleAddress: customer.alternate_visible_address ?? undefined,
   alternate_visible_address: customer.alternate_visible_address ?? undefined,
+  alternateBrand: customer.alternate_brand ?? undefined,
+  alternate_brand: customer.alternate_brand ?? undefined,
+  alternateModel: customer.alternate_model ?? undefined,
+  alternate_model: customer.alternate_model ?? undefined,
+  alternateServiceType: customer.alternate_service_type ?? undefined,
+  alternate_service_type: customer.alternate_service_type ?? undefined,
   serviceType: customer.service_type,
   brand: customer.brand,
   model: customer.model,
@@ -185,6 +191,9 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
       longitude: 0,
       formattedAddress: ''
     },
+    alternate_service_type: 'RO' as 'RO' | 'SOFTENER',
+    alternate_brand: '',
+    alternate_model: '',
     service_cost: 0,
     cost_agreed: false
   });
@@ -368,6 +377,12 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
           longitude: customerToUse.alternate_location?.longitude || 0,
           formattedAddress: customerToUse.alternate_location?.formattedAddress || ''
         },
+        alternate_service_type: (() => {
+          const t = (customerToUse as any).alternate_service_type || (customerToUse as any).alternateServiceType;
+          return t === 'SOFTENER' ? 'SOFTENER' : 'RO';
+        })(),
+        alternate_brand: (customerToUse as any).alternate_brand || (customerToUse as any).alternateBrand || '',
+        alternate_model: (customerToUse as any).alternate_model || (customerToUse as any).alternateModel || '',
         service_cost: customerToUse.serviceCost || 0,
         cost_agreed: customerToUse.costAgreed || false
       });
@@ -443,17 +458,39 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
 
   const handleSwapLocations = () => {
     if (!canSwapLocations) return;
-    setEditFormData((prev) => ({
-      ...prev,
-      visible_address: prev.alternate_visible_address,
-      google_location: prev.alternate_google_location,
-      address: { ...prev.alternate_address },
-      location: { ...prev.alternate_location },
-      alternate_visible_address: prev.visible_address,
-      alternate_google_location: prev.google_location,
-      alternate_address: { ...prev.address },
-      alternate_location: { ...prev.location },
-    }));
+    setEditFormData((prev) => {
+      const primaryRo = prev.equipment['RO'] || { brand: '', model: '' };
+      const secondaryBrand = prev.alternate_brand || '';
+      const secondaryModel = prev.alternate_model || '';
+      const secondaryType = prev.alternate_service_type || 'RO';
+      const primaryHasRo = prev.service_types.includes('RO');
+      const newEquipment = { ...prev.equipment };
+      if (primaryHasRo) {
+        newEquipment['RO'] = { brand: secondaryBrand, model: secondaryModel };
+      }
+      let newServiceTypes = [...prev.service_types];
+      if (secondaryType === 'RO' && !newServiceTypes.includes('RO')) {
+        newServiceTypes = ['RO', ...newServiceTypes];
+      }
+      const swappedPrimaryBrand = primaryHasRo ? primaryRo.brand : prev.alternate_brand;
+      const swappedPrimaryModel = primaryHasRo ? primaryRo.model : prev.alternate_model;
+      return {
+        ...prev,
+        visible_address: prev.alternate_visible_address,
+        google_location: prev.alternate_google_location,
+        address: { ...prev.alternate_address },
+        location: { ...prev.alternate_location },
+        alternate_visible_address: prev.visible_address,
+        alternate_google_location: prev.google_location,
+        alternate_address: { ...prev.address },
+        alternate_location: { ...prev.location },
+        service_types: newServiceTypes,
+        equipment: newEquipment,
+        alternate_service_type: primaryHasRo ? 'RO' : secondaryType,
+        alternate_brand: swappedPrimaryBrand,
+        alternate_model: swappedPrimaryModel,
+      };
+    });
   };
 
   const handleAddressFieldChange = (field: string, value: string) => {
@@ -1031,11 +1068,17 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
                 }
                 return altLocation;
               })(),
+              alternate_service_type: editFormData.alternate_service_type || 'RO',
+              alternate_brand: editFormData.alternate_brand?.trim() || '',
+              alternate_model: editFormData.alternate_model?.trim() || '',
             }
           : {
               alternate_visible_address: null,
               alternate_address: null,
               alternate_location: null,
+              alternate_service_type: null,
+              alternate_brand: null,
+              alternate_model: null,
             }),
       };
 
@@ -1138,6 +1181,139 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
     onOpenChange(isOpen);
   };
 
+  const renderPrimarySiteEquipment = () => (
+    <div className="space-y-3 pt-2 border-t border-border">
+      <Label className="text-sm font-medium text-foreground">Device at this site</Label>
+      <div className="space-y-3">
+        <Label className="text-xs text-muted-foreground">Service types</Label>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {[
+            { value: 'RO', label: 'RO (Reverse Osmosis)' },
+            { value: 'SOFTENER', label: 'Water Softener' },
+          ].map((service) => (
+            <div
+              key={service.value}
+              onClick={() => handleEditServiceTypeToggle(service.value)}
+              className={`p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                editFormData?.service_types?.includes(service.value)
+                  ? 'border-blue-500 bg-blue-50 text-blue-700'
+                  : 'border-border hover:border-border'
+              }`}
+            >
+              <span className="text-sm font-medium">{service.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      {editFormData?.service_types?.length > 0 && (
+        <div className="space-y-3">
+          {editFormData.service_types.map((serviceType) => {
+            const serviceInfo = [
+              { value: 'RO', label: 'RO' },
+              { value: 'SOFTENER', label: 'Water Softener' },
+            ].find((s) => s.value === serviceType);
+            const equipment = editFormData?.equipment?.[serviceType] || { brand: '', model: '' };
+            return (
+              <div key={serviceType} className="bg-muted/40 p-3 rounded-lg space-y-3">
+                <span className="text-sm font-medium text-foreground">{serviceInfo?.label}</span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-2 relative">
+                    <Label htmlFor={`edit_brand_${serviceType}`}>Brand</Label>
+                    <Input
+                      id={`edit_brand_${serviceType}`}
+                      value={equipment.brand}
+                      onChange={(e) => handleEditEquipmentChange(serviceType, 'brand', e.target.value)}
+                      placeholder={`Enter ${serviceType} brand`}
+                      onBlur={() => setTimeout(() => setShowBrandSuggestions(false), 200)}
+                    />
+                    {showBrandSuggestions && brandSuggestions.length > 0 && (
+                      <div className="absolute z-10 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-40 overflow-y-auto">
+                        {brandSuggestions.map((brand, index) => (
+                          <div
+                            key={index}
+                            className="px-3 py-2 hover:bg-accent cursor-pointer text-sm"
+                            onClick={() => selectEditBrand(serviceType, brand)}
+                          >
+                            {brand}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="space-y-2 relative">
+                    <Label htmlFor={`edit_model_${serviceType}`}>Model</Label>
+                    <Input
+                      id={`edit_model_${serviceType}`}
+                      value={equipment.model}
+                      onChange={(e) => handleEditEquipmentChange(serviceType, 'model', e.target.value)}
+                      placeholder={`Enter ${serviceType} model`}
+                      onBlur={() => setTimeout(() => setShowModelSuggestions(false), 200)}
+                    />
+                    {showModelSuggestions && modelSuggestions.length > 0 && (
+                      <div className="absolute z-10 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-40 overflow-y-auto">
+                        {modelSuggestions.map((model, index) => (
+                          <div
+                            key={index}
+                            className="px-3 py-2 hover:bg-accent cursor-pointer text-sm"
+                            onClick={() => selectEditModel(serviceType, model)}
+                          >
+                            {model}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+
+  const renderSecondarySiteEquipment = () => (
+    <div className="space-y-3 pt-2 border-t border-border">
+      <Label className="text-sm font-medium text-foreground">Device at this site</Label>
+      <div className="space-y-2">
+        <Label htmlFor="edit_alternate_service_type" className="text-xs text-muted-foreground">
+          Service type
+        </Label>
+        <select
+          id="edit_alternate_service_type"
+          value={editFormData.alternate_service_type || 'RO'}
+          onChange={(e) =>
+            handleEditFormChange('alternate_service_type', e.target.value as 'RO' | 'SOFTENER')
+          }
+          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+        >
+          <option value="RO">RO Water Purifier</option>
+          <option value="SOFTENER">Water Softener</option>
+        </select>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="space-y-2">
+          <Label htmlFor="edit_alternate_brand">Brand</Label>
+          <Input
+            id="edit_alternate_brand"
+            value={editFormData.alternate_brand}
+            onChange={(e) => handleEditFormChange('alternate_brand', e.target.value)}
+            placeholder="e.g. Aquaguard"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="edit_alternate_model">Model</Label>
+          <Input
+            id="edit_alternate_model"
+            value={editFormData.alternate_model}
+            onChange={(e) => handleEditFormChange('alternate_model', e.target.value)}
+            placeholder="Model name"
+          />
+        </div>
+      </div>
+    </div>
+  );
+
   const renderLocationFields = (slot: 'primary' | 'secondary') => {
     const isPrimary = slot === 'primary';
     const visibleAddress = isPrimary
@@ -1216,28 +1392,6 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
                 maxLength={20}
                 className="text-sm"
               />
-              <div className="flex flex-wrap gap-1.5">
-                {SECONDARY_LOCATION_LABEL_PRESETS.map((preset) => (
-                  <button
-                    key={preset}
-                    type="button"
-                    onClick={() => {
-                      alternateLocationManuallyEditedRef.current = true;
-                      handleEditFormChange('alternate_visible_address', preset);
-                    }}
-                    className={`rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors ${
-                      visibleAddress === preset
-                        ? 'border-blue-500 bg-blue-50 text-blue-700'
-                        : 'border-border bg-background text-foreground hover:border-blue-300 hover:bg-muted/50'
-                    }`}
-                  >
-                    {preset}
-                  </button>
-                ))}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                What kind of place is this? Tap a label or type your own.
-              </p>
             </>
           )}
         </div>
@@ -1407,13 +1561,20 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
             </div>
           </div>
 
-          {/* Address Information */}
+          {/* Address / sites */}
           <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-foreground">Address Information</h3>
-            {renderLocationFields('primary')}
+            {editFormData.has_alternate_location ? (
+              <h3 className="text-lg font-semibold text-foreground">Primary site</h3>
+            ) : (
+              <h3 className="text-lg font-semibold text-foreground">Address Information</h3>
+            )}
+            <div className="rounded-lg border border-border p-4 space-y-4 bg-muted/20">
+              {renderLocationFields('primary')}
+              {renderPrimarySiteEquipment()}
+            </div>
 
-            <div className="flex items-center gap-2 pt-1">
-              {canSwapLocations && (
+            <div className="flex items-center gap-2">
+              {editFormData.has_alternate_location && canSwapLocations && (
                 <PhoneSwapButton onSwap={handleSwapLocations} />
               )}
               <input
@@ -1424,115 +1585,15 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
                 className="w-4 h-4"
               />
               <Label htmlFor="edit_has_alternate_location" className="text-sm font-normal cursor-pointer">
-                Add another location
+                Enable second site
               </Label>
             </div>
 
-            {editFormData.has_alternate_location && renderLocationFields('secondary')}
-          </div>
-
-          {/* Service Information */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-foreground">Service Information</h3>
-            
-            <div className="space-y-3">
-              <Label>Service Types</Label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {[
-                  { value: 'RO', label: 'RO (Reverse Osmosis)' },
-                  { value: 'SOFTENER', label: 'Water Softener' }
-                ].map((service) => (
-                  <div
-                    key={service.value}
-                    onClick={() => handleEditServiceTypeToggle(service.value)}
-                    className={`p-3 border-2 rounded-lg cursor-pointer transition-all ${
-                      editFormData?.service_types?.includes(service.value)
-                        ? 'border-blue-500 bg-blue-50 text-blue-700'
-                        : 'border-border hover:border-border'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">{service.label}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Dynamic Equipment Fields */}
-            {editFormData?.service_types?.length > 0 && (
-              <div className="space-y-4">
-                <Label className="text-base font-semibold">Equipment Details</Label>
-                {editFormData?.service_types?.map((serviceType) => {
-                  const serviceInfo = [
-                    { value: 'RO', label: 'RO (Reverse Osmosis)' },
-                    { value: 'SOFTENER', label: 'Water Softener' }
-                  ].find(s => s.value === serviceType);
-                  
-                  const equipment = editFormData?.equipment?.[serviceType] || { brand: '', model: '' };
-                  
-                  return (
-                    <div key={serviceType} className="bg-muted/40 p-4 rounded-lg space-y-3">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-foreground">{serviceInfo?.label}</span>
-                      </div>
-                      
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div className="space-y-2 relative">
-                          <Label htmlFor={`edit_brand_${serviceType}`}>Brand</Label>
-                          <Input
-                            id={`edit_brand_${serviceType}`}
-                            value={equipment.brand}
-                            onChange={(e) => handleEditEquipmentChange(serviceType, 'brand', e.target.value)}
-                            placeholder={`Enter ${serviceType} brand`}
-                            onBlur={() => {
-                              setTimeout(() => setShowBrandSuggestions(false), 200);
-                            }}
-                          />
-                          {showBrandSuggestions && brandSuggestions.length > 0 && (
-                            <div className="absolute z-10 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-40 overflow-y-auto">
-                              {brandSuggestions.map((brand, index) => (
-                                <div
-                                  key={index}
-                                  className="px-3 py-2 hover:bg-accent hover:text-accent-foreground cursor-pointer text-sm text-foreground"
-                                  onClick={() => selectEditBrand(serviceType, brand)}
-                                >
-                                  {brand}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="space-y-2 relative">
-                          <Label htmlFor={`edit_model_${serviceType}`}>Model</Label>
-                          <Input
-                            id={`edit_model_${serviceType}`}
-                            value={equipment.model}
-                            onChange={(e) => handleEditEquipmentChange(serviceType, 'model', e.target.value)}
-                            placeholder={`Enter ${serviceType} model`}
-                            onBlur={() => {
-                              setTimeout(() => setShowModelSuggestions(false), 200);
-                            }}
-                          />
-                          {showModelSuggestions && modelSuggestions.length > 0 && (
-                            <div className="absolute z-10 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-40 overflow-y-auto">
-                              {modelSuggestions.map((model, index) => (
-                                <div
-                                  key={index}
-                                  className="px-3 py-2 hover:bg-accent hover:text-accent-foreground cursor-pointer text-sm text-foreground"
-                                  onClick={() => selectEditModel(serviceType, model)}
-                                >
-                                  {model}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+            {editFormData.has_alternate_location && (
+              <div className="rounded-lg border border-border p-4 space-y-4 bg-muted/20">
+                <h3 className="text-base font-semibold text-foreground">Second site</h3>
+                {renderLocationFields('secondary')}
+                {renderSecondarySiteEquipment()}
               </div>
             )}
           </div>

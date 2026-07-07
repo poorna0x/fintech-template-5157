@@ -6,6 +6,12 @@ import { PENDING_PAYMENT_REMINDER_TITLE } from './pendingPaymentReminder';
 import { cacheGet, cacheSet, cacheInvalidate } from './supabaseQueryCache';
 import { isMissingServiceBrandColumnError } from './amc-brand';
 import {
+  isMissingDualSiteColumnError,
+  omitDualSiteCustomerCols,
+  stripDualSiteCustomerFields,
+  stripDualSiteJobFields,
+} from './dual-site-columns';
+import {
   normalizeAmcAgreementNumber,
   parseAmcAgreementNumberFromAdditionalInfo,
   amcCreatedOnIstDay,
@@ -232,6 +238,9 @@ export const CUSTOMER_ROW_COLUMNS = [
   'alternate_address',
   'alternate_location',
   'alternate_visible_address',
+  'alternate_brand',
+  'alternate_model',
+  'alternate_service_type',
   'custom_time',
   'service_type',
   'brand',
@@ -1135,11 +1144,19 @@ export const db = {
     },
     
     async getById(id: string) {
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from('customers')
         .select(CUSTOMER_ROW_COLUMNS)
         .eq('id', id)
         .single();
+
+      if (error && isMissingDualSiteColumnError(error)) {
+        ({ data, error } = await supabase
+          .from('customers')
+          .select(omitDualSiteCustomerCols(CUSTOMER_ROW_COLUMNS))
+          .eq('id', id)
+          .single());
+      }
       
       return { data, error };
     },
@@ -1259,11 +1276,21 @@ export const db = {
       }
 
       // Admin + technician: direct UPDATE (RLS scopes technician to assigned customers).
-      const { data, error } = await supabase
+      let payload = { ...updates } as Database['public']['Tables']['customers']['Update'];
+      let { data, error } = await supabase
         .from('customers')
-        .update(updates)
+        .update(payload)
         .eq('id', id)
         .select();
+
+      if (error && isMissingDualSiteColumnError(error)) {
+        payload = stripDualSiteCustomerFields(payload as Record<string, unknown>) as typeof payload;
+        ({ data, error } = await supabase
+          .from('customers')
+          .update(payload)
+          .eq('id', id)
+          .select());
+      }
 
       if (error) {
         return { data: null, error };
@@ -1505,11 +1532,19 @@ export const db = {
     },
 
     async getByCustomerId(customerId: string) {
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from('customers')
         .select(CUSTOMER_ROW_COLUMNS)
         .eq('customer_id', customerId)
         .single();
+
+      if (error && isMissingDualSiteColumnError(error)) {
+        ({ data, error } = await supabase
+          .from('customers')
+          .select(omitDualSiteCustomerCols(CUSTOMER_ROW_COLUMNS))
+          .eq('customer_id', customerId)
+          .single());
+      }
       
       return { data, error };
     },
@@ -1601,11 +1636,24 @@ export const db = {
         insertRow.requirements = coerceJobRequirementsForDb(insertRow.requirements) as typeof insertRow.requirements;
       }
 
-      const { data, error } = await supabase
+      const jobSelectAfterInsert = `${JOB_SELECT_ONGOING_AND_TECH},${JOB_PHOTO_ARRAY_COLUMNS},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`;
+
+      let { data, error } = await supabase
         .from('jobs')
         .insert(insertRow)
-        .select(`${JOB_SELECT_ONGOING_AND_TECH},${JOB_PHOTO_ARRAY_COLUMNS},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`)
+        .select(jobSelectAfterInsert)
         .single();
+
+      if (error && isMissingDualSiteColumnError(error)) {
+        const legacyRow = stripDualSiteJobFields(
+          insertRow as unknown as Record<string, unknown>
+        ) as Database['public']['Tables']['jobs']['Insert'];
+        ({ data, error } = await supabase
+          .from('jobs')
+          .insert(legacyRow)
+          .select(jobSelectAfterInsert)
+          .single());
+      }
       
       // If duplicate job_number error and we haven't retried too many times, retry with new job number
       if (error && error.code === '23505' && error.message?.includes('job_number') && retryCount < 3) {
@@ -3608,32 +3656,16 @@ export const db = {
 
     // Get ongoing jobs (PENDING, ASSIGNED, IN_PROGRESS). Limit 100 to cap egress if count grows.
     async getOngoing(limit: number = 100) {
-      const slim = await supabase
+      const ongoingSelect = `${JOB_SELECT_ONGOING_AND_TECH},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`;
+      const { data: rows, error: err } = await supabase
         .from('jobs')
-        .select(`${JOB_SELECT_ONGOING_AND_TECH},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`)
+        .select(ongoingSelect)
         .in('status', ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'])
         .order('created_at', { ascending: false })
         .limit(limit);
 
-      let rows = slim.data || [];
-      let err = slim.error;
-
-      if (err) {
-        if (import.meta.env.DEV) {
-          console.warn('[db.jobs.getOngoing] Slim select failed, using full select:', slim.error?.message);
-        }
-        const legacy = await supabase
-          .from('jobs')
-          .select(`${JOB_SELECT_ONGOING_AND_TECH},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`)
-          .in('status', ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'])
-          .order('created_at', { ascending: false })
-          .limit(limit);
-        rows = legacy.data || [];
-        err = legacy.error;
-      }
-
-      if (err || !rows.length) {
-        return { data: rows, error: err };
+      if (err || !rows?.length) {
+        return { data: rows || [], error: err };
       }
 
       const { data: photoRows, error: photoErr } = await this.getPhotoFieldsForJobIds(rows.map((r: any) => r.id));

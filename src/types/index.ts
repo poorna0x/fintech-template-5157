@@ -37,6 +37,14 @@ export interface Customer {
   alternate_location?: Customer['location'];
   alternateVisibleAddress?: string;
   alternate_visible_address?: string;
+
+  /** Equipment at secondary site (when customer has two locations). */
+  alternateBrand?: string;
+  alternate_brand?: string;
+  alternateModel?: string;
+  alternate_model?: string;
+  alternateServiceType?: 'RO' | 'SOFTENER' | string;
+  alternate_service_type?: 'RO' | 'SOFTENER' | string;
   
   // Service Information
   serviceType: 'RO' | 'SOFTENER';
@@ -117,7 +125,10 @@ export interface Job {
   // Location
   serviceAddress: Customer['address'];
   serviceLocation: Customer['location'];
-  
+  /** Which customer site this job is for — primary (default) or secondary. */
+  serviceSite?: 'primary' | 'secondary';
+  service_site?: 'primary' | 'secondary';
+
   // Status & Progress
   status: 'PENDING' | 'ASSIGNED' | 'EN_ROUTE' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED' | 'FOLLOW_UP' | 'DENIED' | string;
   priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT' | string;

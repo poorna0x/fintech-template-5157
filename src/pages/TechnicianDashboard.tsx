@@ -83,7 +83,6 @@ import {
   TechnicianQrSnapshotV1,
 } from '@/lib/qrCodeManager';
 import { extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
-import { getLocationLinkFromObject } from '@/lib/jobLocationHelpers';
 import { applyAutoMoveToOngoingOnDateFlag } from '@/lib/followUpToOngoing';
 import ImageUpload from '@/components/ImageUpload';
 import { Label } from '@/components/ui/label';
@@ -95,13 +94,10 @@ import JobPartsUsedDialog from '@/components/admin/JobPartsUsedDialog';
 import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
 import { bangaloreAreas } from '@/lib/adminUtils';
 import { customerNameClassName } from '@/lib/customerDisplay';
-import LocationsDialog from '@/components/admin/LocationsDialog';
 import {
   CustomerLocationVariant,
-  getCustomerLocationSlice,
-  getPrimaryLocationLabel,
-  hasMultipleCustomerLocations,
-  openCustomerLocationInMaps,
+  getJobLocationDisplay,
+  openJobServiceLocationInMaps,
 } from '@/lib/customer-locations';
 import {
   TECHNICIAN_JOB_LIST_BROADCAST_CHANNEL,
@@ -187,15 +183,6 @@ const calculateSimilarity = (str1: string, str2: string): number => {
 };
 
 
-const openLocationInGoogleMaps = (location: any): boolean => {
-  const link = getLocationLinkFromObject(location);
-  if (link) {
-    window.open(link, '_blank', 'noopener,noreferrer');
-    return true;
-  }
-
-  return false;
-};
 
 // Extract location from address string (same as admin dashboard)
 const extractLocationFromAddressString = (completeAddress: string): string | null => {
@@ -708,7 +695,6 @@ const TechnicianDashboard = () => {
     Record<string, CustomerLocationVariant>
   >({});
   const [selectedCustomerForLocations, setSelectedCustomerForLocations] = useState<Customer | null>(null);
-  const [locationsDialogOpen, setLocationsDialogOpen] = useState(false);
   const [customerUpdateDialogJob, setCustomerUpdateDialogJob] = useState<Job | null>(null);
   const [mapOpeningByJobId, setMapOpeningByJobId] = useState<Record<string, boolean>>({});
 
@@ -733,12 +719,8 @@ const TechnicianDashboard = () => {
       try {
         const customer = await loadJobCustomerForLocation(job);
         setSelectedCustomerForLocations(customer);
-        if (hasMultipleCustomerLocations(customer)) {
-          setSelectedJobForAddress(job);
-          setLocationsDialogOpen(true);
-          return;
-        }
-        openJobAddressDialog(job, 'primary');
+        const { variant } = getJobLocationDisplay(job, customer);
+        openJobAddressDialog(job, variant);
       } finally {
         toast.dismiss(t);
       }
@@ -758,31 +740,9 @@ const TechnicianDashboard = () => {
       const t = toast.loading('Loading location…');
       try {
         const customerRow = await loadJobCustomerForLocation(job as Job);
-        setSelectedCustomerForLocations(customerRow);
-
-        if (hasMultipleCustomerLocations(customerRow)) {
-          setSelectedJobForAddress(job);
-          setLocationsDialogOpen(true);
+        if (openJobServiceLocationInMaps(job, customerRow)) {
           return;
         }
-
-        if (openCustomerLocationInMaps(customerRow, 'primary')) {
-          return;
-        }
-        if (openLocationInGoogleMaps((customerRow as any)?.location)) {
-          return;
-        }
-
-        const customerLoc = (job?.customer as any)?.location;
-        if (openLocationInGoogleMaps(customerLoc)) {
-          return;
-        }
-
-        const jobServiceLoc = (job as any)?.serviceLocation || (job as any)?.service_location;
-        if (openLocationInGoogleMaps(jobServiceLoc)) {
-          return;
-        }
-
         toast.error('Location data not available');
       } finally {
         toast.dismiss(t);
@@ -5997,32 +5957,21 @@ const TechnicianDashboard = () => {
                                           </button>
                               </div>
                                         <div className="flex-1 min-w-0">
-                                          <div className="text-sm font-semibold text-gray-900">
-                                            {hasMultipleCustomerLocations(customer)
-                                              ? getPrimaryLocationLabel(customer as Customer)
-                                              : 'Location'}
-                                          </div>
-                                          <div className="text-xs text-gray-500">
-                                            {hasMultipleCustomerLocations(customer) ? (
-                                              <button
-                                                type="button"
-                                                onClick={(e) => {
-                                                  e.stopPropagation();
-                                                  void handleTechnicianLocationLabelClick(job as Job);
-                                                }}
-                                                className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full text-left"
-                                                title="Choose primary or secondary location"
-                                              >
-                                                Primary · Secondary
-                                              </button>
-                                            ) : (() => {
-                                              // Exactly like admin dashboard - check both customer.visible_address and customer.address.visible_address
-                                              const customerData = customer as any;
-                                              const visibleAddress = customerData?.visible_address || (customerData?.address as any)?.visible_address || (address as any)?.visible_address;
-                                              
-                                              if (visibleAddress && String(visibleAddress).trim()) {
-                                                return (
+                                          {(() => {
+                                            const locDisplay = getJobLocationDisplay(job, customer);
+                                            const label =
+                                              locDisplay.visibleLabel &&
+                                              locDisplay.visibleLabel !== 'Location'
+                                                ? locDisplay.visibleLabel
+                                                : locDisplay.address?.street?.trim()
+                                                  ? 'View Address'
+                                                  : 'No location';
+                                            return (
+                                              <>
+                                                <div className="text-sm font-semibold text-gray-900">Location</div>
+                                                <div className="text-xs text-gray-500">
                                                   <button
+                                                    type="button"
                                                     onClick={(e) => {
                                                       e.stopPropagation();
                                                       void handleTechnicianLocationLabelClick(job as Job);
@@ -6030,27 +5979,13 @@ const TechnicianDashboard = () => {
                                                     className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full text-left"
                                                     title="Click to view full address"
                                                   >
-                                                    {String(visibleAddress).trim()}
+                                                    {label}
                                                   </button>
-                                                );
-                                              }
-                                              
-                                              // If no visible_address, check if there's any address
-                                              return (customerData?.address || address) ? (
-                                                <button
-                                                  onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    void handleTechnicianLocationLabelClick(job as Job);
-                                                  }}
-                                                  className="text-left text-gray-500 hover:text-gray-700 hover:underline transition-colors cursor-pointer"
-                                                  title="Click to view full address"
-                                                >
-                                                  View Address
-                                                </button>
-                                              ) : 'No location';
-                                            })()}
+                                                </div>
+                                              </>
+                                            );
+                                          })()}
                             </div>
-                                        </div>
                                       </div>
                                     </div>
                                   );
@@ -6900,34 +6835,21 @@ const TechnicianDashboard = () => {
                                 </button>
                         </div>
                               <div className="flex-1 min-w-0">
-                                <div className="text-sm font-semibold text-gray-900">
-                                  {hasMultipleCustomerLocations(job.customer)
-                                    ? getPrimaryLocationLabel(job.customer as Customer)
-                                    : 'Location'}
-                                </div>
-                                <div className="text-xs text-gray-500">
-                                  {hasMultipleCustomerLocations(job.customer) ? (
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        markJobAsSeen(job.id);
-                                        void handleTechnicianLocationLabelClick(job);
-                                      }}
-                                      className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full text-left"
-                                      title="Choose primary or secondary location"
-                                    >
-                                      Primary · Secondary
-                                    </button>
-                                  ) : (() => {
-                                    const customer = job.customer as any;
-                                    
-                                    // First priority: Use visible_address from database (saved by admin)
-                                    const visibleAddress = customer?.visible_address;
-                                    if (visibleAddress && String(visibleAddress).trim()) {
-                                      const visibleAddr = String(visibleAddress).trim();
-                                      return (
+                                {(() => {
+                                  const locDisplay = getJobLocationDisplay(job, job.customer);
+                                  const label =
+                                    locDisplay.visibleLabel &&
+                                    locDisplay.visibleLabel !== 'Location'
+                                      ? locDisplay.visibleLabel
+                                      : locDisplay.address?.street?.trim()
+                                        ? 'View Address'
+                                        : 'No location';
+                                  return (
+                                    <>
+                                      <div className="text-sm font-semibold text-gray-900">Location</div>
+                                      <div className="text-xs text-gray-500">
                                         <button
+                                          type="button"
                                           onClick={(e) => {
                                             e.stopPropagation();
                                             markJobAsSeen(job.id);
@@ -6936,69 +6858,15 @@ const TechnicianDashboard = () => {
                                           className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full text-left"
                                           title="Click to view full address"
                                         >
-                                          {visibleAddr}
+                                          {label}
                                         </button>
-                                      );
-                                    }
-                                    
-                                    // Fallback: Extract location from address.street if visible_address is missing
-                                    const addressStreet = customer?.address?.street || '';
-                                    if (addressStreet && String(addressStreet).trim()) {
-                                      const extractedLocation = extractLocationFromAddressString(String(addressStreet).trim());
-                                      if (extractedLocation) {
-                                        return (
-                                          <button
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              markJobAsSeen(job.id);
-                                              void handleTechnicianLocationLabelClick(job);
-                                            }}
-                                            className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full text-left"
-                                            title="Click to view full address"
-                                          >
-                                            {extractedLocation}
-                                          </button>
-                                        );
-                                      }
-                                    }
-                                    
-                                    // Fallback: try address.area
-                                    const area = customer?.address?.area;
-                                    if (area && String(area).trim()) {
-                                      return (
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            markJobAsSeen(job.id);
-                                            void handleTechnicianLocationLabelClick(job);
-                                          }}
-                                          className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full text-left"
-                                          title="Click to view full address"
-                                        >
-                                          {String(area).trim()}
-                                        </button>
-                                      );
-                                    }
-                                    
-                                    // If no location found, check if there's any address
-                                    return customer?.address ? (
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          markJobAsSeen(job.id);
-                                          void handleTechnicianLocationLabelClick(job);
-                                        }}
-                                        className="text-left text-gray-500 hover:text-gray-700 hover:underline transition-colors cursor-pointer"
-                                        title="Click to view full address"
-                                      >
-                                        View Address
-                                      </button>
-                                    ) : 'No location';
-                                  })()}
+                                      </div>
+                                    </>
+                                  );
+                                })()}
                           </div>
                             </div>
                       </div>
-                        </div>
                         
                           {/* Photos */}
                           {(() => {
@@ -9210,22 +9078,6 @@ const TechnicianDashboard = () => {
           </DialogContent>
         </Dialog>
 
-        {/* Locations Dialog */}
-        <LocationsDialog
-          open={locationsDialogOpen}
-          onOpenChange={(open) => {
-            setLocationsDialogOpen(open);
-            if (!open) setSelectedCustomerForLocations(null);
-          }}
-          customer={selectedCustomerForLocations}
-          mode="both"
-          onViewAddress={(_customer, variant) => {
-            if (selectedJobForAddress) {
-              openJobAddressDialog(selectedJobForAddress, variant);
-            }
-          }}
-        />
-
         {/* Address Dialog */}
         {selectedJobForAddress && (
           <Dialog
@@ -9244,23 +9096,22 @@ const TechnicianDashboard = () => {
                 <DialogDescription asChild>
                   <span>
                     {(() => {
-                      const variant = addressLocationVariant[selectedJobForAddress.id] || 'primary';
                       const customer =
                         selectedCustomerForLocations ||
                         (selectedJobForAddress.customer as Customer);
-                      const slice = getCustomerLocationSlice(customer, variant);
+                      const display = getJobLocationDisplay(selectedJobForAddress, customer);
                       return (
                         <>
-                          {variant === 'secondary' ? 'Secondary Location' : 'Primary Location'} for{' '}
+                          Service location for{' '}
                           <span className={customerNameClassName(customer as any)}>
                             {(customer as any)?.full_name ||
                               (customer as any)?.fullName ||
                               'Customer'}
                           </span>
-                          {slice.visibleAddress ? (
+                          {display.visibleLabel && display.visibleLabel !== 'Location' ? (
                             <>
                               {' '}
-                              — <span className="font-medium">{slice.visibleAddress}</span>
+                              — <span className="font-medium">{display.visibleLabel}</span>
                             </>
                           ) : null}
                         </>
@@ -9272,19 +9123,18 @@ const TechnicianDashboard = () => {
               <div className="py-4 space-y-4">
                 <div className="text-sm text-gray-900 whitespace-pre-wrap break-words">
                   {(() => {
-                    const variant = addressLocationVariant[selectedJobForAddress.id] || 'primary';
                     const customer =
                       selectedCustomerForLocations ||
                       (selectedJobForAddress.customer as Customer);
-                    const slice = getCustomerLocationSlice(customer, variant);
-                    const fullAddr = formatAddressForDisplay(slice.address)?.trim();
-                    const vis = slice.visibleAddress;
-                    const loc = slice.location as any;
+                    const display = getJobLocationDisplay(selectedJobForAddress, customer);
+                    const fullAddr = formatAddressForDisplay(display.address)?.trim();
+                    const vis = display.visibleLabel;
+                    const loc = display.location as any;
                     const locFa = String(loc?.formattedAddress || loc?.formatted_address || '').trim();
                     const gLoc = typeof loc?.googleLocation === 'string' ? loc.googleLocation.trim() : '';
 
                     if (fullAddr) return fullAddr;
-                    if (vis) return vis;
+                    if (vis && vis !== 'Location') return vis;
                     if (locFa) return locFa;
                     if (gLoc) {
                       return (

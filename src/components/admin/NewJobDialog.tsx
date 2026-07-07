@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmentTimeSelect';
-import { Upload } from 'lucide-react';
+import { MapPin, Upload } from 'lucide-react';
 import { Customer } from '@/types';
 import { toast } from 'sonner';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
@@ -16,6 +16,15 @@ import { generateJobNumber, formatCustomTimeLabel, getDefaultLeadCost, isHomeTri
 import { db } from '@/lib/supabase';
 import { createJobAssignedNotification, sendNotification } from '@/lib/notifications';
 import type { JobAssignedToTechnicianPayload } from './AddCustomerDialog';
+import {
+  CustomerLocationVariant,
+  getCustomerLocationSlice,
+  getPrimaryLocationLabel,
+  getSecondaryLocationLabel,
+  getSiteEquipment,
+  hasDualSiteCustomer,
+  getJobLocationLabelForWhatsApp,
+} from '@/lib/customer-locations';
 
 interface NewJobFormData {
   service_type: 'RO' | 'SOFTENER';
@@ -23,6 +32,7 @@ interface NewJobFormData {
   service_sub_type_custom: string;
   brand: string;
   model: string;
+  service_site: CustomerLocationVariant;
   scheduled_date: string;
   scheduled_time_slot: 'MORNING' | 'AFTERNOON' | 'EVENING' | 'FLEXIBLE' | 'CUSTOM';
   scheduled_time_custom: string;
@@ -72,6 +82,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
     service_sub_type_custom: '',
     brand: '',
     model: '',
+    service_site: 'primary',
     scheduled_date: new Date().toISOString().split('T')[0],
     scheduled_time_slot: 'MORNING',
     scheduled_time_custom: '',
@@ -89,25 +100,56 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
   // Initialize service type, brand, model from customer when dialog opens (supports Softener-only)
   useEffect(() => {
     if (!open || !customer) return;
-    const svcType = (customer as any).service_type || customer.serviceType;
+    const site: CustomerLocationVariant = 'primary';
+    const siteEq = getSiteEquipment(customer, site);
+    const svcType = siteEq.serviceType || (customer as any).service_type || customer.serviceType;
     const types = parseDbServiceType
       ? parseDbServiceType((customer as any).service_type || customer.serviceType || '')
       : (svcType === 'SOFTENER' ? ['SOFTENER'] : ['RO']);
-    const defaultServiceType = types.includes('SOFTENER') && !types.includes('RO')
-      ? 'SOFTENER'
-      : (types[0] === 'SOFTENER' ? 'SOFTENER' : 'RO');
+    const defaultServiceType = siteEq.serviceType || (
+      types.includes('SOFTENER') && !types.includes('RO')
+        ? 'SOFTENER'
+        : (types[0] === 'SOFTENER' ? 'SOFTENER' : 'RO')
+    );
     const brands = (customer.brand || '').split(',').map((s: string) => s.trim()).filter(Boolean);
     const models = (customer.model || '').split(',').map((s: string) => s.trim()).filter(Boolean);
     const idx = types.indexOf(defaultServiceType);
-    const brand = idx >= 0 && brands[idx] ? brands[idx] : (brands[0] || '');
-    const model = idx >= 0 && models[idx] ? models[idx] : (models[0] || '');
+    const brand = siteEq.brand || (idx >= 0 && brands[idx] ? brands[idx] : (brands[0] || ''));
+    const model = siteEq.model || (idx >= 0 && models[idx] ? models[idx] : (models[0] || ''));
     setNewJobFormData(prev => ({
       ...prev,
+      service_site: site,
       service_type: defaultServiceType as 'RO' | 'SOFTENER',
       brand: brand || prev.brand || 'Not specified',
       model: model || prev.model || 'Not specified'
     }));
   }, [open, customer, parseDbServiceType]);
+
+  const applyServiceSiteToForm = (site: CustomerLocationVariant) => {
+    if (!customer) return;
+    const siteEq = getSiteEquipment(customer, site);
+    const types = parseDbServiceType
+      ? parseDbServiceType((customer as any).service_type || customer.serviceType || '')
+      : [siteEq.serviceType];
+    const idx = types.indexOf(siteEq.serviceType);
+    const brands = (customer.brand || '').split(',').map((s: string) => s.trim());
+    const models = (customer.model || '').split(',').map((s: string) => s.trim());
+    const brand =
+      site === 'secondary'
+        ? siteEq.brand
+        : (idx >= 0 ? brands[idx] : brands[0]) || siteEq.brand;
+    const model =
+      site === 'secondary'
+        ? siteEq.model
+        : (idx >= 0 ? models[idx] : models[0]) || siteEq.model;
+    setNewJobFormData((prev) => ({
+      ...prev,
+      service_site: site,
+      service_type: siteEq.serviceType,
+      brand: brand?.trim() || 'Not specified',
+      model: model?.trim() || 'Not specified',
+    }));
+  };
 
   const handleClose = () => {
     setNewJobFormData({
@@ -116,6 +158,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
       service_sub_type_custom: '',
       brand: '',
       model: '',
+      service_site: 'primary',
       scheduled_date: new Date().toISOString().split('T')[0],
       scheduled_time_slot: 'MORNING',
       scheduled_time_custom: '',
@@ -358,6 +401,13 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
         photosToUse = merged.filter(photo => photo && photo.trim() !== '' && photo.startsWith('http'));
       }
 
+      const site = newJobFormData.service_site || 'primary';
+      const locationSlice = getCustomerLocationSlice(customer, site);
+      const serviceAddress = {
+        ...locationSlice.address,
+        visible_address: locationSlice.visibleAddress || locationSlice.address?.visible_address,
+      };
+
       const jobData = {
         job_number: jobNumber,
         customer_id: customer.id,
@@ -367,8 +417,9 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
         model: newJobFormData.model === 'Not specified' ? '' : newJobFormData.model,
         scheduled_date: newJobFormData.scheduled_date,
         scheduled_time_slot: scheduledTimeSlot,
-        service_address: customer.address,
-        service_location: customer.location,
+        service_address: serviceAddress,
+        service_location: locationSlice.location,
+        service_site: site,
         status: newJobFormData.assigned_technician_id ? 'ASSIGNED' : 'PENDING',
         priority: newJobFormData.priority,
         description: newJobFormData.description.trim() || '',
@@ -389,45 +440,60 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
 
       onJobCreated(newJob);
 
-      // Update customer record if brand/model changed
-      const brandChanged = newJobFormData.brand !== 'Not specified' && 
-                          newJobFormData.brand !== customer.brand;
-      const modelChanged = newJobFormData.model !== 'Not specified' && 
-                          newJobFormData.model !== customer.model;
-      
-      if ((brandChanged || modelChanged) && onCustomerUpdated && parseDbServiceType) {
-        const serviceTypes = parseDbServiceType(customer.service_type || '');
-        const currentBrands = customer.brand ? customer.brand.split(',').map(b => b.trim()) : [];
-        const currentModels = customer.model ? customer.model.split(',').map(m => m.trim()) : [];
-        
-        const serviceTypeIndex = serviceTypes.indexOf(newJobFormData.service_type);
-        
-        const updatedBrands = [...currentBrands];
-        const updatedModels = [...currentModels];
-        
-        while (updatedBrands.length < serviceTypes.length) updatedBrands.push('');
-        while (updatedModels.length < serviceTypes.length) updatedModels.push('');
-        
-        if (brandChanged && newJobFormData.brand !== 'Not specified') {
-          updatedBrands[serviceTypeIndex] = newJobFormData.brand;
+      // Update customer record if brand/model changed (correct site only)
+      const newBrand = newJobFormData.brand === 'Not specified' ? '' : newJobFormData.brand;
+      const newModel = newJobFormData.model === 'Not specified' ? '' : newJobFormData.model;
+      const isSecondary = site === 'secondary';
+
+      if (isSecondary) {
+        const brandChanged = newBrand && newBrand !== ((customer as any).alternate_brand || '');
+        const modelChanged = newModel && newModel !== ((customer as any).alternate_model || '');
+        if ((brandChanged || modelChanged) && onCustomerUpdated) {
+          const patch: Record<string, string> = {};
+          if (brandChanged) patch.alternate_brand = newBrand;
+          if (modelChanged) patch.alternate_model = newModel;
+          await db.customers.update(customer.id, patch);
+          onCustomerUpdated({
+            ...customer,
+            alternate_brand: brandChanged ? newBrand : (customer as any).alternate_brand,
+            alternate_model: modelChanged ? newModel : (customer as any).alternate_model,
+          } as Customer);
+          if (onBrandsModelsReload) await onBrandsModelsReload();
         }
-        if (modelChanged && newJobFormData.model !== 'Not specified') {
-          updatedModels[serviceTypeIndex] = newJobFormData.model;
-        }
-        
-        await db.customers.update(customer.id, {
-          brand: updatedBrands.join(', '),
-          model: updatedModels.join(', ')
-        });
-        
-        onCustomerUpdated({
-          ...customer,
-          brand: updatedBrands.join(', '),
-          model: updatedModels.join(', ')
-        });
-        
-        if (onBrandsModelsReload) {
-          await onBrandsModelsReload();
+      } else {
+        const brandChanged = newBrand && newBrand !== customer.brand;
+        const modelChanged = newModel && newModel !== customer.model;
+
+        if ((brandChanged || modelChanged) && onCustomerUpdated && parseDbServiceType) {
+          const serviceTypes = parseDbServiceType(customer.service_type || '');
+          const currentBrands = customer.brand ? customer.brand.split(',').map(b => b.trim()) : [];
+          const currentModels = customer.model ? customer.model.split(',').map(m => m.trim()) : [];
+
+          const serviceTypeIndex = serviceTypes.indexOf(newJobFormData.service_type);
+
+          const updatedBrands = [...currentBrands];
+          const updatedModels = [...currentModels];
+
+          while (updatedBrands.length < serviceTypes.length) updatedBrands.push('');
+          while (updatedModels.length < serviceTypes.length) updatedModels.push('');
+
+          if (brandChanged) updatedBrands[serviceTypeIndex] = newBrand;
+          if (modelChanged) updatedModels[serviceTypeIndex] = newModel;
+
+          await db.customers.update(customer.id, {
+            brand: updatedBrands.join(', '),
+            model: updatedModels.join(', ')
+          });
+
+          onCustomerUpdated({
+            ...customer,
+            brand: updatedBrands.join(', '),
+            model: updatedModels.join(', ')
+          });
+
+          if (onBrandsModelsReload) {
+            await onBrandsModelsReload();
+          }
         }
       }
 
@@ -462,22 +528,16 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
         newJobFormData.scheduled_time_slot === 'CUSTOM' && newJobFormData.scheduled_time_custom
           ? formatCustomTimeLabel(newJobFormData.scheduled_time_custom) || undefined
           : undefined;
+      const notifySite = site;
+      const notifyServiceAddress = serviceAddress;
+      const notifyLocationLabel = getJobLocationLabelForWhatsApp(
+        { service_site: notifySite, service_address: notifyServiceAddress },
+        customer
+      );
 
       handleClose();
 
       if (assignedTechIdToNotify && onJobAssignedToTechnician && customer) {
-        // The Customer type stores the one-word location inside `address.visible_address`
-        // (transformCustomerData in AdminDashboard moves it there). Fall back through
-        // both shapes so we don't end up sending the city name ("Bangalore") in the
-        // WhatsApp notify dialog.
-        const customerAddress = customer.address as
-          | { visible_address?: string; visibleAddress?: string }
-          | undefined;
-        const customerVisible =
-          (customer as { visible_address?: string }).visible_address ||
-          (customer as { visibleAddress?: string }).visibleAddress ||
-          customerAddress?.visible_address ||
-          customerAddress?.visibleAddress;
         const customerName =
           (customer as { fullName?: string }).fullName ||
           (customer as { full_name?: string }).full_name ||
@@ -486,8 +546,8 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
           technicianId: assignedTechIdToNotify,
           serviceSubType: subTypeToNotify || 'Service',
           customerName,
-          visibleAddress: customerVisible,
-          address: customer.address as { area?: string; city?: string } | undefined,
+          visibleAddress: notifyLocationLabel,
+          address: notifyServiceAddress as { area?: string; city?: string },
           leadSource: leadSourceToNotify,
           customTime: customTimeToNotify,
         });
@@ -514,6 +574,69 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
             {/* Service Information */}
             <div className="space-y-4 p-4 border border-border rounded-lg bg-muted/40">
               <h3 className="text-lg font-semibold text-foreground">Service Information</h3>
+              {customer && hasDualSiteCustomer(customer) && (
+                <div className="space-y-2.5 pb-3 mb-1 border-b border-border/80">
+                  <Label className="text-sm font-medium text-foreground">Service at</Label>
+                  <div
+                    className="grid grid-cols-2 gap-2 sm:gap-3"
+                    role="radiogroup"
+                    aria-label="Service location"
+                  >
+                    {(['primary', 'secondary'] as const).map((site) => {
+                      const label =
+                        site === 'primary'
+                          ? getPrimaryLocationLabel(customer)
+                          : getSecondaryLocationLabel(customer);
+                      const eq = getSiteEquipment(customer, site);
+                      const device = [eq.brand, eq.model].filter(Boolean).join(' ');
+                      const isSelected = newJobFormData.service_site === site;
+                      return (
+                        <button
+                          key={site}
+                          type="button"
+                          role="radio"
+                          aria-checked={isSelected}
+                          onClick={() => applyServiceSiteToForm(site)}
+                          className={`relative flex min-h-[4.25rem] sm:min-h-[4.5rem] flex-col justify-center rounded-xl border-2 px-3 py-2.5 sm:px-4 text-left transition-all active:scale-[0.98] ${
+                            isSelected
+                              ? 'border-blue-500 bg-blue-50/90 shadow-sm ring-2 ring-blue-500/20'
+                              : 'border-border bg-background hover:border-blue-300/80 hover:bg-muted/30'
+                          }`}
+                        >
+                          <span className="flex items-start gap-1.5 min-w-0">
+                            <MapPin
+                              className={`mt-0.5 h-3.5 w-3.5 shrink-0 ${
+                                isSelected ? 'text-blue-600' : 'text-muted-foreground'
+                              }`}
+                              aria-hidden
+                            />
+                            <span className="min-w-0 flex-1">
+                              <span
+                                className={`block truncate text-sm font-semibold leading-tight ${
+                                  isSelected ? 'text-blue-900' : 'text-foreground'
+                                }`}
+                              >
+                                {label}
+                              </span>
+                              {device ? (
+                                <span className="mt-0.5 block truncate text-xs leading-snug text-muted-foreground">
+                                  {device}
+                                </span>
+                              ) : null}
+                            </span>
+                          </span>
+                          {isSelected && (
+                            <span
+                              className="absolute right-2 top-2 h-2 w-2 rounded-full bg-blue-500"
+                              aria-hidden
+                            />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="job_service_type">Service Type</Label>

@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { ensureAdminSupabaseSession } from '@/lib/auth';
 import { normalizeCustomerAddress } from '@/lib/customer-address';
-import { CustomerLocationVariant } from '@/lib/customer-locations';
+import { CustomerLocationVariant, getJobLocationLabelForWhatsApp } from '@/lib/customer-locations';
 import { ensureSupabaseSessionForWrite, resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import {
   extractMapsUrlFromText,
@@ -1316,6 +1316,12 @@ const AdminDashboard = () => {
     alternate_location: customer.alternate_location ?? undefined,
     alternateVisibleAddress: customer.alternate_visible_address ?? undefined,
     alternate_visible_address: customer.alternate_visible_address ?? undefined,
+    alternateBrand: customer.alternate_brand ?? undefined,
+    alternate_brand: customer.alternate_brand ?? undefined,
+    alternateModel: customer.alternate_model ?? undefined,
+    alternate_model: customer.alternate_model ?? undefined,
+    alternateServiceType: customer.alternate_service_type ?? undefined,
+    alternate_service_type: customer.alternate_service_type ?? undefined,
     serviceType: customer.service_type,
     brand: customer.brand,
     model: customer.model,
@@ -4810,7 +4816,8 @@ const AdminDashboard = () => {
     setSelectedCustomerForJob(customer);
     setIsJobDialogReady(true);
     openAdminModal('new-job', { customerId: customer.id });
-  }, [openAdminModal]);
+    void loadFullCustomerForAction(customer).then(setSelectedCustomerForJob);
+  }, [openAdminModal, loadFullCustomerForAction]);
 
   const handleCreateJob = async () => {
     if (!selectedCustomerForJob) return;
@@ -6651,9 +6658,10 @@ const AdminDashboard = () => {
           if (freshCustomer) customerForWhatsApp = freshCustomer;
         }
         const customerName = customerForWhatsApp?.full_name || customerForWhatsApp?.fullName || 'Customer';
-        const addr = customerForWhatsApp?.address || (jobToAssign as any).service_address;
-        const vis = customerForWhatsApp?.visible_address;
-        const locationText = (vis && String(vis).trim()) ? String(vis).trim() : (addr?.area || addr?.city || '');
+        const locationText = getJobLocationLabelForWhatsApp(
+          jobToAssign as { service_site?: string; service_address?: unknown },
+          customerForWhatsApp
+        );
         const leadSource = getLeadSourceFromJob(jobToAssign as Record<string, unknown>);
         const customTime = getJobCustomTimeLabel(jobToAssign as Record<string, unknown>) || '';
         setWhatsappTechnician({
@@ -6885,9 +6893,10 @@ const AdminDashboard = () => {
           if (freshCustomer) customerForWhatsApp = freshCustomer;
         }
         const customerName = customerForWhatsApp?.full_name || customerForWhatsApp?.fullName || 'Customer';
-        const addr = customerForWhatsApp?.address || (jobToReassign as any).service_address;
-        const vis = customerForWhatsApp?.visible_address;
-        const locationText = (vis && String(vis).trim()) ? String(vis).trim() : (addr?.area || addr?.city || '');
+        const locationText = getJobLocationLabelForWhatsApp(
+          jobToReassign as { service_site?: string; service_address?: unknown },
+          customerForWhatsApp
+        );
         const leadSource = getLeadSourceFromJob(jobToReassign as Record<string, unknown>);
         const customTime = getJobCustomTimeLabel(jobToReassign as Record<string, unknown>) || '';
         setWhatsappTechnician({
