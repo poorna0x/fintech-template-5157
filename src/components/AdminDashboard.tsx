@@ -105,6 +105,11 @@ import {
   loadAdminDashboardData,
   loadAdminDashboardSecondary,
 } from '@/lib/adminLoadDashboardData';
+import {
+  scheduleAdminAmcJobCreation,
+  scheduleAdminFollowUpPromotion,
+} from '@/lib/adminDashboardSchedulers';
+import { runAdminDashboardSessionBootstrap } from '@/lib/adminDashboardSessionBootstrap';
 import { Customer, Job, Technician } from '@/types';
 import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
 import { toast } from 'sonner';
@@ -152,7 +157,6 @@ import { getLocationLinkFromObject, getLocationUnavailableMessage, resolveJobDes
 import { applyAutoMoveToOngoingOnDateFlag } from '@/lib/followUpToOngoing';
 import { enrichJobsWithAfterPhotosIfNeeded } from '@/lib/jobReportPhotos';
 import {
-  consumeAdminDashboardPrefetch,
   readAdminDashboardCache,
   clearAdminDashboardCache,
   invalidateAdminDashboardCaches,
@@ -1588,69 +1592,28 @@ const AdminDashboard = () => {
   const amcAutoCreateAttemptedRef = useRef(false);
   const followUpPromoteDayRef = useRef<string | null>(null);
 
-  const scheduleFollowUpPromotion = useCallback(() => {
-    const today = getTodayLocalDate();
-    if (followUpPromoteDayRef.current === today) return;
-    followUpPromoteDayRef.current = today;
+  const scheduleFollowUpPromotion = useCallback(
+    () =>
+      scheduleAdminFollowUpPromotion({
+        followUpPromoteDayRef,
+        statusFilter,
+        currentPage,
+        loadFilteredJobs,
+        setAllFollowUpJobs,
+      }),
+    [statusFilter, currentPage, loadFilteredJobs]
+  );
 
-    supabase.auth
-      .getSession()
-      .then(({ data: { session } }) => {
-        if (!session) {
-          followUpPromoteDayRef.current = null;
-          return;
-        }
-        db.jobs.promoteDueFollowUpsToOngoing(today).then((result) => {
-          if (result.error) {
-            console.error('Error promoting due follow-up jobs:', result.error);
-            followUpPromoteDayRef.current = null;
-            return;
-          }
-          if (result.promoted > 0) {
-            toast.success(
-              `${result.promoted} follow-up job${result.promoted > 1 ? 's' : ''} moved to ongoing`
-            );
-            invalidateAdminDashboardCaches();
-            clearModuleJobsListCache();
-            loadFilteredJobs(statusFilter, currentPage, { silent: true });
-            db.jobs.getFollowUpForGlow().then(({ data }) => {
-              if (data) setAllFollowUpJobs(data as Job[]);
-            }).catch(() => {});
-          }
-        });
-      })
-      .catch(() => {
-        followUpPromoteDayRef.current = null;
-      });
-  }, [statusFilter, currentPage, loadFilteredJobs]);
-
-  const scheduleAmcJobCreation = useCallback(() => {
-    if (amcAutoCreateAttemptedRef.current) return;
-    amcAutoCreateAttemptedRef.current = true;
-
-    supabase.auth
-      .getSession()
-      .then(({ data: { session } }) => {
-        if (!session) {
-          amcAutoCreateAttemptedRef.current = false;
-          return;
-        }
-        db.amcContracts.createAMCServiceJobs().then((result) => {
-          if (result.error) {
-            console.error('Error creating AMC service jobs:', result.error);
-            amcAutoCreateAttemptedRef.current = false;
-          } else if (result.created > 0) {
-            toast.success(
-              `Created ${result.created} AMC service job${result.created > 1 ? 's' : ''} automatically`
-            );
-            loadFilteredJobs(statusFilter, currentPage);
-          }
-        });
-      })
-      .catch(() => {
-        amcAutoCreateAttemptedRef.current = false;
-      });
-  }, [statusFilter, currentPage, loadFilteredJobs]);
+  const scheduleAmcJobCreation = useCallback(
+    () =>
+      scheduleAdminAmcJobCreation({
+        amcAutoCreateAttemptedRef,
+        statusFilter,
+        currentPage,
+        loadFilteredJobs,
+      }),
+    [statusFilter, currentPage, loadFilteredJobs]
+  );
 
   const loadDashboardData = useCallback(
     (options?: {
@@ -1695,81 +1658,18 @@ const AdminDashboard = () => {
   const loadDashboardDataRef = useRef(loadDashboardData);
   loadDashboardDataRef.current = loadDashboardData;
 
-  const runDashboardLoadOnceSessionReady = useCallback(async () => {
-    if (dashboardLoadedWithSessionRef.current) return;
-
-    if (getModuleDashboardSessionReady()) {
-      const cached = readAdminDashboardCache();
-      if (cached) {
-        applyAdminSnapshot(cached);
-      }
-      setIsInitialLoad(false);
-      setLoading(false);
-      dashboardLoadedWithSessionRef.current = true;
-      try {
-        await loadDashboardDataRef.current({
-          silent: true,
-          skipOngoingFetch: statusFilter === 'ONGOING',
-          skipTechniciansFetch: Boolean(cached?.technicianRows?.length),
-        });
-      } catch (error) {
-        console.error('[AdminDashboard] Resume load failed:', error);
-      }
-      return;
-    }
-
-    let showedInstantData = false;
-    // True only when the roster/jobs came from the live prefetch (fresh, <1s old)
-    // rather than the sessionStorage snapshot (which can be up to 5 min stale and
-    // therefore must still be refreshed by loadDashboardData).
-    let appliedFreshPrefetch = false;
-    const cached = readAdminDashboardCache();
-    if (cached) {
-      applyAdminSnapshot(cached);
-      showedInstantData = true;
-      setIsInitialLoad(false);
-      setLoading(false);
-    } else {
-      setLoading(true);
-      setIsInitialLoad(true);
-    }
-
-    const sessionOk = await ensureAdminSupabaseSession(1_500);
-    if (!sessionOk) {
-      toast.error('Could not start your session. Please try again or refresh the page.');
-      setLoading(false);
-      setIsInitialLoad(false);
-      return;
-    }
-
-    if (!showedInstantData) {
-      const prefetched = await consumeAdminDashboardPrefetch();
-      if (prefetched) {
-        applyAdminSnapshot(prefetched);
-        showedInstantData = true;
-        appliedFreshPrefetch = true;
-        setIsInitialLoad(false);
-        setLoading(false);
-      }
-    }
-
-    try {
-      await loadDashboardDataRef.current({
-        silent: true,
-        skipOngoingFetch: showedInstantData && statusFilter === 'ONGOING',
-        // Roster is identical to what the prefetch just fetched — skip the
-        // duplicate get_technicians_for_admin RPC on this cold boot.
-        skipTechniciansFetch: appliedFreshPrefetch,
-      });
-      dashboardLoadedWithSessionRef.current = true;
-      setModuleDashboardSessionReady(true);
-    } catch (error) {
-      console.error('[AdminDashboard] Initial load failed:', error);
-    } finally {
-      setIsInitialLoad(false);
-      setLoading(false);
-    }
-  }, [applyAdminSnapshot, statusFilter]);
+  const runDashboardLoadOnceSessionReady = useCallback(
+    () =>
+      runAdminDashboardSessionBootstrap({
+        dashboardLoadedWithSessionRef,
+        statusFilter,
+        applyAdminSnapshot,
+        loadDashboardDataRef,
+        setIsInitialLoad,
+        setLoading,
+      }),
+    [applyAdminSnapshot, statusFilter]
+  );
 
   // Load dashboard only after admin JWT is ready (RLS on customers requires authenticated admin)
   useEffect(() => {
