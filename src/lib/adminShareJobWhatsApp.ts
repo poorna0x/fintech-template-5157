@@ -1,6 +1,14 @@
 import { toast } from 'sonner';
 import { findLeadSource } from '@/lib/adminUtils';
-import { getLocationLinkFromObject } from '@/lib/jobLocationHelpers';
+import {
+  getJobLocationDisplay,
+  getJobLocationLabelForWhatsApp,
+} from '@/lib/customer-locations';
+import {
+  formatAddressForMapsSearch,
+  getLocationLinkFromObject,
+  getMapsSearchLinkFromAddress,
+} from '@/lib/jobLocationHelpers';
 import { db } from '@/lib/supabase';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import type { Job, Technician } from '@/types';
@@ -45,24 +53,27 @@ export async function shareAdminJobViaWhatsApp(job: Job, technicians: Technician
     requirements = requirements && typeof requirements === 'object' ? [requirements] : [];
   }
   const leadSource = findLeadSource(requirements || []) || 'N/A';
-  const serviceLocation = customer?.location || (job as any).service_location || job.serviceLocation || {};
-  const formattedAddress = serviceLocation?.formattedAddress || serviceLocation?.formatted_address || '';
+
+  // Use the job snapshot (service_site / service_address / service_location), not customer primary only.
+  const jobRow = job as Record<string, unknown>;
+  const locDisplay = getJobLocationDisplay(jobRow, customer);
+  const siteLabel = getJobLocationLabelForWhatsApp(
+    {
+      service_site: (jobRow.service_site ?? jobRow.serviceSite) as string | undefined,
+      service_address: locDisplay.address,
+    },
+    customer
+  );
   const googleMapLink =
-    getLocationLinkFromObject(serviceLocation) ||
-    (formattedAddress
-      ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formattedAddress)}`
-      : '');
-  const serviceAddress = customer?.address || (job as any).service_address || job.serviceAddress || {};
-  const addressParts = [
-    serviceAddress?.visible_address || serviceAddress?.visibleAddress,
-    serviceAddress?.street,
-    serviceAddress?.area,
-    serviceAddress?.city,
-    serviceAddress?.state,
-    serviceAddress?.pincode,
-    serviceAddress?.landmark ? `Landmark: ${serviceAddress.landmark}` : null,
-  ].filter(Boolean);
-  const fullAddressLine = addressParts.length > 0 ? addressParts.join(', ') : formattedAddress || '';
+    getLocationLinkFromObject(locDisplay.location) ||
+    getMapsSearchLinkFromAddress(locDisplay.address) ||
+    getMapsSearchLinkFromAddress(customer?.address);
+  const fullAddressLine =
+    formatAddressForMapsSearch(locDisplay.address) ||
+    formatAddressForMapsSearch(customer?.address) ||
+    locDisplay.visibleLabel ||
+    siteLabel ||
+    '';
   const lines = [
     `*Job: ${(job as any).job_number || job.jobNumber || job.id}*`,
     `Service: ${serviceType}${serviceSubType ? ` - ${serviceSubType}` : ''}`,
@@ -70,6 +81,7 @@ export async function shareAdminJobViaWhatsApp(job: Job, technicians: Technician
     `Phone: ${phone}`,
     ...(altPhone ? [`Alt. phone: ${altPhone}`] : []),
     `Lead source: ${leadSource}`,
+    ...(siteLabel ? [`Service at: ${siteLabel}`] : []),
     ...(googleMapLink ? [`Location: ${googleMapLink}`] : []),
     ...(fullAddressLine ? ['', '_Full address:_', fullAddressLine] : []),
   ];
