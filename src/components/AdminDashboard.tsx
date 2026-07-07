@@ -218,6 +218,7 @@ import EditAMCDialog from './admin/EditAMCDialog';
 import WhatsAppDialog from './admin/WhatsAppDialog';
 import { AdminScreenLoader, AdminInlineLoader } from './admin/AdminLoaders';
 import { AdminDeleteConfirmDialogs } from './admin/AdminDeleteConfirmDialogs';
+import { AdminOverrideExistingCustomerDialog } from './admin/AdminOverrideExistingCustomerDialog';
 import AmcInfoDialog from './admin/AmcInfoDialog';
 import MoveToOngoingDialog from './admin/MoveToOngoingDialog';
 import CompleteTechnicianSelectDialog from './admin/CompleteTechnicianSelectDialog';
@@ -12066,36 +12067,20 @@ const AdminDashboard = () => {
         }}
       />
 
-      {/* Override Dialog for Existing Customer */}
-      <AlertDialog open={overrideDialogOpen} onOpenChange={setOverrideDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Customer Already Exists</AlertDialogTitle>
-            <AlertDialogDescription>
-              A customer with this phone number or email already exists: {existingCustomer?.customer_id || existingCustomer?.customerId} - {existingCustomer?.fullName || existingCustomer?.full_name}
-              <br /><br />
-              Would you like to update the existing customer instead?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => {
-              setOverrideDialogOpen(false);
-              setExistingCustomer(null);
-              closeAdminModal();
-            }}>
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction onClick={() => {
-              setShouldUpdateExisting(true);
-              setOverrideDialogOpen(false);
-              // Move to step 2 to continue
-              setCurrentStep(2);
-            }}>
-              Update Existing
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <AdminOverrideExistingCustomerDialog
+        open={overrideDialogOpen}
+        onOpenChange={setOverrideDialogOpen}
+        existingCustomer={existingCustomer}
+        onCancel={() => {
+          handleCancelOverride();
+          closeAdminModal();
+        }}
+        onConfirmUpdate={() => {
+          setShouldUpdateExisting(true);
+          setOverrideDialogOpen(false);
+          setCurrentStep(2);
+        }}
+      />
 
       {/* Legacy Add Customer Dialog - REMOVED - Now using AddCustomerDialog component */}
 
@@ -12155,43 +12140,6 @@ const AdminDashboard = () => {
         isDeletingCustomerPhoto={isDeletingCustomerPhoto}
         onConfirmDeleteCustomerPhoto={confirmDeleteCustomerPhoto}
       />
-
-      {/* Override Existing Customer Dialog */}
-      <AlertDialog open={overrideDialogOpen} onOpenChange={setOverrideDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Customer Already Exists</AlertDialogTitle>
-            <AlertDialogDescription>
-              A customer with this phone number or email already exists:
-              <br />
-              <br />
-              <strong>Customer ID:</strong> {(existingCustomer as any)?.customer_id ?? (existingCustomer as any)?.customerId ?? '—'}
-              <br />
-              <strong>Name:</strong> {(existingCustomer as any)?.full_name ?? (existingCustomer as any)?.fullName ?? '—'}
-              <br />
-              <strong>Phone:</strong> {existingCustomer?.phone ?? '—'}
-              <br />
-              <strong>Email:</strong> {existingCustomer?.email ?? '—'}
-              <br />
-              <br />
-              Do you want to continue and update this existing customer with the new information?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={handleCancelOverride}>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={() => {
-                setShouldUpdateExisting(true);
-                setOverrideDialogOpen(false);
-                setCurrentStep(2); // Move to next step
-              }}
-              className="bg-orange-600 hover:bg-orange-700"
-            >
-              Continue & Update
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       {/* Photo Gallery Dialog */}
       <PhotoGalleryDialog
