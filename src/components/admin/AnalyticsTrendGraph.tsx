@@ -46,6 +46,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { db } from '@/lib/supabase';
 import {
   alignTrendSeriesByIndex,
@@ -489,6 +490,7 @@ export function AnalyticsTrendGraph({
   initialRange,
   analyticsPeriod,
 }: AnalyticsTrendGraphProps) {
+  const isMobile = useIsMobile();
   const [prefsReady, setPrefsReady] = useState(false);
   const [filters, setFilters] = useState<TrendFilters>(defaultFilters);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -884,8 +886,22 @@ export function AnalyticsTrendGraph({
     );
   }, [rangeCompareA, rangeCompareB]);
 
+  const chartLayout = useMemo(
+    () => ({
+      margin: isMobile
+        ? { top: 8, right: 4, left: 0, bottom: 0 }
+        : { top: 12, right: 12, left: 0, bottom: 0 },
+      revenueAxisWidth: isMobile ? 40 : 54,
+      jobsAxisWidth: isMobile ? 28 : 34,
+      maxBarSize: isMobile ? 22 : 36,
+      dotRadius: isMobile ? 2 : 3,
+      xAxisHeight: isMobile ? 54 : 30,
+    }),
+    [isMobile]
+  );
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-4 sm:space-y-5 min-w-0 max-w-full overflow-x-hidden">
       {usingFallback ? (
         <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
           Limited mode: using daily stats rollup. Run{' '}
@@ -894,13 +910,13 @@ export function AnalyticsTrendGraph({
         </p>
       ) : null}
 
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div className="flex flex-wrap items-end gap-2">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between min-w-0">
+        <div className="grid grid-cols-1 min-[400px]:grid-cols-2 sm:flex sm:flex-wrap sm:items-end gap-2 w-full min-w-0">
           <FilterSelect
             label="Timeline"
             value={timelinePreset}
             onValueChange={(v) => setTimelinePreset(v as TrendTimelinePreset)}
-            className="w-[150px]"
+            className="w-full min-w-0 sm:w-[150px]"
             options={[
               { value: 'this_month', label: 'This month' },
               { value: 'last_month', label: 'Last month' },
@@ -920,26 +936,26 @@ export function AnalyticsTrendGraph({
                 value={customMonth}
                 onChange={(e) => setCustomMonth(e.target.value)}
                 max={new Date().toISOString().slice(0, 7)}
-                className="w-[150px] h-9"
+                className="w-full sm:w-[150px] h-9"
               />
             </div>
           ) : null}
           {timelinePreset === 'custom' ? (
             <>
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 min-w-0">
                 <Label className="text-xs text-muted-foreground">From</Label>
-                <DatePicker value={customStart} onChange={(v) => v && setCustomStart(v)} placeholder="Start" className="w-[140px]" />
+                <DatePicker value={customStart} onChange={(v) => v && setCustomStart(v)} placeholder="Start" className="w-full sm:w-[140px]" />
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 min-w-0">
                 <Label className="text-xs text-muted-foreground">To</Label>
-                <DatePicker value={customEnd} onChange={(v) => v && setCustomEnd(v)} placeholder="End" className="w-[140px]" />
+                <DatePicker value={customEnd} onChange={(v) => v && setCustomEnd(v)} placeholder="End" className="w-full sm:w-[140px]" />
               </div>
             </>
           ) : null}
         </div>
-        <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:self-start lg:self-auto">
           {loadedAt && !loading ? (
-            <span className="text-[11px] text-muted-foreground hidden sm:inline">
+            <span className="text-[11px] text-muted-foreground w-full sm:w-auto order-last sm:order-none">
               Updated {formatLoadedAgo(loadedAt)}
             </span>
           ) : null}
@@ -948,24 +964,31 @@ export function AnalyticsTrendGraph({
               type="button"
               variant="secondary"
               size="sm"
-              className="gap-1.5 text-xs h-8"
+              className="gap-1.5 text-xs h-8 flex-1 sm:flex-none min-w-0"
               onClick={applyAnalyticsPeriod}
             >
-              Match analytics ({analyticsPeriodLabel})
+              <span className="truncate sm:hidden">Sync period</span>
+              <span className="truncate hidden sm:inline">Match analytics ({analyticsPeriodLabel})</span>
             </Button>
           ) : null}
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="gap-1.5 h-8"
+            className="gap-1.5 h-8 flex-1 sm:flex-none"
             onClick={() => handleRefresh()}
             disabled={loading}
           >
             {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
             Refresh
           </Button>
-          <Button type="button" variant="outline" size="sm" className="gap-1.5 h-8" onClick={() => setFiltersOpen((o) => !o)}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-1.5 h-8 flex-1 sm:flex-none"
+            onClick={() => setFiltersOpen((o) => !o)}
+          >
             {filtersOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
             Filters {hasActiveFilters(filters) ? '(active)' : ''}
           </Button>
@@ -1008,18 +1031,20 @@ export function AnalyticsTrendGraph({
       ) : null}
 
       <Tabs defaultValue="timeline" className="w-full">
-        <TabsList className="grid w-full grid-cols-3 h-auto p-1">
-          <TabsTrigger value="timeline" className="gap-1.5 text-xs sm:text-sm py-2">
+        <TabsList className="grid w-full grid-cols-3 h-auto p-1 gap-1">
+          <TabsTrigger value="timeline" className="gap-1 text-[11px] sm:text-sm py-2 px-1 sm:px-3">
             <LineChart className="w-4 h-4 shrink-0" />
-            Timeline
+            <span className="truncate">Timeline</span>
           </TabsTrigger>
-          <TabsTrigger value="months" className="gap-1.5 text-xs sm:text-sm py-2">
+          <TabsTrigger value="months" className="gap-1 text-[11px] sm:text-sm py-2 px-1 sm:px-3">
             <CalendarRange className="w-4 h-4 shrink-0" />
-            Compare months
+            <span className="truncate sm:hidden">Months</span>
+            <span className="truncate hidden sm:inline">Compare months</span>
           </TabsTrigger>
-          <TabsTrigger value="ranges" className="gap-1.5 text-xs sm:text-sm py-2">
+          <TabsTrigger value="ranges" className="gap-1 text-[11px] sm:text-sm py-2 px-1 sm:px-3">
             <GitCompare className="w-4 h-4 shrink-0" />
-            Compare ranges
+            <span className="truncate sm:hidden">Ranges</span>
+            <span className="truncate hidden sm:inline">Compare ranges</span>
           </TabsTrigger>
         </TabsList>
 
@@ -1030,7 +1055,7 @@ export function AnalyticsTrendGraph({
             <EmptyState />
           ) : (
             <>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="grid grid-cols-1 min-[400px]:grid-cols-2 lg:grid-cols-4 gap-3">
                 <StatCard title="Total revenue" value={`₹ ${formatCurrency(summary.totalRevenue)}`} icon={<TrendingUp className="w-4 h-4 text-sky-600" />} sub={<ChangeBadge value={summary.overallTrendPct} size="md" />} />
                 <StatCard title="Total jobs" value={String(summary.totalJobs)} icon={<LineChart className="w-4 h-4 text-orange-500" />} sub={`Avg ₹ ${formatCurrency(summary.totalJobs > 0 ? summary.totalRevenue / summary.totalJobs : 0)} / job`} />
                 <StatCard title="Best period" value={summary.bestPeriod ? `₹ ${formatCurrency(summary.bestPeriod.revenue)}` : '—'} icon={<TrendingUp className="w-4 h-4 text-emerald-600" />} sub={summary.bestPeriod?.label} />
@@ -1048,70 +1073,103 @@ export function AnalyticsTrendGraph({
 
               {weekdayPattern ? <WeekdayPatternPanel rows={weekdayPattern} /> : null}
 
-              <div className="rounded-2xl border bg-gradient-to-b from-sky-50/80 to-background p-3 sm:p-5 shadow-sm">
-                <div className="flex items-center justify-between mb-3 gap-2">
-                  <div>
+              <div className="rounded-2xl border bg-gradient-to-b from-sky-50/80 to-background p-3 sm:p-5 shadow-sm min-w-0 overflow-hidden">
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between mb-3">
+                  <div className="min-w-0">
                     <p className="text-sm font-medium text-foreground">
                       {effectiveGranularity === 'day' ? 'Daily' : effectiveGranularity === 'week' ? 'Weekly' : 'Monthly'} performance
                     </p>
                     <p className="text-[11px] text-muted-foreground mt-0.5">
-                      Click a bar or point to view completed jobs
+                      Tap a bar or point to view completed jobs
                     </p>
                   </div>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-[11px] sm:text-xs text-muted-foreground shrink-0">
                     {toDateInputValue(activeRange.startDate)} → {toDateInputValue(activeRange.endDate)}
                   </p>
                 </div>
                 <div className="mb-3 rounded-lg border bg-muted/25 px-3 py-2.5 sm:px-4">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="monthly-target-lakhs" className="text-[11px] text-muted-foreground">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <Label htmlFor="monthly-target-lakhs" className="text-[11px] text-muted-foreground shrink-0">
                         Monthly target
                       </Label>
-                      <div className="flex h-8 items-stretch overflow-hidden rounded-md border bg-background shadow-sm">
-                          <Input
-                            id="monthly-target-lakhs"
-                            type="number"
-                            inputMode="decimal"
-                            min={MIN_MONTHLY_TARGET_LAKHS}
-                            step={0.5}
-                            value={monthlyTargetLakhs}
-                            onChange={(e) => setMonthlyTargetLakhs(e.target.value)}
-                            onBlur={handleMonthlyTargetBlur}
-                            className="h-8 w-12 border-0 px-2 text-xs tabular-nums shadow-none focus-visible:ring-0"
-                            aria-label="Monthly revenue target in lakhs"
-                          />
-                          <span className="flex min-w-[3.25rem] items-center justify-center border-l bg-muted/50 px-2 text-[11px] font-medium text-muted-foreground">
-                            Lakh
-                          </span>
-                        </div>
+                      <div className="inline-flex h-8 w-fit max-w-full shrink-0 items-stretch overflow-hidden rounded-md border bg-background shadow-sm">
+                        <Input
+                          id="monthly-target-lakhs"
+                          type="number"
+                          inputMode="decimal"
+                          min={MIN_MONTHLY_TARGET_LAKHS}
+                          step={0.5}
+                          value={monthlyTargetLakhs}
+                          onChange={(e) => setMonthlyTargetLakhs(e.target.value)}
+                          onBlur={handleMonthlyTargetBlur}
+                          className="h-8 !w-11 min-w-0 shrink-0 border-0 px-2 text-center text-xs tabular-nums shadow-none focus-visible:ring-0"
+                          aria-label="Monthly revenue target in lakhs"
+                        />
+                        <span className="flex items-center border-l bg-muted/50 px-2.5 text-[11px] font-medium text-muted-foreground shrink-0">
+                          Lakh
+                        </span>
+                      </div>
                     </div>
                     {proratedRevenueTarget > 0 ? (
-                      <div className="sm:text-right">
-                        <p className="text-[10px] text-muted-foreground">Green line on chart</p>
-                        <p className="text-sm font-semibold tabular-nums text-emerald-700">
+                      <p className="text-[11px] text-muted-foreground sm:text-right">
+                        Chart line:{' '}
+                        <span className="font-semibold tabular-nums text-emerald-700">
                           {formatLakhs(inrToLakhs(proratedRevenueTarget))} L
-                          <span className="ml-1 text-xs font-normal text-muted-foreground">
+                          <span className="font-normal text-muted-foreground">
                             {effectiveGranularity === 'day'
-                              ? 'per day'
+                              ? '/day'
                               : effectiveGranularity === 'week'
-                                ? 'per week'
-                                : 'per month'}
+                                ? '/week'
+                                : '/month'}
                           </span>
-                        </p>
-                      </div>
+                        </span>
+                      </p>
                     ) : null}
                   </div>
                 </div>
-                <ChartContainer config={chartConfig} className="aspect-[16/10] sm:aspect-[2.2/1] w-full min-h-[280px] cursor-pointer">
-                  <ComposedChart data={chartData} margin={{ top: 12, right: 12, left: 0, bottom: 0 }} onClick={handleChartClick}>
+                <ChartContainer
+                  config={chartConfig}
+                  className="aspect-[5/4] sm:aspect-[16/10] md:aspect-[2.2/1] w-full min-h-[220px] sm:min-h-[280px] cursor-pointer -mx-1 sm:mx-0"
+                >
+                  <ComposedChart
+                    data={chartData}
+                    margin={chartLayout.margin}
+                    onClick={handleChartClick}
+                  >
                     <CartesianGrid vertical={false} strokeDasharray="4 4" stroke="hsl(var(--border))" />
-                    <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={10} minTickGap={20} />
+                    <XAxis
+                      dataKey="label"
+                      tickLine={false}
+                      axisLine={false}
+                      tickMargin={8}
+                      minTickGap={isMobile ? 4 : 20}
+                      tick={{ fontSize: isMobile ? 10 : 12 }}
+                      angle={isMobile ? -42 : 0}
+                      textAnchor={isMobile ? 'end' : 'middle'}
+                      height={chartLayout.xAxisHeight}
+                      interval={isMobile ? 'preserveStartEnd' : undefined}
+                    />
                     {(filters.metric === 'combined' || filters.metric === 'revenue' || filters.metric === 'avgBill') && (
-                      <YAxis yAxisId="revenue" tickLine={false} axisLine={false} width={54} tickFormatter={(v) => formatCompactCurrency(Number(v))} />
+                      <YAxis
+                        yAxisId="revenue"
+                        tickLine={false}
+                        axisLine={false}
+                        width={chartLayout.revenueAxisWidth}
+                        tick={{ fontSize: isMobile ? 10 : 12 }}
+                        tickFormatter={(v) => formatCompactCurrency(Number(v))}
+                      />
                     )}
                     {(filters.metric === 'combined' || filters.metric === 'jobs') && (
-                      <YAxis yAxisId="jobs" orientation="right" tickLine={false} axisLine={false} width={34} allowDecimals={false} />
+                      <YAxis
+                        yAxisId="jobs"
+                        orientation="right"
+                        tickLine={false}
+                        axisLine={false}
+                        width={chartLayout.jobsAxisWidth}
+                        allowDecimals={false}
+                        tick={{ fontSize: isMobile ? 10 : 12 }}
+                      />
                     )}
                     <ChartTooltip content={<RichTooltip />} />
                     {filters.metric !== 'jobs' && filters.metric !== 'avgBill' && proratedRevenueTarget > 0 ? (
@@ -1121,12 +1179,16 @@ export function AnalyticsTrendGraph({
                         stroke="hsl(142 71% 40%)"
                         strokeDasharray="8 4"
                         strokeWidth={2}
-                        label={{
-                          value: 'Target',
-                          position: 'insideTopRight',
-                          fill: 'hsl(142 40% 35%)',
-                          fontSize: 10,
-                        }}
+                        label={
+                          isMobile
+                            ? undefined
+                            : {
+                                value: 'Target',
+                                position: 'insideTopRight',
+                                fill: 'hsl(142 40% 35%)',
+                                fontSize: 10,
+                              }
+                        }
                       />
                     ) : null}
                     {filters.metric !== 'jobs' && filters.metric !== 'avgBill' ? (
@@ -1140,8 +1202,8 @@ export function AnalyticsTrendGraph({
                         name="Jobs"
                         stroke="var(--color-jobs)"
                         strokeWidth={2.5}
-                        dot={{ r: 3, fill: 'var(--color-jobs)' }}
-                        activeDot={{ r: 6, strokeWidth: 2 }}
+                        dot={{ r: chartLayout.dotRadius, fill: 'var(--color-jobs)' }}
+                        activeDot={{ r: isMobile ? 5 : 6, strokeWidth: 2 }}
                       />
                     )}
                     {(filters.metric === 'combined' || filters.metric === 'revenue') && (
@@ -1151,15 +1213,18 @@ export function AnalyticsTrendGraph({
                         name="Revenue"
                         fill="var(--color-revenue)"
                         radius={[6, 6, 0, 0]}
-                        maxBarSize={36}
+                        maxBarSize={chartLayout.maxBarSize}
                         fillOpacity={0.88}
                       />
                     )}
                     {filters.metric === 'avgBill' && (
-                      <Line yAxisId="revenue" type="monotone" dataKey="avgBill" stroke="var(--color-avgBill)" strokeWidth={2.5} dot={{ r: 3 }} />
+                      <Line yAxisId="revenue" type="monotone" dataKey="avgBill" stroke="var(--color-avgBill)" strokeWidth={2.5} dot={{ r: chartLayout.dotRadius }} />
                     )}
                     {filters.metric === 'combined' ? (
-                      <Legend wrapperStyle={{ fontSize: 12 }} />
+                      <Legend
+                        verticalAlign="bottom"
+                        wrapperStyle={{ fontSize: isMobile ? 10 : 12, paddingTop: isMobile ? 4 : 0 }}
+                      />
                     ) : null}
                   </ComposedChart>
                 </ChartContainer>
@@ -1173,6 +1238,7 @@ export function AnalyticsTrendGraph({
                 rows={summary.rows}
                 granularity={effectiveGranularity}
                 onPeriodClick={openPeriodDrilldown}
+                compact={isMobile}
               />
             </>
           )}
@@ -1326,7 +1392,7 @@ function FilterSelect({
     <div className={cn('space-y-1.5', className)}>
       <Label className="text-xs text-muted-foreground">{label}</Label>
       <Select value={value} onValueChange={onValueChange}>
-        <SelectTrigger className="h-9 text-sm">
+        <SelectTrigger className="h-9 text-sm w-full">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -1347,11 +1413,13 @@ function WeekdayPatternPanel({ rows }: { rows: WeekdayPatternRow[] }) {
 
   return (
     <div className="rounded-2xl border bg-card shadow-sm overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-3 border-b bg-muted/20">
-        <CalendarRange className="w-4 h-4 text-sky-600" />
-        <p className="text-sm font-semibold text-foreground">Best days of the week</p>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center px-4 py-3 border-b bg-muted/20">
+        <div className="flex items-center gap-2 min-w-0">
+          <CalendarRange className="w-4 h-4 text-sky-600 shrink-0" />
+          <p className="text-sm font-semibold text-foreground">Best days of the week</p>
+        </div>
         {best ? (
-          <span className="text-[11px] text-muted-foreground ml-auto">
+          <span className="text-[11px] text-muted-foreground sm:ml-auto">
             Top: {best.label} · ₹ {formatCurrency(Math.round(best.avgRevenue))} avg
           </span>
         ) : null}
@@ -1506,10 +1574,12 @@ function TrendInsightsPanel({
 
   return (
     <div className="rounded-2xl border bg-card shadow-sm overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-3 border-b bg-gradient-to-r from-sky-50/80 to-background">
-        <Sparkles className="w-4 h-4 text-sky-600" />
-        <p className="text-sm font-semibold text-foreground">Business insights</p>
-        <span className="text-[11px] text-muted-foreground ml-auto">For selected filters &amp; range</span>
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center px-4 py-3 border-b bg-gradient-to-r from-sky-50/80 to-background">
+        <div className="flex items-center gap-2 min-w-0">
+          <Sparkles className="w-4 h-4 text-sky-600 shrink-0" />
+          <p className="text-sm font-semibold text-foreground">Business insights</p>
+        </div>
+        <span className="text-[11px] text-muted-foreground sm:ml-auto">For selected filters &amp; range</span>
       </div>
 
       <div className="p-4 space-y-4">
@@ -1517,7 +1587,7 @@ function TrendInsightsPanel({
           <TechnicianTeamComparisonCard comparison={technicianComparison} />
         ) : null}
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <InsightMiniCard
             title="Recent momentum"
             icon={<Zap className="w-4 h-4 text-amber-500" />}
@@ -1611,7 +1681,7 @@ function InsightMiniCard({
         <p className="text-[11px] font-medium text-muted-foreground">{title}</p>
         {icon}
       </div>
-      <p className="text-lg font-bold tabular-nums">{value}</p>
+      <p className="text-base sm:text-lg font-bold tabular-nums">{value}</p>
       <div className="text-[11px] text-muted-foreground mt-1 leading-relaxed">{sub}</div>
     </div>
   );
@@ -1633,9 +1703,9 @@ function MixBar({
   const fmt = (n: number) => (isCurrency ? `₹ ${formatCurrency(n)}` : String(n));
   return (
     <div>
-      <div className="flex justify-between text-xs mb-1">
-        <span className="text-muted-foreground">{label}</span>
-        <span className="tabular-nums">
+      <div className="flex justify-between gap-2 text-xs mb-1">
+        <span className="text-muted-foreground shrink-0">{label}</span>
+        <span className="tabular-nums text-right text-[10px] sm:text-xs leading-snug">
           Install {fmt(installValue)} · Service {fmt(serviceValue)}
         </span>
       </div>
@@ -1778,13 +1848,13 @@ function RankedInsightList({
 
 function StatCard({ title, value, sub, icon }: { title: string; value: string; sub?: React.ReactNode; icon?: React.ReactNode }) {
   return (
-    <div className="rounded-xl border bg-gradient-to-br from-background to-sky-50/40 px-4 py-3.5 shadow-sm">
+    <div className="rounded-xl border bg-gradient-to-br from-background to-sky-50/40 px-3 py-3 sm:px-4 sm:py-3.5 shadow-sm min-w-0">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-medium text-muted-foreground">{title}</p>
+        <p className="text-[11px] sm:text-xs font-medium text-muted-foreground">{title}</p>
         {icon}
       </div>
-      <p className="text-xl font-bold text-foreground mt-1 tabular-nums">{value}</p>
-      {sub ? <div className="text-xs text-muted-foreground mt-1">{sub}</div> : null}
+      <p className="text-lg sm:text-xl font-bold text-foreground mt-1 tabular-nums break-all sm:break-normal">{value}</p>
+      {sub ? <div className="text-[11px] sm:text-xs text-muted-foreground mt-1 leading-relaxed">{sub}</div> : null}
     </div>
   );
 }
@@ -1851,22 +1921,24 @@ function TrendTable({
   rows,
   granularity,
   onPeriodClick,
+  compact = false,
 }: {
   rows: AnalyticsTrendPeriodRow[];
   granularity: string;
   onPeriodClick?: (periodKey: string, label: string) => void;
+  compact?: boolean;
 }) {
   return (
-    <div className="overflow-x-auto rounded-xl border">
-      <Table>
+    <div className="overflow-x-auto rounded-xl border -mx-1 sm:mx-0">
+      <Table className={compact ? 'text-xs sm:text-sm' : undefined}>
         <TableHeader>
           <TableRow>
-            <TableHead>{granularity === 'day' ? 'Day' : granularity === 'week' ? 'Week' : 'Month'}</TableHead>
-            <TableHead className="text-right">Jobs</TableHead>
-            <TableHead className="text-right">Revenue</TableHead>
-            <TableHead className="text-right">Avg bill</TableHead>
-            <TableHead className="text-right">Rev. Δ</TableHead>
-            <TableHead className="text-right">Jobs Δ</TableHead>
+            <TableHead className="whitespace-nowrap">{granularity === 'day' ? 'Day' : granularity === 'week' ? 'Week' : 'Month'}</TableHead>
+            <TableHead className="text-right whitespace-nowrap">Jobs</TableHead>
+            <TableHead className="text-right whitespace-nowrap">Revenue</TableHead>
+            <TableHead className={cn('text-right whitespace-nowrap', compact && 'hidden sm:table-cell')}>Avg bill</TableHead>
+            <TableHead className={cn('text-right whitespace-nowrap', compact && 'hidden md:table-cell')}>Rev. Δ</TableHead>
+            <TableHead className={cn('text-right whitespace-nowrap', compact && 'hidden md:table-cell')}>Jobs Δ</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -1876,12 +1948,20 @@ function TrendTable({
               className={onPeriodClick ? 'cursor-pointer hover:bg-muted/40' : undefined}
               onClick={() => onPeriodClick?.(row.periodKey, row.label)}
             >
-              <TableCell className="font-medium">{row.label}</TableCell>
+              <TableCell className="font-medium whitespace-nowrap">{row.label}</TableCell>
               <TableCell className="text-right tabular-nums">{row.jobs}</TableCell>
-              <TableCell className="text-right tabular-nums text-emerald-700">₹ {formatCurrency(row.revenue)}</TableCell>
-              <TableCell className="text-right tabular-nums">₹ {formatCurrency(Math.round(row.avgBill))}</TableCell>
-              <TableCell className="text-right"><ChangeBadge value={row.revenueChangePct} /></TableCell>
-              <TableCell className="text-right"><ChangeBadge value={row.jobsChangePct} /></TableCell>
+              <TableCell className="text-right tabular-nums text-emerald-700 whitespace-nowrap">
+                {compact ? formatCompactCurrency(row.revenue) : `₹ ${formatCurrency(row.revenue)}`}
+              </TableCell>
+              <TableCell className={cn('text-right tabular-nums whitespace-nowrap', compact && 'hidden sm:table-cell')}>
+                ₹ {formatCurrency(Math.round(row.avgBill))}
+              </TableCell>
+              <TableCell className={cn('text-right', compact && 'hidden md:table-cell')}>
+                <ChangeBadge value={row.revenueChangePct} />
+              </TableCell>
+              <TableCell className={cn('text-right', compact && 'hidden md:table-cell')}>
+                <ChangeBadge value={row.jobsChangePct} />
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>
