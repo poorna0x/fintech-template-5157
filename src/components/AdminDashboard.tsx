@@ -94,6 +94,11 @@ import {
   getTodayLocalDate,
   getTomorrowLocalDate,
 } from '@/lib/adminDashboardDateHelpers';
+import {
+  buildCustomersWithJobs,
+  getFilteredCustomersForDashboard,
+  resolveDisplayedCustomers,
+} from '@/lib/adminDashboardCustomerFilters';
 import { Customer, Job, Technician } from '@/types';
 import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
 import { toast } from 'sonner';
@@ -8890,309 +8895,18 @@ const AdminDashboard = () => {
     ? baseCustomers
     : customers;
 
-  function doesCompletedJobMatchFilters(job: any): boolean {
+  const doesCompletedJobMatchFilters = useCallback((job: any): boolean => {
     return completedJobMatchesDashboardClientFilters(job, {
       leadType: completedLeadTypeFilter,
       serviceSubType: completedServiceSubTypeFilter,
       completedBy: completedByFilter,
     }, technicians as any);
-  }
-
-  // Group customers with their jobs (uses baseCustomers so search results get their jobs from current view)
-  const customersWithJobs = baseCustomers.map(customer => {
-    const customerJobs = jobs
-      .filter(job => {
-        // Check both possible field names for customer ID
-        const jobCustomerId = (job as any).customer_id || job.customerId || (job as any).customerId;
-        const customerUuid = customer.id;
-        
-        // Customer Jobs Match - silently continue
-        
-        return jobCustomerId === customerUuid;
-      })
-      .sort((a, b) => {
-        const aDate = new Date((a as any).scheduled_date || a.scheduledDate).getTime();
-        const bDate = new Date((b as any).scheduled_date || b.scheduledDate).getTime();
-        return bDate - aDate; // Most recent first
-      });
-    
-    // Sort completed jobs by completion date (latest first)
-    const completedJobs = customerJobs
-      .filter(job => job.status === 'COMPLETED')
-      .sort((a, b) => {
-        const aCompletionDate = getJobCompletionDate(a);
-        const bCompletionDate = getJobCompletionDate(b);
-        return bCompletionDate - aCompletionDate; // Latest completed first
-      });
-    
-    return {
-      customer,
-      allJobs: customerJobs,
-      upcomingJobs: customerJobs.filter(job => ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(job.status)),                                                    
-      completedJobs: completedJobs,
-      cancelledJobs: customerJobs.filter(job => job.status === 'CANCELLED')
-    };
-  });
-  
-  // Customers with Jobs processing complete
-
-  // Filter customers based on status filter
-  const getFilteredCustomers = () => {
-    // For COMPLETED and CANCELLED, use jobs directly since they're paginated
-    if (statusFilter === 'COMPLETED' || statusFilter === 'CANCELLED') {
-      // Group loaded jobs by customer
-      const customerMap = new Map<string, { customer: Customer; todayJobs: Job[] }>();
-      
-      // First, collect all customers who have jobs for the selected date/range.
-      // Note: jobs array is paginated, so if there are multiple pages,
-      // we only see customers from the current page. This is intentional for performance.
-
-      jobs.forEach(job => {
-        let customer = (job as any).customer || job.customer;
-        const fallbackCustomerId = (job as any).customer_id || (job as any).customerId;
-        if (!customer) {
-          if (!fallbackCustomerId) {
-            if (import.meta.env.DEV) {
-              console.warn('Job missing customer relationship:', {
-                jobId: job.id,
-                jobNumber: job.job_number || job.jobNumber,
-                hasCustomerField: !!(job as any).customer || !!job.customer,
-                status: job.status,
-                completedAt: (job as any).completed_at || job.completedAt,
-                endTime: (job as any).end_time || job.endTime
-              });
-            }
-            return;
-          }
-          // Orphan job or embed failed: still show the row so pagination is not a blank page.
-          customer = {
-            id: fallbackCustomerId,
-            customer_id: null,
-            full_name: 'Customer record unavailable',
-            phone: '',
-            alternate_phone: null,
-            email: null,
-            visible_address: '',
-            address: {},
-            location: null,
-            service_type: null,
-            brand: null,
-            model: null,
-            installation_date: null,
-            warranty_expiry: null,
-            status: null,
-            customer_since: null,
-            last_service_date: null,
-            notes: null,
-            preferred_time_slot: null,
-            preferred_language: null,
-            has_prefilter: null,
-            has_google_review: null,
-            customer_tier: null,
-            raw_water_tds: null,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          };
-        }
-        
-        const customerId = customer.id;
-        if (!customerId) {
-          if (import.meta.env.DEV) {
-            console.warn('Customer missing ID:', customer);
-          }
-          return;
-        }
-        
-        if (!customerMap.has(customerId)) {
-          customerMap.set(customerId, {
-            customer: transformCustomerData(customer),
-            todayJobs: []
-          });
-        }
-        customerMap.get(customerId)!.todayJobs.push(job);
-      });
-      
-      // Debug logging for COMPLETED filter
-      if (import.meta.env.DEV && statusFilter === 'COMPLETED') {
-        console.log('Completed jobs filter - customer grouping:', {
-          totalJobs: jobs.length,
-          uniqueCustomers: customerMap.size,
-          dateFilter: completedDateFilter,
-          currentPage,
-          totalPages,
-          totalCount,
-          customers: Array.from(customerMap.entries()).map(([id, { customer, todayJobs }]) => ({
-            customerId: id,
-            customer_id: (customer as any).customer_id || customer.customerId,
-            name: customer.fullName || (customer as any).full_name,
-            jobCount: todayJobs.length,
-            jobNumbers: todayJobs.map(j => j.job_number || j.jobNumber)
-          }))
-        });
-      }
-      
-      // For each customer, use the jobs from the paginated query for the selected date
-      // Don't use customerHistory here as it might contain jobs from other dates
-      // The database query already filtered by date, so todayJobs contains the correct filtered jobs
-      return Array.from(customerMap.values())
-        .map(({ customer, todayJobs }) => {
-          // For COMPLETED filter with date selection, use only the paginated jobs for that date
-          // This ensures we show only customers who have jobs on the selected date
-          const allJobs = statusFilter === 'COMPLETED'
-            ? todayJobs.filter((job) => job.status === 'COMPLETED' && doesCompletedJobMatchFilters(job))
-            : todayJobs;
-          
-          // Sort completed jobs by completion date (latest first)
-          const completedJobs = allJobs
-            .filter(job => job.status === 'COMPLETED')
-            .sort((a, b) => {
-              const aCompletionDate = getJobCompletionDate(a);
-              const bCompletionDate = getJobCompletionDate(b);
-              return bCompletionDate - aCompletionDate; // Latest completed first
-            });
-          
-          return {
-            customer,
-            allJobs, // Use only jobs from the paginated query (filtered by date)
-            upcomingJobs: allJobs.filter(job => ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(job.status)),
-            completedJobs: completedJobs,
-            cancelledJobs: allJobs.filter(job => job.status === 'CANCELLED' || job.status === 'DENIED')
-          };
-        })
-        .filter((entry) => statusFilter !== 'COMPLETED' || entry.completedJobs.length > 0)
-        .sort((a, b) => {
-          // Sort customers by their most recent completed job date (latest first)
-          const aMostRecentCompleted = a.completedJobs.length > 0 
-            ? getJobCompletionDate(a.completedJobs[0]) 
-            : 0;
-          const bMostRecentCompleted = b.completedJobs.length > 0 
-            ? getJobCompletionDate(b.completedJobs[0]) 
-            : 0;
-          return bMostRecentCompleted - aMostRecentCompleted;
-        });
-    }
-    
-    let filteredCustomers = customersWithJobs;
-    
-    // Apply status filter
-    if (statusFilter === 'ALL') {
-      // Show all customers regardless of job status (including those with no jobs)
-      filteredCustomers = customersWithJobs;
-    } else if (statusFilter === 'ONGOING') {
-      // Show customers with ongoing jobs (pending, assigned, in-progress)
-      filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
-        allJobs.some((job: any) => doesOngoingJobMatchFilters(job))
-      );
-    } else if (statusFilter === 'RESCHEDULED') {
-      // For RESCHEDULED, use jobs if loaded via pagination, otherwise filter customersWithJobs
-      if (jobs.length > 0 && jobs.some(j => ['FOLLOW_UP', 'RESCHEDULED'].includes(j.status))) {
-        const customerMap = new Map<string, { customer: Customer; allJobs: Job[] }>();
-        // Filter out customers that have been deleted (verify customer still exists)
-        const existingCustomerIds = new Set(baseCustomers.map(c => c.id));
-
-        jobs.forEach(job => {
-          const customer = (job as any).customer || job.customer;
-          if (!customer) return;
-          const customerId = customer.id;
-
-          // IMPORTANT: Filter out customers that have been deleted
-          if (!existingCustomerIds.has(customerId)) {
-            if (import.meta.env.DEV) {
-              console.warn('Skipping RESCHEDULED job with deleted customer:', {
-                jobId: job.id,
-                jobNumber: job.job_number || job.jobNumber,
-                customerId: customerId
-              });
-            }
-            return; // Skip jobs for deleted customers
-          }
-          
-          if (!customerMap.has(customerId)) {
-            customerMap.set(customerId, {
-              customer: transformCustomerData(customer),
-              allJobs: []
-            });
-          }
-          customerMap.get(customerId)!.allJobs.push(job);
-        });
-        
-        let customersList = Array.from(customerMap.values()).map(({ customer, allJobs }) => {
-          // Sort completed jobs by completion date (latest first)
-          const completedJobs = allJobs
-            .filter(job => job.status === 'COMPLETED')
-            .sort((a, b) => {
-              const aCompletionDate = getJobCompletionDate(a);
-              const bCompletionDate = getJobCompletionDate(b);
-              return bCompletionDate - aCompletionDate; // Latest completed first
-            });
-          
-          return {
-            customer,
-            allJobs,
-            upcomingJobs: allJobs.filter(job => ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'].includes(job.status)),
-            completedJobs: completedJobs,
-            cancelledJobs: allJobs.filter(job => job.status === 'CANCELLED' || job.status === 'DENIED')
-          };
-        });
-        
-        // Filter customers by followup date (within 7 days) if not showing all
-        if (!showAllFollowups) {
-          const now = new Date();
-          const weekFromNow = new Date(now);
-          weekFromNow.setDate(weekFromNow.getDate() + 7);
-          
-          customersList = customersList.filter(({ allJobs }) => {
-            const followUpJobs = allJobs.filter(job => ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status));
-            // Check if customer has at least one followup within 7 days
-            return followUpJobs.some((job: any) => {
-              const followUpDate = job.follow_up_date || job.followUpDate;
-              if (!followUpDate) return true; // Show customers with jobs without date
-              const followUpDateObj = new Date(followUpDate);
-              if (isNaN(followUpDateObj.getTime())) return true;
-              return followUpDateObj <= weekFromNow;
-            });
-          });
-        }
-        
-        return customersList;
-      }
-      // Filter for follow-up jobs (FOLLOW_UP and RESCHEDULED status)
-      filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
-        allJobs.some(job => ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status))
-      );
-      
-      // Filter customers by followup date (within 7 days) if not showing all
-      if (!showAllFollowups) {
-        const now = new Date();
-        const weekFromNow = new Date(now);
-        weekFromNow.setDate(weekFromNow.getDate() + 7);
-        
-        filteredCustomers = filteredCustomers.filter(({ allJobs }) => {
-          const followUpJobs = allJobs.filter(job => ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status));
-          // Check if customer has at least one followup within 7 days
-          return followUpJobs.some((job: any) => {
-            const followUpDate = job.follow_up_date || job.followUpDate;
-            if (!followUpDate) return true; // Show customers with jobs without date
-            const followUpDateObj = new Date(followUpDate);
-            if (isNaN(followUpDateObj.getTime())) return true;
-            return followUpDateObj <= weekFromNow;
-          });
-        });
-      }
-    } else if (statusFilter === 'CANCELLED') {
-      // Already handled above
-      filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
-        allJobs.some(job => ['DENIED', 'CANCELLED'].includes(job.status as any))
-      );
-    } else {
-      // Filter by specific job status
-      filteredCustomers = customersWithJobs.filter(({ allJobs }) => 
-        allJobs.some(job => job.status === statusFilter)
-      );
-    }
-    
-    return filteredCustomers;
-  };
+  }, [
+    completedLeadTypeFilter,
+    completedServiceSubTypeFilter,
+    completedByFilter,
+    technicians,
+  ]);
 
   // Get today's and tomorrow's date strings for filtering followups (local YYYY-MM-DD)
   const todayDateStr = getTodayLocalDate();
@@ -9232,6 +8946,65 @@ const AdminDashboard = () => {
 
     return true;
   }, [ongoingAssignmentFilter, ongoingAssignedTechnicianFilter, ongoingServiceSubTypeFilter]);
+
+  const customersWithJobs = useMemo(
+    () => buildCustomersWithJobs(baseCustomers, jobs),
+    [baseCustomers, jobs]
+  );
+
+  const getFilteredCustomers = useCallback(
+    () =>
+      getFilteredCustomersForDashboard({
+        statusFilter,
+        jobs,
+        baseCustomers,
+        customersWithJobs,
+        showAllFollowups,
+        completedDateFilter,
+        currentPage,
+        totalPages,
+        totalCount,
+        doesCompletedJobMatchFilters,
+        doesOngoingJobMatchFilters,
+      }),
+    [
+      statusFilter,
+      jobs,
+      baseCustomers,
+      customersWithJobs,
+      showAllFollowups,
+      completedDateFilter,
+      currentPage,
+      totalPages,
+      totalCount,
+      doesCompletedJobMatchFilters,
+      doesOngoingJobMatchFilters,
+    ]
+  );
+
+  const displayedCustomers = useMemo(
+    () =>
+      resolveDisplayedCustomers({
+        searchTerm,
+        statusFilter,
+        searchFilteredCustomers: filteredCustomers,
+        customersWithJobs,
+        todayDateStr,
+        tomorrowDateStr,
+        doesOngoingJobMatchFilters,
+        getFilteredCustomers,
+      }),
+    [
+      searchTerm,
+      statusFilter,
+      filteredCustomers,
+      customersWithJobs,
+      todayDateStr,
+      tomorrowDateStr,
+      doesOngoingJobMatchFilters,
+      getFilteredCustomers,
+    ]
+  );
 
   const ongoingServiceSubTypeOptions = useMemo(() => {
     if (statusFilter !== 'ONGOING') return [] as string[];
@@ -9352,111 +9125,6 @@ const AdminDashboard = () => {
       profit: revenue - sparePartsCost - leadCost - commission,
     };
   }, [getCompletedJobBillAmount, isZeroCommissionCompletedJob]);
-
-  const displayedCustomers = !searchTerm.trim()
-    ? (() => {
-        const filtered = getFilteredCustomers();
-        // For COMPLETED filter, sort by most recent completed job date (latest first)
-        if (statusFilter === 'COMPLETED') {
-          return filtered.sort((a, b) => {
-            const aMostRecentCompleted = a.completedJobs.length > 0 
-              ? getJobCompletionDate(a.completedJobs[0]) 
-              : 0;
-            const bMostRecentCompleted = b.completedJobs.length > 0 
-              ? getJobCompletionDate(b.completedJobs[0]) 
-              : 0;
-            return bMostRecentCompleted - aMostRecentCompleted;
-          });
-        }
-        // For ONGOING filter, sort by most recently created ongoing job (newest first)
-        if (statusFilter === 'ONGOING') {
-          return filtered.sort((a, b) => {
-            // Get most recently created ongoing job for each customer
-            const getMostRecentOngoingJobDate = (customer: typeof filtered[0]): number => {
-              const ongoingJobs = customer.allJobs.filter((job: any) => doesOngoingJobMatchFilters(job));
-              if (ongoingJobs.length === 0) return 0;
-              
-              const dates = ongoingJobs
-                .map(job => {
-                  const createdAt = (job as any).created_at || job.createdAt;
-                  return createdAt ? new Date(createdAt).getTime() : 0;
-                })
-                .filter((d): d is number => d !== 0)
-                .sort((x, y) => y - x); // Sort descending (newest first)
-              
-              return dates.length > 0 ? dates[0] : 0;
-            };
-            
-            const aMostRecent = getMostRecentOngoingJobDate(a);
-            const bMostRecent = getMostRecentOngoingJobDate(b);
-            
-            // Sort by most recently created ongoing job (descending - newest first)
-            return bMostRecent - aMostRecent;
-          });
-        }
-        // For RESCHEDULED filter, sort by follow-up date: today first, tomorrow next, then later by date
-        if (statusFilter === 'RESCHEDULED') {
-          return filtered.sort((a, b) => {
-            const getClosestFollowUpRankAndTime = (customer: typeof filtered[0]): { rank: number; time: number } | null => {
-              const followUpJobs = customer.allJobs.filter(job =>
-                ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status)
-              );
-              if (followUpJobs.length === 0) return null;
-              const withRank = followUpJobs
-                .map(job => {
-                  const fd = job.followUpDate || (job as any).follow_up_date;
-                  const dateStr = fd ? followUpDateToStr(fd) : null;
-                  if (!dateStr) return null;
-                  const rank = dateStr === todayDateStr ? 0 : dateStr === tomorrowDateStr ? 1 : 2;
-                  const time = new Date(fd).getTime();
-                  return { rank, time };
-                })
-                .filter((d): d is { rank: number; time: number } => d !== null)
-                .sort((x, y) => x.rank !== y.rank ? x.rank - y.rank : x.time - y.time);
-              return withRank.length > 0 ? withRank[0] : null;
-            };
-            const aVal = getClosestFollowUpRankAndTime(a);
-            const bVal = getClosestFollowUpRankAndTime(b);
-            if (aVal === null && bVal === null) return 0;
-            if (aVal === null) return 1;
-            if (bVal === null) return -1;
-            return aVal.rank !== bVal.rank ? aVal.rank - bVal.rank : aVal.time - bVal.time;
-          });
-        }
-        // For other filters, sort by customer creation date
-        return filtered.sort((a, b) => {
-          const aDate = new Date(a.customer.createdAt).getTime();
-          const bDate = new Date(b.customer.createdAt).getTime();
-          return bDate - aDate;
-        });
-      })()
-    : filteredCustomers.map((customer: Customer) => {
-        // Find the customer in customersWithJobs to get their jobs
-        const customerWithJobs = customersWithJobs.find(cwj => cwj.customer.id === customer.id);
-        // If found, return it; otherwise create a new entry with empty jobs
-        return customerWithJobs || {
-          customer,
-          allJobs: [],
-          upcomingJobs: [],
-          completedJobs: [],
-          cancelledJobs: []
-        };
-      }).sort((a, b) => {
-        // For COMPLETED filter, sort by most recent completed job date (latest first)
-        if (statusFilter === 'COMPLETED') {
-          const aMostRecentCompleted = a.completedJobs.length > 0 
-            ? getJobCompletionDate(a.completedJobs[0]) 
-            : 0;
-          const bMostRecentCompleted = b.completedJobs.length > 0 
-            ? getJobCompletionDate(b.completedJobs[0]) 
-            : 0;
-          return bMostRecentCompleted - aMostRecentCompleted;
-        }
-        // For other filters, sort by customer creation date
-        const aDate = new Date(a.customer.createdAt).getTime();
-        const bDate = new Date(b.customer.createdAt).getTime();
-        return bDate - aDate;
-      });
 
   const shouldShowCompletedProfitSummary =
     statusFilter === 'COMPLETED' &&
