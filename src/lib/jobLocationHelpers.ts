@@ -13,6 +13,31 @@ function coordsQueryLink(latitude: number, longitude: number): string {
   return `https://www.google.com/maps?q=${latitude},${longitude}`;
 }
 
+/** Build a comma-separated address string suitable for Maps search. */
+export function formatAddressForMapsSearch(address: unknown): string {
+  if (!address || typeof address !== 'object') return '';
+  const a = address as Record<string, unknown>;
+  const parts = [
+    a.visible_address ?? a.visibleAddress,
+    a.street,
+    a.area,
+    a.city,
+    a.state,
+    a.pincode,
+    a.landmark ? `Landmark: ${a.landmark}` : null,
+  ]
+    .map((p) => String(p ?? '').trim())
+    .filter(Boolean);
+  return parts.join(', ');
+}
+
+/** Text search link when GPS / share URLs were redacted on completed jobs. */
+export function getMapsSearchLinkFromAddress(address: unknown): string {
+  const q = formatAddressForMapsSearch(address);
+  if (!q) return '';
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
+}
+
 function getCompactGoogleMapsLink(url: string): string {
   const value = url.trim();
   if (!value) return '';
@@ -78,15 +103,20 @@ export function getLocationLinkFromObject(location: any): string {
   ) {
     return coordsQueryLink(location.latitude, location.longitude);
   }
-  if (
-    location.formattedAddress &&
-    typeof location.formattedAddress === 'string' &&
-    (location.formattedAddress.includes('google.com/maps') ||
-      location.formattedAddress.includes('maps.app.goo.gl')) &&
-    !location.formattedAddress.includes('localhost') &&
-    !location.formattedAddress.includes('127.0.0.1')
-  ) {
-    return getCompactGoogleMapsLink(location.formattedAddress);
+  if (location.formattedAddress && typeof location.formattedAddress === 'string') {
+    const fmt = location.formattedAddress.trim();
+    if (
+      fmt &&
+      (fmt.includes('google.com/maps') || fmt.includes('maps.app.goo.gl')) &&
+      !fmt.includes('localhost') &&
+      !fmt.includes('127.0.0.1')
+    ) {
+      return getCompactGoogleMapsLink(fmt);
+    }
+    // Plain street address kept after GPS redaction on completed jobs
+    if (fmt && !fmt.match(/^\s*-?\d+\.?\d*\s*,\s*-?\d+\.?\d*\s*$/)) {
+      return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fmt)}`;
+    }
   }
   return '';
 }
@@ -95,7 +125,13 @@ export function getGoogleMapsLinkForJobRow(jobRow: any): string {
   const customer = jobRow?.customer || {};
   const customerLocation = customer?.location || {};
   const serviceLocation = jobRow?.service_location || jobRow?.serviceLocation || {};
-  return getLocationLinkFromObject(customerLocation) || getLocationLinkFromObject(serviceLocation);
+  const serviceAddress = jobRow?.service_address || jobRow?.serviceAddress;
+  return (
+    getLocationLinkFromObject(customerLocation) ||
+    getLocationLinkFromObject(serviceLocation) ||
+    getMapsSearchLinkFromAddress(serviceAddress) ||
+    getMapsSearchLinkFromAddress(customer?.address)
+  );
 }
 
 export async function getFreshGoogleMapsLinkForJobRow(
@@ -171,6 +207,12 @@ function collectMapsLinkCandidates(jobRow: any): MapsLinkCandidate[] {
     if (typeof formatted === 'string') {
       pushMapsCandidate(out, formatted, streetHint);
     }
+  }
+
+  const serviceAddress = jobRow?.service_address || jobRow?.serviceAddress;
+  const serviceAddrText = formatAddressForMapsSearch(serviceAddress);
+  if (serviceAddrText) {
+    pushMapsCandidate(out, serviceAddrText, serviceAddrText);
   }
 
   return out;

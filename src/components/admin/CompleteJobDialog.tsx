@@ -16,6 +16,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { RefreshCw } from 'lucide-react';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import { broadcastTechnicianJobListRefreshForJob } from '@/lib/technicianJobListSync';
+import { parseJobRequirements } from '@/lib/adminUtils';
 
 interface CompleteJobDialogProps {
   open: boolean;
@@ -134,22 +135,14 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
   // Check if job requires OTP verification
   const requiresOtp = (): boolean => {
     if (!job) return false;
-    const requirements = job.requirements || [];
-    if (Array.isArray(requirements)) {
-      return requirements.some((req: any) => req?.require_otp === true);
-    }
-    return false;
+    return parseJobRequirements(job.requirements).some((req: any) => req?.require_otp === true);
   };
 
   // Get OTP code from job requirements
   const getOtpCode = (): string | null => {
     if (!job) return null;
-    const requirements = job.requirements || [];
-    if (Array.isArray(requirements)) {
-      const otpReq = requirements.find((req: any) => req?.require_otp === true);
-      return otpReq?.otp_code || null;
-    }
-    return null;
+    const otpReq = parseJobRequirements(job.requirements).find((req: any) => req?.require_otp === true);
+    return otpReq?.otp_code || null;
   };
 
   // Calculate AMC end date: agreement date + years - 1 day
@@ -531,9 +524,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
         });
       }
 
-      if (uploadedBillPhotos.length > 0 || (!isBillAmountZero() && (finalPaymentMode === 'ONLINE' || finalPaymentMode === 'PARTIAL') && finalSelectedQrCodeId) || finalPaymentMode === 'PARTIAL' || (effectiveHasAMC && amcDateGiven && amcEndDate) || isOfficeCompletion) {
-        updateData.requirements = JSON.stringify(requirements);
-      }
+      updateData.requirements = JSON.stringify(requirements);
 
       console.log('🚀 [CompleteJobDialog] Calling db.jobs.update with:', {
         jobId: job.id,

@@ -1,5 +1,6 @@
 -- Jobs privacy: block anon REST access + redact GPS / workflow OTP fields when job completes.
--- The in-app "OTP" is a 4-digit workflow checkbox (not SMS 2FA) — still stripped on complete to reduce noise.
+-- The in-app "OTP" is a 4-digit workflow checkbox (not SMS 2FA).
+-- On complete we strip only otp_code (job-create secret); otp_entered is kept for admin audit.
 -- Run in Supabase SQL Editor after secure-customers-rls.sql. Safe to re-run.
 --
 -- Fixes: GET /rest/v1/jobs exposing requirements + service_location to anon.
@@ -119,7 +120,8 @@ BEGIN
 END;
 $$;
 
--- Strip workflow otp_code from requirements JSON array (not a security secret; reduces exposure)
+-- Strip workflow otp_code from requirements JSON array on complete (generated at job create).
+-- Keep otp_entered + otp_verified* so admin can audit what the technician typed.
 CREATE OR REPLACE FUNCTION public.redact_job_requirements_workflow(p_req jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -146,7 +148,7 @@ BEGIN
   FOR i IN 0 .. jsonb_array_length(arr) - 1 LOOP
     elem := arr -> i;
     IF jsonb_typeof(elem) = 'object' AND (elem ->> 'require_otp')::boolean IS TRUE THEN
-      elem := elem - 'otp_code' - 'otp_entered';
+      elem := elem - 'otp_code';
     END IF;
     out := out || jsonb_build_array(elem);
   END LOOP;

@@ -1,6 +1,6 @@
 import { Customer } from '@/types';
 import { extractCoordinates } from '@/lib/maps';
-import { getLocationLinkFromObject } from '@/lib/jobLocationHelpers';
+import { getLocationLinkFromObject, getMapsSearchLinkFromAddress } from '@/lib/jobLocationHelpers';
 
 export type CustomerLocationVariant = 'primary' | 'secondary';
 
@@ -143,6 +143,11 @@ export const openCustomerLocationInMaps = (
       '_blank',
       'noopener,noreferrer'
     );
+    return true;
+  }
+  const searchLink = getMapsSearchLinkFromAddress(slice.address);
+  if (searchLink) {
+    window.open(searchLink, '_blank', 'noopener,noreferrer');
     return true;
   }
   return false;
@@ -342,6 +347,11 @@ export const openJobServiceLocationInMaps = (
       '_blank',
       'noopener,noreferrer'
     );
+    return true;
+  }
+  const searchLink = getMapsSearchLinkFromAddress(display.address);
+  if (searchLink) {
+    window.open(searchLink, '_blank', 'noopener,noreferrer');
     return true;
   }
   return false;

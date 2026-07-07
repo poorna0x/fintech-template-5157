@@ -4043,22 +4043,18 @@ const TechnicianDashboard = () => {
   // Check if job requires OTP verification
   const requiresOtp = (): boolean => {
     if (!selectedJobForComplete) return false;
-    const requirements = selectedJobForComplete.requirements || [];
-    if (Array.isArray(requirements)) {
-      return requirements.some((req: any) => req?.require_otp === true);
-    }
-    return false;
+    return parseJobRequirements(
+      (selectedJobForComplete as any).requirements ?? selectedJobForComplete.requirements
+    ).some((req: any) => req?.require_otp === true);
   };
 
   // Get OTP code from job requirements
   const getOtpCode = (): string | null => {
     if (!selectedJobForComplete) return null;
-    const requirements = selectedJobForComplete.requirements || [];
-    if (Array.isArray(requirements)) {
-      const otpReq = requirements.find((req: any) => req?.require_otp === true);
-      return otpReq?.otp_code || null;
-    }
-    return null;
+    const otpReq = parseJobRequirements(
+      (selectedJobForComplete as any).requirements ?? selectedJobForComplete.requirements
+    ).find((req: any) => req?.require_otp === true);
+    return otpReq?.otp_code || null;
   };
 
   /** Remote URL / Cloudinary — local file placeholders fail this until upload finishes. */

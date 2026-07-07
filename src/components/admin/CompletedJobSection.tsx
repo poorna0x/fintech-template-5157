@@ -323,6 +323,9 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
   const otpRequirement = requirements.find((r: any) => r?.require_otp === true);
   const otpVerified = otpRequirement?.otp_verified === true;
   const otpEntered = otpRequirement?.otp_entered || otpRequirement?.otp_code;
+  const otpVerifiedAt = otpRequirement?.otp_verified_at
+    ? formatSentAt(String(otpRequirement.otp_verified_at))
+    : null;
 
   // Advanced completed filters mode: show only minimal info until explicitly loaded.
   if (minimalMode && !detailsLoaded) {
@@ -566,9 +569,19 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
               otpVerified ? 'text-green-600' : 'text-red-600'
             }`}>
               {otpVerified ? (
-                <>
-                  ✓ OTP Entered: <span className="font-mono font-bold">{otpEntered || 'N/A'}</span>
-                </>
+                otpEntered ? (
+                  <>
+                    ✓ OTP Entered: <span className="font-mono font-bold">{otpEntered}</span>
+                  </>
+                ) : (
+                  <>
+                    ✓ OTP Verified
+                    {otpVerifiedAt ? ` on ${otpVerifiedAt}` : ''}
+                    <span className="block text-[11px] font-normal text-green-700/80 mt-0.5">
+                      Code not stored on this job
+                    </span>
+                  </>
+                )
               ) : (
                 <>
                   ⚠ OTP Not Verified - Job requires OTP verification
