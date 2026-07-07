@@ -32,7 +32,10 @@ export interface AdminDashboardListData {
   selectedCustomerForPhotos: Customer | null;
   currentLocation: { lat: number; lng: number } | null;
   isGettingLocation: boolean;
-  customerDistances: Record<string, number | null>;
+  customerDistances: Record<
+    string,
+    { distance: string; duration: string; isCalculating: boolean }
+  >;
   technicians: any[];
   techniciansForReports: any[];
   location: Location;
@@ -81,9 +84,11 @@ export interface AdminDashboardListActions {
     React.SetStateAction<{ lat: number; lng: number } | null>
   >;
   setIsGettingLocation: React.Dispatch<React.SetStateAction<boolean>>;
-  setAddressDialogOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  setAddressDialogOpen: React.Dispatch<
+    React.SetStateAction<Record<string, boolean>>
+  >;
   setAddressLocationVariant: React.Dispatch<
-    React.SetStateAction<CustomerLocationVariant | null>
+    React.SetStateAction<Record<string, CustomerLocationVariant>>
   >;
   hydrateCustomerForMaps: (customerId: string) => Promise<Customer | null>;
   setSelectedCompletedJob: React.Dispatch<React.SetStateAction<Job | null>>;

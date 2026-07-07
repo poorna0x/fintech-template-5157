@@ -26,6 +26,7 @@ import {
   Eye,
   Send,
   Image,
+  Calendar,
   CalendarPlus,
   XCircle,
   CheckCircle2,
@@ -36,6 +37,8 @@ import {
   ChevronUp,
   RefreshCw,
   X,
+  UserPlus,
+  ArrowRight,
 } from 'lucide-react';
 import { CustomerCardHeader } from './CustomerCardHeader';
 import { ContactSection } from './ContactSection';
@@ -340,7 +343,7 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
             })() : null;
             const isDefaultCompletedDateFilter =
               completedDatePreset === 'day' &&
-              completedDateFilter === getTodayLocalDate();
+              completedDateFilter === todayDateStr;
             const hasAnyCompletedFilterSelected =
               !isDefaultCompletedDateFilter ||
               completedLeadTypeFilter !== 'all' ||

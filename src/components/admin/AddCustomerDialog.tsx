@@ -1396,7 +1396,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
               const isComplete = stepNumber < currentStep;
               const isCurrent = stepNumber === currentStep;
               return (
-                <React.Fragment key={stepLabel}>
+                <span key={stepLabel} className="contents">
                   <div className="flex w-8 shrink-0 flex-col items-center gap-1 sm:w-10">
                     <div
                       className={cn(
@@ -1427,7 +1427,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                       />
                     </div>
                   )}
-                </React.Fragment>
+                </span>
               );
             })}
           </div>

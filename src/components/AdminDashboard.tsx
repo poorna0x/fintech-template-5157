@@ -82,6 +82,7 @@ import {
 } from 'lucide-react';
 import { db, supabase, fetchCustomerIdsWithCompletedJobsMap, CUSTOMER_ROW_COLUMNS, CUSTOMER_ADMIN_LIST_PATCH_COLUMNS } from '@/lib/supabase';
 import { scheduleDocumentGeneratorPreload } from '@/lib/document-generator-preload';
+import { registerAdminPWA } from '@/lib/pwa';
 import { useAdminRole } from '@/lib/useAdminRole';
 import { saveAdminCompletedJobEdit } from '@/lib/adminSaveCompletedJobEdit';
 import { transformCustomerData, transformTechnicianData } from '@/lib/adminDashboardTransforms';
