@@ -27,7 +27,16 @@ export interface Customer {
     longitude: number;
     formattedAddress: string;
     googlePlaceId?: string;
+    googleLocation?: string | null;
   };
+
+  /** Secondary location — same shape as primary address/location fields. */
+  alternateAddress?: Customer['address'];
+  alternate_address?: Customer['address'];
+  alternateLocation?: Customer['location'];
+  alternate_location?: Customer['location'];
+  alternateVisibleAddress?: string;
+  alternate_visible_address?: string;
   
   // Service Information
   serviceType: 'RO' | 'SOFTENER';

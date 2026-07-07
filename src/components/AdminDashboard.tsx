@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { ensureAdminSupabaseSession } from '@/lib/auth';
 import { normalizeCustomerAddress } from '@/lib/customer-address';
+import { CustomerLocationVariant } from '@/lib/customer-locations';
 import { ensureSupabaseSessionForWrite, resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import {
   extractMapsUrlFromText,
@@ -450,6 +451,9 @@ const AdminDashboard = () => {
   const [isUpdating, setIsUpdating] = useState(false);
   const [visibleAddressSuggestions, setVisibleAddressSuggestions] = useState(false);
   const [addressDialogOpen, setAddressDialogOpen] = useState<{[customerId: string]: boolean}>({});
+  const [addressLocationVariant, setAddressLocationVariant] = useState<
+    Record<string, CustomerLocationVariant>
+  >({});
   
   // Location and distance tracking
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
@@ -1292,6 +1296,26 @@ const AdminDashboard = () => {
       googleLocation:
         customer.location?.googleLocation || customer.location?.google_location || null
     } as any,
+    alternateAddress: customer.alternate_address ?? undefined,
+    alternate_address: customer.alternate_address ?? undefined,
+    alternateLocation: customer.alternate_location
+      ? {
+          latitude: customer.alternate_location?.latitude || 0,
+          longitude: customer.alternate_location?.longitude || 0,
+          formattedAddress:
+            customer.alternate_location?.formatted_address ||
+            customer.alternate_location?.formattedAddress ||
+            '',
+          googlePlaceId: customer.alternate_location?.google_place_id,
+          googleLocation:
+            customer.alternate_location?.googleLocation ||
+            customer.alternate_location?.google_location ||
+            null,
+        }
+      : undefined,
+    alternate_location: customer.alternate_location ?? undefined,
+    alternateVisibleAddress: customer.alternate_visible_address ?? undefined,
+    alternate_visible_address: customer.alternate_visible_address ?? undefined,
     serviceType: customer.service_type,
     brand: customer.brand,
     model: customer.model,
@@ -11230,6 +11254,7 @@ const AdminDashboard = () => {
                   setCurrentLocation={setCurrentLocation}
                   setIsGettingLocation={setIsGettingLocation}
                   setAddressDialogOpen={setAddressDialogOpen}
+                  setAddressLocationVariant={setAddressLocationVariant}
                   hydrateCustomerForMaps={hydrateCustomerForMaps}
                 />
 
@@ -13391,6 +13416,7 @@ const AdminDashboard = () => {
       <AddressDialog
         open={addressDialogOpen}
         onOpenChange={setAddressDialogOpen}
+        locationVariantByCustomerId={addressLocationVariant}
         customers={baseCustomers}
         currentLocation={currentLocation}
         customerDistances={customerDistances}

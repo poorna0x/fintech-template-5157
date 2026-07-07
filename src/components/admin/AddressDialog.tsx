@@ -8,11 +8,16 @@ import { customerNameClassName } from '@/lib/customerDisplay';
 import { toast } from 'sonner';
 import { db } from '@/lib/supabase';
 import { getLocationUnavailableMessage, resolveCustomerLatLngFromRow } from '@/lib/jobLocationHelpers';
+import {
+  CustomerLocationVariant,
+  getCustomerLocationSlice,
+} from '@/lib/customer-locations';
 
 interface AddressDialogProps {
   open: { [customerId: string]: boolean };
   onOpenChange: (open: { [customerId: string]: boolean }) => void;
   customers: Customer[];
+  locationVariantByCustomerId?: Record<string, CustomerLocationVariant>;
   currentLocation: { lat: number; lng: number } | null;
   customerDistances: Record<string, { distance: string; duration: string; isCalculating: boolean }>;
   onCalculateDistance: (
@@ -21,23 +26,43 @@ interface AddressDialogProps {
   ) => Promise<void>;
 }
 
+const customerForLocationVariant = (
+  customer: Customer,
+  variant: CustomerLocationVariant
+): Customer => {
+  if (variant === 'primary') return customer;
+  const slice = getCustomerLocationSlice(customer, 'secondary');
+  return {
+    ...customer,
+    visible_address: slice.visibleAddress,
+    address: slice.address,
+    location: slice.location,
+  } as Customer;
+};
+
 const AddressDialog: React.FC<AddressDialogProps> = ({
   open,
   onOpenChange,
   customers,
+  locationVariantByCustomerId = {},
   currentLocation,
   customerDistances,
   onCalculateDistance
 }) => {
-  // Only render dialogs that are actually open (avoids mounting many dialogs when e.g. search has many results)
   const openCustomerIds = Object.keys(open).filter((id) => open[id]);
   const customersToRender = customers.filter((c) => openCustomerIds.includes(c.id));
 
   return (
     <>
-      {customersToRender.map((customer) => (
+      {customersToRender.map((customer) => {
+        const variant = locationVariantByCustomerId[customer.id] || 'primary';
+        const slice = getCustomerLocationSlice(customer, variant);
+        const displayCustomer = customerForLocationVariant(customer, variant);
+        const variantLabel = variant === 'secondary' ? 'Secondary Location' : 'Primary Location';
+
+        return (
         <Dialog
-          key={customer.id}
+          key={`${customer.id}-${variant}`}
           open={true}
           onOpenChange={(isOpen) => {
             onOpenChange({ ...open, [customer.id]: isOpen });
@@ -48,21 +73,23 @@ const AddressDialog: React.FC<AddressDialogProps> = ({
               <DialogTitle>Full Address</DialogTitle>
               <DialogDescription asChild>
                 <span>
-                  Complete address for{' '}
+                  {variantLabel} for{' '}
                   <span className={customerNameClassName(customer)}>{customer.fullName || 'Customer'}</span>
+                  {slice.visibleAddress ? (
+                    <>
+                      {' '}
+                      — <span className="font-medium">{slice.visibleAddress}</span>
+                    </>
+                  ) : null}
                 </span>
               </DialogDescription>
             </DialogHeader>
             <div className="py-4 space-y-4">
               <div className="text-sm text-foreground whitespace-pre-wrap break-words space-y-2">
                 {(() => {
-                  const fullAddr = formatAddressForDisplay(customer.address)?.trim();
-                  const vis = String(
-                    (customer.address as any)?.visible_address ||
-                      (customer as any).visible_address ||
-                      ''
-                  ).trim();
-                  const loc = customer.location as any;
+                  const fullAddr = formatAddressForDisplay(slice.address)?.trim();
+                  const vis = slice.visibleAddress;
+                  const loc = slice.location as any;
                   const locFa = String(loc?.formattedAddress || loc?.formatted_address || '').trim();
                   const gLoc = typeof loc?.googleLocation === 'string' ? loc.googleLocation.trim() : '';
 
@@ -85,7 +112,6 @@ const AddressDialog: React.FC<AddressDialogProps> = ({
                 })()}
               </div>
               
-              {/* Distance and Time */}
               <div className="pt-3 border-t border-border">
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-sm font-semibold text-foreground">Distance & Time</div>
@@ -100,8 +126,21 @@ const AddressDialog: React.FC<AddressDialogProps> = ({
                       }
 
                       let loadingToast: string | number | undefined;
-                      const resolved = await resolveCustomerLatLngFromRow(customer, {
-                        getCustomerById: db.customers.getById,
+                      const resolved = await resolveCustomerLatLngFromRow(displayCustomer, {
+                        getCustomerById: async (id) => {
+                          if (variant === 'primary') {
+                            return db.customers.getById(id);
+                          }
+                          const result = await db.customers.getById(id);
+                          if (!result.data) return result;
+                          return {
+                            ...result,
+                            data: customerForLocationVariant(
+                              result.data as Customer,
+                              'secondary'
+                            ),
+                          };
+                        },
                         onResolvingLink: () => {
                           loadingToast = toast.loading('Resolving map link...');
                         },
@@ -109,7 +148,7 @@ const AddressDialog: React.FC<AddressDialogProps> = ({
                       if (loadingToast !== undefined) toast.dismiss(loadingToast);
 
                       if (!resolved) {
-                        toast.error(getLocationUnavailableMessage({ id: customer.id, customer }));
+                        toast.error(getLocationUnavailableMessage({ id: customer.id, customer: displayCustomer }));
                         return;
                       }
 
@@ -167,10 +206,10 @@ const AddressDialog: React.FC<AddressDialogProps> = ({
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      ))}
+        );
+      })}
     </>
   );
 };
 
 export default AddressDialog;
-

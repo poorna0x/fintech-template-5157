@@ -2,13 +2,19 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Phone, Mail, MapPin } from 'lucide-react';
 import { Customer } from '@/types';
-import { extractCoordinates } from '@/lib/maps';
 import { toast } from 'sonner';
 import { WhatsAppIcon } from '../WhatsAppIcon';
 import { getAdminEmailComposerUrl, getAdminWhatsAppComposerUrl, getValidCustomerEmail } from '@/lib/customer-email';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import WhatsAppActionDialog from '@/components/admin/WhatsAppActionDialog';
 import PhoneNumbersDialog from '@/components/admin/PhoneNumbersDialog';
+import LocationsDialog from '@/components/admin/LocationsDialog';
+import {
+  CustomerLocationVariant,
+  getPrimaryLocationLabel,
+  hasMultipleCustomerLocations,
+  openCustomerLocationInMaps,
+} from '@/lib/customer-locations';
 import {
   geolocationFailureMessage,
   getDeviceLocation,
@@ -25,6 +31,9 @@ interface ContactSectionProps {
   setCurrentLocation: (location: { lat: number; lng: number }) => void;
   setIsGettingLocation: (isGetting: boolean) => void;
   setAddressDialogOpen: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  setAddressLocationVariant?: React.Dispatch<
+    React.SetStateAction<Record<string, CustomerLocationVariant>>
+  >;
   /** Load full customer from DB when the list card only has a slim embed (e.g. map pin / coordinates). */
   hydrateCustomerForMaps?: (customerId: string) => Promise<Customer | null>;
 }
@@ -39,12 +48,16 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
   setCurrentLocation,
   setIsGettingLocation,
   setAddressDialogOpen,
+  setAddressLocationVariant,
   hydrateCustomerForMaps,
 }) => {
   const navigate = useNavigate();
   const customerEmail = getValidCustomerEmail(customer.email);
   const [whatsappChoiceOpen, setWhatsappChoiceOpen] = useState(false);
   const [whatsappNumbersOpen, setWhatsappNumbersOpen] = useState(false);
+  const [locationsDialogOpen, setLocationsDialogOpen] = useState(false);
+  const [locationsDialogMode, setLocationsDialogMode] = useState<'maps' | 'address'>('address');
+  const [locationsDialogCustomer, setLocationsDialogCustomer] = useState<Customer | null>(null);
 
   const customerDisplayName =
     (customer as any).full_name || customer.fullName || 'Customer';
@@ -114,6 +127,61 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
     }
   };
 
+  const loadCustomerForLocation = async (): Promise<Customer> => {
+    if (hydrateCustomerForMaps) {
+      const full = await hydrateCustomerForMaps(customer.id);
+      if (full) return full;
+    }
+    return customer;
+  };
+
+  const openAddressDialog = (variant: CustomerLocationVariant = 'primary') => {
+    captureCurrentLocation();
+    setAddressLocationVariant?.((prev) => ({ ...prev, [customer.id]: variant }));
+    setAddressDialogOpen((prev) => ({ ...prev, [customer.id]: true }));
+  };
+
+  const handleLocationLabelClick = async () => {
+    let c = customer;
+    if (!hasMultipleCustomerLocations(c) && hydrateCustomerForMaps) {
+      const t = toast.loading('Loading…');
+      try {
+        c = await loadCustomerForLocation();
+      } finally {
+        toast.dismiss(t);
+      }
+    }
+
+    if (hasMultipleCustomerLocations(c)) {
+      setLocationsDialogCustomer(c);
+      setLocationsDialogMode('address');
+      setLocationsDialogOpen(true);
+      return;
+    }
+    openAddressDialog('primary');
+  };
+
+  const handleMapPinClick = async () => {
+    const t = toast.loading('Loading location…');
+    try {
+      const c = await loadCustomerForLocation();
+
+      if (hasMultipleCustomerLocations(c)) {
+        setLocationsDialogCustomer(c);
+        setLocationsDialogMode('maps');
+        setLocationsDialogOpen(true);
+        return;
+      }
+
+      if (openCustomerLocationInMaps(c, 'primary')) return;
+      toast.error('Location data not available');
+    } catch {
+      toast.error('Location data not available');
+    } finally {
+      toast.dismiss(t);
+    }
+  };
+
   return (
     <div className="p-4 border-b border-gray-100">
       <WhatsAppActionDialog
@@ -128,6 +196,13 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
         onOpenChange={setWhatsappNumbersOpen}
         customer={customer}
         mode="whatsapp"
+      />
+      <LocationsDialog
+        open={locationsDialogOpen}
+        onOpenChange={setLocationsDialogOpen}
+        customer={locationsDialogCustomer || customer}
+        mode={locationsDialogMode === 'maps' ? 'maps' : 'address'}
+        onViewAddress={(_c, variant) => openAddressDialog(variant)}
       />
       <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {/* Phone */}
@@ -236,49 +311,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
             <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
               <button
-                onClick={async () => {
-                  const tryOpenForCustomer = (c: Customer): boolean => {
-                    const locAny = c.location as any;
-                    const googleLoc =
-                      (typeof locAny?.googleLocation === 'string' && locAny.googleLocation) ||
-                      (typeof locAny?.google_location === 'string' && locAny.google_location) ||
-                      '';
-                    if (
-                      googleLoc &&
-                      (googleLoc.includes('google.com/maps') || googleLoc.includes('maps.app.goo.gl') || googleLoc.includes('goo.gl/maps')) &&
-                      !googleLoc.includes('localhost') &&
-                      !googleLoc.includes('127.0.0.1')
-                    ) {
-                      window.open(googleLoc, '_blank', 'noopener,noreferrer');
-                      return true;
-                    }
-                    const location = extractCoordinates(c.location);
-                    if (location && location.latitude !== 0 && location.longitude !== 0) {
-                      window.open(
-                        `https://www.google.com/maps/place/${location.latitude},${location.longitude}`,
-                        '_blank',
-                        'noopener,noreferrer'
-                      );
-                      return true;
-                    }
-                    return false;
-                  };
-
-                  if (tryOpenForCustomer(customer)) return;
-
-                  if (hydrateCustomerForMaps) {
-                    const t = toast.loading('Loading location…');
-                    try {
-                      const full = await hydrateCustomerForMaps(customer.id);
-                      toast.dismiss(t);
-                      if (full && tryOpenForCustomer(full)) return;
-                    } catch {
-                      toast.dismiss(t);
-                    }
-                  }
-
-                  toast.error('Location data not available');
-                }}
+                onClick={handleMapPinClick}
                 className="cursor-pointer"
               >
                 <MapPin className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
@@ -286,15 +319,27 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-sm font-semibold text-gray-900">
-                Location
+                {hasMultipleCustomerLocations(customer)
+                  ? getPrimaryLocationLabel(customer)
+                  : 'Location'}
               </div>
               <div className="text-xs">
-                {(customer.address as any)?.visible_address && String((customer.address as any).visible_address).trim() ? (
+                {hasMultipleCustomerLocations(customer) ? (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      captureCurrentLocation();
-                      setAddressDialogOpen(prev => ({ ...prev, [customer.id]: true }));
+                      handleLocationLabelClick();
+                    }}
+                    className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full text-left"
+                    title="Click to choose primary or secondary location"
+                  >
+                    Primary · Secondary
+                  </button>
+                ) : (customer.address as any)?.visible_address && String((customer.address as any).visible_address).trim() ? (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleLocationLabelClick();
                     }}
                     className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full text-left"
                     title="Click to view full address and calculate distance"
@@ -305,8 +350,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      captureCurrentLocation();
-                      setAddressDialogOpen(prev => ({ ...prev, [customer.id]: true }));
+                      handleLocationLabelClick();
                     }}
                     className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full text-left"
                     title="Click to view full address and calculate distance"

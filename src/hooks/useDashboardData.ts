@@ -53,6 +53,12 @@ const transformCustomerData = (customer: any): Customer => ({
     googlePlaceId: customer.location?.google_place_id,
     googleLocation: customer.location?.googleLocation || null
   } as any,
+  alternateAddress: customer.alternate_address ?? undefined,
+  alternate_address: customer.alternate_address ?? undefined,
+  alternateLocation: customer.alternate_location ?? undefined,
+  alternate_location: customer.alternate_location ?? undefined,
+  alternateVisibleAddress: customer.alternate_visible_address ?? undefined,
+  alternate_visible_address: customer.alternate_visible_address ?? undefined,
   serviceType: customer.service_type,
   brand: customer.brand,
   model: customer.model,

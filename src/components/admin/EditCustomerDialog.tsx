@@ -14,6 +14,7 @@ import { useAdminRole } from '@/lib/useAdminRole';
 import { mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas } from '@/lib/adminUtils';
 import { normalizeIndianMobileInput } from '@/lib/utils';
 import PhoneSwapButton from '@/components/admin/PhoneSwapButton';
+import { hasAlternateLocation, SECONDARY_LOCATION_LABEL_PRESETS } from '@/lib/customer-locations';
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import {
   extractMapsUrlFromText,
@@ -72,6 +73,26 @@ const transformCustomerData = (customer: any): Customer => ({
     googlePlaceId: customer.location?.google_place_id,
     googleLocation: customer.location?.googleLocation || null
   } as any,
+  alternateAddress: customer.alternate_address ?? undefined,
+  alternate_address: customer.alternate_address ?? undefined,
+  alternateLocation: customer.alternate_location
+    ? {
+        latitude: customer.alternate_location?.latitude || 0,
+        longitude: customer.alternate_location?.longitude || 0,
+        formattedAddress:
+          customer.alternate_location?.formatted_address ||
+          customer.alternate_location?.formattedAddress ||
+          '',
+        googlePlaceId: customer.alternate_location?.google_place_id,
+        googleLocation:
+          customer.alternate_location?.googleLocation ||
+          customer.alternate_location?.google_location ||
+          null,
+      }
+    : undefined,
+  alternate_location: customer.alternate_location ?? undefined,
+  alternateVisibleAddress: customer.alternate_visible_address ?? undefined,
+  alternate_visible_address: customer.alternate_visible_address ?? undefined,
   serviceType: customer.service_type,
   brand: customer.brand,
   model: customer.model,
@@ -149,6 +170,21 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
       longitude: 0,
       formattedAddress: ''
     },
+    has_alternate_location: false,
+    alternate_visible_address: '',
+    alternate_google_location: '',
+    alternate_address: {
+      street: '',
+      area: '',
+      city: '',
+      state: '',
+      pincode: ''
+    },
+    alternate_location: {
+      latitude: 0,
+      longitude: 0,
+      formattedAddress: ''
+    },
     service_cost: 0,
     cost_agreed: false
   });
@@ -159,6 +195,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
   const [showBrandSuggestions, setShowBrandSuggestions] = useState(false);
   const [showModelSuggestions, setShowModelSuggestions] = useState(false);
   const locationManuallyEditedRef = useRef(false);
+  const alternateLocationManuallyEditedRef = useRef(false);
   const lastSavedFormDataRef = useRef<string>('');
 
   const filteredAddressSuggestions = useMemo(() => {
@@ -171,6 +208,51 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
       area.toLowerCase().includes(searchTerm)
     ).slice(0, 12);
   }, [editFormData?.visible_address]);
+
+  const buildGoogleLocationFromCustomer = (customerToUse: any, prefix: 'primary' | 'secondary') => {
+    const loc = prefix === 'primary' ? customerToUse.location : customerToUse.alternate_location;
+    if (loc?.googleLocation) {
+      const googleLoc = loc.googleLocation;
+      if (
+        googleLoc &&
+        typeof googleLoc === 'string' &&
+        (googleLoc.includes('google.com/maps') || googleLoc.includes('maps.app.goo.gl') || googleLoc.includes('goo.gl/maps')) &&
+        !googleLoc.includes('localhost') &&
+        !googleLoc.includes('127.0.0.1')
+      ) {
+        return googleLoc;
+      }
+    }
+    if (loc?.latitude && loc?.longitude && loc.latitude !== 0 && loc.longitude !== 0) {
+      return `https://www.google.com/maps/place/${loc.latitude},${loc.longitude}`;
+    }
+    if (
+      loc?.formattedAddress &&
+      typeof loc.formattedAddress === 'string' &&
+      (loc.formattedAddress.includes('google.com/maps') || loc.formattedAddress.includes('maps.app.goo.gl')) &&
+      !loc.formattedAddress.includes('localhost') &&
+      !loc.formattedAddress.includes('127.0.0.1')
+    ) {
+      return loc.formattedAddress;
+    }
+    return '';
+  };
+
+  const buildAddressStreetFromCustomer = (customerToUse: any, prefix: 'primary' | 'secondary') => {
+    const address = prefix === 'primary' ? customerToUse.address : customerToUse.alternate_address;
+    const existingStreet = address?.street || '';
+    if (existingStreet.includes(',') || existingStreet.length > 30) {
+      return existingStreet;
+    }
+    const joined = [
+      address?.street,
+      address?.area,
+      address?.city,
+      address?.state,
+      address?.pincode
+    ].filter(Boolean).join(', ');
+    return joined || existingStreet || '';
+  };
 
   // Initialize form when customer changes - fetch fresh data from database
   useEffect(() => {
@@ -271,6 +353,21 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
           longitude: customerToUse.location?.longitude || 0,
           formattedAddress: customerToUse.location?.formattedAddress || ''
         },
+        has_alternate_location: hasAlternateLocation(customerToUse),
+        alternate_visible_address: customerToUse.alternate_visible_address || '',
+        alternate_google_location: buildGoogleLocationFromCustomer(customerToUse, 'secondary'),
+        alternate_address: {
+          street: buildAddressStreetFromCustomer(customerToUse, 'secondary'),
+          area: customerToUse.alternate_address?.area || '',
+          city: customerToUse.alternate_address?.city || '',
+          state: customerToUse.alternate_address?.state || '',
+          pincode: customerToUse.alternate_address?.pincode || ''
+        },
+        alternate_location: {
+          latitude: customerToUse.alternate_location?.latitude || 0,
+          longitude: customerToUse.alternate_location?.longitude || 0,
+          formattedAddress: customerToUse.alternate_location?.formattedAddress || ''
+        },
         service_cost: customerToUse.serviceCost || 0,
         cost_agreed: customerToUse.costAgreed || false
       });
@@ -308,6 +405,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
       
       fetchFreshCustomerData();
       locationManuallyEditedRef.current = false;
+      alternateLocationManuallyEditedRef.current = false;
     }
   }, [customer, open]);
 
@@ -338,6 +436,26 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
     }));
   };
 
+  const canSwapLocations =
+    editFormData.has_alternate_location &&
+    Boolean(editFormData.visible_address?.trim() || editFormData.address?.street?.trim()) &&
+    Boolean(editFormData.alternate_visible_address?.trim() || editFormData.alternate_address?.street?.trim());
+
+  const handleSwapLocations = () => {
+    if (!canSwapLocations) return;
+    setEditFormData((prev) => ({
+      ...prev,
+      visible_address: prev.alternate_visible_address,
+      google_location: prev.alternate_google_location,
+      address: { ...prev.alternate_address },
+      location: { ...prev.alternate_location },
+      alternate_visible_address: prev.visible_address,
+      alternate_google_location: prev.google_location,
+      alternate_address: { ...prev.address },
+      alternate_location: { ...prev.location },
+    }));
+  };
+
   const handleAddressFieldChange = (field: string, value: string) => {
     setEditFormData(prev => ({
       ...prev,
@@ -348,22 +466,26 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
     }));
   };
 
-  const handleFetchLocationFromAddress = () => {
+  const handleFetchLocationFromAddress = (slot: 'primary' | 'secondary' = 'primary') => {
+    if (slot === 'secondary') {
+      toast.info('Pick a site label below (Office, Shop, etc.). Use Complete Address for the full address.');
+      return;
+    }
+
     const address = editFormData?.address?.street || '';
-    const currentAddress = address.trim();
     const currentLocation = editFormData?.visible_address || '';
-    
-    if (!currentAddress || currentAddress.length === 0) {
+
+    if (!address.trim()) {
       toast.error('Please enter a complete address first');
       return;
     }
-    
-    if (currentLocation && currentLocation.trim().length > 0) {
+
+    if (currentLocation.trim()) {
       toast.info('Location already set. Clear it first if you want to fetch a new one.');
       return;
     }
-    
-    const extracted = extractLocationFromAddressString(currentAddress);
+
+    const extracted = extractLocationFromAddressString(address);
     if (extracted) {
       handleEditFormChange('visible_address', extracted);
       locationManuallyEditedRef.current = false;
@@ -371,6 +493,16 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
     } else {
       toast.warning('Could not extract location from address. Please enter manually.');
     }
+  };
+
+  const handleAlternateAddressFieldChange = (field: string, value: string) => {
+    setEditFormData(prev => ({
+      ...prev,
+      alternate_address: {
+        ...prev.alternate_address,
+        [field]: value
+      }
+    }));
   };
 
   const handleEditServiceTypeToggle = (serviceType: string) => {
@@ -570,10 +702,14 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
     }
   };
 
-  const fetchAddressFromGoogleLocation = async () => {
+  const fetchAddressFromGoogleLocation = async (slot: 'primary' | 'secondary' = 'primary') => {
+    const isPrimary = slot === 'primary';
+    const googleLocationField = isPrimary
+      ? editFormData?.google_location || ''
+      : editFormData?.alternate_google_location || '';
     const googleLocation =
-      extractMapsUrlFromText(editFormData?.google_location || '') ||
-      sanitizeGoogleMapsInput(editFormData?.google_location || '');
+      extractMapsUrlFromText(googleLocationField) ||
+      sanitizeGoogleMapsInput(googleLocationField);
     
     if (!googleLocation) {
       toast.error('Please enter a Google Maps link first');
@@ -596,8 +732,10 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
       }
 
       const resolved = await resolveGoogleMapsInputToCoords(googleLocation, {
-        shareText: editFormData?.google_location || '',
-        addressHint: editFormData?.address?.street || '',
+        shareText: googleLocationField,
+        addressHint: isPrimary
+          ? editFormData?.address?.street || ''
+          : editFormData?.alternate_address?.street || '',
         accessToken: token,
       });
 
@@ -614,7 +752,12 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
       const { coords, didExpandShortLink, placeHintUsed } = resolved;
       resolvedLocation = resolved.resolvedLocation;
       if (didExpandShortLink) {
-        setEditFormData((prev) => ({ ...prev, google_location: resolvedLocation }));
+        setEditFormData((prev) => ({
+          ...prev,
+          ...(isPrimary
+            ? { google_location: resolvedLocation }
+            : { alternate_google_location: resolvedLocation }),
+        }));
         toast.info('Short link expanded');
       }
       if (placeHintUsed) {
@@ -630,52 +773,68 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
 
       const address = await reverseGeocode(coords.latitude, coords.longitude);
       
-      // Automatically extract location from address using pre-built data (no API call)
-      // Try extracting from the reverse geocoded address first, then fall back to existing address.street
       let extractedLocation = null;
+      const streetHint = isPrimary
+        ? editFormData.address.street
+        : editFormData.alternate_address.street;
       if (address) {
         extractedLocation = extractLocationFromAddressString(address);
       }
-      // If no location found from reverse geocoded address, try extracting from existing address.street
-      if (!extractedLocation && editFormData.address.street) {
-        extractedLocation = extractLocationFromAddressString(editFormData.address.street);
+      if (!extractedLocation && streetHint) {
+        extractedLocation = extractLocationFromAddressString(streetHint);
       }
       
       setEditFormData(prev => ({
         ...prev,
-        location: {
-          ...prev.location,
-          latitude: coords.latitude,
-          longitude: coords.longitude,
-          formattedAddress: address || prev.location.formattedAddress || ''
-        },
-        address: {
-          street: address || prev.address.street || '',
-          area: '',
-          city: '',
-          state: '',
-          pincode: ''
-        },
-        // Always extract and set location automatically (since it uses pre-built data, no API cost)
-        visible_address: extractedLocation 
-          ? extractedLocation.substring(0, 20) 
-          : prev.visible_address
+        ...(isPrimary
+          ? {
+              location: {
+                ...prev.location,
+                latitude: coords.latitude,
+                longitude: coords.longitude,
+                formattedAddress: address || prev.location.formattedAddress || ''
+              },
+              address: {
+                street: address || prev.address.street || '',
+                area: '',
+                city: '',
+                state: '',
+                pincode: ''
+              },
+              visible_address: extractedLocation
+                ? extractedLocation.substring(0, 20)
+                : prev.visible_address
+            }
+          : {
+              alternate_location: {
+                ...prev.alternate_location,
+                latitude: coords.latitude,
+                longitude: coords.longitude,
+                formattedAddress: address || prev.alternate_location.formattedAddress || ''
+              },
+              alternate_address: {
+                street: address || prev.alternate_address.street || '',
+                area: '',
+                city: '',
+                state: '',
+                pincode: ''
+              },
+            }),
       }));
       
-      // Reset the manual edit flag since we're auto-extracting location
-      if (extractedLocation) {
+      if (extractedLocation && isPrimary) {
         locationManuallyEditedRef.current = false;
       }
       
       if (address) {
         toast.success(`Address fetched: ${address.substring(0, 50)}${address.length > 50 ? '...' : ''}`);
-        if (extractedLocation) {
+        if (extractedLocation && isPrimary) {
           toast.info(`Location automatically identified: ${extractedLocation}`);
         }
       } else {
         toast.success(`Coordinates extracted: ${coords.latitude}, ${coords.longitude}`);
         toast.warning('Could not fetch address. Coordinates saved.');
-        if (extractedLocation) {
+        if (extractedLocation && isPrimary) {
           toast.info(`Location extracted from existing address: ${extractedLocation}`);
         }
       }
@@ -687,23 +846,33 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
     }
   };
 
-  const handleGoogleMapsLinkChange = async (value: string) => {
-    // Only update the google_location field - do NOT extract coordinates or geocode automatically
+  const handleGoogleMapsLinkChange = async (value: string, slot: 'primary' | 'secondary' = 'primary') => {
+    const isPrimary = slot === 'primary';
     setEditFormData(prev => ({
       ...prev,
-      google_location: value
+      ...(isPrimary ? { google_location: value } : { alternate_google_location: value }),
     }));
 
     if (!value.trim()) {
-      // Clear location data when link is removed
       setEditFormData(prev => ({
         ...prev,
-        location: {
-          ...prev.location,
-          latitude: 0,
-          longitude: 0,
-          formattedAddress: ''
-        }
+        ...(isPrimary
+          ? {
+              location: {
+                ...prev.location,
+                latitude: 0,
+                longitude: 0,
+                formattedAddress: ''
+              }
+            }
+          : {
+              alternate_location: {
+                ...prev.alternate_location,
+                latitude: 0,
+                longitude: 0,
+                formattedAddress: ''
+              }
+            }),
       }));
     }
   };
@@ -835,7 +1004,39 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
         customer_tier: editFormData.customer_tier,
         raw_water_tds: Math.max(0, parseInt(String(editFormData.raw_water_tds), 10) || 0),
         address: updatedAddress,
-        location: updatedLocation
+        location: updatedLocation,
+        ...(editFormData.has_alternate_location
+          ? {
+              alternate_visible_address: editFormData.alternate_visible_address
+                ? editFormData.alternate_visible_address.trim()
+                : '',
+              alternate_address: {
+                street: editFormData.alternate_address.street,
+                area: editFormData.alternate_address.area,
+                city: editFormData.alternate_address.city,
+                state: editFormData.alternate_address.state,
+                pincode: editFormData.alternate_address.pincode,
+              },
+              alternate_location: (() => {
+                const altLocation: any = {
+                  latitude: editFormData.alternate_location.latitude || 0,
+                  longitude: editFormData.alternate_location.longitude || 0,
+                  formattedAddress:
+                    editFormData.alternate_address.street ||
+                    editFormData.alternate_location.formattedAddress ||
+                    '',
+                };
+                if (editFormData.alternate_google_location?.trim()) {
+                  altLocation.googleLocation = editFormData.alternate_google_location;
+                }
+                return altLocation;
+              })(),
+            }
+          : {
+              alternate_visible_address: null,
+              alternate_address: null,
+              alternate_location: null,
+            }),
       };
 
       const { data: updatedCustomerFromDb, error } = await db.customers.update(customer.id, updateData);
@@ -937,6 +1138,193 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
     onOpenChange(isOpen);
   };
 
+  const renderLocationFields = (slot: 'primary' | 'secondary') => {
+    const isPrimary = slot === 'primary';
+    const visibleAddress = isPrimary
+      ? editFormData?.visible_address ?? ''
+      : editFormData?.alternate_visible_address ?? '';
+    const street = isPrimary
+      ? editFormData?.address?.street ?? ''
+      : editFormData?.alternate_address?.street ?? '';
+    const googleLoc = isPrimary
+      ? editFormData?.google_location ?? ''
+      : editFormData?.alternate_google_location ?? '';
+    const locationId = isPrimary ? 'edit_visible_address' : 'edit_alternate_visible_address';
+    const addressId = isPrimary ? 'edit_full_address' : 'edit_alternate_full_address';
+    const mapsId = isPrimary ? 'edit_google_location' : 'edit_alternate_google_location';
+    const locationLabel = isPrimary ? 'Location' : 'Location Label';
+
+    return (
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor={locationId}>{locationLabel}</Label>
+          {isPrimary ? (
+            <>
+              <div className="relative">
+                <Input
+                  id={locationId}
+                  value={visibleAddress}
+                  onChange={(e) => {
+                    locationManuallyEditedRef.current = true;
+                    handleEditFormChange('visible_address', e.target.value);
+                    setVisibleAddressSuggestions(e.target.value.length > 0);
+                  }}
+                  onFocus={() => {
+                    if (visibleAddress.length > 0) setVisibleAddressSuggestions(true);
+                  }}
+                  onBlur={() => {
+                    setTimeout(() => setVisibleAddressSuggestions(false), 200);
+                  }}
+                  placeholder="e.g., Bansawadi, Koramangala, Whitefield, etc."
+                  maxLength={20}
+                  className="text-sm"
+                />
+                {visibleAddressSuggestions && filteredAddressSuggestions.length > 0 && (
+                  <div className="absolute z-50 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-48 overflow-y-auto">
+                    {filteredAddressSuggestions.map((suggestion, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          locationManuallyEditedRef.current = true;
+                          handleEditFormChange('visible_address', suggestion);
+                          setVisibleAddressSuggestions(false);
+                        }}
+                        className="w-full text-left px-3 py-2 hover:bg-gray-100 text-sm"
+                      >
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Enter a one-word area name for quick recognition. Start typing to see suggestions.
+              </p>
+            </>
+          ) : (
+            <>
+              <Input
+                id={locationId}
+                value={visibleAddress}
+                onChange={(e) => {
+                  alternateLocationManuallyEditedRef.current = true;
+                  handleEditFormChange('alternate_visible_address', e.target.value);
+                }}
+                placeholder="e.g. Office, Shop, Restaurant"
+                maxLength={20}
+                className="text-sm"
+              />
+              <div className="flex flex-wrap gap-1.5">
+                {SECONDARY_LOCATION_LABEL_PRESETS.map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => {
+                      alternateLocationManuallyEditedRef.current = true;
+                      handleEditFormChange('alternate_visible_address', preset);
+                    }}
+                    className={`rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                      visibleAddress === preset
+                        ? 'border-blue-500 bg-blue-50 text-blue-700'
+                        : 'border-border bg-background text-foreground hover:border-blue-300 hover:bg-muted/50'
+                    }`}
+                  >
+                    {preset}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                What kind of place is this? Tap a label or type your own.
+              </p>
+            </>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label htmlFor={addressId}>Complete Address</Label>
+            {isPrimary && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => handleFetchLocationFromAddress('primary')}
+                className="whitespace-nowrap"
+                title={
+                  visibleAddress.trim()
+                    ? 'Location already set. Clear it first to fetch a new one.'
+                    : 'Extract location from complete address'
+                }
+                disabled={!street.trim() || Boolean(visibleAddress.trim())}
+              >
+                <MapPin className="w-3 h-3 mr-1" />
+                Fetch Location
+              </Button>
+            )}
+          </div>
+          <Textarea
+            id={addressId}
+            value={street}
+            onChange={(e) =>
+              isPrimary
+                ? handleAddressFieldChange('street', e.target.value)
+                : handleAlternateAddressFieldChange('street', e.target.value)
+            }
+            placeholder="Enter complete address (e.g., 123 MG Road, Koramangala, Bangalore, Karnataka, 560034)"
+            rows={3}
+            className="resize-none"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor={mapsId} className="text-sm font-medium text-foreground">
+            Google Maps Location
+          </Label>
+          <Input
+            id={mapsId}
+            value={googleLoc}
+            onChange={(e) => handleGoogleMapsLinkChange(e.target.value, slot)}
+            placeholder="Paste Google Maps share link here..."
+            className="w-full text-sm"
+          />
+          {googleLoc && (
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => fetchAddressFromGoogleLocation(slot)}
+                className="w-full whitespace-nowrap"
+                title="Fetch address from Google Maps link"
+              >
+                <Download className="w-3 h-3 mr-1" />
+                Fetch Address
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  const link =
+                    extractMapsUrlFromText(googleLoc) ||
+                    sanitizeGoogleMapsInput(googleLoc);
+                  window.open(link, '_blank', 'noopener,noreferrer');
+                }}
+                className="w-full whitespace-nowrap"
+                title="Open in Google Maps"
+              >
+                <ExternalLink className="w-3 h-3 mr-1" />
+                Test
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   if (!customer) return null;
 
   return (
@@ -1022,122 +1410,25 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
           {/* Address Information */}
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-foreground">Address Information</h3>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit_visible_address">Location</Label>
-                <div className="relative">
-                  <Input
-                    id="edit_visible_address"
-                    value={editFormData?.visible_address ?? ''}
-                    onChange={(e) => {
-                      locationManuallyEditedRef.current = true;
-                      handleEditFormChange('visible_address', e.target.value);
-                      setVisibleAddressSuggestions(e.target.value.length > 0);
-                    }}
-                    onFocus={() => setVisibleAddressSuggestions((editFormData?.visible_address || '').length > 0)}
-                    onBlur={() => {
-                      setTimeout(() => setVisibleAddressSuggestions(false), 200);
-                    }}
-                    placeholder="e.g., Bansawadi, Koramangala, Whitefield, etc."
-                    maxLength={20}
-                    className="text-sm"
-                  />
-                  {visibleAddressSuggestions && filteredAddressSuggestions.length > 0 && (
-                    <div className="absolute z-50 w-full mt-1 bg-card border border-border rounded-md shadow-lg max-h-48 overflow-y-auto">
-                      {filteredAddressSuggestions.map((suggestion, idx) => (
-                        <button
-                          key={idx}
-                          type="button"
-                          onMouseDown={(e) => {
-                            e.preventDefault();
-                            locationManuallyEditedRef.current = true;
-                            handleEditFormChange('visible_address', suggestion);
-                            setVisibleAddressSuggestions(false);
-                          }}
-                          className="w-full text-left px-3 py-2 hover:bg-gray-100 text-sm"
-                        >
-                          {suggestion}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground">Enter a one-word location identifier for quick recognition. Start typing to see suggestions.</p>
-              </div>
+            {renderLocationFields('primary')}
 
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="edit_full_address">Complete Address</Label>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={handleFetchLocationFromAddress}
-                    className="whitespace-nowrap"
-                    title={editFormData?.visible_address && editFormData.visible_address.trim().length > 0 
-                      ? "Location already set. Clear it first to fetch a new one."
-                      : "Extract location from complete address"}
-                    disabled={!editFormData?.address?.street || editFormData.address.street.trim().length === 0 || (editFormData?.visible_address && editFormData.visible_address.trim().length > 0)}
-                  >
-                    <MapPin className="w-3 h-3 mr-1" />
-                    Fetch Location
-                  </Button>
-                </div>
-                <Textarea
-                  id="edit_full_address"
-                  value={editFormData?.address?.street ?? ''}
-                  onChange={(e) => handleAddressFieldChange('street', e.target.value)}
-                  placeholder="Enter complete address (e.g., 123 MG Road, Koramangala, Bangalore, Karnataka, 560034)"
-                  rows={3}
-                  className="resize-none"
-                />
-              </div>
-            </div>
-
-            {/* Google Maps Location Section */}
-            <div className="space-y-2">
-              <Label htmlFor="edit_google_location" className="text-sm font-medium text-foreground">
-                Google Maps Location
-              </Label>
-              <Input
-                id="edit_google_location"
-                value={editFormData?.google_location ?? ''}
-                onChange={(e) => handleGoogleMapsLinkChange(e.target.value)}
-                placeholder="Paste Google Maps share link here..."
-                className="w-full text-sm"
-              />
-              {editFormData?.google_location && (
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={fetchAddressFromGoogleLocation}
-                    className="w-full whitespace-nowrap"
-                    title="Fetch address from Google Maps link"
-                  >
-                    <Download className="w-3 h-3 mr-1" />
-                    Fetch Address
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      const link =
-                        extractMapsUrlFromText(editFormData.google_location) ||
-                        sanitizeGoogleMapsInput(editFormData.google_location);
-                      window.open(link, '_blank', 'noopener,noreferrer');
-                    }}
-                    className="w-full whitespace-nowrap"
-                    title="Open in Google Maps"
-                  >
-                    <ExternalLink className="w-3 h-3 mr-1" />
-                    Test
-                  </Button>
-                </div>
+            <div className="flex items-center gap-2 pt-1">
+              {canSwapLocations && (
+                <PhoneSwapButton onSwap={handleSwapLocations} />
               )}
+              <input
+                type="checkbox"
+                id="edit_has_alternate_location"
+                checked={editFormData.has_alternate_location}
+                onChange={(e) => handleEditFormChange('has_alternate_location', e.target.checked)}
+                className="w-4 h-4"
+              />
+              <Label htmlFor="edit_has_alternate_location" className="text-sm font-normal cursor-pointer">
+                Add another location
+              </Label>
             </div>
+
+            {editFormData.has_alternate_location && renderLocationFields('secondary')}
           </div>
 
           {/* Service Information */}

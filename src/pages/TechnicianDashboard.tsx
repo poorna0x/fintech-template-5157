@@ -95,6 +95,14 @@ import JobPartsUsedDialog from '@/components/admin/JobPartsUsedDialog';
 import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
 import { bangaloreAreas } from '@/lib/adminUtils';
 import { customerNameClassName } from '@/lib/customerDisplay';
+import LocationsDialog from '@/components/admin/LocationsDialog';
+import {
+  CustomerLocationVariant,
+  getCustomerLocationSlice,
+  getPrimaryLocationLabel,
+  hasMultipleCustomerLocations,
+  openCustomerLocationInMaps,
+} from '@/lib/customer-locations';
 import {
   TECHNICIAN_JOB_LIST_BROADCAST_CHANNEL,
   TECHNICIAN_JOB_LIST_BROADCAST_EVENT,
@@ -696,8 +704,49 @@ const TechnicianDashboard = () => {
   // Address dialog state
   const [addressDialogOpen, setAddressDialogOpen] = useState<{[jobId: string]: boolean}>({});
   const [selectedJobForAddress, setSelectedJobForAddress] = useState<Job | null>(null);
+  const [addressLocationVariant, setAddressLocationVariant] = useState<
+    Record<string, CustomerLocationVariant>
+  >({});
+  const [selectedCustomerForLocations, setSelectedCustomerForLocations] = useState<Customer | null>(null);
+  const [locationsDialogOpen, setLocationsDialogOpen] = useState(false);
+  const [locationsDialogMode, setLocationsDialogMode] = useState<'maps' | 'address'>('address');
   const [customerUpdateDialogJob, setCustomerUpdateDialogJob] = useState<Job | null>(null);
   const [mapOpeningByJobId, setMapOpeningByJobId] = useState<Record<string, boolean>>({});
+
+  const openJobAddressDialog = useCallback((job: Job, variant: CustomerLocationVariant = 'primary') => {
+    setSelectedJobForAddress(job);
+    setAddressLocationVariant((prev) => ({ ...prev, [job.id]: variant }));
+    setAddressDialogOpen((prev) => ({ ...prev, [job.id]: true }));
+  }, []);
+
+  const loadJobCustomerForLocation = useCallback(async (job: Job): Promise<Customer> => {
+    const embedded = (job.customer || {}) as Customer;
+    const customerId = (embedded as any)?.id || (job as any)?.customer_id;
+    if (!customerId) return embedded;
+    const { data, error } = await db.customers.getById(String(customerId));
+    if (!error && data) return data as Customer;
+    return embedded;
+  }, []);
+
+  const handleTechnicianLocationLabelClick = useCallback(
+    async (job: Job) => {
+      const t = toast.loading('Loading…');
+      try {
+        const customer = await loadJobCustomerForLocation(job);
+        setSelectedCustomerForLocations(customer);
+        if (hasMultipleCustomerLocations(customer)) {
+          setSelectedJobForAddress(job);
+          setLocationsDialogMode('address');
+          setLocationsDialogOpen(true);
+          return;
+        }
+        openJobAddressDialog(job, 'primary');
+      } finally {
+        toast.dismiss(t);
+      }
+    },
+    [loadJobCustomerForLocation, openJobAddressDialog]
+  );
 
   const openMapForJob = useCallback(
     async (job: any) => {
@@ -708,14 +757,23 @@ const TechnicianDashboard = () => {
       }
 
       setMapOpeningByJobId((prev) => ({ ...prev, [jobId]: true }));
+      const t = toast.loading('Loading location…');
       try {
-        const customerId = (job?.customer as any)?.id || (job as any)?.customer_id;
-        if (customerId) {
-          // Customer location is the source of truth; job.service_location is only the original job snapshot.
-          const { data: customerRow, error } = await db.customers.getById(String(customerId));
-          if (!error && openLocationInGoogleMaps((customerRow as any)?.location)) {
-            return;
-          }
+        const customerRow = await loadJobCustomerForLocation(job as Job);
+        setSelectedCustomerForLocations(customerRow);
+
+        if (hasMultipleCustomerLocations(customerRow)) {
+          setSelectedJobForAddress(job);
+          setLocationsDialogMode('maps');
+          setLocationsDialogOpen(true);
+          return;
+        }
+
+        if (openCustomerLocationInMaps(customerRow, 'primary')) {
+          return;
+        }
+        if (openLocationInGoogleMaps((customerRow as any)?.location)) {
+          return;
         }
 
         const customerLoc = (job?.customer as any)?.location;
@@ -730,10 +788,11 @@ const TechnicianDashboard = () => {
 
         toast.error('Location data not available');
       } finally {
+        toast.dismiss(t);
         setMapOpeningByJobId((prev) => ({ ...prev, [jobId]: false }));
       }
     },
-    [db.customers]
+    [loadJobCustomerForLocation]
   );
 
   // Define loadAssignedJobs before useEffect hooks that use it
@@ -5941,9 +6000,25 @@ const TechnicianDashboard = () => {
                                           </button>
                               </div>
                                         <div className="flex-1 min-w-0">
-                                          <div className="text-sm font-semibold text-gray-900">Location</div>
+                                          <div className="text-sm font-semibold text-gray-900">
+                                            {hasMultipleCustomerLocations(customer)
+                                              ? getPrimaryLocationLabel(customer as Customer)
+                                              : 'Location'}
+                                          </div>
                                           <div className="text-xs text-gray-500">
-                                            {(() => {
+                                            {hasMultipleCustomerLocations(customer) ? (
+                                              <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  void handleTechnicianLocationLabelClick(job as Job);
+                                                }}
+                                                className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full text-left"
+                                                title="Choose primary or secondary location"
+                                              >
+                                                Primary · Secondary
+                                              </button>
+                                            ) : (() => {
                                               // Exactly like admin dashboard - check both customer.visible_address and customer.address.visible_address
                                               const customerData = customer as any;
                                               const visibleAddress = customerData?.visible_address || (customerData?.address as any)?.visible_address || (address as any)?.visible_address;
@@ -5953,8 +6028,7 @@ const TechnicianDashboard = () => {
                                                   <button
                                                     onClick={(e) => {
                                                       e.stopPropagation();
-                                                      setSelectedJobForAddress(job as any);
-                                                      setAddressDialogOpen(prev => ({ ...prev, [(job as any).id]: true }));
+                                                      void handleTechnicianLocationLabelClick(job as Job);
                                                     }}
                                                     className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full text-left"
                                                     title="Click to view full address"
@@ -5969,8 +6043,7 @@ const TechnicianDashboard = () => {
                                                 <button
                                                   onClick={(e) => {
                                                     e.stopPropagation();
-                                                    setSelectedJobForAddress(job as any);
-                                                    setAddressDialogOpen(prev => ({ ...prev, [(job as any).id]: true }));
+                                                    void handleTechnicianLocationLabelClick(job as Job);
                                                   }}
                                                   className="text-left text-gray-500 hover:text-gray-700 hover:underline transition-colors cursor-pointer"
                                                   title="Click to view full address"
@@ -6830,9 +6903,26 @@ const TechnicianDashboard = () => {
                                 </button>
                         </div>
                               <div className="flex-1 min-w-0">
-                                <div className="text-sm font-semibold text-gray-900">Location</div>
+                                <div className="text-sm font-semibold text-gray-900">
+                                  {hasMultipleCustomerLocations(job.customer)
+                                    ? getPrimaryLocationLabel(job.customer as Customer)
+                                    : 'Location'}
+                                </div>
                                 <div className="text-xs text-gray-500">
-                                  {(() => {
+                                  {hasMultipleCustomerLocations(job.customer) ? (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        markJobAsSeen(job.id);
+                                        void handleTechnicianLocationLabelClick(job);
+                                      }}
+                                      className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full text-left"
+                                      title="Choose primary or secondary location"
+                                    >
+                                      Primary · Secondary
+                                    </button>
+                                  ) : (() => {
                                     const customer = job.customer as any;
                                     
                                     // First priority: Use visible_address from database (saved by admin)
@@ -6844,8 +6934,7 @@ const TechnicianDashboard = () => {
                                           onClick={(e) => {
                                             e.stopPropagation();
                                             markJobAsSeen(job.id);
-                                            setSelectedJobForAddress(job);
-                                            setAddressDialogOpen(prev => ({ ...prev, [job.id]: true }));
+                                            void handleTechnicianLocationLabelClick(job);
                                           }}
                                           className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full text-left"
                                           title="Click to view full address"
@@ -6865,8 +6954,7 @@ const TechnicianDashboard = () => {
                                             onClick={(e) => {
                                               e.stopPropagation();
                                               markJobAsSeen(job.id);
-                                              setSelectedJobForAddress(job);
-                                              setAddressDialogOpen(prev => ({ ...prev, [job.id]: true }));
+                                              void handleTechnicianLocationLabelClick(job);
                                             }}
                                             className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full text-left"
                                             title="Click to view full address"
@@ -6885,8 +6973,7 @@ const TechnicianDashboard = () => {
                                           onClick={(e) => {
                                             e.stopPropagation();
                                             markJobAsSeen(job.id);
-                                            setSelectedJobForAddress(job);
-                                            setAddressDialogOpen(prev => ({ ...prev, [job.id]: true }));
+                                            void handleTechnicianLocationLabelClick(job);
                                           }}
                                           className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full text-left"
                                           title="Click to view full address"
@@ -6902,8 +6989,7 @@ const TechnicianDashboard = () => {
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           markJobAsSeen(job.id);
-                                          setSelectedJobForAddress(job);
-                                          setAddressDialogOpen(prev => ({ ...prev, [job.id]: true }));
+                                          void handleTechnicianLocationLabelClick(job);
                                         }}
                                         className="text-left text-gray-500 hover:text-gray-700 hover:underline transition-colors cursor-pointer"
                                         title="Click to view full address"
@@ -9127,6 +9213,22 @@ const TechnicianDashboard = () => {
           </DialogContent>
         </Dialog>
 
+        {/* Locations Dialog */}
+        <LocationsDialog
+          open={locationsDialogOpen}
+          onOpenChange={(open) => {
+            setLocationsDialogOpen(open);
+            if (!open) setSelectedCustomerForLocations(null);
+          }}
+          customer={selectedCustomerForLocations}
+          mode={locationsDialogMode === 'maps' ? 'maps' : 'address'}
+          onViewAddress={(_customer, variant) => {
+            if (selectedJobForAddress) {
+              openJobAddressDialog(selectedJobForAddress, variant);
+            }
+          }}
+        />
+
         {/* Address Dialog */}
         {selectedJobForAddress && (
           <Dialog
@@ -9135,6 +9237,7 @@ const TechnicianDashboard = () => {
               setAddressDialogOpen(prev => ({ ...prev, [selectedJobForAddress.id]: open }));
               if (!open) {
                 setSelectedJobForAddress(null);
+                setSelectedCustomerForLocations(null);
               }
             }}
           >
@@ -9143,27 +9246,43 @@ const TechnicianDashboard = () => {
                 <DialogTitle>Full Address</DialogTitle>
                 <DialogDescription asChild>
                   <span>
-                    Complete address for{' '}
-                    <span className={customerNameClassName(selectedJobForAddress.customer as any)}>
-                      {(selectedJobForAddress.customer as any)?.full_name ||
-                        (selectedJobForAddress.customer as any)?.fullName ||
-                        'Customer'}
-                    </span>
+                    {(() => {
+                      const variant = addressLocationVariant[selectedJobForAddress.id] || 'primary';
+                      const customer =
+                        selectedCustomerForLocations ||
+                        (selectedJobForAddress.customer as Customer);
+                      const slice = getCustomerLocationSlice(customer, variant);
+                      return (
+                        <>
+                          {variant === 'secondary' ? 'Secondary Location' : 'Primary Location'} for{' '}
+                          <span className={customerNameClassName(customer as any)}>
+                            {(customer as any)?.full_name ||
+                              (customer as any)?.fullName ||
+                              'Customer'}
+                          </span>
+                          {slice.visibleAddress ? (
+                            <>
+                              {' '}
+                              — <span className="font-medium">{slice.visibleAddress}</span>
+                            </>
+                          ) : null}
+                        </>
+                      );
+                    })()}
                   </span>
                 </DialogDescription>
               </DialogHeader>
               <div className="py-4 space-y-4">
                 <div className="text-sm text-gray-900 whitespace-pre-wrap break-words">
                   {(() => {
-                    const customer = selectedJobForAddress.customer as any;
-                    const address = customer?.address || (selectedJobForAddress as any)?.service_address;
-                    const fullAddr = formatAddressForDisplay(address)?.trim();
-                    const vis = String(
-                      (customer?.address as any)?.visible_address ||
-                        customer?.visible_address ||
-                        ''
-                    ).trim();
-                    const loc = customer?.location as any;
+                    const variant = addressLocationVariant[selectedJobForAddress.id] || 'primary';
+                    const customer =
+                      selectedCustomerForLocations ||
+                      (selectedJobForAddress.customer as Customer);
+                    const slice = getCustomerLocationSlice(customer, variant);
+                    const fullAddr = formatAddressForDisplay(slice.address)?.trim();
+                    const vis = slice.visibleAddress;
+                    const loc = slice.location as any;
                     const locFa = String(loc?.formattedAddress || loc?.formatted_address || '').trim();
                     const gLoc = typeof loc?.googleLocation === 'string' ? loc.googleLocation.trim() : '';
 
@@ -9192,6 +9311,7 @@ const TechnicianDashboard = () => {
                   onClick={() => {
                     setAddressDialogOpen(prev => ({ ...prev, [selectedJobForAddress.id]: false }));
                     setSelectedJobForAddress(null);
+                    setSelectedCustomerForLocations(null);
                   }}
                 >
                   Close
