@@ -66,7 +66,10 @@ import {
   resolveTrendTimelineRange,
   rollupDailyStatsToMonthlyTrends,
   getProratedRevenueTargetLine,
-  REVENUE_TARGET_PRESETS_INR,
+  MIN_MONTHLY_TARGET_LAKHS,
+  LAKHS_TO_INR,
+  inrToLakhs,
+  formatLakhs,
   type AnalyticsPeriodSyncInput,
   type AnalyticsTrendInsights,
   type AnalyticsTrendPeriodRow,
@@ -102,12 +105,32 @@ const TREND_CACHE_TTL_MS = 5 * 60 * 1000;
 const TREND_PREFS_KEY = 'hydrogenro-analytics-trend-prefs';
 const TREND_REVENUE_TARGET_KEY = 'hydrogenro-analytics-revenue-target';
 
+function loadSavedTargetLakhs(): string {
+  const fallback = String(MIN_MONTHLY_TARGET_LAKHS);
+  try {
+    const raw = localStorage.getItem(TREND_REVENUE_TARGET_KEY);
+    if (!raw) return fallback;
+    const inr = Number(raw);
+    if (!Number.isFinite(inr) || inr < MIN_MONTHLY_TARGET_LAKHS * LAKHS_TO_INR) return fallback;
+    return formatLakhs(inrToLakhs(inr));
+  } catch {
+    return fallback;
+  }
+}
+
+function parseTargetLakhsInput(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const lakhs = Number(trimmed);
+  if (!Number.isFinite(lakhs)) return null;
+  return lakhs;
+}
+
 type SavedTrendPrefs = {
   timelinePreset: TrendTimelinePreset;
   customMonth: string;
   customStart: string;
   customEnd: string;
-  overlay: TimelineOverlay;
   filters: TrendFilters;
 };
 
@@ -411,12 +434,10 @@ function RichTooltip({
   active,
   payload,
   label,
-  overlay,
 }: {
   active?: boolean;
   payload?: Array<{ dataKey?: string; value?: number; color?: string; name?: string; payload?: Record<string, unknown> }>;
   label?: string;
-  overlay?: TimelineOverlay;
 }) {
   if (!active || !payload?.length) return null;
   const row = payload[0]?.payload as Record<string, unknown> | undefined;
@@ -424,6 +445,7 @@ function RichTooltip({
   const items = payload.filter((entry) => {
     const key = String(entry.dataKey ?? entry.name ?? '');
     if (!key || seen.has(key)) return false;
+    if (key === 'compareRevenue' || key === 'compareJobs') return false;
     seen.add(key);
     return true;
   });
@@ -456,9 +478,6 @@ function RichTooltip({
             <ChangeBadge value={row.revenueChangePct as number | null} />
           </div>
         ) : null}
-        {overlay !== 'none' && row?.compareLabel ? (
-          <p className="text-[10px] text-muted-foreground pt-1">{String(row.compareLabel)}</p>
-        ) : null}
       </div>
     </div>
   );
@@ -477,11 +496,9 @@ export function AnalyticsTrendGraph({
   const [customMonth, setCustomMonth] = useState('');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
-  const [overlay, setOverlay] = useState<TimelineOverlay>('none');
   const [loading, setLoading] = useState(true);
   const [loadedAt, setLoadedAt] = useState<number | null>(null);
   const [summary, setSummary] = useState<AnalyticsTrendSummary | null>(null);
-  const [compareSummary, setCompareSummary] = useState<AnalyticsTrendSummary | null>(null);
   const [insights, setInsights] = useState<AnalyticsTrendInsights | null>(null);
   const [leadSourceInsights, setLeadSourceInsights] = useState<
     Array<{ label: string; revenue: number; jobs: number; avgBill: number }>
@@ -504,15 +521,13 @@ export function AnalyticsTrendGraph({
   const [drilldownPeriodKey, setDrilldownPeriodKey] = useState<string | null>(null);
   const [drilldownPeriodLabel, setDrilldownPeriodLabel] = useState<string | null>(null);
   const [drilldownOpen, setDrilldownOpen] = useState(false);
-  const [monthlyRevenueTarget, setMonthlyRevenueTarget] = useState(() => {
-    try {
-      const raw = localStorage.getItem(TREND_REVENUE_TARGET_KEY);
-      const n = raw ? Number(raw) : 500000;
-      return Number.isFinite(n) && n > 0 ? n : 500000;
-    } catch {
-      return 500000;
-    }
-  });
+  const [monthlyTargetLakhs, setMonthlyTargetLakhs] = useState(loadSavedTargetLakhs);
+
+  const monthlyRevenueTarget = useMemo(() => {
+    const lakhs = parseTargetLakhsInput(monthlyTargetLakhs);
+    if (lakhs == null || lakhs < MIN_MONTHLY_TARGET_LAKHS) return 0;
+    return lakhs * LAKHS_TO_INR;
+  }, [monthlyTargetLakhs]);
 
   const activeRange = useMemo(() => {
     if (timelinePreset === 'custom_month') {
@@ -531,7 +546,6 @@ export function AnalyticsTrendGraph({
       setCustomMonth(saved.customMonth || '');
       setCustomStart(saved.customStart || '');
       setCustomEnd(saved.customEnd || '');
-      setOverlay(saved.overlay);
       setFilters({ ...defaultFilters, ...saved.filters, showMarginTrend: saved.filters.showMarginTrend ?? true });
     } else if (analyticsPeriod) {
       const mapped = mapAnalyticsPeriodToTrend(analyticsPeriod);
@@ -539,27 +553,35 @@ export function AnalyticsTrendGraph({
       if (mapped.customMonth) setCustomMonth(mapped.customMonth);
       if (mapped.customStart) setCustomStart(mapped.customStart);
       if (mapped.customEnd) setCustomEnd(mapped.customEnd);
-      if (mapped.preset === 'this_month') {
-        setOverlay('previous_period');
-      }
     }
     setPrefsReady(true);
   }, []);
 
   useEffect(() => {
-    if (!prefsReady) return;
-    if (timelinePreset === 'this_month') {
-      setOverlay((prev) => (prev === 'none' ? 'previous_period' : prev));
-    }
-  }, [timelinePreset, prefsReady]);
-
-  useEffect(() => {
     try {
-      localStorage.setItem(TREND_REVENUE_TARGET_KEY, String(monthlyRevenueTarget));
+      if (monthlyRevenueTarget > 0) {
+        localStorage.setItem(TREND_REVENUE_TARGET_KEY, String(monthlyRevenueTarget));
+      } else {
+        localStorage.removeItem(TREND_REVENUE_TARGET_KEY);
+      }
     } catch {
       // ignore
     }
   }, [monthlyRevenueTarget]);
+
+  const handleMonthlyTargetBlur = useCallback(() => {
+    const lakhs = parseTargetLakhsInput(monthlyTargetLakhs);
+    if (lakhs == null) {
+      setMonthlyTargetLakhs(String(MIN_MONTHLY_TARGET_LAKHS));
+      return;
+    }
+    if (lakhs < MIN_MONTHLY_TARGET_LAKHS) {
+      setMonthlyTargetLakhs(String(MIN_MONTHLY_TARGET_LAKHS));
+      toast.message(`Minimum monthly target is ${MIN_MONTHLY_TARGET_LAKHS} L`);
+      return;
+    }
+    setMonthlyTargetLakhs(formatLakhs(lakhs));
+  }, [monthlyTargetLakhs]);
 
   useEffect(() => {
     if (!prefsReady) return;
@@ -568,10 +590,9 @@ export function AnalyticsTrendGraph({
       customMonth,
       customStart,
       customEnd,
-      overlay,
       filters,
     });
-  }, [prefsReady, timelinePreset, customMonth, customStart, customEnd, overlay, filters]);
+  }, [prefsReady, timelinePreset, customMonth, customStart, customEnd, filters]);
 
   useEffect(() => {
     if (timelinePreset === 'custom_month' && !customMonth) {
@@ -613,7 +634,7 @@ export function AnalyticsTrendGraph({
           activeRange.startDate,
           activeRange.endDate,
           filters,
-          overlay,
+          'none',
           dailyStatsFallback,
           opts
         ),
@@ -626,7 +647,6 @@ export function AnalyticsTrendGraph({
         toast.error('Deploy scripts/add-analytics-trend-dashboard-rpc.sql for filtered trends.');
       }
       setSummary(dashboard.primary);
-      setCompareSummary(dashboard.compare);
       setInsights(dashboard.insights);
       setMonthCatalog(dashboard.monthCatalog);
       setRpcEquipmentBrands(dashboard.rpcEquipmentBrands);
@@ -647,7 +667,7 @@ export function AnalyticsTrendGraph({
     } finally {
       setLoading(false);
     }
-  }, [activeRange, filters, overlay, dailyStatsFallback]);
+  }, [activeRange, filters, dailyStatsFallback]);
 
   const handleRefresh = useCallback(() => {
     clearTrendDashboardCache();
@@ -760,30 +780,17 @@ export function AnalyticsTrendGraph({
 
   const chartData = useMemo(() => {
     const rows = summary?.rows ?? [];
-    const compareRows = compareSummary?.rows ?? [];
-    return rows.map((row, index) => {
-      const compare = compareRows[index];
-      const overlayLabel =
-        overlay === 'previous_year'
-          ? `vs ${compare?.label ?? 'prior year'}`
-          : overlay === 'previous_period'
-            ? `vs ${compare?.label ?? 'prior period'}`
-            : undefined;
-      return {
-        periodKey: row.periodKey,
-        label: row.label,
-        revenue: row.revenue,
-        jobs: row.jobs,
-        avgBill: Math.round(row.avgBill),
-        marginPct: row.marginPct,
-        revenueChangePct: row.revenueChangePct,
-        jobsChangePct: row.jobsChangePct,
-        compareRevenue: compare?.revenue ?? null,
-        compareJobs: compare?.jobs ?? null,
-        compareLabel: overlayLabel,
-      };
-    });
-  }, [summary, compareSummary, overlay]);
+    return rows.map((row) => ({
+      periodKey: row.periodKey,
+      label: row.label,
+      revenue: row.revenue,
+      jobs: row.jobs,
+      avgBill: Math.round(row.avgBill),
+      marginPct: row.marginPct,
+      revenueChangePct: row.revenueChangePct,
+      jobsChangePct: row.jobsChangePct,
+    }));
+  }, [summary?.rows]);
 
   const avgRevenue = useMemo(() => {
     if (!summary?.rows.length) return 0;
@@ -929,17 +936,6 @@ export function AnalyticsTrendGraph({
               </div>
             </>
           ) : null}
-          <FilterSelect
-            label="Overlay"
-            value={overlay}
-            onValueChange={(v) => setOverlay(v as TimelineOverlay)}
-            className="w-[160px]"
-            options={[
-              { value: 'none', label: 'No comparison' },
-              { value: 'previous_period', label: 'Previous period' },
-              { value: 'previous_year', label: 'Previous year' },
-            ]}
-          />
         </div>
         <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
           {loadedAt && !loading ? (
@@ -1069,27 +1065,26 @@ export function AnalyticsTrendGraph({
                 </div>
                 <div className="flex flex-wrap items-end gap-2 mb-3">
                   <div className="space-y-1">
-                    <Label className="text-[11px] text-muted-foreground">Monthly target (₹)</Label>
-                    <Select
-                      value={String(monthlyRevenueTarget)}
-                      onValueChange={(v) => setMonthlyRevenueTarget(Number(v))}
-                    >
-                      <SelectTrigger className="h-8 w-[130px] text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {REVENUE_TARGET_PRESETS_INR.map((amount) => (
-                          <SelectItem key={amount} value={String(amount)}>
-                            ₹ {(amount / 100000).toFixed(amount >= 100000 ? 1 : 0)}
-                            {amount >= 100000 ? 'L' : 'K'}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Label className="text-[11px] text-muted-foreground">Monthly target (L)</Label>
+                    <div className="flex items-center gap-1.5">
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        min={MIN_MONTHLY_TARGET_LAKHS}
+                        step={0.5}
+                        placeholder=""
+                        value={monthlyTargetLakhs}
+                        onChange={(e) => setMonthlyTargetLakhs(e.target.value)}
+                        onBlur={handleMonthlyTargetBlur}
+                        className="h-8 w-[88px] text-xs tabular-nums"
+                        aria-label="Monthly revenue target in lakhs"
+                      />
+                      <span className="text-[11px] text-muted-foreground pb-0.5">L · min {MIN_MONTHLY_TARGET_LAKHS}</span>
+                    </div>
                   </div>
                   {proratedRevenueTarget > 0 ? (
                     <p className="text-[11px] text-muted-foreground pb-1">
-                      Target line: ₹ {formatCurrency(Math.round(proratedRevenueTarget))}
+                      Target line: {formatLakhs(inrToLakhs(proratedRevenueTarget))} L
                       {effectiveGranularity === 'day' ? ' / day' : effectiveGranularity === 'week' ? ' / week' : ' / month'}
                     </p>
                   ) : null}
@@ -1104,7 +1099,7 @@ export function AnalyticsTrendGraph({
                     {(filters.metric === 'combined' || filters.metric === 'jobs') && (
                       <YAxis yAxisId="jobs" orientation="right" tickLine={false} axisLine={false} width={34} allowDecimals={false} />
                     )}
-                    <ChartTooltip content={<RichTooltip overlay={overlay} />} />
+                    <ChartTooltip content={<RichTooltip />} />
                     {filters.metric !== 'jobs' && filters.metric !== 'avgBill' && proratedRevenueTarget > 0 ? (
                       <ReferenceLine
                         yAxisId="revenue"
@@ -1146,36 +1141,10 @@ export function AnalyticsTrendGraph({
                         fillOpacity={0.88}
                       />
                     )}
-                    {overlay !== 'none' && (filters.metric === 'combined' || filters.metric === 'revenue') && (
-                      <Line
-                        yAxisId="revenue"
-                        type="monotone"
-                        dataKey="compareRevenue"
-                        name="Compare revenue"
-                        stroke="var(--color-compareRevenue)"
-                        strokeWidth={2}
-                        strokeDasharray="6 4"
-                        dot={false}
-                        connectNulls
-                      />
-                    )}
-                    {overlay !== 'none' && (filters.metric === 'combined' || filters.metric === 'jobs') && (
-                      <Line
-                        yAxisId="jobs"
-                        type="monotone"
-                        dataKey="compareJobs"
-                        name="Compare jobs"
-                        stroke="var(--color-compareJobs)"
-                        strokeWidth={2}
-                        strokeDasharray="5 3"
-                        dot={false}
-                        connectNulls
-                      />
-                    )}
                     {filters.metric === 'avgBill' && (
                       <Line yAxisId="revenue" type="monotone" dataKey="avgBill" stroke="var(--color-avgBill)" strokeWidth={2.5} dot={{ r: 3 }} />
                     )}
-                    {filters.metric === 'combined' || overlay !== 'none' ? (
+                    {filters.metric === 'combined' ? (
                       <Legend wrapperStyle={{ fontSize: 12 }} />
                     ) : null}
                   </ComposedChart>

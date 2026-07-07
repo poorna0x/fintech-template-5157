@@ -1184,7 +1184,19 @@ export function rangesMatchDay(
   return day(a.startDate) === day(b.startDate) && day(a.endDate) === day(b.endDate);
 }
 
-const REVENUE_TARGET_PRESETS_INR = [300000, 500000, 750000, 1000000];
+const MIN_MONTHLY_TARGET_LAKHS = 6;
+const LAKHS_TO_INR = 100_000;
+
+export function inrToLakhs(inr: number): number {
+  return inr / LAKHS_TO_INR;
+}
+
+/** Display lakhs without trailing zeros (e.g. 7.5, 10, 0.24). */
+export function formatLakhs(lakhs: number): string {
+  if (!Number.isFinite(lakhs)) return '';
+  const rounded = Math.round(lakhs * 100) / 100;
+  return String(rounded).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
+}
 
 export function getProratedRevenueTargetLine(
   monthlyTarget: number,
@@ -1202,4 +1214,4 @@ export function getProratedRevenueTargetLine(
   return (monthlyTarget / daysInMonth) * 7;
 }
 
-export { REVENUE_TARGET_PRESETS_INR };
+export { MIN_MONTHLY_TARGET_LAKHS, LAKHS_TO_INR };
