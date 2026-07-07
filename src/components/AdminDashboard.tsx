@@ -121,19 +121,13 @@ const AMCViewPage = lazyDefault(() => import('./AMCViewPage'));
 // Letterhead builder is heavy (rich text + sanitizer + preview iframe) and only
 // used on demand. Code-split it so the main admin bundle stays lean.
 const LetterheadDocumentsPage = lazyDefault(() => import('./LetterheadDocumentsPage'));
-type LetterheadDocumentType =
-  | 'service_report'
-  | 'amc_report'
-  | 'custom_document'
-  | 'letterhead';
-import { getAmcDocumentBrandLabel } from '@/lib/amc-brand';
 import { toDateOnly } from '@/lib/amcAutoJobSchedule';
 import ImageUpload from '@/components/ImageUpload';
 const TechnicianPayments = lazyDefault(() => import('./TechnicianPayments'));
 const BillingStats = lazyDefault(() => import('./BillingStats'));
 const Analytics = lazyDefault(() => import('./Analytics'));
 const InventoryManagement = lazyDefault(() => import('./InventoryManagement'));
-import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, levenshteinDistance, calculateSimilarity, extractPhotoUrls, normalizePhotoUrl, parseJobRequirements, getFormattedTimeSlot, findLeadSource, getLeadSourceFromJob, getJobCustomTimeLabel, normalizeLeadType, normalizeServiceSubType, completedJobMatchesDashboardClientFilters, isOfficeCompletedJob, jobCompletionLocalDateIso } from '@/lib/adminUtils';
+import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, levenshteinDistance, calculateSimilarity, extractPhotoUrls, normalizePhotoUrl, parseJobRequirements, getFormattedTimeSlot, findLeadSource, getLeadSourceFromJob, getJobCustomTimeLabel, normalizeLeadType, normalizeServiceSubType, completedJobMatchesDashboardClientFilters, isOfficeCompletedJob, jobCompletionLocalDateIso, ZERO_COMMISSION_EMPLOYEE_ID, jobsMatchOngoingTab } from '@/lib/adminUtils';
 import { getLocationLinkFromObject, getLocationUnavailableMessage, resolveJobDestinationCoordsSync, resolveJobLatLngFromRow } from '@/lib/jobLocationHelpers';
 import { applyAutoMoveToOngoingOnDateFlag } from '@/lib/followUpToOngoing';
 import { enrichJobsWithAfterPhotosIfNeeded } from '@/lib/jobReportPhotos';
@@ -164,6 +158,15 @@ import {
   parseAdminDashboardUrl,
   type AdminModalSlug,
   isAdminModalSlug,
+  readAdminTabViewFromSearch,
+  isAdminTabViewParam,
+  isAdminOverlayViewParam,
+  readAdminOverlayFromSearch,
+  isAdminToolParam,
+  MANAGER_BLOCKED_ADMIN_TOOLS,
+  type AdminDashboardView,
+  type AdminToolDialog,
+  type LetterheadDocumentType,
 } from '@/lib/adminDashboardUrl';
 import { StatusBadge } from './admin/StatusBadge';
 import { CustomerCardHeader } from './admin/CustomerCardHeader';
@@ -204,7 +207,6 @@ import { AddReminderDialog } from './reminders/AddReminderDialog';
 import { TodayRemindersPopup } from './reminders/TodayRemindersPopup';
 import { CustomerRemindersDialog } from './reminders/CustomerRemindersDialog';
 import EditJobDialog from './admin/EditJobDialog';
-import { CustomAppointmentTimeSelect } from './admin/CustomAppointmentTimeSelect';
 import PhoneNumbersDialog from './admin/PhoneNumbersDialog';
 import DescriptionDialog from './admin/DescriptionDialog';
 import JobAddressDialog from './admin/JobAddressDialog';
@@ -214,19 +216,15 @@ import ReassignJobDialog from './admin/ReassignJobDialog';
 import EditCompletedJobDialog from './admin/EditCompletedJobDialog';
 import EditAMCDialog from './admin/EditAMCDialog';
 import WhatsAppDialog from './admin/WhatsAppDialog';
+import { AdminScreenLoader, AdminInlineLoader } from './admin/AdminLoaders';
+import { AdminDeleteConfirmDialogs } from './admin/AdminDeleteConfirmDialogs';
+import AmcInfoDialog from './admin/AmcInfoDialog';
+import MoveToOngoingDialog from './admin/MoveToOngoingDialog';
+import CompleteTechnicianSelectDialog from './admin/CompleteTechnicianSelectDialog';
 import {
   broadcastTechnicianJobListRefresh,
   broadcastTechnicianJobListRefreshForJob,
 } from '@/lib/technicianJobListSync';
-
-const ZERO_COMMISSION_EMPLOYEE_ID = 'TECH851703400';
-
-const ONGOING_JOB_STATUSES = new Set(['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS']);
-
-function jobsMatchOngoingTab(jobs: Job[]): boolean {
-  if (jobs.length === 0) return true;
-  return jobs.some((job) => ONGOING_JOB_STATUSES.has(job.status));
-}
 
 declare global {
   interface Window {
@@ -236,95 +234,6 @@ declare global {
 }
 
 // Utility functions moved to @/lib/adminUtils
-
-function AdminScreenLoader({ message }: { message: string }) {
-  return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-50">
-      <div className="text-center">
-        <div className="flex items-center justify-center space-x-1 mb-4">
-          <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-          <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-          <div className="w-3 h-3 bg-black rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-        </div>
-        <p className="text-gray-600">{message}</p>
-      </div>
-    </div>
-  );
-}
-
-function AdminInlineLoader({ message }: { message: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-16 text-center">
-      <div className="flex items-center justify-center space-x-1 mb-3">
-        <div className="w-2.5 h-2.5 bg-black rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-        <div className="w-2.5 h-2.5 bg-black rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-        <div className="w-2.5 h-2.5 bg-black rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-      </div>
-      <p className="text-sm text-gray-600">{message}</p>
-    </div>
-  );
-}
-
-const ADMIN_TAB_VIEWS = ['payments', 'billing', 'analytics', 'inventory'] as const;
-type AdminTabView = (typeof ADMIN_TAB_VIEWS)[number];
-type AdminDashboardView = 'dashboard' | AdminTabView;
-
-function readAdminTabViewFromSearch(search: string): AdminDashboardView {
-  const view = new URLSearchParams(search).get('view');
-  if (view && (ADMIN_TAB_VIEWS as readonly string[]).includes(view)) {
-    return view as AdminTabView;
-  }
-  return 'dashboard';
-}
-
-function isAdminTabViewParam(view: string | null): view is AdminTabView {
-  return Boolean(view && (ADMIN_TAB_VIEWS as readonly string[]).includes(view));
-}
-
-const ADMIN_OVERLAY_VIEWS = ['gst-invoices', 'amc-view', 'letterhead-documents'] as const;
-type AdminOverlayView = (typeof ADMIN_OVERLAY_VIEWS)[number];
-
-function isAdminOverlayViewParam(view: string | null): view is AdminOverlayView {
-  return Boolean(view && (ADMIN_OVERLAY_VIEWS as readonly string[]).includes(view));
-}
-
-const LETTERHEAD_DOCUMENT_TYPES: LetterheadDocumentType[] = [
-  'service_report',
-  'amc_report',
-  'custom_document',
-  'letterhead',
-];
-
-function readLetterheadTypeFromSearch(search: string): LetterheadDocumentType | undefined {
-  const typeParam = new URLSearchParams(search).get('type') as LetterheadDocumentType | null;
-  if (typeParam && LETTERHEAD_DOCUMENT_TYPES.includes(typeParam)) return typeParam;
-  return undefined;
-}
-
-function readAdminOverlayFromSearch(search: string): {
-  gst: boolean;
-  amc: boolean;
-  letterhead: boolean;
-  letterheadType?: LetterheadDocumentType;
-} {
-  const view = new URLSearchParams(search).get('view');
-  const letterhead = view === 'letterhead-documents';
-  return {
-    gst: view === 'gst-invoices',
-    amc: view === 'amc-view',
-    letterhead,
-    letterheadType: letterhead ? readLetterheadTypeFromSearch(search) : undefined,
-  };
-}
-
-const ADMIN_TOOL_DIALOGS = ['recent-accounts', 'direct-sale', 'amount-trackers', 'sent-email-log', 'measure-distance'] as const;
-type AdminToolDialog = (typeof ADMIN_TOOL_DIALOGS)[number];
-
-const MANAGER_BLOCKED_ADMIN_TOOLS = new Set<AdminToolDialog>(['direct-sale', 'amount-trackers']);
-
-function isAdminToolParam(tool: string | null): tool is AdminToolDialog {
-  return Boolean(tool && (ADMIN_TOOL_DIALOGS as readonly string[]).includes(tool));
-}
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -12481,123 +12390,28 @@ const AdminDashboard = () => {
 
       {/* Legacy Edit Customer Dialog - REMOVED */}
 
-      {/* Delete Customer Confirmation Dialog */}
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Customer</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete customer <strong>{(customerToDelete as any)?.customer_id}</strong> - <strong>{(customerToDelete as any)?.full_name}</strong>?
-              <br />
-              <br />
-              This action cannot be undone and will permanently remove the customer and all associated data.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={handleDeleteCustomer}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              Delete Customer
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Delete Job Confirmation Dialog */}
-      <AlertDialog
-        open={deleteJobDialogOpen}
-        onOpenChange={bindAdminModalDismiss('delete-job', () => {
+      {/* Delete Customer / Job / Photo confirmation dialogs */}
+      <AdminDeleteConfirmDialogs
+        deleteCustomerOpen={deleteDialogOpen}
+        onDeleteCustomerOpenChange={setDeleteDialogOpen}
+        customerToDelete={customerToDelete}
+        onConfirmDeleteCustomer={handleDeleteCustomer}
+        deleteJobOpen={deleteJobDialogOpen}
+        onDeleteJobOpenChange={bindAdminModalDismiss('delete-job', () => {
           setDeleteJobDialogOpen(false);
           setJobToDelete(null);
         })}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Job</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete job <strong>{(jobToDelete as any)?.job_number}</strong>?
-              <br />
-              <br />
-              This action cannot be undone and will permanently remove the job and all associated data.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={handleDeleteJob}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              Delete Job
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Delete Photo Confirmation Dialog */}
-      <AlertDialog open={deletePhotoDialogOpen} onOpenChange={setDeletePhotoDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Photo</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete this photo?
-              <br />
-              <br />
-              This action cannot be undone and will permanently remove the photo from the job.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeletingPhoto}>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={confirmDeletePhoto}
-              disabled={isDeletingPhoto}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              {isDeletingPhoto ? (
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  Deleting...
-                </div>
-              ) : (
-                'Delete Photo'
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Delete Customer Photo Confirmation Dialog */}
-      <AlertDialog open={deleteCustomerPhotoDialogOpen} onOpenChange={setDeleteCustomerPhotoDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Photo</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to delete this photo?
-              <br />
-              <br />
-              This action cannot be undone and will permanently remove the photo from all associated jobs.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeletingCustomerPhoto}>Cancel</AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={confirmDeleteCustomerPhoto}
-              disabled={isDeletingCustomerPhoto}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              {isDeletingCustomerPhoto ? (
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  Deleting...
-                </div>
-              ) : (
-                'Delete Photo'
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        jobToDelete={jobToDelete}
+        onConfirmDeleteJob={handleDeleteJob}
+        deletePhotoOpen={deletePhotoDialogOpen}
+        onDeletePhotoOpenChange={setDeletePhotoDialogOpen}
+        isDeletingPhoto={isDeletingPhoto}
+        onConfirmDeletePhoto={confirmDeletePhoto}
+        deleteCustomerPhotoOpen={deleteCustomerPhotoDialogOpen}
+        onDeleteCustomerPhotoOpenChange={setDeleteCustomerPhotoDialogOpen}
+        isDeletingCustomerPhoto={isDeletingCustomerPhoto}
+        onConfirmDeleteCustomerPhoto={confirmDeleteCustomerPhoto}
+      />
 
       {/* Override Existing Customer Dialog */}
       <AlertDialog open={overrideDialogOpen} onOpenChange={setOverrideDialogOpen}>
@@ -12965,180 +12779,22 @@ const AdminDashboard = () => {
       )}
 
       {/* AMC Info Dialog */}
-      <Dialog open={amcInfoDialogOpen} onOpenChange={setAmcInfoDialogOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Star className="w-5 h-5 text-green-600" />
-              AMC Information
-            </DialogTitle>
-            <DialogDescription>
-              AMC details for {selectedCustomerForAMC?.fullName || 'customer'}
-            </DialogDescription>
-          </DialogHeader>
-          {loadingAMCInfo ? (
-            <div className="py-8 text-center">
-              <div className="flex items-center justify-center gap-2">
-                <RefreshCw className="w-5 h-5 animate-spin text-gray-400" />
-                <span className="text-gray-600">Loading AMC information...</span>
-              </div>
-            </div>
-          ) : amcInfo ? (
-            <div className="py-4 space-y-4">
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-700">Status:</span>
-                  <Badge className="bg-green-600 text-white border-0">
-                    {amcInfo.status}
-                  </Badge>
-                </div>
-
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600 font-medium">Service brand:</span>
-                  <span className="text-gray-900 font-semibold">
-                    {getAmcDocumentBrandLabel(amcInfo)}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-gray-600 font-medium">Start Date:</span>
-                    <p className="text-gray-900 font-semibold mt-1">
-                      {new Date(amcInfo.start_date).toLocaleDateString('en-IN', {
-                        day: 'numeric',
-                        month: 'short',
-                        year: 'numeric'
-                      })}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="text-gray-600 font-medium">End Date:</span>
-                    <p className="text-gray-900 font-semibold mt-1">
-                      {new Date(amcInfo.end_date).toLocaleDateString('en-IN', {
-                        day: 'numeric',
-                        month: 'short',
-                        year: 'numeric'
-                      })}
-                    </p>
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-gray-600 font-medium">Duration:</span>
-                    <p className="text-gray-900 font-semibold mt-1">
-                      {amcInfo.years} {amcInfo.years === 1 ? 'year' : 'years'}
-                    </p>
-                  </div>
-                  <div>
-                    <span className="text-gray-600 font-medium">Includes Prefilter:</span>
-                    <p className="text-gray-900 font-semibold mt-1">
-                      {amcInfo.includes_prefilter ? 'Yes' : 'No'}
-                    </p>
-                  </div>
-                </div>
-                
-                {(() => {
-                  // Parse additional_info to extract description and AMC cost
-                  let description = '';
-                  let additionalInfo = '';
-                  let amcCost: number | null = null;
-                  let totalAmount: number | null = null;
-                  let agreedAmount: number | null = null;
-                  
-                  if (amcInfo.additional_info) {
-                    try {
-                      let parsed: any = {};
-                      if (typeof amcInfo.additional_info === 'string') {
-                        parsed = JSON.parse(amcInfo.additional_info);
-                      } else {
-                        parsed = amcInfo.additional_info;
-                      }
-                      
-                      description = parsed.description || parsed.notes || '';
-                      additionalInfo = parsed.notes || '';
-                      amcCost = parsed.amc_cost || null;
-                      totalAmount = parsed.total_amount || null;
-                      agreedAmount = parsed.agreed_amount || parsed.agreed || null;
-                    } catch (e) {
-                      additionalInfo = amcInfo.additional_info;
-                    }
-                  }
-                  
-                  // Display AMC amount - prioritize agreed_amount, then amc_cost/total_amount, then amcInfo.amount
-                  const displayAmount = agreedAmount || amcCost || totalAmount || amcInfo.amount;
-                  const amountLabel = agreedAmount ? 'Agreed Amount' : (amcCost || totalAmount ? 'AMC Amount' : 'AMC Cost');
-                  
-                  return (
-                    <>
-                      {displayAmount && (
-                        <div className="text-sm">
-                          <span className="text-gray-600 font-medium">{amountLabel}:</span>
-                          <p className="text-gray-900 font-semibold mt-1">
-                            ₹{parseFloat(displayAmount.toString()).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </p>
-                        </div>
-                      )}
-                      {description && (
-                        <div className="pt-3 border-t border-green-200">
-                          <span className="text-gray-600 font-medium text-sm">Description / Summary:</span>
-                          <p className="text-gray-900 mt-2 whitespace-pre-wrap break-words">
-                            {description}
-                          </p>
-                        </div>
-                      )}
-                      {additionalInfo && !description && (
-                        <div className="pt-3 border-t border-green-200">
-                          <span className="text-gray-600 font-medium text-sm">Additional Information:</span>
-                          <p className="text-gray-900 mt-2 whitespace-pre-wrap break-words">
-                            {additionalInfo}
-                          </p>
-                        </div>
-                      )}
-                    </>
-                  );
-                })()}
-                
-                <div className="pt-3 border-t border-green-200 text-xs text-gray-500">
-                  <p>Created: {new Date(amcInfo.created_at).toLocaleString('en-IN')}</p>
-                  {amcInfo.updated_at && amcInfo.updated_at !== amcInfo.created_at && (
-                    <p>Last Updated: {new Date(amcInfo.updated_at).toLocaleString('en-IN')}</p>
-                  )}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="py-8 text-center text-gray-500">
-              <AlertCircle className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-              <p>No active AMC contract found for this customer</p>
-            </div>
-          )}
-          <DialogFooter className="gap-2 sm:gap-2">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setAmcInfoDialogOpen(false);
-                setSelectedCustomerForAMC(null);
-                setAmcInfo(null);
-              }}
-            >
-              Close
-            </Button>
-            {amcInfo && !loadingAMCInfo && (
-              <Button
-                onClick={() => {
-                  setAmcInfoDialogOpen(false);
-                  setAmcEditDialogOpen(true);
-                }}
-                className="bg-green-600 hover:bg-green-700 text-white"
-              >
-                <Edit className="w-4 h-4 mr-2" />
-                Edit AMC
-              </Button>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <AmcInfoDialog
+        open={amcInfoDialogOpen}
+        onOpenChange={setAmcInfoDialogOpen}
+        customer={selectedCustomerForAMC}
+        amcInfo={amcInfo}
+        loading={loadingAMCInfo}
+        onClose={() => {
+          setAmcInfoDialogOpen(false);
+          setSelectedCustomerForAMC(null);
+          setAmcInfo(null);
+        }}
+        onEdit={() => {
+          setAmcInfoDialogOpen(false);
+          setAmcEditDialogOpen(true);
+        }}
+      />
 
       {/* Edit AMC Dialog (opens from inside AMC Info) */}
       <EditAMCDialog
@@ -13170,99 +12826,32 @@ const AdminDashboard = () => {
         />
 
         {/* Move to Ongoing Dialog */}
-        <Dialog open={moveToOngoingDialogOpen} onOpenChange={bindAdminModalDismiss('move-ongoing', () => {
-          setMoveToOngoingDialogOpen(false);
-          setSelectedJobForMoveToOngoing(null);
-          setMoveToOngoingDate('');
-          setMoveToOngoingTimeSlot('MORNING');
-          setMoveToOngoingCustomTime('');
-        })}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Move to Ongoing</DialogTitle>
-              <DialogDescription>
-                Please select the new scheduled date and time slot for this job.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div>
-                <Label htmlFor="admin-ongoing-date">Scheduled Date *</Label>
-                <DatePicker
-                    value={moveToOngoingDate}
-                    onChange={(v) => v && setMoveToOngoingDate(v)}
-                    placeholder="Pick date"
-                    className="mt-1"
-                  />
-              </div>
-              <div>
-                <Label htmlFor="admin-ongoing-time-slot">Time Slot *</Label>
-                <Select
-                  value={moveToOngoingTimeSlot}
-                  onValueChange={(value: 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM') => {
-                    setMoveToOngoingTimeSlot(value);
-                    // Set default time based on time slot
-                    if (value === 'MORNING') {
-                      setMoveToOngoingCustomTime('');
-                    } else if (value === 'AFTERNOON') {
-                      setMoveToOngoingCustomTime('');
-                    } else if (value === 'EVENING') {
-                      setMoveToOngoingCustomTime('');
-                    } else {
-                      // CUSTOM - use current time
-                      const now = new Date();
-                      const customTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-                      setMoveToOngoingCustomTime(customTime);
-                    }
-                  }}
-                >
-                  <SelectTrigger id="admin-ongoing-time-slot" className="mt-1">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="MORNING">Morning (9 AM - 12 PM)</SelectItem>
-                    <SelectItem value="AFTERNOON">Afternoon (12 PM - 5 PM)</SelectItem>
-                    <SelectItem value="EVENING">Evening (5 PM - 8 PM)</SelectItem>
-                    <SelectItem value="CUSTOM">Custom Time</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {moveToOngoingTimeSlot === 'CUSTOM' && (
-                <div>
-                  <Label htmlFor="admin-ongoing-custom-time">Visit time *</Label>
-                  <CustomAppointmentTimeSelect
-                    id="admin-ongoing-custom-time"
-                    className="mt-1"
-                    value={moveToOngoingCustomTime}
-                    onChange={setMoveToOngoingCustomTime}
-                  />
-                </div>
-              )}
-            </div>
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setMoveToOngoingDialogOpen(false);
-                  setSelectedJobForMoveToOngoing(null);
-                  setMoveToOngoingDate('');
-                  setMoveToOngoingTimeSlot('MORNING');
-                  setMoveToOngoingCustomTime('');
-                  onAdminModalOpenChange('move-ongoing', false);
-                }}
-                disabled={isUpdating}
-              >
-                Cancel
-              </Button>
-              <Button
-                onClick={performMoveToOngoing}
-                disabled={isUpdating || !moveToOngoingDate || (moveToOngoingTimeSlot === 'CUSTOM' && !moveToOngoingCustomTime)}
-                className="bg-black hover:bg-gray-800 text-white"
-              >
-                {isUpdating ? 'Moving...' : 'Move to Ongoing'}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <MoveToOngoingDialog
+          open={moveToOngoingDialogOpen}
+          onOpenChange={bindAdminModalDismiss('move-ongoing', () => {
+            setMoveToOngoingDialogOpen(false);
+            setSelectedJobForMoveToOngoing(null);
+            setMoveToOngoingDate('');
+            setMoveToOngoingTimeSlot('MORNING');
+            setMoveToOngoingCustomTime('');
+          })}
+          date={moveToOngoingDate}
+          onDateChange={setMoveToOngoingDate}
+          timeSlot={moveToOngoingTimeSlot}
+          onTimeSlotChange={setMoveToOngoingTimeSlot}
+          customTime={moveToOngoingCustomTime}
+          onCustomTimeChange={setMoveToOngoingCustomTime}
+          isUpdating={isUpdating}
+          onCancel={() => {
+            setMoveToOngoingDialogOpen(false);
+            setSelectedJobForMoveToOngoing(null);
+            setMoveToOngoingDate('');
+            setMoveToOngoingTimeSlot('MORNING');
+            setMoveToOngoingCustomTime('');
+            onAdminModalOpenChange('move-ongoing', false);
+          }}
+          onSubmit={performMoveToOngoing}
+        />
 
       {/* Deny Job Dialog */}
       <DenyJobDialog
@@ -13279,7 +12868,7 @@ const AdminDashboard = () => {
       />
 
       {/* Technician Selection Dialog for Job Completion */}
-      <Dialog
+      <CompleteTechnicianSelectDialog
         open={technicianSelectDialogOpen}
         onOpenChange={(open) => {
           if (!open) {
@@ -13296,67 +12885,12 @@ const AdminDashboard = () => {
           }
           setTechnicianSelectDialogOpen(open);
         }}
-      >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Select Technician</DialogTitle>
-            <DialogDescription>
-              Select the technician who completed this job, or choose Office if no technician was involved
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4">
-            {selectedJobForComplete && (
-              <div className="p-3 bg-gray-50 rounded-md">
-                <p className="font-medium text-sm">Job: {(selectedJobForComplete as any).job_number || selectedJobForComplete.jobNumber}</p>
-                <p className="text-sm text-gray-600">
-                  {(selectedJobForComplete.serviceType || (selectedJobForComplete as any).service_type || 'N/A')} - {(selectedJobForComplete.serviceSubType || (selectedJobForComplete as any).service_sub_type || 'N/A')}
-                </p>
-              </div>
-            )}
-            
-            <div>
-              <Label htmlFor="technician-select-complete">Completed By *</Label>
-              <Select 
-                value={selectedTechnicianForComplete} 
-                onValueChange={setSelectedTechnicianForComplete}
-              >
-                <SelectTrigger className="mt-1">
-                  <SelectValue placeholder="Choose a technician" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="office">Office (no technician)</SelectItem>
-                  {technicians
-                    .filter(tech => !(tech as any).account_status || (tech as any).account_status === 'ACTIVE')
-                    .map((technician) => (
-                      <SelectItem key={technician.id} value={technician.id}>
-                        {technician.fullName || 'Unknown'} ({technician.employeeId || 'No ID'})
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setTechnicianSelectDialogOpen(false);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleTechnicianSelectedForComplete}
-              disabled={!selectedTechnicianForComplete}
-              className="bg-black hover:bg-gray-800 text-white"
-            >
-              Continue
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        job={selectedJobForComplete}
+        technicians={technicians}
+        selectedTechnicianId={selectedTechnicianForComplete}
+        onSelectedTechnicianChange={setSelectedTechnicianForComplete}
+        onContinue={handleTechnicianSelectedForComplete}
+      />
 
       {/* Complete Job Dialog */}
       <CompleteJobDialog
@@ -14169,100 +13703,21 @@ const AdminDashboard = () => {
       />
 
       {/* Recent Accounts Dialog – scoped fetch when opened (no full customer list) */}
-      <Dialog
+      <RecentAccountsDialog
         open={recentAccountsDialogOpen}
         onOpenChange={(open) => handleAdminToolOpenChange('recent-accounts', open)}
-      >
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Recent Accounts - Today</DialogTitle>
-            <DialogDescription>
-              All accounts created today ({new Date().toLocaleDateString()})
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4">
-            {loadingRecentAccounts ? (
-              <div className="text-center py-8 text-gray-500">
-                <p>Loading…</p>
-              </div>
-            ) : recentAccountsToday.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                <p>No accounts created today.</p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {recentAccountsToday.map((customer) => (
-                    <div
-                      key={customer.id}
-                      className="border border-gray-300 rounded-lg p-4 hover:bg-gray-50 transition-colors"
-                    >
-                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="font-semibold text-gray-900">
-                              {customer.customer_id || (customer as any).customerId}
-                            </span>
-                            <Badge variant="outline" className={`text-xs ${customerNameClassName(customer)}`}>
-                              {customer.fullName || customer.full_name}
-                            </Badge>
-                          </div>
-                          <div className="text-sm text-gray-600 space-y-1">
-                            <p>
-                              <span className="font-medium">Phone:</span> {customer.phone}
-                              {customer.alternate_phone && ` / ${customer.alternate_phone}`}
-                            </p>
-                            <p>
-                              <span className="font-medium">Email:</span> {customer.email && customer.email.trim() && !customer.email.toLowerCase().includes('nomail') && !customer.email.toLowerCase().includes('no@mail') 
-                                ? customer.email 
-                                : 'nomail@mail'}
-                            </p>
-                            <p>
-                              <span className="font-medium">Service:</span> {customer.service_type || 'N/A'}
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              Created: {new Date((customer as any).customerSince || (customer as any).customer_since || '').toLocaleString()}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              handleNewJob(customer);
-                              closeAdminTool();
-                            }}
-                          >
-                            <Plus className="w-4 h-4 mr-1" />
-                            New Job
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              void handleEditCustomer(customer);
-                              closeAdminTool();
-                            }}
-                          >
-                            <Edit className="w-4 h-4 mr-1" />
-                            Edit
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            )}
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={closeAdminTool}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        customers={recentAccountsToday}
+        loading={loadingRecentAccounts}
+        useCustomersAsIs
+        onNewJob={(customer) => {
+          handleNewJob(customer);
+          closeAdminTool();
+        }}
+        onEditCustomer={(customer) => {
+          void handleEditCustomer(customer);
+          closeAdminTool();
+        }}
+      />
 
       {/* Distance Measurement Dialog */}
       <Dialog

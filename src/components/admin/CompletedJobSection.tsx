@@ -39,7 +39,7 @@ import type { DocumentBrand } from '@/lib/service-brands';
 import { getCompanyInfoForBrand, getDocumentBrandLabel, normalizeDocumentBrand } from '@/lib/service-brands';
 import { forceLightSelectContentClass, forceLightThemeClass } from '@/lib/force-light-theme';
 
-const ZERO_COMMISSION_EMPLOYEE_ID = 'TECH851703400';
+import { ZERO_COMMISSION_EMPLOYEE_ID } from '@/lib/adminUtils';
 
 function formatSentAt(iso: string): string {
   return new Date(iso).toLocaleString('en-IN', {
