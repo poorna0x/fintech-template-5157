@@ -122,6 +122,14 @@ import {
 } from '@/lib/adminJobCompletionMessaging';
 import { deleteAdminJob } from '@/lib/adminDeleteJob';
 import { updateAdminCustomerStatus } from '@/lib/adminCustomerStatus';
+import { deleteAdminCustomer } from '@/lib/adminDeleteCustomer';
+import {
+  clearAdminCompleteJobSnapshot,
+  fetchAdminJobForComplete,
+  revertIncompleteAdminCompleteFlow,
+  snapshotAdminCompleteJobAssignment,
+  validateAdminCompleteTechnicianSelection,
+} from '@/lib/adminCompleteJobFlow';
 import {
   calculateAdminCustomDistanceBetweenStops,
   getAdminJobEtaForShareDialog,
@@ -2350,72 +2358,21 @@ const AdminDashboard = () => {
   }, [currentPage, statusFilter, loadFilteredJobs]);
 
   const handleDeleteCustomer = async () => {
-    if (!customerToDelete) return;
-    if (isManager) {
-      toast.error(managerRestrictedTitle);
-      return;
-    }
-
-    try {
-      const { error, data } = await db.customers.delete(customerToDelete.id);
-      
-      if (error) {
-        console.error('Delete customer error details:', {
-          error,
-          customerId: customerToDelete.id,
-          customer_id: customerToDelete.customer_id || customerToDelete.customerId,
-          errorCode: error.code,
-          errorMessage: error.message,
-          errorDetails: error.details,
-          errorHint: error.hint
-        });
-        throw new Error(error.message || 'Failed to delete customer. Check RLS policies.');
-      }
-      
-      // Verify deletion succeeded
-      if (data === null || data === undefined) {
-        // Check if customer still exists
-        const { data: verifyData } = await db.customers.getById(customerToDelete.id);
-        if (verifyData) {
-          throw new Error('Customer deletion failed - customer still exists. Check RLS policies.');
-        }
-      }
-      
-      toast.success(`Customer ${customerToDelete.customer_id || customerToDelete.customerId} deleted successfully`);
-      
-      // Remove from local state
-      setCustomers(customers.filter(c => c.id !== customerToDelete.id));
-      
-      // Also remove jobs for this customer from local state
-      // (Database should cascade delete, but we'll also clean up local state)
-      setJobs(prevJobs => prevJobs.filter(job => {
-        const jobCustomerId = (job as any).customer_id || job.customerId;
-        return jobCustomerId !== customerToDelete.id;
-      }));
-      
-      // Clear customer jobs cache
-      setCustomerJobs(prev => {
-        const updated = { ...prev };
-        delete updated[customerToDelete.id];
-        return updated;
-      });
-      
-      setDeleteDialogOpen(false);
-      setCustomerToDelete(null);
-      
-      // Reload dashboard data to ensure consistency
-      await loadDashboardData();
-      
-      // Also reload filtered jobs if we're viewing a filtered view
-      // This ensures jobs for deleted customers are removed from the view
-      if (statusFilter === 'COMPLETED' || statusFilter === 'CANCELLED') {
-        await loadFilteredJobs(statusFilter, currentPage);
-      }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      console.error('Error deleting customer:', error);
-      toast.error(`Failed to delete customer: ${errorMessage}`);
-    }
+    await deleteAdminCustomer({
+      customerToDelete,
+      isManager,
+      managerRestrictedTitle,
+      customers,
+      statusFilter,
+      currentPage,
+      setCustomers,
+      setJobs,
+      setCustomerJobs,
+      setDeleteDialogOpen,
+      setCustomerToDelete,
+      loadDashboardData,
+      loadFilteredJobs,
+    });
   };
 
   // Parse database service_type value back to array of service types
@@ -4970,149 +4927,37 @@ const AdminDashboard = () => {
   // Calculate AMC end date: agreement date + years - 1 day
   // calculateAMCEndDate moved to CompleteJobDialog component
 
-  // Handle job completion - first show technician selection
-  const snapshotJobAssignmentForCompleteFlow = (job: Job) => {
-    const assignedTechnicianId =
-      (job as any).assigned_technician_id ?? job.assignedTechnicianId ?? null;
-    completeFlowSnapshotRef.current = {
-      jobId: job.id,
-      assignedTechnicianId: assignedTechnicianId ? String(assignedTechnicianId) : null,
-      status: job.status,
-      assignedDate: (job as any).assigned_date ?? job.assignedDate ?? null,
-    };
-  };
-
-  const clearCompleteFlowSnapshot = () => {
-    completeFlowSnapshotRef.current = null;
-  };
-
-  const revertIncompleteCompleteFlow = useCallback(async () => {
-    const snapshot = completeFlowSnapshotRef.current;
-    if (!snapshot) return;
-    completeFlowSnapshotRef.current = null;
-
-    const applyLocalRevert = () => {
-      setJobs((prev) =>
-        prev.map((job) =>
-          job.id === snapshot.jobId
-            ? {
-                ...job,
-                assigned_technician_id: snapshot.assignedTechnicianId,
-                assignedTechnicianId: snapshot.assignedTechnicianId,
-                assigned_date: snapshot.assignedDate,
-                assignedDate: snapshot.assignedDate,
-                status: snapshot.status as Job['status'],
-              }
-            : job
-        )
-      );
-      setCustomerJobs((prev) => {
-        const updated = { ...prev };
-        Object.keys(updated).forEach((customerId) => {
-          updated[customerId] = updated[customerId].map((job) =>
-            job.id === snapshot.jobId
-              ? {
-                  ...job,
-                  assigned_technician_id: snapshot.assignedTechnicianId,
-                  assignedTechnicianId: snapshot.assignedTechnicianId,
-                  assigned_date: snapshot.assignedDate,
-                  assignedDate: snapshot.assignedDate,
-                  status: snapshot.status as Job['status'],
-                }
-              : job
-          );
-        });
-        return updated;
-      });
-    };
-
-    applyLocalRevert();
-
-    try {
-      const { data, error } = await db.jobs.getById(snapshot.jobId);
-      if (error || !data) return;
-
-      const row = data as Record<string, unknown>;
-      const status = String(row.status || '');
-      if (status === 'COMPLETED') return;
-
-      const currentAssign = row.assigned_technician_id ? String(row.assigned_technician_id) : null;
-      if (currentAssign === snapshot.assignedTechnicianId) return;
-
-      const { error: updateError } = await db.jobs.update(snapshot.jobId, {
-        assigned_technician_id: snapshot.assignedTechnicianId,
-        assigned_date: snapshot.assignedDate,
-        status: snapshot.status,
-      });
-      if (updateError) {
-        console.warn(
-          '[AdminDashboard] Could not revert assignment after cancelled complete flow:',
-          updateError
-        );
-        return;
-      }
-
-      const techIds = [currentAssign, snapshot.assignedTechnicianId].filter(Boolean) as string[];
-      if (techIds.length) broadcastTechnicianJobListRefresh(techIds);
-    } catch (err) {
-      console.warn('[AdminDashboard] Revert complete-flow assignment failed:', err);
-    }
-  }, []);
+  const revertIncompleteCompleteFlow = useCallback(
+    () =>
+      revertIncompleteAdminCompleteFlow({
+        snapshotRef: completeFlowSnapshotRef,
+        setJobs,
+        setCustomerJobs,
+      }),
+    []
+  );
 
   const handleCompleteJob = async (job: Job) => {
-    // Fetch full job data with customer if not already loaded
-    let jobWithCustomer = job;
-    if (!job.customer || !job.serviceType) {
-      try {
-        const { data: fullJob, error } = await db.jobs.getByIdFull(job.id);
-        if (!error && fullJob) {
-          jobWithCustomer = fullJob as Job;
-        }
-      } catch (error) {
-        console.error('Error fetching job details:', error);
-        // Continue with the job data we have
-      }
-    }
-    
+    const jobWithCustomer = await fetchAdminJobForComplete(job);
     setSelectedJobForComplete(jobWithCustomer);
-    snapshotJobAssignmentForCompleteFlow(jobWithCustomer);
+    snapshotAdminCompleteJobAssignment(jobWithCustomer, completeFlowSnapshotRef);
     setSelectedTechnicianForComplete('');
     openAdminModal('complete', { jobId: jobWithCustomer.id });
     setTechnicianSelectDialogOpen(true);
   };
 
-  // Handle technician selection for job completion
   const handleTechnicianSelectedForComplete = async () => {
-    if (!selectedTechnicianForComplete || !selectedJobForComplete) {
-      toast.error('Please select who completed the job');
+    if (
+      !validateAdminCompleteTechnicianSelection(
+        selectedTechnicianForComplete,
+        selectedJobForComplete,
+        technicians
+      )
+    ) {
       return;
     }
 
-    const isOfficeCompletion = selectedTechnicianForComplete === 'office';
-
-    if (!isOfficeCompletion) {
-      // Validate technician ID format (should be a valid UUID)
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      if (!uuidRegex.test(selectedTechnicianForComplete)) {
-        console.error('Invalid technician ID format:', selectedTechnicianForComplete);
-        toast.error('Invalid technician selected. Please try again.');
-        return;
-      }
-
-      // Verify technician exists in the technicians list
-      const selectedTechnician = technicians.find(t => t.id === selectedTechnicianForComplete);
-      if (!selectedTechnician) {
-        console.error('Technician not found in list:', selectedTechnicianForComplete);
-        toast.error('Selected technician not found. Please refresh and try again.');
-        return;
-      }
-    }
-
-    // Always fetch fresh QR codes when completing a job (cache can miss newly created codes)
     void loadQrCodes(true).catch((err) => console.error('Error loading QR codes:', err));
-
-    // Assignment is applied only when the job is actually completed.
-    // If the dialog is closed early, revertIncompleteCompleteFlow restores the prior assignment.
 
     suppressCompleteFlowRevertRef.current = true;
     setTechnicianSelectDialogOpen(false);
@@ -7245,7 +7090,7 @@ const AdminDashboard = () => {
         onLoadQrCodes={loadQrCodes}
         selectedTechnicianId={selectedTechnicianForComplete}
         onJobCompleted={async (completedJobId?: string) => {
-          clearCompleteFlowSnapshot();
+          clearAdminCompleteJobSnapshot(completeFlowSnapshotRef);
           // Mark this job as completed by admin so polling handler doesn't play sound for it
           if (completedJobId) {
             jobIdsCompletedByAdminRef.current.add(completedJobId);
