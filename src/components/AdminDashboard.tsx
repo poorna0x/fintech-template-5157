@@ -99,6 +99,12 @@ import {
   getFilteredCustomersForDashboard,
   resolveDisplayedCustomers,
 } from '@/lib/adminDashboardCustomerFilters';
+import { loadFilteredJobsForAdmin } from '@/lib/adminLoadFilteredJobs';
+import {
+  applyAdminDashboardSnapshot,
+  loadAdminDashboardData,
+  loadAdminDashboardSecondary,
+} from '@/lib/adminLoadDashboardData';
 import { Customer, Job, Technician } from '@/types';
 import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
 import { toast } from 'sonner';
@@ -148,11 +154,9 @@ import { enrichJobsWithAfterPhotosIfNeeded } from '@/lib/jobReportPhotos';
 import {
   consumeAdminDashboardPrefetch,
   readAdminDashboardCache,
-  writeAdminDashboardCache,
   clearAdminDashboardCache,
   invalidateAdminDashboardCaches,
   getModuleOngoingJobsSnapshot,
-  setModuleOngoingJobsSnapshot,
   getModuleJobsListCache,
   setModuleJobsListCache,
   clearModuleJobsListCache,
@@ -1421,237 +1425,47 @@ const AdminDashboard = () => {
     completedRangeEndDate,
   ]);
 
-  // Load jobs based on current filter (optimized)
-  const loadFilteredJobs = useCallback(async (
-    filter: typeof statusFilter,
-    page: number = 1,
-    opts?: { silent?: boolean; cacheOnly?: boolean }
-  ) => {
-    const silent = opts?.silent === true;
-    const cacheOnly = opts?.cacheOnly === true;
-    // Only non-silent (user-visible) loads bump the request id. Background resume sync must
-    // not supersede an in-flight tab switch or loading stays stuck forever.
-    const requestId = silent ? loadJobsRequestRef.current : ++loadJobsRequestRef.current;
-    const commitJobs = (data: Job[]) => {
-      if (!cacheOnly) {
-        setJobs(data);
-        setTabCachesStale(false);
-      } else if (filter === 'COMPLETED') {
-        // Realtime warm: Completed tab can open instantly after completion sound.
-        setTabCachesStale(false);
-      }
-      if (filter === 'ONGOING') {
-        ongoingJobsSnapshotRef.current = data;
-        setModuleOngoingJobsSnapshot(data);
-      } else if (filter === 'COMPLETED' || filter === 'RESCHEDULED') {
-        const cacheKey = getJobsListCacheKey(filter, page);
-        jobsListCacheRef.current.set(cacheKey, data);
-        setModuleJobsListCache(cacheKey, data);
-      }
-    };
-    try {
-      if (!silent) {
-        setLoading(true);
-      }
-      
-      if (filter === 'ALL') {
-        // For ALL, we need customers with their jobs - load ongoing jobs only for display
-        const { data, error } = await db.jobs.getOngoing();
-        if (requestId !== loadJobsRequestRef.current) return;
-        if (error) {
-          if (!cacheOnly) setJobs([]);
-        } else {
-          if (!cacheOnly) setJobs(data || []);
-        }
-      } else if (filter === 'ONGOING') {
-        // Load all ongoing jobs (usually not too many)
-        const { data, error } = await db.jobs.getOngoing();
-        if (requestId !== loadJobsRequestRef.current) return;
-        if (error) {
-          if (!cacheOnly) setJobs([]);
-        } else {
-          commitJobs(data || []);
-          if (!cacheOnly) {
-            setTotalCount(data?.length || 0);
-            setTotalPages(1);
-          }
-        }
-      } else if (filter === 'COMPLETED' || filter === 'CANCELLED') {
-        // Use pagination for completed and denied jobs
-        const statuses = filter === 'COMPLETED' ? ['COMPLETED'] : ['DENIED', 'CANCELLED'];
-        // Pass date/day-range filter for completed jobs and day filter for denied jobs
-        let dateFilter: string | { startDate: string; endDate: string } | undefined = undefined;
-        if (filter === 'COMPLETED') {
-          if (completedDatePreset === 'day') {
-            dateFilter = completedDateFilter;
-          } else {
-            const start = completedRangeStartDate <= completedRangeEndDate ? completedRangeStartDate : completedRangeEndDate;
-            const end = completedRangeStartDate <= completedRangeEndDate ? completedRangeEndDate : completedRangeStartDate;
-            dateFilter = {
-              startDate: start,
-              endDate: end
-            };
-          }
-        } else if (filter === 'CANCELLED') {
-          dateFilter = deniedDateFilter;
-        }
-
-        let data: any[] = [];
-        let error: any = null;
-        let count = 0;
-        let pages = 0;
-
-        const completedClientFiltersActive =
-          filter === 'COMPLETED' &&
-          (completedLeadTypeFilter !== 'all' ||
-            completedServiceSubTypeFilter !== 'all' ||
-            completedByFilter !== 'all');
-
-        // When lead / service / completed-by filters are on, server pagination is by raw job count but the UI
-        // hides non-matching rows — so page 1 can look empty while "1/4" still shows. Load a bounded batch,
-        // apply the same client filters as the list, then paginate the filtered rows.
-        const COMPLETED_CLIENT_FILTER_BATCH = 5000;
-
-        let slimResult: Awaited<ReturnType<typeof db.jobs.getByStatusPaginatedSlim>>;
-        if (completedClientFiltersActive) {
-          slimResult = await db.jobs.getByStatusPaginatedSlim(
-            statuses,
-            1,
-            COMPLETED_CLIENT_FILTER_BATCH,
-            dateFilter
-          );
-        } else {
-          slimResult = await db.jobs.getByStatusPaginatedSlim(statuses, page, pageSize, dateFilter);
-        }
-        data = slimResult.data || [];
-        error = slimResult.error;
-        count = slimResult.count || 0;
-        pages = slimResult.totalPages || 0;
-
-        if (error) {
-          const fallbackPage = completedClientFiltersActive ? 1 : page;
-          const fallbackSize = completedClientFiltersActive ? COMPLETED_CLIENT_FILTER_BATCH : pageSize;
-          const fallback = await db.jobs.getByStatusPaginated(statuses, fallbackPage, fallbackSize, dateFilter);
-          data = fallback.data || [];
-          error = fallback.error;
-          count = fallback.count || 0;
-          pages = fallback.totalPages || 0;
-        }
-        if (requestId !== loadJobsRequestRef.current) return;
-        if (error) {
-          if (!cacheOnly) setJobs([]);
-        } else {
-          let finalData = data || [];
-          // Jobs without embedded customer (RLS/orphan rows) still need customer for grouping cards.
-          if ((filter === 'COMPLETED' || filter === 'CANCELLED') && finalData.length > 0) {
-            const missingIds = [
-              ...new Set(
-                finalData
-                  .filter((j: any) => j.customer_id && !(j as any).customer)
-                  .map((j: any) => j.customer_id as string)
-              ),
-            ];
-            if (missingIds.length > 0) {
-              const { data: custRows } = await supabase
-                .from('customers')
-                .select(CUSTOMER_ADMIN_LIST_PATCH_COLUMNS)
-                .in('id', missingIds);
-              const byId = new Map((custRows || []).map((row: any) => [row.id, row]));
-              finalData = finalData.map((j: any) =>
-                (j as any).customer || !j.customer_id ? j : { ...j, customer: byId.get(j.customer_id) ?? null }
-              );
-            }
-          }
-
-          if (completedClientFiltersActive) {
-            const filterPayload = {
-              leadType: completedLeadTypeFilter,
-              serviceSubType: completedServiceSubTypeFilter,
-              completedBy: completedByFilter,
-            };
-            const filtered = finalData.filter((j: any) =>
-              completedJobMatchesDashboardClientFilters(
-                j,
-                filterPayload,
-                techniciansRef.current as any
-              )
-            );
-            const filteredCount = filtered.length;
-            const filteredPages =
-              filteredCount > 0 ? Math.ceil(filteredCount / pageSize) : 0;
-            let effectivePage = page;
-            if (filteredPages > 0 && page > filteredPages) effectivePage = filteredPages;
-            if (filteredPages === 0) effectivePage = 1;
-            finalData = filtered.slice((effectivePage - 1) * pageSize, effectivePage * pageSize);
-            count = filteredCount;
-            pages = filteredPages;
-            if (effectivePage !== page && !cacheOnly) {
-              setCurrentPage(effectivePage);
-            }
-          }
-
-          if (filter === 'COMPLETED' && finalData.length > 0) {
-            finalData = await enrichJobsWithAfterPhotosIfNeeded(finalData);
-          }
-
-          commitJobs(finalData);
-          if (!cacheOnly) {
-            setTotalCount(count || 0);
-            setTotalPages(pages || 0);
-          }
-        }
-      } else if (filter === 'RESCHEDULED') {
-        // Follow-up / rescheduled: slim query + photo fields + full customer embed (low egress vs jobs.*)
-        let data: any[] = [];
-        let error: any = null;
-        let count = 0;
-        let pages = 0;
-        const slimFu = await db.jobs.getByStatusPaginatedSlim(['FOLLOW_UP', 'RESCHEDULED'], page, pageSize, undefined, {
-          includePhotoFields: true,
-        });
-        data = slimFu.data || [];
-        error = slimFu.error;
-        count = slimFu.count || 0;
-        pages = slimFu.totalPages || 0;
-        if (error) {
-          const fallback = await db.jobs.getByStatusPaginated(['FOLLOW_UP', 'RESCHEDULED'], page, pageSize);
-          data = fallback.data || [];
-          error = fallback.error;
-          count = fallback.count || 0;
-          pages = fallback.totalPages || 0;
-        }
-        if (requestId !== loadJobsRequestRef.current) return;
-        if (error) {
-          if (!cacheOnly) setJobs([]);
-        } else {
-          commitJobs(data || []);
-          if (!cacheOnly) {
-            setTotalCount(count || 0);
-            setTotalPages(pages || 0);
-          }
-        }
-      }
-    } catch (error) {
-      if (requestId === loadJobsRequestRef.current && !cacheOnly) {
-        setJobs([]);
-      }
-    } finally {
-      if (!silent && requestId === loadJobsRequestRef.current) {
-        setLoading(false);
-      }
-    }
-  }, [
-    pageSize,
-    getJobsListCacheKey,
-    deniedDateFilter,
-    completedDateFilter,
-    completedDatePreset,
-    completedRangeStartDate,
-    completedRangeEndDate,
-    completedLeadTypeFilter,
-    completedServiceSubTypeFilter,
-    completedByFilter,
-  ]);
+  const loadFilteredJobs = useCallback(
+    (
+      filter: typeof statusFilter,
+      page: number = 1,
+      opts?: { silent?: boolean; cacheOnly?: boolean }
+    ) =>
+      loadFilteredJobsForAdmin(filter, page, opts, {
+        pageSize,
+        deniedDateFilter,
+        completedDateFilter,
+        completedDatePreset,
+        completedRangeStartDate,
+        completedRangeEndDate,
+        completedLeadTypeFilter,
+        completedServiceSubTypeFilter,
+        completedByFilter,
+        loadJobsRequestRef,
+        jobsListCacheRef,
+        ongoingJobsSnapshotRef,
+        techniciansRef,
+        getJobsListCacheKey,
+        setJobs,
+        setLoading,
+        setTabCachesStale,
+        setTotalCount,
+        setTotalPages,
+        setCurrentPage,
+      }),
+    [
+      pageSize,
+      getJobsListCacheKey,
+      deniedDateFilter,
+      completedDateFilter,
+      completedDatePreset,
+      completedRangeStartDate,
+      completedRangeEndDate,
+      completedLeadTypeFilter,
+      completedServiceSubTypeFilter,
+      completedByFilter,
+    ]
+  );
 
   const loadCompletedJobDetails = useCallback(async (jobId: string) => {
     if (!jobId) return;
@@ -1748,50 +1562,28 @@ const AdminDashboard = () => {
   };
 
   const applyAdminSnapshot = useCallback((snap: AdminDashboardSnapshot) => {
-    const jobList = (snap.jobs as Job[]) ?? [];
-    setJobs(jobList);
-    ongoingJobsSnapshotRef.current = jobList;
-    setModuleOngoingJobsSnapshot(jobList);
-    setTotalCount(jobList.length);
-    setTotalPages(1);
-    const transformed = (snap.technicianRows as any[]).map(transformTechnicianData);
-    techniciansRef.current = transformed;
-    setTechnicians(transformed);
-    setJobCounts(snap.jobCounts);
+    applyAdminDashboardSnapshot(snap, {
+      setJobs,
+      setTotalCount,
+      setTotalPages,
+      setTechnicians,
+      setJobCounts,
+      ongoingJobsSnapshotRef,
+      techniciansRef,
+    });
   }, []);
 
-  const loadDashboardSecondary = useCallback(async () => {
-    try {
-      const [techniciansAllResult, amcContractsResult, priorCompletedMap] = await Promise.all([
-        db.technicians.getList(500, { activeRosterOnly: false }),
-        supabase.from('amc_contracts').select('customer_id, status').eq('status', 'ACTIVE'),
-        fetchCustomerIdsWithCompletedJobsMap(),
-      ]);
-
-      const amcStatusMap: Record<string, boolean> = {};
-      if (amcContractsResult.data) {
-        amcContractsResult.data.forEach((amc: any) => {
-          amcStatusMap[amc.customer_id] = true;
-        });
-      }
-      setCustomerAMCStatus(amcStatusMap);
-      setCustomerPriorServiceStatus((prev) => ({ ...prev, ...priorCompletedMap }));
-
-      if (techniciansAllResult?.data) {
-        setTechniciansForReports(techniciansAllResult.data.map(transformTechnicianData));
-      }
-
-      void loadBrandsAndModels();
-      void db.jobs
-        .getFollowUpForGlow()
-        .then(({ data }) => {
-          if (data) setAllFollowUpJobs(data as Job[]);
-        })
-        .catch(() => setAllFollowUpJobs([]));
-    } catch (e) {
-      console.warn('[AdminDashboard] Secondary load failed:', e);
-    }
-  }, []);
+  const loadDashboardSecondary = useCallback(
+    () =>
+      loadAdminDashboardSecondary({
+        setCustomerAMCStatus,
+        setCustomerPriorServiceStatus,
+        setTechniciansForReports,
+        setAllFollowUpJobs,
+        loadBrandsAndModels,
+      }),
+    [loadBrandsAndModels]
+  );
 
   const amcAutoCreateAttemptedRef = useRef(false);
   const followUpPromoteDayRef = useRef<string | null>(null);
@@ -1860,108 +1652,37 @@ const AdminDashboard = () => {
       });
   }, [statusFilter, currentPage, loadFilteredJobs]);
 
-  const loadDashboardData = async (options?: {
-    silent?: boolean;
-    skipOngoingFetch?: boolean;
-    skipTechniciansFetch?: boolean;
-  }) => {
-    const silent = options?.silent === true;
-    const skipOngoingFetch = options?.skipOngoingFetch === true;
-    // When the roster was just applied from a fresh live prefetch, skip the
-    // immediate re-fetch — the `get_technicians_for_admin` RPC otherwise runs
-    // twice on every cold boot (once in the prefetch, once here).
-    const skipTechniciansFetch = options?.skipTechniciansFetch === true;
-    try {
-      if (!silent) {
-        setLoading(true);
-      }
-
-      if (!silent) {
-        const sessionReady = await ensureAdminSupabaseSession();
-        if (!sessionReady) {
-          console.warn('[AdminDashboard] Skipping load — admin Supabase session not ready yet');
-          return;
-        }
-      }
-
-      scheduleAmcJobCreation();
-      scheduleFollowUpPromotion();
-
-      const [techniciansResult, jobCountsResult, ongoingResult] = await Promise.all([
-        skipTechniciansFetch
-          ? Promise.resolve({ data: null as Technician[] | null, error: null })
-          : db.technicians.getAllForDashboard(100),
-        db.jobs.getCounts(),
-        skipOngoingFetch && statusFilter === 'ONGOING'
-          ? Promise.resolve({ data: null as Job[] | null, error: null })
-          : statusFilter === 'ONGOING'
-            ? db.jobs.getOngoing(100)
-            : Promise.resolve({ data: null, error: null }),
-      ]);
-
-      if (jobCountsResult.data) {
-        setJobCounts(jobCountsResult.data);
-      }
-
-      if (techniciansResult.data) {
-        const transformedTechnicians = techniciansResult.data.map(transformTechnicianData);
-        techniciansRef.current = transformedTechnicians;
-        setTechnicians(transformedTechnicians);
-      } else if (techniciansResult.error) {
-        console.error('Failed to load technicians:', techniciansResult.error);
-        techniciansRef.current = [];
-        setTechnicians([]);
-      }
-
-      if (!skipOngoingFetch && statusFilter === 'ONGOING' && ongoingResult) {
-        if (ongoingResult.error) {
-          setJobs([]);
-        } else {
-          const list = ongoingResult.data || [];
-          setJobs(list);
-          ongoingJobsSnapshotRef.current = list;
-          setModuleOngoingJobsSnapshot(list);
-          setTotalCount(list.length);
-          setTotalPages(1);
-        }
-      } else if (!skipOngoingFetch && statusFilter !== 'ONGOING') {
-        await loadFilteredJobs(statusFilter, currentPage, { silent: true });
-      }
-
-      const jobsForCache =
-        skipOngoingFetch && statusFilter === 'ONGOING'
-          ? undefined
-          : statusFilter === 'ONGOING'
-            ? ongoingResult?.data ?? []
-            : undefined;
-
-      if (jobsForCache && techniciansResult.data) {
-        writeAdminDashboardCache({
-          savedAt: Date.now(),
-          jobs: jobsForCache,
-          technicianRows: techniciansResult.data,
-          jobCounts: jobCountsResult.data ?? {
-            ongoing: 0,
-            followup: 0,
-            denied: 0,
-            completed: 0,
-          },
-        });
-      }
-
-      void loadDashboardSecondary();
-    } catch (error) {
-      if (!silent) {
-        toast.error(
-          `Failed to load dashboard data: ${error instanceof Error ? error.message : 'Unknown error'}`
-        );
-      }
-    } finally {
-      if (!silent) {
-        setLoading(false);
-      }
-    }
-  };
+  const loadDashboardData = useCallback(
+    (options?: {
+      silent?: boolean;
+      skipOngoingFetch?: boolean;
+      skipTechniciansFetch?: boolean;
+    }) =>
+      loadAdminDashboardData(options, {
+        statusFilter,
+        currentPage,
+        scheduleAmcJobCreation,
+        scheduleFollowUpPromotion,
+        loadFilteredJobs,
+        loadDashboardSecondary,
+        techniciansRef,
+        ongoingJobsSnapshotRef,
+        setLoading,
+        setJobCounts,
+        setTechnicians,
+        setJobs,
+        setTotalCount,
+        setTotalPages,
+      }),
+    [
+      statusFilter,
+      currentPage,
+      scheduleAmcJobCreation,
+      scheduleFollowUpPromotion,
+      loadFilteredJobs,
+      loadDashboardSecondary,
+    ]
+  );
 
   const [isInitialLoad, setIsInitialLoad] = useState(
     () =>
