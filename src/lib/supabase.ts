@@ -456,6 +456,24 @@ const ANALYTICS_JOB_COLUMNS = [
   'job_number',
 ].join(', ');
 
+/** Completed jobs for lead-source breakdown (reads requirements JSON). */
+const LEAD_BREAKDOWN_JOB_COLUMNS = [
+  'id',
+  'status',
+  'lead_source',
+  'requirements',
+  'assigned_by',
+  'booking_source',
+  'booking_domain',
+  'payment_amount',
+  'actual_cost',
+  'lead_cost',
+  'parts_cost_total',
+  'service_sub_type',
+  'completed_at',
+  'end_time',
+].join(', ');
+
 /** Conversion / attribution analytics — minimal columns, no requirements JSON. */
 const ANALYTICS_CONVERSION_JOB_COLUMNS = [
   'id',
@@ -3085,6 +3103,34 @@ export const db = {
         return bAt.localeCompare(aAt);
       });
       return { data: combined, error: null };
+    },
+
+    async getCompletedJobsForLeadBreakdownInRange(startDate: Date, endDate: Date) {
+      const startISO = startDate.toISOString();
+      const endISO = endDate.toISOString();
+      const completedFilter = buildCompletedJobsDateOrFilter(startISO, endISO);
+
+      return fetchAnalyticsPages((from, to) =>
+        supabase
+          .from('jobs')
+          .select(LEAD_BREAKDOWN_JOB_COLUMNS)
+          .eq('status', 'COMPLETED')
+          .or(completedFilter)
+          .order('created_at', { ascending: false })
+          .range(from, to)
+      );
+    },
+
+    /** All completed jobs for lead-source breakdown (all-time analytics). */
+    async getCompletedJobsForLeadBreakdown() {
+      return fetchAnalyticsPages((from, to) =>
+        supabase
+          .from('jobs')
+          .select(LEAD_BREAKDOWN_JOB_COLUMNS)
+          .eq('status', 'COMPLETED')
+          .order('created_at', { ascending: false })
+          .range(from, to)
+      );
     },
 
     /**
@@ -7209,6 +7255,64 @@ export const db = {
       const { data, error } = await supabase.rpc('get_analytics_monthly_trends', {
         p_start: opts.startDate?.toISOString() ?? null,
         p_end: opts.endDate?.toISOString() ?? null,
+        p_granularity: opts.granularity ?? 'month',
+        p_service_type: opts.serviceType ?? null,
+        p_service_sub_type: opts.serviceSubType ?? null,
+        p_equipment_brand: opts.equipmentBrand ?? null,
+        p_service_brand: opts.serviceBrand ?? null,
+        p_lead_source_key: opts.leadSourceKey ?? null,
+        p_technician_id: opts.technicianId ?? null,
+        p_payment_method: opts.paymentMethod ?? null,
+      });
+      return { data, error };
+    },
+    async getTrendDashboard(opts: {
+      startDate: Date;
+      endDate: Date;
+      granularity?: 'month' | 'week' | 'day';
+      compareMode?: 'previous_period' | 'previous_year' | null;
+      serviceType?: string | null;
+      serviceSubType?: string | null;
+      equipmentBrand?: string | null;
+      serviceBrand?: string | null;
+      leadSourceKey?: string | null;
+      technicianId?: string | null;
+      paymentMethod?: string | null;
+    }) {
+      const { data, error } = await supabase.rpc('get_analytics_trend_dashboard', {
+        p_start: opts.startDate.toISOString(),
+        p_end: opts.endDate.toISOString(),
+        p_granularity: opts.granularity ?? 'month',
+        p_compare_mode: opts.compareMode ?? null,
+        p_service_type: opts.serviceType ?? null,
+        p_service_sub_type: opts.serviceSubType ?? null,
+        p_equipment_brand: opts.equipmentBrand ?? null,
+        p_service_brand: opts.serviceBrand ?? null,
+        p_lead_source_key: opts.leadSourceKey ?? null,
+        p_technician_id: opts.technicianId ?? null,
+        p_payment_method: opts.paymentMethod ?? null,
+      });
+      return { data, error };
+    },
+    async getTrendRangeCompare(opts: {
+      aStart: Date;
+      aEnd: Date;
+      bStart: Date;
+      bEnd: Date;
+      granularity?: 'month' | 'week' | 'day';
+      serviceType?: string | null;
+      serviceSubType?: string | null;
+      equipmentBrand?: string | null;
+      serviceBrand?: string | null;
+      leadSourceKey?: string | null;
+      technicianId?: string | null;
+      paymentMethod?: string | null;
+    }) {
+      const { data, error } = await supabase.rpc('get_analytics_trend_range_compare', {
+        p_a_start: opts.aStart.toISOString(),
+        p_a_end: opts.aEnd.toISOString(),
+        p_b_start: opts.bStart.toISOString(),
+        p_b_end: opts.bEnd.toISOString(),
         p_granularity: opts.granularity ?? 'month',
         p_service_type: opts.serviceType ?? null,
         p_service_sub_type: opts.serviceSubType ?? null,

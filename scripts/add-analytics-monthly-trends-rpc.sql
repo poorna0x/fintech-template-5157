@@ -56,6 +56,7 @@ BEGIN
       j.end_time,
       j.completed_at,
       j.lead_source,
+      j.requirements,
       j.assigned_by,
       j.assigned_technician_id,
       j.payment_amount,
@@ -98,7 +99,7 @@ BEGIN
       AND (
         p_lead_source_key IS NULL
         OR public.analytics_norm_key(
-          public.analytics_resolve_lead_source(j.lead_source, j.assigned_by)
+          public.analytics_resolve_lead_source(j.lead_source, j.assigned_by, j.requirements)
         ) = public.analytics_norm_key(p_lead_source_key)
       )
       AND (p_technician_id IS NULL OR j.assigned_technician_id = p_technician_id)

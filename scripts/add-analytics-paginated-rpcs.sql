@@ -10,7 +10,7 @@ IMMUTABLE
 AS $$
   SELECT CASE
     WHEN nullif(btrim(t), '') IS NULL THEN '__unknown__'
-    ELSE lower(regexp_replace(regexp_replace(btrim(t), '\.', '', 'g'), '\s+', '', 'g'))
+    ELSE lower(regexp_replace(btrim(t), '[^a-zA-Z0-9]', '', 'g'))
   END;
 $$;
 

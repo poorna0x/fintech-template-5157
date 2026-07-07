@@ -1,3 +1,6 @@
+import { normalizeLeadType, getLeadSourceFromJob } from '@/lib/adminUtils';
+import { resolveJobBillingAmount } from '@/lib/jobAnalytics';
+
 /** Types + mappers for `get_analytics_dashboard` RPC (admin-only, SECURITY DEFINER). */
 
 export type AnalyticsDashboardRpc = {
@@ -53,23 +56,22 @@ export type AnalyticsDashboardRpc = {
 const CANONICAL_LEAD_NAMES: Record<string, string> = {
   website: 'Website',
   directcall: 'Direct call',
+  googleleads: 'Google-Leads',
   rocareindia: 'RO care india',
   hometriangle: 'Home Triangle',
-  'hometriangle-srujan': 'Home Triangle-Srujan',
   hometrianglesrujan: 'Home Triangle-Srujan',
-  'hometriangle-3': 'Home Triangle-3',
   hometriangle3: 'Home Triangle-3',
   localramu: 'Local Ramu',
   admincreated: 'Admin Created',
-  unknown: 'Direct call',
   other: 'Other',
 };
 
 export function normalizeLeadSourceKey(source: string): string {
-  if (!source) return 'unknown';
+  if (!source) return '__unknown__';
   return source
     .trim()
     .toLowerCase()
+    .replace(/\./g, '')
     .replace(/\s+/g, '')
     .replace(/[^\w]/g, '')
     .trim();
@@ -79,6 +81,16 @@ export function getCanonicalLeadDisplayName(normalizedKey: string, originalSourc
   if (CANONICAL_LEAD_NAMES[normalizedKey]) return CANONICAL_LEAD_NAMES[normalizedKey];
   const words = originalSource.trim().split(/\s+/);
   return words.map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ');
+}
+
+export function resolveLeadSourceDisplayName(rawLabel: string, normalizedKey?: string): string {
+  const trimmed = (rawLabel || '').trim() || 'Direct call';
+  const fromAdmin = normalizeLeadType(trimmed);
+  if (fromAdmin) return fromAdmin;
+  const key = normalizedKey || normalizeLeadSourceKey(trimmed);
+  if (CANONICAL_LEAD_NAMES[key]) return CANONICAL_LEAD_NAMES[key];
+  if (key === '__unknown__') return 'Direct call';
+  return trimmed;
 }
 
 export function mapLeadSourceBreakdownFromDashboard(
@@ -92,8 +104,9 @@ export function mapLeadSourceBreakdownFromDashboard(
   serviceTypes: Array<{ serviceType: string; count: number; amount: number }>;
 }> {
   return rows.map((row) => {
-    const key = row.normalized_key || normalizeLeadSourceKey(row.display_name);
-    const leadType = getCanonicalLeadDisplayName(key, row.display_name || 'Direct call');
+    const rawLabel = (row.display_name || 'Direct call').trim() || 'Direct call';
+    const key = row.normalized_key || normalizeLeadSourceKey(rawLabel);
+    const leadType = resolveLeadSourceDisplayName(rawLabel, key);
     return {
       leadType,
       count: Number(row.count) || 0,
@@ -107,6 +120,81 @@ export function mapLeadSourceBreakdownFromDashboard(
       })),
     };
   });
+}
+
+/** Client-side lead source aggregation (fallback when dashboard RPC unavailable). */
+export function buildLeadSourceBreakdownFromJobs(
+  completedJobs: Array<Record<string, unknown>>
+): Array<{
+  leadType: string;
+  count: number;
+  amount: number;
+  leadCost: number;
+  spareCost: number;
+  serviceTypes: Array<{ serviceType: string; count: number; amount: number }>;
+}> {
+  const leadSourceMap: Record<
+    string,
+    {
+      count: number;
+      amount: number;
+      leadCost: number;
+      spareCost: number;
+      displayName: string;
+      serviceTypes: Record<string, { count: number; amount: number }>;
+    }
+  > = {};
+
+  for (const job of completedJobs) {
+    if (!job) continue;
+    const leadSource = getLeadSourceFromJob(job).trim() || 'Direct call';
+    const normalizedKey = normalizeLeadSourceKey(leadSource);
+    const displayName = resolveLeadSourceDisplayName(leadSource, normalizedKey);
+    const amount = resolveJobBillingAmount(
+      job.payment_amount as number | string | null,
+      job.actual_cost as number | string | null
+    );
+    const serviceType = String(job.service_sub_type || job.serviceSubType || 'Unknown');
+    const leadCost = Number(job.lead_cost || 0);
+    const spareCost = Number(job.parts_cost_total || 0);
+
+    if (!leadSourceMap[normalizedKey]) {
+      leadSourceMap[normalizedKey] = {
+        count: 0,
+        amount: 0,
+        leadCost: 0,
+        spareCost: 0,
+        displayName,
+        serviceTypes: {},
+      };
+    }
+    leadSourceMap[normalizedKey].count += 1;
+    leadSourceMap[normalizedKey].amount += amount;
+    leadSourceMap[normalizedKey].leadCost += leadCost;
+    leadSourceMap[normalizedKey].spareCost += spareCost;
+    if (!leadSourceMap[normalizedKey].serviceTypes[serviceType]) {
+      leadSourceMap[normalizedKey].serviceTypes[serviceType] = { count: 0, amount: 0 };
+    }
+    leadSourceMap[normalizedKey].serviceTypes[serviceType].count += 1;
+    leadSourceMap[normalizedKey].serviceTypes[serviceType].amount += amount;
+  }
+
+  return Object.values(leadSourceMap)
+    .map((stats) => ({
+      leadType: stats.displayName,
+      count: stats.count,
+      amount: stats.amount,
+      leadCost: stats.leadCost,
+      spareCost: stats.spareCost,
+      serviceTypes: Object.entries(stats.serviceTypes)
+        .map(([serviceType, st]) => ({
+          serviceType,
+          count: st.count,
+          amount: st.amount,
+        }))
+        .sort((a, b) => b.amount - a.amount),
+    }))
+    .sort((a, b) => b.amount - a.amount);
 }
 
 export function mapTechnicianStatsFromDashboard(
@@ -517,16 +605,46 @@ export function rollupDailyStatsToMonthlyTrends(
   return mapMonthlyTrendsFromRpc(rpcLike);
 }
 
-export type TrendTimelinePreset = '6m' | '12m' | '24m' | 'ytd' | 'custom';
+export type TrendTimelinePreset =
+  | 'this_month'
+  | 'last_month'
+  | 'custom_month'
+  | '6m'
+  | '12m'
+  | '24m'
+  | 'ytd'
+  | 'custom';
+
+function calendarMonthRange(year: number, monthIndex: number): { startDate: Date; endDate: Date } {
+  const startDate = new Date(year, monthIndex, 1);
+  startDate.setHours(0, 0, 0, 0);
+  const endDate = new Date(year, monthIndex + 1, 0);
+  endDate.setHours(23, 59, 59, 999);
+  return { startDate, endDate };
+}
+
+function capRangeEndAtToday(endDate: Date): Date {
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+  return endDate.getTime() > today.getTime() ? today : endDate;
+}
 
 export function resolveTrendTimelineRange(
   preset: TrendTimelinePreset,
   customStart?: string,
-  customEnd?: string
+  customEnd?: string,
+  customMonth?: string
 ): { startDate: Date; endDate: Date } {
-  const endDate = new Date();
-  endDate.setHours(23, 59, 59, 999);
-  const startDate = new Date();
+  const now = new Date();
+
+  if (preset === 'custom_month' && customMonth && /^\d{4}-\d{2}$/.test(customMonth)) {
+    const [year, month] = customMonth.split('-').map(Number);
+    const range = calendarMonthRange(year, month - 1);
+    if (year === now.getFullYear() && month - 1 === now.getMonth()) {
+      range.endDate = capRangeEndAtToday(range.endDate);
+    }
+    return range;
+  }
 
   if (preset === 'custom' && customStart && customEnd) {
     const start = new Date(customStart);
@@ -537,22 +655,57 @@ export function resolveTrendTimelineRange(
   }
 
   switch (preset) {
-    case 'ytd':
-      startDate.setMonth(0, 1);
-      break;
-    case '24m':
+    case 'this_month': {
+      const startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      startDate.setHours(0, 0, 0, 0);
+      const endDate = new Date();
+      endDate.setHours(23, 59, 59, 999);
+      return { startDate, endDate };
+    }
+    case 'last_month': {
+      const anchor = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      return calendarMonthRange(anchor.getFullYear(), anchor.getMonth());
+    }
+    case 'custom_month': {
+      const startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+      startDate.setHours(0, 0, 0, 0);
+      const endDate = new Date();
+      endDate.setHours(23, 59, 59, 999);
+      return { startDate, endDate };
+    }
+    case 'ytd': {
+      const startDate = new Date(now.getFullYear(), 0, 1);
+      startDate.setHours(0, 0, 0, 0);
+      const endDate = new Date();
+      endDate.setHours(23, 59, 59, 999);
+      return { startDate, endDate };
+    }
+    case '24m': {
+      const startDate = new Date(now);
       startDate.setMonth(startDate.getMonth() - 24);
-      break;
-    case '6m':
+      startDate.setHours(0, 0, 0, 0);
+      const endDate = new Date();
+      endDate.setHours(23, 59, 59, 999);
+      return { startDate, endDate };
+    }
+    case '6m': {
+      const startDate = new Date(now);
       startDate.setMonth(startDate.getMonth() - 6);
-      break;
+      startDate.setHours(0, 0, 0, 0);
+      const endDate = new Date();
+      endDate.setHours(23, 59, 59, 999);
+      return { startDate, endDate };
+    }
     case '12m':
-    default:
+    default: {
+      const startDate = new Date(now);
       startDate.setMonth(startDate.getMonth() - 12);
-      break;
+      startDate.setHours(0, 0, 0, 0);
+      const endDate = new Date();
+      endDate.setHours(23, 59, 59, 999);
+      return { startDate, endDate };
+    }
   }
-  startDate.setHours(0, 0, 0, 0);
-  return { startDate, endDate };
 }
 
 export function getShiftedTrendRange(
@@ -631,5 +784,151 @@ export function compareTrendMonths(
     jobsDeltaPct: pctChange(jobsA, jobsB),
     avgBillDelta: avgA - avgB,
     avgBillDeltaPct: pctChange(avgA, avgB),
+  };
+}
+
+export type AnalyticsTrendInsights = {
+  avgPeriodRevenue: number;
+  avgPeriodJobs: number;
+  avgBill: number;
+  last3Revenue: number;
+  prior3Revenue: number;
+  last3GrowthPct: number | null;
+  installationJobs: number;
+  serviceJobs: number;
+  installationRevenue: number;
+  serviceRevenue: number;
+  revenueSwingsPct: number | null;
+  growingStreakMonths: number;
+  topLeadSources: Array<{ label: string; revenue: number; jobs: number }>;
+  topServiceTypes: Array<{ label: string; revenue: number; jobs: number }>;
+};
+
+export type AnalyticsTrendDashboardRpc = {
+  primary: AnalyticsMonthlyTrendsRpc;
+  compare: AnalyticsMonthlyTrendsRpc | null;
+  month_catalog: Array<{ period_key: string; jobs: number; revenue: number; avg_bill: number }>;
+  insights: {
+    avg_period_revenue: number;
+    avg_period_jobs: number;
+    avg_bill: number;
+    last_3_revenue: number;
+    prior_3_revenue: number;
+    last_3_growth_pct: number | null;
+    installation_jobs: number;
+    service_jobs: number;
+    installation_revenue: number;
+    service_revenue: number;
+    revenue_swings_pct: number | null;
+    growing_streak_months: number;
+    top_lead_sources: Array<{ label: string; revenue: number; jobs: number }>;
+    top_service_types: Array<{ label: string; revenue: number; jobs: number }>;
+  };
+  filter_options: {
+    equipment_brands: string[];
+    lead_sources: Array<{ key: string; label: string }>;
+  };
+};
+
+export type AnalyticsTrendDashboard = {
+  primary: AnalyticsTrendSummary;
+  compare: AnalyticsTrendSummary | null;
+  monthCatalog: AnalyticsTrendPeriodRow[];
+  insights: AnalyticsTrendInsights;
+  filterOptions: {
+    equipmentBrands: string[];
+    leadSources: Array<{ key: string; label: string }>;
+  };
+};
+
+export function computeGrowingRevenueStreak(rows: AnalyticsTrendPeriodRow[]): number {
+  const months = rows.filter((r) => /^\d{4}-\d{2}$/.test(r.periodKey));
+  if (months.length < 2) return 0;
+  let streak = 0;
+  for (let i = months.length - 1; i > 0; i--) {
+    if (months[i].revenue > months[i - 1].revenue) streak++;
+    else break;
+  }
+  return streak;
+}
+
+export function parseAnalyticsTrendDashboardRpc(data: unknown): AnalyticsTrendDashboardRpc | null {
+  if (!data || typeof data !== 'object') return null;
+  return data as AnalyticsTrendDashboardRpc;
+}
+
+export function mapTrendDashboardFromRpc(rpc: AnalyticsTrendDashboardRpc): AnalyticsTrendDashboard {
+  const primary = mapMonthlyTrendsFromRpc(rpc.primary);
+  const compare = rpc.compare ? mapMonthlyTrendsFromRpc(rpc.compare) : null;
+  const monthCatalog = (rpc.month_catalog || []).map((row) => ({
+    periodKey: row.period_key,
+    label: formatTrendPeriodLabel(row.period_key, 'month'),
+    jobs: Number(row.jobs) || 0,
+    revenue: Number(row.revenue) || 0,
+    avgBill: Number(row.avg_bill) || 0,
+    revenueChangePct: null as number | null,
+    jobsChangePct: null as number | null,
+  }));
+
+  const ins = rpc.insights || ({} as AnalyticsTrendDashboardRpc['insights']);
+  const growingStreak =
+    computeGrowingRevenueStreak(
+      primary.rows.filter((r) => /^\d{4}-\d{2}$/.test(r.periodKey))
+    ) || Number(ins.growing_streak_months) || 0;
+
+  return {
+    primary,
+    compare,
+    monthCatalog,
+    insights: {
+      avgPeriodRevenue: Number(ins.avg_period_revenue) || 0,
+      avgPeriodJobs: Number(ins.avg_period_jobs) || 0,
+      avgBill: Number(ins.avg_bill) || 0,
+      last3Revenue: Number(ins.last_3_revenue) || 0,
+      prior3Revenue: Number(ins.prior_3_revenue) || 0,
+      last3GrowthPct:
+        ins.last_3_growth_pct == null ? null : Number(ins.last_3_growth_pct),
+      installationJobs: Number(ins.installation_jobs) || 0,
+      serviceJobs: Number(ins.service_jobs) || 0,
+      installationRevenue: Number(ins.installation_revenue) || 0,
+      serviceRevenue: Number(ins.service_revenue) || 0,
+      revenueSwingsPct:
+        ins.revenue_swings_pct == null ? null : Number(ins.revenue_swings_pct),
+      growingStreakMonths: growingStreak,
+      topLeadSources: (ins.top_lead_sources || []).map((r) => ({
+        label: r.label,
+        revenue: Number(r.revenue) || 0,
+        jobs: Number(r.jobs) || 0,
+      })),
+      topServiceTypes: (ins.top_service_types || []).map((r) => ({
+        label: r.label,
+        revenue: Number(r.revenue) || 0,
+        jobs: Number(r.jobs) || 0,
+      })),
+    },
+    filterOptions: {
+      equipmentBrands: rpc.filter_options?.equipment_brands || [],
+      leadSources: (rpc.filter_options?.lead_sources || []).map((r) => ({
+        key: r.key,
+        label: r.label,
+      })),
+    },
+  };
+}
+
+export type AnalyticsTrendRangeCompareRpc = {
+  range_a: AnalyticsMonthlyTrendsRpc;
+  range_b: AnalyticsMonthlyTrendsRpc;
+};
+
+export function mapTrendRangeCompareFromRpc(
+  data: unknown
+): { a: AnalyticsTrendSummary; b: AnalyticsTrendSummary } | null {
+  if (!data || typeof data !== 'object') return null;
+  const rpc = data as AnalyticsTrendRangeCompareRpc;
+  if (!rpc.range_a || !rpc.range_b) return null;
+  return {
+    a: mapMonthlyTrendsFromRpc(rpc.range_a),
+    b: mapMonthlyTrendsFromRpc(rpc.range_b),
   };
 }

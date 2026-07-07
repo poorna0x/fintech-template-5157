@@ -551,29 +551,59 @@ export const findLeadSource = (requirements: any[]): string | null => {
   return leadSource;
 };
 
-/** Lead source for analytics — prefers `jobs.lead_source`, falls back to requirements JSON. */
-export function getLeadSourceFromJob(job: Record<string, unknown> | null | undefined): string {
-  if (!job) return 'Direct call';
+function resolveWebsiteLeadLabel(
+  job: Record<string, unknown>,
+  leadSource: string
+): string {
+  if (leadSource !== 'Website') return leadSource;
+  const bookingSource = String(job.booking_source ?? '').trim().toLowerCase();
+  const bookingDomain = String(job.booking_domain ?? '').trim();
+  if (bookingSource === 'elevenro') return 'Website (ElevenRO)';
+  if (bookingSource === 'hydrogenro') return 'Website (HydrogenRO)';
+  if (bookingDomain) return `Website (${bookingDomain})`;
+  return leadSource;
+}
 
-  const fromColumn = typeof job.lead_source === 'string' ? job.lead_source.trim() : '';
-  if (fromColumn) return fromColumn;
-
+/** Resolve lead source from requirements JSON (incl. Other → custom label). */
+export function resolveLeadSourceFromRequirements(
+  job: Record<string, unknown> | null | undefined
+): string | null {
+  if (!job) return null;
   try {
     const requirements = parseJobRequirements(job.requirements);
     const ls = findLeadSource(requirements);
-    if (ls && String(ls).trim()) {
-      const trimmed = String(ls).trim();
-      if (trimmed.toLowerCase() === 'other') {
-        for (const req of requirements) {
-          const custom = req?.lead_source_custom;
-          if (custom && String(custom).trim()) return String(custom).trim();
-        }
+    if (!ls || !String(ls).trim()) return null;
+
+    const trimmed = String(ls).trim();
+    if (trimmed.toLowerCase() === 'other') {
+      for (const req of requirements) {
+        const custom = req?.lead_source_custom;
+        if (custom && String(custom).trim()) return String(custom).trim();
       }
-      return trimmed;
+      return 'Other';
     }
+
+    return resolveWebsiteLeadLabel(job, trimmed);
   } catch {
-    /* ignore */
+    return null;
   }
+}
+
+/** Lead source for analytics — prefers requirements when column is empty/default. */
+export function getLeadSourceFromJob(job: Record<string, unknown> | null | undefined): string {
+  if (!job) return 'Direct call';
+
+  const fromRequirements = resolveLeadSourceFromRequirements(job);
+  const fromColumn = typeof job.lead_source === 'string' ? job.lead_source.trim() : '';
+
+  if (fromRequirements) {
+    if (!fromColumn || fromColumn === 'Direct call') {
+      return fromRequirements;
+    }
+  }
+
+  if (fromColumn) return fromColumn;
+  if (fromRequirements) return fromRequirements;
 
   if (job.assigned_by || job.assignedBy) return 'Admin Created';
   return 'Direct call';
@@ -679,6 +709,7 @@ const LEAD_TYPE_NORMALIZE_MAP: Record<string, string> = {
   hometrianglesrujan: 'Home Triangle-Srujan',
   hometriangle3: 'Home Triangle-3',
   localramu: 'Local Ramu',
+  admincreated: 'Admin Created',
   other: 'Other',
 };
 

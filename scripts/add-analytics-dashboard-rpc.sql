@@ -4,7 +4,8 @@
 
 CREATE OR REPLACE FUNCTION public.analytics_resolve_lead_source(
   p_lead_source text,
-  p_assigned_by uuid
+  p_assigned_by uuid,
+  p_requirements jsonb DEFAULT NULL
 )
 RETURNS text
 LANGUAGE sql
@@ -12,6 +13,7 @@ IMMUTABLE
 AS $$
   SELECT coalesce(
     nullif(btrim(p_lead_source), ''),
+    nullif(btrim(public.extract_job_lead_source(p_requirements)), ''),
     CASE WHEN p_assigned_by IS NOT NULL THEN 'Admin Created' ELSE 'Direct call' END
   );
 $$;
@@ -104,6 +106,7 @@ BEGIN
       j.end_time,
       j.completed_at,
       j.lead_source,
+      j.requirements,
       j.assigned_by,
       j.assigned_technician_id,
       j.payment_amount,
@@ -140,8 +143,8 @@ BEGIN
   ),
   lead_by_service AS (
     SELECT
-      public.analytics_norm_key(public.analytics_resolve_lead_source(j.lead_source, j.assigned_by)) AS norm_key,
-      public.analytics_resolve_lead_source(j.lead_source, j.assigned_by) AS raw_label,
+      public.analytics_norm_key(public.analytics_resolve_lead_source(j.lead_source, j.assigned_by, j.requirements)) AS norm_key,
+      public.analytics_resolve_lead_source(j.lead_source, j.assigned_by, j.requirements) AS raw_label,
       coalesce(nullif(btrim(j.service_sub_type), ''), 'Unknown') AS service_sub_type,
       count(*)::integer AS cnt,
       coalesce(sum(public.analytics_job_billing(j.payment_amount, j.actual_cost)), 0)::numeric AS amt,
@@ -456,7 +459,8 @@ $$;
 REVOKE ALL ON FUNCTION public.get_analytics_dashboard(timestamptz, timestamptz) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_analytics_dashboard(timestamptz, timestamptz) TO authenticated;
 
-REVOKE ALL ON FUNCTION public.analytics_resolve_lead_source(text, uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.analytics_resolve_lead_source(text, uuid, jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.analytics_resolve_lead_source(text, uuid, jsonb) TO authenticated;
 REVOKE ALL ON FUNCTION public.analytics_job_billing(numeric, numeric) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.analytics_job_completed_at(timestamptz, timestamptz) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.analytics_job_in_period(text, timestamptz, timestamptz, timestamptz, timestamptz, timestamptz) FROM PUBLIC;

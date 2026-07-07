@@ -241,6 +241,7 @@ BEGIN
         j.end_time,
         j.completed_at,
         j.lead_source,
+        j.requirements,
         j.assigned_by,
         j.assigned_technician_id,
         j.payment_amount,
@@ -253,7 +254,7 @@ BEGIN
     resolved AS (
       SELECT
         r.*,
-        public.analytics_resolve_lead_source(r.lead_source, r.assigned_by) AS resolved_lead
+        public.analytics_resolve_lead_source(r.lead_source, r.assigned_by, r.requirements) AS resolved_lead
       FROM relevant_jobs r
     ),
     first_touch AS (
@@ -350,6 +351,7 @@ BEGIN
         j.end_time,
         j.completed_at,
         j.lead_source,
+        j.requirements,
         j.assigned_by,
         j.assigned_technician_id,
         j.payment_amount,
@@ -360,7 +362,7 @@ BEGIN
     resolved AS (
       SELECT
         r.*,
-        public.analytics_resolve_lead_source(r.lead_source, r.assigned_by) AS resolved_lead
+        public.analytics_resolve_lead_source(r.lead_source, r.assigned_by, r.requirements) AS resolved_lead
       FROM relevant_jobs r
     ),
     first_touch AS (

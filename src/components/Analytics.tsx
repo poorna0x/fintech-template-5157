@@ -34,6 +34,7 @@ import {
 import { normalizeForComparison, normalizeLeadType, getLeadSourceFromJob } from '@/lib/adminUtils';
 import {
   mapLeadSourceBreakdownFromDashboard,
+  buildLeadSourceBreakdownFromJobs,
   mapTechnicianStatsFromDashboard,
   parseAnalyticsDashboardRpc,
   parseReturnComplaintsRpc,
@@ -298,11 +299,36 @@ type AnalyticsExpenseTotals = {
   totalSalaryIncludingAll: number;
 };
 
+async function loadLeadSourceBreakdownForPeriod(
+  startDate: Date | null,
+  endDate: Date | null
+): Promise<ReturnType<typeof buildLeadSourceBreakdownFromJobs>> {
+  if (startDate && endDate) {
+    const { data, error } = await db.jobs.getCompletedJobsForLeadBreakdownInRange(startDate, endDate);
+    if (error || !data) return [];
+    const completed = data.filter((job) => isJobCompletedInRange(job, startDate, endDate));
+    return buildLeadSourceBreakdownFromJobs(completed);
+  }
+  const { data, error } = await db.jobs.getCompletedJobsForLeadBreakdown();
+  if (error || !data) return [];
+  return buildLeadSourceBreakdownFromJobs(data);
+}
+
 /** Map secured `get_analytics_dashboard` RPC → same shape as client-side job aggregation. */
 function buildAnalyticsPayloadFromDashboard(
   dash: AnalyticsDashboardRpc,
   technicians: Array<{ id: string; full_name?: string; account_status?: string }>,
-  expenses: AnalyticsExpenseTotals
+  expenses: AnalyticsExpenseTotals,
+  options?: {
+    leadSourceBreakdown?: Array<{
+      leadType: string;
+      count: number;
+      amount: number;
+      leadCost: number;
+      spareCost: number;
+      serviceTypes: Array<{ serviceType: string; count: number; amount: number }>;
+    }>;
+  }
 ) {
   const sc = dash.status_counts;
   const soft = dash.softener;
@@ -311,7 +337,8 @@ function buildAnalyticsPayloadFromDashboard(
   const completedCount = dash.completed_in_period_count;
   const periodJobCount = dash.period_job_count;
 
-  const leadSourceBreakdown = mapLeadSourceBreakdownFromDashboard(dash.lead_source_breakdown);
+  const leadSourceBreakdown =
+    options?.leadSourceBreakdown ?? mapLeadSourceBreakdownFromDashboard(dash.lead_source_breakdown);
   const totalLeadCostsSum = leadSourceBreakdown.reduce((sum, row) => sum + row.leadCost, 0);
   const otherBusinessChargesTotal =
     expenses.totalOtherBusinessExpenses + expenses.totalOtherBusinessLedgerExpenses;
@@ -861,10 +888,11 @@ const Analytics = () => {
             startStr,
             endStr
           );
+          const leadSourceBreakdown = await loadLeadSourceBreakdownForPeriod(startDate, endDate);
           const payload = buildAnalyticsPayloadFromDashboard(dash, technicians, {
             ...expensePartial,
             ...salaryTotals,
-          });
+          }, { leadSourceBreakdown });
           setAnalytics(payload);
           writeAnalyticsSessionCache(cacheKey, payload);
           return;
@@ -951,11 +979,12 @@ const Analytics = () => {
 
         const dash = parseAnalyticsDashboardRpc(dashboardRes.data);
         if (!dashboardRes.error && dash) {
+          const leadSourceBreakdown = await loadLeadSourceBreakdownForPeriod(null, null);
           const payload = buildAnalyticsPayloadFromDashboard(dash, technicians, {
             ...expensePartial,
             totalSalaryDeductions: 0,
             totalSalaryIncludingAll: 0,
-          });
+          }, { leadSourceBreakdown });
           setAnalytics(payload);
           writeAnalyticsSessionCache(cacheKey, payload);
           return;
@@ -1020,134 +1049,8 @@ const Analytics = () => {
       totalSparePartsCost = completedJobs.reduce((sum: number, j: any) => sum + (Number(j.parts_cost_total) || 0), 0);
 
       // Lead Source Breakdown with Service Type details and lead costs
-      const leadSourceMap: Record<string, { 
-        count: number; 
-        amount: number; 
-        leadCost: number;
-        spareCost: number; // Parts cost for jobs from this source
-        displayName: string;
-        serviceTypes: Record<string, { count: number; amount: number }>;
-      }> = {};
-      const leadSourceNameCounts: Record<string, Record<string, number>> = {}; // Track name variations
-      
-      // Canonical name mapping for known lead sources (normalized key -> canonical display name)
-      // Keys are normalized (lowercase, no spaces, no special chars) for matching
-      const canonicalNames: Record<string, string> = {
-        'website': 'Website',
-        'directcall': 'Direct call',
-        'rocareindia': 'RO care india',
-        'hometriangle': 'Home Triangle',
-        'hometriangle-srujan': 'Home Triangle-Srujan',
-        'hometrianglesrujan': 'Home Triangle-Srujan',
-        'hometriangle-3': 'Home Triangle-3',
-        'hometriangle3': 'Home Triangle-3',
-        'localramu': 'Local Ramu',
-        'admincreated': 'Admin Created',
-        'unknown': 'Direct call',
-        'other': 'Other'
-      };
-      
-      // Helper function to normalize lead source for comparison
-      const normalizeLeadSource = (source: string): string => {
-        if (!source) return 'unknown';
-        // Trim, lowercase, remove all spaces and special characters for comparison
-        return source.trim()
-          .toLowerCase()
-          .replace(/\s+/g, '') // Remove all spaces
-          .replace(/[^\w]/g, '') // Remove special characters
-          .trim();
-      };
-      
-      // Helper function to get canonical name
-      const getCanonicalName = (normalizedKey: string, originalSource: string): string => {
-        // Try exact match in canonical names
-        if (canonicalNames[normalizedKey]) {
-          return canonicalNames[normalizedKey];
-        }
-        // Return original with proper capitalization (first letter uppercase for each word)
-        const words = originalSource.trim().split(/\s+/);
-        return words.map(word => 
-          word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-        ).join(' ');
-      };
-      
-      completedJobs.forEach((job: any) => {
-        if (!job) return;
-        try {
-          let leadSource = getLeadSourceFromJob(job);
-          
-          // Normalize for comparison (trim, lowercase, normalize spaces)
-          const trimmedSource = leadSource.trim() || 'Direct call';
-          
-          // Skip empty or invalid lead sources - they'll be grouped as Direct call
-          if (!trimmedSource || trimmedSource.length === 0) {
-            leadSource = 'Direct call';
-          }
-          
-          const normalizedKey = normalizeLeadSource(trimmedSource);
-          
-          // Track name variations to find the most common one
-          if (!leadSourceNameCounts[normalizedKey]) {
-            leadSourceNameCounts[normalizedKey] = {};
-          }
-          if (!leadSourceNameCounts[normalizedKey][trimmedSource]) {
-            leadSourceNameCounts[normalizedKey][trimmedSource] = 0;
-          }
-          leadSourceNameCounts[normalizedKey][trimmedSource] += 1;
-          
-          const amount = Number(job.payment_amount || job.actual_cost || 0);
-          // Use service_sub_type instead of service_type (e.g., Installation, Service, Reinstallation, etc.)
-          const serviceType = job.service_sub_type || job.serviceSubType || 'Unknown';
-          
-          // Get lead_cost from job
-          const leadCost = Number((job as any).lead_cost || 0);
-          
-          const spareCost = Number(job.parts_cost_total) || 0;
-          if (!leadSourceMap[normalizedKey]) {
-            // Use canonical name if available, otherwise use trimmed source
-            const canonicalName = getCanonicalName(normalizedKey, trimmedSource);
-            leadSourceMap[normalizedKey] = { 
-              count: 0, 
-              amount: 0,
-              leadCost: 0,
-              spareCost: 0,
-              displayName: canonicalName,
-              serviceTypes: {}
-            };
-          }
-          leadSourceMap[normalizedKey].count += 1;
-          leadSourceMap[normalizedKey].amount += amount;
-          leadSourceMap[normalizedKey].leadCost += leadCost;
-          leadSourceMap[normalizedKey].spareCost += spareCost;
-          
-          // Track service sub-type within this lead source (Installation, Service, Reinstallation, etc.)
-          if (!leadSourceMap[normalizedKey].serviceTypes[serviceType]) {
-            leadSourceMap[normalizedKey].serviceTypes[serviceType] = { count: 0, amount: 0 };
-          }
-          leadSourceMap[normalizedKey].serviceTypes[serviceType].count += 1;
-          leadSourceMap[normalizedKey].serviceTypes[serviceType].amount += amount;
-        } catch (e) {
-          // Skip invalid job rows
-        }
-      });
-      
-      // Update display names to use canonical names or most common variation
-      Object.keys(leadSourceMap).forEach(normalizedKey => {
-        const nameVariations = leadSourceNameCounts[normalizedKey];
-        if (nameVariations && Object.keys(nameVariations).length > 0) {
-          // Find the most common variation
-          const mostCommonName = Object.entries(nameVariations)
-            .sort((a, b) => b[1] - a[1])[0]?.[0] || leadSourceMap[normalizedKey].displayName;
-          
-          // Use canonical name if available, otherwise use most common variation
-          const canonicalName = getCanonicalName(normalizedKey, mostCommonName);
-          leadSourceMap[normalizedKey].displayName = canonicalName;
-        } else {
-          // Use canonical name if available
-          const canonicalName = getCanonicalName(normalizedKey, leadSourceMap[normalizedKey].displayName);
-          leadSourceMap[normalizedKey].displayName = canonicalName;
-        }
-      });
+      const leadSourceBreakdown = await loadLeadSourceBreakdownForPeriod(startDate, endDate);
+      const totalLeadCostsSum = leadSourceBreakdown.reduce((sum, row) => sum + row.leadCost, 0);
       
       // Service Type Breakdown (using service_sub_type like Installation, Service, etc.)
       const serviceTypeMap: Record<string, { count: number; amount: number }> = {};
@@ -1419,7 +1322,6 @@ const Analytics = () => {
 
       const periodAverageBill = completedJobs.length > 0 ? periodBilling / completedJobs.length : 0;
 
-      const totalLeadCostsSum = Object.values(leadSourceMap).reduce((sum, stats) => sum + stats.leadCost, 0);
       const otherBusinessChargesTotal = totalOtherBusinessExpenses + totalOtherBusinessLedgerExpenses;
       const expenseTotalJobsOnly =
         totalTechnicianExpenses +
@@ -1471,18 +1373,7 @@ const Analytics = () => {
               .sort((a, b) => b.amount - a.amount),
           }))
           .sort((a, b) => b.completedJobs - a.completedJobs),
-        leadSourceBreakdown: Object.entries(leadSourceMap)
-          .map(([_, stats]) => ({ 
-            leadType: stats.displayName, 
-            count: stats.count, 
-            amount: stats.amount,
-            leadCost: stats.leadCost,
-            spareCost: stats.spareCost,
-            serviceTypes: Object.entries(stats.serviceTypes)
-              .map(([serviceType, serviceStats]) => ({ serviceType, ...serviceStats }))
-              .sort((a, b) => b.amount - a.amount)
-          }))
-          .sort((a, b) => b.amount - a.amount),
+        leadSourceBreakdown,
         totalLeadCosts: totalLeadCostsSum,
         // Expense totals
         totalTechnicianExpenses,
@@ -2549,9 +2440,9 @@ const Analytics = () => {
           </CardHeader>
           <CardContent>
             <div className="space-y-5">
-              {analytics.leadSourceBreakdown.map((leadSource, index) => (
+              {analytics.leadSourceBreakdown.map((leadSource) => (
                 <div
-                  key={index}
+                  key={leadSource.leadType}
                   className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900/50 p-4 sm:p-5 shadow-sm"
                 >
                   <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-3">{leadSource.leadType}</h3>
@@ -2592,8 +2483,8 @@ const Analytics = () => {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {leadSource.serviceTypes.map((serviceType, serviceIndex) => (
-                              <TableRow key={serviceIndex}>
+                            {leadSource.serviceTypes.map((serviceType) => (
+                              <TableRow key={`${leadSource.leadType}-${serviceType.serviceType}`}>
                                 <TableCell className="font-medium">{serviceType.serviceType}</TableCell>
                                 <TableCell className="text-right">{serviceType.count}</TableCell>
                                 <TableCell className="text-right font-semibold text-green-600">
