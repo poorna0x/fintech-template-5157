@@ -221,6 +221,7 @@ import { AdminDeleteConfirmDialogs } from './admin/AdminDeleteConfirmDialogs';
 import AmcInfoDialog from './admin/AmcInfoDialog';
 import MoveToOngoingDialog from './admin/MoveToOngoingDialog';
 import CompleteTechnicianSelectDialog from './admin/CompleteTechnicianSelectDialog';
+import { AdminDashboardHeader } from './admin/AdminDashboardHeader';
 import {
   broadcastTechnicianJobListRefresh,
   broadcastTechnicianJobListRefreshForJob,
@@ -10223,283 +10224,25 @@ const AdminDashboard = () => {
             onSearchCustomer={handleSearchFromBookingIntent}
           />
         )}
-        {/* Page Header */}
-        <div className="mb-6 sm:mb-8">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            
-            {/* Search Bar - visible on desktop only, replaces title */}
-            <div className="hidden sm:flex flex-1 max-w-2xl items-center gap-1.5 sm:gap-2 flex-wrap" data-admin-search>
-              <div className="relative flex-1 min-w-[12rem]">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
-                <Input
-                  placeholder="Search by customer ID, name, phone, alternate number, or email..."
-                  value={searchQuery}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setSearchQuery(value);
-                  }}
-                  onPaste={handleSearchPaste}
-                  onBlur={(e) => {
-                    const trimmed = e.target.value.trim();
-                    if (trimmed !== e.target.value) {
-                      setSearchQuery(trimmed);
-                    }
-                  }}
-                  onKeyPress={handleSearchKeyPress}
-                  className="pl-10 h-9 bg-white border-gray-400 focus:border-blue-500 focus:ring-blue-500 text-sm"
-                />
-            </div>
-              <Button
-                onClick={handleSearch}
-                disabled={isSearching || !searchQuery.trim()}
-                size="sm"
-                className="h-9 shrink-0 bg-blue-600 hover:bg-blue-700 text-white px-2.5 sm:px-3"
-              >
-                {isSearching ? (
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span className="hidden md:inline text-xs sm:text-sm">Searching...</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1">
-                    <Search className="w-4 h-4 shrink-0" />
-                    <span className="hidden sm:inline text-sm">Search</span>
-                  </div>
-                )}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-9 px-2.5 shrink-0"
-                title="Refresh data (no full page reload)"
-                onClick={() => void handleManualRefresh()}
-              >
-                <RefreshCw className="w-4 h-4" />
-              </Button>
-              {searchQuery && (
-                <Button
-                  onClick={handleClearSearch}
-                  variant="outline"
-                  size="sm"
-                  className="h-9 px-2.5 shrink-0"
-                  title="Clear"
-                >
-                  <X className="w-4 h-4" />
-                </Button>
-              )}
-            </div>
-            <div className="flex flex-col sm:flex-row gap-3 sm:flex-wrap">
-              {/* All 6 buttons in a 3x2 grid on mobile, flex on desktop */}
-              <div className="grid grid-cols-3 gap-2 sm:flex sm:gap-2 w-full sm:w-auto">
-                {/* Row 1: Settings, Recent, Payments */}
-              <Button 
-                variant="outline"
-                className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
-                title="Settings"
-                onClick={() => {
-                  hapticTap();
-                  navigate('/settings');
-                }}
-              >
-                <Settings className="w-4 h-4" />
-                <span className="hidden sm:inline">Settings</span>
-              </Button>
-              <DropdownMenu open={toolsMenuOpen} onOpenChange={setToolsMenuOpen}>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
-                    title="Tools"
-                  >
-                    <Wrench className="w-4 h-4" />
-                    <span className="hidden sm:inline">Tools</span>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-52 data-[state=closed]:duration-75 data-[state=open]:duration-100 max-sm:data-[state=closed]:animate-none">
-                  <DropdownMenuItem
-                    onClick={() => openAdminTool('recent-accounts')}
-                  >
-                    <Clock className="w-4 h-4 mr-2" />
-                    Recent Accounts
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => {
-                      hapticTap();
-                      setToolsMenuOpen(false);
-                      navigate(settingsPath('calling', 'open'));
-                    }}
-                  >
-                    <PhoneCall className="w-4 h-4 mr-2" />
-                    Calling Page
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => {
-                      hapticTap();
-                      handleShowAMCView();
-                    }}
-                  >
-                    <Star className="w-4 h-4 mr-2" />
-                    View AMC
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={isManager}
-                    onClick={() => {
-                      if (isManager) return;
-                      openAdminTool('direct-sale');
-                    }}
-                  >
-                    {isManager ? <Lock className="w-4 h-4 mr-2" /> : <ShoppingCart className="w-4 h-4 mr-2" />}
-                    Direct / Office Sales
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={isManager}
-                    onClick={() => {
-                      if (isManager) return;
-                      openAdminTool('amount-trackers');
-                    }}
-                  >
-                    {isManager ? <Lock className="w-4 h-4 mr-2" /> : <DollarSign className="w-4 h-4 mr-2" />}
-                    Amount Trackers
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => openAdminTool('sent-email-log')}>
-                    <Mail className="w-4 h-4 mr-2" />
-                    Sent email log
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => openAdminTool('measure-distance')}>
-                    <Navigation className="w-4 h-4 mr-2" />
-                    Measure distance
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={isManager}
-                    onClick={() => {
-                      if (isManager) return;
-                      setToolsMenuOpen(false);
-                      hapticTap();
-                      navigate(settingsPath('technician-management'));
-                    }}
-                  >
-                    {isManager ? <Lock className="w-4 h-4 mr-2" /> : <UserPlus className="w-4 h-4 mr-2" />}
-                    Edit Technician
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-                <Button
-                  variant={(currentView as string) === 'payments' ? 'default' : 'outline'}
-                  onClick={() => handleViewChange('payments')}
-                  disabled={isManager}
-                  className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
-                  title={isManager ? managerRestrictedTitle : 'Payments'}
-                >
-                  {isManager ? <Lock className="w-4 h-4" /> : <DollarSign className="w-4 h-4" />}
-                  <span className="hidden sm:inline">Payments</span>
-                </Button>
-                
-                {/* Row 2: Billing, Analytics, Inventory */}
-                <Button
-                  variant={(currentView as string) === 'billing' ? 'default' : 'outline'}
-                  onClick={() => handleViewChange('billing')}
-                  disabled={isManager}
-                  className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
-                  title={isManager ? managerRestrictedTitle : 'Billing'}
-                >
-                  {isManager ? <Lock className="w-4 h-4" /> : <Receipt className="w-4 h-4" />}
-                  <span className="hidden sm:inline">Billing</span>
-                </Button>
-                <Button
-                  variant={(currentView as string) === 'analytics' ? 'default' : 'outline'}
-                  onClick={() => handleViewChange('analytics')}
-                  disabled={isManager}
-                  className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
-                  title={isManager ? managerRestrictedTitle : 'Analytics'}
-                >
-                  {isManager ? <Lock className="w-4 h-4" /> : <BarChart3 className="w-4 h-4" />}
-                  <span className="hidden sm:inline">Analytics</span>
-                </Button>
-                <Button
-                  variant={(currentView as string) === 'inventory' ? 'default' : 'outline'}
-                  onClick={() => handleViewChange('inventory')}
-                  disabled={isManager}
-                  className="flex items-center justify-center gap-2 w-full sm:w-auto sm:px-3"
-                  title={isManager ? managerRestrictedTitle : 'Inventory'}
-                >
-                  {isManager ? <Lock className="w-4 h-4" /> : <ShoppingCart className="w-4 h-4" />}
-                  <span className="hidden sm:inline">Inventory</span>
-                </Button>
-              </div>
-              
-              {/* Add Customer button */}
-              <Button
-                variant="brand"
-                onClick={handleAddCustomer}
-                className="w-full sm:w-auto px-4 py-2 text-sm sm:text-base"
-              >
-                <Users className="w-4 h-4 mr-2" />
-                <span className="hidden sm:inline">Add Customer</span>
-                <span className="sm:hidden">Add</span>
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        {/* Search Bar - visible on mobile only (desktop version is in header) */}
-        <div className="mb-4 sm:mb-6 sm:hidden" data-admin-search>
-          <div className="flex flex-wrap gap-1.5 w-full max-w-2xl items-center">
-            <div className="relative flex-1 min-w-0 basis-[min(100%,12rem)]">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
-              <Input
-                placeholder="Search by customer ID, name, phone, alternate number, or email..."
-                value={searchQuery}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setSearchQuery(value);
-                }}
-                onPaste={handleSearchPaste}
-                onBlur={(e) => {
-                  const trimmed = e.target.value.trim();
-                  if (trimmed !== e.target.value) {
-                    setSearchQuery(trimmed);
-                  }
-                }}
-                onKeyPress={handleSearchKeyPress}
-              className="pl-10 h-9 bg-white border-gray-300 focus:border-blue-500 focus:ring-blue-500 text-sm"
-            />
-          </div>
-            <Button
-              onClick={handleSearch}
-              disabled={isSearching || !searchQuery.trim()}
-              size="sm"
-              className="h-9 shrink-0 bg-blue-600 hover:bg-blue-700 text-white px-2.5"
-            >
-              {isSearching ? (
-                <div className="flex items-center gap-1.5">
-                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                </div>
-              ) : (
-                <Search className="w-4 h-4" />
-              )}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-9 px-2.5 shrink-0"
-              title="Refresh data (no full page reload)"
-              onClick={() => void handleManualRefresh()}
-            >
-              <RefreshCw className="w-4 h-4" />
-            </Button>
-            {searchQuery && (
-              <Button
-                onClick={handleClearSearch}
-                variant="outline"
-                size="sm"
-                className="h-9 px-2.5 shrink-0"
-                title="Clear"
-              >
-                <X className="w-4 h-4" />
-              </Button>
-            )}
-          </div>
-        </div>
+        <AdminDashboardHeader
+          searchQuery={searchQuery}
+          onSearchQueryChange={setSearchQuery}
+          onSearchPaste={handleSearchPaste}
+          onSearchKeyPress={handleSearchKeyPress}
+          onSearch={handleSearch}
+          onClearSearch={handleClearSearch}
+          isSearching={isSearching}
+          onManualRefresh={() => void handleManualRefresh()}
+          toolsMenuOpen={toolsMenuOpen}
+          onToolsMenuOpenChange={setToolsMenuOpen}
+          onOpenAdminTool={openAdminTool}
+          onShowAmcView={handleShowAMCView}
+          isManager={isManager}
+          managerRestrictedTitle={managerRestrictedTitle}
+          currentView={currentView}
+          onViewChange={handleViewChange}
+          onAddCustomer={handleAddCustomer}
+        />
 
         {/* Stats Cards - Clickable Filter Buttons */}
         <StatsCards
