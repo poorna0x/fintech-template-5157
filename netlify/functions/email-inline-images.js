@@ -1,13 +1,14 @@
-// Embed template images (logo, WhatsApp, phone icons) as CID attachments at send time.
+// Embed template images as base64 data URLs at send time (inside HTML, not MIME attachments).
 // CRM preview keeps remote https:// URLs; only outgoing SMTP mail is rewritten.
+// Unlike CID attachments, data URLs do not appear as separate files when replying.
 
 const LOGO_ORIGIN = 'https://hydrogenro.com';
 const BRAND_ORIGINS = ['https://hydrogenro.com', 'https://elevenro.com'];
 
-/** @type {{ cid: string; fetchUrl: string; patterns: RegExp[] }[]} */
+/** @type {{ id: string; fetchUrl: string; patterns: RegExp[] }[]} */
 const INLINE_IMAGE_SPECS = [
   {
-    cid: 'logo-light',
+    id: 'logo-light',
     fetchUrl: `${LOGO_ORIGIN}/logo-dark.webp`,
     patterns: [
       /https:\/\/hydrogenro\.com\/logo-dark\.webp/gi,
@@ -15,7 +16,7 @@ const INLINE_IMAGE_SPECS = [
     ],
   },
   {
-    cid: 'logo-dark',
+    id: 'logo-dark',
     fetchUrl: `${LOGO_ORIGIN}/logo-white.webp`,
     patterns: [
       /https:\/\/hydrogenro\.com\/logo-white\.webp/gi,
@@ -23,14 +24,14 @@ const INLINE_IMAGE_SPECS = [
     ],
   },
   {
-    cid: 'whatsapp',
+    id: 'whatsapp',
     fetchUrl: `${LOGO_ORIGIN}/whatsapp.png`,
     patterns: BRAND_ORIGINS.map(
       (origin) => new RegExp(`${origin.replace(/\./g, '\\.')}/whatsapp\\.png`, 'gi')
     ).concat(/https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?\/whatsapp(?:%20\(1\))?\.png/gi),
   },
   {
-    cid: 'phone',
+    id: 'phone',
     fetchUrl: `${LOGO_ORIGIN}/telephone-call.png`,
     patterns: BRAND_ORIGINS.map(
       (origin) => new RegExp(`${origin.replace(/\./g, '\\.')}/telephone-call\\.png`, 'gi')
@@ -46,10 +47,8 @@ function contentTypeFromUrl(url) {
   return 'application/octet-stream';
 }
 
-function filenameFromUrl(url, cid) {
-  const match = url.match(/\.([a-z0-9]+)(?:\?.*)?$/i);
-  const ext = match ? match[1].toLowerCase() : 'bin';
-  return `${cid}.${ext}`;
+function toDataUrl(buffer, contentType) {
+  return `data:${contentType};base64,${buffer.toString('base64')}`;
 }
 
 async function fetchImageBuffer(url) {
@@ -73,12 +72,11 @@ async function fetchImageBuffer(url) {
   }
 }
 
-function rewriteHtmlForCid(html, specs) {
+function rewriteHtmlForDataUrls(html, embedded) {
   let next = html;
-  for (const spec of specs) {
-    const replacement = `cid:${spec.cid}`;
-    for (const pattern of spec.patterns) {
-      next = next.replace(pattern, replacement);
+  for (const { patterns, dataUrl } of embedded) {
+    for (const pattern of patterns) {
+      next = next.replace(pattern, dataUrl);
     }
   }
   return next;
@@ -86,15 +84,14 @@ function rewriteHtmlForCid(html, specs) {
 
 /**
  * @param {string} html
- * @returns {Promise<{ html: string; attachments: object[] }>}
+ * @returns {Promise<{ html: string }>}
  */
 async function embedInlineEmailImages(html) {
   if (!html || typeof html !== 'string') {
-    return { html: html || '', attachments: [] };
+    return { html: html || '' };
   }
 
-  const embeddedSpecs = [];
-  const attachments = [];
+  const embedded = [];
 
   await Promise.all(
     INLINE_IMAGE_SPECS.map(async (spec) => {
@@ -106,16 +103,14 @@ async function embedInlineEmailImages(html) {
 
       try {
         const content = await fetchImageBuffer(spec.fetchUrl);
-        attachments.push({
-          filename: filenameFromUrl(spec.fetchUrl, spec.cid),
-          content,
-          cid: spec.cid,
-          contentType: contentTypeFromUrl(spec.fetchUrl),
+        const contentType = contentTypeFromUrl(spec.fetchUrl);
+        embedded.push({
+          patterns: spec.patterns,
+          dataUrl: toDataUrl(content, contentType),
         });
-        embeddedSpecs.push(spec);
       } catch (error) {
         console.warn('[email-inline-images] fetch failed, keeping remote URL', {
-          cid: spec.cid,
+          id: spec.id,
           url: spec.fetchUrl,
           error: error && error.message,
         });
@@ -123,13 +118,12 @@ async function embedInlineEmailImages(html) {
     })
   );
 
-  if (!embeddedSpecs.length) {
-    return { html, attachments: [] };
+  if (!embedded.length) {
+    return { html };
   }
 
   return {
-    html: rewriteHtmlForCid(html, embeddedSpecs),
-    attachments,
+    html: rewriteHtmlForDataUrls(html, embedded),
   };
 }
 
