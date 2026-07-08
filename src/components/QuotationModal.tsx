@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { Suspense, lazy, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { X } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Bill, Customer } from '@/types';
 import { generateQuotationPDF } from '@/lib/quotation-pdf-generator';
-import QuotationGenerator from './QuotationGenerator';
+
+const QuotationGenerator = lazy(() => import('./QuotationGenerator'));
 
 interface QuotationModalProps {
   isOpen: boolean;
@@ -18,11 +19,11 @@ export default function QuotationModal({ isOpen, onClose, customer }: QuotationM
 
   const handlePrintQuotation = (quotation: Bill, action: 'print' | 'pdf' = 'pdf') => {
     setIsGenerating(true);
-    
+
     // Transform customer object from Bill format (fullName) to PDF format (name)
     const customer = quotation.customer;
-    const customerAddress = typeof customer.address === 'object' ? customer.address : {};
-    
+    const customerAddress = typeof customer.address === 'object' && customer.address ? customer.address : {};
+
     const pdfData = {
       billNumber: quotation.billNumber,
       billDate: quotation.billDate,
@@ -30,13 +31,13 @@ export default function QuotationModal({ isOpen, onClose, customer }: QuotationM
       company: quotation.company,
       customer: {
         name: customer.fullName || customer.name || 'Customer Name',
-        address: customerAddress.street || customer.address || '',
-        city: customerAddress.city || customer.city || '',
-        state: customerAddress.state || customer.state || '',
-        pincode: customerAddress.pincode || customer.pincode || '',
+        address: (customerAddress as any).street || (typeof customer.address === 'string' ? customer.address : '') || '',
+        city: (customerAddress as any).city || customer.city || '',
+        state: (customerAddress as any).state || customer.state || '',
+        pincode: (customerAddress as any).pincode || customer.pincode || '',
         phone: customer.phone || '',
         email: customer.email || '',
-        gstNumber: customer.gstNumber || ''
+        gstNumber: customer.gstNumber || '',
       },
       items: quotation.items.map((item) => ({
         ...item,
@@ -51,7 +52,7 @@ export default function QuotationModal({ isOpen, onClose, customer }: QuotationM
       paymentStatus: quotation.paymentStatus,
       paymentMethod: quotation.paymentMethod,
       notes: quotation.notes,
-      terms: quotation.terms
+      terms: quotation.terms,
     } as any;
 
     // Pass GST option and GST data if available
@@ -74,7 +75,10 @@ export default function QuotationModal({ isOpen, onClose, customer }: QuotationM
     if ((quotation as any).sealVariant) {
       (pdfData as any).sealVariant = (quotation as any).sealVariant;
     }
-    
+    if ((quotation as any).notesHeading) {
+      (pdfData as any).notesHeading = (quotation as any).notesHeading;
+    }
+
     try {
       generateQuotationPDF(pdfData, action);
     } catch (error) {
@@ -117,11 +121,20 @@ export default function QuotationModal({ isOpen, onClose, customer }: QuotationM
 
         <div className="p-4 sm:p-6 pt-3 sm:pt-4">
           {customer ? (
-            <QuotationGenerator
-              customer={customer}
-              onPrint={handlePrintQuotation}
-              embedded
-            />
+            <Suspense
+              fallback={
+                <div className="flex items-center justify-center gap-3 h-64 text-sm text-slate-600">
+                  <Loader2 className="h-5 w-5 animate-spin text-emerald-600" />
+                  Loading quotation form…
+                </div>
+              }
+            >
+              <QuotationGenerator
+                customer={customer}
+                onPrint={handlePrintQuotation}
+                embedded
+              />
+            </Suspense>
           ) : (
             <div className="flex items-center justify-center h-64">
               <div className="text-center text-gray-500">

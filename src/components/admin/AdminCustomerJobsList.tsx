@@ -140,10 +140,6 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
       priorServiceFromJobs={priorServiceFromJobs}
       isLoadingPhotos={isLoadingPhotos}
       selectedCustomerForPhotos={selectedCustomerForPhotos}
-      moreOptionsOpen={a.moreOptionsCustomerId === customer.id}
-      onMoreOptionsOpenChange={(open) => {
-        a.setMoreOptionsCustomerId(open ? customer.id : null);
-      }}
       onEditCustomer={a.handleEditCustomer}
       onNewJob={a.handleNewJob}
       onViewPhotos={a.handleViewPhotos}

@@ -75,7 +75,7 @@ import {
   Lock
 } from 'lucide-react';
 import { db, supabase, fetchCustomerIdsWithCompletedJobsMap, CUSTOMER_ROW_COLUMNS, CUSTOMER_ADMIN_LIST_PATCH_COLUMNS } from '@/lib/supabase';
-import { scheduleDocumentGeneratorPreload } from '@/lib/document-generator-preload';
+import { preloadDocumentGeneratorModals, scheduleDocumentGeneratorPreload } from '@/lib/document-generator-preload';
 import { registerAdminPWA } from '@/lib/pwa';
 import { useAdminRole } from '@/lib/useAdminRole';
 import { saveAdminCompletedJobEdit } from '@/lib/adminSaveCompletedJobEdit';
@@ -368,8 +368,6 @@ const AdminDashboard = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<Customer[] | null>(null); // API search results (find any customer in DB)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  /** Local state only — URL sync caused iOS PWA to reopen this menu after app restart. */
-  const [moreOptionsCustomerId, setMoreOptionsCustomerId] = useState<string | null>(null);
   const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -557,7 +555,9 @@ const AdminDashboard = () => {
     [onAdminModalOpenChange]
   );
 
-  useClearAdminModalOnIOSBackground(() => setMoreOptionsCustomerId(null));
+  useClearAdminModalOnIOSBackground(() => {
+    /* More Options is now local to each customer card — nothing to clear here. */
+  });
 
   // Legacy ?modal=more-options — strip from URL without reopening (iOS PWA restore).
   useEffect(() => {
@@ -1829,7 +1829,9 @@ const AdminDashboard = () => {
     setCustomerPhotoGalleryOpen(modal === 'customer-photos' && !!resolveCustomer(parsed.customerId));
     setCustomerReportDialogOpen(modal === 'report' && !!resolveCustomer(parsed.customerId));
     setHistoryDialogOpen(modal === 'history' && !!resolveCustomer(parsed.customerId));
-    setBillModalOpen(modal === 'bill' && !!resolveCustomer(parsed.customerId));
+    // Open bill as soon as URL says so — click handler already set selectedCustomerForBill.
+    // Don't wait on resolveCustomer (search/list race can leave a blank first paint).
+    setBillModalOpen(modal === 'bill');
     setEditDialogOpen(modal === 'edit-customer' && !!resolveCustomer(parsed.customerId));
     setAddDialogOpen(modal === 'add-customer');
     setNewJobDialogOpen(modal === 'new-job' && !!resolveCustomer(parsed.customerId));
@@ -4471,6 +4473,7 @@ const AdminDashboard = () => {
   };
 
   const handleGenerateBill = useCallback((customer: Customer) => {
+    preloadDocumentGeneratorModals();
     setSelectedCustomerForBill(customer);
     openAdminModal('bill', { customerId: customer.id });
   }, [openAdminModal]);
@@ -4482,6 +4485,7 @@ const AdminDashboard = () => {
   };
 
   const handleGenerateQuotation = (customer: Customer) => {
+    preloadDocumentGeneratorModals();
     setSelectedCustomerForQuotation(customer);
     setQuotationModalOpen(true);
     void loadCustomerForDocuments(customer).then(setSelectedCustomerForQuotation);
@@ -4493,6 +4497,7 @@ const AdminDashboard = () => {
   };
 
   const handleGenerateAMC = (customer: Customer) => {
+    preloadDocumentGeneratorModals();
     setSelectedCustomerForAMC(customer);
     setAmcModalOpen(true);
     void loadCustomerForDocuments(customer).then(setSelectedCustomerForAMC);
@@ -4592,6 +4597,7 @@ const AdminDashboard = () => {
   }, [statusFilter, currentPage, loadJobCounts, loadFilteredJobs, loadDashboardSecondary]);
 
   const handleGenerateTaxInvoice = (customer: Customer) => {
+    preloadDocumentGeneratorModals();
     setSelectedCustomerForTaxInvoice(customer);
     setTaxInvoiceModalOpen(true);
     void loadCustomerForDocuments(customer).then(setSelectedCustomerForTaxInvoice);
@@ -5336,8 +5342,6 @@ const AdminDashboard = () => {
 
   const adminListActionsRef = useRef<AdminDashboardListActions>({} as AdminDashboardListActions);
   adminListActionsRef.current = {
-    moreOptionsCustomerId,
-    setMoreOptionsCustomerId,
     handleEditCustomer,
     handleNewJob,
     handleViewPhotos,
@@ -6390,7 +6394,16 @@ const AdminDashboard = () => {
 
       {/* Bill Generation Modal — code-split, only mounted while open */}
       {billModalOpen && (
-        <Suspense fallback={null}>
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+              <div className="flex items-center gap-3 rounded-lg bg-white px-5 py-4 shadow-lg text-sm text-slate-700">
+                <RefreshCw className="w-5 h-5 animate-spin text-emerald-600" />
+                Opening bill…
+              </div>
+            </div>
+          }
+        >
           <BillModal
             isOpen={billModalOpen}
             onClose={handleBillModalClose}
@@ -6401,7 +6414,16 @@ const AdminDashboard = () => {
 
       {/* Quotation Generation Modal */}
       {quotationModalOpen && (
-        <Suspense fallback={null}>
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+              <div className="flex items-center gap-3 rounded-lg bg-white px-5 py-4 shadow-lg text-sm text-slate-700">
+                <RefreshCw className="w-5 h-5 animate-spin text-emerald-600" />
+                Opening quotation…
+              </div>
+            </div>
+          }
+        >
           <QuotationModal
             isOpen={quotationModalOpen}
             onClose={handleQuotationModalClose}

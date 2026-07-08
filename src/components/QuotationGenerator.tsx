@@ -99,11 +99,20 @@ const defaultBankDetails = {
 };
 
 export default function QuotationGenerator({ customer, onPrint, embedded = false }: QuotationGeneratorProps) {
-  // Safe customer data extraction
+  // Safe customer data extraction (search/slim rows may have string address or missing fields)
   const customerName = customer?.fullName || (customer as any)?.full_name || 'Customer Name';
   const customerPhone = typeof customer?.phone === 'string' ? customer.phone : (customer as any)?.phone || '';
   const customerEmail = customer?.email || '';
-  const customerAddress = customer?.address || {};
+  const customerAddress =
+    customer?.address && typeof customer.address === 'object'
+      ? customer.address
+      : {
+          street: typeof customer?.address === 'string' ? customer.address : '',
+          area: '',
+          city: '',
+          state: '',
+          pincode: '',
+        };
   const customerGst = customer?.gstNumber || '';
   const customerServiceType = customer?.serviceType || 'RO';
 

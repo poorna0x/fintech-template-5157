@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Edit, Plus, Camera, FileText, MoreVertical, Receipt, Star, Bell, ShieldCheck } from 'lucide-react';
 import { Customer } from '@/types';
 import { customerNameClassName } from '@/lib/customerDisplay';
+import { preloadDocumentGeneratorModals } from '@/lib/document-generator-preload';
 
 interface CustomerCardHeaderProps {
   customer: Customer;
@@ -12,8 +13,6 @@ interface CustomerCardHeaderProps {
   customerPriorServiceStatus: Record<string, boolean>;
   isLoadingPhotos: boolean;
   selectedCustomerForPhotos: Customer | null;
-  moreOptionsOpen: boolean;
-  onMoreOptionsOpenChange: (open: boolean) => void;
   onEditCustomer: (customer: Customer) => void;
   onNewJob: (customer: Customer) => void;
   onViewPhotos: (customer: Customer) => void;
@@ -37,8 +36,6 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
   customerPriorServiceStatus,
   isLoadingPhotos,
   selectedCustomerForPhotos,
-  moreOptionsOpen,
-  onMoreOptionsOpenChange,
   onEditCustomer,
   onNewJob,
   onViewPhotos,
@@ -53,6 +50,12 @@ export const CustomerCardHeader: React.FC<CustomerCardHeaderProps> = ({
   onManageWarranty,
   priorServiceFromJobs = false,
 }) => {
+  // Local dialog state — avoid AdminDashboard re-render on every More click (was ~1s lag).
+  const [moreOptionsOpen, setMoreOptionsOpen] = useState(false);
+  const onMoreOptionsOpenChange = (open: boolean) => {
+    if (open) preloadDocumentGeneratorModals();
+    setMoreOptionsOpen(open);
+  };
   const hasGoogleReview =
     customer.has_google_review === true ||
     (customer as any).has_google_review === 'true' ||

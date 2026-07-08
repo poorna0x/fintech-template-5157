@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { Suspense, lazy, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { X } from 'lucide-react';
-import BillGenerator from '@/components/BillGenerator';
+import { Loader2, X } from 'lucide-react';
 import { Customer, Bill } from '@/types';
 import { generateBillPDF } from '@/lib/pdf-generator';
 import { toast } from 'sonner';
+
+const BillGenerator = lazy(() => import('@/components/BillGenerator'));
 
 interface BillModalProps {
   isOpen: boolean;
@@ -18,7 +19,7 @@ export default function BillModal({ isOpen, onClose, customer }: BillModalProps)
 
   const handlePrintBill = (bill: Bill, action: 'print' | 'pdf' = 'pdf') => {
     setIsGenerating(true);
-    
+
     const pdfData = {
       billNumber: bill.billNumber,
       billDate: bill.billDate,
@@ -34,9 +35,9 @@ export default function BillModal({ isOpen, onClose, customer }: BillModalProps)
       notes: bill.notes,
       terms: bill.terms,
       hideGstInHeader: (bill as any).hideGstInHeader || false,
-      documentBrand: (bill as any).documentBrand
+      documentBrand: (bill as any).documentBrand,
     };
-    
+
     try {
       generateBillPDF(pdfData, action);
     } catch (error) {
@@ -79,11 +80,20 @@ export default function BillModal({ isOpen, onClose, customer }: BillModalProps)
 
         <div className="p-4 sm:p-6 pt-3 sm:pt-4">
           {customer ? (
-            <BillGenerator
-              customer={customer}
-              onPrint={handlePrintBill}
-              embedded
-            />
+            <Suspense
+              fallback={
+                <div className="flex items-center justify-center gap-3 h-64 text-sm text-slate-600">
+                  <Loader2 className="h-5 w-5 animate-spin text-emerald-600" />
+                  Loading bill form…
+                </div>
+              }
+            >
+              <BillGenerator
+                customer={customer}
+                onPrint={handlePrintBill}
+                embedded
+              />
+            </Suspense>
           ) : (
             <div className="flex items-center justify-center h-64">
               <div className="text-center text-gray-500">

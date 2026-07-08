@@ -53,8 +53,6 @@ export interface AdminDashboardListData {
 }
 
 export interface AdminDashboardListActions {
-  moreOptionsCustomerId: string | null;
-  setMoreOptionsCustomerId: (id: string | null) => void;
   handleEditCustomer: (customer: Customer) => void;
   handleNewJob: (customer: Customer) => void;
   handleViewPhotos: (customer: Customer) => void;

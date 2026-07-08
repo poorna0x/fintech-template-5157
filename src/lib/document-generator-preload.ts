@@ -1,9 +1,11 @@
 let preloaded = false;
 
-/** Warm AMC / tax-invoice modal chunks during idle time so first open feels instant. */
+/** Warm document modal chunks during idle time so first open feels instant. */
 export function preloadDocumentGeneratorModals() {
   if (preloaded) return;
   preloaded = true;
+  void import('@/components/BillModal');
+  void import('@/components/QuotationModal');
   void import('@/components/AMCModal');
   void import('@/components/TaxInvoiceModal');
 }
@@ -14,8 +16,8 @@ export function scheduleDocumentGeneratorPreload() {
   const run = () => preloadDocumentGeneratorModals();
 
   if ('requestIdleCallback' in window) {
-    window.requestIdleCallback(run, { timeout: 4000 });
+    window.requestIdleCallback(run, { timeout: 2500 });
   } else {
-    window.setTimeout(run, 2500);
+    window.setTimeout(run, 1200);
   }
 }
