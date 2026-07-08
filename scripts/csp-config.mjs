@@ -14,6 +14,7 @@ export const PRODUCTION_CSP = [
     'https://www.gstatic.com',
     'https://www.recaptcha.net',
     'https://apis.google.com',
+    'https://www.googletagmanager.com',
   ].join(' '),
   [
     "style-src 'self' 'unsafe-inline'",
@@ -47,6 +48,9 @@ export const PRODUCTION_CSP = [
     // Firebase Auth identity endpoints (token mint/verify, secure token refresh)
     'https://identitytoolkit.googleapis.com',
     'https://securetoken.googleapis.com',
+    'https://www.google-analytics.com',
+    'https://*.google-analytics.com',
+    'https://www.googletagmanager.com',
   ].join(' '),
   "frame-src 'self' https://www.google.com https://www.recaptcha.net https://maps.google.com https://challenges.cloudflare.com https://*.firebaseapp.com",
   "frame-ancestors 'none'",
@@ -72,6 +76,7 @@ export const DEVELOPMENT_CSP = [
     'https://www.gstatic.com',
     'https://www.recaptcha.net',
     'https://apis.google.com',
+    'https://www.googletagmanager.com',
   ].join(' '),
   [
     "style-src 'self' 'unsafe-inline'",
@@ -104,6 +109,9 @@ export const DEVELOPMENT_CSP = [
     // Firebase Auth identity endpoints
     'https://identitytoolkit.googleapis.com',
     'https://securetoken.googleapis.com',
+    'https://www.google-analytics.com',
+    'https://*.google-analytics.com',
+    'https://www.googletagmanager.com',
   ].join(' '),
   "frame-src 'self' https://www.google.com https://www.recaptcha.net https://maps.google.com https://challenges.cloudflare.com https://*.firebaseapp.com",
   "base-uri 'self'",
