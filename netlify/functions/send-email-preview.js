@@ -4,6 +4,7 @@
 const nodemailer = require('nodemailer');
 const { validatePreviewEmailBody, getFixedFromAddress, getBrandMailMeta } = require('./email-guard');
 const { prepareTrackedEmail } = require('./email-tracking');
+const { embedInlineEmailImages } = require('./email-inline-images');
 const { authorizeAdminRequest, authorizeStaffAmcEmailRequest } = require('./admin-auth-guard');
 const {
   checkRateLimit,
@@ -140,6 +141,9 @@ exports.handler = async (event) => {
       sentByUserId: auth.userId || null,
     });
 
+    const { html: htmlWithInlineImages, attachments: inlineImageAttachments } =
+      await embedInlineEmailImages(tracked.html);
+
     const info = await transporter.sendMail({
       from: {
         name: brandMeta.fromName,
@@ -147,10 +151,10 @@ exports.handler = async (event) => {
       },
       to: toField,
       subject: validated.subject,
-      html: tracked.html,
+      html: htmlWithInlineImages,
       text: validated.text,
       replyTo: brandMeta.replyTo,
-      attachments: nodemailerAttachments,
+      attachments: [...inlineImageAttachments, ...nodemailerAttachments],
       headers: {
         'X-Mailer': `${brandMeta.mailer} Admin Email`,
         'X-Priority': '3',

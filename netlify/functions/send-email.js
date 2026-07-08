@@ -12,6 +12,7 @@ const {
 const { enforceSendEmailRateLimits } = require('./rate-limiter');
 const { validateBookingEmailBody, getFixedFromAddress, getBrandMailMeta } = require('./email-guard');
 const { prepareTrackedEmail } = require('./email-tracking');
+const { embedInlineEmailImages } = require('./email-inline-images');
 
 exports.handler = async (event) => {
   const pre = preflightOrReject(event);
@@ -95,6 +96,9 @@ exports.handler = async (event) => {
       sentByUserId: null,
     });
 
+    const { html: htmlWithInlineImages, attachments: inlineImageAttachments } =
+      await embedInlineEmailImages(tracked.html);
+
     const mailOptions = {
       from: {
         name: brandMeta.fromName,
@@ -102,9 +106,10 @@ exports.handler = async (event) => {
       },
       to: validated.to,
       subject: validated.subject,
-      html: tracked.html,
+      html: htmlWithInlineImages,
       text: validated.text,
       replyTo: brandMeta.replyTo,
+      ...(inlineImageAttachments.length ? { attachments: inlineImageAttachments } : {}),
       headers: {
         'X-Mailer': brandMeta.mailer,
         'X-Priority': '3',
