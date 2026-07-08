@@ -26,5 +26,9 @@
 # Netlify functions (must be before SPA catch-all)
 /api/* /.netlify/functions/:splat 200!
 
+# Canonical booking URL
+/booking /book 301
+/booking/ /book 301
+
 # SPA fallback — must be last
 /* /index.html 200
