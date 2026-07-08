@@ -1724,8 +1724,8 @@ export default function TaxInvoiceGenerator({
                 </Button>
               </div>
 
-              <div className="space-y-1">
-                <Label htmlFor="notesHeading-taxinvoice" className="text-sm font-medium text-blue-800">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:justify-between">
+                <Label htmlFor="notesHeading-taxinvoice" className="text-sm font-medium text-blue-800 sm:w-60">
                   Additional info heading
                 </Label>
                 <Input
@@ -1733,6 +1733,7 @@ export default function TaxInvoiceGenerator({
                   value={notesHeading}
                   onChange={(e) => setNotesHeading(e.target.value)}
                   placeholder="e.g. Warranty Notes"
+                  className="w-full sm:w-72"
                 />
               </div>
               
@@ -1741,7 +1742,7 @@ export default function TaxInvoiceGenerator({
                   <div className="text-sm text-blue-600">
                     Add new notes. Each note will be displayed separately.
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <Textarea
                       value={newNote}
                       onChange={(e) => setNewNote(e.target.value)}
@@ -1749,7 +1750,11 @@ export default function TaxInvoiceGenerator({
                       rows={3}
                       className="flex-1 font-mono text-sm resize-none"
                     />
-                    <Button onClick={addNote} size="sm" className="bg-blue-600 hover:bg-blue-700">
+                    <Button
+                      onClick={addNote}
+                      size="sm"
+                      className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
+                    >
                       <Plus className="w-4 h-4 mr-1" />
                       Add Note
                     </Button>
@@ -1777,8 +1782,8 @@ export default function TaxInvoiceGenerator({
                   <div className="space-y-2">
                     {notesList.map((note, index) => (
                       <div key={`note-${index}-${note.slice(0, 10)}`} className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg">
-                        <span className="text-blue-400 mt-1">★</span>
-                        <span className="flex-1 text-sm whitespace-pre-wrap">{note}</span>
+                        <span className="text-blue-400 mt-0.5 w-5 text-center flex-shrink-0">★</span>
+                        <span className="flex-1 text-sm whitespace-pre-wrap break-words">{note}</span>
                         {isEditingNotes && (
                           <Button
                             variant="ghost"

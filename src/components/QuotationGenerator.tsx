@@ -1368,7 +1368,7 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
               value={notesHeading}
               onChange={(e) => setNotesHeading(e.target.value)}
               placeholder="e.g. Warranty Notes"
-              className="sm:w-72"
+              className="w-full sm:w-72"
             />
           </div>
           {/* Add New Note */}
@@ -1381,7 +1381,7 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
                 rows={3}
                 className="flex-1 font-mono text-sm resize-none"
               />
-              <div className="flex gap-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 {editingNoteIndex !== null ? (
                   <>
                     <Button onClick={updateNote} size="sm" className="bg-green-600 hover:bg-green-700">
@@ -1410,8 +1410,8 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
               <div className="space-y-2">
                 {notes.map((note, index) => (
                   <div key={index} className="flex items-start gap-2 p-3 bg-white border border-blue-200 rounded-lg">
-                    <div className="text-blue-400 mt-1">★</div>
-                    <div className="flex-1 text-sm text-gray-700 whitespace-pre-wrap">
+                    <div className="text-blue-400 mt-0.5 w-5 text-center flex-shrink-0">★</div>
+                    <div className="flex-1 text-sm text-gray-700 whitespace-pre-wrap break-words">
                       {note}
                     </div>
                     <div className="flex gap-1">
