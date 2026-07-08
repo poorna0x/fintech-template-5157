@@ -402,6 +402,12 @@
   }
 
   function activateAsyncStyles() {
+    var links = document.querySelectorAll('link[data-async-css="true"]');
+    if (!links.length) {
+      removeFoucGuards();
+      return;
+    }
+
     function activate(link) {
       if (link.getAttribute('data-async-css') !== 'true') return;
       link.rel = 'stylesheet';
