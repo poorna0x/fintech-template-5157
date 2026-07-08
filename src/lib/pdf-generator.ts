@@ -607,26 +607,12 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
     additionalStyles.id = 'mobile-pdf-format-fix';
     additionalStyles.textContent = `
       @media print {
-        @page {
-          size: A4 !important;
-          margin: 20mm 8mm 20mm 8mm !important;
-        }
-        
+        ${getDocumentPdfPrintFrameCss()}
+
         body {
           width: 100% !important;
           max-width: 100% !important;
           overflow-x: hidden !important;
-          padding: 0 !important;
-          margin: 0 !important;
-        }
-        
-        .bill-container {
-          width: 100% !important;
-          max-width: 100% !important;
-          margin: 0 auto !important;
-          padding: 15px 10px !important;
-          box-sizing: border-box !important;
-          overflow: hidden !important;
         }
       }
     `;
@@ -638,7 +624,7 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
       style.textContent = `
         @page {
           size: 210mm 297mm !important;
-          margin: 20mm 8mm 20mm 8mm !important;
+          margin: 5mm !important;
         }
       `;
       document.head.appendChild(style);
