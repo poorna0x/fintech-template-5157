@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import {
   Bold,
   Italic,
@@ -18,6 +18,7 @@ import {
   Redo2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 interface RichTextEditorProps {
   value: string;
@@ -27,6 +28,32 @@ interface RichTextEditorProps {
   /** Smaller toolbar (B/I/U/lists) for Additional Info and similar fields. */
   compact?: boolean;
 }
+
+type ActiveFormats = {
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  strikeThrough: boolean;
+  unorderedList: boolean;
+  orderedList: boolean;
+  justifyLeft: boolean;
+  justifyCenter: boolean;
+  justifyRight: boolean;
+  block: string;
+};
+
+const EMPTY_ACTIVE: ActiveFormats = {
+  bold: false,
+  italic: false,
+  underline: false,
+  strikeThrough: false,
+  unorderedList: false,
+  orderedList: false,
+  justifyLeft: false,
+  justifyCenter: false,
+  justifyRight: false,
+  block: '',
+};
 
 /**
  * Minimal contenteditable rich text editor used by the Letterhead Documents
@@ -52,6 +79,7 @@ export default function RichTextEditor({
   // Tracks the last value we either accepted from props or emitted ourselves;
   // prevents the React render loop from blowing away the user's caret while typing.
   const lastEmittedRef = useRef<string>('');
+  const [active, setActive] = useState<ActiveFormats>(EMPTY_ACTIVE);
 
   useEffect(() => {
     const el = editorRef.current;
@@ -65,13 +93,72 @@ export default function RichTextEditor({
     lastEmittedRef.current = value || '';
   }, [value]);
 
+  const refreshActive = useCallback(() => {
+    const el = editorRef.current;
+    if (!el) return;
+
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+      setActive(EMPTY_ACTIVE);
+      return;
+    }
+
+    const anchor = selection.anchorNode;
+    if (!anchor || !el.contains(anchor)) {
+      // Keep last highlight while user clicks toolbar (mousedown prevents blur race),
+      // but clear if focus left the editor entirely.
+      if (document.activeElement !== el) {
+        setActive(EMPTY_ACTIVE);
+      }
+      return;
+    }
+
+    const queryState = (cmd: string) => {
+      try {
+        return document.queryCommandState(cmd);
+      } catch {
+        return false;
+      }
+    };
+
+    const queryValue = (cmd: string) => {
+      try {
+        return (document.queryCommandValue(cmd) || '').toString().toLowerCase();
+      } catch {
+        return '';
+      }
+    };
+
+    const block = queryValue('formatBlock').replace(/[<>]/g, '');
+
+    setActive({
+      bold: queryState('bold'),
+      italic: queryState('italic'),
+      underline: queryState('underline'),
+      strikeThrough: queryState('strikeThrough'),
+      unorderedList: queryState('insertUnorderedList'),
+      orderedList: queryState('insertOrderedList'),
+      justifyLeft: queryState('justifyLeft'),
+      justifyCenter: queryState('justifyCenter'),
+      justifyRight: queryState('justifyRight'),
+      block,
+    });
+  }, []);
+
+  useEffect(() => {
+    const onSelChange = () => refreshActive();
+    document.addEventListener('selectionchange', onSelChange);
+    return () => document.removeEventListener('selectionchange', onSelChange);
+  }, [refreshActive]);
+
   const emit = useCallback(() => {
     const el = editorRef.current;
     if (!el) return;
     const html = el.innerHTML;
     lastEmittedRef.current = html;
     onChange(html);
-  }, [onChange]);
+    refreshActive();
+  }, [onChange, refreshActive]);
 
   const exec = useCallback(
     (command: string, arg?: string) => {
@@ -79,8 +166,10 @@ export default function RichTextEditor({
       // execCommand is deprecated but still works everywhere; see note above.
       document.execCommand(command, false, arg);
       emit();
+      // Some browsers update queryCommandState one tick after execCommand.
+      requestAnimationFrame(() => refreshActive());
     },
-    [emit]
+    [emit, refreshActive]
   );
 
   const handleLink = useCallback(() => {
@@ -93,57 +182,103 @@ export default function RichTextEditor({
     exec('removeFormat');
   }, [exec]);
 
+  const isHeading = (tag: string) => active.block === tag || active.block === tag.toLowerCase();
+
   return (
     <div className="border rounded-md bg-white overflow-hidden">
       <div className="flex flex-wrap items-center gap-1 border-b bg-gray-50 px-2 py-1.5">
-        <ToolbarButton title="Bold (Ctrl+B)" onClick={() => exec('bold')}>
+        <ToolbarButton title="Bold (Ctrl+B)" active={active.bold} onClick={() => exec('bold')}>
           <Bold className="w-4 h-4" />
         </ToolbarButton>
-        <ToolbarButton title="Italic (Ctrl+I)" onClick={() => exec('italic')}>
+        <ToolbarButton title="Italic (Ctrl+I)" active={active.italic} onClick={() => exec('italic')}>
           <Italic className="w-4 h-4" />
         </ToolbarButton>
-        <ToolbarButton title="Underline (Ctrl+U)" onClick={() => exec('underline')}>
+        <ToolbarButton
+          title="Underline (Ctrl+U)"
+          active={active.underline}
+          onClick={() => exec('underline')}
+        >
           <Underline className="w-4 h-4" />
         </ToolbarButton>
         {!compact && (
-          <ToolbarButton title="Strikethrough" onClick={() => exec('strikeThrough')}>
+          <ToolbarButton
+            title="Strikethrough"
+            active={active.strikeThrough}
+            onClick={() => exec('strikeThrough')}
+          >
             <Strikethrough className="w-4 h-4" />
           </ToolbarButton>
         )}
         <Divider />
         {!compact && (
           <>
-            <ToolbarButton title="Heading 1" onClick={() => exec('formatBlock', 'H1')}>
+            <ToolbarButton
+              title="Heading 1"
+              active={isHeading('h1')}
+              onClick={() => exec('formatBlock', 'H1')}
+            >
               <Heading1 className="w-4 h-4" />
             </ToolbarButton>
-            <ToolbarButton title="Heading 2" onClick={() => exec('formatBlock', 'H2')}>
+            <ToolbarButton
+              title="Heading 2"
+              active={isHeading('h2')}
+              onClick={() => exec('formatBlock', 'H2')}
+            >
               <Heading2 className="w-4 h-4" />
             </ToolbarButton>
-            <ToolbarButton title="Heading 3" onClick={() => exec('formatBlock', 'H3')}>
+            <ToolbarButton
+              title="Heading 3"
+              active={isHeading('h3')}
+              onClick={() => exec('formatBlock', 'H3')}
+            >
               <Heading3 className="w-4 h-4" />
             </ToolbarButton>
-            <ToolbarButton title="Paragraph" onClick={() => exec('formatBlock', 'P')}>
+            <ToolbarButton
+              title="Paragraph"
+              active={isHeading('p') || active.block === 'div'}
+              onClick={() => exec('formatBlock', 'P')}
+            >
               <span className="text-[11px] font-medium leading-none">P</span>
             </ToolbarButton>
             <Divider />
           </>
         )}
-        <ToolbarButton title="Bullet list" onClick={() => exec('insertUnorderedList')}>
+        <ToolbarButton
+          title="Bullet list"
+          active={active.unorderedList}
+          onClick={() => exec('insertUnorderedList')}
+        >
           <List className="w-4 h-4" />
         </ToolbarButton>
-        <ToolbarButton title="Numbered list" onClick={() => exec('insertOrderedList')}>
+        <ToolbarButton
+          title="Numbered list"
+          active={active.orderedList}
+          onClick={() => exec('insertOrderedList')}
+        >
           <ListOrdered className="w-4 h-4" />
         </ToolbarButton>
         {!compact && (
           <>
             <Divider />
-            <ToolbarButton title="Align left" onClick={() => exec('justifyLeft')}>
+            <ToolbarButton
+              title="Align left"
+              active={active.justifyLeft}
+              onClick={() => exec('justifyLeft')}
+            >
               <AlignLeft className="w-4 h-4" />
             </ToolbarButton>
-            <ToolbarButton title="Align center" onClick={() => exec('justifyCenter')}>
+            <ToolbarButton
+              title="Align center"
+              active={active.justifyCenter}
+              onClick={() => exec('justifyCenter')}
+            >
               <AlignCenter className="w-4 h-4" />
             </ToolbarButton>
-            <ToolbarButton title="Align right" onClick={() => exec('justifyRight')}>
+            <ToolbarButton
+              title="Align right"
+              active={active.justifyRight}
+              onClick={() => exec('justifyRight')}
+            >
               <AlignRight className="w-4 h-4" />
             </ToolbarButton>
             <Divider />
@@ -177,6 +312,9 @@ export default function RichTextEditor({
         style={{ minHeight }}
         onInput={emit}
         onBlur={emit}
+        onKeyUp={refreshActive}
+        onMouseUp={refreshActive}
+        onFocus={refreshActive}
         onPaste={(event) => {
           // Keep basic formatting from Word/Google Docs when available; fall back to plain text.
           const html = event.clipboardData.getData('text/html');
@@ -216,10 +354,12 @@ function ToolbarButton({
   title,
   onClick,
   children,
+  active = false,
 }: {
   title: string;
   onClick: () => void;
   children: React.ReactNode;
+  active?: boolean;
 }) {
   return (
     <Button
@@ -227,7 +367,11 @@ function ToolbarButton({
       variant="ghost"
       size="sm"
       title={title}
-      className="h-7 w-7 p-0 text-gray-700 hover:bg-gray-200"
+      aria-pressed={active}
+      className={cn(
+        'h-7 w-7 p-0 text-gray-700 hover:bg-gray-200',
+        active && 'bg-blue-100 text-blue-700 hover:bg-blue-200 ring-1 ring-blue-300'
+      )}
       // mousedown instead of click so the active selection isn't lost.
       onMouseDown={(e) => {
         e.preventDefault();
