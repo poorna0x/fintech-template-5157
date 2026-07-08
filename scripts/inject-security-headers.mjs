@@ -10,6 +10,23 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.join(__dirname, '..', 'dist');
 const headersPath = path.join(distDir, '_headers');
 
+const NOINDEX_HEADER_PATHS = [
+  '/admin',
+  '/admin/*',
+  '/technician',
+  '/technician/*',
+  '/technician-id/*',
+  '/dashboard',
+  '/dashboard/*',
+  '/search',
+  '/search/*',
+  '/settings',
+  '/settings/*',
+  '/calling',
+  '/calling/*',
+  '/product-verify/*',
+];
+
 const block = `
 /*
   Content-Security-Policy: ${PRODUCTION_CSP}
@@ -19,6 +36,12 @@ const block = `
   Permissions-Policy: ${PERMISSIONS_POLICY}
   Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
 `;
+
+const noindexBlocks = NOINDEX_HEADER_PATHS.map(
+  (route) => `
+${route}
+  X-Robots-Tag: noindex, nofollow`
+).join('');
 
 if (!fs.existsSync(distDir)) {
   console.error('[inject-security-headers] dist/ not found — run vite build first');
@@ -31,8 +54,24 @@ if (fs.existsSync(headersPath)) {
 }
 
 if (!existing.includes('Content-Security-Policy')) {
-  fs.writeFileSync(headersPath, existing.trimEnd() + block);
-  console.log('[inject-security-headers] wrote dist/_headers with CSP');
+  fs.writeFileSync(headersPath, existing.trimEnd() + block + noindexBlocks);
+  console.log('[inject-security-headers] wrote dist/_headers with CSP and noindex routes');
+}
+
+const indexPath = path.join(distDir, 'index.html');
+if (fs.existsSync(indexPath)) {
+  let html = fs.readFileSync(indexPath, 'utf8');
+  const gsc = process.env.VITE_GOOGLE_SITE_VERIFICATION?.trim();
+  if (gsc) {
+    if (!html.includes('google-site-verification')) {
+      html = html.replace(
+        '</head>',
+        `    <meta name="google-site-verification" content="${gsc}" />\n  </head>`
+      );
+    }
+    console.log('[inject-security-headers] injected google-site-verification meta');
+  }
+  fs.writeFileSync(indexPath, html);
 }
 
 // Fail production build if dev URLs OR known secrets leaked into the bundle.

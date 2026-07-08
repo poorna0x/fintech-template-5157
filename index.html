@@ -9,12 +9,8 @@
     
     <!-- Host-aware title / OG / Twitter — must run during parse (WhatsApp & Google do not run deferred JS) -->
     <script src="/head-brand-meta.js"></script>
-    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
-    <meta name="googlebot" content="index, follow" />
-    <meta name="bingbot" content="index, follow" />
-    
-    <!-- Canonical URL - set immediately from requested URL so crawlers see correct canonical before React -->
-    <script src="/head-seo-bootstrap.js" defer></script>
+    <!-- Per-path title, canonical, robots — sync (not defer) so crawlers see route SEO in first pass -->
+    <script src="/head-seo-bootstrap.js"></script>
     <link rel="alternate" type="text/plain" href="/llms.txt" title="LLM site information" />
     
     <!-- Additional SEO Meta Tags -->
@@ -26,9 +22,6 @@
     <meta name="classification" content="Business" />
     <meta name="category" content="Water Purifier Services" />
     <meta name="coverage" content="Bengaluru, Bangalore, Karnataka, India, Electronic City, BTM, HSR Layout, Whitefield, Koramangala, Hebbal, Yelahanka, Sarjapur, Bellandur, JP Nagar, Banashankari, Tumakuru, Nelamangala, Attibele, Chandapura, Devanahalli" />
-    <meta name="distribution" content="global" />
-    <meta name="rating" content="general" />
-    <meta name="revisit-after" content="7 days" />
     <meta name="language" content="English" />
     
     <!-- Advanced SEO Meta Tags -->
@@ -56,36 +49,10 @@
     <meta name="apple-touch-fullscreen" content="yes" />
     <meta name="apple-mobile-web-app-orientations" content="portrait" />
     
-    <!-- Search Engine Specific -->
-    <meta name="google-site-verification" content="YOUR_GOOGLE_VERIFICATION_CODE" />
-    <meta name="yandex-verification" content="YOUR_YANDEX_VERIFICATION_CODE" />
-    <meta name="baidu-site-verification" content="YOUR_BAIDU_VERIFICATION_CODE" />
-    <meta name="pinterest-site-verification" content="YOUR_PINTEREST_VERIFICATION_CODE" />
-    <meta name="facebook-domain-verification" content="YOUR_FACEBOOK_VERIFICATION_CODE" />
-    
     <!-- Content and Quality Signals -->
     <meta name="content-language" content="en-IN" />
     <meta name="audience" content="all" />
-    <meta name="target" content="all" />
     <meta name="resource-type" content="document" />
-    <meta name="distribution" content="global" />
-    <meta name="rating" content="general" />
-    <meta name="revisit-after" content="1 days" />
-    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
-    <meta name="googlebot" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
-    <meta name="bingbot" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
-    <meta name="slurp" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
-    <meta name="duckduckbot" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
-    
-    <!-- Local Business Signals -->
-    <meta name="geo.region" content="IN-KA" />
-    <meta name="geo.placename" content="Bengaluru" />
-    <meta name="geo.position" content="12.9716;77.5946" />
-    <meta name="ICBM" content="12.9716, 77.5946" />
-    <meta name="geo.region" content="IN-KA" />
-    <meta name="geo.placename" content="Bangalore" />
-    <meta name="geo.position" content="12.9716;77.5946" />
-    <meta name="ICBM" content="12.9716, 77.5946" />
     
     <!-- Service Area Coverage -->
     <meta name="service-area" content="Bengaluru, Bangalore, Karnataka, India, Kolar, Ramanagara, Tumakuru, Nelamangala, Doddaballapur" />

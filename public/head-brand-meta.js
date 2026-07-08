@@ -48,13 +48,25 @@
     document.write(html);
   }
 
+  var pathSegment = (location.pathname || '/').replace(/\/$/, '') || '';
+  var pageUrl = profile.origin + (pathSegment ? pathSegment : '');
+  var isNoIndex =
+    /^\/(technician-id|technician\/|technician$|admin|dashboard|search|settings|calling|product-verify)(\/|$)/.test(
+      '/' + (pathSegment || '')
+    );
+
   w('<title>' + esc(profile.title) + '</title>');
   w('<meta name="title" content="' + esc(profile.title) + '" />');
   w('<meta name="description" content="' + esc(profile.description) + '" />');
   w('<meta name="keywords" content="' + esc(profile.keywords) + '" />');
   w('<meta name="author" content="' + esc(profile.author) + '" />');
+  if (isNoIndex) {
+    w('<meta name="robots" content="noindex, nofollow" />');
+  } else {
+    w('<meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />');
+  }
   w('<meta property="og:type" content="website" />');
-  w('<meta property="og:url" content="' + esc(profile.origin) + '" />');
+  w('<meta property="og:url" content="' + esc(pageUrl) + '" />');
   w('<meta property="og:title" content="' + esc(profile.ogTitle) + '" />');
   w('<meta property="og:description" content="' + esc(profile.ogDescription) + '" />');
   w('<meta property="og:image" content="' + esc(profile.ogImage) + '" />');
@@ -64,7 +76,7 @@
   w('<meta property="og:site_name" content="' + esc(profile.siteName) + '" />');
   w('<meta property="og:locale" content="en_IN" />');
   w('<meta name="twitter:card" content="summary_large_image" />');
-  w('<meta name="twitter:url" content="' + esc(profile.origin) + '" />');
+  w('<meta name="twitter:url" content="' + esc(pageUrl) + '" />');
   w('<meta name="twitter:title" content="' + esc(profile.ogTitle) + '" />');
   w('<meta name="twitter:description" content="' + esc(profile.ogDescription) + '" />');
   w('<meta name="twitter:image" content="' + esc(profile.ogImage) + '" />');

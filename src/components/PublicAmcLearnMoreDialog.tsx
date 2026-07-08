@@ -40,7 +40,7 @@ const PublicAmcLearnMoreDialog: React.FC<PublicAmcLearnMoreDialogProps> = ({
 
   const handleBook = () => {
     onOpenChange(false);
-    navigate('/booking');
+    navigate('/book');
   };
 
   return (

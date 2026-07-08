@@ -45,7 +45,6 @@ const staticPaths = [
   { path: '/services', priority: '0.95', changefreq: 'weekly' },
   { path: '/service-areas', priority: '0.95', changefreq: 'weekly' },
   { path: '/book', priority: '0.95', changefreq: 'daily' },
-  { path: '/booking', priority: '0.95', changefreq: 'daily' },
   { path: '/about', priority: '0.8', changefreq: 'monthly' },
   { path: '/contact', priority: '0.8', changefreq: 'monthly' },
   { path: '/blog', priority: '0.75', changefreq: 'weekly' },

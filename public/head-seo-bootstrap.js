@@ -289,7 +289,6 @@
       '/services': 'RO Services in Bengaluru',
       '/service-areas': 'RO Service Areas in Bengaluru',
       '/book': 'Book RO Service in Bengaluru',
-      '/booking': 'Book RO Service in Bengaluru',
       '/contact': 'Contact ' + profile.brandName + ' Bengaluru',
       '/about': 'About ' + profile.brandName,
       '/blog': profile.brandName + ' RO Water Purifier Blog',
@@ -327,9 +326,15 @@
 
   if (noIndex) {
     setMetaName('robots', 'noindex, nofollow');
+    document.querySelectorAll('link[rel="canonical"]').forEach(function (node) {
+      node.parentNode.removeChild(node);
+    });
     return;
   }
 
+  document.querySelectorAll('link[rel="canonical"]').forEach(function (node) {
+    node.parentNode.removeChild(node);
+  });
   var link = document.createElement('link');
   link.rel = 'canonical';
   link.href = canonical;

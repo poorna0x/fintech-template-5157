@@ -212,16 +212,6 @@ const STATIC_PAGE_SEO: Record<string, Partial<Record<PublicSiteKey, RouteSeo>>> 
       description: 'Book RO water purifier service online in Bengaluru with Eleven RO. Same-day installation, repair and maintenance. Call 9880693311.',
     },
   },
-  '/booking': {
-    hydrogenro: {
-      title: 'Book RO Service in Bengaluru | Same-Day Booking | Hydrogen RO',
-      description: 'Book RO water purifier service online in Bengaluru with Hydrogen RO. Same-day installation, repair and maintenance. Call +91-8884944288.',
-    },
-    elevenro: {
-      title: 'Book RO Service in Bengaluru | Same-Day Booking | Eleven RO',
-      description: 'Book RO water purifier service online in Bengaluru with Eleven RO. Same-day installation, repair and maintenance. Call 9880693311.',
-    },
-  },
   '/contact': {
     hydrogenro: {
       title: 'Contact Hydrogen RO | RO Service Bengaluru | +91-8884944288',
@@ -412,7 +402,6 @@ export function getAllIndexablePaths(): string[] {
     '/services',
     '/service-areas',
     '/book',
-    '/booking',
     '/about',
     '/contact',
     '/blog',

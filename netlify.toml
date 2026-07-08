@@ -38,7 +38,7 @@
 
 [[redirects]]
   from = "http://www.elevenro.com/*"
-  to = "https://www.elevenro.com/:splat"
+  to = "https://elevenro.com/:splat"
   status = 301
   force = true
 
@@ -60,9 +60,32 @@
 # Same for the www variant, defensively
 [[redirects]]
   from = "http://www.hydrogenro.com/*"
-  to = "https://www.hydrogenro.com/:splat"
+  to = "https://hydrogenro.com/:splat"
   status = 301
   force = true
+
+[[redirects]]
+  from = "https://www.hydrogenro.com/*"
+  to = "https://hydrogenro.com/:splat"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "https://www.elevenro.com/*"
+  to = "https://elevenro.com/:splat"
+  status = 301
+  force = true
+
+# Canonical booking URL — /booking is a legacy alias
+[[redirects]]
+  from = "/booking"
+  to = "/book"
+  status = 301
+
+[[redirects]]
+  from = "/booking/"
+  to = "/book"
+  status = 301
 
 # Host-specific SEO assets
 [[redirects]]
@@ -74,6 +97,12 @@
 [[redirects]]
   from = "/llms.txt"
   to = "/llms-elevenro.txt"
+  status = 200
+  conditions = {Host = ["elevenro.com", "www.elevenro.com"]}
+
+[[redirects]]
+  from = "/robots.txt"
+  to = "/robots-elevenro.txt"
   status = 200
   conditions = {Host = ["elevenro.com", "www.elevenro.com"]}
 
@@ -355,3 +384,74 @@
   for = "/*.html"
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
+
+# CRM / portal routes must never be indexed (static HTML defaults to index,follow before JS)
+[[headers]]
+  for = "/admin"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+  for = "/admin/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+  for = "/technician"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+  for = "/technician/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+  for = "/technician-id/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+  for = "/dashboard"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+  for = "/dashboard/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+  for = "/search"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+  for = "/search/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+  for = "/settings"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+  for = "/settings/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+  for = "/calling"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+  for = "/calling/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"
+
+[[headers]]
+  for = "/product-verify/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"

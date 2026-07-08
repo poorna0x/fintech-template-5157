@@ -126,15 +126,18 @@ export function buildPublicLocalBusinessJsonLd(siteKey?: PublicSiteKey) {
 export const NO_INDEX_PREFIXES = [
   '/technician-id/',
   '/technician/',
-  '/technician/login',
   '/admin',
   '/dashboard',
   '/search',
   '/settings',
+  '/calling',
   '/product-verify/',
 ];
 
+const NO_INDEX_EXACT_PATHS = new Set(['/technician']);
+
 export function shouldIndexPath(pathname: string): boolean {
+  if (NO_INDEX_EXACT_PATHS.has(pathname)) return false;
   return !NO_INDEX_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 }
 
