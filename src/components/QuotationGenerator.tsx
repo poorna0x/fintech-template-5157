@@ -43,6 +43,8 @@ import { quotationToPreviewHtml, runAfterDialogClose } from '@/lib/document-prev
 import DocumentPreviewDialog from '@/components/document/DocumentPreviewDialog';
 import DocumentEmailSendDialog from '@/components/document/DocumentEmailSendDialog';
 import DocumentTermsEditor from '@/components/document/DocumentTermsEditor';
+import RichTextEditor from '@/components/letterhead/RichTextEditor';
+import { joinNotesHtml, sanitizeHTML, stripHtmlToText } from '@/lib/sanitize';
 import { normalizeRecipientList } from '@/lib/email-recipients';
 import { getValidCustomerEmail } from '@/lib/customer-email';
 import {
@@ -297,7 +299,7 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
   };
 
   const addNote = () => {
-    if (newNote.trim()) {
+    if (stripHtmlToText(newNote)) {
       setNotes([...notes, newNote.trim()]);
       setNewNote('');
     }
@@ -309,7 +311,7 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
   };
 
   const updateNote = () => {
-    if (editingNoteIndex !== null && newNote.trim()) {
+    if (editingNoteIndex !== null && stripHtmlToText(newNote)) {
       const updatedNotes = [...notes];
       updatedNotes[editingNoteIndex] = newNote.trim();
       setNotes(updatedNotes);
@@ -463,7 +465,7 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
       totalAmount: printTotalAmount,
       paymentStatus: 'pending',
       paymentMethod: 'cash',
-      notes: notes.join('\n'),
+      notes: joinNotesHtml(notes),
       notesHeading,
       terms: showValidityNote ? `${validityNote}\n\n${termsForPdf}` : termsForPdf,
       createdAt: new Date().toISOString(),
@@ -1373,33 +1375,35 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
           </div>
           {/* Add New Note */}
           <div className="space-y-3">
+            <RichTextEditor
+              value={newNote}
+              onChange={setNewNote}
+              placeholder="Enter additional information…"
+              minHeight={140}
+            />
             <div className="flex flex-col sm:flex-row gap-2">
-              <Textarea
-                value={newNote}
-                onChange={(e) => setNewNote(e.target.value)}
-                placeholder="Enter additional information (Enter creates a new line)..."
-                rows={3}
-                className="flex-1 font-mono text-sm resize-none"
-              />
-              <div className="flex flex-col sm:flex-row gap-2">
-                {editingNoteIndex !== null ? (
-                  <>
-                    <Button onClick={updateNote} size="sm" className="bg-green-600 hover:bg-green-700">
-                      <Edit className="w-4 h-4 mr-1" />
-                      Update
-                    </Button>
-                    <Button onClick={cancelEdit} variant="outline" size="sm">
-                      <X className="w-4 h-4 mr-1" />
-                      Cancel
-                    </Button>
-                  </>
-                ) : (
-                  <Button onClick={addNote} size="sm" className="bg-blue-600 hover:bg-blue-700">
-                    <Plus className="w-4 h-4 mr-1" />
-                    Add Note
+              {editingNoteIndex !== null ? (
+                <>
+                  <Button onClick={updateNote} size="sm" className="bg-green-600 hover:bg-green-700 w-full sm:w-auto">
+                    <Edit className="w-4 h-4 mr-1" />
+                    Update
                   </Button>
-                )}
-              </div>
+                  <Button onClick={cancelEdit} variant="outline" size="sm" className="w-full sm:w-auto">
+                    <X className="w-4 h-4 mr-1" />
+                    Cancel
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  onClick={addNote}
+                  size="sm"
+                  className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
+                  disabled={!stripHtmlToText(newNote)}
+                >
+                  <Plus className="w-4 h-4 mr-1" />
+                  Add Note
+                </Button>
+              )}
             </div>
           </div>
 
@@ -1410,11 +1414,11 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
               <div className="space-y-2">
                 {notes.map((note, index) => (
                   <div key={index} className="flex items-start gap-2 p-3 bg-white border border-blue-200 rounded-lg">
-                    <div className="text-blue-400 mt-0.5 w-5 text-center flex-shrink-0">★</div>
-                    <div className="flex-1 text-sm text-gray-700 whitespace-pre-wrap break-words">
-                      {note}
-                    </div>
-                    <div className="flex gap-1">
+                    <div
+                      className="flex-1 text-sm text-gray-700 break-words prose prose-sm max-w-none [&_ul]:list-disc [&_ol]:list-decimal [&_ul]:pl-5 [&_ol]:pl-5"
+                      dangerouslySetInnerHTML={{ __html: sanitizeHTML(note, true) }}
+                    />
+                    <div className="flex gap-1 flex-shrink-0">
                       <Button
                         variant="outline"
                         size="sm"

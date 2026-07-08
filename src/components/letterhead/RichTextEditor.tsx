@@ -24,6 +24,8 @@ interface RichTextEditorProps {
   onChange: (html: string) => void;
   placeholder?: string;
   minHeight?: number;
+  /** Smaller toolbar (B/I/U/lists) for Additional Info and similar fields. */
+  compact?: boolean;
 }
 
 /**
@@ -44,6 +46,7 @@ export default function RichTextEditor({
   onChange,
   placeholder = 'Start typing…',
   minHeight = 160,
+  compact = false,
 }: RichTextEditorProps) {
   const editorRef = useRef<HTMLDivElement | null>(null);
   // Tracks the last value we either accepted from props or emitted ourselves;
@@ -91,7 +94,7 @@ export default function RichTextEditor({
   }, [exec]);
 
   return (
-    <div className="border rounded-md bg-white">
+    <div className="border rounded-md bg-white overflow-hidden">
       <div className="flex flex-wrap items-center gap-1 border-b bg-gray-50 px-2 py-1.5">
         <ToolbarButton title="Bold (Ctrl+B)" onClick={() => exec('bold')}>
           <Bold className="w-4 h-4" />
@@ -102,53 +105,67 @@ export default function RichTextEditor({
         <ToolbarButton title="Underline (Ctrl+U)" onClick={() => exec('underline')}>
           <Underline className="w-4 h-4" />
         </ToolbarButton>
-        <ToolbarButton title="Strikethrough" onClick={() => exec('strikeThrough')}>
-          <Strikethrough className="w-4 h-4" />
-        </ToolbarButton>
+        {!compact && (
+          <ToolbarButton title="Strikethrough" onClick={() => exec('strikeThrough')}>
+            <Strikethrough className="w-4 h-4" />
+          </ToolbarButton>
+        )}
         <Divider />
-        <ToolbarButton title="Heading 1" onClick={() => exec('formatBlock', 'H1')}>
-          <Heading1 className="w-4 h-4" />
-        </ToolbarButton>
-        <ToolbarButton title="Heading 2" onClick={() => exec('formatBlock', 'H2')}>
-          <Heading2 className="w-4 h-4" />
-        </ToolbarButton>
-        <ToolbarButton title="Heading 3" onClick={() => exec('formatBlock', 'H3')}>
-          <Heading3 className="w-4 h-4" />
-        </ToolbarButton>
-        <ToolbarButton title="Paragraph" onClick={() => exec('formatBlock', 'P')}>
-          <span className="text-[11px] font-medium leading-none">P</span>
-        </ToolbarButton>
-        <Divider />
+        {!compact && (
+          <>
+            <ToolbarButton title="Heading 1" onClick={() => exec('formatBlock', 'H1')}>
+              <Heading1 className="w-4 h-4" />
+            </ToolbarButton>
+            <ToolbarButton title="Heading 2" onClick={() => exec('formatBlock', 'H2')}>
+              <Heading2 className="w-4 h-4" />
+            </ToolbarButton>
+            <ToolbarButton title="Heading 3" onClick={() => exec('formatBlock', 'H3')}>
+              <Heading3 className="w-4 h-4" />
+            </ToolbarButton>
+            <ToolbarButton title="Paragraph" onClick={() => exec('formatBlock', 'P')}>
+              <span className="text-[11px] font-medium leading-none">P</span>
+            </ToolbarButton>
+            <Divider />
+          </>
+        )}
         <ToolbarButton title="Bullet list" onClick={() => exec('insertUnorderedList')}>
           <List className="w-4 h-4" />
         </ToolbarButton>
         <ToolbarButton title="Numbered list" onClick={() => exec('insertOrderedList')}>
           <ListOrdered className="w-4 h-4" />
         </ToolbarButton>
-        <Divider />
-        <ToolbarButton title="Align left" onClick={() => exec('justifyLeft')}>
-          <AlignLeft className="w-4 h-4" />
-        </ToolbarButton>
-        <ToolbarButton title="Align center" onClick={() => exec('justifyCenter')}>
-          <AlignCenter className="w-4 h-4" />
-        </ToolbarButton>
-        <ToolbarButton title="Align right" onClick={() => exec('justifyRight')}>
-          <AlignRight className="w-4 h-4" />
-        </ToolbarButton>
-        <Divider />
-        <ToolbarButton title="Insert link" onClick={handleLink}>
-          <LinkIcon className="w-4 h-4" />
-        </ToolbarButton>
+        {!compact && (
+          <>
+            <Divider />
+            <ToolbarButton title="Align left" onClick={() => exec('justifyLeft')}>
+              <AlignLeft className="w-4 h-4" />
+            </ToolbarButton>
+            <ToolbarButton title="Align center" onClick={() => exec('justifyCenter')}>
+              <AlignCenter className="w-4 h-4" />
+            </ToolbarButton>
+            <ToolbarButton title="Align right" onClick={() => exec('justifyRight')}>
+              <AlignRight className="w-4 h-4" />
+            </ToolbarButton>
+            <Divider />
+            <ToolbarButton title="Insert link" onClick={handleLink}>
+              <LinkIcon className="w-4 h-4" />
+            </ToolbarButton>
+          </>
+        )}
         <ToolbarButton title="Clear formatting" onClick={handleClear}>
           <Eraser className="w-4 h-4" />
         </ToolbarButton>
-        <Divider />
-        <ToolbarButton title="Undo" onClick={() => exec('undo')}>
-          <Undo2 className="w-4 h-4" />
-        </ToolbarButton>
-        <ToolbarButton title="Redo" onClick={() => exec('redo')}>
-          <Redo2 className="w-4 h-4" />
-        </ToolbarButton>
+        {!compact && (
+          <>
+            <Divider />
+            <ToolbarButton title="Undo" onClick={() => exec('undo')}>
+              <Undo2 className="w-4 h-4" />
+            </ToolbarButton>
+            <ToolbarButton title="Redo" onClick={() => exec('redo')}>
+              <Redo2 className="w-4 h-4" />
+            </ToolbarButton>
+          </>
+        )}
       </div>
       <div
         ref={editorRef}
@@ -161,10 +178,16 @@ export default function RichTextEditor({
         onInput={emit}
         onBlur={emit}
         onPaste={(event) => {
-          // Strip rich formatting from pasted content so the editor stays predictable.
-          event.preventDefault();
+          // Keep basic formatting from Word/Google Docs when available; fall back to plain text.
+          const html = event.clipboardData.getData('text/html');
           const text = event.clipboardData.getData('text/plain');
-          document.execCommand('insertText', false, text);
+          event.preventDefault();
+          if (html) {
+            document.execCommand('insertHTML', false, html);
+          } else {
+            document.execCommand('insertText', false, text);
+          }
+          emit();
         }}
       />
       <style>{`
@@ -175,6 +198,9 @@ export default function RichTextEditor({
         }
         .lh-rte-content { line-height: 1.5; font-weight: 400; }
         .lh-rte-content p, .lh-rte-content div, .lh-rte-content span, .lh-rte-content li { font-weight: 400; }
+        .lh-rte-content b, .lh-rte-content strong { font-weight: 700; }
+        .lh-rte-content i, .lh-rte-content em { font-style: italic; }
+        .lh-rte-content u { text-decoration: underline; }
         .lh-rte-content h1 { font-size: 1.15rem; font-weight: 700; margin: 0.4rem 0; }
         .lh-rte-content h2 { font-size: 1.05rem; font-weight: 700; margin: 0.4rem 0; }
         .lh-rte-content h3 { font-size: 0.98rem; font-weight: 600; margin: 0.35rem 0; }

@@ -46,6 +46,8 @@ import { taxInvoiceToPreviewHtml, runAfterDialogClose } from '@/lib/document-pre
 import DocumentPreviewDialog from '@/components/document/DocumentPreviewDialog';
 import DocumentEmailSendDialog from '@/components/document/DocumentEmailSendDialog';
 import DocumentTermsEditor from '@/components/document/DocumentTermsEditor';
+import RichTextEditor from '@/components/letterhead/RichTextEditor';
+import { joinNotesHtml, sanitizeHTML, stripHtmlToText } from '@/lib/sanitize';
 import { normalizeRecipientList } from '@/lib/email-recipients';
 import { getValidCustomerEmail } from '@/lib/customer-email';
 import {
@@ -495,7 +497,7 @@ export default function TaxInvoiceGenerator({
   };
 
   const addNote = () => {
-    if (newNote.trim()) {
+    if (stripHtmlToText(newNote)) {
       setNotes([...notes, newNote.trim()]);
       setNewNote('');
     }
@@ -507,7 +509,7 @@ export default function TaxInvoiceGenerator({
   };
 
   const updateNote = () => {
-    if (editingNoteIndex !== null && newNote.trim()) {
+    if (editingNoteIndex !== null && stripHtmlToText(newNote)) {
       const updatedNotes = [...notes];
       updatedNotes[editingNoteIndex] = newNote.trim();
       setNotes(updatedNotes);
@@ -799,7 +801,7 @@ export default function TaxInvoiceGenerator({
       totalAmount,
       paymentStatus: 'PENDING',
       paymentMethod: 'CASH',
-      notes: notes.join('\n'),
+      notes: joinNotesHtml(notes),
       notesHeading,
       terms: showValidityNote ? `${validityNote}\n\n${termsForPdf}` : termsForPdf,
       serviceType: customerServiceType,
@@ -1740,39 +1742,71 @@ export default function TaxInvoiceGenerator({
               {isEditingNotes ? (
                 <div className="space-y-4">
                   <div className="text-sm text-blue-600">
-                    Add new notes. Each note will be displayed separately.
+                    Same formatting as Custom Document (Bold, headings, lists, alignment, links).
                   </div>
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <Textarea
+                  <div className="flex flex-col gap-2">
+                    <RichTextEditor
                       value={newNote}
-                      onChange={(e) => setNewNote(e.target.value)}
-                      placeholder="Enter new note (Enter creates a new line)..."
-                      rows={3}
-                      className="flex-1 font-mono text-sm resize-none"
+                      onChange={setNewNote}
+                      placeholder="Enter additional information…"
+                      minHeight={140}
                     />
-                    <Button
-                      onClick={addNote}
-                      size="sm"
-                      className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
-                    >
-                      <Plus className="w-4 h-4 mr-1" />
-                      Add Note
-                    </Button>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      {editingNoteIndex !== null ? (
+                        <>
+                          <Button onClick={updateNote} size="sm" className="bg-green-600 hover:bg-green-700 w-full sm:w-auto">
+                            <Edit className="w-4 h-4 mr-1" />
+                            Update
+                          </Button>
+                          <Button onClick={cancelEdit} variant="outline" size="sm" className="w-full sm:w-auto">
+                            <X className="w-4 h-4 mr-1" />
+                            Cancel
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          onClick={addNote}
+                          size="sm"
+                          className="bg-blue-600 hover:bg-blue-700 w-full sm:w-auto"
+                          disabled={!stripHtmlToText(newNote)}
+                        >
+                          <Plus className="w-4 h-4 mr-1" />
+                          Add Note
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                  <Textarea
-                    value={notes.join('\n\n')}
-                    onChange={(e) => {
-                      const text = e.target.value.replace(/\r\n/g, '\n');
-                      const parsed = text
-                        .split(/\n\s*\n+/)
-                        .map((chunk) => chunk.trim())
-                        .filter(Boolean);
-                      setNotes(parsed);
-                    }}
-                    placeholder="Or edit all notes at once..."
-                    rows={4}
-                    className="font-mono text-sm"
-                  />
+                  {notes.length > 0 && (
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium text-blue-700">Current Notes:</Label>
+                      {notes.map((note, index) => (
+                        <div key={`note-${index}`} className="flex items-start gap-2 p-3 bg-white border border-blue-200 rounded-lg">
+                          <div
+                            className="flex-1 text-sm text-gray-700 break-words prose prose-sm max-w-none [&_ul]:list-disc [&_ol]:list-decimal [&_ul]:pl-5 [&_ol]:pl-5"
+                            dangerouslySetInnerHTML={{ __html: sanitizeHTML(note, true) }}
+                          />
+                          <div className="flex gap-1 flex-shrink-0">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => editNote(index)}
+                              className="h-8 w-8 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                            >
+                              <Edit className="w-3 h-3" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => removeNote(index)}
+                              className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                            >
+                              <X className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -1782,18 +1816,10 @@ export default function TaxInvoiceGenerator({
                   <div className="space-y-2">
                     {notesList.map((note, index) => (
                       <div key={`note-${index}-${note.slice(0, 10)}`} className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg">
-                        <span className="text-blue-400 mt-0.5 w-5 text-center flex-shrink-0">★</span>
-                        <span className="flex-1 text-sm whitespace-pre-wrap break-words">{note}</span>
-                        {isEditingNotes && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => removeNote(index)}
-                            className="text-red-500 hover:text-red-700"
-                          >
-                            <X className="w-4 h-4" />
-                          </Button>
-                        )}
+                        <div
+                          className="flex-1 text-sm break-words prose prose-sm max-w-none [&_ul]:list-disc [&_ol]:list-decimal [&_ul]:pl-5 [&_ol]:pl-5"
+                          dangerouslySetInnerHTML={{ __html: sanitizeHTML(note, true) }}
+                        />
                       </div>
                     ))}
                     {notesList.length === 0 && (

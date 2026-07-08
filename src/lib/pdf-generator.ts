@@ -2,7 +2,7 @@
 // This is a simple implementation using browser's print functionality
 // For production, consider using libraries like jsPDF or Puppeteer
 
-import { sanitizeForTemplate } from './sanitize';
+import { sanitizeForTemplate, sanitizeNotesHtml } from './sanitize';
 import {
   renderPdfCompanyDetailsHtml,
   renderPdfFooterHtml,
@@ -422,9 +422,33 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
         font-size: 14px;
         line-height: 1.5;
         color: #6b7280;
-        /* Preserve user line breaks from Additional Info (textarea/paste). */
-        white-space: pre-wrap;
         word-break: break-word;
+      }
+
+      .notes-content .note-block {
+        margin-bottom: 8px;
+      }
+
+      .notes-content b,
+      .notes-content strong { font-weight: 700; }
+      .notes-content i,
+      .notes-content em { font-style: italic; }
+      .notes-content u { text-decoration: underline; }
+      .notes-content s,
+      .notes-content strike { text-decoration: line-through; }
+      .notes-content h1 { font-size: 16px; font-weight: 700; margin: 6px 0 4px; color: #111827; }
+      .notes-content h2 { font-size: 15px; font-weight: 700; margin: 6px 0 4px; color: #111827; }
+      .notes-content h3 { font-size: 14px; font-weight: 600; margin: 5px 0 3px; color: #111827; }
+      .notes-content ul,
+      .notes-content ol { margin: 4px 0; padding-left: 18px; }
+      .notes-content li { margin: 2px 0; }
+      .notes-content p { margin: 4px 0; }
+      .notes-content a { color: #0369a1; text-decoration: underline; }
+      .notes-content blockquote {
+        margin: 6px 0;
+        padding-left: 10px;
+        border-left: 3px solid #d1d5db;
+        color: #4b5563;
       }
       
       .terms-list {
@@ -875,7 +899,7 @@ function createBillContent(data: PDFBillData): string {
         <div class="notes-section">
           ${data.notes ? `
             <div class="notes-title">${notesHeading}</div>
-              <div class="notes-content">${sanitizeForTemplate(data.notes)}</div>
+              <div class="notes-content">${sanitizeNotesHtml(data.notes)}</div>
           ` : ''}
           ${data.terms ? `
             <div class="notes-title" style="margin-top: 20px;">Terms & Conditions:</div>
@@ -1064,9 +1088,33 @@ function getBillDocumentStyles(): string {
             font-size: 14px;
             line-height: 1.5;
             color: #6b7280;
-            /* Preserve user line breaks from Additional Info (textarea/paste). */
-            white-space: pre-wrap;
             word-break: break-word;
+          }
+
+          .notes-content .note-block {
+            margin-bottom: 8px;
+          }
+
+          .notes-content b,
+          .notes-content strong { font-weight: 700; }
+          .notes-content i,
+          .notes-content em { font-style: italic; }
+          .notes-content u { text-decoration: underline; }
+          .notes-content s,
+          .notes-content strike { text-decoration: line-through; }
+          .notes-content h1 { font-size: 16px; font-weight: 700; margin: 6px 0 4px; color: #111827; }
+          .notes-content h2 { font-size: 15px; font-weight: 700; margin: 6px 0 4px; color: #111827; }
+          .notes-content h3 { font-size: 14px; font-weight: 600; margin: 5px 0 3px; color: #111827; }
+          .notes-content ul,
+          .notes-content ol { margin: 4px 0; padding-left: 18px; }
+          .notes-content li { margin: 2px 0; }
+          .notes-content p { margin: 4px 0; }
+          .notes-content a { color: #0369a1; text-decoration: underline; }
+          .notes-content blockquote {
+            margin: 6px 0;
+            padding-left: 10px;
+            border-left: 3px solid #d1d5db;
+            color: #4b5563;
           }
           
           .terms-list {

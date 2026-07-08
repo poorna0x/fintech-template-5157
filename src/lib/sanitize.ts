@@ -4,11 +4,34 @@
 import DOMPurify from 'dompurify';
 
 /**
- * Configuration for sanitizing rich text content (allows basic formatting)
+ * Same allow-list as Custom Document / Letterhead rich text editor
+ * (bold/italic/lists/headings/links/alignment styles).
  */
 const RICH_TEXT_CONFIG = {
-  ALLOWED_TAGS: ['strong', 'em', 'u', 'b', 'i', 'p', 'br', 'span', 'div', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'],
-  ALLOWED_ATTR: ['class', 'style'],
+  ALLOWED_TAGS: [
+    'p',
+    'br',
+    'span',
+    'div',
+    'strong',
+    'em',
+    'u',
+    's',
+    'b',
+    'i',
+    'h1',
+    'h2',
+    'h3',
+    'h4',
+    'ul',
+    'ol',
+    'li',
+    'a',
+    'blockquote',
+    'hr',
+  ],
+  ALLOWED_ATTR: ['href', 'target', 'rel', 'style', 'class'],
+  ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
   ALLOW_DATA_ATTR: false,
 };
 
@@ -74,5 +97,53 @@ export function sanitizeForTemplate(input: string | number | undefined | null): 
 
   const str = String(input);
   return escapeHTML(str);
+}
+
+/** True when the string already contains HTML tags (vs plain Additional Info notes). */
+export function looksLikeHtml(value: string | null | undefined): boolean {
+  if (!value) return false;
+  return /<\/?[a-z][\s\S]*>/i.test(value);
+}
+
+/** Strip tags for emptiness checks (Add Note disabled when only whitespace/tags). */
+export function stripHtmlToText(html: string | null | undefined): string {
+  if (!html) return '';
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|li|h[1-6])>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Sanitize Additional Info / notes HTML for safe PDF and preview rendering.
+ * Plain-text notes keep line breaks as <br/>.
+ */
+export function sanitizeNotesHtml(notes: string | null | undefined): string {
+  if (!notes) return '';
+  if (looksLikeHtml(notes)) {
+    return sanitizeHTML(notes, true);
+  }
+  return escapeHTML(notes).replace(/\n/g, '<br/>');
+}
+
+/** Join an array of note blocks for document/PDF storage, preserving rich formatting. */
+export function joinNotesHtml(notes: string[]): string {
+  return notes
+    .map((note) => (note || '').trim())
+    .filter((note) => stripHtmlToText(note).length > 0)
+    .map((note) => {
+      const inner = looksLikeHtml(note)
+        ? note
+        : escapeHTML(note).replace(/\n/g, '<br/>');
+      return `<div class="note-block">${inner}</div>`;
+    })
+    .join('');
 }
 
