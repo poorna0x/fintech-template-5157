@@ -141,7 +141,8 @@ exports.handler = async (event) => {
       sentByUserId: auth.userId || null,
     });
 
-    const { html: htmlWithInlineImages } = await embedInlineEmailImages(tracked.html);
+    const { html: htmlWithInlineImages, attachments: inlineImageAttachments } =
+      await embedInlineEmailImages(tracked.html);
 
     const info = await transporter.sendMail({
       from: {
@@ -153,7 +154,7 @@ exports.handler = async (event) => {
       html: htmlWithInlineImages,
       text: validated.text,
       replyTo: brandMeta.replyTo,
-      attachments: nodemailerAttachments,
+      attachments: [...inlineImageAttachments, ...nodemailerAttachments],
       headers: {
         'X-Mailer': `${brandMeta.mailer} Admin Email`,
         'X-Priority': '3',

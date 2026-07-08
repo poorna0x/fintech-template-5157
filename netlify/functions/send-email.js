@@ -96,7 +96,8 @@ exports.handler = async (event) => {
       sentByUserId: null,
     });
 
-    const { html: htmlWithInlineImages } = await embedInlineEmailImages(tracked.html);
+    const { html: htmlWithInlineImages, attachments: inlineImageAttachments } =
+      await embedInlineEmailImages(tracked.html);
 
     const mailOptions = {
       from: {
@@ -108,6 +109,7 @@ exports.handler = async (event) => {
       html: htmlWithInlineImages,
       text: validated.text,
       replyTo: brandMeta.replyTo,
+      ...(inlineImageAttachments.length ? { attachments: inlineImageAttachments } : {}),
       headers: {
         'X-Mailer': brandMeta.mailer,
         'X-Priority': '3',
