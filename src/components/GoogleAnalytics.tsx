@@ -2,14 +2,14 @@ import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   initGoogleAnalytics,
-  isGoogleAnalyticsEnabled,
+  shouldEnableGoogleAnalytics,
   trackGaPageView,
 } from '@/lib/googleAnalytics';
 
-/** GA4 — separate property per brand (hostname picks measurement ID). */
+/** GA4 on public website pages only — not admin, technician, or settings. */
 const GoogleAnalytics = () => {
   const location = useLocation();
-  const enabled = isGoogleAnalyticsEnabled();
+  const enabled = shouldEnableGoogleAnalytics(location.pathname);
 
   useEffect(() => {
     if (!enabled) return;
