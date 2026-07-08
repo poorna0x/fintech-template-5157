@@ -1374,12 +1374,12 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
           {/* Add New Note */}
           <div className="space-y-3">
             <div className="flex flex-col sm:flex-row gap-2">
-              <Input
+              <Textarea
                 value={newNote}
                 onChange={(e) => setNewNote(e.target.value)}
-                placeholder="Enter additional information..."
-                onKeyPress={(e) => e.key === 'Enter' && (editingNoteIndex !== null ? updateNote() : addNote())}
-                className="flex-1"
+                placeholder="Enter additional information (Enter creates a new line)..."
+                rows={3}
+                className="flex-1 font-mono text-sm resize-none"
               />
               <div className="flex gap-2">
                 {editingNoteIndex !== null ? (
@@ -1410,7 +1410,8 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
               <div className="space-y-2">
                 {notes.map((note, index) => (
                   <div key={index} className="flex items-start gap-2 p-3 bg-white border border-blue-200 rounded-lg">
-                    <div className="flex-1 text-sm text-gray-700">
+                    <div className="text-blue-400 mt-1">★</div>
+                    <div className="flex-1 text-sm text-gray-700 whitespace-pre-wrap">
                       {note}
                     </div>
                     <div className="flex gap-1">

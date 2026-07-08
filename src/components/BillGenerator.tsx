@@ -752,11 +752,12 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
                     Add new notes. Each note will be displayed separately.
                   </div>
                   <div className="flex gap-2">
-                    <Input
+                    <Textarea
                       value={newNote}
                       onChange={(e) => setNewNote(e.target.value)}
-                      placeholder="Enter new note..."
-                      onKeyPress={(e) => e.key === 'Enter' && addNote()}
+                      placeholder="Enter new note (Enter creates a new line)..."
+                      rows={3}
+                      className="flex-1 font-mono text-sm"
                     />
                     <Button onClick={addNote} size="sm" className="bg-blue-600 hover:bg-blue-700">
                       <Plus className="w-4 h-4 mr-1" />
@@ -764,18 +765,18 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
                     </Button>
                   </div>
                   <Textarea
-                    value={notes.join('\n')}
-                    onChange={(e) =>
-                      // Convert textarea back into per-line notes.
-                      // - No Enter => one continuous line => one note.
-                      // - Enter / paste line breaks => multiple notes.
-                      setNotes(
-                        e.target.value
-                          .split('\n')
-                          .map((l) => l.trim())
-                          .filter(Boolean)
-                      )
-                    }
+                    value={notes.join('\n\n')}
+                    onChange={(e) => {
+                      // Blank line separated notes:
+                      // - Single Enter => next line within the same note
+                      // - Double Enter => next note (new bullet)
+                      const text = e.target.value.replace(/\r\n/g, '\n');
+                      const parsed = text
+                        .split(/\n\s*\n+/)
+                        .map((chunk) => chunk.trim())
+                        .filter(Boolean);
+                      setNotes(parsed);
+                    }}
                     placeholder="Or edit all notes at once..."
                     rows={4}
                     className="font-mono text-sm"
@@ -789,8 +790,8 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
                   <div className="space-y-2">
                     {notesList.map((note, index) => (
                       <div key={`note-${index}-${note.slice(0, 10)}`} className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg">
-                        <span className="text-blue-400 mt-1">•</span>
-                        <span className="flex-1 text-sm">{note}</span>
+                        <span className="text-blue-400 mt-1">★</span>
+                        <span className="flex-1 text-sm whitespace-pre-wrap">{note}</span>
                         {isEditingNotes && (
                           <Button
                             variant="ghost"
