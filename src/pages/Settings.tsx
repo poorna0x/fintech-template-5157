@@ -56,6 +56,7 @@ import { CommonQrCode, invalidateQrCodesCache, cacheQrCodes, normalizeTechnician
 import CallingPage from '@/pages/CallingPage';
 import { registerAdminPWA } from '@/lib/pwa';
 import { EmailTrackingSettings } from '@/components/admin/EmailTrackingSettings';
+import { BookingIntentArchiveSettings } from '@/components/admin/BookingIntentArchiveSettings';
 import { SettingsRemindersDialog } from '@/components/reminders/SettingsRemindersDialog';
 import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
 import { RecurringServiceTracker } from '@/components/reminders/RecurringServiceTracker';
@@ -152,6 +153,12 @@ const DATABASE_EXPORT_TABLES: {
   { name: 'warranties', orderBy: 'created_at', label: 'Warranties', optional: true },
   { name: 'warranty_items', orderBy: 'created_at', label: 'Warranty Items', optional: true },
   { name: 'website_booking_intent', orderBy: 'updated_at', label: 'Website Booking Intent' },
+  {
+    name: 'website_booking_intent_archive',
+    orderBy: 'archived_at',
+    label: 'Website Booking Intent Archive',
+    optional: true,
+  },
 ];
 
 const Settings = () => {
@@ -2848,6 +2855,8 @@ const Settings = () => {
           </Card>
 
           <EmailTrackingSettings />
+
+          <BookingIntentArchiveSettings />
 
           {/* Data Export Section - At Bottom */}
           <Card>

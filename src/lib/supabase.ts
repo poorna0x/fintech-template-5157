@@ -7220,8 +7220,42 @@ export const db = {
       const rows = (data || []).filter((row) => (row as { quarantined?: boolean }).quarantined !== true);
       return { data: rows, error };
     },
+    /** Move row to website_booking_intent_archive, then delete from live table. */
     async dismiss(id: string) {
-      const { error } = await supabase.from('website_booking_intent').delete().eq('id', id);
+      const { data, error } = await supabase.rpc('archive_website_booking_intent', { p_id: id });
+      return { data, error };
+    },
+  },
+
+  /** Settings: Done booking archive (copies of live intents after Done). */
+  websiteBookingIntentArchive: {
+    async list(opts?: { limit?: number; offset?: number; search?: string }) {
+      const lim = Math.min(Math.max(1, opts?.limit ?? 50), 100);
+      const offset = Math.max(0, opts?.offset ?? 0);
+      let query = supabase
+        .from('website_booking_intent_archive')
+        .select('*', { count: 'exact' })
+        .order('archived_at', { ascending: false })
+        .range(offset, offset + lim - 1);
+      const q = opts?.search?.trim();
+      if (q) {
+        const escaped = q.replace(/[%_,]/g, '');
+        if (escaped) {
+          query = query.or(
+            `full_name.ilike.%${escaped}%,phone.ilike.%${escaped}%,phone_normalized.ilike.%${escaped}%`
+          );
+        }
+      }
+      const { data, error, count } = await query;
+      return { data: data || [], error, count: count ?? 0 };
+    },
+    async deleteForever(id: string) {
+      const { error } = await supabase.from('website_booking_intent_archive').delete().eq('id', id);
+      return { error };
+    },
+    async deleteForeverMany(ids: string[]) {
+      if (!ids.length) return { error: null };
+      const { error } = await supabase.from('website_booking_intent_archive').delete().in('id', ids);
       return { error };
     },
   },

@@ -668,8 +668,30 @@ export interface Database {
           booked_job_number: string | null;
         }>;
       };
+      website_booking_intent_archive: {
+        Row: {
+          id: string;
+          source_id: string | null;
+          full_name: string;
+          phone: string;
+          phone_normalized: string;
+          site_key: 'hydrogenro' | 'elevenro';
+          current_step: number;
+          intent_created_at: string | null;
+          intent_updated_at: string | null;
+          booked_at: string | null;
+          booked_job_number: string | null;
+          archived_at: string;
+        };
+        Insert: never;
+        Update: never;
+      };
     };
     Functions: {
+      archive_website_booking_intent: {
+        Args: { p_id: string };
+        Returns: string;
+      };
       upsert_website_booking_intent: {
         Args: {
           p_full_name: string;

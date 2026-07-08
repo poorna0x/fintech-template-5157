@@ -274,7 +274,12 @@ export function WebsiteBookingIntentBanner({ playAlert, stopAlert, onSearchCusto
     setDismissingId(id);
     const { error } = await db.websiteBookingIntent.dismiss(id);
     setDismissingId(null);
-    if (!error) setRows((prev) => prev.filter((r) => r.id !== id));
+    if (error) {
+      toast.error('Could not mark as done');
+      return;
+    }
+    // Moved to website_booking_intent_archive; live row is deleted.
+    setRows((prev) => prev.filter((r) => r.id !== id));
   };
 
   const hasRows = rows.length > 0;

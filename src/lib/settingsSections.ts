@@ -7,6 +7,7 @@ export const SETTINGS_SECTIONS = {
   'pending-payments': true,
   'technician-management': true,
   'email-tracking': true,
+  'booking-intent-archive': true,
   calling: true,
 } as const;
 
