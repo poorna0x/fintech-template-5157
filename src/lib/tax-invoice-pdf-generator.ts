@@ -5,6 +5,7 @@ import { getCompanyStateCode } from './indian-state-codes';
 import { sanitizeForTemplate, sanitizeNotesHtml } from './sanitize';
 import { resolveBrandSealSrc, resolveDocumentBrandFromData } from './service-brands';
 import { downloadDocumentPdf } from './server-pdf-download';
+import { getDocumentPdfPrintFrameCss } from './document-pdf-print-frame';
 
 function resolveTaxInvoiceSealSrc(data: PDFTaxInvoiceData): string {
   const brand = resolveDocumentBrandFromData({
@@ -1024,24 +1025,15 @@ function getTaxInvoiceDocumentStyles(): string {
               -webkit-print-color-adjust: exact !important;
               color-adjust: exact !important;
             }
+
+            ${getDocumentPdfPrintFrameCss()}
             
         body {
-          margin: 0 !important;
-              padding: 15mm !important;
               font-size: 12pt !important;
               line-height: 1.4 !important;
         }
         
         .bill-container {
-          width: 100% !important;
-          max-width: 100% !important;
-          margin: 0 !important;
-          padding: 20px 1px 20px 1px !important;
-              border: none !important;
-              box-shadow: none !important;
-              background: white !important;
-              box-sizing: border-box !important;
-              border-radius: 0 !important;
               page-break-inside: avoid !important;
               page-break-after: avoid !important;
             }
@@ -1049,36 +1041,6 @@ function getTaxInvoiceDocumentStyles(): string {
             .footer {
               page-break-after: avoid !important;
               margin-bottom: 0 !important;
-              padding-bottom: 0 !important;
-            }
-            
-            @page {
-              size: A4 !important;
-              margin: 20mm 8mm 20mm 8mm !important;
-              border: 2px solid #000000 !important;
-              border-radius: 12px !important;
-            }
-            
-            @page :first {
-              margin-top: 20mm !important;
-              border: 2px solid #000000 !important;
-              border-radius: 12px !important;
-            }
-            
-            @page :left {
-              margin-left: 8mm !important;
-              margin-right: 5mm !important;
-              margin-top: 20mm !important;
-              border: 2px solid #000000 !important;
-              border-radius: 12px !important;
-            }
-            
-            @page :right {
-              margin-left: 5mm !important;
-              margin-right: 8mm !important;
-              margin-top: 20mm !important;
-              border: 2px solid #000000 !important;
-              border-radius: 12px !important;
             }
             
             .page-break {
@@ -1494,10 +1456,10 @@ export async function generateCombinedTaxInvoicePDF(
               -webkit-print-color-adjust: exact !important;
               color-adjust: exact !important;
             }
+
+            ${getDocumentPdfPrintFrameCss()}
             
         body {
-          margin: 0 !important;
-              padding: 15mm 15mm 0 15mm !important;
               font-size: 12pt !important;
               line-height: 1.4 !important;
         }
@@ -1508,15 +1470,6 @@ export async function generateCombinedTaxInvoicePDF(
         }
         
         .bill-container {
-          width: 100% !important;
-          max-width: 100% !important;
-          margin: 0 !important;
-          padding: 20px 1px 20px 1px !important;
-              border: none !important;
-              box-shadow: none !important;
-              background: white !important;
-              box-sizing: border-box !important;
-              border-radius: 0 !important;
               page-break-inside: avoid !important;
               page-break-after: avoid !important;
             }
@@ -1524,47 +1477,16 @@ export async function generateCombinedTaxInvoicePDF(
             .bill-container:last-child {
               page-break-after: avoid !important;
               margin-bottom: 0 !important;
-              padding-bottom: 0 !important;
             }
             
             .footer {
               page-break-after: avoid !important;
               margin-bottom: 0 !important;
-              padding-bottom: 0 !important;
             }
             
             .page-break {
               page-break-before: always !important;
               margin-top: 20px !important;
-            }
-            
-            @page {
-              size: A4 !important;
-              margin: 20mm 8mm 20mm 8mm !important;
-              border: 2px solid #000000 !important;
-              border-radius: 12px !important;
-            }
-            
-            @page :first {
-              margin-top: 20mm !important;
-              border: 2px solid #000000 !important;
-              border-radius: 12px !important;
-            }
-            
-            @page :left {
-              margin-left: 8mm !important;
-              margin-right: 5mm !important;
-              margin-top: 20mm !important;
-              border: 2px solid #000000 !important;
-              border-radius: 12px !important;
-            }
-            
-            @page :right {
-              margin-left: 5mm !important;
-              margin-right: 8mm !important;
-              margin-top: 20mm !important;
-              border: 2px solid #000000 !important;
-              border-radius: 12px !important;
             }
             
             .new-page-content {

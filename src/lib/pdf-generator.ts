@@ -12,6 +12,7 @@ import {
 } from './document-pdf-brand';
 import type { DocumentSealVariant } from './service-brands';
 import { downloadDocumentPdf } from './server-pdf-download';
+import { getDocumentPdfPrintFrameCss } from './document-pdf-print-frame';
 
 export interface PDFBillData {
   billNumber: string;
@@ -511,19 +512,7 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
           overflow-x: hidden !important;
         }
         
-        .bill-container {
-          width: 100% !important;
-          max-width: 100% !important;
-          margin: 0 auto !important;
-          padding: 15px 10px !important;
-          border: 2px solid #000 !important;
-          box-shadow: none !important;
-          background: white !important;
-          box-sizing: border-box !important;
-          -webkit-print-color-adjust: exact !important;
-          print-color-adjust: exact !important;
-          overflow: hidden !important;
-        }
+        ${getDocumentPdfPrintFrameCss()}
         
         .bill-info {
           flex-direction: column !important;
@@ -572,51 +561,6 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
           width: 100% !important;
           margin: 15px 0 0 0 !important;
           padding-right: 0 !important;
-        }
-        
-        @page {
-          size: A4 !important;
-          margin: 20mm 8mm 20mm 8mm !important;
-          border: 2px solid #000000 !important;
-          border-radius: 12px !important;
-        }
-        
-        /* Force A4 format for devices that default to Letter */
-        @page :first {
-          size: A4 !important;
-          margin: 20mm 8mm 20mm 8mm !important;
-          border: 2px solid #000000 !important;
-          border-radius: 12px !important;
-        }
-        
-        /* Additional A4 enforcement */
-        @media print and (max-width: 210mm) {
-          @page {
-            size: A4 !important;
-            margin: 20mm 8mm 20mm 8mm !important;
-          }
-        }
-        
-        @page :first {
-          margin-top: 20mm !important;
-          border: 2px solid #000000 !important;
-          border-radius: 12px !important;
-        }
-        
-        @page :left {
-          margin-left: 8mm !important;
-          margin-right: 5mm !important;
-          margin-top: 20mm !important;
-          border: 2px solid #000000 !important;
-          border-radius: 12px !important;
-        }
-        
-        @page :right {
-          margin-left: 5mm !important;
-          margin-right: 8mm !important;
-          margin-top: 20mm !important;
-          border: 2px solid #000000 !important;
-          border-radius: 12px !important;
         }
         
         .page-break {
@@ -1189,53 +1133,17 @@ function getBillDocumentStyles(): string {
               -webkit-print-color-adjust: exact !important;
               color-adjust: exact !important;
             }
+
+            ${getDocumentPdfPrintFrameCss()}
             
         body {
-          margin: 0 !important;
-              padding: 15mm !important;
               font-size: 12pt !important;
               line-height: 1.4 !important;
         }
         
         .bill-container {
-          width: 100% !important;
-          max-width: 100% !important;
-          margin: 0 !important;
-          padding: 20px 1px 20px 1px !important;
-              border: none !important;
-              box-shadow: none !important;
-              background: white !important;
-              box-sizing: border-box !important;
-              border-radius: 0 !important;
-            }
-            
-            @page {
-              size: A4 !important;
-              margin: 20mm 8mm 20mm 8mm !important;
-              border: 2px solid #000000 !important;
-              border-radius: 12px !important;
-            }
-            
-            @page :first {
-              margin-top: 20mm !important;
-              border: 2px solid #000000 !important;
-              border-radius: 12px !important;
-            }
-            
-            @page :left {
-              margin-left: 8mm !important;
-              margin-right: 5mm !important;
-              margin-top: 20mm !important;
-              border: 2px solid #000000 !important;
-              border-radius: 12px !important;
-            }
-            
-            @page :right {
-              margin-left: 5mm !important;
-              margin-right: 8mm !important;
-              margin-top: 20mm !important;
-              border: 2px solid #000000 !important;
-              border-radius: 12px !important;
+              page-break-inside: avoid !important;
+              page-break-after: avoid !important;
             }
             
             .page-break {

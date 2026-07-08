@@ -11,6 +11,7 @@ import {
   resolvePdfDocumentBrand,
 } from './document-pdf-brand';
 import { downloadDocumentPdf } from './server-pdf-download';
+import { getDocumentPdfPrintFrameCss } from './document-pdf-print-frame';
 
 export interface PDFQuotationData {
   billNumber: string;
@@ -534,6 +535,8 @@ function handleMobilePrint(quotationData: PDFQuotationData, action: 'print' | 'p
           line-height: 1.4 !important;
         }
         
+        ${getDocumentPdfPrintFrameCss({ borderRadius: '10px' })}
+        
         .quotation-container {
           width: 100% !important;
           max-width: 100% !important;
@@ -542,13 +545,6 @@ function handleMobilePrint(quotationData: PDFQuotationData, action: 'print' | 'p
           box-shadow: none !important;
           background: white !important;
           box-sizing: border-box !important;
-        }
-        
-        @page {
-          size: A4 !important;
-          margin: 12mm 8mm !important;
-          border: 2px solid #000000 !important;
-          border-radius: 10px !important;
         }
       }
     `;
@@ -1353,30 +1349,13 @@ function getQuotationDocumentStyles(): string {
               -webkit-print-color-adjust: exact !important;
               color-adjust: exact !important;
             }
+
+            ${getDocumentPdfPrintFrameCss({ borderRadius: '10px' })}
             
         body {
-          margin: 0 !important;
-              padding: 12mm 8mm !important;
               font-size: 12pt !important;
               line-height: 1.4 !important;
         }
-        
-        .quotation-container {
-          width: 100% !important;
-          max-width: 100% !important;
-          margin: 0 !important;
-          padding: 0 !important;
-              box-shadow: none !important;
-              background: white !important;
-              box-sizing: border-box !important;
-            }
-            
-            @page {
-              size: A4 !important;
-              margin: 12mm 8mm !important;
-              border: 2px solid #000000 !important;
-              border-radius: 10px !important;
-            }
           }
   `;
 }
