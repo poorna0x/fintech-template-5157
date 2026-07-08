@@ -118,6 +118,7 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
   const [serviceCharge, setServiceCharge] = useState(0);
   const [notes, setNotes] = useState<string[]>([]);
   const [newNote, setNewNote] = useState('');
+  const [notesHeading, setNotesHeading] = useState('Additional Info');
   const [editingNoteIndex, setEditingNoteIndex] = useState<number | null>(null);
   const [validityNote, setValidityNote] = useState('This quotation is valid for 30 days from the date of issue. Prices are subject to change without prior notice.');
   const [showValidityNote, setShowValidityNote] = useState(false);
@@ -463,6 +464,7 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
       paymentStatus: 'pending',
       paymentMethod: 'cash',
       notes: notes.join('\n'),
+      notesHeading,
       terms: showValidityNote ? `${validityNote}\n\n${termsForPdf}` : termsForPdf,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
@@ -567,6 +569,7 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
     items,
     serviceCharge,
     notes,
+    notesHeading,
     validityNote,
     showValidityNote,
     termItems: serializeTermItems(termItems),
@@ -591,6 +594,7 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
     if (Array.isArray(snap.items)) setItems(snap.items as BillItem[]);
     if (typeof snap.serviceCharge === 'number') setServiceCharge(snap.serviceCharge);
     if (Array.isArray(snap.notes)) setNotes(snap.notes as string[]);
+    if (typeof snap.notesHeading === 'string') setNotesHeading(snap.notesHeading);
     if (typeof snap.validityNote === 'string') setValidityNote(snap.validityNote);
     if (typeof snap.showValidityNote === 'boolean') setShowValidityNote(snap.showValidityNote);
     setTermItems(
@@ -1352,9 +1356,21 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
       {/* Additional Info Section */}
       <Card className="border-blue-200 bg-blue-50/30">
         <CardHeader>
-          <CardTitle className="text-lg sm:text-xl text-blue-800">Additional Info</CardTitle>
+          <CardTitle className="text-lg sm:text-xl text-blue-800">{notesHeading}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="flex flex-col sm:flex-row gap-2 sm:items-center sm:justify-between">
+            <Label htmlFor="notesHeading-quotation" className="text-sm font-medium text-blue-800">
+              Heading
+            </Label>
+            <Input
+              id="notesHeading-quotation"
+              value={notesHeading}
+              onChange={(e) => setNotesHeading(e.target.value)}
+              placeholder="e.g. Warranty Notes"
+              className="sm:w-72"
+            />
+          </div>
           {/* Add New Note */}
           <div className="space-y-3">
             <div className="flex flex-col sm:flex-row gap-2">

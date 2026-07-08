@@ -18,6 +18,7 @@ export function billToBillPdfData(bill: Bill) {
     paymentStatus: bill.paymentStatus,
     paymentMethod: bill.paymentMethod,
     notes: bill.notes,
+    notesHeading: (bill as { notesHeading?: string }).notesHeading,
     terms: bill.terms,
     hideGstInHeader: (bill as { hideGstInHeader?: boolean }).hideGstInHeader || false,
     documentBrand: (bill as { documentBrand?: 'hydrogenro' | 'elevenro' }).documentBrand,
@@ -57,6 +58,7 @@ export function billToQuotationPdfData(bill: Bill) {
     paymentStatus: bill.paymentStatus,
     paymentMethod: bill.paymentMethod,
     notes: bill.notes,
+    notesHeading: (bill as { notesHeading?: string }).notesHeading,
     terms: bill.terms,
   } as Record<string, unknown>;
 
@@ -85,6 +87,7 @@ export function billToTaxInvoicePdfData(bill: Bill) {
     paymentStatus: bill.paymentStatus,
     paymentMethod: bill.paymentMethod,
     notes: bill.notes,
+    notesHeading: (bill as { notesHeading?: string }).notesHeading,
     terms: bill.terms,
     gstData: (bill as { gstData?: object }).gstData || {},
     invoiceDetails: (bill as { invoiceDetails?: object }).invoiceDetails || {},

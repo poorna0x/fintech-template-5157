@@ -52,6 +52,7 @@ export interface PDFQuotationData {
   paymentStatus: string;
   paymentMethod?: string;
   notes?: string;
+  notesHeading?: string;
   terms?: string;
   documentBrand?: 'hydrogenro' | 'elevenro';
   sealVariant?: 'sign' | 'stamp';
@@ -796,6 +797,14 @@ function createQuotationContent(data: PDFQuotationData): string {
   const companyDetails = renderPdfCompanyDetailsHtml(data.company, brand);
   const signatureBlock = renderPdfSignatureHtml(brand, data.billDate, data.sealVariant ?? 'sign');
   const footerBlock = renderPdfFooterHtml(brand, data.company);
+  
+  const rawNotesHeading = (data.notesHeading ?? 'Additional Info').toString().trim();
+  const notesHeading =
+    rawNotesHeading.length === 0
+      ? 'Additional Info:'
+      : rawNotesHeading.endsWith(':')
+        ? rawNotesHeading
+        : `${rawNotesHeading}:`;
   const validityDate = data.validUntil
     ? new Date(data.validUntil)
     : new Date(new Date(data.billDate).getTime() + 30 * 24 * 60 * 60 * 1000);
@@ -906,7 +915,7 @@ function createQuotationContent(data: PDFQuotationData): string {
       <!-- Additional Info -->
       ${data.notes ? `
         <div class="notes-section">
-          <div class="notes-title">Additional Info:</div>
+          <div class="notes-title">${notesHeading}</div>
           <div class="notes-content">${sanitizeForTemplate(data.notes)}</div>
         </div>
       ` : ''}

@@ -52,6 +52,7 @@ export interface PDFBillData {
   paymentStatus: string;
   paymentMethod?: string;
   notes?: string;
+  notesHeading?: string;
   terms?: string;
   hideGstInHeader?: boolean;
   documentBrand?: 'hydrogenro' | 'elevenro';
@@ -786,6 +787,14 @@ function createBillContent(data: PDFBillData): string {
   const signatureBlock = renderPdfSignatureHtml(brand, data.billDate, data.sealVariant ?? 'sign');
   const footerBlock = renderPdfFooterHtml(brand, data.company);
 
+  const rawNotesHeading = (data.notesHeading ?? 'Additional Info').toString().trim();
+  const notesHeading =
+    rawNotesHeading.length === 0
+      ? 'Additional Info:'
+      : rawNotesHeading.endsWith(':')
+        ? rawNotesHeading
+        : `${rawNotesHeading}:`;
+
   return `
     <div class="bill-container">
       <!-- Header -->
@@ -865,7 +874,7 @@ function createBillContent(data: PDFBillData): string {
       ${data.notes || data.terms ? `
         <div class="notes-section">
           ${data.notes ? `
-            <div class="notes-title">Additional Info:</div>
+            <div class="notes-title">${notesHeading}</div>
               <div class="notes-content">${sanitizeForTemplate(data.notes)}</div>
           ` : ''}
           ${data.terms ? `

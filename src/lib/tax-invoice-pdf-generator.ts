@@ -100,6 +100,7 @@ export interface PDFTaxInvoiceData {
   paymentStatus: string;
   paymentMethod?: string;
   notes?: string;
+  notesHeading?: string;
   terms?: string;
   gstData?: {
     placeOfSupply?: string;
@@ -387,6 +388,14 @@ function handleMobilePrint(billData: PDFTaxInvoiceData, action: 'print' | 'pdf')
 }
 
 function createTaxInvoiceContent(data: PDFTaxInvoiceData): string {
+  const rawNotesHeading = (data.notesHeading ?? 'Additional Info').toString().trim();
+  const notesHeading =
+    rawNotesHeading.length === 0
+      ? 'Additional Info:'
+      : rawNotesHeading.endsWith(':')
+        ? rawNotesHeading
+        : `${rawNotesHeading}:`;
+
   return `
     <div class="bill-container">
       <!-- Header -->
@@ -596,7 +605,7 @@ function createTaxInvoiceContent(data: PDFTaxInvoiceData): string {
       ${data.notes || data.terms ? `
         <div class="notes-section">
           ${data.notes ? `
-            <div class="notes-title">Additional Info:</div>
+            <div class="notes-title">${notesHeading}</div>
               <div class="notes-content">${sanitizeForTemplate(data.notes)}</div>
           ` : ''}
           ${data.terms ? `

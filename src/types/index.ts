@@ -416,6 +416,8 @@ export interface Bill {
   
   // Additional Information
   notes?: string;
+  /** Heading text used for Additional Info / Notes section on generated PDFs. */
+  notesHeading?: string;
   terms?: string;
   validity?: string; // AMC validity period
   agreementIntro?: string; // AMC agreement introduction text

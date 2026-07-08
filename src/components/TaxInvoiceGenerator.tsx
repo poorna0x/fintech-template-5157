@@ -236,6 +236,7 @@ export default function TaxInvoiceGenerator({
   const [items, setItems] = useState<EditableBillItem[]>(defaultTaxInvoiceItems);
   const [notes, setNotes] = useState<string[]>([]);
   const [newNote, setNewNote] = useState('');
+  const [notesHeading, setNotesHeading] = useState('Additional Info');
   const [editingNoteIndex, setEditingNoteIndex] = useState<number | null>(null);
   const [validityNote, setValidityNote] = useState('This tax invoice is valid for 30 days from the date of issue. Prices are subject to change without prior notice.');
   const [showValidityNote, setShowValidityNote] = useState(false);
@@ -799,6 +800,7 @@ export default function TaxInvoiceGenerator({
       paymentStatus: 'PENDING',
       paymentMethod: 'CASH',
       notes: notes.join('\n'),
+      notesHeading,
       terms: showValidityNote ? `${validityNote}\n\n${termsForPdf}` : termsForPdf,
       serviceType: customerServiceType,
       createdAt: new Date().toISOString(),
@@ -897,6 +899,7 @@ export default function TaxInvoiceGenerator({
     signatureDate,
     items,
     notes,
+    notesHeading,
     validityNote,
     showValidityNote,
     termItems: serializeTermItems(termItems),
@@ -942,6 +945,7 @@ export default function TaxInvoiceGenerator({
     if (typeof snap.signatureDate === 'string') setSignatureDate(snap.signatureDate);
     if (Array.isArray(snap.items)) setItems(snap.items as BillItem[]);
     if (Array.isArray(snap.notes)) setNotes(snap.notes as string[]);
+    if (typeof snap.notesHeading === 'string') setNotesHeading(snap.notesHeading);
     if (typeof snap.validityNote === 'string') setValidityNote(snap.validityNote);
     if (typeof snap.showValidityNote === 'boolean') setShowValidityNote(snap.showValidityNote);
     setTermItems(coerceTermItemsFromSnapshot(snap));
@@ -1708,7 +1712,7 @@ export default function TaxInvoiceGenerator({
             {/* Notes Section */}
             <div className="space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <h3 className="text-lg font-semibold text-blue-800">Additional Info</h3>
+                <h3 className="text-lg font-semibold text-blue-800">{notesHeading}</h3>
                 <Button
                   variant="outline"
                   size="sm"
@@ -1718,6 +1722,18 @@ export default function TaxInvoiceGenerator({
                   <Edit className="w-4 h-4 mr-2" />
                   {isEditingNotes ? 'View' : 'Edit'}
                 </Button>
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="notesHeading-taxinvoice" className="text-sm font-medium text-blue-800">
+                  Additional info heading
+                </Label>
+                <Input
+                  id="notesHeading-taxinvoice"
+                  value={notesHeading}
+                  onChange={(e) => setNotesHeading(e.target.value)}
+                  placeholder="e.g. Warranty Notes"
+                />
               </div>
               
               {isEditingNotes ? (
