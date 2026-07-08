@@ -748,8 +748,18 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
                     </Button>
                   </div>
                   <Textarea
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
+                    value={notes.join('\n')}
+                    onChange={(e) =>
+                      // Convert textarea back into per-line notes.
+                      // - No Enter => one continuous line => one note.
+                      // - Enter / paste line breaks => multiple notes.
+                      setNotes(
+                        e.target.value
+                          .split('\n')
+                          .map((l) => l.trim())
+                          .filter(Boolean)
+                      )
+                    }
                     placeholder="Or edit all notes at once..."
                     rows={4}
                     className="font-mono text-sm"

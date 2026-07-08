@@ -847,6 +847,9 @@ function getTaxInvoiceDocumentStyles(): string {
             font-size: 14px;
             line-height: 1.5;
             color: #6b7280;
+            /* Preserve user line breaks from Additional Info (textarea/paste). */
+            white-space: pre-wrap;
+            word-break: break-word;
           }
           
           .terms-list {
@@ -1312,6 +1315,9 @@ export async function generateCombinedTaxInvoicePDF(
             font-size: 14px;
             line-height: 1.5;
             color: #6b7280;
+            /* Preserve user line breaks from Additional Info (textarea/paste). */
+            white-space: pre-wrap;
+            word-break: break-word;
           }
           
           .terms-list {

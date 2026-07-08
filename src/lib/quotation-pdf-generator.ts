@@ -381,6 +381,9 @@ function handleMobilePrint(quotationData: PDFQuotationData, action: 'print' | 'p
         font-size: 12px;
         line-height: 1.4;
         color: #6b7280;
+        /* Preserve user line breaks from Additional Info (textarea/paste). */
+        white-space: pre-wrap;
+        word-break: break-word;
       }
       
       .bank-section {
@@ -1174,6 +1177,9 @@ function getQuotationDocumentStyles(): string {
             font-size: 14px;
             line-height: 1.5;
             color: #6b7280;
+            /* Preserve user line breaks from Additional Info (textarea/paste). */
+            white-space: pre-wrap;
+            word-break: break-word;
           }
           
           .bank-section {
