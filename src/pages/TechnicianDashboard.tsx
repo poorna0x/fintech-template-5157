@@ -58,6 +58,7 @@ import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { formatCompletedWhen } from '@/lib/relativeTime';
 import { getJobEquipmentDisplay, parseJobRequirements, isOfficeCompletedJob } from '@/lib/adminUtils';
 import { db, supabase, fetchCustomerIdsWithCompletedJobsMap } from '@/lib/supabase';
+import { mapCustomerGstFields } from '@/lib/customerGst';
 import {
   ensureSupabaseSessionForWrite,
   locationUploadErrorMessage,
@@ -3050,6 +3051,7 @@ const TechnicianDashboard = () => {
       model: String(raw?.model || ''),
       status: 'ACTIVE',
       customerSince: '',
+      ...mapCustomerGstFields(raw as { gstNumber?: string; gst_number?: string }),
     });
 
     void (async () => {
@@ -3075,6 +3077,7 @@ const TechnicianDashboard = () => {
         model: String(row.model || ''),
         status: 'ACTIVE',
         customerSince: String(row.customer_since || ''),
+        ...mapCustomerGstFields(row as { gstNumber?: string; gst_number?: string }),
       });
     })();
 

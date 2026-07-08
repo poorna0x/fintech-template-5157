@@ -1,4 +1,5 @@
 import { normalizeCustomerAddress } from '@/lib/customer-address';
+import { mapCustomerGstFields } from '@/lib/customerGst';
 import type { Customer } from '@/types';
 
 export function transformTechnicianData(tech: any) {
@@ -95,6 +96,7 @@ export function transformCustomerData(customer: any): Customer {
     has_google_review: customer.has_google_review ?? null,
     customer_tier: (customer as any).customer_tier ?? null,
     raw_water_tds: (customer as any).raw_water_tds ?? 0,
+    ...mapCustomerGstFields(customer),
     createdAt: customer.created_at,
     updatedAt: customer.updated_at,
   };

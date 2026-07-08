@@ -1,4 +1,5 @@
 import type { BillItem, CompanyInfo, Customer } from '@/types';
+import { mapCustomerGstFields } from '@/lib/customerGst';
 import { getCompanyStateCode } from '@/lib/indian-state-codes';
 import { generateTaxInvoiceHTML, generateTaxInvoicePDF } from '@/lib/tax-invoice-pdf-generator';
 import type { PDFTaxInvoiceData } from '@/lib/tax-invoice-pdf-generator';
@@ -148,6 +149,7 @@ export function taxInvoiceToCustomer(invoice: TaxInvoiceRecord): Customer {
     brand: '',
     model: '',
     status: 'ACTIVE',
+    ...mapCustomerGstFields({ gst_number: invoice.customer_gstin }),
     createdAt: invoice.created_at || new Date().toISOString(),
     updatedAt: invoice.created_at || new Date().toISOString(),
   } as Customer;

@@ -1023,6 +1023,11 @@ const AdminDashboard = () => {
   const loadJobsRequestRef = useRef(0);
   /** Session cache for Completed / Follow-up tab switches; always refreshed in background on open. */
   const jobsListCacheRef = useRef(new Map<string, Job[]>());
+  /** Short TTL cache for document-modal customer rows (GSTIN + address) to avoid repeat egress. */
+  const documentCustomerCacheRef = useRef(
+    new Map<string, { customer: Customer; fetchedAt: number }>()
+  );
+  const DOCUMENT_CUSTOMER_CACHE_TTL_MS = 60_000;
   /** Snapshot so switching back to Ongoing feels instant without Completed-style cache. */
   const ongoingJobsSnapshotRef = useRef<Job[]>(
     initialOngoingJobs.length > 0 ? initialOngoingJobs : (getModuleOngoingJobsSnapshot() as Job[])
@@ -2428,39 +2433,40 @@ const AdminDashboard = () => {
     }
   }, []);
 
-  /** Document modals — slim fetch (no photos/notes); skip network when list row already has address. */
+  /** Document modals — slim fetch with short TTL cache (GSTIN not on list embeds). */
   const loadCustomerForDocuments = useCallback(async (customer: Customer): Promise<Customer> => {
-    const normalized = normalizeCustomerAddress(customer.address, {
-      visible_address: customer.address?.visible_address || (customer as { visible_address?: string }).visible_address,
-      formattedAddress: customer.location?.formattedAddress,
-    });
-    const hasAddress = Boolean(
-      normalized.street ||
-        normalized.area ||
-        normalized.city ||
-        normalized.state ||
-        normalized.pincode ||
-        customer.location?.formattedAddress?.trim()
-    );
-
-    if (customer.fullName && customer.phone && hasAddress) {
-      return {
-        ...customer,
-        address: {
-          ...normalized,
-          visible_address:
-            normalized.visible_address ||
-            customer.address?.visible_address ||
-            (customer as { visible_address?: string }).visible_address ||
-            '',
-        },
-      };
+    const cached = documentCustomerCacheRef.current.get(customer.id);
+    if (cached && Date.now() - cached.fetchedAt < DOCUMENT_CUSTOMER_CACHE_TTL_MS) {
+      return cached.customer;
     }
 
     try {
       const { data, error } = await db.customers.getByIdForDocuments(customer.id);
-      if (error || !data) return customer;
-      return transformCustomerData(data);
+      if (error || !data) {
+        const normalized = normalizeCustomerAddress(customer.address, {
+          visible_address:
+            customer.address?.visible_address ||
+            (customer as { visible_address?: string }).visible_address,
+          formattedAddress: customer.location?.formattedAddress,
+        });
+        return {
+          ...customer,
+          address: {
+            ...normalized,
+            visible_address:
+              normalized.visible_address ||
+              customer.address?.visible_address ||
+              (customer as { visible_address?: string }).visible_address ||
+              '',
+          },
+        };
+      }
+      const transformed = transformCustomerData(data);
+      documentCustomerCacheRef.current.set(customer.id, {
+        customer: transformed,
+        fetchedAt: Date.now(),
+      });
+      return transformed;
     } catch {
       return customer;
     }
@@ -6082,6 +6088,7 @@ const AdminDashboard = () => {
         dbBrands={dbBrands}
         dbModels={dbModels}
         onCustomerUpdated={(updatedCustomer) => {
+          documentCustomerCacheRef.current.delete(updatedCustomer.id);
           setCustomers(customers.map(c => c.id === updatedCustomer.id ? updatedCustomer : c));
           patchCustomerContactOnJobs(updatedCustomer.id, {
             email: updatedCustomer.email ?? null,
@@ -6096,6 +6103,7 @@ const AdminDashboard = () => {
         }}
         onLoadBrandsAndModels={loadBrandsAndModels}
         onCustomerDeleted={(customerId) => {
+          documentCustomerCacheRef.current.delete(customerId);
           setCustomers(customers.filter(c => c.id !== customerId));
           setEditingCustomer(null);
           loadDashboardData();

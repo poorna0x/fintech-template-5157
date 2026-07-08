@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Plus, Trash2, Download, Edit, X, FileText, Save, Printer, Eye, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { Bill, BillItem, CompanyInfo, Customer } from '@/types';
+import { getCustomerGstNumber, normalizeCustomerGstNumber } from '@/lib/customerGst';
 import {
   type EditableNumber,
   displayEditableNumber,
@@ -24,11 +25,11 @@ type EditableBillItem = Omit<BillItem, 'quantity' | 'unitPrice'> & {
 };
 import {
   getCompanyStateCode,
-  getStateCodeFromGstin,
   getStateNameByCode,
   INDIAN_GST_STATES,
   isIntraStateSupply,
   normalizeGstStateCode,
+  placeOfSupplyFromCustomerGstin,
   preparePlaceOfSupplyForSave,
   resolvePlaceOfSupply,
 } from '@/lib/indian-state-codes';
@@ -184,7 +185,7 @@ export default function TaxInvoiceGenerator({
           state: '',
           pincode: '',
         };
-  const customerGst = customer?.gstNumber || '';
+  const customerGst = getCustomerGstNumber(customer);
   const customerServiceType = customer?.serviceType || 'RO';
 
   // Get preview invoice number (doesn't increment - just shows what the next number would be)
@@ -266,10 +267,13 @@ export default function TaxInvoiceGenerator({
   });
   const [placeOfSupply, setPlaceOfSupply] = useState(initialPos.name);
   const [placeOfSupplyCode, setPlaceOfSupplyCode] = useState(initialPos.code);
+  /** Skip GSTIN→state auto-select while restoring a draft / editing a saved invoice. */
+  const skipGstPlaceOfSupplyAutoRef = useRef(Boolean(editInvoiceId));
 
   const companyStateCode = getCompanyStateCode(company);
 
   const handlePlaceOfSupplyCodeChange = (value: string) => {
+    skipGstPlaceOfSupplyAutoRef.current = false;
     const code = normalizeGstStateCode(value);
     setPlaceOfSupplyCode(code);
     const stateName = getStateNameByCode(code);
@@ -277,6 +281,7 @@ export default function TaxInvoiceGenerator({
   };
 
   const handlePlaceOfSupplySelect = (code: string) => {
+    skipGstPlaceOfSupplyAutoRef.current = false;
     setPlaceOfSupplyCode(code);
     const stateName = getStateNameByCode(code);
     if (stateName) setPlaceOfSupply(stateName);
@@ -379,36 +384,35 @@ export default function TaxInvoiceGenerator({
   });
 
   useEffect(() => {
-    if (!customer) return;
+    if (!customer || editInvoiceId) return;
     const name = customer.fullName || (customer as any)?.full_name || '';
     const phone = typeof customer.phone === 'string' ? customer.phone : (customer as any)?.phone || '';
     const email = customer.email || '';
-    const gst = customer.gstNumber || '';
+    const gst = getCustomerGstNumber(customer);
     const addr = customer.address || {};
     setEditableCustomer((prev) => ({
-      name: prev.name || name,
-      phone: prev.phone || phone,
-      email: prev.email || email,
-      gst: prev.gst || gst,
+      name: name || prev.name,
+      phone: phone || prev.phone,
+      email: email || prev.email,
+      // Prefer saved customer GSTIN once document fetch arrives
+      gst: gst || prev.gst,
       address: {
-        street: prev.address.street || addr.street || '',
-        area: prev.address.area || addr.area || '',
-        city: prev.address.city || addr.city || '',
-        state: prev.address.state || addr.state || '',
-        pincode: prev.address.pincode || addr.pincode || '',
+        street: addr.street || prev.address.street || '',
+        area: addr.area || prev.address.area || '',
+        city: addr.city || prev.address.city || '',
+        state: addr.state || prev.address.state || '',
+        pincode: addr.pincode || prev.address.pincode || '',
       },
     }));
-  }, [customer]);
+  }, [customer, editInvoiceId]);
 
-  // Place of supply follows customer GSTIN state code when GSTIN is entered/updated
+  // Auto-select place of supply / state code from customer GSTIN (first 2 digits)
   useEffect(() => {
-    const code = getStateCodeFromGstin(editableCustomer.gst);
-    if (!code) return;
-    const name = getStateNameByCode(code);
-    if (name) {
-      setPlaceOfSupplyCode(code);
-      setPlaceOfSupply(name);
-    }
+    if (skipGstPlaceOfSupplyAutoRef.current) return;
+    const fromGst = placeOfSupplyFromCustomerGstin(editableCustomer.gst);
+    if (!fromGst) return;
+    setPlaceOfSupplyCode((prev) => (prev === fromGst.code ? prev : fromGst.code));
+    setPlaceOfSupply((prev) => (prev === fromGst.name ? prev : fromGst.name));
   }, [editableCustomer.gst]);
 
   // Calculate totals with GST (after discounts)
@@ -948,6 +952,7 @@ export default function TaxInvoiceGenerator({
 
   const applyDraftSnapshot = (snap: ReturnType<typeof getDraftSnapshot>) => {
     if (!snap || typeof snap !== 'object') return;
+    skipGstPlaceOfSupplyAutoRef.current = true;
     if (typeof snap.billNumber === 'string') {
       billNumberEditedRef.current = true;
       setBillNumber(snap.billNumber);
@@ -1199,6 +1204,9 @@ export default function TaxInvoiceGenerator({
                 <p className="text-xs text-gray-500 mt-1">
                   Supplier: {company.state} ({companyStateCode}).{' '}
                   {isIntraState ? 'Intra-state — CGST + SGST' : 'Inter-state — IGST'}
+                  {editableCustomer.gst
+                    ? ' · State selected from customer GSTIN.'
+                    : ''}
                 </p>
               </div>
               <div>
@@ -1390,11 +1398,26 @@ export default function TaxInvoiceGenerator({
                     <Input
                       id="customer-gst"
                       value={editableCustomer.gst}
-                      onChange={(e) => setEditableCustomer(prev => ({ ...prev, gst: e.target.value }))}
+                      onChange={(e) => {
+                        skipGstPlaceOfSupplyAutoRef.current = false;
+                        setEditableCustomer((prev) => ({
+                          ...prev,
+                          gst: normalizeCustomerGstNumber(e.target.value),
+                        }));
+                      }}
                       placeholder={invoiceType === 'B2B' ? 'Enter GSTIN (Required for B2B)' : 'Enter GSTIN (Optional)'}
                       required={invoiceType === 'B2B'}
+                      maxLength={15}
+                      autoCapitalize="characters"
+                      autoCorrect="off"
+                      spellCheck={false}
                       className={invoiceType === 'B2B' && !editableCustomer.gst ? 'border-red-500' : ''}
                     />
+                    {editableCustomer.gst ? (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        State code auto-fills from GSTIN (first 2 digits).
+                      </p>
+                    ) : null}
                     {invoiceType === 'B2B' && (
                       <p className="text-xs text-red-500 mt-1">Customer GSTIN is mandatory for B2B invoices</p>
                     )}

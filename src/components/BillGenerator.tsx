@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Plus, Trash2, Download, Edit, X, FileText, Printer, Eye, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { Bill, BillItem, CompanyInfo, Customer } from '@/types';
+import { getCustomerGstNumber } from '@/lib/customerGst';
 import DocumentBrandPickerDialog from '@/components/DocumentBrandPickerDialog';
 import {
   DocumentBrand,
@@ -85,7 +86,7 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
           state: '',
           pincode: '',
         };
-  const customerGst = customer?.gstNumber || '';
+  const customerGst = getCustomerGstNumber(customer);
   const customerServiceType = customer?.serviceType || 'RO';
 
   // State management
@@ -133,6 +134,23 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
       pincode: customerAddress.pincode || ''
     }
   });
+
+  // Keep editable customer in sync when async full customer load brings GSTIN / address
+  useEffect(() => {
+    setEditableCustomer({
+      name: customerName || '',
+      phone: customerPhone || '',
+      email: customerEmail || '',
+      gst: customerGst || '',
+      address: {
+        street: customerAddress.street || '',
+        area: customerAddress.area || '',
+        city: customerAddress.city || '',
+        state: customerAddress.state || '',
+        pincode: customerAddress.pincode || '',
+      },
+    });
+  }, [customerName, customerPhone, customerEmail, customerGst, customerAddress]);
 
   // Calculate totals
   const subtotal = items.reduce((sum, item) => sum + item.total, 0);

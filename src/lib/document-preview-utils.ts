@@ -1,4 +1,5 @@
 import { Bill } from '@/types';
+import { getCustomerGstNumber } from '@/lib/customerGst';
 import { generateBillHTML } from '@/lib/pdf-generator';
 import { generateQuotationHTML } from '@/lib/quotation-pdf-generator';
 import { generateTaxInvoiceHTML } from '@/lib/tax-invoice-pdf-generator';
@@ -43,7 +44,7 @@ export function billToQuotationPdfData(bill: Bill) {
       pincode: customerAddress.pincode || customer.pincode || '',
       phone: customer.phone || '',
       email: customer.email || '',
-      gstNumber: customer.gstNumber || '',
+      gstNumber: getCustomerGstNumber(customer),
     },
     items: bill.items.map((item) => ({
       ...item,

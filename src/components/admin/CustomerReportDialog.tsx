@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Customer, Job, Technician } from '@/types';
 import { db } from '@/lib/supabase';
+import { getCustomerGstNumber } from '@/lib/customerGst';
 import { CheckCircle } from 'lucide-react';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import { getJobEquipmentDisplay, isOfficeCompletedJob } from '@/lib/adminUtils';
@@ -72,6 +73,8 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
 
   if (!customer) return null;
 
+  const customerGstin = getCustomerGstNumber(customer);
+
   const completedJobs = customerReportJobs
     .sort((a, b) => {
       // Sort by completion date - latest completed job first
@@ -119,6 +122,12 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                   ? customer.email
                   : 'nomail@mail'}
               </div>
+              {customerGstin ? (
+                <div className="min-w-0 break-words sm:col-span-2">
+                  <span className="text-muted-foreground">GSTIN:</span>{' '}
+                  <span className="font-mono tracking-wide">{customerGstin}</span>
+                </div>
+              ) : null}
               {((customer as any).raw_water_tds != null && (customer as any).raw_water_tds > 0) && (
                 <div className="min-w-0 break-words">
                   <span className="text-muted-foreground">Raw Water TDS:</span> {(customer as any).raw_water_tds} ppm

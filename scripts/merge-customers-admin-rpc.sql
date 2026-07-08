@@ -297,6 +297,10 @@ BEGIN
     raw_water_tds = coalesce(v_primary.raw_water_tds, v_secondary.raw_water_tds),
     has_google_review = CASE WHEN v_has_review THEN true ELSE v_primary.has_google_review END,
     customer_tier = v_tier,
+    gst_number = coalesce(
+      nullif(trim(v_primary.gst_number), ''),
+      nullif(trim(v_secondary.gst_number), '')
+    ),
     updated_at = now()
   WHERE id = p_primary;
 

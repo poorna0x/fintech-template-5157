@@ -13,6 +13,7 @@ import { Edit, Plus, Download, FileText, User, Phone, MapPin, Building, Droplets
 import DocumentBrandLogo from '@/components/DocumentBrandLogo';
 import { toast } from 'sonner';
 import { Customer, Bill, BillItem, CompanyInfo } from '@/types';
+import { getCustomerGstNumber } from '@/lib/customerGst';
 import {
   type EditableNumber,
   displayEditableNumber,
@@ -182,7 +183,7 @@ export default function AMCGenerator({ customer, onAMCSaved, embedded = false }:
       name: customer.fullName || '',
       phone: typeof customer.phone === 'string' ? customer.phone : (customer as { phone?: string })?.phone || '',
       email: customer.email || '',
-      gst: customer.gstNumber || '',
+      gst: getCustomerGstNumber(customer),
       address: {
         street: addr.street,
         area: addr.area,
@@ -200,7 +201,7 @@ export default function AMCGenerator({ customer, onAMCSaved, embedded = false }:
       name: customer.fullName || '',
       phone: typeof customer.phone === 'string' ? customer.phone : (customer as { phone?: string })?.phone || '',
       email: customer.email || '',
-      gst: customer.gstNumber || '',
+      gst: getCustomerGstNumber(customer),
       address: {
         street: addr.street,
         area: addr.area,

@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Bill, Customer } from '@/types';
+import { getCustomerGstNumber } from '@/lib/customerGst';
 import { generateQuotationPDF } from '@/lib/quotation-pdf-generator';
 
 const QuotationGenerator = lazy(() => import('./QuotationGenerator'));
@@ -37,7 +38,7 @@ export default function QuotationModal({ isOpen, onClose, customer }: QuotationM
         pincode: (customerAddress as any).pincode || customer.pincode || '',
         phone: customer.phone || '',
         email: customer.email || '',
-        gstNumber: customer.gstNumber || '',
+        gstNumber: getCustomerGstNumber(customer),
       },
       items: quotation.items.map((item) => ({
         ...item,

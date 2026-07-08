@@ -31,6 +31,7 @@ const SLIM_COLS = [
   'has_prefilter',
   'has_google_review',
   'raw_water_tds',
+  // gst_number omitted — search list is egress-tight; load full/document row when needed
 ].join(', ');
 
 export type AdvancedSearchFilters = {

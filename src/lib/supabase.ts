@@ -127,6 +127,7 @@ const CUSTOMER_EMBED_FOR_TECH_JOBS = [
   'has_google_review',
   'customer_tier',
   'raw_water_tds',
+  // gst_number intentionally omitted — list poll egress; documents use getByIdForDocuments
 ].join(',');
 
 /** Customer embed for technician job list (low-egress). Must include address + location so maps / full-address dialog match DB (slim omit caused fallback to stale job.service_address). */
@@ -150,6 +151,7 @@ const CUSTOMER_EMBED_FOR_TECH_JOBS_SLIM = [
   'has_google_review',
   'customer_tier',
   'raw_water_tds',
+  // gst_number intentionally omitted — list poll egress; documents use getByIdForDocuments
 ].join(',');
 
 /**
@@ -176,6 +178,7 @@ const CUSTOMER_EMBED_FOR_ONGOING_ADMIN = [
   'has_google_review',
   'customer_tier',
   'raw_water_tds',
+  // gst_number intentionally omitted — list poll egress; documents use getByIdForDocuments
 ].join(',');
 
 /** Per-customer job lists: no before_photos/after_photos/images (large JSON). Shared by slim + report helpers. */
@@ -257,6 +260,7 @@ export const CUSTOMER_ROW_COLUMNS = [
   'has_google_review',
   'customer_tier',
   'raw_water_tds',
+  'gst_number',
   'photos',
   'created_at',
   'updated_at',
@@ -282,6 +286,7 @@ export const CUSTOMER_DOCUMENT_COLUMNS = [
   'last_service_date',
   'preferred_time_slot',
   'preferred_language',
+  'gst_number',
   'created_at',
   'updated_at',
 ].join(',');
@@ -640,6 +645,7 @@ export const CUSTOMER_ADMIN_LIST_PATCH_COLUMNS = [
   'has_google_review',
   'customer_tier',
   'raw_water_tds',
+  // gst_number omitted from list patches — document modals refetch via CUSTOMER_DOCUMENT_COLUMNS
   'created_at',
   'updated_at',
 ].join(',');

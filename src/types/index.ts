@@ -83,6 +83,10 @@ export interface Customer {
 
   /** PREMIUM = highlight name gold; WORST = highlight name red (problem customer). */
   customer_tier?: 'PREMIUM' | 'WORST' | null;
+
+  /** Customer GSTIN when registered under GST (null/empty = no GST). */
+  gstNumber?: string | null;
+  gst_number?: string | null;
   
   // Timestamps
   createdAt: string;
@@ -461,6 +465,7 @@ export interface Database {
           cost_agreed?: boolean;
           has_prefilter?: boolean | null;
           customer_tier?: string | null;
+          gst_number?: string | null;
           created_at: string;
           updated_at: string;
         };

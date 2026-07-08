@@ -40,6 +40,7 @@ import {
 import type { Customer, Reminder, ServiceReminderStatus, Technician } from '@/types';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { mapCustomerGstFields } from '@/lib/customerGst';
 import NewJobDialog from '@/components/admin/NewJobDialog';
 import CustomerReportDialog from '@/components/admin/CustomerReportDialog';
 import PhotoViewerDialog from '@/components/admin/PhotoViewerDialog';
@@ -148,6 +149,7 @@ function mapCustomerRow(row: any): Customer {
     has_google_review: row.has_google_review ?? null,
     customer_tier: row.customer_tier ?? null,
     raw_water_tds: row.raw_water_tds ?? 0,
+    ...mapCustomerGstFields(row),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     // snake_case aliases used by some dialogs

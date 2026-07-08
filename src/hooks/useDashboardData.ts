@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { normalizeCustomerAddress } from '@/lib/customer-address';
+import { mapCustomerGstFields } from '@/lib/customerGst';
 import { db, supabase } from '@/lib/supabase';
 import { Customer, Technician } from '@/types';
 import { toast } from 'sonner';
@@ -76,6 +77,7 @@ const transformCustomerData = (customer: any): Customer => ({
   has_prefilter: customer.has_prefilter ?? null,
   has_google_review: (customer as any).has_google_review ?? null,
   customer_tier: (customer as any).customer_tier ?? null,
+  ...mapCustomerGstFields(customer),
   createdAt: customer.created_at,
   updatedAt: customer.updated_at
 });

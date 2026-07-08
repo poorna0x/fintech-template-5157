@@ -735,6 +735,7 @@ CREATE TABLE public.customers (
     custom_time character varying(10),
     has_prefilter boolean,
     raw_water_tds integer,
+    gst_number character varying(15),
     photos jsonb DEFAULT '[]'::jsonb,
     CONSTRAINT customers_preferred_language_check CHECK (((preferred_language)::text = ANY ((ARRAY['ENGLISH'::character varying, 'HINDI'::character varying, 'KANNADA'::character varying, 'TAMIL'::character varying, 'TELUGU'::character varying])::text[]))),
     CONSTRAINT customers_preferred_time_slot_check CHECK (((preferred_time_slot)::text = ANY ((ARRAY['MORNING'::character varying, 'AFTERNOON'::character varying, 'EVENING'::character varying, 'CUSTOM'::character varying])::text[]))),
@@ -769,6 +770,13 @@ COMMENT ON COLUMN public.customers.has_prefilter IS 'Indicates whether the custo
 --
 
 COMMENT ON COLUMN public.customers.raw_water_tds IS 'Raw water TDS in ppm (before RO purification). Captured at job completion for RO customers (prefilter step). Default 0 for existing records.';
+
+
+--
+-- Name: COLUMN customers.gst_number; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.customers.gst_number IS 'Customer GSTIN when registered under GST. NULL/empty means customer does not have GST.';
 
 
 --

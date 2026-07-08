@@ -10,6 +10,7 @@ import {
   normalizeDocumentBrand,
 } from '@/lib/service-brands';
 import type { Bill, BillItem, Customer } from '@/types';
+import { getCustomerGstNumber } from '@/lib/customerGst';
 import { suggestAmcAgreementNumber } from '@/lib/amc-agreement-number';
 
 export interface TechnicianReferenceAmcInput {
@@ -72,7 +73,7 @@ export function buildTechnicianReferenceAmcBill(input: TechnicianReferenceAmcInp
       pincode: billCustomerAddress.pincode,
       phone: input.customer.phone || '',
       email: input.customer.email || '',
-      gstNumber: (input.customer as Customer & { gstNumber?: string }).gstNumber || '',
+      gstNumber: getCustomerGstNumber(input.customer),
       roModel,
     } as Bill['customer'] & { roModel: string },
     items: [amcItem],

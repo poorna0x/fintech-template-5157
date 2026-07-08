@@ -149,6 +149,17 @@ export function getStateCodeFromGstin(gstin: string): string | null {
   return getStateNameByCode(code) ? code : null;
 }
 
+/** Place of supply derived from customer GSTIN (null if GSTIN missing/invalid). */
+export function placeOfSupplyFromCustomerGstin(
+  gstin: string | null | undefined
+): { code: string; name: string } | null {
+  const code = gstin ? getStateCodeFromGstin(gstin) : null;
+  if (!code) return null;
+  const name = getStateNameByCode(code);
+  if (!name) return null;
+  return { code, name };
+}
+
 export function getCompanyStateCode(company: { state?: string; gstNumber?: string }): string {
   return (
     getStateCodeFromGstin(company.gstNumber || '') ||

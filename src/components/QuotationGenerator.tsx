@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { DatePicker } from '@/components/ui/date-picker';
@@ -15,13 +15,14 @@ import {
 import { Plus, Trash2, Download, Edit, X, FileText, Printer, Eye, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { Bill, BillItem, CompanyInfo, Customer } from '@/types';
+import { getCustomerGstNumber, normalizeCustomerGstNumber } from '@/lib/customerGst';
 import {
   getCompanyStateCode,
-  getStateCodeFromGstin,
   getStateNameByCode,
   INDIAN_GST_STATES,
   isIntraStateSupply,
   normalizeGstStateCode,
+  placeOfSupplyFromCustomerGstin,
   preparePlaceOfSupplyForSave,
   resolvePlaceOfSupply,
 } from '@/lib/indian-state-codes';
@@ -113,7 +114,7 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
           state: '',
           pincode: '',
         };
-  const customerGst = customer?.gstNumber || '';
+  const customerGst = getCustomerGstNumber(customer);
   const customerServiceType = customer?.serviceType || 'RO';
 
   // State management
@@ -166,10 +167,13 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
   });
   const [placeOfSupply, setPlaceOfSupply] = useState(initialPos.name);
   const [placeOfSupplyCode, setPlaceOfSupplyCode] = useState(initialPos.code);
+  /** Skip GSTIN→state auto-select while restoring a draft snapshot. */
+  const skipGstPlaceOfSupplyAutoRef = useRef(false);
 
   const companyStateCode = getCompanyStateCode(defaultCompanyInfo);
 
   const handlePlaceOfSupplyCodeChange = (value: string) => {
+    skipGstPlaceOfSupplyAutoRef.current = false;
     const code = normalizeGstStateCode(value);
     setPlaceOfSupplyCode(code);
     const stateName = getStateNameByCode(code);
@@ -177,6 +181,7 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
   };
 
   const handlePlaceOfSupplySelect = (code: string) => {
+    skipGstPlaceOfSupplyAutoRef.current = false;
     setPlaceOfSupplyCode(code);
     const stateName = getStateNameByCode(code);
     if (stateName) setPlaceOfSupply(stateName);
@@ -198,7 +203,7 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
     }
   });
 
-  // Update editable customer when customer prop changes
+  // Update editable customer when customer prop changes (incl. async GSTIN load)
   useEffect(() => {
     setEditableCustomer({
       name: customerName,
@@ -208,23 +213,21 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
       address: {
         street: customerAddress.street || '',
         area: customerAddress.area || '',
-        city: '',
-        state: '',
+        city: customerAddress.city || '',
+        state: customerAddress.state || '',
         pincode: customerAddress.pincode || ''
       }
     });
   }, [customerName, customerPhone, customerEmail, customerGst, customerAddress]);
 
-  // Place of supply from customer GSTIN when Include GST is selected
+  // Auto-select place of supply / state code from customer GSTIN when Include GST is on
   useEffect(() => {
     if (gstOption !== 'include') return;
-    const code = getStateCodeFromGstin(editableCustomer.gst);
-    if (!code) return;
-    const name = getStateNameByCode(code);
-    if (name) {
-      setPlaceOfSupplyCode(code);
-      setPlaceOfSupply(name);
-    }
+    if (skipGstPlaceOfSupplyAutoRef.current) return;
+    const fromGst = placeOfSupplyFromCustomerGstin(editableCustomer.gst);
+    if (!fromGst) return;
+    setPlaceOfSupplyCode((prev) => (prev === fromGst.code ? prev : fromGst.code));
+    setPlaceOfSupply((prev) => (prev === fromGst.name ? prev : fromGst.name));
   }, [editableCustomer.gst, gstOption]);
 
   // Generate quotation number
@@ -597,6 +600,7 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
 
   const applyDraftSnapshot = (snap: ReturnType<typeof getDraftSnapshot>) => {
     if (!snap || typeof snap !== 'object') return;
+    skipGstPlaceOfSupplyAutoRef.current = true;
     if (typeof snap.quotationNumber === 'string') setQuotationNumber(snap.quotationNumber);
     if (typeof snap.quotationDate === 'string') setQuotationDate(snap.quotationDate);
     if (typeof snap.validUntilDate === 'string') setValidUntilDate(snap.validUntilDate);
@@ -846,6 +850,9 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
                     <p className="text-xs text-gray-500 mt-1">
                       Supplier: {defaultCompanyInfo.state} ({companyStateCode}).{' '}
                       {isIntraState ? 'Intra-state — CGST + SGST' : 'Inter-state — IGST'}
+                      {editableCustomer.gst
+                        ? ' · State selected from customer GSTIN.'
+                        : ''}
                     </p>
                   </div>
                   <div>
@@ -931,9 +938,24 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
                     <Input
                       id="customer-gst"
                       value={editableCustomer.gst}
-                      onChange={(e) => setEditableCustomer(prev => ({ ...prev, gst: e.target.value }))}
+                      onChange={(e) => {
+                        skipGstPlaceOfSupplyAutoRef.current = false;
+                        setEditableCustomer((prev) => ({
+                          ...prev,
+                          gst: normalizeCustomerGstNumber(e.target.value),
+                        }));
+                      }}
                       placeholder="Enter GST number"
+                      maxLength={15}
+                      autoCapitalize="characters"
+                      autoCorrect="off"
+                      spellCheck={false}
                     />
+                    {gstOption === 'include' && editableCustomer.gst ? (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        State code auto-fills from GSTIN (first 2 digits).
+                      </p>
+                    ) : null}
                   </div>
                 </div>
                   <div className="space-y-3">

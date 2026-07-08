@@ -15,6 +15,11 @@ import { mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAr
 import { normalizeIndianMobileInput } from '@/lib/utils';
 import PhoneSwapButton from '@/components/admin/PhoneSwapButton';
 import { hasAlternateLocation } from '@/lib/customer-locations';
+import {
+  getCustomerGstNumber,
+  mapCustomerGstFields,
+  normalizeCustomerGstNumber,
+} from '@/lib/customerGst';
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import {
   extractMapsUrlFromText,
@@ -117,6 +122,7 @@ const transformCustomerData = (customer: any): Customer => ({
   has_google_review: (customer as any).has_google_review ?? null,
   customer_tier: (customer as any).customer_tier ?? null,
   raw_water_tds: (customer as any).raw_water_tds ?? 0,
+  ...mapCustomerGstFields(customer),
   createdAt: customer.created_at,
   updatedAt: customer.updated_at
 });
@@ -164,6 +170,8 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
     has_google_review: null as boolean | null,
     customer_tier: null as 'PREMIUM' | 'WORST' | null,
     raw_water_tds: 0 as number,
+    has_gst: false,
+    gst_number: '',
     address: {
       street: '',
       area: '',
@@ -312,6 +320,8 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
               return null;
             })((customerToUse as any).customer_tier),
             raw_water_tds: ((customerToUse as any).raw_water_tds != null && Number((customerToUse as any).raw_water_tds) > 0) ? (customerToUse as any).raw_water_tds : 0,
+            has_gst: Boolean(getCustomerGstNumber(customerToUse)),
+            gst_number: getCustomerGstNumber(customerToUse),
         google_location: (() => {
           if ((customerToUse.location as any)?.googleLocation) {
             const googleLoc = (customerToUse.location as any).googleLocation;
@@ -986,6 +996,11 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
   const handleUpdateCustomer = async () => {
     if (!customer) return;
 
+    if (editFormData.has_gst && !normalizeCustomerGstNumber(editFormData.gst_number)) {
+      toast.error('Enter the customer GST number, or select No if they do not have GST');
+      return;
+    }
+
     setIsUpdating(true);
     try {
       const updatedAddress = {
@@ -1040,6 +1055,9 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
         has_google_review: editFormData.has_google_review,
         customer_tier: editFormData.customer_tier,
         raw_water_tds: Math.max(0, parseInt(String(editFormData.raw_water_tds), 10) || 0),
+        gst_number: editFormData.has_gst
+          ? normalizeCustomerGstNumber(editFormData.gst_number) || null
+          : null,
         address: updatedAddress,
         location: updatedLocation,
         ...(editFormData.has_alternate_location
@@ -1603,6 +1621,60 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
             <h3 className="text-lg font-semibold text-foreground">Additional Information</h3>
             <div className="space-y-4">
               <div className="space-y-2">
+                <Label>Does the customer have GST?</Label>
+                <div className="flex gap-4">
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="radio"
+                      id="edit-gst-no"
+                      name="edit-customer-gst"
+                      checked={!editFormData.has_gst}
+                      onChange={() => {
+                        setEditFormData((prev) => ({
+                          ...prev,
+                          has_gst: false,
+                          gst_number: '',
+                        }));
+                      }}
+                      className="w-4 h-4"
+                    />
+                    <Label htmlFor="edit-gst-no" className="cursor-pointer">No</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="radio"
+                      id="edit-gst-yes"
+                      name="edit-customer-gst"
+                      checked={editFormData.has_gst}
+                      onChange={() => handleEditFormChange('has_gst', true)}
+                      className="w-4 h-4"
+                    />
+                    <Label htmlFor="edit-gst-yes" className="cursor-pointer">Yes</Label>
+                  </div>
+                </div>
+                {editFormData.has_gst && (
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-gst-number">GST Number (GSTIN)</Label>
+                    <Input
+                      id="edit-gst-number"
+                      value={editFormData.gst_number}
+                      onChange={(e) =>
+                        handleEditFormChange(
+                          'gst_number',
+                          normalizeCustomerGstNumber(e.target.value)
+                        )
+                      }
+                      placeholder="e.g. 29AAAAA0000A1Z5"
+                      maxLength={15}
+                      autoCapitalize="characters"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      className="max-w-sm font-mono tracking-wide uppercase"
+                    />
+                  </div>
+                )}
+              </div>
+              <div className="space-y-2">
                 <Label>Does the customer have a prefilter?</Label>
                 <div className="flex gap-4">
                   <div className="flex items-center space-x-2">
@@ -1640,83 +1712,83 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
                   </div>
                 </div>
               </div>
-                <div className="space-y-2">
-                  <Label>Has the customer left a Google review?</Label>
-                  <div className="flex gap-4">
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="radio"
-                        id="edit-google-review-yes"
-                        name="edit-google-review"
-                        checked={editFormData.has_google_review === true}
-                        onChange={() => handleEditFormChange('has_google_review', true)}
-                        className="w-4 h-4"
-                      />
-                      <Label htmlFor="edit-google-review-yes" className="cursor-pointer">Yes</Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="radio"
-                        id="edit-google-review-no"
-                        name="edit-google-review"
-                        checked={editFormData.has_google_review === false}
-                        onChange={() => handleEditFormChange('has_google_review', false)}
-                        className="w-4 h-4"
-                      />
-                      <Label htmlFor="edit-google-review-no" className="cursor-pointer">No</Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="radio"
-                        id="edit-google-review-unknown"
-                        name="edit-google-review"
-                        checked={editFormData.has_google_review === null}
-                        onChange={() => handleEditFormChange('has_google_review', null)}
-                        className="w-4 h-4"
-                      />
-                      <Label htmlFor="edit-google-review-unknown" className="cursor-pointer">Not Set</Label>
-                    </div>
+              <div className="space-y-2">
+                <Label>Has the customer left a Google review?</Label>
+                <div className="flex gap-4">
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="radio"
+                      id="edit-google-review-yes"
+                      name="edit-google-review"
+                      checked={editFormData.has_google_review === true}
+                      onChange={() => handleEditFormChange('has_google_review', true)}
+                      className="w-4 h-4"
+                    />
+                    <Label htmlFor="edit-google-review-yes" className="cursor-pointer">Yes</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="radio"
+                      id="edit-google-review-no"
+                      name="edit-google-review"
+                      checked={editFormData.has_google_review === false}
+                      onChange={() => handleEditFormChange('has_google_review', false)}
+                      className="w-4 h-4"
+                    />
+                    <Label htmlFor="edit-google-review-no" className="cursor-pointer">No</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="radio"
+                      id="edit-google-review-unknown"
+                      name="edit-google-review"
+                      checked={editFormData.has_google_review === null}
+                      onChange={() => handleEditFormChange('has_google_review', null)}
+                      className="w-4 h-4"
+                    />
+                    <Label htmlFor="edit-google-review-unknown" className="cursor-pointer">Not Set</Label>
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <Label>Customer highlight (name color in lists)</Label>
-                  <p className="text-xs text-muted-foreground">Premium = gold name. Worst = red name for difficult/problem customers.</p>
-                  <div className="flex flex-wrap gap-4">
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="radio"
-                        id="edit-customer-tier-none"
-                        name="edit-customer-tier"
-                        checked={editFormData.customer_tier === null}
-                        onChange={() => handleEditFormChange('customer_tier', null)}
-                        className="w-4 h-4"
-                      />
-                      <Label htmlFor="edit-customer-tier-none" className="cursor-pointer">Normal</Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="radio"
-                        id="edit-customer-tier-premium"
-                        name="edit-customer-tier"
-                        checked={editFormData.customer_tier === 'PREMIUM'}
-                        onChange={() => handleEditFormChange('customer_tier', 'PREMIUM')}
-                        className="w-4 h-4"
-                      />
-                      <Label htmlFor="edit-customer-tier-premium" className="cursor-pointer text-amber-600 font-medium">Premium (gold)</Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="radio"
-                        id="edit-customer-tier-worst"
-                        name="edit-customer-tier"
-                        checked={editFormData.customer_tier === 'WORST'}
-                        onChange={() => handleEditFormChange('customer_tier', 'WORST')}
-                        className="w-4 h-4"
-                      />
-                      <Label htmlFor="edit-customer-tier-worst" className="cursor-pointer text-red-600 font-medium">Worst (red)</Label>
-                    </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Customer highlight (name color in lists)</Label>
+                <p className="text-xs text-muted-foreground">Premium = gold name. Worst = red name for difficult/problem customers.</p>
+                <div className="flex flex-wrap gap-4">
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="radio"
+                      id="edit-customer-tier-none"
+                      name="edit-customer-tier"
+                      checked={editFormData.customer_tier === null}
+                      onChange={() => handleEditFormChange('customer_tier', null)}
+                      className="w-4 h-4"
+                    />
+                    <Label htmlFor="edit-customer-tier-none" className="cursor-pointer">Normal</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="radio"
+                      id="edit-customer-tier-premium"
+                      name="edit-customer-tier"
+                      checked={editFormData.customer_tier === 'PREMIUM'}
+                      onChange={() => handleEditFormChange('customer_tier', 'PREMIUM')}
+                      className="w-4 h-4"
+                    />
+                    <Label htmlFor="edit-customer-tier-premium" className="cursor-pointer text-amber-600 font-medium">Premium (gold)</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="radio"
+                      id="edit-customer-tier-worst"
+                      name="edit-customer-tier"
+                      checked={editFormData.customer_tier === 'WORST'}
+                      onChange={() => handleEditFormChange('customer_tier', 'WORST')}
+                      className="w-4 h-4"
+                    />
+                    <Label htmlFor="edit-customer-tier-worst" className="cursor-pointer text-red-600 font-medium">Worst (red)</Label>
                   </div>
                 </div>
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="edit-raw-water-tds">Raw water TDS (ppm)</Label>
                 <Input
