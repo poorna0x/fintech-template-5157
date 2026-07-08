@@ -530,7 +530,7 @@ function handleMobilePrint(quotationData: PDFQuotationData, action: 'print' | 'p
         
         body {
           margin: 0 !important;
-          padding: 8mm !important;
+          padding: 0 !important;
           font-size: 11pt !important;
           line-height: 1.4 !important;
         }
@@ -541,7 +541,6 @@ function handleMobilePrint(quotationData: PDFQuotationData, action: 'print' | 'p
           width: 100% !important;
           max-width: 100% !important;
           margin: 0 !important;
-          padding: 0 !important;
           box-shadow: none !important;
           background: white !important;
           box-sizing: border-box !important;
@@ -1029,7 +1028,7 @@ function getQuotationDocumentStyles(): string {
             color: #333;
             background: white;
             margin: 0;
-            padding: 12mm 8mm;
+            padding: 0;
             font-size: 11px;
         }
       

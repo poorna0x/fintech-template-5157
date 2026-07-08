@@ -7,6 +7,7 @@ import {
 } from './document-pdf-brand';
 import { getDocumentBrandLabel, resolveBrandSealSrc } from './service-brands';
 import { downloadDocumentPdf } from './server-pdf-download';
+import { getDocumentPdfPrintFrameCss } from './document-pdf-print-frame';
 
 interface AMCPDFData {
   billNumber: string;
@@ -206,47 +207,14 @@ export function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): stri
         
         /* Ensure borders appear on printed pages */
         @media print {
-          @page {
-            /* Page margin creates space for border + content padding */
-            margin: 13mm;
-            size: A4;
-          }
-          
-          /* Single border using body border - simplest approach */
-          body {
-            padding: 0 !important;
-            margin: 0 !important;
-            border: 2px solid #000000 !important;
-            width: 210mm !important;
-            min-height: 297mm !important;
-            box-sizing: border-box !important;
-          }
-          
-          /* Remove ALL pseudo-element borders to prevent double border */
-          body::before,
-          body::after {
-            display: none !important;
-            content: none !important;
-            border: none !important;
-            outline: none !important;
-          }
-          
+          ${getDocumentPdfPrintFrameCss()}
+
           .bill-container {
-            border: none !important;
-            box-shadow: none !important;
-            border-radius: 0 !important;
-            outline: none !important;
-            /* Generous padding ensures content never touches border - even at page breaks */
-            padding-top: 10mm !important;    /* Space from top border on first page */
-            padding-bottom: 10mm !important;  /* Space from bottom border on last page */
+            /* Extra inner gap for AMC sections — overrides shared frame padding */
+            padding-top: 10mm !important;
+            padding-bottom: 10mm !important;
             padding-left: 5mm !important;
             padding-right: 5mm !important;
-            margin: 0 !important;
-            width: 100% !important;
-            max-width: 100% !important;
-            /* Ensure padding is maintained across page breaks */
-            box-decoration-break: clone;
-            -webkit-box-decoration-break: clone;
           }
           
           /* Ensure first element respects container padding */
@@ -644,45 +612,6 @@ export function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): stri
           text-align: center;
           font-size: 12px;
           color: #6b7280;
-        }
-        
-        @media print {
-          body {
-            width: 210mm;
-            min-height: 297mm;
-            padding: 0;
-            margin: 0;
-            box-shadow: none;
-          }
-          
-          .bill-container {
-            box-shadow: none;
-            padding: 40px;
-            width: 100%;
-            max-width: 100%;
-            margin: 0;
-          }
-          
-          @page {
-            size: A4;
-            margin: 13mm;
-            border: 2px solid #000000;
-          }
-          
-          @page :first {
-            margin: 13mm;
-            border: 2px solid #000000;
-          }
-          
-          @page :left {
-            margin: 13mm;
-            border: 2px solid #000000;
-          }
-          
-          @page :right {
-            margin: 13mm;
-            border: 2px solid #000000;
-          }
         }
       </style>
     </head>

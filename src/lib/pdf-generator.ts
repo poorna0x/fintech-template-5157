@@ -266,12 +266,11 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
         margin: 0 auto;
         background: white;
         padding: 15px 10px;
-        border: 2px solid #000;
+        border: none;
         box-sizing: border-box;
-        border-radius: 12px;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
-        overflow: hidden;
+        overflow: visible;
         position: relative;
       }
       
@@ -624,7 +623,7 @@ function handleMobilePrint(billData: PDFBillData, action: 'print' | 'pdf'): void
       style.textContent = `
         @page {
           size: 210mm 297mm !important;
-          margin: 5mm !important;
+          margin: 13mm !important;
         }
       `;
       document.head.appendChild(style);
@@ -868,7 +867,7 @@ function getBillDocumentStyles(): string {
             color: #333;
             background: white;
             margin: 0;
-            padding: 15mm;
+            padding: 0;
             font-size: 11px;
         }
       
@@ -878,7 +877,7 @@ function getBillDocumentStyles(): string {
             margin: 0;
             background: white;
             padding: 0;
-            border: 2px solid #000;
+            border: none;
             box-sizing: border-box;
           }
           

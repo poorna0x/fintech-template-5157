@@ -699,7 +699,7 @@ function getTaxInvoiceDocumentStyles(): string {
             color: #333;
             background: white;
             margin: 0;
-            padding: 15mm;
+            padding: 0;
             font-size: 11px;
         }
       
@@ -709,7 +709,7 @@ function getTaxInvoiceDocumentStyles(): string {
             margin: 0;
             background: white;
             padding: 0;
-            border: 2px solid #000;
+            border: none;
             box-sizing: border-box;
             page-break-inside: avoid;
             page-break-after: avoid;
@@ -1150,7 +1150,7 @@ export async function generateCombinedTaxInvoicePDF(
             color: #333;
             background: white;
             margin: 0;
-            padding: 15mm;
+            padding: 0;
             font-size: 11px;
         }
       
@@ -1160,7 +1160,7 @@ export async function generateCombinedTaxInvoicePDF(
             margin: 0;
             background: white;
             padding: 0;
-            border: 2px solid #000;
+            border: none;
             box-sizing: border-box;
           }
           
