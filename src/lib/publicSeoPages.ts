@@ -1,4 +1,5 @@
 import type { PublicSiteKey } from '@/lib/websiteSiteKey';
+import { buildCityServicePageSeo, areaServicePageList, getCityServicePage } from '@/data/cityServiceSeo';
 import { buildLocationKeywords, getLocationSeo, locationSeoList } from '@/data/locationSeo';
 
 export interface RouteSeo {
@@ -18,6 +19,21 @@ export interface SeoLocationPage {
   areaName: string;
   localityType?: 'bangalore' | 'nearby';
 }
+
+export interface SeoCityServicePage {
+  path: string;
+  cityName: string;
+  serviceName: string;
+  shortDescription: string;
+}
+
+/** City × service landing pages (e.g. /ro-installation-in-mysuru). */
+export const SEO_CITY_SERVICE_PAGES: SeoCityServicePage[] = areaServicePageList.map((page) => ({
+  path: page.path,
+  cityName: page.cityName,
+  serviceName: page.serviceName,
+  shortDescription: page.shortDescription,
+}));
 
 export interface SeoBlogArticle {
   slug: string;
@@ -284,6 +300,11 @@ const STATIC_PAGE_SEO: Record<string, Partial<Record<PublicSiteKey, RouteSeo>>> 
   },
 };
 
+export function findCityServicePage(pathname: string): SeoCityServicePage | undefined {
+  const clean = pathname.replace(/\/$/, '') || '/';
+  return SEO_CITY_SERVICE_PAGES.find((page) => page.path === clean);
+}
+
 export function findServicePage(pathname: string): SeoServicePage | undefined {
   const clean = pathname.replace(/\/$/, '') || '/';
   return SEO_SERVICE_PAGES.find((page) => page.path === clean);
@@ -374,6 +395,9 @@ export function resolveRouteSeo(
   const servicePage = findServicePage(clean);
   if (servicePage) return buildServicePageSeo(servicePage, brandName, primaryPhone);
 
+  const cityServicePage = getCityServicePage(clean);
+  if (cityServicePage) return buildCityServicePageSeo(cityServicePage, brandName, primaryPhone);
+
   const locationPage = findLocationPage(clean);
   if (locationPage) return buildLocationPageSeo(locationPage, brandName, primaryPhone);
 
@@ -414,6 +438,7 @@ export function getAllIndexablePaths(): string[] {
     '/disclaimer',
   ]);
   SEO_SERVICE_PAGES.forEach((p) => paths.add(p.path));
+  SEO_CITY_SERVICE_PAGES.forEach((p) => paths.add(p.path));
   SEO_LOCATION_PAGES.forEach((p) => paths.add(p.path));
   SEO_BLOG_ARTICLES.forEach((a) => paths.add(`/blog/${a.slug}`));
   return [...paths];

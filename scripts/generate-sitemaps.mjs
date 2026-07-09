@@ -1,6 +1,7 @@
 /**
  * Regenerate public/sitemap.xml and public/sitemap-elevenro.xml from SEO page registry.
  * Location pages: src/data/locationSeo.ts (slug fields)
+ * City × service pages: src/data/cityServiceSeo.ts
  * Service pages: src/lib/publicSeoPages.ts (path fields in SEO_SERVICE_PAGES)
  * Run: node scripts/generate-sitemaps.mjs
  */
@@ -26,9 +27,32 @@ const locationSlugJson = runTsx(
 );
 const { slugs: locationSlugList, blr: bengaluruLocalitySlugs } = JSON.parse(locationSlugJson);
 
+const cityServiceJson = runTsx(
+  "import { areaServicePageList, PRIORITY_CITY_SLUGS, PRIORITY_BENGALURU_LOCALITY_SLUGS } from './src/data/cityServiceSeo.ts'; console.log(JSON.stringify({ pages: areaServicePageList.map(p => ({ path: p.path, tier: p.cityTier, title: p.serviceName + ' in ' + p.cityName, areaType: p.areaType })), priorityCities: [...PRIORITY_CITY_SLUGS], priorityBlr: PRIORITY_BENGALURU_LOCALITY_SLUGS }));"
+);
+const {
+  pages: cityServicePages,
+  priorityCities,
+  priorityBlr,
+} = JSON.parse(cityServiceJson);
+
+const priorityCitySlugSet = new Set(priorityCities);
+const priorityBlrSet = new Set(priorityBlr);
+
+function locationPriority(slug) {
+  if (priorityBlrSet.has(slug)) return '0.93';
+  const cityPart = slug.replace(/^ro-service-/, '');
+  if (priorityCitySlugSet.has(cityPart)) {
+    if (cityPart === 'bengaluru' || cityPart === 'mysuru' || cityPart === 'mangaluru') return '0.95';
+    if (cityPart === 'udupi') return '0.88';
+    return '0.92';
+  }
+  return '0.85';
+}
+
 const locationPaths = locationSlugList.sort().map((slug) => ({
   path: `/${slug}`,
-  priority: '0.9',
+  priority: locationPriority(slug),
   changefreq: 'weekly',
 }));
 
@@ -37,6 +61,12 @@ const serviceBlock = publicSeoSrc.match(/export const SEO_SERVICE_PAGES[\s\S]*?^
 const servicePaths = [...serviceBlock.matchAll(/path:\s*'([^']+)'/g)].map((m) => ({
   path: m[1],
   priority: '0.9',
+  changefreq: 'weekly',
+}));
+
+const cityServicePaths = cityServicePages.map((page) => ({
+  path: page.path,
+  priority: page.areaType === 'locality' ? '0.92' : page.tier === 1 ? '0.94' : page.tier === 2 ? '0.91' : '0.88',
   changefreq: 'weekly',
 }));
 
@@ -63,7 +93,7 @@ const staticPaths = [
   { path: '/disclaimer', priority: '0.3', changefreq: 'monthly' },
 ];
 
-const paths = [...staticPaths, ...servicePaths, ...locationPaths];
+const paths = [...staticPaths, ...servicePaths, ...cityServicePaths, ...locationPaths];
 
 function buildSitemap(origin) {
   const urls = paths
@@ -99,8 +129,18 @@ bootstrap = bootstrap.replace(
   /\/\/ AUTO:BENGALURU_LOCALITY_SLUGS[\s\S]*?\/\/ END:BENGALURU_LOCALITY_SLUGS/,
   `// AUTO:BENGALURU_LOCALITY_SLUGS\n      var BENGALURU_LOCALITY_SLUGS = new Set(${blrJson});\n      // END:BENGALURU_LOCALITY_SLUGS`
 );
+
+const cityServiceTitleMap = Object.fromEntries(
+  cityServicePages.map((p) => [p.path, `${p.title}`])
+);
+const cityServiceTitleJson = JSON.stringify(cityServiceTitleMap, null, 2).replace(/\n/g, '\n      ');
+bootstrap = bootstrap.replace(
+  /\/\/ AUTO:CITY_SERVICE_TITLES[\s\S]*?\/\/ END:CITY_SERVICE_TITLES/,
+  `// AUTO:CITY_SERVICE_TITLES\n      var CITY_SERVICE_TITLES = ${cityServiceTitleJson};\n      // END:CITY_SERVICE_TITLES`
+);
+
 writeFileSync(bootstrapPath, bootstrap);
 
 console.log(
-  `Generated sitemaps with ${paths.length} URLs (${servicePaths.length} service, ${locationPaths.length} location pages, ${bengaluruLocalitySlugs.length} Bengaluru localities, lastmod ${lastmod})`
+  `Generated sitemaps with ${paths.length} URLs (${servicePaths.length} service, ${cityServicePaths.length} city×service, ${locationPaths.length} location pages, ${bengaluruLocalitySlugs.length} Bengaluru localities, lastmod ${lastmod})`
 );

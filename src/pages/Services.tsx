@@ -11,6 +11,7 @@ import { Filter, Wrench, CheckCircle, DollarSign, Clock, Shield, Settings, Shiel
 
 import { buildPublicLocalBusinessJsonLd, getBrandSeoProfile } from '@/lib/publicSiteSeo';
 import { findServicePage } from '@/lib/publicSeoPages';
+import { getCityServicePage } from '@/data/cityServiceSeo';
 import { PUBLIC_AMC_PLANS, formatPublicAmcInr, PUBLIC_AMC_TAGLINE } from '@/lib/public-amc-info';
 import { getPublicSiteKey } from '@/lib/websiteSiteKey';
 
@@ -21,6 +22,7 @@ const serviceCardContentClass = 'p-8 flex flex-col h-full';
 const Services = () => {
   const { pathname } = useLocation();
   const servicePage = findServicePage(pathname);
+  const cityServicePage = getCityServicePage(pathname);
   const siteKey = getPublicSiteKey();
   const isHydrogenRo = siteKey === 'hydrogenro';
   const brand = getBrandSeoProfile(siteKey);
@@ -89,8 +91,18 @@ const Services = () => {
       <main className="flex-1">
         <SeoBreadcrumbs />
         <PageHero 
-          title={servicePage ? `${servicePage.serviceName} in Karnataka` : 'RO Water Purifier Services in Bengaluru'}
-          description={servicePage?.shortDescription ?? 'Professional RO water purifier installation, repair, and maintenance services by certified technicians in Bengaluru, Karnataka. Same-day service, 24/7 emergency support across all areas of Bangalore.'}
+          title={
+            cityServicePage
+              ? `${cityServicePage.serviceName} in ${cityServicePage.cityName}`
+              : servicePage
+                ? `${servicePage.serviceName} in Karnataka`
+                : 'RO Water Purifier Services in Bengaluru'
+          }
+          description={
+            cityServicePage?.shortDescription ??
+            servicePage?.shortDescription ??
+            'Professional RO water purifier installation, repair, and maintenance services by certified technicians in Bengaluru, Karnataka. Same-day service, 24/7 emergency support across all areas of Bangalore.'
+          }
         />
 
         {/* Why Choose Section */}

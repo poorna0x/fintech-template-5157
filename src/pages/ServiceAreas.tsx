@@ -17,6 +17,15 @@ import {
   LOCATION_HUB_GROUPS,
   getLocationBySlug,
 } from '@/data/locationSeo';
+import { CITY_SERVICE_HUB_GROUPS } from '@/data/cityServiceSeo';
+import {
+  BENGALURU_ZONE_HUBS,
+  TIER1_CITY_HUBS,
+  getZoneSiblingLocations,
+  getBengaluruZoneForSlug,
+  resolveZoneHubAreas,
+  resolveTier1SubAreas,
+} from '@/data/topCityAreasSeo';
 import { getBrandSeoProfile } from '@/lib/publicSiteSeo';
 import { getPublicSiteKey } from '@/lib/websiteSiteKey';
 
@@ -58,6 +67,7 @@ const ServiceAreas = () => {
   }, [loc, brand.brandName, brand.primaryPhone]);
 
   const faqItems = loc ? buildLocationFaqItems(loc, brand.brandName, brand.primaryPhone) : [];
+  const zoneSiblings = loc ? getZoneSiblingLocations(loc.slug) : [];
 
   const nearbyPillClass =
     'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300 border border-sky-200/60 dark:border-sky-500/20 hover:bg-sky-200/80 dark:hover:bg-sky-500/25 transition-colors';
@@ -246,6 +256,24 @@ const ServiceAreas = () => {
           </section>
         )}
 
+        {loc && zoneSiblings.length > 0 && (
+          <section className="py-10 px-4 md:px-12 bg-background border-t border-sky-100/60 dark:border-sky-500/10">
+            <div className="max-w-4xl mx-auto text-center">
+              <h2 className="text-xl md:text-2xl font-bold text-foreground mb-4">
+                Other areas in {loc.region === 'Bengaluru' ? `${getBengaluruZoneForSlug(loc.slug)?.title ?? 'Bengaluru'}` : loc.region}
+              </h2>
+              <div className="flex flex-wrap justify-center gap-2">
+                {zoneSiblings.slice(0, 12).map((sibling) => (
+                  <Link key={sibling.slug} to={`/${sibling.slug}`} className={nearbyPillClass}>
+                    <MapPin className="w-3.5 h-3.5" />
+                    RO service {sibling.name}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
+
         {loc && faqItems.length > 0 && (
           <section className="py-12 px-4 md:px-12 bg-background border-t border-sky-100/60 dark:border-sky-500/10">
             <div className="max-w-3xl mx-auto">
@@ -264,6 +292,116 @@ const ServiceAreas = () => {
                     </summary>
                     <p className="mt-3 text-muted-foreground text-sm leading-relaxed">{item.answer}</p>
                   </details>
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {!loc && (
+          <section className="py-12 px-4 md:px-12 bg-background border-b border-sky-100/60 dark:border-sky-500/10">
+            <div className="max-w-6xl mx-auto">
+              <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-2 text-center">
+                Tier 1 Cities — Areas We Serve
+              </h2>
+              <p className="text-center text-muted-foreground mb-10 max-w-2xl mx-auto">
+                Browse RO service pages inside Bengaluru, Mysuru and Mangaluru — each city links to
+                localities and neighbourhoods we cover.
+              </p>
+              <div className="space-y-10">
+                {TIER1_CITY_HUBS.map((cityHub) => {
+                  const cityLoc = getLocationBySlug(cityHub.locationSlug);
+                  const subAreas =
+                    cityHub.citySlug === 'bengaluru'
+                      ? null
+                      : resolveTier1SubAreas(cityHub);
+                  return (
+                    <div key={cityHub.citySlug}>
+                      <div className="flex flex-wrap items-center gap-3 mb-4">
+                        {cityLoc && (
+                          <Link
+                            to={`/${cityHub.locationSlug}`}
+                            className="text-lg font-semibold text-sky-800 dark:text-sky-300 hover:underline"
+                          >
+                            RO service in {cityHub.cityName}
+                          </Link>
+                        )}
+                      </div>
+                      {cityHub.citySlug === 'bengaluru' ? (
+                        <div className="space-y-6 pl-0 md:pl-4 border-l-0 md:border-l-2 border-sky-100 dark:border-sky-500/20">
+                          {BENGALURU_ZONE_HUBS.map((zoneHub) => {
+                            const areas = resolveZoneHubAreas(zoneHub);
+                            if (!areas.length) return null;
+                            return (
+                              <div key={zoneHub.zone}>
+                                <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+                                  {zoneHub.title}
+                                </h4>
+                                <div className="flex flex-wrap gap-2">
+                                  {areas.map((area) => (
+                                    <Link
+                                      key={area.slug}
+                                      to={`/${area.slug}`}
+                                      className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm bg-sky-50 text-sky-800 dark:bg-sky-500/10 dark:text-sky-300 border border-sky-100 dark:border-sky-500/20 hover:bg-sky-100 dark:hover:bg-sky-500/20 transition-colors"
+                                    >
+                                      {area.name}
+                                    </Link>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        subAreas &&
+                        subAreas.length > 0 && (
+                          <div className="flex flex-wrap gap-2 pl-0 md:pl-4">
+                            {subAreas.map((area) => (
+                              <Link
+                                key={area.slug}
+                                to={`/${area.slug}`}
+                                className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm bg-sky-50 text-sky-800 dark:bg-sky-500/10 dark:text-sky-300 border border-sky-100 dark:border-sky-500/20 hover:bg-sky-100 dark:hover:bg-sky-500/20 transition-colors"
+                              >
+                                {area.name}
+                              </Link>
+                            ))}
+                          </div>
+                        )
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {!loc && (
+          <section className="py-12 px-4 md:px-12 bg-background border-b border-sky-100/60 dark:border-sky-500/10">
+            <div className="max-w-6xl mx-auto">
+              <h2 className="text-2xl md:text-3xl font-bold text-foreground mb-2 text-center">
+                RO Services by City in Karnataka
+              </h2>
+              <p className="text-center text-muted-foreground mb-10 max-w-2xl mx-auto">
+                Service-specific pages for Bengaluru, Mysuru, Mangaluru, Hubballi, Belagavi and other
+                priority Karnataka cities — installation, AMC, commercial RO and water softeners.
+              </p>
+              <div className="space-y-8">
+                {CITY_SERVICE_HUB_GROUPS.map((group) => (
+                  <div key={group.title}>
+                    <h3 className="text-lg font-semibold text-foreground mb-4">{group.title}</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {group.pages.map((page) => (
+                        <Link
+                          key={page.path}
+                          to={page.path}
+                          className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm bg-sky-50 text-sky-800 dark:bg-sky-500/10 dark:text-sky-300 border border-sky-100 dark:border-sky-500/20 hover:bg-sky-100 dark:hover:bg-sky-500/20 transition-colors"
+                        >
+                          {page.serviceName} — {page.cityName}
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>

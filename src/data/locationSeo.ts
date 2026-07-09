@@ -4,6 +4,7 @@
 import { karnatakaSeedsToLocationSeo, KARNATAKA_LOCATION_SEEDS } from '@/data/karnatakaLocationSeeds';
 import { ALL_MICRO_AREA_SEEDS } from '@/data/karnatakaMicroAreas';
 import { KARNATAKA_DISTRICT_EXPANSION_SEEDS } from '@/data/karnatakaDistrictExpansion';
+import { BENGALURU_ZONE_EXPANSION } from '@/data/bengaluruZoneExpansion';
 
 export interface LocationSEO {
   /** URL path without leading slash, e.g. "ro-service-whitefield" */
@@ -207,6 +208,20 @@ const BENGALURU_LOCATION_PAGES: LocationSEO[] = [
     region: 'Bengaluru',
     nearby: ['Bommanahalli', 'Hosur Road', 'HSR Layout', 'Madiwala', 'Electronic City', 'Hongasandra'],
     extraKeywords: ['RO service Singasandra Bangalore', 'RO repair Singasandra', 'RO service Hosur Road Singasandra'],
+  },
+  {
+    slug: 'ro-service-kr-puram',
+    name: 'KR Puram',
+    pincode: '560036',
+    region: 'Bengaluru',
+    nearby: ['Mahadevapura', 'Banaswadi', 'Kasturi Nagar', 'Baiyappanahalli', 'Ramamurthy Nagar', 'Hennur', 'Old Madras Road'],
+    extraKeywords: [
+      'RO service KR Puram Bangalore',
+      'RO service Krishnarajapuram',
+      'RO repair K R Puram',
+      'RO service KR Puram Railway Station',
+      '560036 RO service',
+    ],
   },
   { slug: 'ro-service-mahadevapura', name: 'Mahadevapura', pincode: '560048', region: 'Bengaluru', nearby: ['Whitefield', 'Brookefield', 'Hoodi', 'Kundalahalli', 'Marathahalli', 'KR Puram'] },
   { slug: 'ro-service-hoodi', name: 'Hoodi', pincode: '560048', region: 'Bengaluru', nearby: ['Whitefield', 'Mahadevapura', 'Brookefield', 'ITPL', 'Kadugodi'] },
@@ -415,6 +430,7 @@ export const locationSeoList: LocationSEO[] = (() => {
   karnatakaSeedsToLocationSeo(KARNATAKA_LOCATION_SEEDS).forEach(add);
   karnatakaSeedsToLocationSeo(ALL_MICRO_AREA_SEEDS).forEach(add);
   karnatakaSeedsToLocationSeo(KARNATAKA_DISTRICT_EXPANSION_SEEDS).forEach(add);
+  BENGALURU_ZONE_EXPANSION.forEach(add);
   return merged;
 })();
 
@@ -439,8 +455,12 @@ const NEARBY_ALIASES: Record<string, string> = {
   'silk board junction': 'Silk Board',
   'manyata embassy business park': 'Manyata Tech Park',
   tumkur: 'Tumakuru',
-  'kr puram': 'Mahadevapura',
-  'k r puram': 'Mahadevapura',
+  'sanjay nagar': 'Sanjaynagar',
+  'bannerghatta road': 'Bannerghatta Road',
+  'k r puram': 'KR Puram',
+  krishnarajapuram: 'KR Puram',
+  'hennur main road': 'Hennur Road',
+  'rajarajeshwari nagar': 'RR Nagar',
 };
 
 function normalizeLocationKey(value: string): string {

@@ -139,17 +139,6 @@ const Footer = () => {
         </div>
         
         <div className="mt-16 pt-8 border-t border-border relative z-0">
-          <p className="text-sm text-muted-foreground text-center max-w-lg mx-auto mb-8 leading-relaxed">
-            Sister RO service brand — {sisterBrand.blurb}:{' '}
-            <a
-              href={sisterBrand.href}
-              className="text-foreground font-medium underline underline-offset-4 hover:text-primary transition-colors"
-              rel="noopener noreferrer"
-            >
-              {sisterBrand.name}
-            </a>
-          </p>
-
           {/* Mobile Policy Links - Keep as is */}
           <div className="flex justify-center md:hidden mb-8">
             <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm w-full max-w-sm">
@@ -182,6 +171,12 @@ const Footer = () => {
           
           {/* Hidden SEO Links - Not visible but crawlable */}
           <div className="sr-only">
+            <p>
+              Sister RO service brand — {sisterBrand.blurb}:{' '}
+              <a href={sisterBrand.href} rel="noopener noreferrer">
+                {sisterBrand.name}
+              </a>
+            </p>
             <Link to="/disclaimer">Disclaimer</Link>
             <a href="#services">RO Installation Bengaluru</a>
             <a href="#services">RO Repair & Maintenance</a>

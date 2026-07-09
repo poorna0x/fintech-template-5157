@@ -14,7 +14,7 @@ import NotFound from "./pages/NotFound";
 import PerformanceMonitor from "./components/PerformanceMonitor";
 import PublicSiteSeo from "./components/PublicSiteSeo";
 import GoogleAnalytics from "./components/GoogleAnalytics";
-import { SEO_LOCATION_PAGES, SEO_SERVICE_PAGES } from "@/lib/publicSeoPages";
+import { SEO_CITY_SERVICE_PAGES, SEO_LOCATION_PAGES, SEO_SERVICE_PAGES } from "@/lib/publicSeoPages";
 import { disablePWA } from "@/lib/pwa";
 import { isTechnicianPortalPath } from "@/lib/authPortal";
 
@@ -156,6 +156,11 @@ const App = () => (
                   {/* Search route - return 404 */}
                   <Route path="/search" element={<NotFound />} />
                   
+                  {/* City × service pages — e.g. /ro-installation-in-mysuru */}
+                  {SEO_CITY_SERVICE_PAGES.map(({ path }) => (
+                    <Route key={path} path={path} element={<Services />} />
+                  ))}
+
                   {/* Service-specific pages — same UI, unique SEO URLs */}
                   {SEO_SERVICE_PAGES.map(({ path }) => (
                     <Route key={path} path={path} element={<Services />} />
