@@ -2,8 +2,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { toast } from 'sonner';
 import type { AdminStatusFilter } from '@/lib/adminDashboardCache';
 import type { LoadFilteredJobsFn } from '@/lib/adminLoadDashboardData';
-import { getJobCustomTimeLabel, getLeadSourceFromJob } from '@/lib/adminUtils';
-import { getJobLocationLabelForWhatsApp } from '@/lib/customer-locations';
+import { openAdminWhatsappForJobAssign } from '@/lib/openAdminWhatsappForJobAssign';
 import { createJobAssignedNotification, sendNotification } from '@/lib/notifications';
 import { broadcastTechnicianJobListRefresh } from '@/lib/technicianJobListSync';
 import { db } from '@/lib/supabase';
@@ -62,6 +61,14 @@ export async function saveAdminJobAssignment(ctx: AdminSaveJobAssignmentCtx) {
     broadcastTechnicianJobListRefresh([ctx.selectedTechnicianId]);
 
     const assignedTechnician = ctx.technicians.find((t) => t.id === ctx.selectedTechnicianId);
+
+    if (assignedTechnician && assignedTechnician.phone) {
+      openAdminWhatsappForJobAssign(ctx, ctx.jobToAssign, assignedTechnician, scrollY);
+    } else {
+      ctx.setAssignJobDialogOpen(false);
+      ctx.closeAdminModal();
+    }
+
     if (assignedTechnician) {
       const notification = createJobAssignedNotification(
         (ctx.jobToAssign as any).job_number || ctx.jobToAssign.jobNumber || 'Job',
@@ -72,50 +79,15 @@ export async function saveAdminJobAssignment(ctx: AdminSaveJobAssignmentCtx) {
         ctx.jobToAssign.id,
         assignedTechnician.id
       );
-      await sendNotification(notification);
+      void sendNotification(notification).catch(() => {});
     } else {
       toast.success(
-        `Job assigned to ${assignedTechnician?.fullName || 'technician'} for ${
+        `Job assigned to technician for ${
           (ctx.jobToAssign.customer as any)?.full_name ||
           (ctx.jobToAssign.customer as any)?.fullName ||
           'customer'
         }`
       );
-    }
-
-    ctx.setAssignJobDialogOpen(false);
-
-    if (assignedTechnician && assignedTechnician.phone) {
-      ctx.scrollPositionBeforeWhatsAppRef.current = scrollY;
-      const serviceSubType =
-        (ctx.jobToAssign as any).service_sub_type || ctx.jobToAssign.serviceSubType || 'Service';
-      let customerForWhatsApp = (ctx.jobToAssign.customer as any) || {};
-      const customerId = customerForWhatsApp?.id || (ctx.jobToAssign as any).customer_id;
-      if (customerId) {
-        const { data: freshCustomer } = await db.customers.getById(String(customerId));
-        if (freshCustomer) customerForWhatsApp = freshCustomer;
-      }
-      const customerName =
-        customerForWhatsApp?.full_name || customerForWhatsApp?.fullName || 'Customer';
-      const locationText = getJobLocationLabelForWhatsApp(
-        ctx.jobToAssign as { service_site?: string; service_address?: unknown },
-        customerForWhatsApp
-      );
-      const leadSource = getLeadSourceFromJob(ctx.jobToAssign as Record<string, unknown>);
-      const customTime = getJobCustomTimeLabel(ctx.jobToAssign as Record<string, unknown>) || '';
-      ctx.setWhatsappTechnician({
-        name: assignedTechnician.fullName,
-        phone: assignedTechnician.phone,
-      });
-      ctx.setWhatsappServiceSubType(serviceSubType);
-      ctx.setWhatsappCustomerName(customerName);
-      ctx.setWhatsappLocation(locationText || '');
-      ctx.setWhatsappLeadSource(leadSource);
-      ctx.setWhatsappCustomTime(customTime);
-      ctx.setWhatsappDialogOpen(true);
-      ctx.openAdminWhatsappModal();
-    } else {
-      ctx.closeAdminModal();
     }
 
     ctx.setJobToAssign(null);

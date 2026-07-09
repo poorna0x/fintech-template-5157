@@ -2,8 +2,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { toast } from 'sonner';
 import type { AdminStatusFilter } from '@/lib/adminDashboardCache';
 import type { LoadFilteredJobsFn } from '@/lib/adminLoadDashboardData';
-import { getJobCustomTimeLabel, getLeadSourceFromJob } from '@/lib/adminUtils';
-import { getJobLocationLabelForWhatsApp } from '@/lib/customer-locations';
+import { openAdminWhatsappForJobAssign } from '@/lib/openAdminWhatsappForJobAssign';
 import { broadcastTechnicianJobListRefresh } from '@/lib/technicianJobListSync';
 import { db } from '@/lib/supabase';
 import type { Job, Technician } from '@/types';
@@ -60,41 +59,14 @@ export async function submitAdminJobReassign(
     );
 
     toast.success('Job reassigned successfully');
-    ctx.setReassignDialogOpen(false);
 
     const reassignedTechnician = ctx.technicians.find(
       (t) => t.id === ctx.selectedTechnicianForReassign
     );
     if (reassignedTechnician && reassignedTechnician.phone) {
-      ctx.scrollPositionBeforeWhatsAppRef.current = scrollY;
-      const serviceSubType =
-        (ctx.jobToReassign as any).service_sub_type || ctx.jobToReassign.serviceSubType || 'Service';
-      let customerForWhatsApp = (ctx.jobToReassign.customer as any) || {};
-      const customerId = customerForWhatsApp?.id || (ctx.jobToReassign as any).customer_id;
-      if (customerId) {
-        const { data: freshCustomer } = await db.customers.getById(String(customerId));
-        if (freshCustomer) customerForWhatsApp = freshCustomer;
-      }
-      const customerName =
-        customerForWhatsApp?.full_name || customerForWhatsApp?.fullName || 'Customer';
-      const locationText = getJobLocationLabelForWhatsApp(
-        ctx.jobToReassign as { service_site?: string; service_address?: unknown },
-        customerForWhatsApp
-      );
-      const leadSource = getLeadSourceFromJob(ctx.jobToReassign as Record<string, unknown>);
-      const customTime = getJobCustomTimeLabel(ctx.jobToReassign as Record<string, unknown>) || '';
-      ctx.setWhatsappTechnician({
-        name: reassignedTechnician.fullName,
-        phone: reassignedTechnician.phone,
-      });
-      ctx.setWhatsappServiceSubType(serviceSubType);
-      ctx.setWhatsappCustomerName(customerName);
-      ctx.setWhatsappLocation(locationText || '');
-      ctx.setWhatsappLeadSource(leadSource);
-      ctx.setWhatsappCustomTime(customTime);
-      ctx.setWhatsappDialogOpen(true);
-      ctx.openAdminWhatsappModal();
+      openAdminWhatsappForJobAssign(ctx, ctx.jobToReassign, reassignedTechnician, scrollY);
     } else {
+      ctx.setReassignDialogOpen(false);
       ctx.closeAdminModal();
     }
 

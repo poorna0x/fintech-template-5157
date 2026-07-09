@@ -60,7 +60,7 @@ const WhatsAppDialog: React.FC<WhatsAppDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[425px] duration-100 ease-out data-[state=open]:zoom-in-100 data-[state=closed]:zoom-out-100">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <WhatsAppIcon className="w-5 h-5 text-green-600" />
