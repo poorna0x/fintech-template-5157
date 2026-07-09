@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { Package, Plus, Search, Trash2, Layers } from 'lucide-react';
+import { Package, Plus, Search, Trash2, Layers, X } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { inventoryCache } from '@/lib/inventoryCache';
@@ -630,16 +630,20 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="w-[calc(100%-2rem)] max-w-4xl max-h-[90vh] flex flex-col overflow-hidden p-4 sm:p-6 sm:max-h-[85vh] [&>button]:shrink-0 [&>button]:z-10 [&>button]:!top-[max(1rem,env(safe-area-inset-top,0px))]">
-          <DialogHeader className="shrink-0">
-            <DialogTitle className="flex items-center gap-2">
-              <Package className="w-5 h-5" />
+        <DialogContent
+          hideCloseButton
+          className="w-[calc(100%-2rem)] max-w-4xl max-h-[90vh] flex flex-col overflow-hidden p-4 sm:p-6 sm:max-h-[85vh]"
+        >
+          <div className="shrink-0 flex items-center justify-between gap-3">
+            <DialogTitle className="flex items-center gap-2 text-left text-lg font-semibold leading-none tracking-tight m-0">
+              <Package className="w-5 h-5 shrink-0" />
               Parts Used for Job
             </DialogTitle>
-<DialogDescription>
-            Manage parts used for this job. Each part (or bundle) is deducted from the technician&apos;s inventory and from main inventory. Price at time of use is stored per part. Top-up still works per item as before.
-            </DialogDescription>
-          </DialogHeader>
+            <DialogClose className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground focus:outline-none focus-visible:ring-0">
+              <X className="h-5 w-5" />
+              <span className="sr-only">Close</span>
+            </DialogClose>
+          </div>
 
           <div className="flex-1 min-h-0 overflow-y-auto space-y-4 -mx-1 px-1">
             {/* Add Part / Add Bundle */}

@@ -23,6 +23,7 @@ import { isTechnicianPortalPath } from "@/lib/authPortal";
 // code stays out of the entry chunk that loads on every public page.
 const AdminPortal = lazy(() => import("./pages/AdminPortal"));
 const Booking = lazy(() => import("./pages/Booking"));
+const BookingPrototype = lazy(() => import("./pages/BookingPrototype"));
 const TechnicianLogin = lazy(() => import("./pages/TechnicianLogin"));
 const TechnicianDashboard = lazy(() => import("./pages/TechnicianDashboard"));
 const EmailPreviewRedirect = lazy(() => import("./pages/EmailPreviewPage"));
@@ -125,6 +126,7 @@ const App = () => (
                 <Routes>
                   <Route path="/" element={<Index />} />
                   <Route path="/book" element={<Booking />} />
+                  <Route path="/book-prototype" element={<BookingPrototype />} />
                   <Route path="/admin/login" element={<Navigate to="/admin" replace />} />
                   <Route path="/admin" element={<AdminPortal />} />
                   <Route path="/admin/email-preview" element={<EmailPreviewRedirect />} />
