@@ -7,6 +7,15 @@ Allow: /favicon.svg
 Allow: /*.png
 Allow: /*.ico
 
+# CRM / portal — not public marketing (also noindex via X-Robots-Tag)
+Disallow: /admin
+Disallow: /technician
+Disallow: /settings
+Disallow: /calling
+Disallow: /dashboard
+Disallow: /search
+Disallow: /product-verify/
+
 Sitemap: https://hydrogenro.com/sitemap.xml
 
 User-agent: Googlebot

@@ -9,6 +9,19 @@ import { getPublicSiteKey } from '@/lib/websiteSiteKey';
 
 const Footer = () => {
   const brand = getBrandSeoProfile(getPublicSiteKey());
+  const siteKey = getPublicSiteKey();
+  const sisterBrand =
+    siteKey === 'elevenro'
+      ? {
+          name: 'Hydrogen RO',
+          href: 'https://hydrogenro.com',
+          blurb: 'North & central Bengaluru',
+        }
+      : {
+          name: 'Eleven RO',
+          href: 'https://elevenro.com',
+          blurb: 'South Bangalore & Anjanapura',
+        };
   const telHref = (phone: string) => `tel:${phone.replace(/\s/g, '')}`;
 
   return (
@@ -126,6 +139,17 @@ const Footer = () => {
         </div>
         
         <div className="mt-16 pt-8 border-t border-border relative z-0">
+          <p className="text-sm text-muted-foreground text-center max-w-lg mx-auto mb-8 leading-relaxed">
+            Sister RO service brand — {sisterBrand.blurb}:{' '}
+            <a
+              href={sisterBrand.href}
+              className="text-foreground font-medium underline underline-offset-4 hover:text-primary transition-colors"
+              rel="noopener noreferrer"
+            >
+              {sisterBrand.name}
+            </a>
+          </p>
+
           {/* Mobile Policy Links - Keep as is */}
           <div className="flex justify-center md:hidden mb-8">
             <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm w-full max-w-sm">

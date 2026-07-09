@@ -7,6 +7,14 @@ Allow: /favicon.svg
 Allow: /*.png
 Allow: /*.ico
 
+Disallow: /admin
+Disallow: /technician
+Disallow: /settings
+Disallow: /calling
+Disallow: /dashboard
+Disallow: /search
+Disallow: /product-verify/
+
 Sitemap: https://elevenro.com/sitemap.xml
 
 User-agent: Googlebot

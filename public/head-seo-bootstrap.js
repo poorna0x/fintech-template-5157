@@ -385,14 +385,9 @@
     buildElevenJsonLd(profile, canonical);
 
     var hydrogenCrawler = document.getElementById('crawler-seo-hydrogenro');
-    var elevenCrawler = document.getElementById('crawler-seo-elevenro');
     if (hydrogenCrawler) {
       hydrogenCrawler.setAttribute('hidden', '');
       hydrogenCrawler.setAttribute('aria-hidden', 'true');
-    }
-    if (elevenCrawler) {
-      elevenCrawler.removeAttribute('hidden');
-      elevenCrawler.removeAttribute('aria-hidden');
     }
   }
 

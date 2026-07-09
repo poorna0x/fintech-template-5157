@@ -1458,10 +1458,8 @@ const Analytics = () => {
           prev
             ? {
                 ...prev,
-                returnComplaints:
-                  mapped.total > 0
-                    ? { total: mapped.total, byTechnician: mapped.byTechnician }
-                    : undefined,
+                // Mark as loaded even when total is 0; otherwise the table shows "—" which looks like "not working".
+                returnComplaints: { total: mapped.total, byTechnician: mapped.byTechnician },
                 technicianStats: prev.technicianStats.map((tech) => ({
                   ...tech,
                   returnComplaints: mapped.countsByTechId[tech.id] || 0,
@@ -1529,7 +1527,8 @@ const Analytics = () => {
         }).sort((a, b) => b.count - a.count);
         setAnalytics(prev => prev ? {
           ...prev,
-          returnComplaints: returnComplaintsTotal > 0 ? { total: returnComplaintsTotal, byTechnician } : undefined,
+          // Always load: show 0 instead of "—".
+          returnComplaints: { total: returnComplaintsTotal, byTechnician },
           technicianStats: prev.technicianStats.map(tech => ({
             ...tech,
             returnComplaints: returnComplaintsByTechnician[tech.id] || 0
@@ -1578,7 +1577,8 @@ const Analytics = () => {
         }).sort((a, b) => b.count - a.count);
         setAnalytics(prev => prev ? {
           ...prev,
-          returnComplaints: returnComplaintsTotal > 0 ? { total: returnComplaintsTotal, byTechnician } : undefined,
+          // Always load: show 0 instead of "—".
+          returnComplaints: { total: returnComplaintsTotal, byTechnician },
           technicianStats: prev.technicianStats.map(tech => ({
             ...tech,
             returnComplaints: returnComplaintsByTechnician[tech.id] || 0
