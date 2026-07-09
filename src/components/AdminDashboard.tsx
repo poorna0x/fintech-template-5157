@@ -2021,6 +2021,17 @@ const AdminDashboard = () => {
     }
   }, [isInitialLoad, jobs, lastCheckedJobId]);
 
+  // Jobs already on the Completed tab are not "new" completions — skip alert on later edits (e.g. WhatsApp sent).
+  useEffect(() => {
+    if (isInitialLoad || statusFilter !== 'COMPLETED') return;
+    for (const job of jobs) {
+      const st = String((job as { status?: string }).status || job.status || '').toUpperCase();
+      if (st === 'COMPLETED' && job.id) {
+        jobIdsCompletedByAdminRef.current.add(job.id);
+      }
+    }
+  }, [isInitialLoad, statusFilter, jobs]);
+
   // Derive customers from loaded jobs only (no full customer load)
   const deriveCustomersFromJobs = (jobsList: Job[]) => {
     const seen = new Set<string>();
@@ -4938,6 +4949,7 @@ const AdminDashboard = () => {
       currentPage,
       loadCompletedJobDetails,
       loadFilteredJobs,
+      jobIdsSkipCompletionSoundRef: jobIdsCompletedByAdminRef,
     });
   };
 
@@ -4950,6 +4962,7 @@ const AdminDashboard = () => {
       loadFilteredJobs,
       closeAdminModal,
       setSelectedJobForMessage,
+      jobIdsSkipCompletionSoundRef: jobIdsCompletedByAdminRef,
     });
   };
 

@@ -1,4 +1,4 @@
-import type { Dispatch, SetStateAction } from 'react';
+import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { toast } from 'sonner';
 import type { AdminStatusFilter } from '@/lib/adminDashboardCache';
 import type { LoadFilteredJobsFn } from '@/lib/adminLoadDashboardData';
@@ -68,9 +68,11 @@ export async function markAdminJobMailSent(
     currentPage: number;
     loadCompletedJobDetails: (jobId: string) => Promise<void>;
     loadFilteredJobs: LoadFilteredJobsFn;
+    jobIdsSkipCompletionSoundRef?: MutableRefObject<Set<string>>;
   }
 ) {
   try {
+    ctx.jobIdsSkipCompletionSoundRef?.current.add(jobId);
     const result = await persistJobRequirementsFlag(jobId, ctx.jobs, 'mail_sent', 'mail_sent_at');
     if (!result) return;
 
@@ -97,9 +99,11 @@ export async function markAdminJobMessageSent(
     loadFilteredJobs: LoadFilteredJobsFn;
     closeAdminModal: () => void;
     setSelectedJobForMessage: Dispatch<SetStateAction<Job | null>>;
+    jobIdsSkipCompletionSoundRef?: MutableRefObject<Set<string>>;
   }
 ) {
   try {
+    ctx.jobIdsSkipCompletionSoundRef?.current.add(jobId);
     const result = await persistJobRequirementsFlag(
       jobId,
       ctx.jobs,

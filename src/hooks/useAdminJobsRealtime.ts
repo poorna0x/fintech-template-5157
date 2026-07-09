@@ -95,13 +95,41 @@ export function useAdminJobsRealtime({
           table: 'jobs',
           filter: 'status=eq.COMPLETED',
         },
-        (payload: { new: Record<string, unknown> }) => {
+        (payload: { new: Record<string, unknown>; old: Record<string, unknown> }) => {
           const row = payload.new as {
             id: string;
+            status?: string;
             customer_id?: string | null;
             completed_at?: string | null;
             end_time?: string | null;
           };
+          const oldRow = payload.old as {
+            status?: string;
+            completed_at?: string | null;
+            end_time?: string | null;
+          } | null;
+
+          const previousStatus = oldRow?.status;
+          const previousCompletedAt = oldRow?.completed_at || oldRow?.end_time;
+          const newCompletedAt = row.completed_at || row.end_time;
+
+          // WhatsApp sent, edit, reassign, etc. on an already-completed job still match
+          // status=eq.COMPLETED — never treat those as a fresh technician completion.
+          const alreadyCompleted =
+            previousStatus === 'COMPLETED' || Boolean(previousCompletedAt);
+          const transitionedToCompleted =
+            row.status === 'COMPLETED' &&
+            previousStatus != null &&
+            previousStatus !== 'COMPLETED';
+          const thinOldButFreshCompletion =
+            row.status === 'COMPLETED' &&
+            !alreadyCompleted &&
+            Boolean(newCompletedAt) &&
+            Date.now() - new Date(newCompletedAt).getTime() <= 60_000;
+
+          const isFreshCompletion = transitionedToCompleted || thinOldButFreshCompletion;
+          if (!isFreshCompletion) return;
+
           if (row.customer_id) {
             setCustomerPriorServiceStatus((prev) =>
               prev[row.customer_id as string]
@@ -110,11 +138,9 @@ export function useAdminJobsRealtime({
             );
           }
           if (jobIdsCompletedByAdminRef.current.has(row.id)) return;
-          const completedAt = row.completed_at || row.end_time;
-          if (completedAt) {
-            const t = new Date(completedAt).getTime();
-            if (Date.now() - t > 60000) return;
-          }
+          if (!newCompletedAt) return;
+          const completedAtMs = new Date(newCompletedAt).getTime();
+          if (Number.isNaN(completedAtMs) || Date.now() - completedAtMs > 60_000) return;
           jobIdsCompletedByAdminRef.current.add(row.id);
           playCompletedJobSound();
           void loadJobCounts();
