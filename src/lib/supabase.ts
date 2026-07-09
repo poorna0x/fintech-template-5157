@@ -680,6 +680,21 @@ function isSentEmailLogsRpcNotFoundError(error: unknown): boolean {
   return isCallingRpcNotFoundError(error);
 }
 
+/** Parse jsonb array returned by technician customer-jobs RPCs. */
+function parseJsonbRpcJobRows(data: unknown): Record<string, unknown>[] {
+  if (Array.isArray(data)) return data as Record<string, unknown>[];
+  if (data == null) return [];
+  if (typeof data === 'string') {
+    try {
+      const parsed = JSON.parse(data);
+      return Array.isArray(parsed) ? (parsed as Record<string, unknown>[]) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 export type SentEmailLogsPageResult = {
   total: number;
   rows: Record<string, unknown>[];
@@ -1857,6 +1872,40 @@ export const db = {
       return { data: enriched, error: null };
     },
 
+    /**
+     * Technician Customer Report: SECURITY DEFINER RPC so all completed jobs for the
+     * customer are visible (direct SELECT is limited to technician_can_access_job per row).
+     */
+    async getByCustomerIdForReportAsTechnician(customerId: string) {
+      const authMode = await getCustomerTableAuthMode();
+      if (authMode !== 'technician') {
+        return this.getByCustomerIdForReport(customerId);
+      }
+
+      const { data, error } = await supabase.rpc('get_technician_customer_jobs_report', {
+        p_customer_id: customerId,
+      });
+
+      if (error) {
+        if (isCallingRpcNotFoundError(error)) {
+          return this.getByCustomerIdForReport(customerId);
+        }
+        return { data: [], error };
+      }
+
+      return { data: parseJsonbRpcJobRows(data), error: null };
+    },
+
+    /** Technician report + after_photos enrichment (RPC rows may already include after_photos). */
+    async getByCustomerIdForReportEnrichedAsTechnician(customerId: string) {
+      const { data, error } = await this.getByCustomerIdForReportAsTechnician(customerId);
+      if (error) return { data: data || [], error };
+      if (!data?.length) return { data: data || [], error: null };
+      const { enrichJobsWithAfterPhotosIfNeeded } = await import('@/lib/jobReportPhotos');
+      const enriched = await enrichJobsWithAfterPhotosIfNeeded(data);
+      return { data: enriched, error: null };
+    },
+
     /** Admin customer search: jobs whose job_number matches the query (slim — no requirements/photos). */
     async searchByJobNumberForAdmin(query: string, limit = 20) {
       const trimmed = (query ?? '').trim();
@@ -1901,6 +1950,29 @@ export const db = {
         .order('created_at', { ascending: false });
 
       return { data, error };
+    },
+
+    /**
+     * Technician photo gallery: SECURITY DEFINER RPC for all customer jobs + photo fields.
+     */
+    async getByCustomerIdForPhotoAggregationAsTechnician(customerId: string) {
+      const authMode = await getCustomerTableAuthMode();
+      if (authMode !== 'technician') {
+        return this.getByCustomerIdForPhotoAggregation(customerId);
+      }
+
+      const { data, error } = await supabase.rpc('get_technician_customer_jobs_photos', {
+        p_customer_id: customerId,
+      });
+
+      if (error) {
+        if (isCallingRpcNotFoundError(error)) {
+          return this.getByCustomerIdForPhotoAggregation(customerId);
+        }
+        return { data: [], error };
+      }
+
+      return { data: parseJsonbRpcJobRows(data), error: null };
     },
 
     /**

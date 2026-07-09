@@ -106,6 +106,8 @@ import {
   type TechnicianJobListRefreshPayload,
 } from '@/lib/technicianJobListSync';
 import {
+  aggregateCustomerPhotoUrls,
+  collectAllPhotoUrlsFromJob,
   enrichJobsWithAfterPhotosIfNeeded,
   resolveCustomerUuidForQueries,
   resolveJobBillAndPaymentPhotos,
@@ -1784,18 +1786,13 @@ const TechnicianDashboard = () => {
         const customerUuid = await resolveCustomerUuidForQueries(selectedCustomerForReport);
 
         if (customerUuid) {
-          // Fetch the (slim) completed list, merge in completed jobs already on this
-          // device, then enrich once. We use the non-enriched fetch here so we don't
-          // pull after_photos twice (the merge can add local rows that also need it).
-          const { data, error } = await db.jobs.getByCustomerIdForReport(customerUuid);
+          const { data, error } = await db.jobs.getByCustomerIdForReportEnrichedAsTechnician(customerUuid);
           if (error) {
             console.error('Error fetching customer jobs for report:', error);
             setCustomerReportJobs(mergeCustomerReportJobsForUuid([], customerUuid));
           } else {
             const merged = mergeCustomerReportJobsForUuid(data || [], customerUuid);
             try {
-              // No-ops for rows that already carry after_photos (e.g. local completed
-              // jobs); only rows missing bill/payment photos trigger a single batched read.
               const enriched = await enrichJobsWithAfterPhotosIfNeeded(merged);
               setCustomerReportJobs(enriched);
             } catch {
@@ -5046,7 +5043,7 @@ const TechnicianDashboard = () => {
 
   /** Load photo arrays when slim list row has none (legacy after_photos / images). */
   const fetchJobPhotoUrlsForDialog = async (job: Job): Promise<string[]> => {
-    const fromRow = getAllJobPhotos(job);
+    const fromRow = collectAllPhotoUrlsFromJob(job);
     if (fromRow.length > 0) return fromRow;
 
     const { data: photoRows } = await db.jobs.getPhotoFieldsForJobIds([job.id]);
@@ -5054,25 +5051,7 @@ const TechnicianDashboard = () => {
     if (!row) return [];
 
     const merged = { ...job, ...row } as Job;
-    const { allPhotos } = resolveJobBillAndPaymentPhotos(merged as any);
-    if (allPhotos.length > 0) return allPhotos;
-    return getAllJobPhotos(merged);
-  };
-
-  // Helper function to get all photos for a job
-  const getAllJobPhotos = (job: Job): string[] => {
-    const photos: string[] = [];
-    
-    // Get photos from job
-    if (job.beforePhotos && Array.isArray(job.beforePhotos)) photos.push(...job.beforePhotos);
-    if (job.before_photos && Array.isArray(job.before_photos)) photos.push(...job.before_photos);
-    if (job.afterPhotos && Array.isArray(job.afterPhotos)) photos.push(...job.afterPhotos);
-    if (job.after_photos && Array.isArray(job.after_photos)) photos.push(...job.after_photos);
-    if (job.images && Array.isArray(job.images)) photos.push(...job.images);
-    
-    // Remove duplicates and filter out empty values
-    const uniquePhotos = Array.from(new Set(photos.filter(photo => photo && photo.trim() !== '')));
-    return uniquePhotos;
+    return collectAllPhotoUrlsFromJob(merged);
   };
 
   // Extract URLs from Cloudinary objects or use as-is if already strings
@@ -5170,8 +5149,9 @@ const TechnicianDashboard = () => {
       let customerRecord: any = null;
       const { data: customer, error: customerError } = await db.customers.getById(customerUuid);
       if (!customerError && customer) customerRecord = customer;
-      
-      const { data: customerJobs, error } = await db.jobs.getByCustomerIdForPhotoAggregation(customerUuid);
+
+      const { data: customerJobs, error } =
+        await db.jobs.getByCustomerIdForPhotoAggregationAsTechnician(customerUuid);
 
       if (error) {
         console.error('Error fetching customer jobs:', error);
@@ -5182,190 +5162,42 @@ const TechnicianDashboard = () => {
         if (row?.id) jobById.set(row.id, row);
       }
       for (const j of jobsRef.current) {
-        const cid = (j as any).customer_id || (j.customer as any)?.id;
-        if (cid === customerUuid && !jobById.has(j.id)) jobById.set(j.id, j);
+        const jobCustomerId = (j as any).customer_id || (j.customer as any)?.id;
+        if (jobCustomerId === customerUuid && j.id && !jobById.has(j.id)) {
+          jobById.set(j.id, j);
+        }
       }
-      const allCustomerJobs = Array.from(jobById.values());
+
+      let allCustomerJobs = Array.from(jobById.values());
       if (allCustomerJobs.length === 0 && error) {
         return [];
       }
 
-      // Use Map to track photo URLs with their job dates for sorting (latest first)
-      const photoMap = new Map<string, number>(); // URL -> timestamp
-      
-      // Sort jobs by completion/creation date (latest first) to prioritize newer photos
-      const sortedJobs = [...allCustomerJobs].sort((a, b) => {
-        const dateA = (a as any).completed_at || a.completedAt || a.created_at || a.createdAt || '';
-        const dateB = (b as any).completed_at || b.completedAt || b.created_at || b.createdAt || '';
-        if (!dateA && !dateB) return 0;
-        if (!dateA) return 1;
-        if (!dateB) return -1;
-        return new Date(dateB).getTime() - new Date(dateA).getTime();
-      });
-      
-      if (sortedJobs && Array.isArray(sortedJobs)) {
-        sortedJobs.forEach((job: any) => {
-          // Get job timestamp for sorting (prefer completed_at, fallback to created_at)
-          const jobTimestamp = (job as any).completed_at || job.completedAt 
-            ? new Date((job as any).completed_at || job.completedAt).getTime()
-            : (job.created_at || job.createdAt 
-              ? new Date(job.created_at || job.createdAt).getTime()
-              : Date.now());
-          
-          // Get photos from before_photos field
-          const jobBeforePhotos = Array.isArray(job.before_photos || job.beforePhotos) 
-            ? (job.before_photos || job.beforePhotos) 
-            : [];
-          const extractedBeforePhotos = extractPhotoUrls(jobBeforePhotos);
-          extractedBeforePhotos.forEach(url => {
-            // Only add if not already present, or if this job is newer (higher timestamp)
-            if (!photoMap.has(url) || photoMap.get(url)! < jobTimestamp) {
-              photoMap.set(url, jobTimestamp);
-            }
+      // Dashboard rows omit photo JSON — batch-load before/after/images for every job we know about.
+      const jobIds = allCustomerJobs.map((j: { id?: string }) => j.id).filter(Boolean) as string[];
+      if (jobIds.length > 0) {
+        const { data: photoRows } = await db.jobs.getPhotoFieldsForJobIds(jobIds);
+        if (photoRows?.length) {
+          const photoById = new Map(photoRows.map((row: any) => [row.id, row]));
+          allCustomerJobs = allCustomerJobs.map((job: any) => {
+            const photoRow = photoById.get(job.id);
+            if (!photoRow) return job;
+            return {
+              ...job,
+              before_photos: photoRow.before_photos ?? job.before_photos ?? job.beforePhotos,
+              after_photos: photoRow.after_photos ?? job.after_photos ?? job.afterPhotos,
+              images: photoRow.images ?? job.images,
+            };
           });
-          
-          // Get photos from after_photos field
-          const jobAfterPhotos = Array.isArray(job.after_photos || job.afterPhotos) 
-            ? (job.after_photos || job.afterPhotos) 
-            : [];
-          const extractedAfterPhotos = extractPhotoUrls(jobAfterPhotos);
-          extractedAfterPhotos.forEach(url => {
-            // Only add if not already present, or if this job is newer (higher timestamp)
-            if (!photoMap.has(url) || photoMap.get(url)! < jobTimestamp) {
-              photoMap.set(url, jobTimestamp);
-            }
-          });
-          
-          // Also check if there are photos in the images field
-          const jobImages = Array.isArray(job.images) ? job.images : [];
-          const extractedImages = extractPhotoUrls(jobImages);
-          extractedImages.forEach(url => {
-            // Only add if not already present, or if this job is newer (higher timestamp)
-            if (!photoMap.has(url) || photoMap.get(url)! < jobTimestamp) {
-              photoMap.set(url, jobTimestamp);
-            }
-          });
-          
-          // Get photos from job requirements (bill photos, payment photos)
-          if (job.requirements) {
-            try {
-              const requirements = typeof job.requirements === 'string' 
-                ? JSON.parse(job.requirements) 
-                : job.requirements;
-              
-              if (Array.isArray(requirements)) {
-                requirements.forEach((req: any) => {
-                  if (req.bill_photos && Array.isArray(req.bill_photos)) {
-                    req.bill_photos.forEach((photo: any) => {
-                      const photoUrls = extractPhotoUrls([photo]);
-                      photoUrls.forEach(url => {
-                        if (!photoMap.has(url) || photoMap.get(url)! < jobTimestamp) {
-                          photoMap.set(url, jobTimestamp);
-                        }
-                      });
-                    });
-                  }
-                  if (req.payment_photos && Array.isArray(req.payment_photos)) {
-                    req.payment_photos.forEach((photo: any) => {
-                      const photoUrls = extractPhotoUrls([photo]);
-                      photoUrls.forEach(url => {
-                        if (!photoMap.has(url) || photoMap.get(url)! < jobTimestamp) {
-                          photoMap.set(url, jobTimestamp);
-                        }
-                      });
-                    });
-                  }
-                  // Also check qr_photos for payment screenshots (from secondary account)
-                  // NOTE: We do NOT add QR code URLs (selected_qr_code_url) to customer photos
-                  // QR codes are already stored in Cloudinary and are just references, not actual job photos
-                  if (req.qr_photos && typeof req.qr_photos === 'object') {
-                    if (req.qr_photos.payment_screenshot) {
-                      const screenshotUrls = extractPhotoUrls([req.qr_photos.payment_screenshot]);
-                      screenshotUrls.forEach(url => {
-                        if (!photoMap.has(url) || photoMap.get(url)! < jobTimestamp) {
-                          photoMap.set(url, jobTimestamp);
-                        }
-                      });
-                    }
-                    // Do NOT add selected_qr_code_url to photos - QR codes are reference URLs, not job photos
-                    // QR codes are stored separately in qr_photos requirements and shouldn't appear in customer photo gallery
-                  }
-                });
-              } else if (typeof requirements === 'object' && requirements !== null) {
-                if (requirements.bill_photos && Array.isArray(requirements.bill_photos)) {
-                  requirements.bill_photos.forEach((photo: any) => {
-                    const photoUrls = extractPhotoUrls([photo]);
-                    photoUrls.forEach(url => {
-                      if (!photoMap.has(url) || photoMap.get(url)! < jobTimestamp) {
-                        photoMap.set(url, jobTimestamp);
-                      }
-                    });
-                  });
-                }
-                if (requirements.payment_photos && Array.isArray(requirements.payment_photos)) {
-                  requirements.payment_photos.forEach((photo: any) => {
-                    const photoUrls = extractPhotoUrls([photo]);
-                    photoUrls.forEach(url => {
-                      if (!photoMap.has(url) || photoMap.get(url)! < jobTimestamp) {
-                        photoMap.set(url, jobTimestamp);
-                      }
-                    });
-                  });
-                }
-                // Also check qr_photos for payment screenshots (from secondary account)
-                // NOTE: We do NOT add QR code URLs (selected_qr_code_url) to customer photos
-                // QR codes are already stored in Cloudinary and are just references, not actual job photos
-                if (requirements.qr_photos && typeof requirements.qr_photos === 'object') {
-                  if (requirements.qr_photos.payment_screenshot) {
-                    const screenshotUrls = extractPhotoUrls([requirements.qr_photos.payment_screenshot]);
-                    screenshotUrls.forEach(url => {
-                      if (!photoMap.has(url) || photoMap.get(url)! < jobTimestamp) {
-                        photoMap.set(url, jobTimestamp);
-                      }
-                    });
-                  }
-                  // Do NOT add selected_qr_code_url to photos - QR codes are reference URLs, not job photos
-                  // QR codes are stored separately in qr_photos requirements and shouldn't appear in customer photo gallery
-                }
-              }
-            } catch (e) {
-              // Ignore parse errors
-              console.error('Error parsing requirements:', e);
-            }
-          }
-        });
+        }
       }
-      
-      // Add customer-level photos (photos added without a job) - show at top (high timestamp)
-      if (customerRecord && Array.isArray((customerRecord as any).photos) && (customerRecord as any).photos.length > 0) {
-        const customerPhotos = extractPhotoUrls((customerRecord as any).photos);
-        const noJobTimestamp = Date.now(); // Show as recent
-        customerPhotos.forEach(url => {
-          if (!photoMap.has(url) || photoMap.get(url)! < noJobTimestamp) {
-            photoMap.set(url, noJobTimestamp);
-          }
-        });
+
+      const uniquePhotos = aggregateCustomerPhotoUrls(allCustomerJobs, customerRecord);
+      if (import.meta.env.DEV) {
+        console.log(
+          `📸 Customer gallery: ${uniquePhotos.length} photo(s) from ${allCustomerJobs.length} job(s)`
+        );
       }
-      
-      // Convert Map to Array and sort by timestamp (latest first)
-      const uniquePhotos = Array.from(photoMap.entries())
-        .sort((a, b) => b[1] - a[1]) // Sort by timestamp descending (latest first)
-        .map(([url]) => url); // Extract just the URLs
-      console.log(`📸 Total unique photos found for customer: ${uniquePhotos.length}`);
-      
-      // Log photo sources for debugging
-      // Both primary and secondary Cloudinary accounts use res.cloudinary.com domain
-      const cloudinaryPhotos = uniquePhotos.filter(url => url.includes('res.cloudinary.com'));
-      const otherPhotos = uniquePhotos.filter(url => !url.includes('res.cloudinary.com') && (url.startsWith('http://') || url.startsWith('https://')));
-      console.log(`📸 Cloudinary photos (both accounts): ${cloudinaryPhotos.length}`);
-      console.log(`📸 Other source photos: ${otherPhotos.length}`);
-      
-      // Log sample URLs to verify both accounts are included
-      if (cloudinaryPhotos.length > 0) {
-        const sampleUrls = cloudinaryPhotos.slice(0, 3);
-        console.log(`📸 Sample Cloudinary URLs:`, sampleUrls);
-      }
-      
       return uniquePhotos;
     } catch (error) {
       console.error('Error in getAllCustomerPhotos:', error);
@@ -6869,7 +6701,15 @@ const TechnicianDashboard = () => {
                         
                           {/* Photos */}
                           {(() => {
-                            const customerId = (job.customer as any)?.id || job.customer?.id;
+                            const customerRef = {
+                              id: (job.customer as any)?.id || (job as any).customer_id,
+                              customer_id:
+                                (job.customer as any)?.customer_id ||
+                                (job.customer as any)?.customerId,
+                            };
+                            const hasCustomerKey = Boolean(
+                              customerRef.id || customerRef.customer_id
+                            );
                             return (
                               <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
                                 <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
@@ -6878,20 +6718,27 @@ const TechnicianDashboard = () => {
                                       onClick={async (e) => {
                                         e.stopPropagation();
                                         markJobAsSeen(job.id);
-                                        if (customerId) {
+                                        if (hasCustomerKey) {
                                           setLoadingCustomerPhotos(true);
-                                          const allCustomerPhotos = await getAllCustomerPhotos(customerId);
-                                          setSelectedJobPhotos({ 
-                                            jobId: job.id, 
-                                            photos: allCustomerPhotos,
-                                            customerId 
-                                          });
-                                          setPhotosDialogOpen(true);
-                                          setLoadingCustomerPhotos(false);
+                                          try {
+                                            const allCustomerPhotos =
+                                              await getAllCustomerPhotos(customerRef);
+                                            const resolvedId =
+                                              await resolveCustomerUuidForQueries(customerRef);
+                                            setSelectedJobPhotos({
+                                              jobId: job.id,
+                                              photos: allCustomerPhotos,
+                                              customerId: resolvedId ?? undefined,
+                                            });
+                                            setPhotosDialogOpen(true);
+                                          } finally {
+                                            setLoadingCustomerPhotos(false);
+                                          }
                                         } else {
                                           setLoadingCustomerPhotos(true);
                                           try {
-                                            const jobPhotos = await fetchJobPhotoUrlsForDialog(job);
+                                            const jobPhotos =
+                                              await fetchJobPhotoUrlsForDialog(job);
                                             setSelectedJobPhotos({ jobId: job.id, photos: jobPhotos });
                                             setPhotosDialogOpen(true);
                                           } finally {
@@ -6908,9 +6755,9 @@ const TechnicianDashboard = () => {
                                   <div className="flex-1 min-w-0">
                                     <div className="text-sm font-semibold text-gray-900">Photos</div>
                                     <div className="text-xs text-gray-500">
-                                      {loadingCustomerPhotos 
+                                      {loadingCustomerPhotos
                                         ? 'Loading...'
-                                        : customerId
+                                        : hasCustomerKey
                                           ? 'View all customer photos'
                                           : 'View photos'}
                       </div>

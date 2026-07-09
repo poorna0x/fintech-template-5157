@@ -193,6 +193,100 @@ export async function resolveCustomerUuidForQueries(
  * Batch-fetch after_photos only for jobs missing complete payment+bill URLs in requirements.
  * Preserves report / completed-card behavior while avoiding shipping photo JSON on every row.
  */
+/** All photo URLs on a single job (before/after/images + bill/payment from requirements/after_photos). */
+export function collectAllPhotoUrlsFromJob(job: {
+  before_photos?: unknown;
+  beforePhotos?: unknown;
+  after_photos?: unknown;
+  afterPhotos?: unknown;
+  images?: unknown;
+  requirements?: unknown;
+  payment_method?: string | null;
+  paymentMethod?: string | null;
+}): string[] {
+  const norm = (url: string) => url.split('?')[0].split('#')[0].trim().toLowerCase();
+  const ordered: string[] = [];
+  const seen = new Set<string>();
+  const add = (urls: string[]) => {
+    for (const url of urls) {
+      const key = norm(url);
+      if (!seen.has(key)) {
+        seen.add(key);
+        ordered.push(url);
+      }
+    }
+  };
+
+  const beforeRaw = (job as { before_photos?: unknown; beforePhotos?: unknown }).before_photos
+    ?? (job as { beforePhotos?: unknown }).beforePhotos;
+  const afterRaw = (job as { after_photos?: unknown; afterPhotos?: unknown }).after_photos
+    ?? (job as { afterPhotos?: unknown }).afterPhotos;
+
+  add(extractPhotoUrls(Array.isArray(beforeRaw) ? beforeRaw : []));
+  add(extractPhotoUrls(Array.isArray(afterRaw) ? afterRaw : []));
+  add(extractPhotoUrls(Array.isArray(job.images) ? job.images : []));
+  add(resolveJobBillAndPaymentPhotos(job).allPhotos);
+
+  return ordered;
+}
+
+function jobPhotoSortTimestamp(job: {
+  completed_at?: string | null;
+  completedAt?: string | null;
+  created_at?: string | null;
+  createdAt?: string | null;
+}): number {
+  const raw =
+    job.completed_at ??
+    job.completedAt ??
+    job.created_at ??
+    job.createdAt ??
+    null;
+  return raw ? new Date(raw).getTime() : Date.now();
+}
+
+/**
+ * Merge photo URLs from all customer jobs (+ optional customer-level photos), newest job first.
+ */
+export function aggregateCustomerPhotoUrls(
+  jobs: Array<{
+    completed_at?: string | null;
+    completedAt?: string | null;
+    created_at?: string | null;
+    createdAt?: string | null;
+    [key: string]: unknown;
+  }>,
+  customerRecord?: { photos?: unknown } | null
+): string[] {
+  const photoMap = new Map<string, number>();
+
+  const sortedJobs = [...jobs].sort(
+    (a, b) => jobPhotoSortTimestamp(b) - jobPhotoSortTimestamp(a)
+  );
+
+  for (const job of sortedJobs) {
+    const ts = jobPhotoSortTimestamp(job);
+    for (const url of collectAllPhotoUrlsFromJob(job)) {
+      if (!photoMap.has(url) || photoMap.get(url)! < ts) {
+        photoMap.set(url, ts);
+      }
+    }
+  }
+
+  if (customerRecord && Array.isArray((customerRecord as { photos?: unknown }).photos)) {
+    const noJobTs = Date.now();
+    for (const url of extractPhotoUrls((customerRecord as { photos: unknown[] }).photos)) {
+      if (!photoMap.has(url) || photoMap.get(url)! < noJobTs) {
+        photoMap.set(url, noJobTs);
+      }
+    }
+  }
+
+  return Array.from(photoMap.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([url]) => url);
+}
+
 export async function enrichJobsWithAfterPhotosIfNeeded<T extends { id: string }>(
   jobs: T[]
 ): Promise<T[]> {
