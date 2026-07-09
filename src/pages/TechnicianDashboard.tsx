@@ -9637,7 +9637,13 @@ const TechnicianDashboard = () => {
       </AlertDialog>
 
       {/* Customer Report Dialog */}
-      <Dialog open={customerReportDialogOpen} onOpenChange={setCustomerReportDialogOpen}>
+      <Dialog
+        open={customerReportDialogOpen}
+        onOpenChange={(open) => {
+          if (!open && photoViewerOpen) return;
+          setCustomerReportDialogOpen(open);
+        }}
+      >
         <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>

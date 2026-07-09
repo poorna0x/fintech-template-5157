@@ -889,6 +889,9 @@ const AdminDashboard = () => {
   const [commonQrCodes, setCommonQrCodes] = useState<CommonQrCode[]>([]);
   const [customerReportDialogOpen, setCustomerReportDialogOpen] = useState(false);
   const [selectedCustomerForReport, setSelectedCustomerForReport] = useState<Customer | null>(null);
+  const [reportPhotoViewerOpen, setReportPhotoViewerOpen] = useState(false);
+  const [reportViewerPhoto, setReportViewerPhoto] = useState<{ url: string; index: number; total: number } | null>(null);
+  const [reportViewerBillPhotos, setReportViewerBillPhotos] = useState<string[] | null>(null);
   const [highlightCompletedJobId, setHighlightCompletedJobId] = useState<string | null>(null);
   const [loadedCompletedJobDetails, setLoadedCompletedJobDetails] = useState<Record<string, any>>({});
   const [loadingCompletedJobDetails, setLoadingCompletedJobDetails] = useState<Record<string, boolean>>({});
@@ -6686,27 +6689,69 @@ const AdminDashboard = () => {
       {/* Customer Report Dialog */}
       <CustomerReportDialog
         open={customerReportDialogOpen}
-        onOpenChange={bindAdminModalDismiss('report', () => setCustomerReportDialogOpen(false))}
+        onOpenChange={bindAdminModalDismiss('report', () => {
+          setCustomerReportDialogOpen(false);
+          setReportPhotoViewerOpen(false);
+          setReportViewerPhoto(null);
+          setReportViewerBillPhotos(null);
+        })}
         customer={selectedCustomerForReport}
         technicians={techniciansForReports.length > 0 ? techniciansForReports : technicians}
         onPhotoClick={(url, index, total) => {
-          setSelectedPhoto({ url, index, total });
+          setReportViewerBillPhotos(null);
+          setReportViewerPhoto({ url, index, total });
           setPhotoDownloadMeta({ customerName: selectedCustomerForReport?.fullName, type: 'payment' });
-          openAdminModal('photo-viewer', {
-            customerId: selectedCustomerForReport?.id,
-            photoIdx: index,
-          });
+          setReportPhotoViewerOpen(true);
         }}
         onBillPhotosClick={(photos, index) => {
-          setSelectedBillPhotos(photos);
-          setSelectedPhoto({ url: photos[index], index, total: photos.length });
+          setReportViewerBillPhotos(photos);
+          setReportViewerPhoto({ url: photos[index], index, total: photos.length });
           setPhotoDownloadMeta({ customerName: selectedCustomerForReport?.fullName, type: 'bill' });
-          openAdminModal('photo-viewer', {
-            customerId: selectedCustomerForReport?.id,
-            photoIdx: index,
-          });
+          setReportPhotoViewerOpen(true);
         }}
         onNavigateToCompletedJob={handleNavigateToCompletedJobFromReport}
+      />
+
+      {/* Photo viewer overlay for customer report — local state so ?modal=report stays open */}
+      <PhotoViewerDialog
+        open={reportPhotoViewerOpen}
+        onOpenChange={setReportPhotoViewerOpen}
+        selectedPhoto={reportViewerPhoto}
+        selectedBillPhotos={reportViewerBillPhotos}
+        selectedJobPhotos={null}
+        onPrevious={() => {
+          if (!reportViewerPhoto || !reportViewerBillPhotos || reportViewerBillPhotos.length <= 1) return;
+          const newIndex =
+            reportViewerPhoto.index > 0 ? reportViewerPhoto.index - 1 : reportViewerBillPhotos.length - 1;
+          setReportViewerPhoto({
+            url: reportViewerBillPhotos[newIndex],
+            index: newIndex,
+            total: reportViewerBillPhotos.length,
+          });
+        }}
+        onNext={() => {
+          if (!reportViewerPhoto || !reportViewerBillPhotos || reportViewerBillPhotos.length <= 1) return;
+          const newIndex =
+            reportViewerPhoto.index < reportViewerBillPhotos.length - 1
+              ? reportViewerPhoto.index + 1
+              : 0;
+          setReportViewerPhoto({
+            url: reportViewerBillPhotos[newIndex],
+            index: newIndex,
+            total: reportViewerBillPhotos.length,
+          });
+        }}
+        onDownload={(photoUrl, photoIndex) => {
+          void downloadAdminPhoto(photoUrl, photoIndex, {
+            customerName: selectedCustomerForReport?.fullName,
+            type: reportViewerBillPhotos ? 'bill' : 'payment',
+          });
+        }}
+        onClose={() => {
+          setReportPhotoViewerOpen(false);
+          setReportViewerPhoto(null);
+          setReportViewerBillPhotos(null);
+        }}
       />
 
       {/* Edit Completed Job Dialog */}
