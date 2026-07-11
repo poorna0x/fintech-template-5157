@@ -13,9 +13,11 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { DollarSign, User, Plus, Trash2, Edit, TrendingDown, TrendingUp, RefreshCw, ChevronDown, ChevronUp, Pencil, Check, X, ChevronLeft, ChevronRight, Eye, TrendingUp as TrendingUpIcon, Download, Printer, Users as UsersIcon, Filter } from 'lucide-react';
+import { DollarSign, User, Plus, Trash2, Edit, TrendingDown, TrendingUp, RefreshCw, ChevronDown, ChevronUp, Pencil, Check, X, ChevronLeft, ChevronRight, Eye, TrendingUp as TrendingUpIcon, Download, Users as UsersIcon, Filter } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { generateSalarySlipPDF } from '@/lib/salary-slip-pdf-generator';
+import { generateSalarySlipPDF, getSalarySlipPreviewHtml } from '@/lib/salary-slip-pdf-generator';
+import { runAfterDialogClose } from '@/lib/document-preview-utils';
+import DocumentPreviewDialog from '@/components/document/DocumentPreviewDialog';
 import {
   documentGenerateBtnClass,
   documentOutlineBtnClass,
@@ -304,6 +306,8 @@ const TechnicianPayments = () => {
   const [salarySlipDialogOpen, setSalarySlipDialogOpen] = useState(false);
   const [selectedBreakdownForSlip, setSelectedBreakdownForSlip] = useState<TechnicianSalaryBreakdown | null>(null);
   const [includeDayWiseBreakdown, setIncludeDayWiseBreakdown] = useState(true);
+  const [salarySlipPreviewOpen, setSalarySlipPreviewOpen] = useState(false);
+  const [salarySlipPreviewHtml, setSalarySlipPreviewHtml] = useState<string | null>(null);
 
   // Business expenses
   const [businessExpenses, setBusinessExpenses] = useState<Array<{
@@ -3709,13 +3713,13 @@ const TechnicianPayments = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Salary Slip Download Dialog */}
+      {/* Salary Slip options — Generate opens preview like AMC/quotation */}
       <Dialog open={salarySlipDialogOpen} onOpenChange={setSalarySlipDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Salary Slip</DialogTitle>
             <DialogDescription>
-              Generate (print preview) or download the salary slip as a PDF
+              Choose slip type, then Generate to preview — or Download PDF directly
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -3753,16 +3757,22 @@ const TechnicianPayments = () => {
             <Button
               onClick={() => {
                 if (selectedBreakdownForSlip && commissionPeriod) {
-                  generateSalarySlipPDF(selectedBreakdownForSlip, commissionPeriod, 'print', includeDayWiseBreakdown);
+                  setSalarySlipPreviewHtml(
+                    getSalarySlipPreviewHtml(
+                      selectedBreakdownForSlip,
+                      commissionPeriod,
+                      includeDayWiseBreakdown
+                    )
+                  );
                   setSalarySlipDialogOpen(false);
-                  setSelectedBreakdownForSlip(null);
+                  setSalarySlipPreviewOpen(true);
                 } else {
                   toast.error('Period information not available');
                 }
               }}
               className={documentGenerateBtnClass}
             >
-              <Printer className="w-4 h-4 mr-2" />
+              <Eye className="w-4 h-4 mr-2" />
               Generate
             </Button>
             <Button
@@ -3784,6 +3794,49 @@ const TechnicianPayments = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <DocumentPreviewDialog
+        open={salarySlipPreviewOpen}
+        onOpenChange={(open) => {
+          setSalarySlipPreviewOpen(open);
+          if (!open) {
+            setSalarySlipPreviewHtml(null);
+            setSelectedBreakdownForSlip(null);
+          }
+        }}
+        title="Salary Slip Preview"
+        description="Same layout as the PDF — review before printing or downloading."
+        previewTitle="Salary Slip"
+        previewHtml={salarySlipPreviewHtml}
+        accent="green"
+        generateBtnClass={documentGenerateBtnClass}
+        onDownload={() => {
+          if (!selectedBreakdownForSlip || !commissionPeriod) return;
+          setSalarySlipPreviewOpen(false);
+          runAfterDialogClose(() => {
+            generateSalarySlipPDF(
+              selectedBreakdownForSlip,
+              commissionPeriod,
+              'pdf',
+              includeDayWiseBreakdown
+            );
+            setSelectedBreakdownForSlip(null);
+          });
+        }}
+        onPrint={() => {
+          if (!selectedBreakdownForSlip || !commissionPeriod) return;
+          setSalarySlipPreviewOpen(false);
+          runAfterDialogClose(() => {
+            generateSalarySlipPDF(
+              selectedBreakdownForSlip,
+              commissionPeriod,
+              'print',
+              includeDayWiseBreakdown
+            );
+            setSelectedBreakdownForSlip(null);
+          });
+        }}
+      />
 
       {/* General business_expenses first, then other_expenses below. Lists load on demand. */}
       <div className="mt-8 space-y-6">

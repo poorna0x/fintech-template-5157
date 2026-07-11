@@ -1,7 +1,7 @@
 import { TechnicianSalaryBreakdown } from '@/components/TechnicianPayments';
 import { BRAND_SEAL_SIGN_SRC } from './service-brands';
 import { sanitizeForTemplate } from './sanitize';
-import { downloadDocumentPdf } from './server-pdf-download';
+import { downloadDocumentPdf, withAbsoluteAssetUrls } from './server-pdf-download';
 import { getDocumentPdfPrintFrameCss } from './document-pdf-print-frame';
 
 interface Payment {
@@ -166,31 +166,65 @@ export function generateSalarySlipHTML(data: SalarySlipPDFData, includeDayWiseBr
           ${getDocumentPdfPrintFrameCss()}
 
           .salary-container {
-            padding-top: 10mm !important;
-            padding-bottom: 10mm !important;
-            padding-left: 5mm !important;
-            padding-right: 5mm !important;
+            padding-top: 4mm !important;
+            padding-bottom: 4mm !important;
+            padding-left: 2mm !important;
+            padding-right: 2mm !important;
           }
           
           /* Ensure first element respects container padding */
           .salary-container > *:first-child {
             margin-top: 0 !important;
           }
-          
-          /* Add extra spacing to major sections to prevent touching at page breaks */
-          .salary-breakdown,
+
+          /* Keep small blocks together, but NEVER force large breakdown sections
+             onto the next page (that left page 1 nearly empty). */
+          .info-card,
           .holidays-section,
-          .info-card {
-            margin-top: 8mm !important;
-            margin-bottom: 8mm !important;
+          .signatures,
+          .total-row {
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
+
+          .salary-breakdown {
+            page-break-inside: auto;
+            break-inside: auto;
+            margin-top: 4mm !important;
+            margin-bottom: 4mm !important;
+          }
+
+          .breakdown-table {
+            page-break-inside: auto;
+            break-inside: auto;
+          }
+
+          .breakdown-table thead {
+            display: table-header-group;
+          }
+
+          .breakdown-table tr {
             page-break-inside: avoid;
             break-inside: avoid;
           }
           
-          /* Ensure header has proper spacing */
           .header {
             margin-top: 0 !important;
-            margin-bottom: 12mm !important;
+            margin-bottom: 6mm !important;
+            padding-bottom: 8px !important;
+          }
+
+          .document-title {
+            margin: 8px 0 !important;
+          }
+
+          .salary-info-section {
+            margin-bottom: 6mm !important;
+          }
+
+          .day-wise-breakdown {
+            page-break-before: always;
+            break-before: page;
           }
         }
         
@@ -610,7 +644,7 @@ export function generateSalarySlipHTML(data: SalarySlipPDFData, includeDayWiseBr
 
         <!-- Day-wise Job Breakdown -->
         ${includeDayWiseBreakdown && data.payments && data.payments.length > 0 ? `
-        <div class="salary-breakdown" style="margin-bottom: 30px;">
+        <div class="salary-breakdown day-wise-breakdown" style="margin-bottom: 30px;">
           <h3 class="breakdown-title">Day-wise Job Breakdown</h3>
           ${(() => {
             // Group payments by date
@@ -804,6 +838,82 @@ export function generateSalarySlipHTML(data: SalarySlipPDFData, includeDayWiseBr
   `;
 }
 
+function getDefaultCompanyData(): SalarySlipPDFData['company'] {
+  const companyData: SalarySlipPDFData['company'] = {
+    name: 'Authorised Service Franchise',
+    address: 'Ground Floor, 13, 4th Main Road, Next To Jain Temple,Seshadripuram, Kumara Park West',
+    city: 'Bengaluru',
+    state: 'Karnataka',
+    pincode: '560020',
+    phone: '9886944288 & 8884944288',
+    email: 'mail@hydrogenro.com',
+    gstNumber: '29LIJPS5140P1Z6',
+  };
+
+  try {
+    const storedCompany = localStorage.getItem('companyDetails');
+    if (storedCompany) {
+      Object.assign(companyData, JSON.parse(storedCompany));
+    }
+  } catch {
+    // keep defaults
+  }
+
+  return companyData;
+}
+
+export function buildSalarySlipPdfData(
+  breakdown: TechnicianSalaryBreakdown,
+  period: { start: Date; end: Date },
+  includeDayWiseBreakdown: boolean = true
+): SalarySlipPDFData {
+  return {
+    technicianName: breakdown.technicianName,
+    employeeId: breakdown.employeeId,
+    period,
+    baseSalary: breakdown.baseSalary,
+    periodBaseSalary: breakdown.periodBaseSalary,
+    adjustedBaseSalary: breakdown.adjustedBaseSalary,
+    totalCommission: breakdown.totalCommission,
+    totalExtraCommission: breakdown.totalExtraCommission,
+    billingSlabCommission: breakdown.billingSlabCommission,
+    totalExpenses: breakdown.totalExpenses,
+    totalAdvances: breakdown.totalAdvances,
+    totalHolidays: breakdown.totalHolidays,
+    allowedHolidays: breakdown.allowedHolidays,
+    extraHolidays: breakdown.extraHolidays,
+    unusedLeaves: breakdown.unusedLeaves,
+    unusedLeaveBonus: breakdown.unusedLeaveBonus,
+    holidayDeduction: breakdown.holidayDeduction,
+    salaryBeforeAdvance: breakdown.salaryBeforeAdvance,
+    totalSalary: breakdown.totalSalary,
+    totalBillAmount: breakdown.totalBillAmount,
+    payments: breakdown.payments || [],
+    advances: breakdown.advances || [],
+    extraCommissions: breakdown.extraCommissions || [],
+    monthlyBreakdowns: (breakdown as { monthlyBreakdowns?: MonthlySalaryBreakdown[] }).monthlyBreakdowns || [],
+    company: getDefaultCompanyData(),
+    includeDayWiseBreakdown,
+  };
+}
+
+export function getSalarySlipFilename(
+  breakdown: TechnicianSalaryBreakdown,
+  period: { start: Date; end: Date }
+): string {
+  return `SalarySlip_${breakdown.technicianName.replace(/\s+/g, '_')}_${period.start.toISOString().slice(0, 10)}.pdf`;
+}
+
+/** HTML for in-app preview (absolute asset URLs for logos/seals). */
+export function getSalarySlipPreviewHtml(
+  breakdown: TechnicianSalaryBreakdown,
+  period: { start: Date; end: Date },
+  includeDayWiseBreakdown: boolean = true
+): string {
+  const pdfData = buildSalarySlipPdfData(breakdown, period, includeDayWiseBreakdown);
+  return withAbsoluteAssetUrls(generateSalarySlipHTML(pdfData, includeDayWiseBreakdown));
+}
+
 export function generateSalarySlipPDF(
   breakdown: TechnicianSalaryBreakdown,
   period: { start: Date; end: Date },
@@ -818,62 +928,12 @@ export function generateSalarySlipPDF(
     }
     (window as any).isPrintingSalarySlip = true;
 
-    // Get company details (matching AMC generator)
-    const companyData = {
-      name: 'Authorised Service Franchise',
-      address: 'Ground Floor, 13, 4th Main Road, Next To Jain Temple,Seshadripuram, Kumara Park West',
-      city: 'Bengaluru',
-      state: 'Karnataka',
-      pincode: '560020',
-      phone: '9886944288 & 8884944288',
-      email: 'mail@hydrogenro.com',
-      gstNumber: '29LIJPS5140P1Z6'
-    };
-
-    // Try to get company details from localStorage or config
-    try {
-      const storedCompany = localStorage.getItem('companyDetails');
-      if (storedCompany) {
-        const parsed = JSON.parse(storedCompany);
-        Object.assign(companyData, parsed);
-      }
-    } catch (e) {
-      console.warn('Could not load company details from storage');
-    }
-
-    const pdfData: SalarySlipPDFData = {
-      technicianName: breakdown.technicianName,
-      employeeId: breakdown.employeeId,
-      period,
-      baseSalary: breakdown.baseSalary,
-      periodBaseSalary: breakdown.periodBaseSalary,
-      adjustedBaseSalary: breakdown.adjustedBaseSalary,
-      totalCommission: breakdown.totalCommission,
-      totalExtraCommission: breakdown.totalExtraCommission,
-      billingSlabCommission: breakdown.billingSlabCommission,
-      totalExpenses: breakdown.totalExpenses,
-      totalAdvances: breakdown.totalAdvances,
-      totalHolidays: breakdown.totalHolidays,
-      allowedHolidays: breakdown.allowedHolidays,
-      extraHolidays: breakdown.extraHolidays,
-      unusedLeaves: breakdown.unusedLeaves,
-      unusedLeaveBonus: breakdown.unusedLeaveBonus,
-      holidayDeduction: breakdown.holidayDeduction,
-      salaryBeforeAdvance: breakdown.salaryBeforeAdvance,
-      totalSalary: breakdown.totalSalary,
-      totalBillAmount: breakdown.totalBillAmount,
-      payments: breakdown.payments || [],
-      advances: breakdown.advances || [],
-      extraCommissions: breakdown.extraCommissions || [],
-      monthlyBreakdowns: (breakdown as any).monthlyBreakdowns || [],
-      company: companyData,
-      includeDayWiseBreakdown
-    };
+    const pdfData = buildSalarySlipPdfData(breakdown, period, includeDayWiseBreakdown);
 
     if (action === 'pdf') {
       void downloadDocumentPdf({
         html: generateSalarySlipHTML(pdfData, includeDayWiseBreakdown),
-        filename: `SalarySlip_${breakdown.technicianName.replace(/\s+/g, '_')}_${period.start.toISOString().slice(0, 10)}.pdf`,
+        filename: getSalarySlipFilename(breakdown, period),
       })
         .then(() => {
           (window as any).isPrintingSalarySlip = false;
