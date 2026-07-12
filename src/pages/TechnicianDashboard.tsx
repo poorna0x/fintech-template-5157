@@ -105,6 +105,7 @@ import {
   TECHNICIAN_JOB_LIST_BROADCAST_EVENT,
   type TechnicianJobListRefreshPayload,
 } from '@/lib/technicianJobListSync';
+import { compareJobsByVisitOrder, getJobVisitOrder } from '@/lib/adminVisitOrder';
 import {
   aggregateCustomerPhotoUrls,
   collectAllPhotoUrlsFromJob,
@@ -469,6 +470,13 @@ const TechnicianDashboard = () => {
   const [newJobsAlertOpen, setNewJobsAlertOpen] = useState(false);
   const [confirmStartJobDialog, setConfirmStartJobDialog] = useState<{open: boolean, job: Job | null}>({open: false, job: null});
   const [confirmStartWorkDialog, setConfirmStartWorkDialog] = useState<{open: boolean, job: Job | null}>({open: false, job: null});
+  const [visitOrderSkipDialog, setVisitOrderSkipDialog] = useState<{
+    open: boolean;
+    job: Job | null;
+    action: 'start' | 'startWork' | null;
+    rank: number;
+    firstJob: Job | null;
+  }>({ open: false, job: null, action: null, rank: 0, firstJob: null });
   const [confirmCompleteJobDialog, setConfirmCompleteJobDialog] = useState<{open: boolean, job: Job | null}>({open: false, job: null});
   const [statusFilter, setStatusFilter] = useState<'ONGOING' | 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED'>('ONGOING');
   const statusFilterRef = useRef(statusFilter);
@@ -2561,6 +2569,10 @@ const TechnicianDashboard = () => {
         });
         lastCompletedJobIdsOrderRef.current = filtered.map((j) => j.id);
       }
+    } else if (statusFilter === 'ONGOING' && filtered.some((j) => getJobVisitOrder(j) != null)) {
+      // Admin visit order wins — don't freeze session order so #1/#2 renumber as jobs finish.
+      ongoingOrderRef.current = null;
+      filtered.sort(compareJobsByVisitOrder);
     } else if (ongoingOrderRef.current && ongoingOrderRef.current.length > 0) {
       // Session order is frozen (e.g. the tech tapped Start) — keep every job in its
       // current on-screen slot so it doesn't jump, even across realtime refetches. Newly
@@ -2579,6 +2591,12 @@ const TechnicianDashboard = () => {
       ongoingOrderRef.current = filtered.map((j) => j.id);
     } else if (didSort) {
       filtered.sort((a, b) => {
+      // Prefer admin visit order when present (even if only some jobs have it).
+      const visitCmp = compareJobsByVisitOrder(a, b);
+      if (getJobVisitOrder(a) != null || getJobVisitOrder(b) != null) {
+        return visitCmp;
+      }
+
       const statusA = (a as any).status || a.status;
       const statusB = (b as any).status || b.status;
       
@@ -2890,9 +2908,42 @@ const TechnicianDashboard = () => {
     );
   };
 
+  /** When admin set visit order, find if this job is skipping an earlier stop. */
+  const getVisitOrderSkipInfo = (job: Job): { rank: number; firstJob: Job } | null => {
+    const ordered =
+      statusFilter === 'ONGOING'
+        ? filteredJobs.filter(isOngoingJob)
+        : jobs.filter(isOngoingJob).sort(compareJobsByVisitOrder);
+    if (ordered.length < 2) return null;
+    if (!ordered.some((j) => getJobVisitOrder(j) != null)) return null;
+    const idx = ordered.findIndex((j) => j.id === job.id);
+    if (idx <= 0) return null;
+    return { rank: idx + 1, firstJob: ordered[0] };
+  };
+
+  const proceedAfterVisitOrderCheck = (job: Job, action: 'start' | 'startWork') => {
+    if (action === 'start') {
+      setConfirmStartJobDialog({ open: true, job });
+    } else {
+      setConfirmStartWorkDialog({ open: true, job });
+    }
+  };
+
   // Handle starting job (going to location) - EN_ROUTE status
   const handleStartJob = async (job: Job) => {
     if (!user?.technicianId) return;
+
+    const skip = getVisitOrderSkipInfo(job);
+    if (skip) {
+      setVisitOrderSkipDialog({
+        open: true,
+        job,
+        action: 'start',
+        rank: skip.rank,
+        firstJob: skip.firstJob,
+      });
+      return;
+    }
 
     // Always show confirmation dialog
     setConfirmStartJobDialog({ open: true, job });
@@ -2956,6 +3007,18 @@ const TechnicianDashboard = () => {
   // Handle starting work at location - IN_PROGRESS status
   const handleStartWork = async (job: Job) => {
     if (!user?.technicianId) return;
+
+    const skip = getVisitOrderSkipInfo(job);
+    if (skip) {
+      setVisitOrderSkipDialog({
+        open: true,
+        job,
+        action: 'startWork',
+        rank: skip.rank,
+        firstJob: skip.firstJob,
+      });
+      return;
+    }
 
     // Show confirmation dialog
     setConfirmStartWorkDialog({ open: true, job });
@@ -6042,7 +6105,12 @@ const TechnicianDashboard = () => {
             </Card>
           ) : (
             <>
-            {filteredJobs.map((job) => {
+            {(() => {
+              const showVisitRanks =
+                statusFilter === 'ONGOING' &&
+                filteredJobs.some((j) => getJobVisitOrder(j) != null);
+              return filteredJobs.map((job, jobIndex) => {
+              const visitRank = showVisitRanks ? jobIndex + 1 : null;
               // Extract follow-up information
               const followUpDate = (job as any).follow_up_date || job.followUpDate || null;
               const followUpTime = (job as any).follow_up_time || job.followUpTime || null;
@@ -6204,6 +6272,18 @@ const TechnicianDashboard = () => {
                     <div className="flex-1 min-w-0">
                       {/* Customer name */}
                       <div className="flex items-center gap-2 mb-3 flex-wrap">
+                          {visitRank != null ? (
+                            <span
+                              className={`flex h-7 min-w-7 items-center justify-center rounded-full px-1.5 text-sm font-bold tabular-nums ${
+                                visitRank === 1
+                                  ? 'bg-red-600 text-white ring-2 ring-red-300'
+                                  : 'bg-sky-100 text-sky-800'
+                              }`}
+                              title={visitRank === 1 ? 'Go here first' : `Stop #${visitRank}`}
+                            >
+                              #{visitRank}
+                            </span>
+                          ) : null}
                           {(() => {
                             const jc = job.customer as any;
                             const hasAmcJ = Boolean(customerAMCStatus[jc?.id]);
@@ -6822,7 +6902,8 @@ const TechnicianDashboard = () => {
               </Card>
                 </div>
               );
-            })}
+            });
+            })()}
             
             {/* Daily Summary for Completed Jobs */}
             {statusFilter === 'COMPLETED' && filteredJobs.length > 0 && (() => {
@@ -7150,6 +7231,73 @@ const TechnicianDashboard = () => {
             )}
           </DialogContent>
         </Dialog>
+
+        {/* Warning when starting a later stop before #1 */}
+        <AlertDialog
+          open={visitOrderSkipDialog.open}
+          onOpenChange={(open) => {
+            if (!open) {
+              setVisitOrderSkipDialog({
+                open: false,
+                job: null,
+                action: null,
+                rank: 0,
+                firstJob: null,
+              });
+            }
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Start job #{visitOrderSkipDialog.rank} first?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Admin set a visit order. You still have stop #1 waiting
+                {visitOrderSkipDialog.firstJob
+                  ? ` (${
+                      (visitOrderSkipDialog.firstJob.customer as any)?.full_name ||
+                      visitOrderSkipDialog.firstJob.customer?.fullName ||
+                      'another customer'
+                    })`
+                  : ''}
+                . You can continue with #{visitOrderSkipDialog.rank} if you need to.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel
+                onClick={() =>
+                  setVisitOrderSkipDialog({
+                    open: false,
+                    job: null,
+                    action: null,
+                    rank: 0,
+                    firstJob: null,
+                  })
+                }
+              >
+                Go back
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  const job = visitOrderSkipDialog.job;
+                  const action = visitOrderSkipDialog.action;
+                  setVisitOrderSkipDialog({
+                    open: false,
+                    job: null,
+                    action: null,
+                    rank: 0,
+                    firstJob: null,
+                  });
+                  if (job && action) {
+                    proceedAfterVisitOrderCheck(job, action);
+                  }
+                }}
+                className="bg-amber-600 hover:bg-amber-700"
+              >
+                Continue anyway
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Confirmation Dialog for Starting Job */}
         <AlertDialog open={confirmStartJobDialog.open} onOpenChange={(open) => {

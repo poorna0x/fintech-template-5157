@@ -14,6 +14,7 @@ import {
   DollarSign,
   Lock,
   Mail,
+  ListOrdered,
   Navigation,
   PhoneCall,
   Receipt,
@@ -237,6 +238,10 @@ export function AdminDashboardHeader({
                   <DropdownMenuItem onClick={() => onOpenAdminTool('measure-distance')}>
                     <Navigation className="w-4 h-4 mr-2" />
                     Measure distance
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onOpenAdminTool('arrange-visit-order')}>
+                    <ListOrdered className="w-4 h-4 mr-2" />
+                    Arrange visit order
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     disabled={isManager}

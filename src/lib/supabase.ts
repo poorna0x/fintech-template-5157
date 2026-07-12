@@ -12,6 +12,11 @@ import {
   stripDualSiteJobFields,
 } from './dual-site-columns';
 import {
+  isMissingVisitOrderColumnError,
+  markVisitOrderColumnMissing,
+  resolveJobSelect,
+} from './visit-order-columns';
+import {
   normalizeAmcAgreementNumber,
   parseAmcAgreementNumberFromAdditionalInfo,
   amcCreatedOnIstDay,
@@ -61,6 +66,7 @@ const JOB_SELECT_ONGOING_AND_TECH = [
   'denial_reason',
   'denied_by',
   'assigned_technician_id',
+  'visit_order',
   'team_members',
   'follow_up_date',
   'follow_up_time',
@@ -86,6 +92,11 @@ const JOB_SELECT_ONGOING_AND_TECH = [
   'lead_cost',
   'parts_cost_total',
 ].join(',');
+
+/** Job list select — strips `visit_order` if the DB column is not migrated yet. */
+function jobSelectOngoingAndTech(): string {
+  return resolveJobSelect(JOB_SELECT_ONGOING_AND_TECH);
+}
 
 /** Large JSON arrays — omitted from `JOB_SELECT_ONGOING_AND_TECH`; batch-fetch when UI needs thumbnails. */
 const JOB_PHOTO_ARRAY_COLUMNS = 'before_photos,after_photos,images';
@@ -1657,7 +1668,7 @@ export const db = {
         insertRow.requirements = coerceJobRequirementsForDb(insertRow.requirements) as typeof insertRow.requirements;
       }
 
-      const jobSelectAfterInsert = `${JOB_SELECT_ONGOING_AND_TECH},${JOB_PHOTO_ARRAY_COLUMNS},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`;
+      const jobSelectAfterInsert = `${jobSelectOngoingAndTech()},${JOB_PHOTO_ARRAY_COLUMNS},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`;
 
       let { data, error } = await supabase
         .from('jobs')
@@ -1994,7 +2005,7 @@ export const db = {
     async getByCustomerIdFull(customerId: string) {
       const { data, error } = await supabase
         .from('jobs')
-        .select(`${JOB_SELECT_ONGOING_AND_TECH},${JOB_PHOTO_ARRAY_COLUMNS}`)
+        .select(`${jobSelectOngoingAndTech()},${JOB_PHOTO_ARRAY_COLUMNS}`)
         .eq('customer_id', customerId)
         .order('created_at', { ascending: false });
       return { data, error };
@@ -2095,25 +2106,32 @@ export const db = {
     },
     
     async getAll(limit?: number, includeCustomer?: boolean) {
-      let query;
-      if (includeCustomer) {
-        query = supabase
-          .from('jobs')
-          .select(`${JOB_SELECT_ONGOING_AND_TECH},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`);
-      } else {
-        query = supabase
-          .from('jobs')
-          .select(JOB_SELECT_ONGOING_AND_TECH);
+      const run = async () => {
+        let query;
+        if (includeCustomer) {
+          query = supabase
+            .from('jobs')
+            .select(`${jobSelectOngoingAndTech()},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`);
+        } else {
+          query = supabase
+            .from('jobs')
+            .select(jobSelectOngoingAndTech());
+        }
+
+        query = query.order('created_at', { ascending: false });
+
+        if (limit && limit > 0) {
+          query = query.limit(limit);
+        }
+
+        return query;
+      };
+
+      let { data, error } = await run();
+      if (error && isMissingVisitOrderColumnError(error)) {
+        markVisitOrderColumnMissing();
+        ({ data, error } = await run());
       }
-      
-      query = query.order('created_at', { ascending: false });
-      
-      // Add limit if provided to reduce data transfer
-      if (limit && limit > 0) {
-        query = query.limit(limit);
-      }
-      
-      const { data, error } = await query;
       return { data, error };
     },
 
@@ -2417,7 +2435,7 @@ export const db = {
         // Re-fetch the row with the same column set as list views so merged client state shows edits without a manual refresh
         const { data, error: selectError } = await supabase
           .from('jobs')
-          .select(JOB_SELECT_ONGOING_AND_TECH)
+          .select(jobSelectOngoingAndTech())
           .eq('id', id)
           .single();
       
@@ -2466,7 +2484,7 @@ export const db = {
     async getByStatus(status: string) {
       const { data, error } = await supabase
         .from('jobs')
-        .select(`${JOB_SELECT_ONGOING_AND_TECH},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`)
+        .select(`${jobSelectOngoingAndTech()},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`)
         .eq('status', status)
         .order('created_at', { ascending: false });
       
@@ -2478,7 +2496,7 @@ export const db = {
       const orFilter = `assigned_technician_id.eq.${technicianId},team_members.cs.["${technicianId}"]`;
       const slim = await supabase
         .from('jobs')
-        .select(`${JOB_SELECT_ONGOING_AND_TECH},customer:customers(${CUSTOMER_EMBED_FOR_TECH_JOBS})`)
+        .select(`${jobSelectOngoingAndTech()},customer:customers(${CUSTOMER_EMBED_FOR_TECH_JOBS})`)
         .or(orFilter)
         // Prefer recently touched rows so auto AMC / follow-up → ongoing → reassign is not dropped behind .limit(100) by old created_at.
         .order('updated_at', { ascending: false })
@@ -2494,7 +2512,7 @@ export const db = {
         }
         const legacy = await supabase
           .from('jobs')
-          .select(`${JOB_SELECT_ONGOING_AND_TECH},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`)
+          .select(`${jobSelectOngoingAndTech()},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`)
           .or(orFilter)
           .order('updated_at', { ascending: false })
           .order('created_at', { ascending: false })
@@ -2523,7 +2541,6 @@ export const db = {
       options?: { activeOnly?: boolean }
     ) {
       const orFilter = `assigned_technician_id.eq.${technicianId},team_members.cs.["${technicianId}"]`;
-      const select = `${JOB_SELECT_ONGOING_AND_TECH},customer:customers(${CUSTOMER_EMBED_FOR_TECH_JOBS_SLIM})`;
 
       const now = new Date();
       const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -2532,63 +2549,66 @@ export const db = {
       const yesterdayStart = new Date(todayStart);
       yesterdayStart.setDate(yesterdayStart.getDate() - 1);
 
-      const activeQuery = supabase
-        .from('jobs')
-        .select(select)
-        .or(orFilter)
-        .in('status', ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'])
-        .order('updated_at', { ascending: false })
-        .limit(40);
+      const runSlice = async () => {
+        const select = `${jobSelectOngoingAndTech()},customer:customers(${CUSTOMER_EMBED_FOR_TECH_JOBS_SLIM})`;
+        const activeQuery = supabase
+          .from('jobs')
+          .select(select)
+          .or(orFilter)
+          .in('status', ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'])
+          .order('updated_at', { ascending: false })
+          .limit(40);
 
-      const followUpQuery = supabase
-        .from('jobs')
-        .select(select)
-        .or(orFilter)
-        .eq('status', 'FOLLOW_UP')
-        .order('updated_at', { ascending: false })
-        .limit(20);
+        const followUpQuery = supabase
+          .from('jobs')
+          .select(select)
+          .or(orFilter)
+          .eq('status', 'FOLLOW_UP')
+          .order('updated_at', { ascending: false })
+          .limit(20);
 
-      const completedQuery = supabase
-        .from('jobs')
-        .select(select)
-        .or(orFilter)
-        .eq('status', 'COMPLETED')
-        .gte('completed_at', yesterdayStart.toISOString())
-        .lt('completed_at', tomorrowStart.toISOString())
-        .order('completed_at', { ascending: false })
-        .limit(50);
+        const completedQuery = supabase
+          .from('jobs')
+          .select(select)
+          .or(orFilter)
+          .eq('status', 'COMPLETED')
+          .gte('completed_at', yesterdayStart.toISOString())
+          .lt('completed_at', tomorrowStart.toISOString())
+          .order('completed_at', { ascending: false })
+          .limit(50);
 
-      const deniedQuery = supabase
-        .from('jobs')
-        .select(select)
-        .or(orFilter)
-        .eq('status', 'DENIED')
-        .gte('denied_at', todayStart.toISOString())
-        .lt('denied_at', tomorrowStart.toISOString())
-        .order('denied_at', { ascending: false })
-        .limit(15);
+        const deniedQuery = supabase
+          .from('jobs')
+          .select(select)
+          .or(orFilter)
+          .eq('status', 'DENIED')
+          .gte('denied_at', todayStart.toISOString())
+          .lt('denied_at', tomorrowStart.toISOString())
+          .order('denied_at', { ascending: false })
+          .limit(15);
 
-      let activeRes: Awaited<typeof activeQuery>;
-      let followUpRes: Awaited<typeof followUpQuery>;
-      let completedRes: Awaited<typeof completedQuery> | null = null;
-      let deniedRes: Awaited<typeof deniedQuery> | null = null;
-
-      if (options?.activeOnly) {
-        [activeRes, followUpRes] = await Promise.all([activeQuery, followUpQuery]);
-      } else {
-        [activeRes, followUpRes, completedRes, deniedRes] = await Promise.all([
+        if (options?.activeOnly) {
+          const [activeRes, followUpRes] = await Promise.all([activeQuery, followUpQuery]);
+          return [activeRes, followUpRes] as const;
+        }
+        const [activeRes, followUpRes, completedRes, deniedRes] = await Promise.all([
           activeQuery,
           followUpQuery,
           completedQuery,
           deniedQuery,
         ]);
+        return [activeRes, followUpRes, completedRes, deniedRes] as const;
+      };
+
+      let resultSets = await runSlice();
+      const firstPassError = resultSets.find((res) => res.error)?.error;
+      if (firstPassError && isMissingVisitOrderColumnError(firstPassError)) {
+        markVisitOrderColumnMissing();
+        resultSets = await runSlice();
       }
 
       const byId = new Map<string, unknown>();
       let firstError: { message?: string } | null = null;
-      const resultSets = options?.activeOnly
-        ? [activeRes, followUpRes]
-        : [activeRes, followUpRes, completedRes!, deniedRes!];
       for (const res of resultSets) {
         if (res.error && !firstError) firstError = res.error;
         for (const row of res.data || []) {
@@ -2614,7 +2634,7 @@ export const db = {
       const orFilter = `assigned_technician_id.eq.${technicianId},team_members.cs.["${technicianId}"]`;
       const result = await supabase
         .from('jobs')
-        .select(`${JOB_SELECT_ONGOING_AND_TECH},customer:customers(${CUSTOMER_EMBED_FOR_TECH_JOBS_SLIM})`)
+        .select(`${jobSelectOngoingAndTech()},customer:customers(${CUSTOMER_EMBED_FOR_TECH_JOBS_SLIM})`)
         .or(orFilter)
         .order('updated_at', { ascending: false })
         .order('created_at', { ascending: false })
@@ -2630,7 +2650,7 @@ export const db = {
 
       const legacy = await supabase
         .from('jobs')
-        .select(`${JOB_SELECT_ONGOING_AND_TECH},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`)
+        .select(`${jobSelectOngoingAndTech()},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`)
         .or(orFilter)
         .order('updated_at', { ascending: false })
         .order('created_at', { ascending: false })
@@ -3734,13 +3754,21 @@ export const db = {
 
     // Get ongoing jobs (PENDING, ASSIGNED, IN_PROGRESS). Limit 100 to cap egress if count grows.
     async getOngoing(limit: number = 100) {
-      const ongoingSelect = `${JOB_SELECT_ONGOING_AND_TECH},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`;
-      const { data: rows, error: err } = await supabase
-        .from('jobs')
-        .select(ongoingSelect)
-        .in('status', ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'])
-        .order('created_at', { ascending: false })
-        .limit(limit);
+      const run = async () => {
+        const ongoingSelect = `${jobSelectOngoingAndTech()},customer:customers(${CUSTOMER_EMBED_FOR_ONGOING_ADMIN})`;
+        return supabase
+          .from('jobs')
+          .select(ongoingSelect)
+          .in('status', ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'])
+          .order('created_at', { ascending: false })
+          .limit(limit);
+      };
+
+      let { data: rows, error: err } = await run();
+      if (err && isMissingVisitOrderColumnError(err)) {
+        markVisitOrderColumnMissing();
+        ({ data: rows, error: err } = await run());
+      }
 
       if (err || !rows?.length) {
         return { data: rows || [], error: err };

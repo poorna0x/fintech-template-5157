@@ -124,6 +124,9 @@ export interface Job {
   scheduled_date?: string; // Alternative field name used in database
   scheduledTimeSlot: 'MORNING' | 'AFTERNOON' | 'EVENING' | 'CUSTOM';
   scheduled_time_slot?: string; // Alternative field name used in database
+  /** Admin-set visit sequence for the assigned technician (lower = earlier). */
+  visitOrder?: number | null;
+  visit_order?: number | null;
   estimatedDuration: number; // minutes
   
   // Location

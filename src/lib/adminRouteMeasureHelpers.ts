@@ -217,6 +217,13 @@ export function collectOngoingJobsForMeasure(workingJob: Job | any, jobs: Job[])
     routeJobs = [...routeJobs, workingJob as Job];
   }
   return [...routeJobs].sort((a, b) => {
+    const oa = (a as any).visit_order ?? (a as any).visitOrder;
+    const ob = (b as any).visit_order ?? (b as any).visitOrder;
+    const aHas = oa != null && oa !== '';
+    const bHas = ob != null && ob !== '';
+    if (aHas && bHas && Number(oa) !== Number(ob)) return Number(oa) - Number(ob);
+    if (aHas && !bHas) return -1;
+    if (!aHas && bHas) return 1;
     const da = getJobScheduledDateKey(a) || '9999-12-31';
     const db = getJobScheduledDateKey(b) || '9999-12-31';
     if (da !== db) return da.localeCompare(db);

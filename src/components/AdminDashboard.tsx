@@ -249,6 +249,7 @@ import DirectSaleDialog from './admin/DirectSaleDialog';
 import AmountTrackersDialog from './admin/AmountTrackersDialog';
 import { EmailSentLogDialog } from './admin/EmailSentLogDialog';
 import MeasureDistanceToolDialog from './admin/MeasureDistanceToolDialog';
+import ArrangeTechnicianVisitOrderDialog from './admin/ArrangeTechnicianVisitOrderDialog';
 import { settingsPath } from '@/lib/settingsSections';
 import ServiceHistoryDialog from './admin/ServiceHistoryDialog';
 import PhotoGalleryDialog from './admin/PhotoGalleryDialog';
@@ -805,6 +806,7 @@ const AdminDashboard = () => {
   const directSaleOpen = activeAdminTool === 'direct-sale';
   const amountTrackersOpen = activeAdminTool === 'amount-trackers';
   const measureDistanceOpen = activeAdminTool === 'measure-distance';
+  const arrangeVisitOrderOpen = activeAdminTool === 'arrange-visit-order';
 
   // Close Tools dropdown before paint when URL changes (gesture back / in-app navigate).
   useLayoutEffect(() => {
@@ -6903,6 +6905,25 @@ const AdminDashboard = () => {
         open={measureDistanceOpen}
         onOpenChange={(open) => handleAdminToolOpenChange('measure-distance', open)}
         initialJobs={jobs}
+      />
+
+      <ArrangeTechnicianVisitOrderDialog
+        open={arrangeVisitOrderOpen}
+        onOpenChange={(open) => handleAdminToolOpenChange('arrange-visit-order', open)}
+        technicians={technicians}
+        initialJobs={jobs}
+        onSaved={(technicianId, orderedJobIds) => {
+          const orderMap = new Map(orderedJobIds.map((id, i) => [id, i + 1]));
+          setJobs((prev) =>
+            prev.map((j) => {
+              const tid = (j as any).assigned_technician_id || j.assignedTechnicianId;
+              if (String(tid) !== String(technicianId)) return j;
+              const nextOrder = orderMap.get(j.id);
+              if (nextOrder == null) return j;
+              return { ...j, visit_order: nextOrder, visitOrder: nextOrder };
+            })
+          );
+        }}
       />
 
       {/* Recent Accounts Dialog – scoped fetch when opened (no full customer list) */}

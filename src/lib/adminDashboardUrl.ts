@@ -273,6 +273,7 @@ export const ADMIN_TOOL_DIALOGS = [
   'amount-trackers',
   'sent-email-log',
   'measure-distance',
+  'arrange-visit-order',
 ] as const;
 export type AdminToolDialog = (typeof ADMIN_TOOL_DIALOGS)[number];
 
