@@ -32,6 +32,9 @@ const VISIT_ORDER_JOB_SELECT = [
   'customer:customers(full_name,visible_address)',
 ].join(',');
 
+const VISIT_ORDER_SIBLING_SELECT =
+  'id,visit_order,scheduled_date,scheduled_time_slot,requirements,created_at,assigned_technician_id,status';
+
 export function getJobVisitOrder(job: Job | Record<string, unknown> | null | undefined): number | null {
   if (!job) return null;
   const raw = (job as any).visit_order ?? (job as any).visitOrder;
@@ -42,16 +45,6 @@ export function getJobVisitOrder(job: Job | Record<string, unknown> | null | und
 
 export function localDateKey(d = new Date()): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-export function jobMatchesVisitOrderDate(
-  job: Job | Record<string, unknown>,
-  dateKey: string
-): boolean {
-  const scheduled = getJobScheduledDateKey(job);
-  if (scheduled) return scheduled === dateKey;
-  // Unscheduled open jobs appear under today so they can still be ordered.
-  return dateKey === localDateKey();
 }
 
 export function compareJobsByVisitOrder(
@@ -79,13 +72,12 @@ export function sortJobsForVisitOrder<T extends Job | Record<string, unknown>>(j
 export function visitOrderStopLabel(job: Job | Record<string, unknown>): string {
   const cust = (job as any)?.customer as any;
   const displayName = (cust?.full_name || cust?.fullName || 'Customer').trim() || 'Customer';
-  const loc = String(
-    cust?.visible_address || cust?.visibleAddress || ''
-  )
+  const loc = String(cust?.visible_address || cust?.visibleAddress || '')
     .replace(/[\s\u00a0\u2000-\u200B\uFEFF]+/g, ' ')
     .trim();
-  if (loc) return `${displayName} (${loc})`;
-  return displayName;
+  const dateKey = getJobScheduledDateKey(job);
+  const base = loc ? `${displayName} (${loc})` : displayName;
+  return dateKey ? `${base} · ${dateKey}` : base;
 }
 
 export type VisitOrderJobRow = {
@@ -101,45 +93,32 @@ export type VisitOrderJobRow = {
   assigned_technician_id?: string | null;
 };
 
-/** Filter already-loaded admin jobs in memory (no network). */
+/** Filter already-loaded admin jobs in memory (all open jobs for this tech). */
 export function filterCachedJobsForVisitOrder(
   jobs: Array<Job | Record<string, unknown>>,
-  technicianId: string,
-  dateKey: string
+  technicianId: string
 ): VisitOrderJobRow[] {
   const rows = jobs.filter((j) => {
     const tid = (j as any).assigned_technician_id || (j as any).assignedTechnicianId;
     if (String(tid) !== String(technicianId)) return false;
     const st = String((j as any).status || '').toUpperCase();
-    if (!VISIT_ORDER_STATUSES.has(st)) return false;
-    return jobMatchesVisitOrderDate(j, dateKey);
+    return VISIT_ORDER_STATUSES.has(st);
   }) as VisitOrderJobRow[];
   return sortJobsForVisitOrder(rows);
 }
 
-/** Load open jobs for a technician on a given date (YYYY-MM-DD). Slim columns + date filter. */
+/** Load all open jobs for a technician (any scheduled day). Slim columns. */
 export async function fetchTechnicianJobsForVisitOrder(
-  technicianId: string,
-  dateKey: string
+  technicianId: string
 ): Promise<{ data: VisitOrderJobRow[]; error: Error | null }> {
-  const run = async (select: string) => {
-    let query = supabase
+  const run = async (select: string) =>
+    supabase
       .from('jobs')
       .select(select)
       .eq('assigned_technician_id', technicianId)
       .in('status', Array.from(VISIT_ORDER_STATUSES))
       .order('created_at', { ascending: false })
       .limit(40);
-
-    // Push date filter to DB so we don't download other days' jobs.
-    if (dateKey === localDateKey()) {
-      query = query.or(`scheduled_date.eq.${dateKey},scheduled_date.is.null`);
-    } else {
-      query = query.eq('scheduled_date', dateKey);
-    }
-
-    return query;
-  };
 
   let { data, error } = await run(VISIT_ORDER_JOB_SELECT);
   if (error && isMissingVisitOrderColumnError(error)) {
@@ -151,10 +130,7 @@ export async function fetchTechnicianJobsForVisitOrder(
     return { data: [], error: new Error(error.message) };
   }
 
-  const rows = ((data || []) as VisitOrderJobRow[]).filter((j) =>
-    jobMatchesVisitOrderDate(j, dateKey)
-  );
-  return { data: sortJobsForVisitOrder(rows), error: null };
+  return { data: sortJobsForVisitOrder((data || []) as VisitOrderJobRow[]), error: null };
 }
 
 /** Persist 1-based visit_order for the given job ids (in order). No .select() on updates. */
@@ -188,4 +164,114 @@ export async function saveTechnicianVisitOrder(
 
   broadcastTechnicianJobListRefresh([technicianId]);
   return { error: null };
+}
+
+/**
+ * Plan append position across all open jobs for this technician.
+ * Backfills unordered siblings (by schedule) so numbering stays contiguous.
+ */
+export async function planVisitOrderAppend(
+  technicianId: string,
+  excludeJobId?: string | null
+): Promise<{ nextOrder: number; backfillUpdates: Array<{ id: string; visit_order: number }> }> {
+  const run = async (select: string) =>
+    supabase
+      .from('jobs')
+      .select(select)
+      .eq('assigned_technician_id', technicianId)
+      .in('status', Array.from(VISIT_ORDER_STATUSES))
+      .order('created_at', { ascending: false })
+      .limit(40);
+
+  let { data, error } = await run(VISIT_ORDER_SIBLING_SELECT);
+  if (error && isMissingVisitOrderColumnError(error)) {
+    markVisitOrderColumnMissing();
+    return { nextOrder: 1, backfillUpdates: [] };
+  }
+  if (error) {
+    console.warn('[visit_order] sibling load failed:', error.message);
+    return { nextOrder: 1, backfillUpdates: [] };
+  }
+
+  const siblings = ((data || []) as VisitOrderJobRow[]).filter(
+    (j) => !(excludeJobId && j.id === excludeJobId)
+  );
+
+  const withOrder = siblings
+    .filter((j) => getJobVisitOrder(j) != null)
+    .sort((a, b) => getJobVisitOrder(a)! - getJobVisitOrder(b)!);
+  const withoutOrder = siblings
+    .filter((j) => getJobVisitOrder(j) == null)
+    .sort((a, b) => compareJobsByVisitOrder(a, b));
+
+  let maxOrdered = 0;
+  for (const j of withOrder) {
+    maxOrdered = Math.max(maxOrdered, getJobVisitOrder(j)!);
+  }
+
+  const backfillUpdates = withoutOrder.map((j, i) => ({
+    id: j.id,
+    visit_order: maxOrdered + 1 + i,
+  }));
+  const nextOrder = maxOrdered + withoutOrder.length + 1;
+  return { nextOrder, backfillUpdates };
+}
+
+/**
+ * After assign/reassign/create: put this job at the next stop for the tech.
+ * Returns the visit_order written, or null if skipped/failed.
+ */
+export async function appendJobToTechnicianVisitOrder(opts: {
+  jobId: string;
+  technicianId: string;
+  /** @deprecated Visit order is per technician (all open jobs), not per day. */
+  scheduledDate?: string | null;
+}): Promise<number | null> {
+  const { jobId, technicianId } = opts;
+  if (!jobId || !technicianId) return null;
+
+  try {
+    const { nextOrder, backfillUpdates } = await planVisitOrderAppend(technicianId, jobId);
+
+    const writes = [
+      ...backfillUpdates.map((u) =>
+        supabase
+          .from('jobs')
+          .update({ visit_order: u.visit_order } as any)
+          .eq('id', u.id)
+          .eq('assigned_technician_id', technicianId)
+      ),
+      supabase
+        .from('jobs')
+        .update({ visit_order: nextOrder } as any)
+        .eq('id', jobId),
+    ];
+
+    const results = await Promise.all(writes);
+    const firstErr = results.find((r) => r.error)?.error;
+    if (firstErr) {
+      if (isMissingVisitOrderColumnError(firstErr)) {
+        markVisitOrderColumnMissing();
+        return null;
+      }
+      console.warn('[visit_order] append failed:', firstErr.message);
+      return null;
+    }
+    return nextOrder;
+  } catch (e) {
+    console.warn('[visit_order] append error:', e);
+    return null;
+  }
+}
+
+/** Clear visit_order when a job is unassigned (no .select()). */
+export async function clearJobVisitOrder(jobId: string): Promise<void> {
+  if (!jobId) return;
+  const { error } = await supabase
+    .from('jobs')
+    .update({ visit_order: null } as any)
+    .eq('id', jobId);
+  if (error && isMissingVisitOrderColumnError(error)) {
+    markVisitOrderColumnMissing();
+  }
 }

@@ -9,7 +9,6 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -24,7 +23,6 @@ import { cn } from '@/lib/utils';
 import {
   fetchTechnicianJobsForVisitOrder,
   filterCachedJobsForVisitOrder,
-  localDateKey,
   saveTechnicianVisitOrder,
   visitOrderStopLabel,
   type VisitOrderJobRow,
@@ -35,12 +33,10 @@ type ArrangeTechnicianVisitOrderDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   technicians: Technician[];
-  /** Ongoing jobs already on the dashboard — prefer these to avoid an extra fetch. */
+  /** Ongoing jobs already on the dashboard — used as a fast first paint, then refreshed. */
   initialJobs?: Array<Job | Record<string, unknown>>;
   /** Pre-select when opened from a job row. */
   initialTechnicianId?: string | null;
-  /** Pre-select date (YYYY-MM-DD) when opened from a job row. */
-  initialDateKey?: string | null;
   /** Optional: patch local admin jobs cache after save. */
   onSaved?: (technicianId: string, orderedJobIds: string[]) => void;
 };
@@ -61,7 +57,6 @@ export default function ArrangeTechnicianVisitOrderDialog({
   technicians,
   initialJobs = [],
   initialTechnicianId = null,
-  initialDateKey = null,
   onSaved,
 }: ArrangeTechnicianVisitOrderDialogProps) {
   const activeTechs = useMemo(
@@ -81,7 +76,6 @@ export default function ArrangeTechnicianVisitOrderDialog({
   );
 
   const [technicianId, setTechnicianId] = useState('');
-  const [dateKey, setDateKey] = useState(localDateKey());
   const [rows, setRows] = useState<VisitOrderJobRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -95,32 +89,25 @@ export default function ArrangeTechnicianVisitOrderDialog({
     setDirty(data.some((j) => j.visit_order == null));
   }, []);
 
-  const loadFromCache = useCallback(
-    (techId: string, day: string): boolean => {
-      if (!techId || !initialJobs.length) return false;
-      const cached = filterCachedJobsForVisitOrder(initialJobs, techId, day);
-      if (cached.length === 0) return false;
-      applyRows(cached);
-      return true;
-    },
-    [initialJobs, applyRows]
-  );
-
   const loadJobs = useCallback(
-    async (techId: string, day: string, opts?: { forceNetwork?: boolean }) => {
+    async (techId: string, opts?: { silentCacheFirst?: boolean }) => {
       if (!techId) {
         setRows([]);
         return;
       }
-      if (!opts?.forceNetwork && loadFromCache(techId, day)) {
-        return;
+
+      // Optional instant paint from admin cache, then always refresh from DB
+      // so we never miss open jobs that aren't on the current admin page.
+      if (opts?.silentCacheFirst && initialJobs.length) {
+        const cached = filterCachedJobsForVisitOrder(initialJobs, techId);
+        if (cached.length > 0) applyRows(cached);
       }
+
       setLoading(true);
       try {
-        const { data, error } = await fetchTechnicianJobsForVisitOrder(techId, day);
+        const { data, error } = await fetchTechnicianJobsForVisitOrder(techId);
         if (error) {
           toast.error(error.message || 'Failed to load jobs');
-          setRows([]);
           return;
         }
         applyRows(data);
@@ -128,7 +115,7 @@ export default function ArrangeTechnicianVisitOrderDialog({
         setLoading(false);
       }
     },
-    [loadFromCache, applyRows]
+    [initialJobs, applyRows]
   );
 
   useEffect(() => {
@@ -137,15 +124,13 @@ export default function ArrangeTechnicianVisitOrderDialog({
       initialTechnicianId && activeTechs.some((t) => t.id === initialTechnicianId)
         ? initialTechnicianId
         : activeTechs[0]?.id || '';
-    const nextDate = initialDateKey || localDateKey();
     setTechnicianId(nextTech);
-    setDateKey(nextDate);
     setDirty(false);
     setDragIndex(null);
     setOverIndex(null);
     dragIndexRef.current = null;
-    void loadJobs(nextTech, nextDate);
-  }, [open, initialTechnicianId, initialDateKey, activeTechs, loadJobs]);
+    void loadJobs(nextTech, { silentCacheFirst: true });
+  }, [open, initialTechnicianId, activeTechs, loadJobs]);
 
   const moveRow = (index: number, direction: -1 | 1) => {
     const next = index + direction;
@@ -170,7 +155,6 @@ export default function ArrangeTechnicianVisitOrderDialog({
     setOverIndex(index);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', String(index));
-    // Improve drag ghost in some browsers
     if (e.currentTarget instanceof HTMLElement) {
       e.dataTransfer.setDragImage(e.currentTarget, 24, 24);
     }
@@ -223,47 +207,32 @@ export default function ArrangeTechnicianVisitOrderDialog({
             Arrange visit order
           </DialogTitle>
           <DialogDescription>
-            Drag jobs to set the sequence this technician should follow. On their app, jobs show as
-            #1, #2, #3 — when they finish one, the next becomes #1.
+            All open jobs for this technician. Drag to set #1, #2, #3… New assigns append at the
+            end automatically.
           </DialogDescription>
         </DialogHeader>
 
         <div className="mt-2 space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="visit-order-tech">Technician</Label>
-              <Select
-                value={technicianId || undefined}
-                onValueChange={(v) => {
-                  setTechnicianId(v);
-                  void loadJobs(v, dateKey);
-                }}
-              >
-                <SelectTrigger id="visit-order-tech">
-                  <SelectValue placeholder="Select technician" />
-                </SelectTrigger>
-                <SelectContent>
-                  {activeTechs.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>
-                      {techLabel(t)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="visit-order-date">Date</Label>
-              <Input
-                id="visit-order-date"
-                type="date"
-                value={dateKey}
-                onChange={(e) => {
-                  const v = e.target.value || localDateKey();
-                  setDateKey(v);
-                  void loadJobs(technicianId, v);
-                }}
-              />
-            </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="visit-order-tech">Technician</Label>
+            <Select
+              value={technicianId || undefined}
+              onValueChange={(v) => {
+                setTechnicianId(v);
+                void loadJobs(v, { silentCacheFirst: true });
+              }}
+            >
+              <SelectTrigger id="visit-order-tech">
+                <SelectValue placeholder="Select technician" />
+              </SelectTrigger>
+              <SelectContent>
+                {activeTechs.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    {techLabel(t)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="flex items-center justify-between gap-2">
@@ -279,21 +248,21 @@ export default function ArrangeTechnicianVisitOrderDialog({
               variant="outline"
               size="sm"
               disabled={!technicianId || loading || saving}
-              onClick={() => void loadJobs(technicianId, dateKey, { forceNetwork: true })}
+              onClick={() => void loadJobs(technicianId)}
             >
               <RefreshCw className={`h-4 w-4 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
               Refresh
             </Button>
           </div>
 
-          {loading ? (
+          {loading && rows.length === 0 ? (
             <div className="flex items-center justify-center py-10 text-muted-foreground">
               <Loader2 className="h-5 w-5 animate-spin mr-2" />
               Loading jobs…
             </div>
           ) : rows.length === 0 ? (
             <div className="rounded-md border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
-              No open jobs for this technician on this date.
+              No open jobs for this technician.
             </div>
           ) : (
             <ol className="space-y-2" onDragEnd={clearDrag}>
@@ -322,7 +291,14 @@ export default function ArrangeTechnicianVisitOrderDialog({
                     >
                       <GripVertical className="h-4 w-4" />
                     </span>
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sm font-semibold text-sky-800">
+                    <span
+                      className={cn(
+                        'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-semibold',
+                        index === 0
+                          ? 'bg-red-600 text-white ring-2 ring-red-300'
+                          : 'bg-sky-100 text-sky-800'
+                      )}
+                    >
                       {index + 1}
                     </span>
                     <div className="min-w-0 flex-1">

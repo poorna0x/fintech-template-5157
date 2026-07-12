@@ -5,6 +5,7 @@ import type { LoadFilteredJobsFn } from '@/lib/adminLoadDashboardData';
 import { openAdminWhatsappForJobAssign } from '@/lib/openAdminWhatsappForJobAssign';
 import { createJobAssignedNotification, sendNotification } from '@/lib/notifications';
 import { broadcastTechnicianJobListRefresh } from '@/lib/technicianJobListSync';
+import { appendJobToTechnicianVisitOrder } from '@/lib/adminVisitOrder';
 import { db } from '@/lib/supabase';
 import type { Job, Technician } from '@/types';
 
@@ -57,6 +58,14 @@ export async function saveAdminJobAssignment(ctx: AdminSaveJobAssignmentCtx) {
     } as any);
 
     if (error) throw error;
+
+    const scheduledDate =
+      (ctx.jobToAssign as any).scheduled_date || ctx.jobToAssign.scheduledDate || null;
+    await appendJobToTechnicianVisitOrder({
+      jobId: ctx.jobToAssign.id,
+      technicianId: ctx.selectedTechnicianId,
+      scheduledDate,
+    });
 
     broadcastTechnicianJobListRefresh([ctx.selectedTechnicianId]);
 

@@ -14,6 +14,7 @@ import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
 import { generateJobNumber, formatCustomTimeLabel, getDefaultLeadCost, isHomeTriangleLeadSource } from '@/lib/adminUtils';
 import { db } from '@/lib/supabase';
+import { appendJobToTechnicianVisitOrder } from '@/lib/adminVisitOrder';
 import { createJobAssignedNotification, sendNotification } from '@/lib/notifications';
 import type { JobAssignedToTechnicianPayload } from './AddCustomerDialog';
 import {
@@ -436,6 +437,18 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
       
       if (error) {
         throw new Error(error.message);
+      }
+
+      if (newJob?.id && newJobFormData.assigned_technician_id) {
+        const visitOrder = await appendJobToTechnicianVisitOrder({
+          jobId: newJob.id,
+          technicianId: newJobFormData.assigned_technician_id,
+          scheduledDate: newJobFormData.scheduled_date,
+        });
+        if (visitOrder != null) {
+          (newJob as any).visit_order = visitOrder;
+          (newJob as any).visitOrder = visitOrder;
+        }
       }
 
       onJobCreated(newJob);

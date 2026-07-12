@@ -4,6 +4,9 @@ import type { AdminStatusFilter } from '@/lib/adminDashboardCache';
 import type { LoadFilteredJobsFn } from '@/lib/adminLoadDashboardData';
 import { openAdminWhatsappForJobAssign } from '@/lib/openAdminWhatsappForJobAssign';
 import { broadcastTechnicianJobListRefresh } from '@/lib/technicianJobListSync';
+import {
+  appendJobToTechnicianVisitOrder,
+} from '@/lib/adminVisitOrder';
 import { db } from '@/lib/supabase';
 import type { Job, Technician } from '@/types';
 
@@ -48,12 +51,27 @@ export async function submitAdminJobReassign(
 
     const previousTechnicianId =
       (ctx.jobToReassign as any).assigned_technician_id || ctx.jobToReassign.assignedTechnicianId;
+
+    const scheduledDate =
+      (ctx.jobToReassign as any).scheduled_date || ctx.jobToReassign.scheduledDate || null;
+    const nextVisitOrder = await appendJobToTechnicianVisitOrder({
+      jobId: ctx.jobToReassign.id,
+      technicianId: ctx.selectedTechnicianForReassign,
+      scheduledDate,
+    });
+
     broadcastTechnicianJobListRefresh([previousTechnicianId, ctx.selectedTechnicianForReassign]);
 
     ctx.setJobs((prev) =>
       prev.map((job) =>
         job.id === ctx.jobToReassign!.id
-          ? { ...job, assigned_technician_id: ctx.selectedTechnicianForReassign }
+          ? {
+              ...job,
+              assigned_technician_id: ctx.selectedTechnicianForReassign,
+              ...(nextVisitOrder != null
+                ? { visit_order: nextVisitOrder, visitOrder: nextVisitOrder }
+                : {}),
+            }
           : job
       )
     );
@@ -108,7 +126,8 @@ export async function unassignAdminJob(
       assigned_technician_id: null,
       assigned_date: null,
       status: 'PENDING',
-    });
+      visit_order: null,
+    } as any);
 
     if (error) {
       toast.error('Failed to unassign job');
@@ -126,6 +145,8 @@ export async function unassignAdminJob(
               assignedTechnicianId: null,
               assigned_date: null,
               assignedDate: null,
+              visit_order: null,
+              visitOrder: null,
               status: 'PENDING' as const,
             }
           : j
@@ -143,6 +164,8 @@ export async function unassignAdminJob(
                 assignedTechnicianId: null,
                 assigned_date: null,
                 assignedDate: null,
+                visit_order: null,
+                visitOrder: null,
                 status: 'PENDING' as any,
               }
             : j

@@ -109,6 +109,7 @@ import {
   type AdminFollowUpSubmitData,
 } from '@/lib/adminFollowUpSubmit';
 import { saveAdminJobAssignment } from '@/lib/adminSaveJobAssignment';
+import { appendJobToTechnicianVisitOrder } from '@/lib/adminVisitOrder';
 import {
   getDefaultAdminMoveToOngoingSchedule,
   performAdminMoveToOngoing,
@@ -2973,6 +2974,18 @@ const AdminDashboard = () => {
 
       if (!newJob) {
         throw new Error('Failed to create job');
+      }
+
+      if (newJobFormData.assigned_technician_id) {
+        const visitOrder = await appendJobToTechnicianVisitOrder({
+          jobId: newJob.id,
+          technicianId: newJobFormData.assigned_technician_id,
+          scheduledDate: newJobFormData.scheduled_date,
+        });
+        if (visitOrder != null) {
+          (newJob as any).visit_order = visitOrder;
+          (newJob as any).visitOrder = visitOrder;
+        }
       }
 
       // Add to local state

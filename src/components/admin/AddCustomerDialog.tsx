@@ -1224,6 +1224,23 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
               job_number: (newJob as any).job_number,
               requirements: (newJob as any).requirements
             });
+
+            if (step5JobData.assigned_technician_id) {
+              try {
+                const { appendJobToTechnicianVisitOrder } = await import('@/lib/adminVisitOrder');
+                const visitOrder = await appendJobToTechnicianVisitOrder({
+                  jobId: (newJob as any).id,
+                  technicianId: step5JobData.assigned_technician_id,
+                  scheduledDate: step5JobData.scheduled_date,
+                });
+                if (visitOrder != null) {
+                  (newJob as any).visit_order = visitOrder;
+                  (newJob as any).visitOrder = visitOrder;
+                }
+              } catch (visitOrderErr) {
+                console.warn('Visit order append skipped:', visitOrderErr);
+              }
+            }
             
             if (step5JobData.assigned_technician_id) {
               // Send notification to assigned technician
