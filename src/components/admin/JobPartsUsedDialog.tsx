@@ -558,21 +558,22 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     const qtyToRestore = quantityUsed > 1 ? 1 : quantityUsed;
 
     try {
-      // Custom items aren't tracked in stock, so there's nothing to restore.
-      if (!isCustom && inventoryId) {
-        const mainErr = await restoreMainInventory(inventoryId, qtyToRestore);
-        if (mainErr) {
-          toast.error(`Main inventory: ${mainErr}`);
-          return;
-        }
-      }
-
+      // Persist job_parts_used change first. If RLS/permission blocks it, do not
+      // touch inventory stock (avoids "UI deleted but stock restored" mismatch).
       if (quantityUsed > 1) {
         const newQuantityUsed = quantityUsed - 1;
         const { data: updatedPart, error: updateError } = await db.jobPartsUsed.update(partId, {
           quantity_used: newQuantityUsed,
         });
         if (updateError) throw updateError;
+        if (!updatedPart) throw new Error('Part quantity was not updated. Please try again.');
+
+        if (!isCustom && inventoryId) {
+          const mainErr = await restoreMainInventory(inventoryId, qtyToRestore);
+          if (mainErr) {
+            toast.error(`Part qty reduced, but main inventory restore failed: ${mainErr}`);
+          }
+        }
 
         if (techItem) {
           const newTechQuantity = techItem.quantity + 1;
@@ -598,6 +599,13 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
         const { error: deleteError } = await db.jobPartsUsed.delete(partId);
         if (deleteError) throw deleteError;
 
+        if (!isCustom && inventoryId) {
+          const mainErr = await restoreMainInventory(inventoryId, qtyToRestore);
+          if (mainErr) {
+            toast.error(`Part removed, but main inventory restore failed: ${mainErr}`);
+          }
+        }
+
         if (techItem) {
           const newQuantity = techItem.quantity + quantityUsed;
           const { error: updateTechError } = await db.technicianInventory.update(techItem.id, {
@@ -620,6 +628,8 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     } catch (error: any) {
       console.error('Error deleting part:', error);
       toast.error(error?.message || 'Failed to remove part');
+      // Reload so UI matches DB if delete was blocked (e.g. old RLS).
+      if (job?.id) void loadPartsUsed();
     }
   };
 

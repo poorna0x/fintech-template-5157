@@ -6731,12 +6731,24 @@ export const db = {
     },
 
     async delete(id: string) {
-      const { error } = await supabase
+      // `.select()` so RLS blocking a delete is visible (otherwise PostgREST
+      // returns no error when 0 rows match / 0 rows are deleted).
+      const { data, error } = await supabase
         .from('job_parts_used')
         .delete()
-        .eq('id', id);
-      
-      return { error };
+        .eq('id', id)
+        .select('id');
+
+      if (error) return { error };
+      if (!data?.length) {
+        return {
+          error: {
+            message:
+              'Part was not deleted. You may not have permission to remove this part, or it was already removed.',
+          },
+        };
+      }
+      return { error: null };
     },
 
     /** Recompute total parts cost for a job and update jobs.parts_cost_total. Call after create/update/delete of job_parts_used. */

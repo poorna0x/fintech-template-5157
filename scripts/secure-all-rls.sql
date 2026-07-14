@@ -300,7 +300,7 @@ CREATE POLICY job_parts_used_update
 
 CREATE POLICY job_parts_used_delete
   ON public.job_parts_used FOR DELETE TO authenticated
-  USING (public.is_admin_user());
+  USING (public.is_admin_user() OR public.technician_can_access_job(job_id));
 
 -- ---------------------------------------------------------------------------
 -- amc_contracts (technician: read for customers on their jobs)
