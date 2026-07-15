@@ -92,7 +92,7 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto overflow-x-hidden">
-        <DialogHeader>
+        <DialogHeader className="pr-14">
           <DialogTitle>
             Customer Report -{' '}
             <span className={customerNameClassName(customer)}>{customer.fullName || 'Unknown'}</span>
