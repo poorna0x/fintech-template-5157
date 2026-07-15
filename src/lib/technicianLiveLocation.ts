@@ -122,8 +122,8 @@ async function startWatcher(technicianId: string, oneShot: boolean): Promise<boo
   try {
     watcherId = await BackgroundGeolocation.addWatcher(
       {
-        backgroundTitle: 'HydrogenRO — sharing location',
-        backgroundMessage: 'The office is viewing your live location right now.',
+        backgroundTitle: 'HRO Technician is active',
+        backgroundMessage: 'Location sharing is on.',
         requestPermissions: true,
         stale: oneShot, // a cached fix is fine for the enable bootstrap
         distanceFilter: DISTANCE_FILTER_METERS,

@@ -4,4 +4,7 @@
     <string name="title_activity_main">HRO Technician</string>
     <string name="package_name">com.hydrogenro.technician</string>
     <string name="custom_url_scheme">com.hydrogenro.technician</string>
+    <!-- Location foreground-service notification: white logo + green accent -->
+    <string name="capacitor_background_geolocation_notification_icon">drawable/ic_stat_notify</string>
+    <string name="capacitor_background_geolocation_notification_color">#16A34A</string>
 </resources>
