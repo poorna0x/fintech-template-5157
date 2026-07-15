@@ -16,6 +16,7 @@ import {
   Mail,
   ListOrdered,
   MapPin,
+  MessageSquare,
   Navigation,
   PhoneCall,
   Receipt,
@@ -247,6 +248,10 @@ export function AdminDashboardHeader({
                   <DropdownMenuItem onClick={() => onOpenAdminTool('technician-live-location')}>
                     <MapPin className="w-4 h-4 mr-2" />
                     Technician location
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onOpenAdminTool('message-technician')}>
+                    <MessageSquare className="w-4 h-4 mr-2" />
+                    Message technician
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     disabled={isManager}

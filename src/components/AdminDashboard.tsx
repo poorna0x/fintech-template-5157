@@ -253,6 +253,7 @@ import { EmailSentLogDialog } from './admin/EmailSentLogDialog';
 import MeasureDistanceToolDialog from './admin/MeasureDistanceToolDialog';
 import ArrangeTechnicianVisitOrderDialog from './admin/ArrangeTechnicianVisitOrderDialog';
 import TechnicianLiveLocationDialog from './admin/TechnicianLiveLocationDialog';
+import MessageTechnicianDialog from './admin/MessageTechnicianDialog';
 import { settingsPath } from '@/lib/settingsSections';
 import ServiceHistoryDialog from './admin/ServiceHistoryDialog';
 import PhotoGalleryDialog from './admin/PhotoGalleryDialog';
@@ -811,6 +812,7 @@ const AdminDashboard = () => {
   const measureDistanceOpen = activeAdminTool === 'measure-distance';
   const arrangeVisitOrderOpen = activeAdminTool === 'arrange-visit-order';
   const technicianLiveLocationOpen = activeAdminTool === 'technician-live-location';
+  const messageTechnicianOpen = activeAdminTool === 'message-technician';
 
   // Close Tools dropdown before paint when URL changes (gesture back / in-app navigate).
   useLayoutEffect(() => {
@@ -6949,6 +6951,12 @@ const AdminDashboard = () => {
       <TechnicianLiveLocationDialog
         open={technicianLiveLocationOpen}
         onOpenChange={(open) => handleAdminToolOpenChange('technician-live-location', open)}
+        technicians={technicians}
+      />
+
+      <MessageTechnicianDialog
+        open={messageTechnicianOpen}
+        onOpenChange={(open) => handleAdminToolOpenChange('message-technician', open)}
         technicians={technicians}
       />
 
