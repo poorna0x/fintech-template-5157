@@ -156,7 +156,11 @@ const MessageTechnicianDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+      {/* Don't auto-focus the first control (Select all) — it draws a focus ring */}
+      <DialogContent
+        className="sm:max-w-md max-h-[90vh] overflow-y-auto"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
         <DialogHeader className="pr-8 text-left">
           <DialogTitle className="flex items-center gap-2">
             <MessageSquare className="h-5 w-5" />
@@ -267,7 +271,7 @@ const MessageTechnicianDialog = ({
             </Button>
             <Button
               variant="outline"
-              className="h-11 w-full text-muted-foreground"
+              className="h-11 w-full"
               onClick={() => void dispatch('clear')}
               disabled={sending || selected.size === 0}
             >
