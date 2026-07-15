@@ -39,8 +39,8 @@ type TechnicianLiveLocationDialogProps = {
   technicians: Technician[];
 };
 
-/** Stop waiting for a fresh fix and fall back to the last known location. */
-const FRESH_FIX_TIMEOUT_MS = 60_000;
+/** Per attempt: the phone's GPS window is ~30s, plus push + upload latency. */
+const FRESH_FIX_TIMEOUT_MS = 40_000;
 /** A fix measured within this window counts as the current location. */
 const FRESH_FIX_MAX_AGE_MS = 2 * 60_000;
 
@@ -150,11 +150,26 @@ const TechnicianLiveLocationDialog = ({
         // Loader until the phone's FIRST answer; further fixes refine the map.
         requestedAtRef.current = Date.now();
         setWaitingFresh(true);
-        freshTimeoutRef.current = setTimeout(() => {
-          setWaitingFresh(false);
-          setTimedOut(true);
-        }, FRESH_FIX_TIMEOUT_MS);
       }
+
+      // Two attempts: GPS often fails to lock in the phone's first 30s window
+      // (indoors) but succeeds right after because the chip is warmed up, so
+      // one silent retry roughly doubles the success rate at no extra cost
+      // when the first attempt works. requestedAt stays at the FIRST attempt:
+      // any fix measured after the admin asked counts as exact.
+      let attempt = 0;
+      const requestFix = () => {
+        attempt += 1;
+        void sendPing(techId);
+        freshTimeoutRef.current = setTimeout(() => {
+          if (attempt < 2) {
+            requestFix();
+          } else {
+            setWaitingFresh(false);
+            setTimedOut(true);
+          }
+        }, FRESH_FIX_TIMEOUT_MS);
+      };
 
       // The ping is sent only after the realtime channel is live (see
       // subscribe callback below) — the phone's cached answer can arrive
@@ -212,7 +227,7 @@ const TechnicianLiveLocationDialog = ({
           const broken = status === 'CHANNEL_ERROR' || status === 'TIMED_OUT';
           if ((ready || broken) && shouldPing && !pinged) {
             pinged = true;
-            void sendPing(techId);
+            requestFix();
           }
         });
     },
