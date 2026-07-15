@@ -124,6 +124,15 @@ export const IOS_HAPTIC_ATTR = 'data-ios-haptic-attached';
 export const IOS_INTERACTIVE_SELECTOR =
   '[role="button"]:not(button):not([data-haptic-skip]),[data-haptic-interactive]:not([data-haptic-skip]),a[role="button"]:not([data-haptic-skip])';
 
+/**
+ * Android/desktop click-listener targets. Unlike iOS (where native <button>
+ * is handled by the overlay in button.tsx), here native buttons MUST be
+ * included — this is what makes every button, incl. dialog X close buttons,
+ * vibrate on Android.
+ */
+export const ANDROID_INTERACTIVE_SELECTOR =
+  'button:not([data-haptic-skip]),[role="button"]:not([data-haptic-skip]),[data-haptic-interactive]:not([data-haptic-skip])';
+
 function isHapticTargetDisabled(el: HTMLElement): boolean {
   return (
     (el as HTMLButtonElement).disabled === true ||

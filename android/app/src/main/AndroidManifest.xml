@@ -76,4 +76,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- navigator.vibrate in the WebView (button haptics) is silently ignored without this -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 </manifest>

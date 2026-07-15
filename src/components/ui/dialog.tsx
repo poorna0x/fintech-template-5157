@@ -4,6 +4,7 @@ import { X } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { guardDialogFromSonnerOutsideEvent } from "@/lib/sonner-dialog-guard"
+import { IOSSwitchHapticOverlay } from "@/components/IOSSwitchHapticOverlay"
 
 const Dialog = DialogPrimitive.Root
 
@@ -62,9 +63,10 @@ const DialogContent = React.forwardRef<
     >
       {children}
       {!hideCloseButton && (
-        <DialogPrimitive.Close className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground active:bg-muted/60 focus:outline-none focus:ring-0 focus-visible:ring-0 disabled:pointer-events-none touch-manipulation [-webkit-tap-highlight-color:transparent] sm:right-4 sm:top-4 sm:h-9 sm:w-9">
+        <DialogPrimitive.Close className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center overflow-hidden rounded-md text-muted-foreground transition-colors hover:bg-muted/45 hover:text-foreground active:bg-muted/60 focus:outline-none focus:ring-0 focus-visible:ring-0 disabled:pointer-events-none touch-manipulation [-webkit-tap-highlight-color:transparent] sm:right-4 sm:top-4 sm:h-9 sm:w-9">
           <X className="h-5 w-5" />
           <span className="sr-only">Close</span>
+          <IOSSwitchHapticOverlay />
         </DialogPrimitive.Close>
       )}
     </DialogPrimitive.Content>

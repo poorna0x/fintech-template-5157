@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import {
+  ANDROID_INTERACTIVE_SELECTOR,
   attachIOSHapticOverlay,
   canHaptic,
   hapticTap,
@@ -20,7 +21,7 @@ function shouldHapticForTarget(target: EventTarget | null): HTMLElement | null {
   const node = target as HTMLElement | null;
   if (!node) return null;
   if (node.closest('[data-haptic-skip]')) return null;
-  const el = node.closest(IOS_INTERACTIVE_SELECTOR) as HTMLElement | null;
+  const el = node.closest(ANDROID_INTERACTIVE_SELECTOR) as HTMLElement | null;
   if (!el || isDisabled(el)) return null;
   return el;
 }
