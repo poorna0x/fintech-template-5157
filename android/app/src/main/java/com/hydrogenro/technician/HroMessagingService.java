@@ -79,13 +79,47 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
 
         // Then a fresh fix (up to ~30s). onMessageReceived's process usually
         // stays alive long enough; if not, the last-known upload already landed.
+        requestFreshFix(fused, fine, uploadUrl, technicianId, nonce);
+    }
+
+    /**
+     * Fresh measurement with an indoor fallback. High-accuracy mode leans on
+     * GPS, which often cannot lock indoors — and getCurrentLocation then
+     * "succeeds" with a NULL location. The old code only listened for success
+     * and silently dropped that case, so indoors the admin never got a fresh
+     * fix even with the app open. Now: try high accuracy first, and when it
+     * yields nothing fall back to balanced mode (Wi-Fi/cell — works indoors,
+     * ~15-40m). maxUpdateAge 0 forces genuinely new measurements; the server
+     * guard already prevents an older fix overwriting a newer one.
+     */
+    private void requestFreshFix(FusedLocationProviderClient fused, boolean fine,
+                                 String uploadUrl, String technicianId, String nonce) {
         try {
             CurrentLocationRequest request = new CurrentLocationRequest.Builder()
                 .setPriority(fine ? Priority.PRIORITY_HIGH_ACCURACY : Priority.PRIORITY_BALANCED_POWER_ACCURACY)
-                .setDurationMillis(30_000)
+                .setMaxUpdateAgeMillis(0)
+                .setDurationMillis(25_000)
                 .build();
-            fused.getCurrentLocation(request, null).addOnSuccessListener(location -> {
-                if (location != null) upload(uploadUrl, technicianId, nonce, location);
+            fused.getCurrentLocation(request, null).addOnCompleteListener(task -> {
+                Location location = task.isSuccessful() ? task.getResult() : null;
+                if (location != null) {
+                    upload(uploadUrl, technicianId, nonce, location);
+                    return;
+                }
+                if (!fine) return; // balanced already tried and failed
+                Log.w(TAG, "High-accuracy fix failed (likely indoors); trying balanced");
+                try {
+                    CurrentLocationRequest fallback = new CurrentLocationRequest.Builder()
+                        .setPriority(Priority.PRIORITY_BALANCED_POWER_ACCURACY)
+                        .setMaxUpdateAgeMillis(0)
+                        .setDurationMillis(15_000)
+                        .build();
+                    fused.getCurrentLocation(fallback, null).addOnSuccessListener(loc -> {
+                        if (loc != null) upload(uploadUrl, technicianId, nonce, loc);
+                    });
+                } catch (SecurityException e) {
+                    Log.w(TAG, "Fallback getCurrentLocation not permitted", e);
+                }
             });
         } catch (SecurityException e) {
             Log.w(TAG, "getCurrentLocation not permitted", e);
