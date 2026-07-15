@@ -5,7 +5,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
 const { authorizeAdminBearer } = require('./admin-auth-guard');
-const { getMessaging, isStaleTokenError } = require('./fcm-helper');
+const { getMessaging, sendToTechnicianDevices } = require('./fcm-helper');
 
 exports.handler = async (event) => {
   const corsHeaders = getCorsHeaders(event.headers.origin || event.headers.Origin);
@@ -50,7 +50,7 @@ exports.handler = async (event) => {
 
   const { data: row, error: rowErr } = await db
     .from('technician_live_locations')
-    .select('fcm_token,is_tracking')
+    .select('is_tracking')
     .eq('technician_id', technicianId)
     .maybeSingle();
 
@@ -63,9 +63,6 @@ exports.handler = async (event) => {
   }
   if (!row.is_tracking) {
     return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'sharing_off' }) };
-  }
-  if (!row.fcm_token) {
-    return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'no_token' }) };
   }
 
   // One-time nonce: the app's native handler echoes it back to
@@ -85,8 +82,10 @@ exports.handler = async (event) => {
 
   try {
     const messaging = await getMessaging(db);
-    await messaging.send({
-      token: row.fcm_token,
+    // Wake every device the technician is logged in on — whichever phone is
+    // actually with them responds; uploads just overwrite the same row.
+    const { sent, tokens } = await sendToTechnicianDevices(db, messaging, technicianId, (token) => ({
+      token,
       data: {
         type: 'location_request',
         technicianId,
@@ -94,17 +93,15 @@ exports.handler = async (event) => {
         ...(siteUrl ? { uploadUrl: `${siteUrl}/.netlify/functions/upload-tech-location` } : {}),
       },
       android: { priority: 'high' },
-    });
-    return { statusCode: 200, headers, body: JSON.stringify({ sent: true }) };
-  } catch (err) {
-    // Stale/uninstalled token — clear it so we stop trying.
-    if (isStaleTokenError(err)) {
-      await db
-        .from('technician_live_locations')
-        .update({ fcm_token: null })
-        .eq('technician_id', technicianId);
+    }));
+    if (tokens === 0) {
+      return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'no_token' }) };
+    }
+    if (sent === 0) {
       return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'stale_token' }) };
     }
+    return { statusCode: 200, headers, body: JSON.stringify({ sent: true, devices: sent }) };
+  } catch (err) {
     console.error('[send-location-ping] send failed', err?.message || err);
     return { statusCode: 500, headers, body: JSON.stringify({ error: 'Push send failed' }) };
   }

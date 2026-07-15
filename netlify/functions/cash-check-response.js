@@ -10,12 +10,7 @@
 
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
-const {
-  getMessaging,
-  getTechnicianFcmToken,
-  clearTechnicianFcmToken,
-  isStaleTokenError,
-} = require('./fcm-helper');
+const { getMessaging, sendToTechnicianDevices } = require('./fcm-helper');
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
@@ -69,15 +64,10 @@ exports.handler = async (event) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  const token = await getTechnicianFcmToken(db, technicianId).catch(() => null);
-  if (!token) {
-    return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'no_token' }) };
-  }
-
   const rupees = `₹${Number(amount).toLocaleString('en-IN')}`;
   try {
     const messaging = await getMessaging(db);
-    await messaging.send({
+    const { sent, tokens } = await sendToTechnicianDevices(db, messaging, technicianId, (token) => ({
       token,
       notification: {
         title: 'Cash pending — hand over to office',
@@ -93,13 +83,15 @@ exports.handler = async (event) => {
           tag: 'cash-reminder',
         },
       },
-    });
-    return { statusCode: 200, headers, body: JSON.stringify({ sent: true }) };
-  } catch (err) {
-    if (isStaleTokenError(err)) {
-      await clearTechnicianFcmToken(db, technicianId);
+    }));
+    if (tokens === 0) {
+      return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'no_token' }) };
+    }
+    if (sent === 0) {
       return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'stale_token' }) };
     }
+    return { statusCode: 200, headers, body: JSON.stringify({ sent: true, devices: sent }) };
+  } catch (err) {
     console.error('[cash-check-response] send failed', err?.message || err);
     return { statusCode: 500, headers, body: JSON.stringify({ error: 'Push send failed' }) };
   }

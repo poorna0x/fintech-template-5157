@@ -5,12 +5,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
 const { authorizeAdminBearer } = require('./admin-auth-guard');
-const {
-  getMessaging,
-  getTechnicianFcmToken,
-  clearTechnicianFcmToken,
-  isStaleTokenError,
-} = require('./fcm-helper');
+const { getMessaging, sendToTechnicianDevices } = require('./fcm-helper');
 
 exports.handler = async (event) => {
   const corsHeaders = getCorsHeaders(event.headers.origin || event.headers.Origin);
@@ -65,40 +60,38 @@ exports.handler = async (event) => {
   });
 
   try {
-    const token = await getTechnicianFcmToken(db, technicianId);
-    if (!token) {
+    const messaging = await getMessaging(db);
+    // Every device the technician is logged in on gets the push.
+    const buildMessage = clear
+      ? (token) => ({
+          token,
+          data: { type: 'clear_notifications', ...(tag ? { tag } : {}) },
+          android: { priority: 'high' },
+        })
+      : (token) => ({
+          token,
+          notification: { title, body: message || undefined },
+          data: { type: 'job_notification' },
+          android: {
+            priority: 'high',
+            notification: {
+              channelId: 'job_alerts_v2',
+              defaultSound: true,
+              ...(color ? { color } : {}),
+              ...(tag ? { tag } : {}),
+            },
+          },
+        });
+
+    const { sent, tokens } = await sendToTechnicianDevices(db, messaging, technicianId, buildMessage);
+    if (tokens === 0) {
       return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'no_token' }) };
     }
-
-    const messaging = await getMessaging(db);
-    if (clear) {
-      await messaging.send({
-        token,
-        data: { type: 'clear_notifications', ...(tag ? { tag } : {}) },
-        android: { priority: 'high' },
-      });
-    } else {
-      await messaging.send({
-        token,
-        notification: { title, body: message || undefined },
-        data: { type: 'job_notification' },
-        android: {
-          priority: 'high',
-          notification: {
-            channelId: 'job_alerts_v2',
-            defaultSound: true,
-            ...(color ? { color } : {}),
-            ...(tag ? { tag } : {}),
-          },
-        },
-      });
-    }
-    return { statusCode: 200, headers, body: JSON.stringify({ sent: true }) };
-  } catch (err) {
-    if (isStaleTokenError(err)) {
-      await clearTechnicianFcmToken(db, technicianId);
+    if (sent === 0) {
       return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'stale_token' }) };
     }
+    return { statusCode: 200, headers, body: JSON.stringify({ sent: true, devices: sent }) };
+  } catch (err) {
     console.error('[send-tech-push] failed', err?.message || err);
     return { statusCode: 500, headers, body: JSON.stringify({ error: 'Push send failed' }) };
   }

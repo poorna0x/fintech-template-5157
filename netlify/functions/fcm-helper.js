@@ -36,23 +36,72 @@ function getMessaging(db) {
   return messagingPromise;
 }
 
-/** Fetch the technician's FCM device token (null when app not installed / no token). */
-async function getTechnicianFcmToken(db, technicianId) {
-  const { data, error } = await db
+/**
+ * All FCM device tokens for a technician (one per logged-in device).
+ * Union of the technician_push_tokens table (multi-device) and the legacy
+ * technician_live_locations.fcm_token column, deduped. Empty array when the
+ * app isn't installed anywhere.
+ */
+async function getTechnicianFcmTokens(db, technicianId) {
+  const tokens = new Set();
+
+  const { data: rows, error: tableErr } = await db
+    .from('technician_push_tokens')
+    .select('token')
+    .eq('technician_id', technicianId);
+  if (tableErr) {
+    // Table missing (add-technician-push-tokens.sql not run yet) — legacy column still works.
+    console.warn('[fcm-helper] technician_push_tokens lookup failed:', tableErr.message);
+  }
+  for (const r of rows || []) if (r.token) tokens.add(r.token);
+
+  const { data: legacy, error: legacyErr } = await db
     .from('technician_live_locations')
     .select('fcm_token')
     .eq('technician_id', technicianId)
     .maybeSingle();
-  if (error) throw new Error(`token lookup failed: ${error.message}`);
-  return data?.fcm_token || null;
+  if (legacyErr && tokens.size === 0) {
+    throw new Error(`token lookup failed: ${legacyErr.message}`);
+  }
+  if (legacy?.fcm_token) tokens.add(legacy.fcm_token);
+
+  return [...tokens];
 }
 
-/** Clear a stale token so we stop sending to it. */
-async function clearTechnicianFcmToken(db, technicianId) {
+/** Remove stale device tokens (FCM reported them dead) so we stop sending to them. */
+async function pruneTechnicianFcmTokens(db, technicianId, staleTokens) {
+  if (!staleTokens || staleTokens.length === 0) return;
+  try {
+    await db.from('technician_push_tokens').delete().in('token', staleTokens);
+  } catch {
+    /* table may not exist yet */
+  }
   await db
     .from('technician_live_locations')
     .update({ fcm_token: null })
-    .eq('technician_id', technicianId);
+    .eq('technician_id', technicianId)
+    .in('fcm_token', staleTokens);
+}
+
+/**
+ * Send one FCM message to every device of a technician. Returns the number
+ * of successful deliveries and prunes tokens FCM reports as dead.
+ * `buildMessage(token)` must return the full message object for that token.
+ */
+async function sendToTechnicianDevices(db, messaging, technicianId, buildMessage) {
+  const tokens = await getTechnicianFcmTokens(db, technicianId);
+  if (tokens.length === 0) return { sent: 0, tokens: 0 };
+
+  const results = await Promise.allSettled(tokens.map((t) => messaging.send(buildMessage(t))));
+  const stale = [];
+  let sent = 0;
+  results.forEach((r, i) => {
+    if (r.status === 'fulfilled') sent += 1;
+    else if (isStaleTokenError(r.reason)) stale.push(tokens[i]);
+    else console.error('[fcm-helper] send failed', r.reason?.message || r.reason);
+  });
+  await pruneTechnicianFcmTokens(db, technicianId, stale);
+  return { sent, tokens: tokens.length };
 }
 
 function isStaleTokenError(err) {
@@ -60,4 +109,10 @@ function isStaleTokenError(err) {
   return String(code).includes('registration-token-not-registered');
 }
 
-module.exports = { getMessaging, getTechnicianFcmToken, clearTechnicianFcmToken, isStaleTokenError };
+module.exports = {
+  getMessaging,
+  getTechnicianFcmTokens,
+  pruneTechnicianFcmTokens,
+  sendToTechnicianDevices,
+  isStaleTokenError,
+};

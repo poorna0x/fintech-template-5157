@@ -34,7 +34,15 @@ function loadEnvLocal() {
   const admin = require('firebase-admin');
   admin.initializeApp({ credential: admin.credential.cert(JSON.parse(secret.value)) });
 
-  const { data: rows, error } = await db
+  // Multi-device table + legacy single-token column, deduped.
+  const byToken = new Map();
+  const { data: deviceRows } = await db
+    .from('technician_push_tokens')
+    .select('technician_id,token');
+  for (const r of deviceRows || []) {
+    if (r.token) byToken.set(r.token, r.technician_id);
+  }
+  const { data: legacyRows, error } = await db
     .from('technician_live_locations')
     .select('technician_id,fcm_token')
     .not('fcm_token', 'is', null);
@@ -42,14 +50,18 @@ function loadEnvLocal() {
     console.error('Token lookup failed:', error.message);
     process.exit(1);
   }
+  for (const r of legacyRows || []) {
+    if (r.fcm_token && !byToken.has(r.fcm_token)) byToken.set(r.fcm_token, r.technician_id);
+  }
+  const rows = [...byToken.entries()].map(([token, technician_id]) => ({ fcm_token: token, technician_id }));
 
   // Names to make the output readable.
-  const ids = (rows || []).map((r) => r.technician_id);
+  const ids = [...new Set(rows.map((r) => r.technician_id))];
   const { data: techs } = await db.from('technicians').select('id,full_name').in('id', ids);
   const nameById = new Map((techs || []).map((t) => [t.id, t.full_name]));
 
   console.log(`Found ${rows.length} technician device token(s)`);
-  for (const row of rows || []) {
+  for (const row of rows) {
     const name = nameById.get(row.technician_id) || row.technician_id;
     try {
       await admin.messaging().send({

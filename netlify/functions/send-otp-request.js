@@ -7,12 +7,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
 const { authorizeAdminBearer } = require('./admin-auth-guard');
-const {
-  getMessaging,
-  getTechnicianFcmToken,
-  clearTechnicianFcmToken,
-  isStaleTokenError,
-} = require('./fcm-helper');
+const { getMessaging, sendToTechnicianDevices } = require('./fcm-helper');
 
 exports.handler = async (event) => {
   const corsHeaders = getCorsHeaders(event.headers.origin || event.headers.Origin);
@@ -57,13 +52,9 @@ exports.handler = async (event) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  const token = await getTechnicianFcmToken(db, technicianId);
-  if (!token) {
-    return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'no_token' }) };
-  }
-
   // One-time secret: the notification reply echoes it back to submit-tech-otp
-  // as proof it came from the device that received this push.
+  // as proof it came from a device that received this push. All the
+  // technician's devices get the same nonce; whichever replies first wins.
   const nonce = require('crypto').randomUUID();
   const { data: updated, error: nonceErr } = await db
     .from('technician_otp_requests')
@@ -80,7 +71,7 @@ exports.handler = async (event) => {
 
   try {
     const messaging = await getMessaging(db);
-    await messaging.send({
+    const { sent, tokens } = await sendToTechnicianDevices(db, messaging, technicianId, (token) => ({
       token,
       data: {
         type: 'otp_request',
@@ -90,13 +81,15 @@ exports.handler = async (event) => {
         submitUrl: `${siteUrl}/.netlify/functions/submit-tech-otp`,
       },
       android: { priority: 'high' },
-    });
-    return { statusCode: 200, headers, body: JSON.stringify({ sent: true }) };
-  } catch (err) {
-    if (isStaleTokenError(err)) {
-      await clearTechnicianFcmToken(db, technicianId);
+    }));
+    if (tokens === 0) {
+      return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'no_token' }) };
+    }
+    if (sent === 0) {
       return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'stale_token' }) };
     }
+    return { statusCode: 200, headers, body: JSON.stringify({ sent: true, devices: sent }) };
+  } catch (err) {
     console.error('[send-otp-request] send failed', err?.message || err);
     return { statusCode: 500, headers, body: JSON.stringify({ error: 'Push send failed' }) };
   }
