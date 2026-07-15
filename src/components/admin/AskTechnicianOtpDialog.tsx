@@ -60,6 +60,9 @@ const AskTechnicianOtpDialog = ({
   const ask = async (jobRow: Job, reAsk: boolean) => {
     setStarting(true);
     setFailed(false);
+    // Re-asking: stop showing the previously stored code so the dialog
+    // clearly waits for the fresh one instead of displaying the old code.
+    if (reAsk) setStoredOtp(null);
     try {
       const technicianId =
         (jobRow as any).assigned_technician_id || (jobRow as any).assignedTechnicianId;

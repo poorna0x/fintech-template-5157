@@ -3056,12 +3056,26 @@ const TechnicianDashboard = () => {
       markJobAsSeen(job.id);
 
       // If the customer's OTP was collected in the Start Work dialog, store it in
-      // the same requirements JSON slot the completion flow uses — one write, no
-      // extra table, and the admin Completed section keeps showing it later.
+      // the same requirements JSON slot the completion flow uses — no extra table,
+      // and the admin Completed section keeps showing it later. Re-fetch just the
+      // requirements column first (tiny select, OTP jobs only) so we merge into
+      // the latest server state instead of clobbering admin edits made after the
+      // job list was loaded.
       let updatedRequirements: any[] | undefined;
       if (customerOtp && /^\d{4}$/.test(customerOtp)) {
+        let baseRequirements: any[] | null = null;
+        try {
+          const { data: freshJob } = await supabase
+            .from('jobs')
+            .select('requirements')
+            .eq('id', job.id)
+            .maybeSingle();
+          if (freshJob) baseRequirements = parseJobRequirements((freshJob as any).requirements);
+        } catch {
+          // Offline/fetch failure: fall back to the local copy below.
+        }
         updatedRequirements = applyOtpToRequirements(
-          parseJobRequirements((job as any).requirements ?? job.requirements),
+          baseRequirements ?? parseJobRequirements((job as any).requirements ?? job.requirements),
           customerOtp
         );
       }
