@@ -17,8 +17,11 @@ import { ChevronLeft, ChevronRight, MapPin, Camera, Upload, Check, Phone, Mail, 
 import {
   createBookingCustomer,
   getBookingCustomerByPhone,
+  getBookingCustomerDetails,
   updateBookingCustomer,
+  warmBookingCustomerLookup,
   type BookingAltchaContext,
+  type BookingCustomerDetails,
 } from '@/lib/bookingCustomer';
 import {
   pushWebsiteBookingIntent,
@@ -141,12 +144,38 @@ const Booking: React.FC = () => {
   }, [otpSent, otpVerified, otpResendAt]);
   const otpResendRemaining = Math.max(0, Math.ceil((otpResendAt - otpNow) / 1000));
 
+  // Returning-customer fast flow: phone found on step 1 → offer OTP verify →
+  // show saved model/location → optionally skip the Location step.
+  // Security: the server reveals saved details ONLY with a Firebase token whose
+  // phone matches, so the pre-OTP prompt leaks nothing beyond "number exists"
+  // (already rate-limited + ALTCHA-gated server-side).
+  const [returningStage, setReturningStage] = useState<'hidden' | 'ask' | 'otp' | 'details'>('hidden');
+  const [returningDetails, setReturningDetails] = useState<BookingCustomerDetails | null>(null);
+  const [returningChecking, setReturningChecking] = useState(false);
+  const [returningDetailsLoading, setReturningDetailsLoading] = useState(false);
+  const [useSavedLocation, setUseSavedLocation] = useState(false);
+  // phoneNorm -> found (avoids repeat lookups + repeat prompts per phone)
+  const returningCheckedRef = useRef<Map<string, boolean>>(new Map());
+  const returningDismissedRef = useRef<Set<string>>(new Set());
+
+  const resetReturningState = () => {
+    setReturningStage('hidden');
+    setReturningDetails(null);
+    setReturningDetailsLoading(false);
+    setUseSavedLocation(false);
+  };
+
   // Pre-warm Firebase + reCAPTCHA on the Review step so the first send is fast.
   useEffect(() => {
-    if (OTP_ENABLED && currentStep === 5 && !otpSent && !otpVerified) {
+    if (
+      OTP_ENABLED &&
+      (currentStep === 5 || returningStage === 'ask') &&
+      !otpSent &&
+      !otpVerified
+    ) {
       void prewarmBookingOtp();
     }
-  }, [currentStep, otpSent, otpVerified]);
+  }, [currentStep, returningStage, otpSent, otpVerified]);
 
   const resetOtpState = () => {
     setOtpSent(false);
@@ -222,6 +251,7 @@ const Booking: React.FC = () => {
     imageUploadCacheRef.current.clear();
     setImageUploadInfo({ uploading: 0, failed: 0 });
     resetOtpState();
+    resetReturningState();
   };
 
   const [formData, setFormData] = useState<FormData>({
@@ -484,6 +514,7 @@ const Booking: React.FC = () => {
       const prevNorm = normalizePhoneNumber(formData.phone);
       if (prevNorm && newNorm !== prevNorm) {
         resetOtpState();
+        resetReturningState();
       }
     }
     
@@ -878,10 +909,52 @@ const Booking: React.FC = () => {
     }
   }, [currentStep, isCaptchaVerified, backgroundVerificationFailed]);
 
-  const nextStep = () => {
+  /**
+   * On step 1 Next: check (once per phone) whether this number already has a
+   * profile. If yes, open the returning-customer prompt instead of advancing.
+   * Returns true when the prompt was shown. Fails open to the normal flow —
+   * a failed check never blocks booking and never reveals anything.
+   */
+  const maybeShowReturningPrompt = async (): Promise<boolean> => {
+    if (!OTP_ENABLED || !altchaLoginToken) return false;
+    if (otpVerified || useSavedLocation || returningChecking) return false;
+    const norm = normalizePhoneNumber(formData.phone);
+    if (returningDismissedRef.current.has(norm)) return false;
+    const cached = returningCheckedRef.current.get(norm);
+    if (cached === false) return false;
+    if (cached === true) {
+      setReturningStage('ask');
+      return true;
+    }
+    setReturningChecking(true);
+    try {
+      const { data } = await getBookingCustomerByPhone(formData.phone, {
+        altchaLoginToken,
+        altchaPayload: altchaPayload || undefined,
+      });
+      const found = Boolean(data);
+      returningCheckedRef.current.set(norm, found);
+      if (found) {
+        setReturningStage('ask');
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    } finally {
+      setReturningChecking(false);
+    }
+  };
+
+  const nextStep = async () => {
     if (currentStep < totalSteps) {
       if (canProceed()) {
-        setCurrentStep(currentStep + 1);
+        if (currentStep === 1) {
+          const promptShown = await maybeShowReturningPrompt();
+          if (promptShown) return;
+        }
+        // Saved location in use → Location step is skipped (2 → 4).
+        setCurrentStep(currentStep === 2 && useSavedLocation ? 4 : currentStep + 1);
         setShowValidation(false);
       } else {
         // Show validation and move to first missing field
@@ -924,7 +997,7 @@ const Booking: React.FC = () => {
 
   const prevStep = () => {
     if (currentStep > 1) {
-      setCurrentStep(currentStep - 1);
+      setCurrentStep(currentStep === 4 && useSavedLocation ? 2 : currentStep - 1);
     }
   };
 
@@ -1274,6 +1347,120 @@ const Booking: React.FC = () => {
       /* ignore */
     }
   }, []);
+
+  // --- Returning-customer early OTP (step 1 dialog) -------------------------
+  const handleReturningSendOtp = async () => {
+    if (!validatePhoneNumber(formData.phone)) {
+      setOtpError('Enter a valid 10-digit mobile number.');
+      return;
+    }
+    const rate = checkOtpRateLimit(formData.phone);
+    if (!rate.allowed) {
+      setOtpError(rate.reason || 'Please wait before requesting another code.');
+      if (rate.waitMs && rate.waitMs < 5 * 60_000) {
+        setOtpResendAt(Date.now() + rate.waitMs);
+      }
+      return;
+    }
+    setOtpSending(true);
+    setOtpError('');
+    const res = await sendBookingOtp(formData.phone);
+    setOtpSending(false);
+    if (!res.ok) {
+      setOtpError(res.error || 'Could not send verification code.');
+      return;
+    }
+    setOtpSent(true);
+    setOtpCode('');
+    setOtpResendAt(Date.now() + 60_000);
+    setReturningStage('otp');
+    // Warm firebase-admin on the lookup function while the user reads the SMS.
+    warmBookingCustomerLookup();
+  };
+
+  const handleReturningVerifyOtp = async () => {
+    if (otpVerifying) return;
+    setOtpVerifying(true);
+    setOtpError('');
+    const res = await verifyBookingOtp(otpCode);
+    if (!res.verified || !res.phoneToken) {
+      setOtpVerifying(false);
+      setOtpError(res.error || 'Invalid code. Please try again.');
+      return;
+    }
+    // Keep the token — it also skips the Review-step OTP (no second SMS).
+    setOtpVerified(true);
+    setPhoneToken(res.phoneToken);
+    phoneTokenRef.current = res.phoneToken;
+    setReturningDetailsLoading(true);
+    try {
+      const { data } = await getBookingCustomerDetails(formData.phone, {
+        altchaLoginToken,
+        altchaPayload: altchaPayload || undefined,
+        phoneToken: res.phoneToken,
+      });
+      if (data) {
+        setReturningDetails(data);
+        setReturningStage('details');
+      } else {
+        // Verified but no saved details — continue the normal flow.
+        toast.success('Phone verified!');
+        setReturningStage('hidden');
+        setCurrentStep(2);
+        setShowValidation(false);
+      }
+    } catch {
+      toast.success('Phone verified!');
+      setReturningStage('hidden');
+      setCurrentStep(2);
+      setShowValidation(false);
+    } finally {
+      setReturningDetailsLoading(false);
+      setOtpVerifying(false);
+    }
+  };
+
+  /** "Yes — same model & location": prefill + skip the Location step. */
+  const applySavedDetails = () => {
+    const d = returningDetails;
+    if (!d) return;
+    const lat = d.location.latitude;
+    const lng = d.location.longitude;
+    const hasCoords =
+      typeof lat === 'number' && typeof lng === 'number' && (lat !== 0 || lng !== 0);
+    const savedAddressText = d.location.formattedAddress || d.address.street || '';
+    setFormData(prev => ({
+      ...prev,
+      fullName: prev.fullName || d.fullName,
+      email: prev.email || d.email,
+      serviceType: d.serviceType === 'SOFTENER' ? 'SOFTENER' : 'RO',
+      service: '',
+      customService: '',
+      brandName: d.brand || prev.brandName,
+      modelName: d.model || prev.modelName,
+      // Saved street already includes the house/flat detail from last time.
+      address: savedAddressText || prev.address,
+      addressDetails: '',
+      coordinates: hasCoords ? { lat: lat as number, lng: lng as number } : prev.coordinates,
+      googleMapsLink: d.location.googleLocation || prev.googleMapsLink,
+    }));
+    setUseSavedLocation(hasCoords || Boolean(savedAddressText));
+    setReturningStage('hidden');
+    setCurrentStep(2);
+    setShowValidation(false);
+    toast.success('Saved model & location applied — just pick the service.');
+  };
+
+  /** "No / continue normally" from any stage of the returning dialog. */
+  const dismissReturningPrompt = (advance: boolean) => {
+    returningDismissedRef.current.add(normalizePhoneNumber(formData.phone));
+    setReturningStage('hidden');
+    setOtpError('');
+    if (advance) {
+      setCurrentStep(2);
+      setShowValidation(false);
+    }
+  };
 
   const handleSendOtp = async () => {
     if (!acceptLegal) {
@@ -2053,7 +2240,29 @@ const Booking: React.FC = () => {
               <h3 className="text-xl font-semibold text-foreground">Service Details</h3>
               <p className="text-muted-foreground">What service do you need?</p>
             </div>
-            
+
+            {useSavedLocation && (
+              <div className="flex items-start gap-2.5 rounded-lg border border-green-200 bg-green-50 p-3 dark:border-green-800/60 dark:bg-green-950/40">
+                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-green-600 dark:text-green-400" aria-hidden="true" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs sm:text-sm leading-relaxed text-green-800 dark:text-green-200">
+                    <span className="font-medium">Using your saved location:</span>{' '}
+                    <span className="break-words">{formData.address}</span>
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUseSavedLocation(false);
+                      toast.info('Okay — we\'ll ask for the service location.');
+                    }}
+                    className="mt-1 text-xs font-medium text-green-700 dark:text-green-300 underline underline-offset-2 hover:no-underline"
+                  >
+                    Use a different location
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-4">
               <div>
                 <Label htmlFor="serviceType">Service Type *</Label>
@@ -2968,7 +3177,7 @@ const Booking: React.FC = () => {
 
             {OTP_ENABLED && (
               <div className="rounded-xl border border-border bg-muted/30 p-4 sm:p-5 space-y-4">
-                <div id={FIREBASE_RECAPTCHA_CONTAINER_ID} className="sr-only" aria-hidden="true" />
+                {/* reCAPTCHA container is rendered globally (needed on step 1 too) */}
                 <div className="flex items-start gap-3">
                   <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
                     otpVerified ? 'bg-green-100 dark:bg-green-900/40' : 'bg-sky-100 dark:bg-sky-500/15'
@@ -3510,6 +3719,205 @@ const Booking: React.FC = () => {
               />
             )}
 
+            {/* Invisible reCAPTCHA host — global so OTP can be sent from any step
+                (returning-customer dialog on step 1 and the Review step). */}
+            {OTP_ENABLED && (
+              <div id={FIREBASE_RECAPTCHA_CONTAINER_ID} className="sr-only" aria-hidden="true" />
+            )}
+
+            {/* Returning-customer fast flow dialog */}
+            <Dialog
+              open={returningStage !== 'hidden'}
+              onOpenChange={(open) => {
+                if (!open && !otpVerifying && !returningDetailsLoading) {
+                  dismissReturningPrompt(false);
+                }
+              }}
+            >
+              <DialogContent className="sm:max-w-md">
+                {returningStage === 'ask' && (
+                  <>
+                    <DialogHeader>
+                      <DialogTitle className="flex items-center gap-2 text-lg">
+                        <span>👋</span> Welcome back!
+                      </DialogTitle>
+                      <DialogDescription asChild>
+                        <div className="text-foreground/90 leading-relaxed pt-1 space-y-2">
+                          <p>
+                            We found a saved profile for{' '}
+                            <span className="font-semibold text-foreground">+91 {formData.phone}</span>.
+                          </p>
+                          <p>
+                            Verify it&apos;s you with a quick OTP and we&apos;ll reuse your saved
+                            purifier model and service location — no retyping.
+                          </p>
+                        </div>
+                      </DialogDescription>
+                    </DialogHeader>
+                    {otpError && (
+                      <p className="text-sm text-destructive" role="alert">{otpError}</p>
+                    )}
+                    <div className="flex flex-col gap-2 mt-2">
+                      <Button onClick={handleReturningSendOtp} disabled={otpSending}>
+                        {otpSending ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Sending code…
+                          </>
+                        ) : (
+                          'Verify with OTP'
+                        )}
+                      </Button>
+                      <Button variant="outline" onClick={() => dismissReturningPrompt(true)}>
+                        Continue without verifying
+                      </Button>
+                    </div>
+                  </>
+                )}
+
+                {returningStage === 'otp' && (
+                  <>
+                    <DialogHeader>
+                      <DialogTitle className="flex items-center gap-2 text-lg">
+                        <Phone className="w-5 h-5 text-sky-600 dark:text-sky-400" />
+                        Enter the code
+                      </DialogTitle>
+                      <DialogDescription>
+                        We sent a 6-digit code to +91 {formData.phone}
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-3">
+                      <InputOTP
+                        maxLength={6}
+                        value={otpCode}
+                        disabled={otpVerifying || returningDetailsLoading}
+                        inputMode="numeric"
+                        pattern={REGEXP_ONLY_DIGITS}
+                        autoComplete="one-time-code"
+                        autoFocus
+                        onChange={(v) => {
+                          setOtpCode(v);
+                          setOtpError('');
+                        }}
+                        onComplete={() => handleReturningVerifyOtp()}
+                        containerClassName="w-full"
+                      >
+                        <InputOTPGroup className="w-full justify-between gap-1.5 sm:gap-2">
+                          {[0, 1, 2, 3, 4, 5].map((i) => (
+                            <InputOTPSlot
+                              key={i}
+                              index={i}
+                              className="h-12 flex-1 rounded-md border-l bg-background text-lg font-semibold shadow-sm"
+                            />
+                          ))}
+                        </InputOTPGroup>
+                      </InputOTP>
+                      <div className="flex items-center justify-between gap-2 text-xs sm:text-sm">
+                        <span className="text-muted-foreground">Didn&apos;t get it?</span>
+                        <button
+                          type="button"
+                          disabled={otpSending || otpResendRemaining > 0}
+                          onClick={handleReturningSendOtp}
+                          className="font-medium text-sky-600 dark:text-sky-400 underline-offset-2 hover:underline disabled:opacity-50 disabled:no-underline"
+                        >
+                          {otpResendRemaining > 0
+                            ? `Resend in ${otpResendRemaining}s`
+                            : otpSending
+                              ? 'Sending…'
+                              : 'Resend code'}
+                        </button>
+                      </div>
+                      {otpError && (
+                        <p className="text-sm text-destructive" role="alert">{otpError}</p>
+                      )}
+                      {(otpVerifying || returningDetailsLoading) && (
+                        <p className="text-sm text-muted-foreground inline-flex items-center gap-2">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          {returningDetailsLoading ? 'Fetching your saved details…' : 'Verifying…'}
+                        </p>
+                      )}
+                      <Button variant="outline" className="w-full" onClick={() => dismissReturningPrompt(true)}>
+                        Skip and continue normally
+                      </Button>
+                    </div>
+                  </>
+                )}
+
+                {returningStage === 'details' && returningDetails && (
+                  <>
+                    <DialogHeader>
+                      <DialogTitle className="flex items-center gap-2 text-lg">
+                        <Check className="w-5 h-5 text-green-600 dark:text-green-400" />
+                        Phone verified
+                      </DialogTitle>
+                      <DialogDescription>
+                        Here&apos;s what we have on file for you:
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="rounded-lg border border-border bg-muted/30 divide-y divide-border text-sm">
+                      <div className="flex items-start gap-3 p-3">
+                        <Wrench className="w-4 h-4 mt-0.5 shrink-0 text-sky-600 dark:text-sky-400" />
+                        <div className="min-w-0">
+                          <p className="text-xs text-muted-foreground">Purifier</p>
+                          <p className="font-medium text-foreground break-words">
+                            {[returningDetails.brand, returningDetails.model].filter(Boolean).join(' ') || 'Not on file'}
+                          </p>
+                        </div>
+                      </div>
+                      {returningDetails.lastServiceDate && (
+                        <div className="flex items-start gap-3 p-3">
+                          <Clock className="w-4 h-4 mt-0.5 shrink-0 text-sky-600 dark:text-sky-400" />
+                          <div className="min-w-0">
+                            <p className="text-xs text-muted-foreground">Last service</p>
+                            <p className="font-medium text-foreground">
+                              {new Date(returningDetails.lastServiceDate).toLocaleDateString('en-IN', {
+                                day: 'numeric',
+                                month: 'short',
+                                year: 'numeric',
+                              })}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                      <div className="flex items-start gap-3 p-3">
+                        <MapPin className="w-4 h-4 mt-0.5 shrink-0 text-sky-600 dark:text-sky-400" />
+                        <div className="min-w-0">
+                          <p className="text-xs text-muted-foreground">Service location</p>
+                          <p className="font-medium text-foreground break-words">
+                            {returningDetails.location.formattedAddress ||
+                              returningDetails.address.street ||
+                              'Not on file'}
+                          </p>
+                          {returningDetails.location.googleLocation && (
+                            <a
+                              href={returningDetails.location.googleLocation}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-xs text-sky-600 dark:text-sky-400 hover:underline mt-1"
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                              View on map
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <p className="text-sm text-foreground/90">
+                      Book service for this purifier at this location?
+                    </p>
+                    <div className="flex flex-col gap-2">
+                      <Button onClick={applySavedDetails}>
+                        Yes — use these details
+                      </Button>
+                      <Button variant="outline" onClick={() => dismissReturningPrompt(true)}>
+                        No, enter new details
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </DialogContent>
+            </Dialog>
+
             {/* Form Content */}
             <BehavioralTracker>
               <Card className="mb-6">
@@ -3539,14 +3947,24 @@ const Booking: React.FC = () => {
               {currentStep < totalSteps ? (
                 <Button
                   onClick={nextStep}
+                  disabled={returningChecking}
                   className={`flex items-center hover:scale-105 transition-transform ${
                     showValidation && hasMissingFields() 
                       ? 'border-2 border-black dark:border-white' 
                       : ''
                   }`}
                 >
-                  Next
-                  <ChevronRight className="w-4 h-4 ml-1" />
+                  {returningChecking ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                      Checking…
+                    </>
+                  ) : (
+                    <>
+                      Next
+                      <ChevronRight className="w-4 h-4 ml-1" />
+                    </>
+                  )}
                 </Button>
               ) : OTP_ENABLED && !otpSent && !otpVerified ? (
                 <Button
