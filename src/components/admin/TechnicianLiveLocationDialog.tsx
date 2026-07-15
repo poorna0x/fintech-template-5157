@@ -37,6 +37,9 @@ type TechnicianLiveLocationDialogProps = {
   technicians: Technician[];
 };
 
+/** Stop waiting for a fresh fix and fall back to the last known location. */
+const FRESH_FIX_TIMEOUT_MS = 60_000;
+
 function agoLabel(iso: string): string {
   const secs = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
   if (secs < 60) return `${secs}s ago`;
@@ -56,10 +59,17 @@ const TechnicianLiveLocationDialog = ({
   const [row, setRow] = useState<LiveLocationRow | null>(null);
   const [loading, setLoading] = useState(false);
   const [noRow, setNoRow] = useState(false);
+  // True while we hide the stale location behind a loader, waiting for the
+  // phone to upload a fresh fix after our request.
+  const [waitingFresh, setWaitingFresh] = useState(false);
+  // The phone didn't respond in time — we're showing the last known location.
+  const [timedOut, setTimedOut] = useState(false);
   // Ticks every 5s so the "updated Xs ago" label stays fresh.
   const [, setNowTick] = useState(0);
 
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const requestedAtRef = useRef(0);
+  const freshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const sendPing = useCallback(async (techId: string) => {
     // DB stamp: picked up over realtime when the app is awake.
@@ -84,6 +94,10 @@ const TechnicianLiveLocationDialog = ({
   }, []);
 
   const cleanup = useCallback(() => {
+    if (freshTimeoutRef.current) {
+      clearTimeout(freshTimeoutRef.current);
+      freshTimeoutRef.current = null;
+    }
     if (channelRef.current) {
       void supabase.removeChannel(channelRef.current);
       channelRef.current = null;
@@ -96,6 +110,8 @@ const TechnicianLiveLocationDialog = ({
       setLoading(true);
       setRow(null);
       setNoRow(false);
+      setWaitingFresh(false);
+      setTimedOut(false);
 
       const { data } = await supabase
         .from('technician_live_locations')
@@ -110,8 +126,18 @@ const TechnicianLiveLocationDialog = ({
       }
       setRow(data as LiveLocationRow);
 
-      // One request: the app sends its current location once and stops.
-      void sendPing(techId);
+      if ((data as LiveLocationRow).is_tracking) {
+        // Hide the stale location behind a loader until the fresh fix lands.
+        requestedAtRef.current = Date.now();
+        setWaitingFresh(true);
+        freshTimeoutRef.current = setTimeout(() => {
+          setWaitingFresh(false);
+          setTimedOut(true);
+        }, FRESH_FIX_TIMEOUT_MS);
+
+        // One request: the app sends its current location once and stops.
+        void sendPing(techId);
+      }
 
       channelRef.current = supabase
         .channel(`admin-live-loc-${techId}`)
@@ -125,7 +151,22 @@ const TechnicianLiveLocationDialog = ({
           },
           (payload) => {
             const next = payload.new as LiveLocationRow;
-            if (next) setRow(next);
+            if (!next) return;
+            setRow(next);
+            // Only a genuinely fresh upload ends the loader — our own
+            // ping_requested_at stamp also echoes back here with the old
+            // coordinates and old updated_at, so it fails this check.
+            const isFresh =
+              next.latitude != null &&
+              new Date(next.updated_at).getTime() >= requestedAtRef.current - 15_000;
+            if (isFresh) {
+              if (freshTimeoutRef.current) {
+                clearTimeout(freshTimeoutRef.current);
+                freshTimeoutRef.current = null;
+              }
+              setWaitingFresh(false);
+              setTimedOut(false);
+            }
           }
         )
         .subscribe();
@@ -138,6 +179,8 @@ const TechnicianLiveLocationDialog = ({
       cleanup();
       setRow(null);
       setNoRow(false);
+      setWaitingFresh(false);
+      setTimedOut(false);
       return;
     }
     if (technicianId) void startWatching(technicianId);
@@ -155,11 +198,6 @@ const TechnicianLiveLocationDialog = ({
   const mapSrc = hasCoords
     ? `https://maps.google.com/maps?q=${row.latitude},${row.longitude}&z=16&output=embed`
     : null;
-  // Sharing is on but nothing fresh in the last 2 min — the app is probably asleep.
-  const looksAsleep =
-    row != null &&
-    row.is_tracking &&
-    Date.now() - new Date(row.updated_at).getTime() > 120_000;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -192,10 +230,10 @@ const TechnicianLiveLocationDialog = ({
             </Select>
           </div>
 
-          {loading && (
-            <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Checking…
+          {(loading || waitingFresh) && (
+            <div className="flex flex-col items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              {loading ? 'Checking…' : "Getting the technician's current location…"}
             </div>
           )}
 
@@ -206,7 +244,7 @@ const TechnicianLiveLocationDialog = ({
             </div>
           )}
 
-          {!loading && row && (
+          {!loading && !waitingFresh && row && (
             <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-2 text-sm">
                 <Badge
@@ -231,18 +269,17 @@ const TechnicianLiveLocationDialog = ({
                 </p>
               )}
 
-              {looksAsleep && (
+              {timedOut && (
                 <p className="text-xs text-amber-700">
-                  Waiting for the technician's phone to send a fresh location… If this doesn't
-                  update in a minute, their phone has paused the app — tap Refresh or try again
-                  after they open the app.
+                  The technician's phone didn't respond — showing the last known location.
+                  Tap Refresh to try again, or ask them to open the app.
                 </p>
               )}
 
               {!hasCoords && row.is_tracking && (
                 <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                  Sharing is on but no location has been received yet. It will appear here
-                  automatically once the phone responds.
+                  No location has been received from this technician's phone yet. Tap Refresh
+                  to request it again.
                 </div>
               )}
 
