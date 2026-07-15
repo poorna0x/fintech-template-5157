@@ -1,6 +1,7 @@
 // Scheduled: every day at 10:10 PM IST (16:40 UTC — see netlify.toml).
 // Reminds technicians who completed jobs today to log every part they used,
-// so inventory and job costs stay accurate.
+// so inventory and job costs stay accurate. Admins get a companion push so
+// they know to double-check the day's parts entries.
 
 const { createClient } = require('@supabase/supabase-js');
 const { getMessaging, pruneTechnicianFcmTokens, isStaleTokenError } = require('./fcm-helper');
@@ -94,6 +95,42 @@ exports.handler = async () => {
     await pruneTechnicianFcmTokens(db, technicianId, stale);
   }
 
-  console.log(`[parts-reminder] sent ${sent} reminder(s) across ${technicianIds.length} technician(s)`);
-  return { statusCode: 200, body: JSON.stringify({ sent }) };
+  // Companion push to every admin phone: how many jobs finished today, so
+  // they know to verify the parts were actually logged.
+  let adminSent = 0;
+  const { data: adminTokenRows } = await db.from('admin_push_tokens').select('token');
+  const adminTokens = (adminTokenRows || []).map((r) => r.token).filter(Boolean);
+  if (adminTokens.length > 0) {
+    const jobCount = (doneToday || []).length;
+    const res = await messaging.sendEachForMulticast({
+      tokens: adminTokens,
+      notification: {
+        title: 'Check parts entries',
+        body: `${jobCount} job${jobCount === 1 ? '' : 's'} completed today by ${technicianIds.length} technician${technicianIds.length === 1 ? '' : 's'} — verify all used parts are logged.`,
+      },
+      data: { type: 'job_notification' },
+      android: {
+        priority: 'high',
+        notification: {
+          channelId: 'job_alerts_v2',
+          defaultSound: true,
+          color: '#F59E0B',
+          tag: 'parts-reminder-admin',
+        },
+      },
+    });
+    adminSent = res.successCount;
+    const staleAdmin = [];
+    res.responses.forEach((r, i) => {
+      if (!r.success && isStaleTokenError(r.error)) staleAdmin.push(adminTokens[i]);
+    });
+    if (staleAdmin.length > 0) {
+      await db.from('admin_push_tokens').delete().in('token', staleAdmin);
+    }
+  }
+
+  console.log(
+    `[parts-reminder] sent ${sent} technician reminder(s) across ${technicianIds.length} technician(s), ${adminSent} admin push(es)`
+  );
+  return { statusCode: 200, body: JSON.stringify({ sent, adminSent }) };
 };
