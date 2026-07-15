@@ -110,6 +110,7 @@ import {
 } from '@/lib/adminFollowUpSubmit';
 import { saveAdminJobAssignment } from '@/lib/adminSaveJobAssignment';
 import { appendJobToTechnicianVisitOrder } from '@/lib/adminVisitOrder';
+import { jobAssignPushText, notifyTechnicianJobPush } from '@/lib/adminTechPushNotify';
 import {
   getDefaultAdminMoveToOngoingSchedule,
   performAdminMoveToOngoing,
@@ -2988,6 +2989,14 @@ const AdminDashboard = () => {
           (newJob as any).visit_order = visitOrder;
           (newJob as any).visitOrder = visitOrder;
         }
+        notifyTechnicianJobPush({
+          technicianId: newJobFormData.assigned_technician_id,
+          ...jobAssignPushText({
+            jobNumber: (newJob as any).job_number,
+            customerName:
+              (selectedCustomerForJob as any)?.full_name || selectedCustomerForJob?.fullName,
+          }),
+        });
       }
 
       // Add to local state

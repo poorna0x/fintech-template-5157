@@ -1240,6 +1240,22 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
               } catch (visitOrderErr) {
                 console.warn('Visit order append skipped:', visitOrderErr);
               }
+
+              try {
+                const { jobAssignPushText, notifyTechnicianJobPush } = await import(
+                  '@/lib/adminTechPushNotify'
+                );
+                notifyTechnicianJobPush({
+                  technicianId: step5JobData.assigned_technician_id,
+                  ...jobAssignPushText({
+                    jobNumber: (newJob as any).job_number || (newJob as any).jobNumber,
+                    customerName:
+                      (newCustomer as any).full_name || (newCustomer as any).fullName,
+                  }),
+                });
+              } catch {
+                // best-effort
+              }
             }
             
             if (step5JobData.assigned_technician_id) {

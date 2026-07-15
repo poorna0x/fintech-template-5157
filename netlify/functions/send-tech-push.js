@@ -1,11 +1,16 @@
-// Wake a technician's Android app for a live-location request.
-// Admin-only. Sends a silent, high-priority FCM data message so the app can
-// start its GPS watcher even when Android has frozen it in the background.
-//
+// Send a visible push notification to a technician's Android app.
+// Admin-only. Used for job assignment/reassignment alerts — the system tray
+// shows the notification even when the app is closed.
+
 const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
 const { authorizeAdminBearer } = require('./admin-auth-guard');
-const { getMessaging, isStaleTokenError } = require('./fcm-helper');
+const {
+  getMessaging,
+  getTechnicianFcmToken,
+  clearTechnicianFcmToken,
+  isStaleTokenError,
+} = require('./fcm-helper');
 
 exports.handler = async (event) => {
   const corsHeaders = getCorsHeaders(event.headers.origin || event.headers.Origin);
@@ -34,8 +39,10 @@ exports.handler = async (event) => {
   }
 
   const technicianId = String(body.technicianId || '').trim();
-  if (!technicianId) {
-    return { statusCode: 400, headers, body: JSON.stringify({ error: 'technicianId required' }) };
+  const title = String(body.title || '').trim().slice(0, 120);
+  const message = String(body.body || '').trim().slice(0, 300);
+  if (!technicianId || !title) {
+    return { statusCode: 400, headers, body: JSON.stringify({ error: 'technicianId and title required' }) };
   }
 
   const supabaseUrl = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
@@ -48,41 +55,29 @@ exports.handler = async (event) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  const { data: row, error: rowErr } = await db
-    .from('technician_live_locations')
-    .select('fcm_token,is_tracking')
-    .eq('technician_id', technicianId)
-    .maybeSingle();
-
-  if (rowErr) {
-    console.error('[send-location-ping] lookup failed', rowErr.message);
-    return { statusCode: 500, headers, body: JSON.stringify({ error: 'Lookup failed' }) };
-  }
-  if (!row) {
-    return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'no_row' }) };
-  }
-  if (!row.fcm_token) {
-    return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'no_token' }) };
-  }
-
   try {
+    const token = await getTechnicianFcmToken(db, technicianId);
+    if (!token) {
+      return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'no_token' }) };
+    }
+
     const messaging = await getMessaging(db);
     await messaging.send({
-      token: row.fcm_token,
-      data: { type: 'location_request' },
-      android: { priority: 'high' },
+      token,
+      notification: { title, body: message || undefined },
+      data: { type: 'job_notification' },
+      android: {
+        priority: 'high',
+        notification: { channelId: 'job_alerts', defaultSound: true },
+      },
     });
     return { statusCode: 200, headers, body: JSON.stringify({ sent: true }) };
   } catch (err) {
-    // Stale/uninstalled token — clear it so we stop trying.
     if (isStaleTokenError(err)) {
-      await db
-        .from('technician_live_locations')
-        .update({ fcm_token: null })
-        .eq('technician_id', technicianId);
+      await clearTechnicianFcmToken(db, technicianId);
       return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'stale_token' }) };
     }
-    console.error('[send-location-ping] send failed', err?.message || err);
+    console.error('[send-tech-push] failed', err?.message || err);
     return { statusCode: 500, headers, body: JSON.stringify({ error: 'Push send failed' }) };
   }
 };

@@ -18,9 +18,9 @@
  * On the plain website/PWA `isNativeApp()` is false and none of this runs.
  */
 import { Capacitor, registerPlugin } from '@capacitor/core';
-import { PushNotifications } from '@capacitor/push-notifications';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
+import { registerTechnicianPushToken, setLocationRequestHandler } from '@/lib/technicianPush';
 
 interface Location {
   latitude: number;
@@ -218,39 +218,14 @@ function onLocationRequested(): void {
   if (watcherId === null) void startWatcher(technicianId, false);
 }
 
-let pushListenersAttached = false;
-
 /**
- * Register for FCM push and store the device token on the technician's row.
- * A silent data push { type: 'location_request' } wakes the app even when the
- * realtime websocket is frozen in the background.
+ * Register for FCM push (shared with job notifications) and route silent
+ * { type: 'location_request' } pushes to the watcher. The push wakes the app
+ * even when the realtime websocket is frozen in the background.
  */
 async function setupPushWakeup(technicianId: string): Promise<void> {
-  try {
-    const perm = await PushNotifications.requestPermissions();
-    if (perm.receive !== 'granted') return;
-
-    if (!pushListenersAttached) {
-      pushListenersAttached = true;
-      await PushNotifications.addListener('registration', (token) => {
-        const techId = currentTechnicianId;
-        if (!techId || !token?.value) return;
-        void supabase
-          .from('technician_live_locations')
-          .update({ fcm_token: token.value })
-          .eq('technician_id', techId);
-      });
-      await PushNotifications.addListener('pushNotificationReceived', (notification) => {
-        if ((notification?.data as { type?: string })?.type === 'location_request') {
-          onLocationRequested();
-        }
-      });
-    }
-
-    await PushNotifications.register();
-  } catch {
-    // Push is an optimization; realtime pings still work while the app is awake.
-  }
+  setLocationRequestHandler(onLocationRequested);
+  await registerTechnicianPushToken(technicianId);
 }
 
 /**

@@ -7,6 +7,7 @@ import { broadcastTechnicianJobListRefresh } from '@/lib/technicianJobListSync';
 import {
   appendJobToTechnicianVisitOrder,
 } from '@/lib/adminVisitOrder';
+import { jobAssignPushText, notifyTechnicianJobPush } from '@/lib/adminTechPushNotify';
 import { db } from '@/lib/supabase';
 import type { Job, Technician } from '@/types';
 
@@ -61,6 +62,17 @@ export async function submitAdminJobReassign(
     });
 
     broadcastTechnicianJobListRefresh([previousTechnicianId, ctx.selectedTechnicianForReassign]);
+
+    {
+      const push = jobAssignPushText({
+        jobNumber: (ctx.jobToReassign as any).job_number || ctx.jobToReassign.jobNumber,
+        customerName:
+          (ctx.jobToReassign.customer as any)?.full_name ||
+          (ctx.jobToReassign.customer as any)?.fullName,
+        reassigned: true,
+      });
+      notifyTechnicianJobPush({ technicianId: ctx.selectedTechnicianForReassign, ...push });
+    }
 
     ctx.setJobs((prev) =>
       prev.map((job) =>

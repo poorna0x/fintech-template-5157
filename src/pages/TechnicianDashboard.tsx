@@ -1123,6 +1123,14 @@ const TechnicianDashboard = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.technicianId, loadAssignedJobs]);
 
+  // Android app: register FCM token so job assignment pushes reach this device.
+  useEffect(() => {
+    if (!user?.technicianId) return;
+    void import('@/lib/technicianPush').then(({ registerTechnicianPushToken }) =>
+      registerTechnicianPushToken(user.technicianId!)
+    );
+  }, [user?.technicianId]);
+
   // Returning customers (≥1 completed job) — same logic as admin blue indicator
   useEffect(() => {
     let cancelled = false;

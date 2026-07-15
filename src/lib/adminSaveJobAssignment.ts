@@ -6,6 +6,7 @@ import { openAdminWhatsappForJobAssign } from '@/lib/openAdminWhatsappForJobAssi
 import { createJobAssignedNotification, sendNotification } from '@/lib/notifications';
 import { broadcastTechnicianJobListRefresh } from '@/lib/technicianJobListSync';
 import { appendJobToTechnicianVisitOrder } from '@/lib/adminVisitOrder';
+import { jobAssignPushText, notifyTechnicianJobPush } from '@/lib/adminTechPushNotify';
 import { db } from '@/lib/supabase';
 import type { Job, Technician } from '@/types';
 
@@ -68,6 +69,16 @@ export async function saveAdminJobAssignment(ctx: AdminSaveJobAssignmentCtx) {
     });
 
     broadcastTechnicianJobListRefresh([ctx.selectedTechnicianId]);
+
+    {
+      const push = jobAssignPushText({
+        jobNumber: (ctx.jobToAssign as any).job_number || ctx.jobToAssign.jobNumber,
+        customerName:
+          (ctx.jobToAssign.customer as any)?.full_name ||
+          (ctx.jobToAssign.customer as any)?.fullName,
+      });
+      notifyTechnicianJobPush({ technicianId: ctx.selectedTechnicianId, ...push });
+    }
 
     const assignedTechnician = ctx.technicians.find((t) => t.id === ctx.selectedTechnicianId);
 

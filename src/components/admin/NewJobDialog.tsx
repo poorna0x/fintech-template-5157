@@ -15,6 +15,7 @@ import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloud
 import { generateJobNumber, formatCustomTimeLabel, getDefaultLeadCost, isHomeTriangleLeadSource } from '@/lib/adminUtils';
 import { db } from '@/lib/supabase';
 import { appendJobToTechnicianVisitOrder } from '@/lib/adminVisitOrder';
+import { jobAssignPushText, notifyTechnicianJobPush } from '@/lib/adminTechPushNotify';
 import { createJobAssignedNotification, sendNotification } from '@/lib/notifications';
 import type { JobAssignedToTechnicianPayload } from './AddCustomerDialog';
 import {
@@ -449,6 +450,13 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
           (newJob as any).visit_order = visitOrder;
           (newJob as any).visitOrder = visitOrder;
         }
+        notifyTechnicianJobPush({
+          technicianId: newJobFormData.assigned_technician_id,
+          ...jobAssignPushText({
+            jobNumber: (newJob as any).job_number,
+            customerName: customer?.fullName || (customer as any)?.full_name,
+          }),
+        });
       }
 
       onJobCreated(newJob);
