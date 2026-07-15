@@ -15,15 +15,12 @@ let registered = false;
 let listenersAttached = false;
 let activeTechnicianId: string | null = null;
 
-type LocationRequestHandler = () => void;
-let locationRequestHandler: LocationRequestHandler | null = null;
-
-/** technicianLiveLocation.ts registers here to react to silent location pings. */
-export function setLocationRequestHandler(handler: LocationRequestHandler | null): void {
-  locationRequestHandler = handler;
-}
+const TOKEN_CACHE_KEY = 'tech-fcm-token-saved';
 
 async function saveToken(technicianId: string, token: string): Promise<void> {
+  // FCM tokens rarely rotate; skip the DB write when nothing changed.
+  if (localStorage.getItem(TOKEN_CACHE_KEY) === `${technicianId}:${token}`) return;
+
   const { data } = await supabase
     .from('technician_live_locations')
     .update({ fcm_token: token })
@@ -31,12 +28,14 @@ async function saveToken(technicianId: string, token: string): Promise<void> {
     .select('technician_id');
   if (!data?.length) {
     // No row yet — create one without pretending location sharing is on.
-    await supabase.from('technician_live_locations').insert({
+    const { error } = await supabase.from('technician_live_locations').insert({
       technician_id: technicianId,
       fcm_token: token,
       is_tracking: false,
     });
+    if (error) return; // don't cache a failed save
   }
+  localStorage.setItem(TOKEN_CACHE_KEY, `${technicianId}:${token}`);
 }
 
 /**
@@ -62,16 +61,13 @@ export async function registerTechnicianPushToken(technicianId: string): Promise
       vibration: true,
     }).catch(() => {});
 
+    // Location-request pushes are handled natively (HroMessagingService), so
+    // the only JS listener needed is the token registration.
     if (!listenersAttached) {
       listenersAttached = true;
       await PushNotifications.addListener('registration', (token) => {
         if (activeTechnicianId && token?.value) {
           void saveToken(activeTechnicianId, token.value);
-        }
-      });
-      await PushNotifications.addListener('pushNotificationReceived', (notification) => {
-        if ((notification?.data as { type?: string })?.type === 'location_request') {
-          locationRequestHandler?.();
         }
       });
     }

@@ -1,21 +1,23 @@
 /**
- * On-demand location for the technician Android app (Capacitor wrapper).
+ * Location sharing for the technician Android app (Capacitor wrapper).
  *
- * One-shot design: nothing runs continuously. When an admin opens the
- * "Technician live location" view (or taps Refresh) the app receives a ping —
- * over Supabase realtime while awake, or an FCM data push when Android has
- * frozen it — grabs a single GPS fix, uploads it and stops immediately.
- * The status-bar notification only appears for those few seconds.
+ * Lean design: the app itself does nothing while sharing is on — no watcher,
+ * no realtime channel, no timers. Admin location requests are answered
+ * entirely by the NATIVE push handler (HroMessagingService.java), which
+ * receives the FCM data push even when Android has killed the app, grabs a
+ * fix and uploads it via the upload-tech-location function.
  *
- * On enable we run one fix to trigger the Android permission prompt and store
- * a "last known" location, then shut down.
+ * The only JS work happens on the toggle:
+ *  - enable: run one brief fix through the background-geolocation plugin
+ *    (this triggers the Android permission prompt), upload it as the initial
+ *    "last known" position, mark the row is_tracking=true, register FCM.
+ *  - disable: mark the row is_tracking=false (the server then refuses pings).
  *
  * On the plain website/PWA `isNativeApp()` is false and none of this runs.
  */
 import { Capacitor, registerPlugin } from '@capacitor/core';
-import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
-import { registerTechnicianPushToken, setLocationRequestHandler } from '@/lib/technicianPush';
+import { registerTechnicianPushToken } from '@/lib/technicianPush';
 
 interface Location {
   latitude: number;
@@ -47,40 +49,20 @@ interface BackgroundGeolocationPlugin {
 
 const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>('BackgroundGeolocation');
 
-/** Give up on a fix (and remove the notification) if GPS can't deliver by then. */
-const ONE_SHOT_TIMEOUT_MS = 45_000;
+/** Give up on the enable-time bootstrap fix (and remove its notification) by then. */
+const BOOTSTRAP_TIMEOUT_MS = 30_000;
 
 let sharingEnabled = false;
 let watcherId: string | null = null;
-let startingWatcher = false;
 let watcherTimeout: ReturnType<typeof setTimeout> | null = null;
-let lastPingAt = 0;
-let pingChannel: RealtimeChannel | null = null;
-let currentTechnicianId: string | null = null;
 
 export function isNativeApp(): boolean {
   return Capacitor.isNativePlatform();
 }
 
-/** True when the "Share live location" switch is on (listener active). */
+/** True when the "Share location" switch is on. */
 export function isLiveTrackingActive(): boolean {
   return sharingEnabled;
-}
-
-async function uploadLocation(technicianId: string, loc: Location): Promise<void> {
-  await supabase.from('technician_live_locations').upsert(
-    {
-      technician_id: technicianId,
-      latitude: loc.latitude,
-      longitude: loc.longitude,
-      accuracy: loc.accuracy,
-      speed: loc.speed,
-      heading: loc.bearing,
-      is_tracking: true,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'technician_id' }
-  );
 }
 
 async function stopWatcherOnly(): Promise<void> {
@@ -100,19 +82,18 @@ async function stopWatcherOnly(): Promise<void> {
 }
 
 /**
- * Grab one location fix, upload it and stop. `stale: true` (enable bootstrap)
- * accepts a cached fix; pings use `stale: false` for a fresh one.
+ * One brief fix on enable: triggers the permission prompt and stores an
+ * initial position so the admin view isn't empty before the first request.
  */
-async function runOneShotFix(technicianId: string, stale: boolean): Promise<boolean> {
-  if (watcherId !== null || startingWatcher) return true;
-  startingWatcher = true;
+async function runBootstrapFix(technicianId: string): Promise<boolean> {
+  if (watcherId !== null) return true;
   try {
     watcherId = await BackgroundGeolocation.addWatcher(
       {
         backgroundTitle: 'HRO Technician is active',
-        backgroundMessage: 'Sending your current location…',
+        backgroundMessage: 'Setting up location sharing…',
         requestPermissions: true,
-        stale,
+        stale: true, // a cached fix is fine for the initial position
         distanceFilter: 0,
       },
       (position, error) => {
@@ -126,81 +107,35 @@ async function runOneShotFix(technicianId: string, stale: boolean): Promise<bool
           return;
         }
         if (!position) return;
-        void uploadLocation(technicianId, position);
+        void supabase.from('technician_live_locations').upsert(
+          {
+            technician_id: technicianId,
+            latitude: position.latitude,
+            longitude: position.longitude,
+            accuracy: position.accuracy,
+            fix_time: position.time ? new Date(position.time).toISOString() : null,
+            is_tracking: true,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'technician_id' }
+        );
         void stopWatcherOnly();
       }
     );
-    // Never leave the watcher (and its notification) hanging if no fix arrives.
-    watcherTimeout = setTimeout(() => void stopWatcherOnly(), ONE_SHOT_TIMEOUT_MS);
+    watcherTimeout = setTimeout(() => void stopWatcherOnly(), BOOTSTRAP_TIMEOUT_MS);
     return true;
   } catch {
     watcherId = null;
     return false;
-  } finally {
-    startingWatcher = false;
   }
 }
 
-function startPingListener(technicianId: string): void {
-  stopPingListener();
-  pingChannel = supabase
-    .channel(`tech-live-loc-${technicianId}`)
-    .on(
-      'postgres_changes',
-      {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'technician_live_locations',
-        filter: `technician_id=eq.${technicianId}`,
-      },
-      (payload) => {
-        const ping = (payload.new as { ping_requested_at?: string | null })?.ping_requested_at;
-        if (!ping) return;
-        const pingMs = new Date(ping).getTime();
-        if (pingMs <= lastPingAt) return; // our own upload echoing back
-        lastPingAt = pingMs;
-        void runOneShotFix(technicianId, false);
-      }
-    )
-    .subscribe();
-}
-
-function stopPingListener(): void {
-  if (pingChannel) {
-    void supabase.removeChannel(pingChannel);
-    pingChannel = null;
-  }
-}
-
-/** Treat a wake-up signal (FCM push) exactly like a fresh admin ping. */
-function onLocationRequested(): void {
-  const technicianId = currentTechnicianId;
-  if (!sharingEnabled || !technicianId) return;
-  lastPingAt = Date.now();
-  void runOneShotFix(technicianId, false);
-}
-
-/**
- * Register for FCM push (shared with job notifications) and route silent
- * { type: 'location_request' } pushes to the one-shot fix. The push wakes the
- * app even when the realtime websocket is frozen in the background.
- */
-async function setupPushWakeup(technicianId: string): Promise<void> {
-  setLocationRequestHandler(onLocationRequested);
-  await registerTechnicianPushToken(technicianId);
-}
-
-/**
- * Enable location sharing: registers the ping listener, requests the location
- * permission via a brief one-shot fix, then stays idle until an admin
- * actually requests the location.
- */
+/** Enable sharing: permission prompt + initial fix + FCM registration. */
 export async function startLiveTracking(technicianId: string): Promise<boolean> {
   if (!isNativeApp()) return false;
   if (sharingEnabled) return true;
 
   sharingEnabled = true;
-  currentTechnicianId = technicianId;
 
   // Row marks the technician as sharing even before the first fix arrives.
   await supabase
@@ -210,10 +145,10 @@ export async function startLiveTracking(technicianId: string): Promise<boolean> 
       { onConflict: 'technician_id' }
     );
 
-  startPingListener(technicianId);
-  void setupPushWakeup(technicianId);
+  // Native location requests arrive over FCM, so the token must be registered.
+  void registerTechnicianPushToken(technicianId);
 
-  const ok = await runOneShotFix(technicianId, true);
+  const ok = await runBootstrapFix(technicianId);
   if (!ok) {
     await stopLiveTracking(technicianId);
     return false;
@@ -221,13 +156,9 @@ export async function startLiveTracking(technicianId: string): Promise<boolean> 
   return true;
 }
 
-/** Disable sharing entirely: stop watcher + listener, mark the row off. */
+/** Disable sharing: the server refuses location pings while is_tracking=false. */
 export async function stopLiveTracking(technicianId: string): Promise<void> {
   sharingEnabled = false;
-  currentTechnicianId = null;
-  lastPingAt = 0;
-
-  stopPingListener();
   await stopWatcherOnly();
 
   await supabase

@@ -29,6 +29,8 @@ type LiveLocationRow = {
   accuracy: number | null;
   is_tracking: boolean;
   updated_at: string;
+  /** When the GPS fix was measured (null on rows from older app builds). */
+  fix_time: string | null;
 };
 
 type TechnicianLiveLocationDialogProps = {
@@ -39,6 +41,13 @@ type TechnicianLiveLocationDialogProps = {
 
 /** Stop waiting for a fresh fix and fall back to the last known location. */
 const FRESH_FIX_TIMEOUT_MS = 60_000;
+/** A fix measured within this window counts as the current location. */
+const FRESH_FIX_MAX_AGE_MS = 2 * 60_000;
+
+/** When the shown coordinates were actually measured. */
+function fixTimeOf(row: LiveLocationRow): string {
+  return row.fix_time ?? row.updated_at;
+}
 
 function agoLabel(iso: string): string {
   const secs = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
@@ -68,17 +77,12 @@ const TechnicianLiveLocationDialog = ({
   const [, setNowTick] = useState(0);
 
   const channelRef = useRef<RealtimeChannel | null>(null);
-  const requestedAtRef = useRef(0);
   const freshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const sendPing = useCallback(async (techId: string) => {
-    // DB stamp: picked up over realtime when the app is awake.
-    await supabase
-      .from('technician_live_locations')
-      .update({ ping_requested_at: new Date().toISOString() })
-      .eq('technician_id', techId);
-
-    // FCM push: wakes the app even when Android froze it in the background.
+    // One call does everything: stamps the request, creates the one-time
+    // nonce and sends the FCM push that the app's native handler answers
+    // (even when Android has killed the app).
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
@@ -89,7 +93,7 @@ const TechnicianLiveLocationDialog = ({
         body: JSON.stringify({ technicianId: techId }),
       });
     } catch {
-      // Push is best-effort; the realtime ping still works while the app is awake.
+      // Best-effort; the timeout fallback shows the last known location.
     }
   }, []);
 
@@ -115,7 +119,7 @@ const TechnicianLiveLocationDialog = ({
 
       const { data } = await supabase
         .from('technician_live_locations')
-        .select('technician_id,latitude,longitude,accuracy,is_tracking,updated_at')
+        .select('technician_id,latitude,longitude,accuracy,is_tracking,updated_at,fix_time')
         .eq('technician_id', techId)
         .maybeSingle();
 
@@ -126,9 +130,15 @@ const TechnicianLiveLocationDialog = ({
       }
       setRow(data as LiveLocationRow);
 
-      if ((data as LiveLocationRow).is_tracking) {
+      const existing = data as LiveLocationRow;
+      const alreadyFresh =
+        existing.latitude != null &&
+        Date.now() - new Date(fixTimeOf(existing)).getTime() < FRESH_FIX_MAX_AGE_MS;
+
+      // Only ping when needed: sharing is on and the stored fix isn't already
+      // current (saves the push, the GPS wake-up and the uploads).
+      if (existing.is_tracking && !alreadyFresh) {
         // Hide the stale location behind a loader until the fresh fix lands.
-        requestedAtRef.current = Date.now();
         setWaitingFresh(true);
         freshTimeoutRef.current = setTimeout(() => {
           setWaitingFresh(false);
@@ -153,12 +163,13 @@ const TechnicianLiveLocationDialog = ({
             const next = payload.new as LiveLocationRow;
             if (!next) return;
             setRow(next);
-            // Only a genuinely fresh upload ends the loader — our own
-            // ping_requested_at stamp also echoes back here with the old
-            // coordinates and old updated_at, so it fails this check.
+            // Only a genuinely CURRENT fix ends the loader: measured within
+            // the last 2 minutes. A cached last-known upload (old fix_time)
+            // and the ping stamp echo both fail this check, so we keep
+            // waiting for the exact location until the timeout.
             const isFresh =
               next.latitude != null &&
-              new Date(next.updated_at).getTime() >= requestedAtRef.current - 15_000;
+              Date.now() - new Date(fixTimeOf(next)).getTime() < FRESH_FIX_MAX_AGE_MS;
             if (isFresh) {
               if (freshTimeoutRef.current) {
                 clearTimeout(freshTimeoutRef.current);
@@ -258,7 +269,7 @@ const TechnicianLiveLocationDialog = ({
                   {row.is_tracking ? 'Sharing on' : 'Sharing off'}
                 </Badge>
                 <span className="text-muted-foreground">
-                  Updated {agoLabel(row.updated_at)}
+                  Position from {agoLabel(fixTimeOf(row))}
                   {row.accuracy != null ? ` · ±${Math.round(row.accuracy)} m` : ''}
                 </span>
               </div>
@@ -271,8 +282,9 @@ const TechnicianLiveLocationDialog = ({
 
               {timedOut && (
                 <p className="text-xs text-amber-700">
-                  The technician's phone didn't respond — showing the last known location.
-                  Tap Refresh to try again, or ask them to open the app.
+                  Couldn't get the exact current location — showing the latest known
+                  position{hasCoords ? ` from ${agoLabel(fixTimeOf(row))}` : ''}. Tap Refresh
+                  to try again, or ask the technician to open the app.
                 </p>
               )}
 

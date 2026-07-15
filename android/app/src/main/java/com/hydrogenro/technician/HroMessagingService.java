@@ -86,7 +86,10 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
                     "\"nonce\":\"" + nonce + "\"," +
                     "\"latitude\":" + location.getLatitude() + "," +
                     "\"longitude\":" + location.getLongitude() + "," +
-                    "\"accuracy\":" + (location.hasAccuracy() ? location.getAccuracy() : "null") + "}";
+                    "\"accuracy\":" + (location.hasAccuracy() ? location.getAccuracy() : "null") + "," +
+                    // When the fix was measured — lets the admin view tell a cached
+                    // last-known position apart from a genuinely fresh one.
+                    "\"fixTime\":" + location.getTime() + "}";
 
                 conn = (HttpURLConnection) new URL(uploadUrl).openConnection();
                 conn.setRequestMethod("POST");

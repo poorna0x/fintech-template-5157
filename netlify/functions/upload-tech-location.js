@@ -29,6 +29,8 @@ exports.handler = async (event) => {
   const latitude = Number(body.latitude);
   const longitude = Number(body.longitude);
   const accuracy = body.accuracy != null ? Number(body.accuracy) : null;
+  // Epoch ms of when the GPS fix was measured (may predate the upload).
+  const fixTime = Number(body.fixTime);
 
   if (!technicianId || !nonce || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing fields' }) };
@@ -67,15 +69,24 @@ exports.handler = async (event) => {
     return { statusCode: 403, headers, body: JSON.stringify({ error: 'Forbidden' }) };
   }
 
-  const { error: updErr } = await db
+  const fixIso = Number.isFinite(fixTime) && fixTime > 0 ? new Date(fixTime).toISOString() : null;
+
+  let update = db
     .from('technician_live_locations')
     .update({
       latitude,
       longitude,
       accuracy: Number.isFinite(accuracy) ? accuracy : null,
+      ...(fixIso ? { fix_time: fixIso } : {}),
       updated_at: new Date().toISOString(),
     })
     .eq('technician_id', technicianId);
+  if (fixIso) {
+    // The cached last-known and the fresh fix race over the network; never
+    // let an older measurement overwrite a newer one.
+    update = update.or(`fix_time.is.null,fix_time.lte.${fixIso}`);
+  }
+  const { error: updErr } = await update;
 
   if (updErr) {
     console.error('[upload-tech-location] update failed', updErr.message);

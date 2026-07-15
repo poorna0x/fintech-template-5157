@@ -5671,6 +5671,14 @@ const TechnicianDashboard = () => {
             </Button>
             <Button
               variant="ghost"
+              className="justify-start h-12 px-4 text-base"
+              onClick={() => window.location.reload()}
+            >
+              <RefreshCw className="w-5 h-5 mr-3" />
+              Reload App
+            </Button>
+            <Button
+              variant="ghost"
               className="justify-start h-12 px-4 text-base text-red-600 hover:text-red-700 hover:bg-red-50"
               onClick={() => {
                 setHeaderOptionsDialogOpen(false);

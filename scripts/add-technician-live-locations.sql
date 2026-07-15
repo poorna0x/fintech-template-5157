@@ -33,6 +33,10 @@ ALTER TABLE public.technician_live_locations
 ALTER TABLE public.technician_live_locations
   ADD COLUMN IF NOT EXISTS ping_nonce text;
 
+-- When the GPS fix was actually measured (updated_at is only the upload time).
+ALTER TABLE public.technician_live_locations
+  ADD COLUMN IF NOT EXISTS fix_time timestamptz;
+
 COMMENT ON TABLE public.technician_live_locations IS
   'Latest known location per technician (single row). App uploads only while an admin is viewing (ping_requested_at fresh).';
 
