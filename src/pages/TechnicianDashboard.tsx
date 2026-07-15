@@ -17,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import Logo from '@/components/Logo';
+import LiveLocationToggle from '@/components/technician/LiveLocationToggle';
 import { 
   Wrench, 
   Filter, 
@@ -5726,6 +5727,13 @@ const TechnicianDashboard = () => {
       )}
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-24" style={{ touchAction: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehaviorY: 'auto' }}>
+
+        {/* Live location sharing (Android app only; renders nothing on the website) */}
+        {user?.technicianId && (
+          <div className="mb-6">
+            <LiveLocationToggle technicianId={user.technicianId} />
+          </div>
+        )}
 
         {/* Job Assignment Requests Section */}
         {assignmentRequests.length > 0 && (

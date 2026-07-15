@@ -15,6 +15,7 @@ import {
   Lock,
   Mail,
   ListOrdered,
+  MapPin,
   Navigation,
   PhoneCall,
   Receipt,
@@ -242,6 +243,10 @@ export function AdminDashboardHeader({
                   <DropdownMenuItem onClick={() => onOpenAdminTool('arrange-visit-order')}>
                     <ListOrdered className="w-4 h-4 mr-2" />
                     Arrange visit order
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onOpenAdminTool('technician-live-location')}>
+                    <MapPin className="w-4 h-4 mr-2" />
+                    Technician live location
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     disabled={isManager}

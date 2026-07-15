@@ -274,6 +274,7 @@ export const ADMIN_TOOL_DIALOGS = [
   'sent-email-log',
   'measure-distance',
   'arrange-visit-order',
+  'technician-live-location',
 ] as const;
 export type AdminToolDialog = (typeof ADMIN_TOOL_DIALOGS)[number];
 
