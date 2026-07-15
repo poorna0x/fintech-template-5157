@@ -72,6 +72,10 @@ const TechnicianLiveLocationDialog = ({
   // phone to answer our request with ANY upload (WhatsApp-style: show the
   // first response immediately, then keep refining as better fixes arrive).
   const [waitingFresh, setWaitingFresh] = useState(false);
+  // The phone's first reply is usually its CACHED position; the GPS-measured
+  // fix follows a few seconds later. This tracks whether the position on
+  // screen was actually measured after our request (i.e. it's exact).
+  const [exactFix, setExactFix] = useState(false);
   // The phone didn't respond in time — we're showing the last known location.
   const [timedOut, setTimedOut] = useState(false);
   // Ticks every 5s so the "updated Xs ago" label stays fresh.
@@ -117,6 +121,7 @@ const TechnicianLiveLocationDialog = ({
       setRow(null);
       setNoRow(false);
       setWaitingFresh(false);
+      setExactFix(false);
       setTimedOut(false);
 
       const { data } = await supabase
@@ -136,6 +141,7 @@ const TechnicianLiveLocationDialog = ({
       const alreadyFresh =
         existing.latitude != null &&
         Date.now() - new Date(fixTimeOf(existing)).getTime() < FRESH_FIX_MAX_AGE_MS;
+      if (alreadyFresh) setExactFix(true);
 
       // Only ping when needed: sharing is on and the stored fix isn't already
       // current (saves the push, the GPS wake-up and the uploads).
@@ -176,12 +182,22 @@ const TechnicianLiveLocationDialog = ({
               next.latitude != null &&
               new Date(next.updated_at).getTime() >= requestedAtRef.current - 30_000;
             if (answered) {
+              setWaitingFresh(false);
+              setTimedOut(false);
+            }
+            // Only a fix MEASURED after our request counts as the exact
+            // current position (fix_time is when GPS took the measurement;
+            // the cached first answer carries an older fix_time and fails).
+            const measuredNow =
+              next.latitude != null &&
+              next.fix_time != null &&
+              new Date(next.fix_time).getTime() >= requestedAtRef.current - 30_000;
+            if (measuredNow) {
               if (freshTimeoutRef.current) {
                 clearTimeout(freshTimeoutRef.current);
                 freshTimeoutRef.current = null;
               }
-              setWaitingFresh(false);
-              setTimedOut(false);
+              setExactFix(true);
             }
           }
         )
@@ -196,6 +212,7 @@ const TechnicianLiveLocationDialog = ({
       setRow(null);
       setNoRow(false);
       setWaitingFresh(false);
+      setExactFix(false);
       setTimedOut(false);
       return;
     }
@@ -274,6 +291,11 @@ const TechnicianLiveLocationDialog = ({
                 >
                   {row.is_tracking ? 'Sharing on' : 'Sharing off'}
                 </Badge>
+                {exactFix && hasCoords && (
+                  <Badge variant="outline" className="border-blue-300 bg-blue-50 text-blue-700">
+                    Exact location
+                  </Badge>
+                )}
                 <span className="text-muted-foreground">
                   Position from {agoLabel(fixTimeOf(row))}
                   {row.accuracy != null ? ` · ±${Math.round(row.accuracy)} m` : ''}
@@ -295,14 +317,14 @@ const TechnicianLiveLocationDialog = ({
                 </p>
               )}
 
-              {!timedOut &&
-                hasCoords &&
-                row.is_tracking &&
-                Date.now() - new Date(fixTimeOf(row)).getTime() > FRESH_FIX_MAX_AGE_MS && (
-                  <p className="text-xs text-muted-foreground">
-                    Waiting for a more precise fix — the map updates automatically.
-                  </p>
-                )}
+              {/* Approximate answer shown, phone still measuring the exact fix */}
+              {!timedOut && !exactFix && hasCoords && row.is_tracking && (
+                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Approximate position shown — getting the exact location, updates
+                  automatically…
+                </p>
+              )}
 
               {!hasCoords && row.is_tracking && (
                 <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
@@ -327,7 +349,7 @@ const TechnicianLiveLocationDialog = ({
               <div className="flex gap-2">
                 {hasCoords && (
                   <Button
-                    variant="outline"
+                    variant={exactFix ? 'default' : 'outline'}
                     size="sm"
                     className="h-10 flex-1 sm:h-9 sm:flex-none"
                     onClick={() =>
@@ -338,7 +360,9 @@ const TechnicianLiveLocationDialog = ({
                     }
                   >
                     <ExternalLink className="mr-2 h-4 w-4" />
-                    <span className="truncate">Open in Google Maps</span>
+                    <span className="truncate">
+                      {exactFix ? 'Open exact location in Google Maps' : 'Open in Google Maps'}
+                    </span>
                   </Button>
                 )}
                 <Button
