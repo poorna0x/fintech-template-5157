@@ -1247,11 +1247,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                 );
                 notifyTechnicianJobPush({
                   technicianId: step5JobData.assigned_technician_id,
-                  ...jobAssignPushText({
-                    jobNumber: (newJob as any).job_number || (newJob as any).jobNumber,
-                    customerName:
-                      (newCustomer as any).full_name || (newCustomer as any).fullName,
-                  }),
+                  ...jobAssignPushText({ job: newJob as any, customer: newCustomer as any }),
                 });
               } catch {
                 // best-effort

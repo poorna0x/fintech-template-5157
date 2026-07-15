@@ -52,6 +52,16 @@ export async function registerTechnicianPushToken(technicianId: string): Promise
     const perm = await PushNotifications.requestPermissions();
     if (perm.receive !== 'granted') return;
 
+    // Channel referenced by job-assignment pushes (visible name in Android settings).
+    await PushNotifications.createChannel({
+      id: 'job_alerts',
+      name: 'Job alerts',
+      description: 'New job assignments and updates',
+      importance: 5,
+      visibility: 1,
+      vibration: true,
+    }).catch(() => {});
+
     if (!listenersAttached) {
       listenersAttached = true;
       await PushNotifications.addListener('registration', (token) => {

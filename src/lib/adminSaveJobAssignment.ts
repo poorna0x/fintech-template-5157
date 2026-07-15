@@ -70,15 +70,10 @@ export async function saveAdminJobAssignment(ctx: AdminSaveJobAssignmentCtx) {
 
     broadcastTechnicianJobListRefresh([ctx.selectedTechnicianId]);
 
-    {
-      const push = jobAssignPushText({
-        jobNumber: (ctx.jobToAssign as any).job_number || ctx.jobToAssign.jobNumber,
-        customerName:
-          (ctx.jobToAssign.customer as any)?.full_name ||
-          (ctx.jobToAssign.customer as any)?.fullName,
-      });
-      notifyTechnicianJobPush({ technicianId: ctx.selectedTechnicianId, ...push });
-    }
+    notifyTechnicianJobPush({
+      technicianId: ctx.selectedTechnicianId,
+      ...jobAssignPushText({ job: ctx.jobToAssign as any }),
+    });
 
     const assignedTechnician = ctx.technicians.find((t) => t.id === ctx.selectedTechnicianId);
 

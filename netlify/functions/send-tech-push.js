@@ -41,6 +41,8 @@ exports.handler = async (event) => {
   const technicianId = String(body.technicianId || '').trim();
   const title = String(body.title || '').trim().slice(0, 120);
   const message = String(body.body || '').trim().slice(0, 300);
+  const colorRaw = String(body.color || '').trim();
+  const color = /^#[0-9a-fA-F]{6}$/.test(colorRaw) ? colorRaw : undefined;
   if (!technicianId || !title) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'technicianId and title required' }) };
   }
@@ -68,7 +70,7 @@ exports.handler = async (event) => {
       data: { type: 'job_notification' },
       android: {
         priority: 'high',
-        notification: { channelId: 'job_alerts', defaultSound: true },
+        notification: { channelId: 'job_alerts', defaultSound: true, ...(color ? { color } : {}) },
       },
     });
     return { statusCode: 200, headers, body: JSON.stringify({ sent: true }) };

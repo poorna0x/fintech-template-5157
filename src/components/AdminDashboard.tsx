@@ -2991,11 +2991,7 @@ const AdminDashboard = () => {
         }
         notifyTechnicianJobPush({
           technicianId: newJobFormData.assigned_technician_id,
-          ...jobAssignPushText({
-            jobNumber: (newJob as any).job_number,
-            customerName:
-              (selectedCustomerForJob as any)?.full_name || selectedCustomerForJob?.fullName,
-          }),
+          ...jobAssignPushText({ job: newJob as any, customer: selectedCustomerForJob as any }),
         });
       }
 

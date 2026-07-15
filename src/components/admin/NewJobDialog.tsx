@@ -452,10 +452,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
         }
         notifyTechnicianJobPush({
           technicianId: newJobFormData.assigned_technician_id,
-          ...jobAssignPushText({
-            jobNumber: (newJob as any).job_number,
-            customerName: customer?.fullName || (customer as any)?.full_name,
-          }),
+          ...jobAssignPushText({ job: newJob as any, customer: customer as any }),
         });
       }
 
