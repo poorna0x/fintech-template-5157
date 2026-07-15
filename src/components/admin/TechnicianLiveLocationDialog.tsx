@@ -115,7 +115,7 @@ const TechnicianLiveLocationDialog = ({
   }, []);
 
   const startWatching = useCallback(
-    async (techId: string) => {
+    async (techId: string, force = false) => {
       cleanup();
       setLoading(true);
       setRow(null);
@@ -141,15 +141,18 @@ const TechnicianLiveLocationDialog = ({
       const alreadyFresh =
         existing.latitude != null &&
         Date.now() - new Date(fixTimeOf(existing)).getTime() < FRESH_FIX_MAX_AGE_MS;
-      if (alreadyFresh) setExactFix(true);
+      if (alreadyFresh && !force) setExactFix(true);
 
       // Only ping when needed: sharing is on and the stored fix isn't already
-      // current (saves the push, the GPS wake-up and the uploads).
-      const shouldPing = existing.is_tracking && !alreadyFresh;
+      // current (saves the push, the GPS wake-up and the uploads). An explicit
+      // Refresh click (force) always asks the phone for a new measurement.
+      const shouldPing = existing.is_tracking && (force || !alreadyFresh);
       if (shouldPing) {
-        // Loader until the phone's FIRST answer; further fixes refine the map.
         requestedAtRef.current = Date.now();
-        setWaitingFresh(true);
+        // Full loader until the phone's FIRST answer — except on a forced
+        // Refresh with a position already on screen: keep the map visible and
+        // let the inline "getting the exact location" note show instead.
+        setWaitingFresh(!(force && existing.latitude != null));
       }
 
       // Two attempts: GPS often fails to lock in the phone's first 30s window
@@ -397,7 +400,7 @@ const TechnicianLiveLocationDialog = ({
                   variant="outline"
                   size="sm"
                   className="h-10 flex-1 sm:h-9 sm:flex-none"
-                  onClick={() => technicianId && void startWatching(technicianId)}
+                  onClick={() => technicianId && void startWatching(technicianId, true)}
                 >
                   <RefreshCw className="mr-2 h-4 w-4" />
                   Refresh
