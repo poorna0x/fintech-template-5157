@@ -24,6 +24,11 @@ import java.util.Map;
  * the webview is alive; this service runs even when Android has killed the
  * app, which is why job notifications always worked but location requests
  * didn't. Extending the Capacitor service keeps all JS push behavior intact.
+ *
+ * Also handles OTP-request pushes: shows a notification with an inline
+ * "Enter OTP" reply field (like WhatsApp's reply), so the technician can
+ * type the 4-digit code straight into the notification without opening
+ * the app. The typed code is delivered to OtpReplyReceiver.
  */
 public class HroMessagingService extends com.capacitorjs.plugins.pushnotifications.MessagingService {
 
@@ -34,6 +39,10 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
         super.onMessageReceived(remoteMessage);
 
         Map<String, String> data = remoteMessage.getData();
+        if ("otp_request".equals(data.get("type"))) {
+            showOtpNotification(data);
+            return;
+        }
         if (!"location_request".equals(data.get("type"))) return;
 
         String technicianId = data.get("technicianId");
@@ -76,6 +85,26 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
         } catch (SecurityException e) {
             Log.w(TAG, "getCurrentLocation not permitted", e);
         }
+    }
+
+    /**
+     * OTP request: notification with an inline reply field. Typing the code
+     * fires OtpReplyReceiver, which uploads it — no need to open the app.
+     * Tapping the notification body still opens the app (in-app card fallback).
+     */
+    private void showOtpNotification(Map<String, String> data) {
+        String requestId = data.get("requestId");
+        String nonce = data.get("nonce");
+        String submitUrl = data.get("submitUrl");
+        if (requestId == null || nonce == null || submitUrl == null) return;
+
+        String customerName = data.get("customerName");
+        String body = customerName != null && !customerName.isEmpty()
+            ? "Ask " + customerName + " for the code, then tap Enter OTP to reply from here."
+            : "Ask the customer for the code, then tap Enter OTP to reply from here.";
+
+        OtpReplyReceiver.showOtpRequestNotification(
+            getApplicationContext(), requestId, nonce, submitUrl, body);
     }
 
     private void upload(String uploadUrl, String technicianId, String nonce, Location location) {

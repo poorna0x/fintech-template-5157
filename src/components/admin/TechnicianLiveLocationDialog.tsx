@@ -323,11 +323,13 @@ const TechnicianLiveLocationDialog = ({
                 </div>
               )}
 
-              <div className="flex flex-wrap gap-2">
+              {/* Full-width split on mobile, compact inline on desktop */}
+              <div className="flex gap-2">
                 {hasCoords && (
                   <Button
                     variant="outline"
                     size="sm"
+                    className="h-10 flex-1 sm:h-9 sm:flex-none"
                     onClick={() =>
                       window.open(
                         `https://maps.google.com/?q=${row.latitude},${row.longitude}`,
@@ -336,12 +338,13 @@ const TechnicianLiveLocationDialog = ({
                     }
                   >
                     <ExternalLink className="mr-2 h-4 w-4" />
-                    Open in Google Maps
+                    <span className="truncate">Open in Google Maps</span>
                   </Button>
                 )}
                 <Button
                   variant="outline"
                   size="sm"
+                  className="h-10 flex-1 sm:h-9 sm:flex-none"
                   onClick={() => technicianId && void startWatching(technicianId)}
                 >
                   <RefreshCw className="mr-2 h-4 w-4" />

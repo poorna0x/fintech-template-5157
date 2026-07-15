@@ -17,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import Logo from '@/components/Logo';
+import TechnicianOtpRequestCard from '@/components/technician/TechnicianOtpRequestCard';
 import { 
   Wrench, 
   Filter, 
@@ -5744,6 +5745,11 @@ const TechnicianDashboard = () => {
       )}
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-24" style={{ touchAction: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehaviorY: 'auto' }}>
+
+        {/* Office asked for the customer's OTP (Home Triangle jobs) */}
+        {user?.technicianId && (
+          <TechnicianOtpRequestCard technicianId={user.technicianId} jobs={jobs} />
+        )}
 
         {/* Job Assignment Requests Section */}
         {assignmentRequests.length > 0 && (

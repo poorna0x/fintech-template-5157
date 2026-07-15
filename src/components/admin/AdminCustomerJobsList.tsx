@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -39,7 +39,9 @@ import {
   X,
   UserPlus,
   ArrowRight,
+  KeyRound,
 } from 'lucide-react';
+import AskTechnicianOtpDialog from './AskTechnicianOtpDialog';
 import { CustomerCardHeader } from './CustomerCardHeader';
 import { ContactSection } from './ContactSection';
 import { CompletedJobSection } from './CompletedJobSection';
@@ -100,6 +102,10 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
     applyListCustomerContactToCachedJob,
   } = ctx.data;
   const a = ctx.actionsRef.current;
+
+  // "Ask OTP" (Home Triangle jobs): request the customer's OTP from the
+  // assigned technician's app and watch for the submitted code.
+  const [otpJob, setOtpJob] = useState<Job | null>(null);
 
   return (
     <>
@@ -1178,6 +1184,18 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
                             ) : null;
                           })()}
                           {(() => {
+                            // Home Triangle jobs: ask the assigned technician for the customer's OTP.
+                            const assignedTechnicianId = (job as any).assigned_technician_id || (job as any).assignedTechnicianId;
+                            const leadSource = (getLeadSourceFromJob(job as any) || '').trim().toLowerCase();
+                            const isHomeTriangle = leadSource.startsWith('home triangle');
+                            return assignedTechnicianId && isHomeTriangle ? (
+                              <DropdownMenuItem onClick={() => setOtpJob(job)}>
+                                <KeyRound className="mr-2 h-4 w-4" />
+                                Ask OTP
+                              </DropdownMenuItem>
+                            ) : null;
+                          })()}
+                          {(() => {
                             const assignedTechnicianId = (job as any).assigned_technician_id || (job as any).assignedTechnicianId;
                             return assignedTechnicianId ? (
                               <DropdownMenuItem
@@ -1216,6 +1234,19 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
   </Card>
 );
       })}
+      <AskTechnicianOtpDialog
+        open={otpJob != null}
+        onOpenChange={(o) => {
+          if (!o) setOtpJob(null);
+        }}
+        job={otpJob}
+        technicianName={(() => {
+          if (!otpJob) return undefined;
+          const techId =
+            (otpJob as any).assigned_technician_id || (otpJob as any).assignedTechnicianId;
+          return technicians.find((t) => t.id === techId)?.fullName;
+        })()}
+      />
     </>
   );
 });
