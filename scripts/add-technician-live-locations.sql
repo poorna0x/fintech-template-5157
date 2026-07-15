@@ -5,8 +5,9 @@
 
 CREATE TABLE IF NOT EXISTS public.technician_live_locations (
   technician_id uuid PRIMARY KEY REFERENCES public.technicians(id) ON DELETE CASCADE,
-  latitude double precision NOT NULL,
-  longitude double precision NOT NULL,
+  -- Nullable: the row is created when sharing is enabled, before the first GPS fix.
+  latitude double precision,
+  longitude double precision,
   accuracy double precision,
   speed double precision,
   heading double precision,
@@ -18,6 +19,14 @@ CREATE TABLE IF NOT EXISTS public.technician_live_locations (
 
 ALTER TABLE public.technician_live_locations
   ADD COLUMN IF NOT EXISTS ping_requested_at timestamptz;
+
+-- In case the table was created by an earlier version with NOT NULL coords.
+ALTER TABLE public.technician_live_locations ALTER COLUMN latitude DROP NOT NULL;
+ALTER TABLE public.technician_live_locations ALTER COLUMN longitude DROP NOT NULL;
+
+-- FCM device token of the technician's Android app (used to wake it for a location request).
+ALTER TABLE public.technician_live_locations
+  ADD COLUMN IF NOT EXISTS fcm_token text;
 
 COMMENT ON TABLE public.technician_live_locations IS
   'Latest known location per technician (single row). App uploads only while an admin is viewing (ping_requested_at fresh).';

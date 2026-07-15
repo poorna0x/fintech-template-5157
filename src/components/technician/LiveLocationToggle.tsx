@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { MapPin } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import {
   isNativeApp,
   isLiveTrackingActive,
@@ -51,9 +52,16 @@ const LiveLocationToggle = ({ technicianId }: { technicianId: string }) => {
 
   return (
     <div className="flex items-center justify-between gap-3 rounded-lg border bg-card px-3 py-2">
-      <div className="flex items-center gap-2 text-sm">
-        <MapPin className={on ? 'h-4 w-4 text-green-600' : 'h-4 w-4 text-muted-foreground'} />
-        <span className="font-medium">Share live location</span>
+      <div className="flex items-start gap-2 text-sm">
+        <MapPin
+          className={cn('mt-0.5 h-4 w-4 shrink-0', on ? 'text-green-600' : 'text-muted-foreground')}
+        />
+        <div>
+          <span className="font-medium">Share live location</span>
+          <p className="text-xs text-muted-foreground">
+            Sent only while the office is viewing it.
+          </p>
+        </div>
       </div>
       <Switch checked={on} disabled={busy} onCheckedChange={handleChange} />
     </div>

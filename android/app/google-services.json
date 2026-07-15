@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "449481461674",
+    "project_id": "hydrogenro-otp",
+    "storage_bucket": "hydrogenro-otp.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:449481461674:android:c77ed3066c40389c2325d3",
+        "android_client_info": {
+          "package_name": "com.hydrogenro.technician"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAyvqLJUgUKoJNg2C5-VLAvBg1m-JACiOE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

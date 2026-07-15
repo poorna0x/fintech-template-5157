@@ -1,17 +1,24 @@
 /**
  * Live location for the technician Android app (Capacitor wrapper).
  *
- * Privacy / egress model: while the "Share live location" switch is ON the
- * native watcher keeps the latest fix in memory only. Nothing is uploaded
- * except:
- *   - one write when tracking starts/stops (so admin can see who is sharing),
- *   - while an admin has the "Technician live location" view open. The admin
- *     view stamps ping_requested_at every ~25s; the app listens over realtime
- *     and uploads every ~15s only while that stamp is fresh.
+ * Notification-minimal design: enabling "Share live location" does NOT keep a
+ * location service (or its status-bar notification) running. Instead the app
+ * listens on a realtime channel; when an admin opens the "Technician live
+ * location" view, it stamps ping_requested_at, and only then does the app
+ * start the native watcher (notification appears), upload every ~15s, and
+ * stop again ~90s after the last ping (notification disappears).
+ *
+ * On enable we run the watcher once briefly to trigger the Android permission
+ * prompt and store one "last known" fix, then shut it down.
+ *
+ * Limitation (no push notifications yet): if Android has fully frozen the app
+ * in the background, the ping is only received once the technician reopens
+ * the app. The admin view shows the last-known location and its age.
  *
  * On the plain website/PWA `isNativeApp()` is false and none of this runs.
  */
 import { Capacitor, registerPlugin } from '@capacitor/core';
+import { PushNotifications } from '@capacitor/push-notifications';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 
@@ -45,26 +52,34 @@ interface BackgroundGeolocationPlugin {
 
 const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>('BackgroundGeolocation');
 
-/** Admin ping older than this = nobody is watching, stop uploading. */
-const PING_FRESH_MS = 60_000;
+/** Watcher stops (notification disappears) this long after the last admin ping. */
+const STOP_AFTER_LAST_PING_MS = 90_000;
 /** Upload cadence while an admin is watching. */
 const UPLOAD_INTERVAL_MS = 15_000;
 /** Ignore movements smaller than this (native side filter). */
-const DISTANCE_FILTER_METERS = 30;
+const DISTANCE_FILTER_METERS = 20;
 
+let sharingEnabled = false;
 let watcherId: string | null = null;
+let startingWatcher = false;
 let lastLocation: Location | null = null;
 let lastPingAt = 0;
 let lastUploadAt = 0;
-let uploadTimer: ReturnType<typeof setInterval> | null = null;
+let tickTimer: ReturnType<typeof setInterval> | null = null;
 let pingChannel: RealtimeChannel | null = null;
+let currentTechnicianId: string | null = null;
 
 export function isNativeApp(): boolean {
   return Capacitor.isNativePlatform();
 }
 
+/** True when the "Share live location" switch is on (listener active). */
 export function isLiveTrackingActive(): boolean {
-  return watcherId !== null;
+  return sharingEnabled;
+}
+
+function adminIsWatching(): boolean {
+  return Date.now() - lastPingAt < STOP_AFTER_LAST_PING_MS;
 }
 
 async function uploadLocation(technicianId: string, loc: Location): Promise<void> {
@@ -84,14 +99,78 @@ async function uploadLocation(technicianId: string, loc: Location): Promise<void
   );
 }
 
-function adminIsWatching(): boolean {
-  return Date.now() - lastPingAt < PING_FRESH_MS;
+async function stopWatcherOnly(): Promise<void> {
+  const id = watcherId;
+  watcherId = null;
+  if (id !== null) {
+    try {
+      await BackgroundGeolocation.removeWatcher({ id });
+    } catch {
+      // watcher already gone
+    }
+  }
 }
 
-function maybeUpload(technicianId: string): void {
-  if (!lastLocation || !adminIsWatching()) return;
-  if (Date.now() - lastUploadAt < UPLOAD_INTERVAL_MS - 1_000) return;
-  void uploadLocation(technicianId, lastLocation);
+/**
+ * Start the native watcher (this is what shows the notification).
+ * `oneShot` = permission/last-known bootstrap on enable: stop after first fix
+ * unless an admin started watching in the meantime.
+ */
+async function startWatcher(technicianId: string, oneShot: boolean): Promise<boolean> {
+  if (watcherId !== null || startingWatcher) return true;
+  startingWatcher = true;
+  try {
+    watcherId = await BackgroundGeolocation.addWatcher(
+      {
+        backgroundTitle: 'HydrogenRO — sharing location',
+        backgroundMessage: 'The office is viewing your live location right now.',
+        requestPermissions: true,
+        stale: oneShot, // a cached fix is fine for the enable bootstrap
+        distanceFilter: DISTANCE_FILTER_METERS,
+      },
+      (position, error) => {
+        if (error) {
+          if (error.code === 'NOT_AUTHORIZED') {
+            void stopLiveTracking(technicianId);
+            void BackgroundGeolocation.openSettings();
+          }
+          return;
+        }
+        if (!position) return;
+        lastLocation = position;
+        if (Date.now() - lastUploadAt >= UPLOAD_INTERVAL_MS - 1_000 || oneShot) {
+          void uploadLocation(technicianId, position);
+        }
+        // Native callbacks keep firing even if JS timers are throttled in the
+        // background, so the stop check lives here too.
+        if (!adminIsWatching() && (oneShot || lastPingAt !== 0)) {
+          void stopWatcherOnly();
+        }
+      }
+    );
+    return true;
+  } catch {
+    watcherId = null;
+    return false;
+  } finally {
+    startingWatcher = false;
+  }
+}
+
+function onTick(): void {
+  const technicianId = currentTechnicianId;
+  if (!technicianId) return;
+
+  if (adminIsWatching()) {
+    // Admin is viewing: make sure the watcher runs and uploads are fresh.
+    if (watcherId === null) void startWatcher(technicianId, false);
+    else if (lastLocation && Date.now() - lastUploadAt >= UPLOAD_INTERVAL_MS) {
+      void uploadLocation(technicianId, lastLocation);
+    }
+  } else if (watcherId !== null && lastPingAt !== 0) {
+    // Admin closed the view: stop the watcher so the notification disappears.
+    void stopWatcherOnly();
+  }
 }
 
 function startPingListener(technicianId: string): void {
@@ -112,19 +191,18 @@ function startPingListener(technicianId: string): void {
         const pingMs = new Date(ping).getTime();
         if (pingMs <= lastPingAt) return; // our own upload echoing back
         lastPingAt = pingMs;
-        maybeUpload(technicianId);
+        if (watcherId === null) void startWatcher(technicianId, false);
       }
     )
     .subscribe();
 
-  // Cheap 5s tick: uploads only happen while a fresh admin ping exists.
-  uploadTimer = setInterval(() => maybeUpload(technicianId), 5_000);
+  tickTimer = setInterval(onTick, 5_000);
 }
 
 function stopPingListener(): void {
-  if (uploadTimer) {
-    clearInterval(uploadTimer);
-    uploadTimer = null;
+  if (tickTimer) {
+    clearInterval(tickTimer);
+    tickTimer = null;
   }
   if (pingChannel) {
     void supabase.removeChannel(pingChannel);
@@ -132,62 +210,89 @@ function stopPingListener(): void {
   }
 }
 
-/**
- * Start background tracking. Returns true when the watcher started
- * (permission prompts are handled by the plugin).
- */
-export async function startLiveTracking(technicianId: string): Promise<boolean> {
-  if (!isNativeApp() || watcherId !== null) return watcherId !== null;
+/** Treat a wake-up signal (FCM push) exactly like a fresh admin ping. */
+function onLocationRequested(): void {
+  const technicianId = currentTechnicianId;
+  if (!sharingEnabled || !technicianId) return;
+  lastPingAt = Date.now();
+  if (watcherId === null) void startWatcher(technicianId, false);
+}
 
+let pushListenersAttached = false;
+
+/**
+ * Register for FCM push and store the device token on the technician's row.
+ * A silent data push { type: 'location_request' } wakes the app even when the
+ * realtime websocket is frozen in the background.
+ */
+async function setupPushWakeup(technicianId: string): Promise<void> {
   try {
-    watcherId = await BackgroundGeolocation.addWatcher(
-      {
-        backgroundTitle: 'HydrogenRO — on duty',
-        backgroundMessage: 'Location is shared with the office only when requested.',
-        requestPermissions: true,
-        stale: false,
-        distanceFilter: DISTANCE_FILTER_METERS,
-      },
-      (position, error) => {
-        if (error) {
-          if (error.code === 'NOT_AUTHORIZED') {
-            void stopLiveTracking(technicianId);
-            void BackgroundGeolocation.openSettings();
-          }
-          return;
+    const perm = await PushNotifications.requestPermissions();
+    if (perm.receive !== 'granted') return;
+
+    if (!pushListenersAttached) {
+      pushListenersAttached = true;
+      await PushNotifications.addListener('registration', (token) => {
+        const techId = currentTechnicianId;
+        if (!techId || !token?.value) return;
+        void supabase
+          .from('technician_live_locations')
+          .update({ fcm_token: token.value })
+          .eq('technician_id', techId);
+      });
+      await PushNotifications.addListener('pushNotificationReceived', (notification) => {
+        if ((notification?.data as { type?: string })?.type === 'location_request') {
+          onLocationRequested();
         }
-        if (position) {
-          const isFirstFix = lastLocation === null;
-          lastLocation = position;
-          // First fix creates/updates the row so admin sees "sharing is on".
-          if (isFirstFix) void uploadLocation(technicianId, position);
-          else maybeUpload(technicianId);
-        }
-      }
-    );
-    startPingListener(technicianId);
-    return true;
+      });
+    }
+
+    await PushNotifications.register();
   } catch {
-    watcherId = null;
-    return false;
+    // Push is an optimization; realtime pings still work while the app is awake.
   }
 }
 
-/** Stop tracking and mark the technician's row as no longer live. */
-export async function stopLiveTracking(technicianId: string): Promise<void> {
-  stopPingListener();
-  lastLocation = null;
-  lastPingAt = 0;
+/**
+ * Enable location sharing: registers the ping listener, requests the location
+ * permission via a brief one-shot fix, then stays notification-free until an
+ * admin actually views the location.
+ */
+export async function startLiveTracking(technicianId: string): Promise<boolean> {
+  if (!isNativeApp()) return false;
+  if (sharingEnabled) return true;
 
-  const id = watcherId;
-  watcherId = null;
-  if (id !== null) {
-    try {
-      await BackgroundGeolocation.removeWatcher({ id });
-    } catch {
-      // watcher already gone
-    }
+  sharingEnabled = true;
+  currentTechnicianId = technicianId;
+
+  // Row marks the technician as sharing even before the first fix arrives.
+  await supabase
+    .from('technician_live_locations')
+    .upsert(
+      { technician_id: technicianId, is_tracking: true, updated_at: new Date().toISOString() },
+      { onConflict: 'technician_id' }
+    );
+
+  startPingListener(technicianId);
+  void setupPushWakeup(technicianId);
+
+  const ok = await startWatcher(technicianId, true);
+  if (!ok) {
+    await stopLiveTracking(technicianId);
+    return false;
   }
+  return true;
+}
+
+/** Disable sharing entirely: stop watcher + listener, mark the row off. */
+export async function stopLiveTracking(technicianId: string): Promise<void> {
+  sharingEnabled = false;
+  currentTechnicianId = null;
+  lastPingAt = 0;
+  lastLocation = null;
+
+  stopPingListener();
+  await stopWatcherOnly();
 
   await supabase
     .from('technician_live_locations')

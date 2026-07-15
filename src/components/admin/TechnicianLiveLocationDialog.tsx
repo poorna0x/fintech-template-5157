@@ -24,8 +24,8 @@ import type { Technician } from '@/types';
 
 type LiveLocationRow = {
   technician_id: string;
-  latitude: number;
-  longitude: number;
+  latitude: number | null;
+  longitude: number | null;
   accuracy: number | null;
   is_tracking: boolean;
   updated_at: string;
@@ -66,10 +66,25 @@ const TechnicianLiveLocationDialog = ({
   const pingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const sendPing = useCallback(async (techId: string) => {
+    // DB stamp: picked up over realtime when the app is awake.
     await supabase
       .from('technician_live_locations')
       .update({ ping_requested_at: new Date().toISOString() })
       .eq('technician_id', techId);
+
+    // FCM push: wakes the app even when Android froze it in the background.
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      if (!token) return;
+      await fetch('/.netlify/functions/send-location-ping', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ technicianId: techId }),
+      });
+    } catch {
+      // Push is best-effort; the realtime ping still works while the app is awake.
+    }
   }, []);
 
   const cleanup = useCallback(() => {
@@ -119,7 +134,7 @@ const TechnicianLiveLocationDialog = ({
           },
           (payload) => {
             const next = payload.new as LiveLocationRow;
-            if (next?.latitude != null) setRow(next);
+            if (next) setRow(next);
           }
         )
         .subscribe();
@@ -145,9 +160,15 @@ const TechnicianLiveLocationDialog = ({
   }, [open]);
 
   const activeTechs = technicians.filter((t) => (t as any).isActive !== false);
-  const mapSrc = row
+  const hasCoords = row != null && row.latitude != null && row.longitude != null;
+  const mapSrc = hasCoords
     ? `https://maps.google.com/maps?q=${row.latitude},${row.longitude}&z=16&output=embed`
     : null;
+  // Sharing is on but nothing fresh in the last 2 min — the app is probably asleep.
+  const looksAsleep =
+    row != null &&
+    row.is_tracking &&
+    Date.now() - new Date(row.updated_at).getTime() > 120_000;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -218,6 +239,21 @@ const TechnicianLiveLocationDialog = ({
                 </p>
               )}
 
+              {looksAsleep && (
+                <p className="text-xs text-amber-700">
+                  Waiting for the technician's app to respond… If this doesn't update in a
+                  minute, their phone has paused the app — the location will refresh as soon
+                  as they open it.
+                </p>
+              )}
+
+              {!hasCoords && row.is_tracking && (
+                <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                  Sharing is on but no location fix has been received yet. Keep this window
+                  open — it updates automatically.
+                </div>
+              )}
+
               {mapSrc && (
                 <div className="overflow-hidden rounded-lg border">
                   <iframe
@@ -231,19 +267,21 @@ const TechnicianLiveLocationDialog = ({
               )}
 
               <div className="flex flex-wrap gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    window.open(
-                      `https://maps.google.com/?q=${row.latitude},${row.longitude}`,
-                      '_blank'
-                    )
-                  }
-                >
-                  <ExternalLink className="mr-2 h-4 w-4" />
-                  Open in Google Maps
-                </Button>
+                {hasCoords && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      window.open(
+                        `https://maps.google.com/?q=${row.latitude},${row.longitude}`,
+                        '_blank'
+                      )
+                    }
+                  >
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                    Open in Google Maps
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="sm"
