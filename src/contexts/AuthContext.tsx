@@ -443,6 +443,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const logout = async (): Promise<void> => {
     loggingOutRef.current = true;
     try {
+      // Native admin app: drop this device's push token while the session is
+      // still valid, so a logged-out phone stops getting admin notifications.
+      // No-op in the browser and on technician devices.
+      try {
+        const { unregisterAdminPushToken } = await import('@/lib/adminPush');
+        await unregisterAdminPushToken();
+      } catch {
+        /* best-effort */
+      }
+
       clearAuthSession();
       technicianSessionRef.current = false;
       setUser(null);
