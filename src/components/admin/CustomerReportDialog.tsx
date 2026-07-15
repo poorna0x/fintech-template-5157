@@ -92,7 +92,10 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto overflow-x-hidden">
-        <DialogHeader className="pr-14">
+        {/* Mobile only: equal side padding keeps the centered title clear of
+            the absolute X button without pushing the text off-center.
+            Desktop has room, so no padding there (as before). */}
+        <DialogHeader className="px-10 sm:px-0">
           <DialogTitle>
             Customer Report -{' '}
             <span className={customerNameClassName(customer)}>{customer.fullName || 'Unknown'}</span>

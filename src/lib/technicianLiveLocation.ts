@@ -1,17 +1,17 @@
 /**
  * Location sharing for the technician Android app (Capacitor wrapper).
  *
- * Lean design: the app itself does nothing while sharing is on — no watcher,
- * no realtime channel, no timers. Admin location requests are answered
- * entirely by the NATIVE push handler (HroMessagingService.java), which
- * receives the FCM data push even when Android has killed the app, grabs a
- * fix and uploads it via the upload-tech-location function.
+ * Always on — enabled automatically when the technician dashboard loads in
+ * the native app (no toggle). Lean design: the app itself does nothing while
+ * idle — no watcher, no realtime channel, no timers. Admin location requests
+ * are answered entirely by the NATIVE push handler (HroMessagingService.java),
+ * which receives the FCM data push even when Android has killed the app,
+ * grabs a fix and uploads it via the upload-tech-location function.
  *
- * The only JS work happens on the toggle:
- *  - enable: run one brief fix through the background-geolocation plugin
- *    (this triggers the Android permission prompt), upload it as the initial
- *    "last known" position, mark the row is_tracking=true, register FCM.
- *  - disable: mark the row is_tracking=false (the server then refuses pings).
+ * The only JS work happens once per app start (startLiveTracking):
+ * run one brief fix through the background-geolocation plugin (triggers the
+ * Android permission prompt), upload it as the initial "last known" position,
+ * mark the row is_tracking=true and register the FCM token.
  *
  * On the plain website/PWA `isNativeApp()` is false and none of this runs.
  */
@@ -58,11 +58,6 @@ let watcherTimeout: ReturnType<typeof setTimeout> | null = null;
 
 export function isNativeApp(): boolean {
   return Capacitor.isNativePlatform();
-}
-
-/** True when the "Share location" switch is on. */
-export function isLiveTrackingActive(): boolean {
-  return sharingEnabled;
 }
 
 async function stopWatcherOnly(): Promise<void> {

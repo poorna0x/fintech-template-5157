@@ -69,7 +69,8 @@ const TechnicianLiveLocationDialog = ({
   const [loading, setLoading] = useState(false);
   const [noRow, setNoRow] = useState(false);
   // True while we hide the stale location behind a loader, waiting for the
-  // phone to upload a fresh fix after our request.
+  // phone to answer our request with ANY upload (WhatsApp-style: show the
+  // first response immediately, then keep refining as better fixes arrive).
   const [waitingFresh, setWaitingFresh] = useState(false);
   // The phone didn't respond in time — we're showing the last known location.
   const [timedOut, setTimedOut] = useState(false);
@@ -78,6 +79,7 @@ const TechnicianLiveLocationDialog = ({
 
   const channelRef = useRef<RealtimeChannel | null>(null);
   const freshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const requestedAtRef = useRef(0);
 
   const sendPing = useCallback(async (techId: string) => {
     // One call does everything: stamps the request, creates the one-time
@@ -138,7 +140,8 @@ const TechnicianLiveLocationDialog = ({
       // Only ping when needed: sharing is on and the stored fix isn't already
       // current (saves the push, the GPS wake-up and the uploads).
       if (existing.is_tracking && !alreadyFresh) {
-        // Hide the stale location behind a loader until the fresh fix lands.
+        // Loader until the phone's FIRST answer; further fixes refine the map.
+        requestedAtRef.current = Date.now();
         setWaitingFresh(true);
         freshTimeoutRef.current = setTimeout(() => {
           setWaitingFresh(false);
@@ -163,14 +166,16 @@ const TechnicianLiveLocationDialog = ({
             const next = payload.new as LiveLocationRow;
             if (!next) return;
             setRow(next);
-            // Only a genuinely CURRENT fix ends the loader: measured within
-            // the last 2 minutes. A cached last-known upload (old fix_time)
-            // and the ping stamp echo both fail this check, so we keep
-            // waiting for the exact location until the timeout.
-            const isFresh =
+            // ANY upload that arrived after our request ends the loader —
+            // show the phone's first answer right away (usually its cached
+            // Google location, which is quite fresh) and let later fixes
+            // refine the map. updated_at is the upload time, so the ping
+            // stamp echo (which doesn't touch updated_at) fails this check.
+            // 30s margin covers browser/server clock skew.
+            const answered =
               next.latitude != null &&
-              Date.now() - new Date(fixTimeOf(next)).getTime() < FRESH_FIX_MAX_AGE_MS;
-            if (isFresh) {
+              new Date(next.updated_at).getTime() >= requestedAtRef.current - 30_000;
+            if (answered) {
               if (freshTimeoutRef.current) {
                 clearTimeout(freshTimeoutRef.current);
                 freshTimeoutRef.current = null;
@@ -213,14 +218,15 @@ const TechnicianLiveLocationDialog = ({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader className="pr-12">
+        {/* text-left overrides the mobile text-center default, which looked
+            lopsided combined with the right padding that clears the X button */}
+        <DialogHeader className="pr-10 text-left">
           <DialogTitle className="flex items-center gap-2">
             <MapPin className="h-5 w-5" />
             Technician location
           </DialogTitle>
-          <DialogDescription>
-            The technician's phone sends its current location once when you open this or tap
-            Refresh.
+          <DialogDescription className="sr-only">
+            Shows the technician's current location on a map.
           </DialogDescription>
         </DialogHeader>
 
@@ -250,8 +256,8 @@ const TechnicianLiveLocationDialog = ({
 
           {!loading && noRow && technicianId && (
             <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-              This technician hasn't turned on location sharing in the app yet, or they're
-              using the website instead of the Android app.
+              This technician hasn't opened the Android app yet — location sharing starts
+              automatically the first time they do. They may be using the website instead.
             </div>
           )}
 
@@ -276,7 +282,8 @@ const TechnicianLiveLocationDialog = ({
 
               {!row.is_tracking && (
                 <p className="text-xs text-muted-foreground">
-                  Showing the last known location from before sharing was turned off.
+                  Location sharing is off on this phone — usually the location permission
+                  was denied. Showing the last known location.
                 </p>
               )}
 
@@ -287,6 +294,15 @@ const TechnicianLiveLocationDialog = ({
                   to try again, or ask the technician to open the app.
                 </p>
               )}
+
+              {!timedOut &&
+                hasCoords &&
+                row.is_tracking &&
+                Date.now() - new Date(fixTimeOf(row)).getTime() > FRESH_FIX_MAX_AGE_MS && (
+                  <p className="text-xs text-muted-foreground">
+                    Waiting for a more precise fix — the map updates automatically.
+                  </p>
+                )}
 
               {!hasCoords && row.is_tracking && (
                 <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">

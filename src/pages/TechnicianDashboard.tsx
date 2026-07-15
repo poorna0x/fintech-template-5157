@@ -17,7 +17,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import Logo from '@/components/Logo';
-import LiveLocationToggle from '@/components/technician/LiveLocationToggle';
 import { 
   Wrench, 
   Filter, 
@@ -1123,11 +1122,13 @@ const TechnicianDashboard = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.technicianId, loadAssignedJobs]);
 
-  // Android app: register FCM token so job assignment pushes reach this device.
+  // Android app: enable location sharing + FCM push registration on start.
+  // Always on — no toggle; the phone only sends its location when the office
+  // requests it, and job pushes need the registered token anyway.
   useEffect(() => {
     if (!user?.technicianId) return;
-    void import('@/lib/technicianPush').then(({ registerTechnicianPushToken }) =>
-      registerTechnicianPushToken(user.technicianId!)
+    void import('@/lib/technicianLiveLocation').then(({ startLiveTracking }) =>
+      startLiveTracking(user.technicianId!)
     );
   }, [user?.technicianId]);
 
@@ -5743,13 +5744,6 @@ const TechnicianDashboard = () => {
       )}
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-24" style={{ touchAction: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehaviorY: 'auto' }}>
-
-        {/* Live location sharing (Android app only; renders nothing on the website) */}
-        {user?.technicianId && (
-          <div className="mb-6">
-            <LiveLocationToggle technicianId={user.technicianId} />
-          </div>
-        )}
 
         {/* Job Assignment Requests Section */}
         {assignmentRequests.length > 0 && (
