@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import {
   createOtpRequest,
   getOtpRequestForJob,
+  getStoredOtpFromRequirements,
   watchOtpRequest,
   type OtpRequestRow,
 } from '@/lib/technicianOtpRequests';
@@ -26,8 +27,10 @@ type AskTechnicianOtpDialogProps = {
 
 /**
  * Admin asks the assigned technician for the customer's 4-digit OTP
- * (Home Triangle jobs). Sends a push, then shows the code live once the
- * technician submits it in the app.
+ * (Home Triangle jobs). If the technician already entered it (at Start
+ * Work or earlier), it shows instantly from the job itself — no push, no
+ * extra request. Otherwise sends a push and shows the code live once the
+ * technician submits it.
  */
 const AskTechnicianOtpDialog = ({
   open,
@@ -36,6 +39,7 @@ const AskTechnicianOtpDialog = ({
   technicianName,
 }: AskTechnicianOtpDialogProps) => {
   const [request, setRequest] = useState<OtpRequestRow | null>(null);
+  const [storedOtp, setStoredOtp] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [failed, setFailed] = useState(false);
   const unwatchRef = useRef<(() => void) | null>(null);
@@ -93,7 +97,15 @@ const AskTechnicianOtpDialog = ({
     if (!open || !job) {
       stopWatching();
       setRequest(null);
+      setStoredOtp(null);
       setFailed(false);
+      return;
+    }
+    // The OTP may already live on the job (entered at Start Work or during
+    // completion) — show it straight away with zero extra queries or pushes.
+    const existing = getStoredOtpFromRequirements((job as any).requirements);
+    if (existing) {
+      setStoredOtp(existing);
       return;
     }
     void ask(job, false);
@@ -101,7 +113,7 @@ const AskTechnicianOtpDialog = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, job?.id]);
 
-  const otp = request?.otp || null;
+  const otp = request?.otp || storedOtp || null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -109,12 +121,14 @@ const AskTechnicianOtpDialog = ({
         <DialogHeader className="pr-10 text-left">
           <DialogTitle className="flex items-center gap-2">
             <KeyRound className="h-5 w-5" />
-            Ask OTP
+            Customer OTP
           </DialogTitle>
           <DialogDescription>
-            {technicianName
-              ? `${technicianName} has been asked to enter the customer's OTP.`
-              : "The technician has been asked to enter the customer's OTP."}
+            {storedOtp && !request
+              ? 'This code was already entered by the technician and is saved on the job.'
+              : technicianName
+                ? `${technicianName} has been asked to enter the customer's OTP.`
+                : "The technician has been asked to enter the customer's OTP."}
           </DialogDescription>
         </DialogHeader>
 

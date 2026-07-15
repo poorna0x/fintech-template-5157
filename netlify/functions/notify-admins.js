@@ -9,6 +9,7 @@ const { getMessaging, isStaleTokenError } = require('./fcm-helper');
 
 const COLOR_EN_ROUTE = '#2563EB'; // blue — on the way
 const COLOR_COMPLETED = '#16A34A'; // green — done
+const COLOR_OTP = '#D97706'; // amber — customer OTP entered at start work
 
 // Same rules as getLeadSourceFromJob in the web app, minus analytics extras.
 function resolveLeadSource(job) {
@@ -71,8 +72,12 @@ exports.handler = async (event) => {
 
   const jobId = String(body.jobId || '').trim();
   const evt = String(body.event || '').trim();
-  if (!jobId || !['en_route', 'completed'].includes(evt)) {
+  const otp = String(body.otp || '').trim();
+  if (!jobId || !['en_route', 'completed', 'otp_entered'].includes(evt)) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'jobId and event required' }) };
+  }
+  if (evt === 'otp_entered' && !/^\d{4}$/.test(otp)) {
+    return { statusCode: 400, headers, body: JSON.stringify({ error: 'otp must be 4 digits' }) };
   }
 
   const supabaseUrl = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
@@ -130,6 +135,15 @@ exports.handler = async (event) => {
     title = `${techName} is on the way`;
     message = `${service} — ${customerName}`;
     color = COLOR_EN_ROUTE;
+  } else if (evt === 'otp_entered') {
+    // Customer OTP collected at Start Work — office wants the code plus
+    // customer name and lead source to verify against Home Triangle.
+    title = `OTP ${otp} — ${customerName}`;
+    const lines = [`Entered by ${techName} at start of work`];
+    const leadSource = resolveLeadSource(job);
+    if (leadSource) lines.push(`Lead: ${leadSource}`);
+    message = lines.join('\n');
+    color = COLOR_OTP;
   } else {
     title = `${techName} completed a job`;
     const lines = [`${service} — ${customerName}`];

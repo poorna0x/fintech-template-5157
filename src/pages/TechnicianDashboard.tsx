@@ -58,6 +58,8 @@ import { getAmcDocumentBrandLabel } from '@/lib/amc-brand';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { formatCompletedWhen } from '@/lib/relativeTime';
 import { getJobEquipmentDisplay, parseJobRequirements, isOfficeCompletedJob } from '@/lib/adminUtils';
+import { applyOtpToRequirements, getStoredOtpFromRequirements } from '@/lib/technicianOtpRequests';
+import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { db, supabase, fetchCustomerIdsWithCompletedJobsMap } from '@/lib/supabase';
 import { mapCustomerGstFields } from '@/lib/customerGst';
 import {
@@ -471,6 +473,9 @@ const TechnicianDashboard = () => {
   const [newJobsAlertOpen, setNewJobsAlertOpen] = useState(false);
   const [confirmStartJobDialog, setConfirmStartJobDialog] = useState<{open: boolean, job: Job | null}>({open: false, job: null});
   const [confirmStartWorkDialog, setConfirmStartWorkDialog] = useState<{open: boolean, job: Job | null}>({open: false, job: null});
+  // Customer OTP asked right at Start Work (Home Triangle / OTP-required jobs).
+  const [startWorkOtp, setStartWorkOtp] = useState('');
+  const [startWorkOtpError, setStartWorkOtpError] = useState('');
   const [visitOrderSkipDialog, setVisitOrderSkipDialog] = useState<{
     open: boolean;
     job: Job | null;
@@ -3041,7 +3046,7 @@ const TechnicianDashboard = () => {
   };
 
   // Actually perform the start work action
-  const performStartWork = async (job: Job) => {
+  const performStartWork = async (job: Job, customerOtp?: string) => {
     if (!user?.technicianId) return;
 
     try {
@@ -3050,14 +3055,33 @@ const TechnicianDashboard = () => {
       
       markJobAsSeen(job.id);
 
+      // If the customer's OTP was collected in the Start Work dialog, store it in
+      // the same requirements JSON slot the completion flow uses — one write, no
+      // extra table, and the admin Completed section keeps showing it later.
+      let updatedRequirements: any[] | undefined;
+      if (customerOtp && /^\d{4}$/.test(customerOtp)) {
+        updatedRequirements = applyOtpToRequirements(
+          parseJobRequirements((job as any).requirements ?? job.requirements),
+          customerOtp
+        );
+      }
+
       // Update job status to IN_PROGRESS (at location, working)
       const { error } = await db.jobs.update(job.id, {
         status: 'IN_PROGRESS',
         start_time: new Date().toISOString(),
+        ...(updatedRequirements ? { requirements: updatedRequirements as any } : {}),
       });
 
       if (error) {
         throw new Error(error.message);
+      }
+
+      // Push the OTP to the office phones with customer name + lead source.
+      if (updatedRequirements && customerOtp) {
+        void import('@/lib/notifyAdminsJobEvent').then(({ notifyAdminsJobEvent }) =>
+          notifyAdminsJobEvent(job.id, 'otp_entered', { otp: customerOtp })
+        );
       }
 
       // Freeze the current on-screen order so this job stays where it is instead of
@@ -3067,7 +3091,12 @@ const TechnicianDashboard = () => {
       shouldPreserveOrderRef.current = true;
       setJobs(prev => prev.map(j => 
         j.id === job.id 
-          ? { ...j, status: 'IN_PROGRESS' as any, start_time: new Date().toISOString() }
+          ? {
+              ...j,
+              status: 'IN_PROGRESS' as any,
+              start_time: new Date().toISOString(),
+              ...(updatedRequirements ? { requirements: updatedRequirements as any } : {}),
+            }
           : j
       ));
 
@@ -4136,6 +4165,33 @@ const TechnicianDashboard = () => {
     return otpReq?.otp_code || null;
   };
 
+  /** Job-level OTP check (any job, not just the one open in the complete dialog). */
+  const jobRequiresOtp = (job: Job | null): boolean => {
+    if (!job) return false;
+    return parseJobRequirements((job as any).requirements ?? job.requirements).some(
+      (req: any) => req?.require_otp === true
+    );
+  };
+
+  /** OTP already captured on this job (at Start Work or via an office request). */
+  const getJobEnteredOtp = (job: Job | null): string | null => {
+    if (!job) return null;
+    return getStoredOtpFromRequirements((job as any).requirements ?? job.requirements);
+  };
+
+  /** Completion wizard only shows the OTP step when the code wasn't captured at Start Work. */
+  const needsOtpStep = (): boolean =>
+    requiresOtp() && !getJobEnteredOtp(selectedJobForComplete);
+
+  // Never park the wizard on step 7 when the OTP is already captured
+  // (e.g. a draft saved before the code was entered at Start Work).
+  useEffect(() => {
+    if (completeJobStep === 7 && !needsOtpStep()) {
+      setCompleteJobStep(6);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [completeJobStep, selectedJobForComplete]);
+
   /** Remote URL / Cloudinary — local file placeholders fail this until upload finishes. */
   const isUploadedMediaUrl = (u: unknown): u is string =>
     typeof u === 'string' &&
@@ -4184,8 +4240,8 @@ const TechnicianDashboard = () => {
   /** Primary button shows "Complete Job" — same steps that can trigger DB submit in one click. */
   const isCompleteJobFooterSubmit = () =>
     completeJobStep === 6 ||
-    (completeJobStep === 3 && isBillAmountZero() && isSoftenerService() && !requiresOtp()) ||
-    (completeJobStep === 5 && isSoftenerService() && !requiresOtp());
+    (completeJobStep === 3 && isBillAmountZero() && isSoftenerService() && !needsOtpStep()) ||
+    (completeJobStep === 5 && isSoftenerService() && !needsOtpStep());
 
   /** Advance past step 2 with the bill photo URLs to persist (empty = skipped). */
   const advanceFromStep2 = (billPhotosForSave: string[]) => {
@@ -4196,7 +4252,7 @@ const TechnicianDashboard = () => {
     const isSoftener = isSoftenerService();
     const shouldSkipAMC = billIsZero || isSoftener;
 
-    const needsOtp = requiresOtp();
+    const needsOtp = needsOtpStep();
     let nextStep: 3 | 4 | 6 | 7 = 3;
     if (shouldSkipAMC) {
       if (billIsZero) {
@@ -4447,7 +4503,7 @@ const TechnicianDashboard = () => {
       
       // Check if bill amount is zero - if so, skip payment steps (4 and 5)
       const billIsZeroStep3Continue = isBillAmountZero();
-      const needsOtp = requiresOtp();
+      const needsOtp = needsOtpStep();
       
       // Determine next step:
       // - If bill is zero: skip to step 7 (OTP) if required, or step 6 (prefilter) or submit if softener
@@ -4484,7 +4540,7 @@ const TechnicianDashboard = () => {
       if (isBillAmountZero()) {
         // Skip to step 7 (OTP) if required, or step 6 (prefilter) or submit if softener
         const isSoftener = isSoftenerService();
-        const needsOtp = requiresOtp();
+        const needsOtp = needsOtpStep();
         if (needsOtp) {
           setCompleteJobStep(7);
           return;
@@ -4528,7 +4584,7 @@ const TechnicianDashboard = () => {
         return;
       }
       // Check if OTP is required
-      const needsOtp = requiresOtp();
+      const needsOtp = needsOtpStep();
       
       if (needsOtp) {
         // Go to OTP step (step 7)
@@ -7388,13 +7444,23 @@ const TechnicianDashboard = () => {
         <AlertDialog open={confirmStartWorkDialog.open} onOpenChange={(open) => {
           if (!open) {
             setConfirmStartWorkDialog({ open: false, job: null });
+            setStartWorkOtp('');
+            setStartWorkOtpError('');
           }
         }}>
           <AlertDialogContent>
+            {(() => {
+              const startWorkJob = confirmStartWorkDialog.job;
+              const startWorkNeedsOtp =
+                jobRequiresOtp(startWorkJob) && !getJobEnteredOtp(startWorkJob);
+              return (
+                <>
             <AlertDialogHeader>
               <AlertDialogTitle>Start Work</AlertDialogTitle>
               <AlertDialogDescription>
-                Are you sure you want to start work on this job? This will mark the job as in progress.
+                {startWorkNeedsOtp
+                  ? "Ask the customer for their 4-digit OTP to start work. It will be sent to the office."
+                  : 'Are you sure you want to start work on this job? This will mark the job as in progress.'}
               </AlertDialogDescription>
             </AlertDialogHeader>
             {(() => {
@@ -7416,22 +7482,72 @@ const TechnicianDashboard = () => {
                 <p><strong>Service:</strong> {(confirmStartWorkDialog.job as any).service_type || confirmStartWorkDialog.job.serviceType || 'N/A'}</p>
               </div>
             )}
+            {startWorkNeedsOtp && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 sm:p-4">
+                <Label className="text-sm font-semibold text-amber-900">Customer OTP *</Label>
+                <p className="text-xs text-amber-700 mb-3">
+                  Enter the customer's 4-digit code
+                </p>
+                <div className="flex justify-center">
+                  <InputOTP
+                    maxLength={4}
+                    value={startWorkOtp}
+                    inputMode="numeric"
+                    pattern="^\d+$"
+                    onChange={(value) => {
+                      setStartWorkOtp(value.replace(/\D/g, ''));
+                      setStartWorkOtpError('');
+                    }}
+                  >
+                    <InputOTPGroup className="gap-2">
+                      {[0, 1, 2, 3].map((i) => (
+                        <InputOTPSlot
+                          key={i}
+                          index={i}
+                          className="h-12 w-12 rounded-lg border border-amber-300 bg-white text-lg font-semibold text-amber-900 shadow-sm first:rounded-l-lg last:rounded-r-lg"
+                        />
+                      ))}
+                    </InputOTPGroup>
+                  </InputOTP>
+                </div>
+                {startWorkOtpError && (
+                  <p className="text-sm text-red-500 mt-2 text-center">{startWorkOtpError}</p>
+                )}
+              </div>
+            )}
             <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => setConfirmStartWorkDialog({ open: false, job: null })}>
+              <AlertDialogCancel onClick={() => {
+                setConfirmStartWorkDialog({ open: false, job: null });
+                setStartWorkOtp('');
+                setStartWorkOtpError('');
+              }}>
                 Cancel
               </AlertDialogCancel>
               <AlertDialogAction
-                onClick={() => {
-                  if (confirmStartWorkDialog.job) {
-                    performStartWork(confirmStartWorkDialog.job);
-                    setConfirmStartWorkDialog({ open: false, job: null });
+                disabled={startWorkNeedsOtp && startWorkOtp.length !== 4}
+                onClick={(e) => {
+                  if (!confirmStartWorkDialog.job) return;
+                  if (startWorkNeedsOtp && startWorkOtp.length !== 4) {
+                    e.preventDefault();
+                    setStartWorkOtpError('Please enter all 4 digits');
+                    return;
                   }
+                  performStartWork(
+                    confirmStartWorkDialog.job,
+                    startWorkNeedsOtp ? startWorkOtp : undefined
+                  );
+                  setConfirmStartWorkDialog({ open: false, job: null });
+                  setStartWorkOtp('');
+                  setStartWorkOtpError('');
                 }}
-                className="bg-orange-600 hover:bg-orange-700"
+                className="bg-orange-600 hover:bg-orange-700 disabled:opacity-50"
               >
                 Start Work
               </AlertDialogAction>
             </AlertDialogFooter>
+                </>
+              );
+            })()}
           </AlertDialogContent>
         </AlertDialog>
 
@@ -7973,11 +8089,11 @@ const TechnicianDashboard = () => {
                     <span className="relative z-10">5</span>
                   </div>
                   <div className={`w-4 sm:w-6 md:w-8 h-0.5 sm:h-1 transition-colors flex-shrink-0 ${
-                    completeJobStep >= (requiresOtp() ? 7 : 6) ? 'bg-black' : 'bg-gray-200'
+                    completeJobStep >= (needsOtpStep() ? 7 : 6) ? 'bg-black' : 'bg-gray-200'
                   }`}></div>
                   
                   {/* Step 6 - Prefilter (or Step 7 - OTP if required) */}
-                  {requiresOtp() ? (
+                  {needsOtpStep() ? (
                     <>
                       {/* Step 7 - OTP Verification */}
                       <div className={`flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full text-xs font-medium flex-shrink-0 relative ${
@@ -8625,7 +8741,7 @@ const TechnicianDashboard = () => {
               )}
 
               {/* Step 7: OTP Verification */}
-              {completeJobStep === 7 && requiresOtp() && (
+              {completeJobStep === 7 && needsOtpStep() && (
                 <div className="space-y-4">
                   <div>
                     <Label>Enter 4-Digit OTP *</Label>
@@ -8799,7 +8915,7 @@ const TechnicianDashboard = () => {
                     }
                     setCompleteJobStep((prev) => {
                       // If going back from step 6 and OTP is required, go to step 7, not step 5
-                      if (prev === 6 && requiresOtp()) {
+                      if (prev === 6 && needsOtpStep()) {
                         return 7;
                       }
                       // If going back from step 7, go to step 5

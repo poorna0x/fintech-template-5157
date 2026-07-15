@@ -17,6 +17,7 @@ import { RefreshCw } from 'lucide-react';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import { broadcastTechnicianJobListRefreshForJob } from '@/lib/technicianJobListSync';
 import { parseJobRequirements } from '@/lib/adminUtils';
+import { getStoredOtpFromRequirements } from '@/lib/technicianOtpRequests';
 
 interface CompleteJobDialogProps {
   open: boolean;
@@ -143,6 +144,13 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
     if (!job) return null;
     const otpReq = parseJobRequirements(job.requirements).find((req: any) => req?.require_otp === true);
     return otpReq?.otp_code || null;
+  };
+
+  // Skip the OTP step when the code was already captured (technician entered
+  // it at Start Work, or it arrived via an office OTP request).
+  const needsOtpStep = (): boolean => {
+    if (!requiresOtp()) return false;
+    return !getStoredOtpFromRequirements(job?.requirements);
   };
 
   // Calculate AMC end date: agreement date + years - 1 day
@@ -664,7 +672,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
       const billIsZero = isBillAmountZero();
       const isSoftener = isSoftenerService();
       const shouldSkipAMC = billIsZero || isSoftener;
-      const needsOtp = requiresOtp();
+      const needsOtp = needsOtpStep();
       
       // Determine next step:
       // - If should skip AMC: go directly to step 4 (payment) or step 7 (OTP) or step 6 (prefilter/submit)
@@ -732,7 +740,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
       
       // Check if bill amount is zero - if so, skip payment steps (4 and 5)
       const billIsZeroStep3Continue = isBillAmountZero();
-      const needsOtp = requiresOtp();
+      const needsOtp = needsOtpStep();
       
       // Determine next step:
       // - If bill is zero: skip to step 7 (OTP) if required, or step 6 (prefilter) or submit if softener
@@ -769,7 +777,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
       if (isBillAmountZero()) {
         // Skip to step 7 (OTP) if required, or step 6 (prefilter) or submit if softener
         const isSoftener = isSoftenerService();
-        const needsOtp = requiresOtp();
+        const needsOtp = needsOtpStep();
         if (needsOtp) {
           setCompleteJobStep(7);
           return;
@@ -840,7 +848,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
       }
 
       // Check if OTP is required
-      const needsOtp = requiresOtp();
+      const needsOtp = needsOtpStep();
       if (needsOtp) {
         // Go to OTP step (step 7)
         setCompleteJobStep(7);
@@ -1032,11 +1040,11 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                   <span className="relative z-10">5</span>
                 </div>
                 <div className={`w-4 sm:w-6 md:w-8 h-0.5 sm:h-1 transition-colors flex-shrink-0 ${
-                  completeJobStep >= (requiresOtp() ? 7 : 6) ? 'bg-black' : 'bg-gray-200'
+                  completeJobStep >= (needsOtpStep() ? 7 : 6) ? 'bg-black' : 'bg-gray-200'
                 }`}></div>
                 
                 {/* Step 6 - Prefilter (or Step 7 - OTP if required) */}
-                {requiresOtp() ? (
+                {needsOtpStep() ? (
                   <>
                     {/* Step 7 - OTP Verification */}
                     <div className={`flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 rounded-full text-xs font-medium flex-shrink-0 relative ${
@@ -1555,7 +1563,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
             )}
 
             {/* Step 7: OTP Verification */}
-            {completeJobStep === 7 && requiresOtp() && (
+            {completeJobStep === 7 && needsOtpStep() && (
               <div className="space-y-4">
                 <div>
                   <Label>Enter 4-Digit OTP *</Label>
@@ -1706,7 +1714,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                 if (completeJobStep > 1) {
                       setCompleteJobStep((prev) => {
                         // If going back from step 6 and OTP is required, go to step 7, not step 5
-                        if (prev === 6 && requiresOtp()) {
+                        if (prev === 6 && needsOtpStep()) {
                           return 7;
                         }
                         // If going back from step 7, go to step 5
@@ -1821,7 +1829,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                   {isSubmittingJobCompletion ? 'Completing...' : 'Uploading...'}
                 </>
               ) : (
-                (completeJobStep === 6 || (completeJobStep === 3 && isBillAmountZero() && isSoftenerService()) || (completeJobStep === 5 && isSoftenerService() && !requiresOtp())) 
+                (completeJobStep === 6 || (completeJobStep === 3 && isBillAmountZero() && isSoftenerService()) || (completeJobStep === 5 && isSoftenerService() && !needsOtpStep())) 
                   ? 'Complete Job' 
                   : 'Next'
               )}

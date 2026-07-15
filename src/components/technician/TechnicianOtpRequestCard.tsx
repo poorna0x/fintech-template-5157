@@ -83,7 +83,7 @@ const TechnicianOtpRequestCard = ({ technicianId, jobs }: TechnicianOtpRequestCa
     }
     setSubmitting(request.id);
     try {
-      const ok = await submitOtp(request.id, code);
+      const ok = await submitOtp(request.id, code, request.job_id);
       if (ok) {
         toast.success('OTP sent to the office');
         setRequests((prev) => prev.filter((r) => r.id !== request.id));

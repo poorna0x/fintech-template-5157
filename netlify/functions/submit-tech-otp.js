@@ -45,7 +45,7 @@ exports.handler = async (event) => {
 
   const { data: row, error: rowErr } = await db
     .from('technician_otp_requests')
-    .select('id,reply_nonce,created_at')
+    .select('id,job_id,reply_nonce,created_at')
     .eq('id', requestId)
     .maybeSingle();
 
@@ -75,6 +75,43 @@ exports.handler = async (event) => {
   if (updErr) {
     console.error('[submit-tech-otp] update failed', updErr.message);
     return { statusCode: 500, headers, body: JSON.stringify({ error: 'Update failed' }) };
+  }
+
+  // Also copy the code into jobs.requirements (same slot the completion flow
+  // uses) so the admin Completed section keeps showing it. Best-effort — the
+  // request row already has the code for the live dialog.
+  if (row.job_id) {
+    try {
+      const { data: jobRow } = await db
+        .from('jobs')
+        .select('requirements')
+        .eq('id', row.job_id)
+        .maybeSingle();
+      if (jobRow) {
+        let reqs = [];
+        try {
+          const raw = jobRow.requirements;
+          if (typeof raw === 'string') reqs = JSON.parse(raw);
+          else if (Array.isArray(raw)) reqs = raw;
+          else if (raw && typeof raw === 'object') reqs = [raw];
+        } catch {
+          reqs = [];
+        }
+        if (!Array.isArray(reqs)) reqs = [];
+        const now = new Date().toISOString();
+        const otpReq = reqs.find((r) => r && typeof r === 'object' && r.require_otp === true);
+        if (otpReq) {
+          otpReq.otp_entered = otp;
+          otpReq.otp_verified = true;
+          otpReq.otp_verified_at = now;
+        } else {
+          reqs.push({ require_otp: true, otp_entered: otp, otp_verified: true, otp_verified_at: now });
+        }
+        await db.from('jobs').update({ requirements: reqs }).eq('id', row.job_id);
+      }
+    } catch (err) {
+      console.warn('[submit-tech-otp] could not store OTP on job', err?.message || err);
+    }
   }
 
   return { statusCode: 200, headers, body: JSON.stringify({ ok: true }) };

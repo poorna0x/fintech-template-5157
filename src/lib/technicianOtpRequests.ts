@@ -18,6 +18,63 @@ export type OtpRequestRow = {
 
 const OTP_REQUEST_SELECT = 'id,job_id,technician_id,otp,created_at,submitted_at';
 
+/**
+ * Merge a customer OTP into a job's requirements JSON (the same place the
+ * completion wizard writes it), so it survives to the admin Completed section.
+ * Mutates a copy and returns it.
+ */
+export function applyOtpToRequirements(requirements: any[], otp: string): any[] {
+  const reqs = Array.isArray(requirements) ? [...requirements] : [];
+  const now = new Date().toISOString();
+  const otpReq = reqs.find((r: any) => r && typeof r === 'object' && r.require_otp === true);
+  if (otpReq) {
+    otpReq.otp_entered = otp;
+    otpReq.otp_verified = true;
+    otpReq.otp_verified_at = now;
+  } else {
+    reqs.push({ require_otp: true, otp_entered: otp, otp_verified: true, otp_verified_at: now });
+  }
+  return reqs;
+}
+
+/** Read the customer OTP already stored on a job's requirements JSON, if any. */
+export function getStoredOtpFromRequirements(requirements: any): string | null {
+  let reqs: any[] = [];
+  try {
+    if (typeof requirements === 'string') reqs = JSON.parse(requirements);
+    else if (Array.isArray(requirements)) reqs = requirements;
+    else if (requirements && typeof requirements === 'object') reqs = [requirements];
+  } catch {
+    reqs = [];
+  }
+  const otpReq = reqs.find((r: any) => r && typeof r === 'object' && r.require_otp === true);
+  const otp = otpReq?.otp_entered;
+  return typeof otp === 'string' && otp.trim() ? otp.trim() : null;
+}
+
+/**
+ * Persist the OTP onto jobs.requirements (single small read + write).
+ * Best-effort: the technician_otp_requests row already carries the code.
+ */
+async function persistOtpOnJob(jobId: string, otp: string): Promise<void> {
+  try {
+    const { data } = await supabase.from('jobs').select('requirements').eq('id', jobId).maybeSingle();
+    if (!data) return;
+    let reqs: any[] = [];
+    try {
+      const raw = (data as any).requirements;
+      if (typeof raw === 'string') reqs = JSON.parse(raw);
+      else if (Array.isArray(raw)) reqs = raw;
+      else if (raw && typeof raw === 'object') reqs = [raw];
+    } catch {
+      reqs = [];
+    }
+    await supabase.from('jobs').update({ requirements: applyOtpToRequirements(reqs, otp) }).eq('id', jobId);
+  } catch (err) {
+    console.warn('[otp] could not store OTP on job:', err);
+  }
+}
+
 /** Admin: create (or re-ask, replacing) the OTP request and push-notify the technician. */
 export async function createOtpRequest(opts: {
   jobId: string;
@@ -121,11 +178,15 @@ export async function getPendingOtpRequests(technicianId: string): Promise<OtpRe
 }
 
 /** Technician: submit the code the customer gave them. */
-export async function submitOtp(requestId: string, otp: string): Promise<boolean> {
+export async function submitOtp(requestId: string, otp: string, jobId?: string): Promise<boolean> {
   const { data, error } = await supabase
     .from('technician_otp_requests')
     .update({ otp, submitted_at: new Date().toISOString() })
     .eq('id', requestId)
     .select('id');
-  return !error && !!data?.length;
+  const ok = !error && !!data?.length;
+  // Also copy the code onto the job itself so the admin Completed section
+  // shows it even after the request row is long forgotten.
+  if (ok && jobId) void persistOtpOnJob(jobId, otp);
+  return ok;
 }
