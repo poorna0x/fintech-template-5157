@@ -37,13 +37,13 @@ const LiveLocationToggle = ({ technicianId }: { technicianId: string }) => {
         const ok = await startLiveTracking(technicianId);
         setOn(ok);
         localStorage.setItem(STORAGE_KEY, ok ? '1' : '0');
-        if (ok) toast.success('Live location sharing is on');
+        if (ok) toast.success('Location sharing is on');
         else toast.error('Could not start location sharing. Check location permission.');
       } else {
         await stopLiveTracking(technicianId);
         setOn(false);
         localStorage.setItem(STORAGE_KEY, '0');
-        toast.success('Live location sharing is off');
+        toast.success('Location sharing is off');
       }
     } finally {
       setBusy(false);
@@ -57,9 +57,9 @@ const LiveLocationToggle = ({ technicianId }: { technicianId: string }) => {
           className={cn('mt-0.5 h-4 w-4 shrink-0', on ? 'text-green-600' : 'text-muted-foreground')}
         />
         <div>
-          <span className="font-medium">Share live location</span>
+          <span className="font-medium">Share location</span>
           <p className="text-xs text-muted-foreground">
-            Sent only while the office is viewing it.
+            Sent once, only when the office requests it.
           </p>
         </div>
       </div>

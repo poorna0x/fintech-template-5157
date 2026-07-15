@@ -37,9 +37,6 @@ type TechnicianLiveLocationDialogProps = {
   technicians: Technician[];
 };
 
-/** Re-stamp ping_requested_at while the dialog is open so the app keeps uploading. */
-const PING_INTERVAL_MS = 25_000;
-
 function agoLabel(iso: string): string {
   const secs = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
   if (secs < 60) return `${secs}s ago`;
@@ -63,7 +60,6 @@ const TechnicianLiveLocationDialog = ({
   const [, setNowTick] = useState(0);
 
   const channelRef = useRef<RealtimeChannel | null>(null);
-  const pingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const sendPing = useCallback(async (techId: string) => {
     // DB stamp: picked up over realtime when the app is awake.
@@ -88,10 +84,6 @@ const TechnicianLiveLocationDialog = ({
   }, []);
 
   const cleanup = useCallback(() => {
-    if (pingTimerRef.current) {
-      clearInterval(pingTimerRef.current);
-      pingTimerRef.current = null;
-    }
     if (channelRef.current) {
       void supabase.removeChannel(channelRef.current);
       channelRef.current = null;
@@ -118,9 +110,8 @@ const TechnicianLiveLocationDialog = ({
       }
       setRow(data as LiveLocationRow);
 
-      // Ask the app to start uploading, and repeat while the dialog stays open.
+      // One request: the app sends its current location once and stops.
       void sendPing(techId);
-      pingTimerRef.current = setInterval(() => void sendPing(techId), PING_INTERVAL_MS);
 
       channelRef.current = supabase
         .channel(`admin-live-loc-${techId}`)
@@ -176,10 +167,11 @@ const TechnicianLiveLocationDialog = ({
         <DialogHeader className="pr-12">
           <DialogTitle className="flex items-center gap-2">
             <MapPin className="h-5 w-5" />
-            Technician live location
+            Technician location
           </DialogTitle>
           <DialogDescription>
-            Location is fetched from the technician's app only while this window is open.
+            The technician's phone sends its current location once when you open this or tap
+            Refresh.
           </DialogDescription>
         </DialogHeader>
 
@@ -241,16 +233,16 @@ const TechnicianLiveLocationDialog = ({
 
               {looksAsleep && (
                 <p className="text-xs text-amber-700">
-                  Waiting for the technician's app to respond… If this doesn't update in a
-                  minute, their phone has paused the app — the location will refresh as soon
-                  as they open it.
+                  Waiting for the technician's phone to send a fresh location… If this doesn't
+                  update in a minute, their phone has paused the app — tap Refresh or try again
+                  after they open the app.
                 </p>
               )}
 
               {!hasCoords && row.is_tracking && (
                 <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                  Sharing is on but no location fix has been received yet. Keep this window
-                  open — it updates automatically.
+                  Sharing is on but no location has been received yet. It will appear here
+                  automatically once the phone responds.
                 </div>
               )}
 

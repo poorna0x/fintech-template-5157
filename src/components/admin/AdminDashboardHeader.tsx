@@ -246,7 +246,7 @@ export function AdminDashboardHeader({
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => onOpenAdminTool('technician-live-location')}>
                     <MapPin className="w-4 h-4 mr-2" />
-                    Technician live location
+                    Technician location
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     disabled={isManager}
