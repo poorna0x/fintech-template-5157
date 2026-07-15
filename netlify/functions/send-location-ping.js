@@ -61,15 +61,38 @@ exports.handler = async (event) => {
   if (!row) {
     return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'no_row' }) };
   }
+  if (!row.is_tracking) {
+    return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'sharing_off' }) };
+  }
   if (!row.fcm_token) {
     return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'no_token' }) };
   }
+
+  // One-time nonce: the app's native handler echoes it back to
+  // upload-tech-location as proof it received this specific push.
+  const nonce = require('crypto').randomUUID();
+  const { error: nonceErr } = await db
+    .from('technician_live_locations')
+    .update({ ping_nonce: nonce, ping_requested_at: new Date().toISOString() })
+    .eq('technician_id', technicianId);
+  if (nonceErr) {
+    // ping_nonce column missing (patch SQL not run yet) — the JS path in the
+    // awake app still works, so send the push without native upload support.
+    console.error('[send-location-ping] nonce save failed', nonceErr.message);
+  }
+
+  const siteUrl = (process.env.URL || '').replace(/\/$/, '');
 
   try {
     const messaging = await getMessaging(db);
     await messaging.send({
       token: row.fcm_token,
-      data: { type: 'location_request' },
+      data: {
+        type: 'location_request',
+        technicianId,
+        ...(nonceErr ? {} : { nonce }),
+        ...(siteUrl ? { uploadUrl: `${siteUrl}/.netlify/functions/upload-tech-location` } : {}),
+      },
       android: { priority: 'high' },
     });
     return { statusCode: 200, headers, body: JSON.stringify({ sent: true }) };

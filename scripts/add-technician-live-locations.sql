@@ -28,6 +28,11 @@ ALTER TABLE public.technician_live_locations ALTER COLUMN longitude DROP NOT NUL
 ALTER TABLE public.technician_live_locations
   ADD COLUMN IF NOT EXISTS fcm_token text;
 
+-- One-time nonce included in the location-request push; the app's native code
+-- echoes it back to upload-tech-location as proof it received the push.
+ALTER TABLE public.technician_live_locations
+  ADD COLUMN IF NOT EXISTS ping_nonce text;
+
 COMMENT ON TABLE public.technician_live_locations IS
   'Latest known location per technician (single row). App uploads only while an admin is viewing (ping_requested_at fresh).';
 
