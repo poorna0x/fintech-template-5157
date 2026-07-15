@@ -2,9 +2,10 @@
 // Admin-only. Sends a silent, high-priority FCM data message so the app can
 // start its GPS watcher even when Android has frozen it in the background.
 //
-// Env var required: FIREBASE_SERVICE_ACCOUNT — the full JSON of a Firebase
-// service account key (Project settings → Service accounts → Generate new
-// private key). Never commit that file.
+// The Firebase service-account credential lives in the app_secrets table
+// (key 'firebase_service_account', readable only via the service role) —
+// NOT in an env var, because a ~2.5KB value pushes the total function env
+// over AWS Lambda's 4KB limit and breaks deploys of every function.
 
 const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
@@ -12,17 +13,31 @@ const { authorizeAdminBearer } = require('./admin-auth-guard');
 
 let messagingPromise = null;
 
-function getMessaging() {
+function getMessaging(db) {
   if (!messagingPromise) {
     messagingPromise = (async () => {
       const admin = require('firebase-admin');
       if (!admin.apps.length) {
-        const raw = (process.env.FIREBASE_SERVICE_ACCOUNT || '').trim();
-        if (!raw) throw new Error('FIREBASE_SERVICE_ACCOUNT env var is not set');
+        let raw = (process.env.FIREBASE_SERVICE_ACCOUNT || '').trim();
+        if (!raw) {
+          const { data, error } = await db
+            .from('app_secrets')
+            .select('value')
+            .eq('key', 'firebase_service_account')
+            .maybeSingle();
+          if (error || !data?.value) {
+            throw new Error('firebase_service_account secret not found in app_secrets');
+          }
+          raw = data.value;
+        }
         admin.initializeApp({ credential: admin.credential.cert(JSON.parse(raw)) });
       }
       return admin.messaging();
     })();
+    // Allow a retry on the next invocation if init failed.
+    messagingPromise.catch(() => {
+      messagingPromise = null;
+    });
   }
   return messagingPromise;
 }
@@ -86,7 +101,7 @@ exports.handler = async (event) => {
   }
 
   try {
-    const messaging = await getMessaging();
+    const messaging = await getMessaging(db);
     await messaging.send({
       token: row.fcm_token,
       data: { type: 'location_request' },

@@ -460,7 +460,6 @@ const NEARBY_ALIASES: Record<string, string> = {
   'k r puram': 'KR Puram',
   krishnarajapuram: 'KR Puram',
   'hennur main road': 'Hennur Road',
-  'rajarajeshwari nagar': 'RR Nagar',
 };
 
 function normalizeLocationKey(value: string): string {
