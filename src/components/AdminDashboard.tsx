@@ -564,6 +564,14 @@ const AdminDashboard = () => {
     /* More Options is now local to each customer card — nothing to clear here. */
   });
 
+  // HRO Admin Android app: register this phone for job started/completed
+  // pushes. No-op in the browser.
+  useEffect(() => {
+    void import('@/lib/adminPush').then(({ registerAdminPushToken }) =>
+      registerAdminPushToken()
+    );
+  }, []);
+
   // Legacy ?modal=more-options — strip from URL without reopening (iOS PWA restore).
   useEffect(() => {
     if (!location.pathname.startsWith('/admin')) return;

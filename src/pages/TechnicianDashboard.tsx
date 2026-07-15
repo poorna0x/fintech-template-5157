@@ -3055,6 +3055,11 @@ const TechnicianDashboard = () => {
         throw new Error(error.message);
       }
 
+      // Tell the office phones a job just started (HRO Admin app push).
+      void import('@/lib/notifyAdminsJobEvent').then(({ notifyAdminsJobEvent }) =>
+        notifyAdminsJobEvent(job.id, 'started')
+      );
+
       // Freeze the current on-screen order so this job stays where it is instead of
       // jumping to the top now; a fresh page load will re-sort (active jobs on top).
       ongoingOrderRef.current = filteredJobs.map(j => j.id);
@@ -4222,6 +4227,11 @@ const TechnicianDashboard = () => {
       clearTechnicianCompleteJobDraft(jobId);
       setCompletionRetryPhaseBOnly(false);
       setCompletionSubmitError(null);
+
+      // Tell the office phones the job is done (HRO Admin app push).
+      void import('@/lib/notifyAdminsJobEvent').then(({ notifyAdminsJobEvent }) =>
+        notifyAdminsJobEvent(jobId, 'completed')
+      );
 
       const totalPhotosCount =
         uploadedBillPhotos.length +

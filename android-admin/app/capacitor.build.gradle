@@ -1,0 +1,19 @@
+// Admin app: push notifications only (no background geolocation).
+// Maintained by hand — `npx cap sync` targets the technician android/ project.
+
+android {
+  compileOptions {
+      sourceCompatibility JavaVersion.VERSION_21
+      targetCompatibility JavaVersion.VERSION_21
+  }
+}
+
+apply from: "../capacitor-cordova-android-plugins/cordova.variables.gradle"
+dependencies {
+    implementation project(':capacitor-push-notifications')
+}
+
+
+if (hasProperty('postBuildExtras')) {
+  postBuildExtras()
+}
