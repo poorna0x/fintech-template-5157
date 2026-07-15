@@ -1,7 +1,6 @@
-// Push a "job started" / "job completed" notification to all admin phones
-// (HRO Admin app). Called by the technician app when they start or complete
-// a job. Auth: technician (or admin) session JWT; the job must be assigned
-// to the calling technician.
+// Push an "on the way" / "job completed" notification to all admin phones
+// (HRO Admin app). Called by the technician app. Auth: technician (or admin)
+// session JWT; the job must be assigned to the calling technician.
 
 const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
@@ -9,8 +8,40 @@ const { verifyStaffBearerToken, readBearerToken } = require('./admin-auth-guard'
 const { getMessaging, isStaleTokenError } = require('./fcm-helper');
 
 const COLOR_EN_ROUTE = '#2563EB'; // blue — on the way
-const COLOR_STARTED = '#F97316'; // orange — work in progress
 const COLOR_COMPLETED = '#16A34A'; // green — done
+
+// Same rules as getLeadSourceFromJob in the web app, minus analytics extras.
+function resolveLeadSource(job) {
+  let reqs = [];
+  try {
+    const raw = job.requirements;
+    if (typeof raw === 'string') reqs = JSON.parse(raw);
+    else if (Array.isArray(raw)) reqs = raw;
+    else if (raw && typeof raw === 'object') reqs = [raw];
+  } catch {
+    reqs = [];
+  }
+  let fromReqs = null;
+  for (const r of reqs.flat()) {
+    if (r && typeof r === 'object' && r.lead_source) {
+      fromReqs = String(r.lead_source).trim();
+      if (fromReqs.toLowerCase() === 'other') {
+        const custom = reqs.flat().find((x) => x?.lead_source_custom)?.lead_source_custom;
+        if (custom && String(custom).trim()) fromReqs = String(custom).trim();
+      }
+      break;
+    }
+  }
+  const fromColumn = typeof job.lead_source === 'string' ? job.lead_source.trim() : '';
+  if (fromReqs && (!fromColumn || fromColumn === 'Direct call')) return fromReqs;
+  return fromColumn || fromReqs || 'Direct call';
+}
+
+function formatRupees(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return `₹${n.toLocaleString('en-IN')}`;
+}
 
 exports.handler = async (event) => {
   const corsHeaders = getCorsHeaders(event.headers.origin || event.headers.Origin);
@@ -40,7 +71,7 @@ exports.handler = async (event) => {
 
   const jobId = String(body.jobId || '').trim();
   const evt = String(body.event || '').trim();
-  if (!jobId || !['en_route', 'started', 'completed'].includes(evt)) {
+  if (!jobId || !['en_route', 'completed'].includes(evt)) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'jobId and event required' }) };
   }
 
@@ -57,7 +88,9 @@ exports.handler = async (event) => {
   // The job must exist and (for technician callers) be theirs.
   const { data: job, error: jobErr } = await db
     .from('jobs')
-    .select('id,service_sub_type,assigned_technician_id,customer:customers(full_name)')
+    .select(
+      'id,service_sub_type,assigned_technician_id,payment_amount,actual_cost,payment_method,lead_source,requirements,customer:customers(full_name)'
+    )
     .eq('id', jobId)
     .maybeSingle();
   if (jobErr || !job) {
@@ -89,15 +122,33 @@ exports.handler = async (event) => {
   const techName = tech?.full_name || 'Technician';
   const customerName = job.customer?.full_name || 'customer';
   const service = job.service_sub_type || 'job';
-  const title =
-    evt === 'en_route'
-      ? `${techName} is on the way`
-      : evt === 'started'
-        ? `${techName} started a job`
-        : `${techName} completed a job`;
-  const message = `${service} — ${customerName}`;
-  const color =
-    evt === 'en_route' ? COLOR_EN_ROUTE : evt === 'started' ? COLOR_STARTED : COLOR_COMPLETED;
+
+  let title;
+  let message;
+  let color;
+  if (evt === 'en_route') {
+    title = `${techName} is on the way`;
+    message = `${service} — ${customerName}`;
+    color = COLOR_EN_ROUTE;
+  } else {
+    title = `${techName} completed a job`;
+    const lines = [`${service} — ${customerName}`];
+    const amount = formatRupees(job.payment_amount ?? job.actual_cost);
+    const rawMethod = String(job.payment_method || '').trim();
+    const method =
+      rawMethod.toUpperCase() === 'UPI'
+        ? 'UPI'
+        : rawMethod
+          ? rawMethod.charAt(0).toUpperCase() + rawMethod.slice(1).toLowerCase()
+          : '';
+    if (amount) {
+      lines.push(`Billing: ${amount}${method ? ` (${method})` : ''}`);
+    }
+    const leadSource = resolveLeadSource(job);
+    if (leadSource) lines.push(`Lead: ${leadSource}`);
+    message = lines.join('\n');
+    color = COLOR_COMPLETED;
+  }
 
   try {
     const messaging = await getMessaging(db);

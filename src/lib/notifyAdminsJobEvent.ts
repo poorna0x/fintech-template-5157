@@ -1,14 +1,11 @@
 /**
  * Fire-and-forget push to all admin phones (HRO Admin app) when a
- * technician starts or completes a job. Failures are silent — the admin
- * dashboard's realtime refresh still shows the change either way.
+ * technician heads out to or completes a job. Failures are silent — the
+ * admin dashboard's realtime refresh still shows the change either way.
  */
 import { supabase } from '@/lib/supabase';
 
-export function notifyAdminsJobEvent(
-  jobId: string,
-  event: 'en_route' | 'started' | 'completed'
-): void {
+export function notifyAdminsJobEvent(jobId: string, event: 'en_route' | 'completed'): void {
   if (!jobId) return;
   void (async () => {
     try {
