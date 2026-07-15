@@ -106,6 +106,12 @@
   body {
     @apply bg-background font-inter text-foreground antialiased;
     letter-spacing: -0.025em;
+    /* clip (not hidden): kills sideways panning on mobile without creating a
+       scroll container — overflow-x:hidden on html alone still lets Android
+       browsers pan sideways when some element is wider than the screen.
+       hidden first as fallback for older WebViews without clip support. */
+    overflow-x: hidden;
+    overflow-x: clip;
     /* Allow pull-to-refresh on mobile - use auto to allow all touch gestures */
     touch-action: auto;
     -webkit-overflow-scrolling: touch;
@@ -116,6 +122,7 @@
   /* Hide browser's default loading progress bar */
   html {
     overflow-x: hidden;
+    overflow-x: clip;
     /* Allow pull-to-refresh on mobile - use auto to allow all touch gestures */
     touch-action: auto;
     -webkit-overflow-scrolling: touch;

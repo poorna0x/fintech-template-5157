@@ -265,7 +265,7 @@ const TechnicianLiveLocationDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto overflow-x-hidden">
         {/* text-left overrides the mobile text-center default, which looked
             lopsided combined with the right padding that clears the X button */}
         <DialogHeader className="pr-10 text-left">
@@ -278,7 +278,7 @@ const TechnicianLiveLocationDialog = ({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="min-w-0 space-y-4">
           <div className="space-y-1.5">
             <Label>Technician</Label>
             <Select value={technicianId} onValueChange={setTechnicianId}>
@@ -310,7 +310,7 @@ const TechnicianLiveLocationDialog = ({
           )}
 
           {!loading && !waitingFresh && row && (
-            <div className="space-y-3">
+            <div className="min-w-0 space-y-3">
               <div className="flex flex-wrap items-center gap-2 text-sm">
                 <Badge
                   variant="outline"
@@ -376,13 +376,17 @@ const TechnicianLiveLocationDialog = ({
                 </div>
               )}
 
-              {/* Full-width split on mobile, compact inline on desktop */}
+              {/* Full-width split on mobile, compact inline on desktop.
+                  min-w-0 lets the buttons shrink below their label's natural
+                  width (flexbox min-size:auto) — without it the long "exact
+                  location" label widens the whole dialog past the screen edge
+                  on phones. */}
               <div className="flex gap-2">
                 {hasCoords && (
                   <Button
                     variant={exactFix ? 'default' : 'outline'}
                     size="sm"
-                    className="h-10 flex-1 sm:h-9 sm:flex-none"
+                    className="h-10 min-w-0 flex-1 sm:h-9 sm:flex-none"
                     onClick={() =>
                       window.open(
                         `https://maps.google.com/?q=${row.latitude},${row.longitude}`,
@@ -390,7 +394,7 @@ const TechnicianLiveLocationDialog = ({
                       )
                     }
                   >
-                    <ExternalLink className="mr-2 h-4 w-4" />
+                    <ExternalLink className="mr-2 h-4 w-4 shrink-0" />
                     <span className="truncate">
                       {exactFix ? 'Open exact location in Google Maps' : 'Open in Google Maps'}
                     </span>
@@ -399,10 +403,10 @@ const TechnicianLiveLocationDialog = ({
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-10 flex-1 sm:h-9 sm:flex-none"
+                  className="h-10 min-w-0 flex-1 sm:h-9 sm:flex-none"
                   onClick={() => technicianId && void startWatching(technicianId, true)}
                 >
-                  <RefreshCw className="mr-2 h-4 w-4" />
+                  <RefreshCw className="mr-2 h-4 w-4 shrink-0" />
                   Refresh
                 </Button>
               </div>
