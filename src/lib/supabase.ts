@@ -5263,7 +5263,7 @@ export const db = {
           const description =
             createReason === 'pre_expiry'
               ? `AMC Service - Final visit before AMC contract ends on ${formattedEndDate}. Last service was on ${formattedLastServiceDate}. The next scheduled service (${formatAmcDateEnIN(nextDueStr)}) would fall after the AMC end date, so this job was auto-created in the last ${AMC_REMINDER_DAYS_BEFORE} days before expiry.`
-              : `AMC Service - Scheduled maintenance service. Last service was on ${formattedLastServiceDate}. This is an automatic AMC service job created for regular maintenance.`;
+              : `AMC Service - Scheduled maintenance service due on ${formatAmcDateEnIN(nextDueStr)}. Last service was on ${formattedLastServiceDate}. This job was auto-created ${AMC_REMINDER_DAYS_BEFORE} days before the due date for regular AMC maintenance.`;
 
           const jobData = {
             job_number: jobNumber,
