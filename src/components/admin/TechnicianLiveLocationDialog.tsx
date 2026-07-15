@@ -145,7 +145,8 @@ const TechnicianLiveLocationDialog = ({
 
       // Only ping when needed: sharing is on and the stored fix isn't already
       // current (saves the push, the GPS wake-up and the uploads).
-      if (existing.is_tracking && !alreadyFresh) {
+      const shouldPing = existing.is_tracking && !alreadyFresh;
+      if (shouldPing) {
         // Loader until the phone's FIRST answer; further fixes refine the map.
         requestedAtRef.current = Date.now();
         setWaitingFresh(true);
@@ -153,10 +154,13 @@ const TechnicianLiveLocationDialog = ({
           setWaitingFresh(false);
           setTimedOut(true);
         }, FRESH_FIX_TIMEOUT_MS);
-
-        // One request: the app sends its current location once and stops.
-        void sendPing(techId);
       }
+
+      // The ping is sent only after the realtime channel is live (see
+      // subscribe callback below) — the phone's cached answer can arrive
+      // within a second, before a listener created afterwards would be ready,
+      // and a missed update means waiting out the full timeout for nothing.
+      let pinged = false;
 
       channelRef.current = supabase
         .channel(`admin-live-loc-${techId}`)
@@ -201,7 +205,16 @@ const TechnicianLiveLocationDialog = ({
             }
           }
         )
-        .subscribe();
+        .subscribe((status) => {
+          // Realtime broken: ping anyway — updates won't stream in, but the
+          // phone's upload still lands in the row for the Refresh button.
+          const ready = status === 'SUBSCRIBED';
+          const broken = status === 'CHANNEL_ERROR' || status === 'TIMED_OUT';
+          if ((ready || broken) && shouldPing && !pinged) {
+            pinged = true;
+            void sendPing(techId);
+          }
+        });
     },
     [cleanup, sendPing]
   );
