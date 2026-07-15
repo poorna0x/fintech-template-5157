@@ -13,10 +13,6 @@ import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.location.Priority;
 import com.google.firebase.messaging.RemoteMessage;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 /**
@@ -77,9 +73,18 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             Log.w(TAG, "getLastLocation not permitted", e);
         }
 
-        // Then a fresh fix (up to ~30s). onMessageReceived's process usually
-        // stays alive long enough; if not, the last-known upload already landed.
-        requestFreshFix(fused, fine, uploadUrl, technicianId, nonce);
+        // Then a fresh fix via a short-lived foreground service: Android
+        // throttles fresh-location computation for backgrounded apps (the
+        // inline request "succeeds" with null), and Google's docs recommend a
+        // foreground location service for reliable access. The high-priority
+        // push grants the window to start one. Fall back to the inline
+        // request if the OS refuses the service start.
+        try {
+            LocationFixService.start(getApplicationContext(), uploadUrl, technicianId, nonce);
+        } catch (Exception e) {
+            Log.w(TAG, "Foreground fix service refused; falling back to inline request", e);
+            requestFreshFix(fused, fine, uploadUrl, technicianId, nonce);
+        }
     }
 
     /**
@@ -162,34 +167,6 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
     }
 
     private void upload(String uploadUrl, String technicianId, String nonce, Location location) {
-        new Thread(() -> {
-            HttpURLConnection conn = null;
-            try {
-                String payload = "{\"technicianId\":\"" + technicianId + "\"," +
-                    "\"nonce\":\"" + nonce + "\"," +
-                    "\"latitude\":" + location.getLatitude() + "," +
-                    "\"longitude\":" + location.getLongitude() + "," +
-                    "\"accuracy\":" + (location.hasAccuracy() ? location.getAccuracy() : "null") + "," +
-                    // When the fix was measured — lets the admin view tell a cached
-                    // last-known position apart from a genuinely fresh one.
-                    "\"fixTime\":" + location.getTime() + "}";
-
-                conn = (HttpURLConnection) new URL(uploadUrl).openConnection();
-                conn.setRequestMethod("POST");
-                conn.setRequestProperty("Content-Type", "application/json");
-                conn.setDoOutput(true);
-                conn.setConnectTimeout(10_000);
-                conn.setReadTimeout(10_000);
-                try (OutputStream os = conn.getOutputStream()) {
-                    os.write(payload.getBytes(StandardCharsets.UTF_8));
-                }
-                int code = conn.getResponseCode();
-                if (code != 200) Log.w(TAG, "Upload rejected: HTTP " + code);
-            } catch (Exception e) {
-                Log.w(TAG, "Upload failed", e);
-            } finally {
-                if (conn != null) conn.disconnect();
-            }
-        }).start();
+        LocationUploader.upload(uploadUrl, technicianId, nonce, location);
     }
 }

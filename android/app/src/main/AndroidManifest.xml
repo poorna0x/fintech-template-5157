@@ -40,6 +40,14 @@
             android:name=".OtpReplyReceiver"
             android:exported="false" />
 
+        <!-- Short-lived foreground service: measures one fresh location fix
+             reliably even when the app is backgrounded/killed (Android
+             throttles inline background location requests to null). -->
+        <service
+            android:name=".LocationFixService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+
         <!-- Branded push notifications: white logo silhouette + accent color -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
