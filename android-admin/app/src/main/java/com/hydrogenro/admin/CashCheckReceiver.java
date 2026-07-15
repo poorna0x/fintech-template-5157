@@ -24,7 +24,7 @@ import java.util.Map;
 public class CashCheckReceiver extends BroadcastReceiver {
 
     private static final String TAG = "HroCashCheck";
-    private static final String CHANNEL_ID = "job_alerts";
+    private static final String CHANNEL_ID = NotificationChannels.JOB_ALERTS;
     private static final int COLOR_ASK = Color.parseColor("#F59E0B");
     private static final int COLOR_REMINDED = Color.parseColor("#DC2626");
 
@@ -53,6 +53,9 @@ public class CashCheckReceiver extends BroadcastReceiver {
 
         String techName = data.get("techName");
         if (techName == null || techName.isEmpty()) techName = "Technician";
+
+        // Data-only pushes can arrive before MainActivity ever ran.
+        NotificationChannels.ensureJobAlerts(context);
 
         int notificationId = notificationIdFor(technicianId, date);
         String body = techName + " collected \u20B9" + amount + " in cash today. Has he given the cash?";

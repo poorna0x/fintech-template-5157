@@ -45,7 +45,7 @@ async function pushBookingToAdmins(db, details) {
     data: { type: 'new_booking' },
     android: {
       priority: 'high',
-      notification: { channelId: 'job_alerts', defaultSound: true, color: '#7C3AED' },
+      notification: { channelId: 'job_alerts_v2', defaultSound: true, color: '#7C3AED' },
     },
   });
 

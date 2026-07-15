@@ -47,11 +47,15 @@ export async function registerTechnicianPushToken(technicianId: string): Promise
     const perm = await PushNotifications.requestPermissions();
     if (perm.receive !== 'granted') return;
 
-    // Channel referenced by job-assignment pushes (visible name in Android settings).
+    // Legacy channel (kept so old-APK notifications still land somewhere).
+    // The real channel is now job_alerts_v2 with the custom sound, created
+    // NATIVELY in MainActivity/NotificationChannels — never from JS, because
+    // this JS also runs inside old APKs that don't bundle the sound file and
+    // a channel created without it would be locked silent forever.
     await PushNotifications.createChannel({
       id: 'job_alerts',
-      name: 'Job alerts',
-      description: 'New job assignments and updates',
+      name: 'Other alerts',
+      description: 'Alerts from older app versions',
       importance: 5,
       visibility: 1,
       vibration: true,

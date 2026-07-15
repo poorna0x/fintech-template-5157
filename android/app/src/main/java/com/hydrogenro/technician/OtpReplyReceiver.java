@@ -26,7 +26,7 @@ import java.nio.charset.StandardCharsets;
 public class OtpReplyReceiver extends BroadcastReceiver {
 
     private static final String TAG = "HroOtpReply";
-    private static final String CHANNEL_ID = "job_alerts";
+    private static final String CHANNEL_ID = NotificationChannels.JOB_ALERTS;
     private static final int COLOR_PENDING = Color.parseColor("#F59E0B");
     private static final int COLOR_SUCCESS = Color.parseColor("#16A34A");
 
@@ -55,6 +55,9 @@ public class OtpReplyReceiver extends BroadcastReceiver {
         String submitUrl,
         String body
     ) {
+        // Data-only pushes can arrive before MainActivity ever ran.
+        NotificationChannels.ensureJobAlerts(context);
+
         int notificationId = notificationIdFor(requestId);
 
         RemoteInput remoteInput = new RemoteInput.Builder(KEY_OTP)

@@ -87,7 +87,7 @@ exports.handler = async () => {
     android: {
       priority: 'high',
       notification: {
-        channelId: 'job_alerts',
+        channelId: 'job_alerts_v2',
         defaultSound: true,
         color: '#2563EB',
         tag: 'evening-summary',
