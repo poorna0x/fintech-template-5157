@@ -175,6 +175,7 @@ const Booking: React.FC = () => {
   const addressInputRef = useRef<HTMLInputElement>(null);
   const addressAutocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
   const [currentLocationLoading, setCurrentLocationLoading] = useState(false);
+  const [reviewLocationLoading, setReviewLocationLoading] = useState(false);
   const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number }>({ lat: 12.9716, lng: 77.5946 });
   const [mapZoom, setMapZoom] = useState<number>(15);
 
@@ -1137,6 +1138,61 @@ const Booking: React.FC = () => {
     setFormData(prev => ({ ...prev, googleMapsLink: value }));
   };
 
+  // Accepts full links (google.com/maps/...) and app share links (maps.app.goo.gl/...)
+  const isLikelyMapsLink = (value: string) =>
+    /(google\.[a-z.]+\/maps|maps\.app\.goo\.gl|goo\.gl\/maps)/i.test(value || '');
+
+  const hasMapLocation =
+    formData.coordinates.lat !== 0 ||
+    formData.coordinates.lng !== 0 ||
+    isLikelyMapsLink(formData.googleMapsLink);
+
+  // Review-step location capture: saves coordinates + maps link WITHOUT
+  // overwriting the address text the customer already typed.
+  const handleReviewShareLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error('Geolocation is not supported by your browser');
+      return;
+    }
+    setReviewLocationLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setReviewLocationLoading(false);
+        const location = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude
+        };
+        setFormData(prev => ({
+          ...prev,
+          coordinates: location,
+          googleMapsLink: `https://www.google.com/maps/place/${location.lat},${location.lng}`
+        }));
+        toast.success('Location added to your booking!');
+      },
+      (error) => {
+        setReviewLocationLoading(false);
+        let errorMsg = 'Failed to get your location';
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            errorMsg = 'Permission denied. Please allow location access.';
+            break;
+          case error.POSITION_UNAVAILABLE:
+            errorMsg = 'Location information unavailable.';
+            break;
+          case error.TIMEOUT:
+            errorMsg = 'Location request timed out. Please try again.';
+            break;
+        }
+        toast.error(errorMsg);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0,
+      }
+    );
+  };
+
   const processFiles = async (files: File[]) => {
     const validFiles = files.filter(file => {
       if (!file.type.startsWith('image/')) {
@@ -1576,7 +1632,7 @@ const Booking: React.FC = () => {
             })(),
             googleLocation: formData.coordinates.lat !== 0 && formData.coordinates.lng !== 0
               ? `https://www.google.com/maps/place/${formData.coordinates.lat},${formData.coordinates.lng}`
-              : (formData.googleMapsLink && formData.googleMapsLink.includes('google.com/maps') 
+              : (isLikelyMapsLink(formData.googleMapsLink)
                   ? formData.googleMapsLink 
                   : null)
           },
@@ -1684,7 +1740,7 @@ const Booking: React.FC = () => {
             })(),
             googleLocation: formData.coordinates.lat !== 0 && formData.coordinates.lng !== 0
               ? `https://www.google.com/maps/place/${formData.coordinates.lat},${formData.coordinates.lng}`
-              : (formData.googleMapsLink && formData.googleMapsLink.includes('google.com/maps')
+              : (isLikelyMapsLink(formData.googleMapsLink)
                   ? formData.googleMapsLink
                   : null)
           };
@@ -2835,6 +2891,45 @@ const Booking: React.FC = () => {
                   <div><strong>Service Date:</strong> {formData.serviceDate ? new Date(formData.serviceDate).toLocaleDateString() : 'Not selected'}</div>
                   <div><strong>Time Slot:</strong> {formatTimeSlot(formData.preferredTime, formData.preferredTimeCustom)}</div>
                   {formData.images.length > 0 && <div><strong>Images:</strong> {formData.images.length} uploaded</div>}
+
+                  {/* Nudge when no map location was captured */}
+                  {!hasMapLocation && (
+                    <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-3 space-y-2.5 dark:border-amber-700/60 dark:bg-amber-950/40">
+                      <div className="flex items-start gap-2">
+                        <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                        <p className="text-xs sm:text-sm leading-relaxed text-amber-800 dark:text-amber-200">
+                          No map location added yet. Share your location or a Google Maps link so our technician can find you faster.
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleReviewShareLocation}
+                        disabled={reviewLocationLoading}
+                        className="w-full sm:w-auto border-amber-400 bg-white text-amber-800 hover:bg-amber-100 dark:border-amber-600 dark:bg-transparent dark:text-amber-200 dark:hover:bg-amber-900/40"
+                      >
+                        {reviewLocationLoading ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Getting your location...
+                          </>
+                        ) : (
+                          <>
+                            <Navigation className="mr-2 h-4 w-4" />
+                            Use Current Location
+                          </>
+                        )}
+                      </Button>
+                      <Input
+                        value={formData.googleMapsLink}
+                        onChange={(e) => handleGoogleMapsLinkChange(e.target.value)}
+                        placeholder="Or paste a Google Maps share link..."
+                        className="text-sm bg-white dark:bg-transparent"
+                        inputMode="url"
+                      />
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </div>
