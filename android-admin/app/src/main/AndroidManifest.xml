@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8" ?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -19,6 +20,26 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Native FCM handler: turns the nightly cash-check data push into a
+             Yes/No notification even when the app is killed. Replaces the
+             Capacitor plugin's service (which it extends, so normal push
+             behavior is unchanged). -->
+        <service
+            android:name=".HroMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+        <service
+            android:name="com.capacitorjs.plugins.pushnotifications.MessagingService"
+            tools:node="remove" />
+
+        <!-- Handles the Yes/No buttons on the cash-check notification -->
+        <receiver
+            android:name=".CashCheckReceiver"
+            android:exported="false" />
 
         <!-- Branded push notifications: white logo silhouette + accent color -->
         <meta-data

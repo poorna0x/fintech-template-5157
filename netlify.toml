@@ -23,6 +23,11 @@
   node_bundler = "esbuild"
   external_node_modules = ["@sparticuz/chromium"]
 
+# Nightly cash check: 9:00 PM IST = 15:30 UTC. Asks admins (via push with
+# Yes/No buttons) whether each technician handed over today's cash.
+[functions."daily-cash-check"]
+  schedule = "30 15 * * *"
+
 # Force HTTPS - redirect HTTP to HTTPS
 [[redirects]]
   from = "http://hydrogenro.com/*"
