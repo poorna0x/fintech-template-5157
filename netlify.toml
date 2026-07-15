@@ -28,6 +28,15 @@
 [functions."daily-cash-check"]
   schedule = "30 15 * * *"
 
+# Evening summary: 10:00 PM IST = 16:30 UTC. Day totals pushed to admins.
+[functions."evening-summary"]
+  schedule = "30 16 * * *"
+
+# Parts reminder: 10:10 PM IST = 16:40 UTC. Reminds technicians who worked
+# today to log all the parts they used.
+[functions."parts-reminder"]
+  schedule = "40 16 * * *"
+
 # Force HTTPS - redirect HTTP to HTTPS
 [[redirects]]
   from = "http://hydrogenro.com/*"

@@ -16,6 +16,47 @@
 //     required, so the endpoint cannot be hit directly to spam the owner inbox.
 const { getServiceClient } = require('./booking-guard');
 const { sendBookingAdminNotification } = require('./booking-notify');
+const { getMessaging, isStaleTokenError } = require('./fcm-helper');
+
+/** Instant push to all admin phones (HRO Admin app) — best-effort. */
+async function pushBookingToAdmins(db, details) {
+  const { data: tokenRows } = await db.from('admin_push_tokens').select('token');
+  const tokens = (tokenRows || []).map((r) => r.token).filter(Boolean);
+  if (tokens.length === 0) return;
+
+  const service = [details.serviceType, details.serviceSubType]
+    .map((s) => String(s || '').trim())
+    .filter(Boolean)
+    .join(' ');
+  const when = [details.scheduledDate, details.customTime || details.scheduledTimeSlot]
+    .map((s) => String(s || '').trim())
+    .filter(Boolean)
+    .join(', ');
+  const lines = [
+    `${service || 'Service'} — ${details.customerName || details.phone || 'customer'}`,
+    ...(details.phone ? [`Phone: ${details.phone}`] : []),
+    ...(when ? [`When: ${when}`] : []),
+  ];
+
+  const messaging = await getMessaging(db);
+  const res = await messaging.sendEachForMulticast({
+    tokens,
+    notification: { title: 'New website booking', body: lines.join('\n') },
+    data: { type: 'new_booking' },
+    android: {
+      priority: 'high',
+      notification: { channelId: 'job_alerts', defaultSound: true, color: '#7C3AED' },
+    },
+  });
+
+  const stale = [];
+  res.responses.forEach((r, i) => {
+    if (!r.success && isStaleTokenError(r.error)) stale.push(tokens[i]);
+  });
+  if (stale.length > 0) {
+    await db.from('admin_push_tokens').delete().in('token', stale);
+  }
+}
 
 async function lookupCustomerName(client, customerId) {
   if (!customerId) return '';
@@ -69,7 +110,7 @@ exports.handler = async (event) => {
 
     const requirements = Array.isArray(row.requirements) ? row.requirements[0] : null;
 
-    await sendBookingAdminNotification({
+    const details = {
       customerName,
       phone: phoneNorm,
       brandSource: row.booking_source,
@@ -80,7 +121,16 @@ exports.handler = async (event) => {
       scheduledTimeSlot: row.scheduled_time_slot,
       customTime: requirements ? requirements.custom_time : null,
       jobNumber: (job && (job.job_number || job.jobNumber)) || row.job_number,
-    });
+    };
+
+    // App push first (instant), then the owner email (slow SMTP).
+    if (!client.error) {
+      await pushBookingToAdmins(client.admin, details).catch((err) =>
+        console.error('[booking-notify-background] admin push failed:', err && err.message)
+      );
+    }
+
+    await sendBookingAdminNotification(details);
   } catch (err) {
     console.error('[booking-notify-background] failed:', err && err.message);
   }
