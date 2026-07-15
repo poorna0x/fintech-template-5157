@@ -22,6 +22,12 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
+    // Output "HRO-Admin-debug.apk" instead of the ambiguous "app-debug.apk".
+    applicationVariants.all { variant ->
+        variant.outputs.all {
+            outputFileName = "HRO-Admin-${variant.buildType.name}.apk"
+        }
+    }
 }
 
 repositories {

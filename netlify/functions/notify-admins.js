@@ -8,6 +8,7 @@ const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
 const { verifyStaffBearerToken, readBearerToken } = require('./admin-auth-guard');
 const { getMessaging, isStaleTokenError } = require('./fcm-helper');
 
+const COLOR_EN_ROUTE = '#2563EB'; // blue — on the way
 const COLOR_STARTED = '#F97316'; // orange — work in progress
 const COLOR_COMPLETED = '#16A34A'; // green — done
 
@@ -39,7 +40,7 @@ exports.handler = async (event) => {
 
   const jobId = String(body.jobId || '').trim();
   const evt = String(body.event || '').trim();
-  if (!jobId || !['started', 'completed'].includes(evt)) {
+  if (!jobId || !['en_route', 'started', 'completed'].includes(evt)) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'jobId and event required' }) };
   }
 
@@ -89,9 +90,14 @@ exports.handler = async (event) => {
   const customerName = job.customer?.full_name || 'customer';
   const service = job.service_sub_type || 'job';
   const title =
-    evt === 'started' ? `${techName} started a job` : `${techName} completed a job`;
+    evt === 'en_route'
+      ? `${techName} is on the way`
+      : evt === 'started'
+        ? `${techName} started a job`
+        : `${techName} completed a job`;
   const message = `${service} — ${customerName}`;
-  const color = evt === 'started' ? COLOR_STARTED : COLOR_COMPLETED;
+  const color =
+    evt === 'en_route' ? COLOR_EN_ROUTE : evt === 'started' ? COLOR_STARTED : COLOR_COMPLETED;
 
   try {
     const messaging = await getMessaging(db);

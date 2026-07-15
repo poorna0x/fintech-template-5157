@@ -2981,6 +2981,11 @@ const TechnicianDashboard = () => {
         throw new Error(error.message);
       }
 
+      // Tell the office phones the technician is heading out (HRO Admin app push).
+      void import('@/lib/notifyAdminsJobEvent').then(({ notifyAdminsJobEvent }) =>
+        notifyAdminsJobEvent(job.id, 'en_route')
+      );
+
       // Freeze the current on-screen order so this job stays where it is instead of
       // jumping to the top now; a fresh page load will re-sort (active jobs on top).
       ongoingOrderRef.current = filteredJobs.map(j => j.id);

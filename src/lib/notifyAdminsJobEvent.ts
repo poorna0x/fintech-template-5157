@@ -5,7 +5,10 @@
  */
 import { supabase } from '@/lib/supabase';
 
-export function notifyAdminsJobEvent(jobId: string, event: 'started' | 'completed'): void {
+export function notifyAdminsJobEvent(
+  jobId: string,
+  event: 'en_route' | 'started' | 'completed'
+): void {
   if (!jobId) return;
   void (async () => {
     try {
