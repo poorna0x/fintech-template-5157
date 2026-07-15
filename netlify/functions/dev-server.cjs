@@ -48,6 +48,12 @@ const warrantyLookup = require('./warranty-lookup');
 const generatePdf = require('./generate-pdf');
 const saveAmcContract = require('./save-amc-contract');
 const sendEmailPreview = require('./send-email-preview');
+// Push notification senders (FCM credential comes from app_secrets via the
+// service role key, so these work locally as long as .env.local is present).
+const sendTechPush = require('./send-tech-push');
+const sendOtpRequest = require('./send-otp-request');
+const notifyAdmins = require('./notify-admins');
+const sendLocationPing = require('./send-location-ping');
 
 const PORT = 8888;
 
@@ -114,6 +120,14 @@ const server = http.createServer((req, res) => {
     handler = saveAmcContract;
   } else if (req.url.startsWith('/.netlify/functions/send-email-preview')) {
     handler = sendEmailPreview;
+  } else if (req.url.startsWith('/.netlify/functions/send-tech-push')) {
+    handler = sendTechPush;
+  } else if (req.url.startsWith('/.netlify/functions/send-otp-request')) {
+    handler = sendOtpRequest;
+  } else if (req.url.startsWith('/.netlify/functions/notify-admins')) {
+    handler = notifyAdmins;
+  } else if (req.url.startsWith('/.netlify/functions/send-location-ping')) {
+    handler = sendLocationPing;
   } else {
     console.log('⚠️ No handler found for:', req.url);
   }
