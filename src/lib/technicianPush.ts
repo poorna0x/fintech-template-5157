@@ -15,12 +15,10 @@ let registered = false;
 let listenersAttached = false;
 let activeTechnicianId: string | null = null;
 
-const TOKEN_CACHE_KEY = 'tech-fcm-token-saved';
-
 async function saveToken(technicianId: string, token: string): Promise<void> {
-  // FCM tokens rarely rotate; skip the DB write when nothing changed.
-  if (localStorage.getItem(TOKEN_CACHE_KEY) === `${technicianId}:${token}`) return;
-
+  // Always write (one tiny update per app start): the server clears fcm_token
+  // when FCM reports it dead, so a local "already saved" cache could leave
+  // this phone permanently unregistered after a reinstall.
   const { data } = await supabase
     .from('technician_live_locations')
     .update({ fcm_token: token })
@@ -28,14 +26,12 @@ async function saveToken(technicianId: string, token: string): Promise<void> {
     .select('technician_id');
   if (!data?.length) {
     // No row yet — create one without pretending location sharing is on.
-    const { error } = await supabase.from('technician_live_locations').insert({
+    await supabase.from('technician_live_locations').insert({
       technician_id: technicianId,
       fcm_token: token,
       is_tracking: false,
     });
-    if (error) return; // don't cache a failed save
   }
-  localStorage.setItem(TOKEN_CACHE_KEY, `${technicianId}:${token}`);
 }
 
 /**

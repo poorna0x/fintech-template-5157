@@ -11,20 +11,17 @@ import { supabase } from '@/lib/supabase';
 
 let registered = false;
 
-const TOKEN_CACHE_KEY = 'admin-fcm-token-saved';
-
 async function saveToken(token: string): Promise<void> {
   const { data: sessionData } = await supabase.auth.getSession();
   const userId = sessionData?.session?.user?.id;
   if (!userId) return;
 
-  // FCM tokens rarely rotate; skip the DB write when nothing changed.
-  if (localStorage.getItem(TOKEN_CACHE_KEY) === `${userId}:${token}`) return;
-
-  const { error } = await supabase
+  // Always write (one tiny upsert per app start): the server prunes rows for
+  // tokens FCM reports dead, so a local "already saved" cache could leave
+  // this phone permanently unregistered after a reinstall.
+  await supabase
     .from('admin_push_tokens')
     .upsert({ token, user_id: userId, updated_at: new Date().toISOString() });
-  if (!error) localStorage.setItem(TOKEN_CACHE_KEY, `${userId}:${token}`);
 }
 
 /**
