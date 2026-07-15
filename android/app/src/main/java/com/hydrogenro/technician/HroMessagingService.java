@@ -6,6 +6,7 @@ import android.content.pm.PackageManager;
 import android.location.Location;
 import android.util.Log;
 import androidx.annotation.NonNull;
+import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
 import com.google.android.gms.location.CurrentLocationRequest;
 import com.google.android.gms.location.FusedLocationProviderClient;
@@ -41,6 +42,10 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
         Map<String, String> data = remoteMessage.getData();
         if ("otp_request".equals(data.get("type"))) {
             showOtpNotification(data);
+            return;
+        }
+        if ("clear_notifications".equals(data.get("type"))) {
+            clearNotifications(data.get("tag"));
             return;
         }
         if (!"location_request".equals(data.get("type"))) return;
@@ -105,6 +110,21 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
 
         OtpReplyReceiver.showOtpRequestNotification(
             getApplicationContext(), requestId, nonce, submitUrl, body);
+    }
+
+    /**
+     * Office asked to withdraw notifications: remove ours from the tray.
+     * With a tag, only that notification (id 0 = how FCM posts tagged
+     * system notifications); without, everything this app has posted.
+     * Foreground-service notifications are unaffected by cancelAll.
+     */
+    private void clearNotifications(String tag) {
+        NotificationManagerCompat nm = NotificationManagerCompat.from(getApplicationContext());
+        if (tag != null && !tag.isEmpty()) {
+            nm.cancel(tag, 0);
+        } else {
+            nm.cancelAll();
+        }
     }
 
     private void upload(String uploadUrl, String technicianId, String nonce, Location location) {

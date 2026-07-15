@@ -11,7 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { AlertTriangle, CheckCircle2, Loader2, MessageSquare, Send } from 'lucide-react';
+import { AlertTriangle, BellOff, CheckCircle2, Loader2, MessageSquare, Send } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import type { Technician } from '@/types';
@@ -28,9 +28,15 @@ const TITLE_MAX = 120;
 const BODY_MAX = 300;
 
 /**
- * Send a custom push notification to one or more technicians' phones.
- * Delivery goes straight through FCM (same pipeline as job-assignment
- * pushes) — nothing is stored anywhere.
+ * All custom messages share this notification tag, so sending a new one
+ * REPLACES the previous message on the phone instead of stacking up.
+ */
+const MESSAGE_TAG = 'office_message';
+
+/**
+ * Send a custom push notification to one or more technicians' phones,
+ * or clear the app's notifications from their tray. Delivery goes straight
+ * through FCM (same pipeline as job-assignment pushes) — nothing is stored.
  */
 const MessageTechnicianDialog = ({
   open,
@@ -74,9 +80,14 @@ const MessageTechnicianDialog = ({
     });
   };
 
-  const handleSend = async () => {
+  /**
+   * mode 'send': deliver the typed message (tagged, so it replaces the
+   * previous office message on the phone). mode 'clear': silent push that
+   * removes all of our app's notifications from the phone's tray.
+   */
+  const dispatch = async (mode: 'send' | 'clear') => {
     const body = message.trim();
-    if (!body || selected.size === 0) return;
+    if (selected.size === 0 || (mode === 'send' && !body)) return;
     setSending(true);
     setResults({});
 
@@ -88,6 +99,16 @@ const MessageTechnicianDialog = ({
         return;
       }
 
+      const payload =
+        mode === 'send'
+          ? {
+              title: title.trim() || 'Message from office',
+              body,
+              color: '#2563EB',
+              tag: MESSAGE_TAG,
+            }
+          : { clear: true };
+
       const outcomes = await Promise.all(
         [...selected].map(async (technicianId): Promise<[string, SendStatus]> => {
           try {
@@ -97,12 +118,7 @@ const MessageTechnicianDialog = ({
                 'Content-Type': 'application/json',
                 Authorization: `Bearer ${token}`,
               },
-              body: JSON.stringify({
-                technicianId,
-                title: title.trim() || 'Message from office',
-                body,
-                color: '#2563EB',
-              }),
+              body: JSON.stringify({ technicianId, ...payload }),
             });
             const out = (await res.json().catch(() => null)) as
               | { sent?: boolean; reason?: string }
@@ -120,15 +136,16 @@ const MessageTechnicianDialog = ({
       const map = Object.fromEntries(outcomes) as Record<string, SendStatus>;
       setResults(map);
 
-      const sentCount = outcomes.filter(([, s]) => s === 'sent').length;
-      if (sentCount === outcomes.length) {
+      const okCount = outcomes.filter(([, s]) => s === 'sent').length;
+      const verb = mode === 'send' ? 'Message sent' : 'Notifications cleared';
+      if (okCount === outcomes.length) {
         toast.success(
-          sentCount === 1 ? 'Message sent' : `Message sent to ${sentCount} technicians`
+          okCount === 1 ? verb : `${verb} — ${okCount} technicians`
         );
-      } else if (sentCount > 0) {
-        toast.warning(`Sent to ${sentCount} of ${outcomes.length} — see details below.`);
+      } else if (okCount > 0) {
+        toast.warning(`Done for ${okCount} of ${outcomes.length} — see details below.`);
       } else {
-        toast.error("Couldn't deliver the message — see details below.");
+        toast.error("Couldn't reach any of the phones — see details below.");
       }
     } finally {
       setSending(false);
@@ -233,20 +250,36 @@ const MessageTechnicianDialog = ({
             />
           </div>
 
-          <Button
-            className="h-11 w-full"
-            onClick={() => void handleSend()}
-            disabled={sending || selected.size === 0 || !message.trim()}
-          >
-            {sending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <>
-                <Send className="mr-2 h-4 w-4" />
-                Send{selected.size > 1 ? ` to ${selected.size} technicians` : ''}
-              </>
-            )}
-          </Button>
+          <div className="space-y-2">
+            <Button
+              className="h-11 w-full"
+              onClick={() => void dispatch('send')}
+              disabled={sending || selected.size === 0 || !message.trim()}
+            >
+              {sending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <>
+                  <Send className="mr-2 h-4 w-4" />
+                  Send{selected.size > 1 ? ` to ${selected.size} technicians` : ''}
+                </>
+              )}
+            </Button>
+            <Button
+              variant="outline"
+              className="h-11 w-full text-muted-foreground"
+              onClick={() => void dispatch('clear')}
+              disabled={sending || selected.size === 0}
+            >
+              <BellOff className="mr-2 h-4 w-4" />
+              Clear app notifications on their phone
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              Sending a new message replaces your previous one on the phone. Clear removes
+              all this app's notifications still in their tray (job alerts, OTP requests,
+              messages) — it can't unsee anything already read.
+            </p>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

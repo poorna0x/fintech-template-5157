@@ -43,7 +43,14 @@ exports.handler = async (event) => {
   const message = String(body.body || '').trim().slice(0, 300);
   const colorRaw = String(body.color || '').trim();
   const color = /^#[0-9a-fA-F]{6}$/.test(colorRaw) ? colorRaw : undefined;
-  if (!technicianId || !title) {
+  // Same-tag notifications replace each other on the phone (used by the
+  // Message technician tool so a resend updates the previous message).
+  const tagRaw = String(body.tag || '').trim();
+  const tag = /^[\w.-]{1,64}$/.test(tagRaw) ? tagRaw : undefined;
+  // clear: silent data push; the app's native handler dismisses our
+  // notifications from the tray instead of showing anything.
+  const clear = body.clear === true;
+  if (!technicianId || (!title && !clear)) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'technicianId and title required' }) };
   }
 
@@ -64,15 +71,28 @@ exports.handler = async (event) => {
     }
 
     const messaging = await getMessaging(db);
-    await messaging.send({
-      token,
-      notification: { title, body: message || undefined },
-      data: { type: 'job_notification' },
-      android: {
-        priority: 'high',
-        notification: { channelId: 'job_alerts', defaultSound: true, ...(color ? { color } : {}) },
-      },
-    });
+    if (clear) {
+      await messaging.send({
+        token,
+        data: { type: 'clear_notifications', ...(tag ? { tag } : {}) },
+        android: { priority: 'high' },
+      });
+    } else {
+      await messaging.send({
+        token,
+        notification: { title, body: message || undefined },
+        data: { type: 'job_notification' },
+        android: {
+          priority: 'high',
+          notification: {
+            channelId: 'job_alerts',
+            defaultSound: true,
+            ...(color ? { color } : {}),
+            ...(tag ? { tag } : {}),
+          },
+        },
+      });
+    }
     return { statusCode: 200, headers, body: JSON.stringify({ sent: true }) };
   } catch (err) {
     if (isStaleTokenError(err)) {
