@@ -4,6 +4,7 @@
  * hasn't installed the app or the push can't be delivered — the existing
  * in-app notification/realtime refresh still covers them.
  */
+import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { getJobCustomTimeLabel, getLeadSourceFromJob } from '@/lib/adminUtils';
 import { getJobLocationLabelForWhatsApp } from '@/lib/customer-locations';
@@ -26,14 +27,32 @@ export function notifyTechnicianJobPush(opts: {
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
-      if (!token) return;
-      await fetch('/.netlify/functions/send-tech-push', {
+      if (!token) {
+        console.warn('[tech-push] skipped: no admin session in this browser');
+        return;
+      }
+      // keepalive: the request survives even if the page navigates away
+      // right after assigning (e.g. opening WhatsApp on mobile).
+      const res = await fetch('/.netlify/functions/send-tech-push', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ technicianId, title, body, color }),
+        keepalive: true,
       });
-    } catch {
-      // best-effort
+      const out = (await res.json().catch(() => null)) as
+        | { sent?: boolean; reason?: string; error?: string }
+        | null;
+      if (!res.ok) {
+        console.warn('[tech-push] failed:', res.status, out?.error || '');
+        toast.warning('App notification could not be sent to the technician.');
+      } else if (out?.sent === false) {
+        console.warn('[tech-push] not sent:', out.reason);
+        if (out.reason === 'no_token') {
+          toast.warning("No app notification — technician hasn't installed the app.");
+        }
+      }
+    } catch (err) {
+      console.warn('[tech-push] error:', err);
     }
   })();
 }

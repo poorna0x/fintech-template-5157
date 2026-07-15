@@ -10,6 +10,8 @@ import {
 import { createJobAssignedNotification, sendNotification } from '@/lib/notifications';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { broadcastTechnicianJobListRefresh } from '@/lib/technicianJobListSync';
+import { appendJobToTechnicianVisitOrder } from '@/lib/adminVisitOrder';
+import { jobAssignPushText, notifyTechnicianJobPush } from '@/lib/adminTechPushNotify';
 import { db } from '@/lib/supabase';
 import type { Job, Technician } from '@/types';
 
@@ -190,6 +192,18 @@ export async function performAdminMoveToOngoing(ctx: AdminMoveToOngoingCtx) {
 
     if (shouldAssign) {
       broadcastTechnicianJobListRefresh([ctx.followUpAssignTechnicianId]);
+
+      // Same as the regular assign flow: place the job in the technician's
+      // visit order and push a notification to their phone.
+      await appendJobToTechnicianVisitOrder({
+        jobId: ctx.selectedJob.id,
+        technicianId: ctx.followUpAssignTechnicianId,
+        scheduledDate: ctx.moveToOngoingDate,
+      }).catch(() => {});
+      notifyTechnicianJobPush({
+        technicianId: ctx.followUpAssignTechnicianId,
+        ...jobAssignPushText({ job: ctx.selectedJob as any }),
+      });
     }
 
     const jobId = ctx.selectedJob.id;
