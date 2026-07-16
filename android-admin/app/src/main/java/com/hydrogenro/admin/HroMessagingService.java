@@ -12,6 +12,8 @@ import java.util.Map;
  * (job started/completed) push behavior intact.
  *
  * Also handles technician replies to office messages (inline Reply back).
+ * Standard FCM notification payloads are re-posted to the tray while the
+ * app is in the foreground (FCM would otherwise skip the system tray).
  */
 public class HroMessagingService extends com.capacitorjs.plugins.pushnotifications.MessagingService {
 
@@ -26,6 +28,8 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             TechMessageReplyReceiver.showTechReplyNotification(getApplicationContext(), data);
             return;
         }
+        // Foreground: FCM won't auto-display notification payloads — show ourselves.
+        ForegroundPushNotifier.showIfPresent(getApplicationContext(), remoteMessage);
         super.onMessageReceived(remoteMessage);
     }
 }

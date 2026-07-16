@@ -28,6 +28,8 @@ import java.util.Map;
  * the app. The typed code is delivered to OtpReplyReceiver.
  *
  * Office messages with allowReply use the same pattern via MessageReplyReceiver.
+ * Standard FCM notification payloads are re-posted to the tray while the
+ * app is in the foreground (FCM would otherwise skip the system tray).
  */
 public class HroMessagingService extends com.capacitorjs.plugins.pushnotifications.MessagingService {
 
@@ -49,6 +51,10 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             clearNotifications(data.get("tag"));
             return;
         }
+
+        // Foreground: FCM won't auto-display notification payloads — show ourselves.
+        // Skips location_request / custom types (handled above or silent).
+        ForegroundPushNotifier.showIfPresent(getApplicationContext(), remoteMessage);
 
         super.onMessageReceived(remoteMessage);
 
