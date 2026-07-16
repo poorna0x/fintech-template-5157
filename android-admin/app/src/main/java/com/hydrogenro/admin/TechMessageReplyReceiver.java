@@ -11,6 +11,7 @@ import android.os.Bundle;
 import android.util.Log;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
+import androidx.core.app.Person;
 import androidx.core.app.RemoteInput;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
@@ -48,14 +49,17 @@ public class TechMessageReplyReceiver extends BroadcastReceiver {
 
         NotificationChannels.ensureJobAlerts(context);
 
-        String title = data.get("title");
+        String title = data.get("msgTitle");
+        if (title == null || title.isEmpty()) title = data.get("title");
         if (title == null || title.isEmpty()) {
             String techName = data.get("techName");
             title = (techName != null && !techName.isEmpty())
                 ? "Reply from " + techName
                 : "Technician reply";
         }
-        String body = data.get("body") != null ? data.get("body") : "";
+        String body = data.get("msgBody");
+        if (body == null) body = data.get("body");
+        if (body == null) body = "";
         String tag = data.get("tag");
         if (tag == null || tag.isEmpty()) tag = "office_message_reply";
 
@@ -94,12 +98,19 @@ public class TechMessageReplyReceiver extends BroadcastReceiver {
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
+        Person tech = new Person.Builder().setName(title).setKey("tech").build();
+        Person self = new Person.Builder().setName("You").setKey("self").build();
+        NotificationCompat.MessagingStyle style = new NotificationCompat.MessagingStyle(self)
+            .setConversationTitle(title)
+            .addMessage(body, System.currentTimeMillis(), tech);
+
         Notification notification = new NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_notify)
             .setColor(COLOR_PENDING)
             .setContentTitle(title)
             .setContentText(body)
-            .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
+            .setStyle(style)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setDefaults(Notification.DEFAULT_ALL)
             .setContentIntent(openPending)
@@ -109,6 +120,7 @@ public class TechMessageReplyReceiver extends BroadcastReceiver {
 
         try {
             NotificationManagerCompat.from(context).notify(tag, NOTIFICATION_ID, notification);
+            Log.i(TAG, "Posted tech reply with Reply action");
         } catch (SecurityException e) {
             Log.w(TAG, "Notifications not permitted", e);
         }

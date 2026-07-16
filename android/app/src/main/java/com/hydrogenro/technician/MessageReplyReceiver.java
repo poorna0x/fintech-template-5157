@@ -11,6 +11,7 @@ import android.os.Bundle;
 import android.util.Log;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
+import androidx.core.app.Person;
 import androidx.core.app.RemoteInput;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
@@ -90,12 +91,21 @@ public class MessageReplyReceiver extends BroadcastReceiver {
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
+        // MessagingStyle + CATEGORY_MESSAGE makes the Reply action visible on
+        // more OEMs (Samsung etc. often hide plain action replies until expand).
+        Person office = new Person.Builder().setName(safeTitle).setKey("office").build();
+        Person self = new Person.Builder().setName("You").setKey("self").build();
+        NotificationCompat.MessagingStyle style = new NotificationCompat.MessagingStyle(self)
+            .setConversationTitle(safeTitle)
+            .addMessage(safeBody, System.currentTimeMillis(), office);
+
         Notification notification = new NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_notify)
             .setColor(COLOR_PENDING)
             .setContentTitle(safeTitle)
             .setContentText(safeBody)
-            .setStyle(new NotificationCompat.BigTextStyle().bigText(safeBody))
+            .setStyle(style)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setDefaults(Notification.DEFAULT_ALL)
             .setContentIntent(openPending)
@@ -105,6 +115,7 @@ public class MessageReplyReceiver extends BroadcastReceiver {
 
         try {
             NotificationManagerCompat.from(context).notify(notifTag, NOTIFICATION_ID, notification);
+            Log.i(TAG, "Posted office message with Reply action");
         } catch (SecurityException e) {
             Log.w(TAG, "Notifications not permitted", e);
         }

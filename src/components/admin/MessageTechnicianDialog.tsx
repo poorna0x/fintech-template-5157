@@ -46,7 +46,7 @@ const MessageTechnicianDialog = ({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
-  const [allowReply, setAllowReply] = useState(false);
+  const [allowReply, setAllowReply] = useState(true);
   const [sending, setSending] = useState(false);
   const [results, setResults] = useState<Record<string, SendStatus>>({});
 
@@ -60,7 +60,7 @@ const MessageTechnicianDialog = ({
       setSelected(new Set());
       setTitle('');
       setMessage('');
-      setAllowReply(false);
+      setAllowReply(true);
       setResults({});
       setSending(false);
     }
@@ -257,7 +257,7 @@ const MessageTechnicianDialog = ({
             />
           </div>
 
-          <label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 hover:bg-muted/50">
+          <label className="flex cursor-pointer items-start gap-3 rounded-lg border-2 border-sky-300 bg-sky-50 p-3 dark:border-sky-700 dark:bg-sky-950/40">
             <Checkbox
               checked={allowReply}
               onCheckedChange={(c) => setAllowReply(c === true)}
@@ -265,10 +265,10 @@ const MessageTechnicianDialog = ({
               className="mt-0.5"
             />
             <div className="min-w-0 space-y-0.5">
-              <span className="text-sm font-medium leading-none">Allow reply</span>
+              <span className="text-sm font-semibold leading-none">Allow reply (on by default)</span>
               <p className="text-xs text-muted-foreground leading-snug">
-                Technician can reply from the notification; you can reply back the same way.
-                Replies are pushed to phones only — nothing is saved.
+                Shows a Reply button on their notification. They reply → you get a push and can
+                reply back. Nothing is saved. Uncheck for one-way alerts only.
               </p>
             </div>
           </label>

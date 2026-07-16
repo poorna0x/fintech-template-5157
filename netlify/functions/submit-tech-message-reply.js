@@ -79,6 +79,8 @@ exports.handler = async (event) => {
           // Data-only: admin HroMessagingService shows notification + Reply.
           data: {
             type: 'tech_message_reply',
+            msgTitle: title,
+            msgBody: reply,
             title,
             body: reply,
             techName,

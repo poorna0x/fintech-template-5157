@@ -50,7 +50,9 @@ exports.handler = async (event) => {
   // notifications from the tray instead of showing anything.
   const clear = body.clear === true;
   // allowReply: data-only push; native shows notification with inline Reply.
-  const allowReply = body.allowReply === true;
+  // Accept boolean or string (defensive) so Reply isn't silently skipped.
+  const allowReply =
+    body.allowReply === true || body.allowReply === 'true' || body.allowReply === 1;
   if (!technicianId || (!clear && !title && !(allowReply && message))) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'technicianId and title required' }) };
   }
@@ -70,7 +72,12 @@ exports.handler = async (event) => {
 
   try {
     const messaging = await getMessaging(db);
-    const siteUrl = (process.env.URL || '').replace(/\/$/, '');
+    const siteUrl = (
+      process.env.URL ||
+      process.env.DEPLOY_PRIME_URL ||
+      process.env.VITE_PUBLIC_SITE_URL ||
+      'https://hydrogenro.com'
+    ).replace(/\/$/, '');
 
     let buildMessage;
     if (clear) {
@@ -82,13 +89,16 @@ exports.handler = async (event) => {
     } else if (allowReply) {
       const replyToken = makeOfficeMessageReplyToken(technicianId);
       const notifTitle = title || 'Message from office';
+      console.log('[send-tech-push] allowReply path', { technicianId, hasToken: !!replyToken });
       buildMessage = (token) => ({
         token,
         // Data-only so HroMessagingService builds a notification with Reply.
+        // Use msgTitle/msgBody (not title/body) so OEMs don't treat data as a
+        // display notification and skip our native Reply UI.
         data: {
           type: 'office_message',
-          title: notifTitle,
-          body: message || '',
+          msgTitle: notifTitle,
+          msgBody: message || '',
           replyToken,
           replyUrl: `${siteUrl}/.netlify/functions/submit-tech-message-reply`,
           tag: tag || 'office_message',

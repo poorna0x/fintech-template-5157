@@ -17,8 +17,6 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
 
     @Override
     public void onMessageReceived(@NonNull RemoteMessage remoteMessage) {
-        super.onMessageReceived(remoteMessage);
-
         Map<String, String> data = remoteMessage.getData();
         if ("cash_check".equals(data.get("type"))) {
             CashCheckReceiver.showCashCheckNotification(getApplicationContext(), data);
@@ -26,6 +24,8 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
         }
         if ("tech_message_reply".equals(data.get("type"))) {
             TechMessageReplyReceiver.showTechReplyNotification(getApplicationContext(), data);
+            return;
         }
+        super.onMessageReceived(remoteMessage);
     }
 }

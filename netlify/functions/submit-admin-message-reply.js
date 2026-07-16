@@ -56,8 +56,8 @@ exports.handler = async (event) => {
       token,
       data: {
         type: 'office_message',
-        title: 'Reply from office',
-        body: reply,
+        msgTitle: 'Reply from office',
+        msgBody: reply,
         replyToken: nextToken,
         replyUrl: `${siteUrl}/.netlify/functions/submit-tech-message-reply`,
         tag: 'office_message',

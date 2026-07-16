@@ -35,9 +35,8 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
 
     @Override
     public void onMessageReceived(@NonNull RemoteMessage remoteMessage) {
-        super.onMessageReceived(remoteMessage);
-
         Map<String, String> data = remoteMessage.getData();
+        // Handle our custom types before Capacitor so tray UI is ours (with Reply).
         if ("otp_request".equals(data.get("type"))) {
             showOtpNotification(data);
             return;
@@ -50,6 +49,9 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             clearNotifications(data.get("tag"));
             return;
         }
+
+        super.onMessageReceived(remoteMessage);
+
         if (!"location_request".equals(data.get("type"))) return;
 
         String technicianId = data.get("technicianId");
@@ -162,10 +164,14 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
         String replyToken = data.get("replyToken");
         String replyUrl = data.get("replyUrl");
         if (replyToken == null || replyUrl == null) return;
+        String title = data.get("msgTitle");
+        if (title == null || title.isEmpty()) title = data.get("title");
+        String body = data.get("msgBody");
+        if (body == null) body = data.get("body");
         MessageReplyReceiver.showOfficeMessageNotification(
             getApplicationContext(),
-            data.get("title"),
-            data.get("body"),
+            title,
+            body,
             replyToken,
             replyUrl,
             data.get("tag")
