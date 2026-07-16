@@ -627,26 +627,25 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
    * Read the OS clipboard and return a Google Maps URL if one is in there.
    * Returns null and surfaces a user-facing toast on every failure mode so the
    * caller doesn't need to know why it failed.
+   * Native (admin APK): uses @capacitor/clipboard — WebView clipboard.readText
+   * is blocked on Android.
    */
   const readMapsLinkFromClipboard = async (): Promise<string | null> => {
-    if (
-      typeof navigator === 'undefined' ||
-      !navigator.clipboard ||
-      typeof navigator.clipboard.readText !== 'function'
-    ) {
-      toast.error(
-        'Your browser blocks reading the clipboard. Paste the link into the field, then click Fetch Address.'
-      );
-      return null;
-    }
     let text = '';
     try {
-      text = await navigator.clipboard.readText();
-    } catch {
-      // Permission denied, document not focused, Safari/iOS restrictions, etc.
-      toast.error(
-        'Clipboard access was denied. Paste the link into the field, then click Fetch Address.'
-      );
+      const { readClipboardText } = await import('@/lib/nativeClipboard');
+      text = await readClipboardText();
+    } catch (err) {
+      const code = err instanceof Error ? err.message : '';
+      if (code === 'clipboard_unavailable') {
+        toast.error(
+          'Clipboard is not available here. Paste the link into the field, then click Fetch Address.'
+        );
+      } else {
+        toast.error(
+          'Clipboard access was denied. Paste the link into the field, then click Fetch Address.'
+        );
+      }
       return null;
     }
     if (!text || !text.trim()) {

@@ -1,4 +1,4 @@
-// Admin app: App (back button) + push notifications (no background geolocation).
+// Admin app: App (back button) + push + clipboard (Fetch Address).
 // Maintained by hand — `npx cap sync` targets the technician android/ project.
 
 android {
@@ -11,6 +11,7 @@ android {
 apply from: "../capacitor-cordova-android-plugins/cordova.variables.gradle"
 dependencies {
     implementation project(':capacitor-app')
+    implementation project(':capacitor-clipboard')
     implementation project(':capacitor-push-notifications')
 }
 
