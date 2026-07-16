@@ -10,6 +10,16 @@ const { getMessaging, isStaleTokenError } = require('./fcm-helper');
 const COLOR_EN_ROUTE = '#2563EB'; // blue — on the way
 const COLOR_COMPLETED = '#16A34A'; // green — done
 const COLOR_OTP = '#D97706'; // amber — customer OTP entered at start work
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+/** yyyy-mm-dd in IST — so admin completed filter matches India calendar day. */
+function formatIstDateYmd(date = new Date()) {
+  const ist = new Date(date.getTime() + IST_OFFSET_MS);
+  const y = ist.getUTCFullYear();
+  const m = String(ist.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(ist.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
 
 // Same rules as getLeadSourceFromJob in the web app, minus analytics extras.
 function resolveLeadSource(job) {
@@ -167,10 +177,12 @@ exports.handler = async (event) => {
   try {
     const messaging = await getMessaging(db);
     // Deep link fields: admin APK + web open Completed/Ongoing and highlight the job.
+    // completedDate avoids a round-trip on tap (open the list immediately).
     const data = {
       type: 'job_event',
       event: evt,
       jobId: String(jobId),
+      ...(evt === 'completed' ? { completedDate: formatIstDateYmd() } : {}),
     };
     const res = await messaging.sendEachForMulticast({
       tokens,

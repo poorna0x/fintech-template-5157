@@ -572,78 +572,61 @@ const AdminDashboard = () => {
     );
   }, []);
 
-  // Notification tap → Completed / Ongoing + highlight that job.
+  // Notification tap → Completed / Ongoing + highlight that job (no network wait).
   useEffect(() => {
     let cancelled = false;
     void import('@/lib/adminPushDeepLink').then(({ setAdminPushDeepLinkHandler }) => {
       if (cancelled) return;
       setAdminPushDeepLinkHandler((payload) => {
-        const { jobId, event } = payload;
+        const { jobId, event, completedDate } = payload;
         if (!jobId) return;
 
-        void (async () => {
-          if (event === 'completed') {
-            let dateStr = getTodayLocalDate();
-            try {
-              const { data } = await supabase
-                .from('jobs')
-                .select('id, completed_at, end_time')
-                .eq('id', jobId)
-                .maybeSingle();
-              if (data) {
-                dateStr =
-                  jobCompletionLocalDateIso(data as Record<string, unknown>) || dateStr;
-              }
-            } catch {
-              /* fall back to today */
-            }
-            if (cancelled) return;
-            setSearchQuery('');
-            setSearchTerm('');
-            setSearchResults(null);
-            setCompletedDatePreset('day');
-            setCompletedDateFilter(dateStr);
-            setCompletedRangeStartDate(dateStr);
-            setCompletedRangeEndDate(dateStr);
-            setCompletedLeadTypeFilter('all');
-            setCompletedServiceSubTypeFilter('all');
-            setCompletedByFilter('all');
-            setCurrentPage(1);
-            setStatusFilter('COMPLETED');
-            setHighlightJobId(jobId);
-            navigate(
-              adminDashboardLocation(
-                buildAdminDashboardSearch(
-                  { clearModal: true, clearView: true, tab: 'completed', jobId },
-                  location.search
-                )
-              ),
-              { replace: true }
-            );
-            toast.success('Opening completed job…');
-            return;
-          }
-
-          // en_route / otp_entered / default → Ongoing list
+        if (event === 'completed') {
+          const dateStr =
+            completedDate && /^\d{4}-\d{2}-\d{2}$/.test(completedDate)
+              ? completedDate
+              : getTodayLocalDate();
           setSearchQuery('');
           setSearchTerm('');
           setSearchResults(null);
+          setCompletedDatePreset('day');
+          setCompletedDateFilter(dateStr);
+          setCompletedRangeStartDate(dateStr);
+          setCompletedRangeEndDate(dateStr);
+          setCompletedLeadTypeFilter('all');
+          setCompletedServiceSubTypeFilter('all');
+          setCompletedByFilter('all');
           setCurrentPage(1);
-          setStatusFilter('ONGOING');
+          setStatusFilter('COMPLETED');
           setHighlightJobId(jobId);
           navigate(
             adminDashboardLocation(
               buildAdminDashboardSearch(
-                { clearModal: true, clearView: true, tab: null, jobId },
+                { clearModal: true, clearView: true, tab: 'completed', jobId },
                 location.search
               )
             ),
             { replace: true }
           );
-          toast.success(
-            event === 'otp_entered' ? 'Opening job (OTP)…' : 'Opening job…'
-          );
-        })();
+          return;
+        }
+
+        // en_route / otp_entered / default → Ongoing list
+        setSearchQuery('');
+        setSearchTerm('');
+        setSearchResults(null);
+        setCurrentPage(1);
+        setStatusFilter('ONGOING');
+        setHighlightJobId(jobId);
+        navigate(
+          adminDashboardLocation(
+            buildAdminDashboardSearch(
+              { clearModal: true, clearView: true, tab: null, jobId },
+              location.search
+            )
+          ),
+          { replace: true }
+        );
       });
     });
     return () => {
@@ -2625,21 +2608,34 @@ const AdminDashboard = () => {
 
   useEffect(() => {
     if (!highlightJobId) return;
-    const hasJob = jobs.some((j) => j.id === highlightJobId);
-    if (!hasJob) return;
 
-    const timer = window.setTimeout(() => {
+    let attempts = 0;
+    const tryScroll = () => {
       const el =
         document.querySelector(`[data-admin-job-id="${highlightJobId}"]`) ||
         document.querySelector(`[data-completed-job-id="${highlightJobId}"]`);
-      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, 350);
-
-    const clearTimer = window.setTimeout(() => setHighlightJobId(null), 5000);
-    return () => {
-      window.clearTimeout(timer);
-      window.clearTimeout(clearTimer);
+      if (!el) return false;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return true;
     };
+
+    // Scroll as soon as the card is in the DOM (list may still be loading).
+    if (!tryScroll()) {
+      const poll = window.setInterval(() => {
+        attempts += 1;
+        if (tryScroll() || attempts >= 25) window.clearInterval(poll);
+      }, 80);
+      const clearPoll = window.setTimeout(() => window.clearInterval(poll), 4000);
+      const clearHighlight = window.setTimeout(() => setHighlightJobId(null), 5000);
+      return () => {
+        window.clearInterval(poll);
+        window.clearTimeout(clearPoll);
+        window.clearTimeout(clearHighlight);
+      };
+    }
+
+    const clearHighlight = window.setTimeout(() => setHighlightJobId(null), 5000);
+    return () => window.clearTimeout(clearHighlight);
   }, [highlightJobId, jobs, statusFilter]);
 
   const handleEditCustomer = useCallback((customer: Customer) => {

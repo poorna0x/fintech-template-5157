@@ -7,6 +7,8 @@
 export type AdminPushDeepLinkPayload = {
   jobId: string;
   event: 'en_route' | 'completed' | 'otp_entered' | string;
+  /** yyyy-mm-dd from the push — skip a DB fetch on tap when present. */
+  completedDate?: string;
 };
 
 type Handler = (payload: AdminPushDeepLinkPayload) => void;
@@ -30,8 +32,12 @@ export function parseAdminPushDeepLinkData(
   if (!raw || typeof raw !== 'object') return null;
   const jobId = String(raw.jobId || raw.job || '').trim();
   const event = String(raw.event || '').trim();
+  const completedDateRaw = String(raw.completedDate || '').trim();
+  const completedDate = /^\d{4}-\d{2}-\d{2}$/.test(completedDateRaw)
+    ? completedDateRaw
+    : undefined;
   if (!jobId) return null;
-  return { jobId, event: event || 'completed' };
+  return { jobId, event: event || 'completed', completedDate };
 }
 
 export function deliverAdminPushDeepLink(
