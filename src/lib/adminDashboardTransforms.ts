@@ -18,6 +18,7 @@ export function transformTechnicianData(tech: any) {
     vehicle: tech.vehicle,
     salary: tech.salary,
     qrCode: tech.qr_code || tech.qrCode || '',
+    photo: typeof tech.photo === 'string' && tech.photo.trim() ? tech.photo.trim() : undefined,
     createdAt: tech.created_at,
     updatedAt: tech.updated_at,
   };

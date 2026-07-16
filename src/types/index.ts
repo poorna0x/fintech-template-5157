@@ -202,6 +202,8 @@ export interface Technician {
   phone: string;
   email: string;
   employeeId: string;
+  /** Profile photo URL (Settings / ID card). */
+  photo?: string;
   
   // Skills & Certifications
   skills: {

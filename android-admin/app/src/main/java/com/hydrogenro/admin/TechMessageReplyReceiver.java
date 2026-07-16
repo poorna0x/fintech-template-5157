@@ -5,7 +5,14 @@ import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffXfermode;
+import android.graphics.Rect;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
@@ -13,6 +20,8 @@ import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.core.app.Person;
 import androidx.core.app.RemoteInput;
+import androidx.core.graphics.drawable.IconCompat;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -23,6 +32,7 @@ import org.json.JSONObject;
 /**
  * Inline reply when a technician answers an office message. Reply is pushed
  * back to that technician (no storage) via submit-admin-message-reply.
+ * Technician profile photo (Settings) is shown as the MessagingStyle DP.
  */
 public class TechMessageReplyReceiver extends BroadcastReceiver {
 
@@ -30,6 +40,8 @@ public class TechMessageReplyReceiver extends BroadcastReceiver {
     private static final String CHANNEL_ID = NotificationChannels.JOB_ALERTS;
     private static final int COLOR_PENDING = Color.parseColor("#2563EB");
     private static final int COLOR_SUCCESS = Color.parseColor("#16A34A");
+    private static final int PHOTO_TIMEOUT_MS = 2500;
+    private static final int PHOTO_MAX_PX = 192;
 
     public static final String ACTION_REPLY = "com.hydrogenro.admin.TECH_MSG_REPLY";
     public static final String KEY_REPLY = "reply_text";
@@ -38,6 +50,8 @@ public class TechMessageReplyReceiver extends BroadcastReceiver {
     public static final String EXTRA_TITLE = "title";
     public static final String EXTRA_BODY = "body";
     public static final String EXTRA_TAG = "tag";
+    public static final String EXTRA_TECH_NAME = "techName";
+    public static final String EXTRA_TECH_PHOTO = "techPhoto";
     public static final String EXTRA_NOTIFICATION_ID = "notificationId";
 
     private static final int NOTIFICATION_ID = 0x0AD71;
@@ -51,17 +65,23 @@ public class TechMessageReplyReceiver extends BroadcastReceiver {
 
         String title = data.get("msgTitle");
         if (title == null || title.isEmpty()) title = data.get("title");
+        String techName = data.get("techName");
+        if (techName == null || techName.isEmpty()) {
+            techName = "Technician";
+        }
         if (title == null || title.isEmpty()) {
-            String techName = data.get("techName");
-            title = (techName != null && !techName.isEmpty())
-                ? "Reply from " + techName
-                : "Technician reply";
+            title = "Reply from " + techName;
         }
         String body = data.get("msgBody");
         if (body == null) body = data.get("body");
         if (body == null) body = "";
         String tag = data.get("tag");
         if (tag == null || tag.isEmpty()) tag = "office_message_reply";
+        String techPhoto = data.get("techPhoto");
+        if (techPhoto == null) techPhoto = "";
+
+        Bitmap photoBmp = loadCircularPhoto(techPhoto);
+        IconCompat personIcon = photoBmp != null ? IconCompat.createWithBitmap(photoBmp) : null;
 
         RemoteInput remoteInput = new RemoteInput.Builder(KEY_REPLY)
             .setLabel("Reply")
@@ -74,6 +94,8 @@ public class TechMessageReplyReceiver extends BroadcastReceiver {
             .putExtra(EXTRA_TITLE, title)
             .putExtra(EXTRA_BODY, body)
             .putExtra(EXTRA_TAG, tag)
+            .putExtra(EXTRA_TECH_NAME, techName)
+            .putExtra(EXTRA_TECH_PHOTO, techPhoto)
             .putExtra(EXTRA_NOTIFICATION_ID, NOTIFICATION_ID);
         PendingIntent replyPending = PendingIntent.getBroadcast(
             context,
@@ -98,13 +120,15 @@ public class TechMessageReplyReceiver extends BroadcastReceiver {
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
-        Person tech = new Person.Builder().setName(title).setKey("tech").build();
+        Person.Builder techBuilder = new Person.Builder().setName(techName).setKey("tech");
+        if (personIcon != null) techBuilder.setIcon(personIcon);
+        Person tech = techBuilder.build();
         Person self = new Person.Builder().setName("You").setKey("self").build();
         NotificationCompat.MessagingStyle style = new NotificationCompat.MessagingStyle(self)
             .setConversationTitle(title)
             .addMessage(body, System.currentTimeMillis(), tech);
 
-        Notification notification = new NotificationCompat.Builder(context, CHANNEL_ID)
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_notify)
             .setColor(COLOR_PENDING)
             .setContentTitle(title)
@@ -115,15 +139,67 @@ public class TechMessageReplyReceiver extends BroadcastReceiver {
             .setDefaults(Notification.DEFAULT_ALL)
             .setContentIntent(openPending)
             .addAction(replyAction)
-            .setAutoCancel(false)
-            .build();
+            .setAutoCancel(false);
+        if (photoBmp != null) {
+            builder.setLargeIcon(photoBmp);
+        }
 
         try {
-            NotificationManagerCompat.from(context).notify(tag, NOTIFICATION_ID, notification);
-            Log.i(TAG, "Posted tech reply with Reply action");
+            NotificationManagerCompat.from(context).notify(tag, NOTIFICATION_ID, builder.build());
+            Log.i(TAG, "Posted tech reply with Reply action" + (personIcon != null ? " + photo" : ""));
         } catch (SecurityException e) {
             Log.w(TAG, "Notifications not permitted", e);
         }
+    }
+
+    /** Download + circular-crop technician photo for Person / largeIcon. Fail-soft. */
+    private static Bitmap loadCircularPhoto(String photoUrl) {
+        if (photoUrl == null || photoUrl.isEmpty()) return null;
+        if (!photoUrl.regionMatches(true, 0, "https://", 0, 8)) return null;
+        HttpURLConnection conn = null;
+        try {
+            conn = (HttpURLConnection) new URL(photoUrl).openConnection();
+            conn.setConnectTimeout(PHOTO_TIMEOUT_MS);
+            conn.setReadTimeout(PHOTO_TIMEOUT_MS);
+            conn.setInstanceFollowRedirects(true);
+            int code = conn.getResponseCode();
+            if (code < 200 || code >= 300) return null;
+            InputStream in = conn.getInputStream();
+            Bitmap decoded = BitmapFactory.decodeStream(in);
+            if (in != null) in.close();
+            if (decoded == null) return null;
+            return toCircularBitmap(decoded, PHOTO_MAX_PX);
+        } catch (Exception e) {
+            Log.w(TAG, "Tech photo load failed", e);
+            return null;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    private static Bitmap toCircularBitmap(Bitmap src, int maxPx) {
+        int w = src.getWidth();
+        int h = src.getHeight();
+        if (w <= 0 || h <= 0) return null;
+        int side = Math.min(w, h);
+        int left = (w - side) / 2;
+        int top = (h - side) / 2;
+        Bitmap square = Bitmap.createBitmap(src, left, top, side, side);
+        if (square != src) src.recycle();
+        int size = Math.min(maxPx, side);
+        Bitmap scaled = square.getWidth() == size
+            ? square
+            : Bitmap.createScaledBitmap(square, size, size, true);
+        if (scaled != square) square.recycle();
+
+        Bitmap out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(out);
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        canvas.drawCircle(size / 2f, size / 2f, size / 2f, paint);
+        paint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.SRC_IN));
+        canvas.drawBitmap(scaled, new Rect(0, 0, size, size), new Rect(0, 0, size, size), paint);
+        if (scaled != out) scaled.recycle();
+        return out;
     }
 
     @Override
@@ -139,6 +215,8 @@ public class TechMessageReplyReceiver extends BroadcastReceiver {
         String title = intent.getStringExtra(EXTRA_TITLE);
         String body = intent.getStringExtra(EXTRA_BODY);
         String tag = intent.getStringExtra(EXTRA_TAG);
+        String techName = intent.getStringExtra(EXTRA_TECH_NAME);
+        String techPhoto = intent.getStringExtra(EXTRA_TECH_PHOTO);
         int notificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, NOTIFICATION_ID);
         if (replyToken == null || replyUrl == null) return;
 
@@ -149,6 +227,8 @@ public class TechMessageReplyReceiver extends BroadcastReceiver {
             data.put("replyToken", replyToken);
             data.put("replyUrl", replyUrl);
             data.put("tag", tag);
+            if (techName != null) data.put("techName", techName);
+            if (techPhoto != null) data.put("techPhoto", techPhoto);
             showTechReplyNotification(context, data);
             return;
         }
@@ -192,6 +272,8 @@ public class TechMessageReplyReceiver extends BroadcastReceiver {
                 data.put("replyToken", replyToken);
                 data.put("replyUrl", replyUrl);
                 data.put("tag", tag);
+                if (techName != null) data.put("techName", techName);
+                if (techPhoto != null) data.put("techPhoto", techPhoto);
                 showTechReplyNotification(context, data);
             }
             pending.finish();

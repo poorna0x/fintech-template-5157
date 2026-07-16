@@ -50,10 +50,18 @@ exports.handler = async (event) => {
 
   const { data: tech } = await db
     .from('technicians')
-    .select('full_name')
+    .select('full_name, photo')
     .eq('id', technicianId)
     .maybeSingle();
   const techName = (tech?.full_name && String(tech.full_name).trim()) || 'Technician';
+  const techPhotoRaw = tech?.photo != null ? String(tech.photo).trim() : '';
+  // FCM data values must be short strings; only pass public HTTPS URLs.
+  const techPhoto =
+    techPhotoRaw.length > 8 &&
+    techPhotoRaw.length < 2000 &&
+    /^https:\/\//i.test(techPhotoRaw)
+      ? techPhotoRaw
+      : '';
 
   const { data: tokenRows, error: tokErr } = await db.from('admin_push_tokens').select('token');
   if (tokErr) {
@@ -84,6 +92,7 @@ exports.handler = async (event) => {
             title,
             body: reply,
             techName,
+            techPhoto,
             technicianId,
             replyToken: adminReplyToken,
             replyUrl: `${siteUrl}/.netlify/functions/submit-admin-message-reply`,

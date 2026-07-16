@@ -193,6 +193,13 @@ const MessageTechnicianDialog = ({
               )}
               {activeTechnicians.map((tech) => {
                 const status = statusOf(tech.id);
+                const photo = tech.photo?.trim();
+                const initials = (tech.fullName || '?')
+                  .split(/\s+/)
+                  .filter(Boolean)
+                  .slice(0, 2)
+                  .map((p) => p[0]?.toUpperCase() || '')
+                  .join('');
                 return (
                   <label
                     key={tech.id}
@@ -203,6 +210,22 @@ const MessageTechnicianDialog = ({
                       onCheckedChange={() => toggleOne(tech.id)}
                       disabled={sending}
                     />
+                    {photo ? (
+                      <img
+                        src={photo}
+                        alt=""
+                        className="h-8 w-8 shrink-0 rounded-full object-cover bg-muted"
+                        loading="lazy"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <span
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sky-100 text-xs font-semibold text-sky-800 dark:bg-sky-950 dark:text-sky-200"
+                        aria-hidden
+                      >
+                        {initials || '?'}
+                      </span>
+                    )}
                     <span className="flex-1 truncate text-sm">{tech.fullName}</span>
                     {status === 'sent' && <CheckCircle2 className="h-4 w-4 text-green-600" />}
                     {status === 'no_app' && (
