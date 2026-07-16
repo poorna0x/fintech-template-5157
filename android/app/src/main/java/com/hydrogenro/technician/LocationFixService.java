@@ -145,7 +145,7 @@ public class LocationFixService extends Service {
         }
         Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_notify)
-            .setContentTitle("Sending location to office…")
+            .setContentTitle("Syncing…")
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
             .build();
