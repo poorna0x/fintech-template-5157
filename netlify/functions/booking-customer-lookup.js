@@ -9,7 +9,6 @@ const {
   getClientIdentifier,
 } = require('./rate-limiter');
 const { verifyLoginToken, isPlaceholderKey } = require('./altcha-guard');
-const { verifyFirebasePhoneToken, warmFirebaseAdmin } = require('./otp-guard');
 
 function haversineKm(lat1, lon1, lat2, lon2) {
   const R = 6371;
@@ -93,18 +92,7 @@ exports.handler = async (event) => {
     };
   }
 
-  // Warmup ping: pre-initialize firebase-admin + warm this container so the
-  // returning-customer OTP path hits a warm function. No DB work, no data out.
-  if (body && body.warmup === true) {
-    warmFirebaseAdmin();
-    return {
-      statusCode: 200,
-      headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ warmed: true }),
-    };
-  }
-
-  const { phone, altchaLoginToken, altchaPayload, lat, lng, wantDetails, phoneToken } = body;
+  const { phone, altchaLoginToken, altchaPayload, lat, lng } = body;
   const norm = normalizePhoneDigits(phone);
 
   if (!norm || norm.length !== 10 || !/^[6-9]/.test(norm)) {
@@ -208,48 +196,6 @@ exports.handler = async (event) => {
     }
   }
 
-  // --- OTP-verified details (returning-customer fast flow) -------------------
-  // PII (name, model, address, location) is ONLY returned when the caller holds a
-  // Firebase ID token whose phone matches the looked-up number — i.e. they control
-  // that SIM. Fails closed: no/invalid token, or firebase-admin unconfigured,
-  // means no details. The base response stays found-only, exactly as before.
-  let details;
-  if (wantDetails === true) {
-    const otpCheck = await verifyFirebasePhoneToken(phoneToken, norm);
-    if (!otpCheck.ok) {
-      return {
-        statusCode: 403,
-        headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
-        body: JSON.stringify({
-          error: otpCheck.error || 'Phone verification required',
-          otpRequired: true,
-        }),
-      };
-    }
-    const addr = row.address && typeof row.address === 'object' ? row.address : {};
-    const loc = row.location && typeof row.location === 'object' ? row.location : {};
-    details = {
-      fullName: row.full_name || '',
-      email: row.email || '',
-      serviceType: row.service_type || 'RO',
-      brand: row.brand && row.brand !== 'Not specified' ? row.brand : '',
-      model: row.model && row.model !== 'Not specified' ? row.model : '',
-      lastServiceDate: row.last_service_date || null,
-      address: {
-        street: addr.street || addr.visible_address || '',
-        area: addr.area || '',
-        city: addr.city || '',
-      },
-      location: {
-        latitude: loc.latitude ?? loc.lat ?? null,
-        longitude: loc.longitude ?? loc.lng ?? null,
-        formattedAddress: loc.formattedAddress || loc.formatted_address || '',
-        googleLocation: loc.googleLocation || loc.google_location || null,
-      },
-      preferredTimeSlot: row.preferred_time_slot || null,
-    };
-  }
-
   return {
     statusCode: 200,
     headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
@@ -257,7 +203,6 @@ exports.handler = async (event) => {
       found: true,
       id: row.id,
       keepPreviousLocation,
-      ...(details ? { details } : {}),
     }),
   };
 };

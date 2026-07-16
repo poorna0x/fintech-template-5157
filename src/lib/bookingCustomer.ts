@@ -14,25 +14,6 @@ export interface BookingCustomerLookupResult {
   keepPreviousLocation?: boolean;
 }
 
-/** Full saved details — only returned by the server after Firebase phone-OTP
- *  verification proves the caller owns the number (see booking-customer-lookup). */
-export interface BookingCustomerDetails {
-  fullName: string;
-  email: string;
-  serviceType: 'RO' | 'SOFTENER' | string;
-  brand: string;
-  model: string;
-  lastServiceDate: string | null;
-  address: { street: string; area: string; city: string };
-  location: {
-    latitude: number | null;
-    longitude: number | null;
-    formattedAddress: string;
-    googleLocation: string | null;
-  };
-  preferredTimeSlot: string | null;
-}
-
 async function bookingFetch(
   path: string,
   body: Record<string, unknown>
@@ -96,46 +77,6 @@ export async function getBookingCustomerByPhone(
     keepPreviousLocation: payload.keepPreviousLocation === true,
   };
   return { data: row, error: null };
-}
-
-/**
- * Fetch the customer's saved details after phone-OTP verification.
- * `phoneToken` is the Firebase ID token from verifyBookingOtp — the server
- * verifies it matches the phone before revealing any PII.
- */
-export async function getBookingCustomerDetails(
-  phone: string,
-  options: BookingAltchaContext & { phoneToken: string }
-): Promise<{ data: BookingCustomerDetails | null; error: { message: string } | null }> {
-  const res = await bookingFetch('booking-customer-lookup', {
-    phone,
-    altchaLoginToken: options.altchaLoginToken,
-    altchaPayload: options.altchaPayload,
-    wantDetails: true,
-    phoneToken: options.phoneToken,
-  });
-
-  if (res.error) return { data: null, error: res.error };
-
-  const payload = res.data as { found?: boolean; details?: BookingCustomerDetails } | null;
-  if (!payload?.found || !payload.details) {
-    return { data: null, error: null };
-  }
-  return { data: payload.details, error: null };
-}
-
-/** Fire-and-forget warmup so the OTP-details path hits a warm function. */
-export function warmBookingCustomerLookup(): void {
-  try {
-    void fetch('/.netlify/functions/booking-customer-lookup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ warmup: true }),
-      keepalive: true,
-    }).catch(() => {});
-  } catch {
-    /* ignore */
-  }
 }
 
 export async function createBookingCustomer(
