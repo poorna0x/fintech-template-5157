@@ -1,7 +1,10 @@
-// Admin app: push notifications only (no background geolocation).
+// Admin app: App (back button) + push notifications (no background geolocation).
 // Maintained by hand — `npx cap sync` targets the technician android/ project.
 include ':capacitor-android'
 project(':capacitor-android').projectDir = new File('../node_modules/@capacitor/android/capacitor')
+
+include ':capacitor-app'
+project(':capacitor-app').projectDir = new File('../node_modules/@capacitor/app/android')
 
 include ':capacitor-push-notifications'
 project(':capacitor-push-notifications').projectDir = new File('../node_modules/@capacitor/push-notifications/android')

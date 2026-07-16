@@ -17,6 +17,7 @@ import GoogleAnalytics from "./components/GoogleAnalytics";
 import { SEO_CITY_SERVICE_PAGES, SEO_LOCATION_PAGES, SEO_SERVICE_PAGES } from "@/lib/publicSeoPages";
 import { disablePWA } from "@/lib/pwa";
 import { isTechnicianPortalPath } from "@/lib/authPortal";
+import { startNativeBackButtonHandler } from "@/lib/nativeBackButton";
 
 // Lazy load heavy components for better performance.
 // AdminPortal and TechnicianLogin are lazy too so their login + captcha widget
@@ -106,6 +107,14 @@ const GlobalHaptics = () => {
   return null;
 };
 
+/** Capacitor Android: gesture/hardware back walks SPA history instead of exiting. */
+const NativeBackButton = () => {
+  useEffect(() => {
+    void startNativeBackButtonHandler();
+  }, []);
+  return null;
+};
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider>
@@ -116,6 +125,7 @@ const App = () => (
             <Toaster />
             <Sonner />
             <BrowserRouter>
+              <NativeBackButton />
               <GlobalHaptics />
               <AuthPortalCoordinator />
               <PublicSiteSeo />
