@@ -49,6 +49,30 @@ function fixTimeOf(row: LiveLocationRow): string {
   return row.fix_time ?? row.updated_at;
 }
 
+/** Keep measure-distance / assign / settings on the same pin as live location. */
+async function mirrorExactToTechnicianCurrentLocation(
+  techId: string,
+  latitude: number,
+  longitude: number,
+  accuracy: number | null
+) {
+  try {
+    await supabase
+      .from('technicians')
+      .update({
+        current_location: {
+          latitude,
+          longitude,
+          lastUpdated: new Date().toISOString(),
+          accuracy,
+        },
+      })
+      .eq('id', techId);
+  } catch {
+    // Best-effort; live map is already correct.
+  }
+}
+
 function agoLabel(iso: string): string {
   const secs = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
   if (secs < 60) return `${secs}s ago`;
@@ -141,7 +165,19 @@ const TechnicianLiveLocationDialog = ({
       const alreadyFresh =
         existing.latitude != null &&
         Date.now() - new Date(fixTimeOf(existing)).getTime() < FRESH_FIX_MAX_AGE_MS;
-      if (alreadyFresh && !force) setExactFix(true);
+      if (alreadyFresh && !force) {
+        setExactFix(true);
+        // No ping this time — still push the fresh pin into current_location
+        // so measure-distance / assign see it without waiting for another open.
+        if (existing.latitude != null && existing.longitude != null) {
+          void mirrorExactToTechnicianCurrentLocation(
+            techId,
+            existing.latitude,
+            existing.longitude,
+            existing.accuracy
+          );
+        }
+      }
 
       // Only ping when needed: sharing is on and the stored fix isn't already
       // current (saves the push, the GPS wake-up and the uploads). An explicit

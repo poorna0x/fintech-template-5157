@@ -71,6 +71,7 @@ exports.handler = async (event) => {
 
   const fixIso = Number.isFinite(fixTime) && fixTime > 0 ? new Date(fixTime).toISOString() : null;
 
+  const nowIso = new Date().toISOString();
   let update = db
     .from('technician_live_locations')
     .update({
@@ -78,7 +79,7 @@ exports.handler = async (event) => {
       longitude,
       accuracy: Number.isFinite(accuracy) ? accuracy : null,
       ...(fixIso ? { fix_time: fixIso } : {}),
-      updated_at: new Date().toISOString(),
+      updated_at: nowIso,
     })
     .eq('technician_id', technicianId);
   if (fixIso) {
@@ -86,11 +87,37 @@ exports.handler = async (event) => {
     // let an older measurement overwrite a newer one.
     update = update.or(`fix_time.is.null,fix_time.lte.${fixIso}`);
   }
-  const { error: updErr } = await update;
+  // Confirm a row was written — older-fix rejection returns ok with 0 rows.
+  const { data: updated, error: updErr } = await update.select('technician_id').maybeSingle();
 
   if (updErr) {
     console.error('[upload-tech-location] update failed', updErr.message);
     return { statusCode: 500, headers, body: JSON.stringify({ error: 'Update failed' }) };
+  }
+
+  // Only the GPS-measured ("exact") fix — not the phone's cached first reply —
+  // is mirrored into technicians.current_location for measure-distance / assign.
+  const isExact =
+    Number.isFinite(fixTime) &&
+    fixTime > 0 &&
+    requestedAt > 0 &&
+    fixTime >= requestedAt - 30_000;
+  if (updated && isExact) {
+    const { error: mirrorErr } = await db
+      .from('technicians')
+      .update({
+        current_location: {
+          latitude,
+          longitude,
+          lastUpdated: nowIso,
+          accuracy: Number.isFinite(accuracy) ? accuracy : null,
+        },
+      })
+      .eq('id', technicianId);
+    if (mirrorErr) {
+      // Live row is already correct; don't fail the phone upload over mirror.
+      console.error('[upload-tech-location] current_location mirror failed', mirrorErr.message);
+    }
   }
 
   return { statusCode: 200, headers, body: JSON.stringify({ ok: true }) };
