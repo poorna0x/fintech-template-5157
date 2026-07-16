@@ -473,13 +473,18 @@ const TechnicianDashboard = () => {
   const [newJobsAlertOpen, setNewJobsAlertOpen] = useState(false);
   const [confirmStartJobDialog, setConfirmStartJobDialog] = useState<{open: boolean, job: Job | null}>({open: false, job: null});
   const [confirmStartWorkDialog, setConfirmStartWorkDialog] = useState<{open: boolean, job: Job | null}>({open: false, job: null});
+  /** Maps tap: ask "going now?" before Start job — skipped if already EN_ROUTE / IN_PROGRESS. */
+  const [mapsGoingDialog, setMapsGoingDialog] = useState<{ open: boolean; job: Job | null }>({
+    open: false,
+    job: null,
+  });
   // Customer OTP asked right at Start Work (Home Triangle / OTP-required jobs).
   const [startWorkOtp, setStartWorkOtp] = useState('');
   const [startWorkOtpError, setStartWorkOtpError] = useState('');
   const [visitOrderSkipDialog, setVisitOrderSkipDialog] = useState<{
     open: boolean;
     job: Job | null;
-    action: 'start' | 'startWork' | null;
+    action: 'start' | 'startWork' | 'startAndOpenMap' | null;
     rank: number;
     firstJob: Job | null;
   }>({ open: false, job: null, action: null, rank: 0, firstJob: null });
@@ -745,7 +750,7 @@ const TechnicianDashboard = () => {
     [loadJobCustomerForLocation, openJobAddressDialog]
   );
 
-  const openMapForJob = useCallback(
+  const openMapForJobDirect = useCallback(
     async (job: any) => {
       const jobId = String(job?.id || '');
       if (!jobId) {
@@ -767,6 +772,32 @@ const TechnicianDashboard = () => {
       }
     },
     [loadJobCustomerForLocation]
+  );
+
+  /**
+   * Maps / Google location tap. If already EN_ROUTE or IN_PROGRESS, open Maps
+   * immediately (no re-prompt). Otherwise ask whether they're going now;
+   * Yes → Start job (admin push) then Maps; No → Maps only.
+   */
+  const openMapForJob = useCallback(
+    async (job: any) => {
+      const jobId = String(job?.id || '');
+      if (!jobId) {
+        toast.error('Location data not available');
+        return;
+      }
+      const status = normalizeJobStatus((job as any)?.status ?? job?.status);
+      if (status === 'EN_ROUTE' || status === 'IN_PROGRESS') {
+        await openMapForJobDirect(job);
+        return;
+      }
+      if (status === 'ASSIGNED' || status === 'PENDING') {
+        setMapsGoingDialog({ open: true, job: job as Job });
+        return;
+      }
+      await openMapForJobDirect(job);
+    },
+    [openMapForJobDirect]
   );
 
   // Define loadAssignedJobs before useEffect hooks that use it
@@ -2937,11 +2968,16 @@ const TechnicianDashboard = () => {
     return { rank: idx + 1, firstJob: ordered[0] };
   };
 
-  const proceedAfterVisitOrderCheck = (job: Job, action: 'start' | 'startWork') => {
+  const proceedAfterVisitOrderCheck = (job: Job, action: 'start' | 'startWork' | 'startAndOpenMap') => {
     if (action === 'start') {
       setConfirmStartJobDialog({ open: true, job });
-    } else {
+    } else if (action === 'startWork') {
       setConfirmStartWorkDialog({ open: true, job });
+    } else if (action === 'startAndOpenMap') {
+      void (async () => {
+        const ok = await performStartJob(job);
+        if (ok) await openMapForJobDirect(job);
+      })();
     }
   };
 
@@ -2965,9 +3001,9 @@ const TechnicianDashboard = () => {
     setConfirmStartJobDialog({ open: true, job });
   };
 
-  // Actually perform the start job action
-  const performStartJob = async (job: Job) => {
-    if (!user?.technicianId) return;
+  // Actually perform the start job action. Returns true when EN_ROUTE was set.
+  const performStartJob = async (job: Job): Promise<boolean> => {
+    if (!user?.technicianId) return false;
 
     try {
       setIsUpdating(true);
@@ -3009,6 +3045,7 @@ const TechnicianDashboard = () => {
       setTimeout(() => {
         processingJobsRef.current.delete(job.id);
       }, 30000);
+      return true;
     } catch (error: any) {
       console.error('Error starting job:', error);
       const errorMessage = error?.message || 'Failed to start job';
@@ -3020,9 +3057,29 @@ const TechnicianDashboard = () => {
         });
       }
       processingJobsRef.current.delete(job.id);
+      return false;
     } finally {
       setIsUpdating(false);
     }
+  };
+
+  /** Maps dialog Yes: start job (with visit-order check) then open Maps. */
+  const startJobAndOpenMap = (job: Job) => {
+    const skip = getVisitOrderSkipInfo(job);
+    if (skip) {
+      setVisitOrderSkipDialog({
+        open: true,
+        job,
+        action: 'startAndOpenMap',
+        rank: skip.rank,
+        firstJob: skip.firstJob,
+      });
+      return;
+    }
+    void (async () => {
+      const ok = await performStartJob(job);
+      if (ok) await openMapForJobDirect(job);
+    })();
   };
 
   // Handle starting work at location - IN_PROGRESS status
@@ -7335,6 +7392,69 @@ const TechnicianDashboard = () => {
             )}
           </DialogContent>
         </Dialog>
+
+        {/* Maps tap: ask before Start job (skipped when already EN_ROUTE / IN_PROGRESS) */}
+        <AlertDialog
+          open={mapsGoingDialog.open}
+          onOpenChange={(open) => {
+            if (!open) setMapsGoingDialog({ open: false, job: null });
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Going to this job now?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Opening Maps. If you&apos;re heading there, we&apos;ll mark you as on the way and notify the office.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            {(() => {
+              const activeJob = mapsGoingDialog.job
+                ? getActiveJob(mapsGoingDialog.job.id)
+                : null;
+              return activeJob ? <ActiveJobWarning activeJob={activeJob} /> : null;
+            })()}
+            {mapsGoingDialog.job && (
+              <div className="bg-gray-50 p-3 rounded-lg text-sm">
+                <p>
+                  <strong>Customer:</strong>{' '}
+                  <span className={customerNameClassName(mapsGoingDialog.job.customer as any)}>
+                    {(mapsGoingDialog.job.customer as any)?.full_name ||
+                      mapsGoingDialog.job.customer?.fullName ||
+                      'Unknown'}
+                  </span>
+                </p>
+                <p>
+                  <strong>Service:</strong>{' '}
+                  {(mapsGoingDialog.job as any).service_type ||
+                    mapsGoingDialog.job.serviceType ||
+                    'N/A'}
+                </p>
+              </div>
+            )}
+            <AlertDialogFooter className="flex-col gap-2 sm:flex-row">
+              <AlertDialogCancel
+                onClick={() => {
+                  const job = mapsGoingDialog.job;
+                  setMapsGoingDialog({ open: false, job: null });
+                  if (job) void openMapForJobDirect(job);
+                }}
+              >
+                No, just open Maps
+              </AlertDialogCancel>
+              <AlertDialogAction
+                disabled={isUpdating}
+                onClick={() => {
+                  const job = mapsGoingDialog.job;
+                  setMapsGoingDialog({ open: false, job: null });
+                  if (job) startJobAndOpenMap(job);
+                }}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                Yes, start job & open Maps
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* Warning when starting a later stop before #1 */}
         <AlertDialog
