@@ -6,12 +6,17 @@
  * job started/completed alerts to this phone. Every registered device gets
  * every admin push, regardless of which admin account is logged in.
  * No-op in the browser.
+ *
+ * Also listens for notification taps (pushNotificationActionPerformed) and
+ * deep-links into the dashboard job (Completed / Ongoing).
  */
 import { Capacitor } from '@capacitor/core';
 import { supabase } from '@/lib/supabase';
+import { deliverAdminPushDeepLink } from '@/lib/adminPushDeepLink';
 
 let registered = false;
 let lastToken: string | null = null;
+let actionListenerAttached = false;
 
 const CACHE_KEY = 'hro_admin_push_token_v1';
 // Re-write the row every 3 days even if unchanged. This self-heals the rare
@@ -154,6 +159,14 @@ export async function registerAdminPushToken(): Promise<void> {
         void saveToken(token.value);
       }
     });
+
+    if (!actionListenerAttached) {
+      actionListenerAttached = true;
+      await PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
+        const data = (action?.notification?.data || {}) as Record<string, unknown>;
+        deliverAdminPushDeepLink(data);
+      });
+    }
 
     await PushNotifications.register();
   } catch {

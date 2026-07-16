@@ -96,7 +96,7 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
     completedByFilter,
     loadedCompletedJobDetails,
     loadingCompletedJobDetails,
-    highlightCompletedJobId,
+    highlightJobId,
     doesOngoingJobMatchFilters,
     getJobCompletionDate,
     applyListCustomerContactToCachedJob,
@@ -508,10 +508,11 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
             return (
               <div
                 key={job.id}
+                data-admin-job-id={job.id}
                 data-completed-job-id={job.id}
                 className={
-                  highlightCompletedJobId === job.id
-                    ? 'rounded-xl ring-2 ring-blue-500 ring-offset-2 transition-shadow'
+                  highlightJobId === job.id
+                    ? 'rounded-xl ring-2 ring-sky-500 ring-offset-2 shadow-md transition-shadow duration-500'
                     : undefined
                 }
               >
@@ -609,7 +610,14 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
                   const isFollowUpTomorrow = statusFilter === 'RESCHEDULED' && ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status) && jobFollowUpDateStr === tomorrowDateStr;
                   const jobBorderClass = isFollowUpToday ? 'border-red-400 border-2' : isFollowUpTomorrow ? 'border-yellow-400 border-2' : job.status === 'PENDING' && !(job.assigned_technician_id || job.assignedTechnicianId) ? 'border-blue-500 border-2' : 'border-gray-300';
                   return (
-                <div className={`bg-white rounded-lg border ${jobBorderClass} hover:border-gray-400 hover:shadow-sm transition-all duration-200 overflow-hidden group`}>
+                <div
+                  data-admin-job-id={job.id}
+                  className={`bg-white rounded-lg border ${jobBorderClass} hover:border-gray-400 hover:shadow-sm transition-all duration-200 overflow-hidden group${
+                    highlightJobId === job.id
+                      ? ' ring-2 ring-sky-500 ring-offset-2 shadow-md'
+                      : ''
+                  }`}
+                >
                 <div className="p-3 sm:p-4">
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex-1 min-w-0">

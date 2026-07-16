@@ -572,6 +572,88 @@ const AdminDashboard = () => {
     );
   }, []);
 
+  // Notification tap → Completed / Ongoing + highlight that job.
+  useEffect(() => {
+    let cancelled = false;
+    void import('@/lib/adminPushDeepLink').then(({ setAdminPushDeepLinkHandler }) => {
+      if (cancelled) return;
+      setAdminPushDeepLinkHandler((payload) => {
+        const { jobId, event } = payload;
+        if (!jobId) return;
+
+        void (async () => {
+          if (event === 'completed') {
+            let dateStr = getTodayLocalDate();
+            try {
+              const { data } = await supabase
+                .from('jobs')
+                .select('id, completed_at, end_time')
+                .eq('id', jobId)
+                .maybeSingle();
+              if (data) {
+                dateStr =
+                  jobCompletionLocalDateIso(data as Record<string, unknown>) || dateStr;
+              }
+            } catch {
+              /* fall back to today */
+            }
+            if (cancelled) return;
+            setSearchQuery('');
+            setSearchTerm('');
+            setSearchResults(null);
+            setCompletedDatePreset('day');
+            setCompletedDateFilter(dateStr);
+            setCompletedRangeStartDate(dateStr);
+            setCompletedRangeEndDate(dateStr);
+            setCompletedLeadTypeFilter('all');
+            setCompletedServiceSubTypeFilter('all');
+            setCompletedByFilter('all');
+            setCurrentPage(1);
+            setStatusFilter('COMPLETED');
+            setHighlightJobId(jobId);
+            navigate(
+              adminDashboardLocation(
+                buildAdminDashboardSearch(
+                  { clearModal: true, clearView: true, tab: 'completed', jobId },
+                  location.search
+                )
+              ),
+              { replace: true }
+            );
+            toast.success('Opening completed job…');
+            return;
+          }
+
+          // en_route / otp_entered / default → Ongoing list
+          setSearchQuery('');
+          setSearchTerm('');
+          setSearchResults(null);
+          setCurrentPage(1);
+          setStatusFilter('ONGOING');
+          setHighlightJobId(jobId);
+          navigate(
+            adminDashboardLocation(
+              buildAdminDashboardSearch(
+                { clearModal: true, clearView: true, tab: null, jobId },
+                location.search
+              )
+            ),
+            { replace: true }
+          );
+          toast.success(
+            event === 'otp_entered' ? 'Opening job (OTP)…' : 'Opening job…'
+          );
+        })();
+      });
+    });
+    return () => {
+      cancelled = true;
+      void import('@/lib/adminPushDeepLink').then(({ setAdminPushDeepLinkHandler }) =>
+        setAdminPushDeepLinkHandler(null)
+      );
+    };
+  }, [navigate, location.search]);
+
   // Legacy ?modal=more-options — strip from URL without reopening (iOS PWA restore).
   useEffect(() => {
     if (!location.pathname.startsWith('/admin')) return;
@@ -908,7 +990,7 @@ const AdminDashboard = () => {
   const [reportPhotoViewerOpen, setReportPhotoViewerOpen] = useState(false);
   const [reportViewerPhoto, setReportViewerPhoto] = useState<{ url: string; index: number; total: number } | null>(null);
   const [reportViewerBillPhotos, setReportViewerBillPhotos] = useState<string[] | null>(null);
-  const [highlightCompletedJobId, setHighlightCompletedJobId] = useState<string | null>(null);
+  const [highlightJobId, setHighlightJobId] = useState<string | null>(null);
   const [loadedCompletedJobDetails, setLoadedCompletedJobDetails] = useState<Record<string, any>>({});
   const [loadingCompletedJobDetails, setLoadingCompletedJobDetails] = useState<Record<string, boolean>>({});
   const [editCompletedJobDialogOpen, setEditCompletedJobDialogOpen] = useState(false);
@@ -2534,7 +2616,7 @@ const AdminDashboard = () => {
       ),
       { replace: true }
     );
-    setHighlightCompletedJobId(job.id);
+    setHighlightJobId(job.id);
 
     requestAnimationFrame(() => {
       document.querySelector('[data-admin-customer-list]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -2542,21 +2624,23 @@ const AdminDashboard = () => {
   }, [navigate, location.search, closeAdminModal]);
 
   useEffect(() => {
-    if (!highlightCompletedJobId || statusFilter !== 'COMPLETED') return;
-    const hasJob = jobs.some((j) => j.id === highlightCompletedJobId);
+    if (!highlightJobId) return;
+    const hasJob = jobs.some((j) => j.id === highlightJobId);
     if (!hasJob) return;
 
     const timer = window.setTimeout(() => {
-      const el = document.querySelector(`[data-completed-job-id="${highlightCompletedJobId}"]`);
+      const el =
+        document.querySelector(`[data-admin-job-id="${highlightJobId}"]`) ||
+        document.querySelector(`[data-completed-job-id="${highlightJobId}"]`);
       el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, 350);
 
-    const clearTimer = window.setTimeout(() => setHighlightCompletedJobId(null), 5000);
+    const clearTimer = window.setTimeout(() => setHighlightJobId(null), 5000);
     return () => {
       window.clearTimeout(timer);
       window.clearTimeout(clearTimer);
     };
-  }, [highlightCompletedJobId, jobs, statusFilter]);
+  }, [highlightJobId, jobs, statusFilter]);
 
   const handleEditCustomer = useCallback((customer: Customer) => {
     setEditingCustomer(customer);
@@ -5359,7 +5443,7 @@ const AdminDashboard = () => {
       completedByFilter,
       loadedCompletedJobDetails,
       loadingCompletedJobDetails,
-      highlightCompletedJobId,
+      highlightJobId,
       doesOngoingJobMatchFilters,
       getJobCompletionDate,
       applyListCustomerContactToCachedJob,
@@ -5387,7 +5471,7 @@ const AdminDashboard = () => {
       completedByFilter,
       loadedCompletedJobDetails,
       loadingCompletedJobDetails,
-      highlightCompletedJobId,
+      highlightJobId,
       doesOngoingJobMatchFilters,
       getJobCompletionDate,
       applyListCustomerContactToCachedJob,

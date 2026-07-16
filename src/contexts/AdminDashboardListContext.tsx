@@ -46,7 +46,7 @@ export interface AdminDashboardListData {
   completedByFilter: string;
   loadedCompletedJobDetails: Record<string, any>;
   loadingCompletedJobDetails: Record<string, boolean>;
-  highlightCompletedJobId: string | null;
+  highlightJobId: string | null;
   doesOngoingJobMatchFilters: (job: any) => boolean;
   getJobCompletionDate: (job: Job) => number;
   applyListCustomerContactToCachedJob: (cached: any, listJob: any) => any;

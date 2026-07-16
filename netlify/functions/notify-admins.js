@@ -166,10 +166,16 @@ exports.handler = async (event) => {
 
   try {
     const messaging = await getMessaging(db);
+    // Deep link fields: admin APK + web open Completed/Ongoing and highlight the job.
+    const data = {
+      type: 'job_event',
+      event: evt,
+      jobId: String(jobId),
+    };
     const res = await messaging.sendEachForMulticast({
       tokens,
       notification: { title, body: message },
-      data: { type: 'job_event' },
+      data,
       android: {
         priority: 'high',
         notification: { channelId: 'job_alerts_v2', defaultSound: true, color },

@@ -19,6 +19,9 @@ import java.util.Map;
  *
  * Background/killed: the system still shows FCM's own notification and
  * typically does not call onMessageReceived — so this does not double-fire.
+ *
+ * Tap intent extras include google.message_id + FCM data keys so Capacitor
+ * fires pushNotificationActionPerformed (deep link to the job).
  */
 public final class ForegroundPushNotifier {
 
@@ -68,9 +71,23 @@ public final class ForegroundPushNotifier {
 
         Intent openIntent = new Intent(context, MainActivity.class)
             .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        // Capacitor only treats a tap as a push action when google.message_id is present.
+        String messageId = remoteMessage.getMessageId();
+        if (messageId == null || messageId.isEmpty()) {
+            messageId = "local-" + System.currentTimeMillis();
+        }
+        openIntent.putExtra("google.message_id", messageId);
+        if (data != null) {
+            for (Map.Entry<String, String> e : data.entrySet()) {
+                if (e.getKey() != null && e.getValue() != null) {
+                    openIntent.putExtra(e.getKey(), e.getValue());
+                }
+            }
+        }
+
         PendingIntent openPending = PendingIntent.getActivity(
             context,
-            FALLBACK_ID,
+            FALLBACK_ID ^ tag.hashCode(),
             openIntent,
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
@@ -88,8 +105,6 @@ public final class ForegroundPushNotifier {
             .build();
 
         try {
-            // Same id 0 as FCM tagged posts so a later system/background
-            // delivery with the same tag replaces this foreground one.
             NotificationManagerCompat.from(context).notify(tag, 0, notification);
             Log.i(TAG, "Posted foreground tray notification tag=" + tag);
         } catch (SecurityException e) {
