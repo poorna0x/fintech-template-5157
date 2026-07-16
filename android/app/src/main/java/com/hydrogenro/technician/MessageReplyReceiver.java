@@ -5,7 +5,14 @@ import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffXfermode;
+import android.graphics.Rect;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
@@ -13,6 +20,7 @@ import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.core.app.Person;
 import androidx.core.app.RemoteInput;
+import androidx.core.graphics.drawable.IconCompat;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -23,6 +31,7 @@ import org.json.JSONObject;
  * Inline reply on office "Message technician" pushes (when admin enables
  * Allow reply). Uploads the typed text to submit-tech-message-reply; nothing
  * is stored server-side — admins get a push with the technician name + reply.
+ * Office messages show the bundled HydrogenRO logo as the chat avatar.
  */
 public class MessageReplyReceiver extends BroadcastReceiver {
 
@@ -30,6 +39,8 @@ public class MessageReplyReceiver extends BroadcastReceiver {
     private static final String CHANNEL_ID = NotificationChannels.JOB_ALERTS;
     private static final int COLOR_PENDING = Color.parseColor("#2563EB");
     private static final int COLOR_SUCCESS = Color.parseColor("#16A34A");
+    private static final String OFFICE_SENDER_NAME = "HydrogenRO Office";
+    private static final int AVATAR_MAX_PX = 192;
 
     public static final String ACTION_REPLY = "com.hydrogenro.technician.OFFICE_MSG_REPLY";
     public static final String KEY_REPLY = "reply_text";
@@ -93,13 +104,13 @@ public class MessageReplyReceiver extends BroadcastReceiver {
 
         // MessagingStyle + CATEGORY_MESSAGE makes the Reply action visible on
         // more OEMs (Samsung etc. often hide plain action replies until expand).
-        Person office = new Person.Builder().setName(safeTitle).setKey("office").build();
+        Person office = buildOfficePerson(context);
         Person self = new Person.Builder().setName("You").setKey("self").build();
         NotificationCompat.MessagingStyle style = new NotificationCompat.MessagingStyle(self)
             .setConversationTitle(safeTitle)
             .addMessage(safeBody, System.currentTimeMillis(), office);
 
-        Notification notification = new NotificationCompat.Builder(context, CHANNEL_ID)
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_notify)
             .setColor(COLOR_PENDING)
             .setContentTitle(safeTitle)
@@ -110,15 +121,62 @@ public class MessageReplyReceiver extends BroadcastReceiver {
             .setDefaults(Notification.DEFAULT_ALL)
             .setContentIntent(openPending)
             .addAction(replyAction)
-            .setAutoCancel(false)
-            .build();
+            .setAutoCancel(false);
+        Bitmap officeAvatar = loadOfficeAvatarBitmap(context);
+        if (officeAvatar != null) {
+            builder.setLargeIcon(officeAvatar);
+        }
 
         try {
-            NotificationManagerCompat.from(context).notify(notifTag, NOTIFICATION_ID, notification);
-            Log.i(TAG, "Posted office message with Reply action");
+            NotificationManagerCompat.from(context).notify(notifTag, NOTIFICATION_ID, builder.build());
+            Log.i(TAG, "Posted office message with Reply action + office logo");
         } catch (SecurityException e) {
             Log.w(TAG, "Notifications not permitted", e);
         }
+    }
+
+    private static Person buildOfficePerson(Context context) {
+        Person.Builder office = new Person.Builder()
+            .setName(OFFICE_SENDER_NAME)
+            .setKey("office");
+        office.setIcon(IconCompat.createWithResource(context, R.drawable.ic_office_avatar));
+        return office.build();
+    }
+
+    private static Bitmap loadOfficeAvatarBitmap(Context context) {
+        try {
+            Bitmap decoded = BitmapFactory.decodeResource(context.getResources(), R.drawable.ic_office_avatar);
+            if (decoded == null) return null;
+            return toCircularBitmap(decoded, AVATAR_MAX_PX);
+        } catch (Exception e) {
+            Log.w(TAG, "Office avatar load failed", e);
+            return null;
+        }
+    }
+
+    private static Bitmap toCircularBitmap(Bitmap src, int maxPx) {
+        int w = src.getWidth();
+        int h = src.getHeight();
+        if (w <= 0 || h <= 0) return null;
+        int side = Math.min(w, h);
+        int left = (w - side) / 2;
+        int top = (h - side) / 2;
+        Bitmap square = Bitmap.createBitmap(src, left, top, side, side);
+        if (square != src) src.recycle();
+        int size = Math.min(maxPx, side);
+        Bitmap scaled = square.getWidth() == size
+            ? square
+            : Bitmap.createScaledBitmap(square, size, size, true);
+        if (scaled != square) square.recycle();
+
+        Bitmap out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(out);
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        canvas.drawCircle(size / 2f, size / 2f, size / 2f, paint);
+        paint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.SRC_IN));
+        canvas.drawBitmap(scaled, new Rect(0, 0, size, size), new Rect(0, 0, size, size), paint);
+        if (scaled != out) scaled.recycle();
+        return out;
     }
 
     @Override
