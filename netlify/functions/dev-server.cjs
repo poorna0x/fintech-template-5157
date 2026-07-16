@@ -52,6 +52,8 @@ const sendEmailPreview = require('./send-email-preview');
 // service role key, so these work locally as long as .env.local is present).
 const sendTechPush = require('./send-tech-push');
 const sendOtpRequest = require('./send-otp-request');
+const submitTechMessageReply = require('./submit-tech-message-reply');
+const submitAdminMessageReply = require('./submit-admin-message-reply');
 const notifyAdmins = require('./notify-admins');
 const sendLocationPing = require('./send-location-ping');
 
@@ -124,6 +126,10 @@ const server = http.createServer((req, res) => {
     handler = sendTechPush;
   } else if (req.url.startsWith('/.netlify/functions/send-otp-request')) {
     handler = sendOtpRequest;
+  } else if (req.url.startsWith('/.netlify/functions/submit-tech-message-reply')) {
+    handler = submitTechMessageReply;
+  } else if (req.url.startsWith('/.netlify/functions/submit-admin-message-reply')) {
+    handler = submitAdminMessageReply;
   } else if (req.url.startsWith('/.netlify/functions/notify-admins')) {
     handler = notifyAdmins;
   } else if (req.url.startsWith('/.netlify/functions/send-location-ping')) {

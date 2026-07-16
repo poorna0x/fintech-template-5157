@@ -26,6 +26,8 @@ import java.util.Map;
  * "Enter OTP" reply field (like WhatsApp's reply), so the technician can
  * type the 4-digit code straight into the notification without opening
  * the app. The typed code is delivered to OtpReplyReceiver.
+ *
+ * Office messages with allowReply use the same pattern via MessageReplyReceiver.
  */
 public class HroMessagingService extends com.capacitorjs.plugins.pushnotifications.MessagingService {
 
@@ -38,6 +40,10 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
         Map<String, String> data = remoteMessage.getData();
         if ("otp_request".equals(data.get("type"))) {
             showOtpNotification(data);
+            return;
+        }
+        if ("office_message".equals(data.get("type"))) {
+            showOfficeMessage(data);
             return;
         }
         if ("clear_notifications".equals(data.get("type"))) {
@@ -149,6 +155,21 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
 
         OtpReplyReceiver.showOtpRequestNotification(
             getApplicationContext(), requestId, nonce, submitUrl, body);
+    }
+
+    /** Office message with optional inline Reply (admin checked Allow reply). */
+    private void showOfficeMessage(Map<String, String> data) {
+        String replyToken = data.get("replyToken");
+        String replyUrl = data.get("replyUrl");
+        if (replyToken == null || replyUrl == null) return;
+        MessageReplyReceiver.showOfficeMessageNotification(
+            getApplicationContext(),
+            data.get("title"),
+            data.get("body"),
+            replyToken,
+            replyUrl,
+            data.get("tag")
+        );
     }
 
     /**

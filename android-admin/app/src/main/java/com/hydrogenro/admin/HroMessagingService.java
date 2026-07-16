@@ -10,6 +10,8 @@ import java.util.Map;
  * data-only message and must become a notification with Yes/No buttons even
  * when the app is killed. Extending the Capacitor service keeps normal
  * (job started/completed) push behavior intact.
+ *
+ * Also handles technician replies to office messages (inline Reply back).
  */
 public class HroMessagingService extends com.capacitorjs.plugins.pushnotifications.MessagingService {
 
@@ -20,6 +22,10 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
         Map<String, String> data = remoteMessage.getData();
         if ("cash_check".equals(data.get("type"))) {
             CashCheckReceiver.showCashCheckNotification(getApplicationContext(), data);
+            return;
+        }
+        if ("tech_message_reply".equals(data.get("type"))) {
+            TechMessageReplyReceiver.showTechReplyNotification(getApplicationContext(), data);
         }
     }
 }

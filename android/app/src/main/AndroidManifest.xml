@@ -40,6 +40,11 @@
             android:name=".OtpReplyReceiver"
             android:exported="false" />
 
+        <!-- Handles free-text reply on office Message technician pushes -->
+        <receiver
+            android:name=".MessageReplyReceiver"
+            android:exported="false" />
+
         <!-- Short-lived foreground service: measures one fresh location fix
              reliably even when the app is backgrounded/killed (Android
              throttles inline background location requests to null). -->

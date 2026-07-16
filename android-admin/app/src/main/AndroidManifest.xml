@@ -41,6 +41,11 @@
             android:name=".CashCheckReceiver"
             android:exported="false" />
 
+        <!-- Inline reply when a technician answers an office message -->
+        <receiver
+            android:name=".TechMessageReplyReceiver"
+            android:exported="false" />
+
         <!-- Branded push notifications: white logo silhouette + accent color -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"

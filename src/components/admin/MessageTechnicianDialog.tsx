@@ -46,6 +46,7 @@ const MessageTechnicianDialog = ({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
+  const [allowReply, setAllowReply] = useState(false);
   const [sending, setSending] = useState(false);
   const [results, setResults] = useState<Record<string, SendStatus>>({});
 
@@ -59,6 +60,7 @@ const MessageTechnicianDialog = ({
       setSelected(new Set());
       setTitle('');
       setMessage('');
+      setAllowReply(false);
       setResults({});
       setSending(false);
     }
@@ -106,6 +108,7 @@ const MessageTechnicianDialog = ({
               body,
               color: '#2563EB',
               tag: MESSAGE_TAG,
+              allowReply,
             }
           : { clear: true };
 
@@ -253,6 +256,22 @@ const MessageTechnicianDialog = ({
               disabled={sending}
             />
           </div>
+
+          <label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 hover:bg-muted/50">
+            <Checkbox
+              checked={allowReply}
+              onCheckedChange={(c) => setAllowReply(c === true)}
+              disabled={sending}
+              className="mt-0.5"
+            />
+            <div className="min-w-0 space-y-0.5">
+              <span className="text-sm font-medium leading-none">Allow reply</span>
+              <p className="text-xs text-muted-foreground leading-snug">
+                Technician can reply from the notification; you can reply back the same way.
+                Replies are pushed to phones only — nothing is saved.
+              </p>
+            </div>
+          </label>
 
           <div className="space-y-2">
             <Button
