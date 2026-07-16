@@ -1,6 +1,6 @@
 /**
  * OTP requests: admin asks the assigned technician for the customer's
- * 4-digit code (Home Triangle jobs). One row per job; re-asking resets it.
+ * 4-digit code (Home Triangle / Require OTP jobs). One row per job; re-asking resets it.
  * Requires scripts/add-technician-otp-requests.sql.
  */
 import { toast } from 'sonner';

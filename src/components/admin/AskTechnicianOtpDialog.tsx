@@ -27,10 +27,10 @@ type AskTechnicianOtpDialogProps = {
 
 /**
  * Admin asks the assigned technician for the customer's 4-digit OTP
- * (Home Triangle jobs). If the technician already entered it (at Start
- * Work or earlier), it shows instantly from the job itself — no push, no
- * extra request. Otherwise sends a push and shows the code live once the
- * technician submits it.
+ * (Home Triangle leads, or jobs with Require OTP). If the technician already
+ * entered it (at Start Work or earlier), it shows instantly from the job
+ * itself — no push, no extra request. Otherwise sends a push and shows the
+ * code live once the technician submits it.
  */
 const AskTechnicianOtpDialog = ({
   open,

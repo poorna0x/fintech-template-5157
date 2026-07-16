@@ -103,8 +103,8 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
   } = ctx.data;
   const a = ctx.actionsRef.current;
 
-  // "Ask OTP" (Home Triangle jobs): request the customer's OTP from the
-  // assigned technician's app and watch for the submitted code.
+  // "Ask OTP": request the customer's OTP from the assigned technician's app
+  // (Home Triangle leads, or any job with Require OTP checked).
   const [otpJob, setOtpJob] = useState<Job | null>(null);
 
   return (
@@ -1184,11 +1184,16 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
                             ) : null;
                           })()}
                           {(() => {
-                            // Home Triangle jobs: ask the assigned technician for the customer's OTP.
+                            // Ask the assigned technician for the customer's OTP when:
+                            // - Home Triangle lead (existing), OR
+                            // - the job has Require OTP checked on create/edit.
                             const assignedTechnicianId = (job as any).assigned_technician_id || (job as any).assignedTechnicianId;
                             const leadSource = (getLeadSourceFromJob(job as any) || '').trim().toLowerCase();
                             const isHomeTriangle = leadSource.startsWith('home triangle');
-                            return assignedTechnicianId && isHomeTriangle ? (
+                            const requiresOtp = parseJobRequirements(
+                              (job as any).requirements
+                            ).some((req: any) => req?.require_otp === true);
+                            return assignedTechnicianId && (isHomeTriangle || requiresOtp) ? (
                               <DropdownMenuItem onClick={() => setOtpJob(job)}>
                                 <KeyRound className="mr-2 h-4 w-4" />
                                 Ask OTP

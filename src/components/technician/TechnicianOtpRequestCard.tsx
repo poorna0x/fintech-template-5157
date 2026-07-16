@@ -18,11 +18,11 @@ type TechnicianOtpRequestCardProps = {
 };
 
 /**
- * Shows when the office has asked for the customer's OTP (Home Triangle
- * jobs). Fetched on load and whenever the app returns to the foreground
- * (e.g. after tapping the push notification). While a request is visible,
- * a realtime watch removes it the moment it's answered — including when
- * the technician replies from the notification instead of here.
+ * Shows when the office has asked for the customer's OTP (Home Triangle /
+ * Require OTP jobs). Fetched on load and whenever the app returns to the
+ * foreground (e.g. after tapping the push notification). While a request is
+ * visible, a realtime watch removes it the moment it's answered — including
+ * when the technician replies from the notification instead of here.
  */
 const TechnicianOtpRequestCard = ({ technicianId, jobs }: TechnicianOtpRequestCardProps) => {
   const [requests, setRequests] = useState<OtpRequestRow[]>([]);
