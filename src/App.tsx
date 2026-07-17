@@ -45,16 +45,25 @@ const ProductVerification = lazy(() => import("./pages/ProductVerification"));
 const SpareParts = lazy(() => import("./pages/SpareParts"));
 const Warranty = lazy(() => import("./pages/Warranty"));
 
-// Loading component for lazy-loaded routes
-const LoadingSpinner = () => (
-  <div className="min-h-screen flex items-center justify-center">
-    <div className="flex justify-center space-x-1">
-      <div className="w-4 h-4 bg-primary rounded-full animate-bounce"></div>
-      <div className="w-4 h-4 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-      <div className="w-4 h-4 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+// Loading component for lazy-loaded routes.
+// Native APKs use their own straight-line boot loader — skip the bounce dots there.
+const LoadingSpinner = () => {
+  const native =
+    typeof window !== 'undefined' &&
+    !!(window as Window & { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.();
+  if (native) {
+    return <div className="min-h-screen bg-[#FAFAFA]" aria-hidden />;
+  }
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="flex justify-center space-x-1">
+        <div className="w-4 h-4 bg-primary rounded-full animate-bounce"></div>
+        <div className="w-4 h-4 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+        <div className="w-4 h-4 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 // Optimized QueryClient with better defaults
 const queryClient = new QueryClient({

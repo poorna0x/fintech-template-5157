@@ -12,6 +12,7 @@ const config: CapacitorConfig = {
   appId: 'com.hydrogenro.technician',
   appName: 'HydrogenRO Tech',
   webDir: 'dist',
+  backgroundColor: '#FAFAFA',
   server: {
     url: 'https://hydrogenro.com/technician',
     androidScheme: 'https',
@@ -19,6 +20,7 @@ const config: CapacitorConfig = {
   },
   android: {
     allowMixedContent: false,
+    backgroundColor: '#FAFAFA',
   },
 };
 

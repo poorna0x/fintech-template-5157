@@ -2,12 +2,14 @@
 	"appId": "com.hydrogenro.admin",
 	"appName": "HRO Admin",
 	"webDir": "dist",
+	"backgroundColor": "#FAFAFA",
 	"server": {
 		"url": "https://hydrogenro.com/admin",
 		"androidScheme": "https",
 		"cleartext": false
 	},
 	"android": {
-		"allowMixedContent": false
+		"allowMixedContent": false,
+		"backgroundColor": "#FAFAFA"
 	}
 }

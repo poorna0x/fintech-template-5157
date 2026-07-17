@@ -8,6 +8,13 @@ const adminDashboardImport = () => import('@/components/AdminDashboard');
 const settingsImport = () => import('./Settings');
 
 function AdminPortalLoader({ message }: { message: string }) {
+  const native =
+    typeof window !== 'undefined' &&
+    !!(window as Window & { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.();
+  // APK boot already shows a straight-line loader — no bounce dots here.
+  if (native) {
+    return <div className="min-h-screen bg-[#FAFAFA] admin-page" aria-hidden />;
+  }
   return (
     <div className="flex items-center justify-center min-h-screen admin-page">
       <div className="text-center">

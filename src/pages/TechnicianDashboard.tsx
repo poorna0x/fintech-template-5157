@@ -5645,6 +5645,12 @@ const TechnicianDashboard = () => {
   };
 
   if (authInitializing && !authGraceExpired) {
+    const native =
+      typeof window !== 'undefined' &&
+      !!(window as Window & { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.();
+    if (native) {
+      return <div className="min-h-screen bg-[#FAFAFA]" aria-hidden />;
+    }
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">

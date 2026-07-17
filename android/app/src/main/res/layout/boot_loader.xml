@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Technician boot: black Droplets mark only + thicker line loader.
+  No brand text.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/boot_loader_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/launch_background"
+    android:clickable="true"
+    android:focusable="true">
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:gravity="center_horizontal"
+        android:orientation="vertical">
+
+        <FrameLayout
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:background="@drawable/bg_brand_mark"
+            android:elevation="4dp">
+
+            <ImageView
+                android:layout_width="30dp"
+                android:layout_height="30dp"
+                android:layout_gravity="center"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_droplets" />
+        </FrameLayout>
+
+        <ProgressBar
+            android:id="@+id/boot_line_loader"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="148dp"
+            android:layout_height="6dp"
+            android:layout_marginTop="26dp"
+            android:indeterminate="true"
+            android:indeterminateTint="@color/boot_line"
+            android:progressBackgroundTint="@color/boot_line_track" />
+    </LinearLayout>
+</FrameLayout>

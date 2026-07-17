@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- HydrogenRO brand dark — tints the notification icon/accent -->
+    <color name="launch_background">#FAFAFA</color>
+    <color name="boot_brand">#111111</color>
+    <color name="boot_brand_icon">#FFFFFF</color>
+    <color name="boot_text">#111111</color>
+    <color name="boot_line">#111111</color>
+    <color name="boot_line_track">#E5E5E5</color>
+
+    <color name="colorPrimary">#2B2B2B</color>
+    <color name="colorPrimaryDark">#1A1A1A</color>
+    <color name="colorAccent">#0EA5E9</color>
+
     <color name="notification_accent">#2B2B2B</color>
 </resources>
