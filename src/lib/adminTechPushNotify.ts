@@ -8,12 +8,18 @@ import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { getJobCustomTimeLabel, getLeadSourceFromJob } from '@/lib/adminUtils';
 import { getJobLocationLabelForWhatsApp } from '@/lib/customer-locations';
+import {
+  appendAssignExtras,
+  getJobAgreedCostLabel,
+  getJobDescriptionText,
+} from '@/lib/jobAssignMessageDetails';
 
 /** Notification accent colors — technicians can tell the type at a glance. */
 export const TECH_PUSH_COLOR_ASSIGNED = '#16A34A'; // green: you got a job
 export const TECH_PUSH_COLOR_REMOVED = '#DC2626'; // red: a job was taken away
 export const TECH_PUSH_COLOR_VISIT_ORDER = '#2563EB'; // blue: stop sequence changed
 export const TECH_PUSH_COLOR_TEAM = '#0D9488'; // teal: added as team helper
+export const TECH_PUSH_COLOR_UPDATED = '#D97706'; // amber: job details changed
 
 export function notifyTechnicianJobPush(opts: {
   technicianId: string;
@@ -21,8 +27,10 @@ export function notifyTechnicianJobPush(opts: {
   body?: string;
   /** Hex accent color for the notification icon (e.g. green assigned, red removed). */
   color?: string;
+  /** When true, skip admin toasts (e.g. technician self-nudge). */
+  silent?: boolean;
 }): void {
-  const { technicianId, title, body, color } = opts;
+  const { technicianId, title, body, color, silent } = opts;
   if (!technicianId || !title) return;
 
   void (async () => {
@@ -44,6 +52,7 @@ export function notifyTechnicianJobPush(opts: {
       const out = (await res.json().catch(() => null)) as
         | { sent?: boolean; reason?: string; error?: string }
         | null;
+      if (silent) return;
       if (!res.ok) {
         console.warn('[tech-push] failed:', res.status, out?.error || '');
         toast.warning('App notification could not be sent to the technician.');
@@ -97,7 +106,12 @@ function jobPushDetails(
   }
 
   const details = [customerName, location, leadSource].filter(Boolean).join(' - ');
-  const body = customTime ? `${details}, Time : ${customTime}` : details;
+  const withTime = customTime ? `${details}, Time : ${customTime}` : details;
+  const body = appendAssignExtras(withTime, {
+    description: getJobDescriptionText(job),
+    agreedCost: getJobAgreedCostLabel(job),
+    maxLen: 300,
+  });
   return { serviceSubType, body };
 }
 
@@ -183,5 +197,37 @@ export function visitOrderChangedPushText(opts: {
     title: 'Visit order updated',
     body,
     color: TECH_PUSH_COLOR_VISIT_ORDER,
+  };
+}
+
+/** Description / agreed cost changed on an assigned job. */
+export function jobDetailsUpdatedPushText(opts: {
+  customerName: string;
+  changes: string[];
+}): { title: string; body: string; color: string } {
+  const name = opts.customerName.trim() || 'Customer';
+  const changeLine = (opts.changes || []).filter(Boolean).join(' · ') || 'Job details updated';
+  let body = `${name} — ${changeLine}`;
+  if (body.length > 300) body = `${body.slice(0, 297)}…`;
+  return {
+    title: 'Job details updated',
+    body,
+    color: TECH_PUSH_COLOR_UPDATED,
+  };
+}
+
+/** Date / time rescheduled. */
+export function jobRescheduledPushText(opts: {
+  customerName: string;
+  whenLabel: string;
+}): { title: string; body: string; color: string } {
+  const name = opts.customerName.trim() || 'Customer';
+  const when = opts.whenLabel.trim() || 'new schedule';
+  let body = `${name} — ${when}`;
+  if (body.length > 300) body = `${body.slice(0, 297)}…`;
+  return {
+    title: 'Job rescheduled',
+    body,
+    color: TECH_PUSH_COLOR_UPDATED,
   };
 }

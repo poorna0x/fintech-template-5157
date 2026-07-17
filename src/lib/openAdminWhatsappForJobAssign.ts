@@ -1,6 +1,7 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { getJobCustomTimeLabel, getLeadSourceFromJob } from '@/lib/adminUtils';
 import { getJobLocationLabelForWhatsApp } from '@/lib/customer-locations';
+import { getJobAgreedCostLabel, getJobDescriptionText } from '@/lib/jobAssignMessageDetails';
 import { db } from '@/lib/supabase';
 import type { Job } from '@/types';
 
@@ -12,6 +13,8 @@ export type OpenAdminWhatsappForJobCtx = {
   setWhatsappLocation: Dispatch<SetStateAction<string>>;
   setWhatsappLeadSource: Dispatch<SetStateAction<string>>;
   setWhatsappCustomTime: Dispatch<SetStateAction<string>>;
+  setWhatsappDescription: Dispatch<SetStateAction<string>>;
+  setWhatsappAgreedCost: Dispatch<SetStateAction<string>>;
   setWhatsappDialogOpen: Dispatch<SetStateAction<boolean>>;
   openAdminWhatsappModal: () => void;
 };
@@ -44,6 +47,8 @@ export function openAdminWhatsappForJobAssign(
   );
   const leadSource = getLeadSourceFromJob(job as Record<string, unknown>);
   const customTime = getJobCustomTimeLabel(job as Record<string, unknown>) || '';
+  const description = getJobDescriptionText(job as Record<string, unknown>);
+  const agreedCost = getJobAgreedCostLabel(job as Record<string, unknown>);
 
   ctx.setWhatsappTechnician({ name: technician.fullName, phone: technician.phone });
   ctx.setWhatsappServiceSubType(serviceSubType);
@@ -51,6 +56,8 @@ export function openAdminWhatsappForJobAssign(
   ctx.setWhatsappLocation(locationText || '');
   ctx.setWhatsappLeadSource(leadSource);
   ctx.setWhatsappCustomTime(customTime);
+  ctx.setWhatsappDescription(description);
+  ctx.setWhatsappAgreedCost(agreedCost);
   ctx.openAdminWhatsappModal();
   ctx.setWhatsappDialogOpen(true);
 

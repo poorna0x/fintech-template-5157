@@ -568,6 +568,8 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
           address: notifyServiceAddress as { area?: string; city?: string },
           leadSource: leadSourceToNotify,
           customTime: customTimeToNotify,
+          description: newJobFormData.description.trim() || undefined,
+          agreedCost: newJobFormData.cost_agreed.trim() || undefined,
         });
       }
     } catch (error) {

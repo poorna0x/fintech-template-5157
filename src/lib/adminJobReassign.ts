@@ -31,6 +31,8 @@ export async function submitAdminJobReassign(
     setWhatsappLocation: Dispatch<SetStateAction<string>>;
     setWhatsappLeadSource: Dispatch<SetStateAction<string>>;
     setWhatsappCustomTime: Dispatch<SetStateAction<string>>;
+    setWhatsappDescription: Dispatch<SetStateAction<string>>;
+    setWhatsappAgreedCost: Dispatch<SetStateAction<string>>;
     setWhatsappDialogOpen: Dispatch<SetStateAction<boolean>>;
     openAdminWhatsappModal: () => void;
     closeAdminModal: () => void;

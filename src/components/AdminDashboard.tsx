@@ -1096,6 +1096,8 @@ const AdminDashboard = () => {
   const [whatsappLocation, setWhatsappLocation] = useState<string>('');
   const [whatsappLeadSource, setWhatsappLeadSource] = useState<string>('');
   const [whatsappCustomTime, setWhatsappCustomTime] = useState<string>('');
+  const [whatsappDescription, setWhatsappDescription] = useState<string>('');
+  const [whatsappAgreedCost, setWhatsappAgreedCost] = useState<string>('');
   const [jobToEdit, setJobToEdit] = useState<Job | null>(null);
   const [editJobDialogOpen, setEditJobDialogOpen] = useState(false);
   const [photoToDelete, setPhotoToDelete] = useState<{jobId: string, photoIndex: number, photoUrl: string} | null>(null);
@@ -4812,6 +4814,8 @@ const AdminDashboard = () => {
       setWhatsappLocation,
       setWhatsappLeadSource,
       setWhatsappCustomTime,
+      setWhatsappDescription,
+      setWhatsappAgreedCost,
       setWhatsappDialogOpen,
       openAdminWhatsappModal,
       closeAdminModal,
@@ -4896,6 +4900,8 @@ const AdminDashboard = () => {
       setWhatsappLocation,
       setWhatsappLeadSource,
       setWhatsappCustomTime,
+      setWhatsappDescription,
+      setWhatsappAgreedCost,
       setWhatsappDialogOpen,
       openAdminWhatsappModal,
       closeAdminModal,
@@ -6184,6 +6190,8 @@ const AdminDashboard = () => {
           setWhatsappLocation(locationText || '');
           setWhatsappLeadSource(payload.leadSource || '');
           setWhatsappCustomTime(payload.customTime || '');
+          setWhatsappDescription(payload.description || '');
+          setWhatsappAgreedCost(payload.agreedCost || '');
           setWhatsappDialogOpen(true);
           openAdminWhatsappModal();
         }}
@@ -6409,6 +6417,8 @@ const AdminDashboard = () => {
           setWhatsappLocation(locationText || '');
           setWhatsappLeadSource(payload.leadSource || '');
           setWhatsappCustomTime(payload.customTime || '');
+          setWhatsappDescription(payload.description || '');
+          setWhatsappAgreedCost(payload.agreedCost || '');
           setWhatsappDialogOpen(true);
           openAdminWhatsappModal();
         }}
@@ -6915,6 +6925,8 @@ const AdminDashboard = () => {
           location={whatsappLocation}
           leadSource={whatsappLeadSource}
           customTime={whatsappCustomTime}
+          description={whatsappDescription}
+          agreedCost={whatsappAgreedCost}
         />
       )}
 

@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { db } from '@/lib/supabase';
 import { getDefaultLeadCost } from '@/lib/adminUtils';
+import { notifyTechnicianAfterJobEdit } from '@/lib/notifyTechJobEdit';
 
 interface EditJobFormData {
   serviceType: 'RO' | 'SOFTENER';
@@ -384,6 +385,26 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
         abortCloseAndStayOpen();
         return;
       }
+
+      const beforeSnap = initialFormDataRef.current;
+      if (beforeSnap) {
+        const techId =
+          (job as { assigned_technician_id?: string }).assigned_technician_id ||
+          (job as { assignedTechnicianId?: string }).assignedTechnicianId ||
+          null;
+        const customerName =
+          ((job.customer as { full_name?: string; fullName?: string } | null)?.full_name ||
+            (job.customer as { fullName?: string } | null)?.fullName ||
+            'Customer') as string;
+        notifyTechnicianAfterJobEdit({
+          jobId: job.id,
+          technicianId: techId,
+          customerName,
+          before: beforeSnap,
+          after: { ...editJobFormData },
+        });
+      }
+
       onJobUpdated(payload);
       
       // Update initial form data ref after successful save

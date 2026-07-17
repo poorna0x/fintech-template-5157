@@ -3802,6 +3802,32 @@ const TechnicianDashboard = () => {
       (jobWithCustomer as any)?.customerId ||
       jobWithCustomer.customer_id;
 
+    // Missing equipment brand / purifier photo → toast + push (again at complete end if still missing).
+    if (customerId) {
+      void (async () => {
+        try {
+          const { data: custRow } = await supabase
+            .from('customers')
+            .select('id,brand,photos,full_name')
+            .eq('id', customerId)
+            .maybeSingle();
+          const merged = {
+            ...((jobWithCustomer.customer as Record<string, unknown>) || {}),
+            ...(custRow || {}),
+          };
+          const { nudgeTechCustomerProfileGaps } = await import('@/lib/nudgeTechCustomerProfile');
+          nudgeTechCustomerProfileGaps({
+            jobId: jobWithCustomer.id,
+            customer: merged,
+            phase: 'start',
+            showToast: true,
+          });
+        } catch {
+          /* best-effort */
+        }
+      })();
+    }
+
     if (customerId) {
       setIsLoadingServiceBrand(true);
       (async () => {
@@ -4368,6 +4394,34 @@ const TechnicianDashboard = () => {
       void import('@/lib/notifyAdminsJobEvent').then(({ notifyAdminsJobEvent }) =>
         notifyAdminsJobEvent(jobId, 'completed')
       );
+
+      // If brand / purifier photo still missing at finish, nudge again (even if they ignored at start).
+      const endCustomerId =
+        (selectedJobForComplete.customer as any)?.id ||
+        selectedJobForComplete.customer?.id ||
+        selectedJobForComplete.customer_id ||
+        (selectedJobForComplete as any).customer_id ||
+        selectedJobForComplete.customerId;
+      if (endCustomerId) {
+        void (async () => {
+          try {
+            const { data: custRow } = await supabase
+              .from('customers')
+              .select('id,brand,photos,full_name')
+              .eq('id', endCustomerId)
+              .maybeSingle();
+            const { nudgeTechCustomerProfileGaps } = await import('@/lib/nudgeTechCustomerProfile');
+            nudgeTechCustomerProfileGaps({
+              jobId,
+              customer: custRow || (selectedJobForComplete.customer as Record<string, unknown>),
+              phase: 'end',
+              showToast: true,
+            });
+          } catch {
+            /* best-effort */
+          }
+        })();
+      }
 
       const totalPhotosCount =
         uploadedBillPhotos.length +
@@ -8057,6 +8111,34 @@ const TechnicianDashboard = () => {
                   }
                   setCompleteJobDraftToResume(null);
                   setCompleteDialogOpen(true);
+                  const job = selectedJobForComplete;
+                  const cid =
+                    (job?.customer as any)?.id ||
+                    job?.customer?.id ||
+                    (job as any)?.customer_id ||
+                    job?.customerId;
+                  if (job?.id && cid) {
+                    void (async () => {
+                      try {
+                        const { data: custRow } = await supabase
+                          .from('customers')
+                          .select('id,brand,photos,full_name')
+                          .eq('id', cid)
+                          .maybeSingle();
+                        const { nudgeTechCustomerProfileGaps } = await import(
+                          '@/lib/nudgeTechCustomerProfile'
+                        );
+                        nudgeTechCustomerProfileGaps({
+                          jobId: job.id,
+                          customer: custRow || (job.customer as Record<string, unknown>),
+                          phase: 'start',
+                          showToast: true,
+                        });
+                      } catch {
+                        /* best-effort */
+                      }
+                    })();
+                  }
                 }}
               >
                 {completeJobDraftToResume?.retryPhaseBOnly ? 'Finish' : 'Resume'}

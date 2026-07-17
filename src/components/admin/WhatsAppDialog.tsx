@@ -14,6 +14,8 @@ interface WhatsAppDialogProps {
   location?: string;
   leadSource?: string;
   customTime?: string;
+  description?: string;
+  agreedCost?: string;
 }
 
 const WhatsAppDialog: React.FC<WhatsAppDialogProps> = ({
@@ -25,13 +27,21 @@ const WhatsAppDialog: React.FC<WhatsAppDialogProps> = ({
   customerName,
   location,
   leadSource,
-  customTime
+  customTime,
+  description,
+  agreedCost,
 }) => {
   const locationText = location?.trim() ?? '';
   const leadSourceText = leadSource?.trim() ?? '';
   const customTimeText = customTime?.trim() ?? '';
+  const descriptionText = description?.trim() ?? '';
+  const agreedCostText = agreedCost?.trim() ?? '';
   const mainLine = `New ${serviceSubType.toLowerCase()} assigned - ${customerName}${locationText ? ` - ${locationText}` : ''}${leadSourceText ? ` - ${leadSourceText}` : ''}`;
-  const message = customTimeText ? `${mainLine} ,\n\nTime : ${customTimeText}` : mainLine;
+  const extraLines: string[] = [];
+  if (customTimeText) extraLines.push(`Time : ${customTimeText}`);
+  if (agreedCostText) extraLines.push(`Agreed cost : ${agreedCostText}`);
+  if (descriptionText) extraLines.push(`Description : ${descriptionText}`);
+  const message = extraLines.length > 0 ? `${mainLine}\n\n${extraLines.join('\n')}` : mainLine;
   
   // Format phone number for WhatsApp (remove any non-digit characters except +)
   const formatPhoneForWhatsApp = (phone: string): string => {

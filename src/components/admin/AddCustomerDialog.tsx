@@ -41,6 +41,8 @@ export interface JobAssignedToTechnicianPayload {
   address?: { area?: string; city?: string };
   leadSource?: string;
   customTime?: string;
+  description?: string;
+  agreedCost?: string;
 }
 
 // Keep unsaved Add Customer input in localStorage so closing the dialog (or a refresh)
@@ -1337,6 +1339,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
             step5JobData.scheduled_time_slot === 'CUSTOM' && step5JobData.scheduled_time_custom
               ? formatCustomTimeLabel(step5JobData.scheduled_time_custom) || undefined
               : undefined,
+          description: step5JobData.description.trim() || undefined,
+          agreedCost: step5JobData.cost_agreed.trim() || undefined,
         });
       }
 
