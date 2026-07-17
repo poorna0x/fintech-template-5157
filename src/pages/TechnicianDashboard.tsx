@@ -72,7 +72,6 @@ import { Job, JobAssignmentRequest } from '@/types';
 import { sendNotification, createJobCompletedNotification, createJobAssignmentRequestNotification, createJobAssignmentAcceptedNotification, createJobAssignmentRejectedNotification, requestNotificationPermission } from '@/lib/notifications';
 import FollowUpModal from '@/components/FollowUpModal';
 import { registerTechnicianPWA, disablePWA, isPWAMode } from '@/lib/pwa';
-import { markNativeBootReady } from '@/lib/nativeBootReady';
 import {
   cacheQrCodes,
   cacheTechnicianQrCode,
@@ -1143,12 +1142,6 @@ const TechnicianDashboard = () => {
     const t = setTimeout(() => setAuthGraceExpired(true), isPWAMode() ? 22_000 : 8_000);
     return () => clearTimeout(t);
   }, [authInitializing]);
-
-  // Dashboard shell is painted (past auth gate) — APK boot overlay can dismiss.
-  useEffect(() => {
-    if (authInitializing && !authGraceExpired) return;
-    if (user?.role === 'technician') markNativeBootReady();
-  }, [authInitializing, authGraceExpired, user?.role]);
 
   // Redirect if not technician (after auth finishes or grace timeout)
   useEffect(() => {

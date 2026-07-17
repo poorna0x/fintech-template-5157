@@ -18,7 +18,6 @@ import { registerTechnicianPWA, disablePWA, isPWAMode } from '@/lib/pwa';
 import { clearWrongPortalSession } from '@/lib/authPortal';
 import { formatLoginError } from '@/lib/loginResult';
 import { warmNetlifyFunctions } from '@/lib/loginWarmup';
-import { markNativeBootReady } from '@/lib/nativeBootReady';
 
 const TechnicianLogin = () => {
   const [email, setEmail] = useState('');
@@ -68,8 +67,6 @@ const TechnicianLogin = () => {
     // navigation is instant (no extra round trip after Sign In).
     void import('@/pages/TechnicianDashboard').catch(() => undefined);
     warmNetlifyFunctions();
-    // Login form is painted — APK boot overlay can dismiss.
-    markNativeBootReady();
     return () => {
       disablePWA();
     };
