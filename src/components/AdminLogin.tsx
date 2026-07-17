@@ -17,6 +17,7 @@ import TurnstileWidget, {
 import { registerAdminPWA } from '@/lib/pwa';
 import { formatLoginError } from '@/lib/loginResult';
 import { warmNetlifyFunctions } from '@/lib/loginWarmup';
+import { markNativeBootReady } from '@/lib/nativeBootReady';
 
 const AdminLogin = () => {
   const [email, setEmail] = useState('');
@@ -66,6 +67,8 @@ const AdminLogin = () => {
       setCaptchaTimeout(null);
     }
     warmNetlifyFunctions();
+    // Login form is painted — APK boot overlay can dismiss.
+    markNativeBootReady();
   }, []);
 
   useEffect(() => {

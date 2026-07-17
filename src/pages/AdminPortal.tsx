@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import AdminLogin from '@/components/AdminLogin';
 import { startAdminDashboardPrefetch } from '@/lib/adminDashboardCache';
+import { markNativeBootReady } from '@/lib/nativeBootReady';
 
 const adminDashboardImport = () => import('@/components/AdminDashboard');
 const settingsImport = () => import('./Settings');
@@ -90,6 +91,12 @@ export default function AdminPortal() {
   const booting =
     authInitializing ||
     (user && isAdmin && (onSettings ? !Settings : !Dashboard));
+
+  // Signed-in shell is painted (dashboard/settings). Login marks itself ready.
+  useEffect(() => {
+    if (booting) return;
+    if (user && isAdmin) markNativeBootReady();
+  }, [booting, user, isAdmin]);
 
   if (booting) {
     return (
