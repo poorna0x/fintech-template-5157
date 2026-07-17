@@ -5,12 +5,49 @@
 const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
 const { verifyStaffBearerToken, readBearerToken } = require('./admin-auth-guard');
-const { getMessaging, isStaleTokenError } = require('./fcm-helper');
+const { getMessaging, isStaleTokenError, sendToTechnicianDevices } = require('./fcm-helper');
 
 const COLOR_EN_ROUTE = '#2563EB'; // blue — on the way
 const COLOR_COMPLETED = '#16A34A'; // green — done
 const COLOR_OTP = '#D97706'; // amber — customer OTP entered at start work
+const COLOR_BILL_MISSING = '#D97706'; // amber — completed but no bill photo
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+
+/** True when jobs.requirements has at least one bill photo URL (UPI/payment ignored). */
+function jobHasBillPhotos(job) {
+  let reqs = [];
+  try {
+    const raw = job.requirements;
+    if (typeof raw === 'string') reqs = JSON.parse(raw);
+    else if (Array.isArray(raw)) reqs = raw;
+    else if (raw && typeof raw === 'object') reqs = [raw];
+  } catch {
+    reqs = [];
+  }
+  for (const r of reqs.flat()) {
+    if (!r || typeof r !== 'object' || !Array.isArray(r.bill_photos)) continue;
+    for (const p of r.bill_photos) {
+      const url =
+        typeof p === 'string'
+          ? p
+          : p && typeof p === 'object'
+            ? String(p.url || p.secure_url || p.src || '')
+            : '';
+      if (url.trim().startsWith('http')) return true;
+    }
+  }
+  return false;
+}
+
+/** Digits-only WhatsApp target (91… for India). */
+function formatPhoneForWhatsApp(phone) {
+  const cleaned = String(phone || '').replace(/\D/g, '');
+  if (cleaned.length === 12 && cleaned.startsWith('91')) return cleaned;
+  if (cleaned.length === 10) return `91${cleaned}`;
+  if (cleaned.length === 11 && cleaned.startsWith('0')) return `91${cleaned.slice(1)}`;
+  if (cleaned.length >= 10) return `91${cleaned.slice(-10)}`;
+  return cleaned;
+}
 
 /** yyyy-mm-dd in IST — so admin completed filter matches India calendar day. */
 function formatIstDateYmd(date = new Date()) {
@@ -115,10 +152,11 @@ exports.handler = async (event) => {
     return { statusCode: 403, headers, body: JSON.stringify({ error: 'Forbidden' }) };
   }
 
+  const technicianId = job.assigned_technician_id || auth.userId;
   const { data: tech } = await db
     .from('technicians')
-    .select('full_name')
-    .eq('id', job.assigned_technician_id || auth.userId)
+    .select('full_name,phone')
+    .eq('id', technicianId)
     .maybeSingle();
 
   const { data: tokenRows, error: tokErr } = await db
@@ -137,6 +175,12 @@ exports.handler = async (event) => {
   const techName = tech?.full_name || 'Technician';
   const customerName = job.customer?.full_name || 'customer';
   const service = job.service_sub_type || 'job';
+  // Bill photo only (not UPI/payment screenshot) — egress-free: uses requirements already selected.
+  const billMissing = evt === 'completed' && !jobHasBillPhotos(job);
+  const techPhoneWhatsApp = billMissing ? formatPhoneForWhatsApp(tech?.phone) : '';
+  const billMissingWaText = billMissing
+    ? `Hi, please upload the bill photo for ${customerName} (${service}).`
+    : '';
 
   let title;
   let message;
@@ -155,7 +199,9 @@ exports.handler = async (event) => {
     message = lines.join('\n');
     color = COLOR_OTP;
   } else {
-    title = `${techName} completed a job`;
+    title = billMissing
+      ? `Bill photo missing — ${techName}`
+      : `${techName} completed a job`;
     const lines = [`${service} — ${customerName}`];
     const amount = formatRupees(job.payment_amount ?? job.actual_cost);
     const rawMethod = String(job.payment_method || '').trim();
@@ -168,21 +214,66 @@ exports.handler = async (event) => {
     if (amount) {
       lines.push(`Billing: ${amount}${method ? ` (${method})` : ''}`);
     }
+    if (billMissing) {
+      lines.push('Bill photo not uploaded — tap to WhatsApp technician');
+    }
     const leadSource = resolveLeadSource(job);
     if (leadSource) lines.push(`Lead: ${leadSource}`);
     message = lines.join('\n');
-    color = COLOR_COMPLETED;
+    color = billMissing ? COLOR_BILL_MISSING : COLOR_COMPLETED;
   }
 
   try {
     const messaging = await getMessaging(db);
+
+    // Remind the technician immediately (app push). Admin tap opens WhatsApp compose
+    // — there is no WhatsApp Business API in this project to auto-send.
+    if (billMissing && technicianId) {
+      try {
+        await sendToTechnicianDevices(db, messaging, technicianId, (token) => ({
+          token,
+          notification: {
+            title: 'Bill photo missing',
+            body: `${customerName} — ${service}. Please upload the bill photo.`,
+          },
+          data: {
+            type: 'job_notification',
+            event: 'bill_photo_missing',
+            jobId: String(jobId),
+          },
+          android: {
+            priority: 'high',
+            notification: {
+              channelId: 'job_alerts_v2',
+              defaultSound: true,
+              color: COLOR_BILL_MISSING,
+              tag: `bill_missing_${jobId}`,
+            },
+          },
+        }));
+      } catch (techPushErr) {
+        console.warn(
+          '[notify-admins] bill-missing tech push failed',
+          techPushErr?.message || techPushErr
+        );
+      }
+    }
+
     // Deep link fields: admin APK + web open Completed/Ongoing and highlight the job.
     // completedDate avoids a round-trip on tap (open the list immediately).
+    // billMissing + tech phone → tap also opens WhatsApp to that technician.
     const data = {
       type: 'job_event',
       event: evt,
       jobId: String(jobId),
       ...(evt === 'completed' ? { completedDate: formatIstDateYmd() } : {}),
+      ...(billMissing
+        ? {
+            billMissing: '1',
+            ...(techPhoneWhatsApp ? { techPhone: techPhoneWhatsApp } : {}),
+            ...(billMissingWaText ? { waText: billMissingWaText.slice(0, 500) } : {}),
+          }
+        : {}),
     };
     const res = await messaging.sendEachForMulticast({
       tokens,
@@ -191,7 +282,7 @@ exports.handler = async (event) => {
       android: {
         priority: 'high',
         notification: {
-          channelId: evt === 'completed' ? 'job_complete_v1' : 'job_alerts_v2',
+          channelId: evt === 'completed' && !billMissing ? 'job_complete_v1' : 'job_alerts_v2',
           defaultSound: true,
           color,
         },
@@ -210,7 +301,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200,
       headers,
-      body: JSON.stringify({ sent: res.successCount }),
+      body: JSON.stringify({ sent: res.successCount, billMissing }),
     };
   } catch (err) {
     console.error('[notify-admins] send failed', err?.message || err);
