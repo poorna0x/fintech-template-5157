@@ -83,6 +83,41 @@ function agoLabel(iso: string): string {
   return new Date(iso).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
 }
 
+/**
+ * Relative time that ticks locally. Must not live in the dialog parent —
+ * a parent setInterval re-render remounts the Google Maps iframe.
+ */
+function RelativeAgo({ iso }: { iso: string }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 1_000);
+    return () => clearInterval(t);
+  }, [iso]);
+  return <>{agoLabel(iso)}</>;
+}
+
+/** Map iframe only remounts when lat/lng change (not on label ticks / badge updates). */
+const LiveLocationMap = React.memo(function LiveLocationMap({
+  latitude,
+  longitude,
+}: {
+  latitude: number;
+  longitude: number;
+}) {
+  const src = `https://maps.google.com/maps?q=${latitude},${longitude}&z=16&output=embed`;
+  return (
+    <div className="overflow-hidden rounded-lg border">
+      <iframe
+        title="Technician location map"
+        src={src}
+        className="h-64 w-full sm:h-80"
+        loading="lazy"
+        referrerPolicy="no-referrer-when-downgrade"
+      />
+    </div>
+  );
+});
+
 const TechnicianLiveLocationDialog = ({
   open,
   onOpenChange,
@@ -102,8 +137,6 @@ const TechnicianLiveLocationDialog = ({
   const [exactFix, setExactFix] = useState(false);
   // The phone didn't respond in time — we're showing the last known location.
   const [timedOut, setTimedOut] = useState(false);
-  // Ticks every 5s so the "updated Xs ago" label stays fresh.
-  const [, setNowTick] = useState(0);
 
   const channelRef = useRef<RealtimeChannel | null>(null);
   const freshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -287,17 +320,8 @@ const TechnicianLiveLocationDialog = ({
     return cleanup;
   }, [open, technicianId, startWatching, cleanup]);
 
-  useEffect(() => {
-    if (!open) return;
-    const t = setInterval(() => setNowTick((n) => n + 1), 5_000);
-    return () => clearInterval(t);
-  }, [open]);
-
   const activeTechs = technicians.filter((t) => (t as any).isActive !== false);
   const hasCoords = row != null && row.latitude != null && row.longitude != null;
-  const mapSrc = hasCoords
-    ? `https://maps.google.com/maps?q=${row.latitude},${row.longitude}&z=16&output=embed`
-    : null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -364,7 +388,7 @@ const TechnicianLiveLocationDialog = ({
                   </Badge>
                 )}
                 <span className="text-muted-foreground">
-                  Position from {agoLabel(fixTimeOf(row))}
+                  Position from <RelativeAgo iso={fixTimeOf(row)} />
                   {row.accuracy != null ? ` · ±${Math.round(row.accuracy)} m` : ''}
                 </span>
               </div>
@@ -379,8 +403,14 @@ const TechnicianLiveLocationDialog = ({
               {timedOut && (
                 <p className="text-xs text-amber-700">
                   Couldn't get the exact current location — showing the latest known
-                  position{hasCoords ? ` from ${agoLabel(fixTimeOf(row))}` : ''}. Tap Refresh
-                  to try again, or ask the technician to open the app.
+                  position
+                  {hasCoords ? (
+                    <>
+                      {' '}
+                      from <RelativeAgo iso={fixTimeOf(row)} />
+                    </>
+                  ) : null}
+                  . Tap Refresh to try again, or ask the technician to open the app.
                 </p>
               )}
 
@@ -400,16 +430,8 @@ const TechnicianLiveLocationDialog = ({
                 </div>
               )}
 
-              {mapSrc && (
-                <div className="overflow-hidden rounded-lg border">
-                  <iframe
-                    title="Technician location map"
-                    src={mapSrc}
-                    className="h-64 w-full sm:h-80"
-                    loading="lazy"
-                    referrerPolicy="no-referrer-when-downgrade"
-                  />
-                </div>
+              {hasCoords && (
+                <LiveLocationMap latitude={row.latitude!} longitude={row.longitude!} />
               )}
 
               {/* Full-width split on mobile, compact inline on desktop.
