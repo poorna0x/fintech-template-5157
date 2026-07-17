@@ -27,6 +27,10 @@ import {
   visitOrderStopLabel,
   type VisitOrderJobRow,
 } from '@/lib/adminVisitOrder';
+import {
+  notifyTechnicianJobPush,
+  visitOrderChangedPushText,
+} from '@/lib/adminTechPushNotify';
 import { resolveJobLatLngFromRow, formatAddressForMapsSearch } from '@/lib/jobLocationHelpers';
 import { geocodeFromPlaceHints } from '@/lib/googleMapsLink';
 import { openGoogleMapsMultiStopDirections, readLocationLatLng } from '@/lib/maps';
@@ -326,6 +330,21 @@ export default function ArrangeTechnicianVisitOrderDialog({
       }
       setDirty(false);
       onSaved?.(technicianId, orderedIds);
+
+      // Short customer names only — full stop labels are too long for FCM body.
+      const stopLabels = rows.map((r) => {
+        const cust = r.customer as { full_name?: string; fullName?: string } | null | undefined;
+        return (
+          String(cust?.full_name || cust?.fullName || '').trim() ||
+          visitOrderStopLabel(r).split(' · ')[0] ||
+          'Customer'
+        );
+      });
+      notifyTechnicianJobPush({
+        technicianId,
+        ...visitOrderChangedPushText({ stopLabels }),
+      });
+
       toast.success('Visit order saved — technician list updated');
       onOpenChange(false);
     } finally {

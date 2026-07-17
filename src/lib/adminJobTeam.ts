@@ -4,6 +4,11 @@ import type { AdminStatusFilter } from '@/lib/adminDashboardCache';
 import type { LoadFilteredJobsFn } from '@/lib/adminLoadDashboardData';
 import { createJobAssignedNotification, sendNotification } from '@/lib/notifications';
 import { broadcastTechnicianJobListRefresh } from '@/lib/technicianJobListSync';
+import {
+  notifyTechnicianJobPush,
+  teamMemberAddedPushText,
+  teamMemberRemovedPushText,
+} from '@/lib/adminTechPushNotify';
 import { db } from '@/lib/supabase';
 import type { Job, Technician } from '@/types';
 
@@ -64,6 +69,12 @@ export async function saveAdminTeamMember(
       await sendNotification(notification);
     }
 
+    // App push to the helper (primary assignee already got assign/reassign pushes).
+    notifyTechnicianJobPush({
+      technicianId: ctx.selectedTeamMemberId,
+      ...teamMemberAddedPushText({ job: ctx.jobForTeam as any }),
+    });
+
     toast.success('Team member added successfully');
     ctx.setAddTeamDialogOpen(false);
     ctx.setJobForTeam(null);
@@ -103,6 +114,11 @@ export async function removeAdminTeamMember(
     if (error) throw error;
 
     broadcastTechnicianJobListRefresh([ctx.selectedTeamMemberToRemove]);
+
+    notifyTechnicianJobPush({
+      technicianId: ctx.selectedTeamMemberToRemove,
+      ...teamMemberRemovedPushText({ job: ctx.jobForRemoveTeam as any }),
+    });
 
     toast.success('Team member removed successfully');
     ctx.setRemoveTeamDialogOpen(false);

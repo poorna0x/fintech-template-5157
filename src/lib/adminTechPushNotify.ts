@@ -12,6 +12,8 @@ import { getJobLocationLabelForWhatsApp } from '@/lib/customer-locations';
 /** Notification accent colors — technicians can tell the type at a glance. */
 export const TECH_PUSH_COLOR_ASSIGNED = '#16A34A'; // green: you got a job
 export const TECH_PUSH_COLOR_REMOVED = '#DC2626'; // red: a job was taken away
+export const TECH_PUSH_COLOR_VISIT_ORDER = '#2563EB'; // blue: stop sequence changed
+export const TECH_PUSH_COLOR_TEAM = '#0D9488'; // teal: added as team helper
 
 export function notifyTechnicianJobPush(opts: {
   technicianId: string;
@@ -129,5 +131,57 @@ export function jobRemovedPushText(opts: {
       : `${serviceSubType} unassigned from you`,
     body,
     color: TECH_PUSH_COLOR_REMOVED,
+  };
+}
+
+/** Helper added to a multi-tech job (not the primary assignee). */
+export function teamMemberAddedPushText(opts: {
+  job: Record<string, unknown>;
+  customer?: Record<string, unknown> | null;
+}): { title: string; body: string; color: string } {
+  const { job, customer } = opts;
+  const { serviceSubType, body } = jobPushDetails(job, customer);
+  return {
+    title: `Added to team — ${serviceSubType}`,
+    body,
+    color: TECH_PUSH_COLOR_TEAM,
+  };
+}
+
+/** Helper removed from a multi-tech job. */
+export function teamMemberRemovedPushText(opts: {
+  job: Record<string, unknown>;
+  customer?: Record<string, unknown> | null;
+}): { title: string; body: string; color: string } {
+  const { job, customer } = opts;
+  const { serviceSubType, body } = jobPushDetails(job, customer);
+  return {
+    title: `Removed from team — ${serviceSubType}`,
+    body,
+    color: TECH_PUSH_COLOR_REMOVED,
+  };
+}
+
+/**
+ * Admin rearranged today's stop list. Body is a short numbered sequence
+ * (truncated to fit FCM limits).
+ */
+export function visitOrderChangedPushText(opts: {
+  stopLabels: string[];
+}): { title: string; body: string; color: string } {
+  const labels = (opts.stopLabels || [])
+    .map((s) => String(s || '').trim())
+    .filter(Boolean);
+  const numbered = labels.map((label, i) => `${i + 1}. ${label}`);
+  // send-tech-push caps body at 300 chars
+  let body = numbered.join(' → ');
+  if (body.length > 300) {
+    body = `${body.slice(0, 297)}…`;
+  }
+  if (!body) body = 'Your stop order was updated by the office.';
+  return {
+    title: 'Visit order updated',
+    body,
+    color: TECH_PUSH_COLOR_VISIT_ORDER,
   };
 }
