@@ -1,7 +1,7 @@
 /**
  * APK cold-open handoff:
- * - Native shows logo (admin + text) until the website loader paints
- * - Website bounce spinner takes over; login/dashboard also clears the overlay
+ * Native keeps logo + bounce until login/dashboard paints (__hroBootReady).
+ * Web loader ready is unused on APK (avoids a mid-boot logo size jump).
  */
 declare global {
   interface Window {
@@ -24,12 +24,12 @@ function signalReady(flag: '__hroBootReady' | '__hroWebLoaderReady', attr: strin
   });
 }
 
-/** Real portal UI painted (login / dashboard). */
+/** Real portal UI painted (login / dashboard) — native overlay can dismiss. */
 export function markNativeBootReady(): void {
   signalReady('__hroBootReady', 'data-hro-boot-ready');
 }
 
-/** Website branded loader painted — native logo overlay can dismiss. */
+/** Website branded loader painted (browser only; APK ignores this). */
 export function markNativeWebLoaderReady(): void {
   signalReady('__hroWebLoaderReady', 'data-hro-web-loader-ready');
 }

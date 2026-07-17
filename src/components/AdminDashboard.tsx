@@ -277,6 +277,7 @@ import EditCompletedJobDialog from './admin/EditCompletedJobDialog';
 import EditAMCDialog from './admin/EditAMCDialog';
 import WhatsAppDialog from './admin/WhatsAppDialog';
 import { AdminScreenLoader, AdminInlineLoader } from './admin/AdminLoaders';
+import { markNativeBootReady } from '@/lib/nativeBootReady';
 import { AdminDeleteConfirmDialogs } from './admin/AdminDeleteConfirmDialogs';
 import { AdminOverrideExistingCustomerDialog } from './admin/AdminOverrideExistingCustomerDialog';
 import AmcInfoDialog from './admin/AmcInfoDialog';
@@ -1749,6 +1750,12 @@ const AdminDashboard = () => {
     if (authInitializing || !user || !isAdmin) return;
     void runDashboardLoadOnceSessionReady();
   }, [authInitializing, user?.id, isAdmin, runDashboardLoadOnceSessionReady]);
+
+  // APK: keep native logo+bounce until first dashboard paint (not just chunk load).
+  useEffect(() => {
+    if (!user || !isAdmin || isInitialLoad) return;
+    markNativeBootReady();
+  }, [user, isAdmin, isInitialLoad]);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -5697,7 +5704,7 @@ const AdminDashboard = () => {
 
   // Auth gate handled by AdminPortal — dashboard mounts only when user is admin
   if (isDashboardBootstrapping) {
-    return <AdminScreenLoader message="Loading dashboard..." />;
+    return <AdminScreenLoader message="" />;
   }
 
   if (

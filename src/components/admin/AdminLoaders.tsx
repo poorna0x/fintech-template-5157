@@ -1,7 +1,7 @@
 import React from 'react';
 import { PortalBootLoader } from '@/components/PortalBootLoader';
 
-export function AdminScreenLoader({ message }: { message: string }) {
+export function AdminScreenLoader({ message }: { message?: string }) {
   return <PortalBootLoader showName message={message} />;
 }
 

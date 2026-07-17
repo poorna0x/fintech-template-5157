@@ -66,16 +66,17 @@ export default function AdminPortal() {
     authInitializing ||
     (user && isAdmin && (onSettings ? !Settings : !Dashboard));
 
-  // Signed-in shell is painted (dashboard/settings). Login marks itself ready.
+  // Settings shell ready. Dashboard marks ready after its own initial data load
+  // (avoids a second "Loading dashboard..." flash after the APK overlay).
   useEffect(() => {
     if (booting) return;
-    if (user && isAdmin) markNativeBootReady();
-  }, [booting, user, isAdmin]);
+    if (user && isAdmin && onSettings) markNativeBootReady();
+  }, [booting, user, isAdmin, onSettings]);
 
   if (booting) {
     return (
       <AdminPortalLoader
-        message={onSettings ? 'Loading settings...' : 'Loading...'}
+        message={onSettings ? 'Loading settings...' : ''}
       />
     );
   }

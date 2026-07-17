@@ -12,7 +12,7 @@ type PortalBootLoaderProps = {
 
 /**
  * Website boot spinner for portal apps.
- * On APK, signals native logo overlay to dismiss once this paints.
+ * On APK, native overlay covers this until login/dashboard is ready.
  */
 export function PortalBootLoader({ showName, message, className }: PortalBootLoaderProps) {
   useEffect(() => {

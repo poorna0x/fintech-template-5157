@@ -1,25 +1,69 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Technician: logo only until website loader paints (no APK spinner). -->
+<!-- Technician: logo + bounce from first frame. clipChildren=false so bounce isn't cut. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/boot_loader_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/launch_background"
     android:clickable="true"
+    android:clipChildren="false"
     android:focusable="true">
 
-    <FrameLayout
-        android:layout_width="52dp"
-        android:layout_height="52dp"
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
         android:layout_gravity="center"
-        android:background="@drawable/bg_brand_mark"
-        android:elevation="4dp">
+        android:clipChildren="false"
+        android:clipToPadding="false"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp">
 
-        <ImageView
-            android:layout_width="30dp"
-            android:layout_height="30dp"
-            android:layout_gravity="center"
-            android:contentDescription="@null"
-            android:src="@drawable/ic_droplets" />
-    </FrameLayout>
+        <FrameLayout
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="@drawable/bg_brand_mark">
+
+            <ImageView
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:layout_gravity="center"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_droplets" />
+        </FrameLayout>
+
+        <LinearLayout
+            android:id="@+id/boot_bounce_dots"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:clipChildren="false"
+            android:clipToPadding="false"
+            android:gravity="center"
+            android:orientation="horizontal"
+            android:paddingTop="4dp"
+            android:paddingBottom="2dp">
+
+            <View
+                android:id="@+id/boot_dot_1"
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:background="@drawable/boot_dot" />
+
+            <View
+                android:id="@+id/boot_dot_2"
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:layout_marginStart="4dp"
+                android:background="@drawable/boot_dot" />
+
+            <View
+                android:id="@+id/boot_dot_3"
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:layout_marginStart="4dp"
+                android:background="@drawable/boot_dot" />
+        </LinearLayout>
+    </LinearLayout>
 </FrameLayout>

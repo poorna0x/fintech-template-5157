@@ -1,15 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- System splash icon = same black Droplets mark (avoids blank white flash). -->
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item>
-        <shape android:shape="rectangle">
-            <solid android:color="@color/boot_brand" />
-            <corners android:radius="22dp" />
-        </shape>
-    </item>
-    <item
-        android:drawable="@drawable/ic_droplets"
-        android:gravity="center"
-        android:width="44dp"
-        android:height="44dp" />
-</layer-list>
+<!--
+  System splash must show the logo (no blank frame).
+  40% inset → ~48dp visual on the ~240dp splash icon, matching boot overlay size.
+-->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/ic_splash_brand_core"
+    android:inset="40%" />

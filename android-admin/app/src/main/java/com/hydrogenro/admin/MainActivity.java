@@ -3,6 +3,9 @@ package com.hydrogenro.admin;
 import android.os.Bundle;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
+import android.view.animation.Animation;
+import android.view.animation.AnimationUtils;
 import android.webkit.ValueCallback;
 import android.webkit.WebView;
 import androidx.core.splashscreen.SplashScreen;
@@ -12,8 +15,7 @@ import com.getcapacitor.WebViewListener;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Cold open: logo + "Hydrogen RO" until the website loader (or page) is ready.
- * No native spinner — website bounce takes over after handoff.
+ * Cold open: splash logo → same-size boot overlay + bounce → login/dashboard.
  */
 public class MainActivity extends BridgeActivity {
     private static final long BOOT_LOADER_MAX_MS = 20_000L;
@@ -54,15 +56,31 @@ public class MainActivity extends BridgeActivity {
         NotificationChannels.ensureAll(this);
 
         attachBootLoader();
-        if (bootLoader != null) {
-            bootLoader.post(() -> bootUiReady.set(true));
-        } else {
-            bootUiReady.set(true);
-        }
+        releaseSplashWhenBootDrawn();
 
         getWindow()
             .getDecorView()
             .postDelayed(this::dismissBootLoader, BOOT_LOADER_MAX_MS);
+    }
+
+    /** Keep system splash until boot overlay has actually drawn (no blank gap). */
+    private void releaseSplashWhenBootDrawn() {
+        if (bootLoader == null) {
+            bootUiReady.set(true);
+            return;
+        }
+        bootLoader
+            .getViewTreeObserver()
+            .addOnPreDrawListener(
+                new ViewTreeObserver.OnPreDrawListener() {
+                    @Override
+                    public boolean onPreDraw() {
+                        bootLoader.getViewTreeObserver().removeOnPreDrawListener(this);
+                        bootUiReady.set(true);
+                        return true;
+                    }
+                }
+            );
     }
 
     private void attachBootLoader() {
@@ -77,6 +95,18 @@ public class MainActivity extends BridgeActivity {
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
         );
+        startBounceDots(bootLoader);
+    }
+
+    private void startBounceDots(View root) {
+        int[] ids = { R.id.boot_dot_1, R.id.boot_dot_2, R.id.boot_dot_3 };
+        for (int i = 0; i < ids.length; i++) {
+            View dot = root.findViewById(ids[i]);
+            if (dot == null) continue;
+            Animation bounce = AnimationUtils.loadAnimation(this, R.anim.boot_dot_bounce);
+            bounce.setStartOffset(i * 150L);
+            dot.startAnimation(bounce);
+        }
     }
 
     private void beginReadyWatch() {
@@ -107,12 +137,11 @@ public class MainActivity extends BridgeActivity {
             return;
         }
 
-        // Dismiss when website loader paints, or when login/dashboard is ready.
+        // Dismiss only when login/dashboard is ready (not when web loader paints —
+        // swapping to the web logo caused a size jump).
         webView.evaluateJavascript(
             "(function(){"
-                + "if(window.__hroWebLoaderReady===true)return 'ready';"
                 + "if(window.__hroBootReady===true)return 'ready';"
-                + "if(document.documentElement.getAttribute('data-hro-web-loader-ready')==='1')return 'ready';"
                 + "if(document.documentElement.getAttribute('data-hro-boot-ready')==='1')return 'ready';"
                 + "return 'wait';"
                 + "})();",
@@ -138,9 +167,18 @@ public class MainActivity extends BridgeActivity {
         bootUiReady.set(true);
         runOnUiThread(() -> {
             if (bootLoader == null) return;
+            clearBounceDots(bootLoader);
             ViewGroup parent = (ViewGroup) bootLoader.getParent();
             if (parent != null) parent.removeView(bootLoader);
             bootLoader = null;
         });
+    }
+
+    private void clearBounceDots(View root) {
+        int[] ids = { R.id.boot_dot_1, R.id.boot_dot_2, R.id.boot_dot_3 };
+        for (int id : ids) {
+            View dot = root.findViewById(id);
+            if (dot != null) dot.clearAnimation();
+        }
     }
 }
