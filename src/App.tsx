@@ -20,6 +20,16 @@ import { isTechnicianPortalPath } from "@/lib/authPortal";
 import { startNativeBackButtonHandler } from "@/lib/nativeBackButton";
 import { isNativeApp } from "@/lib/isNativeApp";
 
+// APK cold open: start the portal entry chunk ASAP (overlaps with main-bundle parse).
+if (typeof window !== "undefined" && isNativeApp()) {
+  const path = window.location.pathname;
+  if (path.startsWith("/technician")) {
+    void import("./pages/TechnicianLogin");
+  } else if (path.startsWith("/admin") || path.startsWith("/settings")) {
+    void import("./pages/AdminPortal");
+  }
+}
+
 // Lazy load heavy components for better performance.
 // AdminPortal and TechnicianLogin are lazy too so their login + captcha widget
 // code stays out of the entry chunk that loads on every public page.
