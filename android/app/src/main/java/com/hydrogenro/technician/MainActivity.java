@@ -109,12 +109,12 @@ public class MainActivity extends BridgeActivity {
             return;
         }
 
+        // Dismiss only when React marks real UI (login / dashboard).
         webView.evaluateJavascript(
             "(function(){"
-                + "var r=document.getElementById('root');"
-                + "if(!r||!r.children||r.children.length===0)return 'wait';"
-                + "if(r.querySelector('.animate-bounce'))return 'wait';"
-                + "return 'ready';"
+                + "if(window.__hroBootReady===true)return 'ready';"
+                + "if(document.documentElement.getAttribute('data-hro-boot-ready')==='1')return 'ready';"
+                + "return 'wait';"
                 + "})();",
             new ValueCallback<String>() {
                 @Override

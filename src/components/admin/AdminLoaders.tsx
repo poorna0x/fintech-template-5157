@@ -1,6 +1,10 @@
 import React from 'react';
+import { isNativeApp } from '@/lib/isNativeApp';
 
 export function AdminScreenLoader({ message }: { message: string }) {
+  if (isNativeApp()) {
+    return <div className="min-h-screen bg-[#FAFAFA]" aria-hidden />;
+  }
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-50">
       <div className="text-center">
@@ -16,6 +20,13 @@ export function AdminScreenLoader({ message }: { message: string }) {
 }
 
 export function AdminInlineLoader({ message }: { message: string }) {
+  if (isNativeApp()) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <p className="text-sm text-gray-600">{message}</p>
+      </div>
+    );
+  }
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
       <div className="flex items-center justify-center space-x-1 mb-3">

@@ -18,6 +18,7 @@ import { SEO_CITY_SERVICE_PAGES, SEO_LOCATION_PAGES, SEO_SERVICE_PAGES } from "@
 import { disablePWA } from "@/lib/pwa";
 import { isTechnicianPortalPath } from "@/lib/authPortal";
 import { startNativeBackButtonHandler } from "@/lib/nativeBackButton";
+import { isNativeApp } from "@/lib/isNativeApp";
 
 // Lazy load heavy components for better performance.
 // AdminPortal and TechnicianLogin are lazy too so their login + captcha widget
@@ -45,13 +46,9 @@ const ProductVerification = lazy(() => import("./pages/ProductVerification"));
 const SpareParts = lazy(() => import("./pages/SpareParts"));
 const Warranty = lazy(() => import("./pages/Warranty"));
 
-// Loading component for lazy-loaded routes.
-// Native APKs use their own straight-line boot loader — skip the bounce dots there.
+// Loading for lazy routes. APK keeps its own line loader — never bounce dots there.
 const LoadingSpinner = () => {
-  const native =
-    typeof window !== 'undefined' &&
-    !!(window as Window & { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.();
-  if (native) {
+  if (isNativeApp()) {
     return <div className="min-h-screen bg-[#FAFAFA]" aria-hidden />;
   }
   return (

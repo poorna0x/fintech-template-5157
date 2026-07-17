@@ -3,16 +3,15 @@ import { useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import AdminLogin from '@/components/AdminLogin';
 import { startAdminDashboardPrefetch } from '@/lib/adminDashboardCache';
+import { isNativeApp } from '@/lib/isNativeApp';
+import { markNativeBootReady } from '@/lib/nativeBootReady';
 
 const adminDashboardImport = () => import('@/components/AdminDashboard');
 const settingsImport = () => import('./Settings');
 
 function AdminPortalLoader({ message }: { message: string }) {
-  const native =
-    typeof window !== 'undefined' &&
-    !!(window as Window & { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.();
   // APK boot already shows a straight-line loader — no bounce dots here.
-  if (native) {
+  if (isNativeApp()) {
     return <div className="min-h-screen bg-[#FAFAFA] admin-page" aria-hidden />;
   }
   return (
@@ -90,6 +89,12 @@ export default function AdminPortal() {
   const booting =
     authInitializing ||
     (user && isAdmin && (onSettings ? !Settings : !Dashboard));
+
+  // Signed-in shell is painted (dashboard/settings). Login marks itself ready.
+  useEffect(() => {
+    if (booting) return;
+    if (user && isAdmin) markNativeBootReady();
+  }, [booting, user, isAdmin]);
 
   if (booting) {
     return (

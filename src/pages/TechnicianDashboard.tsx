@@ -73,6 +73,8 @@ import { Job, JobAssignmentRequest } from '@/types';
 import { sendNotification, createJobCompletedNotification, createJobAssignmentRequestNotification, createJobAssignmentAcceptedNotification, createJobAssignmentRejectedNotification, requestNotificationPermission } from '@/lib/notifications';
 import FollowUpModal from '@/components/FollowUpModal';
 import { registerTechnicianPWA, disablePWA, isPWAMode } from '@/lib/pwa';
+import { markNativeBootReady } from '@/lib/nativeBootReady';
+import { isNativeApp } from '@/lib/isNativeApp';
 import {
   cacheQrCodes,
   cacheTechnicianQrCode,
@@ -1143,6 +1145,12 @@ const TechnicianDashboard = () => {
     const t = setTimeout(() => setAuthGraceExpired(true), isPWAMode() ? 22_000 : 8_000);
     return () => clearTimeout(t);
   }, [authInitializing]);
+
+  // Dashboard shell is painted (past auth gate) — APK boot overlay can dismiss.
+  useEffect(() => {
+    if (authInitializing && !authGraceExpired) return;
+    if (user?.role === 'technician') markNativeBootReady();
+  }, [authInitializing, authGraceExpired, user?.role]);
 
   // Redirect if not technician (after auth finishes or grace timeout)
   useEffect(() => {
@@ -5646,10 +5654,7 @@ const TechnicianDashboard = () => {
   };
 
   if (authInitializing && !authGraceExpired) {
-    const native =
-      typeof window !== 'undefined' &&
-      !!(window as Window & { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.();
-    if (native) {
+    if (isNativeApp()) {
       return <div className="min-h-screen bg-[#FAFAFA]" aria-hidden />;
     }
     return (
