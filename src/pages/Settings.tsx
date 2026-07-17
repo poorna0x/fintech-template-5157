@@ -699,23 +699,26 @@ const Settings = () => {
             end: '14:00'
           }
         },
-        status: 'OFFLINE',
-        performance: {
+        salary: salaryPayload,
+        updated_at: new Date().toISOString()
+      };
+
+      // Duty status (AVAILABLE/BUSY/OFFLINE) is live — only set OFFLINE on create.
+      // Editing a tech must not wipe AVAILABLE back to OFFLINE.
+      if (editTechnicianDialogOpen && selectedTechnician) {
+        technicianData.account_status = technicianFormData.accountStatus || 'ACTIVE';
+      } else {
+        technicianData.status = 'OFFLINE';
+        technicianData.performance = {
           totalJobs: 0,
           completedJobs: 0,
           averageRating: 0,
           onTimePercentage: 0,
           customerSatisfaction: 0
-        },
-        salary: salaryPayload,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-
-      technicianData.account_status =
-        editTechnicianDialogOpen && selectedTechnician
-          ? technicianFormData.accountStatus || 'ACTIVE'
-          : 'ACTIVE';
+        };
+        technicianData.created_at = new Date().toISOString();
+        technicianData.account_status = 'ACTIVE';
+      }
 
       const password = technicianFormData.password?.trim() || '';
       let savedTechnicianId: string | null = null;

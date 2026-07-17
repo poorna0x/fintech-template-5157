@@ -64,6 +64,40 @@ export const generateGoogleMapsDirectionsBetween = (
 };
 
 /**
+ * Multi-stop driving route for Google Maps (origin → optional waypoints → destination).
+ * Maps URL API allows a limited number of waypoints; keep intermediate stops ≤ 9.
+ */
+export const generateGoogleMapsMultiStopDirections = (
+  stops: LatLngPoint[],
+  travelMode: 'driving' | 'walking' | 'bicycling' | 'transit' = 'driving'
+): string | null => {
+  if (!stops || stops.length < 2) return null;
+  const origin = stops[0];
+  const destination = stops[stops.length - 1];
+  const middle = stops.slice(1, -1).slice(0, 9);
+  const params = new URLSearchParams({
+    api: '1',
+    origin: `${origin.lat},${origin.lng}`,
+    destination: `${destination.lat},${destination.lng}`,
+    travelmode: travelMode,
+  });
+  if (middle.length > 0) {
+    params.set(
+      'waypoints',
+      middle.map((p) => `${p.lat},${p.lng}`).join('|')
+    );
+  }
+  return `https://www.google.com/maps/dir/?${params.toString()}`;
+};
+
+export const openGoogleMapsMultiStopDirections = (stops: LatLngPoint[]): boolean => {
+  const url = generateGoogleMapsMultiStopDirections(stops);
+  if (!url) return false;
+  window.open(url, '_blank', 'noopener,noreferrer');
+  return true;
+};
+
+/**
  * Open Google Maps directions between two coordinates in a new tab (or Maps app on mobile).
  */
 export const openGoogleMapsDirectionsBetween = (

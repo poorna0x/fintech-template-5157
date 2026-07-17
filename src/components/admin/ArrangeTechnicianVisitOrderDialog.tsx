@@ -17,7 +17,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { GripVertical, ListOrdered, Loader2, RefreshCw } from 'lucide-react';
+import { GripVertical, ListOrdered, Loader2, MapPinned } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import {
@@ -27,7 +27,12 @@ import {
   visitOrderStopLabel,
   type VisitOrderJobRow,
 } from '@/lib/adminVisitOrder';
+import { resolveJobLatLngFromRow, formatAddressForMapsSearch } from '@/lib/jobLocationHelpers';
+import { geocodeFromPlaceHints } from '@/lib/googleMapsLink';
+import { openGoogleMapsMultiStopDirections, readLocationLatLng } from '@/lib/maps';
+import { db } from '@/lib/supabase';
 import type { Job, Technician } from '@/types';
+import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 
 type ArrangeTechnicianVisitOrderDialogProps = {
   open: boolean;
@@ -104,12 +109,15 @@ export default function ArrangeTechnicianVisitOrderDialog({
   initialTechnicianId = null,
   onSaved,
 }: ArrangeTechnicianVisitOrderDialogProps) {
+  // Show full active roster (same as Message / Live location). Do not filter on
+  // live duty status — BUSY / OFFLINE techs still need visit order.
   const activeTechs = useMemo(
     () =>
       technicians
         .filter((t) => {
-          const status = String((t as any).status || '').toUpperCase();
-          return !status || status === 'ACTIVE' || status === 'ON_DUTY' || status === 'AVAILABLE';
+          if ((t as any).isActive === false) return false;
+          const account = String((t as any).account_status || '').toUpperCase();
+          return !account || account === 'ACTIVE' || account === 'SUSPENDED';
         })
         .slice()
         .sort((a, b) =>
@@ -124,6 +132,7 @@ export default function ArrangeTechnicianVisitOrderDialog({
   const [rows, setRows] = useState<VisitOrderJobRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [openingMaps, setOpeningMaps] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dropHint, setDropHint] = useState<DropHint>(null);
@@ -324,6 +333,121 @@ export default function ArrangeTechnicianVisitOrderDialog({
     }
   };
 
+  const handleOpenRouteInMaps = async () => {
+    if (!technicianId || rows.length === 0 || openingMaps) return;
+    setOpeningMaps(true);
+    const resolvingToast = toast.loading('Resolving locations…');
+    try {
+      let techLoc =
+        readLocationLatLng(
+          activeTechs.find((t) => t.id === technicianId)?.currentLocation ||
+            (activeTechs.find((t) => t.id === technicianId) as any)?.current_location
+        ) || null;
+
+      try {
+        const { data: freshTech } = await db.technicians.getById(technicianId);
+        const freshLoc = readLocationLatLng(
+          freshTech?.current_location || (freshTech as any)?.currentLocation
+        );
+        if (freshLoc) techLoc = freshLoc;
+      } catch {
+        /* use cached tech location */
+      }
+
+      if (!techLoc) {
+        toast.error(
+          'Technician location not available. Ask them to open the app, or use Live location first.',
+          { id: resolvingToast }
+        );
+        return;
+      }
+
+      // Google Maps URL: origin + up to 9 waypoints + destination (≤ 11 total points).
+      const routeJobs = rows.slice(0, 10);
+      if (rows.length > 10) {
+        toast.message(`Opening first 10 of ${rows.length} stops (Maps limit).`);
+      }
+
+      const accessToken = await resolveSupabaseAccessTokenForApi();
+      const jobPoints: { lat: number; lng: number }[] = [];
+      const missingLabels: string[] = [];
+
+      for (const job of routeJobs) {
+        // Always load full job + customer so short Maps links / location JSON can resolve.
+        let row: any =
+          initialJobs.find((j) => String((j as any).id) === String(job.id)) || job;
+        try {
+          const { data: full, error } = await db.jobs.getByIdFull(job.id);
+          if (!error && full) row = full;
+        } catch {
+          /* keep cached/slim row */
+        }
+
+        let resolved = await resolveJobLatLngFromRow(row, {
+          accessToken,
+          // Full row already loaded — skip a second getByIdFull inside the helper.
+        });
+
+        // Still missing: expand short link / geocode from address / place name.
+        if (!resolved) {
+          const cust = row?.customer || {};
+          const addressHint =
+            formatAddressForMapsSearch(cust.address) ||
+            String(cust.visible_address || cust.visibleAddress || '').trim() ||
+            '';
+          const hints = [addressHint, String(cust.full_name || cust.fullName || '').trim()]
+            .filter(Boolean)
+            .filter((h, i, arr) => arr.indexOf(h) === i);
+
+          if (hints.length > 0) {
+            const geocoded = await geocodeFromPlaceHints(hints, accessToken);
+            if (geocoded) {
+              resolved = {
+                lat: geocoded.geocoded.latitude,
+                lng: geocoded.geocoded.longitude,
+                workingRow: row,
+              };
+            }
+          }
+        }
+
+        if (resolved) {
+          jobPoints.push({ lat: resolved.lat, lng: resolved.lng });
+        } else {
+          missingLabels.push(visitOrderStopLabel(job));
+        }
+      }
+
+      if (jobPoints.length === 0) {
+        toast.error('No job locations found. Add a Google Maps link on the customer and Fetch location.', {
+          id: resolvingToast,
+        });
+        return;
+      }
+
+      if (missingLabels.length > 0) {
+        toast.warning(
+          `Skipped ${missingLabels.length} stop${missingLabels.length === 1 ? '' : 's'} that could not be resolved.`,
+          { id: resolvingToast }
+        );
+      } else {
+        toast.dismiss(resolvingToast);
+      }
+
+      const stops = [techLoc, ...jobPoints];
+      const opened = openGoogleMapsMultiStopDirections(stops);
+      if (!opened) {
+        toast.error('Could not build the Maps route.');
+        return;
+      }
+      toast.success(
+        `Opened route: technician → ${jobPoints.length} job${jobPoints.length === 1 ? '' : 's'}`
+      );
+    } finally {
+      setOpeningMaps(false);
+    }
+  };
+
   const techLabel = (t: Technician) =>
     String(t.fullName || (t as any).full_name || 'Technician').trim() || 'Technician';
 
@@ -342,19 +466,21 @@ export default function ArrangeTechnicianVisitOrderDialog({
           '[&>button]:h-10 [&>button]:w-10 sm:[&>button]:h-8 sm:[&>button]:w-8'
         )}
       >
-        <DialogHeader className="shrink-0 space-y-1.5 border-b px-4 pb-3 pt-4 pr-14 sm:px-6 sm:pt-5 sm:pr-14 text-left">
+        <DialogHeader className="shrink-0 space-y-1 border-b px-4 pb-3 pt-4 pr-14 text-left sm:px-6 sm:pt-5 sm:pr-14">
           <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
-            <ListOrdered className="h-5 w-5 shrink-0" />
+            <ListOrdered className="h-5 w-5 shrink-0 text-sky-700" />
             Arrange visit order
           </DialogTitle>
-          <DialogDescription className="text-xs sm:text-sm leading-relaxed">
-            Drag the handle to set #1, #2, #3… The list scrolls automatically near the edges.
+          <DialogDescription className="text-xs text-muted-foreground sm:text-sm">
+            Drag to reorder, then open the route in Maps.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-4 py-3 sm:px-6 sm:py-4">
+        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-4 py-3 sm:gap-4 sm:px-6 sm:py-4">
           <div className="shrink-0 space-y-1.5">
-            <Label htmlFor="visit-order-tech">Technician</Label>
+            <Label htmlFor="visit-order-tech" className="text-sm">
+              Technician
+            </Label>
             <Select
               value={technicianId || undefined}
               onValueChange={(v) => {
@@ -362,12 +488,12 @@ export default function ArrangeTechnicianVisitOrderDialog({
                 void loadJobs(v, { silentCacheFirst: true });
               }}
             >
-              <SelectTrigger id="visit-order-tech" className="h-11 sm:h-10">
+              <SelectTrigger id="visit-order-tech" className="h-12 w-full text-base sm:h-10 sm:text-sm">
                 <SelectValue placeholder="Select technician" />
               </SelectTrigger>
               <SelectContent>
                 {activeTechs.map((t) => (
-                  <SelectItem key={t.id} value={t.id} className="min-h-11 sm:min-h-0">
+                  <SelectItem key={t.id} value={t.id} className="min-h-12 text-base sm:min-h-0 sm:text-sm">
                     {techLabel(t)}
                   </SelectItem>
                 ))}
@@ -375,30 +501,16 @@ export default function ArrangeTechnicianVisitOrderDialog({
             </Select>
           </div>
 
-          <div className="flex shrink-0 items-center justify-between gap-2">
-            <p className="min-w-0 flex-1 text-xs sm:text-sm text-muted-foreground">
-              {loading
-                ? 'Loading…'
-                : `${rows.length} open job${rows.length === 1 ? '' : 's'}`}
-              {!loading && rows.length > 1 ? ' · drag to reorder' : ''}
-              {dirty ? ' · unsaved' : ''}
-            </p>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-10 shrink-0 px-3 sm:h-9"
-              disabled={!technicianId || loading || saving}
-              onClick={() => void loadJobs(technicianId)}
-            >
-              <RefreshCw className={`h-4 w-4 sm:mr-1.5 ${loading ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">Refresh</span>
-            </Button>
-          </div>
+          <p className="shrink-0 text-xs text-muted-foreground sm:text-sm">
+            {loading
+              ? 'Loading…'
+              : `${rows.length} open job${rows.length === 1 ? '' : 's'}`}
+            {!loading && dirty ? ' · unsaved' : ''}
+          </p>
 
           <div
             ref={scrollContainerRef}
-            className="min-h-0 flex-1 overflow-y-auto overscroll-contain -mx-1 px-1 pb-[max(0.25rem,env(safe-area-inset-bottom,0px))]"
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain rounded-lg border border-gray-100 bg-slate-50/60 -mx-0 px-1.5 py-1.5 sm:px-2 sm:py-2"
             onDragOver={(event) => {
               if (dragIndex === null) return;
               event.preventDefault();
@@ -406,12 +518,12 @@ export default function ArrangeTechnicianVisitOrderDialog({
             }}
           >
             {loading && rows.length === 0 ? (
-              <div className="flex items-center justify-center py-10 text-muted-foreground">
-                <Loader2 className="h-5 w-5 animate-spin mr-2" />
+              <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                 Loading jobs…
               </div>
             ) : rows.length === 0 ? (
-              <div className="rounded-md border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
+              <div className="rounded-md border border-dashed border-gray-200 bg-white px-4 py-10 text-center text-sm text-muted-foreground">
                 No open jobs for this technician.
               </div>
             ) : (
@@ -442,8 +554,8 @@ export default function ArrangeTechnicianVisitOrderDialog({
                       onDragOver={(e) => handleDragOverRow(index, e)}
                       onDrop={(e) => handleDropRow(index, e)}
                       className={cn(
-                        'relative flex items-center gap-2 rounded-lg border bg-white p-2.5 sm:p-2 transition-[opacity,box-shadow,border-color] duration-150 select-none',
-                        isDragging && 'opacity-40 border-dashed border-sky-300 bg-sky-50/40',
+                        'relative flex items-stretch gap-2 rounded-xl border bg-white p-3 shadow-sm transition-[opacity,box-shadow,border-color] duration-150 select-none sm:items-center sm:rounded-lg sm:p-2.5',
+                        isDragging && 'opacity-40 border-dashed border-sky-300 bg-sky-50/40 shadow-none',
                         !isDragging && 'border-gray-200'
                       )}
                     >
@@ -461,14 +573,15 @@ export default function ArrangeTechnicianVisitOrderDialog({
                       ) : null}
 
                       <div
-                        draggable={!saving}
+                        draggable={!saving && !openingMaps}
                         onDragStart={(e) => handleDragStart(index, e)}
                         onDragEnd={clearDragState}
                         className={cn(
-                          'flex h-11 w-11 sm:h-9 sm:w-9 shrink-0 touch-none items-center justify-center rounded-md text-muted-foreground',
+                          'flex w-10 shrink-0 touch-none items-center justify-center self-center rounded-lg text-muted-foreground sm:h-9 sm:w-9',
                           !saving &&
-                            'cursor-grab hover:bg-slate-100 hover:text-slate-700 active:cursor-grabbing',
-                          saving && 'opacity-50'
+                            !openingMaps &&
+                            'cursor-grab active:bg-slate-100 active:cursor-grabbing',
+                          (saving || openingMaps) && 'opacity-50'
                         )}
                         aria-label="Drag to reorder"
                         role="button"
@@ -488,25 +601,25 @@ export default function ArrangeTechnicianVisitOrderDialog({
 
                       <span
                         className={cn(
-                          'flex h-9 w-9 sm:h-7 sm:w-7 shrink-0 items-center justify-center rounded-full text-sm font-semibold',
+                          'flex h-9 w-9 shrink-0 items-center justify-center self-center rounded-full text-sm font-semibold sm:h-8 sm:w-8',
                           index === 0
-                            ? 'bg-red-600 text-white ring-2 ring-red-300'
+                            ? 'bg-red-600 text-white ring-2 ring-red-200'
                             : 'bg-sky-100 text-sky-800'
                         )}
                       >
                         {index + 1}
                       </span>
 
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm font-medium text-gray-900 break-words leading-snug">
+                      <div className="min-w-0 flex-1 py-0.5">
+                        <div className="text-[15px] font-medium leading-snug text-gray-900 break-words sm:text-sm">
                           {visitOrderStopLabel(job)}
                         </div>
-                        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                           <span className="truncate max-w-full">{job.job_number || '—'}</span>
                           {status ? (
                             <Badge
                               variant="outline"
-                              className="text-[10px] px-1.5 py-0 h-5 shrink-0"
+                              className="h-5 shrink-0 px-1.5 py-0 text-[10px]"
                             >
                               {status.replace('_', ' ')}
                             </Badge>
@@ -530,33 +643,54 @@ export default function ArrangeTechnicianVisitOrderDialog({
           className={cn(
             'shrink-0 gap-2 border-t bg-background px-4 py-3 sm:px-6',
             'pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]',
-            'flex-col-reverse sm:flex-row sm:justify-end'
+            'flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between'
           )}
         >
           <Button
             type="button"
-            variant="outline"
-            className="h-11 w-full sm:h-10 sm:w-auto"
+            variant="ghost"
+            className="h-11 w-full text-muted-foreground hover:text-foreground sm:h-9 sm:w-auto sm:px-3"
             onClick={() => onOpenChange(false)}
-            disabled={saving}
+            disabled={saving || openingMaps}
           >
             Cancel
           </Button>
-          <Button
-            type="button"
-            className="h-11 w-full bg-sky-700 hover:bg-sky-800 sm:h-10 sm:w-auto"
-            onClick={() => void handleSave()}
-            disabled={!technicianId || rows.length === 0 || saving || !dirty}
-          >
-            {saving ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Saving…
-              </>
-            ) : (
-              'Save order'
-            )}
-          </Button>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:gap-2.5">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11 w-full border-gray-300 bg-white text-gray-900 hover:bg-gray-50 sm:h-9 sm:w-auto sm:min-w-[7.5rem] disabled:opacity-40"
+              onClick={() => void handleSave()}
+              disabled={!technicianId || rows.length === 0 || saving || !dirty || openingMaps}
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving…
+                </>
+              ) : (
+                'Save order'
+              )}
+            </Button>
+            <Button
+              type="button"
+              className="h-11 w-full bg-sky-700 text-base shadow-sm hover:bg-sky-800 sm:h-9 sm:w-auto sm:min-w-[11.5rem] sm:text-sm"
+              onClick={() => void handleOpenRouteInMaps()}
+              disabled={!technicianId || rows.length === 0 || saving || openingMaps || loading}
+            >
+              {openingMaps ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Opening Maps…
+                </>
+              ) : (
+                <>
+                  <MapPinned className="mr-2 h-4 w-4" />
+                  Open route in Maps
+                </>
+              )}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
