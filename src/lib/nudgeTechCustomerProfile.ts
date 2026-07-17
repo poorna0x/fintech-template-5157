@@ -1,9 +1,9 @@
 /**
- * Fire-and-forget FCM nudge when customer brand / purifier photo is missing
+ * Fire-and-forget FCM nudge when customer purifier photo is missing
  * at complete-job start or end.
  */
 import { supabase } from '@/lib/supabase';
-import { getCustomerProfileGaps } from '@/lib/jobAssignMessageDetails';
+import { customerMissingPurifierPhoto } from '@/lib/jobAssignMessageDetails';
 import { toast } from 'sonner';
 
 export function nudgeTechCustomerProfileGaps(opts: {
@@ -13,18 +13,11 @@ export function nudgeTechCustomerProfileGaps(opts: {
   /** Show an in-app toast as well (useful while the complete dialog is open). */
   showToast?: boolean;
 }): void {
-  const gaps = getCustomerProfileGaps(opts.customer);
-  if (!gaps.missingBrand && !gaps.missingPhoto) return;
+  if (!customerMissingPurifierPhoto(opts.customer)) return;
   if (!opts.jobId) return;
 
   if (opts.showToast) {
-    if (gaps.missingBrand && gaps.missingPhoto) {
-      toast.warning('Please add the purifier brand and a photo for this customer.');
-    } else if (gaps.missingBrand) {
-      toast.warning('Please add the equipment brand name for this customer.');
-    } else {
-      toast.warning('Please add a purifier photo for this customer.');
-    }
+    toast.warning('Please add a purifier photo for this customer.');
   }
 
   void (async () => {
@@ -38,8 +31,7 @@ export function nudgeTechCustomerProfileGaps(opts: {
         body: JSON.stringify({
           jobId: opts.jobId,
           phase: opts.phase,
-          missingBrand: gaps.missingBrand,
-          missingPhoto: gaps.missingPhoto,
+          missingPhoto: true,
         }),
         keepalive: true,
       });

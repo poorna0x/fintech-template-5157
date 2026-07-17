@@ -1,5 +1,5 @@
 /**
- * Notify assigned technician when admin edits job details (push + email).
+ * Notify assigned technician when admin edits job details (push only).
  */
 import { formatCustomTimeLabel, getFormattedTimeSlot, parseJobRequirements } from '@/lib/adminUtils';
 import {
@@ -7,8 +7,6 @@ import {
   jobRescheduledPushText,
   notifyTechnicianJobPush,
 } from '@/lib/adminTechPushNotify';
-import { emailService } from '@/lib/email';
-import { supabase } from '@/lib/supabase';
 
 export type JobEditSnapshot = {
   description: string;
@@ -38,50 +36,8 @@ function scheduleLabel(snap: JobEditSnapshot): string {
   return `${date}, ${slot}`;
 }
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-async function emailTechnician(opts: {
-  technicianId: string;
-  subject: string;
-  lines: string[];
-  jobId?: string;
-}): Promise<void> {
-  try {
-    const { data: tech } = await supabase
-      .from('technicians')
-      .select('email,full_name')
-      .eq('id', opts.technicianId)
-      .maybeSingle();
-    const to = String(tech?.email || '').trim();
-    if (!to || !to.includes('@')) return;
-
-    const text = opts.lines.join('\n');
-    const html = `<p>Hi ${escapeHtml(tech?.full_name || 'there')},</p><p>${opts.lines
-      .map((l) => escapeHtml(l))
-      .join('<br/>')}</p><p>— Hydrogen RO office</p>`;
-
-    await emailService.sendAdminComposerEmail({
-      templateType: 'general',
-      documentBrand: 'hydrogenro',
-      to,
-      subject: opts.subject,
-      html,
-      text,
-      jobId: opts.jobId || null,
-    });
-  } catch (e) {
-    console.warn('[notifyTechJobEdit] email failed', e);
-  }
-}
-
 /**
- * After a successful Edit Job save: push (and email for desc/cost) the assigned tech.
+ * After a successful Edit Job save: push the assigned tech (no email).
  */
 export function notifyTechnicianAfterJobEdit(opts: {
   jobId: string;
@@ -112,19 +68,6 @@ export function notifyTechnicianAfterJobEdit(opts: {
       technicianId: techId,
       ...jobRescheduledPushText({ customerName, whenLabel }),
     });
-    void emailTechnician({
-      technicianId: techId,
-      jobId: opts.jobId,
-      subject: `Job rescheduled — ${customerName}`,
-      lines: [
-        `A job was rescheduled.`,
-        `Customer: ${customerName}`,
-        `New schedule: ${whenLabel}`,
-        before.scheduledDate || before.scheduledTimeSlot
-          ? `Previous: ${scheduleLabel(before)}`
-          : '',
-      ].filter(Boolean),
-    });
   }
 
   if (descChanged || costChanged) {
@@ -143,16 +86,6 @@ export function notifyTechnicianAfterJobEdit(opts: {
     notifyTechnicianJobPush({
       technicianId: techId,
       ...jobDetailsUpdatedPushText({ customerName, changes }),
-    });
-    void emailTechnician({
-      technicianId: techId,
-      jobId: opts.jobId,
-      subject: `Job details updated — ${customerName}`,
-      lines: [
-        `Job details were updated by the office.`,
-        `Customer: ${customerName}`,
-        ...changes,
-      ],
     });
   }
 }

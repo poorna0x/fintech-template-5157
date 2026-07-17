@@ -3,8 +3,6 @@
  */
 import { parseJobRequirements } from '@/lib/adminUtils';
 
-const INVALID_BRAND = /^(not\s*specified|n\/?a|na|none|-|—|unknown)$/i;
-
 export function getJobDescriptionText(job: Record<string, unknown> | null | undefined): string {
   if (!job) return '';
   return String((job as { description?: string }).description || '').trim();
@@ -47,12 +45,6 @@ export function appendAssignExtras(
   return out;
 }
 
-export function isMissingCustomerBrand(brand: unknown): boolean {
-  const s = String(brand ?? '').trim();
-  if (!s) return true;
-  return INVALID_BRAND.test(s);
-}
-
 export function customerHasPurifierPhoto(photos: unknown): boolean {
   if (!Array.isArray(photos) || photos.length === 0) return false;
   return photos.some((p) => {
@@ -66,19 +58,13 @@ export function customerHasPurifierPhoto(photos: unknown): boolean {
   });
 }
 
-export function getCustomerProfileGaps(customer: Record<string, unknown> | null | undefined): {
-  missingBrand: boolean;
-  missingPhoto: boolean;
-} {
-  if (!customer) return { missingBrand: true, missingPhoto: true };
-  const brand =
-    (customer as { brand?: unknown }).brand ??
-    (customer as { Brand?: unknown }).Brand;
+/** True when the customer has no purifier photo on file. */
+export function customerMissingPurifierPhoto(
+  customer: Record<string, unknown> | null | undefined
+): boolean {
+  if (!customer) return true;
   const photos =
     (customer as { photos?: unknown }).photos ??
     (customer as { Photos?: unknown }).Photos;
-  return {
-    missingBrand: isMissingCustomerBrand(brand),
-    missingPhoto: !customerHasPurifierPhoto(photos),
-  };
+  return !customerHasPurifierPhoto(photos);
 }

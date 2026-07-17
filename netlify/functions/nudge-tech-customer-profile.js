@@ -1,4 +1,4 @@
-// Technician self-nudge: missing customer brand and/or purifier photo.
+// Technician self-nudge: missing customer purifier photo.
 // Auth: technician JWT; job must be assigned to them (or they are a team member).
 
 const { createClient } = require('@supabase/supabase-js');
@@ -39,10 +39,9 @@ exports.handler = async (event) => {
 
   const jobId = String(body.jobId || '').trim();
   const phase = String(body.phase || 'start').trim(); // start | end
-  const missingBrand = body.missingBrand === true || body.missingBrand === 'true';
   const missingPhoto = body.missingPhoto === true || body.missingPhoto === 'true';
-  if (!jobId || (!missingBrand && !missingPhoto)) {
-    return { statusCode: 400, headers, body: JSON.stringify({ error: 'jobId and gaps required' }) };
+  if (!jobId || !missingPhoto) {
+    return { statusCode: 400, headers, body: JSON.stringify({ error: 'jobId and missingPhoto required' }) };
   }
 
   const supabaseUrl = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
@@ -72,18 +71,8 @@ exports.handler = async (event) => {
   }
 
   const customerName = job.customer?.full_name || 'this customer';
-  let title;
-  let message;
-  if (missingBrand && missingPhoto) {
-    title = phase === 'end' ? 'Still missing brand + photo' : 'Add brand + purifier photo';
-    message = `${customerName} — add equipment brand and a purifier photo before you finish.`;
-  } else if (missingBrand) {
-    title = phase === 'end' ? 'Still missing brand name' : 'Add equipment brand';
-    message = `${customerName} — enter the purifier brand name.`;
-  } else {
-    title = phase === 'end' ? 'Still missing purifier photo' : 'Add purifier photo';
-    message = `${customerName} — capture/upload a purifier photo.`;
-  }
+  const title = phase === 'end' ? 'Still missing purifier photo' : 'Add purifier photo';
+  const message = `${customerName} — capture/upload a purifier photo.`;
 
   try {
     const messaging = await getMessaging(db);

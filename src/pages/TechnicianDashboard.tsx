@@ -3802,13 +3802,13 @@ const TechnicianDashboard = () => {
       (jobWithCustomer as any)?.customerId ||
       jobWithCustomer.customer_id;
 
-    // Missing equipment brand / purifier photo → toast + push (again at complete end if still missing).
+    // Missing purifier photo → toast + push (again at complete end if still missing).
     if (customerId) {
       void (async () => {
         try {
           const { data: custRow } = await supabase
             .from('customers')
-            .select('id,brand,photos,full_name')
+            .select('id,photos,full_name')
             .eq('id', customerId)
             .maybeSingle();
           const merged = {
@@ -4395,7 +4395,7 @@ const TechnicianDashboard = () => {
         notifyAdminsJobEvent(jobId, 'completed')
       );
 
-      // If brand / purifier photo still missing at finish, nudge again (even if they ignored at start).
+      // If purifier photo still missing at finish, nudge again (even if they ignored at start).
       const endCustomerId =
         (selectedJobForComplete.customer as any)?.id ||
         selectedJobForComplete.customer?.id ||
@@ -4407,7 +4407,7 @@ const TechnicianDashboard = () => {
           try {
             const { data: custRow } = await supabase
               .from('customers')
-              .select('id,brand,photos,full_name')
+              .select('id,photos,full_name')
               .eq('id', endCustomerId)
               .maybeSingle();
             const { nudgeTechCustomerProfileGaps } = await import('@/lib/nudgeTechCustomerProfile');
@@ -8122,7 +8122,7 @@ const TechnicianDashboard = () => {
                       try {
                         const { data: custRow } = await supabase
                           .from('customers')
-                          .select('id,brand,photos,full_name')
+                          .select('id,photos,full_name')
                           .eq('id', cid)
                           .maybeSingle();
                         const { nudgeTechCustomerProfileGaps } = await import(
