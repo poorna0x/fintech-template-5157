@@ -39,16 +39,6 @@ function jobHasBillPhotos(job) {
   return false;
 }
 
-/** Digits-only WhatsApp target (91… for India). */
-function formatPhoneForWhatsApp(phone) {
-  const cleaned = String(phone || '').replace(/\D/g, '');
-  if (cleaned.length === 12 && cleaned.startsWith('91')) return cleaned;
-  if (cleaned.length === 10) return `91${cleaned}`;
-  if (cleaned.length === 11 && cleaned.startsWith('0')) return `91${cleaned.slice(1)}`;
-  if (cleaned.length >= 10) return `91${cleaned.slice(-10)}`;
-  return cleaned;
-}
-
 /** yyyy-mm-dd in IST — so admin completed filter matches India calendar day. */
 function formatIstDateYmd(date = new Date()) {
   const ist = new Date(date.getTime() + IST_OFFSET_MS);
@@ -155,7 +145,7 @@ exports.handler = async (event) => {
   const technicianId = job.assigned_technician_id || auth.userId;
   const { data: tech } = await db
     .from('technicians')
-    .select('full_name,phone')
+    .select('full_name')
     .eq('id', technicianId)
     .maybeSingle();
 
@@ -177,10 +167,6 @@ exports.handler = async (event) => {
   const service = job.service_sub_type || 'job';
   // Bill photo only (not UPI/payment screenshot) — egress-free: uses requirements already selected.
   const billMissing = evt === 'completed' && !jobHasBillPhotos(job);
-  const techPhoneWhatsApp = billMissing ? formatPhoneForWhatsApp(tech?.phone) : '';
-  const billMissingWaText = billMissing
-    ? `Hi, please upload the bill photo for ${customerName} (${service}).`
-    : '';
 
   let title;
   let message;
@@ -215,7 +201,7 @@ exports.handler = async (event) => {
       lines.push(`Billing: ${amount}${method ? ` (${method})` : ''}`);
     }
     if (billMissing) {
-      lines.push('Bill photo not uploaded — tap to WhatsApp technician');
+      lines.push('Bill photo not uploaded');
     }
     const leadSource = resolveLeadSource(job);
     if (leadSource) lines.push(`Lead: ${leadSource}`);
@@ -226,8 +212,7 @@ exports.handler = async (event) => {
   try {
     const messaging = await getMessaging(db);
 
-    // Remind the technician immediately (app push). Admin tap opens WhatsApp compose
-    // — there is no WhatsApp Business API in this project to auto-send.
+    // Remind the technician immediately via app push (bill photo only — no WhatsApp).
     if (billMissing && technicianId) {
       try {
         await sendToTechnicianDevices(db, messaging, technicianId, (token) => ({
@@ -261,19 +246,11 @@ exports.handler = async (event) => {
 
     // Deep link fields: admin APK + web open Completed/Ongoing and highlight the job.
     // completedDate avoids a round-trip on tap (open the list immediately).
-    // billMissing + tech phone → tap also opens WhatsApp to that technician.
     const data = {
       type: 'job_event',
       event: evt,
       jobId: String(jobId),
       ...(evt === 'completed' ? { completedDate: formatIstDateYmd() } : {}),
-      ...(billMissing
-        ? {
-            billMissing: '1',
-            ...(techPhoneWhatsApp ? { techPhone: techPhoneWhatsApp } : {}),
-            ...(billMissingWaText ? { waText: billMissingWaText.slice(0, 500) } : {}),
-          }
-        : {}),
     };
     const res = await messaging.sendEachForMulticast({
       tokens,

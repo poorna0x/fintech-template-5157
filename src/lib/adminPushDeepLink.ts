@@ -2,7 +2,6 @@
  * Deep-link bridge: admin push tap → dashboard focuses that job.
  * registerAdminPushToken wires Capacitor; AdminDashboard registers the handler.
  * Pending payloads are queued until the dashboard handler is ready (cold start).
- * When bill photo is missing, also carries technician WhatsApp compose fields.
  */
 
 export type AdminPushDeepLinkPayload = {
@@ -10,12 +9,6 @@ export type AdminPushDeepLinkPayload = {
   event: 'en_route' | 'completed' | 'otp_entered' | string;
   /** yyyy-mm-dd from the push — skip a DB fetch on tap when present. */
   completedDate?: string;
-  /** Completed without bill photo — open WhatsApp to the technician. */
-  billMissing?: boolean;
-  /** Digits-only WhatsApp phone (e.g. 91XXXXXXXXXX). */
-  techPhone?: string;
-  /** Prefill text for wa.me. */
-  waText?: string;
 };
 
 type Handler = (payload: AdminPushDeepLinkPayload) => void;
@@ -44,20 +37,7 @@ export function parseAdminPushDeepLinkData(
     ? completedDateRaw
     : undefined;
   if (!jobId) return null;
-  const billMissing =
-    raw.billMissing === true ||
-    raw.billMissing === '1' ||
-    raw.billMissing === 'true';
-  const techPhone = String(raw.techPhone || '').replace(/\D/g, '');
-  const waText = String(raw.waText || '').trim();
-  return {
-    jobId,
-    event: event || 'completed',
-    completedDate,
-    ...(billMissing ? { billMissing: true } : {}),
-    ...(techPhone ? { techPhone } : {}),
-    ...(waText ? { waText } : {}),
-  };
+  return { jobId, event: event || 'completed', completedDate };
 }
 
 export function deliverAdminPushDeepLink(

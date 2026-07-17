@@ -579,21 +579,8 @@ const AdminDashboard = () => {
     void import('@/lib/adminPushDeepLink').then(({ setAdminPushDeepLinkHandler }) => {
       if (cancelled) return;
       setAdminPushDeepLinkHandler((payload) => {
-        const { jobId, event, completedDate, billMissing, techPhone, waText } = payload;
+        const { jobId, event, completedDate } = payload;
         if (!jobId) return;
-
-        // Bill photo missing → open WhatsApp compose to that technician (admin taps Send).
-        if (billMissing && techPhone) {
-          const text =
-            waText ||
-            'Hi, please upload the bill photo for the job you just completed.';
-          const url = `https://wa.me/${techPhone}?text=${encodeURIComponent(text)}`;
-          try {
-            window.open(url, '_blank', 'noopener,noreferrer');
-          } catch {
-            // best-effort; dashboard deep-link below still runs
-          }
-        }
 
         if (event === 'completed') {
           const dateStr =
