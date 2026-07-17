@@ -8,6 +8,6 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         // Custom-sound channel must exist before any push arrives.
-        NotificationChannels.ensureJobAlerts(this);
+        NotificationChannels.ensureAll(this);
     }
 }

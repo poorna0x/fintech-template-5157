@@ -190,7 +190,11 @@ exports.handler = async (event) => {
       data,
       android: {
         priority: 'high',
-        notification: { channelId: 'job_alerts_v2', defaultSound: true, color },
+        notification: {
+          channelId: evt === 'completed' ? 'job_complete_v1' : 'job_alerts_v2',
+          defaultSound: true,
+          color,
+        },
       },
     });
 
