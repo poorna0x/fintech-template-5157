@@ -1,7 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-  Admin boot: black Droplets mark + "Hydrogen RO" + thicker line loader.
--->
+<!-- Admin: logo + Hydrogen RO until website loader paints (no APK spinner). -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/boot_loader_root"
     android:layout_width="match_parent"
@@ -14,49 +12,32 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
-        android:gravity="center_horizontal"
-        android:orientation="vertical"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
         android:paddingStart="32dp"
         android:paddingEnd="32dp">
 
-        <LinearLayout
+        <FrameLayout
+            android:layout_width="52dp"
+            android:layout_height="52dp"
+            android:background="@drawable/bg_brand_mark"
+            android:elevation="4dp">
+
+            <ImageView
+                android:layout_width="30dp"
+                android:layout_height="30dp"
+                android:layout_gravity="center"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_droplets" />
+        </FrameLayout>
+
+        <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <FrameLayout
-                android:layout_width="52dp"
-                android:layout_height="52dp"
-                android:background="@drawable/bg_brand_mark"
-                android:elevation="4dp">
-
-                <ImageView
-                    android:layout_width="30dp"
-                    android:layout_height="30dp"
-                    android:layout_gravity="center"
-                    android:contentDescription="@null"
-                    android:src="@drawable/ic_droplets" />
-            </FrameLayout>
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="12dp"
-                android:text="Hydrogen RO"
-                android:textColor="@color/boot_text"
-                android:textSize="22sp"
-                android:textStyle="bold" />
-        </LinearLayout>
-
-        <ProgressBar
-            android:id="@+id/boot_line_loader"
-            style="?android:attr/progressBarStyleHorizontal"
-            android:layout_width="180dp"
-            android:layout_height="6dp"
-            android:layout_marginTop="26dp"
-            android:indeterminate="true"
-            android:indeterminateTint="@color/boot_line"
-            android:progressBackgroundTint="@color/boot_line_track" />
+            android:layout_marginStart="12dp"
+            android:text="Hydrogen RO"
+            android:textColor="@color/boot_text"
+            android:textSize="22sp"
+            android:textStyle="bold" />
     </LinearLayout>
 </FrameLayout>

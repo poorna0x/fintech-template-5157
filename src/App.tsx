@@ -19,6 +19,7 @@ import { disablePWA } from "@/lib/pwa";
 import { isTechnicianPortalPath } from "@/lib/authPortal";
 import { startNativeBackButtonHandler } from "@/lib/nativeBackButton";
 import { isNativeApp } from "@/lib/isNativeApp";
+import { PortalBootLoader } from "@/components/PortalBootLoader";
 
 // APK cold open: start the portal entry chunk ASAP (overlaps with main-bundle parse).
 if (typeof window !== "undefined" && isNativeApp()) {
@@ -56,10 +57,14 @@ const ProductVerification = lazy(() => import("./pages/ProductVerification"));
 const SpareParts = lazy(() => import("./pages/SpareParts"));
 const Warranty = lazy(() => import("./pages/Warranty"));
 
-// Loading for lazy routes. APK keeps its own line loader — never bounce dots there.
+/** Portal Suspense fallback: branded web bounce; APK native logo dismisses when this paints. */
 const LoadingSpinner = () => {
-  if (isNativeApp()) {
-    return <div className="min-h-screen bg-[#FAFAFA]" aria-hidden />;
+  const { pathname } = useLocation();
+  if (pathname.startsWith("/technician")) {
+    return <PortalBootLoader showName={false} />;
+  }
+  if (pathname.startsWith("/admin") || pathname.startsWith("/settings")) {
+    return <PortalBootLoader showName />;
   }
   return (
     <div className="min-h-screen flex items-center justify-center">

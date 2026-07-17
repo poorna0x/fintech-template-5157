@@ -1,24 +1,35 @@
 /**
- * APK cold-open: native line loader dismisses only when real UI is painted.
- * Blank Suspense / auth placeholders must NOT set this.
+ * APK cold-open handoff:
+ * - Native shows logo (admin + text) until the website loader paints
+ * - Website bounce spinner takes over; login/dashboard also clears the overlay
  */
 declare global {
   interface Window {
     __hroBootReady?: boolean;
+    __hroWebLoaderReady?: boolean;
   }
 }
 
-export function markNativeBootReady(): void {
+function signalReady(flag: '__hroBootReady' | '__hroWebLoaderReady', attr: string): void {
   if (typeof window === 'undefined') return;
-  // Wait two frames so login/dashboard is actually painted under the overlay.
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
-      window.__hroBootReady = true;
+      window[flag] = true;
       try {
-        document.documentElement.setAttribute('data-hro-boot-ready', '1');
+        document.documentElement.setAttribute(attr, '1');
       } catch {
         // ignore
       }
     });
   });
+}
+
+/** Real portal UI painted (login / dashboard). */
+export function markNativeBootReady(): void {
+  signalReady('__hroBootReady', 'data-hro-boot-ready');
+}
+
+/** Website branded loader painted — native logo overlay can dismiss. */
+export function markNativeWebLoaderReady(): void {
+  signalReady('__hroWebLoaderReady', 'data-hro-web-loader-ready');
 }

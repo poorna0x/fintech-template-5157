@@ -12,8 +12,8 @@ import com.getcapacitor.WebViewListener;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Cold open: logo + "Hydrogen RO" + thicker line loader.
- * System splash shows the same logo; exit is instant so there’s no blank white flash.
+ * Cold open: logo + "Hydrogen RO" until the website loader (or page) is ready.
+ * No native spinner — website bounce takes over after handoff.
  */
 public class MainActivity extends BridgeActivity {
     private static final long BOOT_LOADER_MAX_MS = 20_000L;
@@ -107,10 +107,12 @@ public class MainActivity extends BridgeActivity {
             return;
         }
 
-        // Dismiss only when React marks real UI (login / dashboard).
+        // Dismiss when website loader paints, or when login/dashboard is ready.
         webView.evaluateJavascript(
             "(function(){"
+                + "if(window.__hroWebLoaderReady===true)return 'ready';"
                 + "if(window.__hroBootReady===true)return 'ready';"
+                + "if(document.documentElement.getAttribute('data-hro-web-loader-ready')==='1')return 'ready';"
                 + "if(document.documentElement.getAttribute('data-hro-boot-ready')==='1')return 'ready';"
                 + "return 'wait';"
                 + "})();",
