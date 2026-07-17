@@ -63,6 +63,18 @@ exports.handler = async () => {
     if (row.fcm_token) tokensByTech.get(row.technician_id)?.add(row.fcm_token);
   }
 
+  // Honor Settings → push notifications off (same gate as fcm-helper).
+  const { data: pushFlags } = await db
+    .from('technicians')
+    .select('id,push_notifications_enabled')
+    .in('id', technicianIds);
+  const muted = new Set(
+    (pushFlags || [])
+      .filter((t) => t.push_notifications_enabled === false)
+      .map((t) => t.id)
+  );
+  for (const id of muted) tokensByTech.delete(id);
+
   const messaging = await getMessaging(db);
   let sent = 0;
   for (const [technicianId, tokenSet] of tokensByTech) {

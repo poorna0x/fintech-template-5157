@@ -223,6 +223,9 @@ export interface Technician {
   // Account: INACTIVE = removed from roster; row kept for history (jobs, payments, analytics).
   account_status?: 'ACTIVE' | 'INACTIVE' | 'SUSPENDED';
 
+  /** When false, server-side FCM skips this technician (Settings toggle). Default true. */
+  push_notifications_enabled?: boolean;
+
   // Current Status
   status: 'AVAILABLE' | 'BUSY' | 'OFFLINE' | 'ON_BREAK';
   currentLocation?: {

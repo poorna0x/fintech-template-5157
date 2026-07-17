@@ -293,6 +293,7 @@ const Settings = () => {
     baseSalary: 0,
     salaryEffectiveFromMonth: getCurrentMonthKey(),
     accountStatus: 'ACTIVE' as 'ACTIVE' | 'INACTIVE' | 'SUSPENDED',
+    pushNotificationsEnabled: true,
     visibleQrCodes: [] as string[], // Array of QR code IDs visible to this technician
     commonQrCodeIds: [] as string[] // Common QRs to show to this technician (below payment QR), multiple allowed
   });
@@ -411,6 +412,7 @@ const Settings = () => {
           visibleQrCodes: tech.visibleQrCodes || [],
           commonQrCodeIds: (tech as any).commonQrCodeIds || [],
           accountStatus: (tech.account_status as 'ACTIVE' | 'INACTIVE' | 'SUSPENDED') || 'ACTIVE',
+          pushNotificationsEnabled: tech.push_notifications_enabled !== false,
         });
         setNewlyCreatedTechnicianId(null);
       }
@@ -498,6 +500,7 @@ const Settings = () => {
     email: tech.email,
     employeeId: tech.employee_id,
     account_status: tech.account_status || 'ACTIVE',
+    push_notifications_enabled: tech.push_notifications_enabled !== false,
     skills: tech.skills,
     serviceAreas: tech.service_areas,
     status: tech.status,
@@ -604,7 +607,8 @@ const Settings = () => {
       salaryEffectiveFromMonth: getCurrentMonthKey(),
       visibleQrCodes: [],
       commonQrCodeIds: [],
-      accountStatus: 'ACTIVE'
+      accountStatus: 'ACTIVE',
+      pushNotificationsEnabled: true,
     });
     setNewlyCreatedTechnicianId(null);
     openSettingsPanel('add-technician');
@@ -628,7 +632,8 @@ const Settings = () => {
       salaryEffectiveFromMonth: getCurrentMonthKey(),
       visibleQrCodes: technician.visibleQrCodes || [],
       commonQrCodeIds: (technician as any).commonQrCodeIds || [],
-      accountStatus: (technician.account_status as 'ACTIVE' | 'INACTIVE' | 'SUSPENDED') || 'ACTIVE'
+      accountStatus: (technician.account_status as 'ACTIVE' | 'INACTIVE' | 'SUSPENDED') || 'ACTIVE',
+      pushNotificationsEnabled: technician.push_notifications_enabled !== false,
     });
     setNewlyCreatedTechnicianId(null);
     openSettingsPanel('edit-technician', { id: technician.id });
@@ -707,6 +712,8 @@ const Settings = () => {
       // Editing a tech must not wipe AVAILABLE back to OFFLINE.
       if (editTechnicianDialogOpen && selectedTechnician) {
         technicianData.account_status = technicianFormData.accountStatus || 'ACTIVE';
+        technicianData.push_notifications_enabled =
+          technicianFormData.pushNotificationsEnabled !== false;
       } else {
         technicianData.status = 'OFFLINE';
         technicianData.performance = {
@@ -718,6 +725,7 @@ const Settings = () => {
         };
         technicianData.created_at = new Date().toISOString();
         technicianData.account_status = 'ACTIVE';
+        technicianData.push_notifications_enabled = true;
       }
 
       const password = technicianFormData.password?.trim() || '';
@@ -1741,12 +1749,19 @@ const Settings = () => {
             <h3 className="font-semibold text-foreground text-sm sm:text-base truncate">{technician.fullName}</h3>
             <p className="text-xs sm:text-sm text-muted-foreground truncate">{technician.employeeId}</p>
           </div>
-          <Badge
-            variant={technician.account_status === 'ACTIVE' ? 'default' : 'secondary'}
-            className="text-xs shrink-0"
-          >
-            {technician.account_status}
-          </Badge>
+          <div className="flex flex-col items-end gap-1 shrink-0">
+            <Badge
+              variant={technician.account_status === 'ACTIVE' ? 'default' : 'secondary'}
+              className="text-xs"
+            >
+              {technician.account_status}
+            </Badge>
+            {technician.push_notifications_enabled === false ? (
+              <Badge variant="outline" className="text-[10px] text-amber-800 border-amber-300">
+                Push off
+              </Badge>
+            ) : null}
+          </div>
         </div>
 
         <div className="space-y-1.5 sm:space-y-2 text-xs sm:text-sm text-muted-foreground mb-4">
@@ -3055,29 +3070,51 @@ const Settings = () => {
                 </div>
               </div>
               {editTechnicianDialogOpen && (
-                <div className="rounded-lg border border-border bg-muted/40/80 p-3 sm:p-4 space-y-2">
-                  <Label htmlFor="accountStatus">Account status</Label>
-                  <Select
-                    value={technicianFormData.accountStatus}
-                    onValueChange={(v) =>
-                      setTechnicianFormData((prev) => ({
-                        ...prev,
-                        accountStatus: v as 'ACTIVE' | 'INACTIVE' | 'SUSPENDED'
-                      }))
-                    }
-                  >
-                    <SelectTrigger id="accountStatus" className="bg-card">
-                      <SelectValue placeholder="Select status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ACTIVE">Active — roster, payments & salary lists, can log in</SelectItem>
-                      <SelectItem value="INACTIVE">Inactive — hidden from roster, maps, and salary/payment screens</SelectItem>
-                      <SelectItem value="SUSPENDED">Suspended — cannot log in; adjust in roster filters as needed</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">
-                    Inactive keeps all job and payment history; change back to Active to show them in Technician Payments again.
-                  </p>
+                <div className="rounded-lg border border-border bg-muted/40/80 p-3 sm:p-4 space-y-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="accountStatus">Account status</Label>
+                    <Select
+                      value={technicianFormData.accountStatus}
+                      onValueChange={(v) =>
+                        setTechnicianFormData((prev) => ({
+                          ...prev,
+                          accountStatus: v as 'ACTIVE' | 'INACTIVE' | 'SUSPENDED'
+                        }))
+                      }
+                    >
+                      <SelectTrigger id="accountStatus" className="bg-card">
+                        <SelectValue placeholder="Select status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ACTIVE">Active — roster, payments & salary lists, can log in</SelectItem>
+                        <SelectItem value="INACTIVE">Inactive — hidden from roster, maps, and salary/payment screens</SelectItem>
+                        <SelectItem value="SUSPENDED">Suspended — cannot log in; adjust in roster filters as needed</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Inactive keeps all job and payment history; change back to Active to show them in Technician Payments again.
+                    </p>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-card px-3 py-2.5">
+                    <div className="min-w-0 space-y-0.5">
+                      <Label htmlFor="pushNotificationsEnabled" className="text-sm font-medium">
+                        Push notifications
+                      </Label>
+                      <p className="text-xs text-muted-foreground leading-snug">
+                        Job alerts, OTP requests, and office messages to their phone app.
+                      </p>
+                    </div>
+                    <Switch
+                      id="pushNotificationsEnabled"
+                      checked={technicianFormData.pushNotificationsEnabled}
+                      onCheckedChange={(checked) =>
+                        setTechnicianFormData((prev) => ({
+                          ...prev,
+                          pushNotificationsEnabled: checked,
+                        }))
+                      }
+                    />
+                  </div>
                 </div>
               )}
             </div>

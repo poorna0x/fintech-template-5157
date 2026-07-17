@@ -87,8 +87,23 @@ async function pruneTechnicianFcmTokens(db, technicianId, staleTokens) {
  * Send one FCM message to every device of a technician. Returns the number
  * of successful deliveries and prunes tokens FCM reports as dead.
  * `buildMessage(token)` must return the full message object for that token.
+ * Skips when Settings has push_notifications_enabled = false.
  */
 async function sendToTechnicianDevices(db, messaging, technicianId, buildMessage) {
+  try {
+    const { data: techRow, error: techErr } = await db
+      .from('technicians')
+      .select('push_notifications_enabled')
+      .eq('id', technicianId)
+      .maybeSingle();
+    // Missing column (migration not run) → treat as enabled.
+    if (!techErr && techRow && techRow.push_notifications_enabled === false) {
+      return { sent: 0, tokens: 0, skipped: true };
+    }
+  } catch (e) {
+    console.warn('[fcm-helper] push_notifications_enabled check failed:', e?.message || e);
+  }
+
   const tokens = await getTechnicianFcmTokens(db, technicianId);
   if (tokens.length === 0) return { sent: 0, tokens: 0 };
 
