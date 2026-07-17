@@ -1540,8 +1540,15 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
           onDragLeave={() => {}}
           onDrop={() => {}}
           onPhotoClick={(photo, index, total) => {
-            // Open photo in new tab
-            window.open(photo, '_blank');
+            const list = customerPhotos.length > 0 ? customerPhotos : [photo];
+            const safeIndex = Math.min(Math.max(0, index), list.length - 1);
+            setReportSelectedBillPhotos(list);
+            setReportSelectedPhoto({
+              url: list[safeIndex] || photo,
+              index: safeIndex,
+              total: total || list.length,
+            });
+            setReportPhotoViewerOpen(true);
           }}
           onDeletePhoto={() => {
             // Disable delete in calling page

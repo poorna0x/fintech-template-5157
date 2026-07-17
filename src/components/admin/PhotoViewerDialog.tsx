@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Calendar, X } from 'lucide-react';
+import { ZoomableImage } from '@/components/ZoomableImage';
 
 interface PhotoViewerDialogProps {
   open: boolean;
@@ -59,7 +60,7 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
           <DialogTitle>Photo Viewer</DialogTitle>
           <DialogDescription>Full-screen photo viewer</DialogDescription>
         </DialogHeader>
-        <div className="relative w-full h-full flex items-center justify-center min-h-[500px]">
+        <div className="relative w-full h-full flex items-center justify-center min-h-[500px] overflow-hidden">
           {/* Close button */}
           <Button
             variant="ghost"
@@ -111,6 +112,13 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
             </div>
           )}
 
+          {/* Pinch hint (mobile) */}
+          {selectedPhoto && !loadError && (
+            <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-10 pointer-events-none text-white/70 text-xs sm:hidden">
+              Pinch or double-tap to zoom
+            </div>
+          )}
+
           {/* Action buttons */}
           {selectedPhoto && (
             <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-10 flex gap-2">
@@ -126,14 +134,16 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
             </div>
           )}
 
-          {/* Main photo */}
+          {/* Main photo — pinch / double-tap / wheel zoom */}
           {selectedPhoto && !loadError && (
-            <img
-              src={selectedPhoto.url}
-              alt={`Photo ${selectedPhoto.index + 1}`}
-              className="max-w-full max-h-full object-contain"
-              onError={() => setLoadError(true)}
-            />
+            <div className="w-full h-full min-h-[500px] max-h-[90vh] flex items-center justify-center">
+              <ZoomableImage
+                src={selectedPhoto.url}
+                alt={`Photo ${selectedPhoto.index + 1}`}
+                className="max-w-full max-h-[85vh] object-contain select-none"
+                onError={() => setLoadError(true)}
+              />
+            </div>
           )}
           {selectedPhoto && loadError && (
             <div className="text-center text-white px-6 max-w-lg">
@@ -148,4 +158,3 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
 };
 
 export default PhotoViewerDialog;
-

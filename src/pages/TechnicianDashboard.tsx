@@ -17,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import Logo from '@/components/Logo';
+import { ZoomableImage } from '@/components/ZoomableImage';
 import TechnicianOtpRequestCard from '@/components/technician/TechnicianOtpRequestCard';
 import { 
   Wrench, 
@@ -9329,7 +9330,17 @@ const TechnicianDashboard = () => {
                           const placeholder = (e.target as HTMLImageElement).nextElementSibling as HTMLElement;
                           if (placeholder) placeholder.style.display = 'flex';
                         }}
-                        onClick={() => window.open(photo, '_blank', 'noopener,noreferrer')}
+                        onClick={() => {
+                          if (!selectedJobPhotos?.photos?.length) return;
+                          const list = selectedJobPhotos.photos;
+                          setSelectedBillPhotos(list);
+                          setSelectedPhoto({
+                            url: photo,
+                            index,
+                            total: list.length,
+                          });
+                          setPhotoViewerOpen(true);
+                        }}
                       />
                       <div 
                         className="hidden w-full h-full items-center justify-center bg-gray-200 text-gray-400"
@@ -10356,9 +10367,9 @@ const TechnicianDashboard = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Photo Viewer Dialog for Customer Report */}
+      {/* Photo Viewer — pinch / double-tap zoom (same as admin) */}
       <Dialog open={photoViewerOpen} onOpenChange={setPhotoViewerOpen}>
-        <DialogContent className="max-w-[95vw] max-h-[95vh] p-0 bg-black">
+        <DialogContent className="max-w-[95vw] max-h-[95vh] p-0 bg-black overflow-hidden">
           <div className="relative w-full h-full flex items-center justify-center min-h-[60vh]">
             {/* Close button */}
             <Button
@@ -10419,17 +10430,25 @@ const TechnicianDashboard = () => {
               </div>
             )}
 
+            {selectedPhoto && (
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 pointer-events-none text-white/70 text-xs sm:hidden">
+                Pinch or double-tap to zoom
+              </div>
+            )}
+
             {/* Main photo */}
             {selectedPhoto && (
-              <img
-                src={selectedPhoto.url}
-                alt={`Photo ${selectedPhoto.index + 1}`}
-                className="max-w-full max-h-[90vh] object-contain"
-                onError={(e) => {
-                  console.error('Image failed to load:', selectedPhoto.url);
-                  e.currentTarget.style.display = 'none';
-                }}
-              />
+              <div className="w-full h-full min-h-[60vh] max-h-[90vh] flex items-center justify-center">
+                <ZoomableImage
+                  src={selectedPhoto.url}
+                  alt={`Photo ${selectedPhoto.index + 1}`}
+                  className="max-w-full max-h-[90vh] object-contain select-none"
+                  onError={(e) => {
+                    console.error('Image failed to load:', selectedPhoto.url);
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+              </div>
             )}
           </div>
         </DialogContent>
