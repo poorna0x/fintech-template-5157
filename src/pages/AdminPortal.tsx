@@ -4,14 +4,10 @@ import { useAuth } from '@/contexts/AuthContext';
 import AdminLogin from '@/components/AdminLogin';
 import { startAdminDashboardPrefetch } from '@/lib/adminDashboardCache';
 import { markNativeBootReady } from '@/lib/nativeBootReady';
-import { PortalBootLoader } from '@/components/PortalBootLoader';
+import { AdminScreenLoader } from '@/components/admin/AdminLoaders';
 
 const adminDashboardImport = () => import('@/components/AdminDashboard');
 const settingsImport = () => import('./Settings');
-
-function AdminPortalLoader({ message }: { message: string }) {
-  return <PortalBootLoader showName message={message} className="min-h-screen bg-[#FAFAFA] flex items-center justify-center admin-page p-4" />;
-}
 
 /**
  * /admin and /settings entry. Only one heavy shell mounts at a time; dashboard tab
@@ -19,6 +15,9 @@ function AdminPortalLoader({ message }: { message: string }) {
  *
  * Security note: the dashboard chunk (and the admin-data chunk it pulls in) MUST stay
  * behind the auth gate. Anonymous visitors should only ever download AdminLogin.
+ *
+ * In-portal waits (settings chunk, dashboard chunk, auth settle) use plain bounce dots.
+ * Branded logo+name is only on true app entry (App Suspense / native APK overlay).
  */
 export default function AdminPortal() {
   const { pathname } = useLocation();
@@ -74,11 +73,7 @@ export default function AdminPortal() {
   }, [booting, user, isAdmin, onSettings]);
 
   if (booting) {
-    return (
-      <AdminPortalLoader
-        message={onSettings ? 'Loading settings...' : ''}
-      />
-    );
+    return <AdminScreenLoader message={onSettings ? 'Loading settings...' : ''} />;
   }
 
   if (!user || !isAdmin) {

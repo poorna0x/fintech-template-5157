@@ -74,7 +74,6 @@ import { sendNotification, createJobCompletedNotification, createJobAssignmentRe
 import FollowUpModal from '@/components/FollowUpModal';
 import { registerTechnicianPWA, disablePWA, isPWAMode } from '@/lib/pwa';
 import { markNativeBootReady } from '@/lib/nativeBootReady';
-import { PortalBootLoader } from '@/components/PortalBootLoader';
 import {
   cacheQrCodes,
   cacheTechnicianQrCode,
@@ -5708,7 +5707,18 @@ const TechnicianDashboard = () => {
   };
 
   if (authInitializing && !authGraceExpired) {
-    return <PortalBootLoader showName={false} message="Checking authentication..." />;
+    return (
+      <div className="min-h-screen bg-[#FAFAFA] flex items-center justify-center p-4">
+        <div className="text-center">
+          <div className="flex items-center justify-center space-x-1">
+            <div className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+            <div className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+            <div className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+          </div>
+          <p className="text-muted-foreground text-sm mt-4">Checking authentication...</p>
+        </div>
+      </div>
+    );
   }
 
   const ongoingCount = jobs.filter(isOngoingJob).length;
