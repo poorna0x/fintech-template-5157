@@ -1,8 +1,28 @@
 import React from 'react';
-import { PortalBootLoader } from '@/components/PortalBootLoader';
 
+/** In-app full-area wait: bounce dots only (no brand logo/name). */
 export function AdminScreenLoader({ message }: { message?: string }) {
-  return <PortalBootLoader showName message={message} />;
+  return (
+    <div className="min-h-screen bg-[#FAFAFA] flex items-center justify-center p-4">
+      <div className="text-center">
+        <div className="flex items-center justify-center space-x-1">
+          <div
+            className="w-3 h-3 bg-primary rounded-full animate-bounce"
+            style={{ animationDelay: '0ms' }}
+          />
+          <div
+            className="w-3 h-3 bg-primary rounded-full animate-bounce"
+            style={{ animationDelay: '150ms' }}
+          />
+          <div
+            className="w-3 h-3 bg-primary rounded-full animate-bounce"
+            style={{ animationDelay: '300ms' }}
+          />
+        </div>
+        {message ? <p className="text-muted-foreground text-sm mt-4">{message}</p> : null}
+      </div>
+    </div>
+  );
 }
 
 export function AdminInlineLoader({ message }: { message: string }) {
