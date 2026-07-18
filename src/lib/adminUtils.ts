@@ -1017,7 +1017,8 @@ export const normalizeForComparison = (str: string): string => {
     .trim();
 };
 
-const VISIBLE_ADDRESS_MAX_LEN = 20;
+/** Max length for customer one-word / short location (visible_address). */
+export const VISIBLE_ADDRESS_MAX_LEN = 40;
 
 const GENERIC_GEO_LOCALITIES = new Set(
   [

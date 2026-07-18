@@ -13,7 +13,7 @@ import { toast } from 'sonner';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { MapPin, Download, ExternalLink, Loader2, ChevronDown, X, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { generateJobNumber, extractLocationFromAddressString, bangaloreAreas, formatCustomTimeLabel, getDefaultLeadCost, isHomeTriangleLeadSource, resolveVisibleAddressFromGeocode, reverseGeocodeLatLng } from '@/lib/adminUtils';
+import { generateJobNumber, extractLocationFromAddressString, bangaloreAreas, formatCustomTimeLabel, getDefaultLeadCost, isHomeTriangleLeadSource, resolveVisibleAddressFromGeocode, reverseGeocodeLatLng, VISIBLE_ADDRESS_MAX_LEN } from '@/lib/adminUtils';
 import ImageUpload from '@/components/ImageUpload';
 import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmentTimeSelect';
 import PhoneSwapButton from '@/components/admin/PhoneSwapButton';
@@ -1090,7 +1090,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
           formattedAddress: formData.address,
           googleLocation: googleLocation
         },
-        visible_address: formData.visible_address ? formData.visible_address.trim().substring(0, 20) : (extractedLocation ? extractedLocation.substring(0, 20) : ''),
+        visible_address: formData.visible_address ? formData.visible_address.trim().substring(0, VISIBLE_ADDRESS_MAX_LEN) : (extractedLocation ? extractedLocation.substring(0, VISIBLE_ADDRESS_MAX_LEN) : ''),
         service_type: (() => {
           const selectedTypes = formData.service_types;
           const validTypes = ['RO', 'SOFTENER'];
@@ -1588,7 +1588,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                       setTimeout(() => setVisibleAddressSuggestions(false), 200);
                     }}
                     placeholder="e.g., Bansawadi, Koramangala, Whitefield, etc."
-                    maxLength={20}
+                    maxLength={VISIBLE_ADDRESS_MAX_LEN}
                     className="text-sm"
                   />
                   {visibleAddressSuggestions && filteredAddressSuggestions.length > 0 && (

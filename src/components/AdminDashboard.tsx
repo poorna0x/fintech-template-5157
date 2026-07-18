@@ -194,7 +194,7 @@ const TaxInvoiceModal = lazyDefault(() => import('./TaxInvoiceModal'));
 // used on demand. Code-split it so the main admin bundle stays lean.
 import { toDateOnly } from '@/lib/amcAutoJobSchedule';
 import ImageUpload from '@/components/ImageUpload';
-import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, levenshteinDistance, calculateSimilarity, extractPhotoUrls, normalizePhotoUrl, parseJobRequirements, getFormattedTimeSlot, findLeadSource, getLeadSourceFromJob, getJobCustomTimeLabel, normalizeLeadType, normalizeServiceSubType, completedJobMatchesDashboardClientFilters, isOfficeCompletedJob, jobCompletionLocalDateIso, ZERO_COMMISSION_EMPLOYEE_ID, jobsMatchOngoingTab } from '@/lib/adminUtils';
+import { generateJobNumber, formatPreferredTimeSlot, mapServiceTypesToDbValue, extractLocationFromAddressString, levenshteinDistance, calculateSimilarity, extractPhotoUrls, normalizePhotoUrl, parseJobRequirements, getFormattedTimeSlot, findLeadSource, getLeadSourceFromJob, getJobCustomTimeLabel, normalizeLeadType, normalizeServiceSubType, completedJobMatchesDashboardClientFilters, isOfficeCompletedJob, jobCompletionLocalDateIso, ZERO_COMMISSION_EMPLOYEE_ID, jobsMatchOngoingTab, VISIBLE_ADDRESS_MAX_LEN } from '@/lib/adminUtils';
 import { getLocationLinkFromObject } from '@/lib/jobLocationHelpers';
 import { applyAutoMoveToOngoingOnDateFlag } from '@/lib/followUpToOngoing';
 import { enrichJobsWithAfterPhotosIfNeeded } from '@/lib/jobReportPhotos';
@@ -2798,7 +2798,7 @@ const AdminDashboard = () => {
           longitude: 77.5946,
           formattedAddress: addFormData.address
         },
-        visible_address: extractedLocation ? extractedLocation.substring(0, 20) : '', // Auto-extracted location
+        visible_address: extractedLocation ? extractedLocation.substring(0, VISIBLE_ADDRESS_MAX_LEN) : '', // Auto-extracted location
         service_type: (() => {
           const selectedTypes = addFormData.service_types;
           // Valid service types that are supported by the database

@@ -1,4 +1,5 @@
 import type { Job } from '@/types';
+import { VISIBLE_ADDRESS_MAX_LEN } from '@/lib/adminUtils';
 
 const ACTIVE_JOB_STATUSES = new Set(['ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS']);
 
@@ -30,7 +31,6 @@ export type TechnicianCustomerFieldPatch = {
 const NAME_MAX = 120;
 const EMAIL_MAX = 254;
 const PHONE_MAX = 20;
-const VISIBLE_ADDRESS_MAX = 40;
 const STREET_MAX = 500;
 const BRAND_MAX = 120;
 const MODEL_MAX = 200;
@@ -75,7 +75,7 @@ export function sanitizeTechnicianCustomerPatch(
 
   if (patch.visible_address !== undefined) {
     const vis = patch.visible_address.trim();
-    if (vis.length > VISIBLE_ADDRESS_MAX) return { error: 'Area label is too long' };
+    if (vis.length > VISIBLE_ADDRESS_MAX_LEN) return { error: 'Area label is too long' };
     out.visible_address = vis;
   }
 

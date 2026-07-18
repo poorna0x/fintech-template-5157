@@ -11,7 +11,7 @@ import { toast } from 'sonner';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import { MapPin, Download, ExternalLink, Trash2, Lock } from 'lucide-react';
 import { useAdminRole } from '@/lib/useAdminRole';
-import { mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, resolveVisibleAddressFromGeocode, reverseGeocodeLatLng } from '@/lib/adminUtils';
+import { mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, resolveVisibleAddressFromGeocode, reverseGeocodeLatLng, VISIBLE_ADDRESS_MAX_LEN } from '@/lib/adminUtils';
 import { normalizeIndianMobileInput } from '@/lib/utils';
 import PhoneSwapButton from '@/components/admin/PhoneSwapButton';
 import { hasAlternateLocation } from '@/lib/customer-locations';
@@ -1448,7 +1448,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
                     setTimeout(() => setVisibleAddressSuggestions(false), 200);
                   }}
                   placeholder="e.g., Bansawadi, Koramangala, Whitefield, etc."
-                  maxLength={20}
+                  maxLength={VISIBLE_ADDRESS_MAX_LEN}
                   className="text-sm"
                 />
                 {visibleAddressSuggestions && filteredAddressSuggestions.length > 0 && (
@@ -1485,7 +1485,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
                   handleEditFormChange('alternate_visible_address', e.target.value);
                 }}
                 placeholder="e.g. Office, Shop, Restaurant"
-                maxLength={20}
+                maxLength={VISIBLE_ADDRESS_MAX_LEN}
                 className="text-sm"
               />
             </>
