@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import type { AdminStatusFilter } from '@/lib/adminDashboardCache';
 import type { LoadFilteredJobsFn } from '@/lib/adminLoadDashboardData';
 import { openAdminWhatsappForJobAssign } from '@/lib/openAdminWhatsappForJobAssign';
+import { getTechnicianAdminWhatsAppPhone } from '@/lib/technicianContact';
 import { createJobAssignedNotification, sendNotification } from '@/lib/notifications';
 import { broadcastTechnicianJobListRefresh } from '@/lib/technicianJobListSync';
 import { appendJobToTechnicianVisitOrder } from '@/lib/adminVisitOrder';
@@ -79,7 +80,7 @@ export async function saveAdminJobAssignment(ctx: AdminSaveJobAssignmentCtx) {
 
     const assignedTechnician = ctx.technicians.find((t) => t.id === ctx.selectedTechnicianId);
 
-    if (assignedTechnician && assignedTechnician.phone) {
+    if (assignedTechnician && getTechnicianAdminWhatsAppPhone(assignedTechnician)) {
       openAdminWhatsappForJobAssign(ctx, ctx.jobToAssign, assignedTechnician, scrollY);
     } else {
       ctx.setAssignJobDialogOpen(false);

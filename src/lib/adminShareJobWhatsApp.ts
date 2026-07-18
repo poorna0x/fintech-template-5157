@@ -10,6 +10,7 @@ import {
   getMapsSearchLinkFromAddress,
 } from '@/lib/jobLocationHelpers';
 import { db } from '@/lib/supabase';
+import { getTechnicianAdminWhatsAppPhone } from '@/lib/technicianContact';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import type { Job, Technician } from '@/types';
 
@@ -20,8 +21,9 @@ export async function shareAdminJobViaWhatsApp(job: Job, technicians: Technician
     return;
   }
   const technician = technicians.find((t) => t.id === assignedTechnicianId);
-  if (!technician?.phone) {
-    toast.error('Technician phone number not found');
+  const techWaPhone = getTechnicianAdminWhatsAppPhone(technician);
+  if (!techWaPhone) {
+    toast.error('Technician WhatsApp / phone number not found');
     return;
   }
 
@@ -86,7 +88,7 @@ export async function shareAdminJobViaWhatsApp(job: Job, technicians: Technician
     ...(fullAddressLine ? ['', '_Full address:_', fullAddressLine] : []),
   ];
   const text = lines.join('\n');
-  const url = `https://wa.me/${formatPhoneForWhatsApp(technician.phone)}?text=${encodeURIComponent(text)}`;
+  const url = `https://wa.me/${formatPhoneForWhatsApp(techWaPhone)}?text=${encodeURIComponent(text)}`;
   window.open(url, '_blank', 'noopener,noreferrer');
   toast.success('Opening WhatsApp to share job details');
 }

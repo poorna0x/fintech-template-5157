@@ -7,6 +7,7 @@ export function transformTechnicianData(tech: any) {
     id: tech.id,
     fullName: tech.full_name,
     phone: tech.phone,
+    whatsappPhone: tech.whatsapp_phone || tech.whatsappPhone || '',
     email: tech.email,
     employeeId: tech.employee_id,
     status: tech.status || 'AVAILABLE',

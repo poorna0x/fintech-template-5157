@@ -2,6 +2,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { getJobCustomTimeLabel, getLeadSourceFromJob } from '@/lib/adminUtils';
 import { getJobLocationLabelForWhatsApp } from '@/lib/customer-locations';
 import { getJobAgreedCostLabel, getJobDescriptionText } from '@/lib/jobAssignMessageDetails';
+import { getTechnicianAdminWhatsAppPhone } from '@/lib/technicianContact';
 import { db } from '@/lib/supabase';
 import type { Job } from '@/types';
 
@@ -23,7 +24,12 @@ export type OpenAdminWhatsappForJobCtx = {
 export function openAdminWhatsappForJobAssign(
   ctx: OpenAdminWhatsappForJobCtx,
   job: Job,
-  technician: { fullName: string; phone: string },
+  technician: {
+    fullName: string;
+    phone: string;
+    whatsappPhone?: string;
+    whatsapp_phone?: string;
+  },
   scrollY: number
 ): void {
   ctx.scrollPositionBeforeWhatsAppRef.current = scrollY;
@@ -50,7 +56,8 @@ export function openAdminWhatsappForJobAssign(
   const description = getJobDescriptionText(job as Record<string, unknown>);
   const agreedCost = getJobAgreedCostLabel(job as Record<string, unknown>);
 
-  ctx.setWhatsappTechnician({ name: technician.fullName, phone: technician.phone });
+  const adminWaPhone = getTechnicianAdminWhatsAppPhone(technician);
+  ctx.setWhatsappTechnician({ name: technician.fullName, phone: adminWaPhone || technician.phone });
   ctx.setWhatsappServiceSubType(serviceSubType);
   ctx.setWhatsappCustomerName(customerName);
   ctx.setWhatsappLocation(locationText || '');

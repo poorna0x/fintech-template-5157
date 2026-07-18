@@ -11,7 +11,14 @@ export interface ShareTechnicianInfoToCustomerDialogProps {
   onOpenChange: (open: boolean) => void;
   job: Job | null;
   customer: { phone?: string; alternate_phone?: string; alternatePhone?: string; full_name?: string; fullName?: string } | null;
-  technicians: Array<{ id: string; fullName?: string; full_name?: string; phone?: string; currentLocation?: { latitude: number; longitude: number }; current_location?: { latitude: number; longitude: number } }>;
+  technicians: Array<{
+    id: string;
+    fullName?: string;
+    full_name?: string;
+    phone?: string;
+    currentLocation?: { latitude: number; longitude: number };
+    current_location?: { latitude: number; longitude: number };
+  }>;
   getEta?: (job: Job) => Promise<{ durationText?: string; estimatedArrival?: string } | null>;
 }
 
@@ -54,6 +61,7 @@ const ShareTechnicianInfoToCustomerDialog: React.FC<ShareTechnicianInfoToCustome
     ? `📍 *Current location:* ${locationLink}`
     : '📍 *Current location:* Not shared yet';
 
+  // Customer-facing contact only — admin WhatsApp number is never shared here.
   const whatsappMessage = `*Technician assigned for your service*
 
 👤 *Name:* ${techName}
@@ -99,7 +107,7 @@ We'll reach you soon. For any queries, contact the technician directly.`;
         <DialogHeader>
           <DialogTitle>Share technician info to customer</DialogTitle>
           <DialogDescription>
-            Send technician name, phone, location, estimated time and ID card link via WhatsApp
+            Send technician name, contact phone, location, estimated time and ID card link via WhatsApp
           </DialogDescription>
         </DialogHeader>
 

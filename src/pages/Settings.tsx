@@ -285,6 +285,7 @@ const Settings = () => {
   const [technicianFormData, setTechnicianFormData] = useState({
     fullName: '',
     phone: '',
+    whatsappPhone: '',
     email: '',
     employeeId: '',
     password: '',
@@ -402,6 +403,7 @@ const Settings = () => {
         setTechnicianFormData({
           fullName: tech.fullName,
           phone: tech.phone,
+          whatsappPhone: tech.whatsappPhone || '',
           email: tech.email,
           employeeId: tech.employeeId,
           password: '',
@@ -497,6 +499,7 @@ const Settings = () => {
     id: tech.id,
     fullName: tech.full_name,
     phone: tech.phone,
+    whatsappPhone: tech.whatsapp_phone || tech.whatsappPhone || '',
     email: tech.email,
     employeeId: tech.employee_id,
     account_status: tech.account_status || 'ACTIVE',
@@ -598,6 +601,7 @@ const Settings = () => {
     setTechnicianFormData({
       fullName: '',
       phone: '',
+      whatsappPhone: '',
       email: '',
       employeeId: generateEmployeeId(),
       password: '',
@@ -623,6 +627,7 @@ const Settings = () => {
     setTechnicianFormData({
       fullName: technician.fullName,
       phone: technician.phone,
+      whatsappPhone: technician.whatsappPhone || '',
       email: technician.email,
       employeeId: technician.employeeId,
       password: '', // Don't show existing password for security
@@ -678,6 +683,7 @@ const Settings = () => {
       const technicianData: any = {
         full_name: technicianFormData.fullName,
         phone: technicianFormData.phone,
+        whatsapp_phone: technicianFormData.whatsappPhone.trim() || null,
         email: technicianFormData.email,
         employee_id: technicianFormData.employeeId,
         qr_code: technicianFormData.qrCode || null,
@@ -1770,9 +1776,15 @@ const Settings = () => {
             <span className="truncate">{technician.email}</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="font-medium shrink-0">Phone:</span>
+            <span className="font-medium shrink-0">Contact:</span>
             <span className="truncate">{technician.phone}</span>
           </div>
+          {technician.whatsappPhone ? (
+            <div className="flex items-center gap-2">
+              <span className="font-medium shrink-0">Admin WA:</span>
+              <span className="truncate">{technician.whatsappPhone}</span>
+            </div>
+          ) : null}
         </div>
 
         <div className="mb-3">
@@ -3006,13 +3018,25 @@ const Settings = () => {
                   )}
                 </div>
                 <div>
-                  <Label htmlFor="phone">Phone *</Label>
+                  <Label htmlFor="phone">Contact phone (shared to customer) *</Label>
                   <Input
                     id="phone"
                     value={technicianFormData.phone}
                     onChange={(e) => setTechnicianFormData(prev => ({ ...prev, phone: e.target.value }))}
-                    placeholder="Enter phone number"
+                    placeholder="Number customers see / call"
                   />
+                </div>
+                <div>
+                  <Label htmlFor="whatsappPhone">WhatsApp (admin messaging only)</Label>
+                  <Input
+                    id="whatsappPhone"
+                    value={technicianFormData.whatsappPhone}
+                    onChange={(e) => setTechnicianFormData(prev => ({ ...prev, whatsappPhone: e.target.value }))}
+                    placeholder="Optional — where admin sends WhatsApp to this tech"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Used only when admin opens WhatsApp to this technician. Customers always get the contact phone.
+                  </p>
                 </div>
                 <div>
                   <Label htmlFor="email">Email *</Label>

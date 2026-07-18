@@ -83,6 +83,7 @@ GRANT SELECT (
   full_name,
   employee_id,
   phone,
+  whatsapp_phone,
   email,
   photo,
   status

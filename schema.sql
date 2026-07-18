@@ -1468,6 +1468,7 @@ CREATE TABLE public.technicians (
     id uuid DEFAULT extensions.uuid_generate_v4() NOT NULL,
     full_name character varying(255) NOT NULL,
     phone character varying(15) NOT NULL,
+    whatsapp_phone character varying(15),
     email character varying(255) NOT NULL,
     employee_id character varying(50) NOT NULL,
     skills jsonb NOT NULL,

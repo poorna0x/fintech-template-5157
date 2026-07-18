@@ -199,7 +199,10 @@ export interface Job {
 export interface Technician {
   id: string;
   fullName: string;
+  /** Calling phone shared with customers / primary contact. */
   phone: string;
+  /** WhatsApp number for admin→technician messaging only (optional; falls back to phone). */
+  whatsappPhone?: string;
   email: string;
   employeeId: string;
   /** Profile photo URL (Settings / ID card). */
@@ -490,6 +493,7 @@ export interface Database {
           id: string;
           full_name: string;
           phone: string;
+          whatsapp_phone?: string | null;
           email: string;
           employee_id: string;
           skills: any;

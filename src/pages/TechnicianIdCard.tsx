@@ -19,6 +19,7 @@ interface TechnicianData {
   full_name: string;
   employee_id: string;
   phone: string;
+  whatsapp_phone?: string | null;
   email: string;
   photo?: string;
   status?: string;

@@ -118,6 +118,7 @@ import {
 import { removeAdminTeamMember, saveAdminTeamMember } from '@/lib/adminJobTeam';
 import { submitAdminJobReassign, unassignAdminJob } from '@/lib/adminJobReassign';
 import { shareAdminJobViaWhatsApp } from '@/lib/adminShareJobWhatsApp';
+import { getTechnicianAdminWhatsAppPhone } from '@/lib/technicianContact';
 import { prepareAdminDenyJob, submitAdminJobDeny } from '@/lib/adminJobDeny';
 import {
   markAdminJobMailSent,
@@ -6173,7 +6174,10 @@ const AdminDashboard = () => {
         }}
         onJobAssignedToTechnician={(payload) => {
           const assignedTechnician = technicians.find((t) => t.id === payload.technicianId);
-          if (!assignedTechnician?.phone) return;
+          const waPhone = assignedTechnician
+            ? getTechnicianAdminWhatsAppPhone(assignedTechnician)
+            : '';
+          if (!waPhone) return;
           scrollPositionBeforeWhatsAppRef.current = window.scrollY;
           const vis = payload.visibleAddress;
           const addr = payload.address;
@@ -6183,7 +6187,7 @@ const AdminDashboard = () => {
               : addr?.area || addr?.city || '';
           setWhatsappTechnician({
             name: assignedTechnician.fullName || (assignedTechnician as { full_name?: string }).full_name || 'Technician',
-            phone: assignedTechnician.phone,
+            phone: waPhone,
           });
           setWhatsappServiceSubType(payload.serviceSubType);
           setWhatsappCustomerName(payload.customerName);
@@ -6397,7 +6401,10 @@ const AdminDashboard = () => {
         parseDbServiceType={parseDbServiceType}
         onJobAssignedToTechnician={(payload) => {
           const assignedTechnician = technicians.find((t) => t.id === payload.technicianId);
-          if (!assignedTechnician?.phone) return;
+          const waPhone = assignedTechnician
+            ? getTechnicianAdminWhatsAppPhone(assignedTechnician)
+            : '';
+          if (!waPhone) return;
           scrollPositionBeforeWhatsAppRef.current = window.scrollY;
           const vis = payload.visibleAddress;
           const addr = payload.address;
@@ -6410,7 +6417,7 @@ const AdminDashboard = () => {
               assignedTechnician.fullName ||
               (assignedTechnician as { full_name?: string }).full_name ||
               'Technician',
-            phone: assignedTechnician.phone,
+            phone: waPhone,
           });
           setWhatsappServiceSubType(payload.serviceSubType);
           setWhatsappCustomerName(payload.customerName);
