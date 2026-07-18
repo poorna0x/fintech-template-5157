@@ -374,6 +374,7 @@ export const bangaloreAreas = [
   'Parappana', 'Choodasandra', 'Gattahalli', 'Muthsandra', 'Hadosiddapura',
   'Sulikere', 'Thubarahalli', 'Cubbon',
   'Guddahatti', 'Guddahatti Gate', 'Chandapura Gate',
+  'Amanidoddakere', 'Amani Doddakere', 'Hosakote', 'Hoskote Town',
   // Even more one-word Bengaluru localities
   'Anjanapura', 'Arehalli', 'Avalahalli', 'Bagalagunte', 'Banashankari', 'Basapura',
   'Belathur', 'Benniganahalli', 'Bettahalli', 'Bhattarahalli', 'Bhoganahalli', 'Bikasipura',
@@ -1102,6 +1103,8 @@ const GOOGLE_SHORT_LOCATION_TYPES = [
   'administrative_area_level_3',
   'administrative_area_level_4',
   'administrative_area_level_2',
+  // Small towns/villages often come as locality (Bengaluru is filtered as generic)
+  'locality',
   'premise',
 ] as const;
 
@@ -1113,14 +1116,37 @@ function componentLabel(comp: GoogleAddressComponentLike): string {
 function joinGoogleComponentText(components: GoogleAddressComponentLike[]): string {
   return components
     .map((c) => componentLabel(c))
-    .filter(Boolean)
     .join(', ');
+}
+
+/**
+ * Google Plus Code lines look like: "3Q5F+23 Amanidoddakere, India"
+ * Extract the place name after the code (skip India/Karnataka/Bengaluru).
+ */
+export function extractPlaceFromPlusCodeAddress(formatted: string): string | null {
+  if (!formatted?.trim()) return null;
+  const m = formatted.trim().match(/^[A-Z0-9]{2,}\+[A-Z0-9]{2,}\s+(.+)$/i);
+  if (!m) return null;
+
+  const parts = m[1]
+    .split(',')
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  for (const part of parts) {
+    if (isGenericGeoLocality(part)) continue;
+    // Drop trailing "Taluk"/"District" noise when present
+    const cleaned = part.replace(/\s+(Taluk|District|Hobli)$/i, '').trim();
+    if (!cleaned || isGenericGeoLocality(cleaned)) continue;
+    return cleaned;
+  }
+  return null;
 }
 
 /**
  * Short location from Google reverse-geocode address_components (same Fetch call).
  * 1) Longest list match across ALL component names (covers Anekal in admin levels)
- * 2) Else first useful neighborhood/sublocality/admin label
+ * 2) Else first useful neighborhood/sublocality/admin/locality label
  */
 export function shortLocationFromGoogleComponents(
   components: GoogleAddressComponentLike[] | null | undefined
@@ -1153,7 +1179,8 @@ export function shortLocationFromGoogleComponents(
 /**
  * Resolve short/visible location after Fetch Address:
  * 1) bangaloreAreas list (longest match in address text / hints / Google components)
- * 2) Google place components from the same reverse-geocode (no extra API call)
+ * 2) Place name from Plus Code formatted addresses (e.g. "3Q5F+23 Amanidoddakere, India")
+ * 3) Google place components from the same reverse-geocode (no extra API call)
  */
 export function resolveVisibleAddressFromGeocode(options: {
   formattedAddress?: string | null;
@@ -1175,6 +1202,16 @@ export function resolveVisibleAddressFromGeocode(options: {
     if (longest) return clipVisibleAddress(longest);
     const legacy = extractLocationFromAddressString(text);
     if (legacy) return clipVisibleAddress(legacy);
+  }
+
+  // Plus Code addresses often omit Hoskote/etc. and only name the village
+  if (options.formattedAddress) {
+    const plusPlace = extractPlaceFromPlusCodeAddress(options.formattedAddress);
+    if (plusPlace) {
+      const fromList = findLongestAreaMatchInText(plusPlace);
+      if (fromList) return clipVisibleAddress(fromList);
+      return clipVisibleAddress(plusPlace);
+    }
   }
 
   return shortLocationFromGoogleComponents(options.addressComponents);
