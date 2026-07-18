@@ -1164,15 +1164,19 @@ export function extractPlaceFromPlusCodeAddress(formatted: string): string | nul
  * 2) Else first useful neighborhood/sublocality/admin/locality label
  */
 export function shortLocationFromGoogleComponents(
-  components: GoogleAddressComponentLike[] | null | undefined
+  components: GoogleAddressComponentLike[] | null | undefined,
+  options?: { useAreaList?: boolean }
 ): string | null {
   if (!Array.isArray(components) || components.length === 0) return null;
+  const useAreaList = options?.useAreaList !== false;
 
   // List match on every component label (and combined text) — works when Google
   // puts the place in administrative_area_level_* instead of neighborhood.
-  const combined = joinGoogleComponentText(components);
-  const listFromAll = findLongestAreaMatchInText(combined);
-  if (listFromAll) return clipVisibleAddress(listFromAll);
+  if (useAreaList) {
+    const combined = joinGoogleComponentText(components);
+    const listFromAll = findLongestAreaMatchInText(combined);
+    if (listFromAll) return clipVisibleAddress(listFromAll);
+  }
 
   for (const type of GOOGLE_SHORT_LOCATION_TYPES) {
     const comp = components.find((c) => Array.isArray(c.types) && c.types.includes(type));
@@ -1183,9 +1187,32 @@ export function shortLocationFromGoogleComponents(
     const cleaned = raw.replace(/\s+(Taluk|District|Hobli)$/i, '').trim();
     if (!cleaned || isGenericGeoLocality(cleaned)) continue;
 
-    const fromList = findLongestAreaMatchInText(cleaned);
-    if (fromList) return clipVisibleAddress(fromList);
+    if (useAreaList) {
+      const fromList = findLongestAreaMatchInText(cleaned);
+      if (fromList) return clipVisibleAddress(fromList);
+    }
     return clipVisibleAddress(cleaned);
+  }
+
+  return null;
+}
+
+/**
+ * Booking-only short location: Google geocode components / Plus Code place name.
+ * Does not consult bangaloreAreas.
+ */
+export function resolveVisibleAddressFromGoogleOnly(options: {
+  formattedAddress?: string | null;
+  addressComponents?: GoogleAddressComponentLike[] | null;
+}): string | null {
+  const fromComponents = shortLocationFromGoogleComponents(options.addressComponents, {
+    useAreaList: false,
+  });
+  if (fromComponents) return fromComponents;
+
+  if (options.formattedAddress) {
+    const plusPlace = extractPlaceFromPlusCodeAddress(options.formattedAddress);
+    if (plusPlace) return clipVisibleAddress(plusPlace);
   }
 
   return null;
