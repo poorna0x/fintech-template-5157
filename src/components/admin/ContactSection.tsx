@@ -304,8 +304,8 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
         </div>
         
         {/* Location */}
-        <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+        <div className="bg-white rounded-lg p-3 border border-gray-200 hover:border-gray-300 hover:shadow-sm transition-all duration-200 overflow-hidden min-w-0">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 min-w-0">
             <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
               <button
                 onClick={handleMapPinClick}
@@ -314,49 +314,51 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
                 <MapPin className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
               </button>
             </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold text-gray-900">
+            <div className="flex-1 min-w-0 overflow-hidden">
+              <div className="text-sm font-semibold text-gray-900 truncate">
                 {hasMultipleCustomerLocations(customer)
                   ? getPrimaryLocationLabel(customer)
                   : 'Location'}
               </div>
-              <div className="text-xs">
+              <div className="text-xs min-w-0 overflow-hidden">
                 {hasMultipleCustomerLocations(customer) ? (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       handleLocationLabelClick();
                     }}
-                    className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full text-left"
+                    className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full truncate block"
                     title="Click to choose primary or secondary location"
                   >
                     Primary · Secondary
                   </button>
-                ) : (customer.address as any)?.visible_address && String((customer.address as any).visible_address).trim() ? (
+                ) : (() => {
+                  const locationLabel = (
+                    String(
+                      (customer as any)?.visible_address ??
+                        (customer.address as any)?.visible_address ??
+                        ''
+                    ).trim() || 'Location'
+                  );
+                  return (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       handleLocationLabelClick();
                     }}
-                    className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full text-left"
-                    title="Click to view full address and calculate distance"
+                    className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full truncate block"
+                    title={
+                      locationLabel !== 'Location'
+                        ? `${locationLabel} — click to view full address and calculate distance`
+                        : 'Click to view full address and calculate distance'
+                    }
                   >
-                    {String((customer.address as any).visible_address).trim()}
+                    {locationLabel}
                   </button>
-                ) : (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleLocationLabelClick();
-                    }}
-                    className="text-left text-black hover:text-gray-700 hover:underline transition-colors cursor-pointer font-medium w-full text-left"
-                    title="Click to view full address and calculate distance"
-                  >
-                    Location
-                  </button>
-                )}
+                  );
+                })()}
                 {customerDistances[customer.id] && (
-                  <div className="mt-1 text-xs font-medium text-black">
+                  <div className="mt-1 text-xs font-medium text-black truncate">
                     {customerDistances[customer.id].isCalculating ? (
                       <span className="text-gray-400">Calculating...</span>
                     ) : (

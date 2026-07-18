@@ -140,6 +140,7 @@ function pickBookingCustomerUpdates(raw) {
     'alternate_phone',
     'address',
     'location',
+    'visible_address',
     'preferred_time_slot',
     'custom_time',
     'updated_at',

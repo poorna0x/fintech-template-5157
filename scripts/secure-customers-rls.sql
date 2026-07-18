@@ -242,6 +242,10 @@ BEGIN
     END,
     address = CASE WHEN p_updates ? 'address' THEN p_updates -> 'address' ELSE c.address END,
     location = CASE WHEN p_updates ? 'location' THEN p_updates -> 'location' ELSE c.location END,
+    visible_address = CASE
+      WHEN p_updates ? 'visible_address' THEN nullif(btrim(p_updates ->> 'visible_address'), '')
+      ELSE c.visible_address
+    END,
     preferred_time_slot = CASE
       WHEN p_updates ? 'preferred_time_slot' THEN nullif(p_updates ->> 'preferred_time_slot', '')
       ELSE c.preferred_time_slot

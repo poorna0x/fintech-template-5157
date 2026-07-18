@@ -48,6 +48,7 @@ import SecurityStatus from '@/components/SecurityStatus';
 import { useSecurity } from '@/contexts/SecurityContext';
 import DraggableMap from '@/components/DraggableMap';
 import { hasValidMapCoordinates, readLocationLatLng, removePlusCode } from '@/lib/maps';
+import { resolveBookingVisibleAddress } from '@/lib/bookingVisibleAddress';
 import {
   EQUIPMENT_BRAND_DATA as brandData,
   EQUIPMENT_MODEL_DATA as modelData,
@@ -1522,6 +1523,14 @@ const Booking: React.FC = () => {
         };
 
         if (shouldUpdateLocation) {
+          const shortLocation = await resolveBookingVisibleAddress({
+            address: formData.address,
+            lat: formData.coordinates.lat,
+            lng: formData.coordinates.lng,
+          });
+          if (shortLocation) {
+            updateData.visible_address = shortLocation;
+          }
           updateData.address = {
             street: composeStreet(formData.address),
             area: 'Bangalore',
@@ -1596,6 +1605,11 @@ const Booking: React.FC = () => {
         customer = updatedCustomer;
       } else {
         // Customer doesn't exist, create new one
+        const shortLocation = await resolveBookingVisibleAddress({
+          address: formData.address,
+          lat: formData.coordinates?.lat,
+          lng: formData.coordinates?.lng,
+        });
         const customerData = {
           full_name: formData.fullName,
           phone: formData.phone,
@@ -1636,6 +1650,7 @@ const Booking: React.FC = () => {
                   ? formData.googleMapsLink 
                   : null)
           },
+          ...(shortLocation ? { visible_address: shortLocation } : {}),
           service_type: formData.serviceType,
           brand: formData.brandName || 'Not specified',
           model: formData.modelName || 'Not specified',
