@@ -13,7 +13,7 @@ import { toast } from 'sonner';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { MapPin, Download, ExternalLink, Loader2, ChevronDown, X, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { generateJobNumber, extractLocationFromAddressString, bangaloreAreas, formatCustomTimeLabel, getDefaultLeadCost, isHomeTriangleLeadSource } from '@/lib/adminUtils';
+import { generateJobNumber, extractLocationFromAddressString, bangaloreAreas, formatCustomTimeLabel, getDefaultLeadCost, isHomeTriangleLeadSource, resolveVisibleAddressFromGeocode, reverseGeocodeLatLng } from '@/lib/adminUtils';
 import ImageUpload from '@/components/ImageUpload';
 import { CustomAppointmentTimeSelect } from '@/components/admin/CustomAppointmentTimeSelect';
 import PhoneSwapButton from '@/components/admin/PhoneSwapButton';
@@ -613,22 +613,12 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     });
   };
 
-  const reverseGeocode = async (lat: number, lng: number): Promise<string | null> => {
+  const reverseGeocode = async (lat: number, lng: number) => {
     try {
       if (!window.google || !window.google.maps || !window.google.maps.Geocoder) {
         await loadGoogleMapsScript();
       }
-      
-      const geocoder = new window.google.maps.Geocoder();
-      return new Promise((resolve, reject) => {
-        geocoder.geocode({ location: { lat, lng } }, (results, status) => {
-          if (status === 'OK' && results && results[0]) {
-            resolve(results[0].formatted_address);
-          } else {
-            resolve(null);
-          }
-        });
-      });
+      return reverseGeocodeLatLng(lat, lng);
     } catch (error) {
       console.error('Reverse geocoding error:', error);
       return null;
@@ -755,22 +745,22 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         console.warn('Google Maps script load failed; keeping coordinates:', mapsLoadError);
       }
 
-      const address = await reverseGeocode(coords.latitude, coords.longitude);
+      const geocodeResult = await reverseGeocode(coords.latitude, coords.longitude);
+      const address = geocodeResult?.formattedAddress ?? null;
 
-      let extractedLocation = null;
-      if (address) {
-        extractedLocation = extractLocationFromAddressString(address);
-      }
-      if (!extractedLocation && addFormData.address) {
-        extractedLocation = extractLocationFromAddressString(addFormData.address);
-      }
+      // List/DB match first, then Google place components from the same Fetch (no extra API call)
+      const extractedLocation = resolveVisibleAddressFromGeocode({
+        formattedAddress: address,
+        addressComponents: geocodeResult?.addressComponents,
+        addressHints: [addFormDataRef.current.address],
+      });
 
       setAddFormData((prev) => ({
         ...prev,
         google_location: stableMapsLink,
         address: address ? capitalizeFirstLetter(address) : prev.address,
         visible_address: extractedLocation
-          ? capitalizeFirstLetter(extractedLocation).substring(0, 20)
+          ? capitalizeFirstLetter(extractedLocation)
           : prev.visible_address,
       }));
 

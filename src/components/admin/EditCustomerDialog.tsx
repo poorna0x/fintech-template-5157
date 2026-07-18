@@ -11,7 +11,7 @@ import { toast } from 'sonner';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import { MapPin, Download, ExternalLink, Trash2, Lock } from 'lucide-react';
 import { useAdminRole } from '@/lib/useAdminRole';
-import { mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas } from '@/lib/adminUtils';
+import { mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, resolveVisibleAddressFromGeocode, reverseGeocodeLatLng } from '@/lib/adminUtils';
 import { normalizeIndianMobileInput } from '@/lib/utils';
 import PhoneSwapButton from '@/components/admin/PhoneSwapButton';
 import { hasAlternateLocation } from '@/lib/customer-locations';
@@ -743,30 +743,8 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
     });
   };
 
-  // Reverse geocode
-  const reverseGeocode = async (lat: number, lng: number): Promise<string | null> => {
-    try {
-      if (window.google && window.google.maps && window.google.maps.Geocoder) {
-        return new Promise((resolve) => {
-          const geocoder = new window.google.maps.Geocoder();
-          geocoder.geocode(
-            { location: { lat, lng } },
-            (results, status) => {
-              if (status === window.google.maps.GeocoderStatus.OK && results && results[0]) {
-                resolve(results[0].formatted_address);
-              } else {
-                resolve(null);
-              }
-            }
-          );
-        });
-      }
-      return null;
-    } catch (error) {
-      console.error('Reverse geocoding error:', error);
-      return null;
-    }
-  };
+  // Reverse geocode — uses shared helper (formatted address + components, one Google call)
+  const reverseGeocode = async (lat: number, lng: number) => reverseGeocodeLatLng(lat, lng);
 
   const fetchAddressFromGoogleLocation = async (slot: 'primary' | 'secondary' = 'primary') => {
     const isPrimary = slot === 'primary';
@@ -864,18 +842,18 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
         console.warn('Google Maps script load failed; keeping coordinates:', mapsLoadError);
       }
 
-      const address = await reverseGeocode(coords.latitude, coords.longitude);
+      const geocodeResult = await reverseGeocode(coords.latitude, coords.longitude);
+      const address = geocodeResult?.formattedAddress ?? null;
       
-      let extractedLocation = null;
       const streetHint = isPrimary
         ? editFormDataRef.current.address.street
         : editFormDataRef.current.alternate_address.street;
-      if (address) {
-        extractedLocation = extractLocationFromAddressString(address);
-      }
-      if (!extractedLocation && streetHint) {
-        extractedLocation = extractLocationFromAddressString(streetHint);
-      }
+      // List/DB match first, then Google place components from the same Fetch (no extra API call)
+      const extractedLocation = resolveVisibleAddressFromGeocode({
+        formattedAddress: address,
+        addressComponents: geocodeResult?.addressComponents,
+        addressHints: [streetHint],
+      });
       
       setEditFormData(prev => {
         const next = {
@@ -897,7 +875,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
                   pincode: ''
                 },
                 visible_address: extractedLocation
-                  ? extractedLocation.substring(0, 20)
+                  ? extractedLocation
                   : prev.visible_address
               }
             : {
@@ -915,6 +893,9 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
                   state: '',
                   pincode: ''
                 },
+                alternate_visible_address: extractedLocation
+                  ? extractedLocation
+                  : prev.alternate_visible_address,
               }),
         };
         editFormDataRef.current = next;
@@ -923,6 +904,9 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
       
       if (extractedLocation && isPrimary) {
         locationManuallyEditedRef.current = false;
+      }
+      if (extractedLocation && !isPrimary) {
+        alternateLocationManuallyEditedRef.current = false;
       }
       
       if (address) {
