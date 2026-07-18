@@ -1,10 +1,13 @@
-// Admin app: App (back button) + push + clipboard (Fetch Address).
+// Admin app: App (back button) + push + clipboard (Fetch Address) + camera.
 // Maintained by hand — `npx cap sync` targets the technician android/ project.
 include ':capacitor-android'
 project(':capacitor-android').projectDir = new File('../node_modules/@capacitor/android/capacitor')
 
 include ':capacitor-app'
 project(':capacitor-app').projectDir = new File('../node_modules/@capacitor/app/android')
+
+include ':capacitor-camera'
+project(':capacitor-camera').projectDir = new File('../node_modules/@capacitor/camera/android')
 
 include ':capacitor-clipboard'
 project(':capacitor-clipboard').projectDir = new File('../node_modules/@capacitor/clipboard/android')

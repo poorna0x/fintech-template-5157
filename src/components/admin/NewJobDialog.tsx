@@ -27,6 +27,8 @@ import {
   hasDualSiteCustomer,
   getJobLocationLabelForWhatsApp,
 } from '@/lib/customer-locations';
+import { isNativeApp } from '@/lib/isNativeApp';
+import { captureNativeCameraPhoto } from '@/lib/cameraUtils';
 
 interface NewJobFormData {
   service_type: 'RO' | 'SOFTENER';
@@ -826,7 +828,17 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => document.getElementById('camera-upload')?.click()}
+                    onClick={async () => {
+                      if (isNativeApp()) {
+                        const result = await captureNativeCameraPhoto();
+                        if (result.status === 'ok') {
+                          handlePhotoUpload([result.file]);
+                          return;
+                        }
+                        if (result.status === 'cancelled') return;
+                      }
+                      document.getElementById('camera-upload')?.click();
+                    }}
                     className="flex items-center gap-2"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

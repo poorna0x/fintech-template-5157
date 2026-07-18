@@ -164,7 +164,8 @@ import { Customer, Job, Technician } from '@/types';
 import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
 import { toast } from 'sonner';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
-import { isIOS, isPWA, shouldUseFileInputFallback, requestCameraAccess, createVideoElement, checkCameraPermission, filesToFileList, captureVideoFrameToFile } from '@/lib/cameraUtils';
+import { isNativeApp } from '@/lib/isNativeApp';
+import { shouldUseFileInputFallback, requestCameraAccess, createVideoElement, filesToFileList, captureVideoFrameToFile, captureNativeCameraPhoto } from '@/lib/cameraUtils';
 import { getCachedQrCodes, cacheQrCodes, shouldUseCache, CommonQrCode } from '@/lib/qrCodeManager';
 import { openInGoogleMaps, extractCoordinates, formatAddressForDisplay, openGoogleMapsDirectionsBetween } from '@/lib/maps';
 import {
@@ -3769,6 +3770,15 @@ const AdminDashboard = () => {
     if (!selectedCustomerForPhotos) return;
     
     try {
+      if (isNativeApp()) {
+        const result = await captureNativeCameraPhoto();
+        if (result.status === 'ok') {
+          handlePhotoUpload(filesToFileList([result.file]));
+          return;
+        }
+        if (result.status === 'cancelled') return;
+      }
+
       // iOS and mobile PWA: Use file input fallback for better reliability
       if (shouldUseFileInputFallback()) {
         console.log('Using file input fallback for mobile/PWA');

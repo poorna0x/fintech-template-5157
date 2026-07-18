@@ -1,6 +1,84 @@
 // Camera utility functions for better cross-platform compatibility
 import { isNativeApp } from '@/lib/isNativeApp';
 
+/** Result of opening the native Capacitor camera (APK only). */
+export type NativeCameraCaptureResult =
+  | { status: 'ok'; file: File }
+  | { status: 'cancelled' }
+  | { status: 'unavailable' };
+
+function dataUrlToFile(dataUrl: string, filename: string): File | null {
+  try {
+    const [header, data] = dataUrl.split(',');
+    if (!data) return null;
+    const mimeMatch = /data:([^;]+)/.exec(header || '');
+    const mime = mimeMatch?.[1] || 'image/jpeg';
+    const binary = atob(data);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new File([bytes], filename, { type: mime });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Open the system camera via @capacitor/camera (CameraSource.Camera).
+ * Avoids Android WebView `<input capture>` which opens the gallery on many OEMs.
+ * Returns unavailable when not native or plugin missing — caller may fall back.
+ */
+export async function captureNativeCameraPhoto(): Promise<NativeCameraCaptureResult> {
+  if (!isNativeApp()) return { status: 'unavailable' };
+
+  try {
+    const { Camera, CameraResultType, CameraSource } = await import('@capacitor/camera');
+
+    try {
+      await Camera.requestPermissions({ permissions: ['camera'] });
+    } catch {
+      // Some WebViews still succeed on getPhoto after a soft permission failure
+    }
+
+    const photo = await Camera.getPhoto({
+      quality: 90,
+      allowEditing: false,
+      resultType: CameraResultType.DataUrl,
+      source: CameraSource.Camera,
+      correctOrientation: true,
+      saveToGallery: false,
+    });
+
+    if (photo.dataUrl) {
+      const file = dataUrlToFile(photo.dataUrl, `camera-photo-${Date.now()}.jpg`);
+      if (file) return { status: 'ok', file };
+    }
+
+    if (photo.webPath) {
+      const res = await fetch(photo.webPath);
+      const blob = await res.blob();
+      return {
+        status: 'ok',
+        file: new File([blob], `camera-photo-${Date.now()}.jpg`, {
+          type: blob.type || 'image/jpeg',
+        }),
+      };
+    }
+
+    return { status: 'unavailable' };
+  } catch (error: unknown) {
+    const message = String((error as { message?: string })?.message || error || '').toLowerCase();
+    if (
+      message.includes('cancel') ||
+      message.includes('user denied') ||
+      message.includes('no image picked')
+    ) {
+      return { status: 'cancelled' };
+    }
+    console.warn('Native camera capture failed:', error);
+    return { status: 'unavailable' };
+  }
+}
+
 /**
  * Check if device is iOS
  */

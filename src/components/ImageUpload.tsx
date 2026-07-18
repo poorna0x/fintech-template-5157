@@ -5,7 +5,8 @@ import { Upload, Camera, X, Loader2, Image as ImageIcon, FileImage, Trash2 } fro
 import { toast } from 'sonner';
 import { cloudinaryService, validateImageFile, compressImage } from '@/lib/cloudinary';
 import { queuePhoto, isOnline, removeQueuedPhoto, getQueuedPhotosCount } from '@/lib/offlinePhotoQueue';
-import { isIOS, isPWA, isChrome, shouldUseFileInputFallback, requestCameraAccess, createVideoElement, checkCameraPermission, filesToFileList, captureVideoFrameToFile } from '@/lib/cameraUtils';
+import { isNativeApp } from '@/lib/isNativeApp';
+import { shouldUseFileInputFallback, requestCameraAccess, createVideoElement, filesToFileList, captureVideoFrameToFile, captureNativeCameraPhoto } from '@/lib/cameraUtils';
 
 interface ImageUploadProps {
   onImagesChange: (images: string[]) => void;
@@ -366,15 +367,23 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   };
 
   const openCameraDialog = async () => {
-    // iOS, Android PWA, and Chrome on Android: Use file input with capture attribute
-    // This opens the camera directly instead of file picker
-    // File input with capture="environment" is more reliable than getUserMedia on mobile
+    // Capacitor APKs: use native Camera plugin so OEM WebViews don't open the gallery
+    if (isNativeApp()) {
+      const result = await captureNativeCameraPhoto();
+      if (result.status === 'ok') {
+        void handleFileSelect(filesToFileList([result.file]));
+        return;
+      }
+      if (result.status === 'cancelled') return;
+      // Plugin missing / failed — fall through to <input capture>
+    }
+
+    // iOS / Android PWA / Chrome: file input with capture="environment"
+    // Keep accept as image/* only — long MIME lists make some Androids open gallery
     if (shouldUseFileInputFallback()) {
       console.log('Using file input with camera capture for mobile/PWA/Chrome');
-      // Ensure input is reset and properly configured
       if (cameraInputRef.current) {
-        cameraInputRef.current.value = ''; // Reset input
-        // Click will trigger the camera directly due to capture="environment" attribute
+        cameraInputRef.current.value = '';
         setTimeout(() => {
           cameraInputRef.current?.click();
         }, 100);
@@ -776,21 +785,15 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         // Don't set webkitdirectory attribute at all (undefined instead of false)
       />
       
-      {/* Camera input with capture attribute - opens camera directly on mobile devices */}
+      {/* Camera input — accept must stay image/* only or some Androids open the gallery */}
       <input
         ref={cameraInputRef}
         type="file"
-        accept="image/*,image/jpeg,image/jpg,image/png,image/gif,image/webp,image/heic,image/heif"
+        accept="image/*"
         capture="environment"
         onChange={handleCameraCapture}
         className="hidden"
-        // Additional attributes for better mobile compatibility
         multiple={false}
-        // iOS PWA: Ensure webkitdirectory is not set
-        // Don't set webkitdirectory attribute at all (undefined instead of false)
-        // Additional capture attributes for better compatibility across browsers
-        {...({ 'x-capture': 'environment' } as any)}
-        {...({ 'webkit-capture': 'environment' } as any)}
       />
 
       {/* Uploaded Images Grid */}
