@@ -222,6 +222,9 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
   const lastSavedFormDataRef = useRef<string>('');
   /** Ignore stale getById responses; only hydrate on open / customer id change (not every parent re-render). */
   const hydrateGenerationRef = useRef(0);
+  /** Latest form snapshot for Save (avoids stale closure after Fetch Address). */
+  const editFormDataRef = useRef(editFormData);
+  editFormDataRef.current = editFormData;
 
   const filteredAddressSuggestions = useMemo(() => {
     if (!editFormData?.visible_address || editFormData.visible_address.trim().length === 0) {
@@ -815,26 +818,33 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
       // made assign-by-distance resolve again even after a successful Fetch.
       const stableMapsLink = mapsLinkFromCoords(coords.latitude, coords.longitude);
 
-      setEditFormData((prev) => ({
-        ...prev,
-        ...(isPrimary
-          ? {
-              google_location: stableMapsLink,
-              location: {
-                ...prev.location,
-                latitude: coords.latitude,
-                longitude: coords.longitude,
-              },
-            }
-          : {
-              alternate_google_location: stableMapsLink,
-              alternate_location: {
-                ...prev.alternate_location,
-                latitude: coords.latitude,
-                longitude: coords.longitude,
-              },
-            }),
-      }));
+      // Cancel any in-flight open-hydrate so a late getById cannot wipe these coords.
+      hydrateGenerationRef.current += 1;
+
+      setEditFormData((prev) => {
+        const next = {
+          ...prev,
+          ...(isPrimary
+            ? {
+                google_location: stableMapsLink,
+                location: {
+                  ...prev.location,
+                  latitude: coords.latitude,
+                  longitude: coords.longitude,
+                },
+              }
+            : {
+                alternate_google_location: stableMapsLink,
+                alternate_location: {
+                  ...prev.alternate_location,
+                  latitude: coords.latitude,
+                  longitude: coords.longitude,
+                },
+              }),
+        };
+        editFormDataRef.current = next;
+        return next;
+      });
 
       if (didExpandShortLink) {
         toast.info('Short link expanded');
@@ -858,8 +868,8 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
       
       let extractedLocation = null;
       const streetHint = isPrimary
-        ? editFormData.address.street
-        : editFormData.alternate_address.street;
+        ? editFormDataRef.current.address.street
+        : editFormDataRef.current.alternate_address.street;
       if (address) {
         extractedLocation = extractLocationFromAddressString(address);
       }
@@ -867,45 +877,49 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
         extractedLocation = extractLocationFromAddressString(streetHint);
       }
       
-      setEditFormData(prev => ({
-        ...prev,
-        ...(isPrimary
-          ? {
-              google_location: stableMapsLink,
-              location: {
-                ...prev.location,
-                latitude: coords.latitude,
-                longitude: coords.longitude,
-                formattedAddress: address || prev.location.formattedAddress || ''
-              },
-              address: {
-                street: address || prev.address.street || '',
-                area: '',
-                city: '',
-                state: '',
-                pincode: ''
-              },
-              visible_address: extractedLocation
-                ? extractedLocation.substring(0, 20)
-                : prev.visible_address
-            }
-          : {
-              alternate_google_location: stableMapsLink,
-              alternate_location: {
-                ...prev.alternate_location,
-                latitude: coords.latitude,
-                longitude: coords.longitude,
-                formattedAddress: address || prev.alternate_location.formattedAddress || ''
-              },
-              alternate_address: {
-                street: address || prev.alternate_address.street || '',
-                area: '',
-                city: '',
-                state: '',
-                pincode: ''
-              },
-            }),
-      }));
+      setEditFormData(prev => {
+        const next = {
+          ...prev,
+          ...(isPrimary
+            ? {
+                google_location: stableMapsLink,
+                location: {
+                  ...prev.location,
+                  latitude: coords.latitude,
+                  longitude: coords.longitude,
+                  formattedAddress: address || prev.location.formattedAddress || ''
+                },
+                address: {
+                  street: address || prev.address.street || '',
+                  area: '',
+                  city: '',
+                  state: '',
+                  pincode: ''
+                },
+                visible_address: extractedLocation
+                  ? extractedLocation.substring(0, 20)
+                  : prev.visible_address
+              }
+            : {
+                alternate_google_location: stableMapsLink,
+                alternate_location: {
+                  ...prev.alternate_location,
+                  latitude: coords.latitude,
+                  longitude: coords.longitude,
+                  formattedAddress: address || prev.alternate_location.formattedAddress || ''
+                },
+                alternate_address: {
+                  street: address || prev.alternate_address.street || '',
+                  area: '',
+                  city: '',
+                  state: '',
+                  pincode: ''
+                },
+              }),
+        };
+        editFormDataRef.current = next;
+        return next;
+      });
       
       if (extractedLocation && isPrimary) {
         locationManuallyEditedRef.current = false;
@@ -1034,7 +1048,9 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
   const handleUpdateCustomer = async () => {
     if (!customer) return;
 
-    if (editFormData.has_gst && !normalizeCustomerGstNumber(editFormData.gst_number)) {
+    const form = editFormDataRef.current;
+
+    if (form.has_gst && !normalizeCustomerGstNumber(form.gst_number)) {
       toast.error('Enter the customer GST number, or select No if they do not have GST');
       return;
     }
@@ -1042,18 +1058,18 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
     setIsUpdating(true);
     try {
       const updatedAddress = {
-        street: editFormData.address.street,
-        area: editFormData.address.area,
-        city: editFormData.address.city,
-        state: editFormData.address.state,
-        pincode: editFormData.address.pincode
+        street: form.address.street,
+        area: form.address.area,
+        city: form.address.city,
+        state: form.address.state,
+        pincode: form.address.pincode
       };
 
-      let latitude = Number(editFormData.location.latitude) || 0;
-      let longitude = Number(editFormData.location.longitude) || 0;
+      let latitude = Number(form.location.latitude) || 0;
+      let longitude = Number(form.location.longitude) || 0;
       let googleLocation =
-        (editFormData.google_location && editFormData.google_location.trim()) ||
-        ((editFormData.location as any)?.googleLocation as string | undefined) ||
+        (form.google_location && form.google_location.trim()) ||
+        ((form.location as any)?.googleLocation as string | undefined) ||
         '';
 
       if ((latitude === 0 || longitude === 0) && googleLocation) {
@@ -1074,7 +1090,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
       const updatedLocation: any = {
         latitude,
         longitude,
-        formattedAddress: editFormData.address.street || editFormData.location.formattedAddress || '',
+        formattedAddress: form.address.street || form.location.formattedAddress || '',
       };
       
       if (googleLocation) {
@@ -1084,8 +1100,8 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
       const brands: string[] = [];
       const models: string[] = [];
       
-      editFormData.service_types.forEach((serviceType: string) => {
-        const equipment = editFormData.equipment[serviceType];
+      form.service_types.forEach((serviceType: string) => {
+        const equipment = form.equipment[serviceType];
         if (equipment) {
           brands.push(equipment.brand?.trim() || '');
           models.push(equipment.model?.trim() || '');
@@ -1096,45 +1112,45 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
       });
 
       const updateData = {
-        full_name: editFormData.full_name,
-        phone: editFormData.phone,
-        alternate_phone: editFormData.alternate_phone,
-        email: editFormData.email,
-        service_type: mapServiceTypesToDbValue(editFormData.service_types),
+        full_name: form.full_name,
+        phone: form.phone,
+        alternate_phone: form.alternate_phone,
+        email: form.email,
+        service_type: mapServiceTypesToDbValue(form.service_types),
         brand: brands.join(', '),
         model: models.join(', '),
-        preferred_language: (editFormData.native_language || 'ENGLISH') as 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU',
+        preferred_language: (form.native_language || 'ENGLISH') as 'ENGLISH' | 'HINDI' | 'KANNADA' | 'TAMIL' | 'TELUGU',
         preferred_time_slot: (customer as any).preferred_time_slot || customer.preferredTimeSlot || 'MORNING',
-        status: editFormData.status as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
-        notes: editFormData.notes,
-        visible_address: editFormData.visible_address ? editFormData.visible_address.trim() : '',
-        custom_time: editFormData.custom_time || null,
-        has_prefilter: editFormData.has_prefilter,
-        has_google_review: editFormData.has_google_review,
-        customer_tier: editFormData.customer_tier,
-        raw_water_tds: Math.max(0, parseInt(String(editFormData.raw_water_tds), 10) || 0),
-        gst_number: editFormData.has_gst
-          ? normalizeCustomerGstNumber(editFormData.gst_number) || null
+        status: form.status as 'ACTIVE' | 'INACTIVE' | 'BLOCKED',
+        notes: form.notes,
+        visible_address: form.visible_address ? form.visible_address.trim() : '',
+        custom_time: form.custom_time || null,
+        has_prefilter: form.has_prefilter,
+        has_google_review: form.has_google_review,
+        customer_tier: form.customer_tier,
+        raw_water_tds: Math.max(0, parseInt(String(form.raw_water_tds), 10) || 0),
+        gst_number: form.has_gst
+          ? normalizeCustomerGstNumber(form.gst_number) || null
           : null,
         address: updatedAddress,
         location: updatedLocation,
-        ...(editFormData.has_alternate_location
+        ...(form.has_alternate_location
           ? {
-              alternate_visible_address: editFormData.alternate_visible_address
-                ? editFormData.alternate_visible_address.trim()
+              alternate_visible_address: form.alternate_visible_address
+                ? form.alternate_visible_address.trim()
                 : '',
               alternate_address: {
-                street: editFormData.alternate_address.street,
-                area: editFormData.alternate_address.area,
-                city: editFormData.alternate_address.city,
-                state: editFormData.alternate_address.state,
-                pincode: editFormData.alternate_address.pincode,
+                street: form.alternate_address.street,
+                area: form.alternate_address.area,
+                city: form.alternate_address.city,
+                state: form.alternate_address.state,
+                pincode: form.alternate_address.pincode,
               },
               alternate_location: (() => {
-                let altLat = Number(editFormData.alternate_location.latitude) || 0;
-                let altLng = Number(editFormData.alternate_location.longitude) || 0;
+                let altLat = Number(form.alternate_location.latitude) || 0;
+                let altLng = Number(form.alternate_location.longitude) || 0;
                 let altGoogle =
-                  editFormData.alternate_google_location?.trim() || '';
+                  form.alternate_google_location?.trim() || '';
                 if ((altLat === 0 || altLng === 0) && altGoogle) {
                   const extracted = extractCoordinatesFromGoogleMapsLink(altGoogle);
                   if (extracted) {
@@ -1155,8 +1171,8 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
                   latitude: altLat,
                   longitude: altLng,
                   formattedAddress:
-                    editFormData.alternate_address.street ||
-                    editFormData.alternate_location.formattedAddress ||
+                    form.alternate_address.street ||
+                    form.alternate_location.formattedAddress ||
                     '',
                 };
                 if (altGoogle) {
@@ -1164,9 +1180,9 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
                 }
                 return altLocation;
               })(),
-              alternate_service_type: editFormData.alternate_service_type || 'RO',
-              alternate_brand: editFormData.alternate_brand?.trim() || '',
-              alternate_model: editFormData.alternate_model?.trim() || '',
+              alternate_service_type: form.alternate_service_type || 'RO',
+              alternate_brand: form.alternate_brand?.trim() || '',
+              alternate_model: form.alternate_model?.trim() || '',
             }
           : {
               alternate_visible_address: null,
@@ -1185,12 +1201,12 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
       }
 
       // Check if brand or model changed for RO service type
-      const roServiceIndex = editFormData.service_types.indexOf('RO');
+      const roServiceIndex = form.service_types.indexOf('RO');
       let roBrandChanged = false;
       let roModelChanged = false;
       
       if (roServiceIndex >= 0) {
-        const roEquipment = editFormData.equipment['RO'];
+        const roEquipment = form.equipment['RO'];
         const newBrand = roEquipment?.brand?.trim() || '';
         const newModel = roEquipment?.model?.trim() || '';
         
@@ -1206,7 +1222,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
 
       // Update all jobs for this customer if RO brand or model changed
       if ((roBrandChanged || roModelChanged) && roServiceIndex >= 0) {
-        const roEquipment = editFormData.equipment['RO'];
+        const roEquipment = form.equipment['RO'];
         const newBrand = roEquipment?.brand?.trim() || '';
         const newModel = roEquipment?.model?.trim() || '';
 
@@ -1244,7 +1260,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
 
       await onLoadBrandsAndModels();
       
-      lastSavedFormDataRef.current = JSON.stringify(editFormData);
+      lastSavedFormDataRef.current = JSON.stringify(form);
       
       // Show success message
       if ((roBrandChanged || roModelChanged) && roServiceIndex >= 0) {
