@@ -1,18 +1,22 @@
 // Camera utility functions for better cross-platform compatibility
+import { isNativeApp } from '@/lib/isNativeApp';
 
 /**
  * Check if device is iOS
  */
 export const isIOS = (): boolean => {
-  return /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
          (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 };
 
 /**
- * Check if browser is Chrome (including Chrome Dev, Chrome Beta, etc.)
+ * Check if browser is Chrome / Chromium (including Android WebView).
+ * Note: Android WebView UA contains both "Chrome" and "Safari" — do not treat
+ * "Safari" as a disqualifier or Capacitor APKs will miss Chrome detection.
  */
 export const isChrome = (): boolean => {
-  return /Chrome/.test(navigator.userAgent) && !/Edg|OPR|Safari/.test(navigator.userAgent.replace(/Chrome/g, ''));
+  const ua = navigator.userAgent;
+  return /Chrome|CriOS|Chromium/.test(ua) && !/Edg|OPR|Opera/.test(ua);
 };
 
 /**
@@ -41,7 +45,7 @@ export const checkCameraPermission = async (): Promise<PermissionState | 'unknow
     if (!navigator.permissions || !navigator.permissions.query) {
       return 'unknown';
     }
-    
+
     const result = await navigator.permissions.query({ name: 'camera' as PermissionName });
     return result.state;
   } catch (error) {
@@ -57,9 +61,9 @@ export const checkCameraPermission = async (): Promise<PermissionState | 'unknow
  * Permission API can be unreliable, especially on mobile devices
  */
 export const requestCameraAccess = async (): Promise<MediaStream | null> => {
-  const getUserMedia = navigator.mediaDevices?.getUserMedia || 
-                      (navigator as any).getUserMedia || 
-                      (navigator as any).webkitGetUserMedia || 
+  const getUserMedia = navigator.mediaDevices?.getUserMedia ||
+                      (navigator as any).getUserMedia ||
+                      (navigator as any).webkitGetUserMedia ||
                       (navigator as any).mozGetUserMedia;
 
   if (!getUserMedia) {
@@ -69,35 +73,35 @@ export const requestCameraAccess = async (): Promise<MediaStream | null> => {
   // Don't check permission first - permission API is unreliable
   // Just try getUserMedia and handle errors appropriately
 
-    // Try with ideal constraints first (back camera preferred)
-    try {
+  // Try with ideal constraints first (back camera preferred)
+  try {
     // Use modern API if available
     if (navigator.mediaDevices?.getUserMedia) {
-      return await navigator.mediaDevices.getUserMedia({ 
-        video: { 
+      return await navigator.mediaDevices.getUserMedia({
+        video: {
           facingMode: { ideal: 'environment' }, // Back camera preferred
           width: { ideal: 1920, max: 1920 },
           height: { ideal: 1080, max: 1080 }
-        } 
+        }
       });
     }
     // Fallback for older browsers
     return await getUserMedia({ video: { facingMode: 'environment' } });
-    } catch (error: any) {
-      // Fallback to simpler constraints if ideal fails
-      try {
+  } catch (error: any) {
+    // Fallback to simpler constraints if ideal fails
+    try {
       if (navigator.mediaDevices?.getUserMedia) {
-        return await navigator.mediaDevices.getUserMedia({ 
+        return await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'environment' }
         });
       }
       return await getUserMedia({ video: { facingMode: 'environment' } });
-      } catch (fallbackError: any) {
+    } catch (fallbackError: any) {
       // Last resort: try any camera with minimal constraints
       try {
         if (navigator.mediaDevices?.getUserMedia) {
           return await navigator.mediaDevices.getUserMedia({ video: true });
-      }
+        }
         return await getUserMedia({ video: true });
       } catch (finalError: any) {
         console.error('Error requesting camera access:', finalError);
@@ -123,39 +127,89 @@ export const createVideoElement = (): HTMLVideoElement => {
   video.style.height = '100%';
   video.style.objectFit = 'cover'; // Ensure video fills container
   video.style.borderRadius = '8px';
-  
+
   // Prevent default video controls and gestures on mobile
   video.controls = false;
   video.setAttribute('controlslist', 'nodownload noplaybackrate');
-  
+
   return video;
 };
 
 /**
- * Should use file input fallback instead of getUserMedia
- * iOS PWAs often work better with file input
- * Also use fallback for Android browsers that have getUserMedia issues
- * Chrome on Android has stricter camera permission requirements
+ * Should use file input fallback instead of getUserMedia preview modal.
+ * Capacitor APKs / iOS / Android Chrome+PWA: system camera via <input capture> is reliable.
+ * Custom Capture Photo dialog often fails in Android WebView (videoReady / DataTransfer).
  */
 export const shouldUseFileInputFallback = (): boolean => {
-  // On iOS, especially in PWA, file input with capture attribute is more reliable
-  // getUserMedia in iOS PWA often has issues with permissions and video playback
-  if (isIOS()) {
-    // Always use file input on iOS - it's more reliable
+  // Capacitor Android/iOS WebView — always use native camera intent
+  if (isNativeApp()) {
     return true;
   }
-  
+
+  // On iOS, especially in PWA, file input with capture attribute is more reliable
+  if (isIOS()) {
+    return true;
+  }
+
   // For Android PWAs, also prefer file input as it's more consistent
   if (isPWA() && /Android/.test(navigator.userAgent)) {
     return true;
   }
-  
-  // Chrome on Android can have strict permission requirements
-  // File input with capture attribute works more reliably
+
+  // Chrome / Chromium on Android (including many WebViews)
   if (isChrome() && /Android/.test(navigator.userAgent)) {
     return true;
   }
-  
+
   return false;
 };
 
+/** Build a FileList from File[] without relying on DataTransfer (broken in some WebViews). */
+export function filesToFileList(files: File[]): FileList {
+  try {
+    const dt = new DataTransfer();
+    for (const f of files) dt.items.add(f);
+    return dt.files;
+  } catch {
+    const list = {
+      length: files.length,
+      item: (i: number) => files[i] ?? null,
+      *[Symbol.iterator]() {
+        for (const f of files) yield f;
+      },
+    } as unknown as FileList;
+    files.forEach((f, i) => {
+      (list as any)[i] = f;
+    });
+    return list;
+  }
+}
+
+/**
+ * Capture current video frame as a JPEG File.
+ * Returns null if dimensions are not available yet.
+ */
+export async function captureVideoFrameToFile(
+  video: HTMLVideoElement,
+  filename = `camera-photo-${Date.now()}.jpg`,
+  quality = 0.9
+): Promise<File | null> {
+  const width = video.videoWidth;
+  const height = video.videoHeight;
+  if (!width || !height) return null;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d', { willReadFrequently: false });
+  if (!ctx) return null;
+
+  ctx.drawImage(video, 0, 0, width, height);
+
+  const blob = await new Promise<Blob | null>((resolve) => {
+    canvas.toBlob((b) => resolve(b), 'image/jpeg', quality);
+  });
+  if (!blob) return null;
+
+  return new File([blob], filename, { type: 'image/jpeg' });
+}

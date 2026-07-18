@@ -164,7 +164,7 @@ import { Customer, Job, Technician } from '@/types';
 import { cloudinaryService, compressImage, validateImageFile } from '@/lib/cloudinary';
 import { toast } from 'sonner';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
-import { isIOS, isPWA, shouldUseFileInputFallback, requestCameraAccess, createVideoElement, checkCameraPermission } from '@/lib/cameraUtils';
+import { isIOS, isPWA, shouldUseFileInputFallback, requestCameraAccess, createVideoElement, checkCameraPermission, filesToFileList, captureVideoFrameToFile } from '@/lib/cameraUtils';
 import { getCachedQrCodes, cacheQrCodes, shouldUseCache, CommonQrCode } from '@/lib/qrCodeManager';
 import { openInGoogleMaps, extractCoordinates, formatAddressForDisplay, openGoogleMapsDirectionsBetween } from '@/lib/maps';
 import {
@@ -3824,6 +3824,7 @@ const AdminDashboard = () => {
       // Create optimized video element for iOS/mobile
       const video = createVideoElement();
       video.srcObject = stream;
+      void video.play().catch(() => {});
 
       // Create a dialog/modal for camera preview
       const cameraDialog = document.createElement('div');
@@ -3854,8 +3855,12 @@ const AdminDashboard = () => {
       const buttonContainer = document.createElement('div');
       buttonContainer.style.display = 'flex';
       buttonContainer.style.gap = '10px';
+      buttonContainer.style.position = 'relative';
+      buttonContainer.style.zIndex = '10000';
+      buttonContainer.style.pointerEvents = 'auto';
 
       const captureButton = document.createElement('button');
+      captureButton.type = 'button';
       captureButton.textContent = 'Capture Photo';
       captureButton.style.padding = '12px 24px';
       captureButton.style.backgroundColor = '#3b82f6';
@@ -3866,8 +3871,10 @@ const AdminDashboard = () => {
       captureButton.style.fontSize = '16px';
       captureButton.style.fontWeight = '600';
       captureButton.style.transition = 'opacity 0.2s';
+      captureButton.style.touchAction = 'manipulation';
 
       const cancelButton = document.createElement('button');
+      cancelButton.type = 'button';
       cancelButton.textContent = 'Cancel';
       cancelButton.style.padding = '12px 24px';
       cancelButton.style.backgroundColor = '#6b7280';
@@ -3876,6 +3883,7 @@ const AdminDashboard = () => {
       cancelButton.style.borderRadius = '8px';
       cancelButton.style.cursor = 'pointer';
       cancelButton.style.fontSize = '16px';
+      cancelButton.style.touchAction = 'manipulation';
 
       let streamActive = true;
       const closeCamera = () => {
@@ -3913,7 +3921,7 @@ const AdminDashboard = () => {
       // Wait for video to be ready before allowing capture
       // iOS needs more time to initialize
       let videoReady = false;
-      let readyCheckTimeout: NodeJS.Timeout | null = null;
+      let readyCheckTimeout: ReturnType<typeof setTimeout> | null = null;
       
       const enableCapture = () => {
         if (!streamActive) return;
@@ -3939,85 +3947,46 @@ const AdminDashboard = () => {
       readyCheckTimeout = setTimeout(() => {
         if (!videoReady && streamActive) {
           enableCapture();
+          if (!videoReady) {
+            captureButton.disabled = false;
+            captureButton.style.opacity = '1';
+          }
         }
       }, 500);
       
       setTimeout(() => {
-        if (!videoReady && streamActive && video.videoWidth > 0 && video.videoHeight > 0) {
-          enableCapture();
-        }
-      }, 1000);
+        if (!streamActive) return;
+        enableCapture();
+        captureButton.disabled = false;
+        captureButton.style.opacity = '1';
+      }, 1500);
       
       captureButton.disabled = true; // Disable until video is ready
       captureButton.style.opacity = '0.5';
       
-      captureButton.onclick = () => {
-        if (!streamActive) return;
+      const doCapture = async () => {
+        if (!streamActive || captureButton.disabled) return;
         
         try {
-          // Check if video is ready
-          if (!video.videoWidth || !video.videoHeight || !videoReady) {
+          enableCapture();
+          if (!video.videoWidth || !video.videoHeight) {
             toast.error('Camera not ready. Please wait a moment and try again.');
             return;
           }
           
-          // Disable button during capture to prevent double-clicks
           captureButton.disabled = true;
           captureButton.style.opacity = '0.5';
-          
-          // Create canvas to capture the photo
-          const canvas = document.createElement('canvas');
-          canvas.width = video.videoWidth;
-          canvas.height = video.videoHeight;
-          const ctx = canvas.getContext('2d', { willReadFrequently: false });
-          
-          if (!ctx) {
+
+          const file = await captureVideoFrameToFile(video);
+          if (!file) {
             toast.error('Failed to capture photo. Please try again.');
             captureButton.disabled = false;
             captureButton.style.opacity = '1';
             return;
           }
-          
-          try {
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          } catch (drawError) {
-            console.error('Error drawing video to canvas:', drawError);
-            toast.error('Failed to capture photo. Please try again.');
-            captureButton.disabled = false;
-            captureButton.style.opacity = '1';
-            return;
-          }
-          
-          canvas.toBlob((blob) => {
-            if (!streamActive) return;
-            
-            if (!blob) {
-              toast.error('Failed to process photo. Please try again.');
-              captureButton.disabled = false;
-              captureButton.style.opacity = '1';
-              return;
-            }
-            
-            try {
-              // Convert blob to File
-              const file = new File([blob], `camera-photo-${Date.now()}.jpg`, { type: 'image/jpeg' });
-              // Create a DataTransfer object to get a proper FileList
-              const dataTransfer = new DataTransfer();
-              dataTransfer.items.add(file);
-              
-              // Clean up camera before processing file
-              closeCamera();
-              
-              // Process the file
-              handlePhotoUpload(dataTransfer.files);
-            } catch (fileError) {
-              console.error('Error creating file:', fileError);
-              toast.error('Failed to process photo. Please try again.');
-              captureButton.disabled = false;
-              captureButton.style.opacity = '1';
-              closeCamera();
-            }
-          }, 'image/jpeg', 0.9);
+
+          closeCamera();
+          handlePhotoUpload(filesToFileList([file]));
         } catch (error: any) {
           console.error('Error capturing photo:', error);
           toast.error(`Failed to capture photo: ${error?.message || 'Unknown error'}`);
@@ -4025,6 +3994,12 @@ const AdminDashboard = () => {
           captureButton.style.opacity = '1';
           closeCamera();
         }
+      };
+
+      captureButton.onclick = () => { void doCapture(); };
+      captureButton.ontouchend = (e) => {
+        e.preventDefault();
+        void doCapture();
       };
 
       cancelButton.onclick = closeCamera;

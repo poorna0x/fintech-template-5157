@@ -5,7 +5,7 @@ import { Upload, Camera, X, Loader2, Image as ImageIcon, FileImage, Trash2 } fro
 import { toast } from 'sonner';
 import { cloudinaryService, validateImageFile, compressImage } from '@/lib/cloudinary';
 import { queuePhoto, isOnline, removeQueuedPhoto, getQueuedPhotosCount } from '@/lib/offlinePhotoQueue';
-import { isIOS, isPWA, isChrome, shouldUseFileInputFallback, requestCameraAccess, createVideoElement, checkCameraPermission } from '@/lib/cameraUtils';
+import { isIOS, isPWA, isChrome, shouldUseFileInputFallback, requestCameraAccess, createVideoElement, checkCameraPermission, filesToFileList, captureVideoFrameToFile } from '@/lib/cameraUtils';
 
 interface ImageUploadProps {
   onImagesChange: (images: string[]) => void;
@@ -409,6 +409,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
       // Create optimized video element for iOS/mobile
         const video = createVideoElement();
         video.srcObject = stream;
+        void video.play().catch(() => {});
         
         // Create modal overlay
         const modal = document.createElement('div');
@@ -441,9 +442,13 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         const buttonContainer = document.createElement('div');
         buttonContainer.style.display = 'flex';
         buttonContainer.style.gap = '10px';
+        buttonContainer.style.position = 'relative';
+        buttonContainer.style.zIndex = '10000';
+        buttonContainer.style.pointerEvents = 'auto';
         
         // Capture button
         const captureBtn = document.createElement('button');
+        captureBtn.type = 'button';
         captureBtn.textContent = 'Capture Photo';
         captureBtn.style.padding = '12px 24px';
         captureBtn.style.backgroundColor = '#3b82f6';
@@ -454,9 +459,11 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         captureBtn.style.fontSize = '16px';
         captureBtn.style.fontWeight = '600';
       captureBtn.style.transition = 'opacity 0.2s';
+      captureBtn.style.touchAction = 'manipulation';
         
         // Cancel button
         const cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
         cancelBtn.textContent = 'Cancel';
         cancelBtn.style.padding = '12px 24px';
         cancelBtn.style.backgroundColor = '#6b7280';
@@ -465,6 +472,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         cancelBtn.style.borderRadius = '8px';
         cancelBtn.style.cursor = 'pointer';
         cancelBtn.style.fontSize = '16px';
+        cancelBtn.style.touchAction = 'manipulation';
         
       let streamActive = true;
         const cleanup = () => {
@@ -502,7 +510,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
         // Wait for video to be ready before allowing capture
         // iOS needs more time to initialize
         let videoReady = false;
-      let readyCheckTimeout: NodeJS.Timeout | null = null;
+      let readyCheckTimeout: ReturnType<typeof setTimeout> | null = null;
       
         const enableCapture = () => {
         if (!streamActive) return;
@@ -528,86 +536,47 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
       readyCheckTimeout = setTimeout(() => {
         if (!videoReady && streamActive) {
             enableCapture();
+            // Enable anyway after 1.5s — some WebViews never report dimensions until click
+            if (!videoReady) {
+              captureBtn.disabled = false;
+              captureBtn.style.opacity = '1';
+            }
           }
         }, 500);
       
       setTimeout(() => {
-        if (!videoReady && streamActive && video.videoWidth > 0 && video.videoHeight > 0) {
-          enableCapture();
-        }
-      }, 1000);
+        if (!streamActive) return;
+        enableCapture();
+        captureBtn.disabled = false;
+        captureBtn.style.opacity = '1';
+      }, 1500);
         
         captureBtn.disabled = true; // Disable until video is ready
       captureBtn.style.opacity = '0.5';
       
-      captureBtn.onclick = () => {
-        if (!streamActive) return;
-        
+      const doCapture = async () => {
+        if (!streamActive || captureBtn.disabled) return;
+
           try {
-            // Check if video is ready
-            if (!video.videoWidth || !video.videoHeight || !videoReady) {
+            enableCapture();
+            if (!video.videoWidth || !video.videoHeight) {
               toast.error('Camera not ready. Please wait a moment and try again.');
               return;
             }
             
-            // Disable button during capture to prevent double-clicks
             captureBtn.disabled = true;
           captureBtn.style.opacity = '0.5';
-            
-            // Create canvas to capture the photo
-            const canvas = document.createElement('canvas');
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-          const ctx = canvas.getContext('2d', { willReadFrequently: false });
-            
-            if (!ctx) {
+
+            const file = await captureVideoFrameToFile(video);
+            if (!file) {
               toast.error('Failed to capture photo. Please try again.');
-            captureBtn.disabled = false;
-            captureBtn.style.opacity = '1';
-              return;
-            }
-            
-            try {
-            // Draw video frame to canvas
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            } catch (drawError) {
-              console.error('Error drawing video to canvas:', drawError);
-              toast.error('Failed to capture photo. Please try again.');
-            captureBtn.disabled = false;
-            captureBtn.style.opacity = '1';
-              return;
-            }
-            
-          // Convert canvas to blob
-            canvas.toBlob((blob) => {
-            if (!streamActive) return;
-            
-              if (!blob) {
-                toast.error('Failed to process photo. Please try again.');
-                captureBtn.disabled = false;
+              captureBtn.disabled = false;
               captureBtn.style.opacity = '1';
-                return;
-              }
-              
-              try {
-                const file = new File([blob], `camera-photo-${Date.now()}.jpg`, { type: 'image/jpeg' });
-                // Create a DataTransfer object to simulate file input
-                const dataTransfer = new DataTransfer();
-                dataTransfer.items.add(file);
-              
-              // Clean up camera before processing file
+              return;
+            }
+
               cleanup();
-              
-              // Process the file
-                handleFileSelect(dataTransfer.files);
-              } catch (fileError) {
-                console.error('Error creating file:', fileError);
-                toast.error('Failed to process photo. Please try again.');
-                captureBtn.disabled = false;
-              captureBtn.style.opacity = '1';
-                cleanup();
-              }
-            }, 'image/jpeg', 0.9);
+                handleFileSelect(filesToFileList([file]));
           } catch (error: any) {
             console.error('Error capturing photo:', error);
             toast.error(`Failed to capture photo: ${error?.message || 'Unknown error'}`);
@@ -616,6 +585,12 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
             cleanup();
           }
         };
+
+      captureBtn.onclick = () => { void doCapture(); };
+      captureBtn.ontouchend = (e) => {
+        e.preventDefault();
+        void doCapture();
+      };
         
         cancelBtn.onclick = cleanup;
         
