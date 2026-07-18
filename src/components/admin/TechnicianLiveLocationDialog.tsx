@@ -395,8 +395,10 @@ const TechnicianLiveLocationDialog = ({
 
               {!row.is_tracking && (
                 <p className="text-xs text-muted-foreground">
-                  Location sharing is off on this phone — usually the location permission
-                  was denied. Showing the last known location.
+                  Location sharing is off in the app record — ask them to open the
+                  HydrogenRO Tech APK (not the website), keep Location allowed for
+                  the app, then force-close and reopen once. Showing the last known
+                  location.
                 </p>
               )}
 

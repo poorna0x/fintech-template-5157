@@ -8,10 +8,9 @@
  * which receives the FCM data push even when Android has killed the app,
  * grabs a fix and uploads it via the upload-tech-location function.
  *
- * The only JS work happens once per app start (startLiveTracking):
- * run one brief fix through the background-geolocation plugin (triggers the
- * Android permission prompt), upload it as the initial "last known" position,
- * mark the row is_tracking=true and register the FCM token.
+ * The only JS work happens on app start / resume (startLiveTracking):
+ * mark the row is_tracking=true (gates admin pings), register the FCM token,
+ * and run one brief bootstrap fix (permission prompt + initial pin).
  *
  * On the plain website/PWA `isNativeApp()` is false and none of this runs.
  */
@@ -76,6 +75,20 @@ async function stopWatcherOnly(): Promise<void> {
   }
 }
 
+async function markSharingOn(technicianId: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('technician_live_locations')
+    .upsert(
+      { technician_id: technicianId, is_tracking: true, updated_at: new Date().toISOString() },
+      { onConflict: 'technician_id' }
+    );
+  if (error) {
+    console.warn('[live-location] failed to set is_tracking=true:', error.message);
+    return false;
+  }
+  return true;
+}
+
 /**
  * One brief fix on enable: triggers the permission prompt and stores an
  * initial position so the admin view isn't empty before the first request.
@@ -94,6 +107,7 @@ async function runBootstrapFix(technicianId: string): Promise<boolean> {
       (position, error) => {
         if (error) {
           if (error.code === 'NOT_AUTHORIZED') {
+            // Real deny — stop pings until the tech reopens/resumes with permission.
             void stopLiveTracking(technicianId);
             void BackgroundGeolocation.openSettings();
           } else {
@@ -125,30 +139,32 @@ async function runBootstrapFix(technicianId: string): Promise<boolean> {
   }
 }
 
-/** Enable sharing: permission prompt + initial fix + FCM registration. */
+/**
+ * Enable / refresh sharing. Safe to call on every resume — always re-writes
+ * is_tracking=true so a stuck "Sharing off" recovers after permission is fixed.
+ */
 export async function startLiveTracking(technicianId: string): Promise<boolean> {
   if (!isNativeApp()) return false;
-  if (sharingEnabled) return true;
 
-  sharingEnabled = true;
-
-  // Row marks the technician as sharing even before the first fix arrives.
-  await supabase
-    .from('technician_live_locations')
-    .upsert(
-      { technician_id: technicianId, is_tracking: true, updated_at: new Date().toISOString() },
-      { onConflict: 'technician_id' }
-    );
-
-  // Native location requests arrive over FCM, so the token must be registered.
+  // Admin pings gate on this flag. Always refresh it (do not early-return
+  // before the upsert — the in-memory flag can be true while DB is false).
+  const marked = await markSharingOn(technicianId);
   void registerTechnicianPushToken(technicianId);
 
+  if (sharingEnabled) {
+    return marked;
+  }
+  sharingEnabled = true;
+
+  // Bootstrap is best-effort (permission prompt + initial pin). Native FCM
+  // location uploads do not need the watcher — so a failed bootstrap must NOT
+  // flip is_tracking back off (that was leaving techs stuck on "Sharing off"
+  // even with Location permission allowed).
   const ok = await runBootstrapFix(technicianId);
   if (!ok) {
-    await stopLiveTracking(technicianId);
-    return false;
+    console.warn('[live-location] bootstrap watcher failed; keeping is_tracking on for FCM pings');
   }
-  return true;
+  return marked;
 }
 
 /** Disable sharing: the server refuses location pings while is_tracking=false. */

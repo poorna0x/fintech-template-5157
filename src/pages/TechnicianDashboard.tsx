@@ -1167,14 +1167,47 @@ const TechnicianDashboard = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.technicianId, loadAssignedJobs]);
 
-  // Android app: enable location sharing + FCM push registration on start.
+  // Android app: enable location sharing + FCM push registration on start/resume.
   // Always on — no toggle; the phone only sends its location when the office
   // requests it, and job pushes need the registered token anyway.
+  // Re-run on resume so a stuck is_tracking=false recovers after permission is fixed.
   useEffect(() => {
     if (!user?.technicianId) return;
-    void import('@/lib/technicianLiveLocation').then(({ startLiveTracking }) =>
-      startLiveTracking(user.technicianId!)
-    );
+    const technicianId = user.technicianId;
+
+    const enableSharing = () => {
+      void import('@/lib/technicianLiveLocation').then(({ startLiveTracking }) =>
+        startLiveTracking(technicianId)
+      );
+    };
+
+    enableSharing();
+
+    const onVisibility = () => {
+      if (!document.hidden) enableSharing();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    let removeAppListener: (() => void) | undefined;
+    void import('@capacitor/app')
+      .then(({ App }) =>
+        App.addListener('appStateChange', ({ isActive }) => {
+          if (isActive) enableSharing();
+        })
+      )
+      .then((handle) => {
+        removeAppListener = () => {
+          void handle.remove();
+        };
+      })
+      .catch(() => {
+        /* web / plugin missing */
+      });
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      removeAppListener?.();
+    };
   }, [user?.technicianId]);
 
   // Returning customers (≥1 completed job) — same logic as admin blue indicator
