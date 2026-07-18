@@ -191,6 +191,7 @@ export const bangaloreAreas = [
   'Agara', 'Akshayanagar', 'Amruthahalli', 'Anandnagar', 'Ananthapura', 'Anjanapura', 'Arakere',
   'Arekere', 'Avalahalli', 'Bagalur', 'Baiyappanahalli', 'Banaswadi', 'Bannerghatta', 'Basapura',
   'G.B palya', 'GB palya', 'GB Palya', 'Hongasandra', 'Mico Layout', 'Arakere Mico Layout',
+  'Garvebhavipalya', 'Garvebhavi Palya', 'Garvebavi Palya', 'GarvebhaviPalya',
   'HSR Layout', 'Somasandrapalya', 'ITI Layout',
   'Basavanagudi', 'Basaveshwara Nagar', 'Begur', 'Bellandur', 'BEML Layout', 'Benson Town',
   'Bhairava Nagar', 'Bidadi', 'Bidrahalli', 'Bommanahalli', 'Bommasandra', 'Brigade Road',
@@ -1061,7 +1062,11 @@ function isGenericGeoLocality(name: string): boolean {
   return false;
 }
 
-/** Longest bangaloreAreas name that appears in the full address text. */
+/** Longest bangaloreAreas name that appears in the full address text.
+ * When several areas match (Google often lists a wrong nearby layout AND the real
+ * locality), prefer the rightmost match among near-longest hits — Google's
+ * formatted addresses put the more local place later (before city/state).
+ */
 export function findLongestAreaMatchInText(completeAddress: string): string | null {
   if (!completeAddress?.trim()) return null;
 
@@ -1069,24 +1074,33 @@ export function findLongestAreaMatchInText(completeAddress: string): string | nu
   const haystack = completeAddress.toLowerCase();
   const hayNorm = normalizeForComparison(completeAddress);
 
-  let best: string | null = null;
-  let bestLen = 0;
+  type Hit = { name: string; len: number; lastIndex: number };
+  const hits: Hit[] = [];
 
   for (const area of uniqueAreas) {
     const trimmed = area.trim();
     if (trimmed.length < 3) continue;
     const areaLower = trimmed.toLowerCase();
     const areaNorm = normalizeForComparison(trimmed);
-    const hit =
-      haystack.includes(areaLower) ||
-      (areaNorm.length >= 3 && hayNorm.includes(areaNorm));
-    if (hit && trimmed.length > bestLen) {
-      best = trimmed;
-      bestLen = trimmed.length;
+
+    let lastIndex = -1;
+    if (haystack.includes(areaLower)) {
+      lastIndex = haystack.lastIndexOf(areaLower);
+    } else if (areaNorm.length >= 3 && hayNorm.includes(areaNorm)) {
+      lastIndex = hayNorm.lastIndexOf(areaNorm);
+    } else {
+      continue;
     }
+
+    hits.push({ name: trimmed, len: trimmed.length, lastIndex });
   }
 
-  return best;
+  if (hits.length === 0) return null;
+
+  const maxLen = Math.max(...hits.map((h) => h.len));
+  const nearLongest = hits.filter((h) => h.len >= maxLen * 0.75);
+  nearLongest.sort((a, b) => b.lastIndex - a.lastIndex || b.len - a.len);
+  return nearLongest[0]?.name ?? null;
 }
 
 export type GoogleAddressComponentLike = {
