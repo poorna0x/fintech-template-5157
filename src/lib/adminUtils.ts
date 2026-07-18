@@ -373,6 +373,7 @@ export const bangaloreAreas = [
   'Ittamadu', 'Katriguppe', 'Deepanjalinagar', 'Lingarajapuram', 'Harohalli',
   'Parappana', 'Choodasandra', 'Gattahalli', 'Muthsandra', 'Hadosiddapura',
   'Sulikere', 'Thubarahalli', 'Cubbon',
+  'Guddahatti', 'Guddahatti Gate', 'Chandapura Gate',
   // Even more one-word Bengaluru localities
   'Anjanapura', 'Arehalli', 'Avalahalli', 'Bagalagunte', 'Banashankari', 'Basapura',
   'Belathur', 'Benniganahalli', 'Bettahalli', 'Bhattarahalli', 'Bhoganahalli', 'Bikasipura',
@@ -1030,6 +1031,12 @@ const GENERIC_GEO_LOCALITIES = new Set(
     'district',
     'taluk',
     'hobli',
+    'bengaluru urban',
+    'bangalore urban',
+    'bengaluru urban district',
+    'bangalore urban district',
+    'bengaluru rural',
+    'bangalore rural',
   ].map((s) => s.toLowerCase())
 );
 
@@ -1042,6 +1049,13 @@ function isGenericGeoLocality(name: string): boolean {
   if (!n || n.length < 3) return true;
   if (GENERIC_GEO_LOCALITIES.has(n)) return true;
   if (/^\d{6}$/.test(n)) return true; // pincode
+  // "Bengaluru Urban", "Anekal Taluk", etc.
+  if (/\b(bengaluru|bangalore)\b/.test(n) && /\b(urban|rural|district|division|metropolitan)\b/.test(n)) {
+    return true;
+  }
+  if (/\btaluk\b/.test(n) && n.split(/\s+/).length <= 3) {
+    // Prefer bare place name over "Anekal Taluk" when we can; still allow list match separately
+  }
   return false;
 }
 
@@ -1085,26 +1099,52 @@ const GOOGLE_SHORT_LOCATION_TYPES = [
   'sublocality',
   'sublocality_level_2',
   'sublocality_level_3',
+  'administrative_area_level_3',
+  'administrative_area_level_4',
+  'administrative_area_level_2',
   'premise',
 ] as const;
 
+function componentLabel(comp: GoogleAddressComponentLike): string {
+  return (comp.long_name || comp.short_name || '').trim();
+}
+
+/** Join all Google component labels so list matching can see Anekal/etc. even when missing from formatted_address. */
+function joinGoogleComponentText(components: GoogleAddressComponentLike[]): string {
+  return components
+    .map((c) => componentLabel(c))
+    .filter(Boolean)
+    .join(', ');
+}
+
 /**
  * Short location from Google reverse-geocode address_components (same Fetch call).
- * Prefers a list match on the component name; otherwise uses the component label.
+ * 1) Longest list match across ALL component names (covers Anekal in admin levels)
+ * 2) Else first useful neighborhood/sublocality/admin label
  */
 export function shortLocationFromGoogleComponents(
   components: GoogleAddressComponentLike[] | null | undefined
 ): string | null {
   if (!Array.isArray(components) || components.length === 0) return null;
 
+  // List match on every component label (and combined text) — works when Google
+  // puts the place in administrative_area_level_* instead of neighborhood.
+  const combined = joinGoogleComponentText(components);
+  const listFromAll = findLongestAreaMatchInText(combined);
+  if (listFromAll) return clipVisibleAddress(listFromAll);
+
   for (const type of GOOGLE_SHORT_LOCATION_TYPES) {
     const comp = components.find((c) => Array.isArray(c.types) && c.types.includes(type));
-    const raw = (comp?.long_name || comp?.short_name || '').trim();
+    const raw = componentLabel(comp || {});
     if (!raw || isGenericGeoLocality(raw)) continue;
 
-    const fromList = findLongestAreaMatchInText(raw) || extractLocationFromAddressString(raw);
+    // Strip trailing " Taluk" / " District" for cleaner short location
+    const cleaned = raw.replace(/\s+(Taluk|District|Hobli)$/i, '').trim();
+    if (!cleaned || isGenericGeoLocality(cleaned)) continue;
+
+    const fromList = findLongestAreaMatchInText(cleaned);
     if (fromList) return clipVisibleAddress(fromList);
-    return clipVisibleAddress(raw);
+    return clipVisibleAddress(cleaned);
   }
 
   return null;
@@ -1112,7 +1152,7 @@ export function shortLocationFromGoogleComponents(
 
 /**
  * Resolve short/visible location after Fetch Address:
- * 1) bangaloreAreas list (longest match in address text / hints)
+ * 1) bangaloreAreas list (longest match in address text / hints / Google components)
  * 2) Google place components from the same reverse-geocode (no extra API call)
  */
 export function resolveVisibleAddressFromGeocode(options: {
@@ -1120,8 +1160,13 @@ export function resolveVisibleAddressFromGeocode(options: {
   addressComponents?: GoogleAddressComponentLike[] | null;
   addressHints?: Array<string | null | undefined>;
 }): string | null {
+  const componentText = Array.isArray(options.addressComponents)
+    ? joinGoogleComponentText(options.addressComponents)
+    : '';
+
   const texts = [
     options.formattedAddress,
+    componentText,
     ...(options.addressHints || []),
   ].filter((t): t is string => typeof t === 'string' && t.trim().length > 0);
 
