@@ -57,21 +57,45 @@ const ProductVerification = lazy(() => import("./pages/ProductVerification"));
 const SpareParts = lazy(() => import("./pages/SpareParts"));
 const Warranty = lazy(() => import("./pages/Warranty"));
 
-/** Portal Suspense fallback: branded web bounce; APK native logo dismisses when this paints. */
+/** Plain bounce — used for in-session Suspense (Settings, previews, tech dashboard, …). */
+function PlainPortalSuspenseLoader() {
+  return (
+    <div className="min-h-screen bg-[#FAFAFA] flex items-center justify-center p-4">
+      <div className="flex justify-center space-x-1">
+        <div className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+        <div className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+        <div className="w-3 h-3 bg-primary rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Branded logo loader only on the first portal Suspense in this page load
+ * (cold enter). Later lazy navigations stay plain so Settings / email preview
+ * / tech dashboard don't flash logo+name again.
+ */
+let portalEntryLoaderShown = false;
+
 const LoadingSpinner = () => {
   const { pathname } = useLocation();
-  if (pathname.startsWith("/technician")) {
-    return <PortalBootLoader showName={false} />;
+  const isTechnicianPortal = pathname.startsWith("/technician");
+  const isAdminPortal = pathname.startsWith("/admin") || pathname.startsWith("/settings");
+
+  if (isTechnicianPortal || isAdminPortal) {
+    if (!portalEntryLoaderShown) {
+      portalEntryLoaderShown = true;
+      return <PortalBootLoader showName={isAdminPortal} />;
+    }
+    return <PlainPortalSuspenseLoader />;
   }
-  if (pathname.startsWith("/admin") || pathname.startsWith("/settings")) {
-    return <PortalBootLoader showName />;
-  }
+
   return (
     <div className="min-h-screen flex items-center justify-center">
       <div className="flex justify-center space-x-1">
         <div className="w-4 h-4 bg-primary rounded-full animate-bounce"></div>
-        <div className="w-4 h-4 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-        <div className="w-4 h-4 bg-primary rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+        <div className="w-4 h-4 bg-primary rounded-full animate-bounce" style={{ animationDelay: "0.1s" }}></div>
+        <div className="w-4 h-4 bg-primary rounded-full animate-bounce" style={{ animationDelay: "0.2s" }}></div>
       </div>
     </div>
   );

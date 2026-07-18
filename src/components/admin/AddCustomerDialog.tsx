@@ -175,6 +175,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   // Mirrors addFormData.google_location for race-safe reads across async awaits
   // (e.g. while clipboard.readText is in flight, the user might start typing).
   const googleLocationRef = useRef('');
+  // Coords from Fetch Address — used at save when the Maps URL has no lat/lng in the string.
+  const fetchedCoordsRef = useRef<{ latitude: number; longitude: number } | null>(null);
   // Full Maps share text (place name + link) from clipboard — used when short-link expand fails.
   const mapsShareTextRef = useRef('');
   // Guards against double-clicks and other re-entrancy on the Fetch Address button.
@@ -478,6 +480,14 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       [field]: nextValue
     }));
 
+    if (field === 'google_location') {
+      const text = typeof nextValue === 'string' ? nextValue : '';
+      googleLocationRef.current = text;
+      if (!text.trim()) {
+        fetchedCoordsRef.current = null;
+      }
+    }
+
     if (formErrors[field]) {
       setFormErrors(prev => ({
         ...prev,
@@ -698,10 +708,8 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         return;
       }
 
-      let resolvedLocation = googleLocation;
-
       const token = await resolveSupabaseAccessTokenForApi();
-      if (isGoogleMapsShortLink(resolvedLocation)) {
+      if (isGoogleMapsShortLink(googleLocation)) {
         loadingToast = toast.loading('Resolving short link...');
       }
 
@@ -722,10 +730,14 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       }
 
       const { coords, didExpandShortLink, placeHintUsed } = resolved;
-      resolvedLocation = resolved.resolvedLocation;
+      const stableMapsLink = `https://www.google.com/maps/place/${coords.latitude},${coords.longitude}`;
+      fetchedCoordsRef.current = {
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+      };
+      setAddFormData((prev) => ({ ...prev, google_location: stableMapsLink }));
+      googleLocationRef.current = stableMapsLink;
       if (didExpandShortLink) {
-        setAddFormData((prev) => ({ ...prev, google_location: resolvedLocation }));
-        googleLocationRef.current = resolvedLocation;
         toast.info('Short link expanded');
       }
       if (placeHintUsed) {
@@ -734,9 +746,13 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
       loadingToast = toast.loading('Fetching address from Google Maps...');
 
-      const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-      if (apiKey && (!window.google || !window.google.maps || !window.google.maps.Geocoder)) {
-        await loadGoogleMapsScript();
+      try {
+        const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+        if (apiKey && (!window.google || !window.google.maps || !window.google.maps.Geocoder)) {
+          await loadGoogleMapsScript();
+        }
+      } catch (mapsLoadError) {
+        console.warn('Google Maps script load failed; keeping coordinates:', mapsLoadError);
       }
 
       const address = await reverseGeocode(coords.latitude, coords.longitude);
@@ -751,6 +767,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
       setAddFormData((prev) => ({
         ...prev,
+        google_location: stableMapsLink,
         address: address ? capitalizeFirstLetter(address) : prev.address,
         visible_address: extractedLocation
           ? capitalizeFirstLetter(extractedLocation).substring(0, 20)
@@ -768,7 +785,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         }
       } else {
         toast.success(`Coordinates extracted: ${coords.latitude}, ${coords.longitude}`);
-        toast.warning('Could not fetch address. Coordinates saved.');
+        toast.warning('Could not fetch address. Coordinates will be saved with the customer.');
         if (extractedLocation) {
           toast.info(`Location extracted from existing address: ${extractedLocation}`);
         }
@@ -1012,22 +1029,24 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       const formData = addFormDataRef.current;
       const extractedLocation = extractLocationFromAddressString(formData.address);
       
-      // Extract coordinates from Google Maps link if provided
-      let latitude = 0;
-      let longitude = 0;
+      // Extract coordinates from Fetch Address (preferred) or from the Maps URL string
+      let latitude = fetchedCoordsRef.current?.latitude ?? 0;
+      let longitude = fetchedCoordsRef.current?.longitude ?? 0;
       let googleLocation: string | null = null;
-      let coordinatesExtracted = false;
+      let coordinatesExtracted = latitude !== 0 && longitude !== 0;
       
       if (formData.google_location && formData.google_location.trim()) {
         const googleLocationInput = formData.google_location.trim();
         
         if (isGoogleMapsUrl(googleLocationInput)) {
           googleLocation = googleLocationInput;
-          const extracted = extractCoordinatesFromGoogleMapsLink(googleLocationInput);
-          if (extracted) {
-            latitude = extracted.latitude;
-            longitude = extracted.longitude;
-            coordinatesExtracted = true;
+          if (!coordinatesExtracted) {
+            const extracted = extractCoordinatesFromGoogleMapsLink(googleLocationInput);
+            if (extracted) {
+              latitude = extracted.latitude;
+              longitude = extracted.longitude;
+              coordinatesExtracted = true;
+            }
           }
         } else {
           // If it looks like coordinates (lat,lng format)
@@ -1041,9 +1060,15 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
         }
       }
       
-      // If we extracted coordinates but don't have a Google Maps link, generate one
-      if (coordinatesExtracted && !googleLocation && latitude !== 0 && longitude !== 0) {
-        googleLocation = `https://www.google.com/maps/place/${latitude},${longitude}`;
+      // Always store a coords URL when we have lat/lng (avoids re-resolve on assign).
+      if (coordinatesExtracted && latitude !== 0 && longitude !== 0) {
+        if (
+          !googleLocation ||
+          isGoogleMapsShortLink(googleLocation) ||
+          !extractCoordinatesFromGoogleMapsLink(googleLocation)
+        ) {
+          googleLocation = `https://www.google.com/maps/place/${latitude},${longitude}`;
+        }
       }
       
       // Collect all photos from all service types (only include uploaded URLs)

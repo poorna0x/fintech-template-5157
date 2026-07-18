@@ -22,12 +22,18 @@ import {
 } from '@/lib/customerGst';
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import {
+  extractCoordinatesFromGoogleMapsLink,
   extractMapsUrlFromText,
   isGoogleMapsShortLink,
   isGoogleMapsUrl,
   resolveGoogleMapsInputToCoords,
   sanitizeGoogleMapsInput,
 } from '@/lib/googleMapsLink';
+
+/** Persist a coords URL so assign/distance never depends on short-link expand again. */
+function mapsLinkFromCoords(latitude: number, longitude: number): string {
+  return `https://www.google.com/maps/place/${latitude},${longitude}`;
+}
 import {
   EQUIPMENT_BRAND_DATA as brandData,
   EQUIPMENT_MODEL_DATA as modelData,
@@ -214,6 +220,8 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
   const locationManuallyEditedRef = useRef(false);
   const alternateLocationManuallyEditedRef = useRef(false);
   const lastSavedFormDataRef = useRef<string>('');
+  /** Ignore stale getById responses; only hydrate on open / customer id change (not every parent re-render). */
+  const hydrateGenerationRef = useRef(0);
 
   const filteredAddressSuggestions = useMemo(() => {
     if (!editFormData?.visible_address || editFormData.visible_address.trim().length === 0) {
@@ -271,19 +279,28 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
     return joined || existingStreet || '';
   };
 
-  // Initialize form when customer changes - fetch fresh data from database
+  // Hydrate once per open / customer id — not on every new `customer` object from parent re-renders
+  // (those wipe Fetch Address coords on mobile before Save).
   useEffect(() => {
-    if (customer && open) {
-      // Fetch fresh customer data from database to ensure we have latest prefilter status
-      const fetchFreshCustomerData = async () => {
+    if (!open || !customer) {
+      if (!open) hydrateGenerationRef.current += 1;
+      return;
+    }
+
+    const generation = ++hydrateGenerationRef.current;
+    const customerId = customer.id;
+
+    const fetchFreshCustomerData = async () => {
         try {
-          const { data: freshCustomer, error } = await db.customers.getById(customer.id);
+          const { data: freshCustomer, error } = await db.customers.getById(customerId);
+          if (generation !== hydrateGenerationRef.current) return;
           if (error) {
             console.warn('Failed to fetch fresh customer data, using prop data:', error);
           }
           
           // Use fresh customer data if available, otherwise fall back to prop
           const customerToUse = freshCustomer || customer;
+          if (generation !== hydrateGenerationRef.current) return;
           
           const serviceTypes = parseDbServiceType(customerToUse.service_type || '');
           const equipment: {[serviceType: string]: {brand: string, model: string}} = {};
@@ -428,11 +445,10 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
         }
       };
       
-      fetchFreshCustomerData();
+      void fetchFreshCustomerData();
       locationManuallyEditedRef.current = false;
       alternateLocationManuallyEditedRef.current = false;
-    }
-  }, [customer, open]);
+  }, [customer?.id, open]);
 
 
   const handleEditFormChange = (
@@ -768,13 +784,11 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
       return;
     }
 
-    let resolvedLocation = googleLocation;
-
     let loadingToast: string | number | undefined;
 
     try {
       const token = await resolveSupabaseAccessTokenForApi();
-      if (isGoogleMapsShortLink(resolvedLocation)) {
+      if (isGoogleMapsShortLink(googleLocation)) {
         loadingToast = toast.loading('Resolving short link...');
       }
 
@@ -797,14 +811,32 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
       }
 
       const { coords, didExpandShortLink, placeHintUsed } = resolved;
-      resolvedLocation = resolved.resolvedLocation;
+      // Always persist a coords URL — short/place links without lat/lng in the string
+      // made assign-by-distance resolve again even after a successful Fetch.
+      const stableMapsLink = mapsLinkFromCoords(coords.latitude, coords.longitude);
+
+      setEditFormData((prev) => ({
+        ...prev,
+        ...(isPrimary
+          ? {
+              google_location: stableMapsLink,
+              location: {
+                ...prev.location,
+                latitude: coords.latitude,
+                longitude: coords.longitude,
+              },
+            }
+          : {
+              alternate_google_location: stableMapsLink,
+              alternate_location: {
+                ...prev.alternate_location,
+                latitude: coords.latitude,
+                longitude: coords.longitude,
+              },
+            }),
+      }));
+
       if (didExpandShortLink) {
-        setEditFormData((prev) => ({
-          ...prev,
-          ...(isPrimary
-            ? { google_location: resolvedLocation }
-            : { alternate_google_location: resolvedLocation }),
-        }));
         toast.info('Short link expanded');
       }
       if (placeHintUsed) {
@@ -813,9 +845,13 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
 
       loadingToast = toast.loading('Fetching address from Google Maps...');
 
-      const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-      if (apiKey && (!window.google || !window.google.maps || !window.google.maps.Geocoder)) {
-        await loadGoogleMapsScript();
+      try {
+        const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+        if (apiKey && (!window.google || !window.google.maps || !window.google.maps.Geocoder)) {
+          await loadGoogleMapsScript();
+        }
+      } catch (mapsLoadError) {
+        console.warn('Google Maps script load failed; keeping coordinates:', mapsLoadError);
       }
 
       const address = await reverseGeocode(coords.latitude, coords.longitude);
@@ -835,6 +871,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
         ...prev,
         ...(isPrimary
           ? {
+              google_location: stableMapsLink,
               location: {
                 ...prev.location,
                 latitude: coords.latitude,
@@ -853,6 +890,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
                 : prev.visible_address
             }
           : {
+              alternate_google_location: stableMapsLink,
               alternate_location: {
                 ...prev.alternate_location,
                 latitude: coords.latitude,
@@ -880,7 +918,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
         }
       } else {
         toast.success(`Coordinates extracted: ${coords.latitude}, ${coords.longitude}`);
-        toast.warning('Could not fetch address. Coordinates saved.');
+        toast.warning('Could not fetch address. Coordinates saved — tap Update to keep them.');
         if (extractedLocation && isPrimary) {
           toast.info(`Location extracted from existing address: ${extractedLocation}`);
         }
@@ -1011,16 +1049,36 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
         pincode: editFormData.address.pincode
       };
 
+      let latitude = Number(editFormData.location.latitude) || 0;
+      let longitude = Number(editFormData.location.longitude) || 0;
+      let googleLocation =
+        (editFormData.google_location && editFormData.google_location.trim()) ||
+        ((editFormData.location as any)?.googleLocation as string | undefined) ||
+        '';
+
+      if ((latitude === 0 || longitude === 0) && googleLocation) {
+        const extracted = extractCoordinatesFromGoogleMapsLink(googleLocation);
+        if (extracted) {
+          latitude = extracted.latitude;
+          longitude = extracted.longitude;
+        }
+      }
+
+      if (latitude !== 0 && longitude !== 0) {
+        // Prefer a coords URL so later assign/distance never re-expands short links.
+        if (!googleLocation || isGoogleMapsShortLink(googleLocation) || !extractCoordinatesFromGoogleMapsLink(googleLocation)) {
+          googleLocation = mapsLinkFromCoords(latitude, longitude);
+        }
+      }
+
       const updatedLocation: any = {
-        latitude: editFormData.location.latitude || 0,
-        longitude: editFormData.location.longitude || 0,
+        latitude,
+        longitude,
         formattedAddress: editFormData.address.street || editFormData.location.formattedAddress || '',
       };
       
-      if (editFormData.google_location && editFormData.google_location.trim()) {
-        updatedLocation.googleLocation = editFormData.google_location;
-      } else if ((editFormData.location as any)?.googleLocation) {
-        updatedLocation.googleLocation = (editFormData.location as any).googleLocation;
+      if (googleLocation) {
+        updatedLocation.googleLocation = googleLocation;
       }
 
       const brands: string[] = [];
@@ -1073,16 +1131,36 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
                 pincode: editFormData.alternate_address.pincode,
               },
               alternate_location: (() => {
+                let altLat = Number(editFormData.alternate_location.latitude) || 0;
+                let altLng = Number(editFormData.alternate_location.longitude) || 0;
+                let altGoogle =
+                  editFormData.alternate_google_location?.trim() || '';
+                if ((altLat === 0 || altLng === 0) && altGoogle) {
+                  const extracted = extractCoordinatesFromGoogleMapsLink(altGoogle);
+                  if (extracted) {
+                    altLat = extracted.latitude;
+                    altLng = extracted.longitude;
+                  }
+                }
+                if (altLat !== 0 && altLng !== 0) {
+                  if (
+                    !altGoogle ||
+                    isGoogleMapsShortLink(altGoogle) ||
+                    !extractCoordinatesFromGoogleMapsLink(altGoogle)
+                  ) {
+                    altGoogle = mapsLinkFromCoords(altLat, altLng);
+                  }
+                }
                 const altLocation: any = {
-                  latitude: editFormData.alternate_location.latitude || 0,
-                  longitude: editFormData.alternate_location.longitude || 0,
+                  latitude: altLat,
+                  longitude: altLng,
                   formattedAddress:
                     editFormData.alternate_address.street ||
                     editFormData.alternate_location.formattedAddress ||
                     '',
                 };
-                if (editFormData.alternate_google_location?.trim()) {
-                  altLocation.googleLocation = editFormData.alternate_google_location;
+                if (altGoogle) {
+                  altLocation.googleLocation = altGoogle;
                 }
                 return altLocation;
               })(),

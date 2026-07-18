@@ -11,7 +11,7 @@ type PortalBootLoaderProps = {
 };
 
 /**
- * Website boot spinner for portal apps.
+ * Website boot spinner for portal apps — cold entry only (see App.tsx flag).
  * On APK, native overlay covers this until login/dashboard is ready.
  */
 export function PortalBootLoader({ showName, message, className }: PortalBootLoaderProps) {
