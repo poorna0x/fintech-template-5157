@@ -661,6 +661,8 @@ const TechnicianDashboard = () => {
   const [isBillPhotosUploading, setIsBillPhotosUploading] = useState(false);
   const [isPaymentScreenshotUploading, setIsPaymentScreenshotUploading] = useState(false);
   const [optionalCompletionPhotos, setOptionalCompletionPhotos] = useState<string[]>([]);
+  /** Ask for optional job photos only when this customer has zero photos across profile + all jobs. */
+  const [customerHasZeroPhotosAltogether, setCustomerHasZeroPhotosAltogether] = useState(false);
   const [isOptionalCompletionPhotosUploading, setIsOptionalCompletionPhotosUploading] = useState(false);
   const [extraPhotosStep6, setExtraPhotosStep6] = useState<string[]>([]);
   const [dontSendMessageToCustomer, setDontSendMessageToCustomer] = useState(false);
@@ -3547,6 +3549,7 @@ const TechnicianDashboard = () => {
     setBillAmount('');
     setBillPhotos([]);
     setOptionalCompletionPhotos([]);
+    setCustomerHasZeroPhotosAltogether(false);
     setExtraPhotosStep6([]);
     setDontSendMessageToCustomer(false);
     const today = new Date().toISOString().split('T')[0];
@@ -3837,10 +3840,16 @@ const TechnicianDashboard = () => {
       (jobWithCustomer as any)?.customerId ||
       jobWithCustomer.customer_id;
 
-    // Missing purifier photo → toast + push (again at complete end if still missing).
+    // Photos nudge + optional upload step: only when THIS CUSTOMER has zero photos
+    // altogether (profile + any past/current jobs) — not merely because this job slot is empty.
     if (customerId) {
       void (async () => {
         try {
+          const allPhotos = await getAllCustomerPhotos(customerId);
+          const customerHasNoPhotosAtAll = allPhotos.length === 0;
+          setCustomerHasZeroPhotosAltogether(customerHasNoPhotosAtAll);
+          if (!customerHasNoPhotosAtAll) return;
+
           const { data: custRow } = await supabase
             .from('customers')
             .select('id,photos,full_name')
@@ -3856,11 +3865,14 @@ const TechnicianDashboard = () => {
             customer: merged,
             phase: 'start',
             showToast: true,
+            customerHasNoPhotosAtAll: true,
           });
         } catch {
-          /* best-effort */
+          setCustomerHasZeroPhotosAltogether(false);
         }
       })();
+    } else {
+      setCustomerHasZeroPhotosAltogether(false);
     }
 
     if (customerId) {
@@ -3888,7 +3900,7 @@ const TechnicianDashboard = () => {
             setServiceBrand((prev) => prev ?? 'elevenro');
           }
         } catch (err) {
-          console.warn('[TechnicianDashboard] Error loading service brand:', err);
+          console.warn('[TechnicianDashboard] Error loading last service brand:', err);
           setIsLoadingServiceBrand(false);
           setServiceBrand((prev) => prev ?? 'elevenro');
         }
@@ -4430,7 +4442,7 @@ const TechnicianDashboard = () => {
         notifyAdminsJobEvent(jobId, 'completed')
       );
 
-      // If purifier photo still missing at finish, nudge again (even if they ignored at start).
+      // If customer still has no photos at finish, nudge again (even if they ignored at start).
       const endCustomerId =
         (selectedJobForComplete.customer as any)?.id ||
         selectedJobForComplete.customer?.id ||
@@ -4440,6 +4452,12 @@ const TechnicianDashboard = () => {
       if (endCustomerId) {
         void (async () => {
           try {
+            const allPhotos = await getAllCustomerPhotos(endCustomerId);
+            if (allPhotos.length > 0) {
+              setCustomerHasZeroPhotosAltogether(false);
+              return;
+            }
+            setCustomerHasZeroPhotosAltogether(true);
             const { data: custRow } = await supabase
               .from('customers')
               .select('id,photos,full_name')
@@ -4451,6 +4469,7 @@ const TechnicianDashboard = () => {
               customer: custRow || (selectedJobForComplete.customer as Record<string, unknown>),
               phase: 'end',
               showToast: true,
+              customerHasNoPhotosAtAll: true,
             });
           } catch {
             /* best-effort */
@@ -4570,7 +4589,7 @@ const TechnicianDashboard = () => {
         toast.error('Please enter a valid bill amount');
         return;
       }
-      if (jobHasZeroExistingPhotos && (isOptionalCompletionPhotosUploading || hasPendingOptionalCompletionPhotos())) {
+      if (customerHasZeroPhotosAltogether && (isOptionalCompletionPhotosUploading || hasPendingOptionalCompletionPhotos())) {
         toast.error(
           isOptionalCompletionPhotosUploading
             ? 'Completion photo(s) are still uploading.'
@@ -5399,19 +5418,9 @@ const TechnicianDashboard = () => {
     });
   };
 
-  // True when job has no existing photos (before, after, images) - used to show optional "Add photo" at top of dialog
-  const jobHasZeroExistingPhotos = useMemo(() => {
-    if (!selectedJobForComplete) return false;
-    const before = Array.isArray(selectedJobForComplete.before_photos || (selectedJobForComplete as any).beforePhotos) ? (selectedJobForComplete.before_photos || (selectedJobForComplete as any).beforePhotos) : [];
-    const after = Array.isArray(selectedJobForComplete.after_photos || (selectedJobForComplete as any).afterPhotos) ? (selectedJobForComplete.after_photos || (selectedJobForComplete as any).afterPhotos) : [];
-    const images = Array.isArray((selectedJobForComplete as any).images) ? (selectedJobForComplete as any).images : [];
-    const existing = [...extractPhotoUrls(before), ...extractPhotoUrls(after), ...extractPhotoUrls(images)];
-    return existing.length === 0;
-  }, [selectedJobForComplete]);
-
   /** Disable Next / Complete while optional, bill, payment, or extra photos are still uploading (background; no toast). */
   const completeJobNextDisabledByUploads = useMemo(() => {
-    if (completeJobStep === 1 && jobHasZeroExistingPhotos) {
+    if (completeJobStep === 1 && customerHasZeroPhotosAltogether) {
       if (isOptionalCompletionPhotosUploading || optionalCompletionPhotos.some(hasPendingLocalOrUploadingPhoto)) {
         return true;
       }
@@ -5430,7 +5439,7 @@ const TechnicianDashboard = () => {
     return false;
   }, [
     completeJobStep,
-    jobHasZeroExistingPhotos,
+    customerHasZeroPhotosAltogether,
     isOptionalCompletionPhotosUploading,
     optionalCompletionPhotos,
     isBillPhotosUploading,
@@ -7866,7 +7875,7 @@ const TechnicianDashboard = () => {
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction
                 onClick={() => {
-                  if (jobHasZeroExistingPhotos && (isOptionalCompletionPhotosUploading || optionalCompletionPhotos.some(hasPendingLocalOrUploadingPhoto))) {
+                  if (customerHasZeroPhotosAltogether && (isOptionalCompletionPhotosUploading || optionalCompletionPhotos.some(hasPendingLocalOrUploadingPhoto))) {
                     return;
                   }
                   setBillAmountConfirmOpen(false);
@@ -8166,6 +8175,11 @@ const TechnicianDashboard = () => {
                   if (job?.id && cid) {
                     void (async () => {
                       try {
+                        const allPhotos = await getAllCustomerPhotos(cid);
+                        const customerHasNoPhotosAtAll = allPhotos.length === 0;
+                        setCustomerHasZeroPhotosAltogether(customerHasNoPhotosAtAll);
+                        if (!customerHasNoPhotosAtAll) return;
+
                         const { data: custRow } = await supabase
                           .from('customers')
                           .select('id,photos,full_name')
@@ -8179,9 +8193,10 @@ const TechnicianDashboard = () => {
                           customer: custRow || (job.customer as Record<string, unknown>),
                           phase: 'start',
                           showToast: true,
+                          customerHasNoPhotosAtAll: true,
                         });
                       } catch {
-                        /* best-effort */
+                        setCustomerHasZeroPhotosAltogether(false);
                       }
                     })();
                   }
@@ -8241,12 +8256,12 @@ const TechnicianDashboard = () => {
             >
               {selectedJobForComplete && (
                 <>
-                  {/* Optional "Add photo" - only in step 1 when job has no existing photos; once user proceeds or skips, it does not show in later steps */}
-                  {completeJobStep === 1 && jobHasZeroExistingPhotos && (
+                  {/* Optional "Add photo" — only when this customer has no photos anywhere (not per-job). */}
+                  {completeJobStep === 1 && customerHasZeroPhotosAltogether && (
                     <div className="mb-4 w-full max-w-full">
                       <CompletionPhotoStep
-                        label="Add job photos (optional)"
-                        hint="This job has no photos yet — capture the site or RO unit before you continue."
+                        label="Add customer photos (optional)"
+                        hint="This customer has no photos yet — capture the RO unit if you can."
                         images={optionalCompletionPhotos}
                         onImagesChange={setOptionalCompletionPhotos}
                         onUploadStateChange={setIsOptionalCompletionPhotosUploading}

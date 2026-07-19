@@ -1,5 +1,5 @@
 /**
- * Fire-and-forget FCM nudge when customer purifier photo is missing
+ * Fire-and-forget FCM nudge when customer has no purifier/site photos on file
  * at complete-job start or end.
  */
 import { supabase } from '@/lib/supabase';
@@ -12,8 +12,17 @@ export function nudgeTechCustomerProfileGaps(opts: {
   phase: 'start' | 'end';
   /** Show an in-app toast as well (useful while the complete dialog is open). */
   showToast?: boolean;
+  /**
+   * When set, overrides the customers.photos-only check.
+   * Pass true only if the customer has zero photos across profile + all jobs.
+   */
+  customerHasNoPhotosAtAll?: boolean;
 }): void {
-  if (!customerMissingPurifierPhoto(opts.customer)) return;
+  const missing =
+    typeof opts.customerHasNoPhotosAtAll === 'boolean'
+      ? opts.customerHasNoPhotosAtAll
+      : customerMissingPurifierPhoto(opts.customer);
+  if (!missing) return;
   if (!opts.jobId) return;
 
   if (opts.showToast) {
