@@ -172,9 +172,6 @@ public class MessageReplyReceiver extends BroadcastReceiver {
                 R.drawable.ic_stat_notify, "Call", callPending)
             .build();
 
-        // Tap notification body also opens dialer (direct call from message).
-        // openIntent unused — keep contentIntent = call.
-
         Person office = buildOfficePerson(context);
         Person self = new Person.Builder().setName("You").setKey("self").build();
         NotificationCompat.MessagingStyle style = new NotificationCompat.MessagingStyle(self)
