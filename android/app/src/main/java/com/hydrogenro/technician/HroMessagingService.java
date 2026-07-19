@@ -43,6 +43,10 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             showOtpNotification(data);
             return;
         }
+        if ("call_customer".equals(data.get("type"))) {
+            showCallCustomer(data);
+            return;
+        }
         if ("office_message".equals(data.get("type"))) {
             showOfficeMessage(data);
             return;
@@ -180,6 +184,24 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             body,
             replyToken,
             replyUrl,
+            data.get("tag")
+        );
+    }
+
+    /** Job nudge: Call customer — Call action opens dialer (no Reply). */
+    private void showCallCustomer(Map<String, String> data) {
+        String phone = data.get("callPhone");
+        if (phone == null || phone.isEmpty()) phone = data.get("phone");
+        if (phone == null || phone.isEmpty()) return;
+        String title = data.get("msgTitle");
+        if (title == null || title.isEmpty()) title = data.get("title");
+        String body = data.get("msgBody");
+        if (body == null) body = data.get("body");
+        MessageReplyReceiver.showCallCustomerNotification(
+            getApplicationContext(),
+            title,
+            body,
+            phone,
             data.get("tag")
         );
     }

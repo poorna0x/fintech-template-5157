@@ -172,8 +172,10 @@ export async function sendTechnicianPush(opts: {
   color?: string;
   tag?: string;
   allowReply?: boolean;
+  /** When set, tech notification shows a Call action (dialer) — no Reply. */
+  callPhone?: string;
 }): Promise<TechPushSendResult> {
-  const { technicianId, title, body, color, tag, allowReply } = opts;
+  const { technicianId, title, body, color, tag, allowReply, callPhone } = opts;
   if (!technicianId || !title) return 'skipped';
 
   try {
@@ -183,6 +185,8 @@ export async function sendTechnicianPush(opts: {
       toast.error('Session expired — sign in again.');
       return 'failed';
     }
+
+    const phoneDigits = (callPhone || '').replace(/[^\d+]/g, '').trim();
 
     const res = await fetch('/.netlify/functions/send-tech-push', {
       method: 'POST',
@@ -196,7 +200,8 @@ export async function sendTechnicianPush(opts: {
         body,
         color: color || TECH_NUDGE_COLOR,
         ...(tag ? { tag } : {}),
-        ...(allowReply ? { allowReply: true } : {}),
+        ...(allowReply && !phoneDigits ? { allowReply: true } : {}),
+        ...(phoneDigits ? { callPhone: phoneDigits } : {}),
       }),
     });
     const out = (await res.json().catch(() => null)) as
@@ -307,10 +312,16 @@ export async function sendJobCallCustomerNudge(job: Record<string, unknown>): Pr
     toast.error('No technician assigned on this job.');
     return 'skipped';
   }
+  const phone = getJobCustomerPhone(job);
+  if (!phone) {
+    toast.error('No customer phone on this job.');
+    return 'skipped';
+  }
   const copy = buildCallCustomerCopy(job);
   return sendTechnicianPush({
     technicianId: techId,
     ...copy,
+    callPhone: phone,
     tag: `job_nudge_call_${String((job as { id?: string }).id || '').slice(0, 24)}`,
   });
 }

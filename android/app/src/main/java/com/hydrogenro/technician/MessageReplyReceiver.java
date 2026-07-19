@@ -135,6 +135,77 @@ public class MessageReplyReceiver extends BroadcastReceiver {
         }
     }
 
+    /**
+     * Call-customer nudge: messaging-style tray alert with a Call action that
+     * opens the dialer (ACTION_DIAL — no CALL_PHONE permission). No Reply.
+     */
+    public static void showCallCustomerNotification(
+        Context context,
+        String title,
+        String body,
+        String phone,
+        String tag
+    ) {
+        NotificationChannels.ensureJobAlerts(context);
+
+        String digits = phone != null ? phone.replaceAll("[^0-9+]", "") : "";
+        if (digits.isEmpty()) {
+            Log.w(TAG, "call_customer missing phone");
+            return;
+        }
+
+        String safeTitle = (title != null && !title.isEmpty()) ? title : "Call customer now";
+        String safeBody = (body != null && !body.isEmpty()) ? body : digits;
+        String notifTag = (tag != null && !tag.isEmpty()) ? tag : "call_customer";
+        int notifId = NOTIFICATION_ID + 17; // distinct from reply messages
+
+        Intent dialIntent = new Intent(Intent.ACTION_DIAL, android.net.Uri.parse("tel:" + digits))
+            .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        PendingIntent callPending = PendingIntent.getActivity(
+            context,
+            notifId,
+            dialIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+
+        NotificationCompat.Action callAction = new NotificationCompat.Action.Builder(
+                R.drawable.ic_stat_notify, "Call", callPending)
+            .build();
+
+        // Tap notification body also opens dialer (direct call from message).
+        // openIntent unused — keep contentIntent = call.
+
+        Person office = buildOfficePerson(context);
+        Person self = new Person.Builder().setName("You").setKey("self").build();
+        NotificationCompat.MessagingStyle style = new NotificationCompat.MessagingStyle(self)
+            .setConversationTitle(safeTitle)
+            .addMessage(safeBody, System.currentTimeMillis(), office);
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_notify)
+            .setColor(COLOR_PENDING)
+            .setContentTitle(safeTitle)
+            .setContentText(safeBody)
+            .setStyle(style)
+            .setCategory(NotificationCompat.CATEGORY_CALL)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setDefaults(Notification.DEFAULT_ALL)
+            .setContentIntent(callPending)
+            .addAction(callAction)
+            .setAutoCancel(true);
+        Bitmap officeAvatar = loadOfficeAvatarBitmap(context);
+        if (officeAvatar != null) {
+            builder.setLargeIcon(officeAvatar);
+        }
+
+        try {
+            NotificationManagerCompat.from(context).notify(notifTag, notifId, builder.build());
+            Log.i(TAG, "Posted call-customer nudge with Call action");
+        } catch (SecurityException e) {
+            Log.w(TAG, "Notifications not permitted", e);
+        }
+    }
+
     private static Person buildOfficePerson(Context context) {
         Person.Builder office = new Person.Builder()
             .setName(OFFICE_SENDER_NAME)

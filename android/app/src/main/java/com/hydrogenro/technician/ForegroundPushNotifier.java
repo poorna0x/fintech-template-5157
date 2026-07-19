@@ -33,6 +33,7 @@ public final class ForegroundPushNotifier {
         // Silent / already handled with custom UI — never toast these.
         if ("otp_request".equals(type)
             || "office_message".equals(type)
+            || "call_customer".equals(type)
             || "clear_notifications".equals(type)
             || "location_request".equals(type)) {
             return;

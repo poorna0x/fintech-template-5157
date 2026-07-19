@@ -53,10 +53,13 @@ exports.handler = async (event) => {
   // Accept boolean or string (defensive) so Reply isn't silently skipped.
   const allowReply =
     body.allowReply === true || body.allowReply === 'true' || body.allowReply === 1;
-  if (!technicianId || (!clear && !title && !(allowReply && message))) {
+  // callPhone: data-only push; native shows a Call action (dialer) — no Reply.
+  const callPhoneRaw = String(body.callPhone || body.phone || '').trim();
+  const callPhone = callPhoneRaw.replace(/[^\d+]/g, '').slice(0, 20);
+  if (!technicianId || (!clear && !title && !(allowReply && message) && !(callPhone && message))) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'technicianId and title required' }) };
   }
-  if (!clear && !allowReply && !title) {
+  if (!clear && !allowReply && !callPhone && !title) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'technicianId and title required' }) };
   }
 
@@ -84,6 +87,21 @@ exports.handler = async (event) => {
       buildMessage = (token) => ({
         token,
         data: { type: 'clear_notifications', ...(tag ? { tag } : {}) },
+        android: { priority: 'high' },
+      });
+    } else if (callPhone) {
+      // Call-customer nudge: Call action only (no Reply). New tech APK required.
+      const notifTitle = title || 'Call customer now';
+      buildMessage = (token) => ({
+        token,
+        data: {
+          type: 'call_customer',
+          msgTitle: notifTitle,
+          msgBody: message || callPhone,
+          callPhone,
+          tag: tag || 'call_customer',
+          ...(color ? { color } : {}),
+        },
         android: { priority: 'high' },
       });
     } else if (allowReply) {
