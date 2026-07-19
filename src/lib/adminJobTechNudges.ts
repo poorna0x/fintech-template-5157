@@ -183,8 +183,24 @@ export async function sendTechnicianPush(opts: {
   allowReply?: boolean;
   /** When set, tech notification shows a Call action (dialer) — no Reply. */
   callPhone?: string;
+  /** Are you going? Yes→EN_ROUTE, No→reply. Requires tech APK + jobId. */
+  goingNow?: boolean;
+  jobId?: string;
+  /** Short label baked into reply token (e.g. "Time to finish?"). */
+  replyAbout?: string;
 }): Promise<TechPushSendResult> {
-  const { technicianId, title, body, color, tag, allowReply, callPhone } = opts;
+  const {
+    technicianId,
+    title,
+    body,
+    color,
+    tag,
+    allowReply,
+    callPhone,
+    goingNow,
+    jobId,
+    replyAbout,
+  } = opts;
   if (!technicianId || !title) return 'skipped';
 
   try {
@@ -209,8 +225,10 @@ export async function sendTechnicianPush(opts: {
         body,
         color: color || TECH_NUDGE_COLOR,
         ...(tag ? { tag } : {}),
-        ...(allowReply && !phoneDigits ? { allowReply: true } : {}),
+        ...(allowReply && !phoneDigits && !goingNow ? { allowReply: true } : {}),
         ...(phoneDigits ? { callPhone: phoneDigits } : {}),
+        ...(goingNow && jobId ? { goingNow: true, jobId } : {}),
+        ...(replyAbout ? { replyAbout } : {}),
       }),
     });
     const out = (await res.json().catch(() => null)) as
@@ -282,6 +300,15 @@ export function buildStartJobCopy(job: Record<string, unknown>): { title: string
   };
 }
 
+export function buildAreYouGoingCopy(job: Record<string, unknown>): { title: string; body: string } {
+  const label = formatNudgeCustomerLabel(getJobCustomerName(job));
+  const time = getJobCustomTimeLabel(job);
+  return {
+    title: label,
+    body: `Are you going?${time ? ` · ${time}` : ''} — Yes starts the job. No to reply.`.slice(0, 300),
+  };
+}
+
 export function buildCustomerWaitingCopy(job: Record<string, unknown>): { title: string; body: string } {
   const label = formatNudgeCustomerLabel(getJobCustomerName(job));
   const phone = getJobCustomerPhone(job);
@@ -348,6 +375,7 @@ export async function sendJobOnTheWayNudge(job: Record<string, unknown>): Promis
     technicianId: techId,
     ...copy,
     allowReply: true,
+    replyAbout: 'On the way?',
     tag: `job_nudge_eta_${String((job as { id?: string }).id || '').slice(0, 24)}`,
   });
 }
@@ -363,6 +391,7 @@ export async function sendJobTimeToFinishNudge(job: Record<string, unknown>): Pr
     technicianId: techId,
     ...copy,
     allowReply: true,
+    replyAbout: 'Time to finish?',
     tag: `job_nudge_finish_${String((job as { id?: string }).id || '').slice(0, 24)}`,
   });
 }
@@ -381,6 +410,28 @@ export async function sendJobStartNudge(job: Record<string, unknown>): Promise<T
   });
 }
 
+export async function sendJobAreYouGoingNudge(job: Record<string, unknown>): Promise<TechPushSendResult> {
+  const techId = getJobAssignedTechnicianId(job);
+  if (!techId) {
+    toast.error('No technician assigned on this job.');
+    return 'skipped';
+  }
+  const jobId = String((job as { id?: string }).id || '').trim();
+  if (!jobId) {
+    toast.error('Job id missing.');
+    return 'skipped';
+  }
+  const copy = buildAreYouGoingCopy(job);
+  return sendTechnicianPush({
+    technicianId: techId,
+    ...copy,
+    goingNow: true,
+    jobId,
+    replyAbout: 'Are you going?',
+    tag: `job_nudge_going_${jobId.slice(0, 24)}`,
+  });
+}
+
 export async function sendJobCustomerWaitingNudge(job: Record<string, unknown>): Promise<TechPushSendResult> {
   const techId = getJobAssignedTechnicianId(job);
   if (!techId) {
@@ -392,6 +443,7 @@ export async function sendJobCustomerWaitingNudge(job: Record<string, unknown>):
     technicianId: techId,
     ...copy,
     allowReply: true,
+    replyAbout: 'Customer waiting',
     tag: `job_nudge_wait_${String((job as { id?: string }).id || '').slice(0, 24)}`,
   });
 }

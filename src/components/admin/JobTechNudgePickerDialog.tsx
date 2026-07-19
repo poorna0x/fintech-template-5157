@@ -25,6 +25,7 @@ import {
   isCustomerWaitingLikely,
   isJobNotStarted,
   jobOrCustomerHasPhotosLocal,
+  sendJobAreYouGoingNudge,
   sendJobCallCustomerNudge,
   sendJobCustomerWaitingNudge,
   sendJobOnTheWayNudge,
@@ -139,6 +140,22 @@ export default function JobTechNudgePickerDialog({
             )}
             On the way? (reply ETA)
           </Button>
+          {showStart && (
+            <Button
+              type="button"
+              variant="outline"
+              className="justify-start h-11"
+              disabled={!!busy}
+              onClick={() => void run('going', () => sendJobAreYouGoingNudge(job as any))}
+            >
+              {busy === 'going' ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Navigation className="mr-2 h-4 w-4" />
+              )}
+              Are you going? (Yes / No)
+            </Button>
+          )}
           <Button
             type="button"
             variant="outline"

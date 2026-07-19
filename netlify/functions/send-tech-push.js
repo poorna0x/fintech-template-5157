@@ -10,6 +10,16 @@ const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
 const { authorizeAdminBearer } = require('./admin-auth-guard');
 const { getMessaging, sendToTechnicianDevices } = require('./fcm-helper');
 const { makeOfficeMessageReplyToken } = require('./office-message-reply-token');
+const { makeJobStartNudgeToken } = require('./job-start-nudge-token');
+
+/** First phrase of nudge body before em dash / newline — embed in reply token. */
+function replyAboutFromBody(message) {
+  const body = String(message || '').trim();
+  if (!body) return '';
+  const head = body.split(/[—\n]/)[0].trim();
+  if (head && head.length <= 80 && !/^★/.test(head)) return head;
+  return '';
+}
 
 exports.handler = async (event) => {
   const corsHeaders = getCorsHeaders(event.headers.origin || event.headers.Origin);
@@ -56,11 +66,27 @@ exports.handler = async (event) => {
   // callPhone: data-only push; native shows a Call action (dialer) — no Reply.
   const callPhoneRaw = String(body.callPhone || body.phone || '').trim();
   const callPhone = callPhoneRaw.replace(/[^\d+]/g, '').slice(0, 20);
-  if (!technicianId || (!clear && !title && !(allowReply && message) && !(callPhone && message))) {
+  // goingNow: Yes → start job (EN_ROUTE), No → inline reply. Needs tech APK.
+  const goingNow =
+    body.goingNow === true || body.goingNow === 'true' || body.goingNow === 1;
+  const jobId = String(body.jobId || '').trim();
+  const replyAbout = String(body.replyAbout || body.about || '').trim().slice(0, 80)
+    || replyAboutFromBody(message);
+  if (
+    !technicianId ||
+    (!clear &&
+      !title &&
+      !(allowReply && message) &&
+      !(callPhone && message) &&
+      !(goingNow && jobId && message))
+  ) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'technicianId and title required' }) };
   }
-  if (!clear && !allowReply && !callPhone && !title) {
+  if (!clear && !allowReply && !callPhone && !goingNow && !title) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'technicianId and title required' }) };
+  }
+  if (goingNow && !jobId) {
+    return { statusCode: 400, headers, body: JSON.stringify({ error: 'jobId required for goingNow' }) };
   }
 
   const supabaseUrl = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
@@ -104,10 +130,38 @@ exports.handler = async (event) => {
         },
         android: { priority: 'high' },
       });
+    } else if (goingNow) {
+      // Are you going? Yes → EN_ROUTE; No → reply. Tech APK v3.9+.
+      const startToken = makeJobStartNudgeToken(technicianId, jobId);
+      const replyToken = makeOfficeMessageReplyToken(
+        technicianId,
+        replyAbout || 'Are you going?'
+      );
+      const notifTitle = title || 'Are you going?';
+      buildMessage = (token) => ({
+        token,
+        data: {
+          type: 'going_now',
+          msgTitle: notifTitle,
+          msgBody: message || 'Tap Yes to start this job, or No to reply.',
+          jobId,
+          startToken,
+          startUrl: `${siteUrl}/.netlify/functions/submit-tech-going-yes`,
+          replyToken,
+          replyUrl: `${siteUrl}/.netlify/functions/submit-tech-message-reply`,
+          tag: tag || 'going_now',
+          ...(color ? { color } : {}),
+        },
+        android: { priority: 'high' },
+      });
     } else if (allowReply) {
-      const replyToken = makeOfficeMessageReplyToken(technicianId);
+      const replyToken = makeOfficeMessageReplyToken(technicianId, replyAbout);
       const notifTitle = title || 'Message from office';
-      console.log('[send-tech-push] allowReply path', { technicianId, hasToken: !!replyToken });
+      console.log('[send-tech-push] allowReply path', {
+        technicianId,
+        hasToken: !!replyToken,
+        about: replyAbout || null,
+      });
       buildMessage = (token) => ({
         token,
         // Data-only so HroMessagingService builds a notification with Reply.

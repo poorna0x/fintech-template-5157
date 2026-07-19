@@ -43,15 +43,19 @@ public class MessageReplyReceiver extends BroadcastReceiver {
     private static final int AVATAR_MAX_PX = 192;
 
     public static final String ACTION_REPLY = "com.hydrogenro.technician.OFFICE_MSG_REPLY";
+    public static final String ACTION_GOING_YES = "com.hydrogenro.technician.GOING_NOW_YES";
     public static final String KEY_REPLY = "reply_text";
     public static final String EXTRA_REPLY_TOKEN = "replyToken";
     public static final String EXTRA_REPLY_URL = "replyUrl";
+    public static final String EXTRA_START_TOKEN = "startToken";
+    public static final String EXTRA_START_URL = "startUrl";
     public static final String EXTRA_TITLE = "title";
     public static final String EXTRA_BODY = "body";
     public static final String EXTRA_TAG = "tag";
     public static final String EXTRA_NOTIFICATION_ID = "notificationId";
 
     private static final int NOTIFICATION_ID = 0x0FF1CE;
+    private static final int GOING_NOTIFICATION_ID = 0x060166;
 
     public static void showOfficeMessageNotification(
         Context context,
@@ -200,6 +204,110 @@ public class MessageReplyReceiver extends BroadcastReceiver {
         }
     }
 
+    /**
+     * Are you going? Yes posts startToken (job → EN_ROUTE). No is inline Reply
+     * (same submit-tech-message-reply path, about baked into replyToken).
+     */
+    public static void showGoingNowNotification(
+        Context context,
+        String title,
+        String body,
+        String startToken,
+        String startUrl,
+        String replyToken,
+        String replyUrl,
+        String tag
+    ) {
+        NotificationChannels.ensureJobAlerts(context);
+
+        String safeTitle = (title != null && !title.isEmpty()) ? title : "Are you going?";
+        String safeBody = (body != null && !body.isEmpty())
+            ? body
+            : "Yes starts this job. No — type a reply.";
+        String notifTag = (tag != null && !tag.isEmpty()) ? tag : "going_now";
+        int notifId = GOING_NOTIFICATION_ID;
+
+        Intent yesIntent = new Intent(context, MessageReplyReceiver.class)
+            .setAction(ACTION_GOING_YES)
+            .putExtra(EXTRA_START_TOKEN, startToken)
+            .putExtra(EXTRA_START_URL, startUrl)
+            .putExtra(EXTRA_TITLE, safeTitle)
+            .putExtra(EXTRA_BODY, safeBody)
+            .putExtra(EXTRA_TAG, notifTag)
+            .putExtra(EXTRA_NOTIFICATION_ID, notifId);
+        PendingIntent yesPending = PendingIntent.getBroadcast(
+            context,
+            notifId + 1,
+            yesIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+        NotificationCompat.Action yesAction = new NotificationCompat.Action.Builder(
+                R.drawable.ic_stat_notify, "Yes", yesPending)
+            .build();
+
+        RemoteInput remoteInput = new RemoteInput.Builder(KEY_REPLY)
+            .setLabel("Why not?")
+            .build();
+        Intent replyIntent = new Intent(context, MessageReplyReceiver.class)
+            .setAction(ACTION_REPLY)
+            .putExtra(EXTRA_REPLY_TOKEN, replyToken)
+            .putExtra(EXTRA_REPLY_URL, replyUrl)
+            .putExtra(EXTRA_TITLE, safeTitle)
+            .putExtra(EXTRA_BODY, safeBody)
+            .putExtra(EXTRA_TAG, notifTag)
+            .putExtra(EXTRA_NOTIFICATION_ID, notifId);
+        PendingIntent replyPending = PendingIntent.getBroadcast(
+            context,
+            notifId + 2,
+            replyIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT |
+                (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ? PendingIntent.FLAG_MUTABLE : 0)
+        );
+        NotificationCompat.Action noAction = new NotificationCompat.Action.Builder(
+                R.drawable.ic_stat_notify, "No", replyPending)
+            .addRemoteInput(remoteInput)
+            .setAllowGeneratedReplies(false)
+            .build();
+
+        Intent openIntent = new Intent(context, MainActivity.class)
+            .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        PendingIntent openPending = PendingIntent.getActivity(
+            context,
+            notifId,
+            openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+
+        NotificationCompat.BigTextStyle style = new NotificationCompat.BigTextStyle()
+            .setBigContentTitle(safeTitle)
+            .bigText(safeBody);
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_notify)
+            .setColor(COLOR_PENDING)
+            .setContentTitle(safeTitle)
+            .setContentText(safeBody)
+            .setStyle(style)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setDefaults(Notification.DEFAULT_ALL)
+            .setContentIntent(openPending)
+            .addAction(yesAction)
+            .addAction(noAction)
+            .setAutoCancel(false);
+        Bitmap officeAvatar = loadOfficeAvatarBitmap(context);
+        if (officeAvatar != null) {
+            builder.setLargeIcon(officeAvatar);
+        }
+
+        try {
+            NotificationManagerCompat.from(context).notify(notifTag, notifId, builder.build());
+            Log.i(TAG, "Posted going-now nudge with Yes + No(Reply)");
+        } catch (SecurityException e) {
+            Log.w(TAG, "Notifications not permitted", e);
+        }
+    }
+
     private static Person buildOfficePerson(Context context) {
         Person.Builder office = new Person.Builder()
             .setName(OFFICE_SENDER_NAME)
@@ -246,6 +354,12 @@ public class MessageReplyReceiver extends BroadcastReceiver {
 
     @Override
     public void onReceive(Context context, Intent intent) {
+        if (intent == null || intent.getAction() == null) return;
+
+        if (ACTION_GOING_YES.equals(intent.getAction())) {
+            handleGoingYes(context, intent);
+            return;
+        }
         if (!ACTION_REPLY.equals(intent.getAction())) return;
 
         Bundle results = RemoteInput.getResultsFromIntent(intent);
@@ -309,6 +423,49 @@ public class MessageReplyReceiver extends BroadcastReceiver {
                 showOfficeMessageNotification(context, title,
                     (body != null ? body : "") + "\n\nCouldn't send — type your reply again.",
                     replyToken, replyUrl, tag);
+            }
+            pending.finish();
+        }).start();
+    }
+
+    private void handleGoingYes(Context context, Intent intent) {
+        String startToken = intent.getStringExtra(EXTRA_START_TOKEN);
+        String startUrl = intent.getStringExtra(EXTRA_START_URL);
+        String tag = intent.getStringExtra(EXTRA_TAG);
+        int notificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, GOING_NOTIFICATION_ID);
+        if (startToken == null || startUrl == null) return;
+
+        showResult(context, tag, notificationId, "Starting job\u2026", false);
+
+        final PendingResult pending = goAsync();
+        new Thread(() -> {
+            boolean ok = false;
+            HttpURLConnection conn = null;
+            try {
+                JSONObject payload = new JSONObject();
+                payload.put("startToken", startToken);
+                conn = (HttpURLConnection) new URL(startUrl).openConnection();
+                conn.setRequestMethod("POST");
+                conn.setRequestProperty("Content-Type", "application/json");
+                conn.setDoOutput(true);
+                conn.setConnectTimeout(10_000);
+                conn.setReadTimeout(10_000);
+                byte[] bytes = payload.toString().getBytes(StandardCharsets.UTF_8);
+                try (OutputStream os = conn.getOutputStream()) {
+                    os.write(bytes);
+                }
+                ok = conn.getResponseCode() == 200;
+                if (!ok) Log.w(TAG, "Going-yes rejected: HTTP " + conn.getResponseCode());
+            } catch (Exception e) {
+                Log.w(TAG, "Going-yes failed", e);
+            } finally {
+                if (conn != null) conn.disconnect();
+            }
+
+            if (ok) {
+                showResult(context, tag, notificationId, "Job started — you\u2019re on the way \u2713", true);
+            } else {
+                showResult(context, tag, notificationId, "Couldn\u2019t start — open the app", false);
             }
             pending.finish();
         }).start();

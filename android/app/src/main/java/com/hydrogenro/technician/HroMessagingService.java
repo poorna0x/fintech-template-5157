@@ -47,6 +47,10 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             showCallCustomer(data);
             return;
         }
+        if ("going_now".equals(data.get("type"))) {
+            showGoingNow(data);
+            return;
+        }
         if ("office_message".equals(data.get("type"))) {
             showOfficeMessage(data);
             return;
@@ -182,6 +186,29 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             getApplicationContext(),
             title,
             body,
+            replyToken,
+            replyUrl,
+            data.get("tag")
+        );
+    }
+
+    /** Are you going? Yes starts job; No/Reply sends free-text to office. */
+    private void showGoingNow(Map<String, String> data) {
+        String startToken = data.get("startToken");
+        String startUrl = data.get("startUrl");
+        String replyToken = data.get("replyToken");
+        String replyUrl = data.get("replyUrl");
+        if (startToken == null || startUrl == null || replyToken == null || replyUrl == null) return;
+        String title = data.get("msgTitle");
+        if (title == null || title.isEmpty()) title = data.get("title");
+        String body = data.get("msgBody");
+        if (body == null) body = data.get("body");
+        MessageReplyReceiver.showGoingNowNotification(
+            getApplicationContext(),
+            title,
+            body,
+            startToken,
+            startUrl,
             replyToken,
             replyUrl,
             data.get("tag")

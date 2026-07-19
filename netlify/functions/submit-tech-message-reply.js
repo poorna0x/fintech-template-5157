@@ -18,6 +18,10 @@ function formatReplyText(reply) {
     .trim()
     .replace(/\s+/g, ' ');
   if (!t) return t;
+  // Bare ETA / finish estimates: "60" → "60 min."
+  if (/^\d{1,3}$/.test(t)) return `${t} min.`;
+  const minOnly = t.match(/^(\d{1,3})\s*m(in(ute)?s?)?\.?$/i);
+  if (minOnly) return `${minOnly[1]} min.`;
   t = t.charAt(0).toUpperCase() + t.slice(1);
   if (t.length < 100 && !/[.!?…]$/.test(t)) t += '.';
   return t;
@@ -27,7 +31,9 @@ function formatReplyText(reply) {
  * Turn office nudge copy into a short "about" line for the admin notification.
  * e.g. "On the way? — reply with your ETA." → "On the way?"
  */
-function formatNudgeAbout(originalTitle, originalBody) {
+function formatNudgeAbout(originalTitle, originalBody, aboutFromToken) {
+  const fromToken = String(aboutFromToken || '').trim();
+  if (fromToken) return fromToken.slice(0, 80);
   const body = String(originalBody || '').trim();
   if (body) {
     const head = body.split(/[—\n]/)[0].trim();
@@ -39,10 +45,10 @@ function formatNudgeAbout(originalTitle, originalBody) {
   return '';
 }
 
-function buildAdminReplyCopy(techName, reply, originalTitle, originalBody) {
+function buildAdminReplyCopy(techName, reply, originalTitle, originalBody, aboutFromToken) {
   const name = (techName || 'Technician').trim() || 'Technician';
   const nice = formatReplyText(reply);
-  const about = formatNudgeAbout(originalTitle, originalBody);
+  const about = formatNudgeAbout(originalTitle, originalBody, aboutFromToken);
   const title = `${name} replied`;
   let body;
   if (about) {
@@ -80,6 +86,7 @@ exports.handler = async (event) => {
     return { statusCode: 403, headers, body: JSON.stringify({ error: verified.error || 'Forbidden' }) };
   }
   const technicianId = verified.technicianId;
+  const aboutFromToken = verified.about || '';
 
   const supabaseUrl = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
   const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
@@ -126,7 +133,8 @@ exports.handler = async (event) => {
       techName,
       reply,
       originalTitle,
-      originalBody
+      originalBody,
+      aboutFromToken
     );
     const results = await Promise.allSettled(
       tokens.map((token) =>
