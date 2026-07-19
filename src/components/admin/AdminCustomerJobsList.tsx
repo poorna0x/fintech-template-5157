@@ -7,9 +7,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  DropdownMenuSub,
-  DropdownMenuSubTrigger,
-  DropdownMenuSubContent,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -45,11 +42,10 @@ import {
   ArrowRight,
   KeyRound,
   Bell,
-  Phone,
-  ImagePlus,
 } from 'lucide-react';
 import AskTechnicianOtpDialog from './AskTechnicianOtpDialog';
 import JobTechCustomNudgeDialog from './JobTechCustomNudgeDialog';
+import JobTechNudgePickerDialog from './JobTechNudgePickerDialog';
 import { CustomerCardHeader } from './CustomerCardHeader';
 import { ContactSection } from './ContactSection';
 import { CompletedJobSection } from './CompletedJobSection';
@@ -74,19 +70,6 @@ import {
   isOfficeCompletedJob,
   ZERO_COMMISSION_EMPLOYEE_ID,
 } from '@/lib/adminUtils';
-import {
-  isCustomerWaitingLikely,
-  isJobNotStarted,
-  jobOrCustomerHasPhotosLocal,
-  sendJobCallCustomerNudge,
-  sendJobCustomerWaitingNudge,
-  sendJobOnTheWayNudge,
-  sendJobPhotoNudge,
-  sendJobStartNudge,
-} from '@/lib/adminJobTechNudges';
-import { customerNameClassName } from '@/lib/customerDisplay';
-import { cn } from '@/lib/utils';
-import { getAmcDocumentBrandLabel } from '@/lib/amc-brand';
 import type { Job } from '@/types';
 
 export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
@@ -125,6 +108,7 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
   // (Home Triangle leads, or any job with Require OTP checked).
   const [otpJob, setOtpJob] = useState<Job | null>(null);
   const [customNudgeJob, setCustomNudgeJob] = useState<Job | null>(null);
+  const [nudgePickerJob, setNudgePickerJob] = useState<Job | null>(null);
 
   return (
     <>
@@ -1214,70 +1198,11 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
                             const assignedTechnicianId = (job as any).assigned_technician_id || (job as any).assignedTechnicianId;
                             if (!assignedTechnicianId) return null;
 
-                            const showPhoto = !jobOrCustomerHasPhotosLocal(job as any);
-                            const showStart = isJobNotStarted(job as any) && job.status !== 'PENDING';
-                            const showWaiting = isCustomerWaitingLikely(job as any);
-
                             return (
-                              <DropdownMenuSub>
-                                <DropdownMenuSubTrigger>
-                                  <Bell className="mr-2 h-4 w-4" />
-                                  Nudge tech
-                                </DropdownMenuSubTrigger>
-                                <DropdownMenuSubContent className="w-56">
-                                  {showPhoto && (
-                                    <DropdownMenuItem
-                                      onClick={() => {
-                                        void sendJobPhotoNudge(job as any);
-                                      }}
-                                    >
-                                      <ImagePlus className="mr-2 h-4 w-4" />
-                                      Add purifier photo
-                                    </DropdownMenuItem>
-                                  )}
-                                  <DropdownMenuItem
-                                    onClick={() => {
-                                      void sendJobCallCustomerNudge(job as any);
-                                    }}
-                                  >
-                                    <Phone className="mr-2 h-4 w-4" />
-                                    Call customer now
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onClick={() => {
-                                      void sendJobOnTheWayNudge(job as any);
-                                    }}
-                                  >
-                                    <Navigation className="mr-2 h-4 w-4" />
-                                    On the way? (reply ETA)
-                                  </DropdownMenuItem>
-                                  {showStart && (
-                                    <DropdownMenuItem
-                                      onClick={() => {
-                                        void sendJobStartNudge(job as any);
-                                      }}
-                                    >
-                                      <Clock className="mr-2 h-4 w-4" />
-                                      Start this job
-                                    </DropdownMenuItem>
-                                  )}
-                                  {showWaiting && (
-                                    <DropdownMenuItem
-                                      onClick={() => {
-                                        void sendJobCustomerWaitingNudge(job as any);
-                                      }}
-                                    >
-                                      <AlertCircle className="mr-2 h-4 w-4" />
-                                      Customer waiting
-                                    </DropdownMenuItem>
-                                  )}
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem onClick={() => setCustomNudgeJob(job)}>
-                                    <MessageSquare className="mr-2 h-4 w-4" />
-                                    Custom message…
-                                  </DropdownMenuItem>
-                                </DropdownMenuSubContent>
-                              </DropdownMenuSub>
+                              <DropdownMenuItem onClick={() => setNudgePickerJob(job)}>
+                                <Bell className="mr-2 h-4 w-4" />
+                                Nudge tech
+                              </DropdownMenuItem>
                             );
                           })()}
                           {(() => {
@@ -1348,6 +1273,24 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
             (otpJob as any).assigned_technician_id || (otpJob as any).assignedTechnicianId;
           return technicians.find((t) => t.id === techId)?.fullName;
         })()}
+      />
+      <JobTechNudgePickerDialog
+        open={nudgePickerJob != null}
+        onOpenChange={(o) => {
+          if (!o) setNudgePickerJob(null);
+        }}
+        job={nudgePickerJob}
+        technicianName={(() => {
+          if (!nudgePickerJob) return undefined;
+          const techId =
+            (nudgePickerJob as any).assigned_technician_id ||
+            (nudgePickerJob as any).assignedTechnicianId;
+          return technicians.find((t) => t.id === techId)?.fullName;
+        })()}
+        onCustomMessage={(j) => {
+          setNudgePickerJob(null);
+          setCustomNudgeJob(j);
+        }}
       />
       <JobTechCustomNudgeDialog
         open={customNudgeJob != null}
