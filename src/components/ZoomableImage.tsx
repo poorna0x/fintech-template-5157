@@ -10,8 +10,8 @@ interface ZoomableImageProps {
 
 /**
  * Pinch / double-tap / wheel zoom for photo viewers.
- * Keeps global viewport user-scalable=no (page layout safe) while restoring
- * in-image zoom that mobile used to get from the browser.
+ * Wrapper is sized to its parent (viewport stage) — never grows the dialog,
+ * which broke iPhone layout when combined with Radix translate centering.
  */
 export function ZoomableImage({ src, alt = '', className, onError }: ZoomableImageProps) {
   return (
@@ -28,10 +28,13 @@ export function ZoomableImage({ src, alt = '', className, onError }: ZoomableIma
       limitToBounds
     >
       <TransformComponent
+        wrapperClass="!h-full !w-full !max-h-full !max-w-full overflow-hidden"
+        contentClass="!flex !h-full !w-full !max-h-full !max-w-full items-center justify-center"
         wrapperStyle={{
           width: '100%',
           height: '100%',
-          maxHeight: '90vh',
+          maxWidth: '100%',
+          maxHeight: '100%',
           cursor: 'grab',
           touchAction: 'none',
         }}
@@ -47,7 +50,7 @@ export function ZoomableImage({ src, alt = '', className, onError }: ZoomableIma
           src={src}
           alt={alt}
           draggable={false}
-          className={className ?? 'max-w-full max-h-[90vh] object-contain select-none'}
+          className={className ?? 'max-h-full max-w-full select-none object-contain'}
           onError={onError}
         />
       </TransformComponent>

@@ -11,7 +11,7 @@ import { Job } from '@/types';
 import { toast } from 'sonner';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { db } from '@/lib/supabase';
-import { getDefaultLeadCost } from '@/lib/adminUtils';
+import { getDefaultLeadCost, isHomeTriangleLeadSource } from '@/lib/adminUtils';
 import { notifyTechnicianAfterJobEdit } from '@/lib/notifyTechJobEdit';
 
 interface EditJobFormData {
@@ -645,7 +645,9 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
                   setEditJobFormData(prev => ({ 
                     ...prev, 
                     lead_source: value,
-                    lead_cost: defaultCost
+                    lead_cost: defaultCost,
+                    // OTP on for Home Triangle; off when switching away
+                    require_otp: isHomeTriangleLeadSource(value),
                   }));
                 }}
                 required

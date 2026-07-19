@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Calendar, X } from 'lucide-react';
+import { Download, X } from 'lucide-react';
 import { ZoomableImage } from '@/components/ZoomableImage';
+import { cn } from '@/lib/utils';
 
 interface PhotoViewerDialogProps {
   open: boolean;
@@ -16,6 +17,11 @@ interface PhotoViewerDialogProps {
   onClose: () => void;
 }
 
+/**
+ * Full-viewport photo viewer. Uses inset-0 (no dialog translate centering) so
+ * iOS Safari + react-zoom-pan-pinch don't shove the image aside and leave
+ * controls floating in an empty black gutter.
+ */
 const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
   open,
   onOpenChange,
@@ -35,122 +41,124 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
     }
   }, [open, selectedPhoto?.url]);
 
-  const handleClose = (open: boolean) => {
-    if (!open) {
+  const handleClose = (nextOpen: boolean) => {
+    if (!nextOpen) {
       onClose();
     }
   };
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent 
-        className="max-w-[95vw] max-h-[95vh] p-0 bg-black border-none"
+      <DialogContent
+        hideCloseButton
+        className={cn(
+          // Override default max-w-lg + 50%/translate centering — breaks iPhone zoom layout
+          'fixed inset-0 left-0 top-0 z-50 flex h-[100dvh] max-h-[100dvh] w-screen max-w-none',
+          'translate-x-0 translate-y-0 gap-0 rounded-none border-none bg-black p-0 shadow-none',
+          'data-[state=open]:zoom-in-100 data-[state=closed]:zoom-out-100',
+          'data-[state=open]:slide-in-from-left-0 data-[state=open]:slide-in-from-top-0',
+          'data-[state=closed]:slide-out-to-left-0 data-[state=closed]:slide-out-to-top-0',
+        )}
         onInteractOutside={(e) => e.preventDefault()}
         onEscapeKeyDown={(e) => {
           e.preventDefault();
           onClose();
         }}
       >
-        <style dangerouslySetInnerHTML={{__html: `
-          [data-radix-dialog-content] button[data-radix-dialog-close] {
-            display: none !important;
-          }
-        `}} />
         <DialogHeader className="sr-only">
           <DialogTitle>Photo Viewer</DialogTitle>
           <DialogDescription>Full-screen photo viewer</DialogDescription>
         </DialogHeader>
-        <div className="relative w-full h-full flex items-center justify-center min-h-[500px] overflow-hidden">
-          {/* Close button */}
+
+        <div className="relative h-full w-full min-h-0 min-w-0 overflow-hidden">
           <Button
+            type="button"
             variant="ghost"
             size="sm"
-            className="absolute top-4 right-4 z-50 bg-black/70 text-white hover:bg-black/90 rounded-full w-10 h-10 p-0"
+            className="absolute right-3 top-[max(0.75rem,env(safe-area-inset-top))] z-50 h-10 w-10 rounded-full bg-black/70 p-0 text-white hover:bg-black/90"
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
               onClose();
             }}
           >
-            <X className="w-5 h-5" />
+            <X className="h-5 w-5" />
           </Button>
 
-          {/* Previous button */}
           {selectedPhoto && selectedPhoto.total > 1 && (
             <Button
+              type="button"
               variant="ghost"
               size="sm"
-              className="absolute left-4 top-1/2 transform -translate-y-1/2 z-50 bg-black/70 text-white hover:bg-black/90 rounded-full w-10 h-10 p-0"
+              className="absolute left-3 top-1/2 z-50 h-10 w-10 -translate-y-1/2 rounded-full bg-black/70 p-0 text-white hover:bg-black/90"
               onClick={(e) => {
                 e.stopPropagation();
                 onPrevious();
               }}
             >
-              <span className="text-2xl">‹</span>
+              <span className="text-2xl leading-none">‹</span>
             </Button>
           )}
 
-          {/* Next button */}
           {selectedPhoto && selectedPhoto.total > 1 && (
             <Button
+              type="button"
               variant="ghost"
               size="sm"
-              className="absolute right-4 top-1/2 transform -translate-y-1/2 z-50 bg-black/70 text-white hover:bg-black/90 rounded-full w-10 h-10 p-0"
+              className="absolute right-3 top-1/2 z-50 h-10 w-10 -translate-y-1/2 rounded-full bg-black/70 p-0 text-white hover:bg-black/90"
               onClick={(e) => {
                 e.stopPropagation();
                 onNext();
               }}
             >
-              <span className="text-2xl">›</span>
+              <span className="text-2xl leading-none">›</span>
             </Button>
           )}
 
-          {/* Photo counter */}
           {selectedPhoto && selectedPhoto.total > 1 && (
-            <div className="absolute top-4 left-4 z-10 bg-black/50 text-white px-3 py-1 rounded-full text-sm">
+            <div className="absolute left-3 top-[max(0.75rem,env(safe-area-inset-top))] z-50 rounded-full bg-black/50 px-3 py-1 text-sm text-white">
               {selectedPhoto.index + 1} / {selectedPhoto.total}
             </div>
           )}
 
-          {/* Pinch hint (mobile) */}
           {selectedPhoto && !loadError && (
-            <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-10 pointer-events-none text-white/70 text-xs sm:hidden">
+            <div className="pointer-events-none absolute bottom-20 left-1/2 z-50 -translate-x-1/2 text-xs text-white/70 sm:hidden">
               Pinch or double-tap to zoom
             </div>
           )}
 
-          {/* Action buttons */}
           {selectedPhoto && (
-            <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-10 flex gap-2">
+            <div className="absolute bottom-[max(1rem,env(safe-area-inset-bottom))] left-1/2 z-50 flex -translate-x-1/2 gap-2">
               <Button
+                type="button"
                 variant="secondary"
                 size="sm"
                 onClick={() => onDownload(selectedPhoto.url, selectedPhoto.index)}
                 className="bg-card/90 text-black hover:bg-card"
               >
-                <Calendar className="w-4 h-4 mr-2" />
+                <Download className="mr-2 h-4 w-4" />
                 Download
               </Button>
             </div>
           )}
 
-          {/* Main photo — pinch / double-tap / wheel zoom */}
-          {selectedPhoto && !loadError && (
-            <div className="w-full h-full min-h-[500px] max-h-[90vh] flex items-center justify-center">
+          {/* Image stage — fixed to viewport so pan/zoom cannot expand the dialog */}
+          <div className="absolute inset-0 z-0 flex items-center justify-center overflow-hidden">
+            {selectedPhoto && !loadError && (
               <ZoomableImage
                 src={selectedPhoto.url}
                 alt={`Photo ${selectedPhoto.index + 1}`}
-                className="max-w-full max-h-[85vh] object-contain select-none"
+                className="max-h-full max-w-full select-none object-contain"
                 onError={() => setLoadError(true)}
               />
-            </div>
-          )}
-          {selectedPhoto && loadError && (
-            <div className="text-center text-white px-6 max-w-lg">
-              <p className="text-lg font-medium mb-2">Could not load this image</p>
-              <p className="text-sm text-white/80 break-all">{selectedPhoto.url}</p>
-            </div>
-          )}
+            )}
+            {selectedPhoto && loadError && (
+              <div className="max-w-lg px-6 text-center text-white">
+                <p className="mb-2 text-lg font-medium">Could not load this image</p>
+                <p className="break-all text-sm text-white/80">{selectedPhoto.url}</p>
+              </div>
+            )}
+          </div>
         </div>
       </DialogContent>
     </Dialog>

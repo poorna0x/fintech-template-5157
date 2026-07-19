@@ -10487,26 +10487,29 @@ const TechnicianDashboard = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Photo Viewer — pinch / double-tap zoom (same as admin) */}
+      {/* Photo Viewer — pinch / double-tap zoom (same full-viewport layout as admin) */}
       <Dialog open={photoViewerOpen} onOpenChange={setPhotoViewerOpen}>
-        <DialogContent className="max-w-[95vw] max-h-[95vh] p-0 bg-black overflow-hidden">
-          <div className="relative w-full h-full flex items-center justify-center min-h-[60vh]">
-            {/* Close button */}
+        <DialogContent
+          hideCloseButton
+          className="fixed inset-0 left-0 top-0 z-50 flex h-[100dvh] max-h-[100dvh] w-screen max-w-none translate-x-0 translate-y-0 gap-0 rounded-none border-none bg-black p-0 shadow-none data-[state=open]:zoom-in-100 data-[state=closed]:zoom-out-100 data-[state=open]:slide-in-from-left-0 data-[state=open]:slide-in-from-top-0 data-[state=closed]:slide-out-to-left-0 data-[state=closed]:slide-out-to-top-0"
+        >
+          <div className="relative h-full w-full min-h-0 min-w-0 overflow-hidden">
             <Button
+              type="button"
               variant="ghost"
               size="sm"
-              className="absolute top-4 right-4 z-10 bg-black/50 text-white hover:bg-black/70"
+              className="absolute right-3 top-[max(0.75rem,env(safe-area-inset-top))] z-50 h-10 w-10 rounded-full bg-black/70 p-0 text-white hover:bg-black/90"
               onClick={() => setPhotoViewerOpen(false)}
             >
-              <XCircle className="w-5 h-5" />
+              <XCircle className="h-5 w-5" />
             </Button>
 
-            {/* Previous button */}
             {selectedPhoto && selectedPhoto.total > 1 && selectedPhoto.index > 0 && (
               <Button
+                type="button"
                 variant="ghost"
                 size="sm"
-                className="absolute left-4 top-1/2 transform -translate-y-1/2 z-10 bg-black/50 text-white hover:bg-black/70"
+                className="absolute left-3 top-1/2 z-50 h-10 w-10 -translate-y-1/2 rounded-full bg-black/70 p-0 text-white hover:bg-black/90"
                 onClick={() => {
                   if (selectedPhoto && selectedBillPhotos.length > 0) {
                     const newIndex = selectedPhoto.index - 1;
@@ -10518,16 +10521,16 @@ const TechnicianDashboard = () => {
                   }
                 }}
               >
-                <ArrowRight className="w-5 h-5 rotate-180" />
+                <ArrowRight className="h-5 w-5 rotate-180" />
               </Button>
             )}
 
-            {/* Next button */}
             {selectedPhoto && selectedPhoto.total > 1 && selectedPhoto.index < selectedPhoto.total - 1 && (
               <Button
+                type="button"
                 variant="ghost"
                 size="sm"
-                className="absolute right-4 top-1/2 transform -translate-y-1/2 z-10 bg-black/50 text-white hover:bg-black/70"
+                className="absolute right-3 top-1/2 z-50 h-10 w-10 -translate-y-1/2 rounded-full bg-black/70 p-0 text-white hover:bg-black/90"
                 onClick={() => {
                   if (selectedPhoto && selectedBillPhotos.length > 0) {
                     const newIndex = selectedPhoto.index + 1;
@@ -10539,37 +10542,35 @@ const TechnicianDashboard = () => {
                   }
                 }}
               >
-                <ArrowRight className="w-5 h-5" />
+                <ArrowRight className="h-5 w-5" />
               </Button>
             )}
 
-            {/* Photo counter */}
             {selectedPhoto && selectedPhoto.total > 1 && (
-              <div className="absolute top-4 left-4 z-10 bg-black/50 text-white px-3 py-1 rounded-full text-sm">
+              <div className="absolute left-3 top-[max(0.75rem,env(safe-area-inset-top))] z-50 rounded-full bg-black/50 px-3 py-1 text-sm text-white">
                 {selectedPhoto.index + 1} / {selectedPhoto.total}
               </div>
             )}
 
             {selectedPhoto && (
-              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 pointer-events-none text-white/70 text-xs sm:hidden">
+              <div className="pointer-events-none absolute bottom-6 left-1/2 z-50 -translate-x-1/2 text-xs text-white/70 sm:hidden">
                 Pinch or double-tap to zoom
               </div>
             )}
 
-            {/* Main photo */}
-            {selectedPhoto && (
-              <div className="w-full h-full min-h-[60vh] max-h-[90vh] flex items-center justify-center">
+            <div className="absolute inset-0 z-0 flex items-center justify-center overflow-hidden">
+              {selectedPhoto && (
                 <ZoomableImage
                   src={selectedPhoto.url}
                   alt={`Photo ${selectedPhoto.index + 1}`}
-                  className="max-w-full max-h-[90vh] object-contain select-none"
+                  className="max-h-full max-w-full select-none object-contain"
                   onError={(e) => {
                     console.error('Image failed to load:', selectedPhoto.url);
                     e.currentTarget.style.display = 'none';
                   }}
                 />
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </DialogContent>
       </Dialog>

@@ -2129,9 +2129,9 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                                 prev.service_sub_type_custom,
                               ),
                             };
-                            if (isHomeTriangleLeadSource(selectedLeadSource)) {
-                              updated.require_otp = true;
-                            }
+                            // OTP on for Home Triangle; off when switching away
+                            updated.require_otp =
+                              isHomeTriangleLeadSource(selectedLeadSource);
                             return updated;
                           });
                         }}
