@@ -1,37 +1,34 @@
 /**
  * FCM push registration for the technician Android app.
  *
- * Runs on login / app open / resume (native only). Low egress: one RPC per
- * new device token; delayed retries only if FCM hasn't delivered a token yet
- * (max 2 per process). Logout deletes this device's row.
+ * Runs on login / app open / resume (native only). Low egress: one successful
+ * RPC per device token; retries only when FCM/auth save fails.
  */
 import { Capacitor } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { supabase } from '@/lib/supabase';
 
-let registered = false;
 let listenersAttached = false;
 let activeTechnicianId: string | null = null;
 let lastToken: string | null = null;
-/** Avoid re-RPC when startLiveTracking/resume fires repeatedly with the same token. */
+/** Only set after a successful server save — avoids treating a failed upload as done. */
 let lastPersistedKey: string | null = null;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let retriesScheduled = 0;
+let registerInFlight: Promise<void> | null = null;
 
 const TOKEN_CACHE_KEY = 'hro_tech_push_token_v1';
-const MAX_TOKEN_RETRIES = 2;
+const MAX_RETRIES = 4;
 
-function rememberToken(token: string): void {
-  lastToken = token;
+function rememberTokenLocally(token: string): void {
   try {
     localStorage.setItem(TOKEN_CACHE_KEY, token);
   } catch {
-    // Cache only backs up logout cleanup; ignore storage failures.
+    /* ignore */
   }
 }
 
 function readRememberedToken(): string | null {
-  if (lastToken) return lastToken;
   try {
     return localStorage.getItem(TOKEN_CACHE_KEY) || null;
   } catch {
@@ -39,36 +36,55 @@ function readRememberedToken(): string | null {
   }
 }
 
-async function saveToken(technicianId: string, token: string): Promise<void> {
-  rememberToken(token);
+async function waitForSession(maxMs = 8000): Promise<boolean> {
+  const start = Date.now();
+  while (Date.now() - start < maxMs) {
+    const { data } = await supabase.auth.getSession();
+    if (data.session?.access_token && data.session.user?.id) return true;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  const { data } = await supabase.auth.getSession();
+  return Boolean(data.session?.access_token);
+}
 
+async function saveToken(technicianId: string, token: string): Promise<boolean> {
   const persistKey = `${technicianId}::${token}`;
-  if (lastPersistedKey === persistKey) return;
-  lastPersistedKey = persistKey;
+  if (lastPersistedKey === persistKey) return true;
 
-  // Device row keyed by token — this is what the send functions fan out to.
-  // SECURITY DEFINER RPC so the row re-binds to the current technician even
-  // if another technician used this phone before.
-  const { error } = await supabase.rpc('register_technician_push_token', { p_token: token });
-  if (error) {
-    // Allow a later attempt if RPC failed (e.g. brief offline).
-    lastPersistedKey = null;
-    console.warn('[tech-push] token table registration failed:', error.message);
+  // Must be logged in — RPC uses auth.uid() as technician_id.
+  const ready = await waitForSession(5000);
+  if (!ready) {
+    console.warn('[tech-push] no session yet; will retry token save');
+    return false;
   }
 
-  // Legacy single-token column (location pings + older senders).
+  const { error } = await supabase.rpc('register_technician_push_token', { p_token: token });
+  if (error) {
+    console.warn('[tech-push] token table registration failed:', error.message);
+    return false;
+  }
+
   const { data } = await supabase
     .from('technician_live_locations')
     .update({ fcm_token: token })
     .eq('technician_id', technicianId)
     .select('technician_id');
   if (!data?.length) {
-    await supabase.from('technician_live_locations').insert({
+    const { error: insErr } = await supabase.from('technician_live_locations').insert({
       technician_id: technicianId,
       fcm_token: token,
       is_tracking: false,
     });
+    if (insErr) {
+      // Row may already exist — update path race; ignore unique violations.
+      console.warn('[tech-push] live_locations insert:', insErr.message);
+    }
   }
+
+  lastToken = token;
+  lastPersistedKey = persistKey;
+  rememberTokenLocally(token);
+  return true;
 }
 
 /**
@@ -77,7 +93,7 @@ async function saveToken(technicianId: string, token: string): Promise<void> {
  */
 export async function unregisterTechnicianPushToken(): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
-  const token = readRememberedToken();
+  const token = lastToken || readRememberedToken();
   lastToken = null;
   lastPersistedKey = null;
   retriesScheduled = 0;
@@ -103,75 +119,85 @@ export async function unregisterTechnicianPushToken(): Promise<void> {
       new Promise((r) => setTimeout(r, 3000)),
     ]);
   } catch {
-    // Stale rows are pruned server-side when FCM reports the token dead.
+    /* pruned server-side if stale */
   }
 }
 
-function scheduleTokenRetry(technicianId: string): void {
-  if (retriesScheduled >= MAX_TOKEN_RETRIES || lastToken) return;
+function scheduleRetry(technicianId: string, pendingToken?: string | null): void {
+  if (retriesScheduled >= MAX_RETRIES) return;
+  if (lastPersistedKey?.startsWith(`${technicianId}::`)) return;
   retriesScheduled += 1;
-  const delayMs = retriesScheduled === 1 ? 3000 : 12000;
+  const delayMs = retriesScheduled === 1 ? 2000 : retriesScheduled === 2 ? 5000 : 12000;
   if (retryTimer) clearTimeout(retryTimer);
   retryTimer = setTimeout(() => {
     retryTimer = null;
-    if (lastToken || activeTechnicianId !== technicianId) return;
+    if (activeTechnicianId !== technicianId) return;
+    if (pendingToken) {
+      void saveToken(technicianId, pendingToken).then((ok) => {
+        if (!ok) scheduleRetry(technicianId, pendingToken);
+      });
+      return;
+    }
     void registerTechnicianPushToken(technicianId);
   }, delayMs);
 }
 
 /**
  * Idempotent: requests notification permission, registers with FCM and
- * saves the device token. Safe to call on every app start / login / resume.
+ * saves the device token. Safe on every app start / login / resume.
  */
 export async function registerTechnicianPushToken(technicianId: string): Promise<void> {
   if (!Capacitor.isNativePlatform() || !technicianId) return;
   activeTechnicianId = technicianId;
 
-  // localStorage cache is only for logout cleanup — NEVER treat it as proof the
-  // token is still valid with FCM (reinstall/cache can re-upload a dead token,
-  // which then gets pruned and leaves the tech with no pushes).
-  if (!lastToken) {
-    lastToken = readRememberedToken();
+  if (registerInFlight) {
+    await registerInFlight;
+    return;
   }
 
-  try {
-    const perm = await PushNotifications.requestPermissions();
-    if (perm.receive !== 'granted') {
-      console.warn('[tech-push] notification permission not granted');
-      return;
+  registerInFlight = (async () => {
+    try {
+      // Attach listener BEFORE register() so we never miss the first token.
+      if (!listenersAttached) {
+        listenersAttached = true;
+        await PushNotifications.addListener('registration', (token) => {
+          const value = token?.value;
+          if (!value || !activeTechnicianId) return;
+          void saveToken(activeTechnicianId, value).then((ok) => {
+            if (!ok) scheduleRetry(activeTechnicianId!, value);
+          });
+        });
+        await PushNotifications.addListener('registrationError', (err) => {
+          console.warn('[tech-push] FCM registrationError', err);
+          scheduleRetry(technicianId);
+        });
+      }
+
+      const perm = await PushNotifications.requestPermissions();
+      if (perm.receive !== 'granted') {
+        console.warn('[tech-push] notification permission not granted:', perm);
+        return;
+      }
+
+      await PushNotifications.createChannel({
+        id: 'job_alerts',
+        name: 'Other alerts',
+        description: 'Alerts from older app versions',
+        importance: 5,
+        visibility: 1,
+        vibration: true,
+      }).catch(() => {});
+
+      // Always ask FCM for a token. Never trust localStorage alone.
+      await PushNotifications.register();
+      scheduleRetry(technicianId);
+    } catch (err) {
+      console.warn('[tech-push] register failed', err);
+      scheduleRetry(technicianId);
+    } finally {
+      registerInFlight = null;
     }
+  })();
 
-    await PushNotifications.createChannel({
-      id: 'job_alerts',
-      name: 'Other alerts',
-      description: 'Alerts from older app versions',
-      importance: 5,
-      visibility: 1,
-      vibration: true,
-    }).catch(() => {});
-
-    if (!listenersAttached) {
-      listenersAttached = true;
-      await PushNotifications.addListener('registration', (token) => {
-        if (activeTechnicianId && token?.value) {
-          void saveToken(activeTechnicianId, token.value);
-        }
-      });
-      await PushNotifications.addListener('registrationError', (err) => {
-        console.warn('[tech-push] FCM registrationError', err);
-        registered = false;
-        scheduleTokenRetry(technicianId);
-      });
-    }
-
-    // Always ask FCM for a (possibly refreshed) token — even if we already
-    // have lastToken in memory. Listener + saveToken dedupe via lastPersistedKey.
-    await PushNotifications.register();
-    registered = true;
-    scheduleTokenRetry(technicianId);
-  } catch (err) {
-    console.warn('[tech-push] register failed', err);
-    registered = false;
-    scheduleTokenRetry(technicianId);
-  }
+  await registerInFlight;
 }
