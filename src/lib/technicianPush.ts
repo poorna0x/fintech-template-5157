@@ -127,26 +127,11 @@ export async function registerTechnicianPushToken(technicianId: string): Promise
   if (!Capacitor.isNativePlatform() || !technicianId) return;
   activeTechnicianId = technicianId;
 
-  // Warm from local cache after reinstall+same WebView storage — re-bind without
-  // waiting for another FCM round-trip when possible.
+  // localStorage cache is only for logout cleanup — NEVER treat it as proof the
+  // token is still valid with FCM (reinstall/cache can re-upload a dead token,
+  // which then gets pruned and leaves the tech with no pushes).
   if (!lastToken) {
-    const cached = readRememberedToken();
-    if (cached) lastToken = cached;
-  }
-
-  if (lastToken) {
-    void saveToken(technicianId, lastToken);
-    return;
-  }
-
-  if (registered && !lastToken) {
-    try {
-      await PushNotifications.register();
-      scheduleTokenRetry(technicianId);
-    } catch {
-      /* best-effort */
-    }
-    return;
+    lastToken = readRememberedToken();
   }
 
   try {
@@ -179,9 +164,10 @@ export async function registerTechnicianPushToken(technicianId: string): Promise
       });
     }
 
+    // Always ask FCM for a (possibly refreshed) token — even if we already
+    // have lastToken in memory. Listener + saveToken dedupe via lastPersistedKey.
     await PushNotifications.register();
     registered = true;
-    // FCM token arrives async — one or two light retries if it never lands.
     scheduleTokenRetry(technicianId);
   } catch (err) {
     console.warn('[tech-push] register failed', err);
