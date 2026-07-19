@@ -279,6 +279,12 @@ public class MessageReplyReceiver extends BroadcastReceiver {
                 JSONObject payload = new JSONObject();
                 payload.put("replyToken", replyToken);
                 payload.put("reply", replyFinal);
+                if (title != null && !title.isEmpty()) {
+                    payload.put("originalTitle", title);
+                }
+                if (body != null && !body.isEmpty()) {
+                    payload.put("originalBody", body);
+                }
                 conn = (HttpURLConnection) new URL(replyUrl).openConnection();
                 conn.setRequestMethod("POST");
                 conn.setRequestProperty("Content-Type", "application/json");

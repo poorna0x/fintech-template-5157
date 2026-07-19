@@ -12,6 +12,47 @@ const {
 
 const REPLY_MAX = 300;
 
+/** Capitalize and lightly tidy a free-text tech reply for the admin tray. */
+function formatReplyText(reply) {
+  let t = String(reply || '')
+    .trim()
+    .replace(/\s+/g, ' ');
+  if (!t) return t;
+  t = t.charAt(0).toUpperCase() + t.slice(1);
+  if (t.length < 100 && !/[.!?…]$/.test(t)) t += '.';
+  return t;
+}
+
+/**
+ * Turn office nudge copy into a short "about" line for the admin notification.
+ * e.g. "On the way? — reply with your ETA." → "On the way?"
+ */
+function formatNudgeAbout(originalTitle, originalBody) {
+  const body = String(originalBody || '').trim();
+  if (body) {
+    const head = body.split(/[—\n]/)[0].trim();
+    if (head && head.length <= 80 && !/^★/.test(head)) return head;
+  }
+  const title = String(originalTitle || '').trim();
+  // Customer ★ markers alone aren't useful as "about" — skip.
+  if (title && !/^★/.test(title)) return title.slice(0, 80);
+  return '';
+}
+
+function buildAdminReplyCopy(techName, reply, originalTitle, originalBody) {
+  const name = (techName || 'Technician').trim() || 'Technician';
+  const nice = formatReplyText(reply);
+  const about = formatNudgeAbout(originalTitle, originalBody);
+  const title = `${name} replied`;
+  let body;
+  if (about) {
+    body = `${about}\n→ ${nice}`;
+  } else {
+    body = nice;
+  }
+  return { title: title.slice(0, 120), body: body.slice(0, 300) };
+}
+
 exports.handler = async (event) => {
   const headers = { 'Content-Type': 'application/json' };
 
@@ -28,6 +69,8 @@ exports.handler = async (event) => {
 
   const replyToken = String(body.replyToken || '').trim();
   const reply = String(body.reply || '').trim().slice(0, REPLY_MAX);
+  const originalTitle = String(body.originalTitle || body.aboutTitle || '').trim().slice(0, 120);
+  const originalBody = String(body.originalBody || body.aboutBody || '').trim().slice(0, 300);
   if (!replyToken || !reply) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing fields' }) };
   }
@@ -79,7 +122,12 @@ exports.handler = async (event) => {
 
   try {
     const messaging = await getMessaging(db);
-    const title = `Reply from ${techName}`;
+    const { title, body: msgBody } = buildAdminReplyCopy(
+      techName,
+      reply,
+      originalTitle,
+      originalBody
+    );
     const results = await Promise.allSettled(
       tokens.map((token) =>
         messaging.send({
@@ -88,9 +136,9 @@ exports.handler = async (event) => {
           data: {
             type: 'tech_message_reply',
             msgTitle: title,
-            msgBody: reply,
+            msgBody,
             title,
-            body: reply,
+            body: msgBody,
             techName,
             techPhoto,
             technicianId,
