@@ -168,14 +168,14 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
             )}
 
             {selectedPhoto && !loadError && (
-              <div className="pointer-events-none absolute bottom-20 left-1/2 -translate-x-1/2 text-xs text-white/70 sm:hidden">
+              <div className="pointer-events-none absolute inset-x-0 bottom-20 flex justify-center text-xs text-white/70 sm:hidden">
                 Pinch or double-tap to zoom
               </div>
             )}
 
             {showDownload && selectedPhoto && (
               <div
-                className="pointer-events-auto absolute left-1/2 flex -translate-x-1/2 gap-2"
+                className="pointer-events-none absolute inset-x-0 flex justify-center"
                 style={{ bottom: 'max(1rem, env(safe-area-inset-bottom))' }}
               >
                 <Button
@@ -187,7 +187,7 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
                     e.stopPropagation();
                     onDownload(selectedPhoto.url, selectedPhoto.index);
                   }}
-                  className="bg-card/90 text-black hover:bg-card"
+                  className="pointer-events-auto bg-card/90 text-black hover:bg-card"
                 >
                   <Download className="mr-2 h-4 w-4" />
                   Download
