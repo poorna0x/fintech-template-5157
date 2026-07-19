@@ -102,13 +102,12 @@ public class MessageReplyReceiver extends BroadcastReceiver {
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
-        // MessagingStyle + CATEGORY_MESSAGE makes the Reply action visible on
-        // more OEMs (Samsung etc. often hide plain action replies until expand).
-        Person office = buildOfficePerson(context);
-        Person self = new Person.Builder().setName("You").setKey("self").build();
-        NotificationCompat.MessagingStyle style = new NotificationCompat.MessagingStyle(self)
-            .setConversationTitle(safeTitle)
-            .addMessage(safeBody, System.currentTimeMillis(), office);
+        // BigTextStyle keeps the full message visible/expanded in the shade.
+        // MessagingStyle looks like a chat bubble and collapses to one line on
+        // many OEMs — techs couldn't read the nudge without expanding.
+        NotificationCompat.BigTextStyle style = new NotificationCompat.BigTextStyle()
+            .setBigContentTitle(safeTitle)
+            .bigText(safeBody);
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_notify)
@@ -129,15 +128,15 @@ public class MessageReplyReceiver extends BroadcastReceiver {
 
         try {
             NotificationManagerCompat.from(context).notify(notifTag, NOTIFICATION_ID, builder.build());
-            Log.i(TAG, "Posted office message with Reply action + office logo");
+            Log.i(TAG, "Posted office message with Reply + BigTextStyle");
         } catch (SecurityException e) {
             Log.w(TAG, "Notifications not permitted", e);
         }
     }
 
     /**
-     * Call-customer nudge: messaging-style tray alert with a Call action that
-     * opens the dialer (ACTION_DIAL — no CALL_PHONE permission). No Reply.
+     * Call-customer nudge: BigText tray alert with a Call action that opens
+     * the dialer (ACTION_DIAL — no CALL_PHONE permission). No Reply.
      */
     public static void showCallCustomerNotification(
         Context context,
@@ -172,11 +171,9 @@ public class MessageReplyReceiver extends BroadcastReceiver {
                 R.drawable.ic_stat_notify, "Call", callPending)
             .build();
 
-        Person office = buildOfficePerson(context);
-        Person self = new Person.Builder().setName("You").setKey("self").build();
-        NotificationCompat.MessagingStyle style = new NotificationCompat.MessagingStyle(self)
-            .setConversationTitle(safeTitle)
-            .addMessage(safeBody, System.currentTimeMillis(), office);
+        NotificationCompat.BigTextStyle style = new NotificationCompat.BigTextStyle()
+            .setBigContentTitle(safeTitle)
+            .bigText(safeBody);
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_notify)
@@ -197,7 +194,7 @@ public class MessageReplyReceiver extends BroadcastReceiver {
 
         try {
             NotificationManagerCompat.from(context).notify(notifTag, notifId, builder.build());
-            Log.i(TAG, "Posted call-customer nudge with Call action");
+            Log.i(TAG, "Posted call-customer nudge with Call + BigTextStyle");
         } catch (SecurityException e) {
             Log.w(TAG, "Notifications not permitted", e);
         }
