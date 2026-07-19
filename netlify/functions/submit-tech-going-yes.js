@@ -1,12 +1,13 @@
-// Technician tapped Yes on "Are you going?" nudge → set job EN_ROUTE and ping admins.
+// Technician tapped Yes/Start on start-job nudge → set job EN_ROUTE and ping
+// admins with the SAME push as a normal in-app start (notify-admins en_route).
 // Auth: HMAC startToken from send-tech-push (no session).
 
 const { createClient } = require('@supabase/supabase-js');
 const { getMessaging, isStaleTokenError } = require('./fcm-helper');
 const { verifyJobStartNudgeToken } = require('./job-start-nudge-token');
-const { makeOfficeMessageReplyToken } = require('./office-message-reply-token');
 
 const STARTABLE = new Set(['ASSIGNED', 'PENDING', 'EN_ROUTE']);
+const COLOR_EN_ROUTE = '#2563EB'; // same as notify-admins.js
 
 exports.handler = async (event) => {
   const headers = { 'Content-Type': 'application/json' };
@@ -45,7 +46,9 @@ exports.handler = async (event) => {
 
   const { data: job, error: jobErr } = await db
     .from('jobs')
-    .select('id, status, assigned_technician_id, job_number, customer_id, customer:customers(full_name)')
+    .select(
+      'id, status, assigned_technician_id, job_number, service_sub_type, customer:customers(full_name)'
+    )
     .eq('id', jobId)
     .maybeSingle();
 
@@ -66,20 +69,6 @@ exports.handler = async (event) => {
     return { statusCode: 409, headers, body: JSON.stringify({ error: `Cannot start from ${status}` }) };
   }
 
-  const { data: tech } = await db
-    .from('technicians')
-    .select('full_name, photo')
-    .eq('id', technicianId)
-    .maybeSingle();
-  const techName = (tech?.full_name && String(tech.full_name).trim()) || 'Technician';
-  const techPhotoRaw = tech?.photo != null ? String(tech.photo).trim() : '';
-  const techPhoto =
-    techPhotoRaw.length > 8 &&
-    techPhotoRaw.length < 2000 &&
-    /^https:\/\//i.test(techPhotoRaw)
-      ? techPhotoRaw
-      : '';
-
   let updated = false;
   if (status !== 'EN_ROUTE') {
     const { error: updErr } = await db
@@ -94,52 +83,51 @@ exports.handler = async (event) => {
     updated = true;
   }
 
-  const customerName =
-    (job.customer && (job.customer.full_name || job.customer.fullName)) ||
-    'Customer';
-  const cust = String(customerName).trim() || 'Customer';
-  const title = `${techName} is going`;
-  const msgBody = `★ ${cust} ★ — started from nudge.`;
+  // Match notify-admins en_route exactly (skip re-push if already EN_ROUTE).
+  if (updated) {
+    const { data: tech } = await db
+      .from('technicians')
+      .select('full_name')
+      .eq('id', technicianId)
+      .maybeSingle();
+    const techName = (tech?.full_name && String(tech.full_name).trim()) || 'Technician';
+    const customerName =
+      (job.customer && (job.customer.full_name || job.customer.fullName)) || 'customer';
+    const service = job.service_sub_type || 'job';
+    const title = `${techName} is on the way`;
+    const message = `${service} — ${customerName}`;
 
-  const { data: tokenRows } = await db.from('admin_push_tokens').select('token');
-  const tokens = [...new Set((tokenRows || []).map((r) => r.token).filter(Boolean))];
+    const { data: tokenRows } = await db.from('admin_push_tokens').select('token');
+    const tokens = [...new Set((tokenRows || []).map((r) => r.token).filter(Boolean))];
 
-  if (tokens.length) {
-    try {
-      const messaging = await getMessaging(db);
-      const siteUrl = (process.env.URL || '').replace(/\/$/, '');
-      const adminReplyToken = makeOfficeMessageReplyToken(technicianId, 'Are you going?');
-      const results = await Promise.allSettled(
-        tokens.map((token) =>
-          messaging.send({
-            token,
-            data: {
-              type: 'tech_message_reply',
-              msgTitle: title,
-              msgBody,
-              title,
-              body: msgBody,
-              techName,
-              techPhoto,
-              technicianId,
-              replyToken: adminReplyToken,
-              replyUrl: `${siteUrl}/.netlify/functions/submit-admin-message-reply`,
-              tag: 'going_now_yes',
+    if (tokens.length) {
+      try {
+        const messaging = await getMessaging(db);
+        const res = await messaging.sendEachForMulticast({
+          tokens,
+          notification: { title, body: message },
+          data: {
+            type: 'job_event',
+            event: 'en_route',
+            jobId: String(jobId),
+          },
+          android: {
+            priority: 'high',
+            notification: {
+              channelId: 'job_alerts_v2',
+              defaultSound: true,
+              color: COLOR_EN_ROUTE,
             },
-            android: { priority: 'high' },
-          })
-        )
-      );
-      const stale = [];
-      results.forEach((r, i) => {
-        if (r.status === 'rejected' && isStaleTokenError(r.reason)) stale.push(tokens[i]);
-        else if (r.status === 'rejected') {
-          console.error('[submit-tech-going-yes] send', r.reason?.message || r.reason);
-        }
-      });
-      if (stale.length) await db.from('admin_push_tokens').delete().in('token', stale);
-    } catch (err) {
-      console.error('[submit-tech-going-yes] push', err?.message || err);
+          },
+        });
+        const stale = [];
+        res.responses.forEach((r, i) => {
+          if (!r.success && isStaleTokenError(r.error)) stale.push(tokens[i]);
+        });
+        if (stale.length) await db.from('admin_push_tokens').delete().in('token', stale);
+      } catch (err) {
+        console.error('[submit-tech-going-yes] push', err?.message || err);
+      }
     }
   }
 
