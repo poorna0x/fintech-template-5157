@@ -122,8 +122,10 @@ export async function createOtpRequest(opts: {
         console.warn('[otp-push] not sent:', res.status, out?.reason || '');
         toast.warning(
           out?.reason === 'no_token'
-            ? "No notification sent — the technician hasn't installed the app. They'll see the request when they open it."
-            : "Notification couldn't be sent — the technician will see the request in the app."
+            ? 'No push token — open HRO Technician and Allow Notifications. They’ll see the OTP request when the app is open.'
+            : out?.reason === 'stale_token'
+              ? 'Push token expired — ask them to reopen HRO Technician (Allow Notifications).'
+              : "Notification couldn't be sent — the technician will see the request in the app."
         );
       }
     } catch (err) {

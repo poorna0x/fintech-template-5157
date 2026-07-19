@@ -59,7 +59,13 @@ export function notifyTechnicianJobPush(opts: {
       } else if (out?.sent === false) {
         console.warn('[tech-push] not sent:', out.reason);
         if (out.reason === 'no_token') {
-          toast.warning("No app notification — technician hasn't installed the app.");
+          toast.warning(
+            'No push token for this technician — open HRO Technician app and Allow Notifications.'
+          );
+        } else if (out.reason === 'stale_token') {
+          toast.warning(
+            'Push token expired — ask them to reopen HRO Technician (Allow Notifications).'
+          );
         }
       }
     } catch (err) {

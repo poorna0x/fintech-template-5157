@@ -209,8 +209,10 @@ export async function sendTechnicianPush(opts: {
     }
     if (out?.sent === false) {
       if (out.reason === 'no_token' || out.reason === 'stale_token') {
-        toast.warning("No app notification — technician hasn't installed / logged into the app.");
-        return 'no_app';
+        toast.warning(
+          'No push token — open HRO Technician on their phone and Allow Notifications.'
+        );
+        return out.reason === 'stale_token' ? 'failed' : 'no_app';
       }
       toast.warning('Nudge was not delivered.');
       return 'failed';

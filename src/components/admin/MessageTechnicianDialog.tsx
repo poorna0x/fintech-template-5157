@@ -231,7 +231,7 @@ const MessageTechnicianDialog = ({
                     {status === 'no_app' && (
                       <span className="flex items-center gap-1 text-xs text-amber-600">
                         <AlertTriangle className="h-3.5 w-3.5" />
-                        no app
+                        allow notifications
                       </span>
                     )}
                     {status === 'failed' && (
