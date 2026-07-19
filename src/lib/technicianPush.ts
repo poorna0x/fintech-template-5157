@@ -3,12 +3,17 @@
  *
  * Runs on login / app open / resume (native only). Low egress: one successful
  * RPC per device token; retries only when FCM/auth save fails.
+ *
+ * Dual path: Capacitor PushNotifications "registration" event, plus native
+ * MainActivity injection (`window.__HRO_NATIVE_FCM_TOKEN` / `hro-native-fcm`)
+ * when the plugin event is missed.
  */
 import { Capacitor } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { supabase } from '@/lib/supabase';
 
 let listenersAttached = false;
+let nativeListenerAttached = false;
 let activeTechnicianId: string | null = null;
 let lastToken: string | null = null;
 /** Only set after a successful server save — avoids treating a failed upload as done. */
@@ -18,7 +23,13 @@ let retriesScheduled = 0;
 let registerInFlight: Promise<void> | null = null;
 
 const TOKEN_CACHE_KEY = 'hro_tech_push_token_v1';
-const MAX_RETRIES = 4;
+const MAX_RETRIES = 6;
+
+declare global {
+  interface Window {
+    __HRO_NATIVE_FCM_TOKEN?: string;
+  }
+}
 
 function rememberTokenLocally(token: string): void {
   try {
@@ -31,6 +42,15 @@ function rememberTokenLocally(token: string): void {
 function readRememberedToken(): string | null {
   try {
     return localStorage.getItem(TOKEN_CACHE_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
+function readNativeInjectedToken(): string | null {
+  try {
+    const t = window.__HRO_NATIVE_FCM_TOKEN;
+    return typeof t === 'string' && t.trim().length >= 20 ? t.trim() : null;
   } catch {
     return null;
   }
@@ -87,13 +107,22 @@ async function saveToken(technicianId: string, token: string): Promise<boolean> 
   return true;
 }
 
+function trySaveAnyAvailableToken(technicianId: string): void {
+  if (lastPersistedKey?.startsWith(`${technicianId}::`)) return;
+  const candidate = lastToken || readNativeInjectedToken() || readRememberedToken();
+  if (!candidate) return;
+  void saveToken(technicianId, candidate).then((ok) => {
+    if (!ok) scheduleRetry(technicianId, candidate);
+  });
+}
+
 /**
  * Best-effort: remove this device's token so a logged-out phone stops
  * receiving technician pushes.
  */
 export async function unregisterTechnicianPushToken(): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
-  const token = lastToken || readRememberedToken();
+  const token = lastToken || readRememberedToken() || readNativeInjectedToken();
   lastToken = null;
   lastPersistedKey = null;
   retriesScheduled = 0;
@@ -103,6 +132,11 @@ export async function unregisterTechnicianPushToken(): Promise<void> {
   }
   try {
     localStorage.removeItem(TOKEN_CACHE_KEY);
+  } catch {
+    /* ignore */
+  }
+  try {
+    delete window.__HRO_NATIVE_FCM_TOKEN;
   } catch {
     /* ignore */
   }
@@ -127,7 +161,14 @@ function scheduleRetry(technicianId: string, pendingToken?: string | null): void
   if (retriesScheduled >= MAX_RETRIES) return;
   if (lastPersistedKey?.startsWith(`${technicianId}::`)) return;
   retriesScheduled += 1;
-  const delayMs = retriesScheduled === 1 ? 2000 : retriesScheduled === 2 ? 5000 : 12000;
+  const delayMs =
+    retriesScheduled === 1
+      ? 1500
+      : retriesScheduled === 2
+        ? 3000
+        : retriesScheduled === 3
+          ? 6000
+          : 12000;
   if (retryTimer) clearTimeout(retryTimer);
   retryTimer = setTimeout(() => {
     retryTimer = null;
@@ -138,6 +179,7 @@ function scheduleRetry(technicianId: string, pendingToken?: string | null): void
       });
       return;
     }
+    trySaveAnyAvailableToken(technicianId);
     void registerTechnicianPushToken(technicianId);
   }, delayMs);
 }
@@ -149,6 +191,21 @@ function scheduleRetry(technicianId: string, pendingToken?: string | null): void
 export async function registerTechnicianPushToken(technicianId: string): Promise<void> {
   if (!Capacitor.isNativePlatform() || !technicianId) return;
   activeTechnicianId = technicianId;
+
+  if (!nativeListenerAttached && typeof window !== 'undefined') {
+    nativeListenerAttached = true;
+    window.addEventListener('hro-native-fcm', ((ev: Event) => {
+      const detail = (ev as CustomEvent<{ token?: string }>).detail;
+      const value = detail?.token || readNativeInjectedToken();
+      if (!value || !activeTechnicianId) return;
+      void saveToken(activeTechnicianId, value).then((ok) => {
+        if (!ok) scheduleRetry(activeTechnicianId!, value);
+      });
+    }) as EventListener);
+  }
+
+  // Native MainActivity may already have injected the token before JS ran.
+  trySaveAnyAvailableToken(technicianId);
 
   if (registerInFlight) {
     await registerInFlight;
@@ -169,6 +226,7 @@ export async function registerTechnicianPushToken(technicianId: string): Promise
         });
         await PushNotifications.addListener('registrationError', (err) => {
           console.warn('[tech-push] FCM registrationError', err);
+          trySaveAnyAvailableToken(technicianId);
           scheduleRetry(technicianId);
         });
       }
@@ -176,6 +234,8 @@ export async function registerTechnicianPushToken(technicianId: string): Promise
       const perm = await PushNotifications.requestPermissions();
       if (perm.receive !== 'granted') {
         console.warn('[tech-push] notification permission not granted:', perm);
+        // Still try native-injected token (permission gate is Capacitor-side).
+        trySaveAnyAvailableToken(technicianId);
         return;
       }
 
@@ -190,9 +250,13 @@ export async function registerTechnicianPushToken(technicianId: string): Promise
 
       // Always ask FCM for a token. Never trust localStorage alone.
       await PushNotifications.register();
+      // Capacitor may deliver async — also re-check native injection.
+      window.setTimeout(() => trySaveAnyAvailableToken(technicianId), 800);
+      window.setTimeout(() => trySaveAnyAvailableToken(technicianId), 2500);
       scheduleRetry(technicianId);
     } catch (err) {
       console.warn('[tech-push] register failed', err);
+      trySaveAnyAvailableToken(technicianId);
       scheduleRetry(technicianId);
     } finally {
       registerInFlight = null;

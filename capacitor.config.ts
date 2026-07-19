@@ -17,13 +17,10 @@ const config: CapacitorConfig = {
     url: 'https://hydrogenro.com/technician',
     androidScheme: 'https',
     cleartext: false,
-    // Let Turnstile challenge iframes / redirects load inside the WebView.
-    allowNavigation: [
-      'hydrogenro.com',
-      '*.hydrogenro.com',
-      'challenges.cloudflare.com',
-      '*.cloudflare.com',
-    ],
+    // Keep allowNavigation minimal — hosting Turnstile challenge hosts here
+    // can break Capacitor bridge injection after top-level navigations.
+    // Turnstile loads in an iframe; cookies+DOM Storage (MainActivity) are enough.
+    allowNavigation: ['hydrogenro.com', '*.hydrogenro.com'],
   },
   android: {
     allowMixedContent: false,

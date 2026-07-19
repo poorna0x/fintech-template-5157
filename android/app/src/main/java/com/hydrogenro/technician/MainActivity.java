@@ -14,12 +14,14 @@ import androidx.core.splashscreen.SplashScreen;
 import androidx.core.splashscreen.SplashScreenViewProvider;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.WebViewListener;
+import com.google.firebase.messaging.FirebaseMessaging;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Cold open: splash logo → same-size boot overlay + bounce → login/dashboard.
  * Also tunes the Capacitor WebView so Cloudflare Turnstile can complete
- * (third-party cookies + DOM storage per Cloudflare mobile docs).
+ * (third-party cookies + DOM storage per Cloudflare mobile docs), and injects
+ * a native FCM token fallback when the Capacitor push plugin event is missed.
  */
 public class MainActivity extends BridgeActivity {
     private static final long BOOT_LOADER_MAX_MS = 20_000L;
@@ -30,6 +32,7 @@ public class MainActivity extends BridgeActivity {
     private final AtomicBoolean pageReady = new AtomicBoolean(false);
     private final AtomicBoolean watchingReady = new AtomicBoolean(false);
     private final AtomicBoolean bootUiReady = new AtomicBoolean(false);
+    private volatile String cachedFcmToken = null;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -43,12 +46,14 @@ public class MainActivity extends BridgeActivity {
                 @Override
                 public void onPageCommitVisible(WebView view, String url) {
                     hardenWebViewForTurnstile(view);
+                    injectNativeFcmToken(view);
                     beginReadyWatch();
                 }
 
                 @Override
                 public void onPageLoaded(WebView webView) {
                     hardenWebViewForTurnstile(webView);
+                    injectNativeFcmToken(webView);
                     beginReadyWatch();
                 }
 
@@ -64,6 +69,7 @@ public class MainActivity extends BridgeActivity {
 
         // Bridge WebView exists after super.onCreate — configure as early as possible.
         hardenWebViewForTurnstile(webViewOrNull());
+        fetchNativeFcmToken();
 
         attachBootLoader();
         releaseSplashWhenBootDrawn();
@@ -71,6 +77,55 @@ public class MainActivity extends BridgeActivity {
         getWindow()
             .getDecorView()
             .postDelayed(this::dismissBootLoader, BOOT_LOADER_MAX_MS);
+    }
+
+    /**
+     * Capacitor PushNotifications.register() can miss the JS "registration"
+     * event (plugin instance race). Fetch the token natively and expose it on
+     * window.__HRO_NATIVE_FCM_TOKEN for the web app to save.
+     */
+    private void fetchNativeFcmToken() {
+        try {
+            FirebaseMessaging.getInstance()
+                .getToken()
+                .addOnSuccessListener(
+                    token -> {
+                        if (token == null || token.length() < 20) return;
+                        cachedFcmToken = token;
+                        android.util.Log.i("HRO-Main", "Native FCM token ready (len=" + token.length() + ")");
+                        injectNativeFcmToken(webViewOrNull());
+                    }
+                )
+                .addOnFailureListener(
+                    e -> android.util.Log.w("HRO-Main", "Native FCM getToken failed: " + e.getMessage())
+                );
+        } catch (Exception e) {
+            android.util.Log.w("HRO-Main", "Native FCM fetch threw: " + e.getMessage());
+        }
+    }
+
+    private void injectNativeFcmToken(WebView webView) {
+        final String token = cachedFcmToken;
+        if (webView == null || token == null || token.length() < 20) return;
+        final String escaped =
+            token
+                .replace("\\", "\\\\")
+                .replace("'", "\\'")
+                .replace("\n", "")
+                .replace("\r", "");
+        webView.post(
+            () ->
+                webView.evaluateJavascript(
+                    "(function(){"
+                        + "window.__HRO_NATIVE_FCM_TOKEN='"
+                        + escaped
+                        + "';"
+                        + "try{window.dispatchEvent(new CustomEvent('hro-native-fcm',"
+                        + "{detail:{token:window.__HRO_NATIVE_FCM_TOKEN}}));}catch(e){}"
+                        + "})();",
+                    null
+                )
+        );
     }
 
     /**
