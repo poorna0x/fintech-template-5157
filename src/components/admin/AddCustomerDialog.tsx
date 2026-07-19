@@ -26,6 +26,7 @@ import {
   resolveGoogleMapsInputToCoords,
   sanitizeGoogleMapsInput,
 } from '@/lib/googleMapsLink';
+import { removePlusCode } from '@/lib/maps';
 import { beginWebClipboardRead, readClipboardText } from '@/lib/nativeClipboard';
 import {
   EQUIPMENT_BRAND_DATA as brandData,
@@ -768,11 +769,16 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       }
 
       const geocodeResult = await reverseGeocode(coords.latitude, coords.longitude);
-      const address = geocodeResult?.formattedAddress ?? null;
+      // Keep raw Google line (may include Plus Code) for short-location extraction.
+      const rawFormatted = geocodeResult?.formattedAddress ?? null;
+      // Full Address never keeps Plus Codes like "VM99+4P".
+      const address = rawFormatted
+        ? removePlusCode(rawFormatted).replace(/\s+/g, ' ').trim() || null
+        : null;
 
       // List/DB match first, then Google place components from the same Fetch (no extra API call)
       const extractedLocation = resolveVisibleAddressFromGeocode({
-        formattedAddress: address,
+        formattedAddress: rawFormatted,
         addressComponents: geocodeResult?.addressComponents,
         addressHints: [addFormDataRef.current.address],
       });

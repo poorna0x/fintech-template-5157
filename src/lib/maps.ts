@@ -162,14 +162,19 @@ export function haversineKm(
 }
 
 /**
- * Remove Google Plus Codes from address string
- * Plus codes look like "VJVJ+8XW" and should be removed from display
+ * Remove Google Plus Codes from address string.
+ * Plus codes look like "VM99+4P" / "VJVJ+8XW" and should not appear in Full Address.
  */
 export const removePlusCode = (address: string): string => {
-  // Match patterns like "VJVJ+8XW", "VJVJ+8XW, Address", etc.
-  // Plus codes typically have 2-6 characters, a +, and 2-6 characters
-  const plusCodePattern = /\s*[A-Z0-9]{2,6}\+[A-Z0-9]{2,6}\s*,?\s*/gi;
-  return address.replace(plusCodePattern, '').trim();
+  if (!address) return '';
+  // Match patterns like "VM99+4P", "VJVJ+8XW, Address", "3Q5F+23 Place", etc.
+  // Global Plus Codes: 2–8 chars, +, 2–3 chars (local/compound forms vary).
+  const plusCodePattern = /\s*[A-Z0-9]{2,8}\+[A-Z0-9]{2,3}\s*,?\s*/gi;
+  return address
+    .replace(plusCodePattern, ' ')
+    .replace(/^[,\s]+|[,\s]+$/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 };
 
 /**

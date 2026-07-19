@@ -29,6 +29,7 @@ import {
   resolveGoogleMapsInputToCoords,
   sanitizeGoogleMapsInput,
 } from '@/lib/googleMapsLink';
+import { removePlusCode } from '@/lib/maps';
 
 /** Persist a coords URL so assign/distance never depends on short-link expand again. */
 function mapsLinkFromCoords(latitude: number, longitude: number): string {
@@ -843,14 +844,19 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
       }
 
       const geocodeResult = await reverseGeocode(coords.latitude, coords.longitude);
-      const address = geocodeResult?.formattedAddress ?? null;
+      // Keep raw Google line (may include Plus Code) for short-location extraction.
+      const rawFormatted = geocodeResult?.formattedAddress ?? null;
+      // Full Address never keeps Plus Codes like "VM99+4P".
+      const address = rawFormatted
+        ? removePlusCode(rawFormatted).replace(/\s+/g, ' ').trim() || null
+        : null;
       
       const streetHint = isPrimary
         ? editFormDataRef.current.address.street
         : editFormDataRef.current.alternate_address.street;
       // List/DB match first, then Google place components from the same Fetch (no extra API call)
       const extractedLocation = resolveVisibleAddressFromGeocode({
-        formattedAddress: address,
+        formattedAddress: rawFormatted,
         addressComponents: geocodeResult?.addressComponents,
         addressHints: [streetHint],
       });
