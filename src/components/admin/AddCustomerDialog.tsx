@@ -26,6 +26,7 @@ import {
   resolveGoogleMapsInputToCoords,
   sanitizeGoogleMapsInput,
 } from '@/lib/googleMapsLink';
+import { beginWebClipboardRead, readClipboardText } from '@/lib/nativeClipboard';
 import {
   EQUIPMENT_BRAND_DATA as brandData,
   EQUIPMENT_MODEL_DATA as modelData,
@@ -631,12 +632,25 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
    * caller doesn't need to know why it failed.
    * Native (admin APK): uses @capacitor/clipboard — WebView clipboard.readText
    * is blocked on Android.
+   * Desktop: pass an early `navigator.clipboard.readText()` promise started in
+   * the same tick as the click (before any await) so Chrome keeps user activation.
    */
-  const readMapsLinkFromClipboard = async (): Promise<string | null> => {
+  const readMapsLinkFromClipboard = async (
+    earlyWebRead?: Promise<string> | null
+  ): Promise<string | null> => {
     let text = '';
     try {
-      const { readClipboardText } = await import('@/lib/nativeClipboard');
-      text = await readClipboardText();
+      if (earlyWebRead) {
+        try {
+          text = await earlyWebRead;
+        } catch {
+          // Early read can still fail (site permission). Fall back to
+          // readClipboardText which also tries execCommand on desktop.
+          text = await readClipboardText();
+        }
+      } else {
+        text = await readClipboardText();
+      }
     } catch (err) {
       const code = err instanceof Error ? err.message : '';
       if (code === 'clipboard_unavailable') {
@@ -666,6 +680,14 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   const fetchAddressFromGoogleLocation = async () => {
     // Prevent overlapping runs (double-clicks, accidental Enter while busy).
     if (isFetchingAddress) return;
+
+    // Desktop only: start clipboard read in the same tick as the click (no await
+    // before this). beginWebClipboardRead() is a no-op on the admin APK.
+    const fieldNow =
+      extractMapsUrlFromText(googleLocationRef.current || '') ||
+      sanitizeGoogleMapsInput(googleLocationRef.current || '');
+    const earlyWebClipboard = !fieldNow ? beginWebClipboardRead() : null;
+
     setIsFetchingAddress(true);
 
     let loadingToast: string | number | undefined;
@@ -675,7 +697,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
       if (!googleLocation) {
         // No link in the field — try the clipboard so the user can skip pasting.
-        const clipboardLink = await readMapsLinkFromClipboard();
+        const clipboardLink = await readMapsLinkFromClipboard(earlyWebClipboard);
         if (!clipboardLink) return;
 
         // Race-safe: the user may have started typing during the clipboard read.
