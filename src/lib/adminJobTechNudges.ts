@@ -404,7 +404,8 @@ export async function sendJobCustomNudge(
     return 'skipped';
   }
   const name = getJobCustomerName(job);
-  const title = (opts?.title || `Office · ${name}`).slice(0, 120);
+  // Title is always this job's customer — never a generic "office message".
+  const title = (opts?.title || name || 'This job').slice(0, 120);
   return sendTechnicianPush({
     technicianId: techId,
     title,

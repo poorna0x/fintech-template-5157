@@ -27,7 +27,7 @@ type Props = {
 
 const BODY_MAX = 300;
 
-/** Short custom push to the job's assigned technician (job ⋯ → Nudge tech). */
+/** Job-scoped custom push (job ⋯ → Nudge tech → Message about this job). */
 export default function JobTechCustomNudgeDialog({
   open,
   onOpenChange,
@@ -64,10 +64,11 @@ export default function JobTechCustomNudgeDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Message technician</DialogTitle>
+          <DialogTitle>Message about this job</DialogTitle>
           <DialogDescription>
-            Push to {technicianName || 'assigned tech'}
-            {customerName ? ` · ${customerName}` : ''}. They can reply from the notification if enabled.
+            Only for {customerName || 'this customer'}
+            {technicianName ? ` → ${technicianName}` : ' → assigned tech'}. Not a general message.
+            They can reply from the notification if enabled.
           </DialogDescription>
         </DialogHeader>
 
@@ -75,7 +76,11 @@ export default function JobTechCustomNudgeDialog({
           <Textarea
             value={message}
             onChange={(e) => setMessage(e.target.value.slice(0, BODY_MAX))}
-            placeholder="Short message for the technician…"
+            placeholder={
+              customerName
+                ? `Message about ${customerName}'s job…`
+                : 'Message about this job…'
+            }
             rows={4}
             disabled={sending || !techId}
           />
@@ -109,7 +114,7 @@ export default function JobTechCustomNudgeDialog({
             ) : (
               <Send className="mr-2 h-4 w-4" />
             )}
-            Send nudge
+            Send for this job
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -188,7 +188,7 @@ export default function JobTechNudgePickerDialog({
             }}
           >
             <MessageSquare className="mr-2 h-4 w-4" />
-            Custom message…
+            Message about this job…
           </Button>
         </div>
       </DialogContent>
