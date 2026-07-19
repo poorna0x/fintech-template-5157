@@ -112,30 +112,15 @@ export async function unregisterTechnicianPushToken(): Promise<void> {
 export async function registerTechnicianPushToken(technicianId: string): Promise<void> {
   if (!Capacitor.isNativePlatform() || !technicianId) return;
   activeTechnicianId = technicianId;
-
-  // Already have a token on this process — just re-bind ownership for login switches.
-  if (lastToken) {
-    void saveToken(technicianId, lastToken);
-    return;
-  }
-
-  // registration() was called earlier but FCM never delivered a token yet —
-  // do not early-return forever; allow another register() attempt.
-  if (registered && !lastToken) {
-    try {
-      await PushNotifications.register();
-    } catch {
-      /* best-effort */
-    }
+  if (registered) {
+    // Possibly a login switch on the same phone: re-bind the device row.
+    if (lastToken) void saveToken(technicianId, lastToken);
     return;
   }
 
   try {
     const perm = await PushNotifications.requestPermissions();
-    if (perm.receive !== 'granted') {
-      console.warn('[tech-push] notification permission not granted');
-      return;
-    }
+    if (perm.receive !== 'granted') return;
 
     // Legacy channel (kept so old-APK notifications still land somewhere).
     // The real channel is now job_alerts_v2 with the custom sound, created
@@ -160,18 +145,11 @@ export async function registerTechnicianPushToken(technicianId: string): Promise
           void saveToken(activeTechnicianId, token.value);
         }
       });
-      await PushNotifications.addListener('registrationError', (err) => {
-        console.warn('[tech-push] FCM registrationError', err);
-        // Allow a later start/resume to call register() again.
-        registered = false;
-      });
     }
 
     await PushNotifications.register();
     registered = true;
-  } catch (err) {
+  } catch {
     // Push is best-effort; the app works without it.
-    console.warn('[tech-push] register failed', err);
-    registered = false;
   }
 }
