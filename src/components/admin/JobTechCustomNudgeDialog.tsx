@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Loader2, Send } from 'lucide-react';
 import type { Job } from '@/types';
 import {
+  formatNudgeCustomerLabel,
   getJobAssignedTechnicianId,
   getJobCustomerName,
   sendJobCustomNudge,
@@ -47,6 +48,7 @@ export default function JobTechCustomNudgeDialog({
   }, [open]);
 
   const customerName = job ? getJobCustomerName(job as any) : '';
+  const customerLabel = formatNudgeCustomerLabel(customerName || 'Customer');
   const techId = job ? getJobAssignedTechnicianId(job as any) : null;
 
   const handleSend = async () => {
@@ -65,12 +67,22 @@ export default function JobTechCustomNudgeDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Message about this job</DialogTitle>
-          <DialogDescription>
-            Only for {customerName || 'this customer'}
-            {technicianName ? ` → ${technicianName}` : ' → assigned tech'}. Not a general message.
-            They can reply from the notification if enabled.
+          <DialogDescription asChild>
+            <div className="text-sm text-muted-foreground space-y-1.5">
+              <p>
+                Only for{' '}
+                <span className="font-semibold tracking-wide text-violet-700">{customerLabel}</span>
+                {technicianName ? ` → ${technicianName}` : ' → assigned tech'}.
+              </p>
+              <p className="text-xs">Not a general message. They can reply from the notification if enabled.</p>
+            </div>
           </DialogDescription>
         </DialogHeader>
+
+        <div className="rounded-md border border-violet-200 bg-violet-50 px-3 py-2">
+          <p className="text-[11px] uppercase tracking-wider text-violet-600/80 font-medium">Customer</p>
+          <p className="text-base font-semibold tracking-wide text-violet-900">{customerLabel}</p>
+        </div>
 
         <div className="space-y-3">
           <Textarea

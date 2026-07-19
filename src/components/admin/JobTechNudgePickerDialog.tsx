@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import type { Job } from '@/types';
 import {
+  formatNudgeCustomerLabel,
   getJobAssignedTechnicianId,
   getJobCustomerName,
   isCustomerWaitingLikely,
@@ -55,6 +56,7 @@ export default function JobTechNudgePickerDialog({
   const [busy, setBusy] = useState<string | null>(null);
 
   const customerName = job ? getJobCustomerName(job as any) : '';
+  const customerLabel = formatNudgeCustomerLabel(customerName || 'Customer');
   const techId = job ? getJobAssignedTechnicianId(job as any) : null;
 
   const showPhoto = job ? !jobOrCustomerHasPhotosLocal(job as any) : false;
@@ -79,9 +81,16 @@ export default function JobTechNudgePickerDialog({
       <DialogContent className="sm:max-w-sm gap-3">
         <DialogHeader>
           <DialogTitle>Nudge technician</DialogTitle>
-          <DialogDescription>
-            Push to {technicianName || 'assigned tech'}
-            {customerName ? ` · ${customerName}` : ''}
+          <DialogDescription asChild>
+            <div className="text-sm text-muted-foreground">
+              Push to {technicianName || 'assigned tech'}
+              {customerName ? (
+                <>
+                  {' · '}
+                  <span className="font-semibold tracking-wide text-violet-700">{customerLabel}</span>
+                </>
+              ) : null}
+            </div>
           </DialogDescription>
         </DialogHeader>
 

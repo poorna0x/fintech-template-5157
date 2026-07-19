@@ -31,6 +31,15 @@ export function getJobCustomerName(job: Record<string, unknown>): string {
   );
 }
 
+/**
+ * Distinct marker around the customer name so techs spot who the nudge is for
+ * in collapsed Android tray text (notifications can't use real font styles).
+ */
+export function formatNudgeCustomerLabel(name: string): string {
+  const n = String(name || '').trim() || 'Customer';
+  return `★ ${n} ★`;
+}
+
 export function getJobCustomerPhone(job: Record<string, unknown>): string {
   const customer = (job.customer as Record<string, unknown> | undefined) || {};
   const raw =
@@ -232,54 +241,53 @@ export async function sendTechnicianPush(opts: {
 }
 
 export function buildPhotoNudgeCopy(job: Record<string, unknown>): { title: string; body: string } {
-  const name = getJobCustomerName(job);
+  const label = formatNudgeCustomerLabel(getJobCustomerName(job));
   return {
-    title: 'Add purifier photo',
-    body: `${name} — customer has no photos on file. Capture the RO unit.`,
+    title: label,
+    body: 'Add purifier photo — customer has no photos on file. Capture the RO unit.',
   };
 }
 
 export function buildCallCustomerCopy(job: Record<string, unknown>): { title: string; body: string } {
-  const name = getJobCustomerName(job);
+  const label = formatNudgeCustomerLabel(getJobCustomerName(job));
   const phone = getJobCustomerPhone(job);
-  const phonePart = phone ? ` — ${phone}` : '';
   return {
-    title: 'Call customer now',
-    body: `${name}${phonePart}`.slice(0, 300),
+    title: label,
+    body: phone ? `Call customer now — ${phone}` : 'Call customer now',
   };
 }
 
 export function buildOnTheWayCopy(job: Record<string, unknown>): { title: string; body: string } {
-  const name = getJobCustomerName(job);
+  const label = formatNudgeCustomerLabel(getJobCustomerName(job));
   return {
-    title: 'On the way?',
-    body: `${name} — reply with your ETA.`,
+    title: label,
+    body: 'On the way? — reply with your ETA.',
   };
 }
 
 export function buildTimeToFinishCopy(job: Record<string, unknown>): { title: string; body: string } {
-  const name = getJobCustomerName(job);
+  const label = formatNudgeCustomerLabel(getJobCustomerName(job));
   return {
-    title: 'Time to finish?',
-    body: `${name} — how much time do you need to finish? Reply with an estimate.`,
+    title: label,
+    body: 'Time to finish? — how much time do you need? Reply with an estimate.',
   };
 }
 
 export function buildStartJobCopy(job: Record<string, unknown>): { title: string; body: string } {
-  const name = getJobCustomerName(job);
+  const label = formatNudgeCustomerLabel(getJobCustomerName(job));
   const time = getJobCustomTimeLabel(job);
   return {
-    title: 'Start this job',
-    body: `${name}${time ? ` · ${time}` : ''} — please start / mark in progress.`,
+    title: label,
+    body: `Start this job${time ? ` · ${time}` : ''} — please start / mark in progress.`,
   };
 }
 
 export function buildCustomerWaitingCopy(job: Record<string, unknown>): { title: string; body: string } {
-  const name = getJobCustomerName(job);
+  const label = formatNudgeCustomerLabel(getJobCustomerName(job));
   const phone = getJobCustomerPhone(job);
   return {
-    title: 'Customer waiting',
-    body: `${name}${phone ? ` · ${phone}` : ''} — please attend now.`.slice(0, 300),
+    title: label,
+    body: `Customer waiting${phone ? ` · ${phone}` : ''} — please attend now.`.slice(0, 300),
   };
 }
 
@@ -404,8 +412,8 @@ export async function sendJobCustomNudge(
     return 'skipped';
   }
   const name = getJobCustomerName(job);
-  // Title is always this job's customer — never a generic "office message".
-  const title = (opts?.title || name || 'This job').slice(0, 120);
+  // Title is always ★ Customer ★ so techs see who this job message is for.
+  const title = (opts?.title || formatNudgeCustomerLabel(name)).slice(0, 120);
   return sendTechnicianPush({
     technicianId: techId,
     title,
