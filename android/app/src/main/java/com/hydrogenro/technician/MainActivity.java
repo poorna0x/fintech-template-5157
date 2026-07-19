@@ -6,7 +6,9 @@ import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 import android.view.animation.Animation;
 import android.view.animation.AnimationUtils;
+import android.webkit.CookieManager;
 import android.webkit.ValueCallback;
+import android.webkit.WebSettings;
 import android.webkit.WebView;
 import androidx.core.splashscreen.SplashScreen;
 import androidx.core.splashscreen.SplashScreenViewProvider;
@@ -16,6 +18,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Cold open: splash logo → same-size boot overlay + bounce → login/dashboard.
+ * Also tunes the Capacitor WebView so Cloudflare Turnstile can complete
+ * (third-party cookies + DOM storage per Cloudflare mobile docs).
  */
 public class MainActivity extends BridgeActivity {
     private static final long BOOT_LOADER_MAX_MS = 20_000L;
@@ -38,11 +42,13 @@ public class MainActivity extends BridgeActivity {
             new WebViewListener() {
                 @Override
                 public void onPageCommitVisible(WebView view, String url) {
+                    hardenWebViewForTurnstile(view);
                     beginReadyWatch();
                 }
 
                 @Override
                 public void onPageLoaded(WebView webView) {
+                    hardenWebViewForTurnstile(webView);
                     beginReadyWatch();
                 }
 
@@ -56,12 +62,46 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
         NotificationChannels.ensureJobAlerts(this);
 
+        // Bridge WebView exists after super.onCreate — configure as early as possible.
+        hardenWebViewForTurnstile(webViewOrNull());
+
         attachBootLoader();
         releaseSplashWhenBootDrawn();
 
         getWindow()
             .getDecorView()
             .postDelayed(this::dismissBootLoader, BOOT_LOADER_MAX_MS);
+    }
+
+    /**
+     * Cloudflare Turnstile in Android WebView needs third-party cookies + DOM
+     * storage. Apps targeting Lollipop+ disable third-party cookies by default,
+     * which makes the checkbox challenge fail to verify.
+     * @see https://developers.cloudflare.com/turnstile/get-started/mobile-implementation/
+     */
+    private void hardenWebViewForTurnstile(WebView webView) {
+        if (webView == null) return;
+        try {
+            CookieManager cookies = CookieManager.getInstance();
+            cookies.setAcceptCookie(true);
+            cookies.setAcceptThirdPartyCookies(webView, true);
+            // Persist cookie store so Cloudflare challenge state survives brief pauses.
+            cookies.flush();
+
+            WebSettings settings = webView.getSettings();
+            settings.setJavaScriptEnabled(true);
+            settings.setDomStorageEnabled(true);
+            settings.setDatabaseEnabled(true);
+            settings.setLoadWithOverviewMode(true);
+            settings.setUseWideViewPort(true);
+            settings.setAllowFileAccess(true);
+            settings.setAllowContentAccess(true);
+            settings.setJavaScriptCanOpenWindowsAutomatically(true);
+            settings.setMediaPlaybackRequiresUserGesture(false);
+            // Keep the default UA — changing mid-session breaks Turnstile.
+        } catch (Exception e) {
+            android.util.Log.w("HRO-Main", "Turnstile WebView harden failed: " + e.getMessage());
+        }
     }
 
     /** Keep system splash until boot overlay has actually drawn (no blank gap). */

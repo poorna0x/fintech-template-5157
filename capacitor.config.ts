@@ -17,6 +17,13 @@ const config: CapacitorConfig = {
     url: 'https://hydrogenro.com/technician',
     androidScheme: 'https',
     cleartext: false,
+    // Let Turnstile challenge iframes / redirects load inside the WebView.
+    allowNavigation: [
+      'hydrogenro.com',
+      '*.hydrogenro.com',
+      'challenges.cloudflare.com',
+      '*.cloudflare.com',
+    ],
   },
   android: {
     allowMixedContent: false,

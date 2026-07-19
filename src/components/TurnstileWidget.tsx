@@ -155,15 +155,15 @@ const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidgetProps>(
             onTokenRef.current(token);
           },
           'error-callback': () => {
-            setError('Security check failed. Please try again.');
+            setError('Security check failed. Tap Retry below.');
             onTokenRef.current('');
           },
           'expired-callback': () => {
-            setError('Security check expired. Please verify again.');
+            setError('Security check expired. Tap Retry below.');
             onTokenRef.current('');
           },
           'timeout-callback': () => {
-            setError('Security check timed out. Please try again.');
+            setError('Security check timed out. Tap Retry below.');
             onTokenRef.current('');
           },
         });
@@ -212,9 +212,18 @@ const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidgetProps>(
       <div className={`flex flex-col items-center w-full ${className}`}>
         <div ref={containerRef} className="cf-turnstile-container" />
         {error && (
-          <p className="mt-2 text-xs text-destructive text-center" role="alert">
-            {error}
-          </p>
+          <div className="mt-2 flex flex-col items-center gap-1.5">
+            <p className="text-xs text-destructive text-center" role="alert">
+              {error}
+            </p>
+            <button
+              type="button"
+              className="text-xs font-medium text-sky-700 underline underline-offset-2"
+              onClick={() => resetWidget()}
+            >
+              Retry security check
+            </button>
+          </div>
         )}
       </div>
     );
