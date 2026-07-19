@@ -364,6 +364,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setAuthSession(techUser);
         technicianSessionRef.current = true;
         portalRef.current = 'technician';
+        if (techUser.technicianId) {
+          void import('@/lib/technicianPush').then(({ registerTechnicianPushToken }) =>
+            registerTechnicianPushToken(techUser.technicianId as string)
+          );
+        }
         toast.success(
           `Welcome back, ${formatWelcomeDisplayName({
             fullName: techUser.fullName,
