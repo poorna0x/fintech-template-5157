@@ -20,7 +20,6 @@ import type { Job } from '@/types';
 import {
   getJobAssignedTechnicianId,
   getJobCustomerName,
-  getJobNumberLabel,
   isCustomerWaitingLikely,
   isJobNotStarted,
   jobOrCustomerHasPhotosLocal,
@@ -54,7 +53,6 @@ export default function JobTechNudgePickerDialog({
   const [busy, setBusy] = useState<string | null>(null);
 
   const customerName = job ? getJobCustomerName(job as any) : '';
-  const jobNo = job ? getJobNumberLabel(job as any) : '';
   const techId = job ? getJobAssignedTechnicianId(job as any) : null;
 
   const showPhoto = job ? !jobOrCustomerHasPhotosLocal(job as any) : false;
@@ -82,7 +80,6 @@ export default function JobTechNudgePickerDialog({
           <DialogDescription>
             Push to {technicianName || 'assigned tech'}
             {customerName ? ` · ${customerName}` : ''}
-            {jobNo ? ` · ${jobNo}` : ''}
           </DialogDescription>
         </DialogHeader>
 

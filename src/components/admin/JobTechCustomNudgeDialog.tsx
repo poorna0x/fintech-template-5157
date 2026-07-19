@@ -15,7 +15,6 @@ import type { Job } from '@/types';
 import {
   getJobAssignedTechnicianId,
   getJobCustomerName,
-  getJobNumberLabel,
   sendJobCustomNudge,
 } from '@/lib/adminJobTechNudges';
 
@@ -48,7 +47,6 @@ export default function JobTechCustomNudgeDialog({
   }, [open]);
 
   const customerName = job ? getJobCustomerName(job as any) : '';
-  const jobNo = job ? getJobNumberLabel(job as any) : '';
   const techId = job ? getJobAssignedTechnicianId(job as any) : null;
 
   const handleSend = async () => {
@@ -69,8 +67,7 @@ export default function JobTechCustomNudgeDialog({
           <DialogTitle>Message technician</DialogTitle>
           <DialogDescription>
             Push to {technicianName || 'assigned tech'}
-            {customerName ? ` · ${customerName}` : ''}
-            {jobNo ? ` · ${jobNo}` : ''}. They can reply from the notification if enabled.
+            {customerName ? ` · ${customerName}` : ''}. They can reply from the notification if enabled.
           </DialogDescription>
         </DialogHeader>
 

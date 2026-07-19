@@ -233,50 +233,45 @@ export async function sendTechnicianPush(opts: {
 
 export function buildPhotoNudgeCopy(job: Record<string, unknown>): { title: string; body: string } {
   const name = getJobCustomerName(job);
-  const jobNo = getJobNumberLabel(job);
   return {
     title: 'Add purifier photo',
-    body: `${name}${jobNo ? ` (${jobNo})` : ''} — customer has no photos on file. Capture the RO unit.`,
+    body: `${name} — customer has no photos on file. Capture the RO unit.`,
   };
 }
 
 export function buildCallCustomerCopy(job: Record<string, unknown>): { title: string; body: string } {
   const name = getJobCustomerName(job);
   const phone = getJobCustomerPhone(job);
-  const jobNo = getJobNumberLabel(job);
   const phonePart = phone ? ` — ${phone}` : '';
   return {
     title: 'Call customer now',
-    body: `${name}${phonePart}${jobNo ? ` · Job ${jobNo}` : ''}`.slice(0, 300),
+    body: `${name}${phonePart}`.slice(0, 300),
   };
 }
 
 export function buildOnTheWayCopy(job: Record<string, unknown>): { title: string; body: string } {
   const name = getJobCustomerName(job);
-  const jobNo = getJobNumberLabel(job);
   return {
     title: 'On the way?',
-    body: `${name}${jobNo ? ` (${jobNo})` : ''} — reply with your ETA.`,
+    body: `${name} — reply with your ETA.`,
   };
 }
 
 export function buildStartJobCopy(job: Record<string, unknown>): { title: string; body: string } {
   const name = getJobCustomerName(job);
-  const jobNo = getJobNumberLabel(job);
   const time = getJobCustomTimeLabel(job);
   return {
     title: 'Start this job',
-    body: `${name}${jobNo ? ` (${jobNo})` : ''}${time ? ` · ${time}` : ''} — please start / mark in progress.`,
+    body: `${name}${time ? ` · ${time}` : ''} — please start / mark in progress.`,
   };
 }
 
 export function buildCustomerWaitingCopy(job: Record<string, unknown>): { title: string; body: string } {
   const name = getJobCustomerName(job);
-  const jobNo = getJobNumberLabel(job);
   const phone = getJobCustomerPhone(job);
   return {
     title: 'Customer waiting',
-    body: `${name}${phone ? ` · ${phone}` : ''}${jobNo ? ` · Job ${jobNo}` : ''} — please attend now.`.slice(0, 300),
+    body: `${name}${phone ? ` · ${phone}` : ''} — please attend now.`.slice(0, 300),
   };
 }
 
@@ -386,13 +381,11 @@ export async function sendJobCustomNudge(
     return 'skipped';
   }
   const name = getJobCustomerName(job);
-  const jobNo = getJobNumberLabel(job);
   const title = (opts?.title || `Office · ${name}`).slice(0, 120);
-  const withContext = jobNo && !body.includes(jobNo) ? `${body} (${jobNo})`.slice(0, 300) : body;
   return sendTechnicianPush({
     technicianId: techId,
     title,
-    body: withContext,
+    body,
     allowReply: opts?.allowReply !== false,
     tag: `job_nudge_msg_${String((job as { id?: string }).id || '').slice(0, 24)}`,
   });
