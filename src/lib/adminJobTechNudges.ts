@@ -257,6 +257,14 @@ export function buildOnTheWayCopy(job: Record<string, unknown>): { title: string
   };
 }
 
+export function buildTimeToFinishCopy(job: Record<string, unknown>): { title: string; body: string } {
+  const name = getJobCustomerName(job);
+  return {
+    title: 'Time to finish?',
+    body: `${name} — how much time do you need to finish? Reply with an estimate.`,
+  };
+}
+
 export function buildStartJobCopy(job: Record<string, unknown>): { title: string; body: string } {
   const name = getJobCustomerName(job);
   const time = getJobCustomTimeLabel(job);
@@ -333,6 +341,21 @@ export async function sendJobOnTheWayNudge(job: Record<string, unknown>): Promis
     ...copy,
     allowReply: true,
     tag: `job_nudge_eta_${String((job as { id?: string }).id || '').slice(0, 24)}`,
+  });
+}
+
+export async function sendJobTimeToFinishNudge(job: Record<string, unknown>): Promise<TechPushSendResult> {
+  const techId = getJobAssignedTechnicianId(job);
+  if (!techId) {
+    toast.error('No technician assigned on this job.');
+    return 'skipped';
+  }
+  const copy = buildTimeToFinishCopy(job);
+  return sendTechnicianPush({
+    technicianId: techId,
+    ...copy,
+    allowReply: true,
+    tag: `job_nudge_finish_${String((job as { id?: string }).id || '').slice(0, 24)}`,
   });
 }
 

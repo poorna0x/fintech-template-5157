@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import {
   AlertCircle,
   Clock,
+  Hourglass,
   ImagePlus,
   Loader2,
   MessageSquare,
@@ -28,6 +29,7 @@ import {
   sendJobOnTheWayNudge,
   sendJobPhotoNudge,
   sendJobStartNudge,
+  sendJobTimeToFinishNudge,
 } from '@/lib/adminJobTechNudges';
 
 type Props = {
@@ -127,6 +129,20 @@ export default function JobTechNudgePickerDialog({
               <Navigation className="mr-2 h-4 w-4" />
             )}
             On the way? (reply ETA)
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="justify-start h-11"
+            disabled={!!busy}
+            onClick={() => void run('finish', () => sendJobTimeToFinishNudge(job as any))}
+          >
+            {busy === 'finish' ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Hourglass className="mr-2 h-4 w-4" />
+            )}
+            Time to finish? (reply)
           </Button>
           {showStart && (
             <Button
