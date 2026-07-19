@@ -192,26 +192,27 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
         );
     }
 
-    /** Are you going? Yes starts job; No/Reply sends free-text to office. */
+    /** Are you going? / Start job — Start/Yes sets EN_ROUTE; optional No. */
     private void showGoingNow(Map<String, String> data) {
         String startToken = data.get("startToken");
         String startUrl = data.get("startUrl");
-        String replyToken = data.get("replyToken");
-        String replyUrl = data.get("replyUrl");
-        if (startToken == null || startUrl == null || replyToken == null || replyUrl == null) return;
+        if (startToken == null || startUrl == null) return;
         String title = data.get("msgTitle");
         if (title == null || title.isEmpty()) title = data.get("title");
         String body = data.get("msgBody");
         if (body == null) body = data.get("body");
+        boolean startOnly = "start".equalsIgnoreCase(data.get("actionMode"))
+            || "true".equalsIgnoreCase(data.get("startOnly"));
         MessageReplyReceiver.showGoingNowNotification(
             getApplicationContext(),
             title,
             body,
             startToken,
             startUrl,
-            replyToken,
-            replyUrl,
-            data.get("tag")
+            data.get("replyToken"),
+            data.get("replyUrl"),
+            data.get("tag"),
+            startOnly
         );
     }
 

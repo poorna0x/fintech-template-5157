@@ -34,6 +34,7 @@ public final class ForegroundPushNotifier {
         if ("otp_request".equals(type)
             || "office_message".equals(type)
             || "call_customer".equals(type)
+            || "going_now".equals(type)
             || "clear_notifications".equals(type)
             || "location_request".equals(type)) {
             return;

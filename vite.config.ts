@@ -22,9 +22,10 @@ export default defineConfig(({ mode }) => ({
     proxy: {
       // Proxy Netlify functions to avoid CORS issues
       '/.netlify/functions': {
-        target: 'http://localhost:8888',
+        // Use production functions so nudges like goingNow work without netlify:dev.
+        target: 'https://hydrogenro.com',
         changeOrigin: true,
-        secure: false,
+        secure: true,
         rewrite: (path) => path, // Keep the path as-is
         configure: (proxy, options) => {
           proxy.on('error', (err, req, res) => {

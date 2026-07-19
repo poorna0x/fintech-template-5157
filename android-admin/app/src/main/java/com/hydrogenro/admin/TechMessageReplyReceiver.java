@@ -18,9 +18,7 @@ import android.os.Bundle;
 import android.util.Log;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
-import androidx.core.app.Person;
 import androidx.core.app.RemoteInput;
-import androidx.core.graphics.drawable.IconCompat;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
@@ -32,7 +30,9 @@ import org.json.JSONObject;
 /**
  * Inline reply when a technician answers an office message. Reply is pushed
  * back to that technician (no storage) via submit-admin-message-reply.
- * Technician profile photo (Settings) is shown as the MessagingStyle DP.
+ * BigTextStyle keeps the full "{Name} replied / about → reply" text expanded
+ * (MessagingStyle collapses to one line on many OEMs). Tech photo stays as
+ * largeIcon when available.
  */
 public class TechMessageReplyReceiver extends BroadcastReceiver {
 
@@ -81,7 +81,6 @@ public class TechMessageReplyReceiver extends BroadcastReceiver {
         if (techPhoto == null) techPhoto = "";
 
         Bitmap photoBmp = loadCircularPhoto(techPhoto);
-        IconCompat personIcon = photoBmp != null ? IconCompat.createWithBitmap(photoBmp) : null;
 
         RemoteInput remoteInput = new RemoteInput.Builder(KEY_REPLY)
             .setLabel("Reply")
@@ -120,13 +119,10 @@ public class TechMessageReplyReceiver extends BroadcastReceiver {
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
-        Person.Builder techBuilder = new Person.Builder().setName(techName).setKey("tech");
-        if (personIcon != null) techBuilder.setIcon(personIcon);
-        Person tech = techBuilder.build();
-        Person self = new Person.Builder().setName("You").setKey("self").build();
-        NotificationCompat.MessagingStyle style = new NotificationCompat.MessagingStyle(self)
-            .setConversationTitle(title)
-            .addMessage(body, System.currentTimeMillis(), tech);
+        // Prefer a single expanded block over MessagingStyle (OEMs collapse chat).
+        NotificationCompat.BigTextStyle style = new NotificationCompat.BigTextStyle()
+            .setBigContentTitle(title)
+            .bigText(body);
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_notify)
@@ -146,13 +142,14 @@ public class TechMessageReplyReceiver extends BroadcastReceiver {
 
         try {
             NotificationManagerCompat.from(context).notify(tag, NOTIFICATION_ID, builder.build());
-            Log.i(TAG, "Posted tech reply with Reply action" + (personIcon != null ? " + photo" : ""));
+            Log.i(TAG, "Posted tech reply with Reply + BigTextStyle"
+                + (photoBmp != null ? " + photo" : ""));
         } catch (SecurityException e) {
             Log.w(TAG, "Notifications not permitted", e);
         }
     }
 
-    /** Download + circular-crop technician photo for Person / largeIcon. Fail-soft. */
+    /** Download + circular-crop technician photo for largeIcon. Fail-soft. */
     private static Bitmap loadCircularPhoto(String photoUrl) {
         if (photoUrl == null || photoUrl.isEmpty()) return null;
         if (!photoUrl.regionMatches(true, 0, "https://", 0, 8)) return null;

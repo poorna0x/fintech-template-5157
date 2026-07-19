@@ -185,6 +185,8 @@ export async function sendTechnicianPush(opts: {
   callPhone?: string;
   /** Are you going? Yes→EN_ROUTE, No→reply. Requires tech APK + jobId. */
   goingNow?: boolean;
+  /** With goingNow: only a Start button (no No). */
+  startOnly?: boolean;
   jobId?: string;
   /** Short label baked into reply token (e.g. "Time to finish?"). */
   replyAbout?: string;
@@ -198,6 +200,7 @@ export async function sendTechnicianPush(opts: {
     allowReply,
     callPhone,
     goingNow,
+    startOnly,
     jobId,
     replyAbout,
   } = opts;
@@ -227,7 +230,9 @@ export async function sendTechnicianPush(opts: {
         ...(tag ? { tag } : {}),
         ...(allowReply && !phoneDigits && !goingNow ? { allowReply: true } : {}),
         ...(phoneDigits ? { callPhone: phoneDigits } : {}),
-        ...(goingNow && jobId ? { goingNow: true, jobId } : {}),
+        ...(goingNow && jobId
+          ? { goingNow: true, jobId, ...(startOnly ? { startOnly: true } : {}) }
+          : {}),
         ...(replyAbout ? { replyAbout } : {}),
       }),
     });
@@ -296,7 +301,7 @@ export function buildStartJobCopy(job: Record<string, unknown>): { title: string
   const time = getJobCustomTimeLabel(job);
   return {
     title: label,
-    body: `Start this job${time ? ` · ${time}` : ''} — please start / mark in progress.`,
+    body: `Start this job${time ? ` · ${time}` : ''} — tap Start to go on the way.`.slice(0, 300),
   };
 }
 
@@ -305,7 +310,7 @@ export function buildAreYouGoingCopy(job: Record<string, unknown>): { title: str
   const time = getJobCustomTimeLabel(job);
   return {
     title: label,
-    body: `Are you going?${time ? ` · ${time}` : ''} — Yes starts the job. No to reply.`.slice(0, 300),
+    body: `Are you going?${time ? ` · ${time}` : ''} — Yes starts the job. No tells the office.`.slice(0, 300),
   };
 }
 
@@ -402,11 +407,20 @@ export async function sendJobStartNudge(job: Record<string, unknown>): Promise<T
     toast.error('No technician assigned on this job.');
     return 'skipped';
   }
+  const jobId = String((job as { id?: string }).id || '').trim();
+  if (!jobId) {
+    toast.error('Job id missing.');
+    return 'skipped';
+  }
   const copy = buildStartJobCopy(job);
   return sendTechnicianPush({
     technicianId: techId,
     ...copy,
-    tag: `job_nudge_start_${String((job as { id?: string }).id || '').slice(0, 24)}`,
+    goingNow: true,
+    startOnly: true,
+    jobId,
+    replyAbout: 'Start this job?',
+    tag: `job_nudge_start_${jobId.slice(0, 24)}`,
   });
 }
 

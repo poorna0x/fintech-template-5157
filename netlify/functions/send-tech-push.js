@@ -66,9 +66,11 @@ exports.handler = async (event) => {
   // callPhone: data-only push; native shows a Call action (dialer) — no Reply.
   const callPhoneRaw = String(body.callPhone || body.phone || '').trim();
   const callPhone = callPhoneRaw.replace(/[^\d+]/g, '').slice(0, 20);
-  // goingNow: Yes → start job (EN_ROUTE), No → inline reply. Needs tech APK.
+  // goingNow: Yes → start job (EN_ROUTE). Default also has No. startOnly = Start button only.
   const goingNow =
     body.goingNow === true || body.goingNow === 'true' || body.goingNow === 1;
+  const startOnly =
+    body.startOnly === true || body.startOnly === 'true' || body.startOnly === 1;
   const jobId = String(body.jobId || '').trim();
   const replyAbout = String(body.replyAbout || body.about || '').trim().slice(0, 80)
     || replyAboutFromBody(message);
@@ -131,25 +133,29 @@ exports.handler = async (event) => {
         android: { priority: 'high' },
       });
     } else if (goingNow) {
-      // Are you going? Yes → EN_ROUTE; No → reply. Tech APK v3.9+.
+      // Start job from tray. startOnly → Start button; else Yes + No. Tech APK 3.10+.
       const startToken = makeJobStartNudgeToken(technicianId, jobId);
       const replyToken = makeOfficeMessageReplyToken(
         technicianId,
-        replyAbout || 'Are you going?'
+        replyAbout || (startOnly ? 'Start this job?' : 'Are you going?')
       );
-      const notifTitle = title || 'Are you going?';
+      const notifTitle = title || (startOnly ? 'Start this job' : 'Are you going?');
+      const defaultBody = startOnly
+        ? 'Tap Start to mark this job on the way.'
+        : 'Tap Yes to start this job, or No to tell the office.';
       buildMessage = (token) => ({
         token,
         data: {
           type: 'going_now',
           msgTitle: notifTitle,
-          msgBody: message || 'Tap Yes to start this job, or No to reply.',
+          msgBody: message || defaultBody,
           jobId,
           startToken,
           startUrl: `${siteUrl}/.netlify/functions/submit-tech-going-yes`,
           replyToken,
           replyUrl: `${siteUrl}/.netlify/functions/submit-tech-message-reply`,
-          tag: tag || 'going_now',
+          actionMode: startOnly ? 'start' : 'going',
+          tag: tag || (startOnly ? 'start_job' : 'going_now'),
           ...(color ? { color } : {}),
         },
         android: { priority: 'high' },

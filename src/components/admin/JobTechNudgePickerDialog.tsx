@@ -183,7 +183,7 @@ export default function JobTechNudgePickerDialog({
               ) : (
                 <Clock className="mr-2 h-4 w-4" />
               )}
-              Start this job
+              Start this job (tap Start)
             </Button>
           )}
           {showWaiting && (
