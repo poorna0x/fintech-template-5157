@@ -122,6 +122,12 @@ const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidgetProps>(
     const onTokenRef = useRef(onToken);
     const siteKey = readSiteKey();
     const [error, setError] = useState<string | null>(null);
+    // Cloudflare often errors/times out on the very first challenge (cold start,
+    // webview network not ready). Silently reset a few times before falling back
+    // to the manual Retry button so users don't have to tap it themselves.
+    const autoRetryRef = useRef(0);
+    const autoRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const MAX_AUTO_RETRIES = 3;
 
     useEffect(() => {
       onTokenRef.current = onToken;
@@ -144,6 +150,29 @@ const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidgetProps>(
           widgetIdRef.current = null;
         }
 
+        // Silent auto-recovery: reset the widget itself rather than asking the
+        // user to tap Retry. Only surface the manual button once retries run out.
+        const recover = (message: string) => {
+          onTokenRef.current('');
+          if (autoRetryRef.current < MAX_AUTO_RETRIES) {
+            autoRetryRef.current += 1;
+            if (autoRetryTimerRef.current) clearTimeout(autoRetryTimerRef.current);
+            autoRetryTimerRef.current = setTimeout(() => {
+              try {
+                if (widgetIdRef.current && window.turnstile) {
+                  window.turnstile.reset(widgetIdRef.current);
+                } else {
+                  void renderWidget();
+                }
+              } catch {
+                void renderWidget();
+              }
+            }, 600 * autoRetryRef.current);
+            return;
+          }
+          setError(message);
+        };
+
         widgetIdRef.current = window.turnstile.render(containerRef.current, {
           sitekey: siteKey,
           action,
@@ -152,19 +181,17 @@ const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidgetProps>(
           appearance: 'always',
           callback: (token: string) => {
             setError(null);
+            autoRetryRef.current = 0;
             onTokenRef.current(token);
           },
           'error-callback': () => {
-            setError('Security check failed. Tap Retry below.');
-            onTokenRef.current('');
+            recover('Security check failed. Tap Retry below.');
           },
           'expired-callback': () => {
-            setError('Security check expired. Tap Retry below.');
-            onTokenRef.current('');
+            recover('Security check expired. Tap Retry below.');
           },
           'timeout-callback': () => {
-            setError('Security check timed out. Tap Retry below.');
-            onTokenRef.current('');
+            recover('Security check timed out. Tap Retry below.');
           },
         });
       } catch (err) {
@@ -177,6 +204,11 @@ const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidgetProps>(
     const resetWidget = useCallback(() => {
       onTokenRef.current('');
       setError(null);
+      autoRetryRef.current = 0;
+      if (autoRetryTimerRef.current) {
+        clearTimeout(autoRetryTimerRef.current);
+        autoRetryTimerRef.current = null;
+      }
       if (widgetIdRef.current && window.turnstile) {
         try {
           window.turnstile.reset(widgetIdRef.current);
@@ -193,6 +225,10 @@ const TurnstileWidget = forwardRef<TurnstileWidgetHandle, TurnstileWidgetProps>(
     useEffect(() => {
       void renderWidget();
       return () => {
+        if (autoRetryTimerRef.current) {
+          clearTimeout(autoRetryTimerRef.current);
+          autoRetryTimerRef.current = null;
+        }
         if (widgetIdRef.current && window.turnstile) {
           try {
             window.turnstile.remove(widgetIdRef.current);

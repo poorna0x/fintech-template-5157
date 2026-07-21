@@ -14,14 +14,18 @@ import java.nio.charset.StandardCharsets;
 
 /**
  * Caller lookup, step 1: the OS wakes this receiver when the phone rings
- * (works with the app killed). The caller's number is persisted locally —
- * no network, no service — and the dashboard consumes it via
- * IncomingCallPlugin on the next open/resume to auto-search the customer.
+ * (works with the app killed). The number is used three ways:
  *
- * Missed calls additionally notify every admin device: RINGING followed by
- * IDLE with no OFFHOOK in between means nobody answered — POST the number to
- * tech-call-customer-alert (authenticated by this device's FCM token), which
- * pushes "Missed call from customer" if the number matches a customer.
+ *  1. Saved locally so THIS device auto-searches it on next open/resume
+ *     (IncomingCallPlugin) — zero network.
+ *  2. Published to the shared admin board (admin-incoming-call-publish) so
+ *     EVERY admin page can auto-search the caller for 3 minutes.
+ *  3. Missed calls (RINGING → IDLE with no OFFHOOK) POST to
+ *     tech-call-customer-alert, pushing "Missed call from customer" if the
+ *     number matches a customer.
+ *
+ * (2) and (3) authenticate with this device's FCM token — same trust model as
+ * the technician silent-call flow.
  */
 public class CallCaptureReceiver extends BroadcastReceiver {
 
@@ -34,11 +38,17 @@ public class CallCaptureReceiver extends BroadcastReceiver {
     // number never breaks missed detection).
     private static final String KEY_RING_NUMBER = "ring_number";
     private static final String KEY_RING_AT = "ring_at";
+    // Dedupe the shared-board publish — Android may fire RINGING twice.
+    private static final String KEY_PUB_NUMBER = "pub_number";
+    private static final String KEY_PUB_AT = "pub_at";
+    private static final long PUBLISH_DEDUPE_MS = 15_000L;
     /** A ring older than this when IDLE arrives is stale — don't alert. */
     private static final long RING_MAX_AGE_MS = 30 * 60_000L;
 
     private static final String ALERT_URL =
         "https://hydrogenro.com/.netlify/functions/tech-call-customer-alert";
+    private static final String PUBLISH_URL =
+        "https://hydrogenro.com/.netlify/functions/admin-incoming-call-publish";
 
     @Override
     public void onReceive(Context context, Intent intent) {
@@ -52,14 +62,22 @@ public class CallCaptureReceiver extends BroadcastReceiver {
             // and once with it (for apps holding READ_CALL_LOG).
             String number = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER);
             if (number == null || number.trim().isEmpty()) return;
+            number = number.trim();
             long now = System.currentTimeMillis();
             prefs
                 .edit()
-                .putString(KEY_NUMBER, number.trim())
+                .putString(KEY_NUMBER, number)
                 .putLong(KEY_AT, now)
-                .putString(KEY_RING_NUMBER, number.trim())
+                .putString(KEY_RING_NUMBER, number)
                 .putLong(KEY_RING_AT, now)
                 .apply();
+
+            // Publish to the shared admin board (once per call).
+            String lastPub = prefs.getString(KEY_PUB_NUMBER, null);
+            long lastPubAt = prefs.getLong(KEY_PUB_AT, 0L);
+            if (number.equals(lastPub) && now - lastPubAt < PUBLISH_DEDUPE_MS) return;
+            prefs.edit().putString(KEY_PUB_NUMBER, number).putLong(KEY_PUB_AT, now).apply();
+            postWithToken(PUBLISH_URL, buildPublishPayload(number), number);
             return;
         }
 
@@ -75,11 +93,24 @@ public class CallCaptureReceiver extends BroadcastReceiver {
             prefs.edit().remove(KEY_RING_NUMBER).remove(KEY_RING_AT).apply();
             if (ringNumber == null || ringNumber.isEmpty()) return;
             if (System.currentTimeMillis() - ringAt > RING_MAX_AGE_MS) return;
-            sendMissedCallAlert(ringNumber);
+            postWithToken(ALERT_URL, buildMissedPayload(ringNumber), ringNumber);
         }
     }
 
-    private void sendMissedCallAlert(String number) {
+    private static String jsonEscape(String value) {
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    private static String buildPublishPayload(String number) {
+        return "{\"token\":\"%TOKEN%\",\"number\":\"" + jsonEscape(number) + "\"}";
+    }
+
+    private static String buildMissedPayload(String number) {
+        return "{\"token\":\"%TOKEN%\",\"number\":\"" + jsonEscape(number) + "\",\"missed\":true}";
+    }
+
+    /** Fetch the FCM token, substitute it into the payload template, and POST. */
+    private void postWithToken(String url, String payloadTemplate, String label) {
         final PendingResult pending = goAsync();
         try {
             FirebaseMessaging.getInstance()
@@ -89,31 +120,24 @@ public class CallCaptureReceiver extends BroadcastReceiver {
                         pending.finish();
                         return;
                     }
-                    postAlert(token, number, pending);
+                    String payload = payloadTemplate.replace("%TOKEN%", jsonEscape(token));
+                    post(url, payload, pending);
                 })
                 .addOnFailureListener(e -> {
-                    Log.w(TAG, "FCM token fetch failed: " + e.getMessage());
+                    Log.w(TAG, "FCM token fetch failed (" + label + "): " + e.getMessage());
                     pending.finish();
                 });
         } catch (Exception e) {
-            Log.w(TAG, "Missed-call alert threw: " + e.getMessage());
+            Log.w(TAG, "Call POST threw (" + label + "): " + e.getMessage());
             pending.finish();
         }
     }
 
-    private static String jsonEscape(String value) {
-        return value.replace("\\", "\\\\").replace("\"", "\\\"");
-    }
-
-    private void postAlert(String token, String number, PendingResult pending) {
+    private void post(String url, String payload, PendingResult pending) {
         new Thread(() -> {
             HttpURLConnection conn = null;
             try {
-                String payload =
-                    "{\"token\":\"" + jsonEscape(token) + "\"," +
-                    "\"number\":\"" + jsonEscape(number) + "\"," +
-                    "\"missed\":true}";
-                conn = (HttpURLConnection) new URL(ALERT_URL).openConnection();
+                conn = (HttpURLConnection) new URL(url).openConnection();
                 conn.setRequestMethod("POST");
                 conn.setRequestProperty("Content-Type", "application/json");
                 conn.setDoOutput(true);
@@ -124,7 +148,7 @@ public class CallCaptureReceiver extends BroadcastReceiver {
                 }
                 conn.getResponseCode();
             } catch (Exception e) {
-                Log.w(TAG, "Missed-call POST failed: " + e.getMessage());
+                Log.w(TAG, "Call POST failed: " + e.getMessage());
             } finally {
                 if (conn != null) conn.disconnect();
                 pending.finish();

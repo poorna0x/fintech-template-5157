@@ -4495,6 +4495,25 @@ const AdminDashboard = () => {
     };
   }, []);
 
+  // Shared caller board: a call received on any admin phone auto-searches here
+  // too (all admin pages, web + APK) for 3 minutes — fetch on open/resume plus
+  // realtime for already-open pages.
+  useEffect(() => {
+    let cleanup: (() => void) | null = null;
+    let cancelled = false;
+    void import('@/lib/adminSharedIncomingCall').then(({ initAdminSharedCallLookup }) => {
+      const dispose = initAdminSharedCallLookup((digits) =>
+        callerLookupSearchRef.current(digits)
+      );
+      if (cancelled) dispose();
+      else cleanup = dispose;
+    });
+    return () => {
+      cancelled = true;
+      cleanup?.();
+    };
+  }, []);
+
   const handleClearSearch = () => {
     hapticTap();
     adminSearchSyncedRef.current = null;
