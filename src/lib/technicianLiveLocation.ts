@@ -15,6 +15,7 @@
  * On the plain website/PWA `isNativeApp()` is false and none of this runs.
  */
 import { Capacitor, registerPlugin } from '@capacitor/core';
+import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { registerTechnicianPushToken } from '@/lib/technicianPush';
 
@@ -54,6 +55,8 @@ const BOOTSTRAP_TIMEOUT_MS = 30_000;
 let sharingEnabled = false;
 let watcherId: string | null = null;
 let watcherTimeout: ReturnType<typeof setTimeout> | null = null;
+/** Show the "permission off" toast once per app session, not on every resume. */
+let notifiedPermissionDenied = false;
 
 export function isNativeApp(): boolean {
   return Capacitor.isNativePlatform();
@@ -108,8 +111,18 @@ async function runBootstrapFix(technicianId: string): Promise<boolean> {
         if (error) {
           if (error.code === 'NOT_AUTHORIZED') {
             // Real deny — stop pings until the tech reopens/resumes with permission.
+            // Do NOT auto-open the system settings page (it hijacked every app
+            // open on phones where permission was denied/auto-revoked); the
+            // tech grants Location manually from Settings when needed.
             void stopLiveTracking(technicianId);
-            void BackgroundGeolocation.openSettings();
+            if (!notifiedPermissionDenied) {
+              notifiedPermissionDenied = true;
+              toast.warning('Location permission is off', {
+                description:
+                  'Location sharing is paused. Allow Location for HRO Technician in phone Settings to re-enable it.',
+                duration: 8000,
+              });
+            }
           } else {
             void stopWatcherOnly();
           }
