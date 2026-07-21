@@ -96,7 +96,7 @@ import { applyAutoMoveToOngoingOnDateFlag } from '@/lib/followUpToOngoing';
 import ImageUpload from '@/components/ImageUpload';
 import { Label } from '@/components/ui/label';
 import { processQueuedPhotos, startRetryProcessing, setupOnlineListener, stopRetryProcessing } from '@/lib/retryPhotoUpload';
-import { getQueuedPhotosCount } from '@/lib/offlinePhotoQueue';
+import { getQueuedPhotos, getQueuedPhotosCount } from '@/lib/offlinePhotoQueue';
 import { withTimeout, isSlowNetworkError, isTimeoutError } from '@/lib/networkTimeout';
 import TechnicianInventoryView from '@/components/TechnicianInventoryView';
 import JobPartsUsedDialog from '@/components/admin/JobPartsUsedDialog';
@@ -4491,6 +4491,22 @@ const TechnicianDashboard = () => {
         });
       } else {
         toast.success('Job completed successfully!', { duration: 3000 });
+      }
+
+      // Photos whose upload failed live in the offline queue and attach to the
+      // job in the background — tell the tech so a "missing" photo isn't a surprise,
+      // and kick a retry tick right away.
+      try {
+        const pendingForJob = getQueuedPhotos().filter((p) => p.jobId === jobId);
+        if (pendingForJob.length > 0) {
+          toast.info(
+            `${pendingForJob.length} photo(s) are still uploading in the background and will be added to this job automatically. Keep the app open with internet on.`,
+            { duration: 8000 }
+          );
+          void processQueuedPhotos();
+        }
+      } catch {
+        /* best-effort */
       }
 
       const customerId =

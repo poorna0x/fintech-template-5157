@@ -24,6 +24,29 @@ export interface QueuedPhoto {
 const QUEUE_STORAGE_KEY = 'offline_photo_queue';
 const MAX_RETRY_COUNT = 5;
 const MAX_QUEUE_SIZE = 50; // Maximum number of queued photos
+/** Photos already on Cloudinary (uploadedUrl set) only need a cheap DB patch to
+ *  link them to their job — never give up on those via retry count. They only
+ *  expire after this long, so a permanently-broken link can't grow the queue forever. */
+const UPLOADED_LINK_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Remove up to `count` entries to free space, preferring entries whose bytes are
+ * NOT yet on Cloudinary last-resort only. Entries with `uploadedUrl` have their
+ * base64 cleared already (tiny) and evicting them permanently orphans the photo
+ * (uploaded but never linked to the job) — so they are evicted only when nothing
+ * else is left.
+ */
+const evictForSpace = (queue: QueuedPhoto[], count: number): void => {
+  const byOldest = (a: QueuedPhoto, b: QueuedPhoto) => a.timestamp - b.timestamp;
+  const victims = [
+    ...queue.filter((p) => !p.uploadedUrl).sort(byOldest),
+    ...queue.filter((p) => p.uploadedUrl).sort(byOldest),
+  ].slice(0, count);
+  for (const victim of victims) {
+    const idx = queue.indexOf(victim);
+    if (idx !== -1) queue.splice(idx, 1);
+  }
+};
 
 /**
  * Convert File to base64 data URL for localStorage storage
@@ -67,8 +90,14 @@ export const getQueuedPhotos = (): QueuedPhoto[] => {
     const stored = localStorage.getItem(QUEUE_STORAGE_KEY);
     if (!stored) return [];
     const photos = JSON.parse(stored) as QueuedPhoto[];
-    // Filter out photos that have exceeded max retry count
-    return photos.filter(p => p.retryCount < MAX_RETRY_COUNT);
+    // Drop photos that exceeded max upload retries — EXCEPT ones already on
+    // Cloudinary (uploadedUrl): those only need a cheap job-link patch, so they
+    // stay until the link succeeds or they age out.
+    return photos.filter(p =>
+      p.uploadedUrl
+        ? Date.now() - p.timestamp <= UPLOADED_LINK_TTL_MS
+        : p.retryCount < MAX_RETRY_COUNT
+    );
   } catch (error) {
     console.error('Error reading queued photos:', error);
     return [];
@@ -126,10 +155,9 @@ export const queuePhoto = async (
 
       const existingQueue = getQueuedPhotos();
       
-      // Limit queue size - remove oldest if exceeded
+      // Limit queue size - evict (uploaded-but-unlinked entries last)
       if (existingQueue.length >= MAX_QUEUE_SIZE) {
-        existingQueue.sort((a, b) => a.timestamp - b.timestamp);
-        existingQueue.shift(); // Remove oldest
+        evictForSpace(existingQueue, existingQueue.length - MAX_QUEUE_SIZE + 1);
       }
 
       existingQueue.push(queuedPhoto);
@@ -147,10 +175,8 @@ export const queuePhoto = async (
         // Check if string is too large for localStorage
         if (queueString.length > 5 * 1024 * 1024) { // 5MB limit check
           console.warn('Queue data too large, removing oldest entries...');
-          // Remove oldest 20% of entries
-          existingQueue.sort((a, b) => a.timestamp - b.timestamp);
-          const removeCount = Math.floor(existingQueue.length * 0.2);
-          existingQueue.splice(0, removeCount);
+          // Remove oldest 20% of entries (uploaded-but-unlinked entries last)
+          evictForSpace(existingQueue, Math.floor(existingQueue.length * 0.2));
           queueString = JSON.stringify(existingQueue);
         }
         
@@ -161,11 +187,9 @@ export const queuePhoto = async (
         // localStorage might be full - try to clear old entries
         if (storageError.name === 'QuotaExceededError' || storageError.code === 22) {
           console.warn('localStorage full, clearing old entries...');
-          // Remove oldest entries (more aggressively)
-          existingQueue.sort((a, b) => a.timestamp - b.timestamp);
-          // Remove oldest 20% or at least 5 entries
+          // Remove oldest 20% or at least 5 entries (uploaded-but-unlinked last)
           const removeCount = Math.max(5, Math.floor(existingQueue.length * 0.2));
-          existingQueue.splice(0, removeCount);
+          evictForSpace(existingQueue, removeCount);
           
           try {
             const queueString = JSON.stringify(existingQueue);
@@ -259,6 +283,12 @@ export const setQueuedPhotoUploadedUrl = (photoId: string, url: string): void =>
     const photo = queue.find(p => p.id === photoId);
     if (photo) {
       photo.uploadedUrl = url;
+      // Bytes are safe on Cloudinary now — drop the base64 copy so this entry
+      // stops consuming localStorage quota (and never gets space-evicted while
+      // waiting for its job-link patch).
+      photo.fileData = '';
+      // Link retries shouldn't inherit failed-upload attempts.
+      photo.retryCount = 0;
       localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(queue));
     }
   } catch (error) {

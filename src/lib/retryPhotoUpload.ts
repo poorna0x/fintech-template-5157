@@ -17,6 +17,29 @@ import { toast } from 'sonner';
 let isProcessing = false;
 let retryInterval: NodeJS.Timeout | null = null;
 
+const normalizePhotoUrlForCompare = (url: string): string =>
+  url.split('?')[0].split('#')[0].trim().toLowerCase();
+
+/** True when `list` (strings or Cloudinary-ish objects) already contains `url`. */
+const photoListContainsUrl = (list: unknown, url: string): boolean => {
+  if (!Array.isArray(list)) return false;
+  const target = normalizePhotoUrlForCompare(url);
+  return list.some((entry) => {
+    const entryUrl =
+      typeof entry === 'string'
+        ? entry
+        : (entry as any)?.url || (entry as any)?.secure_url;
+    return typeof entryUrl === 'string' && normalizePhotoUrlForCompare(entryUrl) === target;
+  });
+};
+
+/** Existing column value + new URL appended (preserves existing entries as-is). */
+const appendPhotoUrl = (existing: unknown, url: string): unknown[] => {
+  const list = Array.isArray(existing) ? [...existing] : [];
+  list.push(url);
+  return list;
+};
+
 /**
  * Process a single queued photo
  */
@@ -80,6 +103,10 @@ const processQueuedPhoto = async (photo: QueuedPhoto): Promise<boolean> => {
       try {
         const { data: jobData } = await db.jobs.getByIdFull(photo.jobId);
         if (jobData) {
+          // Payload for db.jobs.update — filled per photoType below. Empty when
+          // the photo turns out to be already linked (nothing to patch).
+          const updatePayload: Record<string, unknown> = {};
+
           const currentRequirements = (jobData as any).requirements || [];
           let requirements: any[] = [];
           
@@ -146,23 +173,55 @@ const processQueuedPhoto = async (photo: QueuedPhoto): Promise<boolean> => {
               requirements.push({ payment_photos: existingPaymentPhotos });
               console.log(`✅ Updated job ${photo.jobId} with ${existingPaymentPhotos.length} payment photo(s)`);
             }
-          }
-          
-          // Update job with new requirements
-          const { error: updateError } = await db.jobs.update(photo.jobId, {
-            requirements: JSON.stringify(requirements)
-          });
-
-          if (updateError) {
-            // RLS denial / network blip / 5xx — keep the photo in the queue so
-            // the next retry tick (or app foreground) can re-attempt the patch.
-            console.warn(
-              `[retryPhotoUpload] Job update failed for ${photo.jobId}; keeping queue entry for retry`,
-              updateError
-            );
-            linkSucceeded = false;
           } else {
-            console.log(`✅ Added uploaded photo to job ${photo.jobId} requirements`);
+            // 'after' / 'before' / 'other' — these live in the job's photo
+            // columns, not requirements. Previously this fell through and the
+            // queue entry was deleted without ever writing to the DB (photo on
+            // Cloudinary but invisible to admin/technician).
+            const url = uploadResult.secure_url;
+            if (photo.photoType === 'before') {
+              if (!photoListContainsUrl((jobData as any).before_photos, url)) {
+                updatePayload.before_photos = appendPhotoUrl((jobData as any).before_photos, url);
+              }
+            } else {
+              // 'after' and 'other': completion-flow extras go to after_photos
+              // (admin reports / completed cards) and images (customer gallery),
+              // matching what handleCompleteJobSubmit writes.
+              if (!photoListContainsUrl((jobData as any).after_photos, url) && photo.photoType === 'after') {
+                updatePayload.after_photos = appendPhotoUrl((jobData as any).after_photos, url);
+              }
+              if (!photoListContainsUrl((jobData as any).images, url)) {
+                updatePayload.images = appendPhotoUrl((jobData as any).images, url);
+              }
+            }
+            if (Object.keys(updatePayload).length > 0) {
+              console.log(
+                `✅ Linking ${photo.photoType} photo to job ${photo.jobId} columns:`,
+                Object.keys(updatePayload)
+              );
+            } else {
+              console.log(`ℹ️ ${photo.photoType} photo already linked to job ${photo.jobId}`);
+            }
+          }
+
+          if (photo.photoType === 'bill' || photo.photoType === 'payment') {
+            updatePayload.requirements = JSON.stringify(requirements);
+          }
+
+          if (Object.keys(updatePayload).length > 0) {
+            const { error: updateError } = await db.jobs.update(photo.jobId, updatePayload);
+
+            if (updateError) {
+              // RLS denial / network blip / 5xx — keep the photo in the queue so
+              // the next retry tick (or app foreground) can re-attempt the patch.
+              console.warn(
+                `[retryPhotoUpload] Job update failed for ${photo.jobId}; keeping queue entry for retry`,
+                updateError
+              );
+              linkSucceeded = false;
+            } else {
+              console.log(`✅ Added uploaded photo to job ${photo.jobId}`);
+            }
           }
         } else {
           // Job vanished (deleted / merged / no read access). The photo is now
