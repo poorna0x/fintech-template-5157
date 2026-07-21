@@ -31,7 +31,7 @@ export const CALLER_INTRO_WHATSAPP_MESSAGE = [
   '',
   'To help us serve you better, please share the following:',
   '',
-  '1. Your location',
+  '1. Your location (please send your Google Maps location, along with your flat/building number and name)',
   '2. A photo of your water filter',
   '',
   'Thank you!',
