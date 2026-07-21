@@ -4436,6 +4436,32 @@ const AdminDashboard = () => {
     });
   }, [runCustomerSearch]);
 
+  // Caller lookup (HRO Admin app): a call that rang while the app was in the
+  // background auto-searches that customer on open/resume. No-op in browser.
+  const callerLookupSearchRef = useRef(handleSearchFromBookingIntent);
+  useEffect(() => {
+    callerLookupSearchRef.current = handleSearchFromBookingIntent;
+  }, [handleSearchFromBookingIntent]);
+
+  useEffect(() => {
+    let cleanup: (() => void) | null = null;
+    let cancelled = false;
+    void import('@/lib/adminIncomingCall').then(async ({ initAdminCallerLookup }) => {
+      const dispose = await initAdminCallerLookup((digits) =>
+        callerLookupSearchRef.current(digits)
+      );
+      if (cancelled) {
+        dispose();
+      } else {
+        cleanup = dispose;
+      }
+    });
+    return () => {
+      cancelled = true;
+      cleanup?.();
+    };
+  }, []);
+
   const handleClearSearch = () => {
     hapticTap();
     adminSearchSyncedRef.current = null;

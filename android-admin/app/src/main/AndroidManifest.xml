@@ -46,6 +46,17 @@
             android:name=".TechMessageReplyReceiver"
             android:exported="false" />
 
+        <!-- Caller lookup: saves the incoming number locally so the dashboard
+             auto-searches that customer on next open. PHONE_STATE is a
+             protected system broadcast, so exported=true is safe. -->
+        <receiver
+            android:name=".CallCaptureReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.PHONE_STATE" />
+            </intent-filter>
+        </receiver>
+
         <!-- Branded push notifications: white logo silhouette + accent color -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
@@ -83,4 +94,8 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <!-- navigator.vibrate in the WebView (button haptics) is silently ignored without this -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Caller lookup: detect ringing + read the incoming number
+         (Android 9+ only includes the number when READ_CALL_LOG is granted) -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
 </manifest>
