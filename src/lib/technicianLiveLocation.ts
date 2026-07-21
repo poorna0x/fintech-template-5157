@@ -15,7 +15,6 @@
  * On the plain website/PWA `isNativeApp()` is false and none of this runs.
  */
 import { Capacitor, registerPlugin } from '@capacitor/core';
-import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { registerTechnicianPushToken } from '@/lib/technicianPush';
 
@@ -55,8 +54,6 @@ const BOOTSTRAP_TIMEOUT_MS = 30_000;
 let sharingEnabled = false;
 let watcherId: string | null = null;
 let watcherTimeout: ReturnType<typeof setTimeout> | null = null;
-/** Show the "permission off" toast once per app session, not on every resume. */
-let notifiedPermissionDenied = false;
 
 export function isNativeApp(): boolean {
   return Capacitor.isNativePlatform();
@@ -110,27 +107,13 @@ async function runBootstrapFix(technicianId: string): Promise<boolean> {
       (position, error) => {
         if (error) {
           if (error.code === 'NOT_AUTHORIZED') {
-            // Sharing can't work right now — stop pings until the tech
-            // reopens/resumes with location working. Do NOT auto-open the
-            // system settings page (it hijacked every app open on phones
-            // where permission was denied/auto-revoked); the tech fixes it
-            // manually from Settings when needed.
+            // Sharing can't work right now (permission denied or phone GPS
+            // toggle off) — just mark sharing off so admin pings pause; it
+            // recovers automatically on the next open/resume once fixed.
+            // No settings redirect, no toast: permission is granted manually
+            // in phone Settings, and the admin dialog already shows
+            // "Sharing off" with the last known location.
             void stopLiveTracking(technicianId);
-            if (!notifiedPermissionDenied) {
-              notifiedPermissionDenied = true;
-              // Same NOT_AUTHORIZED code covers both cases; only the message
-              // differs ("Location services disabled." vs permission denied).
-              const gpsToggleOff = /services|disabled/i.test(error.message ?? '');
-              toast.warning(
-                gpsToggleOff ? 'Phone location is turned off' : 'Location permission is off',
-                {
-                  description: gpsToggleOff
-                    ? 'Turn on Location in the phone quick settings, then reopen the app.'
-                    : 'In phone Settings, set Location for HRO Technician to Allow with Precise location ON, then reopen the app.',
-                  duration: 8000,
-                }
-              );
-            }
           } else {
             void stopWatcherOnly();
           }
