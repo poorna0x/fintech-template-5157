@@ -4438,10 +4438,26 @@ const AdminDashboard = () => {
 
   // Caller lookup (HRO Admin app): a call that rang while the app was in the
   // background auto-searches that customer on open/resume. No-op in browser.
-  const callerLookupSearchRef = useRef(handleSearchFromBookingIntent);
+  // Unlike manual searches, a miss here means an unknown caller — offer to
+  // send them the WhatsApp intro (location + filter photo).
+  const [callerNotFoundNumber, setCallerNotFoundNumber] = useState<string | null>(null);
+
+  const handleSearchFromIncomingCall = useCallback((digits: string) => {
+    void (async () => {
+      const results = await runCustomerSearch(digits);
+      requestAnimationFrame(() => {
+        document.querySelector('[data-admin-search]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      if (results.length === 0) {
+        setCallerNotFoundNumber(digits);
+      }
+    })();
+  }, [runCustomerSearch]);
+
+  const callerLookupSearchRef = useRef(handleSearchFromIncomingCall);
   useEffect(() => {
-    callerLookupSearchRef.current = handleSearchFromBookingIntent;
-  }, [handleSearchFromBookingIntent]);
+    callerLookupSearchRef.current = handleSearchFromIncomingCall;
+  }, [handleSearchFromIncomingCall]);
 
   useEffect(() => {
     let cleanup: (() => void) | null = null;
@@ -7125,6 +7141,41 @@ const AdminDashboard = () => {
         onCalculateCustomDistance={() => void calculateCustomDistanceBetweenStops()}
         onOpenCustomDistanceInMaps={() => void openCustomDistanceInGoogleMaps()}
       />
+
+      {/* Caller lookup miss: the number that just called isn't a customer yet */}
+      <AlertDialog
+        open={callerNotFoundNumber !== null}
+        onOpenChange={(open) => {
+          if (!open) setCallerNotFoundNumber(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Customer not found</AlertDialogTitle>
+            <AlertDialogDescription>
+              No customer matches the caller&apos;s number{' '}
+              <span className="font-medium text-foreground">{callerNotFoundNumber}</span>.
+              You can send them a WhatsApp message asking for their location and a
+              photo of their water filter.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Okay</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const number = callerNotFoundNumber;
+                if (!number) return;
+                void import('@/lib/adminIncomingCall').then(({ openCallerIntroWhatsApp }) =>
+                  openCallerIntroWhatsApp(number)
+                );
+              }}
+            >
+              <MessageSquare className="mr-2 h-4 w-4" />
+              Send WhatsApp Message
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

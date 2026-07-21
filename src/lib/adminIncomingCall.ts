@@ -9,7 +9,7 @@
  */
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import type { PermissionState, PluginListenerHandle } from '@capacitor/core';
-import { normalizePhoneForSearch } from '@/lib/utils';
+import { formatPhoneForWhatsApp, normalizePhoneForSearch } from '@/lib/utils';
 
 type ConsumeLastCallResult = {
   number?: string;
@@ -24,6 +24,26 @@ type IncomingCallPlugin = {
 };
 
 const IncomingCall = registerPlugin<IncomingCallPlugin>('IncomingCall');
+
+/** Intro sent to a caller whose number isn't in the customer database yet. */
+export const CALLER_INTRO_WHATSAPP_MESSAGE = [
+  'Hello! Thank you for calling Water Filter Service.',
+  '',
+  'To help us serve you better, please share the following:',
+  '',
+  '1. Your location',
+  '2. A photo of your water filter',
+  '',
+  'Thank you!',
+].join('\n');
+
+/** Open WhatsApp chat with the caller, intro message pre-filled. */
+export function openCallerIntroWhatsApp(number: string): void {
+  const url = `https://wa.me/${formatPhoneForWhatsApp(number)}?text=${encodeURIComponent(
+    CALLER_INTRO_WHATSAPP_MESSAGE
+  )}`;
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
 
 /** Ignore calls older than this — a stale search hours later is confusing. */
 const FRESH_CALL_MAX_AGE_MS = 30 * 60_000;
