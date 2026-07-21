@@ -1,0 +1,34 @@
+# Sensitive probe paths — forced 404 (see scripts/sensitive-public-paths.mjs)
+/.git /404.html 404!
+/.git/* /404.html 404!
+/config.json /404.html 404!
+/.env /404.html 404!
+/.env.local /404.html 404!
+/.env.production /404.html 404!
+/.env.development /404.html 404!
+/package.json /404.html 404!
+/package-lock.json /404.html 404!
+/composer.json /404.html 404!
+/yarn.lock /404.html 404!
+/.htaccess /404.html 404!
+/web.config /404.html 404!
+/.svn /404.html 404!
+/.svn/* /404.html 404!
+/node_modules/* /404.html 404!
+/.aws/* /404.html 404!
+/backup/* /404.html 404!
+/.DS_Store /404.html 404!
+/wp-config.php /404.html 404!
+/phpinfo.php /404.html 404!
+/server-status /404.html 404!
+/.well-known/git/* /404.html 404!
+
+# Netlify functions (must be before SPA catch-all)
+/api/* /.netlify/functions/:splat 200!
+
+# Canonical booking URL
+/booking /book 301
+/booking/ /book 301
+
+# SPA fallback — must be last
+/* /index.html 200

@@ -62,6 +62,13 @@ interface NewJobDialogProps {
   parseDbServiceType?: (serviceType: string) => string[];
   /** When the new job is created with a technician assigned, open WhatsApp notify flow in parent. */
   onJobAssignedToTechnician?: (payload: JobAssignedToTechnicianPayload) => void;
+  /**
+   * Technician portal mode: hides lead cost (server computes the default) and
+   * creates the job through the technician RPC instead of the admin insert.
+   * Admin-only post-create steps (visit order, tech push, customer patch) are
+   * skipped.
+   */
+  technicianMode?: boolean;
 }
 
 const NewJobDialog: React.FC<NewJobDialogProps> = ({
@@ -74,6 +81,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
   onBrandsModelsReload,
   parseDbServiceType,
   onJobAssignedToTechnician,
+  technicianMode = false,
 }) => {
   const [isDragOverNewJob, setIsDragOverNewJob] = useState(false);
   const [isCreatingJob, setIsCreatingJob] = useState(false);
@@ -330,16 +338,19 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
       return;
     }
 
-    if (!newJobFormData.lead_cost || newJobFormData.lead_cost.trim() === '') {
-      toast.error('Please enter lead cost', TOAST_VALIDATION);
-      return;
+    if (!technicianMode) {
+      if (!newJobFormData.lead_cost || newJobFormData.lead_cost.trim() === '') {
+        toast.error('Please enter lead cost', TOAST_VALIDATION);
+        return;
+      }
+      const leadCostCheck = parseFloat(newJobFormData.lead_cost);
+      if (isNaN(leadCostCheck) || leadCostCheck < 0) {
+        toast.error('Lead cost must be a valid number', TOAST_VALIDATION);
+        return;
+      }
     }
 
-    const leadCostNum = parseFloat(newJobFormData.lead_cost);
-    if (isNaN(leadCostNum) || leadCostNum < 0) {
-      toast.error('Lead cost must be a valid number', TOAST_VALIDATION);
-      return;
-    }
+    const leadCostNum = parseFloat(newJobFormData.lead_cost) || 0;
 
     setIsCreatingJob(true);
     try {
@@ -436,10 +447,22 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
         before_photos: photosToUse
       };
 
-      const { data: newJob, error } = await db.jobs.create(jobData);
-      
+      const { data: newJob, error } = technicianMode
+        ? await db.jobs.createAsTechnician(jobData as unknown as Record<string, unknown>)
+        : await db.jobs.create(jobData);
+
       if (error) {
         throw new Error(error.message);
+      }
+
+      if (technicianMode) {
+        // Admin-only post-create steps (visit order, tech push, customer
+        // brand/model patch, WhatsApp notify) are blocked by RLS for
+        // technicians — the job itself is what matters here.
+        onJobCreated(newJob);
+        toast.success(`Job ${(newJob as any)?.job_number || ''} created successfully!`);
+        handleClose();
+        return;
       }
 
       if (newJob?.id && newJobFormData.assigned_technician_id) {
@@ -979,8 +1002,8 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                 )}
               </div>
 
-              {/* Lead Cost - Required when lead source is selected */}
-              {newJobFormData.lead_source && (
+              {/* Lead Cost - Required when lead source is selected (hidden for technicians; server applies the default) */}
+              {!technicianMode && newJobFormData.lead_source && (
                 <div className="space-y-2">
                   <Label htmlFor="job_lead_cost">Lead Cost (₹) *</Label>
                   <Input
@@ -1003,7 +1026,8 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                 </div>
               )}
 
-              {/* Assign to Technician (Optional) */}
+              {/* Assign to Technician (Optional) — admin only; technician-created jobs stay PENDING for admin to assign */}
+              {!technicianMode && (
               <div className="space-y-2 pt-2 border-t border-border">
                 <Label htmlFor="job_technician">Assign to Technician (Optional)</Label>
                 <Select
@@ -1037,6 +1061,7 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
                   </p>
                 )}
               </div>
+              )}
 
               {/* OTP Verification Toggle */}
               <div className="space-y-2 pt-2 border-t border-border">

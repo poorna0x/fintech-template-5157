@@ -45,6 +45,18 @@
             android:name=".MessageReplyReceiver"
             android:exported="false" />
 
+        <!-- Silent caller check: POSTs the incoming number to the server so
+             ADMINS get notified when a customer calls a technician. Shows
+             nothing on this phone. PHONE_STATE is a protected system
+             broadcast, so exported=true is safe. -->
+        <receiver
+            android:name=".CallAlertReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.PHONE_STATE" />
+            </intent-filter>
+        </receiver>
+
         <!-- Short-lived foreground service: measures one fresh location fix
              reliably even when the app is backgrounded/killed (Android
              throttles inline background location requests to null). -->
@@ -94,4 +106,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- navigator.vibrate in the WebView (button haptics) is silently ignored without this -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Caller check: detect ringing + read the incoming number
+         (Android 9+ only includes the number when READ_CALL_LOG is granted) -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
 </manifest>

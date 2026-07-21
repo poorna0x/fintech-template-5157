@@ -5,10 +5,15 @@
  */
 
 export type AdminPushDeepLinkPayload = {
+  /** 'job' (default) → focus a job; 'tech_call' → search the caller's number. */
+  kind?: 'job' | 'tech_call';
   jobId: string;
   event: 'en_route' | 'completed' | 'otp_entered' | string;
   /** yyyy-mm-dd from the push — skip a DB fetch on tap when present. */
   completedDate?: string;
+  /** tech_call: normalized caller number to search. */
+  phone?: string;
+  customerId?: string;
 };
 
 type Handler = (payload: AdminPushDeepLinkPayload) => void;
@@ -30,6 +35,20 @@ export function parseAdminPushDeepLinkData(
   raw: Record<string, unknown> | null | undefined
 ): AdminPushDeepLinkPayload | null {
   if (!raw || typeof raw !== 'object') return null;
+
+  // Technician received a call from a known customer — open that customer.
+  if (String(raw.type || '').trim() === 'tech_call') {
+    const phone = String(raw.phone || '').trim();
+    if (!phone) return null;
+    return {
+      kind: 'tech_call',
+      jobId: '',
+      event: 'tech_call',
+      phone,
+      customerId: String(raw.customerId || '').trim() || undefined,
+    };
+  }
+
   const jobId = String(raw.jobId || raw.job || '').trim();
   const event = String(raw.event || '').trim();
   const completedDateRaw = String(raw.completedDate || '').trim();

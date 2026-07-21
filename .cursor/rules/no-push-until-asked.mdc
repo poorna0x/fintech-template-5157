@@ -1,0 +1,11 @@
+---
+description: Do not git push until the user explicitly asks
+alwaysApply: true
+---
+
+# No Push Until Asked
+
+- **Never run `git push`** (or push to remote in any form) unless the user explicitly asks in that conversation (e.g. "push", "push to main").
+- Committing is still governed by the user's commit rule — only commit when explicitly asked.
+- After making changes, stop at commit-ready state or report what changed locally; do not push proactively, even for bug fixes or urgent regressions.
+- If the user says "save" or "don't push until I say", treat that as an ongoing preference until they explicitly request a push.

@@ -32,6 +32,9 @@ export default defineConfig(({ mode }) => ({
             console.log('Proxy error:', err);
           });
           proxy.on('proxyReq', (proxyReq, req, res) => {
+            // Production functions reject Origin: http://localhost:8080 (CORS
+            // allowlist) — present the target origin so dev logins work.
+            proxyReq.setHeader('origin', 'https://hydrogenro.com');
             console.log('Proxying request to:', proxyReq.path);
           });
         },

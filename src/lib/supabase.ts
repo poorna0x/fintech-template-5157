@@ -1550,6 +1550,19 @@ export const db = {
       return { data, error };
     },
 
+    /**
+     * Technician customer search (SECURITY DEFINER RPC — slim columns only).
+     * Requires scripts/add-technician-customer-tools.sql.
+     */
+    async searchAsTechnician(query: string) {
+      const trimmed = (query ?? '').trim();
+      if (trimmed.length < 3) return { data: [], error: null };
+      const { data, error } = await supabase.rpc('technician_search_customers', {
+        p_query: trimmed,
+      } as never);
+      return { data: (data as Record<string, unknown>[] | null) ?? [], error };
+    },
+
     /** Scoped fetch: customers created today (local date). Use instead of loading all customers. Limit default 100. */
     async getCreatedToday(limit: number = 100) {
       const d = new Date();
@@ -1709,6 +1722,37 @@ export const db = {
         }
       }
       return { data, error };
+    },
+
+    /**
+     * Technician job creation (SECURITY DEFINER RPC — lead cost computed
+     * server-side, status derived from assignment). Retries duplicate
+     * job_number like the admin path. Requires
+     * scripts/add-technician-customer-tools.sql.
+     */
+    async createAsTechnician(
+      job: Record<string, unknown>,
+      retryCount: number = 0
+    ): Promise<{ data: Record<string, unknown> | null; error: { message: string } | null }> {
+      const { data, error } = await supabase.rpc('technician_create_job', {
+        p_job: job,
+      } as never);
+      if (
+        error &&
+        (error.code === '23505' || /job_number/i.test(error.message || '')) &&
+        retryCount < 3
+      ) {
+        const serviceType = (job as { service_type?: string }).service_type || 'RO';
+        const prefix = serviceType === 'RO' ? 'RO' : 'WS';
+        const timestamp = Date.now().toString().slice(-6);
+        const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+        return this.createAsTechnician(
+          { ...job, job_number: `${prefix}${timestamp}${random}` },
+          retryCount + 1
+        );
+      }
+      if (!error) cacheInvalidate('job_counts_v1');
+      return { data: data as Record<string, unknown> | null, error };
     },
 
     async createForBooking(

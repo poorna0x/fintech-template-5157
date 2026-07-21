@@ -1,0 +1,1 @@
+function n(n){const r=n.trim();if(""===r)return"";const t=Number(r);return Number.isFinite(t)?t:""}function r(n){return""===n?"":n}function t(n){if(""===n||null==n)return 0;const r=Number(n);return Number.isFinite(r)?r:0}export{r as d,t as n,n as p};

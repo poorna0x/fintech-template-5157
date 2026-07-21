@@ -1,0 +1,22 @@
+---
+description: After building any Android APK, copy it to ~/Downloads so the user can find it immediately
+alwaysApply: true
+---
+
+# Copy Built APKs to Downloads
+
+Whenever an Android APK is (re)built in this project, immediately copy it to the user's Downloads folder, overwriting the previous copy (never create "(1)" duplicates):
+
+- Technician app: `android/app/build/outputs/apk/debug/HRO-Technician-debug.apk` → `~/Downloads/HRO-Technician-debug.apk`
+- Admin app: `android-admin/app/build/outputs/apk/debug/HRO-Admin-debug.apk` → `~/Downloads/HRO-Admin-debug.apk`
+
+```bash
+cp -f android/app/build/outputs/apk/debug/HRO-Technician-debug.apk ~/Downloads/
+cp -f android-admin/app/build/outputs/apk/debug/HRO-Admin-debug.apk ~/Downloads/
+```
+
+Do this automatically after every successful APK build without being asked, and mention in the reply that the fresh APK is in Downloads.
+
+Build notes:
+- Gradle needs `JAVA_HOME` set to the Android Studio JBR: `export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"`
+- Bump `versionCode`/`versionName` in the app's `build.gradle` when shipping a new APK.

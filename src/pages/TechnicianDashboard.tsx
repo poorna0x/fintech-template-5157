@@ -56,6 +56,7 @@ import {
   ChevronRight,
   IndianRupee,
   Pencil,
+  Search,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getAmcDocumentBrandLabel } from '@/lib/amc-brand';
@@ -399,6 +400,12 @@ function parseMoneyAmount(raw: string): number {
   return n;
 }
 
+// Customer search + job creation are code-split — loaded only when opened.
+const TechnicianCustomerSearchDialog = React.lazy(
+  () => import('@/components/technician/TechnicianCustomerSearchDialog')
+);
+const TechnicianNewJobDialog = React.lazy(() => import('@/components/admin/NewJobDialog'));
+
 const TechnicianDashboard = () => {
   const { user, logout, isTechnician, authInitializing } = useAuth();
   const [authGraceExpired, setAuthGraceExpired] = useState(false);
@@ -528,6 +535,9 @@ const TechnicianDashboard = () => {
   // Options dialog state for 3-dot menu
   const [optionsDialogOpen, setOptionsDialogOpen] = useState<{[jobId: string]: boolean}>({});
   const [selectedJobForOptions, setSelectedJobForOptions] = useState<Job | null>(null);
+  // Customer search (Options menu) + technician job creation
+  const [customerSearchDialogOpen, setCustomerSearchDialogOpen] = useState(false);
+  const [techNewJobCustomer, setTechNewJobCustomer] = useState<Record<string, unknown> | null>(null);
   // Customer report dialog state
   const [customerReportDialogOpen, setCustomerReportDialogOpen] = useState(false);
   const [selectedCustomerForReport, setSelectedCustomerForReport] = useState<any>(null);
@@ -5909,6 +5919,17 @@ const TechnicianDashboard = () => {
               className="justify-start h-12 px-4 text-base"
               onClick={() => {
                 setHeaderOptionsDialogOpen(false);
+                setCustomerSearchDialogOpen(true);
+              }}
+            >
+              <Search className="w-5 h-5 mr-3" />
+              Search Customer
+            </Button>
+            <Button
+              variant="ghost"
+              className="justify-start h-12 px-4 text-base"
+              onClick={() => {
+                setHeaderOptionsDialogOpen(false);
                 setInventoryDialogOpen(true);
               }}
             >
@@ -10525,6 +10546,48 @@ const TechnicianDashboard = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Customer search (from Options) — report + new job for any customer */}
+      {customerSearchDialogOpen && (
+        <React.Suspense fallback={null}>
+          <TechnicianCustomerSearchDialog
+            open={customerSearchDialogOpen}
+            onOpenChange={setCustomerSearchDialogOpen}
+            onViewReport={(c) => {
+              setSelectedCustomerForReport({
+                ...c,
+                id: c.id,
+                full_name: c.full_name || 'Customer',
+                phone: c.phone,
+              });
+              setCustomerReportDialogOpen(true);
+            }}
+            onNewJob={(c) => {
+              setTechNewJobCustomer(c);
+            }}
+          />
+        </React.Suspense>
+      )}
+
+      {/* Technician job creation — same form as admin, lead cost hidden
+          (server applies the default via technician_create_job RPC) */}
+      {techNewJobCustomer && (
+        <React.Suspense fallback={null}>
+          <TechnicianNewJobDialog
+            open={!!techNewJobCustomer}
+            onOpenChange={(open) => {
+              if (!open) setTechNewJobCustomer(null);
+            }}
+            customer={techNewJobCustomer as any}
+            technicians={technicians}
+            onJobCreated={() => {
+              setTechNewJobCustomer(null);
+              setCustomerSearchDialogOpen(false);
+            }}
+            technicianMode
+          />
+        </React.Suspense>
+      )}
 
       {/* Photo Viewer — shared fullscreen viewer (iOS-safe layout + working arrows) */}
       <PhotoViewerDialog

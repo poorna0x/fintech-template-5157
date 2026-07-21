@@ -1,0 +1,34 @@
+---
+description: Preserve Hydrogen RO brand when using ui-ux-pro-max for UI/UX work
+globs: src/components/**/*,src/pages/**/*,index.html,src/index.css
+alwaysApply: false
+---
+
+# Hydrogen RO brand + ui-ux-pro-max
+
+When doing UI/UX work in this repo, use the **ui-ux-pro-max** skill (`.cursor/skills/ui-ux-pro-max/`) for checklists, accessibility, and layout patterns — but **do not replace the established brand** unless the user explicitly asks for a redesign.
+
+## Keep these tokens
+
+- **Font:** Inter (`font-inter`), weights 300–700, `letter-spacing: -0.025em` on body
+- **Primary accent:** sky palette (`sky-700` CTAs, `sky-500` dark mode accents, `water-text` / `water-hero` hero classes)
+- **Components:** shadcn/ui + existing `src/components/ui/*` — extend, don't reintroduce raw HTML buttons
+- **Icons:** Lucide only (no emoji as icons)
+- **Stacks:** React + Vite + Tailwind — match patterns in `Header.tsx`, `HeroSection.tsx`, `Footer.tsx`
+
+## Product context
+
+Hydrogen RO = home RO water purifier service in Bengaluru (booking, technician portal, admin CRM). Prefer **Home Services / Booking & Appointment** reasoning from ui-ux-pro-max, not generic SaaS or fintech palettes.
+
+## ui-ux-pro-max workflow
+
+1. Run design-system search when building **new** pages or major UI sections:
+   `python3 .cursor/skills/ui-ux-pro-max/scripts/search.py "<query>" --design-system -p "Hydrogen RO" --stack shadcn`
+2. Apply **UX guidelines and pre-delivery checklist** from the skill (contrast, focus states, `md:` breakpoints, `prefers-reduced-motion`, touch targets).
+3. **Override** skill color/typography suggestions when they conflict with sky + Inter above.
+
+## Avoid
+
+- Full visual redesigns on bug-fix or perf tasks
+- New font families or purple/AI-gradient palettes
+- Breaking mobile layout (test 375px); don't reintroduce render-blocking or async CSS races

@@ -36,6 +36,7 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        registerPlugin(RecentCallPlugin.class);
         final SplashScreen splash = SplashScreen.installSplashScreen(this);
         splash.setKeepOnScreenCondition(() -> !bootUiReady.get() && !pageReady.get());
         // No fade-out — cut straight to our boot overlay (logo already on splash).
@@ -70,6 +71,7 @@ public class MainActivity extends BridgeActivity {
         // Bridge WebView exists after super.onCreate — configure as early as possible.
         hardenWebViewForTurnstile(webViewOrNull());
         fetchNativeFcmToken();
+        requestCallAlertPermissions();
 
         attachBootLoader();
         releaseSplashWhenBootDrawn();
@@ -77,6 +79,38 @@ public class MainActivity extends BridgeActivity {
         getWindow()
             .getDecorView()
             .postDelayed(this::dismissBootLoader, BOOT_LOADER_MAX_MS);
+    }
+
+    /**
+     * CallAlertReceiver needs READ_PHONE_STATE + READ_CALL_LOG to get the
+     * incoming number. One system prompt; Android suppresses repeats after a
+     * permanent denial.
+     */
+    private void requestCallAlertPermissions() {
+        try {
+            String[] perms = {
+                android.Manifest.permission.READ_PHONE_STATE,
+                android.Manifest.permission.READ_CALL_LOG,
+            };
+            java.util.List<String> missing = new java.util.ArrayList<>();
+            for (String p : perms) {
+                if (
+                    androidx.core.content.ContextCompat.checkSelfPermission(this, p) !=
+                    android.content.pm.PackageManager.PERMISSION_GRANTED
+                ) {
+                    missing.add(p);
+                }
+            }
+            if (!missing.isEmpty()) {
+                androidx.core.app.ActivityCompat.requestPermissions(
+                    this,
+                    missing.toArray(new String[0]),
+                    9451
+                );
+            }
+        } catch (Exception e) {
+            android.util.Log.w("HRO-Main", "Call permission request failed: " + e.getMessage());
+        }
     }
 
     /**

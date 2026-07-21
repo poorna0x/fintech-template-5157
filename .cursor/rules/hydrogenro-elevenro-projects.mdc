@@ -1,0 +1,24 @@
+---
+description: HydrogenRO and ElevenRO are sibling frontends sharing the same backend
+alwaysApply: true
+---
+
+# HydrogenRO & ElevenRO — Two Frontends, One Backend
+
+These are **two separate frontend projects** that share the **same backend**.
+
+| Brand | Project path |
+|-------|----------------|
+| **HydrogenRO** | `/Users/poorna/Documents/HydrogenRO-CRM/fintech-template-5157` |
+| **ElevenRO** | `/Users/poorna/Documents/elevenro-crm` |
+
+## Routing instructions
+
+- **"HydrogenRO" / "hydrogen ro" / "here"** (in this workspace) → work in **HydrogenRO** (this repo).
+- **"ElevenRO" / "eleven ro" / "do it in elevenro"** → work in **ElevenRO** at `/Users/poorna/Documents/elevenro-crm`.
+- When the target is unclear, ask which brand before editing files.
+
+## Shared backend
+
+- Backend changes may affect both apps; consider impact on the sibling frontend when modifying shared APIs, auth, or data models.
+- UI/branding changes are usually brand-specific — apply them only in the requested project unless the user asks for both.

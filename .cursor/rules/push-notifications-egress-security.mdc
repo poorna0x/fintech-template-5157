@@ -1,0 +1,25 @@
+---
+description: Push notification architecture, Android apps, and the standing egress + security requirements
+alwaysApply: true
+---
+
+# Push Notifications, Android Apps, Egress & Security
+
+This project ships two Capacitor Android apps built from this repo plus push notifications via FCM. Keep this architecture in mind for every change.
+
+## Android apps
+- Technician app: `android/` (package `com.hydrogenro.technician`, APK `HRO-Technician-debug.apk`)
+- Admin app: `android-admin/` (package `com.hydrogenro.admin`, APK `HRO-Admin-debug.apk`)
+- Both use notification channel `job_alerts_v2` with custom sounds (`res/raw/tech_alert.wav` / `admin_chime.wav`), created natively in `NotificationChannels.java`. Never create this channel from JS (old APKs lack the sound file and would lock it silent).
+- Web-layer changes reach phones via Netlify deploy; native (Java/gradle/res) changes require a new APK.
+
+## Push notifications (FCM, free tier)
+- Firebase service account lives in the `app_secrets` table (key `firebase_service_account`), NOT env vars (4KB Lambda env limit).
+- Shared sender helper: `netlify/functions/fcm-helper.js` (`getMessaging`, `sendToTechnicianDevices`, token pruning).
+- Admin devices: `admin_push_tokens` table (multi-device). Technician devices: `technician_push_tokens` table (multi-device, one row per device, registered via `register_technician_push_token` RPC) with legacy fallback `technician_live_locations.fcm_token`.
+- All technician-facing senders fan out to every logged-in device and prune tokens FCM reports dead. Logout deletes that device's token.
+- Scheduled functions (netlify.toml cron, IST times): evening-summary 10:00 PM, parts-reminder 10:10 PM (techs who completed jobs + all admins), daily-cash-check.
+
+## Standing requirements for ALL new work
+- **Minimize Supabase egress**: select only needed columns, avoid polling, reuse already-fetched data, prefer single upserts/RPCs, cache in localStorage where sensible.
+- **Security**: every new table gets RLS (`public.is_admin_user()` for admin access, `auth.uid()` for own rows); use SECURITY DEFINER RPCs only when RLS genuinely can't express the rule; service-role keys stay server-side (Netlify functions/scripts only); never expose secrets to the client.

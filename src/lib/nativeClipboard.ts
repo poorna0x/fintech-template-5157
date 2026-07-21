@@ -57,8 +57,26 @@ export function beginWebClipboardRead(): Promise<string> | null {
 export async function readClipboardText(): Promise<string> {
   if (isNativePlatform()) {
     const { Clipboard } = await import('@capacitor/clipboard');
-    const { value } = await Clipboard.read();
-    return typeof value === 'string' ? value : '';
+    try {
+      const { value } = await Clipboard.read();
+      return typeof value === 'string' ? value : '';
+    } catch (err) {
+      // The Android plugin REJECTS when the clipboard is merely empty
+      // ("There is no data on the clipboard") — that's not a denial, so
+      // return '' and let callers show their "clipboard is empty" message.
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/no data/i.test(msg)) return '';
+      // Plugin failed for another reason (e.g. null clip description on some
+      // Samsung builds) — try the WebView Clipboard API before giving up.
+      try {
+        if (navigator?.clipboard?.readText) {
+          return await navigator.clipboard.readText();
+        }
+      } catch {
+        // fall through to clipboard_denied
+      }
+      throw new Error('clipboard_denied');
+    }
   }
 
   if (

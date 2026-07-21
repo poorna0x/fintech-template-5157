@@ -582,6 +582,23 @@ const AdminDashboard = () => {
       if (cancelled) return;
       setAdminPushDeepLinkHandler((payload) => {
         const { jobId, event, completedDate } = payload;
+
+        // Technician got a call from a known customer — the ?search= URL sync
+        // effect runs the actual customer search.
+        if (payload.kind === 'tech_call') {
+          if (!payload.phone) return;
+          navigate(
+            adminDashboardLocation(
+              buildAdminDashboardSearch(
+                { clearModal: true, clearView: true, search: payload.phone },
+                location.search
+              )
+            ),
+            { replace: true }
+          );
+          return;
+        }
+
         if (!jobId) return;
 
         if (event === 'completed') {
