@@ -110,18 +110,26 @@ async function runBootstrapFix(technicianId: string): Promise<boolean> {
       (position, error) => {
         if (error) {
           if (error.code === 'NOT_AUTHORIZED') {
-            // Real deny — stop pings until the tech reopens/resumes with permission.
-            // Do NOT auto-open the system settings page (it hijacked every app
-            // open on phones where permission was denied/auto-revoked); the
-            // tech grants Location manually from Settings when needed.
+            // Sharing can't work right now — stop pings until the tech
+            // reopens/resumes with location working. Do NOT auto-open the
+            // system settings page (it hijacked every app open on phones
+            // where permission was denied/auto-revoked); the tech fixes it
+            // manually from Settings when needed.
             void stopLiveTracking(technicianId);
             if (!notifiedPermissionDenied) {
               notifiedPermissionDenied = true;
-              toast.warning('Location permission is off', {
-                description:
-                  'Location sharing is paused. Allow Location for HRO Technician in phone Settings to re-enable it.',
-                duration: 8000,
-              });
+              // Same NOT_AUTHORIZED code covers both cases; only the message
+              // differs ("Location services disabled." vs permission denied).
+              const gpsToggleOff = /services|disabled/i.test(error.message ?? '');
+              toast.warning(
+                gpsToggleOff ? 'Phone location is turned off' : 'Location permission is off',
+                {
+                  description: gpsToggleOff
+                    ? 'Turn on Location in the phone quick settings, then reopen the app.'
+                    : 'In phone Settings, set Location for HRO Technician to Allow with Precise location ON, then reopen the app.',
+                  duration: 8000,
+                }
+              );
             }
           } else {
             void stopWatcherOnly();
