@@ -32,7 +32,6 @@ import {
 } from 'lucide-react';
 import { hapticTap } from '@/lib/haptics';
 import { settingsPath } from '@/lib/settingsSections';
-import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import type { AdminDashboardView, AdminToolDialog } from '@/lib/adminDashboardUrl';
 
 export type UnknownCallerChipProps = {
@@ -59,11 +58,9 @@ type AdminDashboardHeaderProps = {
   currentView: AdminDashboardView;
   onViewChange: (view: AdminDashboardView) => void;
   onAddCustomer: () => void;
-  /** Admin APK only — unknown incoming caller within 3 min. */
-  unknownCaller?: UnknownCallerChipProps | null;
+  /** Admin APK: highlight Recent Accounts when an unknown caller is waiting. */
+  unknownCallerPending?: boolean;
 };
-
-function AdminSearchField({
   searchQuery,
   onSearchQueryChange,
   onSearchPaste,
@@ -96,65 +93,6 @@ function AdminSearchField({
   );
 }
 
-function UnknownCallerChip({
-  phone,
-  onWhatsApp,
-  onDismiss,
-}: UnknownCallerChipProps) {
-  return (
-    <div
-      className="w-full max-w-2xl rounded-lg border border-amber-200/90 bg-amber-50/90 px-2.5 py-2 sm:px-3 sm:py-2.5 shadow-sm"
-      role="status"
-      aria-live="polite"
-    >
-      <div className="flex items-start gap-2 sm:items-center sm:justify-between sm:gap-3">
-        <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-900/80 sm:text-xs">
-            Incoming call · not in CRM
-          </p>
-          <p className="mt-0.5 font-mono text-sm font-semibold tabular-nums text-foreground truncate">
-            {phone}
-          </p>
-          <p className="mt-1 text-xs text-amber-950/75 leading-snug">
-            Send WhatsApp asking for Google Maps location, flat/building name, and a water-filter photo.
-          </p>
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground sm:hidden"
-          onClick={onDismiss}
-          aria-label="Dismiss"
-        >
-          <X className="h-4 w-4" />
-        </Button>
-      </div>
-      <div className="mt-2 flex flex-wrap items-center gap-1.5 sm:gap-2">
-        <Button
-          type="button"
-          size="sm"
-          className="h-9 w-full sm:w-auto min-h-9 bg-green-600 text-white hover:bg-green-700 px-3"
-          onClick={onWhatsApp}
-        >
-          <WhatsAppIcon className="mr-1.5 h-4 w-4 shrink-0" />
-          Send WhatsApp Message
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="hidden h-9 shrink-0 px-2 text-muted-foreground hover:text-foreground sm:inline-flex"
-          onClick={onDismiss}
-        >
-          <X className="mr-1 h-4 w-4" />
-          Dismiss
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 export function AdminDashboardHeader({
   searchQuery,
   onSearchQueryChange,
@@ -173,7 +111,7 @@ export function AdminDashboardHeader({
   currentView,
   onViewChange,
   onAddCustomer,
-  unknownCaller,
+  unknownCallerPending = false,
 }: AdminDashboardHeaderProps) {
   const navigate = useNavigate();
 
@@ -188,8 +126,8 @@ export function AdminDashboardHeader({
     <>
       <div className="mb-6 sm:mb-8">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-          <div className="hidden sm:flex flex-1 max-w-2xl flex-col gap-2 min-w-0">
-            <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap" data-admin-search>
+          <div className="hidden sm:flex flex-1 max-w-2xl min-w-0">
+            <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap w-full" data-admin-search>
               <AdminSearchField
                 searchQuery={searchQuery}
                 onSearchQueryChange={onSearchQueryChange}
@@ -230,7 +168,6 @@ export function AdminDashboardHeader({
                 </Button>
               )}
             </div>
-            {unknownCaller ? <UnknownCallerChip {...unknownCaller} /> : null}
           </div>
 
           <div className="flex flex-col sm:flex-row gap-3 sm:flex-wrap">
@@ -265,6 +202,11 @@ export function AdminDashboardHeader({
                   <DropdownMenuItem onClick={() => onOpenAdminTool('recent-accounts')}>
                     <Clock className="w-4 h-4 mr-2" />
                     Recent Accounts
+                    {unknownCallerPending ? (
+                      <span className="ml-auto rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900">
+                        Caller
+                      </span>
+                    ) : null}
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={() => {
@@ -433,11 +375,6 @@ export function AdminDashboardHeader({
             </Button>
           )}
         </div>
-        {unknownCaller ? (
-          <div className="mt-2 sm:hidden">
-            <UnknownCallerChip {...unknownCaller} />
-          </div>
-        ) : null}
       </div>
     </>
   );

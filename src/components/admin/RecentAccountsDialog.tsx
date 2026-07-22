@@ -4,7 +4,14 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Customer } from '@/types';
 import { customerNameClassName } from '@/lib/customerDisplay';
-import { Plus, Edit } from 'lucide-react';
+import { Plus, Edit, Phone } from 'lucide-react';
+import { WhatsAppIcon } from '@/components/WhatsAppIcon';
+
+export type UnknownCallerRowProps = {
+  phone: string;
+  onWhatsApp: () => void;
+  onDismiss: () => void;
+};
 
 interface RecentAccountsDialogProps {
   open: boolean;
@@ -15,6 +22,8 @@ interface RecentAccountsDialogProps {
   useCustomersAsIs?: boolean;
   onNewJob: (customer: Customer) => void;
   onEditCustomer: (customer: Customer) => void;
+  /** Admin APK only — incoming number not in CRM (shown above today's list). */
+  unknownCaller?: UnknownCallerRowProps | null;
 }
 
 const RecentAccountsDialog: React.FC<RecentAccountsDialogProps> = ({
@@ -24,7 +33,8 @@ const RecentAccountsDialog: React.FC<RecentAccountsDialogProps> = ({
   loading = false,
   useCustomersAsIs = false,
   onNewJob,
-  onEditCustomer
+  onEditCustomer,
+  unknownCaller = null,
 }) => {
   const todayCustomers = useCustomersAsIs
     ? customers
@@ -53,13 +63,57 @@ const RecentAccountsDialog: React.FC<RecentAccountsDialogProps> = ({
         </DialogHeader>
         
         <div className="space-y-4">
+          {unknownCaller ? (
+            <div className="rounded-lg border border-amber-200/90 bg-amber-50/80 p-3 sm:p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge
+                      variant="outline"
+                      className="border-amber-300 bg-amber-100/80 text-[10px] font-semibold uppercase tracking-wide text-amber-900"
+                    >
+                      Not in CRM
+                    </Badge>
+                    <span className="inline-flex items-center gap-1.5 font-mono text-sm font-semibold tabular-nums text-foreground">
+                      <Phone className="h-3.5 w-3.5 shrink-0 opacity-70" />
+                      {unknownCaller.phone}
+                    </span>
+                  </div>
+                  <p className="mt-1.5 text-xs text-muted-foreground leading-snug">
+                    Incoming call — send WhatsApp intro for location and filter photo.
+                  </p>
+                </div>
+                <div className="flex w-full shrink-0 gap-2 sm:w-auto">
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-9 flex-1 bg-green-600 text-white hover:bg-green-700 sm:flex-none sm:min-w-[7.5rem]"
+                    onClick={unknownCaller.onWhatsApp}
+                  >
+                    <WhatsAppIcon className="mr-1.5 h-4 w-4 shrink-0" />
+                    WhatsApp
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-9 flex-1 sm:flex-none"
+                    onClick={unknownCaller.onDismiss}
+                  >
+                    Dismiss
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           {loading ? (
             <div className="text-center py-8 text-muted-foreground">
               <p>Loading…</p>
             </div>
           ) : todayCustomers.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              <p>No accounts created today.</p>
+              <p>{unknownCaller ? 'No other accounts created today.' : 'No accounts created today.'}</p>
             </div>
           ) : (
             <div className="space-y-2">

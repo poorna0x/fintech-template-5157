@@ -6,7 +6,7 @@
  * zero egress. When the admin opens/resumes the app, we consume that number
  * and auto-search the customer — only if opened within 3 minutes of the
  * ring. Older calls are discarded so the dashboard opens normally. Unknown
- * callers get a search-bar chip (WhatsApp intro) for the same window.
+ * callers get a compact Recent button (WhatsApp intro) for 10 minutes.
  * No-op in the browser and in old APKs without the plugin.
  */
 import { Capacitor, registerPlugin } from '@capacitor/core';
@@ -52,9 +52,10 @@ export function openCallerIntroWhatsApp(number: string): void {
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 
-/** Auto-search + unknown-caller chip window (matches shared incoming-call board). */
-export const UNKNOWN_CALLER_WINDOW_MS = 3 * 60_000;
+/** Unknown-caller Recent button — local only, no auto-search or search-field fill. */
+export const UNKNOWN_CALLER_WINDOW_MS = 10 * 60_000;
 
+/** Auto-search on open for local incoming calls (known customers only path). */
 const FRESH_CALL_MAX_AGE_MS = UNKNOWN_CALLER_WINDOW_MS;
 const UNKNOWN_CALLER_STORAGE_KEY = 'hro_admin_unknown_caller';
 

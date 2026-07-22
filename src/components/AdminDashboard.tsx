@@ -4349,14 +4349,21 @@ const AdminDashboard = () => {
 
   const adminSearchSyncedRef = useRef<string | null>(null);
 
-  const runCustomerSearch = useCallback(async (rawQuery: string, opts?: { skipNavigate?: boolean }): Promise<Customer[]> => {
+  const runCustomerSearch = useCallback(async (
+    rawQuery: string,
+    opts?: { skipNavigate?: boolean; silent?: boolean }
+  ): Promise<Customer[]> => {
     const trimmedQuery = rawQuery.trim();
-    hapticTap();
+    if (!opts?.silent) {
+      hapticTap();
+    }
     setIsSearching(true);
-    setSearchTerm(trimmedQuery);
-    setSearchQuery(trimmedQuery);
+    if (!opts?.silent) {
+      setSearchTerm(trimmedQuery);
+      setSearchQuery(trimmedQuery);
+    }
 
-    if (!opts?.skipNavigate) {
+    if (!opts?.skipNavigate && !opts?.silent) {
       const currentSearch = new URLSearchParams(location.search).get('search');
       if (trimmedQuery) {
         adminSearchSyncedRef.current = trimmedQuery;
@@ -4461,8 +4468,8 @@ const AdminDashboard = () => {
     });
   }, [runCustomerSearch]);
 
-  // Caller lookup (HRO Admin APK): auto-search on open/resume within 3 min.
-  // Unknown callers get a chip near search (Search + WhatsApp). No-op in browser.
+  // Caller lookup (HRO Admin APK): unknown callers → compact Recent button only
+  // (no search field fill). Known callers still auto-search as before.
   const [unknownCaller, setUnknownCaller] = useState<UnknownCallerRecord | null>(() =>
     isAdminCallerLookupAvailable() ? readUnknownCaller() : null
   );
@@ -4470,19 +4477,22 @@ const AdminDashboard = () => {
   const handleSearchFromIncomingCall = useCallback(
     (digits: string, opts?: { offerNotFound?: boolean; ringAt?: number }) => {
       void (async () => {
-        const results = await runCustomerSearch(digits);
-        requestAnimationFrame(() => {
-          document.querySelector('[data-admin-search]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        });
-        if (!opts?.offerNotFound) return;
-        if (results.length === 0) {
-          const at = opts.ringAt ?? Date.now();
-          saveUnknownCaller(digits, at);
-          setUnknownCaller({ phone: digits, at });
-        } else {
+        if (opts?.offerNotFound) {
+          const results = await runCustomerSearch(digits, { silent: true, skipNavigate: true });
+          if (results.length === 0) {
+            const at = opts.ringAt ?? Date.now();
+            saveUnknownCaller(digits, at);
+            setUnknownCaller({ phone: digits, at });
+            return;
+          }
           clearUnknownCaller();
           setUnknownCaller(null);
         }
+
+        await runCustomerSearch(digits);
+        requestAnimationFrame(() => {
+          document.querySelector('[data-admin-search]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
       })();
     },
     [runCustomerSearch]
@@ -4544,7 +4554,7 @@ const AdminDashboard = () => {
   }, []);
 
   // Shared caller board: known customers only — auto-search, never the
-  // unknown-caller chip (that is local-phone-only within 3 min).
+  // unknown-caller Recent button (local-phone-only, 10 min).
   useEffect(() => {
     let cleanup: (() => void) | null = null;
     let cancelled = false;
@@ -5888,7 +5898,7 @@ const AdminDashboard = () => {
           currentView={currentView}
           onViewChange={handleViewChange}
           onAddCustomer={handleAddCustomer}
-          unknownCaller={unknownCallerChip}
+          unknownCallerPending={Boolean(unknownCallerChip)}
         />
 
         {/* Stats Cards - Clickable Filter Buttons */}
@@ -7200,6 +7210,7 @@ const AdminDashboard = () => {
           void handleEditCustomer(customer);
           closeAdminTool();
         }}
+        unknownCaller={unknownCallerChip}
       />
 
       <JobDistanceMeasurementDialog
