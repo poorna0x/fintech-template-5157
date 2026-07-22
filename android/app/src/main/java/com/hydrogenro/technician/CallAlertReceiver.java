@@ -39,6 +39,8 @@ public class CallAlertReceiver extends BroadcastReceiver {
     private static final String KEY_RING_SEEN_AT = "ring_seen_at";
     private static final String KEY_ALERTED_RING_AT = "alerted_ring_at";
     private static final String KEY_POLL_RING_AT = "poll_ring_at";
+    /** Prevents double POST while first request is in flight (not a long block). */
+    private static final String KEY_POST_INFLIGHT_RING = "post_inflight_ring";
 
     private static final long LIVE_POLL_INTERVAL_MS = 750L;
     private static final int LIVE_POLL_MAX_TRIES = 80; // ~60s while call is live
@@ -98,6 +100,7 @@ public class CallAlertReceiver extends BroadcastReceiver {
                     .remove(KEY_RING_SEEN_AT)
                     .remove(KEY_ALERTED_RING_AT)
                     .remove(KEY_POLL_RING_AT)
+                    .remove(KEY_POST_INFLIGHT_RING)
                     .apply();
                 return;
             }
@@ -108,6 +111,7 @@ public class CallAlertReceiver extends BroadcastReceiver {
                     .remove(KEY_RING_SEEN_AT)
                     .remove(KEY_ALERTED_RING_AT)
                     .remove(KEY_POLL_RING_AT)
+                    .remove(KEY_POST_INFLIGHT_RING)
                     .apply();
                 return;
             }
@@ -142,6 +146,7 @@ public class CallAlertReceiver extends BroadcastReceiver {
                         .remove(KEY_RING_SEEN_AT)
                         .remove(KEY_ALERTED_RING_AT)
                         .remove(KEY_POLL_RING_AT)
+                        .remove(KEY_POST_INFLIGHT_RING)
                         .apply();
                     pending.finish();
                 }
@@ -149,12 +154,10 @@ public class CallAlertReceiver extends BroadcastReceiver {
         }
     }
 
-    /** Prefer incoming-type; fall back to any fresh CallLog row for this ring. */
+    /** Prefer incoming CallLog only (never outgoing dialed numbers). */
     private static String resolveLiveNumber(Context app, long ringAt) {
         long since = ringAt - 5_000L;
-        String incoming = CallLogHelper.latestIncomingNumber(app, since);
-        if (incoming != null && !incoming.isEmpty()) return incoming;
-        return CallLogHelper.latestAnyNumber(app, since);
+        return CallLogHelper.latestIncomingNumber(app, since);
     }
 
     /**
@@ -202,9 +205,11 @@ public class CallAlertReceiver extends BroadcastReceiver {
         }).start();
     }
 
-    /** Save locally (for JWT backup) and POST once per ring session. */
+    /** Save locally and POST. Mark ring alerted only after a successful upload
+     *  so a failed FCM auth can retry (JS JWT backup also still works). */
     static void handleCaller(Context context, String cleaned) {
         if (cleaned == null || cleaned.trim().isEmpty()) return;
+        if (!DevicePrefsPlugin.shouldProcessIncomingCall(context)) return;
         cleaned = cleaned.trim();
 
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
@@ -220,22 +225,30 @@ public class CallAlertReceiver extends BroadcastReceiver {
             Log.i(TAG, "Dedupe skip — already alerted this ring session");
             return;
         }
+        long inflight = prefs.getLong(KEY_POST_INFLIGHT_RING, 0L);
+        if (inflight == ringAt) {
+            Log.i(TAG, "Dedupe skip — POST already in flight for this ring");
+            return;
+        }
 
+        // Save number for JS backup immediately; do NOT mark alerted yet.
         prefs
             .edit()
-            .putLong(KEY_ALERTED_RING_AT, ringAt)
+            .putLong(KEY_POST_INFLIGHT_RING, ringAt)
             .putString(KEY_LAST_NUMBER, cleaned)
             .putLong(KEY_LAST_AT, now)
             .remove(KEY_CONSUMED_AT)
             .apply();
 
         final String number = cleaned;
+        final long ringAtFinal = ringAt;
         final String stored = DevicePrefsPlugin.readFcmToken(context);
 
         if (stored != null && stored.length() >= 20) {
             List<String> list = new ArrayList<>();
             list.add(stored.trim());
-            postAlertTryTokens(context, list, number);
+            postAlertTryTokens(context, list, number, ringAtFinal);
+            return;
         }
 
         try {
@@ -244,38 +257,66 @@ public class CallAlertReceiver extends BroadcastReceiver {
                 .addOnSuccessListener(fresh -> {
                     if (fresh != null && fresh.length() >= 20) {
                         DevicePrefsPlugin.saveFcmToken(context, fresh.trim());
-                        if (stored == null || stored.length() < 20) {
-                            List<String> tokens = new ArrayList<>();
-                            tokens.add(fresh.trim());
-                            postAlertTryTokens(context, tokens, number);
-                        }
+                        List<String> tokens = new ArrayList<>();
+                        tokens.add(fresh.trim());
+                        postAlertTryTokens(context, tokens, number, ringAtFinal);
+                    } else {
+                        clearInflight(context, ringAtFinal);
                     }
                 })
                 .addOnFailureListener(e -> {
                     Log.w(TAG, "FCM token fetch failed: " + e.getMessage());
-                    if (stored == null || stored.length() < 20) {
-                        Log.w(TAG, "No FCM token available to POST call alert");
-                    }
+                    clearInflight(context, ringAtFinal);
                 });
         } catch (Exception e) {
             Log.w(TAG, "handleCaller threw: " + e.getMessage());
+            clearInflight(context, ringAtFinal);
         }
+    }
+
+    private static void clearInflight(Context context, long ringAt) {
+        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        if (prefs.getLong(KEY_POST_INFLIGHT_RING, 0L) == ringAt) {
+            prefs.edit().remove(KEY_POST_INFLIGHT_RING).apply();
+        }
+    }
+
+    private static void markAlerted(Context context, long ringAt) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putLong(KEY_ALERTED_RING_AT, ringAt)
+            .remove(KEY_POST_INFLIGHT_RING)
+            .apply();
     }
 
     private static String jsonEscape(String value) {
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
-    private static void postAlertTryTokens(Context context, List<String> tokens, String number) {
+    private static void postAlertTryTokens(
+        Context context,
+        List<String> tokens,
+        String number,
+        long ringAt
+    ) {
         new Thread(() -> {
+            boolean ok = false;
             for (String token : tokens) {
                 int code = postOnce(token, number);
                 Log.i(TAG, "Alert POST code=" + code + " tokenLen=" + token.length());
                 if (code == 401) continue;
                 if (code >= 200 && code < 300) {
                     DevicePrefsPlugin.saveFcmToken(context, token);
+                    ok = true;
                 }
                 break;
+            }
+            if (ok) {
+                markAlerted(context, ringAt);
+            } else {
+                clearInflight(context, ringAt);
+                Log.w(TAG, "Alert POST failed — will allow retry / JS JWT backup");
             }
         }).start();
     }

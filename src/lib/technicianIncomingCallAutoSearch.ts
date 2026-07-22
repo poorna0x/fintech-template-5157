@@ -1,9 +1,8 @@
 /**
  * Technician incoming-call → silent background lookup (technician sees nothing).
- *
- * Native CallAlertReceiver usually POSTs with FCM already. This is a JWT backup
- * via peek (does not consume) so a 2nd call within minutes still works.
- * Server searches by phone and only pushes admins when a customer is found.
+ * Peeks CallLog/prefs and JWT-notifies admins when a known customer is found.
+ * Same customer calling again gets a new CallLog/prefs `at` → notifies again.
+ * Only skips an identical phone+at already sent (same single ring).
  */
 import { Capacitor } from '@capacitor/core';
 import type { PluginListenerHandle } from '@capacitor/core';
@@ -33,17 +32,13 @@ function markLastAuto(phone: string, at: number): void {
   }
 }
 
-/** Already notified for this exact native ring (same phone + same at). */
+/** Same capture event only — not "same customer forever". */
 function alreadyHandled(phone: string, callAt: number): boolean {
   const last = readLastAuto();
   if (!last) return false;
   return last.phone === phone && last.at === callAt;
 }
 
-/**
- * Watch for a fresh incoming caller and silently notify admins if known.
- * Returns cleanup.
- */
 export function initTechnicianIncomingCallBackgroundLookup(): () => void {
   if (!Capacitor.isNativePlatform()) return () => {};
 

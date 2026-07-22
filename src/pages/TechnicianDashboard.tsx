@@ -540,15 +540,6 @@ const TechnicianDashboard = () => {
   // Customer search (Options menu) + technician job creation
   const [customerSearchDialogOpen, setCustomerSearchDialogOpen] = useState(false);
   const [techNewJobCustomer, setTechNewJobCustomer] = useState<Record<string, unknown> | null>(null);
-  /** Temporary CallLog/capture test banner (Moto/Truecaller diagnosis). */
-  const [callerCaptureDebug, setCallerCaptureDebug] = useState<{
-    displayNumber: string | null;
-    source: string | null;
-    hasCallLogPermission: boolean;
-    checkedAt: number;
-    prefsNumber: string | null;
-    callLogNumber: string | null;
-  } | null>(null);
   // Customer report dialog state
   const [customerReportDialogOpen, setCustomerReportDialogOpen] = useState(false);
   const [selectedCustomerForReport, setSelectedCustomerForReport] = useState<any>(null);
@@ -1263,65 +1254,6 @@ const TechnicianDashboard = () => {
     return () => {
       cancelled = true;
       cleanup?.();
-    };
-  }, [user?.technicianId]);
-
-  // TEMP test: show last captured caller number on open/resume so we can see
-  // if CallLog/prefs got a number (vs push/CRM failure).
-  useEffect(() => {
-    if (!user?.technicianId) return;
-    let cancelled = false;
-    const refresh = () => {
-      void import('@/lib/technicianIncomingCall').then(async ({ debugReadTechnicianCallerCapture }) => {
-        const info = await debugReadTechnicianCallerCapture();
-        if (cancelled) return;
-        if (!info) {
-          setCallerCaptureDebug({
-            displayNumber: null,
-            source: null,
-            hasCallLogPermission: false,
-            checkedAt: Date.now(),
-            prefsNumber: null,
-            callLogNumber: null,
-          });
-          return;
-        }
-        setCallerCaptureDebug({
-          displayNumber: info.displayNumber,
-          source: info.source,
-          hasCallLogPermission: info.hasCallLogPermission,
-          checkedAt: info.checkedAt,
-          prefsNumber: info.prefsNumber,
-          callLogNumber: info.callLogNumber,
-        });
-      });
-    };
-    refresh();
-    const poll = window.setInterval(refresh, 3000);
-    const onVisible = () => {
-      if (!document.hidden) refresh();
-    };
-    document.addEventListener('visibilitychange', onVisible);
-    window.addEventListener('focus', onVisible);
-    let removeApp: (() => void) | undefined;
-    void import('@capacitor/app')
-      .then(({ App }) =>
-        App.addListener('appStateChange', ({ isActive }) => {
-          if (isActive) refresh();
-        })
-      )
-      .then((handle) => {
-        removeApp = () => {
-          void handle.remove();
-        };
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-      clearInterval(poll);
-      document.removeEventListener('visibilitychange', onVisible);
-      window.removeEventListener('focus', onVisible);
-      removeApp?.();
     };
   }, [user?.technicianId]);
 
@@ -6016,37 +5948,6 @@ const TechnicianDashboard = () => {
           </div>
         </header>
       </div>
-
-      {/* TEMP: caller-number capture test (remove after Moto/Truecaller diagnosis) */}
-      {callerCaptureDebug && (
-        <div className="mx-4 mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-          <p className="font-semibold">Call capture test</p>
-          {callerCaptureDebug.displayNumber ? (
-            <p className="mt-0.5">
-              Last number:{' '}
-              <span className="font-mono text-base font-bold tracking-wide">
-                {callerCaptureDebug.displayNumber}
-              </span>
-              {callerCaptureDebug.source ? (
-                <span className="ml-1 text-xs text-amber-800">({callerCaptureDebug.source})</span>
-              ) : null}
-            </p>
-          ) : (
-            <p className="mt-0.5 font-medium text-red-700">
-              No number found — CallLog/prefs empty (dialer likely blocking)
-            </p>
-          )}
-          <p className="mt-1 text-xs text-amber-800/90">
-            prefs: {callerCaptureDebug.prefsNumber || '—'} · call log:{' '}
-            {callerCaptureDebug.callLogNumber || '—'} · permission:{' '}
-            {callerCaptureDebug.hasCallLogPermission ? 'yes' : 'NO'} · checked{' '}
-            {new Date(callerCaptureDebug.checkedAt).toLocaleTimeString()}
-          </p>
-          <p className="mt-0.5 text-[11px] text-amber-700">
-            Receive a call, then open this page. If number shows here, capture works.
-          </p>
-        </div>
-      )}
 
       {/* Centered options dialog (convenience on mobile) */}
       <Dialog open={headerOptionsDialogOpen} onOpenChange={setHeaderOptionsDialogOpen}>
