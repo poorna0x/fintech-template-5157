@@ -61,6 +61,8 @@ type AdminDashboardHeaderProps = {
   /** Admin APK: highlight Recent Accounts when an unknown caller is waiting. */
   unknownCallerPending?: boolean;
 };
+
+function AdminSearchField({
   searchQuery,
   onSearchQueryChange,
   onSearchPaste,
