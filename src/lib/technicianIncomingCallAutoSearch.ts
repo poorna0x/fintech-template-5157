@@ -10,7 +10,7 @@ import { peekRecentTechnicianCaller } from '@/lib/technicianIncomingCall';
 import { notifyAdminsTechnicianCall } from '@/lib/technicianCallAlert';
 
 const LAST_AUTO_KEY = 'hro_tech_incoming_bg_lookup';
-const POLL_MS = 2_000;
+const POLL_MS = 1_000;
 
 function readLastAuto(): { phone: string; at: number } | null {
   try {

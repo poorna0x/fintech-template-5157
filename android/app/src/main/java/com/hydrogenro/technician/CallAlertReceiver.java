@@ -42,11 +42,11 @@ public class CallAlertReceiver extends BroadcastReceiver {
     /** Prevents double POST while first request is in flight (not a long block). */
     private static final String KEY_POST_INFLIGHT_RING = "post_inflight_ring";
 
-    private static final long LIVE_POLL_INTERVAL_MS = 750L;
-    private static final int LIVE_POLL_MAX_TRIES = 80; // ~60s while call is live
+    private static final long LIVE_POLL_INTERVAL_MS = 400L;
+    private static final int LIVE_POLL_MAX_TRIES = 150; // ~60s while call is live
     /** Truecaller / OEM often write CallLog seconds after hang-up — keep trying. */
-    private static final long POST_CALL_POLL_INTERVAL_MS = 1_000L;
-    private static final int POST_CALL_POLL_MAX_TRIES = 20; // ~20s after call ends
+    private static final long POST_CALL_POLL_INTERVAL_MS = 500L;
+    private static final int POST_CALL_POLL_MAX_TRIES = 120; // ~60s after call ends
 
     private static final String ALERT_URL =
         "https://hydrogenro.com/.netlify/functions/tech-call-customer-alert";
@@ -175,7 +175,6 @@ public class CallAlertReceiver extends BroadcastReceiver {
             try {
                 Log.i(TAG, "Live CallLog poll started for ring " + ringAt);
                 for (int i = 0; i < LIVE_POLL_MAX_TRIES; i++) {
-                    Thread.sleep(LIVE_POLL_INTERVAL_MS);
                     SharedPreferences p = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
                     if (p.getLong(KEY_RING_SEEN_AT, 0L) != ringAt) {
                         Log.i(TAG, "Live poll stop — ring session ended");
@@ -191,6 +190,7 @@ public class CallAlertReceiver extends BroadcastReceiver {
                         handleCaller(app, number);
                         return;
                     }
+                    Thread.sleep(LIVE_POLL_INTERVAL_MS);
                 }
                 Log.w(TAG, "Live CallLog poll timed out without number");
             } catch (Exception e) {
