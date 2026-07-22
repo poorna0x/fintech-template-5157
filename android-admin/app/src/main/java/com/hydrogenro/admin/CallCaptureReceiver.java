@@ -53,10 +53,23 @@ public class CallCaptureReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
         if (!TelephonyManager.ACTION_PHONE_STATE_CHANGED.equals(intent.getAction())) return;
-        if (!DevicePrefsPlugin.shouldProcessIncomingCall(context)) return;
 
         String state = intent.getStringExtra(TelephonyManager.EXTRA_STATE);
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+
+        // Always clear ring state when the call ends / is answered, even if
+        // detection is off — otherwise a later "detect on" + IDLE can false-fire.
+        if (TelephonyManager.EXTRA_STATE_OFFHOOK.equals(state)) {
+            prefs.edit().remove(KEY_RING_NUMBER).remove(KEY_RING_AT).apply();
+            return;
+        }
+
+        if (!DevicePrefsPlugin.shouldProcessIncomingCall(context)) {
+            if (TelephonyManager.EXTRA_STATE_IDLE.equals(state)) {
+                prefs.edit().remove(KEY_RING_NUMBER).remove(KEY_RING_AT).apply();
+            }
+            return;
+        }
 
         if (TelephonyManager.EXTRA_STATE_RINGING.equals(state)) {
             // Android 9+ sends this broadcast twice: once without the number
@@ -79,12 +92,6 @@ public class CallCaptureReceiver extends BroadcastReceiver {
             if (number.equals(lastPub) && now - lastPubAt < PUBLISH_DEDUPE_MS) return;
             prefs.edit().putString(KEY_PUB_NUMBER, number).putLong(KEY_PUB_AT, now).apply();
             postWithToken(PUBLISH_URL, buildPublishPayload(number), number);
-            return;
-        }
-
-        if (TelephonyManager.EXTRA_STATE_OFFHOOK.equals(state)) {
-            // Answered — not a missed call.
-            prefs.edit().remove(KEY_RING_NUMBER).remove(KEY_RING_AT).apply();
             return;
         }
 

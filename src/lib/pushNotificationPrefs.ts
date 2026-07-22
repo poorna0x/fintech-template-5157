@@ -37,8 +37,9 @@ export const ADMIN_PUSH_LABELS: Record<AdminPushCategory, { label: string; descr
     description: 'On the way, completed, OTP entered, bill missing.',
   },
   customer_calls: {
-    label: 'Customer call alerts',
-    description: 'When a customer calls a technician or admin phone.',
+    label: 'Customer call alerts (incl. missed)',
+    description:
+      'Push when a customer rings a tech/admin phone, or an admin misses a known customer call. Turn this OFF to stop receiving those notifications.',
   },
   tech_search: {
     label: 'Technician customer search',

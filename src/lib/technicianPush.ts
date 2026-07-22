@@ -303,3 +303,15 @@ export async function registerTechnicianPushToken(technicianId: string): Promise
 
   await registerInFlight;
 }
+
+/** FCM token for this technician phone, if already registered (local only). */
+export function getThisTechnicianDeviceToken(): string | null {
+  return lastToken || readRememberedToken() || readNativeInjectedToken();
+}
+
+/** Update cached call-detect flag after Settings toggle (same phone). */
+export function updateCachedTechnicianCallAlerts(enabled: boolean): void {
+  const c = readPersist();
+  if (!c) return;
+  writePersist({ ...c, callAlertsEnabled: enabled });
+}

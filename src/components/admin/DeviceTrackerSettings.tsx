@@ -42,6 +42,9 @@ import {
   updateTechnicianDevice,
   writeDeviceTrackerCache,
 } from '@/lib/deviceTracker';
+import { syncDevicePrefsToNative } from '@/lib/devicePrefs';
+import { getThisAdminDeviceToken, updateCachedAdminCallAlerts } from '@/lib/adminPush';
+import { getThisTechnicianDeviceToken, updateCachedTechnicianCallAlerts } from '@/lib/technicianPush';
 
 type Tab = 'admin' | 'technician';
 
@@ -172,10 +175,10 @@ function DeviceCard({
           <div className="min-w-0 space-y-0.5">
             <Label className="text-sm font-medium flex items-center gap-1.5">
               <PhoneCall className="w-3.5 h-3.5" />
-              Detect incoming calls
+              Detect calls on this phone
             </Label>
             <p className="text-xs text-muted-foreground leading-snug">
-              This phone listens for customer calls and alerts the team.
+              Whether this phone listens for rings (publish to shared search + report missed). Does not stop receiving call pushes — use “Customer call alerts” below for that.
             </p>
           </div>
           <Switch
@@ -287,6 +290,13 @@ export function DeviceTrackerSettings() {
         });
         return next;
       });
+      if (typeof patch.call_alerts_enabled === 'boolean') {
+        const thisToken = getThisAdminDeviceToken();
+        if (thisToken && thisToken === token) {
+          updateCachedAdminCallAlerts(patch.call_alerts_enabled);
+          await syncDevicePrefsToNative({ callAlertsEnabled: patch.call_alerts_enabled });
+        }
+      }
       toast.success(label);
     } catch (err) {
       console.error('[device-tracker] admin update', err);
@@ -315,6 +325,13 @@ export function DeviceTrackerSettings() {
         });
         return next;
       });
+      if (typeof patch.call_alerts_enabled === 'boolean') {
+        const thisToken = getThisTechnicianDeviceToken();
+        if (thisToken && thisToken === token) {
+          updateCachedTechnicianCallAlerts(patch.call_alerts_enabled);
+          await syncDevicePrefsToNative({ callAlertsEnabled: patch.call_alerts_enabled });
+        }
+      }
       toast.success(label);
     } catch (err) {
       console.error('[device-tracker] tech update', err);
@@ -440,7 +457,9 @@ export function DeviceTrackerSettings() {
                     void patchAdmin(
                       device.token,
                       { call_alerts_enabled: enabled },
-                      enabled ? 'Call detection on' : 'Call detection off'
+                      enabled
+                        ? 'This phone will detect calls (open the app once if toggled from desktop)'
+                        : 'Call detection off on this phone (open the app once if toggled from desktop)'
                     )
                   }
                   onTogglePref={(key, enabled) =>
@@ -487,7 +506,9 @@ export function DeviceTrackerSettings() {
                     void patchTech(
                       device.token,
                       { call_alerts_enabled: enabled },
-                      enabled ? 'Call detection on' : 'Call detection off'
+                      enabled
+                        ? 'This phone will detect calls (open the app once if toggled from desktop)'
+                        : 'Call detection off on this phone (open the app once if toggled from desktop)'
                     )
                   }
                   onTogglePref={(key, enabled) =>

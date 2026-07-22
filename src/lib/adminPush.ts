@@ -185,3 +185,15 @@ export async function registerAdminPushToken(): Promise<void> {
     /* push is best-effort */
   }
 }
+
+/** FCM token for this admin phone, if already registered (local only). */
+export function getThisAdminDeviceToken(): string | null {
+  return lastToken || readPersist()?.token || null;
+}
+
+/** Update cached call-detect flag after Settings toggle (same phone). */
+export function updateCachedAdminCallAlerts(enabled: boolean): void {
+  const c = readPersist();
+  if (!c) return;
+  writePersist({ ...c, callAlertsEnabled: enabled });
+}
