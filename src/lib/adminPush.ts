@@ -90,12 +90,18 @@ async function saveToken(token: string): Promise<void> {
   const userId = await getUserId();
   if (!userId) return;
 
-  // Same phone + same admin already registered — zero Supabase calls.
+  // Same phone + same admin already registered — skip token upsert, but still
+  // refresh call-detect prefs from the server (Settings may have changed them).
   if (isAlreadyPersisted(token, userId)) {
+    const { data: prefsRow } = await supabase
+      .from('admin_push_tokens')
+      .select('call_alerts_enabled')
+      .eq('token', token)
+      .maybeSingle();
+    const callAlertsEnabled = prefsRow?.call_alerts_enabled !== false;
     const cached = readPersist();
-    if (cached) {
-      await syncDevicePrefsToNative({ callAlertsEnabled: cached.callAlertsEnabled });
-    }
+    if (cached) writePersist({ ...cached, callAlertsEnabled });
+    await syncDevicePrefsToNative({ callAlertsEnabled });
     return;
   }
 

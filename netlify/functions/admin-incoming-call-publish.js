@@ -67,11 +67,15 @@ exports.handler = async (event) => {
   // Authenticate: FCM token must belong to a registered admin device.
   const { data: adminRow } = await db
     .from('admin_push_tokens')
-    .select('token')
+    .select('token, call_alerts_enabled')
     .eq('token', deviceToken)
     .maybeSingle();
   if (!adminRow) {
     return { statusCode: 401, headers: HEADERS, body: JSON.stringify({ error: 'Unauthorized' }) };
+  }
+  // Device Tracker → Detect calls off — ignore even if the APK still posts.
+  if (adminRow.call_alerts_enabled === false) {
+    return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ ok: false, reason: 'call_detect_off' }) };
   }
 
   // Only publish known customers — unknown callers stay local to the phone that

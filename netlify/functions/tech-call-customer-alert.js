@@ -86,10 +86,17 @@ exports.handler = async (event) => {
   let isAdminDevice = false;
   const { data: tokenRow } = await db
     .from('technician_push_tokens')
-    .select('technician_id')
+    .select('technician_id, call_alerts_enabled')
     .eq('token', deviceToken)
     .maybeSingle();
   technicianId = tokenRow?.technician_id || null;
+  if (technicianId && tokenRow?.call_alerts_enabled === false) {
+    return {
+      statusCode: 200,
+      headers: HEADERS,
+      body: JSON.stringify({ found: false, reason: 'call_detect_off' }),
+    };
+  }
   if (!technicianId) {
     const { data: legacyRow } = await db
       .from('technician_live_locations')
@@ -101,10 +108,17 @@ exports.handler = async (event) => {
   if (!technicianId && missed) {
     const { data: adminRow } = await db
       .from('admin_push_tokens')
-      .select('token')
+      .select('token, call_alerts_enabled')
       .eq('token', deviceToken)
       .maybeSingle();
     isAdminDevice = Boolean(adminRow);
+    if (isAdminDevice && adminRow.call_alerts_enabled === false) {
+      return {
+        statusCode: 200,
+        headers: HEADERS,
+        body: JSON.stringify({ found: false, reason: 'call_detect_off' }),
+      };
+    }
   }
   if (!technicianId && !isAdminDevice) {
     return { statusCode: 401, headers: HEADERS, body: JSON.stringify({ error: 'Unauthorized' }) };

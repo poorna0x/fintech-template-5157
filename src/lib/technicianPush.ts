@@ -109,7 +109,15 @@ async function saveToken(technicianId: string, token: string): Promise<boolean> 
   if (cached?.token === token && cached.technicianId === technicianId) {
     lastPersistedKey = key;
     lastToken = token;
-    await syncDevicePrefsToNative({ callAlertsEnabled: cached.callAlertsEnabled });
+    // Refresh call-detect from server (may have been toggled in Settings).
+    const { data: prefsRow } = await supabase
+      .from('technician_push_tokens')
+      .select('call_alerts_enabled')
+      .eq('token', token)
+      .maybeSingle();
+    const callAlertsEnabled = prefsRow?.call_alerts_enabled !== false;
+    writePersist({ ...cached, callAlertsEnabled });
+    await syncDevicePrefsToNative({ callAlertsEnabled });
     return true;
   }
 
