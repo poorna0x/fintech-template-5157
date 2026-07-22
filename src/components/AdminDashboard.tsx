@@ -392,7 +392,7 @@ const AdminDashboard = () => {
   const [searchQuery, setSearchQuery] = useState(''); // For the input field
   const [isSearching, setIsSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<Customer[] | null>(null); // API search results (find any customer in DB)
-  /** Incoming-call auto-fill — cleared from the UI after 3 minutes. */
+  /** Incoming-call auto-fill — cleared from the UI after 1.5 minutes. */
   const [incomingAutoSearch, setIncomingAutoSearch] = useState<IncomingAutoSearchRecord | null>(
     () => readIncomingAutoSearch()
   );
@@ -620,6 +620,7 @@ const AdminDashboard = () => {
           if (!payload.phone) return;
           const auto = markIncomingAutoSearch(payload.phone);
           if (auto) setIncomingAutoSearch(auto);
+          setHighlightJobId(null);
           navigate(
             adminDashboardLocation(
               buildAdminDashboardSearch(
@@ -1027,6 +1028,8 @@ const AdminDashboard = () => {
   const [reportViewerPhoto, setReportViewerPhoto] = useState<{ url: string; index: number; total: number } | null>(null);
   const [reportViewerBillPhotos, setReportViewerBillPhotos] = useState<string[] | null>(null);
   const [highlightJobId, setHighlightJobId] = useState<string | null>(null);
+  /** Prevent re-scrolling the same highlight when `jobs` updates (e.g. customer search). */
+  const highlightScrolledForRef = useRef<string | null>(null);
   const [loadedCompletedJobDetails, setLoadedCompletedJobDetails] = useState<Record<string, any>>({});
   const [loadingCompletedJobDetails, setLoadingCompletedJobDetails] = useState<Record<string, boolean>>({});
   const [editCompletedJobDialogOpen, setEditCompletedJobDialogOpen] = useState(false);
@@ -2668,15 +2671,22 @@ const AdminDashboard = () => {
   }, [navigate, location.search, closeAdminModal]);
 
   useEffect(() => {
-    if (!highlightJobId) return;
+    if (!highlightJobId) {
+      highlightScrolledForRef.current = null;
+      return;
+    }
 
     let attempts = 0;
     const tryScroll = () => {
+      // Already scrolled for this highlight — jobs refresh (search merge, etc.)
+      // must not jump the page again.
+      if (highlightScrolledForRef.current === highlightJobId) return true;
       const el =
         document.querySelector(`[data-admin-job-id="${highlightJobId}"]`) ||
         document.querySelector(`[data-completed-job-id="${highlightJobId}"]`);
       if (!el) return false;
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      highlightScrolledForRef.current = highlightJobId;
       return true;
     };
 
@@ -4483,15 +4493,26 @@ const AdminDashboard = () => {
   const handleSearch = useCallback(async () => {
     clearIncomingAutoSearch();
     setIncomingAutoSearch(null);
+    setHighlightJobId(null);
+    const scrollY = window.scrollY ?? document.documentElement.scrollTop ?? 0;
     await runCustomerSearch(searchQuery);
+    requestAnimationFrame(() => window.scrollTo(0, scrollY));
   }, [runCustomerSearch, searchQuery]);
+
+  const scrollVisibleAdminSearchIntoView = () => {
+    const nodes = document.querySelectorAll<HTMLElement>('[data-admin-search]');
+    const el =
+      [...nodes].find((n) => n.getClientRects().length > 0) ?? nodes[0] ?? null;
+    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   const handleSearchFromBookingIntent = useCallback((phone: string) => {
     const query = normalizePhoneForSearch(phone) || phone.trim();
     if (!query) return;
+    setHighlightJobId(null);
     void runCustomerSearch(query);
     requestAnimationFrame(() => {
-      document.querySelector('[data-admin-search]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      scrollVisibleAdminSearchIntoView();
     });
   }, [runCustomerSearch]);
 
@@ -4504,6 +4525,14 @@ const AdminDashboard = () => {
   const handleSearchFromIncomingCall = useCallback(
     (digits: string, opts?: { offerNotFound?: boolean; ringAt?: number }) => {
       void (async () => {
+        // Same as manual search: don't let a leftover job highlight re-scroll
+        // when this search merges jobs, and keep the current scroll position.
+        setHighlightJobId(null);
+        const scrollY = window.scrollY ?? document.documentElement.scrollTop ?? 0;
+        const restoreScroll = () => {
+          requestAnimationFrame(() => window.scrollTo(0, scrollY));
+        };
+
         if (opts?.offerNotFound) {
           const results = await runCustomerSearch(digits, { silent: true, skipNavigate: true });
           if (results.length === 0) {
@@ -4522,9 +4551,7 @@ const AdminDashboard = () => {
         const auto = markIncomingAutoSearch(digits, opts?.ringAt);
         if (auto) setIncomingAutoSearch(auto);
         await runCustomerSearch(digits);
-        requestAnimationFrame(() => {
-          document.querySelector('[data-admin-search]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        });
+        restoreScroll();
       })();
     },
     [runCustomerSearch]
@@ -4547,7 +4574,7 @@ const AdminDashboard = () => {
   }, [unknownCaller]);
 
   // Auto-filled incoming-call search: clear box/results/?search= when the
-  // 3-min window ends. Always clear — manual search already nulls this state
+  // 1.5-min window ends. Always clear — manual search already nulls this state
   // (so this timer is cancelled). Match-checks were too brittle and left the
   // UI stuck with no timer. Also re-check on focus/visibility (Android WebView
   // often pauses setTimeout while backgrounded).
@@ -4754,7 +4781,11 @@ const AdminDashboard = () => {
     const normalized = normalizePhoneForSearch(pasted);
     if (normalized.length >= 10) {
       e.preventDefault();
-      void runCustomerSearch(normalized);
+      setHighlightJobId(null);
+      const scrollY = window.scrollY ?? document.documentElement.scrollTop ?? 0;
+      void runCustomerSearch(normalized).then(() => {
+        requestAnimationFrame(() => window.scrollTo(0, scrollY));
+      });
     }
   };
 

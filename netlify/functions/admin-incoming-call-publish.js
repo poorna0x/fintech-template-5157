@@ -1,5 +1,5 @@
 // Publish an incoming call to the shared admin board so every admin page can
-// auto-search the caller for the next 3 minutes. The admin phone that rings
+// auto-search the caller for the next 1.5 minutes. The admin phone that rings
 // POSTs { token, number } here (native, works with the app killed). We insert
 // one row (service role) and prune stale rows so the table stays tiny.
 //
@@ -97,7 +97,7 @@ exports.handler = async (event) => {
     return { statusCode: 500, headers: HEADERS, body: JSON.stringify({ error: 'Insert failed' }) };
   }
 
-  // Keep the table tiny — anything older than an hour is useless (3-min window).
+  // Keep the table tiny — anything older than an hour is useless (1.5-min window).
   await db
     .from('admin_incoming_calls')
     .delete()

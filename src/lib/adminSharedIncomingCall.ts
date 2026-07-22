@@ -1,7 +1,7 @@
 /**
  * Shared incoming-call board (admin_incoming_calls): a call received on ONE
- * admin phone becomes searchable on EVERY admin page for 3 minutes.
- * The auto-filled search also clears itself when that 3-minute window ends.
+ * admin phone becomes searchable on EVERY admin page for 1.5 minutes.
+ * The auto-filled search also clears itself when that window ends.
  *
  *  - fetch-on-open / resume: one slim SELECT (backup path).
  *  - realtime INSERT: immediately refetch the latest row (do NOT trust the
@@ -16,8 +16,8 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabaseClient';
 import { normalizePhoneForSearch } from '@/lib/utils';
 
-const WINDOW_MS = 3 * 60_000;
-/** Same window as shared board — auto-search only within 3 min of the ring. */
+const WINDOW_MS = 90_000; // 1.5 minutes
+/** Same window as shared board — auto-search only within 1.5 min of the ring. */
 export const INCOMING_CALL_SEARCH_WINDOW_MS = WINDOW_MS;
 const LAST_HANDLED_KEY = 'hro_admin_shared_call_handled_at';
 const AUTO_SEARCH_KEY = 'hro_admin_incoming_auto_search';
@@ -53,7 +53,7 @@ export function markIncomingAutoSearch(
   return record;
 }
 
-/** True when ?search= matches a past incoming-call auto-search older than 3 min. */
+/** True when ?search= matches a past incoming-call auto-search older than the window. */
 export function isIncomingAutoSearchStale(phone: string, now = Date.now()): boolean {
   const parsed = readIncomingAutoSearch();
   if (!parsed) return false;

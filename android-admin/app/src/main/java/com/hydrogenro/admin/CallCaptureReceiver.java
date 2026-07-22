@@ -19,7 +19,7 @@ import java.nio.charset.StandardCharsets;
  *  1. Saved locally so THIS device auto-searches it on next open/resume
  *     (IncomingCallPlugin) — zero network.
  *  2. Published to the shared admin board (admin-incoming-call-publish) so
- *     EVERY admin page can auto-search the caller for 3 minutes.
+ *     EVERY admin page can auto-search the caller for 1.5 minutes.
  *  3. Missed calls (RINGING → IDLE with no OFFHOOK) POST to
  *     tech-call-customer-alert, pushing "Missed call from customer" if the
  *     number matches a customer.

@@ -4,7 +4,7 @@
  * The native side (CallCaptureReceiver) saves the last incoming call number
  * on the phone while the app is in the background — no network, no polling,
  * zero egress. When the admin opens/resumes the app, we consume that number
- * and auto-search the customer — only if opened within 3 minutes of the
+ * and auto-search the customer — only if opened within 1.5 minutes of the
  * ring. Older calls are discarded so the dashboard opens normally. Unknown
  * callers get a compact Recent button (WhatsApp intro) for 10 minutes.
  * No-op in the browser and in old APKs without the plugin.
