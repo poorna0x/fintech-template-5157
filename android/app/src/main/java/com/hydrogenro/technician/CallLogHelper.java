@@ -9,13 +9,22 @@ import android.util.Log;
 import androidx.core.content.ContextCompat;
 
 /**
- * Read recent numbers from the system call log.
- * EXTRA_INCOMING_NUMBER is often empty on Indian OEMs / Truecaller;
- * CallLog may appear while the call is still live on some devices.
+ * Read recent incoming numbers from the system call log (with CallLog DATE
+ * so we can tell a new call from the same number apart from an old one).
  */
 final class CallLogHelper {
 
     private static final String TAG = "HroCallLog";
+
+    static final class Entry {
+        final String number;
+        final long dateMs;
+
+        Entry(String number, long dateMs) {
+            this.number = number;
+            this.dateMs = dateMs;
+        }
+    }
 
     private CallLogHelper() {}
 
@@ -24,23 +33,21 @@ final class CallLogHelper {
             == PackageManager.PERMISSION_GRANTED;
     }
 
-    /**
-     * Most recent incoming / missed / rejected number since {@code sinceEpochMs}.
-     * Returns null if none or permission missing.
-     */
     static String latestIncomingNumber(Context context, long sinceEpochMs) {
-        return latestNumber(context, sinceEpochMs, true);
+        Entry e = latestIncoming(context, sinceEpochMs);
+        return e != null ? e.number : null;
     }
 
-    /**
-     * Any recent call-log number since {@code sinceEpochMs} (live-call poll).
-     * Some dialers write the row before classifying type.
-     */
+    static Entry latestIncoming(Context context, long sinceEpochMs) {
+        return latest(context, sinceEpochMs, true);
+    }
+
     static String latestAnyNumber(Context context, long sinceEpochMs) {
-        return latestNumber(context, sinceEpochMs, false);
+        Entry e = latest(context, sinceEpochMs, false);
+        return e != null ? e.number : null;
     }
 
-    private static String latestNumber(Context context, long sinceEpochMs, boolean incomingOnly) {
+    private static Entry latest(Context context, long sinceEpochMs, boolean incomingOnly) {
         if (!hasCallLogPermission(context)) return null;
         Cursor cursor = null;
         try {
@@ -76,8 +83,9 @@ final class CallLogHelper {
             if (cursor == null) return null;
             while (cursor.moveToNext()) {
                 String number = cursor.getString(0);
-                if (number != null && !number.trim().isEmpty()) {
-                    return number.trim();
+                long dateMs = cursor.getLong(2);
+                if (number != null && !number.trim().isEmpty() && dateMs > 0) {
+                    return new Entry(number.trim(), dateMs);
                 }
             }
             return null;

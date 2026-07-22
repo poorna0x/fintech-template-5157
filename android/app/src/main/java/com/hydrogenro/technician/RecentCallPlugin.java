@@ -10,11 +10,13 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 
 /**
  * Recent incoming caller for JWT backup notify.
- * Prefers a fresh CallLog incoming number over stale prefs (so a new call
- * is not hidden behind an older captured number).
+ * Uses CallLog DATE so the same customer calling again is a new event
+ * (not stuck on the previous capture).
  */
 @CapacitorPlugin(name = "RecentCall")
 public class RecentCallPlugin extends Plugin {
+
+    static final String KEY_LAST_CALLLOG_DATE = "last_calllog_date";
 
     private SharedPreferences prefs() {
         return getContext().getSharedPreferences(CallAlertReceiver.PREFS, Context.MODE_PRIVATE);
@@ -30,33 +32,38 @@ public class RecentCallPlugin extends Plugin {
         String prefsNumber = prefs.getString(CallAlertReceiver.KEY_LAST_NUMBER, null);
         long prefsAt = prefs.getLong(CallAlertReceiver.KEY_LAST_AT, 0L);
         long consumedAt = prefs.getLong(CallAlertReceiver.KEY_CONSUMED_AT, 0L);
+        long lastLogDate = prefs.getLong(KEY_LAST_CALLLOG_DATE, 0L);
         long now = System.currentTimeMillis();
 
-        // Incoming only — never use outgoing "numbers I dialed".
         long since = now - 15 * 60_000L;
-        String fromLog = CallLogHelper.latestIncomingNumber(getContext(), since);
+        CallLogHelper.Entry fromLog = CallLogHelper.latestIncoming(getContext(), since);
 
         JSObject ret = new JSObject();
 
-        if (fromLog != null && !fromLog.isEmpty()) {
-            String logDigits = digitsOnly(fromLog);
+        if (fromLog != null) {
+            String logDigits = digitsOnly(fromLog.number);
             String prefsDigits = digitsOnly(prefsNumber);
-            boolean different =
+            boolean differentNumber =
                 prefsDigits.isEmpty() || !logDigits.equals(prefsDigits);
+            // New CallLog row (newer DATE) = new call, even if same number.
+            boolean newerCallLog = fromLog.dateMs > lastLogDate;
             boolean prefsStale = prefsAt <= 0 || now - prefsAt > 60_000L;
-            // New/different CallLog row wins so BG notify sees the latest caller.
-            if (different || prefsStale || prefsAt == consumedAt) {
+            boolean consumed = prefsAt > 0 && prefsAt == consumedAt;
+
+            if (differentNumber || newerCallLog || prefsStale || consumed) {
                 prefs
                     .edit()
-                    .putString(CallAlertReceiver.KEY_LAST_NUMBER, fromLog)
+                    .putString(CallAlertReceiver.KEY_LAST_NUMBER, fromLog.number)
                     .putLong(CallAlertReceiver.KEY_LAST_AT, now)
+                    .putLong(KEY_LAST_CALLLOG_DATE, fromLog.dateMs)
                     .remove(CallAlertReceiver.KEY_CONSUMED_AT)
                     .apply();
                 if (consume) {
                     prefs.edit().putLong(CallAlertReceiver.KEY_CONSUMED_AT, now).apply();
                 }
-                ret.put("number", fromLog);
+                ret.put("number", fromLog.number);
                 ret.put("at", now);
+                ret.put("callLogDate", fromLog.dateMs);
                 ret.put("source", "call_log");
                 return ret;
             }

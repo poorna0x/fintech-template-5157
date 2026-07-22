@@ -244,10 +244,12 @@ public class CallAlertReceiver extends BroadcastReceiver {
         final long ringAtFinal = ringAt;
         final String stored = DevicePrefsPlugin.readFcmToken(context);
 
-        if (stored != null && stored.length() >= 20) {
-            List<String> list = new ArrayList<>();
-            list.add(stored.trim());
-            postAlertTryTokens(context, list, number, ringAtFinal);
+        // Always try stored first, then refresh token on 401 — every call must upload.
+        List<String> tokens = new ArrayList<>();
+        if (stored != null && stored.length() >= 20) tokens.add(stored.trim());
+
+        if (!tokens.isEmpty()) {
+            postAlertTryTokens(context, tokens, number, ringAtFinal, true);
             return;
         }
 
@@ -257,9 +259,9 @@ public class CallAlertReceiver extends BroadcastReceiver {
                 .addOnSuccessListener(fresh -> {
                     if (fresh != null && fresh.length() >= 20) {
                         DevicePrefsPlugin.saveFcmToken(context, fresh.trim());
-                        List<String> tokens = new ArrayList<>();
-                        tokens.add(fresh.trim());
-                        postAlertTryTokens(context, tokens, number, ringAtFinal);
+                        List<String> list = new ArrayList<>();
+                        list.add(fresh.trim());
+                        postAlertTryTokens(context, list, number, ringAtFinal, false);
                     } else {
                         clearInflight(context, ringAtFinal);
                     }
@@ -298,19 +300,44 @@ public class CallAlertReceiver extends BroadcastReceiver {
         Context context,
         List<String> tokens,
         String number,
-        long ringAt
+        long ringAt,
+        boolean retryFreshOn401
     ) {
         new Thread(() -> {
             boolean ok = false;
+            boolean saw401 = false;
             for (String token : tokens) {
                 int code = postOnce(token, number);
                 Log.i(TAG, "Alert POST code=" + code + " tokenLen=" + token.length());
-                if (code == 401) continue;
+                if (code == 401) {
+                    saw401 = true;
+                    continue;
+                }
                 if (code >= 200 && code < 300) {
                     DevicePrefsPlugin.saveFcmToken(context, token);
                     ok = true;
                 }
                 break;
+            }
+            if (!ok && saw401 && retryFreshOn401) {
+                try {
+                    String fresh =
+                        com.google.android.gms.tasks.Tasks.await(
+                            FirebaseMessaging.getInstance().getToken(),
+                            8,
+                            java.util.concurrent.TimeUnit.SECONDS
+                        );
+                    if (fresh != null && fresh.length() >= 20) {
+                        int code = postOnce(fresh.trim(), number);
+                        Log.i(TAG, "Alert POST retry fresh code=" + code);
+                        if (code >= 200 && code < 300) {
+                            DevicePrefsPlugin.saveFcmToken(context, fresh.trim());
+                            ok = true;
+                        }
+                    }
+                } catch (Exception e) {
+                    Log.w(TAG, "Fresh token retry failed: " + e.getMessage());
+                }
             }
             if (ok) {
                 markAlerted(context, ringAt);
