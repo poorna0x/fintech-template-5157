@@ -1,6 +1,7 @@
 /**
  * Shared incoming-call board (admin_incoming_calls): a call received on ONE
  * admin phone becomes searchable on EVERY admin page for 3 minutes.
+ * The auto-filled search also clears itself when that 3-minute window ends.
  *
  *  - fetch-on-open / resume: one slim SELECT (backup path).
  *  - realtime INSERT: immediately refetch the latest row (do NOT trust the
@@ -24,33 +25,41 @@ const CHANNEL_NAME = 'admin-incoming-calls';
 
 export type IncomingAutoSearchRecord = { phone: string; at: number };
 
-/** Mark a search as auto-triggered by incoming call (not manual). Used to drop stale ?search= URLs. */
-export function markIncomingAutoSearch(phone: string, at = Date.now()): void {
-  const digits = normalizePhoneForSearch(phone);
-  if (digits.length < 7) return;
+export function readIncomingAutoSearch(): IncomingAutoSearchRecord | null {
   try {
-    sessionStorage.setItem(
-      AUTO_SEARCH_KEY,
-      JSON.stringify({ phone: digits, at } satisfies IncomingAutoSearchRecord)
-    );
+    const raw = sessionStorage.getItem(AUTO_SEARCH_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<IncomingAutoSearchRecord>;
+    if (!parsed.phone || typeof parsed.at !== 'number') return null;
+    return { phone: parsed.phone, at: parsed.at };
+  } catch {
+    return null;
+  }
+}
+
+/** Mark a search as auto-triggered by incoming call (not manual). Used to drop stale ?search= URLs. */
+export function markIncomingAutoSearch(
+  phone: string,
+  at = Date.now()
+): IncomingAutoSearchRecord | null {
+  const digits = normalizePhoneForSearch(phone);
+  if (digits.length < 7) return null;
+  const record: IncomingAutoSearchRecord = { phone: digits, at };
+  try {
+    sessionStorage.setItem(AUTO_SEARCH_KEY, JSON.stringify(record));
   } catch {
     /* ignore */
   }
+  return record;
 }
 
 /** True when ?search= matches a past incoming-call auto-search older than 3 min. */
 export function isIncomingAutoSearchStale(phone: string, now = Date.now()): boolean {
-  try {
-    const raw = sessionStorage.getItem(AUTO_SEARCH_KEY);
-    if (!raw) return false;
-    const parsed = JSON.parse(raw) as Partial<IncomingAutoSearchRecord>;
-    if (!parsed.phone || typeof parsed.at !== 'number') return false;
-    const q = normalizePhoneForSearch(phone);
-    if (q !== parsed.phone) return false;
-    return now - parsed.at > WINDOW_MS;
-  } catch {
-    return false;
-  }
+  const parsed = readIncomingAutoSearch();
+  if (!parsed) return false;
+  const q = normalizePhoneForSearch(phone);
+  if (q !== parsed.phone) return false;
+  return now - parsed.at > WINDOW_MS;
 }
 
 export function clearIncomingAutoSearch(): void {
@@ -81,7 +90,7 @@ function markHandled(atMs: number): void {
 function consider(
   phone: string | undefined,
   createdAt: string | undefined,
-  onNumber: (digits: string) => void
+  onNumber: (digits: string, ringAt: number) => void
 ): boolean {
   if (!phone || !createdAt) return false;
   const atMs = new Date(createdAt).getTime();
@@ -91,13 +100,13 @@ function consider(
   const digits = normalizePhoneForSearch(phone);
   if (digits.length < 7) return false;
   markHandled(atMs);
-  onNumber(digits);
+  onNumber(digits, atMs);
   return true;
 }
 
 /** One slim read of the most recent shared call; auto-search if fresh + new. */
 export async function checkSharedIncomingCall(
-  onNumber: (digits: string) => void
+  onNumber: (digits: string, ringAt: number) => void
 ): Promise<void> {
   try {
     const sinceIso = new Date(Date.now() - WINDOW_MS).toISOString();
@@ -121,7 +130,7 @@ export async function checkSharedIncomingCall(
  * Returns a cleanup function.
  */
 export function initAdminSharedCallLookup(
-  onNumber: (digits: string) => void
+  onNumber: (digits: string, ringAt: number) => void
 ): () => void {
   let channel: RealtimeChannel | null = null;
   let disposed = false;

@@ -189,8 +189,11 @@ import {
 } from '@/lib/adminIncomingCall';
 import {
   clearIncomingAutoSearch,
+  INCOMING_CALL_SEARCH_WINDOW_MS,
   isIncomingAutoSearchStale,
   markIncomingAutoSearch,
+  readIncomingAutoSearch,
+  type IncomingAutoSearchRecord,
 } from '@/lib/adminSharedIncomingCall';
 import {
   EQUIPMENT_BRAND_DATA as brandData,
@@ -389,6 +392,20 @@ const AdminDashboard = () => {
   const [searchQuery, setSearchQuery] = useState(''); // For the input field
   const [isSearching, setIsSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<Customer[] | null>(null); // API search results (find any customer in DB)
+  /** Incoming-call auto-fill — cleared from the UI after 3 minutes. */
+  const [incomingAutoSearch, setIncomingAutoSearch] = useState<IncomingAutoSearchRecord | null>(() => {
+    const rec = readIncomingAutoSearch();
+    if (!rec) return null;
+    if (Date.now() - rec.at > INCOMING_CALL_SEARCH_WINDOW_MS) {
+      clearIncomingAutoSearch();
+      return null;
+    }
+    return rec;
+  });
+  const searchQueryRef = useRef(searchQuery);
+  const searchTermRef = useRef(searchTerm);
+  searchQueryRef.current = searchQuery;
+  searchTermRef.current = searchTerm;
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
@@ -611,7 +628,8 @@ const AdminDashboard = () => {
         // effect runs the actual customer search.
         if (payload.kind === 'tech_call') {
           if (!payload.phone) return;
-          markIncomingAutoSearch(payload.phone);
+          const auto = markIncomingAutoSearch(payload.phone);
+          if (auto) setIncomingAutoSearch(auto);
           navigate(
             adminDashboardLocation(
               buildAdminDashboardSearch(
@@ -4474,6 +4492,7 @@ const AdminDashboard = () => {
 
   const handleSearch = useCallback(async () => {
     clearIncomingAutoSearch();
+    setIncomingAutoSearch(null);
     await runCustomerSearch(searchQuery);
   }, [runCustomerSearch, searchQuery]);
 
@@ -4510,7 +4529,8 @@ const AdminDashboard = () => {
         // Put ?search= in the URL so the URL-sync effect does not wipe results
         // (skipNavigate previously set searchTerm, then the effect saw no
         // ?search= and cleared — desktop scrolled but looked empty).
-        markIncomingAutoSearch(digits, opts?.ringAt);
+        const auto = markIncomingAutoSearch(digits, opts?.ringAt);
+        if (auto) setIncomingAutoSearch(auto);
         await runCustomerSearch(digits);
         requestAnimationFrame(() => {
           document.querySelector('[data-admin-search]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -4535,6 +4555,45 @@ const AdminDashboard = () => {
     }, Math.max(remaining, 0));
     return () => window.clearTimeout(timer);
   }, [unknownCaller]);
+
+  // Auto-filled incoming-call search: clear the box/results when the 3-min
+  // window ends (same clock as the auto-search gate). Skip if the admin
+  // already typed/searched something else.
+  useEffect(() => {
+    if (!incomingAutoSearch) return;
+    const digits = normalizePhoneForSearch(incomingAutoSearch.phone);
+    const remaining =
+      incomingAutoSearch.at + INCOMING_CALL_SEARCH_WINDOW_MS - Date.now();
+    const clearAutoFill = () => {
+      clearIncomingAutoSearch();
+      setIncomingAutoSearch(null);
+      const urlSearch = normalizePhoneForSearch(
+        new URLSearchParams(window.location.search).get('search') || ''
+      );
+      const liveSearch = normalizePhoneForSearch(
+        searchQueryRef.current || searchTermRef.current || ''
+      );
+      if (urlSearch !== digits && liveSearch !== digits) return;
+      adminSearchSyncedRef.current = null;
+      setSearchQuery('');
+      setSearchTerm('');
+      setSearchResults(null);
+      if (urlSearch === digits) {
+        navigate(
+          adminDashboardLocation(
+            buildAdminDashboardSearch({ clearSearch: true }, window.location.search)
+          ),
+          { replace: true }
+        );
+      }
+    };
+    if (remaining <= 0) {
+      clearAutoFill();
+      return;
+    }
+    const timer = window.setTimeout(clearAutoFill, remaining);
+    return () => window.clearTimeout(timer);
+  }, [incomingAutoSearch, navigate]);
 
   const unknownCallerChip = useMemo(() => {
     if (!isAdminCallerLookupAvailable() || !unknownCaller || !isUnknownCallerFresh(unknownCaller)) {
@@ -4581,8 +4640,8 @@ const AdminDashboard = () => {
     let cleanup: (() => void) | null = null;
     let cancelled = false;
     void import('@/lib/adminSharedIncomingCall').then(({ initAdminSharedCallLookup }) => {
-      const dispose = initAdminSharedCallLookup((digits) =>
-        callerLookupSearchRef.current(digits, { offerNotFound: false })
+      const dispose = initAdminSharedCallLookup((digits, ringAt) =>
+        callerLookupSearchRef.current(digits, { offerNotFound: false, ringAt })
       );
       if (cancelled) dispose();
       else cleanup = dispose;
@@ -4596,6 +4655,7 @@ const AdminDashboard = () => {
   const handleClearSearch = () => {
     hapticTap();
     clearIncomingAutoSearch();
+    setIncomingAutoSearch(null);
     adminSearchSyncedRef.current = null;
     // Always clear UI on this click. If we only navigate away from ?search= and
     // return early, the URL sync effect sees a null ref and leaves results on
@@ -4634,6 +4694,7 @@ const AdminDashboard = () => {
     if (searchParam) {
       if (isIncomingAutoSearchStale(searchParam)) {
         clearIncomingAutoSearch();
+        setIncomingAutoSearch(null);
         adminSearchSyncedRef.current = null;
         setSearchQuery('');
         setSearchTerm('');
