@@ -179,14 +179,27 @@ exports.handler = async (event) => {
     }
   }
 
-  const [{ data: tech }, tokens] = await Promise.all([
+  const [{ data: tech }, customerCallTokens] = await Promise.all([
     technicianId
       ? db.from('technicians').select('full_name').eq('id', technicianId).maybeSingle()
       : Promise.resolve({ data: null }),
     getAdminFcmTokens(db, 'customer_calls'),
   ]);
+  // Search alerts use tech_search — if that works but customer_calls is empty
+  // (pref off / never configured), fall back so call rings still reach those admins.
+  let tokens = customerCallTokens;
+  let tokenSource = 'customer_calls';
   if (tokens.length === 0) {
-    return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ sent: 0, reason: 'no_tokens' }) };
+    tokens = await getAdminFcmTokens(db, 'tech_search');
+    tokenSource = 'tech_search_fallback';
+    console.warn('[tech-call-customer-alert] customer_calls empty; using tech_search tokens');
+  }
+  if (tokens.length === 0) {
+    return {
+      statusCode: 200,
+      headers: HEADERS,
+      body: JSON.stringify({ sent: 0, reason: 'no_tokens', tokenSource }),
+    };
   }
 
   const techName = tech?.full_name || 'Technician';
@@ -239,7 +252,7 @@ exports.handler = async (event) => {
     return {
       statusCode: 200,
       headers: HEADERS,
-      body: JSON.stringify({ found: true, sent: res.successCount }),
+      body: JSON.stringify({ found: true, sent: res.successCount, tokenSource }),
     };
   } catch (err) {
     console.error('[tech-call-customer-alert] send failed', err?.message || err);

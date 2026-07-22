@@ -7,10 +7,15 @@ import android.content.SharedPreferences;
 import android.telephony.TelephonyManager;
 import android.util.Log;
 import com.google.firebase.messaging.FirebaseMessaging;
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Silent caller check: when the technician's phone rings, POST the number to
@@ -22,7 +27,7 @@ import java.nio.charset.StandardCharsets;
 public class CallAlertReceiver extends BroadcastReceiver {
 
     private static final String TAG = "HroCallAlert";
-    // Shared with RecentCallPlugin (search dialog "did they just call?" prompt).
+    // Shared with RecentCallPlugin (search dialog "did this customer just call?").
     static final String PREFS = "hro_call_alert";
     static final String KEY_LAST_NUMBER = "last_number";
     static final String KEY_LAST_AT = "last_at";
@@ -36,15 +41,13 @@ public class CallAlertReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
         if (!TelephonyManager.ACTION_PHONE_STATE_CHANGED.equals(intent.getAction())) return;
-        // Do NOT gate on native SharedPreferences here. Device Tracker mute is
-        // enforced on the server (call_alerts_enabled). A stale native "off"
-        // (silent FCM prefs sync missed) was blocking rings while tech search
-        // pushes still worked — same admin phone, different code path.
+        // Mute is enforced on the server (call_alerts_enabled). Do not gate on
+        // native SharedPreferences — stale "off" blocked rings while search worked.
 
         String state = intent.getStringExtra(TelephonyManager.EXTRA_STATE);
         if (!TelephonyManager.EXTRA_STATE_RINGING.equals(state)) return;
 
-        // Android 9+ sends the broadcast twice; only the one for READ_CALL_LOG
+        // Android 9+ sends this broadcast twice; only the one for READ_CALL_LOG
         // holders carries the number.
         String number = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER);
         if (number == null || number.trim().isEmpty()) return;
@@ -57,30 +60,35 @@ public class CallAlertReceiver extends BroadcastReceiver {
         if (cleaned.equals(lastNumber) && now - lastAt < DEDUPE_WINDOW_MS) return;
         prefs.edit().putString(KEY_LAST_NUMBER, cleaned).putLong(KEY_LAST_AT, now).apply();
 
-        // Keep the process alive while we fetch the FCM token and POST.
         final PendingResult pending = goAsync();
+        final Context app = context.getApplicationContext();
         try {
-            // Prefer the token last saved to the server (SharedPreferences) so
-            // ring-time auth matches technician_push_tokens. Fresh getToken()
-            // can race a rotation and 401 before re-register.
-            String stored = DevicePrefsPlugin.readFcmToken(context);
-            if (stored != null) {
-                postAlert(stored, cleaned, pending);
-                return;
-            }
+            final String stored = DevicePrefsPlugin.readFcmToken(app);
             FirebaseMessaging.getInstance()
                 .getToken()
-                .addOnSuccessListener(token -> {
-                    if (token == null || token.length() < 20) {
+                .addOnSuccessListener(fresh -> {
+                    List<String> tokens = new ArrayList<>();
+                    // Fresh first (matches DB after login). Stored as fallback if
+                    // getToken rotated ahead of re-register (or vice versa).
+                    if (fresh != null && fresh.length() >= 20) tokens.add(fresh.trim());
+                    if (stored != null && stored.length() >= 20 && !tokens.contains(stored)) {
+                        tokens.add(stored);
+                    }
+                    if (tokens.isEmpty()) {
                         pending.finish();
                         return;
                     }
-                    DevicePrefsPlugin.saveFcmToken(context, token);
-                    postAlert(token, cleaned, pending);
+                    postAlertTryTokens(app, tokens, cleaned, pending);
                 })
                 .addOnFailureListener(e -> {
                     Log.w(TAG, "FCM token fetch failed: " + e.getMessage());
-                    pending.finish();
+                    if (stored != null) {
+                        List<String> tokens = new ArrayList<>();
+                        tokens.add(stored);
+                        postAlertTryTokens(app, tokens, cleaned, pending);
+                    } else {
+                        pending.finish();
+                    }
                 });
         } catch (Exception e) {
             Log.w(TAG, "Call alert threw: " + e.getMessage());
@@ -92,29 +100,65 @@ public class CallAlertReceiver extends BroadcastReceiver {
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
-    private void postAlert(String token, String number, PendingResult pending) {
+    private void postAlertTryTokens(
+        Context context,
+        List<String> tokens,
+        String number,
+        PendingResult pending
+    ) {
         new Thread(() -> {
-            HttpURLConnection conn = null;
             try {
-                String payload =
-                    "{\"token\":\"" + jsonEscape(token) + "\"," +
-                    "\"number\":\"" + jsonEscape(number) + "\"}";
-                conn = (HttpURLConnection) new URL(ALERT_URL).openConnection();
-                conn.setRequestMethod("POST");
-                conn.setRequestProperty("Content-Type", "application/json");
-                conn.setDoOutput(true);
-                conn.setConnectTimeout(10_000);
-                conn.setReadTimeout(10_000);
-                try (OutputStream os = conn.getOutputStream()) {
-                    os.write(payload.getBytes(StandardCharsets.UTF_8));
+                for (String token : tokens) {
+                    int code = postOnce(token, number);
+                    Log.i(TAG, "Alert POST code=" + code + " tokenLen=" + token.length());
+                    if (code == 401) continue; // try next token
+                    if (code >= 200 && code < 300) {
+                        DevicePrefsPlugin.saveFcmToken(context, token);
+                    }
+                    break;
                 }
-                conn.getResponseCode();
             } catch (Exception e) {
                 Log.w(TAG, "Alert POST failed: " + e.getMessage());
             } finally {
-                if (conn != null) conn.disconnect();
                 pending.finish();
             }
         }).start();
+    }
+
+    /** @return HTTP status, or -1 on I/O failure */
+    private int postOnce(String token, String number) {
+        HttpURLConnection conn = null;
+        try {
+            String payload =
+                "{\"token\":\"" + jsonEscape(token) + "\"," +
+                "\"number\":\"" + jsonEscape(number) + "\"}";
+            conn = (HttpURLConnection) new URL(ALERT_URL).openConnection();
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setDoOutput(true);
+            conn.setConnectTimeout(10_000);
+            conn.setReadTimeout(10_000);
+            try (OutputStream os = conn.getOutputStream()) {
+                os.write(payload.getBytes(StandardCharsets.UTF_8));
+            }
+            int code = conn.getResponseCode();
+            InputStream stream =
+                code >= 400 ? conn.getErrorStream() : conn.getInputStream();
+            if (stream != null) {
+                try (BufferedReader br =
+                    new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = br.readLine()) != null) sb.append(line);
+                    Log.i(TAG, "Alert body: " + sb);
+                }
+            }
+            return code;
+        } catch (Exception e) {
+            Log.w(TAG, "postOnce failed: " + e.getMessage());
+            return -1;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
     }
 }
