@@ -393,19 +393,9 @@ const AdminDashboard = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<Customer[] | null>(null); // API search results (find any customer in DB)
   /** Incoming-call auto-fill — cleared from the UI after 3 minutes. */
-  const [incomingAutoSearch, setIncomingAutoSearch] = useState<IncomingAutoSearchRecord | null>(() => {
-    const rec = readIncomingAutoSearch();
-    if (!rec) return null;
-    if (Date.now() - rec.at > INCOMING_CALL_SEARCH_WINDOW_MS) {
-      clearIncomingAutoSearch();
-      return null;
-    }
-    return rec;
-  });
-  const searchQueryRef = useRef(searchQuery);
-  const searchTermRef = useRef(searchTerm);
-  searchQueryRef.current = searchQuery;
-  searchTermRef.current = searchTerm;
+  const [incomingAutoSearch, setIncomingAutoSearch] = useState<IncomingAutoSearchRecord | null>(
+    () => readIncomingAutoSearch()
+  );
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
@@ -4556,29 +4546,23 @@ const AdminDashboard = () => {
     return () => window.clearTimeout(timer);
   }, [unknownCaller]);
 
-  // Auto-filled incoming-call search: clear the box/results when the 3-min
-  // window ends (same clock as the auto-search gate). Skip if the admin
-  // already typed/searched something else.
+  // Auto-filled incoming-call search: clear box/results/?search= when the
+  // 3-min window ends. Always clear — manual search already nulls this state
+  // (so this timer is cancelled). Match-checks were too brittle and left the
+  // UI stuck with no timer. Also re-check on focus/visibility (Android WebView
+  // often pauses setTimeout while backgrounded).
   useEffect(() => {
     if (!incomingAutoSearch) return;
-    const digits = normalizePhoneForSearch(incomingAutoSearch.phone);
-    const remaining =
-      incomingAutoSearch.at + INCOMING_CALL_SEARCH_WINDOW_MS - Date.now();
+    const ringAt = incomingAutoSearch.at;
+
     const clearAutoFill = () => {
       clearIncomingAutoSearch();
       setIncomingAutoSearch(null);
-      const urlSearch = normalizePhoneForSearch(
-        new URLSearchParams(window.location.search).get('search') || ''
-      );
-      const liveSearch = normalizePhoneForSearch(
-        searchQueryRef.current || searchTermRef.current || ''
-      );
-      if (urlSearch !== digits && liveSearch !== digits) return;
       adminSearchSyncedRef.current = null;
       setSearchQuery('');
       setSearchTerm('');
       setSearchResults(null);
-      if (urlSearch === digits) {
+      if (new URLSearchParams(window.location.search).get('search')) {
         navigate(
           adminDashboardLocation(
             buildAdminDashboardSearch({ clearSearch: true }, window.location.search)
@@ -4587,12 +4571,25 @@ const AdminDashboard = () => {
         );
       }
     };
-    if (remaining <= 0) {
+
+    const maybeClear = () => {
+      if (Date.now() - ringAt < INCOMING_CALL_SEARCH_WINDOW_MS) return;
       clearAutoFill();
-      return;
-    }
-    const timer = window.setTimeout(clearAutoFill, remaining);
-    return () => window.clearTimeout(timer);
+    };
+
+    maybeClear();
+    const remaining = ringAt + INCOMING_CALL_SEARCH_WINDOW_MS - Date.now();
+    if (remaining <= 0) return;
+
+    const timer = window.setTimeout(maybeClear, remaining);
+    const onResume = () => maybeClear();
+    document.addEventListener('visibilitychange', onResume);
+    window.addEventListener('focus', onResume);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onResume);
+      window.removeEventListener('focus', onResume);
+    };
   }, [incomingAutoSearch, navigate]);
 
   const unknownCallerChip = useMemo(() => {
