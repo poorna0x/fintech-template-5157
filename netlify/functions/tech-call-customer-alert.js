@@ -55,7 +55,8 @@ exports.handler = async (event) => {
 
   const deviceToken = String(body.token || '').trim();
   const phone = normalizePhone(body.number);
-  if (deviceToken.length < 50) {
+  // FCM tokens are usually 140+ chars; keep a low floor so we don't reject valid ones.
+  if (deviceToken.length < 20) {
     return { statusCode: 401, headers: HEADERS, body: JSON.stringify({ error: 'Unauthorized' }) };
   }
   if (!phone) {
@@ -120,20 +121,15 @@ exports.handler = async (event) => {
           body: JSON.stringify({ found: false, reason: 'call_detect_off' }),
         };
       }
-      // Orphan legacy token: tech has multi-device rows but this FCM token isn't
-      // among them — don't alert (stale live_locations dual-write).
+      // Orphan: token is on live_locations but not in technician_push_tokens,
+      // while other devices exist. Usually a token rotation before re-register —
+      // rejecting here silently dropped customer-call admin pushes. Allow the
+      // alert; mute still applies when THIS token has call_alerts_enabled=false.
       if (!legacyPrefs) {
-        const { count } = await db
-          .from('technician_push_tokens')
-          .select('token', { count: 'exact', head: true })
-          .eq('technician_id', technicianId);
-        if ((count || 0) > 0) {
-          return {
-            statusCode: 200,
-            headers: HEADERS,
-            body: JSON.stringify({ found: false, reason: 'call_detect_legacy_orphan' }),
-          };
-        }
+        console.warn(
+          '[tech-call-customer-alert] live_locations token not in push_tokens for',
+          technicianId
+        );
       }
     }
   }

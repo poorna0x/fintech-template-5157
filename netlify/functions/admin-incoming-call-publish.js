@@ -42,7 +42,7 @@ exports.handler = async (event) => {
 
   const deviceToken = String(body.token || '').trim();
   const phone = normalizePhone(body.number);
-  if (deviceToken.length < 50) {
+  if (deviceToken.length < 20) {
     return { statusCode: 401, headers: HEADERS, body: JSON.stringify({ error: 'Unauthorized' }) };
   }
   if (!phone) {

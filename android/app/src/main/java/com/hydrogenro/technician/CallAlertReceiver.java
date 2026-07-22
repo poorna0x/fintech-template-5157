@@ -57,6 +57,14 @@ public class CallAlertReceiver extends BroadcastReceiver {
         // Keep the process alive while we fetch the FCM token and POST.
         final PendingResult pending = goAsync();
         try {
+            // Prefer the token last saved to the server (SharedPreferences) so
+            // ring-time auth matches technician_push_tokens. Fresh getToken()
+            // can race a rotation and 401 before re-register.
+            String stored = DevicePrefsPlugin.readFcmToken(context);
+            if (stored != null) {
+                postAlert(stored, cleaned, pending);
+                return;
+            }
             FirebaseMessaging.getInstance()
                 .getToken()
                 .addOnSuccessListener(token -> {
@@ -64,6 +72,7 @@ public class CallAlertReceiver extends BroadcastReceiver {
                         pending.finish();
                         return;
                     }
+                    DevicePrefsPlugin.saveFcmToken(context, token);
                     postAlert(token, cleaned, pending);
                 })
                 .addOnFailureListener(e -> {

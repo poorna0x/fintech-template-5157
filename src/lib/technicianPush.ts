@@ -117,7 +117,7 @@ async function saveToken(technicianId: string, token: string): Promise<boolean> 
       .maybeSingle();
     const callAlertsEnabled = prefsRow?.call_alerts_enabled !== false;
     writePersist({ ...cached, callAlertsEnabled });
-    await syncDevicePrefsToNative({ callAlertsEnabled });
+    await syncDevicePrefsToNative({ callAlertsEnabled, fcmToken: token });
     return true;
   }
 
@@ -169,7 +169,7 @@ async function saveToken(technicianId: string, token: string): Promise<boolean> 
   lastToken = token;
   lastPersistedKey = key;
   rememberTokenLocally(token);
-  await syncDevicePrefsToNative({ callAlertsEnabled });
+  await syncDevicePrefsToNative({ callAlertsEnabled, fcmToken: token });
   return true;
 }
 

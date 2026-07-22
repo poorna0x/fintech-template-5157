@@ -128,6 +128,7 @@ public class MainActivity extends BridgeActivity {
                     token -> {
                         if (token == null || token.length() < 20) return;
                         cachedFcmToken = token;
+                        DevicePrefsPlugin.saveFcmToken(MainActivity.this, token);
                         android.util.Log.i("HRO-Main", "Native FCM token ready (len=" + token.length() + ")");
                         injectNativeFcmToken(webViewOrNull());
                     }

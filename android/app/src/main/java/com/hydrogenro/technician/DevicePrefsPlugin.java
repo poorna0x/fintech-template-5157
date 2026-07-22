@@ -14,6 +14,8 @@ public class DevicePrefsPlugin extends Plugin {
 
     static final String PREFS = "hro_device_prefs";
     static final String KEY_CALL_ALERTS = "call_alerts_enabled";
+    /** Last FCM token registered with the server — CallAlertReceiver prefers this. */
+    static final String KEY_FCM_TOKEN = "fcm_token";
 
     static SharedPreferences prefs(Context context) {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
@@ -30,6 +32,19 @@ public class DevicePrefsPlugin extends Plugin {
     /** Apply prefs from a silent FCM (app may be killed). */
     static void applyCallAlertsEnabled(Context context, boolean enabled) {
         prefs(context).edit().putBoolean(KEY_CALL_ALERTS, enabled).apply();
+    }
+
+    static void saveFcmToken(Context context, String token) {
+        if (token == null) return;
+        String trimmed = token.trim();
+        if (trimmed.length() < 20) return;
+        prefs(context).edit().putString(KEY_FCM_TOKEN, trimmed).apply();
+    }
+
+    static String readFcmToken(Context context) {
+        String token = prefs(context).getString(KEY_FCM_TOKEN, null);
+        if (token == null || token.trim().length() < 20) return null;
+        return token.trim();
     }
 
     static String buildDeviceLabel() {
@@ -50,10 +65,13 @@ public class DevicePrefsPlugin extends Plugin {
     @PluginMethod
     public void setPrefs(PluginCall call) {
         Boolean alerts = call.getBoolean("callAlertsEnabled", true);
-        prefs(getContext())
-            .edit()
-            .putBoolean(KEY_CALL_ALERTS, alerts == null || alerts)
-            .apply();
+        SharedPreferences.Editor edit = prefs(getContext()).edit();
+        edit.putBoolean(KEY_CALL_ALERTS, alerts == null || alerts);
+        String token = call.getString("fcmToken");
+        if (token != null && token.trim().length() >= 20) {
+            edit.putString(KEY_FCM_TOKEN, token.trim());
+        }
+        edit.apply();
         call.resolve();
     }
 
