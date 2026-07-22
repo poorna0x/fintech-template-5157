@@ -27,8 +27,11 @@ import java.util.List;
  *  - Truecaller / some OEMs never put the number in EXTRA — then CallLog on
  *    IDLE (after the dialer writes the row) is the fallback.
  *
- * POST uses the stored FCM token immediately (search-alert speed); refresh
- * token in the background for the next call.
+ * Deduping is per ring session only (not per phone for minutes): same number
+ * calling again right after hang-up notifies again. Double RINGING + IDLE for
+ * one call still posts once.
+ *
+ * POST uses the stored FCM token immediately; refresh token in the background.
  */
 public class CallAlertReceiver extends BroadcastReceiver {
 
@@ -38,9 +41,8 @@ public class CallAlertReceiver extends BroadcastReceiver {
     static final String KEY_LAST_AT = "last_at";
     static final String KEY_CONSUMED_AT = "consumed_at";
     private static final String KEY_RING_SEEN_AT = "ring_seen_at";
-    /** Collapse double RINGING + RINGING/IDLE for one call — not 10 minutes. */
-    private static final long DEDUPE_WINDOW_MS = 45_000L;
-    private static final long CALL_LOG_LOOKBACK_MS = 5 * 60_000L;
+    /** Ring session already POSTed — collapses double RINGING + IDLE. */
+    private static final String KEY_ALERTED_RING_AT = "alerted_ring_at";
 
     private static final String ALERT_URL =
         "https://hydrogenro.com/.netlify/functions/tech-call-customer-alert";
@@ -54,13 +56,15 @@ public class CallAlertReceiver extends BroadcastReceiver {
         SharedPreferences prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
 
         if (TelephonyManager.EXTRA_STATE_RINGING.equals(state)) {
-            prefs.edit().putLong(KEY_RING_SEEN_AT, System.currentTimeMillis()).apply();
+            long now = System.currentTimeMillis();
+            long existingRing = prefs.getLong(KEY_RING_SEEN_AT, 0L);
+            // Keep one ring-id for the whole call (don't rewrite on 2nd RINGING).
+            if (existingRing <= 0 || now - existingRing > 30 * 60_000L) {
+                prefs.edit().putLong(KEY_RING_SEEN_AT, now).apply();
+            }
 
             String number = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER);
             if (number == null || number.trim().isEmpty()) {
-                // Like admin: empty EXTRA → wait for the second RINGING that
-                // carries the number. Instant CallLog peek only (no sleep) —
-                // Truecaller/OEM often hasn't written the row yet.
                 number = CallLogHelper.latestIncomingNumber(
                     app,
                     System.currentTimeMillis() - 15_000L
@@ -75,17 +79,17 @@ public class CallAlertReceiver extends BroadcastReceiver {
             return;
         }
 
-        // Call ended / missed — call log usually has the number now (Truecaller).
         if (TelephonyManager.EXTRA_STATE_IDLE.equals(state)) {
             long ringAt = prefs.getLong(KEY_RING_SEEN_AT, 0L);
-            prefs.edit().remove(KEY_RING_SEEN_AT).apply();
             if (ringAt <= 0) return;
-            if (System.currentTimeMillis() - ringAt > 30 * 60_000L) return;
+            if (System.currentTimeMillis() - ringAt > 30 * 60_000L) {
+                prefs.edit().remove(KEY_RING_SEEN_AT).remove(KEY_ALERTED_RING_AT).apply();
+                return;
+            }
 
             final PendingResult pending = goAsync();
             new Thread(() -> {
                 try {
-                    // Dialer / Truecaller usually writes CallLog as the call ends.
                     Thread.sleep(400);
                     String fromLog = CallLogHelper.latestIncomingNumber(
                         app,
@@ -99,28 +103,40 @@ public class CallAlertReceiver extends BroadcastReceiver {
                 } catch (Exception e) {
                     Log.w(TAG, "IDLE call-log read failed: " + e.getMessage());
                 } finally {
+                    // End of call — next RINGING is a new session (same number OK).
+                    app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                        .edit()
+                        .remove(KEY_RING_SEEN_AT)
+                        .remove(KEY_ALERTED_RING_AT)
+                        .apply();
                     pending.finish();
                 }
             }).start();
         }
     }
 
-    /** Save locally (for JWT backup) and POST with stored FCM token immediately. */
+    /** Save locally (for JWT backup) and POST once per ring session. */
     static void handleCaller(Context context, String cleaned) {
         if (cleaned == null || cleaned.trim().isEmpty()) return;
         cleaned = cleaned.trim();
 
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         long now = System.currentTimeMillis();
-        String lastNumber = prefs.getString(KEY_LAST_NUMBER, null);
-        long lastAt = prefs.getLong(KEY_LAST_AT, 0L);
-        if (cleaned.equals(lastNumber) && now - lastAt < DEDUPE_WINDOW_MS) {
-            Log.i(TAG, "Dedupe skip same number within " + DEDUPE_WINDOW_MS + "ms");
+        long ringAt = prefs.getLong(KEY_RING_SEEN_AT, 0L);
+        if (ringAt <= 0) {
+            ringAt = now;
+            prefs.edit().putLong(KEY_RING_SEEN_AT, ringAt).apply();
+        }
+
+        long alertedFor = prefs.getLong(KEY_ALERTED_RING_AT, 0L);
+        if (alertedFor == ringAt) {
+            Log.i(TAG, "Dedupe skip — already alerted this ring session");
             return;
         }
-        // New ring — clear consumed so JS peek/backup can see it again.
+
         prefs
             .edit()
+            .putLong(KEY_ALERTED_RING_AT, ringAt)
             .putString(KEY_LAST_NUMBER, cleaned)
             .putLong(KEY_LAST_AT, now)
             .remove(KEY_CONSUMED_AT)
@@ -129,14 +145,12 @@ public class CallAlertReceiver extends BroadcastReceiver {
         final String number = cleaned;
         final String stored = DevicePrefsPlugin.readFcmToken(context);
 
-        // Fast path: POST with stored token now (same idea as search JWT fire).
         if (stored != null && stored.length() >= 20) {
             List<String> list = new ArrayList<>();
             list.add(stored.trim());
             postAlertTryTokens(context, list, number);
         }
 
-        // Refresh token for next call; POST if we had no stored token.
         try {
             FirebaseMessaging.getInstance()
                 .getToken()

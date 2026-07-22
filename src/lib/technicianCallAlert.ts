@@ -3,12 +3,13 @@
  * ping admin devices. Uses the technician session JWT — same trust path as
  * search alerts — so it still works when native FCM-token auth fails.
  *
- * Deduped per phone for a few minutes (native ring POST + JS resume may both fire).
+ * Only a tiny dedupe (~3s) so native FCM + JS peek for the *same* ring don't
+ * double-send. Same number calling again immediately is allowed.
  */
 import { supabase } from '@/lib/supabase';
 import { normalizePhoneForSearch } from '@/lib/utils';
 
-const DEDUP_WINDOW_MS = 45_000;
+const DEDUP_WINDOW_MS = 3_000;
 const recentlyNotified = new Map<string, number>();
 
 export function notifyAdminsTechnicianCall(phone: string): void {
