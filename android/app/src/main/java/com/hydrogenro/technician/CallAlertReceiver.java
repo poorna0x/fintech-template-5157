@@ -44,9 +44,7 @@ public class CallAlertReceiver extends BroadcastReceiver {
     private static final int LIVE_POLL_MAX_TRIES = 80; // ~60s while call is live
     /** Truecaller / OEM often write CallLog seconds after hang-up — keep trying. */
     private static final long POST_CALL_POLL_INTERVAL_MS = 1_000L;
-    private static final int POST_CALL_POLL_MAX_TRIES = 60; // ~60s after call ends
-    /** Soft ring window when only a dialer notification gave us the number. */
-    private static final long NOTIF_RING_SESSION_MS = 90_000L;
+    private static final int POST_CALL_POLL_MAX_TRIES = 20; // ~20s after call ends
 
     private static final String ALERT_URL =
         "https://hydrogenro.com/.netlify/functions/tech-call-customer-alert";
@@ -204,29 +202,9 @@ public class CallAlertReceiver extends BroadcastReceiver {
         }).start();
     }
 
-    /**
-     * Truecaller notification path: start/reuse a short ring session so we still
-     * dedupe one call, but a new call after ~90s can alert again.
-     */
-    static void handleCallerFromNotification(Context context, String cleaned) {
-        if (!DevicePrefsPlugin.shouldProcessIncomingCall(context)) return;
-        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        long now = System.currentTimeMillis();
-        long ringAt = prefs.getLong(KEY_RING_SEEN_AT, 0L);
-        if (ringAt <= 0 || now - ringAt > NOTIF_RING_SESSION_MS) {
-            prefs
-                .edit()
-                .putLong(KEY_RING_SEEN_AT, now)
-                .remove(KEY_ALERTED_RING_AT)
-                .apply();
-        }
-        handleCaller(context, cleaned);
-    }
-
     /** Save locally (for JWT backup) and POST once per ring session. */
     static void handleCaller(Context context, String cleaned) {
         if (cleaned == null || cleaned.trim().isEmpty()) return;
-        if (!DevicePrefsPlugin.shouldProcessIncomingCall(context)) return;
         cleaned = cleaned.trim();
 
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);

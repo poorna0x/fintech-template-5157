@@ -1201,10 +1201,6 @@ const TechnicianDashboard = () => {
       void import('@/lib/technicianPush').then(({ registerTechnicianPushToken }) =>
         registerTechnicianPushToken(technicianId)
       );
-      // Truecaller/Moto: prompt once for Notification access (caller number fallback).
-      void import('@/lib/ensureCallNotificationAccess').then(({ ensureCallNotificationAccessPrompt }) =>
-        ensureCallNotificationAccessPrompt()
-      );
       // JWT + CallLog backup for call alerts when native ring capture missed the number.
       window.setTimeout(() => {
         void import('@/lib/technicianIncomingCall').then(({ reportRecentTechnicianCallToAdmins }) =>

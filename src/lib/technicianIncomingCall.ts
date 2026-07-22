@@ -18,7 +18,7 @@ type RecentCallPlugin = {
 
 const RecentCall = registerPlugin<RecentCallPlugin>('RecentCall');
 
-const FRESH_CALL_MAX_AGE_MS = 10 * 60_000;
+const FRESH_CALL_MAX_AGE_MS = 5 * 60_000;
 
 function isAvailable(): boolean {
   return Capacitor.isNativePlatform() && Capacitor.isPluginAvailable('RecentCall');
