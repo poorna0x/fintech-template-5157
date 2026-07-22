@@ -4597,6 +4597,12 @@ const AdminDashboard = () => {
     hapticTap();
     clearIncomingAutoSearch();
     adminSearchSyncedRef.current = null;
+    // Always clear UI on this click. If we only navigate away from ?search= and
+    // return early, the URL sync effect sees a null ref and leaves results on
+    // screen — forcing a second X click.
+    setSearchQuery('');
+    setSearchTerm('');
+    setSearchResults(null);
     if (new URLSearchParams(location.search).get('search')) {
       navigate(
         adminDashboardLocation(
@@ -4604,11 +4610,7 @@ const AdminDashboard = () => {
         ),
         { replace: true }
       );
-      return;
     }
-    setSearchQuery('');
-    setSearchTerm('');
-    setSearchResults(null);
   };
 
   // Customer search (?search=) — swipe-back clears results instead of exiting the PWA.
@@ -4633,6 +4635,9 @@ const AdminDashboard = () => {
       if (isIncomingAutoSearchStale(searchParam)) {
         clearIncomingAutoSearch();
         adminSearchSyncedRef.current = null;
+        setSearchQuery('');
+        setSearchTerm('');
+        setSearchResults(null);
         navigate(
           adminDashboardLocation(
             buildAdminDashboardSearch({ clearSearch: true }, location.search)
