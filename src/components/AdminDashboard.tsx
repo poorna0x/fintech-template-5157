@@ -4507,8 +4507,11 @@ const AdminDashboard = () => {
           setUnknownCaller(null);
         }
 
+        // Put ?search= in the URL so the URL-sync effect does not wipe results
+        // (skipNavigate previously set searchTerm, then the effect saw no
+        // ?search= and cleared — desktop scrolled but looked empty).
         markIncomingAutoSearch(digits, opts?.ringAt);
-        await runCustomerSearch(digits, { skipNavigate: true });
+        await runCustomerSearch(digits);
         requestAnimationFrame(() => {
           document.querySelector('[data-admin-search]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
@@ -4664,13 +4667,17 @@ const AdminDashboard = () => {
       return;
     }
 
-    adminSearchSyncedRef.current = null;
-    if (searchTerm.trim()) {
+    // No ?search= in the URL. Clear UI only if we previously synced from the
+    // URL (swipe-back / Clear). Do NOT clear when searchTerm was set by
+    // incoming-call auto-search before navigate lands, or by any path that
+    // intentionally skips URL updates — that caused “scroll but no customer”.
+    if (adminSearchSyncedRef.current != null) {
+      adminSearchSyncedRef.current = null;
       setSearchQuery('');
       setSearchTerm('');
       setSearchResults(null);
     }
-  }, [location.pathname, location.search, navigate, openAdminModal, runCustomerSearch, searchTerm]);
+  }, [location.pathname, location.search, navigate, openAdminModal, runCustomerSearch]);
 
   const handleSearchKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
