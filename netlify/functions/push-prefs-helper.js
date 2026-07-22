@@ -154,7 +154,6 @@ function isStaleTokenError(err) {
 }
 
 module.exports = {
-  getMessaging,
   getAdminFcmTokens,
   pruneAdminFcmTokens,
   getTechnicianFcmTokens,
