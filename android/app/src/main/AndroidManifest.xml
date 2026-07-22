@@ -57,9 +57,17 @@
             </intent-filter>
         </receiver>
 
-        <!-- Keeps process alive to finish call-alert HTTP when app is killed -->
+        <!-- Keeps process alive (foreground short-service) to finish call-alert
+             HTTP / CallLog poll when the technician app is killed. -->
         <service
             android:name=".CallAlertUploadService"
+            android:exported="false"
+            android:foregroundServiceType="shortService" />
+
+        <!-- AlarmManager wake-ups retry call-alert upload if FGS start was
+             blocked while the app was fully killed (Android 12+). -->
+        <receiver
+            android:name=".CallAlertKickReceiver"
             android:exported="false" />
 
         <!-- Short-lived foreground service: measures one fresh location fix
@@ -112,7 +120,11 @@
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SHORT_SERVICE" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- navigator.vibrate in the WebView (button haptics) is silently ignored without this -->
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Caller check: detect ringing + read the incoming number
