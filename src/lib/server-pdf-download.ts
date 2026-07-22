@@ -67,6 +67,51 @@ function triggerFileDownload(buffer: ArrayBuffer, filename: string): void {
   }, 2000);
 }
 
+/**
+ * Android/iOS WebView ignores <a download> for blob URLs — toast says success
+ * but nothing appears. Write to cache + open the system Share sheet so the
+ * user can Save to Files / Downloads / Drive.
+ */
+async function triggerNativePdfShare(buffer: ArrayBuffer, filename: string): Promise<void> {
+  const { Filesystem, Directory } = await import('@capacitor/filesystem');
+  const { Share } = await import('@capacitor/share');
+  const safeName = sanitizeFilename(filename);
+  const path = `hro-pdfs/${safeName}`;
+  const data = arrayBufferToBase64(buffer);
+
+  const written = await Filesystem.writeFile({
+    path,
+    data,
+    directory: Directory.Cache,
+    recursive: true,
+  });
+
+  const fileUrl =
+    written.uri ||
+    (await Filesystem.getUri({ path, directory: Directory.Cache })).uri;
+
+  await Share.share({
+    title: safeName,
+    text: safeName,
+    url: fileUrl,
+    dialogTitle: 'Save or share PDF',
+  });
+}
+
+async function deliverPdfFile(buffer: ArrayBuffer, filename: string): Promise<'native' | 'web'> {
+  try {
+    const { Capacitor } = await import('@capacitor/core');
+    if (Capacitor.isNativePlatform()) {
+      await triggerNativePdfShare(buffer, filename);
+      return 'native';
+    }
+  } catch (err) {
+    console.warn('[pdf] native share failed, falling back to anchor download', err);
+  }
+  triggerFileDownload(buffer, filename);
+  return 'web';
+}
+
 async function parsePdfResponse(response: Response, fallbackFilename: string): Promise<ArrayBuffer> {
   const contentType = response.headers.get('content-type') || '';
 
@@ -210,9 +255,9 @@ async function fetchPdfFromServer(html: string, filename: string): Promise<{
   };
 }
 
-async function downloadViaServer(html: string, filename: string): Promise<void> {
+async function downloadViaServer(html: string, filename: string): Promise<'native' | 'web'> {
   const { buffer, filename: resolvedFilename } = await fetchPdfFromServer(html, filename);
-  triggerFileDownload(buffer, resolvedFilename);
+  return deliverPdfFile(buffer, resolvedFilename);
 }
 
 /** Open document HTML in a new window and trigger the browser print / Save-as-PDF flow. */
@@ -303,8 +348,10 @@ export async function downloadDocumentPdf(options: DownloadDocumentPdfOptions): 
   const toastId = toast.loading('Generating PDF…');
 
   try {
-    await downloadViaServer(html, filename);
-    toast.success('PDF downloaded', { id: toastId });
+    const mode = await downloadViaServer(html, filename);
+    toast.success(mode === 'native' ? 'PDF ready — use Save / Share' : 'PDF downloaded', {
+      id: toastId,
+    });
   } catch (error) {
     const opened = openHtmlPrintFallback(html);
     if (opened) {

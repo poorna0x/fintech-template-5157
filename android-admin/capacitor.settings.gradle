@@ -1,4 +1,5 @@
-// Admin app: App (back button) + push + clipboard (Fetch Address) + camera.
+// Admin app: App (back button) + push + clipboard (Fetch Address) + camera +
+// filesystem/share (PDF save sheet — WebView <a download> does not work).
 // Maintained by hand — `npx cap sync` targets the technician android/ project.
 include ':capacitor-android'
 project(':capacitor-android').projectDir = new File('../node_modules/@capacitor/android/capacitor')
@@ -12,5 +13,11 @@ project(':capacitor-camera').projectDir = new File('../node_modules/@capacitor/c
 include ':capacitor-clipboard'
 project(':capacitor-clipboard').projectDir = new File('../node_modules/@capacitor/clipboard/android')
 
+include ':capacitor-filesystem'
+project(':capacitor-filesystem').projectDir = new File('../node_modules/@capacitor/filesystem/android')
+
 include ':capacitor-push-notifications'
 project(':capacitor-push-notifications').projectDir = new File('../node_modules/@capacitor/push-notifications/android')
+
+include ':capacitor-share'
+project(':capacitor-share').projectDir = new File('../node_modules/@capacitor/share/android')

@@ -1,4 +1,5 @@
-// Admin app: App (back button) + push + clipboard (Fetch Address) + camera.
+// Admin app: App (back button) + push + clipboard (Fetch Address) + camera +
+// filesystem/share (PDF save sheet).
 // Maintained by hand — `npx cap sync` targets the technician android/ project.
 
 android {
@@ -13,7 +14,9 @@ dependencies {
     implementation project(':capacitor-app')
     implementation project(':capacitor-camera')
     implementation project(':capacitor-clipboard')
+    implementation project(':capacitor-filesystem')
     implementation project(':capacitor-push-notifications')
+    implementation project(':capacitor-share')
 }
 
 
