@@ -29,7 +29,7 @@ export type TechPushPrefs = Record<TechPushCategory, boolean>;
 export const ADMIN_PUSH_LABELS: Record<AdminPushCategory, { label: string; description: string }> = {
   job_status: {
     label: 'Job status updates',
-    description: 'On the way, completed, OTP entered, bill missing.',
+    description: 'On the way, completed, OTP entered, bill missing, tech-created jobs.',
   },
   customer_calls: {
     label: 'Customer call alerts (incl. missed)',

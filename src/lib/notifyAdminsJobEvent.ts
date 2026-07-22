@@ -1,6 +1,7 @@
 /**
  * Fire-and-forget push to all admin phones (HRO Admin app) when a
- * technician heads out to, enters a customer OTP for, or completes a job.
+ * technician heads out to, enters a customer OTP for, completes a job,
+ * or creates a job (from customer search).
  * Failures are silent — the admin dashboard's realtime refresh still shows
  * the change either way.
  */
@@ -8,7 +9,7 @@ import { supabase } from '@/lib/supabase';
 
 export function notifyAdminsJobEvent(
   jobId: string,
-  event: 'en_route' | 'completed' | 'otp_entered',
+  event: 'en_route' | 'completed' | 'otp_entered' | 'job_created',
   extra?: { otp?: string }
 ): void {
   if (!jobId) return;

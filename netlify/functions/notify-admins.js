@@ -110,7 +110,7 @@ exports.handler = async (event) => {
   const jobId = String(body.jobId || '').trim();
   const evt = String(body.event || '').trim();
   const otp = String(body.otp || '').trim();
-  if (!jobId || !['en_route', 'completed', 'otp_entered'].includes(evt)) {
+  if (!jobId || !['en_route', 'completed', 'otp_entered', 'job_created'].includes(evt)) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'jobId and event required' }) };
   }
   if (evt === 'otp_entered' && !/^\d{4}$/.test(otp)) {
@@ -131,18 +131,29 @@ exports.handler = async (event) => {
   const { data: job, error: jobErr } = await db
     .from('jobs')
     .select(
-      'id,service_sub_type,assigned_technician_id,payment_amount,actual_cost,payment_method,lead_source,requirements,customer:customers(full_name)'
+      'id,job_number,service_sub_type,assigned_technician_id,assigned_by,payment_amount,actual_cost,payment_method,lead_source,requirements,customer:customers(full_name)'
     )
     .eq('id', jobId)
     .maybeSingle();
   if (jobErr || !job) {
     return { statusCode: 404, headers, body: JSON.stringify({ error: 'Job not found' }) };
   }
-  if (auth.role === 'technician' && job.assigned_technician_id !== auth.userId) {
-    return { statusCode: 403, headers, body: JSON.stringify({ error: 'Forbidden' }) };
+  if (auth.role === 'technician') {
+    // job_created: tech-created jobs are usually PENDING (unassigned) —
+    // authorize via assigned_by (set to auth.uid() in technician_create_job).
+    const allowed =
+      evt === 'job_created'
+        ? job.assigned_by === auth.userId
+        : job.assigned_technician_id === auth.userId;
+    if (!allowed) {
+      return { statusCode: 403, headers, body: JSON.stringify({ error: 'Forbidden' }) };
+    }
   }
 
-  const technicianId = job.assigned_technician_id || auth.userId;
+  const technicianId =
+    evt === 'job_created'
+      ? job.assigned_by || auth.userId
+      : job.assigned_technician_id || auth.userId;
   const { data: tech } = await db
     .from('technicians')
     .select('full_name')
@@ -160,10 +171,19 @@ exports.handler = async (event) => {
   // Bill photo only (not UPI/payment screenshot) — egress-free: uses requirements already selected.
   const billMissing = evt === 'completed' && !jobHasBillPhotos(job);
 
+  const COLOR_JOB_CREATED = '#0369A1'; // sky — tech created a job for admin to assign
   let title;
   let message;
   let color;
-  if (evt === 'en_route') {
+  if (evt === 'job_created') {
+    title = `${techName} created a job`;
+    const lines = [`${service} — ${customerName}`];
+    if (job.job_number) lines.push(`Job #${job.job_number}`);
+    const leadSource = resolveLeadSource(job);
+    if (leadSource) lines.push(`Lead: ${leadSource}`);
+    message = lines.join('\n');
+    color = COLOR_JOB_CREATED;
+  } else if (evt === 'en_route') {
     title = `${techName} is on the way`;
     message = `${service} — ${customerName}`;
     color = COLOR_EN_ROUTE;

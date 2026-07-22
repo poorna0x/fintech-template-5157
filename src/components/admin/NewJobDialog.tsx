@@ -460,6 +460,11 @@ const NewJobDialog: React.FC<NewJobDialogProps> = ({
         // brand/model patch, WhatsApp notify) are blocked by RLS for
         // technicians — the job itself is what matters here.
         onJobCreated(newJob);
+        if ((newJob as { id?: string } | null)?.id) {
+          void import('@/lib/notifyAdminsJobEvent').then(({ notifyAdminsJobEvent }) =>
+            notifyAdminsJobEvent(String((newJob as { id: string }).id), 'job_created')
+          );
+        }
         toast.success(`Job ${(newJob as any)?.job_number || ''} created successfully!`);
         handleClose();
         return;
