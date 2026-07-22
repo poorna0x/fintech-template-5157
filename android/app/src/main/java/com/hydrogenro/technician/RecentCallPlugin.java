@@ -36,10 +36,19 @@ public class RecentCallPlugin extends Plugin {
         }
 
         // Fallback: system call log (when PHONE_STATE never carried the number).
+        // Do not re-offer the same number after it was already consumed in this window.
         long since = System.currentTimeMillis() - 5 * 60_000L;
         String fromLog = CallLogHelper.latestIncomingNumber(getContext(), since);
         if (fromLog != null && !fromLog.isEmpty()) {
             long now = System.currentTimeMillis();
+            if (
+                number != null
+                    && fromLog.equals(number)
+                    && consumedAt > 0
+                    && (now - consumedAt) < 5 * 60_000L
+            ) {
+                return ret;
+            }
             prefs
                 .edit()
                 .putString(CallAlertReceiver.KEY_LAST_NUMBER, fromLog)

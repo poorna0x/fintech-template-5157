@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -6,16 +6,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { FileText, Loader2, MapPin, Phone, Plus, Search } from 'lucide-react';
@@ -61,8 +51,6 @@ const TechnicianCustomerSearchDialog = ({
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<TechnicianSearchCustomer[] | null>(null);
   const [searching, setSearching] = useState(false);
-  // Phone rang < 5 min ago (native capture) — offer to search that caller.
-  const [recentCallNumber, setRecentCallNumber] = useState<string | null>(null);
 
   const runSearch = async (rawQuery?: string) => {
     const trimmed = (rawQuery ?? query).trim();
@@ -89,24 +77,6 @@ const TechnicianCustomerSearchDialog = ({
       setSearching(false);
     }
   };
-
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-    void import('@/lib/technicianIncomingCall').then(
-      async ({ consumeRecentTechnicianCallerNumber }) => {
-        const { notifyAdminsTechnicianCall } = await import('@/lib/technicianCallAlert');
-        const number = await consumeRecentTechnicianCallerNumber();
-        if (!cancelled && number) {
-          notifyAdminsTechnicianCall(number);
-          setRecentCallNumber(number);
-        }
-      }
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [open]);
 
   const handleOpenChange = (next: boolean) => {
     if (!next) {
@@ -205,39 +175,6 @@ const TechnicianCustomerSearchDialog = ({
           </div>
         )}
       </DialogContent>
-
-      {/* A call rang in the last 5 minutes — offer to search that caller */}
-      <AlertDialog
-        open={recentCallNumber !== null}
-        onOpenChange={(next) => {
-          if (!next) setRecentCallNumber(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Searching the customer who just called?</AlertDialogTitle>
-            <AlertDialogDescription>
-              You received a call from{' '}
-              <span className="font-medium text-foreground">{recentCallNumber}</span>{' '}
-              a few minutes ago. Search this number?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>No</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                const number = recentCallNumber;
-                if (!number) return;
-                setQuery(number);
-                void runSearch(number);
-              }}
-            >
-              <Search className="mr-1.5 h-4 w-4" />
-              Yes, search
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </Dialog>
   );
 };

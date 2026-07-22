@@ -1238,6 +1238,25 @@ const TechnicianDashboard = () => {
     };
   }, [user?.technicianId]);
 
+  // Incoming call → silent background customer lookup + admin notify if found.
+  // Technician never sees Search open for this.
+  useEffect(() => {
+    if (!user?.technicianId) return;
+    let cleanup: (() => void) | null = null;
+    let cancelled = false;
+    void import('@/lib/technicianIncomingCallAutoSearch').then(
+      ({ initTechnicianIncomingCallBackgroundLookup }) => {
+        const dispose = initTechnicianIncomingCallBackgroundLookup();
+        if (cancelled) dispose();
+        else cleanup = dispose;
+      }
+    );
+    return () => {
+      cancelled = true;
+      cleanup?.();
+    };
+  }, [user?.technicianId]);
+
   // Tools → Arrange order: only show #1/#2 when admin turns the switch on.
   useEffect(() => {
     let cancelled = false;
