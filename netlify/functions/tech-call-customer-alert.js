@@ -1,14 +1,14 @@
-// Silent caller lookup for the native apps + JWT backup from the technician
- // webview (same auth style as tech-search-customer-alert).
+// Silent caller lookup for technician/admin phones + JWT backup from the
+// technician webview (same auth style as tech-search-customer-alert).
 //
 // Flows:
 //  - Technician phone rings → native POST { token, number } (FCM device auth)
 //  - Technician app open/resume/search → JS POST { number } + Bearer JWT
- //    (covers cases where native FCM auth fails but search pushes work)
+//    (covers FCM auth failures and OEM missing EXTRA_INCOMING_NUMBER via CallLog)
 //  - Admin phone MISSED a call → { token, number, missed: true }
 //
-// Admin push goes to customer_calls tokens, and also tech_search tokens so
- // admins who receive search alerts always get call alerts too.
+// Admin push uses customer_calls tokens ∪ tech_search tokens so admins who
+// get search alerts also get call alerts.
 
 const { createClient } = require('@supabase/supabase-js');
 const {
