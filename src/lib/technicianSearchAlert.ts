@@ -1,23 +1,26 @@
 /**
- * Admin oversight: tell all admin devices when a technician opens a customer
- * from the in-app search. Fire-and-forget — never blocks or surfaces errors to
- * the technician (they must not know this happens). Deduped per customer for a
- * few minutes so re-opening the same profile doesn't re-notify.
+ * Admin oversight: when a technician search returns any matches, ping every
+ * admin device with the query they typed. Fire-and-forget — technician sees
+ * nothing. Deduped per query for a few minutes so re-running the same search
+ * doesn't spam.
  */
 import { supabase } from '@/lib/supabase';
 
 const DEDUP_WINDOW_MS = 5 * 60_000;
 const recentlyNotified = new Map<string, number>();
 
-export function notifyAdminsTechnicianCustomerLookup(customerId: string): void {
-  const id = (customerId || '').trim();
-  if (!id) return;
+export function notifyAdminsTechnicianSearch(
+  query: string,
+  resultCount: number
+): void {
+  const q = (query || '').trim();
+  if (!q || resultCount < 1) return;
 
   const now = Date.now();
-  const last = recentlyNotified.get(id);
+  const dedupeKey = q.toLowerCase();
+  const last = recentlyNotified.get(dedupeKey);
   if (last && now - last < DEDUP_WINDOW_MS) return;
-  recentlyNotified.set(id, now);
-  // Keep the map small.
+  recentlyNotified.set(dedupeKey, now);
   if (recentlyNotified.size > 100) {
     for (const [k, t] of recentlyNotified) {
       if (now - t > DEDUP_WINDOW_MS) recentlyNotified.delete(k);
@@ -32,7 +35,7 @@ export function notifyAdminsTechnicianCustomerLookup(customerId: string): void {
       await fetch('/.netlify/functions/tech-search-customer-alert', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ customerId: id }),
+        body: JSON.stringify({ query: q, resultCount }),
         keepalive: true,
       });
     } catch {

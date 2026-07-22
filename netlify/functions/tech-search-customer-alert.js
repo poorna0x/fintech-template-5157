@@ -1,11 +1,9 @@
-// Admin oversight: when a technician opens a customer from the in-app search
-// (manual lookup, not a phone call), notify every admin device. Tapping the
-// push opens that customer in the admin app via the shared tech_call deep link.
+// Admin oversight: when a technician search returns any matches, notify every
+// admin device with the query they typed. Tapping the push opens admin search
+// with that same query (tech_search deep link).
 //
-// Auth: the technician's Supabase JWT (Authorization: Bearer). We verify the
-// token maps to an ACTIVE technician — this runs in the foreground with a live
-// session, so unlike the silent call flow we don't need FCM-token auth.
-// Origin is enforced in production; per-technician rate limit caps spam/egress.
+// Auth: technician Supabase JWT. ACTIVE technician check. Origin enforced in
+// production. Per-technician rate limit caps spam/egress.
 
 const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
@@ -34,7 +32,6 @@ exports.handler = async (event) => {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid JSON' }) };
   }
 
-  // Must be a technician session.
   const token = readBearerToken(event);
   const session = await verifyStaffBearerToken(token);
   if (!session.ok || session.role !== 'technician') {
@@ -42,12 +39,12 @@ exports.handler = async (event) => {
   }
   const technicianId = session.userId;
 
-  const customerId = String(body.customerId || '').trim();
-  if (!customerId) {
-    return { statusCode: 400, headers, body: JSON.stringify({ error: 'customerId required' }) };
+  const query = String(body.query || '').trim().slice(0, 80);
+  const resultCount = Math.max(0, Math.min(100, Number(body.resultCount) || 0));
+  if (!query || resultCount < 1) {
+    return { statusCode: 200, headers, body: JSON.stringify({ sent: 0, reason: 'no_results' }) };
   }
 
-  // Cheap anti-spam: cap per technician (covers repeated opens of many customers).
   const limit = checkRateLimitForKey(technicianId, {
     maxRequests: 40,
     windowMs: 3_600_000,
@@ -67,7 +64,6 @@ exports.handler = async (event) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  // Confirm the technician is still ACTIVE (JWT alone can outlive a suspension).
   const { data: tech } = await db
     .from('technicians')
     .select('full_name, account_status')
@@ -75,15 +71,6 @@ exports.handler = async (event) => {
     .maybeSingle();
   if (!tech || tech.account_status !== 'ACTIVE') {
     return { statusCode: 403, headers, body: JSON.stringify({ error: 'Inactive technician' }) };
-  }
-
-  const { data: customer } = await db
-    .from('customers')
-    .select('id, full_name, phone')
-    .eq('id', customerId)
-    .maybeSingle();
-  if (!customer) {
-    return { statusCode: 200, headers, body: JSON.stringify({ sent: 0, reason: 'no_customer' }) };
   }
 
   const { data: tokenRows, error: tokErr } = await db.from('admin_push_tokens').select('token');
@@ -96,20 +83,21 @@ exports.handler = async (event) => {
   }
 
   const techName = tech.full_name || 'Technician';
-  const phone = customer.phone || '';
+  const resultLabel = resultCount === 1 ? '1 result' : `${resultCount} results`;
 
   try {
     const messaging = await getMessaging(db);
     const res = await messaging.sendEachForMulticast({
       tokens,
       notification: {
-        title: `${techName} looked up a customer`,
-        body: `${customer.full_name || 'Customer'}${phone ? ` (${phone})` : ''} — tap to open`,
+        title: `${techName} searched customers`,
+        body: `"${query}" — ${resultLabel}`,
       },
       data: {
-        type: 'tech_call',
-        phone,
-        customerId: String(customer.id),
+        type: 'tech_search',
+        query,
+        // Reuse tech_call deep-link path (admin searches this string).
+        phone: query,
         technicianId: String(technicianId),
       },
       android: {
@@ -118,7 +106,7 @@ exports.handler = async (event) => {
           channelId: 'job_alerts_v2',
           defaultSound: true,
           color: '#0369A1',
-          tag: `tech_search_${technicianId}_${customer.id}`,
+          tag: `tech_search_${technicianId}_${query.slice(0, 24)}`,
         },
       },
     });

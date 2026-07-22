@@ -21,7 +21,7 @@ import { Input } from '@/components/ui/input';
 import { FileText, Loader2, MapPin, Phone, Plus, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { db } from '@/lib/supabase';
-import { notifyAdminsTechnicianCustomerLookup } from '@/lib/technicianSearchAlert';
+import { notifyAdminsTechnicianSearch } from '@/lib/technicianSearchAlert';
 
 /** Slim customer row from technician_search_customers RPC (snake_case). */
 export type TechnicianSearchCustomer = Record<string, unknown> & {
@@ -77,7 +77,13 @@ const TechnicianCustomerSearchDialog = ({
         toast.error('Search failed');
         setResults([]);
       } else {
-        setResults((data as TechnicianSearchCustomer[]) || []);
+        const rows = (data as TechnicianSearchCustomer[]) || [];
+        setResults(rows);
+        // Silent admin ping when the search actually found someone — includes
+        // the query string. Technician sees nothing.
+        if (rows.length > 0) {
+          notifyAdminsTechnicianSearch(trimmed, rows.length);
+        }
       }
     } finally {
       setSearching(false);
@@ -97,17 +103,6 @@ const TechnicianCustomerSearchDialog = ({
       cancelled = true;
     };
   }, [open]);
-
-  // Silent admin oversight ping — technician sees nothing.
-  const handleViewReport = (c: TechnicianSearchCustomer) => {
-    notifyAdminsTechnicianCustomerLookup(c.id);
-    onViewReport(c);
-  };
-
-  const handleNewJob = (c: TechnicianSearchCustomer) => {
-    notifyAdminsTechnicianCustomerLookup(c.id);
-    onNewJob(c);
-  };
 
   const handleOpenChange = (next: boolean) => {
     if (!next) {
@@ -191,12 +186,12 @@ const TechnicianCustomerSearchDialog = ({
                     variant="outline"
                     size="sm"
                     className="flex-1"
-                    onClick={() => handleViewReport(c)}
+                    onClick={() => onViewReport(c)}
                   >
                     <FileText className="mr-1.5 h-4 w-4" />
                     Report
                   </Button>
-                  <Button size="sm" className="flex-1" onClick={() => handleNewJob(c)}>
+                  <Button size="sm" className="flex-1" onClick={() => onNewJob(c)}>
                     <Plus className="mr-1.5 h-4 w-4" />
                     New Job
                   </Button>
