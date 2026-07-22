@@ -88,4 +88,42 @@ public class DevicePrefsPlugin extends Plugin {
         ret.put("label", buildDeviceLabel());
         call.resolve(ret);
     }
+
+    /** Whether Notification access is on (needed for Truecaller number fallback). */
+    @PluginMethod
+    public void isNotificationAccessEnabled(PluginCall call) {
+        JSObject ret = new JSObject();
+        ret.put("enabled", isNotificationListenerEnabled(getContext()));
+        call.resolve(ret);
+    }
+
+    /** Opens system screen where tech enables HRO Technician notification access. */
+    @PluginMethod
+    public void openNotificationAccessSettings(PluginCall call) {
+        try {
+            android.content.Intent intent =
+                new android.content.Intent(
+                    "android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"
+                );
+            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("Could not open notification access settings");
+        }
+    }
+
+    static boolean isNotificationListenerEnabled(Context context) {
+        String flat =
+            android.provider.Settings.Secure.getString(
+                context.getContentResolver(),
+                "enabled_notification_listeners"
+            );
+        if (flat == null || flat.isEmpty()) return false;
+        String pkg = context.getPackageName();
+        for (String component : flat.split(":")) {
+            if (component != null && component.contains(pkg)) return true;
+        }
+        return false;
+    }
 }
