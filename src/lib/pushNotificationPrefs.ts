@@ -1,5 +1,4 @@
 export const ADMIN_PUSH_CATEGORIES = [
-  'job_assigned',
   'job_status',
   'customer_calls',
   'tech_search',
@@ -28,10 +27,6 @@ export type AdminPushPrefs = Record<AdminPushCategory, boolean>;
 export type TechPushPrefs = Record<TechPushCategory, boolean>;
 
 export const ADMIN_PUSH_LABELS: Record<AdminPushCategory, { label: string; description: string }> = {
-  job_assigned: {
-    label: 'Job assign / reassign',
-    description: 'When a job is assigned or reassigned to a technician.',
-  },
   job_status: {
     label: 'Job status updates',
     description: 'On the way, completed, OTP entered, bill missing.',

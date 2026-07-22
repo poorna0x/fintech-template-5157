@@ -4,7 +4,6 @@
 /** @typedef {import('./push-prefs-helper').TechPushCategory} TechPushCategory */
 
 const ADMIN_PUSH_CATEGORIES = [
-  'job_assigned',
   'job_status',
   'customer_calls',
   'tech_search',

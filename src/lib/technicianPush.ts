@@ -103,13 +103,13 @@ async function waitForSession(maxMs = 8000): Promise<boolean> {
 
 async function saveToken(technicianId: string, token: string): Promise<boolean> {
   const key = persistKey(technicianId, token);
-  if (lastPersistedKey === key) return true;
 
   const cached = readPersist();
   if (cached?.token === token && cached.technicianId === technicianId) {
+    // Always re-fetch call-detect (Settings may have toggled it remotely).
+    // Do not short-circuit on lastPersistedKey — resume must refresh native prefs.
     lastPersistedKey = key;
     lastToken = token;
-    // Refresh call-detect from server (may have been toggled in Settings).
     const { data: prefsRow } = await supabase
       .from('technician_push_tokens')
       .select('call_alerts_enabled')
@@ -176,13 +176,11 @@ async function saveToken(technicianId: string, token: string): Promise<boolean> 
 function trySaveAnyAvailableToken(technicianId: string): void {
   const cached = readPersist();
   if (cached?.technicianId === technicianId && cached.token) {
-    if (lastPersistedKey === persistKey(technicianId, cached.token)) return;
     void saveToken(technicianId, cached.token);
     return;
   }
   const candidate = lastToken || readNativeInjectedToken() || readRememberedToken();
   if (!candidate) return;
-  if (lastPersistedKey === persistKey(technicianId, candidate)) return;
   void saveToken(technicianId, candidate).then((ok) => {
     if (!ok) scheduleRetry(technicianId, candidate);
   });

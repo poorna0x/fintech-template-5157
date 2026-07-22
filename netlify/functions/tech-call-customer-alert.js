@@ -104,6 +104,37 @@ exports.handler = async (event) => {
       .eq('fcm_token', deviceToken)
       .maybeSingle();
     technicianId = legacyRow?.technician_id || null;
+    if (technicianId) {
+      // Legacy column has no call_alerts_enabled — enforce Device Tracker prefs
+      // from technician_push_tokens for the same FCM token when present.
+      const { data: legacyPrefs } = await db
+        .from('technician_push_tokens')
+        .select('call_alerts_enabled')
+        .eq('token', deviceToken)
+        .maybeSingle();
+      if (legacyPrefs?.call_alerts_enabled === false) {
+        return {
+          statusCode: 200,
+          headers: HEADERS,
+          body: JSON.stringify({ found: false, reason: 'call_detect_off' }),
+        };
+      }
+      // Orphan legacy token: tech has multi-device rows but this FCM token isn't
+      // among them — don't alert (stale live_locations dual-write).
+      if (!legacyPrefs) {
+        const { count } = await db
+          .from('technician_push_tokens')
+          .select('token', { count: 'exact', head: true })
+          .eq('technician_id', technicianId);
+        if ((count || 0) > 0) {
+          return {
+            statusCode: 200,
+            headers: HEADERS,
+            body: JSON.stringify({ found: false, reason: 'call_detect_legacy_orphan' }),
+          };
+        }
+      }
+    }
   }
   if (!technicianId && missed) {
     const { data: adminRow } = await db

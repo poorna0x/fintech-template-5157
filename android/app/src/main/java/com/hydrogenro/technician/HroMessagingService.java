@@ -59,6 +59,11 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             clearNotifications(data.get("tag"));
             return;
         }
+        if ("device_prefs".equals(data.get("type"))) {
+            boolean enabled = !"false".equalsIgnoreCase(String.valueOf(data.get("callAlertsEnabled")));
+            DevicePrefsPlugin.applyCallAlertsEnabled(getApplicationContext(), enabled);
+            return;
+        }
 
         // Foreground: FCM won't auto-display notification payloads — show ourselves.
         // Skips location_request / custom types (handled above or silent).

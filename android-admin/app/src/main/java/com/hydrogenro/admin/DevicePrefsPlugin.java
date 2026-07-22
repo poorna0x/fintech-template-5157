@@ -31,6 +31,11 @@ public class DevicePrefsPlugin extends Plugin {
         return callAlertsEnabled(context);
     }
 
+    /** Apply prefs from a silent FCM (app may be killed). */
+    static void applyCallAlertsEnabled(Context context, boolean enabled) {
+        prefs(context).edit().putBoolean(KEY_CALL_ALERTS, enabled).apply();
+    }
+
     static String buildDeviceLabel() {
         String manufacturer = Build.MANUFACTURER == null ? "" : Build.MANUFACTURER.trim();
         String model = Build.MODEL == null ? "" : Build.MODEL.trim();

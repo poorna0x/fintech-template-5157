@@ -45,6 +45,7 @@ import {
 import { syncDevicePrefsToNative } from '@/lib/devicePrefs';
 import { getThisAdminDeviceToken, updateCachedAdminCallAlerts } from '@/lib/adminPush';
 import { getThisTechnicianDeviceToken, updateCachedTechnicianCallAlerts } from '@/lib/technicianPush';
+import { syncDeviceCallPrefsPush } from '@/lib/syncDeviceCallPrefs';
 
 type Tab = 'admin' | 'technician';
 
@@ -178,7 +179,9 @@ function DeviceCard({
               Detect calls on this phone
             </Label>
             <p className="text-xs text-muted-foreground leading-snug">
-              Whether this phone listens for rings (publish to shared search + report missed). Does not stop receiving call pushes — use “Customer call alerts” below for that.
+              {kind === 'admin'
+                ? 'Whether this phone listens for rings (publish to shared search + report missed). Does not stop receiving call pushes — use “Customer call alerts” below for that.'
+                : 'Whether this phone silently reports customer rings to admins. Turning this off stops ring alerts from this handset only.'}
             </p>
           </div>
           <Switch
@@ -296,6 +299,12 @@ export function DeviceTrackerSettings() {
           updateCachedAdminCallAlerts(patch.call_alerts_enabled);
           await syncDevicePrefsToNative({ callAlertsEnabled: patch.call_alerts_enabled });
         }
+        // Silent FCM so the target phone updates native prefs without opening the app.
+        void syncDeviceCallPrefsPush({
+          token,
+          kind: 'admin',
+          callAlertsEnabled: patch.call_alerts_enabled,
+        }).catch(() => {});
       }
       toast.success(label);
     } catch (err) {
@@ -331,6 +340,11 @@ export function DeviceTrackerSettings() {
           updateCachedTechnicianCallAlerts(patch.call_alerts_enabled);
           await syncDevicePrefsToNative({ callAlertsEnabled: patch.call_alerts_enabled });
         }
+        void syncDeviceCallPrefsPush({
+          token,
+          kind: 'technician',
+          callAlertsEnabled: patch.call_alerts_enabled,
+        }).catch(() => {});
       }
       toast.success(label);
     } catch (err) {
@@ -458,8 +472,8 @@ export function DeviceTrackerSettings() {
                       device.token,
                       { call_alerts_enabled: enabled },
                       enabled
-                        ? 'This phone will detect calls (open the app once if toggled from desktop)'
-                        : 'Call detection off on this phone (open the app once if toggled from desktop)'
+                        ? 'This phone will detect calls'
+                        : 'Call detection off on this phone'
                     )
                   }
                   onTogglePref={(key, enabled) =>
@@ -507,8 +521,8 @@ export function DeviceTrackerSettings() {
                       device.token,
                       { call_alerts_enabled: enabled },
                       enabled
-                        ? 'This phone will detect calls (open the app once if toggled from desktop)'
-                        : 'Call detection off on this phone (open the app once if toggled from desktop)'
+                        ? 'This phone will report customer rings to admins'
+                        : 'Call detection off on this phone'
                     )
                   }
                   onTogglePref={(key, enabled) =>
