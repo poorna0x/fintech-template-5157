@@ -71,6 +71,7 @@ async function pruneAdminFcmTokens(db, staleTokens) {
 
 async function getTechnicianFcmTokens(db, technicianId, category = null) {
   const tokens = new Set();
+  const knownDeviceTokens = new Set();
 
   const { data: rows, error: tableErr } = await db
     .from('technician_push_tokens')
@@ -80,7 +81,9 @@ async function getTechnicianFcmTokens(db, technicianId, category = null) {
     console.warn('[fcm-helper] technician_push_tokens lookup failed:', tableErr.message);
   }
   for (const r of rows || []) {
-    if (r.token && isPushEnabledRow(r) && isCategoryEnabled(r.push_prefs, category)) {
+    if (!r.token) continue;
+    knownDeviceTokens.add(r.token);
+    if (isPushEnabledRow(r) && isCategoryEnabled(r.push_prefs, category)) {
       tokens.add(r.token);
     }
   }
@@ -90,11 +93,15 @@ async function getTechnicianFcmTokens(db, technicianId, category = null) {
     .select('fcm_token')
     .eq('technician_id', technicianId)
     .maybeSingle();
-  if (legacyErr && tokens.size === 0) {
+  if (legacyErr && tokens.size === 0 && knownDeviceTokens.size === 0) {
     throw new Error(`token lookup failed: ${legacyErr.message}`);
   }
-  // Legacy single-token column has no per-device prefs — always include.
-  if (legacy?.fcm_token) tokens.add(legacy.fcm_token);
+  // Legacy column has no push_enabled / push_prefs. Never use it to bypass Device
+  // Tracker mute: if this FCM token already has a push_tokens row, prefs above
+  // already decided. Only fall back when the tech has no multi-device rows yet.
+  if (legacy?.fcm_token && !knownDeviceTokens.has(legacy.fcm_token) && knownDeviceTokens.size === 0) {
+    tokens.add(legacy.fcm_token);
+  }
 
   return [...tokens];
 }
