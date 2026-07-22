@@ -29,7 +29,7 @@ const IncomingCall = registerPlugin<IncomingCallPlugin>('IncomingCall');
 
 /** Intro sent to a caller whose number isn't in the customer database yet. */
 export const CALLER_INTRO_WHATSAPP_MESSAGE = [
-  'Hello! Thank you for calling Water Filter Service.',
+  'Hi from Water Purifier Service.',
   '',
   'To help us serve you better, please share the following:',
   '',
@@ -44,6 +44,11 @@ export function openCallerIntroWhatsApp(number: string): void {
   const url = `https://wa.me/${formatPhoneForWhatsApp(number)}?text=${encodeURIComponent(
     CALLER_INTRO_WHATSAPP_MESSAGE
   )}`;
+  // APK WebView: window.open often drops ?text=; direct navigation keeps the template.
+  if (Capacitor.isNativePlatform()) {
+    window.location.href = url;
+    return;
+  }
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 

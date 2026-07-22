@@ -37,7 +37,6 @@ import type { AdminDashboardView, AdminToolDialog } from '@/lib/adminDashboardUr
 
 export type UnknownCallerChipProps = {
   phone: string;
-  onSearch: () => void;
   onWhatsApp: () => void;
   onDismiss: () => void;
 };
@@ -99,7 +98,6 @@ function AdminSearchField({
 
 function UnknownCallerChip({
   phone,
-  onSearch,
   onWhatsApp,
   onDismiss,
 }: UnknownCallerChipProps) {
@@ -117,6 +115,9 @@ function UnknownCallerChip({
           <p className="mt-0.5 font-mono text-sm font-semibold tabular-nums text-foreground truncate">
             {phone}
           </p>
+          <p className="mt-1 text-xs text-amber-950/75 leading-snug">
+            Send WhatsApp asking for Google Maps location, flat/building name, and a water-filter photo.
+          </p>
         </div>
         <Button
           type="button"
@@ -132,22 +133,12 @@ function UnknownCallerChip({
       <div className="mt-2 flex flex-wrap items-center gap-1.5 sm:gap-2">
         <Button
           type="button"
-          variant="outline"
           size="sm"
-          className="h-9 flex-1 min-w-[7rem] border-amber-300 bg-white text-amber-950 hover:bg-amber-100/80 sm:flex-none sm:min-w-0"
-          onClick={onSearch}
-        >
-          <Search className="mr-1.5 h-4 w-4 shrink-0" />
-          Search
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          className="h-9 flex-1 min-w-[7rem] bg-green-600 text-white hover:bg-green-700 sm:flex-none sm:min-w-0"
+          className="h-9 w-full sm:w-auto min-h-9 bg-green-600 text-white hover:bg-green-700 px-3"
           onClick={onWhatsApp}
         >
           <WhatsAppIcon className="mr-1.5 h-4 w-4 shrink-0" />
-          WhatsApp
+          Send WhatsApp Message
         </Button>
         <Button
           type="button"

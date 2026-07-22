@@ -4511,17 +4511,13 @@ const AdminDashboard = () => {
     const phone = unknownCaller.phone;
     return {
       phone,
-      onSearch: () => {
-        setSearchQuery(phone);
-        void runCustomerSearch(phone);
-      },
       onWhatsApp: () => openCallerIntroWhatsApp(phone),
       onDismiss: () => {
         clearUnknownCaller();
         setUnknownCaller(null);
       },
     };
-  }, [unknownCaller, runCustomerSearch]);
+  }, [unknownCaller]);
 
   const callerLookupSearchRef = useRef(handleSearchFromIncomingCall);
   useEffect(() => {
