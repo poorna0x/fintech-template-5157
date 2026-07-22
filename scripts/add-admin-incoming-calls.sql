@@ -16,6 +16,10 @@ CREATE TABLE IF NOT EXISTS public.admin_incoming_calls (
 CREATE INDEX IF NOT EXISTS admin_incoming_calls_created_at_idx
   ON public.admin_incoming_calls (created_at DESC);
 
+-- Full row in WAL so realtime INSERT payloads include phone + created_at
+-- (DEFAULT replica identity is enough for INSERT, but FULL is safer with RLS).
+ALTER TABLE public.admin_incoming_calls REPLICA IDENTITY FULL;
+
 ALTER TABLE public.admin_incoming_calls ENABLE ROW LEVEL SECURITY;
 
 -- Admins read; no INSERT/UPDATE/DELETE for authenticated (service role only).
