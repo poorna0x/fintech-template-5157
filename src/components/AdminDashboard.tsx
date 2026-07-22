@@ -4454,22 +4454,25 @@ const AdminDashboard = () => {
   }, [runCustomerSearch]);
 
   // Caller lookup (HRO Admin app): a call that rang while the app was in the
-  // background auto-searches that customer on open/resume. No-op in browser.
-  // Unlike manual searches, a miss here means an unknown caller — offer to
-  // send them the WhatsApp intro (location + filter photo).
+  // background auto-searches that customer on open/resume (only if opened
+  // within 60s). No-op in browser. A miss offers WhatsApp intro — but only for
+  // that fresh local call, never for shared-board lookups or stale opens.
   const [callerNotFoundNumber, setCallerNotFoundNumber] = useState<string | null>(null);
 
-  const handleSearchFromIncomingCall = useCallback((digits: string) => {
-    void (async () => {
-      const results = await runCustomerSearch(digits);
-      requestAnimationFrame(() => {
-        document.querySelector('[data-admin-search]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
-      if (results.length === 0) {
-        setCallerNotFoundNumber(digits);
-      }
-    })();
-  }, [runCustomerSearch]);
+  const handleSearchFromIncomingCall = useCallback(
+    (digits: string, opts?: { offerNotFound?: boolean }) => {
+      void (async () => {
+        const results = await runCustomerSearch(digits);
+        requestAnimationFrame(() => {
+          document.querySelector('[data-admin-search]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+        if (opts?.offerNotFound && results.length === 0) {
+          setCallerNotFoundNumber(digits);
+        }
+      })();
+    },
+    [runCustomerSearch]
+  );
 
   const callerLookupSearchRef = useRef(handleSearchFromIncomingCall);
   useEffect(() => {
@@ -4481,7 +4484,7 @@ const AdminDashboard = () => {
     let cancelled = false;
     void import('@/lib/adminIncomingCall').then(async ({ initAdminCallerLookup }) => {
       const dispose = await initAdminCallerLookup((digits) =>
-        callerLookupSearchRef.current(digits)
+        callerLookupSearchRef.current(digits, { offerNotFound: true })
       );
       if (cancelled) {
         dispose();
@@ -4495,15 +4498,14 @@ const AdminDashboard = () => {
     };
   }, []);
 
-  // Shared caller board: a call received on any admin phone auto-searches here
-  // too (all admin pages, web + APK) for 3 minutes — fetch on open/resume plus
-  // realtime for already-open pages.
+  // Shared caller board: known customers only — auto-search, never the
+  // "not found / WhatsApp" popup (that is local-phone-only within 60s).
   useEffect(() => {
     let cleanup: (() => void) | null = null;
     let cancelled = false;
     void import('@/lib/adminSharedIncomingCall').then(({ initAdminSharedCallLookup }) => {
       const dispose = initAdminSharedCallLookup((digits) =>
-        callerLookupSearchRef.current(digits)
+        callerLookupSearchRef.current(digits, { offerNotFound: false })
       );
       if (cancelled) dispose();
       else cleanup = dispose;

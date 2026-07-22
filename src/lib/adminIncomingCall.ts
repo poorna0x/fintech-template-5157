@@ -4,8 +4,10 @@
  * The native side (CallCaptureReceiver) saves the last incoming call number
  * on the phone while the app is in the background — no network, no polling,
  * zero egress. When the admin opens/resumes the app, we consume that number
- * and auto-search the customer. No-op in the browser and in old APKs
- * without the plugin.
+ * and auto-search the customer — only if opened within 60 seconds of the
+ * ring. Older calls are discarded so the dashboard opens normally (no
+ * stale search / "customer not found" popup). No-op in the browser and in
+ * old APKs without the plugin.
  */
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import type { PermissionState, PluginListenerHandle } from '@capacitor/core';
@@ -45,8 +47,12 @@ export function openCallerIntroWhatsApp(number: string): void {
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 
-/** Ignore calls older than this — a stale search hours later is confusing. */
-const FRESH_CALL_MAX_AGE_MS = 30 * 60_000;
+/**
+ * Only auto-search (and offer "customer not found" / WhatsApp intro) if the
+ * admin opens the app within this window. After that the stale number is
+ * cleared silently and the dashboard opens normally.
+ */
+const FRESH_CALL_MAX_AGE_MS = 60_000;
 
 function isAvailable(): boolean {
   return (
