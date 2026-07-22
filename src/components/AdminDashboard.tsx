@@ -188,6 +188,11 @@ import {
   type UnknownCallerRecord,
 } from '@/lib/adminIncomingCall';
 import {
+  clearIncomingAutoSearch,
+  isIncomingAutoSearchStale,
+  markIncomingAutoSearch,
+} from '@/lib/adminSharedIncomingCall';
+import {
   EQUIPMENT_BRAND_DATA as brandData,
   EQUIPMENT_MODEL_DATA as modelData,
 } from '@/lib/equipment-suggestions';
@@ -595,6 +600,7 @@ const AdminDashboard = () => {
         // effect runs the actual customer search.
         if (payload.kind === 'tech_call') {
           if (!payload.phone) return;
+          markIncomingAutoSearch(payload.phone);
           navigate(
             adminDashboardLocation(
               buildAdminDashboardSearch(
@@ -4456,6 +4462,7 @@ const AdminDashboard = () => {
   }, [location.search, navigate]);
 
   const handleSearch = useCallback(async () => {
+    clearIncomingAutoSearch();
     await runCustomerSearch(searchQuery);
   }, [runCustomerSearch, searchQuery]);
 
@@ -4489,7 +4496,8 @@ const AdminDashboard = () => {
           setUnknownCaller(null);
         }
 
-        await runCustomerSearch(digits);
+        markIncomingAutoSearch(digits, opts?.ringAt);
+        await runCustomerSearch(digits, { skipNavigate: true });
         requestAnimationFrame(() => {
           document.querySelector('[data-admin-search]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
@@ -4573,6 +4581,7 @@ const AdminDashboard = () => {
 
   const handleClearSearch = () => {
     hapticTap();
+    clearIncomingAutoSearch();
     adminSearchSyncedRef.current = null;
     if (new URLSearchParams(location.search).get('search')) {
       navigate(
@@ -4607,6 +4616,18 @@ const AdminDashboard = () => {
     const searchParam = parsed.search?.trim() ?? '';
 
     if (searchParam) {
+      if (isIncomingAutoSearchStale(searchParam)) {
+        clearIncomingAutoSearch();
+        adminSearchSyncedRef.current = null;
+        navigate(
+          adminDashboardLocation(
+            buildAdminDashboardSearch({ clearSearch: true }, location.search)
+          ),
+          { replace: true }
+        );
+        return;
+      }
+
       if (adminSearchSyncedRef.current === searchParam) {
         return;
       }

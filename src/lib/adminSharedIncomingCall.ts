@@ -16,8 +16,50 @@ import { supabase } from '@/lib/supabaseClient';
 import { normalizePhoneForSearch } from '@/lib/utils';
 
 const WINDOW_MS = 3 * 60_000;
+/** Same window as shared board — auto-search only within 3 min of the ring. */
+export const INCOMING_CALL_SEARCH_WINDOW_MS = WINDOW_MS;
 const LAST_HANDLED_KEY = 'hro_admin_shared_call_handled_at';
+const AUTO_SEARCH_KEY = 'hro_admin_incoming_auto_search';
 const CHANNEL_NAME = 'admin-incoming-calls';
+
+export type IncomingAutoSearchRecord = { phone: string; at: number };
+
+/** Mark a search as auto-triggered by incoming call (not manual). Used to drop stale ?search= URLs. */
+export function markIncomingAutoSearch(phone: string, at = Date.now()): void {
+  const digits = normalizePhoneForSearch(phone);
+  if (digits.length < 7) return;
+  try {
+    sessionStorage.setItem(
+      AUTO_SEARCH_KEY,
+      JSON.stringify({ phone: digits, at } satisfies IncomingAutoSearchRecord)
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
+/** True when ?search= matches a past incoming-call auto-search older than 3 min. */
+export function isIncomingAutoSearchStale(phone: string, now = Date.now()): boolean {
+  try {
+    const raw = sessionStorage.getItem(AUTO_SEARCH_KEY);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as Partial<IncomingAutoSearchRecord>;
+    if (!parsed.phone || typeof parsed.at !== 'number') return false;
+    const q = normalizePhoneForSearch(phone);
+    if (q !== parsed.phone) return false;
+    return now - parsed.at > WINDOW_MS;
+  } catch {
+    return false;
+  }
+}
+
+export function clearIncomingAutoSearch(): void {
+  try {
+    sessionStorage.removeItem(AUTO_SEARCH_KEY);
+  } catch {
+    /* ignore */
+  }
+}
 
 function readLastHandled(): number {
   try {

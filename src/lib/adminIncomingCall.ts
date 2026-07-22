@@ -12,6 +12,7 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import type { PermissionState, PluginListenerHandle } from '@capacitor/core';
 import { formatPhoneForWhatsApp, normalizePhoneForSearch } from '@/lib/utils';
+import { INCOMING_CALL_SEARCH_WINDOW_MS } from '@/lib/adminSharedIncomingCall';
 
 type ConsumeLastCallResult = {
   number?: string;
@@ -55,8 +56,8 @@ export function openCallerIntroWhatsApp(number: string): void {
 /** Unknown-caller Recent button — local only, no auto-search or search-field fill. */
 export const UNKNOWN_CALLER_WINDOW_MS = 10 * 60_000;
 
-/** Auto-search on open for local incoming calls (known customers only path). */
-const FRESH_CALL_MAX_AGE_MS = UNKNOWN_CALLER_WINDOW_MS;
+/** Auto-search on open for local incoming calls (known customers). */
+const FRESH_CALL_MAX_AGE_MS = INCOMING_CALL_SEARCH_WINDOW_MS;
 const UNKNOWN_CALLER_STORAGE_KEY = 'hro_admin_unknown_caller';
 
 export type UnknownCallerRecord = { phone: string; at: number };
