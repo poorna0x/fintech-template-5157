@@ -2,8 +2,8 @@
 // admin device only when the number matches an existing customer:
 //  - Technician phone rings → { token, number } → "X got a call from a
 //    customer" (token must exist in technician_push_tokens / legacy table).
-//    Skip when that technician already has an ongoing job for this customer
-//    (PENDING / ASSIGNED / EN_ROUTE / IN_PROGRESS — not FOLLOW_UP).
+//    Skip when that technician is already EN_ROUTE / IN_PROGRESS for this
+//    customer (actively on the job — PENDING/ASSIGNED still notify).
 //  - Admin phone MISSED a call → { token, number, missed: true } → "Missed
 //    call from customer" (token must exist in admin_push_tokens).
 // Tapping either push opens that customer in the admin app (tech_call deep
@@ -22,8 +22,8 @@ const { findCustomerByPhoneDigits } = require('./customer-phone-lookup');
 
 const HEADERS = { 'Content-Type': 'application/json' };
 
-/** Ongoing (active work) — excludes FOLLOW_UP / RESCHEDULED / completed. */
-const ONGOING_JOB_STATUSES = ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'];
+/** Actively working — only then treat customer call as expected and skip admin push. */
+const ACTIVE_JOB_STATUSES = ['EN_ROUTE', 'IN_PROGRESS'];
 
 /** Any format → bare 10-digit Indian number ('' when too short to match). */
 function normalizePhone(raw) {
@@ -158,22 +158,23 @@ exports.handler = async (event) => {
     return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ found: false, reason: 'no_customer' }) };
   }
 
-  // Tech already on an ongoing job with this customer → expected call, skip admin push.
+  // Tech is already en route / in progress with this customer → expected call,
+  // skip admin push. PENDING / ASSIGNED still notify (office wants those rings).
   // Follow-up / rescheduled jobs still notify. Admin missed-call flow is unchanged.
   if (technicianId && !isAdminDevice) {
-    const { data: ongoingJob } = await db
+    const { data: activeJob } = await db
       .from('jobs')
       .select('id')
       .eq('assigned_technician_id', technicianId)
       .eq('customer_id', customer.id)
-      .in('status', ONGOING_JOB_STATUSES)
+      .in('status', ACTIVE_JOB_STATUSES)
       .limit(1)
       .maybeSingle();
-    if (ongoingJob?.id) {
+    if (activeJob?.id) {
       return {
         statusCode: 200,
         headers: HEADERS,
-        body: JSON.stringify({ found: true, sent: 0, reason: 'ongoing_job' }),
+        body: JSON.stringify({ found: true, sent: 0, reason: 'active_job' }),
       };
     }
   }
