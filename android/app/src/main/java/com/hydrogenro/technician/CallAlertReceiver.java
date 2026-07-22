@@ -42,6 +42,9 @@ public class CallAlertReceiver extends BroadcastReceiver {
 
     private static final long LIVE_POLL_INTERVAL_MS = 750L;
     private static final int LIVE_POLL_MAX_TRIES = 80; // ~60s while call is live
+    /** Truecaller / OEM often write CallLog seconds after hang-up — keep trying. */
+    private static final long POST_CALL_POLL_INTERVAL_MS = 1_000L;
+    private static final int POST_CALL_POLL_MAX_TRIES = 20; // ~20s after call ends
 
     private static final String ALERT_URL =
         "https://hydrogenro.com/.netlify/functions/tech-call-customer-alert";
@@ -99,22 +102,40 @@ public class CallAlertReceiver extends BroadcastReceiver {
                 return;
             }
 
+            // Already pushed while live — clear session and stop.
+            if (prefs.getLong(KEY_ALERTED_RING_AT, 0L) == ringAt) {
+                prefs.edit()
+                    .remove(KEY_RING_SEEN_AT)
+                    .remove(KEY_ALERTED_RING_AT)
+                    .remove(KEY_POLL_RING_AT)
+                    .apply();
+                return;
+            }
+
             final PendingResult pending = goAsync();
             new Thread(() -> {
                 try {
-                    // Last chance — Truecaller often writes CallLog on hang-up.
-                    Thread.sleep(400);
-                    if (prefsStillSameRing(app, ringAt)
-                        && prefs.getLong(KEY_ALERTED_RING_AT, 0L) != ringAt) {
+                    // After hang-up: keep polling CallLog — Truecaller often
+                    // writes the number only once the call is cut.
+                    Log.i(TAG, "Post-call CallLog poll started for ring " + ringAt);
+                    for (int i = 0; i < POST_CALL_POLL_MAX_TRIES; i++) {
+                        SharedPreferences p =
+                            app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+                        if (p.getLong(KEY_ALERTED_RING_AT, 0L) == ringAt) {
+                            Log.i(TAG, "Post-call poll stop — already alerted");
+                            return;
+                        }
                         String fromLog = resolveLiveNumber(app, ringAt);
                         if (fromLog != null && !fromLog.isEmpty()) {
+                            Log.i(TAG, "Post-call got number — searching/pushing");
                             handleCaller(app, fromLog);
-                        } else {
-                            Log.w(TAG, "IDLE after ring but call log empty");
+                            return;
                         }
+                        Thread.sleep(POST_CALL_POLL_INTERVAL_MS);
                     }
+                    Log.w(TAG, "Post-call poll timed out — CallLog never had number");
                 } catch (Exception e) {
-                    Log.w(TAG, "IDLE call-log read failed: " + e.getMessage());
+                    Log.w(TAG, "Post-call poll failed: " + e.getMessage());
                 } finally {
                     app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                         .edit()
@@ -130,16 +151,10 @@ public class CallAlertReceiver extends BroadcastReceiver {
 
     /** Prefer incoming-type; fall back to any fresh CallLog row for this ring. */
     private static String resolveLiveNumber(Context app, long ringAt) {
-        long since = ringAt - 3_000L;
+        long since = ringAt - 5_000L;
         String incoming = CallLogHelper.latestIncomingNumber(app, since);
         if (incoming != null && !incoming.isEmpty()) return incoming;
         return CallLogHelper.latestAnyNumber(app, since);
-    }
-
-    private static boolean prefsStillSameRing(Context app, long ringAt) {
-        return app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .getLong(KEY_RING_SEEN_AT, 0L)
-            == ringAt;
     }
 
     /**
