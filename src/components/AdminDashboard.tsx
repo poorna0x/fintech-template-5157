@@ -247,6 +247,7 @@ import {
   type AdminToolDialog,
   type LetterheadDocumentType,
 } from '@/lib/adminDashboardUrl';
+import { settingsPanelPath } from '@/lib/settingsUrl';
 import WarrantyManagementDialog from './admin/WarrantyManagementDialog';
 import { CompleteJobDialog } from './admin/CompleteJobDialog';
 import { StatsCards } from './admin/StatsCards';
@@ -594,6 +595,16 @@ const AdminDashboard = () => {
     void import('@/lib/adminPushDeepLink').then(({ setAdminPushDeepLinkHandler }) => {
       if (cancelled) return;
       setAdminPushDeepLinkHandler((payload) => {
+        if (payload.kind === 'settings' && payload.panel && payload.reminderId) {
+          navigate(
+            settingsPanelPath(payload.panel, {
+              id: payload.reminderId,
+              action: payload.action,
+            })
+          );
+          return;
+        }
+
         const { jobId, event, completedDate } = payload;
 
         // Technician got a call from a known customer — the ?search= URL sync

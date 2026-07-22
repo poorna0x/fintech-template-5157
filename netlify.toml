@@ -37,6 +37,16 @@
 [functions."parts-reminder"]
   schedule = "40 16 * * *"
 
+# Morning reminders: 9:00 AM IST = 03:30 UTC. General reminders + pending
+# payments due today → admin phones (WhatsApp action on pending payments).
+[functions."admin-reminders-push"]
+  schedule = "30 3 * * *"
+
+# Ephemeral data cleanup: every Monday 2:00 AM IST = Sunday 20:30 UTC.
+# Purges short-lived rows (booking intents, sync pings, etc.) older than 7 days.
+[functions."ephemeral-data-cleanup"]
+  schedule = "30 20 * * 0"
+
 # Force HTTPS - redirect HTTP to HTTPS
 [[redirects]]
   from = "http://hydrogenro.com/*"

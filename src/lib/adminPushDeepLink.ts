@@ -4,9 +4,11 @@
  * Pending payloads are queued until the dashboard handler is ready (cold start).
  */
 
+import type { SettingsPanelSlug } from '@/lib/settingsUrl';
+
 export type AdminPushDeepLinkPayload = {
-  /** 'job' (default) → focus a job; 'tech_call' → search the caller's number. */
-  kind?: 'job' | 'tech_call';
+  /** 'job' (default) → focus a job; 'tech_call' → search the caller's number; 'settings' → Settings panel. */
+  kind?: 'job' | 'tech_call' | 'settings';
   jobId: string;
   event: 'en_route' | 'completed' | 'otp_entered' | string;
   /** yyyy-mm-dd from the push — skip a DB fetch on tap when present. */
@@ -14,6 +16,11 @@ export type AdminPushDeepLinkPayload = {
   /** tech_call: normalized caller number to search. */
   phone?: string;
   customerId?: string;
+  /** settings deep-link */
+  panel?: SettingsPanelSlug;
+  reminderId?: string;
+  /** e.g. whatsapp — open Pending payments then offer WhatsApp for that row */
+  action?: string;
 };
 
 type Handler = (payload: AdminPushDeepLinkPayload) => void;
@@ -35,6 +42,20 @@ export function parseAdminPushDeepLinkData(
   raw: Record<string, unknown> | null | undefined
 ): AdminPushDeepLinkPayload | null {
   if (!raw || typeof raw !== 'object') return null;
+
+  if (String(raw.type || '').trim() === 'admin_reminder') {
+    const reminderId = String(raw.reminderId || '').trim();
+    const panelRaw = String(raw.panel || '').trim();
+    if (!reminderId || !panelRaw) return null;
+    return {
+      kind: 'settings',
+      jobId: '',
+      event: 'admin_reminder',
+      panel: panelRaw as SettingsPanelSlug,
+      reminderId,
+      action: String(raw.action || '').trim() || undefined,
+    };
+  }
 
   // Technician received a call from a known customer — open that customer.
   // Technician searched customers — open admin search with the same query

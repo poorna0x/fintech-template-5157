@@ -49,6 +49,26 @@ export function parsePendingPaymentReminderNotes(
  * reminder_at is stored as YYYY-MM-DD. Parsing with `new Date('YYYY-MM-DD')` is UTC and can
  * show the wrong calendar day in some timezones; use local midnight instead.
  */
+/** Pre-filled WhatsApp reminder — shared by Settings and admin push deep-links. */
+export function buildPendingPaymentWhatsAppMessage(
+  customerName: string,
+  amountPending: number
+): string {
+  const formattedAmount = amountPending.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+  return `Hi ${customerName} 😊
+
+Hope you're doing well. Just a quick reminder that you have a pending payment of ₹${formattedAmount}.
+
+Request you to please clear the payment at your earliest convenience. If you have already paid, kindly ignore this message.
+
+For any help/support:
+📞 Phone: 8884944288
+📧 Email: info@hydrogenro.com
+🌐 Website: https://hydrogenro.com
+
+Thanks & regards 🙏`;
+}
+
 export function parseReminderAtLocalDate(reminderAt: string | Date): Date {
   if (reminderAt instanceof Date) return reminderAt;
   const s = (reminderAt ?? '').trim().split('T')[0];

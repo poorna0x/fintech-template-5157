@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -40,9 +40,14 @@ type CustomerLabel = { name: string; customerId: string };
 interface SettingsRemindersDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  initialReminderId?: string | null;
 }
 
-export function SettingsRemindersDialog({ open, onOpenChange }: SettingsRemindersDialogProps) {
+export function SettingsRemindersDialog({
+  open,
+  onOpenChange,
+  initialReminderId = null,
+}: SettingsRemindersDialogProps) {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [customerLabels, setCustomerLabels] = useState<Record<string, CustomerLabel>>({});
   const [loaded, setLoaded] = useState(false);
@@ -54,6 +59,9 @@ export function SettingsRemindersDialog({ open, onOpenChange }: SettingsReminder
   const [page, setPage] = useState(1);
   const [editReminder, setEditReminder] = useState<Reminder | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [highlightReminderId, setHighlightReminderId] = useState<string | null>(null);
+  const deepLinkHandledRef = useRef<string | null>(null);
+  const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const load = (overrides?: { includeCompleted?: boolean; showAll?: boolean }) => {
     const include = overrides?.includeCompleted ?? includeCompleted;
@@ -104,6 +112,15 @@ export function SettingsRemindersDialog({ open, onOpenChange }: SettingsReminder
     });
   };
 
+  useEffect(() => {
+    if (!open || !initialReminderId) return;
+    if (deepLinkHandledRef.current === initialReminderId) return;
+    deepLinkHandledRef.current = initialReminderId;
+    setShowUpcomingOnly(false);
+    setHighlightReminderId(initialReminderId);
+    load({ showAll: true });
+  }, [open, initialReminderId]);
+
   const filteredReminders = useMemo(() => {
     let list = reminders;
     const q = searchQuery.trim().toLowerCase();
@@ -143,6 +160,20 @@ export function SettingsRemindersDialog({ open, onOpenChange }: SettingsReminder
       ),
     [filteredReminders, currentPage]
   );
+
+  useEffect(() => {
+    if (!highlightReminderId || !loaded) return;
+    const idx = filteredReminders.findIndex((r) => r.id === highlightReminderId);
+    if (idx < 0) return;
+    const targetPage = Math.floor(idx / PAGE_SIZE) + 1;
+    if (targetPage !== page) {
+      setPage(targetPage);
+      return;
+    }
+    window.setTimeout(() => {
+      rowRefs.current[highlightReminderId]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 100);
+  }, [highlightReminderId, loaded, filteredReminders, page]);
 
   const handleDelete = async (id: string) => {
     const { error } = await db.reminders.delete(id);
@@ -304,18 +335,27 @@ export function SettingsRemindersDialog({ open, onOpenChange }: SettingsReminder
                 <>
                   <div className="space-y-3">
                     {paginatedReminders.map((r) => (
-                      <ReminderRow
+                      <div
                         key={r.id}
-                        r={r}
-                        customerLabel={
-                          r.entity_type === 'customer' && r.entity_id
-                            ? customerLabels[r.entity_id]
-                            : null
+                        ref={(el) => {
+                          rowRefs.current[r.id] = el;
+                        }}
+                        className={
+                          highlightReminderId === r.id ? 'rounded-lg ring-2 ring-amber-500' : undefined
                         }
-                        onEdit={() => setEditReminder(r)}
-                        onDelete={() => setDeleteId(r.id)}
-                        onMarkDone={() => handleMarkDone(r)}
-                      />
+                      >
+                        <ReminderRow
+                          r={r}
+                          customerLabel={
+                            r.entity_type === 'customer' && r.entity_id
+                              ? customerLabels[r.entity_id]
+                              : null
+                          }
+                          onEdit={() => setEditReminder(r)}
+                          onDelete={() => setDeleteId(r.id)}
+                          onMarkDone={() => handleMarkDone(r)}
+                        />
+                      </div>
                     ))}
                   </div>
                   {totalPages > 1 && (

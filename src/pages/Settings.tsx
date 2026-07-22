@@ -72,6 +72,7 @@ import {
   buildSettingsSearch,
   parseSettingsUrl,
   settingsLocation,
+  settingsPanelPath,
   type SettingsPanelSlug,
 } from '@/lib/settingsUrl';
 
@@ -343,7 +344,13 @@ const Settings = () => {
 
   // Pending payments dialog (lazy load, add/edit/complete)
   const [pendingPaymentsDialogOpen, setPendingPaymentsDialogOpen] = useState(false);
-  const [pendingPaymentsInitialAction, setPendingPaymentsInitialAction] = useState<'list' | 'add'>('list');
+  const [pendingPaymentsInitialAction, setPendingPaymentsInitialAction] = useState<
+    'list' | 'add' | 'whatsapp'
+  >('list');
+  const [pendingPaymentsInitialReminderId, setPendingPaymentsInitialReminderId] = useState<
+    string | null
+  >(null);
+  const [remindersInitialReminderId, setRemindersInitialReminderId] = useState<string | null>(null);
 
   // Load data on component mount
   useEffect(() => {
@@ -354,6 +361,30 @@ const Settings = () => {
     loadTodos();
     loadAmountTrackers();
   }, []);
+
+  // Reminder / pending-payment push tap while already on Settings.
+  useEffect(() => {
+    let cancelled = false;
+    void import('@/lib/adminPushDeepLink').then(({ setAdminPushDeepLinkHandler }) => {
+      if (cancelled) return;
+      setAdminPushDeepLinkHandler((payload) => {
+        if (payload.kind === 'settings' && payload.panel && payload.reminderId) {
+          navigate(
+            settingsPanelPath(payload.panel, {
+              id: payload.reminderId,
+              action: payload.action,
+            })
+          );
+        }
+      });
+    });
+    return () => {
+      cancelled = true;
+      void import('@/lib/adminPushDeepLink').then(({ setAdminPushDeepLinkHandler }) =>
+        setAdminPushDeepLinkHandler(null)
+      );
+    };
+  }, [navigate]);
 
   // Sync settings panels (?panel=) for mobile swipe-back.
   useEffect(() => {
@@ -393,7 +424,21 @@ const Settings = () => {
     setAddTrackerDialogOpen(panel === 'add-tracker');
     setPendingPaymentsDialogOpen(panel === 'pending-payments');
     if (panel === 'pending-payments') {
-      setPendingPaymentsInitialAction(parsed.panelAction === 'add' ? 'add' : 'list');
+      setPendingPaymentsInitialReminderId(parsed.panelId);
+      setPendingPaymentsInitialAction(
+        parsed.panelAction === 'add'
+          ? 'add'
+          : parsed.panelAction === 'whatsapp'
+            ? 'whatsapp'
+            : 'list'
+      );
+    } else {
+      setPendingPaymentsInitialReminderId(null);
+    }
+    if (panel === 'reminders') {
+      setRemindersInitialReminderId(parsed.panelId);
+    } else {
+      setRemindersInitialReminderId(null);
     }
 
     if (panel === 'edit-technician' && parsed.panelId) {
@@ -2170,6 +2215,7 @@ const Settings = () => {
           <SettingsRemindersDialog
             open={remindersDialogOpen}
             onOpenChange={bindSettingsPanelDismiss('reminders', () => setRemindersDialogOpen(false))}
+            initialReminderId={remindersInitialReminderId}
           />
 
           {/* Recurring service tracking */}
@@ -2229,6 +2275,7 @@ const Settings = () => {
             open={pendingPaymentsDialogOpen}
             onOpenChange={bindSettingsPanelDismiss('pending-payments', () => setPendingPaymentsDialogOpen(false))}
             initialAction={pendingPaymentsInitialAction}
+            initialReminderId={pendingPaymentsInitialReminderId}
           />
 
           {/* GST Invoices */}

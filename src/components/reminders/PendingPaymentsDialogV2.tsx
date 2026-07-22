@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -31,7 +31,7 @@ import type { Reminder } from '@/types';
 import { db, supabase, REMINDER_ROW_COLUMNS } from '@/lib/supabase';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
-import { PENDING_PAYMENT_REMINDER_TITLE, parseReminderAtLocalDate } from '@/lib/pendingPaymentReminder';
+import { PENDING_PAYMENT_REMINDER_TITLE, parseReminderAtLocalDate, buildPendingPaymentWhatsAppMessage } from '@/lib/pendingPaymentReminder';
 
 const PENDING_PAYMENT_TITLE = PENDING_PAYMENT_REMINDER_TITLE;
 const PAGE_SIZE = 20;
@@ -431,10 +431,12 @@ export function SettingsPendingPaymentsDialogV2({
   open,
   onOpenChange,
   initialAction = 'list',
+  initialReminderId = null,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  initialAction?: 'list' | 'add';
+  initialAction?: 'list' | 'add' | 'whatsapp';
+  initialReminderId?: string | null;
 }) {
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -462,6 +464,9 @@ export function SettingsPendingPaymentsDialogV2({
   const [postCompleteWhatsappTarget, setPostCompleteWhatsappTarget] = useState<PendingPaymentReminder | null>(null);
   /** Captured before reload — `load()` drops completed customers from `customerLabels`. */
   const [postCompleteCustomerLabel, setPostCompleteCustomerLabel] = useState<CustomerLabel | null>(null);
+  const [highlightReminderId, setHighlightReminderId] = useState<string | null>(null);
+  const deepLinkHandledRef = useRef<string | null>(null);
+  const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const openWhatsApp = (phone: string, message: string) => {
     if (!phone) return;
@@ -482,24 +487,8 @@ export function SettingsPendingPaymentsDialogV2({
     window.location.href = `tel:${tel}`;
   };
 
-  const buildPendingPaymentMessage = (payment: PendingPaymentReminder, customer: CustomerLabel) => {
-    const amount = Number(payment.amount_pending) || 0;
-    const formattedAmount = amount.toLocaleString('en-IN', { maximumFractionDigits: 2 });
-
-    // Keep it polite + short, include contact info like other admin WhatsApp templates.
-    return `Hi ${customer.name} 😊
-
-Hope you're doing well. Just a quick reminder that you have a pending payment of ₹${formattedAmount}.
-
-Request you to please clear the payment at your earliest convenience. If you have already paid, kindly ignore this message.
-
-For any help/support:
-📞 Phone: 8884944288
-📧 Email: info@hydrogenro.com
-🌐 Website: https://hydrogenro.com
-
-Thanks & regards 🙏`;
-  };
+  const buildPendingPaymentMessage = (payment: PendingPaymentReminder, customer: CustomerLabel) =>
+    buildPendingPaymentWhatsAppMessage(customer.name, Number(payment.amount_pending) || 0);
 
   const buildPaymentReceivedMessage = (payment: PendingPaymentReminder, customer: CustomerLabel) => {
     const amount = Number(payment.amount_pending) || 0;
@@ -560,8 +549,9 @@ Hydrogen RO Team`;
     [filteredPayments]
   );
 
-  const load = async () => {
+  const load = async (focusId?: string | null): Promise<PendingPaymentReminder[]> => {
     setLoading(true);
+    let result: PendingPaymentReminder[] = [];
     try {
       const from = 0;
       const to = PAGE_SIZE - 1;
@@ -577,7 +567,7 @@ Hydrogen RO Team`;
 
       if (reminderError) throw reminderError;
 
-      const list = ((reminderRows || []) as Reminder[]).map((r) => {
+      let list = ((reminderRows || []) as Reminder[]).map((r) => {
         const parsed = parsePendingNotes(r.notes);
         return {
           ...r,
@@ -586,8 +576,26 @@ Hydrogen RO Team`;
         };
       }) as PendingPaymentReminder[];
 
+      if (focusId && !list.some((r) => r.id === focusId)) {
+        const { data: oneRow, error: oneErr } = await supabase
+          .from('reminders')
+          .select(REMINDER_ROW_COLUMNS)
+          .eq('id', focusId)
+          .maybeSingle();
+        if (!oneErr && oneRow) {
+          const parsed = parsePendingNotes(oneRow.notes);
+          list = [
+            {
+              ...(oneRow as Reminder),
+              amount_pending: parsed.amount_pending,
+              note: parsed.note,
+            } as PendingPaymentReminder,
+            ...list,
+          ];
+        }
+      }
+
       const customerIds = [...new Set(list.filter((r) => !!r.entity_id).map((r) => r.entity_id as string))];
-      // Fetch only required customer fields for the loaded page (keeps egress low).
       const { data: custRows, error: custError } = await supabase
         .from('customers')
         .select('id, full_name, customer_id, phone, alternate_phone')
@@ -602,12 +610,58 @@ Hydrogen RO Team`;
       setPayments(list);
       setCustomerLabels(labelMap);
       setLoaded(true);
+      result = list;
     } catch (err: any) {
       toast.error(err?.message || 'Failed to load pending payments');
     } finally {
       setLoading(false);
     }
+    return result;
   };
+
+  useEffect(() => {
+    if (!open || !initialReminderId || initialAction === 'add') return;
+    const key = `${initialReminderId}:${initialAction || 'list'}`;
+    if (deepLinkHandledRef.current === key) return;
+    deepLinkHandledRef.current = key;
+
+    void (async () => {
+      const list = await load(initialReminderId);
+      setHighlightReminderId(initialReminderId);
+      window.setTimeout(() => {
+        rowRefs.current[initialReminderId]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 150);
+
+      if (initialAction !== 'whatsapp') return;
+      const target = list.find((p) => p.id === initialReminderId);
+      if (!target) return;
+      const customer = target.entity_id ? customerLabels[target.entity_id as string] : undefined;
+      // customerLabels may not be updated yet — read from fresh load path below
+      const { data: custRows } = await supabase
+        .from('customers')
+        .select('id, full_name, customer_id, phone, alternate_phone')
+        .eq('id', target.entity_id as string)
+        .maybeSingle();
+      const label = custRows ? getCustomerLabelFromRow(custRows) : customer;
+      if (!label) {
+        toast.error('Customer info not loaded');
+        return;
+      }
+      const message = buildPendingPaymentMessage(target, label);
+      const primary = label.phone;
+      const alternate = label.alternatePhone;
+      if (!primary && !alternate) {
+        toast.error('Customer phone number is missing');
+        return;
+      }
+      if (alternate && alternate.trim() && alternate.trim() !== primary?.trim()) {
+        setWhatsappTarget(target);
+        setWhatsappDialogOpen(true);
+        return;
+      }
+      openWhatsApp(primary || alternate || '', message);
+    })();
+  }, [open, initialReminderId, initialAction]);
 
   // When user is adding/editing, render ONLY the add/edit dialog.
   // This prevents the pending list UI from showing behind the form.
@@ -815,7 +869,12 @@ Hydrogen RO Team`;
                   return (
                     <div
                       key={p.id}
-                      className="flex items-start justify-between gap-3 rounded-lg border p-3 bg-background"
+                      ref={(el) => {
+                        rowRefs.current[p.id] = el;
+                      }}
+                      className={`flex items-start justify-between gap-3 rounded-lg border p-3 bg-background ${
+                        highlightReminderId === p.id ? 'ring-2 ring-amber-500 border-amber-300' : ''
+                      }`}
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">

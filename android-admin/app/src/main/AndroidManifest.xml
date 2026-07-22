@@ -41,6 +41,11 @@
             android:name=".CashCheckReceiver"
             android:exported="false" />
 
+        <!-- Morning reminder / pending-payment push (WhatsApp + Open actions) -->
+        <receiver
+            android:name=".ReminderPushReceiver"
+            android:exported="false" />
+
         <!-- Inline reply when a technician answers an office message -->
         <receiver
             android:name=".TechMessageReplyReceiver"
