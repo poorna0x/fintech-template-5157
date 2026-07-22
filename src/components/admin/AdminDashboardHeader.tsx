@@ -32,7 +32,15 @@ import {
 } from 'lucide-react';
 import { hapticTap } from '@/lib/haptics';
 import { settingsPath } from '@/lib/settingsSections';
+import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import type { AdminDashboardView, AdminToolDialog } from '@/lib/adminDashboardUrl';
+
+export type UnknownCallerChipProps = {
+  phone: string;
+  onSearch: () => void;
+  onWhatsApp: () => void;
+  onDismiss: () => void;
+};
 
 type AdminDashboardHeaderProps = {
   searchQuery: string;
@@ -52,6 +60,8 @@ type AdminDashboardHeaderProps = {
   currentView: AdminDashboardView;
   onViewChange: (view: AdminDashboardView) => void;
   onAddCustomer: () => void;
+  /** Admin APK only — unknown incoming caller within 3 min. */
+  unknownCaller?: UnknownCallerChipProps | null;
 };
 
 function AdminSearchField({
@@ -87,6 +97,73 @@ function AdminSearchField({
   );
 }
 
+function UnknownCallerChip({
+  phone,
+  onSearch,
+  onWhatsApp,
+  onDismiss,
+}: UnknownCallerChipProps) {
+  return (
+    <div
+      className="w-full max-w-2xl rounded-lg border border-amber-200/90 bg-amber-50/90 px-2.5 py-2 sm:px-3 sm:py-2.5 shadow-sm"
+      role="status"
+      aria-live="polite"
+    >
+      <div className="flex items-start gap-2 sm:items-center sm:justify-between sm:gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-900/80 sm:text-xs">
+            Incoming call · not in CRM
+          </p>
+          <p className="mt-0.5 font-mono text-sm font-semibold tabular-nums text-foreground truncate">
+            {phone}
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground sm:hidden"
+          onClick={onDismiss}
+          aria-label="Dismiss"
+        >
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-1.5 sm:gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-9 flex-1 min-w-[7rem] border-amber-300 bg-white text-amber-950 hover:bg-amber-100/80 sm:flex-none sm:min-w-0"
+          onClick={onSearch}
+        >
+          <Search className="mr-1.5 h-4 w-4 shrink-0" />
+          Search
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          className="h-9 flex-1 min-w-[7rem] bg-green-600 text-white hover:bg-green-700 sm:flex-none sm:min-w-0"
+          onClick={onWhatsApp}
+        >
+          <WhatsAppIcon className="mr-1.5 h-4 w-4 shrink-0" />
+          WhatsApp
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="hidden h-9 shrink-0 px-2 text-muted-foreground hover:text-foreground sm:inline-flex"
+          onClick={onDismiss}
+        >
+          <X className="mr-1 h-4 w-4" />
+          Dismiss
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function AdminDashboardHeader({
   searchQuery,
   onSearchQueryChange,
@@ -105,6 +182,7 @@ export function AdminDashboardHeader({
   currentView,
   onViewChange,
   onAddCustomer,
+  unknownCaller,
 }: AdminDashboardHeaderProps) {
   const navigate = useNavigate();
 
@@ -118,47 +196,50 @@ export function AdminDashboardHeader({
   return (
     <>
       <div className="mb-6 sm:mb-8">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div className="hidden sm:flex flex-1 max-w-2xl items-center gap-1.5 sm:gap-2 flex-wrap" data-admin-search>
-            <AdminSearchField
-              searchQuery={searchQuery}
-              onSearchQueryChange={onSearchQueryChange}
-              onSearchPaste={onSearchPaste}
-              onSearchKeyPress={onSearchKeyPress}
-              inputClassName="pl-10 h-9 bg-white border-gray-400 focus:border-blue-500 focus:ring-blue-500 text-sm"
-            />
-            <Button
-              onClick={onSearch}
-              disabled={isSearching || !searchQuery.trim()}
-              size="sm"
-              className="h-9 shrink-0 bg-blue-600 hover:bg-blue-700 text-white px-2.5 sm:px-3"
-            >
-              {isSearching ? (
-                <div className="flex items-center gap-1.5">
-                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  <span className="hidden md:inline text-xs sm:text-sm">Searching...</span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-1">
-                  <Search className="w-4 h-4 shrink-0" />
-                  <span className="hidden sm:inline text-sm">Search</span>
-                </div>
-              )}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-9 px-2.5 shrink-0"
-              title="Refresh data (no full page reload)"
-              onClick={onManualRefresh}
-            >
-              <RefreshCw className="w-4 h-4" />
-            </Button>
-            {searchQuery && (
-              <Button onClick={onClearSearch} variant="outline" size="sm" className="h-9 px-2.5 shrink-0" title="Clear">
-                <X className="w-4 h-4" />
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+          <div className="hidden sm:flex flex-1 max-w-2xl flex-col gap-2 min-w-0">
+            <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap" data-admin-search>
+              <AdminSearchField
+                searchQuery={searchQuery}
+                onSearchQueryChange={onSearchQueryChange}
+                onSearchPaste={onSearchPaste}
+                onSearchKeyPress={onSearchKeyPress}
+                inputClassName="pl-10 h-9 bg-white border-gray-400 focus:border-blue-500 focus:ring-blue-500 text-sm"
+              />
+              <Button
+                onClick={onSearch}
+                disabled={isSearching || !searchQuery.trim()}
+                size="sm"
+                className="h-9 shrink-0 bg-blue-600 hover:bg-blue-700 text-white px-2.5 sm:px-3"
+              >
+                {isSearching ? (
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span className="hidden md:inline text-xs sm:text-sm">Searching...</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1">
+                    <Search className="w-4 h-4 shrink-0" />
+                    <span className="hidden sm:inline text-sm">Search</span>
+                  </div>
+                )}
               </Button>
-            )}
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9 px-2.5 shrink-0"
+                title="Refresh data (no full page reload)"
+                onClick={onManualRefresh}
+              >
+                <RefreshCw className="w-4 h-4" />
+              </Button>
+              {searchQuery && (
+                <Button onClick={onClearSearch} variant="outline" size="sm" className="h-9 px-2.5 shrink-0" title="Clear">
+                  <X className="w-4 h-4" />
+                </Button>
+              )}
+            </div>
+            {unknownCaller ? <UnknownCallerChip {...unknownCaller} /> : null}
           </div>
 
           <div className="flex flex-col sm:flex-row gap-3 sm:flex-wrap">
@@ -361,6 +442,11 @@ export function AdminDashboardHeader({
             </Button>
           )}
         </div>
+        {unknownCaller ? (
+          <div className="mt-2 sm:hidden">
+            <UnknownCallerChip {...unknownCaller} />
+          </div>
+        ) : null}
       </div>
     </>
   );

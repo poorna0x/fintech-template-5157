@@ -20,7 +20,6 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { 
@@ -60,7 +59,6 @@ import {
   Filter,
   FilterX,
   Tag,
-  MessageSquare,
   DollarSign,
   BarChart3,
   ArrowLeft,
@@ -179,6 +177,16 @@ import {
   normalizePhoneForSearch,
   shouldRunAdminJobNumberSearch,
 } from '@/lib/utils';
+import {
+  clearUnknownCaller,
+  isAdminCallerLookupAvailable,
+  isUnknownCallerFresh,
+  openCallerIntroWhatsApp,
+  readUnknownCaller,
+  saveUnknownCaller,
+  UNKNOWN_CALLER_WINDOW_MS,
+  type UnknownCallerRecord,
+} from '@/lib/adminIncomingCall';
 import {
   EQUIPMENT_BRAND_DATA as brandData,
   EQUIPMENT_MODEL_DATA as modelData,
@@ -4453,26 +4461,67 @@ const AdminDashboard = () => {
     });
   }, [runCustomerSearch]);
 
-  // Caller lookup (HRO Admin app): a call that rang while the app was in the
-  // background auto-searches that customer on open/resume (only if opened
-  // within 60s). No-op in browser. A miss offers WhatsApp intro — but only for
-  // that fresh local call, never for shared-board lookups or stale opens.
-  const [callerNotFoundNumber, setCallerNotFoundNumber] = useState<string | null>(null);
+  // Caller lookup (HRO Admin APK): auto-search on open/resume within 3 min.
+  // Unknown callers get a chip near search (Search + WhatsApp). No-op in browser.
+  const [unknownCaller, setUnknownCaller] = useState<UnknownCallerRecord | null>(() =>
+    isAdminCallerLookupAvailable() ? readUnknownCaller() : null
+  );
 
   const handleSearchFromIncomingCall = useCallback(
-    (digits: string, opts?: { offerNotFound?: boolean }) => {
+    (digits: string, opts?: { offerNotFound?: boolean; ringAt?: number }) => {
       void (async () => {
         const results = await runCustomerSearch(digits);
         requestAnimationFrame(() => {
           document.querySelector('[data-admin-search]')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         });
-        if (opts?.offerNotFound && results.length === 0) {
-          setCallerNotFoundNumber(digits);
+        if (!opts?.offerNotFound) return;
+        if (results.length === 0) {
+          const at = opts.ringAt ?? Date.now();
+          saveUnknownCaller(digits, at);
+          setUnknownCaller({ phone: digits, at });
+        } else {
+          clearUnknownCaller();
+          setUnknownCaller(null);
         }
       })();
     },
     [runCustomerSearch]
   );
+
+  useEffect(() => {
+    if (!unknownCaller || !isUnknownCallerFresh(unknownCaller)) {
+      if (unknownCaller) {
+        clearUnknownCaller();
+        setUnknownCaller(null);
+      }
+      return;
+    }
+    const remaining = unknownCaller.at + UNKNOWN_CALLER_WINDOW_MS - Date.now();
+    const timer = window.setTimeout(() => {
+      clearUnknownCaller();
+      setUnknownCaller(null);
+    }, Math.max(remaining, 0));
+    return () => window.clearTimeout(timer);
+  }, [unknownCaller]);
+
+  const unknownCallerChip = useMemo(() => {
+    if (!isAdminCallerLookupAvailable() || !unknownCaller || !isUnknownCallerFresh(unknownCaller)) {
+      return null;
+    }
+    const phone = unknownCaller.phone;
+    return {
+      phone,
+      onSearch: () => {
+        setSearchQuery(phone);
+        void runCustomerSearch(phone);
+      },
+      onWhatsApp: () => openCallerIntroWhatsApp(phone),
+      onDismiss: () => {
+        clearUnknownCaller();
+        setUnknownCaller(null);
+      },
+    };
+  }, [unknownCaller, runCustomerSearch]);
 
   const callerLookupSearchRef = useRef(handleSearchFromIncomingCall);
   useEffect(() => {
@@ -4483,8 +4532,8 @@ const AdminDashboard = () => {
     let cleanup: (() => void) | null = null;
     let cancelled = false;
     void import('@/lib/adminIncomingCall').then(async ({ initAdminCallerLookup }) => {
-      const dispose = await initAdminCallerLookup((digits) =>
-        callerLookupSearchRef.current(digits, { offerNotFound: true })
+      const dispose = await initAdminCallerLookup((digits, { at }) =>
+        callerLookupSearchRef.current(digits, { offerNotFound: true, ringAt: at })
       );
       if (cancelled) {
         dispose();
@@ -4499,7 +4548,7 @@ const AdminDashboard = () => {
   }, []);
 
   // Shared caller board: known customers only — auto-search, never the
-  // "not found / WhatsApp" popup (that is local-phone-only within 60s).
+  // unknown-caller chip (that is local-phone-only within 3 min).
   useEffect(() => {
     let cleanup: (() => void) | null = null;
     let cancelled = false;
@@ -5843,6 +5892,7 @@ const AdminDashboard = () => {
           currentView={currentView}
           onViewChange={handleViewChange}
           onAddCustomer={handleAddCustomer}
+          unknownCaller={unknownCallerChip}
         />
 
         {/* Stats Cards - Clickable Filter Buttons */}
@@ -7180,40 +7230,6 @@ const AdminDashboard = () => {
         onOpenCustomDistanceInMaps={() => void openCustomDistanceInGoogleMaps()}
       />
 
-      {/* Caller lookup miss: the number that just called isn't a customer yet */}
-      <AlertDialog
-        open={callerNotFoundNumber !== null}
-        onOpenChange={(open) => {
-          if (!open) setCallerNotFoundNumber(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Customer not found</AlertDialogTitle>
-            <AlertDialogDescription>
-              No customer matches the caller&apos;s number{' '}
-              <span className="font-medium text-foreground">{callerNotFoundNumber}</span>.
-              You can send them a WhatsApp message asking for their location and a
-              photo of their water filter.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Okay</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                const number = callerNotFoundNumber;
-                if (!number) return;
-                void import('@/lib/adminIncomingCall').then(({ openCallerIntroWhatsApp }) =>
-                  openCallerIntroWhatsApp(number)
-                );
-              }}
-            >
-              <MessageSquare className="mr-2 h-4 w-4" />
-              Send WhatsApp Message
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 };

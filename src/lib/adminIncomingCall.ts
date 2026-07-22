@@ -4,10 +4,10 @@
  * The native side (CallCaptureReceiver) saves the last incoming call number
  * on the phone while the app is in the background — no network, no polling,
  * zero egress. When the admin opens/resumes the app, we consume that number
- * and auto-search the customer — only if opened within 60 seconds of the
- * ring. Older calls are discarded so the dashboard opens normally (no
- * stale search / "customer not found" popup). No-op in the browser and in
- * old APKs without the plugin.
+ * and auto-search the customer — only if opened within 3 minutes of the
+ * ring. Older calls are discarded so the dashboard opens normally. Unknown
+ * callers get a search-bar chip (WhatsApp intro) for the same window.
+ * No-op in the browser and in old APKs without the plugin.
  */
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import type { PermissionState, PluginListenerHandle } from '@capacitor/core';
@@ -47,17 +47,71 @@ export function openCallerIntroWhatsApp(number: string): void {
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 
-/**
- * Only auto-search (and offer "customer not found" / WhatsApp intro) if the
- * admin opens the app within this window. After that the stale number is
- * cleared silently and the dashboard opens normally.
- */
-const FRESH_CALL_MAX_AGE_MS = 60_000;
+/** Auto-search + unknown-caller chip window (matches shared incoming-call board). */
+export const UNKNOWN_CALLER_WINDOW_MS = 3 * 60_000;
 
-function isAvailable(): boolean {
+const FRESH_CALL_MAX_AGE_MS = UNKNOWN_CALLER_WINDOW_MS;
+const UNKNOWN_CALLER_STORAGE_KEY = 'hro_admin_unknown_caller';
+
+export type UnknownCallerRecord = { phone: string; at: number };
+
+export function isAdminCallerLookupAvailable(): boolean {
   return (
     Capacitor.isNativePlatform() && Capacitor.isPluginAvailable('IncomingCall')
   );
+}
+
+function isAvailable(): boolean {
+  return isAdminCallerLookupAvailable();
+}
+
+export function isUnknownCallerFresh(
+  record: UnknownCallerRecord | null | undefined,
+  now = Date.now()
+): boolean {
+  if (!record?.phone) return false;
+  return now - record.at <= UNKNOWN_CALLER_WINDOW_MS;
+}
+
+/** Read a persisted unknown caller (APK only; localStorage). */
+export function readUnknownCaller(): UnknownCallerRecord | null {
+  if (!isAdminCallerLookupAvailable()) return null;
+  try {
+    const raw = localStorage.getItem(UNKNOWN_CALLER_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<UnknownCallerRecord>;
+    if (!parsed.phone || typeof parsed.at !== 'number') return null;
+    const record = { phone: String(parsed.phone), at: parsed.at };
+    if (!isUnknownCallerFresh(record)) {
+      localStorage.removeItem(UNKNOWN_CALLER_STORAGE_KEY);
+      return null;
+    }
+    return record;
+  } catch {
+    return null;
+  }
+}
+
+export function saveUnknownCaller(phone: string, at = Date.now()): void {
+  if (!isAdminCallerLookupAvailable()) return;
+  const digits = normalizePhoneForSearch(phone) || phone.trim();
+  if (digits.length < 7) return;
+  try {
+    localStorage.setItem(
+      UNKNOWN_CALLER_STORAGE_KEY,
+      JSON.stringify({ phone: digits, at } satisfies UnknownCallerRecord)
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
+export function clearUnknownCaller(): void {
+  try {
+    localStorage.removeItem(UNKNOWN_CALLER_STORAGE_KEY);
+  } catch {
+    /* ignore */
+  }
 }
 
 /** One system permission prompt per app install; never nag after a denial. */
@@ -69,12 +123,12 @@ async function ensurePermission(): Promise<boolean> {
   return res.callerId === 'granted';
 }
 
-async function consumeFreshNumber(): Promise<string | null> {
+async function consumeFreshCall(): Promise<{ digits: string; at: number } | null> {
   const { number, at } = await IncomingCall.consumeLastCall();
   if (!number || !at) return null;
   if (Date.now() - at > FRESH_CALL_MAX_AGE_MS) return null;
   const digits = normalizePhoneForSearch(number);
-  return digits.length >= 7 ? digits : null;
+  return digits.length >= 7 ? { digits, at } : null;
 }
 
 /**
@@ -82,7 +136,7 @@ async function consumeFreshNumber(): Promise<string | null> {
  * delivering the normalized number to `onNumber`. Returns a cleanup function.
  */
 export async function initAdminCallerLookup(
-  onNumber: (digits: string) => void
+  onNumber: (digits: string, meta: { at: number }) => void
 ): Promise<() => void> {
   if (!isAvailable()) return () => {};
 
@@ -94,8 +148,8 @@ export async function initAdminCallerLookup(
 
   const deliver = async () => {
     try {
-      const digits = await consumeFreshNumber();
-      if (digits) onNumber(digits);
+      const fresh = await consumeFreshCall();
+      if (fresh) onNumber(fresh.digits, { at: fresh.at });
     } catch {
       // Plugin hiccup — next resume will try again.
     }
