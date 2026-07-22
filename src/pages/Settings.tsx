@@ -111,6 +111,8 @@ const DATABASE_EXPORT_TABLES: {
   /** If true, skip silently when the table is not in Supabase (optional migration). */
   optional?: boolean;
 }[] = [
+  { name: 'admin_incoming_calls', orderBy: 'created_at', label: 'Admin Incoming Calls', optional: true },
+  { name: 'admin_push_tokens', orderBy: 'updated_at', label: 'Admin Push Tokens', optional: true },
   { name: 'admin_todos', orderBy: 'created_at', label: 'Admin Todos' },
   { name: 'admin_users', orderBy: 'id', label: 'Admin Users' },
   { name: 'admin_audit_log', orderBy: 'created_at', label: 'Admin Audit Log', optional: true },
@@ -120,6 +122,7 @@ const DATABASE_EXPORT_TABLES: {
   { name: 'business_expenses', orderBy: 'expense_date', label: 'Business Expenses' },
   { name: 'call_history', orderBy: 'contacted_at', label: 'Call History' },
   { name: 'common_qr_codes', orderBy: 'created_at', label: 'Common QR Codes' },
+  { name: 'crm_settings', orderBy: 'key', label: 'CRM Settings', optional: true },
   { name: 'customers', orderBy: 'created_at', label: 'Customers' },
   { name: 'document_drafts', orderBy: 'updated_at', label: 'Document Drafts' },
   { name: 'follow_ups', orderBy: 'created_at', label: 'Follow-ups' },
@@ -135,7 +138,6 @@ const DATABASE_EXPORT_TABLES: {
   { name: 'product_qr_codes', orderBy: 'created_at', label: 'Product QR Codes' },
   { name: 'reminders', orderBy: 'reminder_at', label: 'Reminders' },
   { name: 'sent_email_logs', orderBy: 'sent_at', label: 'Sent Email Logs', optional: true },
-  { name: 'crm_settings', orderBy: 'key', label: 'CRM Settings', optional: true },
   { name: 'service_areas', orderBy: 'id', label: 'Service Areas' },
   { name: 'tax_invoices', orderBy: 'created_at', label: 'Tax Invoices' },
   { name: 'technician_advances', orderBy: 'created_at', label: 'Technician Advances' },
@@ -150,10 +152,34 @@ const DATABASE_EXPORT_TABLES: {
     label: 'Technician Job Sync',
     optional: true,
   },
+  {
+    name: 'technician_live_locations',
+    orderBy: 'updated_at',
+    label: 'Technician Live Locations',
+    optional: true,
+  },
+  {
+    name: 'technician_otp_requests',
+    orderBy: 'created_at',
+    label: 'Technician OTP Requests',
+    optional: true,
+  },
   { name: 'technician_payments', orderBy: 'created_at', label: 'Technician Payments' },
+  {
+    name: 'technician_push_tokens',
+    orderBy: 'updated_at',
+    label: 'Technician Push Tokens',
+    optional: true,
+  },
   { name: 'technicians', orderBy: 'created_at', label: 'Technicians' },
   { name: 'warranties', orderBy: 'created_at', label: 'Warranties', optional: true },
   { name: 'warranty_items', orderBy: 'created_at', label: 'Warranty Items', optional: true },
+  {
+    name: 'website_analytics_events',
+    orderBy: 'created_at',
+    label: 'Website Analytics Events',
+    optional: true,
+  },
   { name: 'website_booking_intent', orderBy: 'updated_at', label: 'Website Booking Intent' },
   {
     name: 'website_booking_intent_archive',
