@@ -1201,6 +1201,10 @@ const TechnicianDashboard = () => {
       void import('@/lib/technicianPush').then(({ registerTechnicianPushToken }) =>
         registerTechnicianPushToken(technicianId)
       );
+      // JWT backup for call alerts (same auth as search) when native FCM POST failed.
+      void import('@/lib/technicianIncomingCall').then(({ reportRecentTechnicianCallToAdmins }) =>
+        reportRecentTechnicianCallToAdmins()
+      );
     };
 
     enableSharing();

@@ -16,20 +16,35 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 @CapacitorPlugin(name = "RecentCall")
 public class RecentCallPlugin extends Plugin {
 
-    @PluginMethod
-    public void consumeRecentCall(PluginCall call) {
-        SharedPreferences prefs = getContext()
-            .getSharedPreferences(CallAlertReceiver.PREFS, Context.MODE_PRIVATE);
+    private SharedPreferences prefs() {
+        return getContext().getSharedPreferences(CallAlertReceiver.PREFS, Context.MODE_PRIVATE);
+    }
+
+    private JSObject readRecent(boolean consume) {
+        SharedPreferences prefs = prefs();
         String number = prefs.getString(CallAlertReceiver.KEY_LAST_NUMBER, null);
         long at = prefs.getLong(CallAlertReceiver.KEY_LAST_AT, 0L);
         long consumedAt = prefs.getLong(CallAlertReceiver.KEY_CONSUMED_AT, 0L);
 
         JSObject ret = new JSObject();
         if (number != null && !number.isEmpty() && at > 0 && at != consumedAt) {
-            prefs.edit().putLong(CallAlertReceiver.KEY_CONSUMED_AT, at).apply();
+            if (consume) {
+                prefs.edit().putLong(CallAlertReceiver.KEY_CONSUMED_AT, at).apply();
+            }
             ret.put("number", number);
             ret.put("at", at);
         }
-        call.resolve(ret);
+        return ret;
+    }
+
+    @PluginMethod
+    public void consumeRecentCall(PluginCall call) {
+        call.resolve(readRecent(true));
+    }
+
+    /** Same data as consume, but leaves the call available for the search prompt. */
+    @PluginMethod
+    public void peekRecentCall(PluginCall call) {
+        call.resolve(readRecent(false));
     }
 }

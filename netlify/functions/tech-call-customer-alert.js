@@ -1,24 +1,25 @@
-// Silent caller lookup for the native apps. Two flows, both push to every
-// admin device only when the number matches an existing customer:
-//  - Technician phone rings → { token, number } → "X got a call from a
-//    customer" (token must exist in technician_push_tokens / legacy table).
-//    Skip when that technician is already EN_ROUTE / IN_PROGRESS for this
-//    customer (actively on the job — PENDING/ASSIGNED still notify).
-//  - Admin phone MISSED a call → { token, number, missed: true } → "Missed
-//    call from customer" (token must exist in admin_push_tokens).
-// Tapping either push opens that customer in the admin app (tech_call deep
-// link). No match → no push.
+// Silent caller lookup for the native apps + JWT backup from the technician
+ // webview (same auth style as tech-search-customer-alert).
 //
-// Auth: the device's FCM token is the credential. Tokens are long random
-// strings created by FCM and deleted on logout — same trust level as the
-// one-time nonces used by upload-tech-location. The call happens natively
-// (app may be killed), so no Supabase JWT is available; origin checks don't
-// apply.
+// Flows:
+//  - Technician phone rings → native POST { token, number } (FCM device auth)
+//  - Technician app open/resume/search → JS POST { number } + Bearer JWT
+ //    (covers cases where native FCM auth fails but search pushes work)
+//  - Admin phone MISSED a call → { token, number, missed: true }
+//
+// Admin push goes to customer_calls tokens, and also tech_search tokens so
+ // admins who receive search alerts always get call alerts too.
 
 const { createClient } = require('@supabase/supabase-js');
-const { getMessaging, isStaleTokenError, getAdminFcmTokens, pruneAdminFcmTokens } = require('./fcm-helper');
+const {
+  getMessaging,
+  isStaleTokenError,
+  getAdminFcmTokens,
+  pruneAdminFcmTokens,
+} = require('./fcm-helper');
 const { checkRateLimit, checkRateLimitForKey, rateLimitResponseForKey } = require('./rate-limiter');
 const { findCustomerByPhoneDigits } = require('./customer-phone-lookup');
+const { verifyStaffBearerToken, readBearerToken } = require('./admin-auth-guard');
 
 const HEADERS = { 'Content-Type': 'application/json' };
 
@@ -33,12 +34,19 @@ function normalizePhone(raw) {
   return digits.length >= 10 ? digits.slice(-10) : '';
 }
 
+async function resolveAdminCallTokens(db) {
+  const [callTokens, searchTokens] = await Promise.all([
+    getAdminFcmTokens(db, 'customer_calls'),
+    getAdminFcmTokens(db, 'tech_search'),
+  ]);
+  return [...new Set([...(callTokens || []), ...(searchTokens || [])])];
+}
+
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, headers: HEADERS, body: JSON.stringify({ error: 'Method not allowed' }) };
   }
 
-  // Cheap abuse guards: per-IP and per-device-token.
   const ipLimit = checkRateLimit(event, {
     maxRequests: 120,
     windowMs: 3_600_000,
@@ -53,22 +61,14 @@ exports.handler = async (event) => {
     return { statusCode: 400, headers: HEADERS, body: JSON.stringify({ error: 'Invalid JSON' }) };
   }
 
-  const deviceToken = String(body.token || '').trim();
   const phone = normalizePhone(body.number);
-  // FCM tokens are usually 140+ chars; keep a low floor so we don't reject valid ones.
-  if (deviceToken.length < 20) {
-    return { statusCode: 401, headers: HEADERS, body: JSON.stringify({ error: 'Unauthorized' }) };
-  }
   if (!phone) {
-    return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ found: false }) };
+    return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ found: false, reason: 'bad_number' }) };
   }
 
-  const tokenLimit = checkRateLimitForKey(deviceToken, {
-    maxRequests: 60,
-    windowMs: 3_600_000,
-    endpoint: 'tech-call-alert-token',
-  });
-  if (!tokenLimit.allowed) return rateLimitResponseForKey(tokenLimit);
+  const missed = body.missed === true;
+  const deviceToken = String(body.token || '').trim();
+  const bearer = readBearerToken(event);
 
   const supabaseUrl = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
   const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
@@ -79,68 +79,104 @@ exports.handler = async (event) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  const missed = body.missed === true;
-
-  // Authenticate the device: FCM token → technician (ring flow) or admin
-  // device (missed-call flow). Legacy fallback covers technician phones that
-  // registered before the multi-device table existed.
   let technicianId = null;
   let isAdminDevice = false;
-  const { data: tokenRow } = await db
-    .from('technician_push_tokens')
-    .select('technician_id, call_alerts_enabled')
-    .eq('token', deviceToken)
-    .maybeSingle();
-  technicianId = tokenRow?.technician_id || null;
-  if (technicianId && tokenRow?.call_alerts_enabled === false) {
-    return {
-      statusCode: 200,
-      headers: HEADERS,
-      body: JSON.stringify({ found: false, reason: 'call_detect_off' }),
-    };
+  let authVia = null;
+
+  // 1) Prefer technician JWT (same trust path as search alerts).
+  if (bearer) {
+    const session = await verifyStaffBearerToken(bearer);
+    if (session.ok && session.role === 'technician') {
+      technicianId = session.userId;
+      authVia = 'jwt';
+    }
   }
+
+  // 2) FCM device token (native ring / admin missed — no JWT available).
   if (!technicianId) {
-    const { data: legacyRow } = await db
-      .from('technician_live_locations')
-      .select('technician_id')
-      .eq('fcm_token', deviceToken)
+    if (deviceToken.length < 20) {
+      return { statusCode: 401, headers: HEADERS, body: JSON.stringify({ error: 'Unauthorized' }) };
+    }
+
+    const tokenLimit = checkRateLimitForKey(deviceToken, {
+      maxRequests: 60,
+      windowMs: 3_600_000,
+      endpoint: 'tech-call-alert-token',
+    });
+    if (!tokenLimit.allowed) return rateLimitResponseForKey(tokenLimit);
+
+    const { data: tokenRow } = await db
+      .from('technician_push_tokens')
+      .select('technician_id, call_alerts_enabled')
+      .eq('token', deviceToken)
       .maybeSingle();
-    technicianId = legacyRow?.technician_id || null;
-    if (technicianId) {
-      // Legacy column has no call_alerts_enabled — enforce Device Tracker prefs
-      // from technician_push_tokens for the same FCM token when present.
-      const { data: legacyPrefs } = await db
-        .from('technician_push_tokens')
-        .select('call_alerts_enabled')
+    technicianId = tokenRow?.technician_id || null;
+    if (technicianId && tokenRow?.call_alerts_enabled === false) {
+      return {
+        statusCode: 200,
+        headers: HEADERS,
+        body: JSON.stringify({ found: false, reason: 'call_detect_off' }),
+      };
+    }
+    if (technicianId) authVia = 'fcm';
+
+    if (!technicianId) {
+      const { data: legacyRow } = await db
+        .from('technician_live_locations')
+        .select('technician_id')
+        .eq('fcm_token', deviceToken)
+        .maybeSingle();
+      technicianId = legacyRow?.technician_id || null;
+      if (technicianId) {
+        const { data: legacyPrefs } = await db
+          .from('technician_push_tokens')
+          .select('call_alerts_enabled')
+          .eq('token', deviceToken)
+          .maybeSingle();
+        if (legacyPrefs?.call_alerts_enabled === false) {
+          return {
+            statusCode: 200,
+            headers: HEADERS,
+            body: JSON.stringify({ found: false, reason: 'call_detect_off' }),
+          };
+        }
+        authVia = 'fcm_legacy';
+      }
+    }
+
+    if (!technicianId && missed) {
+      const { data: adminRow } = await db
+        .from('admin_push_tokens')
+        .select('token, call_alerts_enabled')
         .eq('token', deviceToken)
         .maybeSingle();
-      if (legacyPrefs?.call_alerts_enabled === false) {
+      isAdminDevice = Boolean(adminRow);
+      if (isAdminDevice && adminRow.call_alerts_enabled === false) {
         return {
           statusCode: 200,
           headers: HEADERS,
           body: JSON.stringify({ found: false, reason: 'call_detect_off' }),
         };
       }
-      // Orphan: token is on live_locations but not in technician_push_tokens,
-      // while other devices exist. Usually a token rotation before re-register —
-      // rejecting here silently dropped customer-call admin pushes. Allow the
-      // alert; mute still applies when THIS token has call_alerts_enabled=false.
-      if (!legacyPrefs) {
-        console.warn(
-          '[tech-call-customer-alert] live_locations token not in push_tokens for',
-          technicianId
-        );
-      }
+      if (isAdminDevice) authVia = 'admin_fcm';
     }
   }
-  if (!technicianId && missed) {
-    const { data: adminRow } = await db
-      .from('admin_push_tokens')
-      .select('token, call_alerts_enabled')
-      .eq('token', deviceToken)
-      .maybeSingle();
-    isAdminDevice = Boolean(adminRow);
-    if (isAdminDevice && adminRow.call_alerts_enabled === false) {
+
+  if (!technicianId && !isAdminDevice) {
+    return { statusCode: 401, headers: HEADERS, body: JSON.stringify({ error: 'Unauthorized' }) };
+  }
+
+  // JWT path: if every registered device has detect-calls off, respect mute.
+  if (authVia === 'jwt' && technicianId) {
+    const { data: prefsRows } = await db
+      .from('technician_push_tokens')
+      .select('call_alerts_enabled')
+      .eq('technician_id', technicianId);
+    if (
+      Array.isArray(prefsRows) &&
+      prefsRows.length > 0 &&
+      prefsRows.every((r) => r.call_alerts_enabled === false)
+    ) {
       return {
         statusCode: 200,
         headers: HEADERS,
@@ -148,19 +184,27 @@ exports.handler = async (event) => {
       };
     }
   }
-  if (!technicianId && !isAdminDevice) {
-    return { statusCode: 401, headers: HEADERS, body: JSON.stringify({ error: 'Unauthorized' }) };
+
+  if (technicianId) {
+    const { data: techRow } = await db
+      .from('technicians')
+      .select('full_name, account_status')
+      .eq('id', technicianId)
+      .maybeSingle();
+    if (!techRow || techRow.account_status !== 'ACTIVE') {
+      return { statusCode: 403, headers: HEADERS, body: JSON.stringify({ error: 'Inactive technician' }) };
+    }
   }
 
-  // Digit-normalized match (stored phones often have +91 / spaces — LIKE misses those).
   const customer = await findCustomerByPhoneDigits(db, phone, 'id,full_name');
   if (!customer) {
-    return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ found: false, reason: 'no_customer' }) };
+    return {
+      statusCode: 200,
+      headers: HEADERS,
+      body: JSON.stringify({ found: false, reason: 'no_customer', authVia }),
+    };
   }
 
-  // Tech is already en route / in progress with this customer → expected call,
-  // skip admin push. PENDING / ASSIGNED still notify (office wants those rings).
-  // Follow-up / rescheduled jobs still notify. Admin missed-call flow is unchanged.
   if (technicianId && !isAdminDevice) {
     const { data: activeJob } = await db
       .from('jobs')
@@ -174,31 +218,23 @@ exports.handler = async (event) => {
       return {
         statusCode: 200,
         headers: HEADERS,
-        body: JSON.stringify({ found: true, sent: 0, reason: 'active_job' }),
+        body: JSON.stringify({ found: true, sent: 0, reason: 'active_job', authVia }),
       };
     }
   }
 
-  const [{ data: tech }, customerCallTokens] = await Promise.all([
+  const [{ data: tech }, tokens] = await Promise.all([
     technicianId
       ? db.from('technicians').select('full_name').eq('id', technicianId).maybeSingle()
       : Promise.resolve({ data: null }),
-    getAdminFcmTokens(db, 'customer_calls'),
+    resolveAdminCallTokens(db),
   ]);
-  // Search alerts use tech_search — if that works but customer_calls is empty
-  // (pref off / never configured), fall back so call rings still reach those admins.
-  let tokens = customerCallTokens;
-  let tokenSource = 'customer_calls';
-  if (tokens.length === 0) {
-    tokens = await getAdminFcmTokens(db, 'tech_search');
-    tokenSource = 'tech_search_fallback';
-    console.warn('[tech-call-customer-alert] customer_calls empty; using tech_search tokens');
-  }
+
   if (tokens.length === 0) {
     return {
       statusCode: 200,
       headers: HEADERS,
-      body: JSON.stringify({ sent: 0, reason: 'no_tokens', tokenSource }),
+      body: JSON.stringify({ sent: 0, reason: 'no_tokens', authVia }),
     };
   }
 
@@ -252,7 +288,12 @@ exports.handler = async (event) => {
     return {
       statusCode: 200,
       headers: HEADERS,
-      body: JSON.stringify({ found: true, sent: res.successCount, tokenSource }),
+      body: JSON.stringify({
+        found: true,
+        sent: res.successCount,
+        authVia,
+        adminDevices: tokens.length,
+      }),
     };
   } catch (err) {
     console.error('[tech-call-customer-alert] send failed', err?.message || err);

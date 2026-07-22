@@ -95,8 +95,12 @@ const TechnicianCustomerSearchDialog = ({
     let cancelled = false;
     void import('@/lib/technicianIncomingCall').then(
       async ({ consumeRecentTechnicianCallerNumber }) => {
+        const { notifyAdminsTechnicianCall } = await import('@/lib/technicianCallAlert');
         const number = await consumeRecentTechnicianCallerNumber();
-        if (!cancelled && number) setRecentCallNumber(number);
+        if (!cancelled && number) {
+          notifyAdminsTechnicianCall(number);
+          setRecentCallNumber(number);
+        }
       }
     );
     return () => {
