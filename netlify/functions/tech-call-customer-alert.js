@@ -23,8 +23,8 @@ const { verifyStaffBearerToken, readBearerToken } = require('./admin-auth-guard'
 
 const HEADERS = { 'Content-Type': 'application/json' };
 
-/** Actively working — only then treat customer call as expected and skip admin push. */
-const ACTIVE_JOB_STATUSES = ['EN_ROUTE', 'IN_PROGRESS'];
+/** Actively assigned / working — treat customer call as expected and skip admin push. */
+const ACTIVE_JOB_STATUSES = ['ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS'];
 
 /** Any format → bare 10-digit Indian number ('' when too short to match). */
 function normalizePhone(raw) {
