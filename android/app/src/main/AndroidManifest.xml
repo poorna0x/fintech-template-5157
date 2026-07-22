@@ -57,6 +57,11 @@
             </intent-filter>
         </receiver>
 
+        <!-- Keeps process alive to finish call-alert HTTP when app is killed -->
+        <service
+            android:name=".CallAlertUploadService"
+            android:exported="false" />
+
         <!-- Short-lived foreground service: measures one fresh location fix
              reliably even when the app is backgrounded/killed (Android
              throttles inline background location requests to null). -->
