@@ -114,7 +114,7 @@ import {
   TECHNICIAN_JOB_LIST_BROADCAST_EVENT,
   type TechnicianJobListRefreshPayload,
 } from '@/lib/technicianJobListSync';
-import { compareJobsByVisitOrder, getJobVisitOrder } from '@/lib/adminVisitOrder';
+import { compareJobsByVisitOrder, getJobVisitOrder, getVisitOrderVisibleToTechnicians } from '@/lib/adminVisitOrder';
 import {
   aggregateCustomerPhotoUrls,
   collectAllPhotoUrlsFromJob,
@@ -500,6 +500,8 @@ const TechnicianDashboard = () => {
     rank: number;
     firstJob: Job | null;
   }>({ open: false, job: null, action: null, rank: 0, firstJob: null });
+  /** Admin Tools → Arrange order master switch (default off). */
+  const [visitOrderVisible, setVisitOrderVisible] = useState(false);
   const [confirmCompleteJobDialog, setConfirmCompleteJobDialog] = useState<{open: boolean, job: Job | null}>({open: false, job: null});
   const [statusFilter, setStatusFilter] = useState<'ONGOING' | 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED'>('ONGOING');
   const statusFilterRef = useRef(statusFilter);
@@ -1229,6 +1231,25 @@ const TechnicianDashboard = () => {
       removeAppListener?.();
     };
   }, [user?.technicianId]);
+
+  // Tools → Arrange order: only show #1/#2 when admin turns the switch on.
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = () => {
+      void getVisitOrderVisibleToTechnicians().then((v) => {
+        if (!cancelled) setVisitOrderVisible(v);
+      });
+    };
+    refresh();
+    const onVisibility = () => {
+      if (!document.hidden) refresh();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, []);
 
   // Returning customers (≥1 completed job) — same logic as admin blue indicator
   useEffect(() => {
@@ -2677,7 +2698,11 @@ const TechnicianDashboard = () => {
         });
         lastCompletedJobIdsOrderRef.current = filtered.map((j) => j.id);
       }
-    } else if (statusFilter === 'ONGOING' && filtered.some((j) => getJobVisitOrder(j) != null)) {
+    } else if (
+      visitOrderVisible &&
+      statusFilter === 'ONGOING' &&
+      filtered.some((j) => getJobVisitOrder(j) != null)
+    ) {
       // Admin visit order wins — don't freeze session order so #1/#2 renumber as jobs finish.
       ongoingOrderRef.current = null;
       filtered.sort(compareJobsByVisitOrder);
@@ -2700,9 +2725,11 @@ const TechnicianDashboard = () => {
     } else if (didSort) {
       filtered.sort((a, b) => {
       // Prefer admin visit order when present (even if only some jobs have it).
-      const visitCmp = compareJobsByVisitOrder(a, b);
-      if (getJobVisitOrder(a) != null || getJobVisitOrder(b) != null) {
-        return visitCmp;
+      if (visitOrderVisible) {
+        const visitCmp = compareJobsByVisitOrder(a, b);
+        if (getJobVisitOrder(a) != null || getJobVisitOrder(b) != null) {
+          return visitCmp;
+        }
       }
 
       const statusA = (a as any).status || a.status;
@@ -2767,7 +2794,7 @@ const TechnicianDashboard = () => {
     if (didSort) shouldPreserveOrderRef.current = false;
 
     setFilteredJobs(filtered);
-  }, [jobs, statusFilter, seenJobs, completedDateFilter, user?.technicianId, user?.id]);
+  }, [jobs, statusFilter, seenJobs, completedDateFilter, user?.technicianId, user?.id, visitOrderVisible]);
 
   // Newly assigned jobs the technician hasn't acknowledged yet (drives the blocking alert).
   const newAssignedJobs = useMemo(
@@ -3016,8 +3043,9 @@ const TechnicianDashboard = () => {
     );
   };
 
-  /** When admin set visit order, find if this job is skipping an earlier stop. */
+  /** When admin set visit order AND Tools toggle is on, find if this job skips an earlier stop. */
   const getVisitOrderSkipInfo = (job: Job): { rank: number; firstJob: Job } | null => {
+    if (!visitOrderVisible) return null;
     const ordered =
       statusFilter === 'ONGOING'
         ? filteredJobs.filter(isOngoingJob)
@@ -6421,6 +6449,7 @@ const TechnicianDashboard = () => {
             <>
             {(() => {
               const showVisitRanks =
+                visitOrderVisible &&
                 statusFilter === 'ONGOING' &&
                 filteredJobs.some((j) => getJobVisitOrder(j) != null);
               return filteredJobs.map((job, jobIndex) => {

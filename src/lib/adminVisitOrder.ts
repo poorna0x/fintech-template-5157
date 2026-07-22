@@ -275,3 +275,42 @@ export async function clearJobVisitOrder(jobId: string): Promise<void> {
     markVisitOrderColumnMissing();
   }
 }
+
+const VISIT_ORDER_VISIBLE_KEY = 'visit_order_visible_to_technicians';
+
+/** Admin + technician: is visit-order UI enabled? Default false if unset/RPC missing. */
+export async function getVisitOrderVisibleToTechnicians(): Promise<boolean> {
+  try {
+    const { data, error } = await supabase.rpc('is_visit_order_visible_to_technicians');
+    if (!error && typeof data === 'boolean') return data;
+  } catch {
+    /* fall through */
+  }
+  try {
+    const { data } = await supabase
+      .from('crm_settings')
+      .select('value')
+      .eq('key', VISIT_ORDER_VISIBLE_KEY)
+      .maybeSingle();
+    return data?.value === true;
+  } catch {
+    return false;
+  }
+}
+
+/** Admin only: turn technician visit-order numbers on/off. */
+export async function setVisitOrderVisibleToTechnicians(
+  visible: boolean
+): Promise<{ error: Error | null }> {
+  const { error } = await supabase.from('crm_settings').upsert(
+    {
+      key: VISIT_ORDER_VISIBLE_KEY,
+      value: visible,
+      updated_at: new Date().toISOString(),
+    } as any,
+    { onConflict: 'key' }
+  );
+  if (error) return { error: new Error(error.message) };
+  return { error: null };
+}
+

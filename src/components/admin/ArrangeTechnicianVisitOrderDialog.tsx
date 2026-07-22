@@ -17,13 +17,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { GripVertical, ListOrdered, Loader2, MapPinned } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import {
   fetchTechnicianJobsForVisitOrder,
   filterCachedJobsForVisitOrder,
+  getVisitOrderVisibleToTechnicians,
   saveTechnicianVisitOrder,
+  setVisitOrderVisibleToTechnicians,
   visitOrderStopLabel,
   type VisitOrderJobRow,
 } from '@/lib/adminVisitOrder';
@@ -140,6 +143,9 @@ export default function ArrangeTechnicianVisitOrderDialog({
   const [dirty, setDirty] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dropHint, setDropHint] = useState<DropHint>(null);
+  /** Master switch: technicians only see #1/#2 when this is on. */
+  const [showOnTechApp, setShowOnTechApp] = useState(false);
+  const [togglingVisibility, setTogglingVisibility] = useState(false);
 
   const listRef = useRef<HTMLOListElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -193,7 +199,29 @@ export default function ArrangeTechnicianVisitOrderDialog({
     dragIndexRef.current = null;
     draggingRef.current = false;
     void loadJobs(nextTech, { silentCacheFirst: true });
+    void getVisitOrderVisibleToTechnicians().then(setShowOnTechApp);
   }, [open, initialTechnicianId, activeTechs, loadJobs]);
+
+  const handleVisibilityToggle = async (next: boolean) => {
+    setTogglingVisibility(true);
+    const prev = showOnTechApp;
+    setShowOnTechApp(next);
+    try {
+      const { error } = await setVisitOrderVisibleToTechnicians(next);
+      if (error) {
+        setShowOnTechApp(prev);
+        toast.error(error.message || 'Could not update setting');
+        return;
+      }
+      toast.success(
+        next
+          ? 'Technicians will now see visit order (#1, #2…)'
+          : 'Visit order hidden on technician app'
+      );
+    } finally {
+      setTogglingVisibility(false);
+    }
+  };
 
   const clearDragState = useCallback(() => {
     draggingRef.current = false;
@@ -331,21 +359,27 @@ export default function ArrangeTechnicianVisitOrderDialog({
       setDirty(false);
       onSaved?.(technicianId, orderedIds);
 
-      // Short customer names only — full stop labels are too long for FCM body.
-      const stopLabels = rows.map((r) => {
-        const cust = r.customer as { full_name?: string; fullName?: string } | null | undefined;
-        return (
-          String(cust?.full_name || cust?.fullName || '').trim() ||
-          visitOrderStopLabel(r).split(' · ')[0] ||
-          'Customer'
-        );
-      });
-      notifyTechnicianJobPush({
-        technicianId,
-        ...visitOrderChangedPushText({ stopLabels }),
-      });
+      // Only notify the tech when they can actually see the order numbers.
+      if (showOnTechApp) {
+        const stopLabels = rows.map((r) => {
+          const cust = r.customer as { full_name?: string; fullName?: string } | null | undefined;
+          return (
+            String(cust?.full_name || cust?.fullName || '').trim() ||
+            visitOrderStopLabel(r).split(' · ')[0] ||
+            'Customer'
+          );
+        });
+        notifyTechnicianJobPush({
+          technicianId,
+          ...visitOrderChangedPushText({ stopLabels }),
+        });
+      }
 
-      toast.success('Visit order saved — technician list updated');
+      toast.success(
+        showOnTechApp
+          ? 'Visit order saved — technician list updated'
+          : 'Visit order saved (hidden on technician app until you turn it on)'
+      );
       onOpenChange(false);
     } finally {
       setSaving(false);
@@ -491,11 +525,29 @@ export default function ArrangeTechnicianVisitOrderDialog({
             Arrange visit order
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground sm:text-sm">
-            Drag to reorder, then open the route in Maps.
+            Drag to reorder, then open the route in Maps. Turn on the switch below
+            to show stop numbers on the technician app.
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-4 py-3 sm:gap-4 sm:px-6 sm:py-4">
+          <div className="flex shrink-0 items-center justify-between gap-3 rounded-lg border border-sky-100 bg-sky-50/70 px-3 py-2.5">
+            <div className="min-w-0">
+              <Label htmlFor="visit-order-visible" className="text-sm font-medium text-sky-950">
+                Show order on technician app
+              </Label>
+              <p className="text-[11px] text-sky-900/70 sm:text-xs">
+                Off by default — technicians only see #1, #2… when this is on.
+              </p>
+            </div>
+            <Switch
+              id="visit-order-visible"
+              checked={showOnTechApp}
+              disabled={togglingVisibility}
+              onCheckedChange={(v) => void handleVisibilityToggle(v)}
+            />
+          </div>
+
           <div className="shrink-0 space-y-1.5">
             <Label htmlFor="visit-order-tech" className="text-sm">
               Technician
