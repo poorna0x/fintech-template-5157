@@ -1,33 +1,71 @@
 /**
  * FCM push registration for the technician Android app.
  *
- * Runs on login / app open / resume (native only). Low egress: one successful
- * RPC per device token; retries only when FCM/auth save fails.
- *
- * Dual path: Capacitor PushNotifications "registration" event, plus native
- * MainActivity injection (`window.__HRO_NATIVE_FCM_TOKEN` / `hro-native-fcm`)
- * when the plugin event is missed.
+ * Saves once per device (+ re-save if token or technician changes).
+ * Repeat app opens use localStorage — no Supabase egress.
  */
 import { Capacitor } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { supabase } from '@/lib/supabase';
+import { registrationDeviceName } from '@/lib/deviceTracker';
+import { getNativeDeviceLabel, syncDevicePrefsToNative } from '@/lib/devicePrefs';
 
 let listenersAttached = false;
 let nativeListenerAttached = false;
 let activeTechnicianId: string | null = null;
 let lastToken: string | null = null;
-/** Only set after a successful server save — avoids treating a failed upload as done. */
 let lastPersistedKey: string | null = null;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let retriesScheduled = 0;
 let registerInFlight: Promise<void> | null = null;
 
 const TOKEN_CACHE_KEY = 'hro_tech_push_token_v1';
+const PERSIST_KEY = 'hro_tech_push_persist_v2';
 const MAX_RETRIES = 6;
+
+type TechPushPersist = {
+  token: string;
+  technicianId: string;
+  callAlertsEnabled: boolean;
+};
 
 declare global {
   interface Window {
     __HRO_NATIVE_FCM_TOKEN?: string;
+  }
+}
+
+function persistKey(technicianId: string, token: string): string {
+  return `${technicianId}::${token}`;
+}
+
+function readPersist(): TechPushPersist | null {
+  try {
+    const raw = localStorage.getItem(PERSIST_KEY);
+    if (!raw) return null;
+    const c = JSON.parse(raw) as TechPushPersist;
+    if (!c.token || !c.technicianId) return null;
+    return c;
+  } catch {
+    return null;
+  }
+}
+
+function writePersist(data: TechPushPersist): void {
+  try {
+    localStorage.setItem(PERSIST_KEY, JSON.stringify(data));
+    localStorage.setItem(TOKEN_CACHE_KEY, data.token);
+  } catch {
+    /* ignore */
+  }
+}
+
+function clearPersist(): void {
+  try {
+    localStorage.removeItem(PERSIST_KEY);
+    localStorage.removeItem(TOKEN_CACHE_KEY);
+  } catch {
+    /* ignore */
   }
 }
 
@@ -40,11 +78,7 @@ function rememberTokenLocally(token: string): void {
 }
 
 function readRememberedToken(): string | null {
-  try {
-    return localStorage.getItem(TOKEN_CACHE_KEY) || null;
-  } catch {
-    return null;
-  }
+  return readPersist()?.token || localStorage.getItem(TOKEN_CACHE_KEY) || null;
 }
 
 function readNativeInjectedToken(): string | null {
@@ -68,10 +102,17 @@ async function waitForSession(maxMs = 8000): Promise<boolean> {
 }
 
 async function saveToken(technicianId: string, token: string): Promise<boolean> {
-  const persistKey = `${technicianId}::${token}`;
-  if (lastPersistedKey === persistKey) return true;
+  const key = persistKey(technicianId, token);
+  if (lastPersistedKey === key) return true;
 
-  // Must be logged in — RPC uses auth.uid() as technician_id.
+  const cached = readPersist();
+  if (cached?.token === token && cached.technicianId === technicianId) {
+    lastPersistedKey = key;
+    lastToken = token;
+    await syncDevicePrefsToNative({ callAlertsEnabled: cached.callAlertsEnabled });
+    return true;
+  }
+
   const ready = await waitForSession(5000);
   if (!ready) {
     console.warn('[tech-push] no session yet; will retry token save');
@@ -84,42 +125,61 @@ async function saveToken(technicianId: string, token: string): Promise<boolean> 
     return false;
   }
 
-  const { data } = await supabase
+  const deviceLabel = await getNativeDeviceLabel();
+  const prior = readPersist();
+  const isNewToken = prior?.token !== token;
+  const patch: Record<string, string> = {};
+  if (deviceLabel) patch.device_model = deviceLabel;
+  if (isNewToken || !prior) {
+    patch.display_name = registrationDeviceName('technician', token, deviceLabel);
+  }
+  if (Object.keys(patch).length > 0) {
+    await supabase.from('technician_push_tokens').update(patch).eq('token', token);
+  }
+
+  const { data: locData } = await supabase
     .from('technician_live_locations')
     .update({ fcm_token: token })
     .eq('technician_id', technicianId)
     .select('technician_id');
-  if (!data?.length) {
-    const { error: insErr } = await supabase.from('technician_live_locations').insert({
+  if (!locData?.length) {
+    await supabase.from('technician_live_locations').insert({
       technician_id: technicianId,
       fcm_token: token,
       is_tracking: false,
     });
-    if (insErr) {
-      // Row may already exist — update path race; ignore unique violations.
-      console.warn('[tech-push] live_locations insert:', insErr.message);
-    }
   }
 
+  const { data: prefsRow } = await supabase
+    .from('technician_push_tokens')
+    .select('call_alerts_enabled')
+    .eq('token', token)
+    .maybeSingle();
+
+  const callAlertsEnabled = prefsRow?.call_alerts_enabled !== false;
+  writePersist({ token, technicianId, callAlertsEnabled });
   lastToken = token;
-  lastPersistedKey = persistKey;
+  lastPersistedKey = key;
   rememberTokenLocally(token);
+  await syncDevicePrefsToNative({ callAlertsEnabled });
   return true;
 }
 
 function trySaveAnyAvailableToken(technicianId: string): void {
-  if (lastPersistedKey?.startsWith(`${technicianId}::`)) return;
+  const cached = readPersist();
+  if (cached?.technicianId === technicianId && cached.token) {
+    if (lastPersistedKey === persistKey(technicianId, cached.token)) return;
+    void saveToken(technicianId, cached.token);
+    return;
+  }
   const candidate = lastToken || readNativeInjectedToken() || readRememberedToken();
   if (!candidate) return;
+  if (lastPersistedKey === persistKey(technicianId, candidate)) return;
   void saveToken(technicianId, candidate).then((ok) => {
     if (!ok) scheduleRetry(technicianId, candidate);
   });
 }
 
-/**
- * Best-effort: remove this device's token so a logged-out phone stops
- * receiving technician pushes.
- */
 export async function unregisterTechnicianPushToken(): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
   const token = lastToken || readRememberedToken() || readNativeInjectedToken();
@@ -130,11 +190,7 @@ export async function unregisterTechnicianPushToken(): Promise<void> {
     clearTimeout(retryTimer);
     retryTimer = null;
   }
-  try {
-    localStorage.removeItem(TOKEN_CACHE_KEY);
-  } catch {
-    /* ignore */
-  }
+  clearPersist();
   try {
     delete window.__HRO_NATIVE_FCM_TOKEN;
   } catch {
@@ -159,16 +215,10 @@ export async function unregisterTechnicianPushToken(): Promise<void> {
 
 function scheduleRetry(technicianId: string, pendingToken?: string | null): void {
   if (retriesScheduled >= MAX_RETRIES) return;
-  if (lastPersistedKey?.startsWith(`${technicianId}::`)) return;
+  if (pendingToken && lastPersistedKey === persistKey(technicianId, pendingToken)) return;
   retriesScheduled += 1;
   const delayMs =
-    retriesScheduled === 1
-      ? 1500
-      : retriesScheduled === 2
-        ? 3000
-        : retriesScheduled === 3
-          ? 6000
-          : 12000;
+    retriesScheduled === 1 ? 1500 : retriesScheduled === 2 ? 3000 : retriesScheduled === 3 ? 6000 : 12000;
   if (retryTimer) clearTimeout(retryTimer);
   retryTimer = setTimeout(() => {
     retryTimer = null;
@@ -184,10 +234,6 @@ function scheduleRetry(technicianId: string, pendingToken?: string | null): void
   }, delayMs);
 }
 
-/**
- * Idempotent: requests notification permission, registers with FCM and
- * saves the device token. Safe on every app start / login / resume.
- */
 export async function registerTechnicianPushToken(technicianId: string): Promise<void> {
   if (!Capacitor.isNativePlatform() || !technicianId) return;
   activeTechnicianId = technicianId;
@@ -204,7 +250,6 @@ export async function registerTechnicianPushToken(technicianId: string): Promise
     }) as EventListener);
   }
 
-  // Native MainActivity may already have injected the token before JS ran.
   trySaveAnyAvailableToken(technicianId);
 
   if (registerInFlight) {
@@ -214,7 +259,6 @@ export async function registerTechnicianPushToken(technicianId: string): Promise
 
   registerInFlight = (async () => {
     try {
-      // Attach listener BEFORE register() so we never miss the first token.
       if (!listenersAttached) {
         listenersAttached = true;
         await PushNotifications.addListener('registration', (token) => {
@@ -233,8 +277,6 @@ export async function registerTechnicianPushToken(technicianId: string): Promise
 
       const perm = await PushNotifications.requestPermissions();
       if (perm.receive !== 'granted') {
-        console.warn('[tech-push] notification permission not granted:', perm);
-        // Still try native-injected token (permission gate is Capacitor-side).
         trySaveAnyAvailableToken(technicianId);
         return;
       }
@@ -248,12 +290,8 @@ export async function registerTechnicianPushToken(technicianId: string): Promise
         vibration: true,
       }).catch(() => {});
 
-      // Always ask FCM for a token. Never trust localStorage alone.
       await PushNotifications.register();
-      // Capacitor may deliver async — also re-check native injection.
       window.setTimeout(() => trySaveAnyAvailableToken(technicianId), 800);
-      window.setTimeout(() => trySaveAnyAvailableToken(technicianId), 2500);
-      scheduleRetry(technicianId);
     } catch (err) {
       console.warn('[tech-push] register failed', err);
       trySaveAnyAvailableToken(technicianId);

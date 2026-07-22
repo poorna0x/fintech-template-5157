@@ -81,7 +81,7 @@ exports.handler = async (event) => {
         submitUrl: `${siteUrl}/.netlify/functions/submit-tech-otp`,
       },
       android: { priority: 'high' },
-    }));
+    }), 'otp_request');
     if (tokens === 0) {
       return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'no_token' }) };
     }

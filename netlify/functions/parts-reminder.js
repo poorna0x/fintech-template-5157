@@ -4,7 +4,7 @@
 // they know to double-check the day's parts entries.
 
 const { createClient } = require('@supabase/supabase-js');
-const { getMessaging, pruneTechnicianFcmTokens, isStaleTokenError } = require('./fcm-helper');
+const { getMessaging, getAdminFcmTokens, pruneAdminFcmTokens, sendToTechnicianDevices } = require('./fcm-helper');
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
@@ -41,77 +41,47 @@ exports.handler = async () => {
     return { statusCode: 200, body: JSON.stringify({ sent: 0, reason: 'no_completed_jobs' }) };
   }
 
-  // Every device of every technician who worked today (multi-device table
-  // + legacy single-token column, deduped per technician).
-  const tokensByTech = new Map(technicianIds.map((id) => [id, new Set()]));
-  const { data: deviceRows, error: deviceErr } = await db
-    .from('technician_push_tokens')
-    .select('technician_id,token')
-    .in('technician_id', technicianIds);
-  if (deviceErr) {
-    console.warn('[parts-reminder] technician_push_tokens lookup failed:', deviceErr.message);
-  }
-  for (const row of deviceRows || []) {
-    if (row.token) tokensByTech.get(row.technician_id)?.add(row.token);
-  }
-  const { data: legacyRows } = await db
-    .from('technician_live_locations')
-    .select('technician_id,fcm_token')
-    .in('technician_id', technicianIds)
-    .not('fcm_token', 'is', null);
-  for (const row of legacyRows || []) {
-    if (row.fcm_token) tokensByTech.get(row.technician_id)?.add(row.fcm_token);
-  }
-
-  // Honor Settings → push notifications off (same gate as fcm-helper).
-  const { data: pushFlags } = await db
-    .from('technicians')
-    .select('id,push_notifications_enabled')
-    .in('id', technicianIds);
-  const muted = new Set(
-    (pushFlags || [])
-      .filter((t) => t.push_notifications_enabled === false)
-      .map((t) => t.id)
-  );
-  for (const id of muted) tokensByTech.delete(id);
-
+  // Every device of every technician who worked today — honor per-device prefs.
   const messaging = await getMessaging(db);
   let sent = 0;
-  for (const [technicianId, tokenSet] of tokensByTech) {
-    const stale = [];
-    for (const token of tokenSet) {
-      try {
-        await messaging.send({
-          token,
+  for (const technicianId of technicianIds) {
+    const { data: techRow } = await db
+      .from('technicians')
+      .select('push_notifications_enabled')
+      .eq('id', technicianId)
+      .maybeSingle();
+    if (techRow?.push_notifications_enabled === false) continue;
+
+    const result = await sendToTechnicianDevices(
+      db,
+      messaging,
+      technicianId,
+      (token) => ({
+        token,
+        notification: {
+          title: 'Add all used parts',
+          body: "Make sure every part you used today is added to your completed jobs.",
+        },
+        data: { type: 'job_notification' },
+        android: {
+          priority: 'high',
           notification: {
-            title: 'Add all used parts',
-            body: "Make sure every part you used today is added to your completed jobs.",
+            channelId: 'job_alerts_v2',
+            defaultSound: true,
+            color: '#F59E0B',
+            tag: 'parts-reminder',
           },
-          data: { type: 'job_notification' },
-          android: {
-            priority: 'high',
-            notification: {
-              channelId: 'job_alerts_v2',
-              defaultSound: true,
-              color: '#F59E0B',
-              tag: 'parts-reminder',
-            },
-          },
-        });
-        sent += 1;
-      } catch (err) {
-        if (isStaleTokenError(err)) stale.push(token);
-        else console.error('[parts-reminder] send failed', err?.message || err);
-      }
-    }
-    await pruneTechnicianFcmTokens(db, technicianId, stale);
+        },
+      }),
+      'parts_reminder'
+    );
+    sent += result.sent;
   }
 
   // Companion push to every admin phone: how many jobs finished today, so
   // they know to verify the parts were actually logged.
   let adminSent = 0;
-  const { data: adminTokenRows } = await db.from('admin_push_tokens').select('token');
-  const adminTokens = (adminTokenRows || []).map((r) => r.token).filter(Boolean);
+  const adminTokens = await getAdminFcmTokens(db, 'parts_reminder');
   if (adminTokens.length > 0) {
     const jobCount = (doneToday || []).length;
     const res = await messaging.sendEachForMulticast({
@@ -137,7 +107,7 @@ exports.handler = async () => {
       if (!r.success && isStaleTokenError(r.error)) staleAdmin.push(adminTokens[i]);
     });
     if (staleAdmin.length > 0) {
-      await db.from('admin_push_tokens').delete().in('token', staleAdmin);
+      await pruneAdminFcmTokens(db, staleAdmin);
     }
   }
 

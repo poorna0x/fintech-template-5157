@@ -36,6 +36,7 @@ public class CallAlertReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
         if (!TelephonyManager.ACTION_PHONE_STATE_CHANGED.equals(intent.getAction())) return;
+        if (!DevicePrefsPlugin.shouldProcessIncomingCall(context)) return;
 
         String state = intent.getStringExtra(TelephonyManager.EXTRA_STATE);
         if (!TelephonyManager.EXTRA_STATE_RINGING.equals(state)) return;

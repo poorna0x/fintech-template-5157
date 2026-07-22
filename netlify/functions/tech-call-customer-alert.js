@@ -16,7 +16,7 @@
 // apply.
 
 const { createClient } = require('@supabase/supabase-js');
-const { getMessaging, isStaleTokenError } = require('./fcm-helper');
+const { getMessaging, isStaleTokenError, getAdminFcmTokens, pruneAdminFcmTokens } = require('./fcm-helper');
 const { checkRateLimit, checkRateLimitForKey, rateLimitResponseForKey } = require('./rate-limiter');
 
 const HEADERS = { 'Content-Type': 'application/json' };
@@ -141,16 +141,12 @@ exports.handler = async (event) => {
     }
   }
 
-  const [{ data: tech }, { data: tokenRows, error: tokErr }] = await Promise.all([
+  const [{ data: tech }, tokens] = await Promise.all([
     technicianId
       ? db.from('technicians').select('full_name').eq('id', technicianId).maybeSingle()
       : Promise.resolve({ data: null }),
-    db.from('admin_push_tokens').select('token'),
+    getAdminFcmTokens(db, 'customer_calls'),
   ]);
-  if (tokErr) {
-    return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ sent: 0, reason: 'no_table' }) };
-  }
-  const tokens = (tokenRows || []).map((r) => r.token).filter(Boolean);
   if (tokens.length === 0) {
     return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ sent: 0, reason: 'no_tokens' }) };
   }
@@ -199,7 +195,7 @@ exports.handler = async (event) => {
       if (!r.success && isStaleTokenError(r.error)) stale.push(tokens[i]);
     });
     if (stale.length > 0) {
-      await db.from('admin_push_tokens').delete().in('token', stale);
+      await pruneAdminFcmTokens(db, stale);
     }
 
     return {

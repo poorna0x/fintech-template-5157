@@ -53,6 +53,7 @@ public class CallCaptureReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
         if (!TelephonyManager.ACTION_PHONE_STATE_CHANGED.equals(intent.getAction())) return;
+        if (!DevicePrefsPlugin.shouldProcessIncomingCall(context)) return;
 
         String state = intent.getStringExtra(TelephonyManager.EXTRA_STATE);
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);

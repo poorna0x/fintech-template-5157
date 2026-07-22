@@ -57,6 +57,7 @@ import CallingPage from '@/pages/CallingPage';
 import { registerAdminPWA } from '@/lib/pwa';
 import { EmailTrackingSettings } from '@/components/admin/EmailTrackingSettings';
 import { BookingIntentArchiveSettings } from '@/components/admin/BookingIntentArchiveSettings';
+import { DeviceTrackerSettings } from '@/components/admin/DeviceTrackerSettings';
 import { SettingsRemindersDialog } from '@/components/reminders/SettingsRemindersDialog';
 import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
 import { RecurringServiceTracker } from '@/components/reminders/RecurringServiceTracker';
@@ -2140,6 +2141,8 @@ const Settings = () => {
               </div>
             </CardContent>
           </Card>
+
+          <DeviceTrackerSettings />
 
           {/* Advanced customer search */}
           <SettingsActionCard

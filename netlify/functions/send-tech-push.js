@@ -201,7 +201,22 @@ exports.handler = async (event) => {
       });
     }
 
-    const { sent, tokens } = await sendToTechnicianDevices(db, messaging, technicianId, buildMessage);
+    let category = 'job_assigned';
+    if (clear) {
+      category = null;
+    } else if (callPhone || goingNow) {
+      category = 'job_nudges';
+    } else if (allowReply) {
+      category = 'office_messages';
+    }
+
+    const { sent, tokens } = await sendToTechnicianDevices(
+      db,
+      messaging,
+      technicianId,
+      buildMessage,
+      category
+    );
     if (tokens === 0) {
       return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'no_token' }) };
     }

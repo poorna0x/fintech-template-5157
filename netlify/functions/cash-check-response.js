@@ -83,7 +83,7 @@ exports.handler = async (event) => {
           tag: 'cash-reminder',
         },
       },
-    }));
+    }), 'job_nudges');
     if (tokens === 0) {
       return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'no_token' }) };
     }

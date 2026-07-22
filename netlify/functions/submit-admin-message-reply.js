@@ -64,7 +64,7 @@ exports.handler = async (event) => {
         color: '#2563EB',
       },
       android: { priority: 'high' },
-    }));
+    }), 'office_messages');
     if (tokens === 0) {
       return { statusCode: 200, headers, body: JSON.stringify({ ok: true, devices: 0 }) };
     }

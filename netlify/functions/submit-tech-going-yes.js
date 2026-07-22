@@ -3,7 +3,7 @@
 // Auth: HMAC startToken from send-tech-push (no session).
 
 const { createClient } = require('@supabase/supabase-js');
-const { getMessaging, isStaleTokenError } = require('./fcm-helper');
+const { getMessaging, isStaleTokenError, getAdminFcmTokens, pruneAdminFcmTokens } = require('./fcm-helper');
 const { verifyJobStartNudgeToken } = require('./job-start-nudge-token');
 
 const STARTABLE = new Set(['ASSIGNED', 'PENDING', 'EN_ROUTE']);
@@ -97,8 +97,7 @@ exports.handler = async (event) => {
     const title = `${techName} is on the way`;
     const message = `${service} — ${customerName}`;
 
-    const { data: tokenRows } = await db.from('admin_push_tokens').select('token');
-    const tokens = [...new Set((tokenRows || []).map((r) => r.token).filter(Boolean))];
+    const tokens = [...new Set(await getAdminFcmTokens(db, 'job_status'))];
 
     if (tokens.length) {
       try {
@@ -124,7 +123,7 @@ exports.handler = async (event) => {
         res.responses.forEach((r, i) => {
           if (!r.success && isStaleTokenError(r.error)) stale.push(tokens[i]);
         });
-        if (stale.length) await db.from('admin_push_tokens').delete().in('token', stale);
+        if (stale.length) await pruneAdminFcmTokens(db, stale);
       } catch (err) {
         console.error('[submit-tech-going-yes] push', err?.message || err);
       }

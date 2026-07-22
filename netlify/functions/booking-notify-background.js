@@ -16,12 +16,11 @@
 //     required, so the endpoint cannot be hit directly to spam the owner inbox.
 const { getServiceClient } = require('./booking-guard');
 const { sendBookingAdminNotification } = require('./booking-notify');
-const { getMessaging, isStaleTokenError } = require('./fcm-helper');
+const { getMessaging, getAdminFcmTokens, pruneAdminFcmTokens, isStaleTokenError } = require('./fcm-helper');
 
 /** Instant push to all admin phones (HRO Admin app) — best-effort. */
 async function pushBookingToAdmins(db, details) {
-  const { data: tokenRows } = await db.from('admin_push_tokens').select('token');
-  const tokens = (tokenRows || []).map((r) => r.token).filter(Boolean);
+  const tokens = await getAdminFcmTokens(db, 'new_booking');
   if (tokens.length === 0) return;
 
   const service = [details.serviceType, details.serviceSubType]
@@ -54,7 +53,7 @@ async function pushBookingToAdmins(db, details) {
     if (!r.success && isStaleTokenError(r.error)) stale.push(tokens[i]);
   });
   if (stale.length > 0) {
-    await db.from('admin_push_tokens').delete().in('token', stale);
+    await pruneAdminFcmTokens(db, stale);
   }
 }
 

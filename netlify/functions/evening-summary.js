@@ -3,7 +3,7 @@
 // "9 completed · ₹12,400 collected (₹4,300 cash) · 2 jobs still open"
 
 const { createClient } = require('@supabase/supabase-js');
-const { getMessaging, isStaleTokenError } = require('./fcm-helper');
+const { getMessaging, isStaleTokenError, getAdminFcmTokens, pruneAdminFcmTokens } = require('./fcm-helper');
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
@@ -27,7 +27,7 @@ exports.handler = async () => {
     Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate()) - IST_OFFSET_MS
   );
 
-  const [{ data: completed, error: compErr }, { count: openCount }, { data: tokenRows }] =
+  const [{ data: completed, error: compErr }, { count: openCount }, tokens] =
     await Promise.all([
       db
         .from('jobs')
@@ -38,13 +38,12 @@ exports.handler = async () => {
         .from('jobs')
         .select('id', { count: 'exact', head: true })
         .in('status', ['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS']),
-      db.from('admin_push_tokens').select('token'),
+      getAdminFcmTokens(db, 'day_summary'),
     ]);
   if (compErr) {
     console.error('[evening-summary] jobs query failed', compErr.message);
     return { statusCode: 500, body: 'Query failed' };
   }
-  const tokens = (tokenRows || []).map((r) => r.token).filter(Boolean);
   if (tokens.length === 0) {
     return { statusCode: 200, body: JSON.stringify({ sent: 0, reason: 'no_tokens' }) };
   }
@@ -100,7 +99,7 @@ exports.handler = async () => {
     if (!r.success && isStaleTokenError(r.error)) stale.push(tokens[i]);
   });
   if (stale.length > 0) {
-    await db.from('admin_push_tokens').delete().in('token', stale);
+    await pruneAdminFcmTokens(db, stale);
   }
 
   console.log(`[evening-summary] ${title} — ${message} → ${res.successCount} phone(s)`);

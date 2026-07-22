@@ -8,7 +8,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
 const { verifyStaffBearerToken, readBearerToken } = require('./admin-auth-guard');
-const { getMessaging, isStaleTokenError } = require('./fcm-helper');
+const { getMessaging, isStaleTokenError, getAdminFcmTokens, pruneAdminFcmTokens } = require('./fcm-helper');
 const { checkRateLimitForKey, rateLimitResponseForKey } = require('./rate-limiter');
 
 exports.handler = async (event) => {
@@ -73,11 +73,7 @@ exports.handler = async (event) => {
     return { statusCode: 403, headers, body: JSON.stringify({ error: 'Inactive technician' }) };
   }
 
-  const { data: tokenRows, error: tokErr } = await db.from('admin_push_tokens').select('token');
-  if (tokErr) {
-    return { statusCode: 200, headers, body: JSON.stringify({ sent: 0, reason: 'no_table' }) };
-  }
-  const tokens = (tokenRows || []).map((r) => r.token).filter(Boolean);
+  const tokens = await getAdminFcmTokens(db, 'tech_search');
   if (tokens.length === 0) {
     return { statusCode: 200, headers, body: JSON.stringify({ sent: 0, reason: 'no_tokens' }) };
   }
@@ -116,7 +112,7 @@ exports.handler = async (event) => {
       if (!r.success && isStaleTokenError(r.error)) stale.push(tokens[i]);
     });
     if (stale.length > 0) {
-      await db.from('admin_push_tokens').delete().in('token', stale);
+      await pruneAdminFcmTokens(db, stale);
     }
 
     return { statusCode: 200, headers, body: JSON.stringify({ sent: res.successCount }) };

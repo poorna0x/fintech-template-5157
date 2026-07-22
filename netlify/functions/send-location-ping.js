@@ -93,7 +93,7 @@ exports.handler = async (event) => {
         ...(siteUrl ? { uploadUrl: `${siteUrl}/.netlify/functions/upload-tech-location` } : {}),
       },
       android: { priority: 'high' },
-    }));
+    }), 'location_ping');
     if (tokens === 0) {
       return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'no_token' }) };
     }

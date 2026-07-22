@@ -9,6 +9,7 @@ export const SETTINGS_SECTIONS = {
   'email-tracking': true,
   'booking-intent-archive': true,
   calling: true,
+  'device-tracker': true,
 } as const;
 
 export type SettingsSectionId = keyof typeof SETTINGS_SECTIONS;

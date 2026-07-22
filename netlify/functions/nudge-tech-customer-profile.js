@@ -94,7 +94,7 @@ exports.handler = async (event) => {
           tag: `profile_gap_${jobId}_${phase}`,
         },
       },
-    }));
+    }), 'job_assigned');
     return {
       statusCode: 200,
       headers,

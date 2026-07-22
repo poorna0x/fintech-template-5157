@@ -9,7 +9,7 @@
 
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
-const { getMessaging, isStaleTokenError } = require('./fcm-helper');
+const { getMessaging, isStaleTokenError, getAdminFcmTokens, pruneAdminFcmTokens } = require('./fcm-helper');
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
@@ -93,11 +93,10 @@ exports.handler = async () => {
   }
 
   const technicianIds = [...cashByTechnician.keys()];
-  const [{ data: techs }, { data: tokenRows }] = await Promise.all([
+  const [{ data: techs }, adminTokens] = await Promise.all([
     db.from('technicians').select('id,full_name').in('id', technicianIds),
-    db.from('admin_push_tokens').select('token'),
+    getAdminFcmTokens(db, 'cash_check'),
   ]);
-  const adminTokens = (tokenRows || []).map((r) => r.token).filter(Boolean);
   if (adminTokens.length === 0) {
     return { statusCode: 200, body: JSON.stringify({ sent: 0, reason: 'no_admin_tokens' }) };
   }
@@ -137,7 +136,7 @@ exports.handler = async () => {
   }
 
   if (staleTokens.size > 0) {
-    await db.from('admin_push_tokens').delete().in('token', [...staleTokens]);
+    await pruneAdminFcmTokens(db, [...staleTokens]);
   }
 
   console.log(`[daily-cash-check] ${dateLabel}: ${cashByTechnician.size} technician(s), ${sent} push(es)`);

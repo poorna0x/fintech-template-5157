@@ -4,7 +4,7 @@
 // tap always deep-links into Settings on that customer.
 
 const { createClient } = require('@supabase/supabase-js');
-const { getMessaging, isStaleTokenError } = require('./fcm-helper');
+const { getMessaging, isStaleTokenError, getAdminFcmTokens, pruneAdminFcmTokens } = require('./fcm-helper');
 
 const PENDING_PAYMENT_TITLE = 'Pending payment';
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
@@ -60,26 +60,21 @@ exports.handler = async () => {
 
   const today = istTodayYmd();
 
-  const [{ data: reminders, error: remErr }, { data: tokenRows, error: tokErr }] = await Promise.all([
+  const [{ data: reminders, error: remErr }, tokens] = await Promise.all([
     db
       .from('reminders')
       .select('id,title,notes,entity_type,entity_id,reminder_at')
       .eq('reminder_at', today)
       .is('completed_at', null)
       .order('created_at', { ascending: true }),
-    db.from('admin_push_tokens').select('token'),
+    getAdminFcmTokens(db, 'reminders'),
   ]);
 
   if (remErr) {
     console.error('[admin-reminders-push] reminders query failed', remErr.message);
     return { statusCode: 500, body: 'Query failed' };
   }
-  if (tokErr) {
-    console.error('[admin-reminders-push] token lookup failed', tokErr.message);
-    return { statusCode: 200, body: JSON.stringify({ sent: 0, reason: 'no_table' }) };
-  }
 
-  const tokens = (tokenRows || []).map((r) => r.token).filter(Boolean);
   if (tokens.length === 0) {
     return { statusCode: 200, body: JSON.stringify({ sent: 0, reason: 'no_tokens', today }) };
   }
@@ -190,7 +185,7 @@ exports.handler = async () => {
   }
 
   if (staleTokens.size > 0) {
-    await db.from('admin_push_tokens').delete().in('token', [...staleTokens]);
+    await pruneAdminFcmTokens(db, [...staleTokens]);
   }
 
   console.log(

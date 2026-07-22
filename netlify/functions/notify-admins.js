@@ -5,7 +5,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
 const { verifyStaffBearerToken, readBearerToken } = require('./admin-auth-guard');
-const { getMessaging, isStaleTokenError, sendToTechnicianDevices } = require('./fcm-helper');
+const { getMessaging, isStaleTokenError, sendToTechnicianDevices, getAdminFcmTokens, pruneAdminFcmTokens } = require('./fcm-helper');
 
 const COLOR_EN_ROUTE = '#2563EB'; // blue — on the way
 const COLOR_COMPLETED = '#16A34A'; // green — done
@@ -149,15 +149,7 @@ exports.handler = async (event) => {
     .eq('id', technicianId)
     .maybeSingle();
 
-  const { data: tokenRows, error: tokErr } = await db
-    .from('admin_push_tokens')
-    .select('token');
-  if (tokErr) {
-    // Table missing (SQL script not run yet) — not an app error.
-    console.error('[notify-admins] token lookup failed', tokErr.message);
-    return { statusCode: 200, headers, body: JSON.stringify({ sent: 0, reason: 'no_table' }) };
-  }
-  const tokens = (tokenRows || []).map((r) => r.token).filter(Boolean);
+  const tokens = await getAdminFcmTokens(db, 'job_status');
   if (tokens.length === 0) {
     return { statusCode: 200, headers, body: JSON.stringify({ sent: 0, reason: 'no_tokens' }) };
   }
@@ -235,7 +227,7 @@ exports.handler = async (event) => {
               tag: `bill_missing_${jobId}`,
             },
           },
-        }));
+        }), 'bill_reminders');
       } catch (techPushErr) {
         console.warn(
           '[notify-admins] bill-missing tech push failed',
@@ -272,7 +264,7 @@ exports.handler = async (event) => {
       if (!r.success && isStaleTokenError(r.error)) stale.push(tokens[i]);
     });
     if (stale.length > 0) {
-      await db.from('admin_push_tokens').delete().in('token', stale);
+      await pruneAdminFcmTokens(db, stale);
     }
 
     return {

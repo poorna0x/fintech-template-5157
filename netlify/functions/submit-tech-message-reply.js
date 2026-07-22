@@ -4,7 +4,7 @@
 // as a data-only notification so admins can reply back inline.
 
 const { createClient } = require('@supabase/supabase-js');
-const { getMessaging, isStaleTokenError } = require('./fcm-helper');
+const { getMessaging, isStaleTokenError, getAdminFcmTokens, pruneAdminFcmTokens } = require('./fcm-helper');
 const {
   makeOfficeMessageReplyToken,
   verifyOfficeMessageReplyToken,
@@ -113,12 +113,7 @@ exports.handler = async (event) => {
       ? techPhotoRaw
       : '';
 
-  const { data: tokenRows, error: tokErr } = await db.from('admin_push_tokens').select('token');
-  if (tokErr) {
-    console.error('[submit-tech-message-reply] admin tokens', tokErr.message);
-    return { statusCode: 500, headers, body: JSON.stringify({ error: 'Token lookup failed' }) };
-  }
-  const tokens = [...new Set((tokenRows || []).map((r) => r.token).filter(Boolean))];
+  const tokens = await getAdminFcmTokens(db, 'tech_messages');
   if (tokens.length === 0) {
     return { statusCode: 200, headers, body: JSON.stringify({ ok: true, admins: 0 }) };
   }
@@ -166,7 +161,7 @@ exports.handler = async (event) => {
       else console.error('[submit-tech-message-reply] send failed', r.reason?.message || r.reason);
     });
     if (stale.length) {
-      await db.from('admin_push_tokens').delete().in('token', stale);
+      await pruneAdminFcmTokens(db, stale);
     }
     return { statusCode: 200, headers, body: JSON.stringify({ ok: true, admins: sent }) };
   } catch (err) {
