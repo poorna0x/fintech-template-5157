@@ -80,3 +80,68 @@ export function reportRecentTechnicianCallToAdmins(): void {
     if (digits) notifyAdminsTechnicianCall(digits);
   });
 }
+
+export type TechnicianCallerDebugInfo = {
+  prefsNumber: string | null;
+  prefsAt: number | null;
+  callLogNumber: string | null;
+  hasCallLogPermission: boolean;
+  checkedAt: number;
+  /** Best number to display (prefs or CallLog). */
+  displayNumber: string | null;
+  source: 'prefs' | 'call_log' | null;
+};
+
+/** Diagnostics for Moto/Truecaller tests — does not consume or notify. */
+export async function debugReadTechnicianCallerCapture(): Promise<TechnicianCallerDebugInfo | null> {
+  if (!isAvailable()) return null;
+  try {
+    const plugin = RecentCall as RecentCallPlugin & {
+      debugReadRecentCall?: () => Promise<{
+        prefsNumber?: string;
+        prefsAt?: number;
+        callLogNumber?: string;
+        hasCallLogPermission?: boolean;
+        checkedAt?: number;
+      }>;
+    };
+    if (typeof plugin.debugReadRecentCall !== 'function') {
+      const hit = await peekRecentTechnicianCaller();
+      return {
+        prefsNumber: hit?.digits ?? null,
+        prefsAt: hit?.at ?? null,
+        callLogNumber: null,
+        hasCallLogPermission: true,
+        checkedAt: Date.now(),
+        displayNumber: hit?.digits ?? null,
+        source: hit ? 'prefs' : null,
+      };
+    }
+    const raw = await plugin.debugReadRecentCall();
+    const prefsNumber = raw.prefsNumber
+      ? normalizePhoneForSearch(raw.prefsNumber)
+      : null;
+    const callLogNumber = raw.callLogNumber
+      ? normalizePhoneForSearch(raw.callLogNumber)
+      : null;
+    const displayNumber =
+      (prefsNumber && prefsNumber.length >= 7 ? prefsNumber : null) ||
+      (callLogNumber && callLogNumber.length >= 7 ? callLogNumber : null);
+    const source: TechnicianCallerDebugInfo['source'] = prefsNumber
+      ? 'prefs'
+      : callLogNumber
+        ? 'call_log'
+        : null;
+    return {
+      prefsNumber: prefsNumber && prefsNumber.length >= 7 ? prefsNumber : null,
+      prefsAt: typeof raw.prefsAt === 'number' ? raw.prefsAt : null,
+      callLogNumber: callLogNumber && callLogNumber.length >= 7 ? callLogNumber : null,
+      hasCallLogPermission: raw.hasCallLogPermission !== false,
+      checkedAt: typeof raw.checkedAt === 'number' ? raw.checkedAt : Date.now(),
+      displayNumber,
+      source,
+    };
+  } catch {
+    return null;
+  }
+}

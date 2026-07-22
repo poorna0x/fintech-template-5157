@@ -76,4 +76,33 @@ public class RecentCallPlugin extends Plugin {
     public void peekRecentCall(PluginCall call) {
         call.resolve(readRecent(false));
     }
+
+    /**
+     * Test/diagnostics: always report prefs + CallLog (no consume gating) so
+     * we can see if the dialer wrote a number after a call.
+     */
+    @PluginMethod
+    public void debugReadRecentCall(PluginCall call) {
+        SharedPreferences prefs = prefs();
+        JSObject ret = new JSObject();
+        String prefsNumber = prefs.getString(CallAlertReceiver.KEY_LAST_NUMBER, null);
+        long prefsAt = prefs.getLong(CallAlertReceiver.KEY_LAST_AT, 0L);
+        long consumedAt = prefs.getLong(CallAlertReceiver.KEY_CONSUMED_AT, 0L);
+        if (prefsNumber != null) ret.put("prefsNumber", prefsNumber);
+        if (prefsAt > 0) ret.put("prefsAt", prefsAt);
+        if (consumedAt > 0) ret.put("consumedAt", consumedAt);
+
+        long since = System.currentTimeMillis() - 15 * 60_000L;
+        String fromLog = CallLogHelper.latestIncomingNumber(getContext(), since);
+        if (fromLog == null || fromLog.isEmpty()) {
+            fromLog = CallLogHelper.latestAnyNumber(getContext(), since);
+            if (fromLog != null) ret.put("callLogAny", true);
+        }
+        if (fromLog != null && !fromLog.isEmpty()) {
+            ret.put("callLogNumber", fromLog);
+        }
+        ret.put("hasCallLogPermission", CallLogHelper.hasCallLogPermission(getContext()));
+        ret.put("checkedAt", System.currentTimeMillis());
+        call.resolve(ret);
+    }
 }
