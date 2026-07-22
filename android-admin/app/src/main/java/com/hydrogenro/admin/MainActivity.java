@@ -31,6 +31,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(IncomingCallPlugin.class);
         registerPlugin(AdminClipboardPlugin.class);
+        registerPlugin(PdfSavePlugin.class);
         final SplashScreen splash = SplashScreen.installSplashScreen(this);
         splash.setKeepOnScreenCondition(() -> !bootUiReady.get() && !pageReady.get());
         splash.setOnExitAnimationListener(SplashScreenViewProvider::remove);

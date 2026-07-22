@@ -69,9 +69,31 @@ function triggerFileDownload(buffer: ArrayBuffer, filename: string): void {
 
 /**
  * Android/iOS WebView ignores <a download> for blob URLs — toast says success
- * but nothing appears. Write to cache + open the system Share sheet so the
- * user can Save to Files / Downloads / Drive.
+ * but nothing appears. On Android, also write into public Downloads via the
+ * PdfSave plugin so Files → Downloads shows the PDF. Then open the system
+ * Share sheet so the user can send it (WhatsApp / Drive / etc.).
  */
+async function savePdfToPublicDownloads(buffer: ArrayBuffer, filename: string): Promise<boolean> {
+  try {
+    const { Capacitor, registerPlugin } = await import('@capacitor/core');
+    if (!Capacitor.isNativePlatform()) return false;
+    if (!Capacitor.isPluginAvailable('PdfSave')) return false;
+
+    type PdfSavePlugin = {
+      saveToDownloads(options: { filename: string; data: string }): Promise<{ path?: string }>;
+    };
+    const PdfSave = registerPlugin<PdfSavePlugin>('PdfSave');
+    await PdfSave.saveToDownloads({
+      filename: sanitizeFilename(filename),
+      data: arrayBufferToBase64(buffer),
+    });
+    return true;
+  } catch (err) {
+    console.warn('[pdf] save to Downloads failed', err);
+    return false;
+  }
+}
+
 async function triggerNativePdfShare(buffer: ArrayBuffer, filename: string): Promise<void> {
   const { Filesystem, Directory } = await import('@capacitor/filesystem');
   const { Share } = await import('@capacitor/share');
@@ -94,19 +116,30 @@ async function triggerNativePdfShare(buffer: ArrayBuffer, filename: string): Pro
     title: safeName,
     text: safeName,
     url: fileUrl,
-    dialogTitle: 'Save or share PDF',
+    dialogTitle: 'Share PDF',
   });
 }
 
-async function deliverPdfFile(buffer: ArrayBuffer, filename: string): Promise<'native' | 'web'> {
+async function deliverPdfFile(
+  buffer: ArrayBuffer,
+  filename: string
+): Promise<'native-saved' | 'native' | 'web'> {
   try {
     const { Capacitor } = await import('@capacitor/core');
     if (Capacitor.isNativePlatform()) {
-      await triggerNativePdfShare(buffer, filename);
-      return 'native';
+      const saved = await savePdfToPublicDownloads(buffer, filename);
+      try {
+        await triggerNativePdfShare(buffer, filename);
+      } catch (shareErr) {
+        // User dismissed share, or share failed — Downloads save still counts.
+        console.warn('[pdf] native share skipped/failed', shareErr);
+        if (saved) return 'native-saved';
+        throw shareErr;
+      }
+      return saved ? 'native-saved' : 'native';
     }
   } catch (err) {
-    console.warn('[pdf] native share failed, falling back to anchor download', err);
+    console.warn('[pdf] native delivery failed, falling back to anchor download', err);
   }
   triggerFileDownload(buffer, filename);
   return 'web';
@@ -349,9 +382,16 @@ export async function downloadDocumentPdf(options: DownloadDocumentPdfOptions): 
 
   try {
     const mode = await downloadViaServer(html, filename);
-    toast.success(mode === 'native' ? 'PDF ready — use Save / Share' : 'PDF downloaded', {
-      id: toastId,
-    });
+    toast.success(
+      mode === 'native-saved'
+        ? 'PDF saved to Downloads'
+        : mode === 'native'
+          ? 'PDF ready — use Share'
+          : 'PDF downloaded',
+      {
+        id: toastId,
+      }
+    );
   } catch (error) {
     const opened = openHtmlPrintFallback(html);
     if (opened) {
