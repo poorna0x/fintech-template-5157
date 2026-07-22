@@ -36,7 +36,10 @@ public class CallAlertReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
         if (!TelephonyManager.ACTION_PHONE_STATE_CHANGED.equals(intent.getAction())) return;
-        if (!DevicePrefsPlugin.shouldProcessIncomingCall(context)) return;
+        // Do NOT gate on native SharedPreferences here. Device Tracker mute is
+        // enforced on the server (call_alerts_enabled). A stale native "off"
+        // (silent FCM prefs sync missed) was blocking rings while tech search
+        // pushes still worked — same admin phone, different code path.
 
         String state = intent.getStringExtra(TelephonyManager.EXTRA_STATE);
         if (!TelephonyManager.EXTRA_STATE_RINGING.equals(state)) return;
