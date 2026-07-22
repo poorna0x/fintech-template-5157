@@ -3,11 +3,20 @@
  * On Capacitor Android/iOS, navigator.clipboard.readText is often blocked in
  * the WebView — use the native Clipboard plugin instead.
  *
+ * Admin APK: prefers AdminClipboard (handles Google Maps HTML/URI shares that
+ * stock @capacitor/clipboard often returns empty for).
+ *
  * Desktop website: Clipboard API needs a fresh user gesture. Callers should
  * prefer `beginWebClipboardRead()` at the start of a click handler (before any
  * await) so Chrome does not drop transient activation.
  */
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
+
+type AdminClipboardPlugin = {
+  readText(): Promise<{ value?: string }>;
+};
+
+const AdminClipboard = registerPlugin<AdminClipboardPlugin>('AdminClipboard');
 
 function isNativePlatform(): boolean {
   try {
@@ -54,8 +63,22 @@ export function beginWebClipboardRead(): Promise<string> | null {
   return navigator.clipboard.readText();
 }
 
+async function readViaAdminClipboardPlugin(): Promise<string | null> {
+  if (!Capacitor.isPluginAvailable('AdminClipboard')) return null;
+  try {
+    const { value } = await AdminClipboard.readText();
+    return typeof value === 'string' ? value : '';
+  } catch {
+    return null;
+  }
+}
+
 export async function readClipboardText(): Promise<string> {
   if (isNativePlatform()) {
+    // Prefer admin-hardened reader (Maps shares, UI-thread, coerceToText).
+    const adminRead = await readViaAdminClipboardPlugin();
+    if (adminRead !== null) return adminRead;
+
     const { Clipboard } = await import('@capacitor/clipboard');
     try {
       const { value } = await Clipboard.read();

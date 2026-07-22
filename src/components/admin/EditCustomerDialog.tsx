@@ -30,6 +30,7 @@ import {
   sanitizeGoogleMapsInput,
 } from '@/lib/googleMapsLink';
 import { removePlusCode } from '@/lib/maps';
+import { beginWebClipboardRead, readClipboardText } from '@/lib/nativeClipboard';
 
 /** Persist a coords URL so assign/distance never depends on short-link expand again. */
 function mapsLinkFromCoords(latitude: number, longitude: number): string {
@@ -213,6 +214,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
     cost_agreed: false
   });
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isFetchingAddress, setIsFetchingAddress] = useState(false);
   const [visibleAddressSuggestions, setVisibleAddressSuggestions] = useState(false);
   const [brandSuggestions, setBrandSuggestions] = useState<string[]>([]);
   const [modelSuggestions, setModelSuggestions] = useState<string[]>([]);
@@ -226,6 +228,8 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
   /** Latest form snapshot for Save (avoids stale closure after Fetch Address). */
   const editFormDataRef = useRef(editFormData);
   editFormDataRef.current = editFormData;
+  /** Full Maps share text from clipboard — used when short-link expand fails. */
+  const mapsShareTextRef = useRef('');
 
   const filteredAddressSuggestions = useMemo(() => {
     if (!editFormData?.visible_address || editFormData.visible_address.trim().length === 0) {
@@ -747,38 +751,107 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
   // Reverse geocode — uses shared helper (formatted address + components, one Google call)
   const reverseGeocode = async (lat: number, lng: number) => reverseGeocodeLatLng(lat, lng);
 
+  const readMapsLinkFromClipboard = async (
+    earlyWebRead?: Promise<string> | null
+  ): Promise<string | null> => {
+    let text = '';
+    try {
+      if (earlyWebRead) {
+        try {
+          text = await earlyWebRead;
+        } catch {
+          text = await readClipboardText();
+        }
+      } else {
+        text = await readClipboardText();
+      }
+    } catch (err) {
+      const code = err instanceof Error ? err.message : '';
+      if (code === 'clipboard_unavailable') {
+        toast.error(
+          'Clipboard is not available here. Paste the link into the field, then click Fetch Address.'
+        );
+      } else {
+        toast.error(
+          'Clipboard access was denied. Paste the link into the field, then click Fetch Address.'
+        );
+      }
+      return null;
+    }
+    if (!text || !text.trim()) {
+      toast.error('Clipboard is empty. Copy a Google Maps share link first.');
+      return null;
+    }
+    mapsShareTextRef.current = text;
+    const link = extractMapsUrlFromText(text);
+    if (!link) {
+      toast.error("Clipboard doesn't contain a Google Maps link.");
+      return null;
+    }
+    return link;
+  };
+
   const fetchAddressFromGoogleLocation = async (slot: 'primary' | 'secondary' = 'primary') => {
+    if (isFetchingAddress) return;
+
     const isPrimary = slot === 'primary';
-    const googleLocationField = isPrimary
-      ? editFormData?.google_location || ''
-      : editFormData?.alternate_google_location || '';
-    const googleLocation =
-      extractMapsUrlFromText(googleLocationField) ||
-      sanitizeGoogleMapsInput(googleLocationField);
-    
-    if (!googleLocation) {
-      toast.error('Please enter a Google Maps link first');
-      return;
-    }
+    const fieldKey = isPrimary ? 'google_location' : 'alternate_google_location';
+    const fieldNowRaw = isPrimary
+      ? editFormDataRef.current?.google_location || ''
+      : editFormDataRef.current?.alternate_google_location || '';
+    const fieldNow =
+      extractMapsUrlFromText(fieldNowRaw) || sanitizeGoogleMapsInput(fieldNowRaw);
+    // Desktop: start clipboard read in the same tick as the click. No-op on admin APK.
+    const earlyWebClipboard = !fieldNow ? beginWebClipboardRead() : null;
 
-    if (!isGoogleMapsUrl(googleLocation)) {
-      toast.error('Please enter a valid Google Maps link');
-      return;
-    }
-
+    setIsFetchingAddress(true);
     let loadingToast: string | number | undefined;
 
     try {
+      let googleLocationField = fieldNowRaw;
+      let googleLocation = fieldNow;
+
+      if (!googleLocation) {
+        const clipboardLink = await readMapsLinkFromClipboard(earlyWebClipboard);
+        if (!clipboardLink) return;
+
+        const latestRaw = isPrimary
+          ? editFormDataRef.current?.google_location || ''
+          : editFormDataRef.current?.alternate_google_location || '';
+        const latestTyped =
+          extractMapsUrlFromText(latestRaw) || sanitizeGoogleMapsInput(latestRaw);
+        if (latestTyped) {
+          googleLocationField = latestRaw;
+          googleLocation = latestTyped;
+        } else {
+          googleLocationField = mapsShareTextRef.current || clipboardLink;
+          googleLocation = clipboardLink;
+          setEditFormData((prev) => {
+            const next = { ...prev, [fieldKey]: clipboardLink };
+            editFormDataRef.current = next;
+            return next;
+          });
+          toast.info('Pasted link from clipboard');
+        }
+      } else {
+        mapsShareTextRef.current = googleLocationField;
+      }
+
+      if (!isGoogleMapsUrl(googleLocation)) {
+        toast.error('Please enter a valid Google Maps link');
+        return;
+      }
+
       const token = await resolveSupabaseAccessTokenForApi();
       if (isGoogleMapsShortLink(googleLocation)) {
         loadingToast = toast.loading('Resolving short link...');
       }
 
       const resolved = await resolveGoogleMapsInputToCoords(googleLocation, {
-        shareText: googleLocationField,
+        shareText: mapsShareTextRef.current || googleLocationField,
         addressHint: isPrimary
-          ? editFormData?.address?.street || ''
-          : editFormData?.alternate_address?.street || '',
+          ? editFormDataRef.current?.address?.street || ''
+          : editFormDataRef.current?.alternate_address?.street || '',
         accessToken: token,
       });
 
@@ -932,6 +1005,7 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
       toast.error('Failed to fetch address. Please try again.');
     } finally {
       if (loadingToast !== undefined) toast.dismiss(loadingToast);
+      setIsFetchingAddress(false);
     }
   };
 
@@ -1552,11 +1626,12 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
                 variant="outline"
                 size="sm"
                 onClick={() => fetchAddressFromGoogleLocation(slot)}
+                disabled={isFetchingAddress}
                 className="w-full whitespace-nowrap"
-                title="Fetch address from Google Maps link"
+                title="Fetch address from Google Maps link or clipboard"
               >
                 <Download className="w-3 h-3 mr-1" />
-                Fetch Address
+                {isFetchingAddress ? 'Fetching…' : 'Fetch Address'}
               </Button>
               <Button
                 type="button"
