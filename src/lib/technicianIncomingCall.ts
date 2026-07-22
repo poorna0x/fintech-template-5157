@@ -47,14 +47,25 @@ export async function consumeRecentTechnicianCallerNumber(): Promise<string | nu
 
 /** Same as consume, but does not mark the call used (resume notify path). */
 export async function peekRecentTechnicianCallerNumber(): Promise<string | null> {
+  const hit = await peekRecentTechnicianCaller();
+  return hit?.digits ?? null;
+}
+
+/** Digits + native ring timestamp (for dedupe against the same saved call). */
+export async function peekRecentTechnicianCaller(): Promise<{
+  digits: string;
+  at: number;
+} | null> {
   if (!isAvailable()) return null;
   try {
-    // Older APKs only have consume — fall back so notify still works once.
     if (typeof (RecentCall as RecentCallPlugin).peekRecentCall !== 'function') {
-      return consumeRecentTechnicianCallerNumber();
+      const digits = await consumeRecentTechnicianCallerNumber();
+      return digits ? { digits, at: Date.now() } : null;
     }
     const { number, at } = await RecentCall.peekRecentCall();
-    return normalizeFresh(number, at);
+    const digits = normalizeFresh(number, at);
+    if (!digits || typeof at !== 'number') return null;
+    return { digits, at };
   } catch {
     return null;
   }

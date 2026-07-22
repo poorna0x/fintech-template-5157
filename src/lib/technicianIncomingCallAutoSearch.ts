@@ -1,20 +1,17 @@
 /**
  * Technician incoming-call → silent background lookup (technician sees nothing).
  *
- * Native CallAlertReceiver / CallLog saves the last ringing number. On app
- * open/resume (and a light poll while the dashboard is open) we consume it and
- * POST to tech-call-customer-alert. The server searches by phone and only
- * pushes admins when a customer is found; unknown numbers are ignored.
+ * Native CallAlertReceiver usually POSTs with FCM already. This is a JWT backup
+ * via peek (does not consume) so a 2nd call within minutes still works.
+ * Server searches by phone and only pushes admins when a customer is found.
  */
 import { Capacitor } from '@capacitor/core';
 import type { PluginListenerHandle } from '@capacitor/core';
-import { consumeRecentTechnicianCallerNumber } from '@/lib/technicianIncomingCall';
+import { peekRecentTechnicianCaller } from '@/lib/technicianIncomingCall';
 import { notifyAdminsTechnicianCall } from '@/lib/technicianCallAlert';
 
 const LAST_AUTO_KEY = 'hro_tech_incoming_bg_lookup';
-/** Don't re-fire for the same caller within the CallLog fresh window. */
-const FRESH_MS = 5 * 60_000;
-const POLL_MS = 3_000;
+const POLL_MS = 2_000;
 
 function readLastAuto(): { phone: string; at: number } | null {
   try {
@@ -28,7 +25,7 @@ function readLastAuto(): { phone: string; at: number } | null {
   }
 }
 
-function markLastAuto(phone: string, at = Date.now()): void {
+function markLastAuto(phone: string, at: number): void {
   try {
     sessionStorage.setItem(LAST_AUTO_KEY, JSON.stringify({ phone, at }));
   } catch {
@@ -36,10 +33,11 @@ function markLastAuto(phone: string, at = Date.now()): void {
   }
 }
 
-function alreadyHandled(phone: string): boolean {
+/** Already notified for this exact native ring (same phone + same at). */
+function alreadyHandled(phone: string, callAt: number): boolean {
   const last = readLastAuto();
   if (!last) return false;
-  return last.phone === phone && Date.now() - last.at < FRESH_MS;
+  return last.phone === phone && last.at === callAt;
 }
 
 /**
@@ -56,22 +54,20 @@ export function initTechnicianIncomingCallBackgroundLookup(): () => void {
   const deliver = async () => {
     if (disposed) return;
     try {
-      const digits = await consumeRecentTechnicianCallerNumber();
-      if (!digits || disposed) return;
-      if (alreadyHandled(digits)) return;
-      markLastAuto(digits);
-      // Server looks up customer; push only if found. Tech UI unchanged.
-      notifyAdminsTechnicianCall(digits);
+      const hit = await peekRecentTechnicianCaller();
+      if (!hit || disposed) return;
+      if (alreadyHandled(hit.digits, hit.at)) return;
+      markLastAuto(hit.digits, hit.at);
+      notifyAdminsTechnicianCall(hit.digits);
     } catch {
       /* next resume / poll retries */
     }
   };
 
-  // Call log may write a moment after IDLE — try twice.
   void deliver();
   window.setTimeout(() => {
     if (!disposed) void deliver();
-  }, 1500);
+  }, 800);
 
   const onVisible = () => {
     if (document.visibilityState === 'visible') void deliver();

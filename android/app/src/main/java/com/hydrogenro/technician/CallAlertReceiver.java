@@ -21,10 +21,14 @@ import java.util.List;
  * When the technician phone rings (or the call ends), capture the caller and
  * POST to tech-call-customer-alert so admins are notified for known customers.
  *
- * Number sources (in order):
- *  1. EXTRA_INCOMING_NUMBER (often empty on OEMs)
- *  2. System CallLog (reliable with READ_CALL_LOG)
- *  3. Delayed CallLog retry after RINGING / on IDLE
+ * Fast path (same idea as admin CallCaptureReceiver):
+ *  - Android often fires RINGING twice — once without EXTRA_INCOMING_NUMBER,
+ *    once with it. Wait for the numbered broadcast; do NOT sleep 6s on CallLog.
+ *  - Truecaller / some OEMs never put the number in EXTRA — then CallLog on
+ *    IDLE (after the dialer writes the row) is the fallback.
+ *
+ * POST uses the stored FCM token immediately (search-alert speed); refresh
+ * token in the background for the next call.
  */
 public class CallAlertReceiver extends BroadcastReceiver {
 
@@ -34,7 +38,8 @@ public class CallAlertReceiver extends BroadcastReceiver {
     static final String KEY_LAST_AT = "last_at";
     static final String KEY_CONSUMED_AT = "consumed_at";
     private static final String KEY_RING_SEEN_AT = "ring_seen_at";
-    private static final long DEDUPE_WINDOW_MS = 10 * 60_000L;
+    /** Collapse double RINGING + RINGING/IDLE for one call — not 10 minutes. */
+    private static final long DEDUPE_WINDOW_MS = 45_000L;
     private static final long CALL_LOG_LOOKBACK_MS = 5 * 60_000L;
 
     private static final String ALERT_URL =
@@ -53,50 +58,24 @@ public class CallAlertReceiver extends BroadcastReceiver {
 
             String number = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER);
             if (number == null || number.trim().isEmpty()) {
+                // Like admin: empty EXTRA → wait for the second RINGING that
+                // carries the number. Instant CallLog peek only (no sleep) —
+                // Truecaller/OEM often hasn't written the row yet.
                 number = CallLogHelper.latestIncomingNumber(
                     app,
-                    System.currentTimeMillis() - CALL_LOG_LOOKBACK_MS
+                    System.currentTimeMillis() - 15_000L
                 );
-            }
-
-            if (number != null && !number.trim().isEmpty()) {
-                handleCaller(app, number.trim());
-                return;
-            }
-
-            // Number not available yet — retry CallLog shortly (common on OEMs).
-            final PendingResult pending = goAsync();
-            new Thread(() -> {
-                try {
-                    Thread.sleep(2500);
-                    String delayed = CallLogHelper.latestIncomingNumber(
-                        app,
-                        System.currentTimeMillis() - CALL_LOG_LOOKBACK_MS
-                    );
-                    if (delayed != null && !delayed.isEmpty()) {
-                        handleCaller(app, delayed);
-                    } else {
-                        Thread.sleep(4000);
-                        delayed = CallLogHelper.latestIncomingNumber(
-                            app,
-                            System.currentTimeMillis() - CALL_LOG_LOOKBACK_MS
-                        );
-                        if (delayed != null && !delayed.isEmpty()) {
-                            handleCaller(app, delayed);
-                        } else {
-                            Log.w(TAG, "RINGING but no caller number in intent or call log");
-                        }
-                    }
-                } catch (Exception e) {
-                    Log.w(TAG, "Delayed call-log read failed: " + e.getMessage());
-                } finally {
-                    pending.finish();
+                if (number == null || number.trim().isEmpty()) {
+                    Log.i(TAG, "RINGING without number — waiting for numbered RINGING or IDLE");
+                    return;
                 }
-            }).start();
+            }
+
+            handleCaller(app, number.trim());
             return;
         }
 
-        // Call ended / missed — call log usually has the number now.
+        // Call ended / missed — call log usually has the number now (Truecaller).
         if (TelephonyManager.EXTRA_STATE_IDLE.equals(state)) {
             long ringAt = prefs.getLong(KEY_RING_SEEN_AT, 0L);
             prefs.edit().remove(KEY_RING_SEEN_AT).apply();
@@ -106,8 +85,8 @@ public class CallAlertReceiver extends BroadcastReceiver {
             final PendingResult pending = goAsync();
             new Thread(() -> {
                 try {
-                    // Brief wait so the dialer writes the call-log row.
-                    Thread.sleep(800);
+                    // Dialer / Truecaller usually writes CallLog as the call ends.
+                    Thread.sleep(400);
                     String fromLog = CallLogHelper.latestIncomingNumber(
                         app,
                         ringAt - 5_000L
@@ -126,7 +105,7 @@ public class CallAlertReceiver extends BroadcastReceiver {
         }
     }
 
-    /** Save locally (for JWT/search backup) and POST to server with FCM tokens. */
+    /** Save locally (for JWT backup) and POST with stored FCM token immediately. */
     static void handleCaller(Context context, String cleaned) {
         if (cleaned == null || cleaned.trim().isEmpty()) return;
         cleaned = cleaned.trim();
@@ -135,28 +114,46 @@ public class CallAlertReceiver extends BroadcastReceiver {
         long now = System.currentTimeMillis();
         String lastNumber = prefs.getString(KEY_LAST_NUMBER, null);
         long lastAt = prefs.getLong(KEY_LAST_AT, 0L);
-        if (cleaned.equals(lastNumber) && now - lastAt < DEDUPE_WINDOW_MS) return;
-        prefs.edit().putString(KEY_LAST_NUMBER, cleaned).putLong(KEY_LAST_AT, now).apply();
+        if (cleaned.equals(lastNumber) && now - lastAt < DEDUPE_WINDOW_MS) {
+            Log.i(TAG, "Dedupe skip same number within " + DEDUPE_WINDOW_MS + "ms");
+            return;
+        }
+        // New ring — clear consumed so JS peek/backup can see it again.
+        prefs
+            .edit()
+            .putString(KEY_LAST_NUMBER, cleaned)
+            .putLong(KEY_LAST_AT, now)
+            .remove(KEY_CONSUMED_AT)
+            .apply();
 
         final String number = cleaned;
         final String stored = DevicePrefsPlugin.readFcmToken(context);
+
+        // Fast path: POST with stored token now (same idea as search JWT fire).
+        if (stored != null && stored.length() >= 20) {
+            List<String> list = new ArrayList<>();
+            list.add(stored.trim());
+            postAlertTryTokens(context, list, number);
+        }
+
+        // Refresh token for next call; POST if we had no stored token.
         try {
             FirebaseMessaging.getInstance()
                 .getToken()
                 .addOnSuccessListener(fresh -> {
-                    List<String> tokens = new ArrayList<>();
-                    if (fresh != null && fresh.length() >= 20) tokens.add(fresh.trim());
-                    if (stored != null && stored.length() >= 20 && !tokens.contains(stored)) {
-                        tokens.add(stored);
+                    if (fresh != null && fresh.length() >= 20) {
+                        DevicePrefsPlugin.saveFcmToken(context, fresh.trim());
+                        if (stored == null || stored.length() < 20) {
+                            List<String> tokens = new ArrayList<>();
+                            tokens.add(fresh.trim());
+                            postAlertTryTokens(context, tokens, number);
+                        }
                     }
-                    if (!tokens.isEmpty()) postAlertTryTokens(context, tokens, number);
                 })
                 .addOnFailureListener(e -> {
                     Log.w(TAG, "FCM token fetch failed: " + e.getMessage());
-                    if (stored != null) {
-                        List<String> tokens = new ArrayList<>();
-                        tokens.add(stored);
-                        postAlertTryTokens(context, tokens, number);
+                    if (stored == null || stored.length() < 20) {
+                        Log.w(TAG, "No FCM token available to POST call alert");
                     }
                 });
         } catch (Exception e) {
@@ -192,8 +189,8 @@ public class CallAlertReceiver extends BroadcastReceiver {
             conn.setRequestMethod("POST");
             conn.setRequestProperty("Content-Type", "application/json");
             conn.setDoOutput(true);
-            conn.setConnectTimeout(10_000);
-            conn.setReadTimeout(10_000);
+            conn.setConnectTimeout(8_000);
+            conn.setReadTimeout(8_000);
             try (OutputStream os = conn.getOutputStream()) {
                 os.write(payload.getBytes(StandardCharsets.UTF_8));
             }

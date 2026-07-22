@@ -8,7 +8,7 @@
 import { supabase } from '@/lib/supabase';
 import { normalizePhoneForSearch } from '@/lib/utils';
 
-const DEDUP_WINDOW_MS = 5 * 60_000;
+const DEDUP_WINDOW_MS = 45_000;
 const recentlyNotified = new Map<string, number>();
 
 export function notifyAdminsTechnicianCall(phone: string): void {

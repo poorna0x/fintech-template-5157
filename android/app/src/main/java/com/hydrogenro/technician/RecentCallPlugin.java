@@ -36,7 +36,7 @@ public class RecentCallPlugin extends Plugin {
         }
 
         // Fallback: system call log (when PHONE_STATE never carried the number).
-        // Do not re-offer the same number after it was already consumed in this window.
+        // Block re-offer only briefly (match native ~45s dedupe), so a 2nd call works.
         long since = System.currentTimeMillis() - 5 * 60_000L;
         String fromLog = CallLogHelper.latestIncomingNumber(getContext(), since);
         if (fromLog != null && !fromLog.isEmpty()) {
@@ -45,7 +45,7 @@ public class RecentCallPlugin extends Plugin {
                 number != null
                     && fromLog.equals(number)
                     && consumedAt > 0
-                    && (now - consumedAt) < 5 * 60_000L
+                    && (now - consumedAt) < 45_000L
             ) {
                 return ret;
             }
