@@ -18,7 +18,7 @@ import java.io.FileOutputStream;
 import java.io.OutputStream;
 
 /**
- * Write a PDF into the public Downloads folder so it appears in Files → Downloads.
+ * Write a file into the public Downloads folder (PDF, images, etc.).
  * Android 10+ uses MediaStore (no storage permission). Older APIs write the
  * legacy public Downloads directory.
  */
@@ -29,6 +29,7 @@ public class PdfSavePlugin extends Plugin {
     public void saveToDownloads(PluginCall call) {
         String filename = call.getString("filename");
         String data = call.getString("data");
+        String mimeType = call.getString("mimeType");
         if (filename == null || filename.trim().isEmpty()) {
             call.reject("filename_required");
             return;
@@ -38,7 +39,10 @@ public class PdfSavePlugin extends Plugin {
             return;
         }
 
-        String safeName = sanitizeFilename(filename.trim());
+        String resolvedMime = (mimeType != null && !mimeType.trim().isEmpty())
+            ? mimeType.trim()
+            : "application/octet-stream";
+        String safeName = sanitizeFilename(filename.trim(), resolvedMime);
         byte[] bytes;
         try {
             bytes = Base64.decode(data, Base64.DEFAULT);
@@ -46,7 +50,7 @@ public class PdfSavePlugin extends Plugin {
             call.reject("invalid_base64");
             return;
         }
-        if (bytes.length < 4) {
+        if (bytes.length == 0) {
             call.reject("empty_file");
             return;
         }
@@ -54,9 +58,9 @@ public class PdfSavePlugin extends Plugin {
         try {
             String savedPath;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                savedPath = saveViaMediaStore(safeName, bytes);
+                savedPath = saveViaMediaStore(safeName, bytes, resolvedMime);
             } else {
-                savedPath = saveViaLegacyDownloads(safeName, bytes);
+                savedPath = saveViaLegacyDownloads(safeName, bytes, resolvedMime);
             }
 
             JSObject result = new JSObject();
@@ -64,15 +68,15 @@ public class PdfSavePlugin extends Plugin {
             result.put("filename", safeName);
             call.resolve(result);
         } catch (Exception e) {
-            call.reject(e.getMessage() != null ? e.getMessage() : "pdf_save_failed");
+            call.reject(e.getMessage() != null ? e.getMessage() : "save_failed");
         }
     }
 
-    private String saveViaMediaStore(String safeName, byte[] bytes) throws Exception {
+    private String saveViaMediaStore(String safeName, byte[] bytes, String mimeType) throws Exception {
         ContentResolver resolver = getContext().getContentResolver();
         ContentValues values = new ContentValues();
         values.put(MediaStore.MediaColumns.DISPLAY_NAME, safeName);
-        values.put(MediaStore.MediaColumns.MIME_TYPE, "application/pdf");
+        values.put(MediaStore.MediaColumns.MIME_TYPE, mimeType);
         values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
         values.put(MediaStore.MediaColumns.IS_PENDING, 1);
 
@@ -96,7 +100,7 @@ public class PdfSavePlugin extends Plugin {
         return Environment.DIRECTORY_DOWNLOADS + "/" + safeName;
     }
 
-    private String saveViaLegacyDownloads(String safeName, byte[] bytes) throws Exception {
+    private String saveViaLegacyDownloads(String safeName, byte[] bytes, String mimeType) throws Exception {
         File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
         if (dir == null) {
             throw new Exception("downloads_dir_missing");
@@ -114,16 +118,47 @@ public class PdfSavePlugin extends Plugin {
         MediaScannerConnection.scanFile(
             getContext(),
             new String[] { file.getAbsolutePath() },
-            new String[] { "application/pdf" },
+            new String[] { mimeType },
             null
         );
         return file.getAbsolutePath();
     }
 
-    private static String sanitizeFilename(String raw) {
+    private static String sanitizeFilename(String raw, String mimeType) {
         String base = raw.replaceAll("[/\\\\?%*:|\"<>]", "_").replaceAll("\\s+", "_");
         if (base.length() > 180) base = base.substring(0, 180);
-        if (!base.toLowerCase().endsWith(".pdf")) base = base + ".pdf";
+        if (!hasFileExtension(base)) {
+            String ext = extensionFromMime(mimeType);
+            if (ext != null) base = base + "." + ext;
+        }
         return base;
+    }
+
+    private static boolean hasFileExtension(String name) {
+        int dot = name.lastIndexOf('.');
+        return dot > 0 && dot < name.length() - 1;
+    }
+
+    private static String extensionFromMime(String mimeType) {
+        if (mimeType == null) return null;
+        switch (mimeType.toLowerCase()) {
+            case "application/pdf":
+                return "pdf";
+            case "image/jpeg":
+            case "image/jpg":
+                return "jpg";
+            case "image/png":
+                return "png";
+            case "image/webp":
+                return "webp";
+            case "image/gif":
+                return "gif";
+            default:
+                if (mimeType.startsWith("image/")) {
+                    String sub = mimeType.substring("image/".length());
+                    if (!sub.isEmpty()) return sub.split("[+;]")[0];
+                }
+                return null;
+        }
     }
 }

@@ -1,5 +1,6 @@
 import { toast } from 'sonner';
 import { cloudinaryService } from '@/lib/cloudinary';
+import { saveBytesToNativeDownloads } from '@/lib/nativeDownloadsSave';
 
 export function normalizeUrlForPhotoMatch(url: string): string {
   if (!url || typeof url !== 'string') return '';
@@ -85,10 +86,20 @@ export async function downloadAdminPhoto(
       baseName = parts.join('_');
     }
 
+    const filename = `${baseName}.${ext}`;
+    const mimeType = blob.type && blob.type.includes('/') ? blob.type : `image/${ext}`;
+    const buffer = await blob.arrayBuffer();
+
+    const savedNative = await saveBytesToNativeDownloads(buffer, filename, mimeType);
+    if (savedNative) {
+      toast.success('Photo saved to Downloads');
+      return;
+    }
+
     const objectUrl = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = objectUrl;
-    link.download = `${baseName}.${ext}`;
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
