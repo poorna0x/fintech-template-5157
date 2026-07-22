@@ -9,6 +9,7 @@
 
 const { createClient } = require('@supabase/supabase-js');
 const { checkRateLimit, checkRateLimitForKey, rateLimitResponseForKey } = require('./rate-limiter');
+const { findCustomerByPhoneDigits } = require('./customer-phone-lookup');
 
 const HEADERS = { 'Content-Type': 'application/json' };
 
@@ -81,12 +82,7 @@ exports.handler = async (event) => {
   // Only publish known customers — unknown callers stay local to the phone that
   // rang (it shows the "not found / send WhatsApp intro" prompt); no point
   // broadcasting an unknown number to every admin.
-  const { data: customer } = await db
-    .from('customers')
-    .select('id')
-    .or(`phone.like.%${phone},alternate_phone.like.%${phone}`)
-    .limit(1)
-    .maybeSingle();
+  const customer = await findCustomerByPhoneDigits(db, phone, 'id');
   if (!customer) {
     return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ ok: false, reason: 'no_customer' }) };
   }

@@ -18,6 +18,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const { getMessaging, isStaleTokenError, getAdminFcmTokens, pruneAdminFcmTokens } = require('./fcm-helper');
 const { checkRateLimit, checkRateLimitForKey, rateLimitResponseForKey } = require('./rate-limiter');
+const { findCustomerByPhoneDigits } = require('./customer-phone-lookup');
 
 const HEADERS = { 'Content-Type': 'application/json' };
 
@@ -155,15 +156,10 @@ exports.handler = async (event) => {
     return { statusCode: 401, headers: HEADERS, body: JSON.stringify({ error: 'Unauthorized' }) };
   }
 
-  // One slim indexed lookup — id and name only.
-  const { data: customer } = await db
-    .from('customers')
-    .select('id,full_name')
-    .or(`phone.like.%${phone},alternate_phone.like.%${phone}`)
-    .limit(1)
-    .maybeSingle();
+  // Digit-normalized match (stored phones often have +91 / spaces — LIKE misses those).
+  const customer = await findCustomerByPhoneDigits(db, phone, 'id,full_name');
   if (!customer) {
-    return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ found: false }) };
+    return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ found: false, reason: 'no_customer' }) };
   }
 
   // Tech already on an ongoing job with this customer → expected call, skip admin push.
