@@ -114,7 +114,7 @@ import {
   TECHNICIAN_JOB_LIST_BROADCAST_EVENT,
   type TechnicianJobListRefreshPayload,
 } from '@/lib/technicianJobListSync';
-import { compareJobsByVisitOrder, getJobVisitOrder, getVisitOrderVisibleToTechnicians } from '@/lib/adminVisitOrder';
+import { compareJobsByVisitOrder, getJobVisitOrder, getVisitOrderVisibleForTechnician } from '@/lib/adminVisitOrder';
 import {
   aggregateCustomerPhotoUrls,
   collectAllPhotoUrlsFromJob,
@@ -500,7 +500,7 @@ const TechnicianDashboard = () => {
     rank: number;
     firstJob: Job | null;
   }>({ open: false, job: null, action: null, rank: 0, firstJob: null });
-  /** Admin Tools → Arrange order master switch (default off). */
+  /** Admin Tools → Arrange order per-technician switch (default off). */
   const [visitOrderVisible, setVisitOrderVisible] = useState(false);
   const [confirmCompleteJobDialog, setConfirmCompleteJobDialog] = useState<{open: boolean, job: Job | null}>({open: false, job: null});
   const [statusFilter, setStatusFilter] = useState<'ONGOING' | 'PENDING' | 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'RESCHEDULED'>('ONGOING');
@@ -1257,11 +1257,16 @@ const TechnicianDashboard = () => {
     };
   }, [user?.technicianId]);
 
-  // Tools → Arrange order: only show #1/#2 when admin turns the switch on.
+  // Tools → Arrange order: only show #1/#2 when admin turns the switch on for this tech.
   useEffect(() => {
+    const techId = user?.technicianId;
+    if (!techId) {
+      setVisitOrderVisible(false);
+      return;
+    }
     let cancelled = false;
     const refresh = () => {
-      void getVisitOrderVisibleToTechnicians().then((v) => {
+      void getVisitOrderVisibleForTechnician(techId).then((v) => {
         if (!cancelled) setVisitOrderVisible(v);
       });
     };
@@ -1274,7 +1279,7 @@ const TechnicianDashboard = () => {
       cancelled = true;
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, []);
+  }, [user?.technicianId]);
 
   // Returning customers (≥1 completed job) — same logic as admin blue indicator
   useEffect(() => {

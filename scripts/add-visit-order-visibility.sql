@@ -1,3 +1,7 @@
+-- DEPRECATED: Global master switch. Replaced by per-technician column
+-- `technicians.visit_order_visible` (see add-technician-visit-order-visible.sql).
+-- Kept for reference only — do not run on new environments.
+
 -- Master switch: technicians only see visit-order (#1/#2) when this is ON.
 -- Default OFF. Admin toggles it in Tools → Arrange visit order.
 -- Run in Supabase SQL Editor. Safe to re-run.

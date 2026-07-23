@@ -24,9 +24,9 @@ import { cn } from '@/lib/utils';
 import {
   fetchTechnicianJobsForVisitOrder,
   filterCachedJobsForVisitOrder,
-  getVisitOrderVisibleToTechnicians,
+  getVisitOrderVisibleForTechnician,
   saveTechnicianVisitOrder,
-  setVisitOrderVisibleToTechnicians,
+  setVisitOrderVisibleForTechnician,
   visitOrderStopLabel,
   type VisitOrderJobRow,
 } from '@/lib/adminVisitOrder';
@@ -199,24 +199,46 @@ export default function ArrangeTechnicianVisitOrderDialog({
     dragIndexRef.current = null;
     draggingRef.current = false;
     void loadJobs(nextTech, { silentCacheFirst: true });
-    void getVisitOrderVisibleToTechnicians().then(setShowOnTechApp);
   }, [open, initialTechnicianId, activeTechs, loadJobs]);
 
+  // Load on/off for the selected technician (including when the dropdown changes).
+  useEffect(() => {
+    if (!open || !technicianId) {
+      setShowOnTechApp(false);
+      return;
+    }
+    let cancelled = false;
+    void getVisitOrderVisibleForTechnician(technicianId).then((v) => {
+      if (!cancelled) setShowOnTechApp(v);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, technicianId]);
+
   const handleVisibilityToggle = async (next: boolean) => {
+    if (!technicianId) {
+      toast.error('Select a technician first');
+      return;
+    }
     setTogglingVisibility(true);
     const prev = showOnTechApp;
     setShowOnTechApp(next);
     try {
-      const { error } = await setVisitOrderVisibleToTechnicians(next);
+      const { error } = await setVisitOrderVisibleForTechnician(technicianId, next);
       if (error) {
         setShowOnTechApp(prev);
         toast.error(error.message || 'Could not update setting');
         return;
       }
+      const name =
+        activeTechs.find((t) => t.id === technicianId)?.fullName ||
+        (activeTechs.find((t) => t.id === technicianId) as any)?.full_name ||
+        'technician';
       toast.success(
         next
-          ? 'Technicians will now see visit order (#1, #2…)'
-          : 'Visit order hidden on technician app'
+          ? `Visit order shown for ${name}`
+          : `Visit order hidden for ${name}`
       );
     } finally {
       setTogglingVisibility(false);
@@ -378,7 +400,7 @@ export default function ArrangeTechnicianVisitOrderDialog({
       toast.success(
         showOnTechApp
           ? 'Visit order saved — technician list updated'
-          : 'Visit order saved (hidden on technician app until you turn it on)'
+          : 'Visit order saved (hidden for this technician until you turn it on)'
       );
       onOpenChange(false);
     } finally {
@@ -525,29 +547,12 @@ export default function ArrangeTechnicianVisitOrderDialog({
             Arrange visit order
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground sm:text-sm">
-            Drag to reorder, then open the route in Maps. Turn on the switch below
-            to show stop numbers on the technician app.
+            Pick a technician, drag to reorder, then open the route in Maps. The
+            switch only applies to the selected technician.
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-4 py-3 sm:gap-4 sm:px-6 sm:py-4">
-          <div className="flex shrink-0 items-center justify-between gap-3 rounded-lg border border-sky-100 bg-sky-50/70 px-3 py-2.5">
-            <div className="min-w-0">
-              <Label htmlFor="visit-order-visible" className="text-sm font-medium text-sky-950">
-                Show order on technician app
-              </Label>
-              <p className="text-[11px] text-sky-900/70 sm:text-xs">
-                Off by default — technicians only see #1, #2… when this is on.
-              </p>
-            </div>
-            <Switch
-              id="visit-order-visible"
-              checked={showOnTechApp}
-              disabled={togglingVisibility}
-              onCheckedChange={(v) => void handleVisibilityToggle(v)}
-            />
-          </div>
-
           <div className="shrink-0 space-y-1.5">
             <Label htmlFor="visit-order-tech" className="text-sm">
               Technician
@@ -570,6 +575,23 @@ export default function ArrangeTechnicianVisitOrderDialog({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="flex shrink-0 items-center justify-between gap-3 rounded-lg border border-sky-100 bg-sky-50/70 px-3 py-2.5">
+            <div className="min-w-0">
+              <Label htmlFor="visit-order-visible" className="text-sm font-medium text-sky-950">
+                Show order on this technician&apos;s app
+              </Label>
+              <p className="text-[11px] text-sky-900/70 sm:text-xs">
+                Off by default — only this technician sees #1, #2… when on.
+              </p>
+            </div>
+            <Switch
+              id="visit-order-visible"
+              checked={showOnTechApp}
+              disabled={togglingVisibility || !technicianId}
+              onCheckedChange={(v) => void handleVisibilityToggle(v)}
+            />
           </div>
 
           <p className="shrink-0 text-xs text-muted-foreground sm:text-sm">

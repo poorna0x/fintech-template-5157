@@ -276,41 +276,52 @@ export async function clearJobVisitOrder(jobId: string): Promise<void> {
   }
 }
 
-const VISIT_ORDER_VISIBLE_KEY = 'visit_order_visible_to_technicians';
-
-/** Admin + technician: is visit-order UI enabled? Default false if unset/RPC missing. */
-export async function getVisitOrderVisibleToTechnicians(): Promise<boolean> {
+/** Per-technician: is visit-order UI enabled for this tech? Default false. */
+export async function getVisitOrderVisibleForTechnician(
+  technicianId: string
+): Promise<boolean> {
+  if (!technicianId) return false;
   try {
-    const { data, error } = await supabase.rpc('is_visit_order_visible_to_technicians');
-    if (!error && typeof data === 'boolean') return data;
-  } catch {
-    /* fall through */
-  }
-  try {
-    const { data } = await supabase
-      .from('crm_settings')
-      .select('value')
-      .eq('key', VISIT_ORDER_VISIBLE_KEY)
+    const { data, error } = await supabase
+      .from('technicians')
+      .select('visit_order_visible')
+      .eq('id', technicianId)
       .maybeSingle();
-    return data?.value === true;
+    if (error) {
+      // Column not migrated yet — treat as off.
+      if (/visit_order_visible/i.test(error.message)) return false;
+      console.warn('[visit_order] visibility read failed:', error.message);
+      return false;
+    }
+    return (data as { visit_order_visible?: boolean } | null)?.visit_order_visible === true;
   } catch {
     return false;
   }
 }
 
-/** Admin only: turn technician visit-order numbers on/off. */
-export async function setVisitOrderVisibleToTechnicians(
+/** Admin only: turn visit-order numbers on/off for one technician. */
+export async function setVisitOrderVisibleForTechnician(
+  technicianId: string,
   visible: boolean
 ): Promise<{ error: Error | null }> {
-  const { error } = await supabase.from('crm_settings').upsert(
-    {
-      key: VISIT_ORDER_VISIBLE_KEY,
-      value: visible,
+  if (!technicianId) return { error: new Error('No technician selected') };
+  const { error } = await supabase
+    .from('technicians')
+    .update({
+      visit_order_visible: visible,
       updated_at: new Date().toISOString(),
-    } as any,
-    { onConflict: 'key' }
-  );
-  if (error) return { error: new Error(error.message) };
+    } as any)
+    .eq('id', technicianId);
+  if (error) {
+    if (/visit_order_visible/i.test(error.message)) {
+      return {
+        error: new Error(
+          'Visit order visibility column is missing. Run scripts/add-technician-visit-order-visible.sql in Supabase, then try again.'
+        ),
+      };
+    }
+    return { error: new Error(error.message) };
+  }
   return { error: null };
 }
 
