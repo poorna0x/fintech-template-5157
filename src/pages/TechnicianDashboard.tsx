@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Navigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -5853,6 +5853,11 @@ const TechnicianDashboard = () => {
         </div>
       </div>
     );
+  }
+
+  // Never paint the home shell for anonymous / wrong-role visitors (redirect-after-paint flash).
+  if (user?.role !== 'technician') {
+    return <Navigate to="/technician/login" replace />;
   }
 
   const ongoingCount = jobs.filter(isOngoingJob).length;

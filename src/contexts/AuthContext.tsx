@@ -177,22 +177,31 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       settleAuthInit();
     }, overallTimeoutMs);
 
-    const restoreTechnicianFromLocalStorage = () => {
+    const restoreTechnicianFromLocalStorage = async () => {
       const stored = getAuthSession();
       if (stored?.role === 'technician' && portalRef.current === 'technician') {
-        setUser({
-          id: stored.id,
-          email: stored.email,
-          role: 'technician',
-          fullName: stored.fullName,
-          technicianId: stored.technicianId,
-        });
-        technicianSessionRef.current = true;
-        void supabase.auth.refreshSession().then(({ data: { session: refreshed } }) => {
-          if (refreshed?.user && !loggingOutRef.current) {
-            void applySessionUser(refreshed);
+        // Do not optimistically setUser — that painted the dashboard before refresh
+        // finished and caused a home→login flash when the JWT was already gone.
+        try {
+          const refreshResult = await Promise.race([
+            supabase.auth.refreshSession(),
+            new Promise<{ data: { session: null } }>((resolve) =>
+              setTimeout(() => resolve({ data: { session: null } }), 4_000)
+            ),
+          ]);
+          if (cancelled || loggingOutRef.current) return;
+          const refreshed = refreshResult.data.session;
+          if (refreshed?.user) {
+            await applySessionUser(refreshed);
+            return;
           }
-        });
+        } catch {
+          /* fall through and clear */
+        }
+        if (cancelled || loggingOutRef.current) return;
+        clearAuthSession();
+        setUser(null);
+        technicianSessionRef.current = false;
         return;
       }
       if (stored?.role !== 'technician') clearAuthSession();
@@ -210,7 +219,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
       if (establishedSessionUserId) return;
       initialSessionUserId = null;
-      restoreTechnicianFromLocalStorage();
+      await restoreTechnicianFromLocalStorage();
     };
 
     const checkSession = async () => {
