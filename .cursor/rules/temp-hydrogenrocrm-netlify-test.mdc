@@ -1,0 +1,23 @@
+---
+description: TEMP — undo hydrogenrocrm.netlify.app test origin after testing
+alwaysApply: true
+---
+
+# TEMPORARY: hydrogenrocrm.netlify.app (testing only)
+
+`https://hydrogenrocrm.netlify.app` was added as a **temporary** Netlify test site (different Netlify account). **Undo this when testing is done.**
+
+## Remove / revert these when asked to clean up
+
+1. `netlify/functions/cors-helper.js` — `PRODUCTION_ORIGINS` entry for `https://hydrogenrocrm.netlify.app`
+2. `netlify/functions/generate-pdf.js` — `ALLOWED_ASSET_HOSTS` entry for `hydrogenrocrm.netlify.app`
+3. `scripts/csp-config.mjs` — any `hydrogenrocrm.netlify.app` connect-src entry (if present)
+4. This rule file: `.cursor/rules/temp-hydrogenrocrm-netlify-test.mdc`
+
+## Also remind the user (dashboard, not git)
+
+- Supabase → Auth → URL config: remove redirect/site URL for `https://hydrogenrocrm.netlify.app`
+- Cloudflare Turnstile hostname allowlist
+- Google Maps API key HTTP referrer restrictions
+
+Do **not** add a netlify.toml redirect from `hydrogenrocrm.netlify.app` → `hydrogenro.com` while testing (that would break the test site).

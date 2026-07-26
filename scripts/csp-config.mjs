@@ -42,6 +42,8 @@ export const PRODUCTION_CSP = [
     'https://goo.gl',
     'https://hydrogenro.com',
     'https://www.hydrogenro.com',
+    // TEMP test site (different Netlify account) — remove when testing is done
+    'https://hydrogenrocrm.netlify.app',
     'https://elevenro.com',
     'https://www.elevenro.com',
     'https://challenges.cloudflare.com',

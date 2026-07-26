@@ -18,6 +18,8 @@ const ALLOWED_ASSET_HOSTS = [
   'elevenro.com',
   'www.elevenro.com',
   'hydrogenro.netlify.app',
+  // TEMP test site — remove with cors-helper when testing is done
+  'hydrogenrocrm.netlify.app',
   'fonts.googleapis.com',
   'fonts.gstatic.com',
   'localhost',
