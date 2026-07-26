@@ -178,9 +178,16 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
   // (e.g. while clipboard.readText is in flight, the user might start typing).
   const googleLocationRef = useRef('');
   // Coords from Fetch Address — used at save when the Maps URL has no lat/lng in the string.
+  // Must be cleared whenever the Maps link changes or the form resets; otherwise the next
+  // customer can inherit the previous customer's pin (admin link correct, tech/distance wrong).
   const fetchedCoordsRef = useRef<{ latitude: number; longitude: number } | null>(null);
   // Full Maps share text (place name + link) from clipboard — used when short-link expand fails.
   const mapsShareTextRef = useRef('');
+
+  const clearLocationFetchState = useCallback(() => {
+    fetchedCoordsRef.current = null;
+    mapsShareTextRef.current = '';
+  }, []);
   // Guards against double-clicks and other re-entrancy on the Fetch Address button.
   const [isFetchingAddress, setIsFetchingAddress] = useState(false);
   const [step5JobData, setStep5JobData] = useState(() => ({
@@ -234,8 +241,10 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       setLeadCostExpanded(false);
       equipmentUploadingRef.current = {};
       setAnyEquipmentUploading(false);
+      // Closing must drop Fetch coords — dialog stays mounted while closed.
+      clearLocationFetchState();
     }
-  }, [open]);
+  }, [open, clearLocationFetchState]);
 
   useEffect(() => {
     if (!open || currentStep !== 1 || showResumePrompt) return;
@@ -314,17 +323,27 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
   const handleResumeDraft = () => {
     const draft = loadAddCustomerDraft();
+    // Never keep Fetch coords from a previous create — resume only restores form fields.
+    clearLocationFetchState();
     if (draft) {
-      setAddFormData({ ...createDefaultAddFormData(), ...(draft.addFormData || {}) });
+      const resumed = { ...createDefaultAddFormData(), ...(draft.addFormData || {}) };
+      setAddFormData(resumed);
       setStep5JobData({ ...createDefaultStep5JobData(), ...(draft.step5JobData || {}) });
       if (typeof draft.currentStep === 'number') setCurrentStep(draft.currentStep);
       if (typeof draft.shouldCreateJob === 'boolean') setShouldCreateJob(draft.shouldCreateJob);
+      // If draft Maps URL already embeds coords, restore them so save doesn't need re-Fetch.
+      const draftLink = String(resumed.google_location || '').trim();
+      if (draftLink) {
+        const fromUrl = extractCoordinatesFromGoogleMapsLink(draftLink);
+        if (fromUrl) fetchedCoordsRef.current = fromUrl;
+      }
     }
     setShowResumePrompt(false);
   };
 
   const handleStartNewEntry = () => {
     clearAddCustomerDraft();
+    clearLocationFetchState();
     setAddFormData(createDefaultAddFormData());
     setStep5JobData(createDefaultStep5JobData());
     setCurrentStep(1);
@@ -485,9 +504,10 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
     if (field === 'google_location') {
       const text = typeof nextValue === 'string' ? nextValue : '';
       googleLocationRef.current = text;
-      if (!text.trim()) {
-        fetchedCoordsRef.current = null;
-      }
+      // Any link change invalidates the previous Fetch — otherwise a prior customer's
+      // lat/lng can be saved onto this customer while the pasted link looks correct.
+      fetchedCoordsRef.current = null;
+      mapsShareTextRef.current = text.trim() ? text : '';
     }
 
     if (formErrors[field]) {
@@ -1047,24 +1067,23 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
       const formData = addFormDataRef.current;
       const extractedLocation = extractLocationFromAddressString(formData.address);
       
-      // Extract coordinates from Fetch Address (preferred) or from the Maps URL string
-      let latitude = fetchedCoordsRef.current?.latitude ?? 0;
-      let longitude = fetchedCoordsRef.current?.longitude ?? 0;
+      // Extract coordinates: prefer lat/lng embedded in the current Maps URL, then Fetch.
+      // Never keep a Fetch that doesn't match the URL currently in the form.
+      let latitude = 0;
+      let longitude = 0;
       let googleLocation: string | null = null;
-      let coordinatesExtracted = latitude !== 0 && longitude !== 0;
-      
+      let coordinatesExtracted = false;
+
       if (formData.google_location && formData.google_location.trim()) {
         const googleLocationInput = formData.google_location.trim();
-        
+
         if (isGoogleMapsUrl(googleLocationInput)) {
           googleLocation = googleLocationInput;
-          if (!coordinatesExtracted) {
-            const extracted = extractCoordinatesFromGoogleMapsLink(googleLocationInput);
-            if (extracted) {
-              latitude = extracted.latitude;
-              longitude = extracted.longitude;
-              coordinatesExtracted = true;
-            }
+          const extracted = extractCoordinatesFromGoogleMapsLink(googleLocationInput);
+          if (extracted) {
+            latitude = extracted.latitude;
+            longitude = extracted.longitude;
+            coordinatesExtracted = true;
           }
         } else {
           // If it looks like coordinates (lat,lng format)
@@ -1076,6 +1095,18 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
             googleLocation = `https://www.google.com/maps/place/${latitude},${longitude}`;
           }
         }
+      }
+
+      // Fetch coords only when the current link has no embedded lat/lng (e.g. short links).
+      if (
+        !coordinatesExtracted &&
+        fetchedCoordsRef.current &&
+        fetchedCoordsRef.current.latitude !== 0 &&
+        fetchedCoordsRef.current.longitude !== 0
+      ) {
+        latitude = fetchedCoordsRef.current.latitude;
+        longitude = fetchedCoordsRef.current.longitude;
+        coordinatesExtracted = true;
       }
       
       // Always store a coords URL when we have lat/lng (avoids re-resolve on assign).
@@ -1389,6 +1420,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
 
       // Customer created — discard the saved draft and reset the form.
       clearAddCustomerDraft();
+      clearLocationFetchState();
       setAddFormData(createDefaultAddFormData());
       setCurrentStep(1);
       setFormErrors({});

@@ -14,7 +14,8 @@ import { useAdminRole } from '@/lib/useAdminRole';
 import { mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, resolveVisibleAddressFromGeocode, reverseGeocodeLatLng, VISIBLE_ADDRESS_MAX_LEN } from '@/lib/adminUtils';
 import { normalizeIndianMobileInput } from '@/lib/utils';
 import PhoneSwapButton from '@/components/admin/PhoneSwapButton';
-import { hasAlternateLocation } from '@/lib/customer-locations';
+import { hasAlternateLocation, getJobServiceSite } from '@/lib/customer-locations';
+import { VISIT_ORDER_STATUSES } from '@/lib/adminVisitOrder';
 import {
   getCustomerGstNumber,
   mapCustomerGstFields,
@@ -1011,33 +1012,31 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
 
   const handleGoogleMapsLinkChange = async (value: string, slot: 'primary' | 'secondary' = 'primary') => {
     const isPrimary = slot === 'primary';
-    setEditFormData(prev => ({
+    const extracted = value.trim() ? extractCoordinatesFromGoogleMapsLink(value.trim()) : null;
+
+    setEditFormData((prev) => ({
       ...prev,
       ...(isPrimary ? { google_location: value } : { alternate_google_location: value }),
+      // Link change must drop previous pin — otherwise save keeps old lat/lng while the
+      // pasted link looks correct in admin Maps.
+      ...(isPrimary
+        ? {
+            location: {
+              ...prev.location,
+              latitude: extracted?.latitude ?? 0,
+              longitude: extracted?.longitude ?? 0,
+              googleLocation: value.trim() || null,
+            },
+          }
+        : {
+            alternate_location: {
+              ...prev.alternate_location,
+              latitude: extracted?.latitude ?? 0,
+              longitude: extracted?.longitude ?? 0,
+              googleLocation: value.trim() || null,
+            },
+          }),
     }));
-
-    if (!value.trim()) {
-      setEditFormData(prev => ({
-        ...prev,
-        ...(isPrimary
-          ? {
-              location: {
-                ...prev.location,
-                latitude: 0,
-                longitude: 0,
-                formattedAddress: ''
-              }
-            }
-          : {
-              alternate_location: {
-                ...prev.alternate_location,
-                latitude: 0,
-                longitude: 0,
-                formattedAddress: ''
-              }
-            }),
-      }));
-    }
   };
 
   const handleDeleteCustomer = async () => {
@@ -1136,7 +1135,8 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
         ((form.location as any)?.googleLocation as string | undefined) ||
         '';
 
-      if ((latitude === 0 || longitude === 0) && googleLocation) {
+      // Prefer coords embedded in the current Maps URL over stale form lat/lng.
+      if (googleLocation) {
         const extracted = extractCoordinatesFromGoogleMapsLink(googleLocation);
         if (extracted) {
           latitude = extracted.latitude;
@@ -1262,6 +1262,51 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
 
       if (error) {
         throw new Error(error.message);
+      }
+
+      // Keep open jobs' Maps pin in sync with the customer (tech app reads job snapshot).
+      try {
+        const prevLoc = customer.location as any;
+        const locationChanged =
+          Number(prevLoc?.latitude) !== latitude ||
+          Number(prevLoc?.longitude) !== longitude ||
+          String(prevLoc?.googleLocation || prevLoc?.google_location || '') !==
+            String(updatedLocation.googleLocation || '');
+
+        if (locationChanged || form.has_alternate_location) {
+          const { data: customerJobs, error: jobsError } = await db.jobs.getByCustomerId(customer.id);
+          if (!jobsError && customerJobs?.length) {
+            const openJobs = customerJobs.filter((job: any) => {
+              const st = String(job.status || '').toUpperCase();
+              return (
+                VISIT_ORDER_STATUSES.has(st) ||
+                st === 'FOLLOW_UP' ||
+                st === 'RESCHEDULED'
+              );
+            });
+            await Promise.all(
+              openJobs.map(async (job: any) => {
+                const site = getJobServiceSite(job);
+                if (site === 'secondary' && form.has_alternate_location) {
+                  const alt = (updateData as any).alternate_location;
+                  const altAddr = (updateData as any).alternate_address;
+                  if (!alt) return;
+                  return db.jobs.update(job.id, {
+                    service_location: alt,
+                    service_address: altAddr || job.service_address,
+                  } as any);
+                }
+                if (site === 'secondary') return;
+                return db.jobs.update(job.id, {
+                  service_location: updatedLocation,
+                  service_address: updatedAddress,
+                } as any);
+              })
+            );
+          }
+        }
+      } catch (syncErr) {
+        console.warn('[EditCustomer] open-job location sync skipped:', syncErr);
       }
 
       // Check if brand or model changed for RO service type
