@@ -13,9 +13,6 @@ const PRODUCTION_ORIGINS = [
   'https://hydrogenro.com',
   'https://www.hydrogenro.com',
   'https://hydrogenro.netlify.app',
-  // TEMP test site (different Netlify account) — remove when testing is done
-  // (see .cursor/rules/temp-hydrogenrocrm-netlify-test.mdc)
-  'https://hydrogenrocrm.netlify.app',
   'https://elevenro.com',
   'https://www.elevenro.com',
 ];
