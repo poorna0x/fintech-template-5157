@@ -271,6 +271,7 @@ import AmountTrackersDialog from './admin/AmountTrackersDialog';
 import { EmailSentLogDialog } from './admin/EmailSentLogDialog';
 import MeasureDistanceToolDialog from './admin/MeasureDistanceToolDialog';
 import ArrangeTechnicianVisitOrderDialog from './admin/ArrangeTechnicianVisitOrderDialog';
+import NearbyJobsToolDialog from './admin/NearbyJobsToolDialog';
 import TechnicianLiveLocationDialog from './admin/TechnicianLiveLocationDialog';
 import MessageTechnicianDialog from './admin/MessageTechnicianDialog';
 import { settingsPath } from '@/lib/settingsSections';
@@ -938,6 +939,7 @@ const AdminDashboard = () => {
   const amountTrackersOpen = activeAdminTool === 'amount-trackers';
   const measureDistanceOpen = activeAdminTool === 'measure-distance';
   const arrangeVisitOrderOpen = activeAdminTool === 'arrange-visit-order';
+  const nearbyJobsOpen = activeAdminTool === 'nearby-jobs';
   const technicianLiveLocationOpen = activeAdminTool === 'technician-live-location';
   const messageTechnicianOpen = activeAdminTool === 'message-technician';
 
@@ -7314,6 +7316,12 @@ const AdminDashboard = () => {
             })
           );
         }}
+      />
+
+      <NearbyJobsToolDialog
+        open={nearbyJobsOpen}
+        onOpenChange={(open) => handleAdminToolOpenChange('nearby-jobs', open)}
+        technicians={technicians}
       />
 
       <TechnicianLiveLocationDialog

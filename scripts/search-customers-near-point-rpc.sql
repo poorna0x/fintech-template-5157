@@ -42,8 +42,8 @@ BEGIN
     RAISE EXCEPTION 'invalid coordinates' USING ERRCODE = '22023';
   END IF;
 
-  -- Clamp radius (50 m–50 km) and result cap
-  v_radius := LEAST(GREATEST(COALESCE(p_radius_km, 2), 0.05), 50);
+  -- Clamp radius (0–50 km) and result cap
+  v_radius := LEAST(GREATEST(COALESCE(p_radius_km, 2), 0), 50);
   v_limit := LEAST(GREATEST(COALESCE(p_limit, 500), 1), 500);
 
   -- Cheap bbox prefilter (~111 km per degree latitude)

@@ -74,12 +74,12 @@ export type AdvancedSearchFilters = {
   tdsMax?: number | '';
   /**
    * Nearby search center (resolved from a Google Maps link by the dialog).
-   * When set with nearRadiusMeters, restricts to customers whose map pin is within radius.
+   * When set with nearRadiusKm, restricts to customers whose map pin is within radius.
    */
   nearLat?: number | null;
   nearLng?: number | null;
-  /** Radius in meters around nearLat/nearLng. Clamped server-side (~50 m–50 km). */
-  nearRadiusMeters?: number | '';
+  /** Radius in km around nearLat/nearLng. Clamped 0–50 km (RPC). */
+  nearRadiusKm?: number | '';
   /** Raw paste / Maps URL kept for UI only (not sent to the RPC). */
   nearMapsLink?: string;
   sort?: 'last_service_desc' | 'created_desc' | 'name_asc' | 'distance_asc';
@@ -229,23 +229,23 @@ function nearBounds(filters: AdvancedSearchFilters): {
 } | null {
   const lat = filters.nearLat;
   const lng = filters.nearLng;
-  const meters =
-    typeof filters.nearRadiusMeters === 'number' && Number.isFinite(filters.nearRadiusMeters)
-      ? filters.nearRadiusMeters
+  const km =
+    typeof filters.nearRadiusKm === 'number' && Number.isFinite(filters.nearRadiusKm)
+      ? filters.nearRadiusKm
       : null;
   if (
     lat == null ||
     lng == null ||
     !Number.isFinite(lat) ||
     !Number.isFinite(lng) ||
-    meters == null ||
-    meters <= 0
+    km == null ||
+    km <= 0
   ) {
     return null;
   }
-  // 50 m – 50_000 m (matches RPC clamp)
-  const clampedM = Math.min(Math.max(Math.round(meters), 50), 50_000);
-  return { lat, lng, radiusKm: clampedM / 1000 };
+  // 0–50 km (matches RPC clamp)
+  const radiusKm = Math.min(Math.max(km, 0), 50);
+  return { lat, lng, radiusKm };
 }
 
 /**

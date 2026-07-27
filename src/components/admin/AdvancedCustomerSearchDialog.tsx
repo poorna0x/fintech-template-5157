@@ -54,18 +54,27 @@ import {
   resolveGoogleMapsInputToCoords,
 } from '@/lib/googleMapsLink';
 
-const NEAR_RADIUS_PRESETS_M = [200, 500, 1000, 2000, 3000, 5000, 10000] as const;
-const DEFAULT_NEAR_RADIUS_M = 2000;
-const MIN_NEAR_RADIUS_M = 50;
-const MAX_NEAR_RADIUS_M = 50_000;
+const NEAR_RADIUS_PRESETS_KM = [0.2, 0.5, 1, 2, 3, 5, 10] as const;
+const DEFAULT_NEAR_RADIUS_KM = 2;
+const MIN_NEAR_RADIUS_KM = 0;
+const MAX_NEAR_RADIUS_KM = 50;
 
-function clampNearRadiusMeters(raw: number): number {
-  if (!Number.isFinite(raw)) return DEFAULT_NEAR_RADIUS_M;
-  return Math.min(Math.max(Math.round(raw), MIN_NEAR_RADIUS_M), MAX_NEAR_RADIUS_M);
+function clampNearRadiusKm(raw: number): number {
+  if (!Number.isFinite(raw)) return DEFAULT_NEAR_RADIUS_KM;
+  const rounded = Math.round(raw * 1000) / 1000;
+  return Math.min(Math.max(rounded, MIN_NEAR_RADIUS_KM), MAX_NEAR_RADIUS_KM);
 }
 
-function formatMetersLabel(meters: number): string {
-  return `${meters.toLocaleString('en-IN')} m`;
+function formatKmLabel(km: number): string {
+  const rounded = Math.round(km * 1000) / 1000;
+  const text = Number.isInteger(rounded)
+    ? String(rounded)
+    : String(rounded).replace(/\.?0+$/, '');
+  return `${text} km`;
+}
+
+function isKmDraft(raw: string): boolean {
+  return raw === '' || raw === '.' || /^\d+\.$/.test(raw);
 }
 
 interface AdvancedCustomerSearchDialogProps {
@@ -79,7 +88,7 @@ const EMPTY_FILTERS: AdvancedSearchFilters = {
   brandSource: 'either',
   locationContains: '',
   nearMapsLink: '',
-  nearRadiusMeters: DEFAULT_NEAR_RADIUS_M,
+  nearRadiusKm: DEFAULT_NEAR_RADIUS_KM,
   nearLat: null,
   nearLng: null,
   serviceType: '',
@@ -218,6 +227,8 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
   const [pageSize, setPageSize] = useState<25 | 50 | 100>(25);
   const [nearResolvedLabel, setNearResolvedLabel] = useState<string | null>(null);
   const [isResolvingNear, setIsResolvingNear] = useState(false);
+  /** Local draft so backspace / "0." work without snapping to the min. */
+  const [radiusKmDraft, setRadiusKmDraft] = useState<string | null>(null);
 
   /** Load slim technician list once. Used by both the "Completed by" filter and the Report dialog. */
   const ensureTechniciansLoaded = async (): Promise<TechRow[]> => {
@@ -269,13 +280,30 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
     setHasSearched(false);
     setPage(1);
     setNearResolvedLabel(null);
+    setRadiusKmDraft(null);
   };
 
   const handleSearch = async () => {
+    let committedRadiusKm = DEFAULT_NEAR_RADIUS_KM;
+    if (radiusKmDraft != null) {
+      const n =
+        isKmDraft(radiusKmDraft) || radiusKmDraft.trim() === ''
+          ? DEFAULT_NEAR_RADIUS_KM
+          : Number(radiusKmDraft);
+      committedRadiusKm = clampNearRadiusKm(Number.isFinite(n) ? n : DEFAULT_NEAR_RADIUS_KM);
+      update('nearRadiusKm', committedRadiusKm);
+      setRadiusKmDraft(null);
+    } else {
+      committedRadiusKm = clampNearRadiusKm(
+        typeof filters.nearRadiusKm === 'number' ? filters.nearRadiusKm : DEFAULT_NEAR_RADIUS_KM
+      );
+    }
+
     setIsSearching(true);
     try {
       let searchFilters: AdvancedSearchFilters = {
         ...filters,
+        nearRadiusKm: committedRadiusKm,
         nearLat: null,
         nearLng: null,
       };
@@ -303,15 +331,13 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
           return;
         }
 
-        const radiusM = clampNearRadiusMeters(
-          typeof filters.nearRadiusMeters === 'number' ? filters.nearRadiusMeters : DEFAULT_NEAR_RADIUS_M
-        );
+        const radiusKm = committedRadiusKm;
 
         searchFilters = {
           ...searchFilters,
           nearLat: resolved.coords.latitude,
           nearLng: resolved.coords.longitude,
-          nearRadiusMeters: radiusM,
+          nearRadiusKm: radiusKm,
           sort:
             filters.sort === 'last_service_desc' || !filters.sort
               ? 'distance_asc'
@@ -322,14 +348,15 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
           resolved.placeHintUsed ||
           `${resolved.coords.latitude.toFixed(5)}, ${resolved.coords.longitude.toFixed(5)}`;
         setNearResolvedLabel(
-          `${label} · within ${formatMetersLabel(radiusM)}${resolved.didExpandShortLink ? ' (short link resolved)' : ''}`
+          `${label} · within ${formatKmLabel(radiusKm)}${resolved.didExpandShortLink ? ' (short link resolved)' : ''}`
         );
         setFilters((prev) => ({
           ...prev,
           nearLat: resolved.coords.latitude,
           nearLng: resolved.coords.longitude,
-          nearRadiusMeters: radiusM,
+          nearRadiusKm: radiusKm,
         }));
+        setRadiusKmDraft(null);
       } else {
         setNearResolvedLabel(null);
       }
@@ -532,71 +559,78 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
                   />
                 </div>
                 <div className="space-y-1.5 sm:w-40">
-                  <Label htmlFor="adv_near_radius_m" className="text-xs text-muted-foreground">
-                    Radius (meters)
+                  <Label htmlFor="adv_near_radius_km" className="text-xs text-muted-foreground">
+                    Radius (km)
                   </Label>
                   <div className="relative">
                     <Input
-                      id="adv_near_radius_m"
-                      type="number"
-                      inputMode="numeric"
-                      min={MIN_NEAR_RADIUS_M}
-                      max={MAX_NEAR_RADIUS_M}
-                      step={50}
+                      id="adv_near_radius_km"
+                      type="text"
+                      inputMode="decimal"
                       value={
-                        filters.nearRadiusMeters === '' || filters.nearRadiusMeters == null
-                          ? ''
-                          : filters.nearRadiusMeters
+                        radiusKmDraft != null
+                          ? radiusKmDraft
+                          : filters.nearRadiusKm === '' || filters.nearRadiusKm == null
+                            ? ''
+                            : String(filters.nearRadiusKm)
                       }
                       onChange={(e) => {
                         const raw = e.target.value;
-                        if (raw === '') {
-                          update('nearRadiusMeters', '');
+                        if (raw !== '' && !/^\d*\.?\d*$/.test(raw)) return;
+                        setRadiusKmDraft(raw);
+                        if (isKmDraft(raw)) {
+                          update('nearRadiusKm', '');
                           return;
                         }
-                        const n = parseInt(raw, 10);
+                        const n = Number(raw);
                         if (!Number.isFinite(n) || n < 0) return;
-                        update('nearRadiusMeters', Math.min(n, MAX_NEAR_RADIUS_M));
+                        update('nearRadiusKm', Math.min(n, MAX_NEAR_RADIUS_KM));
                       }}
                       onBlur={() => {
-                        update(
-                          'nearRadiusMeters',
-                          clampNearRadiusMeters(
-                            typeof filters.nearRadiusMeters === 'number'
-                              ? filters.nearRadiusMeters
-                              : DEFAULT_NEAR_RADIUS_M
-                          )
+                        const fromDraft =
+                          radiusKmDraft != null && !isKmDraft(radiusKmDraft)
+                            ? Number(radiusKmDraft)
+                            : typeof filters.nearRadiusKm === 'number'
+                              ? filters.nearRadiusKm
+                              : DEFAULT_NEAR_RADIUS_KM;
+                        const clamped = clampNearRadiusKm(
+                          Number.isFinite(fromDraft) ? fromDraft : DEFAULT_NEAR_RADIUS_KM
                         );
+                        update('nearRadiusKm', clamped);
+                        setRadiusKmDraft(null);
                       }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') void handleSearch();
                       }}
-                      className="pr-8"
+                      className="pr-9"
                     />
                     <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                      m
+                      km
                     </span>
                   </div>
                 </div>
               </div>
               <div className="mt-2 flex flex-wrap gap-1.5">
-                {NEAR_RADIUS_PRESETS_M.map((m) => {
+                {NEAR_RADIUS_PRESETS_KM.map((km) => {
                   const active =
-                    (typeof filters.nearRadiusMeters === 'number'
-                      ? filters.nearRadiusMeters
-                      : DEFAULT_NEAR_RADIUS_M) === m;
+                    (typeof filters.nearRadiusKm === 'number'
+                      ? filters.nearRadiusKm
+                      : DEFAULT_NEAR_RADIUS_KM) === km && radiusKmDraft == null;
                   return (
                     <button
-                      key={m}
+                      key={km}
                       type="button"
-                      onClick={() => update('nearRadiusMeters', m)}
+                      onClick={() => {
+                        update('nearRadiusKm', km);
+                        setRadiusKmDraft(null);
+                      }}
                       className={`rounded-md border px-2 py-0.5 text-xs transition-colors ${
                         active
                           ? 'border-primary bg-primary text-primary-foreground'
                           : 'border-border bg-background text-muted-foreground hover:bg-muted'
                       }`}
                     >
-                      {formatMetersLabel(m)}
+                      {formatKmLabel(km)}
                     </button>
                   );
                 })}
@@ -605,8 +639,9 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
                 <p className="mt-2 text-xs text-muted-foreground">{nearResolvedLabel}</p>
               ) : (
                 <p className="mt-2 text-xs text-muted-foreground">
-                  Short links are resolved automatically. Enter any radius in meters (50–50,000),
-                  or tap a preset. Matches customers with a saved map pin inside that distance.
+                  Short links are resolved automatically. Enter radius in km (e.g. 0.5 = 500 m,
+                  max 50 km), or tap a preset. Matches customers with a saved map pin inside that
+                  distance.
                 </p>
               )}
             </div>

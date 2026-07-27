@@ -274,6 +274,7 @@ export const ADMIN_TOOL_DIALOGS = [
   'sent-email-log',
   'measure-distance',
   'arrange-visit-order',
+  'nearby-jobs',
   'technician-live-location',
   'message-technician',
 ] as const;

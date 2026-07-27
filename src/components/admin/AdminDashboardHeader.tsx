@@ -18,6 +18,7 @@ import {
   MapPin,
   MessageSquare,
   Navigation,
+  Radar,
   PhoneCall,
   Receipt,
   RefreshCw,
@@ -260,6 +261,10 @@ export function AdminDashboardHeader({
                   <DropdownMenuItem onClick={() => onOpenAdminTool('arrange-visit-order')}>
                     <ListOrdered className="w-4 h-4 mr-2" />
                     Arrange visit order
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onOpenAdminTool('nearby-jobs')}>
+                    <Radar className="w-4 h-4 mr-2" />
+                    Nearby jobs
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => onOpenAdminTool('technician-live-location')}>
                     <MapPin className="w-4 h-4 mr-2" />
