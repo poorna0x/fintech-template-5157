@@ -95,19 +95,30 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
   }, []);
 
   const recalcTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingRecalcJobIdRef = useRef<string | null>(null);
+  const pendingRecalcRef = useRef<{ jobId: string; rows: JobPartUsed[] } | null>(null);
   /** Prevents overlapping quick-adds for the same inventory (double-tap / slow network). */
   const quickAddInFlightRef = useRef<Set<string>>(new Set());
 
   const RECALC_DEBOUNCE_MS = 180;
+  const MAIN_AVAILABLE_CACHE_KEY = 'inventory_items_available';
 
-  const scheduleRecalcJobPartsCost = useCallback((jobId: string) => {
-    pendingRecalcJobIdRef.current = jobId;
+  const sumPartsCost = (rows: JobPartUsed[]) =>
+    rows.reduce((sum, row) => {
+      const qty = Number(row.quantity_used) || 0;
+      const price = row.price_at_time_of_use != null ? Number(row.price_at_time_of_use) : 0;
+      return sum + qty * price;
+    }, 0);
+
+  /** Debounced write of parts_cost_total from already-known rows (no re-fetch). */
+  const scheduleRecalcJobPartsCost = useCallback((jobId: string, rows: JobPartUsed[]) => {
+    pendingRecalcRef.current = { jobId, rows };
     if (recalcTimeoutRef.current) clearTimeout(recalcTimeoutRef.current);
     recalcTimeoutRef.current = setTimeout(() => {
-      db.jobPartsUsed.recalculateAndUpdateJobPartsCost(jobId).catch(() => {});
-      pendingRecalcJobIdRef.current = null;
+      const pending = pendingRecalcRef.current;
+      pendingRecalcRef.current = null;
       recalcTimeoutRef.current = null;
+      if (!pending) return;
+      db.jobPartsUsed.updatePartsCostTotal(pending.jobId, sumPartsCost(pending.rows)).catch(() => {});
     }, RECALC_DEBOUNCE_MS);
   }, []);
 
@@ -116,10 +127,10 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       clearTimeout(recalcTimeoutRef.current);
       recalcTimeoutRef.current = null;
     }
-    const jobId = pendingRecalcJobIdRef.current;
-    if (jobId) {
-      pendingRecalcJobIdRef.current = null;
-      db.jobPartsUsed.recalculateAndUpdateJobPartsCost(jobId).catch(() => {});
+    const pending = pendingRecalcRef.current;
+    if (pending) {
+      pendingRecalcRef.current = null;
+      db.jobPartsUsed.updatePartsCostTotal(pending.jobId, sumPartsCost(pending.rows)).catch(() => {});
     }
   }, []);
 
@@ -136,7 +147,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     if (!technician?.id) return;
 
     try {
-      const { data, error } = await db.technicianInventory.getByTechnician(technician.id);
+      const { data, error } = await db.technicianInventory.getByTechnicianForParts(technician.id);
       if (error) throw error;
       const inventoryData = data || [];
       setTechnicianInventory(inventoryData);
@@ -223,11 +234,10 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
 
   const loadMainInventory = useCallback(async (opts?: { force?: boolean }) => {
     if (mainInventoryLoaded && !opts?.force) return;
-    const cacheKey = 'inventory_items';
 
-    // Prefer valid cache — do not silently re-fetch getAll (large egress)
+    // Prefer valid cache — do not silently re-fetch (large egress)
     if (!opts?.force) {
-      const cached = inventoryCache.get<InventoryItem[]>(cacheKey);
+      const cached = inventoryCache.get<InventoryItem[]>(MAIN_AVAILABLE_CACHE_KEY);
       if (cached && cached.length > 0) {
         setMainInventoryItems(cached);
         setMainInventoryLoaded(true);
@@ -235,19 +245,20 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       }
     }
 
-    const { data, error } = await db.inventory.getAll();
+    // In-stock only — skips zero-qty rows + timestamps
+    const { data, error } = await db.inventory.getAvailableSlim();
     if (!error && data) {
       setMainInventoryItems(data);
-      inventoryCache.set(cacheKey, data);
+      inventoryCache.set(MAIN_AVAILABLE_CACHE_KEY, data);
     }
     setMainInventoryLoaded(true);
   }, [mainInventoryLoaded]);
 
-  // Load main inventory when Add Part / Add Bundle opens (fallback + name enrich)
+  // Main catalog only needed for Add Part picker (bundle checks shortfall ids on apply)
   useEffect(() => {
-    if (!(addPartDialogOpen || addBundleDialogOpen)) return;
+    if (!addPartDialogOpen) return;
     void loadMainInventory();
-  }, [addPartDialogOpen, addBundleDialogOpen, loadMainInventory]);
+  }, [addPartDialogOpen, loadMainInventory]);
 
   // Memoize inventory lookup map for O(1) access
   const inventoryMap = useMemo(() => {
@@ -264,7 +275,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
         idx >= 0
           ? prev.map((m, i) => (i === idx ? { ...m, ...item } : m))
           : [...prev, item];
-      inventoryCache.set('inventory_items', next);
+      inventoryCache.set(MAIN_AVAILABLE_CACHE_KEY, next.filter(m => Number(m.quantity ?? 0) > 0));
       return next;
     });
   }, []);
@@ -377,7 +388,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
           ? { ...m, quantity: Math.max(0, Number(m.quantity ?? 0) + delta) }
           : m
       );
-      inventoryCache.set('inventory_items', next);
+      inventoryCache.set(MAIN_AVAILABLE_CACHE_KEY, next.filter(m => Number(m.quantity ?? 0) > 0));
       return next;
     });
   }, []);
@@ -391,7 +402,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     const techItem = technicianInventory.find(i => i.inventory_id === inventoryId);
     if (techItem) {
       const newQty = techItem.quantity + qty;
-      const { error } = await db.technicianInventory.update(techItem.id, { quantity: newQty });
+      const { error } = await db.technicianInventory.updateQuantity(techItem.id, newQty);
       if (error) throw error;
       setTechnicianInventoryAndCache(prev =>
         prev.map(i => (i.id === techItem.id ? { ...i, quantity: newQty } : i))
@@ -438,10 +449,11 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
         source: 'custom',
       });
       if (error) throw error;
-      if (newPart) setPartsUsed(prev => [newPart as JobPartUsed, ...prev]);
+      const nextParts = newPart ? ([newPart as JobPartUsed, ...partsUsed] as JobPartUsed[]) : partsUsed;
+      if (newPart) setPartsUsed(nextParts);
       resetCustomForm();
       setInventorySearchQuery('');
-      scheduleRecalcJobPartsCost(job.id);
+      scheduleRecalcJobPartsCost(job.id, nextParts);
       toast.success('Custom item added.');
     } catch (e: any) {
       console.error('Error adding custom part:', e);
@@ -451,7 +463,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     }
   };
 
-  // Apply bundle: prefer technician stock; remainder (or full need) from main with source=main.
+  // Apply bundle: tech bag first; shortfall from main. Does not load full main catalog.
   const handleApplyBundle = async (bundleId: string) => {
     if (!job?.id || !technician?.id) return;
     setApplyingBundle(true);
@@ -462,11 +474,15 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
         setApplyingBundle(false);
         return;
       }
-      const items = bundleData.items as { inventory_id: string; quantity: number; inventory?: { id: string; price?: number } }[];
+      const items = bundleData.items as {
+        inventory_id: string;
+        quantity: number;
+        inventory?: { id: string; product_name?: string; price?: number };
+      }[];
 
       type Plan = { inventory_id: string; fromTech: number; fromMain: number; name: string };
-      const plans: Plan[] = [];
-      const short: string[] = [];
+      const draftPlans: Plan[] = [];
+      const shortfallIds: string[] = [];
 
       for (const it of items) {
         const techItem = technicianInventory.find(i => i.inventory_id === it.inventory_id);
@@ -476,18 +492,35 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
         const fromMain = need - fromTech;
         const name =
           techItem?.inventory?.product_name ||
-          inventoryMap.get(it.inventory_id)?.product_name ||
+          it.inventory?.product_name ||
           it.inventory_id;
+        draftPlans.push({ inventory_id: it.inventory_id, fromTech, fromMain, name });
+        if (fromMain > 0) shortfallIds.push(it.inventory_id);
+      }
 
-        if (fromMain > 0) {
-          // Use already-loaded main list — no per-item getById
-          const mainQty = Number(inventoryMap.get(it.inventory_id)?.quantity ?? 0);
-          if (mainQty < fromMain) {
-            short.push(`${name}: need ${need} (tech ${techHave} + main ${mainQty})`);
+      // One batch query for all shortfall qty/price — not full catalog
+      const mainById = new Map<string, { quantity: number; price: number | null }>();
+      if (shortfallIds.length > 0) {
+        const { data: mainRows, error: mainErr } = await db.inventory.getQtyPriceByIds(shortfallIds);
+        if (mainErr) throw mainErr;
+        for (const row of mainRows || []) {
+          mainById.set(row.id, { quantity: Number(row.quantity ?? 0), price: row.price ?? null });
+        }
+      }
+
+      const short: string[] = [];
+      const plans: Plan[] = [];
+      for (const plan of draftPlans) {
+        if (plan.fromMain > 0) {
+          const mainQty = mainById.get(plan.inventory_id)?.quantity ?? 0;
+          if (mainQty < plan.fromMain) {
+            short.push(
+              `${plan.name}: need ${plan.fromTech + plan.fromMain} (tech ${plan.fromTech} + main ${mainQty})`
+            );
             continue;
           }
         }
-        plans.push({ inventory_id: it.inventory_id, fromTech, fromMain, name });
+        plans.push(plan);
       }
 
       if (short.length > 0) {
@@ -497,18 +530,14 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       }
 
       const priceMap = new Map<string, number>();
-      const missingPriceIds: string[] = [];
       for (const it of items) {
-        const fromBundle = (it.inventory as { price?: number } | undefined)?.price;
-        const fromMap = inventoryMap.get(it.inventory_id)?.price;
+        const fromBundle = it.inventory?.price;
+        const fromTech = technicianInventory.find(i => i.inventory_id === it.inventory_id)?.inventory?.price;
+        const fromMain = mainById.get(it.inventory_id)?.price;
         if (fromBundle != null) priceMap.set(it.inventory_id, Number(fromBundle));
-        else if (fromMap != null) priceMap.set(it.inventory_id, Number(fromMap));
-        else missingPriceIds.push(it.inventory_id);
-      }
-      // At most one getById per missing price (rare — catalog usually already loaded)
-      for (const id of missingPriceIds) {
-        const { data: invData } = await db.inventory.getById(id);
-        priceMap.set(id, invData?.price ? Number(invData.price) : 0);
+        else if (fromTech != null) priceMap.set(it.inventory_id, Number(fromTech));
+        else if (fromMain != null) priceMap.set(it.inventory_id, Number(fromMain));
+        else priceMap.set(it.inventory_id, 0);
       }
 
       let workingParts: JobPartUsed[] = [...partsUsed];
@@ -527,7 +556,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
           const newQty = existing.quantity_used + qty;
           await db.jobPartsUsed.update(existing.id, { quantity_used: newQty });
           workingParts = workingParts.map(p =>
-            p.id === existing.id ? { ...p, quantity_used: newQty } : p
+            p.id === existing.id ? { ...p, quantity_used: newQty, price_at_time_of_use: existing.price_at_time_of_use ?? price } : p
           );
         } else {
           const { data: newPart, error: createErr } = await db.jobPartsUsed.create({
@@ -545,14 +574,15 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
 
       for (const plan of plans) {
         const price = priceMap.get(plan.inventory_id) ?? 0;
-        // Only touch main inventory for the warehouse shortfall — tech bag is enough otherwise
         if (plan.fromMain > 0) {
-          const err = await deductMainInventory(plan.inventory_id, plan.fromMain);
+          const err = await deductMainInventory(
+            plan.inventory_id,
+            plan.fromMain,
+            mainById.get(plan.inventory_id) ?? null
+          );
           if (err) {
             toast.error(`Main inventory: ${err}`);
             setApplyingBundle(false);
-            const { data } = await db.inventory.getById(plan.inventory_id);
-            if (data) patchMainLocalItem(data as InventoryItem);
             return;
           }
         }
@@ -565,9 +595,10 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
             }
             await upsertPart(plan.inventory_id, plan.fromTech, 'technician', price);
             const newTechQty = techItem.quantity - plan.fromTech;
-            const { error: techErr } = await db.technicianInventory.update(techItem.id, {
-              quantity: newTechQty,
-            });
+            const { error: techErr } = await db.technicianInventory.updateQuantity(
+              techItem.id,
+              newTechQty
+            );
             if (techErr) throw techErr;
             workingTech = workingTech.map(i =>
               i.id === techItem.id ? { ...i, quantity: newTechQty } : i
@@ -588,16 +619,20 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       setPartsUsed(workingParts);
       setTechnicianInventoryAndCache(() => workingTech);
       setMainInventoryItems(prev => {
+        if (prev.length === 0) return prev;
         const next = prev.map(m => {
           const plan = plans.find(p => p.inventory_id === m.id);
           if (!plan || plan.fromMain <= 0) return m;
           return { ...m, quantity: Math.max(0, Number(m.quantity ?? 0) - plan.fromMain) };
         });
-        inventoryCache.set('inventory_items', next);
+        inventoryCache.set(
+          MAIN_AVAILABLE_CACHE_KEY,
+          next.filter(m => Number(m.quantity ?? 0) > 0)
+        );
         return next;
       });
       setAddBundleDialogOpen(false);
-      scheduleRecalcJobPartsCost(job.id);
+      scheduleRecalcJobPartsCost(job.id, workingParts);
       toast.success(`Bundle applied: ${items.length} part(s) added.`);
     } catch (e: any) {
       toast.error(e?.message || 'Failed to apply bundle');
@@ -659,6 +694,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
           const existingPart = partsUsed.find(
             p => p.inventory_id === inventoryId && p.source === 'main'
           );
+          let nextParts = partsUsed;
           if (existingPart) {
             const newQuantity = existingPart.quantity_used + 1;
             const { data: updatedPart, error: updateError } = await db.jobPartsUsed.update(
@@ -666,32 +702,34 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
               { quantity_used: newQuantity }
             );
             if (updateError) throw updateError;
-            setPartsUsed(prev =>
-              prev.map(p =>
-                p.id === existingPart.id
-                  ? (updatedPart as JobPartUsed) || { ...p, quantity_used: newQuantity }
-                  : p
-              )
+            nextParts = partsUsed.map(p =>
+              p.id === existingPart.id
+                ? ({ ...(updatedPart as JobPartUsed), quantity_used: newQuantity, inventory: p.inventory, price_at_time_of_use: p.price_at_time_of_use } as JobPartUsed)
+                : p
             );
+            setPartsUsed(nextParts);
           } else {
             const { data: newPart, error: createError } = await db.jobPartsUsed.create({
               job_id: job.id,
               technician_id: technician.id,
               inventory_id: inventoryId,
               quantity_used: 1,
-              price_at_time_of_use: currentPrice,
+              price_at_time_of_use: currentPrice ?? 0,
               source: 'main',
             });
             if (createError) throw createError;
-            if (newPart) setPartsUsed(prev => [newPart as JobPartUsed, ...prev]);
+            if (newPart) {
+              nextParts = [newPart as JobPartUsed, ...partsUsed];
+              setPartsUsed(nextParts);
+            }
           }
+          bumpMainLocalQty(inventoryId, -1);
+          scheduleRecalcJobPartsCost(job.id, nextParts);
         } catch (writeErr) {
           await restoreMainInventory(inventoryId, 1);
           throw writeErr;
         }
 
-        bumpMainLocalQty(inventoryId, -1);
-        scheduleRecalcJobPartsCost(job.id);
         toast.success('Part added (1 qty) from main inventory.');
         return;
       }
@@ -706,6 +744,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
         p => p.inventory_id === inventoryId && (p.source || 'technician') === 'technician'
       );
 
+      let nextParts = partsUsed;
       if (existingPart) {
         const newQuantity = existingPart.quantity_used + 1;
         const { data: updatedPart, error: updateError } = await db.jobPartsUsed.update(existingPart.id, {
@@ -714,12 +753,18 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
         if (updateError) throw updateError;
 
         const newTechQuantity = techItem.quantity - 1;
-        const { error: updateTechError } = await db.technicianInventory.update(techItem.id, {
-          quantity: newTechQuantity
-        });
+        const { error: updateTechError } = await db.technicianInventory.updateQuantity(
+          techItem.id,
+          newTechQuantity
+        );
         if (updateTechError) throw updateTechError;
 
-        setPartsUsed(prev => prev.map(p => p.id === existingPart.id ? (updatedPart || p) : p));
+        nextParts = partsUsed.map(p =>
+          p.id === existingPart.id
+            ? ({ ...p, ...(updatedPart || {}), quantity_used: newQuantity, inventory: p.inventory } as JobPartUsed)
+            : p
+        );
+        setPartsUsed(nextParts);
         setTechnicianInventoryAndCache(prev =>
           prev.map(i => (i.id === techItem.id ? { ...i, quantity: newTechQuantity } : i))
         );
@@ -729,24 +774,28 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
           technician_id: technician.id,
           inventory_id: inventoryId,
           quantity_used: 1,
-          price_at_time_of_use: currentPrice,
+          price_at_time_of_use: currentPrice ?? 0,
           source: 'technician',
         });
         if (createError) throw createError;
 
         const newTechQuantity = techItem.quantity - 1;
-        const { error: updateTechError } = await db.technicianInventory.update(techItem.id, {
-          quantity: newTechQuantity
-        });
+        const { error: updateTechError } = await db.technicianInventory.updateQuantity(
+          techItem.id,
+          newTechQuantity
+        );
         if (updateTechError) throw updateTechError;
 
-        if (newPart) setPartsUsed(prev => [newPart as JobPartUsed, ...prev]);
+        if (newPart) {
+          nextParts = [newPart as JobPartUsed, ...partsUsed];
+          setPartsUsed(nextParts);
+        }
         setTechnicianInventoryAndCache(prev =>
           prev.map(i => (i.id === techItem.id ? { ...i, quantity: newTechQuantity } : i))
         );
       }
 
-      scheduleRecalcJobPartsCost(job.id);
+      scheduleRecalcJobPartsCost(job.id, nextParts);
       toast.success('Part added (1 qty) from technician bag.');
     } catch (error: any) {
       console.error('Error quick adding part:', error);
@@ -792,10 +841,13 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
           await restoreTechBagQty(inventoryId, 1);
         }
 
-        setPartsUsed(prev =>
-          prev.map(p => (p.id === partId ? (updatedPart || { ...p, quantity_used: newQuantityUsed }) : p))
+        const nextParts = partsUsed.map(p =>
+          p.id === partId
+            ? ({ ...p, ...(updatedPart || {}), quantity_used: newQuantityUsed, inventory: p.inventory } as JobPartUsed)
+            : p
         );
-        if (job?.id) scheduleRecalcJobPartsCost(job.id);
+        setPartsUsed(nextParts);
+        if (job?.id) scheduleRecalcJobPartsCost(job.id, nextParts);
         toast.success(
           isCustom
             ? 'Removed 1 qty from job.'
@@ -820,8 +872,9 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
           await restoreTechBagQty(inventoryId, quantityUsed);
         }
 
-        setPartsUsed(prev => prev.filter(p => p.id !== partId));
-        if (job?.id) scheduleRecalcJobPartsCost(job.id);
+        const nextParts = partsUsed.filter(p => p.id !== partId);
+        setPartsUsed(nextParts);
+        if (job?.id) scheduleRecalcJobPartsCost(job.id, nextParts);
         toast.success(
           isCustom
             ? 'Custom item removed.'

@@ -6256,10 +6256,31 @@ export const db = {
       return { data, error };
     },
 
+    /** In-stock rows only — for Add Parts main-fallback picker (much smaller than getAll). */
+    async getAvailableSlim() {
+      const { data, error } = await supabase
+        .from('inventory')
+        .select('id, product_name, code, price, quantity')
+        .gt('quantity', 0)
+        .order('product_name', { ascending: true });
+      return { data, error };
+    },
+
+    /** Batch qty+price for specific ids (bundle shortfall checks). */
+    async getQtyPriceByIds(ids: string[]) {
+      const unique = [...new Set(ids.filter(Boolean))];
+      if (unique.length === 0) return { data: [] as Array<{ id: string; quantity: number; price: number | null }>, error: null };
+      const { data, error } = await supabase
+        .from('inventory')
+        .select('id, quantity, price')
+        .in('id', unique);
+      return { data: data || [], error };
+    },
+
     async getById(id: string) {
       const { data, error } = await supabase
         .from('inventory')
-        .select('id, product_name, code, price, quantity, created_at, updated_at')
+        .select('id, product_name, code, price, quantity')
         .eq('id', id)
         .single();
       
@@ -6365,7 +6386,7 @@ export const db = {
     async getAll() {
       const { data, error } = await supabase
         .from('inventory_bundles')
-        .select('id, name, description, created_at, updated_at')
+        .select('id, name, description')
         .order('name', { ascending: true });
       return { data: data || [], error };
     },
@@ -6373,15 +6394,13 @@ export const db = {
     async getByIdWithItems(id: string) {
       const { data: bundle, error: bundleError } = await supabase
         .from('inventory_bundles')
-        .select('id, name, description, created_at, updated_at')
+        .select('id, name, description')
         .eq('id', id)
         .single();
       if (bundleError || !bundle) return { data: null, error: bundleError };
       const { data: items, error: itemsError } = await supabase
         .from('inventory_bundle_items')
         .select(`
-          id,
-          bundle_id,
           inventory_id,
           quantity,
           inventory:inventory(id, product_name, code, price)
@@ -6480,6 +6499,22 @@ export const db = {
       return { data, error };
     },
 
+    /** Slim bag load for Add Parts — includes price, no technician join. */
+    async getByTechnicianForParts(technicianId: string) {
+      const { data, error } = await supabase
+        .from('technician_inventory')
+        .select(`
+          id,
+          technician_id,
+          inventory_id,
+          quantity,
+          inventory:inventory(id, product_name, code, price)
+        `)
+        .eq('technician_id', technicianId)
+        .order('quantity', { ascending: false });
+      return { data, error };
+    },
+
     async getByInventory(inventoryId: string) {
       const { data, error } = await supabase
         .from('technician_inventory')
@@ -6540,6 +6575,15 @@ export const db = {
         .single();
       
       return { data, error };
+    },
+
+    /** Qty-only update for Add Parts mutations (no joins). */
+    async updateQuantity(id: string, quantity: number) {
+      const { error } = await supabase
+        .from('technician_inventory')
+        .update({ quantity })
+        .eq('id', id);
+      return { error };
     },
 
     async delete(id: string) {
@@ -6633,12 +6677,11 @@ export const db = {
           quantity_used,
           price_at_time_of_use,
           source,
-          created_at,
-          inventory:inventory(id, product_name, code, price)
+          inventory:inventory(id, product_name, code)
         `)
         .eq('job_id', jobId)
         .order('created_at', { ascending: false });
-      
+
       return { data, error };
     },
 
@@ -6759,18 +6802,7 @@ export const db = {
         .from('job_parts_used')
         .update(updates)
         .eq('id', id)
-        .select(`
-          id,
-          job_id,
-          technician_id,
-          inventory_id,
-          custom_name,
-          quantity_used,
-          price_at_time_of_use,
-          source,
-          created_at,
-          inventory:inventory(id, product_name, code)
-        `)
+        .select('id, quantity_used, inventory_id, source, custom_name, price_at_time_of_use')
         .single();
       
       return { data, error };
@@ -6797,6 +6829,15 @@ export const db = {
       return { error: null };
     },
 
+    /** Write parts_cost_total from an already-known row set (no re-fetch). */
+    async updatePartsCostTotal(jobId: string, total: number): Promise<{ error: any }> {
+      const { error } = await supabase
+        .from('jobs')
+        .update({ parts_cost_total: total })
+        .eq('id', jobId);
+      return { error };
+    },
+
     /** Recompute total parts cost for a job and update jobs.parts_cost_total. Call after create/update/delete of job_parts_used. */
     async recalculateAndUpdateJobPartsCost(jobId: string): Promise<{ error: any }> {
       const { data: rows, error: fetchError } = await this.getWithPriceByJobIds([jobId]);
@@ -6809,11 +6850,7 @@ export const db = {
           : (invPrice != null ? Number(invPrice) : 0);
         return sum + qty * price;
       }, 0);
-      const { error: updateError } = await supabase
-        .from('jobs')
-        .update({ parts_cost_total: total })
-        .eq('id', jobId);
-      return { error: updateError };
+      return this.updatePartsCostTotal(jobId, total);
     }
   },
 
