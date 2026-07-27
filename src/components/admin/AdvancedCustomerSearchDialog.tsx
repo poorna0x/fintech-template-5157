@@ -24,6 +24,7 @@ import {
   Copy,
   ExternalLink,
   Map,
+  MapPin,
   RotateCcw,
   ChevronDown,
   ChevronUp,
@@ -31,6 +32,7 @@ import {
   Image as ImageIcon,
   ArrowLeft,
   ArrowRight,
+  Loader2,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -45,6 +47,14 @@ import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import CustomerReportDialog from '@/components/admin/CustomerReportDialog';
 import PhotoViewerDialog from '@/components/admin/PhotoViewerDialog';
 import type { Customer, Technician } from '@/types';
+import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
+import {
+  extractMapsUrlFromText,
+  isGoogleMapsUrl,
+  resolveGoogleMapsInputToCoords,
+} from '@/lib/googleMapsLink';
+
+const NEAR_RADIUS_OPTIONS_KM = [0.5, 1, 2, 3, 5, 10] as const;
 
 interface AdvancedCustomerSearchDialogProps {
   open: boolean;
@@ -56,6 +66,10 @@ const EMPTY_FILTERS: AdvancedSearchFilters = {
   brandContains: '',
   brandSource: 'either',
   locationContains: '',
+  nearMapsLink: '',
+  nearRadiusKm: 2,
+  nearLat: null,
+  nearLng: null,
   serviceType: '',
   status: '',
   hasPrefilter: '',
@@ -190,6 +204,8 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
   // re-querying Supabase per page and respects the user's "less egress" ask.
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<25 | 50 | 100>(25);
+  const [nearResolvedLabel, setNearResolvedLabel] = useState<string | null>(null);
+  const [isResolvingNear, setIsResolvingNear] = useState(false);
 
   /** Load slim technician list once. Used by both the "Completed by" filter and the Report dialog. */
   const ensureTechniciansLoaded = async (): Promise<TechRow[]> => {
@@ -240,12 +256,74 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
     setResults([]);
     setHasSearched(false);
     setPage(1);
+    setNearResolvedLabel(null);
   };
 
   const handleSearch = async () => {
     setIsSearching(true);
     try {
-      const { data, error } = await advancedCustomerSearch(filters);
+      let searchFilters: AdvancedSearchFilters = {
+        ...filters,
+        nearLat: null,
+        nearLng: null,
+      };
+
+      const mapsPaste = (filters.nearMapsLink ?? '').trim();
+      if (mapsPaste) {
+        const mapsUrl = extractMapsUrlFromText(mapsPaste) || mapsPaste;
+        if (!isGoogleMapsUrl(mapsUrl)) {
+          toast.error('Paste a valid Google Maps link (maps.app.goo.gl or google.com/maps)');
+          setIsSearching(false);
+          return;
+        }
+
+        setIsResolvingNear(true);
+        const token = await resolveSupabaseAccessTokenForApi();
+        const resolved = await resolveGoogleMapsInputToCoords(mapsUrl, {
+          shareText: mapsPaste,
+          accessToken: token,
+        });
+        setIsResolvingNear(false);
+
+        if (!resolved.ok) {
+          toast.error(resolved.error || 'Could not resolve that Maps link');
+          setIsSearching(false);
+          return;
+        }
+
+        const radius =
+          typeof filters.nearRadiusKm === 'number' && filters.nearRadiusKm > 0
+            ? filters.nearRadiusKm
+            : 2;
+
+        searchFilters = {
+          ...searchFilters,
+          nearLat: resolved.coords.latitude,
+          nearLng: resolved.coords.longitude,
+          nearRadiusKm: radius,
+          sort:
+            filters.sort === 'last_service_desc' || !filters.sort
+              ? 'distance_asc'
+              : filters.sort,
+        };
+
+        const label =
+          resolved.placeHintUsed ||
+          `${resolved.coords.latitude.toFixed(5)}, ${resolved.coords.longitude.toFixed(5)}`;
+        setNearResolvedLabel(
+          `${label} · within ${radius} km${resolved.didExpandShortLink ? ' (short link resolved)' : ''}`
+        );
+        setFilters((prev) => ({
+          ...prev,
+          nearLat: resolved.coords.latitude,
+          nearLng: resolved.coords.longitude,
+          nearRadiusKm: radius,
+        }));
+      } else {
+        setNearResolvedLabel(null);
+      }
+
+      const { data, error } = await advancedCustomerSearch(searchFilters);
       if (error) {
         toast.error(error.message || 'Search failed');
         setResults([]);
@@ -261,6 +339,7 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
       setHasSearched(true);
       setPage(1);
     } finally {
+      setIsResolvingNear(false);
       setIsSearching(false);
     }
   };
@@ -347,8 +426,9 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
             Advanced customer search
           </DialogTitle>
           <DialogDescription className="text-xs sm:text-sm">
-            Combine any filters. Use commas in Location to OR multiple areas (e.g.
-            "Kasavanahalli, Haralur").
+            Combine any filters. Paste a Google Maps link (short links work) and pick a
+            radius to find customers near that pin. Use commas in Location contains to OR
+            multiple areas (e.g. Kasavanahalli, Haralur).
           </DialogDescription>
         </DialogHeader>
 
@@ -411,6 +491,66 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
               />
             </div>
 
+            <div className="space-y-1.5 sm:col-span-2 lg:col-span-3 rounded-lg border bg-muted/30 p-3">
+              <div className="flex items-center gap-1.5 mb-2">
+                <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
+                <Label className="text-xs sm:text-sm font-medium">Near Maps location</Label>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
+                <div className="space-y-1.5 min-w-0">
+                  <Label htmlFor="adv_near_maps" className="text-xs text-muted-foreground">
+                    Google Maps link
+                  </Label>
+                  <Input
+                    id="adv_near_maps"
+                    placeholder="https://maps.app.goo.gl/… or full maps URL"
+                    value={filters.nearMapsLink ?? ''}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setFilters((prev) => ({
+                        ...prev,
+                        nearMapsLink: value,
+                        nearLat: null,
+                        nearLng: null,
+                      }));
+                      setNearResolvedLabel(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') void handleSearch();
+                    }}
+                  />
+                </div>
+                <div className="space-y-1.5 sm:w-36">
+                  <Label className="text-xs text-muted-foreground">Radius</Label>
+                  <Select
+                    value={String(
+                      typeof filters.nearRadiusKm === 'number' ? filters.nearRadiusKm : 2
+                    )}
+                    onValueChange={(v) => update('nearRadiusKm', Number(v))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {NEAR_RADIUS_OPTIONS_KM.map((km) => (
+                        <SelectItem key={km} value={String(km)}>
+                          {km < 1 ? `${km * 1000} m` : `${km} km`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              {nearResolvedLabel ? (
+                <p className="mt-2 text-xs text-muted-foreground">{nearResolvedLabel}</p>
+              ) : (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Short links are resolved automatically. Matches customers with a saved map pin
+                  (primary or alternate) inside the radius.
+                </p>
+              )}
+            </div>
+
             <div className="space-y-1.5">
               <Label className="text-xs sm:text-sm">Service type</Label>
               <Select
@@ -462,6 +602,7 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
                   <SelectItem value="last_service_desc">Last service (newest)</SelectItem>
                   <SelectItem value="created_desc">Customer created (newest)</SelectItem>
                   <SelectItem value="name_asc">Name (A → Z)</SelectItem>
+                  <SelectItem value="distance_asc">Nearest first (Maps radius)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -741,13 +882,16 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
           <div className="flex flex-wrap items-center gap-2 pt-2 border-t">
             <Button
               onClick={handleSearch}
-              disabled={isSearching}
-              className=""
+              disabled={isSearching || isResolvingNear}
             >
-              <Search className="w-4 h-4 mr-2" />
-              {isSearching ? 'Searching…' : 'Search'}
+              {isResolvingNear || isSearching ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Search className="w-4 h-4 mr-2" />
+              )}
+              {isResolvingNear ? 'Resolving Maps link…' : isSearching ? 'Searching…' : 'Search'}
             </Button>
-            <Button variant="outline" onClick={handleReset} disabled={isSearching}>
+            <Button variant="outline" onClick={handleReset} disabled={isSearching || isResolvingNear}>
               <RotateCcw className="w-4 h-4 mr-2" />
               Reset
             </Button>
@@ -984,6 +1128,14 @@ const ResultRow: React.FC<ResultRowProps> = ({
             {row.status && row.status !== 'ACTIVE' && (
               <Badge variant="outline" className="text-xs">
                 {row.status}
+              </Badge>
+            )}
+            {typeof row.distance_km === 'number' && Number.isFinite(row.distance_km) && (
+              <Badge variant="secondary" className="text-xs">
+                {row.distance_km < 1
+                  ? `${Math.round(row.distance_km * 1000)} m`
+                  : `${row.distance_km.toFixed(row.distance_km < 10 ? 2 : 1)} km`}
+                {row.matched_site === 'alternate' ? ' · alt pin' : ''}
               </Badge>
             )}
           </div>

@@ -1,10 +1,12 @@
 /**
  * Advanced customer search powering Settings → Advanced customer search dialog.
  *
- * All filtering happens through PostgREST — no extra RPCs. Job-side filters
- * (completed_by / lead_source / service_sub_type / payment range) collapse into
- * ONE jobs query; the resulting customer-id set is then intersected via
- * `customers.id IN (...)` to keep egress tight.
+ * Job-side filters (completed_by / lead_source / service_sub_type / payment range)
+ * collapse into ONE jobs query; the resulting customer-id set is then intersected
+ * via `customers.id IN (...)` to keep egress tight.
+ *
+ * Nearby (Maps link + radius) uses admin-only RPC `search_customers_near_point`
+ * (Haversine on stored JSONB coords) — no Distance Matrix, no full location dump.
  */
 import { supabase } from './supabaseClient';
 import { completedJobLeadSourceContainVariants } from './adminUtils';
@@ -70,7 +72,17 @@ export type AdvancedSearchFilters = {
   tdsMin?: number | '';
   /** Customer raw water TDS (ppm) <= this. */
   tdsMax?: number | '';
-  sort?: 'last_service_desc' | 'created_desc' | 'name_asc';
+  /**
+   * Nearby search center (resolved from a Google Maps link by the dialog).
+   * When set with nearRadiusKm, restricts to customers whose map pin is within radius.
+   */
+  nearLat?: number | null;
+  nearLng?: number | null;
+  /** Radius in km around nearLat/nearLng. Typical presets: 0.5–10. Clamped server-side 0.1–50. */
+  nearRadiusKm?: number | '';
+  /** Raw paste / Maps URL kept for UI only (not sent to the RPC). */
+  nearMapsLink?: string;
+  sort?: 'last_service_desc' | 'created_desc' | 'name_asc' | 'distance_asc';
   limit?: number;
 };
 
@@ -90,6 +102,10 @@ export type AdvancedSearchRow = {
   has_prefilter: boolean | null;
   has_google_review: boolean | null;
   raw_water_tds: number | null;
+  /** Present when nearby filter was used (km from the Maps pin). */
+  distance_km?: number | null;
+  /** Which stored pin matched: primary | alternate. */
+  matched_site?: 'primary' | 'alternate' | string | null;
 };
 
 const MAX_LIMIT = 500;
@@ -177,6 +193,18 @@ function unionSets(...sets: Array<Set<string> | null | undefined>): Set<string> 
 
 function sortRows(rows: AdvancedSearchRow[], sort: AdvancedSearchFilters['sort']): void {
   const mode = sort ?? 'last_service_desc';
+  if (mode === 'distance_asc') {
+    rows.sort((a, b) => {
+      const ad = a.distance_km;
+      const bd = b.distance_km;
+      if (ad == null && bd == null) return (a.full_name ?? '').localeCompare(b.full_name ?? '');
+      if (ad == null) return 1;
+      if (bd == null) return -1;
+      if (ad !== bd) return ad - bd;
+      return (a.full_name ?? '').localeCompare(b.full_name ?? '');
+    });
+    return;
+  }
   if (mode === 'created_desc') {
     rows.sort((a, b) => (b as { created_at?: string }).created_at?.localeCompare(
       (a as { created_at?: string }).created_at ?? ''
@@ -192,6 +220,99 @@ function sortRows(rows: AdvancedSearchRow[], sort: AdvancedSearchFilters['sort']
     const bt = b.last_service_date ? new Date(b.last_service_date).getTime() : 0;
     return bt - at;
   });
+}
+
+function nearBounds(filters: AdvancedSearchFilters): {
+  lat: number;
+  lng: number;
+  radiusKm: number;
+} | null {
+  const lat = filters.nearLat;
+  const lng = filters.nearLng;
+  const radius =
+    typeof filters.nearRadiusKm === 'number' && Number.isFinite(filters.nearRadiusKm)
+      ? filters.nearRadiusKm
+      : null;
+  if (
+    lat == null ||
+    lng == null ||
+    !Number.isFinite(lat) ||
+    !Number.isFinite(lng) ||
+    radius == null ||
+    radius <= 0
+  ) {
+    return null;
+  }
+  return { lat, lng, radiusKm: Math.min(Math.max(radius, 0.1), 50) };
+}
+
+/**
+ * Admin RPC: customers within radius of a Maps pin. Returns id → distance map.
+ * Empty map = none in range. null = RPC unavailable / auth error (caller surfaces message).
+ */
+async function fetchNearbyCustomerDistances(
+  lat: number,
+  lng: number,
+  radiusKm: number,
+  limit: number
+): Promise<
+  | { ok: true; byId: Map<string, { distance_km: number; matched_site: string | null }> }
+  | { ok: false; error: string }
+> {
+  const { data, error } = await supabase.rpc('search_customers_near_point', {
+    p_lat: lat,
+    p_lng: lng,
+    p_radius_km: radiusKm,
+    p_limit: limit,
+  });
+
+  if (error) {
+    const msg = error.message || 'Nearby search failed';
+    const lower = msg.toLowerCase();
+    if (
+      lower.includes('could not find the function') ||
+      lower.includes('schema cache') ||
+      lower.includes('pgrst202') ||
+      lower.includes('404')
+    ) {
+      return {
+        ok: false,
+        error:
+          'Nearby search is not set up yet — run scripts/search-customers-near-point-rpc.sql in Supabase SQL Editor, then try again.',
+      };
+    }
+    if (lower.includes('42501') || lower.includes('insufficient') || lower.includes('not authorized')) {
+      return { ok: false, error: 'Nearby search requires an admin account' };
+    }
+    return { ok: false, error: formatSearchError(error) };
+  }
+
+  const byId = new Map<string, { distance_km: number; matched_site: string | null }>();
+  for (const row of (data ?? []) as Array<{
+    customer_id?: string;
+    distance_km?: number | string | null;
+    matched_site?: string | null;
+  }>) {
+    const id = row.customer_id;
+    if (!id) continue;
+    const dist = typeof row.distance_km === 'number' ? row.distance_km : Number(row.distance_km);
+    if (!Number.isFinite(dist)) continue;
+    const existing = byId.get(id);
+    if (!existing || dist < existing.distance_km) {
+      byId.set(id, {
+        distance_km: dist,
+        matched_site: row.matched_site ?? null,
+      });
+    }
+  }
+  return { ok: true, byId };
+}
+
+function intersectIdLists(a: string[] | null, b: string[]): string[] {
+  if (!a) return b;
+  if (a.length === 0 || b.length === 0) return [];
+  const setB = new Set(b);
+  return a.filter((id) => setB.has(id));
 }
 
 function applyLeadSourceJobFilter(q: ReturnType<typeof supabase.from>, leadSource: string) {
@@ -526,15 +647,29 @@ export async function advancedCustomerSearch(
       brand && (brandSource === 'jobs' || brandSource === 'either') ? brand : null;
     const restrictive = hasRestrictiveJobFilter(filters);
     const needsAmcSet = filters.hasAMC === 'yes' || filters.hasAMC === 'no';
+    const near = nearBounds(filters);
 
     let jobIdSet: Set<string> | null;
     let activeAMCIds: Set<string>;
+    let nearbyById: Map<string, { distance_km: number; matched_site: string | null }> | null =
+      null;
+
+    const nearbyPromise = near
+      ? fetchNearbyCustomerDistances(near.lat, near.lng, near.radiusKm, MAX_LIMIT)
+      : Promise.resolve(null);
+
     if (brand && brandSource === 'either' && restrictive) {
-      const [baseJobIds, jobBrandIds, amcIds] = await Promise.all([
+      const [baseJobIds, jobBrandIds, amcIds, nearby] = await Promise.all([
         fetchCustomerIdsForJobFilters(filters, jobBrandValue, { applyJobBrand: false }),
         fetchCustomerIdsForJobFilters(filters, jobBrandValue),
         needsAmcSet ? fetchActiveAMCCustomerIds() : Promise.resolve(new Set<string>()),
+        nearbyPromise,
       ]);
+      if (nearby) {
+        if (!nearby.ok) return { data: [], error: { message: nearby.error } };
+        nearbyById = nearby.byId;
+        if (nearbyById.size === 0) return { data: [], error: null };
+      }
       const profileBrandIds =
         baseJobIds && baseJobIds.size > 0
           ? await fetchCustomerIdsWithProfileBrand(baseJobIds, brand)
@@ -542,10 +677,16 @@ export async function advancedCustomerSearch(
       jobIdSet = unionSets(jobBrandIds, profileBrandIds);
       activeAMCIds = amcIds;
     } else {
-      const [fetchedJobIds, amcIds] = await Promise.all([
+      const [fetchedJobIds, amcIds, nearby] = await Promise.all([
         fetchCustomerIdsForJobFilters(filters, jobBrandValue),
         needsAmcSet ? fetchActiveAMCCustomerIds() : Promise.resolve(new Set<string>()),
+        nearbyPromise,
       ]);
+      if (nearby) {
+        if (!nearby.ok) return { data: [], error: { message: nearby.error } };
+        nearbyById = nearby.byId;
+        if (nearbyById.size === 0) return { data: [], error: null };
+      }
       jobIdSet = fetchedJobIds;
       activeAMCIds = amcIds;
     }
@@ -555,15 +696,22 @@ export async function advancedCustomerSearch(
     }
 
     const brandFoldedIntoOr = brandSource === 'either' && !!brand && !restrictive;
-    const restrictFromJobs =
+    let restrictFromJobs =
       jobIdSet && !brandFoldedIntoOr ? Array.from(jobIdSet) : null;
+
+    if (nearbyById) {
+      restrictFromJobs = intersectIdLists(restrictFromJobs, Array.from(nearbyById.keys()));
+    }
 
     if (restrictFromJobs && restrictFromJobs.length === 0) {
       return { data: [], error: null };
     }
 
+    const effectiveSort: AdvancedSearchFilters['sort'] =
+      filters.sort ?? (nearbyById ? 'distance_asc' : 'last_service_desc');
+
     const baseOpts: CustomerQueryOptions = {
-      filters,
+      filters: { ...filters, sort: effectiveSort === 'distance_asc' ? 'name_asc' : effectiveSort },
       brand,
       brandSource,
       restrictive,
@@ -577,10 +725,26 @@ export async function advancedCustomerSearch(
 
     if (brandFoldedIntoOr && brand) {
       const jobIds = jobIdSet ? Array.from(jobIdSet) : [];
+      const restrictProfile = nearbyById
+        ? intersectIdLists(null, Array.from(nearbyById.keys()))
+        : null;
+      const restrictJobBrand = nearbyById
+        ? intersectIdLists(jobIds.length > 0 ? jobIds : null, Array.from(nearbyById.keys()))
+        : jobIds.length > 0
+          ? jobIds
+          : [];
       const [profileResult, jobBrandResult] = await Promise.all([
-        runCustomerQuery({ ...baseOpts, restrictToIds: null, brandProfileMatch: true }),
-        jobIds.length > 0
-          ? runCustomerQuery({ ...baseOpts, restrictToIds: jobIds, brandProfileMatch: false })
+        runCustomerQuery({
+          ...baseOpts,
+          restrictToIds: restrictProfile,
+          brandProfileMatch: true,
+        }),
+        restrictJobBrand && restrictJobBrand.length > 0
+          ? runCustomerQuery({
+              ...baseOpts,
+              restrictToIds: restrictJobBrand,
+              brandProfileMatch: false,
+            })
           : Promise.resolve({ rows: [] as AdvancedSearchRow[], error: null }),
       ]);
       if (profileResult.error) return { data: [], error: profileResult.error };
@@ -588,19 +752,25 @@ export async function advancedCustomerSearch(
       const merged = new Map<string, AdvancedSearchRow>();
       for (const row of [...profileResult.rows, ...jobBrandResult.rows]) merged.set(row.id, row);
       allRows = Array.from(merged.values());
-      sortRows(allRows, filters.sort);
-      allRows = allRows.slice(0, limit);
     } else {
       const result = await runCustomerQuery(baseOpts);
       if (result.error) return { data: [], error: result.error };
       allRows = result.rows;
     }
 
-    await enrichLastServiceDates(allRows);
-
-    if ((filters.sort ?? 'last_service_desc') === 'last_service_desc') {
-      sortRows(allRows, 'last_service_desc');
+    if (nearbyById) {
+      for (const row of allRows) {
+        const nearHit = nearbyById.get(row.id);
+        if (nearHit) {
+          row.distance_km = nearHit.distance_km;
+          row.matched_site = nearHit.matched_site;
+        }
+      }
     }
+
+    await enrichLastServiceDates(allRows);
+    sortRows(allRows, effectiveSort);
+    allRows = allRows.slice(0, limit);
 
     return { data: allRows, error: null };
   } catch (err) {
