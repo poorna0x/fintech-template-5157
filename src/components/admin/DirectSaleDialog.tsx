@@ -20,6 +20,7 @@ import {
 import { Loader2, ShoppingBag, Search, Check, X, Plus } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
+import { filterInventoryByApproxSearch } from '@/lib/inventorySearch';
 
 interface DirectSaleDialogProps {
   open: boolean;
@@ -255,16 +256,12 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
   );
 
   const filteredInventory = useMemo(() => {
-    const q = debouncedSearch.trim().toLowerCase();
-    let list = inventory;
-    if (q) {
-      list = inventory.filter(
-        (i) =>
-          i.product_name?.toLowerCase().includes(q) ||
-          (i.code ? i.code.toLowerCase().includes(q) : false)
+    if (!debouncedSearch.trim()) {
+      return [...inventory].sort((a, b) =>
+        (a.product_name || '').localeCompare(b.product_name || '')
       );
     }
-    return [...list].sort((a, b) => (a.product_name || '').localeCompare(b.product_name || ''));
+    return filterInventoryByApproxSearch(inventory, debouncedSearch);
   }, [inventory, debouncedSearch]);
 
   const hasItems = selectedItems.length > 0 || resolvedCustomItems.length > 0;

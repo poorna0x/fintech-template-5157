@@ -13,6 +13,10 @@ import { db, supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { inventoryCache, debounce } from '@/lib/inventoryCache';
+import {
+  filterInventoryByApproxSearch,
+  filterNestedInventoryByApproxSearch,
+} from '@/lib/inventorySearch';
 import TechnicianTopUpDialog from '@/components/TechnicianTopUpDialog';
 
 interface InventoryItem {
@@ -195,40 +199,24 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
     }
   }, [requestDialogOpen, mainInventory.length, loadMainInventory]);
 
-  // Filter my inventory list by search (product name or code)
+  // Filter my inventory list by search (product name or code) — client-side approx match
   const filteredMyInventory = useMemo(() => {
     if (!debouncedItemSearchQuery.trim()) return myInventory;
-    const query = debouncedItemSearchQuery.toLowerCase().trim();
-    return myInventory.filter(item => {
-      const inv = item.inventory || mainInventory.find(i => i.id === item.inventory_id);
-      if (!inv) return false;
-      const nameMatch = inv.product_name?.toLowerCase().includes(query);
-      const codeMatch = inv.code?.toLowerCase().includes(query);
-      return nameMatch || codeMatch;
-    });
+    return filterNestedInventoryByApproxSearch(
+      myInventory,
+      debouncedItemSearchQuery,
+      (item) => item.inventory || mainInventory.find((i) => i.id === item.inventory_id)
+    );
   }, [myInventory, mainInventory, debouncedItemSearchQuery]);
 
-  // Filter and sort inventory items for search (using debounced query)
+  // Filter and rank inventory items for search (using debounced query)
   const filteredInventoryItems = useMemo(() => {
-    let filtered = mainInventory;
-    
-    // Filter by debounced search query
-    if (debouncedSearchQuery.trim()) {
-      const query = debouncedSearchQuery.toLowerCase().trim();
-      filtered = filtered.filter(item => {
-        const nameMatch = item.product_name?.toLowerCase().includes(query);
-        const codeMatch = item.code?.toLowerCase().includes(query);
-        return nameMatch || codeMatch;
-      });
+    if (!debouncedSearchQuery.trim()) {
+      return [...mainInventory]
+        .sort((a, b) => a.product_name.localeCompare(b.product_name))
+        .slice(0, 20);
     }
-    
-    // Sort by name (only if needed)
-    if (filtered.length > 0) {
-      filtered = [...filtered].sort((a, b) => a.product_name.localeCompare(b.product_name));
-    }
-    
-    // Limit results for performance
-    return filtered.slice(0, 20);
+    return filterInventoryByApproxSearch(mainInventory, debouncedSearchQuery).slice(0, 20);
   }, [mainInventory, debouncedSearchQuery]);
 
   // Get selected inventory item name

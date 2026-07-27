@@ -23,6 +23,7 @@ import { Package, Plus, Search, Trash2 } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { getOfficeJobParts, OfficeJobPart } from '@/lib/adminUtils';
+import { filterInventoryByApproxSearch } from '@/lib/inventorySearch';
 import { Job } from '@/types';
 
 interface InventoryItem {
@@ -117,16 +118,12 @@ const OfficeJobPartsDialog: React.FC<OfficeJobPartsDialogProps> = ({
   );
 
   const filteredInventory = useMemo(() => {
-    const q = debouncedSearch.trim().toLowerCase();
-    let list = inventory;
-    if (q) {
-      list = inventory.filter(
-        (i) =>
-          i.product_name?.toLowerCase().includes(q) ||
-          (i.code ? i.code.toLowerCase().includes(q) : false)
+    if (!debouncedSearch.trim()) {
+      return [...inventory].sort((a, b) =>
+        (a.product_name || '').localeCompare(b.product_name || '')
       );
     }
-    return [...list].sort((a, b) => (a.product_name || '').localeCompare(b.product_name || ''));
+    return filterInventoryByApproxSearch(inventory, debouncedSearch);
   }, [inventory, debouncedSearch]);
 
   const persist = async (nextParts: OfficeJobPart[]) => {

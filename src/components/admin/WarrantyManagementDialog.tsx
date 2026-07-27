@@ -72,6 +72,7 @@ import {
   type DocumentBrand,
 } from '@/lib/service-brands';
 import { resolveCustomerSendBrand } from '@/lib/admin-email-sources';
+import { filterInventoryByApproxSearch } from '@/lib/inventorySearch';
 
 const DEFAULT_WARRANTY_CARD_BRAND: DocumentBrand = 'elevenro';
 
@@ -565,14 +566,8 @@ export default function WarrantyManagementDialog({
   );
 
   const filteredInventory = useMemo(() => {
-    const q = invQuery.trim().toLowerCase();
-    const base = q
-      ? invList.filter(
-          (r) =>
-            r.product_name.toLowerCase().includes(q) || (r.code ?? '').toLowerCase().includes(q)
-        )
-      : invList;
-    return base.slice(0, 30);
+    if (!invQuery.trim()) return invList.slice(0, 30);
+    return filterInventoryByApproxSearch(invList, invQuery).slice(0, 30);
   }, [invList, invQuery]);
 
   // ---- save (create or update) ----

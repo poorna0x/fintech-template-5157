@@ -8,6 +8,7 @@ import { Package, Plus, Search, Trash2, Layers, X } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { inventoryCache } from '@/lib/inventoryCache';
+import { scoreInventoryMatch } from '@/lib/inventorySearch';
 import { hapticTap } from '@/lib/haptics';
 import { Job, Technician } from '@/types';
 
@@ -333,17 +334,22 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       }
     }
 
+    const q = debouncedSearchQuery.trim();
     let filtered = rows;
-    if (debouncedSearchQuery.trim()) {
-      const query = debouncedSearchQuery.toLowerCase().trim();
-      filtered = rows.filter(item => {
-        const nameMatch = item.product_name.toLowerCase().includes(query);
-        const codeMatch = item.code?.toLowerCase().includes(query);
-        return nameMatch || !!codeMatch;
+    if (q) {
+      const scored = rows
+        .map((item) => ({
+          item,
+          score: scoreInventoryMatch(item.product_name, item.code, q),
+        }))
+        .filter((r): r is { item: AddablePartRow; score: number } => r.score != null);
+      scored.sort((a, b) => {
+        if (a.item.source !== b.item.source) return a.item.source === 'technician' ? -1 : 1;
+        if (b.score !== a.score) return b.score - a.score;
+        return a.item.product_name.localeCompare(b.item.product_name);
       });
-    }
-
-    if (filtered.length > 1) {
+      filtered = scored.map((r) => r.item);
+    } else if (filtered.length > 1) {
       filtered = [...filtered].sort((a, b) => {
         if (a.source !== b.source) return a.source === 'technician' ? -1 : 1;
         return a.product_name.localeCompare(b.product_name);

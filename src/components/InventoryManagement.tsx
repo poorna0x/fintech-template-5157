@@ -11,6 +11,7 @@ import { ShoppingCart, Plus, Edit, Trash2, Search, X, RefreshCw, User, Package }
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { inventoryCache } from '@/lib/inventoryCache';
+import { filterInventoryByApproxSearch, scoreInventoryMatch } from '@/lib/inventorySearch';
 import TechnicianInventoryManagement from './TechnicianInventoryManagement';
 
 interface InventoryItem {
@@ -135,44 +136,34 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
     setInventoryLoaded(true);
   }, [loadInventory]);
 
-  // Filter inventory items based on search query
+  // Filter inventory items based on approximate search (typos, spaces, word order)
   const filteredItems = useMemo(() => {
-    if (!debouncedSearchQuery.trim()) {
-      return inventoryItems;
-    }
-
-    const query = debouncedSearchQuery.toLowerCase().trim();
-    return inventoryItems.filter(item => {
-      const nameMatch = item.product_name?.toLowerCase().includes(query);
-      const codeMatch = item.code?.toLowerCase().includes(query);
-      return nameMatch || codeMatch;
-    });
+    return filterInventoryByApproxSearch(inventoryItems, debouncedSearchQuery);
   }, [inventoryItems, debouncedSearchQuery]);
 
-  // Generate search suggestions
+  // Generate search suggestions (ranked approx matches)
   const searchSuggestions = useMemo(() => {
     if (!searchQuery.trim() || searchQuery.length < 2) {
       return [];
     }
 
-    const query = searchQuery.toLowerCase().trim();
+    const ranked = filterInventoryByApproxSearch(inventoryItems, searchQuery).slice(0, 8);
     const suggestions: Array<{ type: 'name' | 'code'; value: string; item: InventoryItem }> = [];
-
-    inventoryItems.forEach(item => {
-      if (item.product_name?.toLowerCase().includes(query)) {
+    for (const item of ranked) {
+      const score = scoreInventoryMatch(item.product_name, item.code, searchQuery) ?? 0;
+      const codeNormHit =
+        item.code &&
+        score >= 800 &&
+        (item.code.toLowerCase().includes(searchQuery.toLowerCase().trim()) ||
+          score >= 900);
+      if (codeNormHit && item.code) {
+        suggestions.push({ type: 'code', value: item.code, item });
+      } else if (item.product_name) {
         suggestions.push({ type: 'name', value: item.product_name, item });
       }
-      if (item.code?.toLowerCase().includes(query)) {
-        suggestions.push({ type: 'code', value: item.code, item });
-      }
-    });
+    }
 
-    // Remove duplicates and limit to 8 suggestions
-    const uniqueSuggestions = Array.from(
-      new Map(suggestions.map(s => [s.value, s])).values()
-    ).slice(0, 8);
-
-    return uniqueSuggestions;
+    return Array.from(new Map(suggestions.map((s) => [s.value, s])).values()).slice(0, 8);
   }, [searchQuery, inventoryItems]);
 
   // Paginated items
@@ -423,13 +414,7 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
   };
 
   const filteredBundleDialogInventory = useMemo(() => {
-    if (!debouncedBundleSearch.trim()) return bundleDialogInventory;
-    const q = debouncedBundleSearch.toLowerCase().trim();
-    return bundleDialogInventory.filter(
-      (i) =>
-        i.product_name?.toLowerCase().includes(q) ||
-        (i.code && i.code.toLowerCase().includes(q))
-    );
+    return filterInventoryByApproxSearch(bundleDialogInventory, debouncedBundleSearch);
   }, [bundleDialogInventory, debouncedBundleSearch]);
 
   const handleSaveBundle = async () => {

@@ -16,6 +16,10 @@ import { toast } from 'sonner';
 import { hapticTap } from '@/lib/haptics';
 import { cn } from '@/lib/utils';
 import { inventoryCache, debounce } from '@/lib/inventoryCache';
+import {
+  filterNestedInventoryByApproxSearch,
+  scoreInventoryMatch,
+} from '@/lib/inventorySearch';
 
 interface Technician {
   id: string;
@@ -228,32 +232,21 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
   // Filter technician inventory based on selected technician and item search (using debounced query)
   const filteredInventory = useMemo(() => {
     let filtered = technicianInventory;
-    
+
     // Filter by technician
     if (selectedTechnicianId) {
-      filtered = filtered.filter(item => item.technician_id === selectedTechnicianId);
+      filtered = filtered.filter((item) => item.technician_id === selectedTechnicianId);
     }
-    
-    // Filter by debounced item search query
+
+    // Client-side approx match on product name / code (no extra egress)
     if (debouncedItemSearchQuery.trim()) {
-      const query = debouncedItemSearchQuery.toLowerCase().trim();
-      filtered = filtered.filter(item => {
-        const inventory = item.inventory;
-        if (!inventory) {
-          const mainItem = inventoryItems.find(i => i.id === item.inventory_id);
-          if (mainItem) {
-            const nameMatch = mainItem.product_name?.toLowerCase().includes(query);
-            const codeMatch = mainItem.code?.toLowerCase().includes(query);
-            return nameMatch || codeMatch;
-          }
-          return false;
-        }
-        const nameMatch = inventory.product_name?.toLowerCase().includes(query);
-        const codeMatch = inventory.code?.toLowerCase().includes(query);
-        return nameMatch || codeMatch;
-      });
+      filtered = filterNestedInventoryByApproxSearch(
+        filtered,
+        debouncedItemSearchQuery,
+        (item) => item.inventory || inventoryItems.find((i) => i.id === item.inventory_id)
+      );
     }
-    
+
     return filtered;
   }, [technicianInventory, selectedTechnicianId, debouncedItemSearchQuery, inventoryItems]);
 
@@ -799,32 +792,30 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
 
   // Filter and sort inventory items for search (using debounced query)
   const filteredInventoryItems = useMemo(() => {
-    let filtered = inventoryItems;
-    
-    // Filter by debounced search query
-    if (debouncedInventorySearchQuery.trim()) {
-      const query = debouncedInventorySearchQuery.toLowerCase().trim();
-      filtered = filtered.filter(item => {
-        const nameMatch = item.product_name?.toLowerCase().includes(query);
-        const codeMatch = item.code?.toLowerCase().includes(query);
-        return nameMatch || codeMatch;
-      });
-    }
-    
-    // Sort by usage count (most used first), then by name (only if needed)
-    if (filtered.length > 0) {
-      filtered = [...filtered].sort((a, b) => {
+    const q = debouncedInventorySearchQuery.trim();
+    if (!q) {
+      return [...inventoryItems].sort((a, b) => {
         const aUsage = inventoryUsageCount[a.id] || 0;
         const bUsage = inventoryUsageCount[b.id] || 0;
-        if (bUsage !== aUsage) {
-          return bUsage - aUsage; // Most used first
-        }
+        if (bUsage !== aUsage) return bUsage - aUsage;
         return a.product_name.localeCompare(b.product_name);
       });
     }
-    
-    // Return all filtered results (Command component will handle display)
-    return filtered;
+
+    // Approx match first, then usage as tiebreaker (client-side only)
+    const scored: Array<{ item: (typeof inventoryItems)[number]; score: number }> = [];
+    for (const item of inventoryItems) {
+      const score = scoreInventoryMatch(item.product_name, item.code, q);
+      if (score != null) scored.push({ item, score });
+    }
+    scored.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      const aUsage = inventoryUsageCount[a.item.id] || 0;
+      const bUsage = inventoryUsageCount[b.item.id] || 0;
+      if (bUsage !== aUsage) return bUsage - aUsage;
+      return a.item.product_name.localeCompare(b.item.product_name);
+    });
+    return scored.map((s) => s.item);
   }, [inventoryItems, debouncedInventorySearchQuery, inventoryUsageCount]);
 
   // Get selected inventory item name
