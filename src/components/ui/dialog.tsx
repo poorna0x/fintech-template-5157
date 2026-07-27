@@ -35,10 +35,12 @@ const DialogContent = React.forwardRef<
     hideCloseButton?: boolean;
     /** When false, only explicit close (X) dismisses — not outside click or Escape */
     dismissible?: boolean;
+    /** Extra classes for the backdrop overlay (e.g. raise z-index over nested dialogs). */
+    overlayClassName?: string;
   }
->(({ className, children, hideCloseButton, dismissible = true, onInteractOutside, onPointerDownOutside, onEscapeKeyDown, ...props }, ref) => (
+>(({ className, children, hideCloseButton, dismissible = true, overlayClassName, onInteractOutside, onPointerDownOutside, onEscapeKeyDown, ...props }, ref) => (
   <DialogPortal>
-    <DialogOverlay />
+    <DialogOverlay className={overlayClassName} />
     <DialogPrimitive.Content
       ref={ref}
       onInteractOutside={(event) => {

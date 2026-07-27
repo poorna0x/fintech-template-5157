@@ -72,9 +72,11 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent
         hideCloseButton
+        overlayClassName="z-[100]"
         style={FULLSCREEN_STYLE}
         className={cn(
-          'fixed inset-0 z-50 flex !h-[100dvh] !max-h-[100dvh] !w-full !max-w-none',
+          // z-[100] sits above nested report/gallery dialogs (also z-50)
+          'fixed inset-0 z-[100] flex !h-[100dvh] !max-h-[100dvh] !w-full !max-w-none',
           '!left-0 !top-0 !translate-x-0 !translate-y-0 gap-0 rounded-none border-none bg-black p-0 shadow-none',
           // Enter/exit animations use transform and break absolute left/right on iOS
           '!animate-none data-[state=open]:!animate-none data-[state=closed]:!animate-none',
