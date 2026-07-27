@@ -545,13 +545,12 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
 
       for (const plan of plans) {
         const price = priceMap.get(plan.inventory_id) ?? 0;
-        const totalForMainDeduct = plan.fromTech + plan.fromMain; // tech path still deducts main (legacy)
-        if (totalForMainDeduct > 0) {
-          const err = await deductMainInventory(plan.inventory_id, totalForMainDeduct);
+        // Only touch main inventory for the warehouse shortfall — tech bag is enough otherwise
+        if (plan.fromMain > 0) {
+          const err = await deductMainInventory(plan.inventory_id, plan.fromMain);
           if (err) {
             toast.error(`Main inventory: ${err}`);
             setApplyingBundle(false);
-            // Single-row refresh instead of full getAll
             const { data } = await db.inventory.getById(plan.inventory_id);
             if (data) patchMainLocalItem(data as InventoryItem);
             return;
@@ -579,9 +578,8 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
             await upsertPart(plan.inventory_id, plan.fromMain, 'main', price);
           }
         } catch (planErr) {
-          // Best-effort undo of this plan's main deduct (prior plans already committed).
-          if (totalForMainDeduct > 0) {
-            await restoreMainInventory(plan.inventory_id, totalForMainDeduct);
+          if (plan.fromMain > 0) {
+            await restoreMainInventory(plan.inventory_id, plan.fromMain);
           }
           throw planErr;
         }
@@ -592,9 +590,8 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       setMainInventoryItems(prev => {
         const next = prev.map(m => {
           const plan = plans.find(p => p.inventory_id === m.id);
-          if (!plan) return m;
-          const deduct = plan.fromTech + plan.fromMain;
-          return { ...m, quantity: Math.max(0, Number(m.quantity ?? 0) - deduct) };
+          if (!plan || plan.fromMain <= 0) return m;
+          return { ...m, quantity: Math.max(0, Number(m.quantity ?? 0) - plan.fromMain) };
         });
         inventoryCache.set('inventory_items', next);
         return next;
@@ -604,7 +601,6 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       toast.success(`Bundle applied: ${items.length} part(s) added.`);
     } catch (e: any) {
       toast.error(e?.message || 'Failed to apply bundle');
-      // Reload only what we need to resync — avoid force getAll when cache is fine
       void loadPartsUsed();
       void loadTechnicianInventory();
     } finally {
@@ -612,8 +608,8 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     }
   };
 
-  // Quick add 1 qty — from technician bag, or directly from main when tech has none.
-  // Uses already-loaded inventoryMap / tech bag for price+qty (no getById on happy path).
+  // Quick add 1 qty — tech bag when available; main only when tech has none/zero.
+  // Tech path does NOT touch main inventory.
   const handleQuickAddPart = async (
     inventoryId: string,
     source: 'technician' | 'main' = 'technician'
@@ -627,7 +623,6 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       const techItem = technicianInventory.find(i => i.inventory_id === inventoryId);
       let mainCached = inventoryMap.get(inventoryId) as InventoryItem | undefined;
 
-      // Resolve price from local data; create() will fetch price only if we leave it undefined
       let currentPrice: number | undefined =
         mainCached?.price != null
           ? Number(mainCached.price)
@@ -636,7 +631,6 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
           : undefined;
 
       if (source === 'main') {
-        // Refresh one row only when local qty looks empty/missing (RPC still authoritative)
         if (!mainCached || Number(mainCached.quantity ?? 0) < 1) {
           const { data, error } = await db.inventory.getById(inventoryId);
           if (error) throw error;
@@ -702,6 +696,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
         return;
       }
 
+      // Technician bag path — no main inventory check or deduct
       if (!techItem || techItem.quantity < 1) {
         toast.error('Insufficient technician quantity');
         return;
@@ -710,63 +705,49 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       const existingPart = partsUsed.find(
         p => p.inventory_id === inventoryId && (p.source || 'technician') === 'technician'
       );
-      // Client qty hint from cache; RPC rejects if main is actually short
-      const mainErr = await deductMainInventory(inventoryId, 1, mainCached ?? null);
-      if (mainErr) {
-        toast.error(`Main inventory: ${mainErr}`);
-        const { data } = await db.inventory.getById(inventoryId);
-        if (data) patchMainLocalItem(data as InventoryItem);
-        return;
+
+      if (existingPart) {
+        const newQuantity = existingPart.quantity_used + 1;
+        const { data: updatedPart, error: updateError } = await db.jobPartsUsed.update(existingPart.id, {
+          quantity_used: newQuantity
+        });
+        if (updateError) throw updateError;
+
+        const newTechQuantity = techItem.quantity - 1;
+        const { error: updateTechError } = await db.technicianInventory.update(techItem.id, {
+          quantity: newTechQuantity
+        });
+        if (updateTechError) throw updateTechError;
+
+        setPartsUsed(prev => prev.map(p => p.id === existingPart.id ? (updatedPart || p) : p));
+        setTechnicianInventoryAndCache(prev =>
+          prev.map(i => (i.id === techItem.id ? { ...i, quantity: newTechQuantity } : i))
+        );
+      } else {
+        const { data: newPart, error: createError } = await db.jobPartsUsed.create({
+          job_id: job.id,
+          technician_id: technician.id,
+          inventory_id: inventoryId,
+          quantity_used: 1,
+          price_at_time_of_use: currentPrice,
+          source: 'technician',
+        });
+        if (createError) throw createError;
+
+        const newTechQuantity = techItem.quantity - 1;
+        const { error: updateTechError } = await db.technicianInventory.update(techItem.id, {
+          quantity: newTechQuantity
+        });
+        if (updateTechError) throw updateTechError;
+
+        if (newPart) setPartsUsed(prev => [newPart as JobPartUsed, ...prev]);
+        setTechnicianInventoryAndCache(prev =>
+          prev.map(i => (i.id === techItem.id ? { ...i, quantity: newTechQuantity } : i))
+        );
       }
 
-      try {
-        if (existingPart) {
-          const newQuantity = existingPart.quantity_used + 1;
-          const { data: updatedPart, error: updateError } = await db.jobPartsUsed.update(existingPart.id, {
-            quantity_used: newQuantity
-          });
-          if (updateError) throw updateError;
-
-          const newTechQuantity = techItem.quantity - 1;
-          const { error: updateTechError } = await db.technicianInventory.update(techItem.id, {
-            quantity: newTechQuantity
-          });
-          if (updateTechError) throw updateTechError;
-
-          setPartsUsed(prev => prev.map(p => p.id === existingPart.id ? (updatedPart || p) : p));
-          setTechnicianInventoryAndCache(prev =>
-            prev.map(i => (i.id === techItem.id ? { ...i, quantity: newTechQuantity } : i))
-          );
-        } else {
-          const { data: newPart, error: createError } = await db.jobPartsUsed.create({
-            job_id: job.id,
-            technician_id: technician.id,
-            inventory_id: inventoryId,
-            quantity_used: 1,
-            price_at_time_of_use: currentPrice,
-            source: 'technician',
-          });
-          if (createError) throw createError;
-
-          const newTechQuantity = techItem.quantity - 1;
-          const { error: updateTechError } = await db.technicianInventory.update(techItem.id, {
-            quantity: newTechQuantity
-          });
-          if (updateTechError) throw updateTechError;
-
-          if (newPart) setPartsUsed(prev => [newPart as JobPartUsed, ...prev]);
-          setTechnicianInventoryAndCache(prev =>
-            prev.map(i => (i.id === techItem.id ? { ...i, quantity: newTechQuantity } : i))
-          );
-        }
-      } catch (writeErr) {
-        await restoreMainInventory(inventoryId, 1);
-        throw writeErr;
-      }
-
-      bumpMainLocalQty(inventoryId, -1);
       scheduleRecalcJobPartsCost(job.id);
-      toast.success('Part added (1 qty). Technician and main inventory updated.');
+      toast.success('Part added (1 qty) from technician bag.');
     } catch (error: any) {
       console.error('Error quick adding part:', error);
       toast.error(error?.message || 'Failed to add part');
@@ -775,8 +756,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     }
   };
 
-  // Remove part from job: if qty > 1, reduce by 1 only; if qty is 1, remove the row entirely.
-  // source=main → restore main only; source=technician → restore tech + main; custom → neither.
+  // Remove: main → restore main only; technician → restore tech bag only; custom → neither.
   const handleDeletePart = async (
     partId: string,
     inventoryId: string | null,
@@ -799,7 +779,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
         if (updateError) throw updateError;
         if (!updatedPart) throw new Error('Part quantity was not updated. Please try again.');
 
-        if (!isCustom && inventoryId) {
+        if (fromMainOnly && inventoryId) {
           const mainErr = await restoreMainInventory(inventoryId, qtyToRestore);
           if (mainErr) {
             toast.error(`Part qty reduced, but main inventory restore failed: ${mainErr}`);
@@ -821,13 +801,13 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
             ? 'Removed 1 qty from job.'
             : fromMainOnly
             ? 'Removed 1 qty from job; stock returned to main inventory.'
-            : 'Removed 1 qty from job; stock returned to technician and main inventory.'
+            : 'Removed 1 qty from job; stock returned to technician bag.'
         );
       } else {
         const { error: deleteError } = await db.jobPartsUsed.delete(partId);
         if (deleteError) throw deleteError;
 
-        if (!isCustom && inventoryId) {
+        if (fromMainOnly && inventoryId) {
           const mainErr = await restoreMainInventory(inventoryId, qtyToRestore);
           if (mainErr) {
             toast.error(`Part removed, but main inventory restore failed: ${mainErr}`);
@@ -847,7 +827,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
             ? 'Custom item removed.'
             : fromMainOnly
             ? 'Part removed; stock returned to main inventory.'
-            : 'Part removed; stock returned to technician and main inventory.'
+            : 'Part removed; stock returned to technician bag.'
         );
       }
     } catch (error: any) {
@@ -970,13 +950,13 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
                                           ? ''
                                           : partFromMain
                                           ? ' One unit returns to main inventory.'
-                                          : ' One unit returns to the technician and main inventory.'
+                                          : ' One unit returns to the technician bag.'
                                       }`
                                     : partIsCustom
                                     ? 'Remove this custom item from the job?'
                                     : partFromMain
                                     ? 'Remove this part from the job? The quantity will return to main inventory only.'
-                                    : "Remove this part from the job? The quantity will return to the technician and main inventory."}
+                                    : 'Remove this part from the job? The quantity will return to the technician bag.'}
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
