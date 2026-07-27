@@ -196,9 +196,9 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     const cacheKey = `tech_inventory_${technician.id}`;
     const cached = inventoryCache.get<TechnicianInventoryItem[]>(cacheKey);
 
-    if (cached && cached.length >= 0) {
+    // inventoryCache.get already enforces TTL — use cache as-is (no background refetch)
+    if (cached) {
       setTechnicianInventory(cached);
-      loadTechnicianInventory(); // revalidate in background
       return;
     }
 
@@ -224,11 +224,17 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
   const loadMainInventory = useCallback(async (opts?: { force?: boolean }) => {
     if (mainInventoryLoaded && !opts?.force) return;
     const cacheKey = 'inventory_items';
-    const cached = inventoryCache.get<InventoryItem[]>(cacheKey);
-    if (cached && cached.length > 0 && !opts?.force) {
-      setMainInventoryItems(cached);
-      setMainInventoryLoaded(true);
+
+    // Prefer valid cache — do not silently re-fetch getAll (large egress)
+    if (!opts?.force) {
+      const cached = inventoryCache.get<InventoryItem[]>(cacheKey);
+      if (cached && cached.length > 0) {
+        setMainInventoryItems(cached);
+        setMainInventoryLoaded(true);
+        return;
+      }
     }
+
     const { data, error } = await db.inventory.getAll();
     if (!error && data) {
       setMainInventoryItems(data);
@@ -249,6 +255,33 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     mainInventoryItems.forEach(item => map.set(item.id, item));
     return map;
   }, [mainInventoryItems]);
+
+  /** Patch one main row in local state + cache (avoids getAll after a single-item refresh). */
+  const patchMainLocalItem = useCallback((item: InventoryItem) => {
+    setMainInventoryItems(prev => {
+      const idx = prev.findIndex(m => m.id === item.id);
+      const next =
+        idx >= 0
+          ? prev.map((m, i) => (i === idx ? { ...m, ...item } : m))
+          : [...prev, item];
+      inventoryCache.set('inventory_items', next);
+      return next;
+    });
+  }, []);
+
+  /** Sync tech bag list into inventoryCache after local qty changes. */
+  const setTechnicianInventoryAndCache = useCallback(
+    (updater: (prev: TechnicianInventoryItem[]) => TechnicianInventoryItem[]) => {
+      setTechnicianInventory(prev => {
+        const next = updater(prev);
+        if (technician?.id) {
+          inventoryCache.set(`tech_inventory_${technician.id}`, next);
+        }
+        return next;
+      });
+    },
+    [technician?.id]
+  );
 
   /**
    * Add Part list: technician bag (qty > 0) first; then main warehouse parts the
@@ -360,7 +393,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       const newQty = techItem.quantity + qty;
       const { error } = await db.technicianInventory.update(techItem.id, { quantity: newQty });
       if (error) throw error;
-      setTechnicianInventory(prev =>
+      setTechnicianInventoryAndCache(prev =>
         prev.map(i => (i.id === techItem.id ? { ...i, quantity: newQty } : i))
       );
       return;
@@ -372,7 +405,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     });
     if (error) throw error;
     if (data) {
-      setTechnicianInventory(prev => [data as TechnicianInventoryItem, ...prev]);
+      setTechnicianInventoryAndCache(prev => [data as TechnicianInventoryItem, ...prev]);
     }
   };
 
@@ -447,8 +480,8 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
           it.inventory_id;
 
         if (fromMain > 0) {
-          const { data: mainItem } = await db.inventory.getById(it.inventory_id);
-          const mainQty = mainItem ? Number((mainItem as any).quantity ?? 0) : 0;
+          // Use already-loaded main list — no per-item getById
+          const mainQty = Number(inventoryMap.get(it.inventory_id)?.quantity ?? 0);
           if (mainQty < fromMain) {
             short.push(`${name}: need ${need} (tech ${techHave} + main ${mainQty})`);
             continue;
@@ -464,13 +497,18 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       }
 
       const priceMap = new Map<string, number>();
+      const missingPriceIds: string[] = [];
       for (const it of items) {
-        const inv = inventoryMap.get(it.inventory_id) as InventoryItem | undefined;
-        if (inv?.price != null) priceMap.set(it.inventory_id, Number(inv.price));
-        else {
-          const { data: invData } = await db.inventory.getById(it.inventory_id);
-          priceMap.set(it.inventory_id, invData?.price ? Number(invData.price) : 0);
-        }
+        const fromBundle = (it.inventory as { price?: number } | undefined)?.price;
+        const fromMap = inventoryMap.get(it.inventory_id)?.price;
+        if (fromBundle != null) priceMap.set(it.inventory_id, Number(fromBundle));
+        else if (fromMap != null) priceMap.set(it.inventory_id, Number(fromMap));
+        else missingPriceIds.push(it.inventory_id);
+      }
+      // At most one getById per missing price (rare — catalog usually already loaded)
+      for (const id of missingPriceIds) {
+        const { data: invData } = await db.inventory.getById(id);
+        priceMap.set(id, invData?.price ? Number(invData.price) : 0);
       }
 
       let workingParts: JobPartUsed[] = [...partsUsed];
@@ -513,9 +551,9 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
           if (err) {
             toast.error(`Main inventory: ${err}`);
             setApplyingBundle(false);
-            void loadPartsUsed();
-            void loadTechnicianInventory();
-            void loadMainInventory({ force: true });
+            // Single-row refresh instead of full getAll
+            const { data } = await db.inventory.getById(plan.inventory_id);
+            if (data) patchMainLocalItem(data as InventoryItem);
             return;
           }
         }
@@ -550,7 +588,7 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       }
 
       setPartsUsed(workingParts);
-      setTechnicianInventory(workingTech);
+      setTechnicianInventoryAndCache(() => workingTech);
       setMainInventoryItems(prev => {
         const next = prev.map(m => {
           const plan = plans.find(p => p.inventory_id === m.id);
@@ -566,15 +604,16 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       toast.success(`Bundle applied: ${items.length} part(s) added.`);
     } catch (e: any) {
       toast.error(e?.message || 'Failed to apply bundle');
+      // Reload only what we need to resync — avoid force getAll when cache is fine
       void loadPartsUsed();
       void loadTechnicianInventory();
-      void loadMainInventory({ force: true });
     } finally {
       setApplyingBundle(false);
     }
   };
 
   // Quick add 1 qty — from technician bag, or directly from main when tech has none.
+  // Uses already-loaded inventoryMap / tech bag for price+qty (no getById on happy path).
   const handleQuickAddPart = async (
     inventoryId: string,
     source: 'technician' | 'main' = 'technician'
@@ -585,24 +624,40 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     quickAddInFlightRef.current.add(flightKey);
 
     try {
-      // Always refresh main row for qty/price — cache can be stale after other admins assign stock.
-      const { data: inventoryData, error: invError } = await db.inventory.getById(inventoryId);
-      if (invError) throw invError;
-      const currentPrice = inventoryData?.price ? Number(inventoryData.price) : 0;
-      const mainItemForDeduct = inventoryData as { quantity?: number } | null;
+      const techItem = technicianInventory.find(i => i.inventory_id === inventoryId);
+      let mainCached = inventoryMap.get(inventoryId) as InventoryItem | undefined;
+
+      // Resolve price from local data; create() will fetch price only if we leave it undefined
+      let currentPrice: number | undefined =
+        mainCached?.price != null
+          ? Number(mainCached.price)
+          : techItem?.inventory?.price != null
+          ? Number(techItem.inventory.price)
+          : undefined;
 
       if (source === 'main') {
-        const mainQty = Number(mainItemForDeduct?.quantity ?? NaN);
+        // Refresh one row only when local qty looks empty/missing (RPC still authoritative)
+        if (!mainCached || Number(mainCached.quantity ?? 0) < 1) {
+          const { data, error } = await db.inventory.getById(inventoryId);
+          if (error) throw error;
+          if (data) {
+            mainCached = data as InventoryItem;
+            patchMainLocalItem(mainCached);
+            if (currentPrice == null && data.price != null) currentPrice = Number(data.price);
+          }
+        }
+
+        const mainQty = Number(mainCached?.quantity ?? NaN);
         if (!Number.isNaN(mainQty) && mainQty < 1) {
           toast.error('Insufficient main inventory');
-          void loadMainInventory({ force: true });
           return;
         }
 
-        const mainErr = await deductMainInventory(inventoryId, 1, mainItemForDeduct);
+        const mainErr = await deductMainInventory(inventoryId, 1, mainCached ?? null);
         if (mainErr) {
           toast.error(`Main inventory: ${mainErr}`);
-          void loadMainInventory({ force: true });
+          const { data } = await db.inventory.getById(inventoryId);
+          if (data) patchMainLocalItem(data as InventoryItem);
           return;
         }
 
@@ -647,7 +702,6 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
         return;
       }
 
-      const techItem = technicianInventory.find(i => i.inventory_id === inventoryId);
       if (!techItem || techItem.quantity < 1) {
         toast.error('Insufficient technician quantity');
         return;
@@ -656,9 +710,12 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       const existingPart = partsUsed.find(
         p => p.inventory_id === inventoryId && (p.source || 'technician') === 'technician'
       );
-      const mainErr = await deductMainInventory(inventoryId, 1, mainItemForDeduct);
+      // Client qty hint from cache; RPC rejects if main is actually short
+      const mainErr = await deductMainInventory(inventoryId, 1, mainCached ?? null);
       if (mainErr) {
         toast.error(`Main inventory: ${mainErr}`);
+        const { data } = await db.inventory.getById(inventoryId);
+        if (data) patchMainLocalItem(data as InventoryItem);
         return;
       }
 
@@ -677,7 +734,9 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
           if (updateTechError) throw updateTechError;
 
           setPartsUsed(prev => prev.map(p => p.id === existingPart.id ? (updatedPart || p) : p));
-          setTechnicianInventory(prev => prev.map(i => i.id === techItem.id ? { ...i, quantity: newTechQuantity } : i));
+          setTechnicianInventoryAndCache(prev =>
+            prev.map(i => (i.id === techItem.id ? { ...i, quantity: newTechQuantity } : i))
+          );
         } else {
           const { data: newPart, error: createError } = await db.jobPartsUsed.create({
             job_id: job.id,
@@ -696,7 +755,9 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
           if (updateTechError) throw updateTechError;
 
           if (newPart) setPartsUsed(prev => [newPart as JobPartUsed, ...prev]);
-          setTechnicianInventory(prev => prev.map(i => i.id === techItem.id ? { ...i, quantity: newTechQuantity } : i));
+          setTechnicianInventoryAndCache(prev =>
+            prev.map(i => (i.id === techItem.id ? { ...i, quantity: newTechQuantity } : i))
+          );
         }
       } catch (writeErr) {
         await restoreMainInventory(inventoryId, 1);
@@ -794,7 +855,6 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       toast.error(error?.message || 'Failed to remove part');
       if (job?.id) void loadPartsUsed();
       void loadTechnicianInventory();
-      void loadMainInventory({ force: true });
     }
   };
 
