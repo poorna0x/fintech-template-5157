@@ -235,10 +235,10 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
   const loadMainInventory = useCallback(async (opts?: { force?: boolean }) => {
     if (mainInventoryLoaded && !opts?.force) return;
 
-    // Prefer valid cache — do not silently re-fetch (large egress)
+    // Prefer valid cache (including empty catalog) — do not silently re-fetch
     if (!opts?.force) {
       const cached = inventoryCache.get<InventoryItem[]>(MAIN_AVAILABLE_CACHE_KEY);
-      if (cached && cached.length > 0) {
+      if (cached !== null) {
         setMainInventoryItems(cached);
         setMainInventoryLoaded(true);
         return;
@@ -247,9 +247,10 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
 
     // In-stock only — skips zero-qty rows + timestamps
     const { data, error } = await db.inventory.getAvailableSlim();
-    if (!error && data) {
-      setMainInventoryItems(data);
-      inventoryCache.set(MAIN_AVAILABLE_CACHE_KEY, data);
+    if (!error) {
+      const rows = data || [];
+      setMainInventoryItems(rows);
+      inventoryCache.set(MAIN_AVAILABLE_CACHE_KEY, rows);
     }
     setMainInventoryLoaded(true);
   }, [mainInventoryLoaded]);
@@ -380,18 +381,42 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       : null;
   };
 
-  /** Keep local main list + inventoryCache in sync after deduct/restore. */
+  /** Keep local main list + inventoryCache in sync after deduct/restore.
+   * Never overwrite the cache with [] just because the dialog state is empty
+   * (e.g. deleting a Main part while Add Part is closed). */
   const bumpMainLocalQty = useCallback((inventoryId: string, delta: number) => {
-    setMainInventoryItems(prev => {
-      const next = prev.map(m =>
+    const applyDelta = (list: InventoryItem[]) =>
+      list.map(m =>
         m.id === inventoryId
           ? { ...m, quantity: Math.max(0, Number(m.quantity ?? 0) + delta) }
           : m
       );
-      inventoryCache.set(MAIN_AVAILABLE_CACHE_KEY, next.filter(m => Number(m.quantity ?? 0) > 0));
+
+    setMainInventoryItems(prev => {
+      if (prev.length === 0) return prev;
+      const next = applyDelta(prev);
+      inventoryCache.set(
+        MAIN_AVAILABLE_CACHE_KEY,
+        next.filter(m => Number(m.quantity ?? 0) > 0)
+      );
       return next;
     });
-  }, []);
+
+    const cached = inventoryCache.get<InventoryItem[]>(MAIN_AVAILABLE_CACHE_KEY);
+    if (cached && cached.some(m => m.id === inventoryId)) {
+      inventoryCache.set(
+        MAIN_AVAILABLE_CACHE_KEY,
+        applyDelta(cached).filter(m => Number(m.quantity ?? 0) > 0)
+      );
+    } else if (delta > 0) {
+      // Item was depleted to 0 and dropped from cache — re-fetch so it reappears in Add Part
+      void db.inventory.getById(inventoryId).then(({ data }) => {
+        if (data && Number((data as InventoryItem).quantity ?? 0) > 0) {
+          patchMainLocalItem(data as InventoryItem);
+        }
+      });
+    }
+  }, [patchMainLocalItem]);
 
   /** Restore technician bag qty; create the bag row if it was deleted. */
   const restoreTechBagQty = async (
@@ -593,8 +618,8 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
             if (!techItem || techItem.quantity < plan.fromTech) {
               throw new Error(`Technician stock changed for ${plan.name}`);
             }
-            await upsertPart(plan.inventory_id, plan.fromTech, 'technician', price);
             const newTechQty = techItem.quantity - plan.fromTech;
+            // Deduct bag first so a failed job-part write can restore bag cleanly
             const { error: techErr } = await db.technicianInventory.updateQuantity(
               techItem.id,
               newTechQty
@@ -603,6 +628,15 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
             workingTech = workingTech.map(i =>
               i.id === techItem.id ? { ...i, quantity: newTechQty } : i
             );
+            try {
+              await upsertPart(plan.inventory_id, plan.fromTech, 'technician', price);
+            } catch (partErr) {
+              await db.technicianInventory.updateQuantity(techItem.id, techItem.quantity);
+              workingTech = workingTech.map(i =>
+                i.id === techItem.id ? { ...i, quantity: techItem.quantity } : i
+              );
+              throw partErr;
+            }
           }
 
           if (plan.fromMain > 0) {
@@ -747,11 +781,6 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
       let nextParts = partsUsed;
       if (existingPart) {
         const newQuantity = existingPart.quantity_used + 1;
-        const { data: updatedPart, error: updateError } = await db.jobPartsUsed.update(existingPart.id, {
-          quantity_used: newQuantity
-        });
-        if (updateError) throw updateError;
-
         const newTechQuantity = techItem.quantity - 1;
         const { error: updateTechError } = await db.technicianInventory.updateQuantity(
           techItem.id,
@@ -759,40 +788,61 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
         );
         if (updateTechError) throw updateTechError;
 
-        nextParts = partsUsed.map(p =>
-          p.id === existingPart.id
-            ? ({ ...p, ...(updatedPart || {}), quantity_used: newQuantity, inventory: p.inventory } as JobPartUsed)
-            : p
-        );
-        setPartsUsed(nextParts);
-        setTechnicianInventoryAndCache(prev =>
-          prev.map(i => (i.id === techItem.id ? { ...i, quantity: newTechQuantity } : i))
-        );
-      } else {
-        const { data: newPart, error: createError } = await db.jobPartsUsed.create({
-          job_id: job.id,
-          technician_id: technician.id,
-          inventory_id: inventoryId,
-          quantity_used: 1,
-          price_at_time_of_use: currentPrice ?? 0,
-          source: 'technician',
-        });
-        if (createError) throw createError;
+        try {
+          const { data: updatedPart, error: updateError } = await db.jobPartsUsed.update(
+            existingPart.id,
+            { quantity_used: newQuantity }
+          );
+          if (updateError) throw updateError;
 
-        const newTechQuantity = techItem.quantity - 1;
-        const { error: updateTechError } = await db.technicianInventory.updateQuantity(
-          techItem.id,
-          newTechQuantity
-        );
-        if (updateTechError) throw updateTechError;
-
-        if (newPart) {
-          nextParts = [newPart as JobPartUsed, ...partsUsed];
+          nextParts = partsUsed.map(p =>
+            p.id === existingPart.id
+              ? ({
+                  ...p,
+                  ...(updatedPart || {}),
+                  quantity_used: newQuantity,
+                  inventory: p.inventory,
+                } as JobPartUsed)
+              : p
+          );
           setPartsUsed(nextParts);
+          setTechnicianInventoryAndCache(prev =>
+            prev.map(i => (i.id === techItem.id ? { ...i, quantity: newTechQuantity } : i))
+          );
+        } catch (partErr) {
+          await db.technicianInventory.updateQuantity(techItem.id, techItem.quantity);
+          throw partErr;
         }
-        setTechnicianInventoryAndCache(prev =>
-          prev.map(i => (i.id === techItem.id ? { ...i, quantity: newTechQuantity } : i))
+      } else {
+        const newTechQuantity = techItem.quantity - 1;
+        const { error: updateTechError } = await db.technicianInventory.updateQuantity(
+          techItem.id,
+          newTechQuantity
         );
+        if (updateTechError) throw updateTechError;
+
+        try {
+          const { data: newPart, error: createError } = await db.jobPartsUsed.create({
+            job_id: job.id,
+            technician_id: technician.id,
+            inventory_id: inventoryId,
+            quantity_used: 1,
+            price_at_time_of_use: currentPrice ?? 0,
+            source: 'technician',
+          });
+          if (createError) throw createError;
+
+          if (newPart) {
+            nextParts = [newPart as JobPartUsed, ...partsUsed];
+            setPartsUsed(nextParts);
+          }
+          setTechnicianInventoryAndCache(prev =>
+            prev.map(i => (i.id === techItem.id ? { ...i, quantity: newTechQuantity } : i))
+          );
+        } catch (partErr) {
+          await db.technicianInventory.updateQuantity(techItem.id, techItem.quantity);
+          throw partErr;
+        }
       }
 
       scheduleRecalcJobPartsCost(job.id, nextParts);
