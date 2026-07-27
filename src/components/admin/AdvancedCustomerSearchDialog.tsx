@@ -54,7 +54,19 @@ import {
   resolveGoogleMapsInputToCoords,
 } from '@/lib/googleMapsLink';
 
-const NEAR_RADIUS_OPTIONS_KM = [0.5, 1, 2, 3, 5, 10] as const;
+const NEAR_RADIUS_PRESETS_M = [200, 500, 1000, 2000, 3000, 5000, 10000] as const;
+const DEFAULT_NEAR_RADIUS_M = 2000;
+const MIN_NEAR_RADIUS_M = 50;
+const MAX_NEAR_RADIUS_M = 50_000;
+
+function clampNearRadiusMeters(raw: number): number {
+  if (!Number.isFinite(raw)) return DEFAULT_NEAR_RADIUS_M;
+  return Math.min(Math.max(Math.round(raw), MIN_NEAR_RADIUS_M), MAX_NEAR_RADIUS_M);
+}
+
+function formatMetersLabel(meters: number): string {
+  return `${meters.toLocaleString('en-IN')} m`;
+}
 
 interface AdvancedCustomerSearchDialogProps {
   open: boolean;
@@ -67,7 +79,7 @@ const EMPTY_FILTERS: AdvancedSearchFilters = {
   brandSource: 'either',
   locationContains: '',
   nearMapsLink: '',
-  nearRadiusKm: 2,
+  nearRadiusMeters: DEFAULT_NEAR_RADIUS_M,
   nearLat: null,
   nearLng: null,
   serviceType: '',
@@ -291,16 +303,15 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
           return;
         }
 
-        const radius =
-          typeof filters.nearRadiusKm === 'number' && filters.nearRadiusKm > 0
-            ? filters.nearRadiusKm
-            : 2;
+        const radiusM = clampNearRadiusMeters(
+          typeof filters.nearRadiusMeters === 'number' ? filters.nearRadiusMeters : DEFAULT_NEAR_RADIUS_M
+        );
 
         searchFilters = {
           ...searchFilters,
           nearLat: resolved.coords.latitude,
           nearLng: resolved.coords.longitude,
-          nearRadiusKm: radius,
+          nearRadiusMeters: radiusM,
           sort:
             filters.sort === 'last_service_desc' || !filters.sort
               ? 'distance_asc'
@@ -311,13 +322,13 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
           resolved.placeHintUsed ||
           `${resolved.coords.latitude.toFixed(5)}, ${resolved.coords.longitude.toFixed(5)}`;
         setNearResolvedLabel(
-          `${label} · within ${radius} km${resolved.didExpandShortLink ? ' (short link resolved)' : ''}`
+          `${label} · within ${formatMetersLabel(radiusM)}${resolved.didExpandShortLink ? ' (short link resolved)' : ''}`
         );
         setFilters((prev) => ({
           ...prev,
           nearLat: resolved.coords.latitude,
           nearLng: resolved.coords.longitude,
-          nearRadiusKm: radius,
+          nearRadiusMeters: radiusM,
         }));
       } else {
         setNearResolvedLabel(null);
@@ -520,33 +531,82 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
                     }}
                   />
                 </div>
-                <div className="space-y-1.5 sm:w-36">
-                  <Label className="text-xs text-muted-foreground">Radius</Label>
-                  <Select
-                    value={String(
-                      typeof filters.nearRadiusKm === 'number' ? filters.nearRadiusKm : 2
-                    )}
-                    onValueChange={(v) => update('nearRadiusKm', Number(v))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {NEAR_RADIUS_OPTIONS_KM.map((km) => (
-                        <SelectItem key={km} value={String(km)}>
-                          {km < 1 ? `${km * 1000} m` : `${km} km`}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <div className="space-y-1.5 sm:w-40">
+                  <Label htmlFor="adv_near_radius_m" className="text-xs text-muted-foreground">
+                    Radius (meters)
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      id="adv_near_radius_m"
+                      type="number"
+                      inputMode="numeric"
+                      min={MIN_NEAR_RADIUS_M}
+                      max={MAX_NEAR_RADIUS_M}
+                      step={50}
+                      value={
+                        filters.nearRadiusMeters === '' || filters.nearRadiusMeters == null
+                          ? ''
+                          : filters.nearRadiusMeters
+                      }
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        if (raw === '') {
+                          update('nearRadiusMeters', '');
+                          return;
+                        }
+                        const n = parseInt(raw, 10);
+                        if (!Number.isFinite(n) || n < 0) return;
+                        update('nearRadiusMeters', Math.min(n, MAX_NEAR_RADIUS_M));
+                      }}
+                      onBlur={() => {
+                        update(
+                          'nearRadiusMeters',
+                          clampNearRadiusMeters(
+                            typeof filters.nearRadiusMeters === 'number'
+                              ? filters.nearRadiusMeters
+                              : DEFAULT_NEAR_RADIUS_M
+                          )
+                        );
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') void handleSearch();
+                      }}
+                      className="pr-8"
+                    />
+                    <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                      m
+                    </span>
+                  </div>
                 </div>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {NEAR_RADIUS_PRESETS_M.map((m) => {
+                  const active =
+                    (typeof filters.nearRadiusMeters === 'number'
+                      ? filters.nearRadiusMeters
+                      : DEFAULT_NEAR_RADIUS_M) === m;
+                  return (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => update('nearRadiusMeters', m)}
+                      className={`rounded-md border px-2 py-0.5 text-xs transition-colors ${
+                        active
+                          ? 'border-primary bg-primary text-primary-foreground'
+                          : 'border-border bg-background text-muted-foreground hover:bg-muted'
+                      }`}
+                    >
+                      {formatMetersLabel(m)}
+                    </button>
+                  );
+                })}
               </div>
               {nearResolvedLabel ? (
                 <p className="mt-2 text-xs text-muted-foreground">{nearResolvedLabel}</p>
               ) : (
                 <p className="mt-2 text-xs text-muted-foreground">
-                  Short links are resolved automatically. Matches customers with a saved map pin
-                  (primary or alternate) inside the radius.
+                  Short links are resolved automatically. Enter any radius in meters (50–50,000),
+                  or tap a preset. Matches customers with a saved map pin inside that distance.
                 </p>
               )}
             </div>
@@ -1132,9 +1192,7 @@ const ResultRow: React.FC<ResultRowProps> = ({
             )}
             {typeof row.distance_km === 'number' && Number.isFinite(row.distance_km) && (
               <Badge variant="secondary" className="text-xs">
-                {row.distance_km < 1
-                  ? `${Math.round(row.distance_km * 1000)} m`
-                  : `${row.distance_km.toFixed(row.distance_km < 10 ? 2 : 1)} km`}
+                {`${Math.round(row.distance_km * 1000).toLocaleString('en-IN')} m`}
                 {row.matched_site === 'alternate' ? ' · alt pin' : ''}
               </Badge>
             )}
