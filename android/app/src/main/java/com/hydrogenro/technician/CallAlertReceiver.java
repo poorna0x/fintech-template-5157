@@ -51,6 +51,9 @@ public class CallAlertReceiver extends BroadcastReceiver {
         final Context app = context.getApplicationContext();
         SharedPreferences prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
 
+        // Outgoing wrong-company-line check (independent of incoming admin alert).
+        WrongLineCallReceiver.onPhoneState(app, state);
+
         if (TelephonyManager.EXTRA_STATE_RINGING.equals(state)) {
             long now = System.currentTimeMillis();
             boolean wasInCall = prefs.getBoolean(KEY_IN_CALL, false);

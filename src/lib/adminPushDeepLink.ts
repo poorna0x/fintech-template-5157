@@ -76,7 +76,7 @@ export function parseAdminPushDeepLinkData(
   // Technician received a call from a known customer — open that customer.
   // Technician searched customers — open admin search with the same query
   // (payload.phone carries the query for tech_search).
-  if (String(raw.type || '').trim() === 'tech_call' || String(raw.type || '').trim() === 'tech_search') {
+  if (String(raw.type || '').trim() === 'tech_call' || String(raw.type || '').trim() === 'tech_search' || String(raw.type || '').trim() === 'wrong_line_call') {
     const phone = String(raw.phone || raw.query || '').trim();
     if (!phone) return null;
     return {

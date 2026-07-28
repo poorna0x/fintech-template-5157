@@ -8,7 +8,7 @@ import { Capacitor } from '@capacitor/core';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { supabase } from '@/lib/supabase';
 import { registrationDeviceName } from '@/lib/deviceTracker';
-import { getNativeDeviceLabel, syncDevicePrefsToNative } from '@/lib/devicePrefs';
+import { getNativeDeviceLabel, syncDevicePrefsToNative, syncCompanyPhoneToNative } from '@/lib/devicePrefs';
 
 let listenersAttached = false;
 let nativeListenerAttached = false;
@@ -21,6 +21,7 @@ let registerInFlight: Promise<void> | null = null;
 
 const TOKEN_CACHE_KEY = 'hro_tech_push_token_v1';
 const PERSIST_KEY = 'hro_tech_push_persist_v2';
+const COMPANY_PHONE_KEY = 'hro_tech_company_phone_v1';
 const MAX_RETRIES = 6;
 
 type TechPushPersist = {
@@ -28,6 +29,65 @@ type TechPushPersist = {
   technicianId: string;
   callAlertsEnabled: boolean;
 };
+
+type CompanyPhoneCache = {
+  technicianId: string;
+  phone: string;
+  /** yyyy-mm-dd IST-ish local — refresh at most once a day */
+  day: string;
+};
+
+function todayKey(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function readCompanyPhoneCache(): CompanyPhoneCache | null {
+  try {
+    const raw = localStorage.getItem(COMPANY_PHONE_KEY);
+    if (!raw) return null;
+    const c = JSON.parse(raw) as CompanyPhoneCache;
+    if (!c.technicianId || !c.phone) return null;
+    return c;
+  } catch {
+    return null;
+  }
+}
+
+function writeCompanyPhoneCache(data: CompanyPhoneCache): void {
+  try {
+    localStorage.setItem(COMPANY_PHONE_KEY, JSON.stringify(data));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Load technicians.phone at most once a day onto the device — not on every call. */
+async function syncCompanyPhoneOnce(technicianId: string): Promise<void> {
+  const day = todayKey();
+  const cached = readCompanyPhoneCache();
+  if (
+    cached?.technicianId === technicianId &&
+    cached.day === day &&
+    cached.phone.length >= 10
+  ) {
+    await syncCompanyPhoneToNative(cached.phone);
+    return;
+  }
+
+  const { data } = await supabase
+    .from('technicians')
+    .select('phone')
+    .eq('id', technicianId)
+    .maybeSingle();
+  const phone = String(data?.phone || '').replace(/\D/g, '').slice(-10);
+  if (phone.length < 10) return;
+  writeCompanyPhoneCache({ technicianId, phone, day });
+  await syncCompanyPhoneToNative(phone);
+}
 
 declare global {
   interface Window {
@@ -64,6 +124,7 @@ function clearPersist(): void {
   try {
     localStorage.removeItem(PERSIST_KEY);
     localStorage.removeItem(TOKEN_CACHE_KEY);
+    localStorage.removeItem(COMPANY_PHONE_KEY);
   } catch {
     /* ignore */
   }
@@ -117,7 +178,12 @@ async function saveToken(technicianId: string, token: string): Promise<boolean> 
       .maybeSingle();
     const callAlertsEnabled = prefsRow?.call_alerts_enabled !== false;
     writePersist({ ...cached, callAlertsEnabled });
-    await syncDevicePrefsToNative({ callAlertsEnabled, fcmToken: token });
+    await syncDevicePrefsToNative({
+      callAlertsEnabled,
+      fcmToken: token,
+      companyPhone: readCompanyPhoneCache()?.phone,
+    });
+    void syncCompanyPhoneOnce(technicianId);
     return true;
   }
 
@@ -169,7 +235,12 @@ async function saveToken(technicianId: string, token: string): Promise<boolean> 
   lastToken = token;
   lastPersistedKey = key;
   rememberTokenLocally(token);
-  await syncDevicePrefsToNative({ callAlertsEnabled, fcmToken: token });
+  await syncDevicePrefsToNative({
+    callAlertsEnabled,
+    fcmToken: token,
+    companyPhone: readCompanyPhoneCache()?.phone,
+  });
+  void syncCompanyPhoneOnce(technicianId);
   return true;
 }
 

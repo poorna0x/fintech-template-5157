@@ -3121,13 +3121,16 @@ const Settings = () => {
                   )}
                 </div>
                 <div>
-                  <Label htmlFor="phone">Contact phone (shared to customer) *</Label>
+                  <Label htmlFor="phone">Company calling number *</Label>
                   <Input
                     id="phone"
                     value={technicianFormData.phone}
                     onChange={(e) => setTechnicianFormData(prev => ({ ...prev, phone: e.target.value }))}
                     placeholder="Number customers see / call"
                   />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Company SIM for this technician. If they call a customer from another line, you both get a push (tap opens the customer).
+                  </p>
                 </div>
                 <div>
                   <Label htmlFor="whatsappPhone">WhatsApp (admin messaging only)</Label>

@@ -130,5 +130,6 @@
     <!-- Caller check: detect ringing + read the incoming number
          (Android 9+ only includes the number when READ_CALL_LOG is granted) -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.READ_PHONE_NUMBERS" />
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
 </manifest>
