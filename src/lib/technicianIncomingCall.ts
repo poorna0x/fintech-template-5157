@@ -7,8 +7,18 @@ import { normalizePhoneForSearch } from '@/lib/utils';
 import { notifyAdminsTechnicianCall } from '@/lib/technicianCallAlert';
 
 type RecentCallPlugin = {
-  consumeRecentCall(): Promise<{ number?: string; at?: number }>;
-  peekRecentCall(): Promise<{ number?: string; at?: number }>;
+  consumeRecentCall(): Promise<{
+    number?: string;
+    at?: number;
+    callLogDate?: number;
+    alerted?: boolean;
+  }>;
+  peekRecentCall(): Promise<{
+    number?: string;
+    at?: number;
+    callLogDate?: number;
+    alerted?: boolean;
+  }>;
 };
 
 const RecentCall = registerPlugin<RecentCallPlugin>('RecentCall');
@@ -47,6 +57,9 @@ export async function peekRecentTechnicianCallerNumber(): Promise<string | null>
 export async function peekRecentTechnicianCaller(): Promise<{
   digits: string;
   at: number;
+  callAt?: number;
+  callId?: string;
+  alreadyAlerted?: boolean;
 } | null> {
   if (!isAvailable()) return null;
   try {
@@ -54,17 +67,26 @@ export async function peekRecentTechnicianCaller(): Promise<{
       const digits = await consumeRecentTechnicianCallerNumber();
       return digits ? { digits, at: Date.now() } : null;
     }
-    const { number, at } = await RecentCall.peekRecentCall();
-    const digits = normalizeFresh(number, at);
-    if (!digits || typeof at !== 'number') return null;
-    return { digits, at };
+    const result = await RecentCall.peekRecentCall();
+    if (result?.alerted) {
+      return null;
+    }
+    const digits = normalizeFresh(result?.number, result?.at);
+    if (!digits || typeof result?.at !== 'number') return null;
+    const callAt =
+      typeof result.callLogDate === 'number' && result.callLogDate > 0
+        ? result.callLogDate
+        : undefined;
+    const callId = callAt ? `${digits}:${callAt}` : undefined;
+    return { digits, at: result.at, callAt, callId };
   } catch {
     return null;
   }
 }
 
 export function reportRecentTechnicianCallToAdmins(): void {
-  void peekRecentTechnicianCallerNumber().then((digits) => {
-    if (digits) notifyAdminsTechnicianCall(digits);
+  void peekRecentTechnicianCaller().then((hit) => {
+    if (!hit) return;
+    notifyAdminsTechnicianCall(hit.digits, { callId: hit.callId, callAt: hit.callAt });
   });
 }

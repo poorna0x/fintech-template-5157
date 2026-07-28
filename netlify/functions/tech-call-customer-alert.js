@@ -69,6 +69,9 @@ exports.handler = async (event) => {
   const missed = body.missed === true;
   const deviceToken = String(body.token || '').trim();
   const bearer = readBearerToken(event);
+  const callAtRaw = Number(body.callAt);
+  const callAt = Number.isFinite(callAtRaw) && callAtRaw > 1_000_000_000_000 ? Math.floor(callAtRaw) : 0;
+  let callId = String(body.callId || '').trim().slice(0, 80);
 
   const supabaseUrl = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
   const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
@@ -223,6 +226,31 @@ exports.handler = async (event) => {
     }
   }
 
+  // Idempotent send: same CallLog call_id → one admin push. Re-call = new call_id.
+  if (technicianId && !isAdminDevice) {
+    if (!callId) {
+      callId = callAt > 0 ? `${phone}:${callAt}` : `${phone}:t${Math.floor(Date.now() / 20_000)}`;
+    }
+    const { error: dedupeErr } = await db.from('tech_call_alert_events').insert({
+      technician_id: technicianId,
+      call_id: callId,
+      phone,
+    });
+    if (dedupeErr) {
+      const code = String(dedupeErr.code || '');
+      const msg = String(dedupeErr.message || '');
+      if (code === '23505' || /duplicate|unique/i.test(msg)) {
+        return {
+          statusCode: 200,
+          headers: HEADERS,
+          body: JSON.stringify({ found: true, sent: 0, reason: 'deduped', callId, authVia }),
+        };
+      }
+      // Table missing — still send (don't block), log once.
+      console.warn('[tech-call-customer-alert] dedupe insert failed:', msg);
+    }
+  }
+
   const [{ data: tech }, tokens] = await Promise.all([
     technicianId
       ? db.from('technicians').select('full_name').eq('id', technicianId).maybeSingle()
@@ -265,6 +293,7 @@ exports.handler = async (event) => {
         phone,
         customerId: String(customer.id),
         ...(technicianId ? { technicianId: String(technicianId) } : {}),
+        ...(callId ? { callId } : {}),
       },
       android: {
         priority: 'high',
@@ -272,7 +301,8 @@ exports.handler = async (event) => {
           channelId: 'job_alerts_v2',
           defaultSound: true,
           color,
-          tag: `tech_call_${technicianId || 'admin'}_${phone}${missed ? '_missed' : ''}`,
+          // Include callId so a re-call is a distinct notification, not a silent replace.
+          tag: `tech_call_${technicianId || 'admin'}_${phone}_${callId || 'x'}${missed ? '_missed' : ''}`,
         },
       },
     });

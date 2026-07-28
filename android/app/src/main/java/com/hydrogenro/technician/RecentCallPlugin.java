@@ -10,8 +10,9 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 
 /**
  * Recent incoming caller for JWT backup notify.
- * Uses CallLog DATE so the same customer calling again is a new event
- * (not stuck on the previous capture).
+ * Uses CallLog DATE so the same customer calling again is a new event.
+ * If native hangup path already alerted this callId, peek returns alerted=true
+ * so JS does not POST a duplicate.
  */
 @CapacitorPlugin(name = "RecentCall")
 public class RecentCallPlugin extends Plugin {
@@ -24,7 +25,10 @@ public class RecentCallPlugin extends Plugin {
 
     private static String digitsOnly(String raw) {
         if (raw == null) return "";
-        return raw.replaceAll("\\D", "");
+        String digits = raw.replaceAll("\\D", "");
+        if (digits.length() >= 12 && digits.startsWith("91")) digits = digits.substring(2);
+        digits = digits.replaceFirst("^0+", "");
+        return digits.length() >= 10 ? digits.substring(digits.length() - 10) : digits;
     }
 
     private JSObject readRecent(boolean consume) {
@@ -34,6 +38,7 @@ public class RecentCallPlugin extends Plugin {
         long consumedAt = prefs.getLong(CallAlertReceiver.KEY_CONSUMED_AT, 0L);
         long lastLogDate = prefs.getLong(KEY_LAST_CALLLOG_DATE, 0L);
         long now = System.currentTimeMillis();
+        String alertedCallId = prefs.getString(CallAlertReceiver.KEY_ALERTED_CALL_ID, "");
 
         long since = now - 15 * 60_000L;
         CallLogHelper.Entry fromLog = CallLogHelper.latestIncoming(getContext(), since);
@@ -45,10 +50,20 @@ public class RecentCallPlugin extends Plugin {
             String prefsDigits = digitsOnly(prefsNumber);
             boolean differentNumber =
                 prefsDigits.isEmpty() || !logDigits.equals(prefsDigits);
-            // New CallLog row (newer DATE) = new call, even if same number.
             boolean newerCallLog = fromLog.dateMs > lastLogDate;
             boolean prefsStale = prefsAt <= 0 || now - prefsAt > 60_000L;
             boolean consumed = prefsAt > 0 && prefsAt == consumedAt;
+            String callId = logDigits.isEmpty() ? "" : (logDigits + ":" + fromLog.dateMs);
+
+            if (!callId.isEmpty() && callId.equals(alertedCallId)) {
+                ret.put("alerted", true);
+                ret.put("number", fromLog.number);
+                ret.put("at", fromLog.dateMs);
+                ret.put("callLogDate", fromLog.dateMs);
+                ret.put("callId", callId);
+                ret.put("source", "call_log_alerted");
+                return ret;
+            }
 
             if (differentNumber || newerCallLog || prefsStale || consumed) {
                 prefs
@@ -64,17 +79,34 @@ public class RecentCallPlugin extends Plugin {
                 ret.put("number", fromLog.number);
                 ret.put("at", now);
                 ret.put("callLogDate", fromLog.dateMs);
+                if (!callId.isEmpty()) ret.put("callId", callId);
                 ret.put("source", "call_log");
                 return ret;
             }
         }
 
         if (prefsNumber != null && !prefsNumber.isEmpty() && prefsAt > 0 && prefsAt != consumedAt) {
+            String prefsDigits = digitsOnly(prefsNumber);
+            String callId =
+                !prefsDigits.isEmpty() && lastLogDate > 0
+                    ? (prefsDigits + ":" + lastLogDate)
+                    : "";
+            if (!callId.isEmpty() && callId.equals(alertedCallId)) {
+                ret.put("alerted", true);
+                ret.put("number", prefsNumber);
+                ret.put("at", prefsAt);
+                ret.put("callLogDate", lastLogDate);
+                ret.put("callId", callId);
+                ret.put("source", "prefs_alerted");
+                return ret;
+            }
             if (consume) {
                 prefs.edit().putLong(CallAlertReceiver.KEY_CONSUMED_AT, prefsAt).apply();
             }
             ret.put("number", prefsNumber);
             ret.put("at", prefsAt);
+            if (lastLogDate > 0) ret.put("callLogDate", lastLogDate);
+            if (!callId.isEmpty()) ret.put("callId", callId);
             ret.put("source", "prefs");
         }
         return ret;

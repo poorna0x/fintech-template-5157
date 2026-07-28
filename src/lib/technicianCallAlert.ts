@@ -3,26 +3,36 @@
  * ping admin devices. Uses the technician session JWT — same trust path as
  * search alerts — so it still works when native FCM-token auth fails.
  *
- * Only a tiny dedupe (~3s) so native FCM + JS peek for the *same* ring don't
- * double-send. Same number calling again immediately is allowed.
+ * Dedupes by callId (CallLog DATE) so native hangup POST + JS peek for the
+ * *same* call never double-send. A new call (new CallLog DATE) notifies again.
  */
 import { supabase } from '@/lib/supabase';
 import { normalizePhoneForSearch } from '@/lib/utils';
 
-const DEDUP_WINDOW_MS = 2_000;
 const recentlyNotified = new Map<string, number>();
 
-export function notifyAdminsTechnicianCall(phone: string): void {
+export function notifyAdminsTechnicianCall(
+  phone: string,
+  opts?: { callId?: string; callAt?: number }
+): void {
   const digits = normalizePhoneForSearch(phone);
   if (digits.length < 10) return;
 
+  const callAt =
+    typeof opts?.callAt === 'number' && opts.callAt > 1_000_000_000_000
+      ? Math.floor(opts.callAt)
+      : 0;
+  const callId =
+    (opts?.callId && String(opts.callId).trim()) ||
+    (callAt > 0 ? `${digits}:${callAt}` : `${digits}:js:${Math.floor(Date.now() / 20_000)}`);
+
   const now = Date.now();
-  const last = recentlyNotified.get(digits);
-  if (last && now - last < DEDUP_WINDOW_MS) return;
-  recentlyNotified.set(digits, now);
-  if (recentlyNotified.size > 100) {
+  const last = recentlyNotified.get(callId);
+  if (last && now - last < 60_000) return;
+  recentlyNotified.set(callId, now);
+  if (recentlyNotified.size > 80) {
     for (const [k, t] of recentlyNotified) {
-      if (now - t > DEDUP_WINDOW_MS) recentlyNotified.delete(k);
+      if (now - t > 60_000) recentlyNotified.delete(k);
     }
   }
 
@@ -37,7 +47,7 @@ export function notifyAdminsTechnicianCall(phone: string): void {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ number: digits }),
+        body: JSON.stringify({ number: digits, callId, callAt: callAt || undefined }),
         keepalive: true,
       });
     } catch {

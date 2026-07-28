@@ -245,14 +245,8 @@ public class CallAlertUploadService extends Service {
                 cancelKicks(app, session);
                 return;
             }
-            String fromLog = CallLogHelper.latestIncomingNumber(app, session - 5_000L);
-            if (fromLog != null && !fromLog.isEmpty()) {
-                Log.i(TAG, "Watch got number — uploading");
-                prefs
-                    .edit()
-                    .putString(CallAlertReceiver.KEY_PENDING_NUMBER, fromLog)
-                    .apply();
-                CallAlertReceiver.uploadCallerNow(app, fromLog, session);
+            if (CallAlertReceiver.finalizeAndUpload(app, session)) {
+                Log.i(TAG, "Watch finalize done");
                 return;
             }
             try {

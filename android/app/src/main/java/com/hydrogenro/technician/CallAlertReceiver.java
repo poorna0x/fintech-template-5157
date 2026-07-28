@@ -18,16 +18,22 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Detects customer calls on the technician phone and uploads so admins get FCM.
+ * Customer called the technician → notify admins after the call ends (IDLE).
  *
- * Closed-app reliability layers:
- * 1) goAsync + sync POST when EXTRA/CallLog already has the number
- * 2) {@link CallAlertUploadService} foreground short-service (CallLog poll + POST)
- * 3) AlarmManager kicks ({@link CallAlertKickReceiver}) if FGS start was blocked
+ * Why hangup-first:
+ * - Dialers (Truecaller / Samsung / Google) often hide EXTRA_INCOMING_NUMBER
+ *   mid-ring, but always write CallLog when the call finishes.
+ * - Waiting until IDLE avoids racing RINGING + OFFHOOK + FGS + JS backup
+ *   (the usual source of duplicate admin pushes).
+ *
+ * Re-call: new RINGING after IDLE → new session + new CallLog DATE → new push.
+ * Same call: client claim lock + server (technician_id, call_id) PK.
  */
 public class CallAlertReceiver extends BroadcastReceiver {
 
     private static final String TAG = "HroCallAlert";
+    private static final Object UPLOAD_LOCK = new Object();
+
     static final String PREFS = "hro_call_alert";
     static final String KEY_LAST_NUMBER = "last_number";
     static final String KEY_LAST_AT = "last_at";
@@ -36,8 +42,10 @@ public class CallAlertReceiver extends BroadcastReceiver {
     static final String KEY_ALERTED_RING_AT = "alerted_ring_at";
     static final String KEY_PENDING_RING_AT = "pending_ring_at";
     static final String KEY_PENDING_NUMBER = "pending_number";
+    static final String KEY_ALERTED_CALL_ID = "alerted_call_id";
+    static final String KEY_CLAIMED_CALL_ID = "claimed_call_id";
     private static final String KEY_IN_CALL = "in_call";
-    private static final String KEY_POST_INFLIGHT_RING = "post_inflight_ring";
+    private static final String KEY_HAD_INCOMING_RING = "had_incoming_ring";
 
     private static final String ALERT_URL =
         "https://hydrogenro.com/.netlify/functions/tech-call-customer-alert";
@@ -51,7 +59,6 @@ public class CallAlertReceiver extends BroadcastReceiver {
         final Context app = context.getApplicationContext();
         SharedPreferences prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
 
-        // Outgoing wrong-company-line check (independent of incoming admin alert).
         WrongLineCallReceiver.onPhoneState(app, state);
 
         if (TelephonyManager.EXTRA_STATE_RINGING.equals(state)) {
@@ -60,7 +67,6 @@ public class CallAlertReceiver extends BroadcastReceiver {
             long existingRing = prefs.getLong(KEY_RING_SEEN_AT, 0L);
             long ringAt;
             // Same ringing episode can fire RINGING multiple times — reuse id.
-            // After IDLE, always mint a new ring session so re-calls notify again.
             if (
                 wasInCall &&
                 existingRing > 0 &&
@@ -70,117 +76,176 @@ public class CallAlertReceiver extends BroadcastReceiver {
                 ringAt = existingRing;
             } else {
                 ringAt = now;
+            }
+
+            SharedPreferences.Editor ed =
                 prefs
                     .edit()
                     .putLong(KEY_RING_SEEN_AT, ringAt)
                     .putBoolean(KEY_IN_CALL, true)
-                    .apply();
-            }
+                    .putBoolean(KEY_HAD_INCOMING_RING, true)
+                    .putLong(KEY_PENDING_RING_AT, ringAt);
 
             String number = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER);
-            if (number == null || number.trim().isEmpty()) {
-                number = CallLogHelper.latestIncomingNumber(app, ringAt - 5_000L);
-            }
-
             if (number != null && !number.trim().isEmpty()) {
-                persistPending(prefs, number.trim(), now);
-                final String n = number.trim();
-                final long ra = ringAt;
-                final PendingResult pending = goAsync();
-                new Thread(() -> {
-                    try {
-                        uploadCallerNow(app, n, ra);
-                        if (prefs.getLong(KEY_ALERTED_RING_AT, 0L) != ra) {
-                            CallAlertUploadService.startUpload(app, n, ra);
-                        }
-                    } finally {
-                        pending.finish();
-                    }
-                }).start();
-                return;
+                String cleaned = number.trim();
+                ed.putString(KEY_PENDING_NUMBER, cleaned)
+                    .putString(KEY_LAST_NUMBER, cleaned)
+                    .putLong(KEY_LAST_AT, now)
+                    .remove(KEY_CONSUMED_AT);
+                Log.i(TAG, "RINGING — cached number, wait for hangup");
+            } else {
+                Log.i(TAG, "RINGING — no EXTRA yet, will use CallLog after hangup");
             }
-
-            // No number yet — FGS + alarm kicks poll CallLog with app killed.
-            CallAlertUploadService.startWatch(app, ringAt);
+            ed.apply();
+            // Do NOT upload / start FGS here — hangup path is the single sender.
             return;
         }
 
         if (TelephonyManager.EXTRA_STATE_OFFHOOK.equals(state)) {
             prefs.edit().putBoolean(KEY_IN_CALL, true).apply();
-            long ringAt = prefs.getLong(KEY_RING_SEEN_AT, 0L);
-            if (ringAt > 0 && prefs.getLong(KEY_ALERTED_RING_AT, 0L) != ringAt) {
-                CallAlertUploadService.startWatch(app, ringAt);
-            }
             return;
         }
 
-        if (TelephonyManager.EXTRA_STATE_IDLE.equals(state)) {
-            prefs.edit().putBoolean(KEY_IN_CALL, false).apply();
-            long ringAt = prefs.getLong(KEY_RING_SEEN_AT, 0L);
-            if (ringAt <= 0) {
-                ringAt = prefs.getLong(KEY_PENDING_RING_AT, 0L);
-            }
-            if (ringAt <= 0) return;
-            if (System.currentTimeMillis() - ringAt > 30 * 60_000L) {
-                prefs.edit().remove(KEY_RING_SEEN_AT).apply();
-                CallAlertUploadService.cancelKicks(app, ringAt);
-                return;
-            }
-            if (prefs.getLong(KEY_ALERTED_RING_AT, 0L) == ringAt) {
-                prefs.edit().remove(KEY_RING_SEEN_AT).apply();
-                CallAlertUploadService.cancelKicks(app, ringAt);
-                return;
-            }
-            // Keep ring_seen_at until upload succeeds so watch/kicks share one session.
-            CallAlertUploadService.startWatch(app, ringAt);
-        }
-    }
+        if (!TelephonyManager.EXTRA_STATE_IDLE.equals(state)) return;
 
-    private static void persistPending(SharedPreferences prefs, String number, long now) {
+        boolean hadIncoming = prefs.getBoolean(KEY_HAD_INCOMING_RING, false);
+        long ringAt = prefs.getLong(KEY_RING_SEEN_AT, 0L);
+        if (ringAt <= 0) ringAt = prefs.getLong(KEY_PENDING_RING_AT, 0L);
+
         prefs
             .edit()
-            .putString(KEY_LAST_NUMBER, number)
-            .putLong(KEY_LAST_AT, now)
-            .putString(KEY_PENDING_NUMBER, number)
-            .remove(KEY_CONSUMED_AT)
+            .putBoolean(KEY_IN_CALL, false)
+            .putBoolean(KEY_HAD_INCOMING_RING, false)
             .apply();
+
+        // Outgoing-only IDLE (no prior RINGING) — ignore for admin inbound alerts.
+        if (!hadIncoming || ringAt <= 0) return;
+        if (System.currentTimeMillis() - ringAt > 45 * 60_000L) {
+            prefs.edit().remove(KEY_RING_SEEN_AT).apply();
+            return;
+        }
+        if (prefs.getLong(KEY_ALERTED_RING_AT, 0L) == ringAt) {
+            CallAlertUploadService.cancelKicks(app, ringAt);
+            prefs.edit().remove(KEY_RING_SEEN_AT).apply();
+            return;
+        }
+
+        Log.i(TAG, "IDLE after inbound — finalize alert for ring " + ringAt);
+        final long session = ringAt;
+        final PendingResult pending = goAsync();
+        new Thread(() -> {
+            try {
+                // Brief pause so OEMs flush CallLog after hangup.
+                try {
+                    Thread.sleep(800);
+                } catch (InterruptedException ignored) {
+                    /* continue */
+                }
+                if (!finalizeAndUpload(app, session)) {
+                    // CallLog not ready yet — FGS + kicks will finish once.
+                    CallAlertUploadService.startWatch(app, session);
+                }
+            } finally {
+                pending.finish();
+            }
+        }).start();
     }
 
-    /** Synchronous HTTP upload (called from FGS / goAsync / alarm kick). */
-    static void uploadCallerNow(Context context, String cleaned, long ringAt) {
-        if (cleaned == null || cleaned.trim().isEmpty()) return;
-        if (!DevicePrefsPlugin.shouldProcessIncomingCall(context)) return;
-        cleaned = cleaned.trim();
-
+    /**
+     * Resolve number from CallLog (preferred) or RINGING cache, then upload once.
+     * @return true if handled (alerted, claimed, or nothing to do); false if still waiting on CallLog
+     */
+    static boolean finalizeAndUpload(Context context, long ringAt) {
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        long now = System.currentTimeMillis();
         if (ringAt <= 0) {
             ringAt = prefs.getLong(KEY_RING_SEEN_AT, 0L);
             if (ringAt <= 0) ringAt = prefs.getLong(KEY_PENDING_RING_AT, 0L);
-            if (ringAt <= 0) ringAt = now;
+        }
+        if (ringAt <= 0) return true;
+        if (prefs.getLong(KEY_ALERTED_RING_AT, 0L) == ringAt) {
+            CallAlertUploadService.cancelKicks(context, ringAt);
+            return true;
         }
 
-        if (prefs.getLong(KEY_ALERTED_RING_AT, 0L) == ringAt) {
-            Log.i(TAG, "Upload skip — already alerted");
-            CallAlertUploadService.cancelKicks(context, ringAt);
-            return;
+        CallLogHelper.Entry log =
+            CallLogHelper.bestIncomingForSession(context, ringAt, ringAt - 15_000L);
+        String number = null;
+        long callAt = ringAt;
+        if (log != null) {
+            number = log.number;
+            callAt = log.dateMs > 0 ? log.dateMs : ringAt;
         }
-        long inflight = prefs.getLong(KEY_POST_INFLIGHT_RING, 0L);
-        long lastAt = prefs.getLong(KEY_LAST_AT, 0L);
-        if (inflight == ringAt && now - lastAt < 20_000L) {
-            Log.i(TAG, "Upload skip — already in flight");
-            return;
+        if (number == null || number.trim().isEmpty()) {
+            number = prefs.getString(KEY_PENDING_NUMBER, null);
+        }
+        if (number == null || number.trim().isEmpty()) {
+            number = prefs.getString(KEY_LAST_NUMBER, null);
+        }
+        if (number == null || number.trim().isEmpty()) {
+            Log.i(TAG, "Finalize — no number yet");
+            return false;
         }
 
         prefs
             .edit()
-            .putLong(KEY_POST_INFLIGHT_RING, ringAt)
-            .putLong(KEY_PENDING_RING_AT, ringAt)
-            .putString(KEY_LAST_NUMBER, cleaned)
-            .putString(KEY_PENDING_NUMBER, cleaned)
-            .putLong(KEY_LAST_AT, now)
-            .remove(KEY_CONSUMED_AT)
+            .putString(KEY_PENDING_NUMBER, number.trim())
+            .putString(KEY_LAST_NUMBER, number.trim())
+            .putLong(KEY_LAST_AT, System.currentTimeMillis())
+            .putLong(RecentCallPlugin.KEY_LAST_CALLLOG_DATE, callAt)
             .apply();
+
+        uploadCallerNow(context, number.trim(), ringAt, callAt);
+        return prefs.getLong(KEY_ALERTED_RING_AT, 0L) == ringAt;
+    }
+
+    /** Legacy 3-arg entry — callAt defaults to ringAt. */
+    @Deprecated
+    static void uploadCallerNow(Context context, String cleaned, long ringAt) {
+        uploadCallerNow(context, cleaned, ringAt, ringAt);
+    }
+
+    static void uploadCallerNow(Context context, String cleaned, long ringAt, long callAt) {
+        if (cleaned == null || cleaned.trim().isEmpty()) return;
+        if (!DevicePrefsPlugin.shouldProcessIncomingCall(context)) return;
+        cleaned = cleaned.trim();
+        if (callAt <= 0) callAt = ringAt > 0 ? ringAt : System.currentTimeMillis();
+        if (ringAt <= 0) ringAt = callAt;
+
+        String phone10 = normalize10(cleaned);
+        String callId = phone10.isEmpty()
+            ? ("ring:" + ringAt)
+            : (phone10 + ":" + callAt);
+
+        synchronized (UPLOAD_LOCK) {
+            SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+            if (prefs.getLong(KEY_ALERTED_RING_AT, 0L) == ringAt) {
+                Log.i(TAG, "Upload skip — ring already alerted");
+                CallAlertUploadService.cancelKicks(context, ringAt);
+                return;
+            }
+            String alertedId = prefs.getString(KEY_ALERTED_CALL_ID, "");
+            if (callId.equals(alertedId)) {
+                Log.i(TAG, "Upload skip — callId already alerted");
+                markAlerted(context, ringAt, callId);
+                return;
+            }
+            String claimed = prefs.getString(KEY_CLAIMED_CALL_ID, "");
+            if (callId.equals(claimed)) {
+                Log.i(TAG, "Upload skip — callId already claimed");
+                return;
+            }
+            // Claim BEFORE network so concurrent FGS / kick / JS can't race.
+            prefs
+                .edit()
+                .putString(KEY_CLAIMED_CALL_ID, callId)
+                .putLong(KEY_PENDING_RING_AT, ringAt)
+                .putString(KEY_PENDING_NUMBER, cleaned)
+                .putString(KEY_LAST_NUMBER, cleaned)
+                .putLong(KEY_LAST_AT, System.currentTimeMillis())
+                .remove(KEY_CONSUMED_AT)
+                .commit();
+        }
 
         String token = DevicePrefsPlugin.readFcmToken(context);
         if (token == null || token.length() < 20) {
@@ -203,12 +268,12 @@ public class CallAlertReceiver extends BroadcastReceiver {
 
         if (token == null || token.length() < 20) {
             Log.w(TAG, "No FCM token — upload aborted");
-            clearInflight(context, ringAt);
+            clearClaim(context, callId);
             return;
         }
 
-        int code = postOnce(token, cleaned);
-        Log.i(TAG, "Alert POST code=" + code);
+        int code = postOnce(token, cleaned, callId, callAt);
+        Log.i(TAG, "Alert POST code=" + code + " callId=" + callId);
         if (code == 401) {
             try {
                 String fresh =
@@ -218,7 +283,7 @@ public class CallAlertReceiver extends BroadcastReceiver {
                         TimeUnit.SECONDS
                     );
                 if (fresh != null && fresh.length() >= 20) {
-                    code = postOnce(fresh.trim(), cleaned);
+                    code = postOnce(fresh.trim(), cleaned, callId, callAt);
                     Log.i(TAG, "Alert POST retry fresh code=" + code);
                     if (code >= 200 && code < 300) {
                         DevicePrefsPlugin.saveFcmToken(context, fresh.trim());
@@ -230,42 +295,58 @@ public class CallAlertReceiver extends BroadcastReceiver {
         }
 
         if (code >= 200 && code < 300) {
-            markAlerted(context, ringAt);
-            Log.i(TAG, "Alert upload OK (closed-app safe)");
+            markAlerted(context, ringAt, callId);
+            Log.i(TAG, "Alert upload OK");
         } else {
-            clearInflight(context, ringAt);
+            clearClaim(context, callId);
             Log.w(TAG, "Alert upload failed");
         }
     }
 
-    private static void clearInflight(Context context, long ringAt) {
-        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        if (prefs.getLong(KEY_POST_INFLIGHT_RING, 0L) == ringAt) {
-            prefs.edit().remove(KEY_POST_INFLIGHT_RING).apply();
+    private static void clearClaim(Context context, String callId) {
+        synchronized (UPLOAD_LOCK) {
+            SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+            if (callId.equals(prefs.getString(KEY_CLAIMED_CALL_ID, ""))) {
+                prefs.edit().remove(KEY_CLAIMED_CALL_ID).commit();
+            }
         }
     }
 
-    private static void markAlerted(Context context, long ringAt) {
-        context
-            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .putLong(KEY_ALERTED_RING_AT, ringAt)
-            .remove(KEY_POST_INFLIGHT_RING)
-            .remove(KEY_RING_SEEN_AT)
-            .apply();
+    private static void markAlerted(Context context, long ringAt, String callId) {
+        synchronized (UPLOAD_LOCK) {
+            context
+                .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putLong(KEY_ALERTED_RING_AT, ringAt)
+                .putString(KEY_ALERTED_CALL_ID, callId != null ? callId : "")
+                .remove(KEY_CLAIMED_CALL_ID)
+                .remove(KEY_RING_SEEN_AT)
+                .commit();
+        }
         CallAlertUploadService.cancelKicks(context, ringAt);
     }
 
+    private static String normalize10(String raw) {
+        if (raw == null) return "";
+        String digits = raw.replaceAll("\\D", "");
+        if (digits.length() >= 12 && digits.startsWith("91")) digits = digits.substring(2);
+        digits = digits.replaceFirst("^0+", "");
+        return digits.length() >= 10 ? digits.substring(digits.length() - 10) : "";
+    }
+
     private static String jsonEscape(String value) {
+        if (value == null) return "";
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
-    private static int postOnce(String token, String number) {
+    private static int postOnce(String token, String number, String callId, long callAt) {
         HttpURLConnection conn = null;
         try {
             String payload =
                 "{\"token\":\"" + jsonEscape(token) + "\"," +
-                "\"number\":\"" + jsonEscape(number) + "\"}";
+                "\"number\":\"" + jsonEscape(number) + "\"," +
+                "\"callId\":\"" + jsonEscape(callId) + "\"," +
+                "\"callAt\":" + callAt + "}";
             conn = (HttpURLConnection) new URL(ALERT_URL).openConnection();
             conn.setRequestMethod("POST");
             conn.setRequestProperty("Content-Type", "application/json");

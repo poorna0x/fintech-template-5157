@@ -51,9 +51,9 @@ export function initTechnicianIncomingCallBackgroundLookup(): () => void {
     try {
       const hit = await peekRecentTechnicianCaller();
       if (!hit || disposed) return;
-      if (alreadyHandled(hit.digits, hit.at)) return;
-      markLastAuto(hit.digits, hit.at);
-      notifyAdminsTechnicianCall(hit.digits);
+      if (alreadyHandled(hit.digits, hit.callAt || hit.at)) return;
+      markLastAuto(hit.digits, hit.callAt || hit.at);
+      notifyAdminsTechnicianCall(hit.digits, { callId: hit.callId, callAt: hit.callAt });
     } catch {
       /* next resume / poll retries */
     }

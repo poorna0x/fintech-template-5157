@@ -36,15 +36,8 @@ public class CallAlertKickReceiver extends BroadcastReceiver {
             return;
         }
 
-        String number = prefs.getString(CallAlertReceiver.KEY_PENDING_NUMBER, null);
-        if (number == null || number.trim().isEmpty()) {
-            number = prefs.getString(CallAlertReceiver.KEY_LAST_NUMBER, null);
-        }
         Log.i(TAG, "Alarm kick for ring " + ringAt);
-        if (number != null && !number.trim().isEmpty()) {
-            CallAlertUploadService.startUpload(app, number.trim(), ringAt, false);
-        } else {
-            CallAlertUploadService.startWatch(app, ringAt, false);
-        }
+        // Hangup-first path: resolve CallLog then upload once (no second parallel upload).
+        CallAlertUploadService.startWatch(app, ringAt, false);
     }
 }
