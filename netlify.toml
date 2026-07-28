@@ -28,6 +28,11 @@
 [functions."daily-cash-check"]
   schedule = "30 15 * * *"
 
+# Morning cash reminder: 8:30 AM IST = 03:00 UTC. Re-pushes technicians who
+# still owe yesterday's cash (admin tapped No on the 9 PM check).
+[functions."morning-cash-reminder"]
+  schedule = "0 3 * * *"
+
 # Evening summary: 10:00 PM IST = 16:30 UTC. Day totals pushed to admins.
 [functions."evening-summary"]
   schedule = "30 16 * * *"

@@ -100,6 +100,18 @@ BEGIN
     v_remaining := v_remaining || jsonb_build_object('technician_otp_requests', v_n);
   END IF;
 
+  IF to_regclass('public.technician_cash_pending') IS NOT NULL THEN
+    DELETE FROM public.technician_cash_pending
+    WHERE created_at < v_cutoff;
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    v_deleted := v_deleted || jsonb_build_object('technician_cash_pending', v_n);
+
+    SELECT count(*)::integer INTO v_n
+    FROM public.technician_cash_pending
+    WHERE created_at < v_cutoff;
+    v_remaining := v_remaining || jsonb_build_object('technician_cash_pending', v_n);
+  END IF;
+
   IF to_regclass('public.auth_login_attempts') IS NOT NULL THEN
     DELETE FROM public.auth_login_attempts
     WHERE last_attempt_at < v_cutoff

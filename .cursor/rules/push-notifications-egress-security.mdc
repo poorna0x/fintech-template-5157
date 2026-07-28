@@ -18,7 +18,7 @@ This project ships two Capacitor Android apps built from this repo plus push not
 - Shared sender helper: `netlify/functions/fcm-helper.js` (`getMessaging`, `sendToTechnicianDevices`, token pruning).
 - Admin devices: `admin_push_tokens` table (multi-device). Technician devices: `technician_push_tokens` table (multi-device, one row per device, registered via `register_technician_push_token` RPC) with legacy fallback `technician_live_locations.fcm_token`.
 - All technician-facing senders fan out to every logged-in device and prune tokens FCM reports dead. Logout deletes that device's token.
-- Scheduled functions (netlify.toml cron, IST times): evening-summary 10:00 PM, parts-reminder 10:10 PM (techs who completed jobs + all admins), daily-cash-check.
+- Scheduled functions (netlify.toml cron, IST times): daily-cash-check 9:00 PM, morning-cash-reminder 8:30 AM (techs admin marked unpaid), evening-summary 10:00 PM, parts-reminder 10:10 PM (techs who completed jobs + all admins), admin-reminders-push 9:00 AM.
 
 ## Standing requirements for ALL new work
 - **Minimize Supabase egress**: select only needed columns, avoid polling, reuse already-fetched data, prefer single upserts/RPCs, cache in localStorage where sensible.

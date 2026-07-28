@@ -3,6 +3,9 @@
 // signature from the original push, then reminds the technician with a
 // visible push: "Please hand over today's cash."
 //
+// Also stores a pending row so morning-cash-reminder can push again at
+// 8:30 AM IST the next day.
+//
 // No session auth — the notification tap happens outside the webview — so
 // the HMAC signature (signed with the service key, never exposed) is the
 // credential. It's only valid for that technician/date/amount and expires
@@ -10,7 +13,8 @@
 
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
-const { getMessaging, sendToTechnicianDevices } = require('./fcm-helper');
+const { getMessaging } = require('./fcm-helper');
+const { sendCashHandoverReminder } = require('./cash-handover-push');
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
@@ -60,30 +64,44 @@ exports.handler = async (event) => {
     return { statusCode: 403, headers, body: JSON.stringify({ error: 'Expired' }) };
   }
 
+  const amountInr = Math.round(Number(amount));
+  if (!Number.isFinite(amountInr) || amountInr <= 0) {
+    return { statusCode: 400, headers, body: JSON.stringify({ error: 'Invalid amount' }) };
+  }
+
   const db = createClient(supabaseUrl, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  const rupees = `₹${Number(amount).toLocaleString('en-IN')}`;
+  // Queue for next-morning 8:30 AM IST reminder (scripts/add-technician-cash-pending.sql).
+  try {
+    const { error: upsertErr } = await db.from('technician_cash_pending').upsert(
+      {
+        technician_id: technicianId,
+        cash_date: date,
+        amount_inr: amountInr,
+        morning_sent_at: null,
+        created_at: new Date().toISOString(),
+      },
+      { onConflict: 'technician_id,cash_date' }
+    );
+    if (upsertErr) {
+      console.warn('[cash-check-response] pending upsert failed:', upsertErr.message);
+    }
+  } catch (err) {
+    console.warn('[cash-check-response] pending upsert error:', err?.message || err);
+  }
+
   try {
     const messaging = await getMessaging(db);
-    const { sent, tokens } = await sendToTechnicianDevices(db, messaging, technicianId, (token) => ({
-      token,
-      notification: {
-        title: 'Cash pending — hand over to office',
-        body: `Please hand over today's cash collection of ${rupees} to the office.`,
-      },
-      data: { type: 'job_notification' },
-      android: {
-        priority: 'high',
-        notification: {
-          channelId: 'job_alerts_v2',
-          defaultSound: true,
-          color: '#DC2626',
-          tag: 'cash-reminder',
-        },
-      },
-    }), 'job_nudges');
+    const forYesterday = date === istDateLabel(-1);
+    const { sent, tokens } = await sendCashHandoverReminder(
+      db,
+      messaging,
+      technicianId,
+      amountInr,
+      { forYesterday }
+    );
     if (tokens === 0) {
       return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'no_token' }) };
     }
