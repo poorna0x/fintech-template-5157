@@ -292,6 +292,8 @@ exports.handler = async (event) => {
         type: 'tech_call',
         phone,
         customerId: String(customer.id),
+        techName,
+        missed: missed ? 'true' : 'false',
         ...(technicianId ? { technicianId: String(technicianId) } : {}),
         ...(callId ? { callId } : {}),
       },

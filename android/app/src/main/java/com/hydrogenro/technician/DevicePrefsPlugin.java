@@ -20,8 +20,15 @@ public class DevicePrefsPlugin extends Plugin {
     static final String KEY_COMPANY_PHONE = "company_phone";
     /** Comma-separated 10-digit SIM MSISDNs cached on the device. */
     static final String KEY_SIM_NUMBERS = "sim_numbers";
-    /** "subId=number;subId=number" map for matching CallLog phone accounts. */
+    /** "subId=number;…" map for matching CallLog phone accounts. */
     static final String KEY_SIM_SUB_MAP = "sim_sub_map";
+    /** "subId=slot1Based;…" — works even when MSISDN is blank. */
+    static final String KEY_SIM_SLOT_MAP = "sim_slot_map";
+    /**
+     * 1-based company SIM slot when numbers can't be read.
+     * Default {@link SimLineHelper#DEFAULT_COMPANY_SIM_SLOT} (SIM 2).
+     */
+    static final String KEY_COMPANY_SIM_SLOT = "company_sim_slot";
 
     static SharedPreferences prefs(Context context) {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
@@ -39,11 +46,18 @@ public class DevicePrefsPlugin extends Plugin {
         return prefs(context).getString(KEY_COMPANY_PHONE, "");
     }
 
-    static void saveSimCache(Context context, String numbersCsv, String subMap) {
+    /** 1-based company SIM slot (default SIM 2). */
+    static int readCompanySimSlot(Context context) {
+        int slot = prefs(context).getInt(KEY_COMPANY_SIM_SLOT, SimLineHelper.DEFAULT_COMPANY_SIM_SLOT);
+        return slot >= 1 ? slot : SimLineHelper.DEFAULT_COMPANY_SIM_SLOT;
+    }
+
+    static void saveSimCache(Context context, String numbersCsv, String subMap, String slotMap) {
         prefs(context)
             .edit()
             .putString(KEY_SIM_NUMBERS, numbersCsv != null ? numbersCsv : "")
             .putString(KEY_SIM_SUB_MAP, subMap != null ? subMap : "")
+            .putString(KEY_SIM_SLOT_MAP, slotMap != null ? slotMap : "")
             .apply();
     }
 
@@ -68,6 +82,23 @@ public class DevicePrefsPlugin extends Plugin {
             String sub = part.substring(0, eq).trim();
             String num = SimLineHelper.normalize10(part.substring(eq + 1));
             if (!sub.isEmpty() && !num.isEmpty()) out.put(sub, num);
+        }
+        return out;
+    }
+
+    static java.util.Map<String, Integer> readSimSlotMap(Context context) {
+        java.util.Map<String, Integer> out = new java.util.HashMap<>();
+        String raw = prefs(context).getString(KEY_SIM_SLOT_MAP, "");
+        if (raw == null || raw.isEmpty()) return out;
+        for (String part : raw.split(";")) {
+            int eq = part.indexOf('=');
+            if (eq <= 0) continue;
+            String sub = part.substring(0, eq).trim();
+            try {
+                int slot = Integer.parseInt(part.substring(eq + 1).trim());
+                if (!sub.isEmpty() && slot >= 1) out.put(sub, slot);
+            } catch (NumberFormatException ignored) {
+            }
         }
         return out;
     }

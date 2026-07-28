@@ -94,6 +94,7 @@ exports.handler = async (event) => {
         query,
         // Reuse tech_call deep-link path (admin searches this string).
         phone: query,
+        techName,
         technicianId: String(technicianId),
       },
       android: {

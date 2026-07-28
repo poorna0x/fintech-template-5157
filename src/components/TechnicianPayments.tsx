@@ -1105,18 +1105,22 @@ const TechnicianPayments = () => {
 
   // Deep-link from nightly expense-review push (No → Payments → Add expense).
   useEffect(() => {
-    const openFromKind = (kind: 'technician' | 'business') => {
+    const openFromKind = (kind: 'technician' | 'business', expenseDate?: string | null) => {
       try {
         localStorage.removeItem('hro_admin_add_expense');
+        localStorage.removeItem('hro_admin_add_expense_date');
       } catch {
         /* ignore */
       }
+      const today = new Date().toISOString().split('T')[0];
+      const date =
+        expenseDate && /^\d{4}-\d{2}-\d{2}$/.test(expenseDate) ? expenseDate : today;
       if (kind === 'business') {
         setEditingBusinessExpense(null);
         setBusinessExpenseFormData({
           amount: '',
           description: '',
-          expense_date: new Date().toISOString().split('T')[0],
+          expense_date: date,
           category: '',
           notes: '',
         });
@@ -1127,7 +1131,7 @@ const TechnicianPayments = () => {
           technician_id: '',
           amount: '',
           description: '',
-          expense_date: new Date().toISOString().split('T')[0],
+          expense_date: date,
           category: 'OTHER',
           notes: '',
         });
@@ -1135,7 +1139,10 @@ const TechnicianPayments = () => {
       }
       navigate(
         adminDashboardLocation(
-          buildAdminDashboardSearch({ addExpense: null, view: 'payments' }, location.search)
+          buildAdminDashboardSearch(
+            { addExpense: null, expenseDate: null, view: 'payments' },
+            location.search
+          )
         ),
         { replace: true }
       );
@@ -1143,12 +1150,13 @@ const TechnicianPayments = () => {
 
     const parsed = parseAdminDashboardUrl(location.search);
     if (parsed.addExpense) {
-      openFromKind(parsed.addExpense);
+      openFromKind(parsed.addExpense, parsed.expenseDate);
     } else {
       try {
         const stored = localStorage.getItem('hro_admin_add_expense');
+        const storedDate = localStorage.getItem('hro_admin_add_expense_date');
         if (stored === 'technician' || stored === 'business') {
-          openFromKind(stored);
+          openFromKind(stored, storedDate);
         }
       } catch {
         /* ignore */
@@ -1156,9 +1164,11 @@ const TechnicianPayments = () => {
     }
 
     const onCustom = (e: Event) => {
-      const detail = (e as CustomEvent<{ addExpense?: string }>).detail;
+      const detail = (e as CustomEvent<{ addExpense?: string; expenseDate?: string }>).detail;
       const kind = detail?.addExpense;
-      if (kind === 'technician' || kind === 'business') openFromKind(kind);
+      if (kind === 'technician' || kind === 'business') {
+        openFromKind(kind, detail?.expenseDate);
+      }
     };
     window.addEventListener('hro-admin-add-expense', onCustom as EventListener);
     return () => window.removeEventListener('hro-admin-add-expense', onCustom as EventListener);

@@ -76,23 +76,29 @@ public class WrongLineCallReceiver {
     }
 
     private static void checkAndUpload(Context context, long sinceEpochMs) {
+        // Keep slot map fresh when numbers are blank (cheap local Telephony read).
+        SimLineHelper.refreshSimCache(context);
+
         SimLineHelper.OutgoingCall call = SimLineHelper.latestOutgoing(context, sinceEpochMs);
         if (call == null) {
             Log.i(TAG, "No outgoing CallLog row");
             return;
         }
-        if (!SimLineHelper.isWrongCompanyLine(context, call.fromNumber)) {
+        if (!SimLineHelper.isWrongCompanyLine(context, call)) {
             Log.i(TAG, "Outgoing used company line (or undetectable) — skip");
             return;
         }
 
         String dialed = SimLineHelper.normalize10(call.dialedNumber);
         String from = SimLineHelper.normalize10(call.fromNumber);
+        if (from.isEmpty() && call.fromSimSlot > 0) {
+            from = "SIM" + call.fromSimSlot;
+        }
         String company = DevicePrefsPlugin.readCompanyPhone(context);
         if (dialed.isEmpty() || company.isEmpty()) return;
 
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        String dedupeKey = company + "|" + dialed + "|" + from;
+        String dedupeKey = company + "|" + dialed + "|" + from + "|" + call.fromSimSlot;
         long now = System.currentTimeMillis();
         if (
             dedupeKey.equals(prefs.getString(KEY_LAST_ALERT_KEY, ""))

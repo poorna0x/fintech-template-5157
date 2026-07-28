@@ -42,7 +42,12 @@ exports.handler = async (event) => {
   }
 
   const customerPhone = normalizePhone(body.number);
-  const fromReported = normalizePhone(body.fromNumber);
+  const fromRaw = String(body.fromNumber || '').trim();
+  const fromReported = normalizePhone(fromRaw);
+  const fromLabel =
+    fromReported ||
+    (/^SIM\s*\d+$/i.test(fromRaw) ? fromRaw.replace(/\s+/g, '').toUpperCase() : '') ||
+    '';
   if (!customerPhone) {
     return { statusCode: 200, headers: HEADERS, body: JSON.stringify({ found: false, reason: 'bad_number' }) };
   }
@@ -157,7 +162,7 @@ exports.handler = async (event) => {
   }
 
   const techName = tech.full_name || 'Technician';
-  const usedLine = fromReported || 'unknown personal/other SIM';
+  const usedLine = fromLabel || 'unknown personal/other SIM';
   const title = `${techName} called on wrong number`;
   const bodyText = `${customer.full_name} (${customerPhone}) · used ${usedLine} · company ${companyPhone}`;
 
@@ -166,14 +171,19 @@ exports.handler = async (event) => {
     phone: customerPhone,
     customerId: String(customer.id),
     technicianId: String(technicianId),
-    fromNumber: fromReported || '',
+    fromNumber: fromLabel || fromReported || '',
     companyPhone,
     techName,
   };
 
   try {
     const messaging = await getMessaging(db);
-    const adminTokens = await getAdminFcmTokens(db, 'customer_calls');
+    const adminTokens = [
+      ...new Set([
+        ...(await getAdminFcmTokens(db, 'customer_calls')),
+        ...(await getAdminFcmTokens(db, 'tech_search')),
+      ]),
+    ];
 
     let adminSent = 0;
     if (adminTokens.length > 0) {

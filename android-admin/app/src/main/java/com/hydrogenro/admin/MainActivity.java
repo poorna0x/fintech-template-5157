@@ -88,9 +88,15 @@ public class MainActivity extends BridgeActivity {
         if (!"technician".equals(kind) && !"business".equals(kind)) return;
 
         final String addExpense = kind;
+        final String expenseDate = intent.getStringExtra("date");
+        final String safeDate =
+            expenseDate != null && expenseDate.matches("\\d{4}-\\d{2}-\\d{2}")
+                ? expenseDate
+                : "";
         getSharedPreferences("hro_admin_deeplink", MODE_PRIVATE)
             .edit()
             .putString("addExpense", addExpense)
+            .putString("expenseDate", safeDate)
             .apply();
 
         Runnable inject = () -> {
@@ -101,11 +107,19 @@ public class MainActivity extends BridgeActivity {
                     + "localStorage.setItem('hro_admin_add_expense','"
                     + addExpense
                     + "');"
+                    + (safeDate.isEmpty()
+                        ? "localStorage.removeItem('hro_admin_add_expense_date');"
+                        : "localStorage.setItem('hro_admin_add_expense_date','"
+                            + safeDate
+                            + "');")
                     + "window.dispatchEvent(new CustomEvent('hro-admin-add-expense',{detail:{addExpense:'"
                     + addExpense
-                    + "'}}));"
+                    + "'"
+                    + (safeDate.isEmpty() ? "" : ",expenseDate:'" + safeDate + "'")
+                    + "}}));"
                     + "var need='/admin?view=payments&addExpense="
                     + addExpense
+                    + (safeDate.isEmpty() ? "" : "&expenseDate=" + safeDate)
                     + "';"
                     + "if(location.pathname.indexOf('/admin')!==0||location.search.indexOf('view=payments')<0||location.search.indexOf('addExpense=')<0){"
                     + "location.assign(need);"

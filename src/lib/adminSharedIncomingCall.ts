@@ -23,7 +23,24 @@ const LAST_HANDLED_KEY = 'hro_admin_shared_call_handled_at';
 const AUTO_SEARCH_KEY = 'hro_admin_incoming_auto_search';
 const CHANNEL_NAME = 'admin-incoming-calls';
 
-export type IncomingAutoSearchRecord = { phone: string; at: number };
+export type IncomingCallAlertKind =
+  | 'tech_call'
+  | 'wrong_line_call'
+  | 'tech_search'
+  | 'missed_call';
+
+export type IncomingAutoSearchRecord = {
+  phone: string;
+  at: number;
+  /** Why this search was opened (push tap / shared board). */
+  kind?: IncomingCallAlertKind;
+  techName?: string;
+  fromNumber?: string;
+  companyPhone?: string;
+  customerId?: string;
+};
+
+export type IncomingAutoSearchMeta = Omit<IncomingAutoSearchRecord, 'phone' | 'at'>;
 
 export function readIncomingAutoSearch(): IncomingAutoSearchRecord | null {
   try {
@@ -31,7 +48,15 @@ export function readIncomingAutoSearch(): IncomingAutoSearchRecord | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<IncomingAutoSearchRecord>;
     if (!parsed.phone || typeof parsed.at !== 'number') return null;
-    return { phone: parsed.phone, at: parsed.at };
+    return {
+      phone: parsed.phone,
+      at: parsed.at,
+      kind: parsed.kind,
+      techName: parsed.techName,
+      fromNumber: parsed.fromNumber,
+      companyPhone: parsed.companyPhone,
+      customerId: parsed.customerId,
+    };
   } catch {
     return null;
   }
@@ -40,11 +65,22 @@ export function readIncomingAutoSearch(): IncomingAutoSearchRecord | null {
 /** Mark a search as auto-triggered by incoming call (not manual). Used to drop stale ?search= URLs. */
 export function markIncomingAutoSearch(
   phone: string,
-  at = Date.now()
+  atOrMeta: number | IncomingAutoSearchMeta = Date.now(),
+  maybeMeta?: IncomingAutoSearchMeta
 ): IncomingAutoSearchRecord | null {
   const digits = normalizePhoneForSearch(phone);
   if (digits.length < 7) return null;
-  const record: IncomingAutoSearchRecord = { phone: digits, at };
+  const at = typeof atOrMeta === 'number' ? atOrMeta : Date.now();
+  const meta = typeof atOrMeta === 'number' ? maybeMeta : atOrMeta;
+  const record: IncomingAutoSearchRecord = {
+    phone: digits,
+    at,
+    ...(meta?.kind ? { kind: meta.kind } : {}),
+    ...(meta?.techName ? { techName: meta.techName } : {}),
+    ...(meta?.fromNumber ? { fromNumber: meta.fromNumber } : {}),
+    ...(meta?.companyPhone ? { companyPhone: meta.companyPhone } : {}),
+    ...(meta?.customerId ? { customerId: meta.customerId } : {}),
+  };
   try {
     sessionStorage.setItem(AUTO_SEARCH_KEY, JSON.stringify(record));
   } catch {

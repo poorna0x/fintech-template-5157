@@ -305,6 +305,7 @@ import MoveToOngoingDialog from './admin/MoveToOngoingDialog';
 import CompleteTechnicianSelectDialog from './admin/CompleteTechnicianSelectDialog';
 import { AdminDashboardHeader } from './admin/AdminDashboardHeader';
 import { AdminSearchResultsBar } from './admin/AdminSearchResultsBar';
+import { AdminCallAlertContextBanner, describeCallAlertContext } from './admin/AdminCallAlertContextBanner';
 import { DeniedJobsDateFilter } from './admin/DeniedJobsDateFilter';
 import { CompletedJobsFiltersSection } from './admin/CompletedJobsFiltersSection';
 import JobDistanceMeasurementDialog, {
@@ -623,6 +624,7 @@ const AdminDashboard = () => {
                   clearSearch: true,
                   view: 'payments',
                   addExpense: payload.addExpense,
+                  expenseDate: payload.expenseDate || null,
                 },
                 location.search
               )
@@ -634,12 +636,28 @@ const AdminDashboard = () => {
 
         const { jobId, event, completedDate } = payload;
 
-        // Technician got a call from a known customer — the ?search= URL sync
-        // effect runs the actual customer search.
+        // Technician got a call / wrong-line / search — ?search= URL sync
+        // runs the customer search; banner keeps tech + reason after tap.
         if (payload.kind === 'tech_call') {
           if (!payload.phone) return;
-          const auto = markIncomingAutoSearch(payload.phone);
-          if (auto) setIncomingAutoSearch(auto);
+          const kind =
+            payload.event === 'wrong_line_call' ||
+            payload.event === 'tech_search' ||
+            payload.event === 'missed_call'
+              ? payload.event
+              : 'tech_call';
+          const auto = markIncomingAutoSearch(payload.phone, {
+            kind,
+            techName: payload.techName,
+            fromNumber: payload.fromNumber,
+            companyPhone: payload.companyPhone,
+            customerId: payload.customerId,
+          });
+          if (auto) {
+            setIncomingAutoSearch(auto);
+            const { title, detail } = describeCallAlertContext(auto);
+            toast.message(title, { description: detail || undefined, duration: 6500 });
+          }
           setHighlightJobId(null);
           navigate(
             adminDashboardLocation(
@@ -6054,6 +6072,16 @@ const AdminDashboard = () => {
           onAddCustomer={handleAddCustomer}
           unknownCallerPending={Boolean(unknownCallerChip)}
         />
+
+        {incomingAutoSearch?.kind ? (
+          <AdminCallAlertContextBanner
+            record={incomingAutoSearch}
+            onDismiss={() => {
+              clearIncomingAutoSearch();
+              setIncomingAutoSearch(null);
+            }}
+          />
+        ) : null}
 
         {/* Stats Cards - Clickable Filter Buttons */}
         <StatsCards

@@ -13,9 +13,14 @@ export type AdminPushDeepLinkPayload = {
   event: 'en_route' | 'completed' | 'otp_entered' | string;
   /** yyyy-mm-dd from the push — skip a DB fetch on tap when present. */
   completedDate?: string;
-  /** tech_call: normalized caller number to search. */
+  /** tech_call / wrong_line: normalized phone to search. */
   phone?: string;
   customerId?: string;
+  /** tech_call / wrong_line context kept after the tray notification is gone */
+  techName?: string;
+  fromNumber?: string;
+  companyPhone?: string;
+  technicianId?: string;
   /** settings deep-link */
   panel?: SettingsPanelSlug;
   reminderId?: string;
@@ -23,6 +28,8 @@ export type AdminPushDeepLinkPayload = {
   action?: string;
   /** payments: open Add technician / business expense dialog */
   addExpense?: 'technician' | 'business';
+  /** yyyy-mm-dd from expense-review push */
+  expenseDate?: string;
 };
 
 type Handler = (payload: AdminPushDeepLinkPayload) => void;
@@ -65,27 +72,43 @@ export function parseAdminPushDeepLinkData(
     const addExpense =
       addRaw === 'technician' || addRaw === 'business' ? addRaw : null;
     if (!addExpense) return null;
+    const expenseDateRaw = String(raw.date || raw.expenseDate || '').trim();
+    const expenseDate = /^\d{4}-\d{2}-\d{2}$/.test(expenseDateRaw)
+      ? expenseDateRaw
+      : undefined;
     return {
       kind: 'payments',
       jobId: '',
       event: 'expense_review',
       addExpense,
+      expenseDate,
     };
   }
 
-  // Technician received a call from a known customer — open that customer.
-  // Technician searched customers — open admin search with the same query
+  // Technician received a call / searched / wrong-line dial — open that customer.
   // (payload.phone carries the query for tech_search).
-  if (String(raw.type || '').trim() === 'tech_call' || String(raw.type || '').trim() === 'tech_search' || String(raw.type || '').trim() === 'wrong_line_call') {
-    const phone = String(raw.phone || raw.query || '').trim();
-    if (!phone) return null;
-    return {
-      kind: 'tech_call',
-      jobId: '',
-      event: String(raw.type || '').trim() === 'tech_search' ? 'tech_search' : 'tech_call',
-      phone,
-      customerId: String(raw.customerId || '').trim() || undefined,
-    };
+  {
+    const type = String(raw.type || '').trim();
+    if (type === 'tech_call' || type === 'tech_search' || type === 'wrong_line_call') {
+      const phone = String(raw.phone || raw.query || '').trim();
+      if (!phone) return null;
+      const missed =
+        String(raw.missed || '').toLowerCase() === 'true' ||
+        String(raw.missed || '') === '1';
+      let event: string = type;
+      if (type === 'tech_call' && missed) event = 'missed_call';
+      return {
+        kind: 'tech_call',
+        jobId: '',
+        event,
+        phone,
+        customerId: String(raw.customerId || '').trim() || undefined,
+        techName: String(raw.techName || '').trim() || undefined,
+        fromNumber: String(raw.fromNumber || '').trim() || undefined,
+        companyPhone: String(raw.companyPhone || '').trim() || undefined,
+        technicianId: String(raw.technicianId || '').trim() || undefined,
+      };
+    }
   }
 
   const jobId = String(raw.jobId || raw.job || '').trim();

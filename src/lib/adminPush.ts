@@ -177,6 +177,19 @@ export async function registerAdminPushToken(): Promise<void> {
         const data = (action?.notification?.data || {}) as Record<string, unknown>;
         deliverAdminPushDeepLink(data);
       });
+      // App already open: tray still shows (native), but also toast + search chip
+      // so the admin sees context without opening the shade.
+      await PushNotifications.addListener('pushNotificationReceived', (notification) => {
+        const data = (notification?.data || {}) as Record<string, unknown>;
+        const type = String(data.type || '').trim();
+        if (
+          type === 'tech_call' ||
+          type === 'wrong_line_call' ||
+          type === 'tech_search'
+        ) {
+          deliverAdminPushDeepLink(data);
+        }
+      });
     }
 
     await PushNotifications.register();

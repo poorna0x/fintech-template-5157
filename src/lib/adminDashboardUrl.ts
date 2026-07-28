@@ -92,6 +92,8 @@ export type ParsedAdminDashboardUrl = {
   photoIdx: number | null;
   /** Payments deep-link: open Add technician / business expense dialog. */
   addExpense: 'technician' | 'business' | null;
+  /** yyyy-mm-dd from expense-review push — prefill Add expense date. */
+  expenseDate: string | null;
 };
 
 export function parseAdminDashboardUrl(search: string): ParsedAdminDashboardUrl {
@@ -106,6 +108,7 @@ export function parseAdminDashboardUrl(search: string): ParsedAdminDashboardUrl 
   }
   const actionRaw = sp.get('action');
   const addExpenseRaw = sp.get('addExpense');
+  const expenseDateRaw = String(sp.get('expenseDate') || '').trim();
   return {
     tab: isAdminJobTabSlug(sp.get('tab')) ? (sp.get('tab') as AdminJobTabSlug) : null,
     view: sp.get('view'),
@@ -120,6 +123,7 @@ export function parseAdminDashboardUrl(search: string): ParsedAdminDashboardUrl 
     photoIdx,
     addExpense:
       addExpenseRaw === 'technician' || addExpenseRaw === 'business' ? addExpenseRaw : null,
+    expenseDate: /^\d{4}-\d{2}-\d{2}$/.test(expenseDateRaw) ? expenseDateRaw : null,
   };
 }
 
@@ -136,6 +140,7 @@ export type AdminDashboardSearchPatch = {
   photoType?: 'before' | 'after' | null;
   photoIdx?: number | null;
   addExpense?: 'technician' | 'business' | null;
+  expenseDate?: string | null;
   clearModal?: boolean;
   clearView?: boolean;
   clearTool?: boolean;
@@ -152,6 +157,7 @@ export function buildAdminDashboardSearch(
     sp.delete('view');
     sp.delete('type');
     sp.delete('addExpense');
+    sp.delete('expenseDate');
   }
   if (patch.clearTool) {
     sp.delete('tool');
@@ -203,7 +209,11 @@ export function buildAdminDashboardSearch(
       sp.set('photoIdx', String(patch.photoIdx));
     }
   }
-  if (patch.addExpense !== undefined) setOrDelete('addExpense', patch.addExpense);
+  if (patch.addExpense !== undefined) {
+    setOrDelete('addExpense', patch.addExpense);
+    if (patch.addExpense === null) sp.delete('expenseDate');
+  }
+  if (patch.expenseDate !== undefined) setOrDelete('expenseDate', patch.expenseDate);
 
   const qs = sp.toString();
   return qs ? `?${qs}` : '';
