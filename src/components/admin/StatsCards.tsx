@@ -2,6 +2,7 @@ import React from 'react';
 import { Card } from '@/components/ui/card';
 import { Wrench, CalendarPlus, XCircle, CheckCircle } from 'lucide-react';
 import { Job } from '@/types';
+import { useFollowUpGlowEnabled } from '@/hooks/useFollowUpGlowEnabled';
 
 interface StatsCardsProps {
   statusFilter: string;
@@ -25,6 +26,8 @@ export const StatsCards: React.FC<StatsCardsProps> = ({
   inProgressJobs,
   allJobs = [],
 }) => {
+  const followUpGlowEnabled = useFollowUpGlowEnabled();
+
   // Helper: format date as local YYYY-MM-DD (avoid UTC/toISOString mismatch)
   const toLocalDateStr = (d: Date) =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -78,7 +81,7 @@ export const StatsCards: React.FC<StatsCardsProps> = ({
     return 'ring-4 ring-yellow-400 ring-opacity-75 shadow-lg shadow-yellow-200';
   };
   
-  const followUpGlowClass = getFollowUpGlowClass();
+  const followUpGlowClass = followUpGlowEnabled ? getFollowUpGlowClass() : '';
   return (
     <div className="grid grid-cols-2 gap-3 mb-6 sm:grid-cols-4 sm:gap-6">
       <Card 

@@ -8,6 +8,7 @@ export const SETTINGS_SECTIONS = {
   'technician-management': true,
   'email-tracking': true,
   'booking-intent-archive': true,
+  dashboard: true,
   calling: true,
   'device-tracker': true,
 } as const;

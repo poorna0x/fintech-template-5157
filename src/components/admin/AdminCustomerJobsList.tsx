@@ -71,6 +71,7 @@ import {
   ZERO_COMMISSION_EMPLOYEE_ID,
 } from '@/lib/adminUtils';
 import type { Job } from '@/types';
+import { useFollowUpGlowEnabled } from '@/hooks/useFollowUpGlowEnabled';
 
 export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
   const ctx = useAdminDashboardList();
@@ -103,6 +104,7 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
     applyListCustomerContactToCachedJob,
   } = ctx.data;
   const a = ctx.actionsRef.current;
+  const followUpGlowEnabled = useFollowUpGlowEnabled();
 
   // "Ask OTP": request the customer's OTP from the assigned technician's app
   // (Home Triangle leads, or any job with Require OTP checked).
@@ -131,7 +133,7 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
     const lead = (findLeadSource(arr) || '').toLowerCase();
     return lead.includes('website');
   });
-  const borderClass = hasTodayFollowup ? 'border-red-400 border-2' : hasTomorrowFollowup ? 'border-yellow-400 border-2' : hasWebsiteLead ? 'border-red-400 border-2' : 'border-gray-300';
+  const borderClass = followUpGlowEnabled && hasTodayFollowup ? 'border-red-400 border-2' : followUpGlowEnabled && hasTomorrowFollowup ? 'border-yellow-400 border-2' : hasWebsiteLead ? 'border-red-400 border-2' : 'border-gray-300';
   const hoverBorderClass = hasWebsiteLead ? 'hover:border-green-400' : 'hover:border-gray-400';
   const priorServiceFromJobs =
     completedJobs.length > 0 ||
@@ -611,7 +613,7 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
                   const jobFollowUpDateStr = followUpDateToStr(followUpDate);
                   const isFollowUpToday = statusFilter === 'RESCHEDULED' && ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status) && jobFollowUpDateStr === todayDateStr;
                   const isFollowUpTomorrow = statusFilter === 'RESCHEDULED' && ['FOLLOW_UP', 'RESCHEDULED'].includes(job.status) && jobFollowUpDateStr === tomorrowDateStr;
-                  const jobBorderClass = isFollowUpToday ? 'border-red-400 border-2' : isFollowUpTomorrow ? 'border-yellow-400 border-2' : job.status === 'PENDING' && !(job.assigned_technician_id || job.assignedTechnicianId) ? 'border-blue-500 border-2' : 'border-gray-300';
+                  const jobBorderClass = followUpGlowEnabled && isFollowUpToday ? 'border-red-400 border-2' : followUpGlowEnabled && isFollowUpTomorrow ? 'border-yellow-400 border-2' : job.status === 'PENDING' && !(job.assigned_technician_id || job.assignedTechnicianId) ? 'border-blue-500 border-2' : 'border-gray-300';
                   return (
                 <div
                   data-admin-job-id={job.id}

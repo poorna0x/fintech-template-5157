@@ -38,7 +38,8 @@ import {
   Lock,
   GitMerge,
   Repeat,
-  ShieldCheck
+  ShieldCheck,
+  CalendarPlus
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db, supabase } from '@/lib/supabase';
@@ -58,6 +59,10 @@ import { registerAdminPWA } from '@/lib/pwa';
 import { EmailTrackingSettings } from '@/components/admin/EmailTrackingSettings';
 import { BookingIntentArchiveSettings } from '@/components/admin/BookingIntentArchiveSettings';
 import { DeviceTrackerSettings } from '@/components/admin/DeviceTrackerSettings';
+import {
+  isFollowUpGlowEnabled,
+  setFollowUpGlowEnabled,
+} from '@/lib/followUpGlowSettings';
 import { SettingsRemindersDialog } from '@/components/reminders/SettingsRemindersDialog';
 import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
 import { RecurringServiceTracker } from '@/components/reminders/RecurringServiceTracker';
@@ -334,6 +339,8 @@ const Settings = () => {
     return stored !== null ? stored === 'true' : true; // Default to enabled
   });
 
+  const [followUpGlowEnabled, setFollowUpGlowEnabledState] = useState<boolean>(isFollowUpGlowEnabled);
+
   // Download data state
   const [isDownloading, setIsDownloading] = useState(false);
 
@@ -564,6 +571,16 @@ const Settings = () => {
       detail: { enabled }
     }));
     toast.success(enabled ? '✅ Location tracking enabled - technicians\' locations will be automatically updated' : '🚫 Location tracking disabled - all location updates are now blocked');
+  };
+
+  const handleFollowUpGlowToggle = (enabled: boolean) => {
+    setFollowUpGlowEnabledState(enabled);
+    setFollowUpGlowEnabled(enabled);
+    toast.success(
+      enabled
+        ? 'Follow-up glow enabled — today (red) and tomorrow (yellow) highlights are on'
+        : 'Follow-up glow disabled — dashboard highlights turned off'
+    );
   };
 
   // Transform technician data from database format to frontend format
@@ -2454,13 +2471,6 @@ const Settings = () => {
                 </Button>
               </div>
             </CardHeader>
-            <CardContent className="p-4 sm:p-6 pt-0">
-              <p className="text-sm text-muted-foreground">
-                Moves all jobs, AMC, invoices, and call history to the keeper record. The duplicate
-                phone is saved as alternate phone. Requires{' '}
-                <code className="text-xs">merge-customers-admin-rpc.sql</code> in Supabase.
-              </p>
-            </CardContent>
           </Card>
 
           {/* Warranty Management */}
@@ -2487,12 +2497,6 @@ const Settings = () => {
                 </Button>
               </div>
             </CardHeader>
-            <CardContent className="p-4 sm:p-6 pt-0">
-              <p className="text-sm text-muted-foreground">
-                Pull parts from any job or add coverage by category (electricals, consumables, outside filter,
-                membrane, body). Default duration is 3 months per item.
-              </p>
-            </CardContent>
           </Card>
 
           {/* Direct / Office Sales */}
@@ -2524,12 +2528,6 @@ const Settings = () => {
                 </Button>
               </div>
             </CardHeader>
-            <CardContent className="p-4 sm:p-6 pt-0">
-              <p className="text-sm text-muted-foreground">
-                Saved as a completed, paid sale that counts toward revenue for the chosen date.
-                Optionally pick an inventory item to deduct stock and track cost for profit.
-              </p>
-            </CardContent>
           </Card>
 
           {/* Styled QR Image Generator */}
@@ -2954,6 +2952,35 @@ const Settings = () => {
                 <Switch
                   checked={locationTrackingEnabled}
                   onCheckedChange={handleLocationTrackingToggle}
+                  className="ml-6 border-2 border-border dark:border-gray-600 data-[state=unchecked]:bg-card dark:data-[state=unchecked]:bg-gray-700"
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card id="section-dashboard">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+                <CalendarPlus className="w-5 h-5" />
+                Dashboard Settings
+              </CardTitle>
+              <CardDescription className="text-sm mt-1">
+                Control visual highlights on the admin dashboard
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-6">
+              <div className="flex items-center justify-between p-6 bg-muted/40 dark:bg-gray-800 rounded-lg border border-border dark:border-gray-700">
+                <div className="flex-1">
+                  <h3 className="font-semibold text-foreground dark:text-white text-base sm:text-lg mb-2">
+                    Follow-up glow highlights
+                  </h3>
+                  <p className="text-sm sm:text-base text-muted-foreground dark:text-muted-foreground/70">
+                    When enabled, the Followup stats card and follow-up job cards glow red for today and yellow for tomorrow.
+                  </p>
+                </div>
+                <Switch
+                  checked={followUpGlowEnabled}
+                  onCheckedChange={handleFollowUpGlowToggle}
                   className="ml-6 border-2 border-border dark:border-gray-600 data-[state=unchecked]:bg-card dark:data-[state=unchecked]:bg-gray-700"
                 />
               </div>
