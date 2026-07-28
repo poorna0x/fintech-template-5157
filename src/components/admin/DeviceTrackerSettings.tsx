@@ -180,8 +180,8 @@ function DeviceCard({
             </Label>
             <p className="text-xs text-muted-foreground leading-snug">
               {kind === 'admin'
-                ? 'Whether this phone listens for rings (publish to shared search + report missed). Does not stop receiving call pushes — use “Customer call alerts” below for that.'
-                : 'Whether this phone silently reports customer rings to admins. Turning this off stops ring alerts from this handset only.'}
+                ? 'Whether this phone listens for rings (publish to shared search + report missed). Does not stop receiving call pushes — use “Customer call alerts” / “Wrong company-line calls” below for that.'
+                : 'Whether this phone reports customer rings and wrong-line outbound calls to admins. Off = this handset stops both detections.'}
             </p>
           </div>
           <Switch

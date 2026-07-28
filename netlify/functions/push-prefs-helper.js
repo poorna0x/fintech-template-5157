@@ -6,6 +6,7 @@
 const ADMIN_PUSH_CATEGORIES = [
   'job_status',
   'customer_calls',
+  'wrong_line',
   'tech_search',
   'tech_messages',
   'reminders',
@@ -23,6 +24,7 @@ const TECH_PUSH_CATEGORIES = [
   'location_ping',
   'parts_reminder',
   'bill_reminders',
+  'wrong_line',
 ];
 
 const DEFAULT_ADMIN_PREFS = Object.fromEntries(ADMIN_PUSH_CATEGORIES.map((k) => [k, true]));

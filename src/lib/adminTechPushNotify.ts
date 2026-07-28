@@ -206,30 +206,30 @@ export function visitOrderChangedPushText(opts: {
   };
 }
 
-/** Description / agreed cost changed on an assigned job. */
+/** Description / agreed cost / schedule / service changed — prefer notifyTechJobEdit. */
 export function jobDetailsUpdatedPushText(opts: {
   customerName: string;
   changes: string[];
 }): { title: string; body: string; color: string } {
   const name = opts.customerName.trim() || 'Customer';
-  const changeLine = (opts.changes || []).filter(Boolean).join(' · ') || 'Job details updated';
+  const changeLine = (opts.changes || []).filter(Boolean).join(' · ') || 'Details changed';
   let body = `${name} — ${changeLine}`;
   if (body.length > 300) body = `${body.slice(0, 297)}…`;
   return {
-    title: 'Job details updated',
+    title: 'Job updated',
     body,
     color: TECH_PUSH_COLOR_UPDATED,
   };
 }
 
-/** Date / time rescheduled. */
+/** Date / time rescheduled — prefer notifyTechJobEdit for edit-dialog saves. */
 export function jobRescheduledPushText(opts: {
   customerName: string;
   whenLabel: string;
 }): { title: string; body: string; color: string } {
   const name = opts.customerName.trim() || 'Customer';
   const when = opts.whenLabel.trim() || 'new schedule';
-  let body = `${name} — ${when}`;
+  let body = `${name} — New schedule: ${when}`;
   if (body.length > 300) body = `${body.slice(0, 297)}…`;
   return {
     title: 'Job rescheduled',

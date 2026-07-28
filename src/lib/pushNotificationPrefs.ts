@@ -1,6 +1,7 @@
 export const ADMIN_PUSH_CATEGORIES = [
   'job_status',
   'customer_calls',
+  'wrong_line',
   'tech_search',
   'tech_messages',
   'reminders',
@@ -18,6 +19,7 @@ export const TECH_PUSH_CATEGORIES = [
   'location_ping',
   'parts_reminder',
   'bill_reminders',
+  'wrong_line',
 ] as const;
 
 export type AdminPushCategory = (typeof ADMIN_PUSH_CATEGORIES)[number];
@@ -35,6 +37,11 @@ export const ADMIN_PUSH_LABELS: Record<AdminPushCategory, { label: string; descr
     label: 'Customer call alerts (incl. missed)',
     description:
       'Push when a customer rings a tech/admin phone, or an admin misses a known customer call. Turn this OFF to stop receiving those notifications.',
+  },
+  wrong_line: {
+    label: 'Wrong company-line calls',
+    description:
+      'Push when a technician dials a known customer from a line that is not their company SIM (e.g. personal / SIM 1).',
   },
   tech_search: {
     label: 'Technician customer search',
@@ -94,6 +101,11 @@ export const TECH_PUSH_LABELS: Record<TechPushCategory, { label: string; descrip
   bill_reminders: {
     label: 'Bill photo reminders',
     description: 'When bill photo is missing after job completion.',
+  },
+  wrong_line: {
+    label: 'Wrong company-line reminder',
+    description:
+      'Notify this phone when it dials a customer from a non-company SIM. Detection also needs “Detect calls” on.',
   },
 };
 

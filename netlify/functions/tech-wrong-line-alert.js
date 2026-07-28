@@ -111,6 +111,25 @@ exports.handler = async (event) => {
     return { statusCode: 401, headers: HEADERS, body: JSON.stringify({ error: 'Unauthorized' }) };
   }
 
+  // JWT / multi-device: if every registered device has detect-calls off, skip.
+  {
+    const { data: prefsRows } = await db
+      .from('technician_push_tokens')
+      .select('call_alerts_enabled')
+      .eq('technician_id', technicianId);
+    if (
+      Array.isArray(prefsRows) &&
+      prefsRows.length > 0 &&
+      prefsRows.every((r) => r.call_alerts_enabled === false)
+    ) {
+      return {
+        statusCode: 200,
+        headers: HEADERS,
+        body: JSON.stringify({ found: false, reason: 'call_detect_off' }),
+      };
+    }
+  }
+
   const { data: tech } = await db
     .from('technicians')
     .select('full_name, phone, account_status')
@@ -178,12 +197,8 @@ exports.handler = async (event) => {
 
   try {
     const messaging = await getMessaging(db);
-    const adminTokens = [
-      ...new Set([
-        ...(await getAdminFcmTokens(db, 'customer_calls')),
-        ...(await getAdminFcmTokens(db, 'tech_search')),
-      ]),
-    ];
+    // Device Tracker → Notification types → “Wrong company-line calls”
+    const adminTokens = await getAdminFcmTokens(db, 'wrong_line');
 
     let adminSent = 0;
     if (adminTokens.length > 0) {
@@ -230,7 +245,7 @@ exports.handler = async (event) => {
           },
         },
       }),
-      null
+      'wrong_line'
     );
 
     return {
