@@ -90,6 +90,8 @@ export type ParsedAdminDashboardUrl = {
   customerId: string | null;
   photoType: 'before' | 'after' | null;
   photoIdx: number | null;
+  /** Payments deep-link: open Add technician / business expense dialog. */
+  addExpense: 'technician' | 'business' | null;
 };
 
 export function parseAdminDashboardUrl(search: string): ParsedAdminDashboardUrl {
@@ -103,6 +105,7 @@ export function parseAdminDashboardUrl(search: string): ParsedAdminDashboardUrl 
     photoIdx = Number.isFinite(n) ? n : null;
   }
   const actionRaw = sp.get('action');
+  const addExpenseRaw = sp.get('addExpense');
   return {
     tab: isAdminJobTabSlug(sp.get('tab')) ? (sp.get('tab') as AdminJobTabSlug) : null,
     view: sp.get('view'),
@@ -115,6 +118,8 @@ export function parseAdminDashboardUrl(search: string): ParsedAdminDashboardUrl 
     customerId: sp.get('customer'),
     photoType: photo === 'before' || photo === 'after' ? photo : null,
     photoIdx,
+    addExpense:
+      addExpenseRaw === 'technician' || addExpenseRaw === 'business' ? addExpenseRaw : null,
   };
 }
 
@@ -130,6 +135,7 @@ export type AdminDashboardSearchPatch = {
   customerId?: string | null;
   photoType?: 'before' | 'after' | null;
   photoIdx?: number | null;
+  addExpense?: 'technician' | 'business' | null;
   clearModal?: boolean;
   clearView?: boolean;
   clearTool?: boolean;
@@ -145,6 +151,7 @@ export function buildAdminDashboardSearch(
   if (patch.clearView) {
     sp.delete('view');
     sp.delete('type');
+    sp.delete('addExpense');
   }
   if (patch.clearTool) {
     sp.delete('tool');
@@ -196,6 +203,7 @@ export function buildAdminDashboardSearch(
       sp.set('photoIdx', String(patch.photoIdx));
     }
   }
+  if (patch.addExpense !== undefined) setOrDelete('addExpense', patch.addExpense);
 
   const qs = sp.toString();
   return qs ? `?${qs}` : '';

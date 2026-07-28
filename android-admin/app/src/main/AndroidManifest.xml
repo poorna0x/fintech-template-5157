@@ -41,6 +41,11 @@
             android:name=".CashCheckReceiver"
             android:exported="false" />
 
+        <!-- Nightly expense review Yes/No → Payments add expense -->
+        <receiver
+            android:name=".ExpenseReviewReceiver"
+            android:exported="false" />
+
         <!-- Morning reminder / pending-payment push (WhatsApp + Open actions) -->
         <receiver
             android:name=".ReminderPushReceiver"

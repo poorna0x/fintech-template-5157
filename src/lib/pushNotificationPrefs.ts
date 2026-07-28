@@ -49,8 +49,8 @@ export const ADMIN_PUSH_LABELS: Record<AdminPushCategory, { label: string; descr
     description: 'Daily reminder and pending payment due alerts.',
   },
   cash_check: {
-    label: 'Cash collection check',
-    description: 'Evening cash handover Yes/No prompts.',
+    label: 'Cash & expense evening checks',
+    description: 'Cash handover Yes/No, plus daily technician/business expense review.',
   },
   day_summary: {
     label: 'Evening day summary',

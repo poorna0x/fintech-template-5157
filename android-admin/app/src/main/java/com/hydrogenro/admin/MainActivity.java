@@ -1,6 +1,7 @@
 package com.hydrogenro.admin;
 
 import android.os.Bundle;
+import android.content.Intent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
@@ -61,10 +62,63 @@ public class MainActivity extends BridgeActivity {
 
         attachBootLoader();
         releaseSplashWhenBootDrawn();
+        deliverExpenseReviewIfNeeded(getIntent());
 
         getWindow()
             .getDecorView()
             .postDelayed(this::dismissBootLoader, BOOT_LOADER_MAX_MS);
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        deliverExpenseReviewIfNeeded(intent);
+    }
+
+    /**
+     * Expense-review "No" opens Payments → Add expense. Persist + navigate even
+     * when Capacitor's push tap listener has not attached yet (cold start).
+     */
+    private void deliverExpenseReviewIfNeeded(Intent intent) {
+        if (intent == null) return;
+        if (!"expense_review".equals(intent.getStringExtra("type"))) return;
+        String kind = intent.getStringExtra("addExpense");
+        if (kind == null) kind = intent.getStringExtra("kind");
+        if (!"technician".equals(kind) && !"business".equals(kind)) return;
+
+        final String addExpense = kind;
+        getSharedPreferences("hro_admin_deeplink", MODE_PRIVATE)
+            .edit()
+            .putString("addExpense", addExpense)
+            .apply();
+
+        Runnable inject = () -> {
+            WebView webView = webViewOrNull();
+            if (webView == null) return;
+            String js =
+                "(function(){try{"
+                    + "localStorage.setItem('hro_admin_add_expense','"
+                    + addExpense
+                    + "');"
+                    + "window.dispatchEvent(new CustomEvent('hro-admin-add-expense',{detail:{addExpense:'"
+                    + addExpense
+                    + "'}}));"
+                    + "var need='/admin?view=payments&addExpense="
+                    + addExpense
+                    + "';"
+                    + "if(location.pathname.indexOf('/admin')!==0||location.search.indexOf('view=payments')<0||location.search.indexOf('addExpense=')<0){"
+                    + "location.assign(need);"
+                    + "}"
+                    + "}catch(e){}})();";
+            webView.evaluateJavascript(js, null);
+        };
+
+        // WebView may not exist yet on cold open — retry a few times.
+        View decor = getWindow().getDecorView();
+        decor.post(inject);
+        decor.postDelayed(inject, 800);
+        decor.postDelayed(inject, 2000);
     }
 
     /** Keep system splash until boot overlay has actually drawn (no blank gap). */

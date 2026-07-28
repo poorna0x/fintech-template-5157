@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
@@ -29,6 +30,11 @@ import {
   getTechnicianMonthlyBaseSalary,
 } from '@/lib/technicianSalaryForPeriod';
 import { hapticConfirm, hapticTap } from '@/lib/haptics';
+import {
+  adminDashboardLocation,
+  buildAdminDashboardSearch,
+  parseAdminDashboardUrl,
+} from '@/lib/adminDashboardUrl';
 
 interface TechnicianPayment {
   id: string;
@@ -198,6 +204,8 @@ const shouldBlockTechCardSwipe = (target: EventTarget | null): boolean => {
 };
 
 const TechnicianPayments = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [technicians, setTechnicians] = useState<any[]>([]);
   const [salaryBreakdowns, setSalaryBreakdowns] = useState<TechnicianSalaryBreakdown[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1094,6 +1102,67 @@ const TechnicianPayments = () => {
     });
     setBusinessExpenseDialogOpen(true);
   };
+
+  // Deep-link from nightly expense-review push (No → Payments → Add expense).
+  useEffect(() => {
+    const openFromKind = (kind: 'technician' | 'business') => {
+      try {
+        localStorage.removeItem('hro_admin_add_expense');
+      } catch {
+        /* ignore */
+      }
+      if (kind === 'business') {
+        setEditingBusinessExpense(null);
+        setBusinessExpenseFormData({
+          amount: '',
+          description: '',
+          expense_date: new Date().toISOString().split('T')[0],
+          category: '',
+          notes: '',
+        });
+        setBusinessExpenseDialogOpen(true);
+      } else {
+        setEditingExpense(null);
+        setExpenseFormData({
+          technician_id: '',
+          amount: '',
+          description: '',
+          expense_date: new Date().toISOString().split('T')[0],
+          category: 'OTHER',
+          notes: '',
+        });
+        setExpenseDialogOpen(true);
+      }
+      navigate(
+        adminDashboardLocation(
+          buildAdminDashboardSearch({ addExpense: null, view: 'payments' }, location.search)
+        ),
+        { replace: true }
+      );
+    };
+
+    const parsed = parseAdminDashboardUrl(location.search);
+    if (parsed.addExpense) {
+      openFromKind(parsed.addExpense);
+    } else {
+      try {
+        const stored = localStorage.getItem('hro_admin_add_expense');
+        if (stored === 'technician' || stored === 'business') {
+          openFromKind(stored);
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
+    const onCustom = (e: Event) => {
+      const detail = (e as CustomEvent<{ addExpense?: string }>).detail;
+      const kind = detail?.addExpense;
+      if (kind === 'technician' || kind === 'business') openFromKind(kind);
+    };
+    window.addEventListener('hro-admin-add-expense', onCustom as EventListener);
+    return () => window.removeEventListener('hro-admin-add-expense', onCustom as EventListener);
+  }, [location.search, navigate]);
 
   const handleEditBusinessExpense = (expense: any) => {
     setEditingBusinessExpense(expense);

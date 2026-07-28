@@ -28,6 +28,11 @@
 [functions."daily-cash-check"]
   schedule = "30 15 * * *"
 
+# Daily expense review: 9:15 PM IST = 15:45 UTC. Asks admins if technician
+# and business expenses were all added; No opens Payments → Add expense.
+[functions."daily-expense-review"]
+  schedule = "45 15 * * *"
+
 # Morning cash reminder: 8:30 AM IST = 03:00 UTC. Re-pushes technicians who
 # still owe yesterday's cash (admin tapped No on the 9 PM check).
 [functions."morning-cash-reminder"]

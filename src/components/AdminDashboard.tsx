@@ -613,6 +613,25 @@ const AdminDashboard = () => {
           return;
         }
 
+        if (payload.kind === 'payments' && payload.addExpense) {
+          navigate(
+            adminDashboardLocation(
+              buildAdminDashboardSearch(
+                {
+                  clearModal: true,
+                  clearTool: true,
+                  clearSearch: true,
+                  view: 'payments',
+                  addExpense: payload.addExpense,
+                },
+                location.search
+              )
+            ),
+            { replace: true }
+          );
+          return;
+        }
+
         const { jobId, event, completedDate } = payload;
 
         // Technician got a call from a known customer — the ?search= URL sync

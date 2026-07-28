@@ -7,8 +7,8 @@
 import type { SettingsPanelSlug } from '@/lib/settingsUrl';
 
 export type AdminPushDeepLinkPayload = {
-  /** 'job' (default) → focus a job; 'tech_call' → search the caller's number; 'settings' → Settings panel. */
-  kind?: 'job' | 'tech_call' | 'settings';
+  /** 'job' (default) → focus a job; 'tech_call' → search the caller's number; 'settings' → Settings panel; 'payments' → Payments tab + optional add-expense dialog. */
+  kind?: 'job' | 'tech_call' | 'settings' | 'payments';
   jobId: string;
   event: 'en_route' | 'completed' | 'otp_entered' | string;
   /** yyyy-mm-dd from the push — skip a DB fetch on tap when present. */
@@ -21,6 +21,8 @@ export type AdminPushDeepLinkPayload = {
   reminderId?: string;
   /** e.g. whatsapp — open Pending payments then offer WhatsApp for that row */
   action?: string;
+  /** payments: open Add technician / business expense dialog */
+  addExpense?: 'technician' | 'business';
 };
 
 type Handler = (payload: AdminPushDeepLinkPayload) => void;
@@ -54,6 +56,20 @@ export function parseAdminPushDeepLinkData(
       panel: panelRaw as SettingsPanelSlug,
       reminderId,
       action: String(raw.action || '').trim() || undefined,
+    };
+  }
+
+  // Nightly expense review (No / notification tap) → Payments → Add expense.
+  if (String(raw.type || '').trim() === 'expense_review') {
+    const addRaw = String(raw.addExpense || raw.kind || '').trim();
+    const addExpense =
+      addRaw === 'technician' || addRaw === 'business' ? addRaw : null;
+    if (!addExpense) return null;
+    return {
+      kind: 'payments',
+      jobId: '',
+      event: 'expense_review',
+      addExpense,
     };
   }
 
