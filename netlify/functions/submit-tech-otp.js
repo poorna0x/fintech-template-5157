@@ -112,6 +112,17 @@ exports.handler = async (event) => {
     } catch (err) {
       console.warn('[submit-tech-otp] could not store OTP on job', err?.message || err);
     }
+
+    // Admin may have closed Ask OTP — always push so they get the code.
+    try {
+      const { notifyAdminsOtpEntered } = require('./admin-otp-notify');
+      const push = await notifyAdminsOtpEntered(db, { jobId: row.job_id, otp });
+      if (!push.sent) {
+        console.warn('[submit-tech-otp] admin OTP push not sent:', push.reason || 'unknown');
+      }
+    } catch (err) {
+      console.warn('[submit-tech-otp] admin OTP push failed', err?.message || err);
+    }
   }
 
   return { statusCode: 200, headers, body: JSON.stringify({ ok: true }) };

@@ -2,6 +2,7 @@
  * Fire-and-forget push to all admin phones (HRO Admin app) when a
  * technician heads out to, enters a customer OTP for, completes a job,
  * or creates a job (from customer search).
+ * OTP is pushed for Ask OTP replies, notification inline reply, and Start Work.
  * Failures are silent — the admin dashboard's realtime refresh still shows
  * the change either way.
  */

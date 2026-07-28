@@ -185,10 +185,17 @@ export async function submitOtp(requestId: string, otp: string, jobId?: string):
     .from('technician_otp_requests')
     .update({ otp, submitted_at: new Date().toISOString() })
     .eq('id', requestId)
-    .select('id');
+    .select('id,job_id');
   const ok = !error && !!data?.length;
+  const resolvedJobId = jobId || (data?.[0] as { job_id?: string } | undefined)?.job_id;
   // Also copy the code onto the job itself so the admin Completed section
   // shows it even after the request row is long forgotten.
-  if (ok && jobId) void persistOtpOnJob(jobId, otp);
+  if (ok && resolvedJobId) void persistOtpOnJob(resolvedJobId, otp);
+  // Always push to admin phones — the Ask OTP dialog may be closed.
+  if (ok && resolvedJobId && /^\d{4}$/.test(otp)) {
+    void import('@/lib/notifyAdminsJobEvent').then(({ notifyAdminsJobEvent }) =>
+      notifyAdminsJobEvent(resolvedJobId, 'otp_entered', { otp })
+    );
+  }
   return ok;
 }

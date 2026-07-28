@@ -6,10 +6,10 @@ const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
 const { verifyStaffBearerToken, readBearerToken } = require('./admin-auth-guard');
 const { getMessaging, isStaleTokenError, sendToTechnicianDevices, getAdminFcmTokens, pruneAdminFcmTokens } = require('./fcm-helper');
+const { notifyAdminsOtpEntered } = require('./admin-otp-notify');
 
 const COLOR_EN_ROUTE = '#2563EB'; // blue — on the way
 const COLOR_COMPLETED = '#16A34A'; // green — done
-const COLOR_OTP = '#D97706'; // amber — customer OTP entered at start work
 const COLOR_BILL_MISSING = '#D97706'; // amber — completed but no bill photo
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
@@ -150,6 +150,16 @@ exports.handler = async (event) => {
     }
   }
 
+  // OTP entered (Ask OTP card / Start Work) — shared helper (same push as notification reply).
+  if (evt === 'otp_entered') {
+    const push = await notifyAdminsOtpEntered(db, { jobId, otp });
+    return {
+      statusCode: 200,
+      headers,
+      body: JSON.stringify({ sent: push.sent, ...(push.reason ? { reason: push.reason } : {}) }),
+    };
+  }
+
   const technicianId =
     evt === 'job_created'
       ? job.assigned_by || auth.userId
@@ -187,15 +197,6 @@ exports.handler = async (event) => {
     title = `${techName} is on the way`;
     message = `${service} — ${customerName}`;
     color = COLOR_EN_ROUTE;
-  } else if (evt === 'otp_entered') {
-    // Customer OTP collected at Start Work — office wants the code plus
-    // customer name and lead source to verify against Home Triangle.
-    title = `OTP ${otp} — ${customerName}`;
-    const lines = [`Entered by ${techName} at start of work`];
-    const leadSource = resolveLeadSource(job);
-    if (leadSource) lines.push(`Lead: ${leadSource}`);
-    message = lines.join('\n');
-    color = COLOR_OTP;
   } else {
     title = billMissing
       ? `Bill photo missing — ${techName}`
