@@ -107,7 +107,7 @@ import { customerNameClassName } from '@/lib/customerDisplay';
 import {
   CustomerLocationVariant,
   getJobLocationDisplay,
-  openJobServiceLocationInMaps,
+  openJobServiceLocationInMapsAsync,
 } from '@/lib/customer-locations';
 import {
   TECHNICIAN_JOB_LIST_BROADCAST_CHANNEL,
@@ -781,7 +781,7 @@ const TechnicianDashboard = () => {
       const t = toast.loading('Loading location…');
       try {
         const customerRow = await loadJobCustomerForLocation(job as Job);
-        if (openJobServiceLocationInMaps(job, customerRow)) {
+        if (await openJobServiceLocationInMapsAsync(job, customerRow)) {
           return;
         }
         toast.error('Location data not available');
@@ -2040,6 +2040,21 @@ const TechnicianDashboard = () => {
       setRealtimeConnected(jobsSubscribed || broadcastSubscribed);
     };
 
+    const jobServiceSiteFieldsChanged = (prev: Job, incoming: Record<string, unknown>): boolean => {
+      const keys = ['service_address', 'service_location', 'service_site'] as const;
+      return keys.some((key) => {
+        if (!(key in incoming)) return false;
+        const prevVal =
+          (prev as Record<string, unknown>)[key] ??
+          (prev as Record<string, unknown>)[key === 'service_address' ? 'serviceAddress' : key === 'service_location' ? 'serviceLocation' : 'serviceSite'];
+        try {
+          return JSON.stringify(prevVal ?? null) !== JSON.stringify(incoming[key] ?? null);
+        } catch {
+          return prevVal !== incoming[key];
+        }
+      });
+    };
+
     const handleAssignedJobRowChange = async (payload: { new: Record<string, unknown> }) => {
       if (!isMounted.current) return;
       const updatedJob = payload.new as any;
@@ -2053,6 +2068,11 @@ const TechnicianDashboard = () => {
       processingJobsRef.current.add(updatedJob.id);
       try {
         if (isInList) {
+          // Address/map edits sync job rows from admin — refetch so embedded customer matches.
+          if (jobServiceSiteFieldsChanged(jobInList!, updatedJob)) {
+            scheduleJobListSync();
+            return;
+          }
           setJobs((prev) => {
             const idx = prev.findIndex((j) => j.id === updatedJob.id);
             if (idx < 0) return prev;

@@ -81,6 +81,7 @@ const JOB_SELECT_ONGOING_AND_TECH = [
   'payment_method',
   'service_address',
   'service_location',
+  'service_site',
   'description',
   'assigned_by',
   'assigned_date',

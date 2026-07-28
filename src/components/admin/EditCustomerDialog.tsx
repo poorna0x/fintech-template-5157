@@ -14,7 +14,7 @@ import { useAdminRole } from '@/lib/useAdminRole';
 import { mapServiceTypesToDbValue, extractLocationFromAddressString, bangaloreAreas, resolveVisibleAddressFromGeocode, reverseGeocodeLatLng, VISIBLE_ADDRESS_MAX_LEN } from '@/lib/adminUtils';
 import { normalizeIndianMobileInput } from '@/lib/utils';
 import PhoneSwapButton from '@/components/admin/PhoneSwapButton';
-import { hasAlternateLocation, getJobServiceSite } from '@/lib/customer-locations';
+import { hasAlternateLocation, getAlternateAddress, getAlternateLocation, getJobServiceSite } from '@/lib/customer-locations';
 import { VISIT_ORDER_STATUSES } from '@/lib/adminVisitOrder';
 import {
   getCustomerGstNumber,
@@ -1264,8 +1264,19 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
         throw new Error(error.message);
       }
 
-      // Keep open jobs' Maps pin in sync with the customer (tech app reads job snapshot).
+      // Keep open jobs in sync with the customer (address + map) so tech matches admin.
       try {
+        const prevAddr = customer.address || {};
+        const prevVis = String((customer as any).visible_address || prevAddr.visible_address || '').trim();
+        const newVis = String(form.visible_address || '').trim();
+        const primaryAddressChanged =
+          prevVis !== newVis ||
+          String(prevAddr.street || '').trim() !== String(updatedAddress.street || '').trim() ||
+          String(prevAddr.area || '').trim() !== String(updatedAddress.area || '').trim() ||
+          String(prevAddr.city || '').trim() !== String(updatedAddress.city || '').trim() ||
+          String(prevAddr.state || '').trim() !== String(updatedAddress.state || '').trim() ||
+          String(prevAddr.pincode || '').trim() !== String(updatedAddress.pincode || '').trim();
+
         const prevLoc = customer.location as any;
         const locationChanged =
           Number(prevLoc?.latitude) !== latitude ||
@@ -1273,7 +1284,43 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
           String(prevLoc?.googleLocation || prevLoc?.google_location || '') !==
             String(updatedLocation.googleLocation || '');
 
-        if (locationChanged || form.has_alternate_location) {
+        const prevAltAddr = getAlternateAddress(customer) || {};
+        const prevAltVis = String((customer as any).alternate_visible_address || '').trim();
+        const newAltVis = String(form.alternate_visible_address || '').trim();
+        const newAltAddr = form.has_alternate_location ? form.alternate_address : null;
+        const prevAltLoc = getAlternateLocation(customer);
+        const newAltLoc = form.has_alternate_location
+          ? (updateData as { alternate_location?: { latitude?: number; longitude?: number; googleLocation?: string } })
+              .alternate_location
+          : null;
+
+        const alternateAddressChanged =
+          form.has_alternate_location &&
+          (prevAltVis !== newAltVis ||
+            String(prevAltAddr.street || '').trim() !== String(newAltAddr?.street || '').trim() ||
+            String(prevAltAddr.area || '').trim() !== String(newAltAddr?.area || '').trim() ||
+            String(prevAltAddr.city || '').trim() !== String(newAltAddr?.city || '').trim() ||
+            String(prevAltAddr.state || '').trim() !== String(newAltAddr?.state || '').trim() ||
+            String(prevAltAddr.pincode || '').trim() !== String(newAltAddr?.pincode || '').trim());
+
+        const alternateLocationChanged =
+          form.has_alternate_location &&
+          Boolean(newAltLoc) &&
+          (Number(prevAltLoc?.latitude) !== Number(newAltLoc?.latitude) ||
+            Number(prevAltLoc?.longitude) !== Number(newAltLoc?.longitude) ||
+            String(prevAltLoc?.googleLocation || '') !== String(newAltLoc?.googleLocation || ''));
+
+        const shouldSyncOpenJobs =
+          locationChanged ||
+          primaryAddressChanged ||
+          alternateAddressChanged ||
+          alternateLocationChanged;
+
+        if (shouldSyncOpenJobs) {
+          const primaryServiceAddress = {
+            ...updatedAddress,
+            visible_address: newVis || undefined,
+          };
           const { data: customerJobs, error: jobsError } = await db.jobs.getByCustomerId(customer.id);
           if (!jobsError && customerJobs?.length) {
             const openJobs = customerJobs.filter((job: any) => {
@@ -1289,17 +1336,23 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
                 const site = getJobServiceSite(job);
                 if (site === 'secondary' && form.has_alternate_location) {
                   const alt = (updateData as any).alternate_location;
-                  const altAddr = (updateData as any).alternate_address;
-                  if (!alt) return;
+                  const altAddrRaw = (updateData as any).alternate_address;
+                  if (!alt && !alternateAddressChanged) return;
+                  const altServiceAddress = altAddrRaw
+                    ? {
+                        ...altAddrRaw,
+                        visible_address: newAltVis || undefined,
+                      }
+                    : job.service_address;
                   return db.jobs.update(job.id, {
-                    service_location: alt,
-                    service_address: altAddr || job.service_address,
+                    service_location: alt || job.service_location,
+                    service_address: altServiceAddress,
                   } as any);
                 }
                 if (site === 'secondary') return;
                 return db.jobs.update(job.id, {
                   service_location: updatedLocation,
-                  service_address: updatedAddress,
+                  service_address: primaryServiceAddress,
                 } as any);
               })
             );

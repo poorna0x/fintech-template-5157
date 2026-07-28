@@ -1,6 +1,6 @@
 import { Customer } from '@/types';
 import { extractCoordinates } from '@/lib/maps';
-import { getLocationLinkFromObject, getMapsSearchLinkFromAddress } from '@/lib/jobLocationHelpers';
+import { getMapsSearchLinkFromAddress, resolveJobDestinationCoordsAsync } from '@/lib/jobLocationHelpers';
 
 export type CustomerLocationVariant = 'primary' | 'secondary';
 
@@ -115,28 +115,82 @@ export const getCustomerLocationSlice = (
   };
 };
 
-export const openCustomerLocationInMaps = (
-  customer: Customer,
-  variant: CustomerLocationVariant
-): boolean => {
-  const slice = getCustomerLocationSlice(customer, variant);
-  const locAny = slice.location as any;
+const isValidGoogleMapsHref = (url: string): boolean =>
+  Boolean(
+    url &&
+      (url.includes('google.com/maps') ||
+        url.includes('maps.app.goo.gl') ||
+        url.includes('goo.gl/maps')) &&
+      !url.includes('localhost') &&
+      !url.includes('127.0.0.1')
+  );
+
+const getGoogleLocationHref = (location: unknown): string => {
+  const locAny = location as Record<string, unknown> | null | undefined;
   const googleLoc =
     (typeof locAny?.googleLocation === 'string' && locAny.googleLocation) ||
     (typeof locAny?.google_location === 'string' && locAny.google_location) ||
     '';
-  if (
-    googleLoc &&
-    (googleLoc.includes('google.com/maps') ||
-      googleLoc.includes('maps.app.goo.gl') ||
-      googleLoc.includes('goo.gl/maps')) &&
-    !googleLoc.includes('localhost') &&
-    !googleLoc.includes('127.0.0.1')
-  ) {
+  return googleLoc.trim();
+};
+
+/** True when a location has a Maps URL or non-zero coordinates. */
+export const locationHasMapPin = (location: unknown): boolean => {
+  if (!location || typeof location !== 'object') return false;
+  const googleLoc = getGoogleLocationHref(location);
+  if (googleLoc && isValidGoogleMapsHref(googleLoc)) return true;
+  const coords = extractCoordinates(location);
+  return Boolean(coords && coords.latitude !== 0 && coords.longitude !== 0);
+};
+
+/**
+ * Job snapshots often have address text but no pin (e.g. new customer). Pull the
+ * customer's live map pin so technician Maps matches admin.
+ */
+export const mergeCustomerMapPinIntoJobLocation = (
+  jobLocation: JobLocationDisplay['location'] | undefined,
+  customerLocation: JobLocationDisplay['location'] | undefined | null
+): JobLocationDisplay['location'] => {
+  const base =
+    jobLocation ||
+    ({ latitude: 0, longitude: 0, formattedAddress: '' } as JobLocationDisplay['location']);
+
+  if (!customerLocation || locationHasMapPin(base)) return base;
+  if (!locationHasMapPin(customerLocation)) return base;
+
+  const cust = customerLocation as Record<string, unknown>;
+  const baseAny = base as Record<string, unknown>;
+  return {
+    ...base,
+    latitude: Number(cust.latitude) || Number(base.latitude) || 0,
+    longitude: Number(cust.longitude) || Number(base.longitude) || 0,
+    formattedAddress:
+      String(base.formattedAddress || cust.formattedAddress || cust.formatted_address || '').trim() ||
+      base.formattedAddress,
+    googlePlaceId:
+      (base.googlePlaceId as string | undefined) ||
+      (cust.googlePlaceId as string | undefined) ||
+      (cust.google_place_id as string | undefined),
+    googleLocation:
+      (baseAny.googleLocation as string | null | undefined) ||
+      (baseAny.google_location as string | null | undefined) ||
+      (cust.googleLocation as string | null | undefined) ||
+      (cust.google_location as string | null | undefined) ||
+      null,
+  };
+};
+
+/** Open a location slice the same way admin does — raw Maps URL first, not rewritten coords. */
+const openLocationSliceInMaps = (
+  location: JobLocationDisplay['location'],
+  address?: Customer['address']
+): boolean => {
+  const googleLoc = getGoogleLocationHref(location);
+  if (googleLoc && isValidGoogleMapsHref(googleLoc)) {
     window.open(googleLoc, '_blank', 'noopener,noreferrer');
     return true;
   }
-  const coords = extractCoordinates(slice.location);
+  const coords = extractCoordinates(location);
   if (coords && coords.latitude !== 0 && coords.longitude !== 0) {
     window.open(
       `https://www.google.com/maps/place/${coords.latitude},${coords.longitude}`,
@@ -145,12 +199,20 @@ export const openCustomerLocationInMaps = (
     );
     return true;
   }
-  const searchLink = getMapsSearchLinkFromAddress(slice.address);
+  const searchLink = getMapsSearchLinkFromAddress(address);
   if (searchLink) {
     window.open(searchLink, '_blank', 'noopener,noreferrer');
     return true;
   }
   return false;
+};
+
+export const openCustomerLocationInMaps = (
+  customer: Customer,
+  variant: CustomerLocationVariant
+): boolean => {
+  const slice = getCustomerLocationSlice(customer, variant);
+  return openLocationSliceInMaps(slice.location, slice.address);
 };
 
 export const getPrimaryLocationLabel = (customer: Customer): string => {
@@ -264,7 +326,7 @@ export interface JobLocationDisplay {
   location: Customer['location'] & { googleLocation?: string | null };
 }
 
-/** Location shown on technician job cards — uses the job snapshot, not customer site picker. */
+/** Location on technician job cards — live customer for this job's site (same as admin). */
 export const getJobLocationDisplay = (
   job: unknown,
   customer?: unknown
@@ -276,21 +338,32 @@ export const getJobLocationDisplay = (
   const visFromJob =
     trim(serviceAddr?.visible_address) || trim((serviceAddr as { visibleAddress?: string })?.visibleAddress);
 
-  const hasJobAddress =
-    Boolean(visFromJob) ||
-    Boolean(trim(serviceAddr?.street)) ||
-    Boolean(serviceLoc?.latitude && serviceLoc?.longitude && (serviceLoc.latitude !== 0 || serviceLoc.longitude !== 0));
-
-  if (hasJobAddress) {
+  if (customer) {
+    const slice = getCustomerLocationSlice(customer as Customer, site);
     return {
       variant: site,
       visibleLabel:
+        slice.visibleAddress ||
         visFromJob ||
         getJobLocationLabelForWhatsApp(
           { service_site: site, service_address: serviceAddr },
           customer
         ) ||
-        'Location',
+        getPrimaryLocationLabel(customer as Customer),
+      address: slice.address,
+      location: slice.location,
+    };
+  }
+
+  const hasJobAddress =
+    Boolean(visFromJob) ||
+    Boolean(trim(serviceAddr?.street)) ||
+    locationHasMapPin(serviceLoc);
+
+  if (hasJobAddress) {
+    return {
+      variant: site,
+      visibleLabel: visFromJob || 'Location',
       address: serviceAddr || {
         street: '',
         area: '',
@@ -308,16 +381,6 @@ export const getJobLocationDisplay = (
     };
   }
 
-  if (customer) {
-    const slice = getCustomerLocationSlice(customer as Customer, site);
-    return {
-      variant: site,
-      visibleLabel: slice.visibleAddress || getPrimaryLocationLabel(customer as Customer),
-      address: slice.address,
-      location: slice.location,
-    };
-  }
-
   return {
     variant: 'primary',
     visibleLabel: 'Location',
@@ -332,27 +395,32 @@ export const openJobServiceLocationInMaps = (
   customer?: unknown
 ): boolean => {
   const display = getJobLocationDisplay(job, customer);
-  const link = getLocationLinkFromObject(display.location);
-  if (link) {
-    window.open(link, '_blank', 'noopener,noreferrer');
-    return true;
-  }
+  if (openLocationSliceInMaps(display.location, display.address)) return true;
   if (customer) {
     return openCustomerLocationInMaps(customer as Customer, display.variant);
   }
-  const coords = extractCoordinates(display.location);
-  if (coords && coords.latitude !== 0 && coords.longitude !== 0) {
-    window.open(
-      `https://www.google.com/maps/place/${coords.latitude},${coords.longitude}`,
-      '_blank',
-      'noopener,noreferrer'
-    );
-    return true;
-  }
-  const searchLink = getMapsSearchLinkFromAddress(display.address);
-  if (searchLink) {
-    window.open(searchLink, '_blank', 'noopener,noreferrer');
-    return true;
-  }
   return false;
+};
+
+/** Resolve short Maps links / missing coords, then open (technician tap). */
+export const openJobServiceLocationInMapsAsync = async (
+  job: unknown,
+  customer?: unknown,
+  options: { accessToken?: string | null } = {}
+): Promise<boolean> => {
+  if (openJobServiceLocationInMaps(job, customer)) return true;
+
+  const customerRow = customer || (job as { customer?: unknown })?.customer;
+  const row = customerRow ? { ...(job as object), customer: customerRow } : job;
+  const resolved = await resolveJobDestinationCoordsAsync(row, {
+    accessToken: options.accessToken ?? null,
+  });
+  if (!resolved) return false;
+
+  window.open(
+    `https://www.google.com/maps?q=${resolved.lat},${resolved.lng}`,
+    '_blank',
+    'noopener,noreferrer'
+  );
+  return true;
 };
