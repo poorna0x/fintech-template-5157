@@ -32,6 +32,14 @@ import com.google.android.gms.location.Priority;
  *
  * Shows a quiet, low-importance notification for the few seconds it runs
  * (an Android requirement for foreground services), then stops itself.
+ *
+ * Crash rules this must obey:
+ * - After {@code startForegroundService}, {@code startForeground} must be
+ *   called promptly or Android kills the app.
+ * - On Android 14+, a location-typed foreground service without location
+ *   permission throws {@link SecurityException}.
+ * - OEM battery managers may refuse the foreground start entirely — that
+ *   must not take the process down; the push handler has an inline fallback.
  */
 public class LocationFixService extends Service {
 
@@ -62,30 +70,63 @@ public class LocationFixService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        startAsForeground();
+        // MUST call startForeground promptly after startForegroundService, or
+        // Android throws ForegroundServiceDidNotStartInTimeException and kills
+        // the app. Permission is checked inside startAsForeground (typed start
+        // requires it on Android 14+).
+        boolean foreground = startAsForeground();
+        if (!foreground) {
+            Log.w(TAG, "Could not enter foreground; stopping for inline fallback");
+            CrashReporter.reportWarning(this, "Location service blocked by phone",
+                "Android refused the background location service, so only a cached position may reach the office. "
+                    + "Check battery/background restrictions for the app on this phone.",
+                null);
+            stopEverything();
+            return START_NOT_STICKY;
+        }
 
         String uploadUrl = intent != null ? intent.getStringExtra(EXTRA_UPLOAD_URL) : null;
         String technicianId = intent != null ? intent.getStringExtra(EXTRA_TECHNICIAN_ID) : null;
         String nonce = intent != null ? intent.getStringExtra(EXTRA_NONCE) : null;
-        if (uploadUrl == null || technicianId == null || nonce == null) {
-            stopSelf();
-            return START_NOT_STICKY;
-        }
-
-        handler.postDelayed(this::finish, MAX_RUNTIME_MS);
 
         boolean fine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
             == PackageManager.PERMISSION_GRANTED;
         boolean coarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
             == PackageManager.PERMISSION_GRANTED;
-        if (!fine && !coarse) {
+        if (uploadUrl == null || technicianId == null || nonce == null || (!fine && !coarse)) {
+            Log.w(TAG, "Missing extras or location permission; stopping");
             finish();
             return START_NOT_STICKY;
         }
 
-        FusedLocationProviderClient fused = LocationServices.getFusedLocationProviderClient(this);
+        FusedLocationProviderClient fused;
+        try {
+            fused = LocationServices.getFusedLocationProviderClient(this);
+        } catch (Throwable t) {
+            Log.w(TAG, "Play Services location unavailable", t);
+            finish();
+            return START_NOT_STICKY;
+        }
+
+        handler.postDelayed(this::finish, MAX_RUNTIME_MS);
         requestFix(fused, fine, uploadUrl, technicianId, nonce);
         return START_NOT_STICKY;
+    }
+
+    /**
+     * Android 14+ can time out a foreground service; not stopping on demand is
+     * itself a crash. Both signatures exist across 14/15+, so honour either.
+     */
+    @Override
+    public void onTimeout(int startId) {
+        Log.w(TAG, "Foreground service timed out; stopping");
+        finish();
+    }
+
+    @Override
+    public void onTimeout(int startId, int fgsType) {
+        Log.w(TAG, "Foreground service timed out; stopping");
+        finish();
     }
 
     /**
@@ -101,58 +142,92 @@ public class LocationFixService extends Service {
                 .setDurationMillis(25_000)
                 .build();
             fused.getCurrentLocation(request, null).addOnCompleteListener(task -> {
-                Location location = task.isSuccessful() ? task.getResult() : null;
-                if (location != null) {
-                    LocationUploader.upload(uploadUrl, technicianId, nonce, location);
-                    finish();
-                    return;
-                }
-                if (!fine) {
-                    finish();
-                    return;
-                }
-                Log.w(TAG, "High-accuracy fix failed (likely indoors); trying balanced");
                 try {
+                    Location location = task.isSuccessful() ? task.getResult() : null;
+                    if (location != null) {
+                        LocationUploader.upload(uploadUrl, technicianId, nonce, location);
+                        finish();
+                        return;
+                    }
+                    if (!fine) {
+                        finish();
+                        return;
+                    }
+                    Log.w(TAG, "High-accuracy fix failed (likely indoors); trying balanced");
                     CurrentLocationRequest fallback = new CurrentLocationRequest.Builder()
                         .setPriority(Priority.PRIORITY_BALANCED_POWER_ACCURACY)
                         .setMaxUpdateAgeMillis(0)
                         .setDurationMillis(15_000)
                         .build();
                     fused.getCurrentLocation(fallback, null).addOnCompleteListener(t2 -> {
-                        Location loc = t2.isSuccessful() ? t2.getResult() : null;
-                        if (loc != null) LocationUploader.upload(uploadUrl, technicianId, nonce, loc);
-                        finish();
+                        try {
+                            Location loc = t2.isSuccessful() ? t2.getResult() : null;
+                            if (loc != null) {
+                                LocationUploader.upload(uploadUrl, technicianId, nonce, loc);
+                            }
+                        } catch (Throwable t) {
+                            Log.w(TAG, "Balanced fix callback failed", t);
+                        } finally {
+                            finish();
+                        }
                     });
-                } catch (SecurityException e) {
+                } catch (Throwable t) {
+                    Log.w(TAG, "Location fix callback failed", t);
                     finish();
                 }
             });
-        } catch (SecurityException e) {
+        } catch (Throwable t) {
+            Log.w(TAG, "Location request failed", t);
             finish();
         }
     }
 
-    private void startAsForeground() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationManager nm = getSystemService(NotificationManager.class);
-            if (nm != null && nm.getNotificationChannel(CHANNEL_ID) == null) {
-                NotificationChannel channel = new NotificationChannel(
-                    CHANNEL_ID, "Location sharing", NotificationManager.IMPORTANCE_LOW);
-                channel.setDescription("Shown briefly while sending your location to the office");
-                channel.setShowBadge(false);
-                nm.createNotificationChannel(channel);
+    /**
+     * @return true only if we really are a foreground service now. Every start
+     * path here can legitimately fail on a real phone — background-start rules
+     * (Android 12+), missing runtime permission (Android 14+), OEM battery
+     * managers — and an unhandled failure crashes the app the moment the admin
+     * requests a location. Failing softly just costs us this one FGS attempt;
+     * {@link HroMessagingService} still has last-known + inline fallbacks.
+     */
+    private boolean startAsForeground() {
+        Notification notification;
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                NotificationManager nm = getSystemService(NotificationManager.class);
+                if (nm != null && nm.getNotificationChannel(CHANNEL_ID) == null) {
+                    NotificationChannel channel = new NotificationChannel(
+                        CHANNEL_ID, "Location sharing", NotificationManager.IMPORTANCE_LOW);
+                    channel.setDescription("Shown briefly while sending your location to the office");
+                    channel.setShowBadge(false);
+                    nm.createNotificationChannel(channel);
+                }
+            }
+            notification = new NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_stat_notify)
+                .setContentTitle("Syncing…")
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setOngoing(true)
+                .build();
+        } catch (Throwable t) {
+            Log.w(TAG, "Could not build foreground notification", t);
+            return false;
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            try {
+                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
+                return true;
+            } catch (Throwable t) {
+                Log.w(TAG, "Typed foreground start refused; retrying untyped", t);
             }
         }
-        Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_stat_notify)
-            .setContentTitle("Syncing…")
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setOngoing(true)
-            .build();
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
-        } else {
+        try {
             startForeground(NOTIFICATION_ID, notification);
+            return true;
+        } catch (Throwable t) {
+            Log.w(TAG, "Foreground start refused", t);
+            return false;
         }
     }
 
@@ -161,10 +236,22 @@ public class LocationFixService extends Service {
         finished = true;
         handler.removeCallbacksAndMessages(null);
         // Small delay so an in-flight upload thread can finish its POST.
-        handler.postDelayed(() -> {
+        handler.postDelayed(this::stopEverything, 3_000);
+    }
+
+    private void stopEverything() {
+        finished = true;
+        handler.removeCallbacksAndMessages(null);
+        try {
             stopForeground(true);
+        } catch (Throwable ignored) {
+            /* never was foreground, or already gone */
+        }
+        try {
             stopSelf();
-        }, 3_000);
+        } catch (Throwable ignored) {
+            /* already destroyed */
+        }
     }
 
     @Override

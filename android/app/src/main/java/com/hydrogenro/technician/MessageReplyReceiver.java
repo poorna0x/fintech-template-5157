@@ -362,6 +362,14 @@ public class MessageReplyReceiver extends BroadcastReceiver {
 
     @Override
     public void onReceive(Context context, Intent intent) {
+        try {
+            handleReceive(context, intent);
+        } catch (Throwable t) {
+            Log.w(TAG, "onReceive failed", t);
+        }
+    }
+
+    private void handleReceive(Context context, Intent intent) {
         if (intent == null || intent.getAction() == null) return;
 
         if (ACTION_GOING_YES.equals(intent.getAction())) {

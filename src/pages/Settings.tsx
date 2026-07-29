@@ -59,6 +59,7 @@ import { registerAdminPWA } from '@/lib/pwa';
 import { EmailTrackingSettings } from '@/components/admin/EmailTrackingSettings';
 import { BookingIntentArchiveSettings } from '@/components/admin/BookingIntentArchiveSettings';
 import { DeviceTrackerSettings } from '@/components/admin/DeviceTrackerSettings';
+import { AppCrashReports } from '@/components/admin/AppCrashReports';
 import {
   isFollowUpGlowEnabled,
   setFollowUpGlowEnabled,
@@ -2186,6 +2187,8 @@ const Settings = () => {
           </Card>
 
           <DeviceTrackerSettings />
+
+          <AppCrashReports />
 
           {/* Advanced customer search */}
           <SettingsActionCard

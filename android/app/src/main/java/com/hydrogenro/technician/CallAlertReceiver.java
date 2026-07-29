@@ -52,6 +52,16 @@ public class CallAlertReceiver extends BroadcastReceiver {
 
     @Override
     public void onReceive(Context context, Intent intent) {
+        try {
+            handlePhoneState(context, intent);
+        } catch (Throwable t) {
+            Log.w(TAG, "PHONE_STATE handling failed", t);
+            CrashReporter.reportWarning(context, "Call detection failed",
+                String.valueOf(t.getMessage()), t);
+        }
+    }
+
+    private void handlePhoneState(Context context, Intent intent) {
         if (!TelephonyManager.ACTION_PHONE_STATE_CHANGED.equals(intent.getAction())) return;
         if (!DevicePrefsPlugin.shouldProcessIncomingCall(context)) return;
 
@@ -59,7 +69,11 @@ public class CallAlertReceiver extends BroadcastReceiver {
         final Context app = context.getApplicationContext();
         SharedPreferences prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
 
-        WrongLineCallReceiver.onPhoneState(app, state);
+        try {
+            WrongLineCallReceiver.onPhoneState(app, state);
+        } catch (Throwable t) {
+            Log.w(TAG, "Wrong-line hook failed", t);
+        }
 
         if (TelephonyManager.EXTRA_STATE_RINGING.equals(state)) {
             long now = System.currentTimeMillis();
@@ -146,6 +160,8 @@ public class CallAlertReceiver extends BroadcastReceiver {
                     // CallLog not ready yet — FGS + kicks will finish once.
                     CallAlertUploadService.startWatch(app, session);
                 }
+            } catch (Throwable t) {
+                Log.w(TAG, "IDLE finalize failed", t);
             } finally {
                 pending.finish();
             }

@@ -258,13 +258,33 @@ public class CallAlertUploadService extends Service {
         Log.w(TAG, "Watch timed out without number");
     }
 
+    /**
+     * Android 14+ gives a shortService a hard time budget and crashes the app
+     * if it is still running when the budget expires. Stop on demand instead.
+     */
+    @Override
+    public void onTimeout(int startId) {
+        Log.w(TAG, "shortService timed out; stopping");
+        stopClean(startId);
+    }
+
+    @Override
+    public void onTimeout(int startId, int fgsType) {
+        Log.w(TAG, "shortService timed out; stopping");
+        stopClean(startId);
+    }
+
     private void stopClean(int startId) {
         try {
             stopForeground(true);
         } catch (Exception ignored) {
             /* older APIs */
         }
-        stopSelf(startId);
+        try {
+            stopSelf(startId);
+        } catch (Exception ignored) {
+            /* already destroyed */
+        }
     }
 
     private void ensureChannel() {

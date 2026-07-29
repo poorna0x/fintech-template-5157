@@ -116,63 +116,67 @@ public class OtpReplyReceiver extends BroadcastReceiver {
 
     @Override
     public void onReceive(Context context, Intent intent) {
-        if (!ACTION_REPLY.equals(intent.getAction())) return;
+        try {
+            if (intent == null || !ACTION_REPLY.equals(intent.getAction())) return;
 
-        Bundle results = RemoteInput.getResultsFromIntent(intent);
-        CharSequence typed = results != null ? results.getCharSequence(KEY_OTP) : null;
-        String otp = typed != null ? typed.toString().trim() : "";
+            Bundle results = RemoteInput.getResultsFromIntent(intent);
+            CharSequence typed = results != null ? results.getCharSequence(KEY_OTP) : null;
+            String otp = typed != null ? typed.toString().trim() : "";
 
-        String requestId = intent.getStringExtra(EXTRA_REQUEST_ID);
-        String nonce = intent.getStringExtra(EXTRA_NONCE);
-        String submitUrl = intent.getStringExtra(EXTRA_SUBMIT_URL);
-        int notificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, 0);
-        if (requestId == null || nonce == null || submitUrl == null) return;
+            String requestId = intent.getStringExtra(EXTRA_REQUEST_ID);
+            String nonce = intent.getStringExtra(EXTRA_NONCE);
+            String submitUrl = intent.getStringExtra(EXTRA_SUBMIT_URL);
+            int notificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, 0);
+            if (requestId == null || nonce == null || submitUrl == null) return;
 
-        if (!otp.matches("\\d{4}")) {
-            // Re-show with the reply field so they can correct it right there.
-            showOtpRequestNotification(context, requestId, nonce, submitUrl,
-                "The code must be exactly 4 digits — try again.");
-            return;
-        }
+            if (!otp.matches("\\d{4}")) {
+                // Re-show with the reply field so they can correct it right there.
+                showOtpRequestNotification(context, requestId, nonce, submitUrl,
+                    "The code must be exactly 4 digits — try again.");
+                return;
+            }
 
-        // Acknowledge immediately so the reply spinner in the notification stops.
-        showResult(context, notificationId, "Sending code " + otp + "\u2026", false);
+            // Acknowledge immediately so the reply spinner in the notification stops.
+            showResult(context, notificationId, "Sending code " + otp + "\u2026", false);
 
-        // goAsync keeps the process alive for the network call (~10s budget).
-        final PendingResult pending = goAsync();
-        new Thread(() -> {
-            boolean ok = false;
-            HttpURLConnection conn = null;
-            try {
-                String payload = "{\"requestId\":\"" + requestId + "\"," +
-                    "\"nonce\":\"" + nonce + "\"," +
-                    "\"otp\":\"" + otp + "\"}";
-                conn = (HttpURLConnection) new URL(submitUrl).openConnection();
-                conn.setRequestMethod("POST");
-                conn.setRequestProperty("Content-Type", "application/json");
-                conn.setDoOutput(true);
-                conn.setConnectTimeout(10_000);
-                conn.setReadTimeout(10_000);
-                try (OutputStream os = conn.getOutputStream()) {
-                    os.write(payload.getBytes(StandardCharsets.UTF_8));
+            // goAsync keeps the process alive for the network call (~10s budget).
+            final PendingResult pending = goAsync();
+            new Thread(() -> {
+                boolean ok = false;
+                HttpURLConnection conn = null;
+                try {
+                    String payload = "{\"requestId\":\"" + requestId + "\"," +
+                        "\"nonce\":\"" + nonce + "\"," +
+                        "\"otp\":\"" + otp + "\"}";
+                    conn = (HttpURLConnection) new URL(submitUrl).openConnection();
+                    conn.setRequestMethod("POST");
+                    conn.setRequestProperty("Content-Type", "application/json");
+                    conn.setDoOutput(true);
+                    conn.setConnectTimeout(10_000);
+                    conn.setReadTimeout(10_000);
+                    try (OutputStream os = conn.getOutputStream()) {
+                        os.write(payload.getBytes(StandardCharsets.UTF_8));
+                    }
+                    ok = conn.getResponseCode() == 200;
+                    if (!ok) Log.w(TAG, "Submit rejected: HTTP " + conn.getResponseCode());
+                } catch (Exception e) {
+                    Log.w(TAG, "Submit failed", e);
                 }
-                ok = conn.getResponseCode() == 200;
-                if (!ok) Log.w(TAG, "Submit rejected: HTTP " + conn.getResponseCode());
-            } catch (Exception e) {
-                Log.w(TAG, "Submit failed", e);
-            }
-            finally {
-                if (conn != null) conn.disconnect();
-            }
+                finally {
+                    if (conn != null) conn.disconnect();
+                }
 
-            if (ok) {
-                showResult(context, notificationId, "OTP " + otp + " sent to the office \u2713", true);
-            } else {
-                showResult(context, notificationId,
-                    "Couldn't send the code — open the app and enter it there.", false);
-            }
-            pending.finish();
-        }).start();
+                if (ok) {
+                    showResult(context, notificationId, "OTP " + otp + " sent to the office \u2713", true);
+                } else {
+                    showResult(context, notificationId,
+                        "Couldn't send the code — open the app and enter it there.", false);
+                }
+                pending.finish();
+            }).start();
+        } catch (Throwable t) {
+            Log.w(TAG, "onReceive failed", t);
+        }
     }
 
     private void showResult(Context context, int notificationId, String text, boolean success) {

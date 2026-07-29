@@ -20,24 +20,28 @@ public class CallAlertKickReceiver extends BroadcastReceiver {
 
     @Override
     public void onReceive(Context context, Intent intent) {
-        if (intent == null || !ACTION_KICK.equals(intent.getAction())) return;
-        if (!DevicePrefsPlugin.shouldProcessIncomingCall(context)) return;
+        try {
+            if (intent == null || !ACTION_KICK.equals(intent.getAction())) return;
+            if (!DevicePrefsPlugin.shouldProcessIncomingCall(context)) return;
 
-        Context app = context.getApplicationContext();
-        SharedPreferences prefs =
-            app.getSharedPreferences(CallAlertReceiver.PREFS, Context.MODE_PRIVATE);
-        long ringAt = intent.getLongExtra(EXTRA_RING_AT, 0L);
-        if (ringAt <= 0) {
-            ringAt = prefs.getLong(CallAlertReceiver.KEY_PENDING_RING_AT, 0L);
-        }
-        if (ringAt <= 0) return;
-        if (prefs.getLong(CallAlertReceiver.KEY_ALERTED_RING_AT, 0L) == ringAt) {
-            CallAlertUploadService.cancelKicks(app, ringAt);
-            return;
-        }
+            Context app = context.getApplicationContext();
+            SharedPreferences prefs =
+                app.getSharedPreferences(CallAlertReceiver.PREFS, Context.MODE_PRIVATE);
+            long ringAt = intent.getLongExtra(EXTRA_RING_AT, 0L);
+            if (ringAt <= 0) {
+                ringAt = prefs.getLong(CallAlertReceiver.KEY_PENDING_RING_AT, 0L);
+            }
+            if (ringAt <= 0) return;
+            if (prefs.getLong(CallAlertReceiver.KEY_ALERTED_RING_AT, 0L) == ringAt) {
+                CallAlertUploadService.cancelKicks(app, ringAt);
+                return;
+            }
 
-        Log.i(TAG, "Alarm kick for ring " + ringAt);
-        // Hangup-first path: resolve CallLog then upload once (no second parallel upload).
-        CallAlertUploadService.startWatch(app, ringAt, false);
+            Log.i(TAG, "Alarm kick for ring " + ringAt);
+            // Hangup-first path: resolve CallLog then upload once (no second parallel upload).
+            CallAlertUploadService.startWatch(app, ringAt, false);
+        } catch (Throwable t) {
+            Log.w(TAG, "Alarm kick failed", t);
+        }
     }
 }

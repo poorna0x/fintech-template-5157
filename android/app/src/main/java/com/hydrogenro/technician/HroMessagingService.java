@@ -37,6 +37,18 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
 
     @Override
     public void onMessageReceived(@NonNull RemoteMessage remoteMessage) {
+        // Any uncaught throwable from FCM dispatch crashes the technician app
+        // (seen on location pings and on custom notification types).
+        try {
+            handleMessage(remoteMessage);
+        } catch (Throwable t) {
+            Log.w(TAG, "onMessageReceived failed", t);
+            CrashReporter.reportWarning(getApplicationContext(),
+                "Push message handling failed", String.valueOf(t.getMessage()), t);
+        }
+    }
+
+    private void handleMessage(@NonNull RemoteMessage remoteMessage) {
         Map<String, String> data = remoteMessage.getData();
         // Handle our custom types before Capacitor so tray UI is ours (with Reply).
         if ("otp_request".equals(data.get("type"))) {
@@ -67,12 +79,19 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
 
         // Foreground: FCM won't auto-display notification payloads — show ourselves.
         // Skips location_request / custom types (handled above or silent).
-        ForegroundPushNotifier.showIfPresent(getApplicationContext(), remoteMessage);
+        try {
+            ForegroundPushNotifier.showIfPresent(getApplicationContext(), remoteMessage);
+        } catch (Throwable t) {
+            Log.w(TAG, "Foreground tray notification failed", t);
+        }
 
         super.onMessageReceived(remoteMessage);
 
         if (!"location_request".equals(data.get("type"))) return;
+        handleLocationRequest(data);
+    }
 
+    private void handleLocationRequest(Map<String, String> data) {
         String technicianId = data.get("technicianId");
         String nonce = data.get("nonce");
         String uploadUrl = data.get("uploadUrl");
@@ -85,10 +104,21 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             == PackageManager.PERMISSION_GRANTED;
         if (!fine && !coarse) {
             Log.w(TAG, "No location permission; skipping upload");
+            CrashReporter.reportWarning(context, "Location permission missing",
+                "Admin asked for this phone's location but Location permission is denied, so nothing could be sent.",
+                null);
             return;
         }
 
-        FusedLocationProviderClient fused = LocationServices.getFusedLocationProviderClient(context);
+        FusedLocationProviderClient fused;
+        try {
+            fused = LocationServices.getFusedLocationProviderClient(context);
+        } catch (Throwable t) {
+            Log.w(TAG, "Play Services location unavailable", t);
+            CrashReporter.reportWarning(context, "Google Play Services location unavailable",
+                "This phone cannot provide locations — Play Services is missing or out of date.", t);
+            return;
+        }
 
         // Last known fix first: instant, so the admin sees something right away
         // even if the fresh fix below takes a while or the process dies.
@@ -96,21 +126,28 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             fused.getLastLocation().addOnSuccessListener(location -> {
                 if (location != null) upload(uploadUrl, technicianId, nonce, location);
             });
-        } catch (SecurityException e) {
-            Log.w(TAG, "getLastLocation not permitted", e);
+        } catch (Throwable t) {
+            Log.w(TAG, "getLastLocation failed", t);
         }
 
-        // Then a fresh fix via a short-lived foreground service: Android
-        // throttles fresh-location computation for backgrounded apps (the
-        // inline request "succeeds" with null), and Google's docs recommend a
-        // foreground location service for reliable access. The high-priority
-        // push grants the window to start one. Fall back to the inline
-        // request if the OS refuses the service start.
+        // Fresh fix via short-lived foreground service (reliable when the app
+        // is backgrounded/killed). start() itself can throw; the service can
+        // also fail startForeground later without throwing back here — so we
+        // ALWAYS also kick an inline request. Server keeps the newer fix_time.
+        boolean fgsStarted = false;
         try {
             LocationFixService.start(getApplicationContext(), uploadUrl, technicianId, nonce);
-        } catch (Exception e) {
-            Log.w(TAG, "Foreground fix service refused; falling back to inline request", e);
+            fgsStarted = true;
+        } catch (Throwable t) {
+            Log.w(TAG, "Foreground fix service refused", t);
+        }
+        try {
             requestFreshFix(fused, fine, uploadUrl, technicianId, nonce);
+        } catch (Throwable t) {
+            Log.w(TAG, "Inline fresh fix failed", t);
+            if (!fgsStarted) {
+                Log.w(TAG, "No FGS and no inline fix — relying on last-known only");
+            }
         }
     }
 
@@ -149,12 +186,12 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
                     fused.getCurrentLocation(fallback, null).addOnSuccessListener(loc -> {
                         if (loc != null) upload(uploadUrl, technicianId, nonce, loc);
                     });
-                } catch (SecurityException e) {
-                    Log.w(TAG, "Fallback getCurrentLocation not permitted", e);
+                } catch (Throwable t) {
+                    Log.w(TAG, "Fallback getCurrentLocation failed", t);
                 }
             });
-        } catch (SecurityException e) {
-            Log.w(TAG, "getCurrentLocation not permitted", e);
+        } catch (Throwable t) {
+            Log.w(TAG, "getCurrentLocation failed", t);
         }
     }
 
