@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Bug, RefreshCw, Trash2, ChevronDown, ChevronUp, Copy } from 'lucide-react';
 import { toast } from 'sonner';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -161,6 +161,7 @@ export function AppCrashReports() {
   const [crashes, setCrashes] = useState<AppCrashRow[]>(() => readCrashCache() ?? []);
   const [loading, setLoading] = useState(false);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<AppCrashRow | null>(null);
 
   const refresh = useCallback(async (opts?: { force?: boolean }) => {
     if (!opts?.force) {
@@ -195,9 +196,12 @@ export function AppCrashReports() {
         writeCrashCache(next);
         return next;
       });
+      toast.success('Report deleted');
     } catch (err) {
       console.error('[app-crashes] delete failed', err);
       toast.error('Could not delete');
+    } finally {
+      setDeleteTarget(null);
     }
   };
 
@@ -238,9 +242,6 @@ export function AppCrashReports() {
                   </Badge>
                 ) : null}
               </CardTitle>
-              <CardDescription className="text-xs mt-0.5">
-                Phone crashes and silent failures (location blocked, permission off). Needs latest APK.
-              </CardDescription>
             </div>
             <div className="flex gap-1.5 shrink-0">
               {crashes.length > 0 ? (
@@ -273,19 +274,43 @@ export function AppCrashReports() {
           ) : (
             <div className="space-y-2">
               {crashes.map((crash) => (
-                <CrashCard key={crash.id} crash={crash} onDelete={() => void removeOne(crash.id)} />
+                <CrashCard
+                  key={crash.id}
+                  crash={crash}
+                  onDelete={() => setDeleteTarget(crash)}
+                />
               ))}
             </div>
           )}
         </CardContent>
       </Card>
 
+      <AlertDialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this report?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Removes the stored crash/warning from the database. It will come back only if the phone reports it again.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700"
+              onClick={() => deleteTarget && void removeOne(deleteTarget.id)}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <AlertDialog open={confirmClear} onOpenChange={setConfirmClear}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Clear all reports?</AlertDialogTitle>
             <AlertDialogDescription>
-              This deletes {crashes.length} report{crashes.length === 1 ? '' : 's'}. New crashes and warnings will still be reported.
+              This deletes {crashes.length} stored report{crashes.length === 1 ? '' : 's'} from the database. New ones will still arrive.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
