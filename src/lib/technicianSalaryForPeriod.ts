@@ -153,7 +153,7 @@ export function getTechnicianDailyBaseSalary(tech: any, date: Date): number {
 /**
  * Billing-slab commission tiers:
  *
- *   1,70,001 – 1,99,999  →  ₹2,000                  (entry tier)
+ *   1,75,001 – 1,99,999  →  ₹2,000                  (entry tier)
  *   2,00,000 – 2,74,999  →  ₹5,000
  *   2,75,000 – 2,99,999  →  ₹5,000 + ₹2,000 = ₹7,000
  *   3,00,000 – 3,74,999  →  ₹10,000
@@ -164,7 +164,7 @@ export function getTechnicianDailyBaseSalary(tech: any, date: Date): number {
  *     offset reaches ₹75,000, resets at the next lakh boundary).
  */
 export function calculateBillingSlabCommission(monthlyBilling: number): number {
-  if (monthlyBilling >= 170001 && monthlyBilling < 200000) return 2000;
+  if (monthlyBilling > 175000 && monthlyBilling < 200000) return 2000;
   if (monthlyBilling < 200000) return 0;
 
   const base = (Math.floor((monthlyBilling - 200000) / 100000) + 1) * 5000;

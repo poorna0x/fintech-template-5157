@@ -12,7 +12,7 @@ DECLARE
   base numeric;
   offset_within_lakh numeric;
 BEGIN
-  IF billing >= 170001 AND billing < 200000 THEN
+  IF billing > 175000 AND billing < 200000 THEN
     RETURN 2000;
   END IF;
   IF billing < 200000 THEN
