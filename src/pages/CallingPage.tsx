@@ -1560,12 +1560,14 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
       {customerReportDialogOpen && (
         <CustomerReportDialog
           open={customerReportDialogOpen}
+          photoViewerOpen={reportPhotoViewerOpen}
           customer={selectedCustomerForReport}
           technicians={technicians}
           onOpenChange={(open) => {
             setCustomerReportDialogOpen(open);
             if (!open) {
               setSelectedCustomerForReport(null);
+              setReportPhotoViewerOpen(false);
             }
           }}
           onPhotoClick={(url, index, total, photos) => {

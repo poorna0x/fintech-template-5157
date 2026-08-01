@@ -1104,9 +1104,13 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
       {reportCustomer && (
         <CustomerReportDialog
           open={reportDialogOpen}
+          photoViewerOpen={reportPhotoViewerOpen}
           onOpenChange={(o) => {
             setReportDialogOpen(o);
-            if (!o) setReportCustomer(null);
+            if (!o) {
+              setReportCustomer(null);
+              setReportPhotoViewerOpen(false);
+            }
           }}
           customer={reportCustomer}
           technicians={technicianRows as unknown as Technician[]}

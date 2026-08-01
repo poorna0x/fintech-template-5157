@@ -80,7 +80,28 @@ function scrubPhotoViewerSideEffects() {
   document.body.style.removeProperty('touch-action');
 }
 
-/** Apply real pixel size and re-fit so portrait payment shots fill the screen (not a tiny landscape box). */
+type ZoomLevelLike = {
+  fit: number;
+  panAreaSize: { x?: number; y?: number } | null;
+  elementSize: { x: number; y: number } | null;
+};
+
+/**
+ * Same rule for every photo: object-fit contain.
+ * PhotoSwipe's built-in `fit` caps at 1× so small payment shots stay tiny while
+ * large ones fill the screen — that looked inconsistent. This scales up or down.
+ */
+function containZoom(z: ZoomLevelLike): number {
+  const panW = z.panAreaSize?.x ?? 0;
+  const panH = z.panAreaSize?.y ?? 0;
+  const imgW = z.elementSize?.x ?? 0;
+  const imgH = z.elementSize?.y ?? 0;
+  if (!panW || !panH || !imgW || !imgH) return z.fit;
+  const level = Math.min(panW / imgW, panH / imgH);
+  return Number.isFinite(level) && level > 0 ? level : z.fit;
+}
+
+/** Update slide pixel size and re-apply the same contain zoom. */
 function applyRealSizeAndFit(pswp: PhotoSwipe, slideIndex: number, width: number, height: number) {
   if (!width || !height) return;
   const dataSource = pswp.options.dataSource;
@@ -97,12 +118,12 @@ function applyRealSizeAndFit(pswp: PhotoSwipe, slideIndex: number, width: number
 
   try {
     if (changed) slide.updateContentSize(true);
-    const fit = slide.zoomLevels?.fit;
-    if (typeof fit === 'number' && Number.isFinite(fit)) {
-      const cx = pswp.viewportSize.x / 2;
-      const cy = pswp.viewportSize.y / 2;
-      slide.zoomTo(fit, { x: cx, y: cy }, 0);
-    }
+    const z = slide.zoomLevels;
+    if (!z) return;
+    const level = containZoom(z);
+    const cx = pswp.viewportSize.x / 2;
+    const cy = pswp.viewportSize.y / 2;
+    slide.zoomTo(level, { x: cx, y: cy }, 0);
   } catch {
     /* ignore */
   }
@@ -142,6 +163,8 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
   const pswpRef = useRef<PhotoSwipe | null>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  /** Set while tearing down for remount/cleanup — destroy() fires 'close'; don't dismiss UI then. */
+  const suppressCloseCallbackRef = useRef(false);
 
   /** Photo painted and sized — only then show arrows/download (close stays). */
   const [photoReady, setPhotoReady] = useState(false);
@@ -167,11 +190,13 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
   const currentUrl =
     (parentDrivenNav ? selectedPhoto?.url : urls[slideIndex]) || selectedPhoto?.url || '';
 
+  // Multi-slide: do NOT put index in the key — parent index updates must not destroy PhotoSwipe
+  // (destroy() calls close() which was wrongly dismissing the whole viewer).
   const sessionKey = !open || !selectedPhoto?.url
     ? ''
     : parentDrivenNav
       ? `p|${selectedPhoto.url}|${selectedPhoto.index}`
-      : `g|${urlsKey}|${selectedPhoto.index}`;
+      : `g|${urlsKey}`;
 
   useEffect(() => {
     if (!sessionKey || !selectedPhoto?.url) {
@@ -190,24 +215,26 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
       : Math.min(Math.max(selectedPhoto.index, 0), list.length - 1);
 
     if (pswpRef.current) {
+      suppressCloseCallbackRef.current = true;
       try {
         pswpRef.current.destroy();
       } catch {
         /* ignore */
       }
       pswpRef.current = null;
+      suppressCloseCallbackRef.current = false;
     }
 
     const openViewer = async () => {
-      // Only block on the current photo size (fast). Neighbors refine on load.
-      const startSize = await loadNaturalSize(list[startIndex]);
+      // Real sizes for every slide up front — wrong aspect on neighbors made
+      // arrow-next jump between tiny / tall / over-zoomed.
+      const sizes = await Promise.all(list.map((src) => loadNaturalSize(src)));
       if (cancelled) return;
 
       const slides: Slide[] = list.map((src, i) => ({
         src,
-        // Portrait fallback for unpaid sizes — avoids tiny payment fit
-        width: i === startIndex ? startSize.width : FALLBACK_W,
-        height: i === startIndex ? startSize.height : FALLBACK_H,
+        width: sizes[i]?.width || FALLBACK_W,
+        height: sizes[i]?.height || FALLBACK_H,
         alt: `Photo ${i + 1}`,
       }));
 
@@ -220,9 +247,10 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
         closeOnVerticalDrag: false,
         tapAction: false,
         doubleTapAction: 'zoom',
-        secondaryZoomLevel: 2.5,
-        maxZoomLevel: 4,
-        initialZoomLevel: 'fit',
+        // One rule everywhere: contain in viewport (scale up or down).
+        initialZoomLevel: (z) => containZoom(z),
+        secondaryZoomLevel: (z) => containZoom(z) * 2.5,
+        maxZoomLevel: (z) => Math.max(4, containZoom(z) * 4),
         padding: { top: 0, bottom: 0, left: 0, right: 0 },
         preload: [1, 1],
         zoom: false,
@@ -246,12 +274,24 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
 
       pswp.on('change', () => {
         setSlideIndex(pswp.currIndex);
+        // Always reset to contain when changing slides (no leftover zoom).
         const el = pswp.currSlide?.content?.element;
         if (el instanceof HTMLImageElement && el.complete && el.naturalWidth > 0) {
           applyRealSizeAndFit(pswp, pswp.currIndex, el.naturalWidth, el.naturalHeight);
           setPhotoReady(true);
         } else {
           setPhotoReady(false);
+          const z = pswp.currSlide?.zoomLevels;
+          if (z) {
+            try {
+              const level = containZoom(z);
+              const cx = pswp.viewportSize.x / 2;
+              const cy = pswp.viewportSize.y / 2;
+              pswp.currSlide?.zoomTo(level, { x: cx, y: cy }, 0);
+            } catch {
+              /* ignore */
+            }
+          }
           requestAnimationFrame(syncReadyFromCurrent);
         }
       });
@@ -270,6 +310,8 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
       pswp.on('close', () => {
         setPhotoReady(false);
         scrubPhotoViewerSideEffects();
+        // destroy() always ends up in close() — ignore when remounting/cleaning up
+        if (suppressCloseCallbackRef.current) return;
         onCloseRef.current();
       });
 
@@ -282,23 +324,6 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
       pswp.init();
       setSlideIndex(pswp.currIndex);
       requestAnimationFrame(syncReadyFromCurrent);
-
-      // Warm real sizes for neighbors in background (no UI wait)
-      list.forEach((src, i) => {
-        if (i === startIndex) return;
-        void loadNaturalSize(src).then((size) => {
-          if (cancelled || !pswpRef.current) return;
-          const dataSource = pswp.options.dataSource;
-          if (!Array.isArray(dataSource)) return;
-          const item = dataSource[i] as Slide | undefined;
-          if (!item) return;
-          item.width = size.width;
-          item.height = size.height;
-          if (pswp.currIndex === i) {
-            applyRealSizeAndFit(pswp, i, size.width, size.height);
-          }
-        });
-      });
     };
 
     void openViewer();
@@ -307,12 +332,14 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
       cancelled = true;
       setPhotoReady(false);
       if (pswpRef.current) {
+        suppressCloseCallbackRef.current = true;
         try {
           pswpRef.current.destroy();
         } catch {
           /* ignore */
         }
         pswpRef.current = null;
+        suppressCloseCallbackRef.current = false;
       }
       scrubPhotoViewerSideEffects();
     };
@@ -323,24 +350,25 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
     const pswp = pswpRef.current;
     if (pswp) {
       try {
-        pswp.close(); // normal path: 'close' handler calls onClose
+        pswp.close(); // 'close' → onClose (Escape / X)
       } catch {
         scrubPhotoViewerSideEffects();
         onClose();
         return;
       }
-      // If close() was a no-op, force unlock so the app isn't stuck
       window.setTimeout(() => {
         if (pswpRef.current !== pswp) {
           scrubPhotoViewerSideEffects();
           return;
         }
+        suppressCloseCallbackRef.current = true;
         try {
           pswp.destroy();
         } catch {
           /* ignore */
         }
         pswpRef.current = null;
+        suppressCloseCallbackRef.current = false;
         scrubPhotoViewerSideEffects();
         onClose();
       }, 80);
@@ -350,7 +378,14 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
     onClose();
   };
 
-  const handlePrevious = () => {
+  const stopDialogDismiss = (e: React.SyntheticEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handlePrevious = (e?: React.SyntheticEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
     if (parentDrivenNav) {
       onPrevious();
       return;
@@ -358,7 +393,9 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
     pswpRef.current?.prev();
   };
 
-  const handleNext = () => {
+  const handleNext = (e?: React.SyntheticEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
     if (parentDrivenNav) {
       onNext();
       return;
@@ -387,9 +424,9 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
           type="button"
           aria-label="Close"
           className="pointer-events-auto absolute right-3 top-[max(0.75rem,env(safe-area-inset-top))] flex h-11 w-11 items-center justify-center rounded-full bg-black/70 text-white active:bg-black/90"
+          onPointerDown={stopDialogDismiss}
           onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
+            stopDialogDismiss(e);
             handleClose();
           }}
         >
@@ -409,11 +446,8 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
             aria-label="Previous photo"
             className="pointer-events-auto absolute left-3 top-1/2 z-[70] flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-black/70 text-white active:bg-black/90"
             style={{ left: 12 }}
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              handlePrevious();
-            }}
+            onPointerDown={stopDialogDismiss}
+            onClick={handlePrevious}
           >
             <ChevronLeft className="h-7 w-7" strokeWidth={2.5} />
           </button>
@@ -425,11 +459,8 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
             aria-label="Next photo"
             className="pointer-events-auto absolute top-1/2 z-[70] flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-black/70 text-white active:bg-black/90"
             style={{ right: 12 }}
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              handleNext();
-            }}
+            onPointerDown={stopDialogDismiss}
+            onClick={handleNext}
           >
             <ChevronRight className="h-7 w-7" strokeWidth={2.5} />
           </button>
@@ -452,9 +483,9 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
               type="button"
               variant="secondary"
               size="sm"
+              onPointerDown={stopDialogDismiss}
               onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
+                stopDialogDismiss(e);
                 onDownload(currentUrl, displayIndex);
               }}
               className="pointer-events-auto bg-card/90 text-black hover:bg-card"

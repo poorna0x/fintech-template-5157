@@ -21,6 +21,8 @@ interface CustomerReportDialogProps {
   onBillPhotosClick?: (photos: string[], index: number) => void;
   /** Admin: jump to Completed tab for this job's completion date. */
   onNavigateToCompletedJob?: (customer: Customer, job: Job) => void;
+  /** When photo viewer is open above this dialog, ignore outside clicks/Escape on the report. */
+  photoViewerOpen?: boolean;
 }
 
 const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
@@ -31,6 +33,7 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
   onPhotoClick,
   onBillPhotosClick,
   onNavigateToCompletedJob,
+  photoViewerOpen = false,
 }) => {
   const [customerReportJobs, setCustomerReportJobs] = useState<any[]>([]);
   const [loadingCustomerReportJobs, setLoadingCustomerReportJobs] = useState(false);
@@ -92,7 +95,18 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto overflow-x-hidden">
+      <DialogContent
+        className="sm:max-w-4xl max-h-[90vh] overflow-y-auto overflow-x-hidden"
+        onPointerDownOutside={(e) => {
+          if (photoViewerOpen) e.preventDefault();
+        }}
+        onInteractOutside={(e) => {
+          if (photoViewerOpen) e.preventDefault();
+        }}
+        onEscapeKeyDown={(e) => {
+          if (photoViewerOpen) e.preventDefault();
+        }}
+      >
         {/* Mobile only: equal side padding keeps the centered title clear of
             the absolute X button without pushing the text off-center.
             Desktop has room, so no padding there (as before). */}

@@ -7146,6 +7146,7 @@ const AdminDashboard = () => {
       {/* Customer Report Dialog */}
       <CustomerReportDialog
         open={customerReportDialogOpen}
+        photoViewerOpen={reportPhotoViewerOpen}
         onOpenChange={bindAdminModalDismiss('report', () => {
           setCustomerReportDialogOpen(false);
           setReportPhotoViewerOpen(false);
