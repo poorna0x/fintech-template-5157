@@ -379,64 +379,81 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                           <div className="mt-3 pt-3 border-t border-border">
                             <div className="font-medium text-foreground mb-3">Payment & Bill Documents</div>
                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                              {paymentScreenshots.map((paymentUrl, idx) => (
-                                <div 
-                                  key={`payment-${idx}`}
-                                  className="relative group cursor-pointer rounded-lg overflow-hidden border-2 border-blue-300 hover:border-blue-500 transition-all"
-                                  onClick={() => {
-                                    if (onPhotoClick) {
-                                      onPhotoClick(
-                                        paymentUrl,
-                                        idx,
-                                        paymentScreenshots.length,
-                                        paymentScreenshots,
-                                      );
-                                    }
-                                  }}
-                                >
-                                  <img 
-                                    src={paymentUrl} 
-                                    alt={`Payment ${idx + 1}`} 
-                                    className="w-full h-40 sm:h-48 object-cover transition-transform group-hover:scale-105" 
-                                  />
-                                  <div className="absolute top-2 left-2 bg-blue-600 text-white text-xs font-semibold px-2 py-1 rounded">
-                                    Payment {paymentScreenshots.length > 1 ? idx + 1 : ''}
-                                  </div>
-                                  <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-opacity flex items-center justify-center">
-                                    <div className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-sm font-medium bg-black bg-opacity-50 px-3 py-1 rounded">
-                                      Click to view
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
-                              
-                              {billPhotosOnly && billPhotosOnly.length > 0 && billPhotosOnly.map((photo: string, idx: number) => (
-                                <div 
-                                  key={idx} 
-                                  className="relative group cursor-pointer rounded-lg overflow-hidden border-2 border-green-300 hover:border-green-500 transition-all"
-                                  onClick={() => {
-                                    if (onBillPhotosClick) {
-                                      onBillPhotosClick(billPhotosOnly, idx);
-                                    } else if (onPhotoClick) {
-                                      onPhotoClick(photo, idx, billPhotosOnly.length);
-                                    }
-                                  }}
-                                >
-                                  <img 
-                                    src={photo} 
-                                    alt={`Bill photo ${idx + 1}`} 
-                                    className="w-full h-40 sm:h-48 object-cover transition-transform group-hover:scale-105" 
-                                  />
-                                  <div className="absolute top-2 left-2 bg-green-600 text-white text-xs font-semibold px-2 py-1 rounded">
-                                    Bill {idx + 1}
-                                  </div>
-                                  <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-opacity flex items-center justify-center">
-                                    <div className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-sm font-medium bg-black bg-opacity-50 px-3 py-1 rounded">
-                                      Click to view
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
+                              {(() => {
+                                // One gallery: payment(s) then bill(s) so arrows can go payment ↔ bill
+                                // even when each side has only one photo.
+                                const docPhotos = [
+                                  ...paymentScreenshots,
+                                  ...(billPhotosOnly || []),
+                                ];
+                                const openDocAt = (startIndex: number) => {
+                                  if (docPhotos.length === 0) return;
+                                  const safe = Math.min(
+                                    Math.max(0, startIndex),
+                                    docPhotos.length - 1,
+                                  );
+                                  if (onBillPhotosClick) {
+                                    onBillPhotosClick(docPhotos, safe);
+                                  } else if (onPhotoClick) {
+                                    onPhotoClick(
+                                      docPhotos[safe],
+                                      safe,
+                                      docPhotos.length,
+                                      docPhotos,
+                                    );
+                                  }
+                                };
+                                return (
+                                  <>
+                                    {paymentScreenshots.map((paymentUrl, idx) => (
+                                      <div
+                                        key={`payment-${idx}`}
+                                        className="relative group cursor-pointer rounded-lg overflow-hidden border-2 border-blue-300 hover:border-blue-500 transition-all"
+                                        onClick={() => openDocAt(idx)}
+                                      >
+                                        <img
+                                          src={paymentUrl}
+                                          alt={`Payment ${idx + 1}`}
+                                          className="w-full h-40 sm:h-48 object-cover transition-transform group-hover:scale-105"
+                                        />
+                                        <div className="absolute top-2 left-2 bg-blue-600 text-white text-xs font-semibold px-2 py-1 rounded">
+                                          Payment {paymentScreenshots.length > 1 ? idx + 1 : ''}
+                                        </div>
+                                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-opacity flex items-center justify-center">
+                                          <div className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-sm font-medium bg-black bg-opacity-50 px-3 py-1 rounded">
+                                            Click to view
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                    {billPhotosOnly &&
+                                      billPhotosOnly.length > 0 &&
+                                      billPhotosOnly.map((photo: string, idx: number) => (
+                                        <div
+                                          key={`bill-${idx}`}
+                                          className="relative group cursor-pointer rounded-lg overflow-hidden border-2 border-green-300 hover:border-green-500 transition-all"
+                                          onClick={() =>
+                                            openDocAt(paymentScreenshots.length + idx)
+                                          }
+                                        >
+                                          <img
+                                            src={photo}
+                                            alt={`Bill photo ${idx + 1}`}
+                                            className="w-full h-40 sm:h-48 object-cover transition-transform group-hover:scale-105"
+                                          />
+                                          <div className="absolute top-2 left-2 bg-green-600 text-white text-xs font-semibold px-2 py-1 rounded">
+                                            Bill {idx + 1}
+                                          </div>
+                                          <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-opacity flex items-center justify-center">
+                                            <div className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-sm font-medium bg-black bg-opacity-50 px-3 py-1 rounded">
+                                              Click to view
+                                            </div>
+                                          </div>
+                                        </div>
+                                      ))}
+                                  </>
+                                );
+                              })()}
                             </div>
                           </div>
                         ) : null}
