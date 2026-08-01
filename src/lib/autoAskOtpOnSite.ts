@@ -1,17 +1,22 @@
 /**
- * On-site OTP ask: after GPS near customer on an OTP-required job, wait 20 seconds
+ * On-site OTP ask: after first GPS-near on an OTP-required job, wait 5 minutes
  * then Ask OTP once. Server skips if OTP already entered or otp_auto_asked_at is set.
+ *
+ * Reliability notes (why 20s worked but 5 min often did not):
+ * - Android WebView pauses/throttles long setTimeouts when the screen locks.
+ * - We used to require "still within 200 m" to fire — GPS drift after minutes blocked it.
+ * Fix: persist nearAt, fire when dwell elapsed even if slightly off-site, and flush
+ * overdue jobs on an interval + app resume (not only on the timer callback).
  */
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import { getStoredOtpFromRequirements } from '@/lib/technicianOtpRequests';
 import { haversineDistanceMeters } from '@/lib/googleMapsDistance';
 
 const ENDPOINT = '/.netlify/functions/auto-ask-otp-on-site';
-const STORAGE_KEY = 'hro_otp_onsite_dwell_v4';
+const STORAGE_KEY = 'hro_otp_onsite_dwell_v5';
 const NEAR_METERS = 200;
-/** Ignore only very coarse fixes; outdoor GPS often reports 50–300 m. */
 const MAX_ACCURACY_METERS = 500;
-const DWELL_MS = 20_000;
+const DWELL_MS = 5 * 60 * 1000;
 const ACTIVE_STATUSES = new Set(['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS']);
 
 type DwellEntry = { nearAt: number; fired?: boolean };
@@ -84,6 +89,16 @@ function getCustomerCoords(job: any): { lat: number; lng: number } | null {
   return { lat, lng };
 }
 
+function isActiveOtpJob(job: AutoAskOtpJobLike): boolean {
+  if (!job?.id) return false;
+  const status = String(job.status || '').toUpperCase();
+  if (!ACTIVE_STATUSES.has(status)) return false;
+  if (job.otp_auto_asked_at) return false;
+  if (!jobRequiresOtp(job)) return false;
+  if (getStoredOtpFromRequirements(job.requirements)) return false;
+  return true;
+}
+
 async function fireAutoAsk(jobId: string, technicianId: string, nearAt: number): Promise<void> {
   const map = readDwellMap();
   if (map[jobId]?.fired) return;
@@ -97,7 +112,7 @@ async function fireAutoAsk(jobId: string, technicianId: string, nearAt: number):
   try {
     const accessToken = await resolveSupabaseAccessTokenForApi();
     if (!accessToken) {
-      console.warn('[auto-ask-otp] no session — will retry on next location fix');
+      console.warn('[auto-ask-otp] no session — will retry on next flush');
       return;
     }
 
@@ -124,12 +139,10 @@ async function fireAutoAsk(jobId: string, technicianId: string, nearAt: number):
     console.log('[auto-ask-otp] response', res.status, out);
 
     if (res.ok) {
-      // Definitive: asked, skipped (already entered / already asked / inactive).
       markFired(jobId, nearAt);
       return;
     }
 
-    // 500 (e.g. SQL column missing) — allow retry next open.
     console.warn('[auto-ask-otp] request failed', res.status, out);
   } catch (err) {
     console.warn('[auto-ask-otp] error', err);
@@ -137,8 +150,12 @@ async function fireAutoAsk(jobId: string, technicianId: string, nearAt: number):
 }
 
 function scheduleFire(jobId: string, technicianId: string, nearAt: number): void {
-  if (pendingTimers.has(jobId)) return;
   const remaining = Math.max(0, nearAt + DWELL_MS - Date.now());
+  const existing = pendingTimers.get(jobId);
+  if (existing) {
+    clearTimeout(existing);
+    pendingTimers.delete(jobId);
+  }
   console.log('[auto-ask-otp] timer armed', { jobId, remainingMs: remaining });
   const timer = setTimeout(() => {
     pendingTimers.delete(jobId);
@@ -158,7 +175,35 @@ export type AutoAskOtpJobLike = {
 };
 
 /**
- * Call whenever the technician dashboard has a fresh GPS fix and job list.
+ * Fire any jobs whose dwell already finished. Does not need a fresh GPS fix —
+ * used on resume / periodic flush because long setTimeouts die in the background.
+ */
+export function flushDueAutoAskOtpOnSite(opts: {
+  technicianId: string;
+  jobs: AutoAskOtpJobLike[];
+}): void {
+  const { technicianId, jobs } = opts;
+  if (!technicianId || !jobs?.length) return;
+
+  const map = readDwellMap();
+  const now = Date.now();
+
+  for (const job of jobs) {
+    if (!isActiveOtpJob(job)) continue;
+    const entry = map[job.id];
+    if (!entry?.nearAt || entry.fired) continue;
+    if (now < entry.nearAt + DWELL_MS) {
+      scheduleFire(job.id, technicianId, entry.nearAt);
+      continue;
+    }
+    console.log('[auto-ask-otp] dwell elapsed — flushing', { jobId: job.id });
+    void fireAutoAsk(job.id, technicianId, entry.nearAt);
+  }
+}
+
+/**
+ * Call when the technician dashboard has a GPS fix + job list.
+ * Starts the dwell clock the first time the tech is near the customer.
  */
 export function evaluateAutoAskOtpOnSite(opts: {
   technicianId: string;
@@ -170,23 +215,34 @@ export function evaluateAutoAskOtpOnSite(opts: {
   const { technicianId, jobs, lat, lng } = opts;
   if (!technicianId || !Number.isFinite(lat) || !Number.isFinite(lng)) return;
 
+  // Always flush overdue first (even if this fix is coarse / slightly off-site).
+  flushDueAutoAskOtpOnSite({ technicianId, jobs });
+
   const accuracy = opts.accuracyMeters;
-  if (typeof accuracy === 'number' && Number.isFinite(accuracy) && accuracy > MAX_ACCURACY_METERS) {
-    console.log('[auto-ask-otp] skip — GPS accuracy too coarse', accuracy);
-    return;
-  }
+  const accuracyOk =
+    !(typeof accuracy === 'number' && Number.isFinite(accuracy) && accuracy > MAX_ACCURACY_METERS);
 
   const map = readDwellMap();
   let mapDirty = false;
   const now = Date.now();
 
   for (const job of jobs) {
-    if (!job?.id) continue;
-    const status = String(job.status || '').toUpperCase();
-    if (!ACTIVE_STATUSES.has(status)) continue;
-    if (job.otp_auto_asked_at) continue;
-    if (!jobRequiresOtp(job)) continue;
-    if (getStoredOtpFromRequirements(job.requirements)) continue;
+    if (!isActiveOtpJob(job)) continue;
+
+    const existing = map[job.id];
+    if (existing?.fired) continue;
+
+    // Dwell already started — keep timer; don't require still-near to stay armed.
+    if (existing?.nearAt) {
+      if (now >= existing.nearAt + DWELL_MS) {
+        void fireAutoAsk(job.id, technicianId, existing.nearAt);
+      } else {
+        scheduleFire(job.id, technicianId, existing.nearAt);
+      }
+      continue;
+    }
+
+    if (!accuracyOk) continue;
 
     const dest = getCustomerCoords(job);
     if (!dest) {
@@ -200,23 +256,14 @@ export function evaluateAutoAskOtpOnSite(opts: {
       continue;
     }
 
-    const existing = map[job.id];
-    if (existing?.fired) continue;
-
-    console.log('[auto-ask-otp] near customer', { jobId: job.id, meters: Math.round(meters) });
-
-    if (!existing?.nearAt) {
-      map[job.id] = { nearAt: now };
-      mapDirty = true;
-      scheduleFire(job.id, technicianId, now);
-      continue;
-    }
-
-    if (now >= existing.nearAt + DWELL_MS) {
-      void fireAutoAsk(job.id, technicianId, existing.nearAt);
-    } else {
-      scheduleFire(job.id, technicianId, existing.nearAt);
-    }
+    console.log('[auto-ask-otp] near customer — start dwell', {
+      jobId: job.id,
+      meters: Math.round(meters),
+      dwellMs: DWELL_MS,
+    });
+    map[job.id] = { nearAt: now };
+    mapDirty = true;
+    scheduleFire(job.id, technicianId, now);
   }
 
   if (mapDirty) writeDwellMap(map);

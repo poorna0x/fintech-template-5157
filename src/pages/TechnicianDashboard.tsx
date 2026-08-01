@@ -2516,7 +2516,7 @@ const TechnicianDashboard = () => {
     }
   }, [currentLocation, jobs, assignmentRequests]);
 
-  // OTP-required jobs: if GPS is near the customer, wait 5 minutes then Ask OTP once.
+  // OTP-required jobs: GPS near customer starts a 5‑min dwell, then Ask OTP once.
   useEffect(() => {
     if (!user?.technicianId || !currentLocation || jobs.length === 0) return;
     void import('@/lib/autoAskOtpOnSite').then(({ evaluateAutoAskOtpOnSite }) => {
@@ -2528,6 +2528,49 @@ const TechnicianDashboard = () => {
       });
     });
   }, [user?.technicianId, currentLocation, jobs]);
+
+  // Long dwells: WebView setTimeout often dies when the screen locks. Flush overdue
+  // Ask OTP on resume and every 30s while the dashboard is open.
+  useEffect(() => {
+    if (!user?.technicianId || jobs.length === 0) return;
+    const technicianId = user.technicianId;
+
+    const flush = () => {
+      void import('@/lib/autoAskOtpOnSite').then(({ flushDueAutoAskOtpOnSite }) => {
+        flushDueAutoAskOtpOnSite({ technicianId, jobs });
+      });
+    };
+
+    flush();
+    const intervalId = window.setInterval(flush, 30_000);
+
+    const onVisibility = () => {
+      if (!document.hidden) flush();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    let removeAppListener: (() => void) | undefined;
+    void import('@capacitor/app')
+      .then(({ App }) =>
+        App.addListener('appStateChange', ({ isActive }) => {
+          if (isActive) flush();
+        })
+      )
+      .then((handle) => {
+        removeAppListener = () => {
+          void handle.remove();
+        };
+      })
+      .catch(() => {
+        /* web */
+      });
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', onVisibility);
+      removeAppListener?.();
+    };
+  }, [user?.technicianId, jobs]);
 
   // Realtime for assignment requests — no 5s polling; refresh when requests change
   useEffect(() => {
