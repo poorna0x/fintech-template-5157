@@ -1592,11 +1592,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
           selectedPhoto={reportSelectedPhoto}
           selectedBillPhotos={reportSelectedBillPhotos}
           selectedJobPhotos={null}
-          // Gallery: no arrows. Report multi bill/payment: arrows.
-          showNavigation={
-            !customerPhotoGalleryOpen &&
-            Boolean(reportSelectedBillPhotos && reportSelectedBillPhotos.length > 1)
-          }
+          showNavigation={Boolean(reportSelectedBillPhotos && reportSelectedBillPhotos.length > 1)}
           onPrevious={() => {
             if (!reportSelectedPhoto || !reportSelectedBillPhotos || reportSelectedBillPhotos.length <= 1) return;
             const newIndex = reportSelectedPhoto.index > 0 ? reportSelectedPhoto.index - 1 : reportSelectedBillPhotos.length - 1;

@@ -5469,6 +5469,8 @@ const AdminDashboard = () => {
   };
 
   const openPhotoViewer = (photoUrl: string, photoIndex: number, totalPhotos: number, jobId?: string) => {
+    setSelectedBillPhotos(null);
+    setSelectedCustomerPhotos(null);
     setSelectedPhoto({ url: photoUrl, index: photoIndex, total: totalPhotos });
     const parsed = parseAdminDashboardUrl(location.search);
     openAdminModal('photo-viewer', {
@@ -6608,13 +6610,16 @@ const AdminDashboard = () => {
         selectedPhoto={selectedPhoto}
         selectedBillPhotos={selectedBillPhotos}
         selectedJobPhotos={selectedJobPhotos}
+        selectedCustomerPhotos={selectedCustomerPhotos}
         onPrevious={goToPreviousPhoto}
         onNext={goToNextPhoto}
         onDownload={downloadPhoto}
-        // Only bill/payment sequences need arrows. Job/customer gallery grids
-        // already pick the thumb — and opening the viewer clears gallery modal
-        // state (photos → photo-viewer), so don't key off photoGalleryOpen.
-        showNavigation={Boolean(selectedBillPhotos && selectedBillPhotos.length > 1)}
+        // Arrows whenever the open list has multiple photos (bills, job gallery, customer gallery).
+        showNavigation={Boolean(
+          (selectedBillPhotos && selectedBillPhotos.length > 1) ||
+            (selectedCustomerPhotos && selectedCustomerPhotos.length > 1) ||
+            (selectedJobPhotos?.photos && selectedJobPhotos.photos.length > 1),
+        )}
         onClose={() => {
           onAdminModalOpenChange('photo-viewer', false);
           setSelectedPhoto(null);
@@ -6762,8 +6767,10 @@ const AdminDashboard = () => {
           const photos = customerPhotos[customerId] || [];
           // Reverse photos to match the display order (latest first)
           const reversedPhotos = [...photos].reverse();
+          setSelectedJobPhotos(null);
+          setSelectedBillPhotos(null);
           setSelectedCustomerPhotos(reversedPhotos);
-          setSelectedPhoto({ url: photo, index, total });
+          setSelectedPhoto({ url: photo, index, total: reversedPhotos.length || total });
           openAdminModal('photo-viewer', {
             customerId: selectedCustomerForPhotos?.id,
             photoIdx: index,

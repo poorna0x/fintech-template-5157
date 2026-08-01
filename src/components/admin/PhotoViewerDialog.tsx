@@ -11,12 +11,14 @@ interface PhotoViewerDialogProps {
   selectedPhoto: { url: string; index: number; total: number } | null;
   selectedBillPhotos: string[] | null;
   selectedJobPhotos: { jobId: string; photos: string[]; type: 'before' | 'after' } | null;
+  /** Customer photo gallery list (admin). */
+  selectedCustomerPhotos?: string[] | null;
   onPrevious: () => void;
   onNext: () => void;
   onDownload: (photoUrl: string, photoIndex: number) => void;
   onClose: () => void;
   showDownload?: boolean;
-  /** Prev/next for bill/payment sequences only. Gallery grids: false. */
+  /** Prev/next when the open list has more than one photo. */
   showNavigation?: boolean;
 }
 
@@ -26,8 +28,10 @@ function resolveUrls(
   selectedPhoto: PhotoViewerDialogProps['selectedPhoto'],
   selectedBillPhotos: string[] | null,
   selectedJobPhotos: PhotoViewerDialogProps['selectedJobPhotos'],
+  selectedCustomerPhotos?: string[] | null,
 ): string[] {
   if (selectedBillPhotos && selectedBillPhotos.length > 0) return selectedBillPhotos;
+  if (selectedCustomerPhotos && selectedCustomerPhotos.length > 0) return selectedCustomerPhotos;
   if (selectedJobPhotos?.photos && selectedJobPhotos.photos.length > 0) {
     return selectedJobPhotos.photos;
   }
@@ -153,6 +157,7 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
   selectedPhoto,
   selectedBillPhotos,
   selectedJobPhotos,
+  selectedCustomerPhotos = null,
   onPrevious,
   onNext,
   onDownload,
@@ -174,8 +179,8 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
     if (!showNavigation) {
       return selectedPhoto?.url ? [selectedPhoto.url] : [];
     }
-    return resolveUrls(selectedPhoto, selectedBillPhotos, selectedJobPhotos);
-  }, [showNavigation, selectedPhoto, selectedBillPhotos, selectedJobPhotos]);
+    return resolveUrls(selectedPhoto, selectedBillPhotos, selectedJobPhotos, selectedCustomerPhotos);
+  }, [showNavigation, selectedPhoto, selectedBillPhotos, selectedJobPhotos, selectedCustomerPhotos]);
   const urlsKey = urls.join('\n');
 
   const parentDrivenNav =
