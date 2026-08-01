@@ -7176,7 +7176,8 @@ const AdminDashboard = () => {
         selectedPhoto={reportViewerPhoto}
         selectedBillPhotos={reportViewerBillPhotos}
         selectedJobPhotos={null}
-        showNavigation={Boolean(reportViewerBillPhotos && reportViewerBillPhotos.length > 1)}
+        // Report already lists payment/bill thumbs — no fullscreen arrows.
+        showNavigation={false}
         onPrevious={() => {
           if (!reportViewerPhoto || !reportViewerBillPhotos || reportViewerBillPhotos.length <= 1) return;
           const newIndex =

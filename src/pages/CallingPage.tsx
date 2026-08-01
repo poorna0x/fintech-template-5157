@@ -1589,8 +1589,8 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
           selectedPhoto={reportSelectedPhoto}
           selectedBillPhotos={reportSelectedBillPhotos}
           selectedJobPhotos={null}
-          // Customer photo gallery already picks thumbs — hide arrows there.
-          showNavigation={!customerPhotoGalleryOpen}
+          // Report / gallery already pick thumbs — no fullscreen arrows.
+          showNavigation={false}
           onPrevious={() => {
             if (!reportSelectedPhoto || !reportSelectedBillPhotos || reportSelectedBillPhotos.length <= 1) return;
             const newIndex = reportSelectedPhoto.index > 0 ? reportSelectedPhoto.index - 1 : reportSelectedBillPhotos.length - 1;

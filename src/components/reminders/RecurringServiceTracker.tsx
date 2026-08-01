@@ -1069,6 +1069,8 @@ Thanks & regards 🙏`;
           selectedPhoto={viewerPhoto}
           selectedBillPhotos={viewerBillPhotos}
           selectedJobPhotos={null}
+          // Report already lists thumbs — no fullscreen arrows.
+          showNavigation={false}
           onPrevious={() => {
             if (!viewerPhoto || !viewerBillPhotos || viewerBillPhotos.length <= 1) return;
             const newIndex = viewerPhoto.index > 0 ? viewerPhoto.index - 1 : viewerBillPhotos.length - 1;

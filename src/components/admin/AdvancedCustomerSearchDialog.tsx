@@ -1135,6 +1135,8 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
           selectedPhoto={reportSelectedPhoto}
           selectedBillPhotos={reportSelectedBillPhotos}
           selectedJobPhotos={null}
+          // Report already lists thumbs — no fullscreen arrows.
+          showNavigation={false}
           onPrevious={() => {
             if (
               !reportSelectedPhoto ||
