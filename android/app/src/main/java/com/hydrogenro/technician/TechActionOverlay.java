@@ -13,8 +13,10 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
+import android.text.Editable;
 import android.text.InputFilter;
 import android.text.InputType;
+import android.text.TextWatcher;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.util.TypedValue;
@@ -41,6 +43,7 @@ public final class TechActionOverlay {
 
     private static final String TAG = "HroTechActionOverlay";
     private static final long AUTO_DISMISS_MS = 90_000L;
+    private static final long OTP_AUTO_DISMISS_MS = 180_000L;
 
     private static final int WHITE = 0xFFFFFFFF;
     private static final int INK = 0xFF0F172A;
@@ -239,12 +242,15 @@ public final class TechActionOverlay {
         EditText input = null;
         if (mode == Mode.REPLY || mode == Mode.OTP) {
             input = new EditText(context);
-            input.setHint(mode == Mode.OTP ? "4-digit code" : "Type your reply…");
+            input.setHint(mode == Mode.OTP ? "••••" : "Type your reply…");
             input.setTextColor(INK);
             input.setHintTextColor(MUTED);
-            input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
-            input.setBackgroundColor(WHITE);
-            input.setPadding(dp(density, 12), dp(density, 12), dp(density, 12), dp(density, 12));
+            input.setTextSize(TypedValue.COMPLEX_UNIT_SP, mode == Mode.OTP ? 28 : 15);
+            input.setPadding(
+                dp(density, 12),
+                dp(density, mode == Mode.OTP ? 16 : 12),
+                dp(density, 12),
+                dp(density, mode == Mode.OTP ? 16 : 12));
             GradientDrawable inputBg = new GradientDrawable();
             inputBg.setColor(WHITE);
             inputBg.setCornerRadius(dp(density, 12));
@@ -254,6 +260,9 @@ public final class TechActionOverlay {
                 input.setInputType(InputType.TYPE_CLASS_NUMBER);
                 input.setFilters(new InputFilter[] { new InputFilter.LengthFilter(4) });
                 input.setImeOptions(EditorInfo.IME_ACTION_DONE);
+                input.setGravity(Gravity.CENTER);
+                input.setLetterSpacing(0.45f);
+                input.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
             } else {
                 input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
                 input.setMaxLines(4);
@@ -294,12 +303,10 @@ public final class TechActionOverlay {
             primary, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
         content.addView(actions, actionsLp);
 
-        // Going mode: Yes + No (replace primary/secondary labels already set)
-        TextView noBtn = null;
+        // Going mode: Yes + No
         if (mode == Mode.GOING) {
             secondary.setText("No");
             primary.setText("Yes");
-            noBtn = secondary;
         }
 
         card.addView(
@@ -311,6 +318,7 @@ public final class TechActionOverlay {
         final TextView primaryFinal = primary;
         final TextView secondaryFinal = secondary;
         final ProgressBar spinnerFinal = spinner;
+        final boolean[] otpSubmitting = { false };
 
         if (mode != Mode.GOING) {
             secondary.setOnClickListener(v -> dismiss());
@@ -340,8 +348,8 @@ public final class TechActionOverlay {
                 });
         }
 
-        primary.setOnClickListener(
-            v ->
+        Runnable doPrimary =
+            () ->
                 onPrimary(
                     context,
                     mode,
@@ -360,7 +368,37 @@ public final class TechActionOverlay {
                     requestId,
                     nonce,
                     submitUrl,
-                    jobId));
+                    jobId,
+                    otpSubmitting);
+
+        primary.setOnClickListener(v -> doPrimary.run());
+
+        // OTP: auto-send as soon as 4 digits are typed (no extra tap).
+        if (mode == Mode.OTP && input != null) {
+            input.addTextChangedListener(
+                new TextWatcher() {
+                    @Override
+                    public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+                    @Override
+                    public void onTextChanged(CharSequence s, int start, int before, int count) {}
+
+                    @Override
+                    public void afterTextChanged(Editable s) {
+                        if (s != null && s.length() == 4 && !otpSubmitting[0]) {
+                            doPrimary.run();
+                        }
+                    }
+                });
+            input.setOnEditorActionListener(
+                (v, actionId, event) -> {
+                    if (actionId == EditorInfo.IME_ACTION_DONE) {
+                        doPrimary.run();
+                        return true;
+                    }
+                    return false;
+                });
+        }
 
         FrameLayout root = new FrameLayout(context);
         root.setPadding(dp(density, 12), dp(density, 12), dp(density, 12), dp(density, 12));
@@ -411,7 +449,8 @@ public final class TechActionOverlay {
             enter.setInterpolator(new DecelerateInterpolator());
             enter.start();
             mainHandler.removeCallbacks(autoDismiss);
-            mainHandler.postDelayed(autoDismiss, AUTO_DISMISS_MS);
+            mainHandler.postDelayed(
+                autoDismiss, mode == Mode.OTP ? OTP_AUTO_DISMISS_MS : AUTO_DISMISS_MS);
             if (input != null) input.requestFocus();
             Log.i(TAG, "Overlay shown mode=" + mode);
         } catch (Throwable t) {
@@ -438,7 +477,8 @@ public final class TechActionOverlay {
         String requestId,
         String nonce,
         String submitUrl,
-        String jobId
+        String jobId,
+        boolean[] otpSubmitting
     ) {
         switch (mode) {
             case CALL: {
@@ -512,11 +552,13 @@ public final class TechActionOverlay {
                 break;
             }
             case OTP: {
+                if (otpSubmitting != null && otpSubmitting[0]) return;
                 String otp = input != null ? input.getText().toString().trim() : "";
                 if (!otp.matches("\\d{4}")) {
                     toast(context, "Enter exactly 4 digits");
                     return;
                 }
+                if (otpSubmitting != null) otpSubmitting[0] = true;
                 setBusy(true, primary, secondary, spinner);
                 OtpReplyReceiver.submitOtp(
                     context,
@@ -527,6 +569,7 @@ public final class TechActionOverlay {
                     ok -> {
                         mainHandler.post(
                             () -> {
+                                if (otpSubmitting != null) otpSubmitting[0] = false;
                                 setBusy(false, primary, secondary, spinner);
                                 if (ok) {
                                     toast(context, "OTP sent to office");

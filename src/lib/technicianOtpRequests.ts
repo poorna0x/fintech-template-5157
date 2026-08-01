@@ -6,7 +6,7 @@
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
-import { getTechPushOverlayPref } from '@/lib/techPushDeliveryPrefs';
+import { getOtpPushOverlayPref } from '@/lib/techPushDeliveryPrefs';
 
 export type OtpRequestRow = {
   id: string;
@@ -119,7 +119,8 @@ export async function createOtpRequest(opts: {
           requestId: row.id,
           technicianId,
           customerName,
-          ...( (overlay ?? getTechPushOverlayPref()) ? { overlay: true } : {}),
+          // Always send boolean so server can default ON without breaking uncheck.
+          overlay: overlay ?? getOtpPushOverlayPref(),
         }),
         keepalive: true,
       });

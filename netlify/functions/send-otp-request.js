@@ -38,9 +38,10 @@ exports.handler = async (event) => {
   const requestId = String(body.requestId || '').trim();
   const technicianId = String(body.technicianId || '').trim();
   const customerName = String(body.customerName || '').trim().slice(0, 80);
+  const showOverlayRaw = body.overlay ?? body.showOverlay;
+  // Ask OTP defaults to overlay ON unless admin explicitly turns it off.
   const showOverlay =
-    body.overlay === true || body.overlay === 'true' || body.overlay === 1 ||
-    body.showOverlay === true || body.showOverlay === 'true' || body.showOverlay === 1;
+    !(showOverlayRaw === false || showOverlayRaw === 'false' || showOverlayRaw === 0);
   if (!requestId || !technicianId) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'requestId and technicianId required' }) };
   }

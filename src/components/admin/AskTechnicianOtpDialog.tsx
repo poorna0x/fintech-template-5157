@@ -17,7 +17,7 @@ import {
   watchOtpRequest,
   type OtpRequestRow,
 } from '@/lib/technicianOtpRequests';
-import { getTechPushOverlayPref, setTechPushOverlayPref } from '@/lib/techPushDeliveryPrefs';
+import { getOtpPushOverlayPref, setOtpPushOverlayPref } from '@/lib/techPushDeliveryPrefs';
 import type { Job } from '@/types';
 
 type AskTechnicianOtpDialogProps = {
@@ -28,11 +28,9 @@ type AskTechnicianOtpDialogProps = {
 };
 
 /**
- * Admin asks the assigned technician for the customer's 4-digit OTP
- * (Home Triangle leads, or jobs with Require OTP). If the technician already
- * entered it (at Start Work or earlier), it shows instantly from the job
- * itself — no push, no extra request. Otherwise sends a push and shows the
- * code live once the technician submits it.
+ * Admin asks the assigned technician for the customer's 4-digit OTP.
+ * Overlay is ON by default (tech can enter OTP on the card). Live-updates
+ * when the tech submits.
  */
 const AskTechnicianOtpDialog = ({
   open,
@@ -44,8 +42,9 @@ const AskTechnicianOtpDialog = ({
   const [storedOtp, setStoredOtp] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [failed, setFailed] = useState(false);
-  const [showOverlay, setShowOverlay] = useState(() => getTechPushOverlayPref());
+  const [showOverlay, setShowOverlay] = useState(() => getOtpPushOverlayPref());
   const unwatchRef = useRef<(() => void) | null>(null);
+  const toastedOtpRef = useRef<string | null>(null);
 
   const stopWatching = () => {
     unwatchRef.current?.();
@@ -55,18 +54,29 @@ const AskTechnicianOtpDialog = ({
   const beginWatching = (row: OtpRequestRow) => {
     stopWatching();
     setRequest(row);
-    if (!row.otp) {
-      unwatchRef.current = watchOtpRequest(row.id, (next) => setRequest(next));
+    if (row.otp) {
+      if (toastedOtpRef.current !== row.otp) {
+        toastedOtpRef.current = row.otp;
+      }
+      return;
     }
+    unwatchRef.current = watchOtpRequest(row.id, (next) => {
+      setRequest(next);
+      if (next.otp && toastedOtpRef.current !== next.otp) {
+        toastedOtpRef.current = next.otp;
+        toast.success(`OTP received: ${next.otp}`);
+      }
+    });
   };
 
   const ask = async (jobRow: Job, reAsk: boolean) => {
     setStarting(true);
     setFailed(false);
-    setTechPushOverlayPref(showOverlay);
-    // Re-asking: stop showing the previously stored code so the dialog
-    // clearly waits for the fresh one instead of displaying the old code.
-    if (reAsk) setStoredOtp(null);
+    setOtpPushOverlayPref(showOverlay);
+    if (reAsk) {
+      setStoredOtp(null);
+      toastedOtpRef.current = null;
+    }
     try {
       const technicianId =
         (jobRow as any).assigned_technician_id || (jobRow as any).assignedTechnicianId;
@@ -76,7 +86,6 @@ const AskTechnicianOtpDialog = ({
         return;
       }
 
-      // Reopening: show an already-submitted code instead of re-asking.
       if (!reAsk) {
         const existing = await getOtpRequestForJob(jobRow.id);
         if (existing?.otp) {
@@ -111,11 +120,10 @@ const AskTechnicianOtpDialog = ({
       setRequest(null);
       setStoredOtp(null);
       setFailed(false);
-      setShowOverlay(getTechPushOverlayPref());
+      setShowOverlay(getOtpPushOverlayPref());
+      toastedOtpRef.current = null;
       return;
     }
-    // The OTP may already live on the job (entered at Start Work or during
-    // completion) — show it straight away with zero extra queries or pushes.
     const existing = getStoredOtpFromRequirements((job as any).requirements);
     if (existing) {
       setStoredOtp(existing);
@@ -145,20 +153,21 @@ const AskTechnicianOtpDialog = ({
           </DialogDescription>
         </DialogHeader>
 
-        <label className="flex cursor-pointer items-start gap-2.5 rounded-md border px-3 py-2.5">
+        <label className="flex cursor-pointer items-start gap-2.5 rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5">
           <Checkbox
             checked={showOverlay}
             onCheckedChange={(v) => {
               const on = v === true;
               setShowOverlay(on);
-              setTechPushOverlayPref(on);
+              setOtpPushOverlayPref(on);
             }}
             disabled={starting}
             className="mt-0.5"
           />
           <span className="text-xs text-muted-foreground leading-snug">
-            <span className="font-medium text-foreground">Also show on-screen overlay</span>
-            {' — '}Enter OTP on the card (same as notification). Applies on Ask again.
+            <span className="font-medium text-foreground">Show on-screen overlay</span>
+            {' — '}on by default. Tech enters the 4-digit code on the card (tray still works).
+            Change applies on Ask again.
           </span>
         </label>
 
@@ -188,7 +197,11 @@ const AskTechnicianOtpDialog = ({
 
         {!starting && otp && (
           <div className="flex flex-col items-center gap-4 py-4">
-            <div className="text-4xl font-bold tracking-[0.4em] pl-[0.4em]">{otp}</div>
+            <div className="rounded-xl border-2 border-amber-300 bg-amber-50 px-6 py-4">
+              <div className="text-4xl font-bold tracking-[0.4em] pl-[0.4em] text-amber-950">
+                {otp}
+              </div>
+            </div>
             <div className="flex gap-2">
               <Button
                 variant="outline"
