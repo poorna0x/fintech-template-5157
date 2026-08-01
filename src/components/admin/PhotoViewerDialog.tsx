@@ -34,22 +34,47 @@ function resolveUrls(
   return [];
 }
 
-function loadSlide(src: string, alt: string): Promise<Slide> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      resolve({
-        src,
-        width: img.naturalWidth || 1600,
-        height: img.naturalHeight || 1200,
-        alt,
-      });
-    };
-    img.onerror = () => {
-      resolve({ src, width: 1600, height: 1200, alt });
-    };
-    img.src = src;
-  });
+/** Placeholder size so PhotoSwipe can open instantly (no preload wait). */
+function placeholderSize(): { width: number; height: number } {
+  if (typeof window === 'undefined') return { width: 1600, height: 1200 };
+  return {
+    width: Math.max(1200, Math.round(window.innerWidth * 2)),
+    height: Math.max(900, Math.round(window.innerHeight * 2)),
+  };
+}
+
+function slidesFromUrls(urls: string[]): Slide[] {
+  const { width, height } = placeholderSize();
+  return urls.map((src, i) => ({
+    src,
+    width,
+    height,
+    alt: `Photo ${i + 1}`,
+  }));
+}
+
+/** After decode, fix real dimensions so pinch zoom bounds match the image. */
+function refineSlideSize(pswp: PhotoSwipe, slideIndex: number, img: HTMLImageElement) {
+  const w = img.naturalWidth;
+  const h = img.naturalHeight;
+  if (!w || !h) return;
+
+  const dataSource = pswp.options.dataSource;
+  if (!Array.isArray(dataSource)) return;
+  const item = dataSource[slideIndex] as Slide | undefined;
+  if (!item || (item.width === w && item.height === h)) return;
+
+  item.width = w;
+  item.height = h;
+
+  const slide = pswp.currSlide;
+  if (slide && slide.index === slideIndex) {
+    try {
+      slide.updateContentSize(true);
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 /** Hide PhotoSwipe’s default chrome — we render the previous HRO controls on top. */
@@ -66,8 +91,8 @@ const PSWP_CHROME_CSS = `
 `;
 
 /**
- * PhotoSwipe for pinch/double-tap zoom (works in APK + PWA).
- * Previous HRO control layout (close / arrows / counter / download) restored on top.
+ * PhotoSwipe for pinch/double-tap zoom (APK + PWA).
+ * Opens immediately (no dimension preload). Previous HRO controls overlaid.
  */
 const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
   open,
@@ -82,7 +107,6 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
   showDownload = true,
 }) => {
   const pswpRef = useRef<PhotoSwipe | null>(null);
-  const closingFromPsRef = useRef(false);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
@@ -93,6 +117,7 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
     () => resolveUrls(selectedPhoto, selectedBillPhotos, selectedJobPhotos),
     [selectedPhoto, selectedBillPhotos, selectedJobPhotos],
   );
+  const urlsKey = urls.join('\n');
 
   const parentDrivenNav = urls.length === 1 && Boolean(selectedPhoto && selectedPhoto.total > 1);
   const hasNav = Boolean(
@@ -107,79 +132,88 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
   const currentUrl =
     (parentDrivenNav ? selectedPhoto?.url : urls[slideIndex]) || selectedPhoto?.url || '';
 
+  // Remount key: multi-slide gallery stays alive across arrow taps; parent-driven swaps URL.
+  const sessionKey = !open || !selectedPhoto?.url
+    ? ''
+    : parentDrivenNav
+      ? `p|${selectedPhoto.url}|${selectedPhoto.index}`
+      : `g|${urlsKey}|${selectedPhoto.index}`;
+
   useEffect(() => {
-    if (!open || !selectedPhoto?.url) {
+    if (!sessionKey || !selectedPhoto?.url) {
       setPswpReady(false);
       return;
     }
 
+    const list = urlsKey ? urlsKey.split('\n').filter(Boolean) : [];
+    if (list.length === 0) return;
+
     let cancelled = false;
-    if (urls.length === 0) return;
 
     const startIndex = parentDrivenNav
       ? 0
-      : Math.min(Math.max(selectedPhoto.index, 0), urls.length - 1);
+      : Math.min(Math.max(selectedPhoto.index, 0), list.length - 1);
 
-    const openViewer = async () => {
-      const slides = await Promise.all(
-        urls.map((url, i) => loadSlide(url, `Photo ${i + 1}`)),
-      );
-      if (cancelled) return;
-
-      if (pswpRef.current) {
-        try {
-          pswpRef.current.destroy();
-        } catch {
-          /* ignore */
-        }
-        pswpRef.current = null;
+    if (pswpRef.current) {
+      try {
+        pswpRef.current.destroy();
+      } catch {
+        /* ignore */
       }
+      pswpRef.current = null;
+    }
 
-      const options: PhotoSwipeOptions = {
-        dataSource: slides,
-        index: startIndex,
-        bgOpacity: 1,
-        showHideAnimationType: 'fade',
-        pinchToClose: false,
-        closeOnVerticalDrag: false,
-        tapAction: 'toggle-controls',
-        doubleTapAction: 'zoom',
-        secondaryZoomLevel: 2.5,
-        maxZoomLevel: 4,
-        initialZoomLevel: 'fit',
-        padding: { top: 0, bottom: 0, left: 0, right: 0 },
-        // All default chrome off — React overlay matches previous layout
-        zoom: false,
-        close: false,
-        arrowPrev: false,
-        arrowNext: false,
-        counter: false,
-      };
-
-      const pswp = new PhotoSwipe(options);
-      pswpRef.current = pswp;
-
-      pswp.on('change', () => {
-        setSlideIndex(pswp.currIndex);
-      });
-
-      pswp.on('close', () => {
-        closingFromPsRef.current = true;
-        setPswpReady(false);
-        onCloseRef.current();
-      });
-
-      pswp.on('destroy', () => {
-        if (pswpRef.current === pswp) pswpRef.current = null;
-        setPswpReady(false);
-      });
-
-      pswp.init();
-      setSlideIndex(pswp.currIndex);
-      setPswpReady(true);
+    const options: PhotoSwipeOptions = {
+      dataSource: slidesFromUrls(list),
+      index: startIndex,
+      bgOpacity: 1,
+      showHideAnimationType: 'none',
+      pinchToClose: false,
+      closeOnVerticalDrag: false,
+      tapAction: 'toggle-controls',
+      doubleTapAction: 'zoom',
+      secondaryZoomLevel: 2.5,
+      maxZoomLevel: 4,
+      initialZoomLevel: 'fit',
+      padding: { top: 0, bottom: 0, left: 0, right: 0 },
+      preload: [1, 1],
+      zoom: false,
+      close: false,
+      arrowPrev: false,
+      arrowNext: false,
+      counter: false,
     };
 
-    void openViewer();
+    const pswp = new PhotoSwipe(options);
+    pswpRef.current = pswp;
+
+    pswp.on('change', () => {
+      setSlideIndex(pswp.currIndex);
+    });
+
+    pswp.on('loadComplete', (e) => {
+      if (cancelled || e.isError) return;
+      const el = e.content?.element;
+      if (el instanceof HTMLImageElement) {
+        refineSlideSize(pswp, e.slide.index, el);
+      }
+    });
+
+    pswp.on('close', () => {
+      setPswpReady(false);
+      onCloseRef.current();
+    });
+
+    pswp.on('destroy', () => {
+      if (pswpRef.current === pswp) pswpRef.current = null;
+      setPswpReady(false);
+    });
+
+    pswp.init();
+    if (!cancelled) {
+      setSlideIndex(pswp.currIndex);
+      setPswpReady(true);
+    }
 
     return () => {
       cancelled = true;
@@ -192,20 +226,12 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
         }
         pswpRef.current = null;
       }
-      closingFromPsRef.current = false;
     };
-  }, [
-    open,
-    selectedPhoto?.url,
-    selectedPhoto?.index,
-    selectedPhoto?.total,
-    urls,
-    parentDrivenNav,
-  ]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sessionKey encodes open/urls/index
+  }, [sessionKey]);
 
   const handleClose = () => {
     if (pswpRef.current) {
-      closingFromPsRef.current = true;
       try {
         pswpRef.current.close();
       } catch {
@@ -247,7 +273,6 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
   return createPortal(
     <>
       <style>{PSWP_CHROME_CSS}</style>
-      {/* Controls above PhotoSwipe; pointer-events only on buttons so pinch still works */}
       <div
         className="pointer-events-none fixed inset-0 z-[210]"
         style={{ zIndex: 210 }}
