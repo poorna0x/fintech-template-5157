@@ -1,6 +1,9 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import PhotoSwipe, { type PhotoSwipeOptions } from 'photoswipe';
 import 'photoswipe/style.css';
+import { Button } from '@/components/ui/button';
+import { ChevronLeft, ChevronRight, Download, X } from 'lucide-react';
 
 interface PhotoViewerDialogProps {
   open: boolean;
@@ -49,10 +52,22 @@ function loadSlide(src: string, alt: string): Promise<Slide> {
   });
 }
 
+/** Hide PhotoSwipe’s default chrome — we render the previous HRO controls on top. */
+const PSWP_CHROME_CSS = `
+.pswp { --pswp-bg: #000; z-index: 200 !important; }
+.pswp__top-bar,
+.pswp__button--close,
+.pswp__button--zoom,
+.pswp__button--arrow--prev,
+.pswp__button--arrow--next,
+.pswp__counter {
+  display: none !important;
+}
+`;
+
 /**
- * Fullscreen photo viewer powered by PhotoSwipe (pinch / double-tap / pan).
- * Same black lightbox feel — no custom +/- controls.
- * Custom gesture code kept failing in APK WebView + PWA; PhotoSwipe owns touch.
+ * PhotoSwipe for pinch/double-tap zoom (works in APK + PWA).
+ * Previous HRO control layout (close / arrows / counter / download) restored on top.
  */
 const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
   open,
@@ -68,26 +83,39 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
 }) => {
   const pswpRef = useRef<PhotoSwipe | null>(null);
   const closingFromPsRef = useRef(false);
-  // Stable callbacks without re-opening on every parent render
   const onCloseRef = useRef(onClose);
-  const onPreviousRef = useRef(onPrevious);
-  const onNextRef = useRef(onNext);
-  const onDownloadRef = useRef(onDownload);
   onCloseRef.current = onClose;
-  onPreviousRef.current = onPrevious;
-  onNextRef.current = onNext;
-  onDownloadRef.current = onDownload;
+
+  const [pswpReady, setPswpReady] = useState(false);
+  const [slideIndex, setSlideIndex] = useState(0);
+
+  const urls = useMemo(
+    () => resolveUrls(selectedPhoto, selectedBillPhotos, selectedJobPhotos),
+    [selectedPhoto, selectedBillPhotos, selectedJobPhotos],
+  );
+
+  const parentDrivenNav = urls.length === 1 && Boolean(selectedPhoto && selectedPhoto.total > 1);
+  const hasNav = Boolean(
+    selectedPhoto && (selectedPhoto.total > 1 || urls.length > 1),
+  );
+  const displayIndex = parentDrivenNav
+    ? (selectedPhoto?.index ?? 0)
+    : slideIndex;
+  const displayTotal = parentDrivenNav
+    ? (selectedPhoto?.total ?? 1)
+    : Math.max(urls.length, selectedPhoto?.total ?? 1);
+  const currentUrl =
+    (parentDrivenNav ? selectedPhoto?.url : urls[slideIndex]) || selectedPhoto?.url || '';
 
   useEffect(() => {
-    if (!open || !selectedPhoto?.url) return;
+    if (!open || !selectedPhoto?.url) {
+      setPswpReady(false);
+      return;
+    }
 
     let cancelled = false;
-    const urls = resolveUrls(selectedPhoto, selectedBillPhotos, selectedJobPhotos);
     if (urls.length === 0) return;
 
-    // If parent is driving a multi-photo set but only passed one URL, keep index 0
-    // and use custom arrows that call onPrevious/onNext.
-    const parentDrivenNav = urls.length === 1 && selectedPhoto.total > 1;
     const startIndex = parentDrivenNav
       ? 0
       : Math.min(Math.max(selectedPhoto.index, 0), urls.length - 1);
@@ -98,7 +126,6 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
       );
       if (cancelled) return;
 
-      // Tear down any previous instance before opening a new one
       if (pswpRef.current) {
         try {
           pswpRef.current.destroy();
@@ -121,100 +148,45 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
         maxZoomLevel: 4,
         initialZoomLevel: 'fit',
         padding: { top: 0, bottom: 0, left: 0, right: 0 },
-        // No +/- zoom control — pinch / double-tap only (user request)
+        // All default chrome off — React overlay matches previous layout
         zoom: false,
-        // Hide PS arrows when parent drives navigation with a single-slide source
-        arrowPrev: !parentDrivenNav && urls.length > 1,
-        arrowNext: !parentDrivenNav && urls.length > 1,
-        counter: urls.length > 1 || parentDrivenNav,
+        close: false,
+        arrowPrev: false,
+        arrowNext: false,
+        counter: false,
       };
 
       const pswp = new PhotoSwipe(options);
       pswpRef.current = pswp;
 
-      pswp.on('uiRegister', () => {
-        if (showDownload) {
-          pswp.ui?.registerElement({
-            name: 'hroDownload',
-            order: 9,
-            isButton: true,
-            tagName: 'button',
-            title: 'Download',
-            html: {
-              isCustomSVG: true,
-              inner:
-                '<path d="M20.5 14.3v4.2a1 1 0 0 1-1 1h-15a1 1 0 0 1-1-1v-4.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M12 3.5v11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="m7.5 10.5 4.5 4.5 4.5-4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
-              outlineID: 'pswp-hro-download',
-            },
-            onClick: () => {
-              const slide = pswp.currSlide;
-              const src = slide?.data?.src;
-              if (typeof src === 'string') {
-                onDownloadRef.current(src, pswp.currIndex);
-              }
-            },
-          });
-        }
-
-        if (parentDrivenNav) {
-          pswp.ui?.registerElement({
-            name: 'hroPrev',
-            className: 'pswp__button--arrow--prev',
-            order: 10,
-            isButton: true,
-            appendTo: 'root',
-            html: {
-              isCustomSVG: true,
-              inner: '<path d="M20 5.5 9 12l11 6.5" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>',
-              outlineID: 'pswp-hro-prev',
-            },
-            onClick: () => onPreviousRef.current(),
-          });
-          pswp.ui?.registerElement({
-            name: 'hroNext',
-            className: 'pswp__button--arrow--next',
-            order: 11,
-            isButton: true,
-            appendTo: 'root',
-            html: {
-              isCustomSVG: true,
-              inner: '<path d="M4 5.5 15 12 4 18.5" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>',
-              outlineID: 'pswp-hro-next',
-            },
-            onClick: () => onNextRef.current(),
-          });
-        }
+      pswp.on('change', () => {
+        setSlideIndex(pswp.currIndex);
       });
 
       pswp.on('close', () => {
         closingFromPsRef.current = true;
+        setPswpReady(false);
         onCloseRef.current();
       });
 
       pswp.on('destroy', () => {
         if (pswpRef.current === pswp) pswpRef.current = null;
+        setPswpReady(false);
       });
 
       pswp.init();
-
-      // Parent-driven counter: "3 / 10"
-      if (parentDrivenNav && pswp.counterElement) {
-        pswp.counterElement.textContent = `${selectedPhoto.index + 1} / ${selectedPhoto.total}`;
-      }
+      setSlideIndex(pswp.currIndex);
+      setPswpReady(true);
     };
 
     void openViewer();
 
     return () => {
       cancelled = true;
+      setPswpReady(false);
       if (pswpRef.current) {
         try {
-          // If parent closed us, destroy without re-entering onClose
-          if (!closingFromPsRef.current) {
-            pswpRef.current.destroy();
-          } else {
-            pswpRef.current.destroy();
-          }
+          pswpRef.current.destroy();
         } catch {
           /* ignore */
         }
@@ -222,19 +194,147 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
       }
       closingFromPsRef.current = false;
     };
-    // Re-open when the active photo URL changes (parent-driven prev/next)
   }, [
     open,
     selectedPhoto?.url,
     selectedPhoto?.index,
     selectedPhoto?.total,
-    selectedBillPhotos,
-    selectedJobPhotos,
-    showDownload,
+    urls,
+    parentDrivenNav,
   ]);
 
-  // PhotoSwipe renders its own portal/DOM — nothing for React to paint.
-  return null;
+  const handleClose = () => {
+    if (pswpRef.current) {
+      closingFromPsRef.current = true;
+      try {
+        pswpRef.current.close();
+      } catch {
+        onClose();
+      }
+      return;
+    }
+    onClose();
+  };
+
+  const handlePrevious = () => {
+    if (parentDrivenNav) {
+      onPrevious();
+      return;
+    }
+    const pswp = pswpRef.current;
+    if (pswp && urls.length > 1) {
+      pswp.prev();
+      return;
+    }
+    onPrevious();
+  };
+
+  const handleNext = () => {
+    if (parentDrivenNav) {
+      onNext();
+      return;
+    }
+    const pswp = pswpRef.current;
+    if (pswp && urls.length > 1) {
+      pswp.next();
+      return;
+    }
+    onNext();
+  };
+
+  if (!open || typeof document === 'undefined') return null;
+
+  return createPortal(
+    <>
+      <style>{PSWP_CHROME_CSS}</style>
+      {/* Controls above PhotoSwipe; pointer-events only on buttons so pinch still works */}
+      <div
+        className="pointer-events-none fixed inset-0 z-[210]"
+        style={{ zIndex: 210 }}
+        aria-hidden={!pswpReady}
+      >
+        <button
+          type="button"
+          aria-label="Close"
+          className="pointer-events-auto absolute right-3 top-[max(0.75rem,env(safe-area-inset-top))] flex h-11 w-11 items-center justify-center rounded-full bg-black/70 text-white active:bg-black/90"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            handleClose();
+          }}
+        >
+          <X className="h-5 w-5" />
+        </button>
+
+        {hasNav && selectedPhoto && (
+          <div className="pointer-events-none absolute left-3 top-[max(0.75rem,env(safe-area-inset-top))] rounded-full bg-black/50 px-3 py-1 text-sm text-white">
+            {displayIndex + 1} / {displayTotal}
+          </div>
+        )}
+
+        {hasNav && (
+          <button
+            type="button"
+            aria-label="Previous photo"
+            className="pointer-events-auto absolute left-3 top-1/2 z-[70] flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-black/70 text-white active:bg-black/90"
+            style={{ left: 12 }}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handlePrevious();
+            }}
+          >
+            <ChevronLeft className="h-7 w-7" strokeWidth={2.5} />
+          </button>
+        )}
+
+        {hasNav && (
+          <button
+            type="button"
+            aria-label="Next photo"
+            className="pointer-events-auto absolute top-1/2 z-[70] flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-black/70 text-white active:bg-black/90"
+            style={{ right: 12 }}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handleNext();
+            }}
+          >
+            <ChevronRight className="h-7 w-7" strokeWidth={2.5} />
+          </button>
+        )}
+
+        {selectedPhoto && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-20 flex justify-center text-xs text-white/70 sm:hidden">
+            Pinch or double-tap to zoom
+          </div>
+        )}
+
+        {showDownload && selectedPhoto && currentUrl && (
+          <div
+            className="pointer-events-none absolute inset-x-0 flex justify-center"
+            style={{ bottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+          >
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onDownload(currentUrl, displayIndex);
+              }}
+              className="pointer-events-auto bg-card/90 text-black hover:bg-card"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Download
+            </Button>
+          </div>
+        )}
+      </div>
+    </>,
+    document.body,
+  );
 };
 
 export default PhotoViewerDialog;
