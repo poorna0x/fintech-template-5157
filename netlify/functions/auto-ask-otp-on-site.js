@@ -1,7 +1,7 @@
 // Auto Ask OTP using a SERVER-side on-site clock (survives phone lock / WebView kill).
 //
 // Body: { jobId, near?: boolean }
-//  - near:true  → first time: set jobs.otp_onsite_detected_at = now (arm dwell; currently 3 min)
+//  - near:true  → first time: set jobs.otp_onsite_detected_at = now (arm dwell; 7 min)
 //  - any call   → if onsite + dwell elapsed + OTP still missing → Ask OTP once
 //
 // Auth: technician JWT assigned to the job.
@@ -18,8 +18,7 @@ const { checkRateLimit } = require('./rate-limiter');
 const { getMessaging, sendToTechnicianDevices } = require('./fcm-helper');
 
 const ACTIVE_STATUSES = new Set(['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS']);
-/** Temporary test dwell — was 5 minutes / 1 minute. */
-const DWELL_MS = 3 * 60 * 1000;
+const DWELL_MS = 7 * 60 * 1000;
 
 function jsonResponse(statusCode, corsHeaders, body) {
   return {

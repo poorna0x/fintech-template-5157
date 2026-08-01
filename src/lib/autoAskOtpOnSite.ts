@@ -1,5 +1,5 @@
 /**
- * On-site OTP ask — SERVER owns the dwell clock (3 minutes after GPS near).
+ * On-site OTP ask — SERVER owns the dwell clock (7 minutes after GPS near).
  *
  * Phone:
  *  1) GPS near customer → POST near:true (arms otp_onsite_detected_at)
