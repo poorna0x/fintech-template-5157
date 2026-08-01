@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import React, { useEffect, useId, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight, Download, X } from 'lucide-react';
 import { ZoomableImage } from '@/components/ZoomableImage';
@@ -19,34 +19,16 @@ interface PhotoViewerDialogProps {
   showDownload?: boolean;
 }
 
-/** Kill Radix/Tailwind translate centering — required for iOS Safari. */
-const FULLSCREEN_STYLE: React.CSSProperties = {
-  position: 'fixed',
-  inset: 0,
-  left: 0,
-  top: 0,
-  right: 0,
-  bottom: 0,
-  width: '100%',
-  maxWidth: '100%',
-  height: '100dvh',
-  maxHeight: '100dvh',
-  margin: 0,
-  transform: 'none',
-  borderRadius: 0,
-};
-
 const ctrlBtn =
   'flex h-11 w-11 items-center justify-center rounded-full bg-black/70 text-white active:bg-black/90';
 
 /**
- * Full-viewport photo viewer.
- * Controls are individual absolute buttons (no full-screen overlay) so Android
- * WebView pinch/double-tap reaches the image.
+ * Fullscreen photo viewer via document.body portal — not Radix Dialog.
+ * Nested gallery dialogs no longer steal pinch on Capacitor Android WebView.
  */
 const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
   open,
-  onOpenChange,
+  onOpenChange: _onOpenChange,
   selectedPhoto,
   selectedBillPhotos: _selectedBillPhotos,
   selectedJobPhotos: _selectedJobPhotos,
@@ -57,163 +39,184 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
   showDownload = true,
 }) => {
   const [loadError, setLoadError] = useState(false);
+  const titleId = useId();
   const hasNav = Boolean(selectedPhoto && selectedPhoto.total > 1);
 
   useEffect(() => {
-    if (open && selectedPhoto?.url) {
-      setLoadError(false);
-    }
+    if (open && selectedPhoto?.url) setLoadError(false);
   }, [open, selectedPhoto?.url]);
 
-  const handleClose = (nextOpen: boolean) => {
-    if (!nextOpen) {
-      onClose();
-    }
-  };
+  useEffect(() => {
+    if (!open) return;
 
-  return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent
-        hideCloseButton
-        overlayClassName="z-[100]"
-        style={FULLSCREEN_STYLE}
-        className={cn(
-          'fixed inset-0 z-[100] flex !h-[100dvh] !max-h-[100dvh] !w-full !max-w-none',
-          '!left-0 !top-0 !translate-x-0 !translate-y-0 gap-0 rounded-none border-none bg-black p-0 shadow-none',
-          '!animate-none data-[state=open]:!animate-none data-[state=closed]:!animate-none',
-          'data-[state=open]:!zoom-in-100 data-[state=closed]:!zoom-out-100',
-          'data-[state=open]:!slide-in-from-left-0 data-[state=open]:!slide-in-from-top-0',
-          'data-[state=closed]:!slide-out-to-left-0 data-[state=closed]:!slide-out-to-top-0',
-        )}
-        onInteractOutside={(e) => e.preventDefault()}
-        onEscapeKeyDown={(e) => {
-          e.preventDefault();
-          onClose();
-        }}
-      >
-        <DialogHeader className="sr-only">
-          <DialogTitle>Photo Viewer</DialogTitle>
-          <DialogDescription>Full-screen photo viewer</DialogDescription>
-        </DialogHeader>
+    // Override Radix parent-dialog body lock (pointer-events:none) so our
+    // portal can receive pinch on Android WebView.
+    const prevOverflow = document.body.style.overflow;
+    const prevTouchAction = document.body.style.touchAction;
+    const prevPointerEvents = document.body.style.pointerEvents;
+    document.body.style.overflow = 'hidden';
+    document.body.style.touchAction = 'none';
+    document.body.style.pointerEvents = 'auto';
 
-        <div
-          className="relative h-full w-full min-h-0 min-w-0 overflow-hidden"
-          // Stop nested gallery/report dialogs (admin + technician) from stealing pinch.
-          onTouchStart={(e) => e.stopPropagation()}
-          onTouchMove={(e) => e.stopPropagation()}
-          onTouchEnd={(e) => e.stopPropagation()}
-          onPointerDown={(e) => e.stopPropagation()}
-        >
-          <div className="absolute inset-0 z-0 overflow-hidden">
-            {selectedPhoto && !loadError && (
-              <ZoomableImage
-                key={selectedPhoto.url}
-                src={selectedPhoto.url}
-                alt={`Photo ${selectedPhoto.index + 1}`}
-                className="max-h-[100dvh] max-w-[100vw] select-none object-contain"
-                onError={() => setLoadError(true)}
-              />
-            )}
-            {selectedPhoto && loadError && (
-              <div className="flex h-full w-full items-center justify-center px-6 text-center text-white">
-                <div className="max-w-lg">
-                  <p className="mb-2 text-lg font-medium">Could not load this image</p>
-                  <p className="break-all text-sm text-white/80">{selectedPhoto.url}</p>
-                </div>
-              </div>
-            )}
-          </div>
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      } else if (e.key === 'ArrowLeft' && hasNav) {
+        e.preventDefault();
+        onPrevious();
+      } else if (e.key === 'ArrowRight' && hasNav) {
+        e.preventDefault();
+        onNext();
+      }
+    };
+    window.addEventListener('keydown', onKey);
 
-          <button
-            type="button"
-            aria-label="Close"
-            className={cn(ctrlBtn, 'absolute right-3 z-[70]')}
-            style={{ top: 'max(0.75rem, env(safe-area-inset-top))' }}
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onClose();
-            }}
-          >
-            <X className="h-5 w-5" />
-          </button>
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.body.style.touchAction = prevTouchAction;
+      document.body.style.pointerEvents = prevPointerEvents;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [open, hasNav, onClose, onPrevious, onNext]);
 
-          {hasNav && selectedPhoto && (
-            <div
-              className="pointer-events-none absolute left-3 z-[70] rounded-full bg-black/50 px-3 py-1 text-sm text-white"
-              style={{ top: 'max(0.75rem, env(safe-area-inset-top))' }}
-            >
-              {selectedPhoto.index + 1} / {selectedPhoto.total}
-            </div>
-          )}
+  if (!open || typeof document === 'undefined') return null;
 
-          {hasNav && (
-            <button
-              type="button"
-              aria-label="Previous photo"
-              className={cn(ctrlBtn, 'absolute left-3 top-1/2 z-[70] h-12 w-12 -translate-y-1/2')}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onPrevious();
-              }}
-            >
-              <ChevronLeft className="h-7 w-7" strokeWidth={2.5} />
-            </button>
-          )}
+  return createPortal(
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      className="fixed inset-0 flex bg-black"
+      style={{
+        zIndex: 2147483000,
+        pointerEvents: 'auto',
+        width: '100%',
+        height: '100dvh',
+        maxHeight: '100dvh',
+        touchAction: 'none',
+        overscrollBehavior: 'none',
+      }}
+    >
+      <h2 id={titleId} className="sr-only">
+        Photo Viewer
+      </h2>
 
-          {hasNav && (
-            <button
-              type="button"
-              aria-label="Next photo"
-              className={cn(ctrlBtn, 'absolute right-3 top-1/2 z-[70] h-12 w-12 -translate-y-1/2')}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onNext();
-              }}
-            >
-              <ChevronRight className="h-7 w-7" strokeWidth={2.5} />
-            </button>
-          )}
-
+      <div className="relative h-full w-full min-h-0 min-w-0 overflow-hidden">
+        <div className="absolute inset-0 z-0 overflow-hidden">
           {selectedPhoto && !loadError && (
-            <div
-              className="pointer-events-none absolute inset-x-0 z-[60] flex justify-center text-xs text-white/70 sm:hidden"
-              style={{
-                bottom: showDownload
-                  ? 'max(4.25rem, calc(env(safe-area-inset-bottom) + 3.25rem))'
-                  : 'max(1.25rem, env(safe-area-inset-bottom))',
-              }}
-            >
-              Pinch or double-tap to zoom
+            <ZoomableImage
+              key={selectedPhoto.url}
+              src={selectedPhoto.url}
+              alt={`Photo ${selectedPhoto.index + 1}`}
+              onError={() => setLoadError(true)}
+            />
+          )}
+          {selectedPhoto && loadError && (
+            <div className="flex h-full w-full items-center justify-center px-6 text-center text-white">
+              <div className="max-w-lg">
+                <p className="mb-2 text-lg font-medium">Could not load this image</p>
+                <p className="break-all text-sm text-white/80">{selectedPhoto.url}</p>
+              </div>
             </div>
           )}
-
-          {showDownload && selectedPhoto && (
-            <div
-              className="absolute inset-x-0 z-[70] flex justify-center"
-              style={{ bottom: 'max(1rem, env(safe-area-inset-bottom))' }}
-            >
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  onDownload(selectedPhoto.url, selectedPhoto.index);
-                }}
-                className="bg-card/90 text-black hover:bg-card"
-              >
-                <Download className="mr-2 h-4 w-4" />
-                Download
-              </Button>
+          {!selectedPhoto && (
+            <div className="flex h-full w-full items-center justify-center text-white/70">
+              No photo selected
             </div>
           )}
         </div>
-      </DialogContent>
-    </Dialog>
+
+        <button
+          type="button"
+          aria-label="Close"
+          className={cn(ctrlBtn, 'absolute right-3 z-[2]')}
+          style={{ top: 'max(0.75rem, env(safe-area-inset-top))' }}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onClose();
+          }}
+        >
+          <X className="h-5 w-5" />
+        </button>
+
+        {hasNav && selectedPhoto && (
+          <div
+            className="pointer-events-none absolute left-3 z-[2] rounded-full bg-black/50 px-3 py-1 text-sm text-white"
+            style={{ top: 'max(0.75rem, env(safe-area-inset-top))' }}
+          >
+            {selectedPhoto.index + 1} / {selectedPhoto.total}
+          </div>
+        )}
+
+        {hasNav && (
+          <button
+            type="button"
+            aria-label="Previous photo"
+            className={cn(ctrlBtn, 'absolute left-3 top-1/2 z-[2] h-12 w-12 -translate-y-1/2')}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onPrevious();
+            }}
+          >
+            <ChevronLeft className="h-7 w-7" strokeWidth={2.5} />
+          </button>
+        )}
+
+        {hasNav && (
+          <button
+            type="button"
+            aria-label="Next photo"
+            className={cn(ctrlBtn, 'absolute right-3 top-1/2 z-[2] h-12 w-12 -translate-y-1/2')}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onNext();
+            }}
+          >
+            <ChevronRight className="h-7 w-7" strokeWidth={2.5} />
+          </button>
+        )}
+
+        {selectedPhoto && !loadError && (
+          <div
+            className="pointer-events-none absolute inset-x-0 z-[1] flex justify-center text-xs text-white/70 sm:hidden"
+            style={{
+              bottom: showDownload
+                ? 'max(4.25rem, calc(env(safe-area-inset-bottom) + 3.25rem))'
+                : 'max(1.25rem, env(safe-area-inset-bottom))',
+            }}
+          >
+            Pinch or double-tap to zoom
+          </div>
+        )}
+
+        {showDownload && selectedPhoto && (
+          <div
+            className="absolute inset-x-0 z-[2] flex justify-center"
+            style={{ bottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+          >
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onDownload(selectedPhoto.url, selectedPhoto.index);
+              }}
+              className="bg-card/90 text-black hover:bg-card"
+            >
+              <Download className="mr-2 h-4 w-4" />
+              Download
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body,
   );
 };
 
