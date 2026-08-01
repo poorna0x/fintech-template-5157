@@ -26,6 +26,7 @@ import { mergeEditableCustomer } from '@/lib/document-drafts';
 import { billToPreviewHtml, runAfterDialogClose } from '@/lib/document-preview-utils';
 import DocumentPreviewDialog from '@/components/document/DocumentPreviewDialog';
 import DocumentEmailSendDialog from '@/components/document/DocumentEmailSendDialog';
+import DocumentPaymentStatusCard from '@/components/document/DocumentPaymentStatusCard';
 import DocumentTermsEditor from '@/components/document/DocumentTermsEditor';
 import RichTextEditor from '@/components/letterhead/RichTextEditor';
 import { joinNotesHtml, sanitizeHTML, stripHtmlToText } from '@/lib/sanitize';
@@ -38,6 +39,18 @@ import {
   serializeTermItems,
   type ServiceDocumentTermItem,
 } from '@/lib/service-document-terms';
+import {
+  type DocumentPaymentStatus,
+  documentPaymentSummaryClass,
+  documentPaymentSummaryLabel,
+  isDocumentPaymentStatus,
+  resolveDocumentPayment,
+  validatePartialPaymentAmount,
+} from '@/lib/document-payment';
+import {
+  type EditableNumber,
+  num,
+} from '@/lib/editable-number-input';
 
 interface BillGeneratorProps {
   customer?: Customer;
@@ -105,6 +118,8 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
   );
   const termsForPdf = useMemo(() => formatServiceDocumentTermsForPdf(termItems), [termItems]);
   const [serviceCharge, setServiceCharge] = useState(0);
+  const [paymentStatus, setPaymentStatus] = useState<DocumentPaymentStatus>('PAID');
+  const [amountReceived, setAmountReceived] = useState<EditableNumber>(0);
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [hideGstInHeader, setHideGstInHeader] = useState(false);
   const [brandPickerOpen, setBrandPickerOpen] = useState(false);
@@ -155,6 +170,20 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
   // Calculate totals
   const subtotal = items.reduce((sum, item) => sum + item.total, 0);
   const totalAmount = subtotal + serviceCharge;
+
+  useEffect(() => {
+    if (paymentStatus === 'PAID') {
+      setAmountReceived(totalAmount);
+    } else if (paymentStatus === 'PENDING') {
+      setAmountReceived(0);
+    }
+  }, [paymentStatus, totalAmount]);
+
+  const resolvedPayment = resolveDocumentPayment({
+    paymentStatus,
+    totalAmount,
+    amountPaid: num(amountReceived),
+  });
 
   // Generate bill number only when empty (preserve restored drafts / manual entry)
   useEffect(() => {
@@ -241,6 +270,16 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
       return null;
     }
 
+    const partialError = validatePartialPaymentAmount(
+      paymentStatus,
+      resolvedPayment.paid,
+      totalAmount
+    );
+    if (partialError) {
+      toast.error(partialError);
+      return null;
+    }
+
     const brandCompany = getCompanyInfoForBrand(brand);
     setCompany(brandCompany);
 
@@ -265,7 +304,8 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
       totalTax: 0,
       serviceCharge,
       totalAmount,
-      paymentStatus: 'PENDING',
+      paymentStatus: resolvedPayment.status,
+      amountPaid: resolvedPayment.paid,
       paymentMethod: 'CASH',
       notes: joinNotesHtml(notes),
       notesHeading,
@@ -346,6 +386,8 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
     termItems: serializeTermItems(termItems),
     terms: termsForPdf,
     serviceCharge,
+    paymentStatus,
+    amountReceived: num(amountReceived),
     hideGstInHeader,
     editableCustomer,
   });
@@ -361,6 +403,8 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
     if (typeof snap.showValidityNote === 'boolean') setShowValidityNote(snap.showValidityNote);
     setTermItems(coerceTermItemsFromSnapshot(snap));
     if (typeof snap.serviceCharge === 'number') setServiceCharge(snap.serviceCharge);
+    if (isDocumentPaymentStatus(snap.paymentStatus)) setPaymentStatus(snap.paymentStatus);
+    if (typeof snap.amountReceived === 'number') setAmountReceived(snap.amountReceived);
     if (typeof snap.hideGstInHeader === 'boolean') setHideGstInHeader(snap.hideGstInHeader);
     if (snap.editableCustomer && typeof snap.editableCustomer === 'object')
       setEditableCustomer((prev) => mergeEditableCustomer(prev, snap.editableCustomer));
@@ -716,6 +760,16 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
         </CardContent>
       </Card>
 
+      <DocumentPaymentStatusCard
+        title="Payment on bill"
+        description="Printed on the bill PDF with a payment acknowledgement (paid, partial, or pending)."
+        paymentStatus={paymentStatus}
+        onPaymentStatusChange={setPaymentStatus}
+        amountReceived={amountReceived}
+        onAmountReceivedChange={setAmountReceived}
+        totalAmount={totalAmount}
+      />
+
       {/* Bill Summary */}
       <Card>
         <CardHeader>
@@ -736,6 +790,12 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
             <div className="flex justify-between text-xl font-bold border-t pt-4">
               <span>Total Amount:</span>
               <span>₹{totalAmount.toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between text-sm sm:text-base pt-1">
+              <span>Payment:</span>
+              <span className={documentPaymentSummaryClass(resolvedPayment.status)}>
+                {documentPaymentSummaryLabel(resolvedPayment)}
+              </span>
             </div>
           </div>
         </CardContent>

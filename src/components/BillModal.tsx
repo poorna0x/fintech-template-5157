@@ -30,13 +30,15 @@ export default function BillModal({ isOpen, onClose, customer }: BillModalProps)
       totalTax: bill.totalTax,
       serviceCharge: bill.serviceCharge || 0,
       totalAmount: bill.totalAmount,
-      paymentStatus: bill.paymentStatus,
-      paymentMethod: bill.paymentMethod,
-      notes: bill.notes,
-      terms: bill.terms,
-      hideGstInHeader: (bill as any).hideGstInHeader || false,
-      documentBrand: (bill as any).documentBrand,
-    };
+    paymentStatus: bill.paymentStatus,
+    paymentMethod: bill.paymentMethod,
+    notes: bill.notes,
+    notesHeading: (bill as { notesHeading?: string }).notesHeading,
+    terms: bill.terms,
+    hideGstInHeader: (bill as any).hideGstInHeader || false,
+    documentBrand: (bill as any).documentBrand,
+    amountPaid: bill.amountPaid,
+  };
 
     try {
       generateBillPDF(pdfData, action);

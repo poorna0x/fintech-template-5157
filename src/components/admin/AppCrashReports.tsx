@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Bug, RefreshCw, Trash2, ChevronDown, ChevronUp, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -22,6 +22,7 @@ import {
   loadAppCrashReports,
   loadCrashStack,
   readCrashCache,
+  readCrashCacheMeta,
   shortExceptionName,
   writeCrashCache,
 } from '@/lib/appCrashReports';
@@ -156,26 +157,33 @@ function CrashCard({
   );
 }
 
-/** Settings section — crashes the Android apps uploaded after they died. */
+function formatCachedAt(at: number | null): string | null {
+  if (!at) return null;
+  try {
+    return new Date(at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+  } catch {
+    return null;
+  }
+}
+
+/** Settings section — load on demand (Refresh) to avoid egress every Settings open. */
 export function AppCrashReports() {
+  const cachedMeta = readCrashCacheMeta();
   const [crashes, setCrashes] = useState<AppCrashRow[]>(() => readCrashCache() ?? []);
+  const [cachedAt, setCachedAt] = useState<number | null>(() => cachedMeta?.at ?? null);
   const [loading, setLoading] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(() => cachedMeta != null || (readCrashCache()?.length ?? 0) > 0);
   const [confirmClear, setConfirmClear] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<AppCrashRow | null>(null);
 
-  const refresh = useCallback(async (opts?: { force?: boolean }) => {
-    if (!opts?.force) {
-      const cached = readCrashCache();
-      if (cached) {
-        setCrashes(cached);
-        return;
-      }
-    }
+  const refresh = useCallback(async () => {
     setLoading(true);
     try {
       const rows = await loadAppCrashReports();
       setCrashes(rows);
       writeCrashCache(rows);
+      setCachedAt(Date.now());
+      setHasLoaded(true);
     } catch (err) {
       console.error('[app-crashes] load failed', err);
       toast.error('Could not load app health reports. Run scripts/add-app-crash-reports.sql in Supabase if this is new.');
@@ -183,10 +191,6 @@ export function AppCrashReports() {
       setLoading(false);
     }
   }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
 
   const removeOne = async (id: string) => {
     try {
@@ -207,12 +211,14 @@ export function AppCrashReports() {
 
   const crashCount = crashes.filter((c) => c.kind === 'crash').length;
   const warningCount = crashes.length - crashCount;
+  const cachedLabel = formatCachedAt(cachedAt);
 
   const clearAll = async () => {
     try {
       await deleteAppCrashReports(crashes.map((c) => c.id));
       setCrashes([]);
       writeCrashCache([]);
+      setCachedAt(Date.now());
       toast.success('Reports cleared');
     } catch (err) {
       console.error('[app-crashes] clear failed', err);
@@ -231,20 +237,29 @@ export function AppCrashReports() {
               <CardTitle className="flex flex-wrap items-center gap-2 text-base">
                 <Bug className="w-4 h-4 shrink-0" />
                 App health
-                {crashCount > 0 ? (
+                {hasLoaded && crashCount > 0 ? (
                   <Badge variant="outline" className="text-[10px] text-red-700 border-red-300 px-1.5 py-0">
                     {crashCount} crash{crashCount === 1 ? '' : 'es'}
                   </Badge>
                 ) : null}
-                {warningCount > 0 ? (
+                {hasLoaded && warningCount > 0 ? (
                   <Badge variant="outline" className="text-[10px] text-amber-800 border-amber-300 px-1.5 py-0">
                     {warningCount} warning{warningCount === 1 ? '' : 's'}
                   </Badge>
                 ) : null}
               </CardTitle>
+              {cachedLabel ? (
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Last loaded {cachedLabel} — tap Refresh for latest
+                </p>
+              ) : (
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Not loaded yet — tap Refresh when you want to check
+                </p>
+              )}
             </div>
             <div className="flex gap-1.5 shrink-0">
-              {crashes.length > 0 ? (
+              {hasLoaded && crashes.length > 0 ? (
                 <Button type="button" variant="outline" size="sm" className="h-8" onClick={() => setConfirmClear(true)}>
                   <Trash2 className="w-3.5 h-3.5 sm:mr-1.5" />
                   <span className="hidden sm:inline">Clear</span>
@@ -255,7 +270,7 @@ export function AppCrashReports() {
                 variant="outline"
                 size="sm"
                 className="h-8"
-                onClick={() => void refresh({ force: true })}
+                onClick={() => void refresh()}
                 disabled={loading}
               >
                 <RefreshCw className={`w-3.5 h-3.5 sm:mr-1.5 ${loading ? 'animate-spin' : ''}`} />
@@ -267,6 +282,10 @@ export function AppCrashReports() {
         <CardContent className="p-4 pt-2 sm:p-5 sm:pt-2 space-y-2">
           {loading && crashes.length === 0 ? (
             <div className="text-center py-3 text-muted-foreground text-xs">Loading…</div>
+          ) : !hasLoaded ? (
+            <div className="text-center py-3 text-muted-foreground text-xs">
+              Tap Refresh to load crash and warning reports.
+            </div>
           ) : crashes.length === 0 ? (
             <div className="text-center py-3 text-muted-foreground text-xs">
               Nothing reported — phones healthy.

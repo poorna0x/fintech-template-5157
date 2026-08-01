@@ -31,6 +31,7 @@ export default function TaxInvoiceModal({ isOpen, onClose, customer }: TaxInvoic
       totalAmount: bill.totalAmount,
       paymentStatus: bill.paymentStatus,
       paymentMethod: bill.paymentMethod,
+      amountPaid: bill.amountPaid,
       notes: bill.notes,
       terms: bill.terms,
       gstData: (bill as any).gstData || {},

@@ -23,14 +23,35 @@ export interface AppCrashRow {
 const LIST_COLUMNS =
   'id,app,kind,technician_id,device_token_suffix,device_model,app_version,android_version,exception,message,occurrences,first_seen_at,last_seen_at';
 
-const CACHE_KEY = 'hro_app_crashes_cache_v1';
+const CACHE_KEY = 'hro_app_crashes_cache_v2';
+
+type CrashCachePayload = { at: number; rows: AppCrashRow[] };
 
 export function readCrashCache(): AppCrashRow[] | null {
   try {
-    const raw = sessionStorage.getItem(CACHE_KEY);
+    const raw = localStorage.getItem(CACHE_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as AppCrashRow[];
+    const parsed = JSON.parse(raw) as CrashCachePayload | AppCrashRow[];
+    // v2 shape
+    if (parsed && typeof parsed === 'object' && Array.isArray((parsed as CrashCachePayload).rows)) {
+      return (parsed as CrashCachePayload).rows;
+    }
+    // legacy session array
     return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export function readCrashCacheMeta(): { at: number; rows: AppCrashRow[] } | null {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as CrashCachePayload;
+    if (parsed && typeof parsed === 'object' && Array.isArray(parsed.rows) && typeof parsed.at === 'number') {
+      return parsed;
+    }
+    return null;
   } catch {
     return null;
   }
@@ -38,7 +59,8 @@ export function readCrashCache(): AppCrashRow[] | null {
 
 export function writeCrashCache(rows: AppCrashRow[]): void {
   try {
-    sessionStorage.setItem(CACHE_KEY, JSON.stringify(rows));
+    const payload: CrashCachePayload = { at: Date.now(), rows };
+    localStorage.setItem(CACHE_KEY, JSON.stringify(payload));
   } catch {
     /* ignore quota errors */
   }

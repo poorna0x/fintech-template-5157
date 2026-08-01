@@ -13,6 +13,11 @@ import {
 import type { DocumentSealVariant } from './service-brands';
 import { downloadDocumentPdf } from './server-pdf-download';
 import { getDocumentPdfPrintFrameCss } from './document-pdf-print-frame';
+import {
+  buildBillPaymentNoticeHtml,
+  buildBillPaymentSummaryRowsHtml,
+  documentPaymentNoticeCss,
+} from './document-payment';
 
 export interface PDFBillData {
   billNumber: string;
@@ -52,6 +57,8 @@ export interface PDFBillData {
   totalAmount: number;
   paymentStatus: string;
   paymentMethod?: string;
+  /** Amount received toward total (PARTIAL / paid record on PDF). */
+  amountPaid?: number;
   notes?: string;
   notesHeading?: string;
   terms?: string;
@@ -821,7 +828,18 @@ function createBillContent(data: PDFBillData): string {
           <span>Total Amount:</span>
           <span>₹${data.totalAmount.toLocaleString()}</span>
         </div>
+        ${buildBillPaymentSummaryRowsHtml({
+          paymentStatus: data.paymentStatus,
+          totalAmount: data.totalAmount,
+          amountPaid: data.amountPaid,
+        })}
       </div>
+
+      ${buildBillPaymentNoticeHtml({
+        paymentStatus: data.paymentStatus,
+        totalAmount: data.totalAmount,
+        amountPaid: data.amountPaid,
+      })}
       
       <!-- Notes and Terms -->
       ${data.notes || data.terms ? `
@@ -1144,6 +1162,7 @@ function getBillDocumentStyles(): string {
               padding-top: 20px !important;
             }
           }
+      ${documentPaymentNoticeCss()}
   `;
 }
 

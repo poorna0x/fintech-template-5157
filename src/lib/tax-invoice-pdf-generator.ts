@@ -6,6 +6,11 @@ import { sanitizeForTemplate, sanitizeNotesHtml } from './sanitize';
 import { resolveBrandSealSrc, resolveDocumentBrandFromData } from './service-brands';
 import { downloadDocumentPdf } from './server-pdf-download';
 import { getDocumentPdfPrintFrameCss } from './document-pdf-print-frame';
+import {
+  buildInvoicePaymentNoticeHtml,
+  buildInvoicePaymentSummaryRowsHtml,
+  documentPaymentNoticeCss,
+} from './document-payment';
 
 function resolveTaxInvoiceSealSrc(data: PDFTaxInvoiceData): string {
   const brand = resolveDocumentBrandFromData({
@@ -100,6 +105,8 @@ export interface PDFTaxInvoiceData {
   totalAmount: number;
   paymentStatus: string;
   paymentMethod?: string;
+  /** Amount received toward invoice value (PARTIAL / paid record on PDF). */
+  amountPaid?: number;
   notes?: string;
   notesHeading?: string;
   terms?: string;
@@ -121,6 +128,9 @@ export interface PDFTaxInvoiceData {
     invoiceType?: 'B2B' | 'B2C';
     poNumber?: string;
     paymentDueDate?: string;
+    paymentStatus?: 'PAID' | 'PARTIAL' | 'PENDING';
+    amountPaid?: number;
+    balanceDue?: number;
     deliveryAddress?: {
       street?: string;
       area?: string;
@@ -439,7 +449,7 @@ function createTaxInvoiceContent(data: PDFTaxInvoiceData): string {
             <div><strong>Invoice Date:</strong> ${new Date(data.billDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}</div>
             ${(data as any).invoiceDetails?.poNumber ? `<div><strong>PO Number / Work Order Number:</strong> ${sanitizeForTemplate((data as any).invoiceDetails.poNumber)} ${(data as any).invoiceDetails?.poNumberRequired ? '<span style="color: #dc2626; font-size: 11px;">(Required for Government)</span>' : ''}</div>` : ''}
             ${data.gstData?.placeOfSupply ? `<div><strong>Place of Supply:</strong> ${sanitizeForTemplate(data.gstData.placeOfSupply)} (State Code: ${sanitizeForTemplate(data.gstData.placeOfSupplyCode || '—')})</div>` : ''}
-            ${(data as any).invoiceDetails?.paymentDueDate ? `<div><strong>Payment Due Date:</strong> ${new Date((data as any).invoiceDetails.paymentDueDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}</div>` : ''}
+            ${(data as any).invoiceDetails?.paymentDueDate && data.paymentStatus !== 'PAID' ? `<div><strong>Payment Due Date:</strong> ${new Date((data as any).invoiceDetails.paymentDueDate).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' })}</div>` : ''}
             ${data.gstData?.reverseCharge ? `<div><strong>Reverse Charge:</strong> Yes</div>` : ''}
             ${data.gstData?.eWayBillNo ? `<div><strong>E-Way Bill No:</strong> ${data.gstData.eWayBillNo}</div>` : ''}
             ${data.gstData?.vehicleNo ? `<div><strong>Vehicle No:</strong> ${data.gstData.vehicleNo}</div>` : ''}
@@ -579,11 +589,23 @@ function createTaxInvoiceContent(data: PDFTaxInvoiceData): string {
           <span>Grand Total (Invoice Value):</span>
           <span>₹${data.totalAmount.toLocaleString()}</span>
         </div>
+        ${buildInvoicePaymentSummaryRowsHtml({
+          paymentStatus: data.paymentStatus,
+          totalAmount: data.totalAmount,
+          amountPaid: data.amountPaid,
+        })}
         <div class="summary-row" style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #e5e7eb; font-size: 13px; font-weight: bold;">
           <span>Amount in Words:</span>
           <span style="text-transform: capitalize;">${numberToWords(data.totalAmount)}</span>
         </div>
       </div>
+
+      ${buildInvoicePaymentNoticeHtml({
+        paymentStatus: data.paymentStatus,
+        totalAmount: data.totalAmount,
+        amountPaid: data.amountPaid,
+        paymentDueDate: (data as any).invoiceDetails?.paymentDueDate,
+      })}
       
       <!-- Bank Details (Above Terms & Conditions) -->
       ${data.bankDetails && Object.keys(data.bankDetails).length > 0 ? `
@@ -1056,6 +1078,7 @@ function getTaxInvoiceDocumentStyles(): string {
               padding-top: 20px !important;
             }
           }
+      ${documentPaymentNoticeCss()}
         </style>
   `;
 }
@@ -1497,6 +1520,7 @@ export async function generateCombinedTaxInvoicePDF(
               padding-top: 20px !important;
             }
           }
+        ${documentPaymentNoticeCss()}
         </style>
       </head>
       <body>

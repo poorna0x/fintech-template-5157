@@ -50,6 +50,7 @@ export default function GSTInvoiceEditDialog({
       totalAmount: bill.totalAmount,
       paymentStatus: bill.paymentStatus,
       paymentMethod: bill.paymentMethod,
+      amountPaid: bill.amountPaid,
       notes: bill.notes,
       terms: bill.terms,
       gstData: (bill as any).gstData || {},

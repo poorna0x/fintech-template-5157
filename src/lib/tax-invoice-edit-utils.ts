@@ -87,6 +87,8 @@ export type TaxInvoiceEditSnapshot = {
   showPONumber: boolean;
   poNumberRequired: boolean;
   paymentDueDate: string;
+  paymentStatus?: 'PAID' | 'PARTIAL' | 'PENDING';
+  amountReceived?: number;
   deliveryAddress: {
     street: string;
     area: string;
@@ -205,6 +207,18 @@ export function taxInvoiceToEditSnapshot(invoice: TaxInvoiceRecord): TaxInvoiceE
     showPONumber: Boolean(details.poNumber),
     poNumberRequired: Boolean(details.poNumberRequired),
     paymentDueDate: typeof details.paymentDueDate === 'string' ? details.paymentDueDate : '',
+    paymentStatus:
+      details.paymentStatus === 'PAID' ||
+      details.paymentStatus === 'PARTIAL' ||
+      details.paymentStatus === 'PENDING'
+        ? details.paymentStatus
+        : 'PAID',
+    amountReceived:
+      typeof details.amountPaid === 'number'
+        ? details.amountPaid
+        : typeof details.amountReceived === 'number'
+          ? details.amountReceived
+          : 0,
     deliveryAddress: {
       street: delivery.street || '',
       area: delivery.area || '',
@@ -252,7 +266,18 @@ export function taxInvoiceToPdfData(invoice: TaxInvoiceRecord): PDFTaxInvoiceDat
     totalTax: invoice.total_tax,
     serviceCharge: invoice.service_charge || 0,
     totalAmount: invoice.total_amount,
-    paymentStatus: 'PENDING',
+    paymentStatus:
+      details.paymentStatus === 'PAID' ||
+      details.paymentStatus === 'PARTIAL' ||
+      details.paymentStatus === 'PENDING'
+        ? details.paymentStatus
+        : 'PAID',
+    amountPaid:
+      typeof details.amountPaid === 'number'
+        ? details.amountPaid
+        : typeof details.amountReceived === 'number'
+          ? details.amountReceived
+          : undefined,
     notes: notesText,
     terms: invoice.terms || '',
     gstData: {

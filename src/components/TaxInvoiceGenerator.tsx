@@ -46,6 +46,7 @@ import { mergeEditableCustomer } from '@/lib/document-drafts';
 import { taxInvoiceToPreviewHtml, runAfterDialogClose } from '@/lib/document-preview-utils';
 import DocumentPreviewDialog from '@/components/document/DocumentPreviewDialog';
 import DocumentEmailSendDialog from '@/components/document/DocumentEmailSendDialog';
+import DocumentPaymentStatusCard from '@/components/document/DocumentPaymentStatusCard';
 import DocumentTermsEditor from '@/components/document/DocumentTermsEditor';
 import RichTextEditor from '@/components/letterhead/RichTextEditor';
 import { joinNotesHtml, sanitizeHTML, stripHtmlToText } from '@/lib/sanitize';
@@ -65,6 +66,14 @@ import {
   type DocumentBrand,
 } from '@/lib/service-brands';
 import type { TaxInvoiceEditSnapshot } from '@/lib/tax-invoice-edit-utils';
+import {
+  type DocumentPaymentStatus,
+  documentPaymentSummaryClass,
+  documentPaymentSummaryLabel,
+  isDocumentPaymentStatus,
+  resolveDocumentPayment,
+  validatePartialPaymentAmount,
+} from '@/lib/document-payment';
 
 // Helper function to convert number to words
 function numberToWords(num: number): string {
@@ -332,6 +341,8 @@ export default function TaxInvoiceGenerator({
   const [showPONumber, setShowPONumber] = useState(false);
   const [poNumberRequired, setPONumberRequired] = useState(false); // For government entities
   const [paymentDueDate, setPaymentDueDate] = useState('');
+  const [paymentStatus, setPaymentStatus] = useState<DocumentPaymentStatus>('PAID');
+  const [amountReceived, setAmountReceived] = useState<EditableNumber>(0);
   const [deliveryAddress, setDeliveryAddress] = useState({
     street: '',
     area: '',
@@ -486,6 +497,20 @@ export default function TaxInvoiceGenerator({
   
   const totalAmount = calculatedTotal;
 
+  useEffect(() => {
+    if (paymentStatus === 'PAID') {
+      setAmountReceived(totalAmount);
+    } else if (paymentStatus === 'PENDING') {
+      setAmountReceived(0);
+    }
+  }, [paymentStatus, totalAmount]);
+
+  const resolvedPayment = resolveDocumentPayment({
+    paymentStatus,
+    totalAmount,
+    amountPaid: num(amountReceived),
+  });
+
   // Invoice number generation is now handled by getNextInvoiceNumber() function
 
   const addItem = () => {
@@ -586,6 +611,16 @@ export default function TaxInvoiceGenerator({
     // Validate B2B invoice requires customer GST
     if (invoiceType === 'B2B' && !editableCustomer.gst) {
       toast.error('Customer GSTIN is mandatory for B2B invoices. Please enter customer GST number.');
+      return;
+    }
+
+    const partialError = validatePartialPaymentAmount(
+      paymentStatus,
+      resolvedPayment.paid,
+      totalAmount
+    );
+    if (partialError) {
+      toast.error(partialError);
       return;
     }
 
@@ -690,6 +725,9 @@ export default function TaxInvoiceGenerator({
           poNumber: showPONumber ? poNumber : null,
           poNumberRequired,
           paymentDueDate,
+          paymentStatus: resolvedPayment.status,
+          amountPaid: resolvedPayment.paid,
+          balanceDue: resolvedPayment.balance,
           deliveryAddress: showDeliveryAddress ? deliveryAddress : null,
           totalDiscount,
           companyStateCode,
@@ -791,6 +829,16 @@ export default function TaxInvoiceGenerator({
       return null;
     }
 
+    const partialError = validatePartialPaymentAmount(
+      paymentStatus,
+      resolvedPayment.paid,
+      totalAmount
+    );
+    if (partialError) {
+      toast.error(partialError);
+      return null;
+    }
+
     const bill: Bill = {
       id: Date.now().toString(),
       billNumber,
@@ -812,7 +860,8 @@ export default function TaxInvoiceGenerator({
       totalTax,
       serviceCharge: num(serviceCharge),
       totalAmount,
-      paymentStatus: 'PENDING',
+      paymentStatus: resolvedPayment.status,
+      amountPaid: resolvedPayment.paid,
       paymentMethod: 'CASH',
       notes: joinNotesHtml(notes),
       notesHeading,
@@ -863,6 +912,9 @@ export default function TaxInvoiceGenerator({
       poNumber: showPONumber ? poNumber : null,
       poNumberRequired,
       paymentDueDate,
+      paymentStatus: resolvedPayment.status,
+      amountPaid: resolvedPayment.paid,
+      balanceDue: resolvedPayment.balance,
       deliveryAddress: showDeliveryAddress ? deliveryAddress : null,
       totalDiscount
     };
@@ -945,6 +997,8 @@ export default function TaxInvoiceGenerator({
     showPONumber,
     poNumberRequired,
     paymentDueDate,
+    paymentStatus,
+    amountReceived: num(amountReceived),
     deliveryAddress,
     showDeliveryAddress,
     editableCustomer,
@@ -995,6 +1049,8 @@ export default function TaxInvoiceGenerator({
     if (typeof snap.showPONumber === 'boolean') setShowPONumber(snap.showPONumber);
     if (typeof snap.poNumberRequired === 'boolean') setPONumberRequired(snap.poNumberRequired);
     if (typeof snap.paymentDueDate === 'string') setPaymentDueDate(snap.paymentDueDate);
+    if (isDocumentPaymentStatus(snap.paymentStatus)) setPaymentStatus(snap.paymentStatus);
+    if (typeof snap.amountReceived === 'number') setAmountReceived(snap.amountReceived);
     if (snap.deliveryAddress && typeof snap.deliveryAddress === 'object')
       setDeliveryAddress((prev) => ({ ...prev, ...snap.deliveryAddress }));
     if (typeof snap.showDeliveryAddress === 'boolean')
@@ -1329,9 +1385,20 @@ export default function TaxInvoiceGenerator({
                 </div>
               )}
             </div>
-            
-            {/* Payment Due Date */}
-            <div className="border-t pt-4 mt-4">
+          </CardContent>
+        </Card>
+
+        <DocumentPaymentStatusCard
+          title="Payment on invoice"
+          description="Printed on the tax invoice PDF with a payment acknowledgement (paid, partial, or pending)."
+          paymentStatus={paymentStatus}
+          onPaymentStatusChange={setPaymentStatus}
+          amountReceived={amountReceived}
+          onAmountReceivedChange={setAmountReceived}
+          totalAmount={totalAmount}
+        >
+          {(paymentStatus === 'PENDING' || paymentStatus === 'PARTIAL') && (
+            <div>
               <Label htmlFor="paymentDueDate">Payment Due Date (Optional)</Label>
               <DatePicker
                 value={paymentDueDate}
@@ -1340,8 +1407,8 @@ export default function TaxInvoiceGenerator({
                 className="mt-1"
               />
             </div>
-          </CardContent>
-        </Card>
+          )}
+        </DocumentPaymentStatusCard>
 
         {/* Customer Information */}
         <Card>
@@ -1728,6 +1795,12 @@ export default function TaxInvoiceGenerator({
             <div className="flex justify-between text-xl font-bold border-t pt-4">
               <span>Grand Total:</span>
               <span>₹{totalAmount.toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between text-sm sm:text-base pt-1">
+              <span>Payment:</span>
+              <span className={documentPaymentSummaryClass(resolvedPayment.status)}>
+                {documentPaymentSummaryLabel(resolvedPayment)}
+              </span>
             </div>
             <div className="text-xs text-gray-500 mt-2">
               Amount in Words: {numberToWords(totalAmount)}
