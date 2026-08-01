@@ -361,12 +361,13 @@ public class CallAlertReceiver extends BroadcastReceiver {
             }
         }
 
+        // 503 no_tokens / 5xx — keep claim cleared so kicks can retry.
         if (code >= 200 && code < 300) {
             markAlerted(context, ringAt, callId);
             Log.i(TAG, "Alert upload OK");
         } else {
             clearClaim(context, callId);
-            Log.w(TAG, "Alert upload failed");
+            Log.w(TAG, "Alert upload failed code=" + code);
         }
     }
 

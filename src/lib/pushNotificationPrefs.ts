@@ -36,7 +36,7 @@ export const ADMIN_PUSH_LABELS: Record<AdminPushCategory, { label: string; descr
   customer_calls: {
     label: 'Customer call alerts (incl. missed)',
     description:
-      'Push when a customer rings a tech/admin phone, or an admin misses a known customer call. Off = this phone stops those call pushes only (other types unchanged).',
+      'Push when a customer rings a tech/admin phone, or an admin misses a known customer call. Keep this ON for call alerts. If no phone has it on, search-alert phones are used as a fallback.',
   },
   wrong_line: {
     label: 'Wrong company-line calls',

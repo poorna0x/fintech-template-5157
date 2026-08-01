@@ -7,8 +7,8 @@
 //    (covers FCM auth failures and OEM missing EXTRA_INCOMING_NUMBER via CallLog)
 //  - Admin phone MISSED a call → { token, number, missed: true }
 //
-// Admin push uses Device Tracker → “Customer call alerts” only.
-// (tech_search is a separate toggle for search alerts.)
+// Admin push prefers Device Tracker → “Customer call alerts”, with tech_search
+// fallback when that list is empty (avoids silent no_tokens).
 
 const { createClient } = require('@supabase/supabase-js');
 const {
@@ -35,8 +35,18 @@ function normalizePhone(raw) {
 }
 
 async function resolveAdminCallTokens(db) {
-  // Only “Customer call alerts” — not tech_search (that toggle is search-only).
-  return getAdminFcmTokens(db, 'customer_calls');
+  // Prefer Device Tracker → “Customer call alerts”.
+  // Fallback to tech_search if that list is empty (same phones often share both
+  // toggles historically) so call pushes don't silently die with no_tokens.
+  const callTokens = await getAdminFcmTokens(db, 'customer_calls');
+  if (callTokens.length > 0) return callTokens;
+  const searchTokens = await getAdminFcmTokens(db, 'tech_search');
+  if (searchTokens.length > 0) {
+    console.warn(
+      '[tech-call-customer-alert] customer_calls empty — falling back to tech_search tokens'
+    );
+  }
+  return searchTokens;
 }
 
 exports.handler = async (event) => {
@@ -281,10 +291,29 @@ exports.handler = async (event) => {
   ]);
 
   if (tokens.length === 0) {
+    // Do not keep the dedupe claim — otherwise fixing prefs later cannot re-alert
+    // this call, and native would treat 200 as success and stop retries.
+    if (technicianId && callId) {
+      try {
+        await db
+          .from('tech_call_alert_events')
+          .delete()
+          .eq('technician_id', technicianId)
+          .eq('call_id', callId);
+      } catch (e) {
+        console.warn('[tech-call-customer-alert] dedupe rollback failed', e?.message || e);
+      }
+    }
     return {
-      statusCode: 200,
+      statusCode: 503,
       headers: HEADERS,
-      body: JSON.stringify({ sent: 0, reason: 'no_tokens', authVia }),
+      body: JSON.stringify({
+        found: true,
+        sent: 0,
+        reason: 'no_tokens',
+        authVia,
+        error: 'No admin devices with Customer call alerts enabled',
+      }),
     };
   }
 
