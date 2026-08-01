@@ -98,17 +98,23 @@ public class WrongLineCallReceiver {
         if (dialed.isEmpty() || company.isEmpty()) return;
 
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        String dedupeKey = company + "|" + dialed + "|" + from + "|" + call.fromSimSlot;
-        long now = System.currentTimeMillis();
-        // Short window only — blocks CallLog double-reads of the *same* hangup,
-        // not a later intentional redial on the wrong SIM (that should warn again).
-        if (
-            dedupeKey.equals(prefs.getString(KEY_LAST_ALERT_KEY, ""))
-                && now - prefs.getLong(KEY_LAST_ALERT_AT, 0L) < 90_000L
-        ) {
-            Log.i(TAG, "Dedupe skip (same hangup <90s)");
+        // Dedupe by CallLog DATE — same hangup re-read is skipped; a new dial
+        // always has a new dateMs so it alerts again (no time cooldown).
+        String dedupeKey =
+            company
+                + "|"
+                + dialed
+                + "|"
+                + from
+                + "|"
+                + call.fromSimSlot
+                + "|"
+                + call.dateMs;
+        if (dedupeKey.equals(prefs.getString(KEY_LAST_ALERT_KEY, ""))) {
+            Log.i(TAG, "Dedupe skip (same CallLog row)");
             return;
         }
+        long now = System.currentTimeMillis();
 
         String token = DevicePrefsPlugin.readFcmToken(context);
         if (token == null || token.length() < 20) {
