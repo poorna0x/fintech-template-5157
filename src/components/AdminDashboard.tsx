@@ -6611,9 +6611,10 @@ const AdminDashboard = () => {
         onPrevious={goToPreviousPhoto}
         onNext={goToNextPhoto}
         onDownload={downloadPhoto}
-        // Gallery grids already pick the photo — hide arrows/counter there.
-        // Keep nav for bill/payment sequences (gallery dialogs closed).
-        showNavigation={!photoGalleryOpen && !customerPhotoGalleryOpen}
+        // Only bill/payment sequences need arrows. Job/customer gallery grids
+        // already pick the thumb — and opening the viewer clears gallery modal
+        // state (photos → photo-viewer), so don't key off photoGalleryOpen.
+        showNavigation={Boolean(selectedBillPhotos && selectedBillPhotos.length > 1)}
         onClose={() => {
           onAdminModalOpenChange('photo-viewer', false);
           setSelectedPhoto(null);
@@ -7175,6 +7176,7 @@ const AdminDashboard = () => {
         selectedPhoto={reportViewerPhoto}
         selectedBillPhotos={reportViewerBillPhotos}
         selectedJobPhotos={null}
+        showNavigation={Boolean(reportViewerBillPhotos && reportViewerBillPhotos.length > 1)}
         onPrevious={() => {
           if (!reportViewerPhoto || !reportViewerBillPhotos || reportViewerBillPhotos.length <= 1) return;
           const newIndex =
