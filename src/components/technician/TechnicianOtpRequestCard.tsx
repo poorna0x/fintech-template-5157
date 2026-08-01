@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
@@ -15,6 +15,8 @@ import type { Job } from '@/types';
 type TechnicianOtpRequestCardProps = {
   technicianId: string;
   jobs: Job[];
+  /** Patch parent job list so Start Work sees OTP already entered. */
+  onOtpSubmitted?: (jobId: string, otp: string) => void;
 };
 
 /**
@@ -24,10 +26,16 @@ type TechnicianOtpRequestCardProps = {
  * visible, a realtime watch removes it the moment it's answered — including
  * when the technician replies from the notification instead of here.
  */
-const TechnicianOtpRequestCard = ({ technicianId, jobs }: TechnicianOtpRequestCardProps) => {
+const TechnicianOtpRequestCard = ({
+  technicianId,
+  jobs,
+  onOtpSubmitted,
+}: TechnicianOtpRequestCardProps) => {
   const [requests, setRequests] = useState<OtpRequestRow[]>([]);
   const [codes, setCodes] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState<string | null>(null);
+  const onOtpSubmittedRef = useRef(onOtpSubmitted);
+  onOtpSubmittedRef.current = onOtpSubmitted;
 
   const refresh = useCallback(async () => {
     if (!technicianId) return;
@@ -66,6 +74,9 @@ const TechnicianOtpRequestCard = ({ technicianId, jobs }: TechnicianOtpRequestCa
           const next = payload.new as OtpRequestRow | undefined;
           if (next?.otp) {
             setRequests((prev) => prev.filter((r) => r.id !== next.id));
+            if (/^\d{4}$/.test(String(next.otp).trim())) {
+              onOtpSubmittedRef.current?.(next.job_id, String(next.otp).trim());
+            }
           }
         }
       )
@@ -87,6 +98,7 @@ const TechnicianOtpRequestCard = ({ technicianId, jobs }: TechnicianOtpRequestCa
       if (ok) {
         toast.success('OTP sent to the office');
         setRequests((prev) => prev.filter((r) => r.id !== request.id));
+        onOtpSubmittedRef.current?.(request.job_id, code);
       } else {
         toast.error('Could not send the OTP. Try again.');
       }

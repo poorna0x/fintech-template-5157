@@ -63,7 +63,7 @@ import { getAmcDocumentBrandLabel } from '@/lib/amc-brand';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { formatCompletedWhen } from '@/lib/relativeTime';
 import { getJobEquipmentDisplay, parseJobRequirements, isOfficeCompletedJob } from '@/lib/adminUtils';
-import { applyOtpToRequirements, getStoredOtpFromRequirements } from '@/lib/technicianOtpRequests';
+import { applyOtpToRequirements, getStoredOtpFromRequirements, getSubmittedOtpForJob } from '@/lib/technicianOtpRequests';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { db, supabase, fetchCustomerIdsWithCompletedJobsMap } from '@/lib/supabase';
 import { mapCustomerGstFields } from '@/lib/customerGst';
@@ -3183,7 +3183,7 @@ const TechnicianDashboard = () => {
     if (action === 'start') {
       setConfirmStartJobDialog({ open: true, job });
     } else if (action === 'startWork') {
-      setConfirmStartWorkDialog({ open: true, job });
+      void openStartWorkConfirm(job);
     } else if (action === 'startAndOpenMap') {
       void (async () => {
         const ok = await performStartJob(job);
@@ -3309,8 +3309,47 @@ const TechnicianDashboard = () => {
       return;
     }
 
-    // Show confirmation dialog
+    void openStartWorkConfirm(job);
+  };
+
+  /**
+   * Open Start Work confirm. If Ask OTP already captured the code (DB or
+   * request row) but local job list is stale, merge it in so we don't ask again
+   * and don't push OTP to admins a second time.
+   */
+  const openStartWorkConfirm = async (job: Job) => {
+    setStartWorkOtp('');
+    setStartWorkOtpError('');
     setConfirmStartWorkDialog({ open: true, job });
+
+    if (!jobRequiresOtp(job) || getJobEnteredOtp(job)) return;
+
+    try {
+      const [{ data: fresh }, answered] = await Promise.all([
+        supabase.from('jobs').select('requirements').eq('id', job.id).maybeSingle(),
+        getSubmittedOtpForJob(job.id),
+      ]);
+      let reqs = parseJobRequirements(
+        (fresh as { requirements?: unknown } | null)?.requirements ??
+          (job as any).requirements ??
+          job.requirements
+      );
+      const fromJob = getStoredOtpFromRequirements(reqs);
+      const entered = fromJob || answered;
+      if (!entered) return;
+      if (!fromJob && answered) {
+        reqs = applyOtpToRequirements(reqs, answered);
+      }
+      const patched = { ...job, requirements: reqs as any };
+      setJobs((prev) =>
+        prev.map((j) => (j.id === job.id ? { ...j, requirements: reqs as any } : j))
+      );
+      setConfirmStartWorkDialog((prev) =>
+        prev.open && prev.job?.id === job.id ? { open: true, job: patched } : prev
+      );
+    } catch {
+      /* keep dialog with local job */
+    }
   };
 
   // Actually perform the start work action
@@ -3330,6 +3369,7 @@ const TechnicianDashboard = () => {
       // the latest server state instead of clobbering admin edits made after the
       // job list was loaded.
       let updatedRequirements: any[] | undefined;
+      let shouldPushOtp = false;
       if (customerOtp && /^\d{4}$/.test(customerOtp)) {
         let baseRequirements: any[] | null = null;
         try {
@@ -3342,10 +3382,12 @@ const TechnicianDashboard = () => {
         } catch {
           // Offline/fetch failure: fall back to the local copy below.
         }
-        updatedRequirements = applyOtpToRequirements(
-          baseRequirements ?? parseJobRequirements((job as any).requirements ?? job.requirements),
-          customerOtp
-        );
+        const base =
+          baseRequirements ?? parseJobRequirements((job as any).requirements ?? job.requirements);
+        // Already entered via Ask OTP / notification — store if needed, never re-push.
+        const alreadyHad = getStoredOtpFromRequirements(base);
+        shouldPushOtp = !alreadyHad;
+        updatedRequirements = applyOtpToRequirements(base, customerOtp);
       }
 
       // Update job status to IN_PROGRESS (at location, working)
@@ -3359,8 +3401,8 @@ const TechnicianDashboard = () => {
         throw new Error(error.message);
       }
 
-      // Push the OTP to the office phones with customer name + lead source.
-      if (updatedRequirements && customerOtp) {
+      // Push only the first time this job gets an OTP (Ask OTP may have pushed already).
+      if (shouldPushOtp && customerOtp) {
         void import('@/lib/notifyAdminsJobEvent').then(({ notifyAdminsJobEvent }) =>
           notifyAdminsJobEvent(job.id, 'otp_entered', { otp: customerOtp })
         );
@@ -6324,7 +6366,24 @@ const TechnicianDashboard = () => {
 
         {/* Office asked for the customer's OTP (Home Triangle jobs) */}
         {user?.technicianId && (
-          <TechnicianOtpRequestCard technicianId={user.technicianId} jobs={jobs} />
+          <TechnicianOtpRequestCard
+            technicianId={user.technicianId}
+            jobs={jobs}
+            onOtpSubmitted={(jobId, otp) => {
+              setJobs((prev) =>
+                prev.map((j) => {
+                  if (j.id !== jobId) return j;
+                  return {
+                    ...j,
+                    requirements: applyOtpToRequirements(
+                      parseJobRequirements((j as any).requirements ?? j.requirements),
+                      otp
+                    ) as any,
+                  };
+                })
+              );
+            }}
+          />
         )}
 
         {/* Job Assignment Requests Section */}

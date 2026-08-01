@@ -153,6 +153,17 @@ export async function getOtpRequestForJob(jobId: string): Promise<OtpRequestRow 
   return (data as OtpRequestRow) ?? null;
 }
 
+/** Technician/Start Work: OTP already answered via Ask OTP card or notification reply. */
+export async function getSubmittedOtpForJob(jobId: string): Promise<string | null> {
+  const { data } = await supabase
+    .from('technician_otp_requests')
+    .select('otp')
+    .eq('job_id', jobId)
+    .maybeSingle();
+  const otp = data?.otp;
+  return typeof otp === 'string' && /^\d{4}$/.test(otp.trim()) ? otp.trim() : null;
+}
+
 /** Admin: live updates for one request (returns unsubscribe). */
 export function watchOtpRequest(
   requestId: string,
