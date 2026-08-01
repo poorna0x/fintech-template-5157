@@ -6,7 +6,9 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 
 export interface DeviceNativePrefs {
-  callAlertsEnabled: boolean;
+  callAlertsEnabled?: boolean;
+  /** Tech Device Tracker → Wrong company-line reminder (self overlay / tray). */
+  wrongLineReminderEnabled?: boolean;
   fcmToken?: string | null;
   /** technicians.phone — company calling line, synced once (not polled). */
   companyPhone?: string | null;
@@ -14,12 +16,17 @@ export interface DeviceNativePrefs {
 
 interface DevicePrefsPlugin {
   setPrefs(options: {
-    callAlertsEnabled: boolean;
+    callAlertsEnabled?: boolean;
+    wrongLineReminderEnabled?: boolean;
     fcmToken?: string;
     companyPhone?: string;
   }): Promise<void>;
   setCompanyPhone(options: { phone: string }): Promise<{ companyPhone: string }>;
-  getPrefs(): Promise<{ callAlertsEnabled: boolean; companyPhone?: string }>;
+  getPrefs(): Promise<{
+    callAlertsEnabled: boolean;
+    wrongLineReminderEnabled?: boolean;
+    companyPhone?: string;
+  }>;
   getDeviceLabel(): Promise<{ label: string }>;
 }
 
@@ -39,17 +46,23 @@ export async function syncDevicePrefsToNative(prefs: DeviceNativePrefs): Promise
   if (!Capacitor.isNativePlatform()) return;
   try {
     const payload: {
-      callAlertsEnabled: boolean;
+      callAlertsEnabled?: boolean;
+      wrongLineReminderEnabled?: boolean;
       fcmToken?: string;
       companyPhone?: string;
-    } = {
-      callAlertsEnabled: prefs.callAlertsEnabled !== false,
-    };
+    } = {};
+    if (typeof prefs.callAlertsEnabled === 'boolean') {
+      payload.callAlertsEnabled = prefs.callAlertsEnabled !== false;
+    }
+    if (typeof prefs.wrongLineReminderEnabled === 'boolean') {
+      payload.wrongLineReminderEnabled = prefs.wrongLineReminderEnabled !== false;
+    }
     const token = typeof prefs.fcmToken === 'string' ? prefs.fcmToken.trim() : '';
     if (token.length >= 20) payload.fcmToken = token;
     const company =
       typeof prefs.companyPhone === 'string' ? prefs.companyPhone.replace(/\D/g, '') : '';
     if (company.length >= 10) payload.companyPhone = company.slice(-10);
+    if (Object.keys(payload).length === 0) return;
     await DevicePrefs.setPrefs(payload);
   } catch {
     // Plugin missing on old APK — call alerts use defaults until APK update.

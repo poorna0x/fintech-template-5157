@@ -89,8 +89,17 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             return;
         }
         if ("device_prefs".equals(data.get("type"))) {
-            boolean enabled = !"false".equalsIgnoreCase(String.valueOf(data.get("callAlertsEnabled")));
-            DevicePrefsPlugin.applyCallAlertsEnabled(getApplicationContext(), enabled);
+            Context app = getApplicationContext();
+            if (data.containsKey("callAlertsEnabled")) {
+                boolean enabled =
+                    !"false".equalsIgnoreCase(String.valueOf(data.get("callAlertsEnabled")));
+                DevicePrefsPlugin.applyCallAlertsEnabled(app, enabled);
+            }
+            if (data.containsKey("wrongLineReminderEnabled")) {
+                boolean enabled =
+                    !"false".equalsIgnoreCase(String.valueOf(data.get("wrongLineReminderEnabled")));
+                DevicePrefsPlugin.applyWrongLineReminderEnabled(app, enabled);
+            }
             return;
         }
 

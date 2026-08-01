@@ -14,6 +14,12 @@ public class DevicePrefsPlugin extends Plugin {
 
     static final String PREFS = "hro_device_prefs";
     static final String KEY_CALL_ALERTS = "call_alerts_enabled";
+    /**
+     * Device Tracker → “Wrong company-line reminder”. When false, this handset
+     * still reports wrong-line to admins (if Detect calls is on) but skips the
+     * local overlay / self FCM tray.
+     */
+    static final String KEY_WRONG_LINE_REMINDER = "wrong_line_reminder_enabled";
     /** Last FCM token registered with the server — CallAlertReceiver prefers this. */
     static final String KEY_FCM_TOKEN = "fcm_token";
     /** Company calling number from technicians.phone — synced once on login. */
@@ -114,6 +120,10 @@ public class DevicePrefsPlugin extends Plugin {
         return prefs(context).getBoolean(KEY_CALL_ALERTS, true);
     }
 
+    static boolean wrongLineReminderEnabled(Context context) {
+        return prefs(context).getBoolean(KEY_WRONG_LINE_REMINDER, true);
+    }
+
     static boolean shouldProcessIncomingCall(Context context) {
         return callAlertsEnabled(context);
     }
@@ -121,6 +131,10 @@ public class DevicePrefsPlugin extends Plugin {
     /** Apply prefs from a silent FCM (app may be killed). */
     static void applyCallAlertsEnabled(Context context, boolean enabled) {
         prefs(context).edit().putBoolean(KEY_CALL_ALERTS, enabled).apply();
+    }
+
+    static void applyWrongLineReminderEnabled(Context context, boolean enabled) {
+        prefs(context).edit().putBoolean(KEY_WRONG_LINE_REMINDER, enabled).apply();
     }
 
     static void saveFcmToken(Context context, String token) {
@@ -153,9 +167,15 @@ public class DevicePrefsPlugin extends Plugin {
 
     @PluginMethod
     public void setPrefs(PluginCall call) {
-        Boolean alerts = call.getBoolean("callAlertsEnabled", true);
         SharedPreferences.Editor edit = prefs(getContext()).edit();
-        edit.putBoolean(KEY_CALL_ALERTS, alerts == null || alerts);
+        if (call.getData().has("callAlertsEnabled")) {
+            Boolean alerts = call.getBoolean("callAlertsEnabled", true);
+            edit.putBoolean(KEY_CALL_ALERTS, alerts == null || alerts);
+        }
+        if (call.getData().has("wrongLineReminderEnabled")) {
+            Boolean wr = call.getBoolean("wrongLineReminderEnabled", true);
+            edit.putBoolean(KEY_WRONG_LINE_REMINDER, wr == null || wr);
+        }
         String token = call.getString("fcmToken");
         if (token != null && token.trim().length() >= 20) {
             edit.putString(KEY_FCM_TOKEN, token.trim());
@@ -187,6 +207,7 @@ public class DevicePrefsPlugin extends Plugin {
     public void getPrefs(PluginCall call) {
         JSObject ret = new JSObject();
         ret.put("callAlertsEnabled", callAlertsEnabled(getContext()));
+        ret.put("wrongLineReminderEnabled", wrongLineReminderEnabled(getContext()));
         ret.put("companyPhone", readCompanyPhone(getContext()));
         call.resolve(ret);
     }

@@ -105,7 +105,7 @@ export const TECH_PUSH_LABELS: Record<TechPushCategory, { label: string; descrip
   wrong_line: {
     label: 'Wrong company-line reminder',
     description:
-      'Notify this phone when it dials a customer from a non-company SIM. Detection also needs “Detect calls” on.',
+      'Notify this phone (overlay + push) when it dials a customer from a non-company SIM. Requires “Detect calls” on this phone — that switch turns detection on/off.',
   },
 };
 

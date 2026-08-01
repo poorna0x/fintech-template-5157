@@ -346,6 +346,18 @@ export function DeviceTrackerSettings() {
           callAlertsEnabled: patch.call_alerts_enabled,
         }).catch(() => {});
       }
+      if (patch.push_prefs && typeof (patch.push_prefs as { wrong_line?: boolean }).wrong_line === 'boolean') {
+        const wrongOn = (patch.push_prefs as { wrong_line: boolean }).wrong_line !== false;
+        const thisToken = getThisTechnicianDeviceToken();
+        if (thisToken && thisToken === token) {
+          await syncDevicePrefsToNative({ wrongLineReminderEnabled: wrongOn });
+        }
+        void syncDeviceCallPrefsPush({
+          token,
+          kind: 'technician',
+          wrongLineReminderEnabled: wrongOn,
+        }).catch(() => {});
+      }
       toast.success(label);
     } catch (err) {
       console.error('[device-tracker] tech update', err);
@@ -529,7 +541,11 @@ export function DeviceTrackerSettings() {
                     void patchTech(
                       device.token,
                       { push_prefs: { ...device.push_prefs, [key]: enabled } },
-                      'Notification preference saved'
+                      key === 'wrong_line'
+                        ? enabled
+                          ? 'Wrong-line reminder on for this phone'
+                          : 'Wrong-line reminder off (Detect calls still reports to admins)'
+                        : 'Notification preference saved'
                     )
                   }
                   onRemove={() =>

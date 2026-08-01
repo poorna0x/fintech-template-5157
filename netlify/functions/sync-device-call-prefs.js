@@ -35,12 +35,22 @@ exports.handler = async (event) => {
 
   const token = String(body.token || '').trim();
   const kind = String(body.kind || '').trim();
+  const hasCallAlerts = Object.prototype.hasOwnProperty.call(body, 'callAlertsEnabled');
+  const hasWrongLine = Object.prototype.hasOwnProperty.call(body, 'wrongLineReminderEnabled');
   const callAlertsEnabled = body.callAlertsEnabled !== false;
+  const wrongLineReminderEnabled = body.wrongLineReminderEnabled !== false;
   if (!token || (kind !== 'admin' && kind !== 'technician')) {
     return {
       statusCode: 400,
       headers,
       body: JSON.stringify({ error: 'token and kind (admin|technician) required' }),
+    };
+  }
+  if (!hasCallAlerts && !hasWrongLine) {
+    return {
+      statusCode: 400,
+      headers,
+      body: JSON.stringify({ error: 'callAlertsEnabled or wrongLineReminderEnabled required' }),
     };
   }
 
@@ -64,12 +74,16 @@ exports.handler = async (event) => {
     const messaging = await getMessaging(db);
     // Data-only, high priority — reaches killed apps; no tray notification.
     // Bypass mute/category filters: muted phones must still receive prefs sync.
+    const data = { type: 'device_prefs' };
+    if (hasCallAlerts) {
+      data.callAlertsEnabled = callAlertsEnabled ? 'true' : 'false';
+    }
+    if (hasWrongLine) {
+      data.wrongLineReminderEnabled = wrongLineReminderEnabled ? 'true' : 'false';
+    }
     await messaging.send({
       token,
-      data: {
-        type: 'device_prefs',
-        callAlertsEnabled: callAlertsEnabled ? 'true' : 'false',
-      },
+      data,
       android: { priority: 'high' },
     });
     return { statusCode: 200, headers, body: JSON.stringify({ sent: true }) };

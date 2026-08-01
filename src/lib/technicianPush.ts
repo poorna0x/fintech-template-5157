@@ -9,6 +9,7 @@ import { PushNotifications } from '@capacitor/push-notifications';
 import { supabase } from '@/lib/supabase';
 import { registrationDeviceName } from '@/lib/deviceTracker';
 import { getNativeDeviceLabel, syncDevicePrefsToNative, syncCompanyPhoneToNative } from '@/lib/devicePrefs';
+import { normalizeTechPushPrefs } from '@/lib/pushNotificationPrefs';
 
 let listenersAttached = false;
 let nativeListenerAttached = false;
@@ -173,13 +174,16 @@ async function saveToken(technicianId: string, token: string): Promise<boolean> 
     lastToken = token;
     const { data: prefsRow } = await supabase
       .from('technician_push_tokens')
-      .select('call_alerts_enabled')
+      .select('call_alerts_enabled, push_prefs')
       .eq('token', token)
       .maybeSingle();
     const callAlertsEnabled = prefsRow?.call_alerts_enabled !== false;
+    const wrongLineReminderEnabled =
+      normalizeTechPushPrefs(prefsRow?.push_prefs).wrong_line !== false;
     writePersist({ ...cached, callAlertsEnabled });
     await syncDevicePrefsToNative({
       callAlertsEnabled,
+      wrongLineReminderEnabled,
       fcmToken: token,
       companyPhone: readCompanyPhoneCache()?.phone,
     });
@@ -226,17 +230,20 @@ async function saveToken(technicianId: string, token: string): Promise<boolean> 
 
   const { data: prefsRow } = await supabase
     .from('technician_push_tokens')
-    .select('call_alerts_enabled')
+    .select('call_alerts_enabled, push_prefs')
     .eq('token', token)
     .maybeSingle();
 
   const callAlertsEnabled = prefsRow?.call_alerts_enabled !== false;
+  const wrongLineReminderEnabled =
+    normalizeTechPushPrefs(prefsRow?.push_prefs).wrong_line !== false;
   writePersist({ token, technicianId, callAlertsEnabled });
   lastToken = token;
   lastPersistedKey = key;
   rememberTokenLocally(token);
   await syncDevicePrefsToNative({
     callAlertsEnabled,
+    wrongLineReminderEnabled,
     fcmToken: token,
     companyPhone: readCompanyPhoneCache()?.phone,
   });

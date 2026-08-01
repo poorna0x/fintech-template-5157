@@ -143,17 +143,21 @@ public class WrongLineCallReceiver {
         String usedLabel = from.isEmpty() ? "another SIM" : from;
         String officeLabel =
             companySlot > 0 ? company + " (SIM " + companySlot + ")" : company;
-        // Always warn locally on detect — don't wait for customer lookup / FCM.
-        TechActionOverlay.showWrongLineWarning(
-            context,
-            "Please call from company number",
-            "You called a customer from "
-                + usedLabel
-                + ".\n\nPlease call from the company number: "
-                + officeLabel
-                + ".",
-            "wrong_line_self_" + dialed
-        );
+        // Always warn locally on detect — unless this phone muted “Wrong company-line reminder”.
+        if (DevicePrefsPlugin.wrongLineReminderEnabled(context)) {
+            TechActionOverlay.showWrongLineWarning(
+                context,
+                "Please call from company number",
+                "You called a customer from "
+                    + usedLabel
+                    + ".\n\nPlease call from the company number: "
+                    + officeLabel
+                    + ".",
+                "wrong_line_self_" + dialed
+            );
+        } else {
+            Log.i(TAG, "Wrong-line reminder muted on this phone — overlay skipped");
+        }
 
         String body = postOnce(token, dialed, from, company, call.fromSimSlot, companySlot);
         boolean found = body != null && body.contains("\"found\":true");
