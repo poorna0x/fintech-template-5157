@@ -72,10 +72,16 @@ exports.handler = async (event) => {
   const startOnly =
     body.startOnly === true || body.startOnly === 'true' || body.startOnly === 1;
   const jobId = String(body.jobId || '').trim();
-  // assigned | reassigned → data-only overlay push on technician APK
+  // assigned | reassigned | unassigned | removed | updated → overlay on tech APK
   const eventRaw = String(body.event || '').trim().toLowerCase();
-  const overlayEvent =
-    eventRaw === 'assigned' || eventRaw === 'reassigned' ? eventRaw : '';
+  const overlayEvents = new Set([
+    'assigned',
+    'reassigned',
+    'unassigned',
+    'removed',
+    'updated',
+  ]);
+  const overlayEvent = overlayEvents.has(eventRaw) ? eventRaw : '';
   const replyAbout = String(body.replyAbout || body.about || '').trim().slice(0, 80)
     || replyAboutFromBody(message);
   if (
@@ -191,7 +197,14 @@ exports.handler = async (event) => {
     } else if (overlayEvent) {
       // Data-only so HroMessagingService can show a draw-over-apps card even
       // when the app is killed (notification+data often never reaches Java).
-      const notifTitle = title || (overlayEvent === 'reassigned' ? 'Job reassigned to you' : 'New job assigned');
+      const overlayDefaults = {
+        assigned: 'New job assigned',
+        reassigned: 'Job reassigned to you',
+        unassigned: 'Job unassigned from you',
+        removed: 'Job moved to another technician',
+        updated: 'Job updated',
+      };
+      const notifTitle = title || overlayDefaults[overlayEvent] || 'Job alert';
       buildMessage = (token) => ({
         token,
         data: {

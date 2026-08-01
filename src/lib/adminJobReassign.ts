@@ -79,6 +79,7 @@ export async function submitAdminJobReassign(
     if (previousTechnicianId && previousTechnicianId !== ctx.selectedTechnicianForReassign) {
       notifyTechnicianJobPush({
         technicianId: previousTechnicianId,
+        jobId: ctx.jobToReassign.id,
         ...jobRemovedPushText({ job: ctx.jobToReassign as any, movedToAnother: true }),
       });
     }
@@ -160,6 +161,7 @@ export async function unassignAdminJob(
     if (previousTechnicianId) {
       notifyTechnicianJobPush({
         technicianId: previousTechnicianId,
+        jobId: job.id,
         ...jobRemovedPushText({ job: job as any }),
       });
     }

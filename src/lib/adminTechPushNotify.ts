@@ -15,11 +15,20 @@ import {
 } from '@/lib/jobAssignMessageDetails';
 
 /** Notification accent colors — technicians can tell the type at a glance. */
-export const TECH_PUSH_COLOR_ASSIGNED = '#16A34A'; // green: you got a job
-export const TECH_PUSH_COLOR_REMOVED = '#DC2626'; // red: a job was taken away
-export const TECH_PUSH_COLOR_VISIT_ORDER = '#2563EB'; // blue: stop sequence changed
+export const TECH_PUSH_COLOR_ASSIGNED = '#16A34A'; // green: new job to you
+export const TECH_PUSH_COLOR_REASSIGNED = '#2563EB'; // blue: reassigned to you
+export const TECH_PUSH_COLOR_REMOVED = '#DC2626'; // red: unassign / moved away
+export const TECH_PUSH_COLOR_VISIT_ORDER = '#7C3AED'; // violet: stop sequence changed
 export const TECH_PUSH_COLOR_TEAM = '#0D9488'; // teal: added as team helper
-export const TECH_PUSH_COLOR_UPDATED = '#D97706'; // amber: job details changed
+export const TECH_PUSH_COLOR_UPDATED = '#D97706'; // amber: job details edited
+
+/** Events that show the Truecaller-style draw-over-apps card on the tech APK. */
+export type TechJobOverlayEvent =
+  | 'assigned'
+  | 'reassigned'
+  | 'unassigned'
+  | 'removed'
+  | 'updated';
 
 export function notifyTechnicianJobPush(opts: {
   technicianId: string;
@@ -29,13 +38,13 @@ export function notifyTechnicianJobPush(opts: {
   color?: string;
   /** When true, skip admin toasts (e.g. technician self-nudge). */
   silent?: boolean;
-  /** Job id for overlay deep-open (assign / reassign). */
+  /** Job id for overlay deep-open. */
   jobId?: string;
   /**
-   * Assign/reassign-to-you → technician APK shows a draw-over-apps card.
+   * Assign / reassign / unassign / removed / edit → draw-over-apps card.
    * Other pushes stay as normal tray notifications.
    */
-  event?: 'assigned' | 'reassigned';
+  event?: TechJobOverlayEvent;
 }): void {
   const { technicianId, title, body, color, silent, jobId, event } = opts;
   if (!technicianId || !title) return;
@@ -147,7 +156,7 @@ export function jobAssignPushText(opts: {
       ? `${serviceSubType} reassigned to you`
       : `New ${serviceSubType.toLowerCase()} assigned`,
     body,
-    color: TECH_PUSH_COLOR_ASSIGNED,
+    color: reassigned ? TECH_PUSH_COLOR_REASSIGNED : TECH_PUSH_COLOR_ASSIGNED,
     event: reassigned ? 'reassigned' : 'assigned',
   };
 }
@@ -157,7 +166,12 @@ export function jobRemovedPushText(opts: {
   job: Record<string, unknown>;
   customer?: Record<string, unknown> | null;
   movedToAnother?: boolean;
-}): { title: string; body: string; color: string } {
+}): {
+  title: string;
+  body: string;
+  color: string;
+  event: 'unassigned' | 'removed';
+} {
   const { job, customer, movedToAnother } = opts;
   const { serviceSubType, body } = jobPushDetails(job, customer);
   return {
@@ -166,6 +180,7 @@ export function jobRemovedPushText(opts: {
       : `${serviceSubType} unassigned from you`,
     body,
     color: TECH_PUSH_COLOR_REMOVED,
+    event: movedToAnother ? 'removed' : 'unassigned',
   };
 }
 
@@ -225,7 +240,7 @@ export function visitOrderChangedPushText(opts: {
 export function jobDetailsUpdatedPushText(opts: {
   customerName: string;
   changes: string[];
-}): { title: string; body: string; color: string } {
+}): { title: string; body: string; color: string; event: 'updated' } {
   const name = opts.customerName.trim() || 'Customer';
   const changeLine = (opts.changes || []).filter(Boolean).join(' · ') || 'Details changed';
   let body = `${name} — ${changeLine}`;
@@ -234,6 +249,7 @@ export function jobDetailsUpdatedPushText(opts: {
     title: 'Job updated',
     body,
     color: TECH_PUSH_COLOR_UPDATED,
+    event: 'updated',
   };
 }
 
@@ -241,7 +257,7 @@ export function jobDetailsUpdatedPushText(opts: {
 export function jobRescheduledPushText(opts: {
   customerName: string;
   whenLabel: string;
-}): { title: string; body: string; color: string } {
+}): { title: string; body: string; color: string; event: 'updated' } {
   const name = opts.customerName.trim() || 'Customer';
   const when = opts.whenLabel.trim() || 'new schedule';
   let body = `${name} — New schedule: ${when}`;
@@ -250,5 +266,6 @@ export function jobRescheduledPushText(opts: {
     title: 'Job rescheduled',
     body,
     color: TECH_PUSH_COLOR_UPDATED,
+    event: 'updated',
   };
 }

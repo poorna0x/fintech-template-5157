@@ -244,17 +244,27 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
     }
 
     /**
-     * Assign / reassign: draw-over-apps card (if permitted) + tray alert with
-     * job_alerts_v2 sound. Data-only FCM so this runs even when the app is killed.
+     * Assign / reassign / unassign / edit: draw-over-apps card (if permitted) +
+     * tray alert with job_alerts_v2 sound. Data-only FCM so this runs even when
+     * the app is killed.
      */
     private void showJobAlertOverlay(Map<String, String> data) {
         Context context = getApplicationContext();
+        String event = data.get("event");
         String title = data.get("msgTitle");
         if (title == null || title.isEmpty()) title = data.get("title");
         if (title == null || title.isEmpty()) {
-            title = "reassigned".equalsIgnoreCase(data.get("event"))
-                ? "Job reassigned to you"
-                : "New job assigned";
+            if ("reassigned".equalsIgnoreCase(event)) {
+                title = "Job reassigned to you";
+            } else if ("unassigned".equalsIgnoreCase(event)) {
+                title = "Job unassigned from you";
+            } else if ("removed".equalsIgnoreCase(event)) {
+                title = "Job moved to another technician";
+            } else if ("updated".equalsIgnoreCase(event)) {
+                title = "Job updated";
+            } else {
+                title = "New job assigned";
+            }
         }
         String body = data.get("msgBody");
         if (body == null) body = data.get("body");
@@ -264,20 +274,33 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
         String tag = data.get("tag");
         if (tag == null || tag.isEmpty()) tag = "job_alert_overlay";
 
-        JobAlertOverlay.show(context, title, body, jobId, color);
-        postJobAlertTray(context, title, body, jobId, color, tag);
+        JobAlertOverlay.show(context, title, body, jobId, color, event);
+        postJobAlertTray(context, title, body, jobId, color, tag, event);
     }
 
     private void postJobAlertTray(
-        Context context, String title, String body, String jobId, String colorHex, String tag
+        Context context,
+        String title,
+        String body,
+        String jobId,
+        String colorHex,
+        String tag,
+        String event
     ) {
         NotificationChannels.ensureJobAlerts(context);
         int color = Color.parseColor("#16A34A");
+        if ("reassigned".equalsIgnoreCase(event)) {
+            color = Color.parseColor("#2563EB");
+        } else if ("unassigned".equalsIgnoreCase(event) || "removed".equalsIgnoreCase(event)) {
+            color = Color.parseColor("#DC2626");
+        } else if ("updated".equalsIgnoreCase(event)) {
+            color = Color.parseColor("#D97706");
+        }
         if (colorHex != null && colorHex.matches("#[0-9a-fA-F]{6}")) {
             try {
                 color = Color.parseColor(colorHex);
             } catch (IllegalArgumentException ignored) {
-                /* keep green */
+                /* keep event default */
             }
         }
 

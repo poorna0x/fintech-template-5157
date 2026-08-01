@@ -162,8 +162,10 @@ export function notifyTechnicianAfterJobEdit(opts: {
 
   notifyTechnicianJobPush({
     technicianId: techId,
+    jobId: opts.jobId,
     title: titleForChanges(flags),
     body,
     color: TECH_PUSH_COLOR_UPDATED,
+    event: 'updated',
   });
 }
