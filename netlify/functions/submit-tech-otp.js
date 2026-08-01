@@ -45,7 +45,7 @@ exports.handler = async (event) => {
 
   const { data: row, error: rowErr } = await db
     .from('technician_otp_requests')
-    .select('id,job_id,reply_nonce,created_at')
+    .select('id,job_id,reply_nonce,created_at,otp')
     .eq('id', requestId)
     .maybeSingle();
 
@@ -113,15 +113,19 @@ exports.handler = async (event) => {
       console.warn('[submit-tech-otp] could not store OTP on job', err?.message || err);
     }
 
-    // Admin may have closed Ask OTP — always push so they get the code.
-    try {
-      const { notifyAdminsOtpEntered } = require('./admin-otp-notify');
-      const push = await notifyAdminsOtpEntered(db, { jobId: row.job_id, otp });
-      if (!push.sent) {
-        console.warn('[submit-tech-otp] admin OTP push not sent:', push.reason || 'unknown');
+    // First answer only — re-submit/typo corrections update the row + live dialog
+    // without a second tray alert (collapse tag still covers races).
+    const alreadyHadOtp = typeof row.otp === 'string' && /^\d{4}$/.test(row.otp.trim());
+    if (!alreadyHadOtp) {
+      try {
+        const { notifyAdminsOtpEntered } = require('./admin-otp-notify');
+        const push = await notifyAdminsOtpEntered(db, { jobId: row.job_id, otp });
+        if (!push.sent) {
+          console.warn('[submit-tech-otp] admin OTP push not sent:', push.reason || 'unknown');
+        }
+      } catch (err) {
+        console.warn('[submit-tech-otp] admin OTP push failed', err?.message || err);
       }
-    } catch (err) {
-      console.warn('[submit-tech-otp] admin OTP push failed', err?.message || err);
     }
   }
 

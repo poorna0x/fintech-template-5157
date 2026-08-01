@@ -54,11 +54,14 @@ async function getAdminFcmTokens(db, category = null) {
     console.warn('[fcm-helper] admin_push_tokens lookup failed:', error.message);
     return [];
   }
-  return (rows || [])
-    .filter(
-      (r) => r.token && isPushEnabledRow(r) && isCategoryEnabled(r.push_prefs, category)
-    )
-    .map((r) => r.token);
+  // Unique tokens — duplicate rows (reinstall / race) were causing 2 alerts on one phone.
+  return [...new Set(
+    (rows || [])
+      .filter(
+        (r) => r.token && isPushEnabledRow(r) && isCategoryEnabled(r.push_prefs, category)
+      )
+      .map((r) => r.token)
+  )];
 }
 
 /** Remove stale admin device tokens. */

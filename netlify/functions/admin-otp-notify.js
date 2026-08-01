@@ -71,7 +71,7 @@ async function notifyAdminsOtpEntered(db, opts) {
     if (tech?.full_name) techName = tech.full_name;
   }
 
-  const tokens = await getAdminFcmTokens(db, 'job_status');
+  const tokens = [...new Set(await getAdminFcmTokens(db, 'job_status'))];
   if (tokens.length === 0) {
     return { sent: 0, reason: 'no_tokens' };
   }
@@ -82,6 +82,8 @@ async function notifyAdminsOtpEntered(db, opts) {
   const leadSource = resolveLeadSource(job);
   if (leadSource) lines.push(`Lead: ${leadSource}`);
   const message = lines.join('\n');
+  // Same job → replace prior OTP alert instead of stacking two trays.
+  const collapseTag = `otp_entered_${jobId}`;
 
   try {
     const messaging = await getMessaging(db);
@@ -92,13 +94,16 @@ async function notifyAdminsOtpEntered(db, opts) {
         type: 'job_event',
         event: 'otp_entered',
         jobId: String(jobId),
+        tag: collapseTag,
       },
       android: {
         priority: 'high',
+        collapseKey: collapseTag,
         notification: {
           channelId: 'job_alerts_v2',
           defaultSound: true,
           color: COLOR_OTP,
+          tag: collapseTag,
         },
       },
     });

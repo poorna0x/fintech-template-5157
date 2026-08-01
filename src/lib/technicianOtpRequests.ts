@@ -188,21 +188,35 @@ export async function getPendingOtpRequests(technicianId: string): Promise<OtpRe
 
 /** Technician: submit the code the customer gave them. */
 export async function submitOtp(requestId: string, otp: string, jobId?: string): Promise<boolean> {
-  const { data, error } = await supabase
+  // First answer wins for the admin push. Later overwrites (typo fix) update
+  // the row without a second tray notification.
+  const { data: firstHit, error: firstErr } = await supabase
     .from('technician_otp_requests')
     .update({ otp, submitted_at: new Date().toISOString() })
     .eq('id', requestId)
+    .is('otp', null)
     .select('id,job_id');
-  const ok = !error && !!data?.length;
-  const resolvedJobId = jobId || (data?.[0] as { job_id?: string } | undefined)?.job_id;
-  // Also copy the code onto the job itself so the admin Completed section
-  // shows it even after the request row is long forgotten.
-  if (ok && resolvedJobId) void persistOtpOnJob(resolvedJobId, otp);
-  // Always push to admin phones — the Ask OTP dialog may be closed.
-  if (ok && resolvedJobId && /^\d{4}$/.test(otp)) {
+
+  let resolvedJobId = jobId || (firstHit?.[0] as { job_id?: string } | undefined)?.job_id;
+  let isFirstAnswer = !firstErr && !!firstHit?.length;
+
+  if (!isFirstAnswer) {
+    const { data: overwrite, error: overwriteErr } = await supabase
+      .from('technician_otp_requests')
+      .update({ otp, submitted_at: new Date().toISOString() })
+      .eq('id', requestId)
+      .select('id,job_id');
+    if (overwriteErr || !overwrite?.length) return false;
+    resolvedJobId = jobId || (overwrite[0] as { job_id?: string }).job_id;
+  } else if (firstErr) {
+    return false;
+  }
+
+  if (resolvedJobId) void persistOtpOnJob(resolvedJobId, otp);
+  if (isFirstAnswer && resolvedJobId && /^\d{4}$/.test(otp)) {
     void import('@/lib/notifyAdminsJobEvent').then(({ notifyAdminsJobEvent }) =>
-      notifyAdminsJobEvent(resolvedJobId, 'otp_entered', { otp })
+      notifyAdminsJobEvent(resolvedJobId!, 'otp_entered', { otp })
     );
   }
-  return ok;
+  return true;
 }

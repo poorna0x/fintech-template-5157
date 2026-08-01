@@ -83,7 +83,14 @@ const AskTechnicianOtpDialog = ({
 
       if (!reAsk) {
         const existing = await getOtpRequestForJob(jobRow.id);
+        // Already answered — just show the code (no second push).
         if (existing?.otp) {
+          beginWatching(existing);
+          return;
+        }
+        // Pending Ask OTP already exists (e.g. auto-ask on-site) — watch it;
+        // do NOT createOtpRequest again or the tech gets a duplicate push.
+        if (existing) {
           beginWatching(existing);
           return;
         }
