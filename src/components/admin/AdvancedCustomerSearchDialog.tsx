@@ -1110,9 +1110,10 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
           }}
           customer={reportCustomer}
           technicians={technicianRows as unknown as Technician[]}
-          onPhotoClick={(url, index, total) => {
-            setReportSelectedBillPhotos(null);
-            setReportSelectedPhoto({ url, index, total });
+          onPhotoClick={(url, index, total, photos) => {
+            const list = photos && photos.length > 0 ? photos : [url];
+            setReportSelectedBillPhotos(list);
+            setReportSelectedPhoto({ url: list[index] || url, index, total: list.length || total });
             setReportPhotoViewerOpen(true);
           }}
           onBillPhotosClick={(photos, index) => {
@@ -1135,8 +1136,7 @@ const AdvancedCustomerSearchDialog: React.FC<AdvancedCustomerSearchDialogProps> 
           selectedPhoto={reportSelectedPhoto}
           selectedBillPhotos={reportSelectedBillPhotos}
           selectedJobPhotos={null}
-          // Report already lists thumbs — no fullscreen arrows.
-          showNavigation={false}
+          showNavigation={Boolean(reportSelectedBillPhotos && reportSelectedBillPhotos.length > 1)}
           onPrevious={() => {
             if (
               !reportSelectedPhoto ||

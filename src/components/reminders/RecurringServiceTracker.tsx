@@ -1049,9 +1049,10 @@ Thanks & regards 🙏`;
         onOpenChange={setReportOpen}
         customer={activeCustomer}
         technicians={technicians}
-        onPhotoClick={(url, index, total) => {
-          setViewerBillPhotos(null);
-          setViewerPhoto({ url, index, total });
+        onPhotoClick={(url, index, total, photos) => {
+          const list = photos && photos.length > 0 ? photos : [url];
+          setViewerBillPhotos(list);
+          setViewerPhoto({ url: list[index] || url, index, total: list.length || total });
           setPhotoViewerOpen(true);
         }}
         onBillPhotosClick={(photos, index) => {
@@ -1069,8 +1070,7 @@ Thanks & regards 🙏`;
           selectedPhoto={viewerPhoto}
           selectedBillPhotos={viewerBillPhotos}
           selectedJobPhotos={null}
-          // Report already lists thumbs — no fullscreen arrows.
-          showNavigation={false}
+          showNavigation={Boolean(viewerBillPhotos && viewerBillPhotos.length > 1)}
           onPrevious={() => {
             if (!viewerPhoto || !viewerBillPhotos || viewerBillPhotos.length <= 1) return;
             const newIndex = viewerPhoto.index > 0 ? viewerPhoto.index - 1 : viewerBillPhotos.length - 1;

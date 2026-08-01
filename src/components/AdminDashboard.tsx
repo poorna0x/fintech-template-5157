@@ -7154,9 +7154,10 @@ const AdminDashboard = () => {
         })}
         customer={selectedCustomerForReport}
         technicians={techniciansForReports.length > 0 ? techniciansForReports : technicians}
-        onPhotoClick={(url, index, total) => {
-          setReportViewerBillPhotos(null);
-          setReportViewerPhoto({ url, index, total });
+        onPhotoClick={(url, index, total, photos) => {
+          const list = photos && photos.length > 0 ? photos : [url];
+          setReportViewerBillPhotos(list);
+          setReportViewerPhoto({ url: list[index] || url, index, total: list.length || total });
           setPhotoDownloadMeta({ customerName: selectedCustomerForReport?.fullName, type: 'payment' });
           setReportPhotoViewerOpen(true);
         }}
@@ -7176,8 +7177,7 @@ const AdminDashboard = () => {
         selectedPhoto={reportViewerPhoto}
         selectedBillPhotos={reportViewerBillPhotos}
         selectedJobPhotos={null}
-        // Report already lists payment/bill thumbs — no fullscreen arrows.
-        showNavigation={false}
+        showNavigation={Boolean(reportViewerBillPhotos && reportViewerBillPhotos.length > 1)}
         onPrevious={() => {
           if (!reportViewerPhoto || !reportViewerBillPhotos || reportViewerBillPhotos.length <= 1) return;
           const newIndex =

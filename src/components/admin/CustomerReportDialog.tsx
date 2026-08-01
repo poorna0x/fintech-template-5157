@@ -16,7 +16,8 @@ interface CustomerReportDialogProps {
   onOpenChange: (open: boolean) => void;
   customer: Customer | null;
   technicians: Technician[];
-  onPhotoClick?: (url: string, index: number, total: number) => void;
+  /** Optional `photos` = full set so the viewer can show prev/next. */
+  onPhotoClick?: (url: string, index: number, total: number, photos?: string[]) => void;
   onBillPhotosClick?: (photos: string[], index: number) => void;
   /** Admin: jump to Completed tab for this job's completion date. */
   onNavigateToCompletedJob?: (customer: Customer, job: Job) => void;
@@ -384,7 +385,12 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
                                   className="relative group cursor-pointer rounded-lg overflow-hidden border-2 border-blue-300 hover:border-blue-500 transition-all"
                                   onClick={() => {
                                     if (onPhotoClick) {
-                                      onPhotoClick(paymentUrl, idx, paymentScreenshots.length);
+                                      onPhotoClick(
+                                        paymentUrl,
+                                        idx,
+                                        paymentScreenshots.length,
+                                        paymentScreenshots,
+                                      );
                                     }
                                   }}
                                 >

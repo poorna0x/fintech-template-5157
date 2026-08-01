@@ -1568,9 +1568,10 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
               setSelectedCustomerForReport(null);
             }
           }}
-          onPhotoClick={(url, index, total) => {
-            setReportSelectedBillPhotos(null);
-            setReportSelectedPhoto({ url, index, total });
+          onPhotoClick={(url, index, total, photos) => {
+            const list = photos && photos.length > 0 ? photos : [url];
+            setReportSelectedBillPhotos(list);
+            setReportSelectedPhoto({ url: list[index] || url, index, total: list.length || total });
             setReportPhotoViewerOpen(true);
           }}
           onBillPhotosClick={(photos, index) => {
@@ -1589,8 +1590,11 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
           selectedPhoto={reportSelectedPhoto}
           selectedBillPhotos={reportSelectedBillPhotos}
           selectedJobPhotos={null}
-          // Report / gallery already pick thumbs — no fullscreen arrows.
-          showNavigation={false}
+          // Gallery: no arrows. Report multi bill/payment: arrows.
+          showNavigation={
+            !customerPhotoGalleryOpen &&
+            Boolean(reportSelectedBillPhotos && reportSelectedBillPhotos.length > 1)
+          }
           onPrevious={() => {
             if (!reportSelectedPhoto || !reportSelectedBillPhotos || reportSelectedBillPhotos.length <= 1) return;
             const newIndex = reportSelectedPhoto.index > 0 ? reportSelectedPhoto.index - 1 : reportSelectedBillPhotos.length - 1;
