@@ -100,11 +100,13 @@ public class WrongLineCallReceiver {
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         String dedupeKey = company + "|" + dialed + "|" + from + "|" + call.fromSimSlot;
         long now = System.currentTimeMillis();
+        // Short window only — blocks CallLog double-reads of the *same* hangup,
+        // not a later intentional redial on the wrong SIM (that should warn again).
         if (
             dedupeKey.equals(prefs.getString(KEY_LAST_ALERT_KEY, ""))
-                && now - prefs.getLong(KEY_LAST_ALERT_AT, 0L) < 15 * 60_000L
+                && now - prefs.getLong(KEY_LAST_ALERT_AT, 0L) < 90_000L
         ) {
-            Log.i(TAG, "Dedupe skip");
+            Log.i(TAG, "Dedupe skip (same hangup <90s)");
             return;
         }
 
