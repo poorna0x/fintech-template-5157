@@ -15,13 +15,8 @@ interface PhotoViewerDialogProps {
   onNext: () => void;
   onDownload: (photoUrl: string, photoIndex: number) => void;
   onClose: () => void;
-  /** Hide download (e.g. technician viewer). Default true. */
   showDownload?: boolean;
-  /**
-   * Show prev/next arrows + counter.
-   * False when opened from a photo gallery grid (pick another thumb instead).
-   * Default true (bill/payment/report sequences).
-   */
+  /** Prev/next for bill/payment sequences only. Gallery grids: false. */
   showNavigation?: boolean;
 }
 
@@ -40,51 +35,32 @@ function resolveUrls(
   return [];
 }
 
-/** Neutral 4:3 placeholder — never use viewport size (that stretches photos on desktop). */
-const PLACEHOLDER_W = 1600;
-const PLACEHOLDER_H = 1200;
-
-function slidesFromUrls(urls: string[]): Slide[] {
-  return urls.map((src, i) => ({
-    src,
-    width: PLACEHOLDER_W,
-    height: PLACEHOLDER_H,
-    alt: `Photo ${i + 1}`,
-  }));
-}
-
-/** Resolve natural size (usually instant if the gallery thumb already cached the URL). */
-function loadNaturalSize(src: string): Promise<{ width: number; height: number } | null> {
+function loadNaturalSize(src: string): Promise<{ width: number; height: number }> {
   return new Promise((resolve) => {
     const img = new Image();
-    const done = () => {
-      if (img.naturalWidth > 0 && img.naturalHeight > 0) {
-        resolve({ width: img.naturalWidth, height: img.naturalHeight });
-      } else {
-        resolve(null);
-      }
+    const finish = () => {
+      resolve({
+        width: img.naturalWidth || 1600,
+        height: img.naturalHeight || 1200,
+      });
     };
-    img.onload = done;
-    img.onerror = () => resolve(null);
+    img.onload = finish;
+    img.onerror = () => resolve({ width: 1600, height: 1200 });
     img.src = src;
-    if (img.complete) done();
+    if (img.complete) finish();
   });
 }
 
-/** After decode, fix real dimensions so pinch zoom bounds match the image. */
 function refineSlideSize(pswp: PhotoSwipe, slideIndex: number, img: HTMLImageElement) {
   const w = img.naturalWidth;
   const h = img.naturalHeight;
   if (!w || !h) return;
-
   const dataSource = pswp.options.dataSource;
   if (!Array.isArray(dataSource)) return;
   const item = dataSource[slideIndex] as Slide | undefined;
   if (!item || (item.width === w && item.height === h)) return;
-
   item.width = w;
   item.height = h;
-
   const slide = pswp.currSlide;
   if (slide && slide.index === slideIndex) {
     try {
@@ -95,26 +71,30 @@ function refineSlideSize(pswp: PhotoSwipe, slideIndex: number, img: HTMLImageEle
   }
 }
 
-/** Hide PhotoSwipe chrome; never stretch photos to the slide box. */
-const PSWP_CHROME_CSS = `
+/**
+ * Old HRO chrome + PhotoSwipe zoom only.
+ * - Black stage immediately (like before)
+ * - No arrows/download until the photo has loaded
+ * - Real image dimensions before open so size matches the old object-contain look
+ */
+const PSWP_CSS = `
 .pswp { --pswp-bg: #000; z-index: 200 !important; }
+.pswp__bg { background: #000 !important; }
 .pswp__top-bar,
 .pswp__button--close,
 .pswp__button--zoom,
 .pswp__button--arrow--prev,
 .pswp__button--arrow--next,
-.pswp__counter {
+.pswp__counter,
+.pswp__preloader {
   display: none !important;
 }
 .pswp__img {
   object-fit: contain !important;
+  object-position: center center !important;
 }
 `;
 
-/**
- * PhotoSwipe for pinch/double-tap zoom (APK + PWA).
- * Opens immediately (no dimension preload). Previous HRO controls overlaid.
- */
 const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
   open,
   onOpenChange: _onOpenChange,
@@ -132,11 +112,11 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
-  const [pswpReady, setPswpReady] = useState(false);
+  /** Photo painted and sized — only then show arrows/download (close stays). */
+  const [photoReady, setPhotoReady] = useState(false);
   const [slideIndex, setSlideIndex] = useState(0);
 
   const urls = useMemo(() => {
-    // Gallery grid already lets you pick photos — open a single slide only.
     if (!showNavigation) {
       return selectedPhoto?.url ? [selectedPhoto.url] : [];
     }
@@ -147,18 +127,15 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
   const parentDrivenNav =
     showNavigation && urls.length === 1 && Boolean(selectedPhoto && selectedPhoto.total > 1);
   const hasNav = Boolean(
-    showNavigation && selectedPhoto && (selectedPhoto.total > 1 || urls.length > 1),
+    showNavigation && selectedPhoto && (urls.length > 1 || (selectedPhoto.total > 1 && parentDrivenNav)),
   );
-  const displayIndex = parentDrivenNav
-    ? (selectedPhoto?.index ?? 0)
-    : slideIndex;
+  const displayIndex = parentDrivenNav ? (selectedPhoto?.index ?? 0) : slideIndex;
   const displayTotal = parentDrivenNav
     ? (selectedPhoto?.total ?? 1)
-    : Math.max(urls.length, selectedPhoto?.total ?? 1);
+    : Math.max(urls.length, 1);
   const currentUrl =
     (parentDrivenNav ? selectedPhoto?.url : urls[slideIndex]) || selectedPhoto?.url || '';
 
-  // Remount key: multi-slide gallery stays alive across arrow taps; parent-driven swaps URL.
   const sessionKey = !open || !selectedPhoto?.url
     ? ''
     : parentDrivenNav
@@ -167,7 +144,7 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
 
   useEffect(() => {
     if (!sessionKey || !selectedPhoto?.url) {
-      setPswpReady(false);
+      setPhotoReady(false);
       return;
     }
 
@@ -175,6 +152,7 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
     if (list.length === 0) return;
 
     let cancelled = false;
+    setPhotoReady(false);
 
     const startIndex = parentDrivenNav
       ? 0
@@ -190,17 +168,29 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
     }
 
     const openViewer = async () => {
-      const slides = slidesFromUrls(list);
-      // Current slide only — usually cache-hit from the thumb, keeps aspect correct on desktop.
-      const natural = await loadNaturalSize(list[startIndex]);
+      // Size every slide we can from cache before open — correct fit like old object-contain.
+      const slides: Slide[] = await Promise.all(
+        list.map(async (src, i) => {
+          // Prioritize current slide; neighbors can use cache if available without blocking forever.
+          if (i === startIndex) {
+            const size = await loadNaturalSize(src);
+            return { src, width: size.width, height: size.height, alt: `Photo ${i + 1}` };
+          }
+          // Neighbors: try sync cache via complete Image, else 4:3 fallback refined on load.
+          const probe = new Image();
+          probe.src = src;
+          if (probe.complete && probe.naturalWidth > 0) {
+            return {
+              src,
+              width: probe.naturalWidth,
+              height: probe.naturalHeight,
+              alt: `Photo ${i + 1}`,
+            };
+          }
+          return { src, width: 1600, height: 1200, alt: `Photo ${i + 1}` };
+        }),
+      );
       if (cancelled) return;
-      if (natural) {
-        slides[startIndex] = {
-          ...slides[startIndex],
-          width: natural.width,
-          height: natural.height,
-        };
-      }
 
       const options: PhotoSwipeOptions = {
         dataSource: slides,
@@ -209,7 +199,7 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
         showHideAnimationType: 'none',
         pinchToClose: false,
         closeOnVerticalDrag: false,
-        tapAction: 'toggle-controls',
+        tapAction: false,
         doubleTapAction: 'zoom',
         secondaryZoomLevel: 2.5,
         maxZoomLevel: 4,
@@ -228,6 +218,7 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
 
       pswp.on('change', () => {
         setSlideIndex(pswp.currIndex);
+        setPhotoReady(false);
       });
 
       pswp.on('loadComplete', (e) => {
@@ -236,30 +227,39 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
         if (el instanceof HTMLImageElement) {
           refineSlideSize(pswp, e.slide.index, el);
         }
+        if (e.slide.index === pswp.currIndex) {
+          setPhotoReady(true);
+        }
       });
 
       pswp.on('close', () => {
-        setPswpReady(false);
+        setPhotoReady(false);
         onCloseRef.current();
       });
 
       pswp.on('destroy', () => {
         if (pswpRef.current === pswp) pswpRef.current = null;
-        setPswpReady(false);
+        setPhotoReady(false);
       });
 
       pswp.init();
-      if (!cancelled) {
-        setSlideIndex(pswp.currIndex);
-        setPswpReady(true);
-      }
+      setSlideIndex(pswp.currIndex);
+      // If image was already decoded/cached, loadComplete may have fired; mark ready next frame.
+      requestAnimationFrame(() => {
+        if (cancelled) return;
+        const el = pswp.currSlide?.content?.element;
+        if (el instanceof HTMLImageElement && el.complete && el.naturalWidth > 0) {
+          refineSlideSize(pswp, pswp.currIndex, el);
+          setPhotoReady(true);
+        }
+      });
     };
 
     void openViewer();
 
     return () => {
       cancelled = true;
-      setPswpReady(false);
+      setPhotoReady(false);
       if (pswpRef.current) {
         try {
           pswpRef.current.destroy();
@@ -269,7 +269,7 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
         pswpRef.current = null;
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- sessionKey encodes open/urls/index
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionKey]);
 
   const handleClose = () => {
@@ -289,12 +289,7 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
       onPrevious();
       return;
     }
-    const pswp = pswpRef.current;
-    if (pswp && urls.length > 1) {
-      pswp.prev();
-      return;
-    }
-    onPrevious();
+    pswpRef.current?.prev();
   };
 
   const handleNext = () => {
@@ -302,24 +297,26 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
       onNext();
       return;
     }
-    const pswp = pswpRef.current;
-    if (pswp && urls.length > 1) {
-      pswp.next();
-      return;
-    }
-    onNext();
+    pswpRef.current?.next();
   };
 
   if (!open || typeof document === 'undefined') return null;
 
   return createPortal(
     <>
-      <style>{PSWP_CHROME_CSS}</style>
+      <style>{PSWP_CSS}</style>
+      {/* Instant black stage — same as old viewer while photo/zoom mounts */}
+      <div
+        className="fixed inset-0 z-[199] bg-black"
+        style={{ zIndex: 199 }}
+        aria-hidden
+      />
+
       <div
         className="pointer-events-none fixed inset-0 z-[210]"
         style={{ zIndex: 210 }}
-        aria-hidden={!pswpReady}
       >
+        {/* Close always available */}
         <button
           type="button"
           aria-label="Close"
@@ -333,13 +330,14 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
           <X className="h-5 w-5" />
         </button>
 
-        {hasNav && selectedPhoto && (
+        {/* Arrows / counter / download only after photo is on screen — no early flash */}
+        {photoReady && hasNav && (
           <div className="pointer-events-none absolute left-3 top-[max(0.75rem,env(safe-area-inset-top))] rounded-full bg-black/50 px-3 py-1 text-sm text-white">
             {displayIndex + 1} / {displayTotal}
           </div>
         )}
 
-        {hasNav && (
+        {photoReady && hasNav && (
           <button
             type="button"
             aria-label="Previous photo"
@@ -355,7 +353,7 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
           </button>
         )}
 
-        {hasNav && (
+        {photoReady && hasNav && (
           <button
             type="button"
             aria-label="Next photo"
@@ -371,13 +369,13 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
           </button>
         )}
 
-        {selectedPhoto && (
+        {photoReady && (
           <div className="pointer-events-none absolute inset-x-0 bottom-20 flex justify-center text-xs text-white/70 sm:hidden">
             Pinch or double-tap to zoom
           </div>
         )}
 
-        {showDownload && selectedPhoto && currentUrl && (
+        {photoReady && showDownload && currentUrl && (
           <div
             className="pointer-events-none absolute inset-x-0 flex justify-center"
             style={{ bottom: 'max(1rem, env(safe-area-inset-bottom))' }}
