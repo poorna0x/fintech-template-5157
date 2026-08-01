@@ -13,6 +13,10 @@ CREATE TABLE IF NOT EXISTS public.tech_call_alert_events (
 CREATE INDEX IF NOT EXISTS tech_call_alert_events_created_at_idx
   ON public.tech_call_alert_events (created_at DESC);
 
+-- Phone-window dedupe lookup (same tech + customer within ~45s).
+CREATE INDEX IF NOT EXISTS tech_call_alert_events_tech_phone_created_idx
+  ON public.tech_call_alert_events (technician_id, phone, created_at DESC);
+
 ALTER TABLE public.tech_call_alert_events ENABLE ROW LEVEL SECURITY;
 
 -- Service role only (Netlify). No client policies.

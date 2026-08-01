@@ -76,6 +76,10 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             showTechNudge(data);
             return;
         }
+        if ("wrong_line_call".equals(data.get("type"))) {
+            showWrongLineCall(data);
+            return;
+        }
         if ("job_alert_overlay".equals(data.get("type"))) {
             showJobAlertOverlay(data);
             return;
@@ -302,6 +306,59 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             Log.w(TAG, "Notifications not permitted", e);
         }
         TechActionOverlay.maybeShowFromPush(context, TechActionOverlay.Mode.INFO, data);
+    }
+
+    /** Wrong company SIM — tray + big full-screen warning overlay. */
+    private void showWrongLineCall(Map<String, String> data) {
+        Context context = getApplicationContext();
+        String title = data.get("msgTitle");
+        if (title == null || title.isEmpty()) title = data.get("title");
+        if (title == null || title.isEmpty()) title = "Please call from company number";
+        String body = data.get("msgBody");
+        if (body == null) body = data.get("body");
+        if (body == null) body = "";
+        String tag = data.get("tag");
+        if (tag == null || tag.isEmpty()) tag = "wrong_line_self";
+        String colorHex = data.get("color");
+        int color = Color.parseColor("#B45309");
+        if (colorHex != null && colorHex.matches("#[0-9a-fA-F]{6}")) {
+            try {
+                color = Color.parseColor(colorHex);
+            } catch (IllegalArgumentException ignored) {
+                /* keep amber */
+            }
+        }
+        NotificationChannels.ensureJobAlerts(context);
+        Intent openIntent =
+            new Intent(context, MainActivity.class)
+                .setFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK
+                        | Intent.FLAG_ACTIVITY_SINGLE_TOP
+                        | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        PendingIntent openPending =
+            PendingIntent.getActivity(
+                context,
+                Math.abs(tag.hashCode()),
+                openIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        Notification notification =
+            new NotificationCompat.Builder(context, NotificationChannels.JOB_ALERTS)
+                .setSmallIcon(R.drawable.ic_stat_notify)
+                .setColor(color)
+                .setContentTitle(title)
+                .setContentText(body)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setDefaults(Notification.DEFAULT_ALL)
+                .setContentIntent(openPending)
+                .setAutoCancel(true)
+                .build();
+        try {
+            NotificationManagerCompat.from(context).notify(tag, Math.abs(tag.hashCode()), notification);
+        } catch (SecurityException e) {
+            Log.w(TAG, "Notifications not permitted", e);
+        }
+        TechActionOverlay.showWrongLineWarning(context, title, body, tag);
     }
 
     /**

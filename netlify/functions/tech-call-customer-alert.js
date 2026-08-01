@@ -227,9 +227,34 @@ exports.handler = async (event) => {
   }
 
   // Idempotent send: same CallLog call_id → one admin push. Re-call = new call_id.
+  // Phone window (45s) catches mismatched ids (native ringAt vs JS dateMs / js:bucket).
   if (technicianId && !isAdminDevice) {
     if (!callId) {
       callId = callAt > 0 ? `${phone}:${callAt}` : `${phone}:t${Math.floor(Date.now() / 20_000)}`;
+    }
+    const sinceIso = new Date(Date.now() - 45_000).toISOString();
+    const { data: recentSamePhone } = await db
+      .from('tech_call_alert_events')
+      .select('call_id')
+      .eq('technician_id', technicianId)
+      .eq('phone', phone)
+      .gte('created_at', sinceIso)
+      .limit(1)
+      .maybeSingle();
+    if (recentSamePhone?.call_id) {
+      return {
+        statusCode: 200,
+        headers: HEADERS,
+        body: JSON.stringify({
+          found: true,
+          sent: 0,
+          reason:
+            recentSamePhone.call_id === callId ? 'deduped' : 'deduped_phone_window',
+          callId,
+          priorCallId: recentSamePhone.call_id,
+          authVia,
+        }),
+      };
     }
     const { error: dedupeErr } = await db.from('tech_call_alert_events').insert({
       technician_id: technicianId,
@@ -303,8 +328,10 @@ exports.handler = async (event) => {
           channelId: 'job_alerts_v2',
           defaultSound: true,
           color,
-          // Include callId so a re-call is a distinct notification, not a silent replace.
-          tag: `tech_call_${technicianId || 'admin'}_${phone}_${callId || 'x'}${missed ? '_missed' : ''}`,
+          // Collapse by tech+phone (omit callId) so duplicate POSTs with
+          // mismatched ids replace instead of stacking 3–4 notifications.
+          // A true re-call updates the same tag — still one clear alert.
+          tag: `tech_call_${technicianId || 'admin'}_${phone}${missed ? '_missed' : ''}`,
         },
       },
     });

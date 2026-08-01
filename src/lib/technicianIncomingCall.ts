@@ -17,6 +17,7 @@ type RecentCallPlugin = {
     number?: string;
     at?: number;
     callLogDate?: number;
+    callId?: string;
     alerted?: boolean;
   }>;
 };
@@ -69,7 +70,11 @@ export async function peekRecentTechnicianCaller(): Promise<{
     }
     const result = await RecentCall.peekRecentCall();
     if (result?.alerted) {
-      return null;
+      return {
+        digits: normalizePhoneForSearch(String(result.number || '')) || 'x',
+        at: typeof result.at === 'number' ? result.at : Date.now(),
+        alreadyAlerted: true,
+      };
     }
     const digits = normalizeFresh(result?.number, result?.at);
     if (!digits || typeof result?.at !== 'number') return null;
@@ -77,8 +82,14 @@ export async function peekRecentTechnicianCaller(): Promise<{
       typeof result.callLogDate === 'number' && result.callLogDate > 0
         ? result.callLogDate
         : undefined;
-    const callId = callAt ? `${digits}:${callAt}` : undefined;
-    return { digits, at: result.at, callAt, callId };
+    const callId =
+      typeof (result as { callId?: string }).callId === 'string' &&
+      (result as { callId?: string }).callId!.trim()
+        ? (result as { callId?: string }).callId!.trim()
+        : callAt
+          ? `${digits}:${callAt}`
+          : undefined;
+    return { digits, at: result.at, callAt, callId, alreadyAlerted: false };
   } catch {
     return null;
   }
@@ -86,7 +97,7 @@ export async function peekRecentTechnicianCaller(): Promise<{
 
 export function reportRecentTechnicianCallToAdmins(): void {
   void peekRecentTechnicianCaller().then((hit) => {
-    if (!hit) return;
+    if (!hit || hit.alreadyAlerted || !hit.callId || !hit.callAt) return;
     notifyAdminsTechnicianCall(hit.digits, { callId: hit.callId, callAt: hit.callAt });
   });
 }

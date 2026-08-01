@@ -43,6 +43,7 @@ public final class TechActionOverlay {
     private static final String TAG = "HroTechActionOverlay";
     private static final long AUTO_DISMISS_MS = 90_000L;
     private static final long OTP_AUTO_DISMISS_MS = 180_000L;
+    private static final long WRONG_LINE_AUTO_DISMISS_MS = 180_000L;
 
     private static final int WHITE = 0xFFFFFFFF;
     private static final int INK = 0xFF0F172A;
@@ -52,6 +53,7 @@ public final class TechActionOverlay {
     private static final int AMBER = 0xFFD97706;
     private static final int BLUE = 0xFF2563EB;
     private static final int GREEN = 0xFF16A34A;
+    private static final int WRONG_LINE_RED = 0xFFB45309;
 
     public enum Mode {
         REPLY,
@@ -59,7 +61,9 @@ public final class TechActionOverlay {
         CALL,
         GOING,
         START,
-        INFO
+        INFO,
+        /** Full-screen warning when tech dialed a customer from a non-company SIM. */
+        WRONG_LINE
     }
 
     private static View currentView;
@@ -113,6 +117,43 @@ public final class TechActionOverlay {
                     data.get("jobId")));
     }
 
+    /** Immediate full-screen wrong-line warning (detecting handset — no FCM wait). */
+    public static void showWrongLineWarning(
+        Context context, String title, String body, String tag
+    ) {
+        if (context == null) return;
+        if (!canDraw(context)) {
+            Log.i(TAG, "Overlay permission missing — wrong-line warning skipped");
+            return;
+        }
+        final Context app = context.getApplicationContext();
+        final String t =
+            title != null && !title.trim().isEmpty()
+                ? title.trim()
+                : defaultTitle(Mode.WRONG_LINE);
+        final String b = body != null ? body.trim() : "";
+        final String trayTag =
+            tag != null && !tag.isEmpty() ? tag : "wrong_line_self";
+        mainHandler.post(
+            () ->
+                showOnMain(
+                    app,
+                    Mode.WRONG_LINE,
+                    t,
+                    b,
+                    "#B45309",
+                    null,
+                    null,
+                    trayTag,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null));
+    }
+
     /** Close overlay and clear the matching tray notification. */
     public static void dismiss() {
         dismiss(true);
@@ -153,6 +194,10 @@ public final class TechActionOverlay {
                 break;
             case INFO:
                 currentTrayTag = t != null ? t : "tech_nudge";
+                currentTrayId = Math.abs(currentTrayTag.hashCode());
+                break;
+            case WRONG_LINE:
+                currentTrayTag = t != null ? t : "wrong_line_self";
                 currentTrayId = Math.abs(currentTrayTag.hashCode());
                 break;
             case OTP:
@@ -290,7 +335,7 @@ public final class TechActionOverlay {
         TextView titleView = new TextView(context);
         titleView.setText(safe(title, defaultTitle(mode)));
         titleView.setTextColor(INK);
-        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, mode == Mode.WRONG_LINE ? 22 : 18);
         titleView.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
         content.addView(titleView);
 
@@ -298,12 +343,12 @@ public final class TechActionOverlay {
             TextView bodyView = new TextView(context);
             bodyView.setText(body.trim());
             bodyView.setTextColor(BODY);
-            bodyView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-            bodyView.setLineSpacing(dp(density, 2), 1f);
+            bodyView.setTextSize(TypedValue.COMPLEX_UNIT_SP, mode == Mode.WRONG_LINE ? 16 : 14);
+            bodyView.setLineSpacing(dp(density, mode == Mode.WRONG_LINE ? 4 : 2), 1f);
             LinearLayout.LayoutParams bodyLp =
                 new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-            bodyLp.topMargin = dp(density, 10);
+            bodyLp.topMargin = dp(density, mode == Mode.WRONG_LINE ? 14 : 10);
             content.addView(bodyView, bodyLp);
         }
 
@@ -375,6 +420,13 @@ public final class TechActionOverlay {
         if (mode == Mode.GOING) {
             secondary.setText("No");
             primary.setText("Yes");
+        }
+        if (mode == Mode.WRONG_LINE) {
+            // Single big acknowledge — warning should not be easy to miss.
+            secondary.setVisibility(View.GONE);
+            secLp.rightMargin = 0;
+            primary.setText("Got it");
+            actions.setWeightSum(1f);
         }
 
         card.addView(
@@ -453,7 +505,11 @@ public final class TechActionOverlay {
         }
 
         FrameLayout root = new FrameLayout(context);
-        root.setPadding(dp(density, 12), dp(density, 12), dp(density, 12), dp(density, 12));
+        int rootPad = mode == Mode.WRONG_LINE ? dp(density, 20) : dp(density, 12);
+        root.setPadding(rootPad, rootPad, rootPad, rootPad);
+        if (mode == Mode.WRONG_LINE) {
+            root.setBackgroundColor(0xE6111111);
+        }
         FrameLayout.LayoutParams cardLp =
             new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT);
@@ -465,7 +521,14 @@ public final class TechActionOverlay {
 
         DisplayMetrics metrics = new DisplayMetrics();
         wm.getDefaultDisplay().getMetrics(metrics);
-        int width = Math.min(metrics.widthPixels - dp(density, 20), dp(density, 400));
+        int width =
+            mode == Mode.WRONG_LINE
+                ? WindowManager.LayoutParams.MATCH_PARENT
+                : Math.min(metrics.widthPixels - dp(density, 20), dp(density, 400));
+        int height =
+            mode == Mode.WRONG_LINE
+                ? WindowManager.LayoutParams.MATCH_PARENT
+                : WindowManager.LayoutParams.WRAP_CONTENT;
 
         int type =
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
@@ -475,7 +538,7 @@ public final class TechActionOverlay {
         WindowManager.LayoutParams lp =
             new WindowManager.LayoutParams(
                 width,
-                WindowManager.LayoutParams.WRAP_CONTENT,
+                height,
                 type,
                 WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
                     | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
@@ -501,8 +564,10 @@ public final class TechActionOverlay {
             enter.setInterpolator(new DecelerateInterpolator());
             enter.start();
             mainHandler.removeCallbacks(autoDismiss);
-            mainHandler.postDelayed(
-                autoDismiss, mode == Mode.OTP ? OTP_AUTO_DISMISS_MS : AUTO_DISMISS_MS);
+            long dismissMs = AUTO_DISMISS_MS;
+            if (mode == Mode.OTP) dismissMs = OTP_AUTO_DISMISS_MS;
+            else if (mode == Mode.WRONG_LINE) dismissMs = WRONG_LINE_AUTO_DISMISS_MS;
+            mainHandler.postDelayed(autoDismiss, dismissMs);
             if (input != null) input.requestFocus();
             Log.i(TAG, "Overlay shown mode=" + mode);
         } catch (Throwable t) {
@@ -550,6 +615,10 @@ public final class TechActionOverlay {
             case INFO: {
                 dismiss(true);
                 openApp(context, jobId);
+                break;
+            }
+            case WRONG_LINE: {
+                dismiss(true);
                 break;
             }
             case START:
@@ -710,6 +779,9 @@ public final class TechActionOverlay {
             case GOING:
                 fallback = GREEN;
                 break;
+            case WRONG_LINE:
+                fallback = WRONG_LINE_RED;
+                break;
             default:
                 fallback = VIOLET;
                 break;
@@ -736,6 +808,8 @@ public final class TechActionOverlay {
                 return "START";
             case REPLY:
                 return "MESSAGE";
+            case WRONG_LINE:
+                return "WRONG LINE";
             default:
                 return "NUDGE";
         }
@@ -753,6 +827,8 @@ public final class TechActionOverlay {
                 return "Yes";
             case REPLY:
                 return "Send reply";
+            case WRONG_LINE:
+                return "Got it";
             default:
                 return "Open app";
         }
@@ -765,9 +841,13 @@ public final class TechActionOverlay {
             case CALL:
                 return "Call customer now";
             case START:
-                return "Start this job";
+                return "Start this job?";
             case GOING:
-                return "Are you going?";
+                return "Are you going now?";
+            case REPLY:
+                return "Message from office";
+            case WRONG_LINE:
+                return "Please call from company number";
             default:
                 return "Message from office";
         }

@@ -240,25 +240,28 @@ exports.handler = async (event) => {
       if (stale.length > 0) await pruneAdminFcmTokens(db, stale);
     }
 
+    const techTitle = 'Please call from company number';
+    const techBody = `You called ${customer.full_name} (${customerPhone}) from ${usedLine}.\n\nPlease call from the company number: ${officeLine}.`;
+    const techTag = `wrong_line_self_${customerPhone}`;
+
     const techResult = await sendToTechnicianDevices(
       db,
       messaging,
       technicianId,
       (token) => ({
         token,
-        notification: {
-          title: 'Call used wrong company number',
-          body: `You called ${customer.full_name} (${customerPhone}) from ${usedLine}. Use company ${officeLine}.`,
+        // Data-only: native builds tray + big overlay (notification payload would skip onMessageReceived when killed).
+        data: {
+          ...dataPayload,
+          type: 'wrong_line_call',
+          showOverlay: '1',
+          msgTitle: techTitle,
+          msgBody: techBody,
+          color: '#B45309',
+          tag: techTag,
         },
-        data: dataPayload,
         android: {
           priority: 'high',
-          notification: {
-            channelId: 'job_alerts_v2',
-            defaultSound: true,
-            color: '#B45309',
-            tag: `wrong_line_self_${customerPhone}`,
-          },
         },
       }),
       'wrong_line'

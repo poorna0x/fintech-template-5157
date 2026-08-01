@@ -132,14 +132,28 @@ public class WrongLineCallReceiver {
         }
 
         int companySlot = DevicePrefsPlugin.readCompanySimSlot(context);
-        int code = postOnce(token, dialed, from, company, call.fromSimSlot, companySlot);
-        Log.i(TAG, "Wrong-line POST code=" + code);
-        if (code >= 200 && code < 300) {
+        String body = postOnce(token, dialed, from, company, call.fromSimSlot, companySlot);
+        boolean found = body != null && body.contains("\"found\":true");
+        Log.i(TAG, "Wrong-line POST found=" + found + " body=" + body);
+        if (found) {
             prefs
                 .edit()
                 .putString(KEY_LAST_ALERT_KEY, dedupeKey)
                 .putLong(KEY_LAST_ALERT_AT, now)
                 .apply();
+            String usedLabel = from.isEmpty() ? "another SIM" : from;
+            String officeLabel =
+                companySlot > 0 ? company + " (SIM " + companySlot + ")" : company;
+            TechActionOverlay.showWrongLineWarning(
+                context,
+                "Please call from company number",
+                "You called a customer from "
+                    + usedLabel
+                    + ".\n\nPlease call from the company number: "
+                    + officeLabel
+                    + ".",
+                "wrong_line_self_" + dialed
+            );
         }
     }
 
@@ -148,7 +162,8 @@ public class WrongLineCallReceiver {
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
-    private static int postOnce(
+    /** Returns response body (or null on failure). */
+    private static String postOnce(
         String token,
         String dialed,
         String from,
@@ -177,19 +192,20 @@ public class WrongLineCallReceiver {
             int code = conn.getResponseCode();
             InputStream stream =
                 code >= 400 ? conn.getErrorStream() : conn.getInputStream();
+            StringBuilder sb = new StringBuilder();
             if (stream != null) {
                 try (BufferedReader br =
                     new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
-                    StringBuilder sb = new StringBuilder();
                     String line;
                     while ((line = br.readLine()) != null) sb.append(line);
-                    Log.i(TAG, "Body: " + sb);
                 }
             }
-            return code;
+            Log.i(TAG, "POST code=" + code + " body=" + sb);
+            if (code < 200 || code >= 300) return null;
+            return sb.toString();
         } catch (Exception e) {
             Log.w(TAG, "postOnce failed: " + e.getMessage());
-            return -1;
+            return null;
         } finally {
             if (conn != null) conn.disconnect();
         }

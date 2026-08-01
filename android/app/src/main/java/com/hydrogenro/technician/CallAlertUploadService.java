@@ -171,7 +171,10 @@ public class CallAlertUploadService extends Service {
             long ringAt = i.getLongExtra(EXTRA_RING_AT, 0L);
             String number = i.getStringExtra(EXTRA_NUMBER);
             if (MODE_UPLOAD.equals(mode) && number != null) {
-                CallAlertReceiver.uploadCallerNow(app, number, ringAt);
+                // Prefer CallLog-stable callId; don't POST with ringAt alone.
+                if (!CallAlertReceiver.finalizeAndUpload(app, ringAt)) {
+                    CallAlertUploadService.startWatch(app, ringAt, false);
+                }
             }
         }
     }
@@ -212,9 +215,9 @@ public class CallAlertUploadService extends Service {
                 try {
                     if (MODE_WATCH.equals(mode)) {
                         watchThenUpload(app, ringAt);
-                    } else {
-                        if (number != null && !number.isEmpty()) {
-                            CallAlertReceiver.uploadCallerNow(app, number, ringAt);
+                    } else if (number != null && !number.isEmpty()) {
+                        if (!CallAlertReceiver.finalizeAndUpload(app, ringAt)) {
+                            watchThenUpload(app, ringAt);
                         }
                     }
                 } finally {
@@ -255,7 +258,8 @@ public class CallAlertUploadService extends Service {
                 return;
             }
         }
-        Log.w(TAG, "Watch timed out without number");
+        Log.w(TAG, "Watch timed out — last-resort pending upload");
+        CallAlertReceiver.uploadPendingFallback(app, session);
     }
 
     /**

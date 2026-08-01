@@ -184,35 +184,45 @@ public class CallAlertReceiver extends BroadcastReceiver {
             return true;
         }
 
+        // Always wait for CallLog DATE so callId = phone:dateMs matches the JS
+        // backup. Uploading early with ringAt as callAt caused 2–4 admin pushes
+        // (native phone:ringAt + JS phone:dateMs + retries).
         CallLogHelper.Entry log =
             CallLogHelper.bestIncomingForSession(context, ringAt, ringAt - 15_000L);
-        String number = null;
-        long callAt = ringAt;
-        if (log != null) {
-            number = log.number;
-            callAt = log.dateMs > 0 ? log.dateMs : ringAt;
-        }
-        if (number == null || number.trim().isEmpty()) {
-            number = prefs.getString(KEY_PENDING_NUMBER, null);
-        }
-        if (number == null || number.trim().isEmpty()) {
-            number = prefs.getString(KEY_LAST_NUMBER, null);
-        }
-        if (number == null || number.trim().isEmpty()) {
-            Log.i(TAG, "Finalize — no number yet");
+        if (log == null || log.number == null || log.number.trim().isEmpty()) {
+            Log.i(TAG, "Finalize — waiting CallLog for stable callId");
             return false;
         }
+        String number = log.number.trim();
+        long callAt = log.dateMs > 0 ? log.dateMs : ringAt;
 
         prefs
             .edit()
-            .putString(KEY_PENDING_NUMBER, number.trim())
-            .putString(KEY_LAST_NUMBER, number.trim())
+            .putString(KEY_PENDING_NUMBER, number)
+            .putString(KEY_LAST_NUMBER, number)
             .putLong(KEY_LAST_AT, System.currentTimeMillis())
             .putLong(RecentCallPlugin.KEY_LAST_CALLLOG_DATE, callAt)
             .apply();
 
-        uploadCallerNow(context, number.trim(), ringAt, callAt);
+        uploadCallerNow(context, number, ringAt, callAt);
         return prefs.getLong(KEY_ALERTED_RING_AT, 0L) == ringAt;
+    }
+
+    /**
+     * Last resort when CallLog never appears (OEM / privacy). Uses ring session
+     * as callAt — prefer {@link #finalizeAndUpload} whenever CallLog is ready.
+     */
+    static void uploadPendingFallback(Context context, long ringAt) {
+        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        if (ringAt <= 0) return;
+        if (prefs.getLong(KEY_ALERTED_RING_AT, 0L) == ringAt) return;
+        String number = prefs.getString(KEY_PENDING_NUMBER, null);
+        if (number == null || number.trim().isEmpty()) {
+            number = prefs.getString(KEY_LAST_NUMBER, null);
+        }
+        if (number == null || number.trim().isEmpty()) return;
+        Log.w(TAG, "Fallback upload with ring session id (no CallLog)");
+        uploadCallerNow(context, number.trim(), ringAt, ringAt);
     }
 
     /** Legacy 3-arg entry — callAt defaults to ringAt. */

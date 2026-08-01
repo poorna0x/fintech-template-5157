@@ -51,8 +51,12 @@ export function initTechnicianIncomingCallBackgroundLookup(): () => void {
     try {
       const hit = await peekRecentTechnicianCaller();
       if (!hit || disposed) return;
-      if (alreadyHandled(hit.digits, hit.callAt || hit.at)) return;
-      markLastAuto(hit.digits, hit.callAt || hit.at);
+      // Wait for CallLog DATE so callId matches native hangup POST (phone:dateMs).
+      // Without it, a js:time-bucket id races native and admins get 2–4 pushes per call.
+      if (!hit.callId || !hit.callAt) return;
+      if (hit.alreadyAlerted) return;
+      if (alreadyHandled(hit.digits, hit.callAt)) return;
+      markLastAuto(hit.digits, hit.callAt);
       notifyAdminsTechnicianCall(hit.digits, { callId: hit.callId, callAt: hit.callAt });
     } catch {
       /* next resume / poll retries */
