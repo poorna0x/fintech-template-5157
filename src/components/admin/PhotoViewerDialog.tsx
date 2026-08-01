@@ -1,8 +1,8 @@
-import React, { useEffect, useId, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, ChevronRight, Download, X } from 'lucide-react';
-import { ZoomableImage } from '@/components/ZoomableImage';
+import { ChevronLeft, ChevronRight, Download, Minus, Plus, RotateCcw, X } from 'lucide-react';
+import { ZoomableImage, type ZoomableImageHandle } from '@/components/ZoomableImage';
 import { cn } from '@/lib/utils';
 
 interface PhotoViewerDialogProps {
@@ -23,8 +23,8 @@ const ctrlBtn =
   'flex h-11 w-11 items-center justify-center rounded-full bg-black/70 text-white active:bg-black/90';
 
 /**
- * Fullscreen photo viewer via document.body portal — not Radix Dialog.
- * Nested gallery dialogs no longer steal pinch on Capacitor Android WebView.
+ * Fullscreen photo viewer via body portal (avoids nested Radix stealing pinch).
+ * Zoom uses the Jul-17 react-zoom-pan-pinch approach + always-on +/- buttons.
  */
 const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
   open,
@@ -40,6 +40,7 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
 }) => {
   const [loadError, setLoadError] = useState(false);
   const titleId = useId();
+  const zoomRef = useRef<ZoomableImageHandle | null>(null);
   const hasNav = Boolean(selectedPhoto && selectedPhoto.total > 1);
 
   useEffect(() => {
@@ -49,8 +50,6 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
   useEffect(() => {
     if (!open) return;
 
-    // Override Radix parent-dialog body lock (pointer-events:none) so our
-    // portal can receive pinch on Android WebView.
     const prevOverflow = document.body.style.overflow;
     const prevTouchAction = document.body.style.touchAction;
     const prevPointerEvents = document.body.style.pointerEvents;
@@ -107,6 +106,7 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
           {selectedPhoto && !loadError && (
             <ZoomableImage
               key={selectedPhoto.url}
+              ref={zoomRef}
               src={selectedPhoto.url}
               alt={`Photo ${selectedPhoto.index + 1}`}
               onError={() => setLoadError(true)}
@@ -118,11 +118,6 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
                 <p className="mb-2 text-lg font-medium">Could not load this image</p>
                 <p className="break-all text-sm text-white/80">{selectedPhoto.url}</p>
               </div>
-            </div>
-          )}
-          {!selectedPhoto && (
-            <div className="flex h-full w-full items-center justify-center text-white/70">
-              No photo selected
             </div>
           )}
         </div>
@@ -182,14 +177,62 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
 
         {selectedPhoto && !loadError && (
           <div
-            className="pointer-events-none absolute inset-x-0 z-[1] flex justify-center text-xs text-white/70 sm:hidden"
+            className="absolute left-1/2 z-[2] flex -translate-x-1/2 items-center gap-2"
             style={{
               bottom: showDownload
-                ? 'max(4.25rem, calc(env(safe-area-inset-bottom) + 3.25rem))'
+                ? 'max(4.5rem, calc(env(safe-area-inset-bottom) + 3.5rem))'
                 : 'max(1.25rem, env(safe-area-inset-bottom))',
             }}
           >
-            Pinch or double-tap to zoom
+            <button
+              type="button"
+              aria-label="Zoom out"
+              className={ctrlBtn}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                zoomRef.current?.zoomOut();
+              }}
+            >
+              <Minus className="h-5 w-5" />
+            </button>
+            <button
+              type="button"
+              aria-label="Reset zoom"
+              className={ctrlBtn}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                zoomRef.current?.reset();
+              }}
+            >
+              <RotateCcw className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              aria-label="Zoom in"
+              className={ctrlBtn}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                zoomRef.current?.zoomIn();
+              }}
+            >
+              <Plus className="h-5 w-5" />
+            </button>
+          </div>
+        )}
+
+        {selectedPhoto && !loadError && (
+          <div
+            className="pointer-events-none absolute inset-x-0 z-[1] flex justify-center text-xs text-white/70 sm:hidden"
+            style={{
+              bottom: showDownload
+                ? 'max(7.5rem, calc(env(safe-area-inset-bottom) + 6.5rem))'
+                : 'max(4.25rem, calc(env(safe-area-inset-bottom) + 3.25rem))',
+            }}
+          >
+            Pinch, double-tap, or use + / −
           </div>
         )}
 
