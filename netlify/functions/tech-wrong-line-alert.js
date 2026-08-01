@@ -151,10 +151,12 @@ exports.handler = async (event) => {
   // Server is source of truth: only alert when reported from-line ≠ company,
   // or when from-line is unknown but client already decided (from empty) —
   // then require client companyPhone match so we don't trust a spoofed dial.
+  // Slot fields cover Indian SIMs where MSISDN is blank (office defaults to SIM 2).
   const clientCompany = normalizePhone(body.companyPhone);
-  if (clientCompany && clientCompany !== companyPhone) {
-    // Stale cache — still use DB company phone for the comparison below.
-  }
+  const fromSimSlot = Math.max(0, parseInt(String(body.fromSimSlot || '0'), 10) || 0);
+  const companySimSlot = Math.max(0, parseInt(String(body.companySimSlot || '0'), 10) || 0);
+  const slotSame = fromSimSlot > 0 && companySimSlot > 0 && fromSimSlot === companySimSlot;
+  const slotWrong = fromSimSlot > 0 && companySimSlot > 0 && fromSimSlot !== companySimSlot;
 
   if (fromReported && fromReported === companyPhone) {
     return {
@@ -163,7 +165,16 @@ exports.handler = async (event) => {
       body: JSON.stringify({ found: false, reason: 'same_line' }),
     };
   }
-  if (!fromReported && clientCompany !== companyPhone) {
+  if (slotSame) {
+    return {
+      statusCode: 200,
+      headers: HEADERS,
+      body: JSON.stringify({ found: false, reason: 'same_sim_slot' }),
+    };
+  }
+  // No phone-number from-line: allow when SIM slots prove wrong, or when the
+  // client company cache matches DB (legacy path). Reject otherwise.
+  if (!fromReported && !slotWrong && clientCompany !== companyPhone) {
     return {
       statusCode: 200,
       headers: HEADERS,
@@ -181,9 +192,14 @@ exports.handler = async (event) => {
   }
 
   const techName = tech.full_name || 'Technician';
-  const usedLine = fromLabel || 'unknown personal/other SIM';
+  const usedLine =
+    fromLabel ||
+    (fromSimSlot > 0 ? `SIM${fromSimSlot}` : '') ||
+    'unknown personal/other SIM';
+  const officeLine =
+    companySimSlot > 0 ? `${companyPhone} (SIM${companySimSlot})` : companyPhone;
   const title = `${techName} called on wrong number`;
-  const bodyText = `${customer.full_name} (${customerPhone}) · used ${usedLine} · company ${companyPhone}`;
+  const bodyText = `${customer.full_name} (${customerPhone}) · used ${usedLine} · company ${officeLine}`;
 
   const dataPayload = {
     type: 'wrong_line_call',
@@ -232,7 +248,7 @@ exports.handler = async (event) => {
         token,
         notification: {
           title: 'Call used wrong company number',
-          body: `You called ${customer.full_name} (${customerPhone}) from ${usedLine}. Use ${companyPhone}.`,
+          body: `You called ${customer.full_name} (${customerPhone}) from ${usedLine}. Use company ${officeLine}.`,
         },
         data: dataPayload,
         android: {

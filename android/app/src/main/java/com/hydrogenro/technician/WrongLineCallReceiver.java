@@ -131,7 +131,8 @@ public class WrongLineCallReceiver {
             return;
         }
 
-        int code = postOnce(token, dialed, from, company);
+        int companySlot = DevicePrefsPlugin.readCompanySimSlot(context);
+        int code = postOnce(token, dialed, from, company, call.fromSimSlot, companySlot);
         Log.i(TAG, "Wrong-line POST code=" + code);
         if (code >= 200 && code < 300) {
             prefs
@@ -147,14 +148,23 @@ public class WrongLineCallReceiver {
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
-    private static int postOnce(String token, String dialed, String from, String company) {
+    private static int postOnce(
+        String token,
+        String dialed,
+        String from,
+        String company,
+        int fromSimSlot,
+        int companySimSlot
+    ) {
         HttpURLConnection conn = null;
         try {
             String payload =
                 "{\"token\":\"" + jsonEscape(token) + "\"," +
                 "\"number\":\"" + jsonEscape(dialed) + "\"," +
                 "\"fromNumber\":\"" + jsonEscape(from) + "\"," +
-                "\"companyPhone\":\"" + jsonEscape(company) + "\"}";
+                "\"companyPhone\":\"" + jsonEscape(company) + "\"," +
+                "\"fromSimSlot\":" + Math.max(0, fromSimSlot) + "," +
+                "\"companySimSlot\":" + Math.max(0, companySimSlot) + "}";
             conn = (HttpURLConnection) new URL(ALERT_URL).openConnection();
             conn.setRequestMethod("POST");
             conn.setRequestProperty("Content-Type", "application/json");

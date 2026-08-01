@@ -39,6 +39,8 @@ public class DevicePrefsPlugin extends Plugin {
         prefs(context).edit().putString(KEY_COMPANY_PHONE, n).apply();
         if (!n.isEmpty()) {
             SimLineHelper.refreshSimCache(context);
+        } else {
+            saveCompanySimSlot(context, SimLineHelper.DEFAULT_COMPANY_SIM_SLOT);
         }
     }
 
@@ -50,6 +52,11 @@ public class DevicePrefsPlugin extends Plugin {
     static int readCompanySimSlot(Context context) {
         int slot = prefs(context).getInt(KEY_COMPANY_SIM_SLOT, SimLineHelper.DEFAULT_COMPANY_SIM_SLOT);
         return slot >= 1 ? slot : SimLineHelper.DEFAULT_COMPANY_SIM_SLOT;
+    }
+
+    static void saveCompanySimSlot(Context context, int slot1Based) {
+        int slot = slot1Based >= 1 ? slot1Based : SimLineHelper.DEFAULT_COMPANY_SIM_SLOT;
+        prefs(context).edit().putInt(KEY_COMPANY_SIM_SLOT, slot).apply();
     }
 
     static void saveSimCache(Context context, String numbersCsv, String subMap, String slotMap) {

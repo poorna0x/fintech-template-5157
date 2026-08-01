@@ -130,6 +130,75 @@ final class SimLineHelper {
             TAG,
             "SIM cache refreshed: " + numbers.size() + " number(s), " + slotBySub.size() + " slot(s)"
         );
+        resolveAndSaveCompanySimSlot(context);
+    }
+
+    /**
+     * If the company phone matches a readable SIM MSISDN, pin that slot as office.
+     * If numbers can't be fetched / don't match → office defaults to SIM 2.
+     */
+    static void resolveAndSaveCompanySimSlot(Context context) {
+        String company = DevicePrefsPlugin.readCompanyPhone(context);
+        if (company.isEmpty()) {
+            DevicePrefsPlugin.saveCompanySimSlot(context, DEFAULT_COMPANY_SIM_SLOT);
+            return;
+        }
+
+        Map<String, String> bySub = DevicePrefsPlugin.readSimSubMap(context);
+        Map<String, Integer> slots = DevicePrefsPlugin.readSimSlotMap(context);
+        for (Map.Entry<String, String> e : bySub.entrySet()) {
+            if (!company.equals(e.getValue())) continue;
+            Integer slot = slots.get(e.getKey());
+            if (slot != null && slot >= 1) {
+                DevicePrefsPlugin.saveCompanySimSlot(context, slot);
+                Log.i(TAG, "Company phone matched on SIM " + slot);
+                return;
+            }
+        }
+
+        // Live pass in case cache maps are empty but SubscriptionInfo is readable now.
+        if (
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE)
+                == PackageManager.PERMISSION_GRANTED
+        ) {
+            try {
+                SubscriptionManager sm =
+                    (SubscriptionManager) context.getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE);
+                if (sm != null) {
+                    List<SubscriptionInfo> infos = sm.getActiveSubscriptionInfoList();
+                    if (infos != null) {
+                        for (SubscriptionInfo info : infos) {
+                            String num = normalize10(info.getNumber());
+                            if (num.isEmpty() && android.os.Build.VERSION.SDK_INT >= 24) {
+                                try {
+                                    TelephonyManager tm =
+                                        ((TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE))
+                                            .createForSubscriptionId(info.getSubscriptionId());
+                                    if (tm != null) num = normalize10(tm.getLine1Number());
+                                } catch (Exception ignored) {
+                                }
+                            }
+                            if (company.equals(num)) {
+                                int slot1 = info.getSimSlotIndex() + 1;
+                                if (slot1 >= 1) {
+                                    DevicePrefsPlugin.saveCompanySimSlot(context, slot1);
+                                    Log.i(TAG, "Company phone live-matched on SIM " + slot1);
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "Company SIM resolve failed: " + e.getMessage());
+            }
+        }
+
+        DevicePrefsPlugin.saveCompanySimSlot(context, DEFAULT_COMPANY_SIM_SLOT);
+        Log.i(
+            TAG,
+            "Company phone not readable on any SIM — default office SIM " + DEFAULT_COMPANY_SIM_SLOT
+        );
     }
 
     /**
