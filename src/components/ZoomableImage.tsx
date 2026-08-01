@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import {
   TransformWrapper,
   TransformComponent,
@@ -18,22 +18,70 @@ const DOUBLE_TAP_MS = 380;
 const TAP_MOVE_PX = 14;
 const ZOOM_SCALE = 2.5;
 
+/** Stable props — must not be recreated every frame or Android pinch dies mid-gesture. */
+const PANNING_PROPS = { disabled: true, velocityDisabled: true } as const;
+const WHEEL_PROPS = { step: 0.12 } as const;
+const PINCH_PROPS = { step: 8 } as const;
+const DOUBLE_CLICK_PROPS = { disabled: true } as const;
+const AUTO_ALIGNMENT_PROPS = { disabled: true } as const;
+const VELOCITY_ANIMATION_PROPS = { disabled: true } as const;
+
+const WRAPPER_STYLE_BASE: React.CSSProperties = {
+  width: '100%',
+  height: '100%',
+  maxWidth: '100%',
+  maxHeight: '100%',
+  cursor: 'default',
+  touchAction: 'none',
+};
+
+const CONTENT_STYLE: React.CSSProperties = {
+  width: '100%',
+  height: '100%',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+};
+
 type TapPoint = { x: number; y: number; t: number };
+
+function syncPanningAndCursor(
+  ref: ReactZoomPanPinchContentRef | ReactZoomPanPinchRef | null,
+  scale: number
+) {
+  if (!ref) return;
+  const disabled = scale <= 1.05;
+  try {
+    const setup = ref.instance?.setup as { panning?: { disabled?: boolean } } | undefined;
+    if (setup?.panning) {
+      setup.panning.disabled = disabled;
+    }
+  } catch {
+    /* ignore */
+  }
+  const wrapper = ref.instance?.wrapperComponent;
+  if (wrapper) {
+    wrapper.style.cursor = disabled ? 'default' : 'grab';
+  }
+}
 
 /**
  * Pinch / double-tap / wheel zoom for photo viewers.
  * Custom double-tap (library window is a hard-coded 200ms).
  * Panning disabled at 1× so the first tap isn’t eaten by a tiny drag.
+ *
+ * Important: do NOT setState on every transform frame — that rebuilds
+ * TransformWrapper props mid-pinch and kills zoom on Android WebView.
  */
 export function ZoomableImage({ src, alt = '', className, onError }: ZoomableImageProps) {
   const apiRef = useRef<ReactZoomPanPinchContentRef | null>(null);
-  const [scale, setScale] = useState(1);
+  const scaleRef = useRef(1);
   const lastTapRef = useRef<TapPoint | null>(null);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const multiTouchRef = useRef(false);
 
   useEffect(() => {
-    setScale(1);
+    scaleRef.current = 1;
     lastTapRef.current = null;
     touchStartRef.current = null;
     multiTouchRef.current = false;
@@ -41,17 +89,25 @@ export function ZoomableImage({ src, alt = '', className, onError }: ZoomableIma
 
   const handleInit = useCallback((ref: ReactZoomPanPinchRef) => {
     apiRef.current = ref;
+    scaleRef.current = 1;
+    syncPanningAndCursor(ref, 1);
     // Wait for layout + image decode so center isn't computed against 0×0 on iOS
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         try {
           ref.centerView(1, 0);
-          setScale(1);
+          scaleRef.current = 1;
+          syncPanningAndCursor(ref, 1);
         } catch {
           /* ignore if unmounted */
         }
       });
     });
+  }, []);
+
+  const handleTransform = useCallback((_ref: ReactZoomPanPinchRef, state: { scale: number }) => {
+    scaleRef.current = state.scale;
+    syncPanningAndCursor(apiRef.current ?? _ref, state.scale);
   }, []);
 
   const zoomToggleAt = useCallback((clientX: number, clientY: number) => {
@@ -127,7 +183,7 @@ export function ZoomableImage({ src, alt = '', className, onError }: ZoomableIma
 
       lastTapRef.current = { x: touch.clientX, y: touch.clientY, t: now };
     },
-    [zoomToggleAt],
+    [zoomToggleAt]
   );
 
   const handleDoubleClick = useCallback(
@@ -135,7 +191,7 @@ export function ZoomableImage({ src, alt = '', className, onError }: ZoomableIma
       e.preventDefault();
       zoomToggleAt(e.clientX, e.clientY);
     },
-    [zoomToggleAt],
+    [zoomToggleAt]
   );
 
   return (
@@ -152,34 +208,21 @@ export function ZoomableImage({ src, alt = '', className, onError }: ZoomableIma
         maxScale={5}
         centerOnInit={false}
         onInit={handleInit}
-        onTransform={(_ref, state) => setScale(state.scale)}
-        doubleClick={{ disabled: true }}
-        wheel={{ step: 0.12 }}
-        pinch={{ step: 8 }}
-        panning={{ disabled: scale <= 1.05, velocityDisabled: true }}
+        onTransformed={handleTransform}
+        doubleClick={DOUBLE_CLICK_PROPS}
+        wheel={WHEEL_PROPS}
+        pinch={PINCH_PROPS}
+        panning={PANNING_PROPS}
         limitToBounds
         disablePadding
-        autoAlignment={{ disabled: true }}
-        velocityAnimation={{ disabled: true }}
+        autoAlignment={AUTO_ALIGNMENT_PROPS}
+        velocityAnimation={VELOCITY_ANIMATION_PROPS}
       >
         <TransformComponent
           wrapperClass="!h-full !w-full !max-h-full !max-w-full overflow-hidden"
           contentClass="!flex !h-full !w-full !max-h-full !max-w-full items-center justify-center"
-          wrapperStyle={{
-            width: '100%',
-            height: '100%',
-            maxWidth: '100%',
-            maxHeight: '100%',
-            cursor: scale > 1.05 ? 'grab' : 'default',
-            touchAction: 'none',
-          }}
-          contentStyle={{
-            width: '100%',
-            height: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
+          wrapperStyle={WRAPPER_STYLE_BASE}
+          contentStyle={CONTENT_STYLE}
         >
           <img
             src={src}
