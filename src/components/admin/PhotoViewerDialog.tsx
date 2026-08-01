@@ -17,6 +17,12 @@ interface PhotoViewerDialogProps {
   onClose: () => void;
   /** Hide download (e.g. technician viewer). Default true. */
   showDownload?: boolean;
+  /**
+   * Show prev/next arrows + counter.
+   * False when opened from a photo gallery grid (pick another thumb instead).
+   * Default true (bill/payment/report sequences).
+   */
+  showNavigation?: boolean;
 }
 
 type Slide = { src: string; width: number; height: number; alt: string };
@@ -105,6 +111,7 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
   onDownload,
   onClose,
   showDownload = true,
+  showNavigation = true,
 }) => {
   const pswpRef = useRef<PhotoSwipe | null>(null);
   const onCloseRef = useRef(onClose);
@@ -113,15 +120,19 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
   const [pswpReady, setPswpReady] = useState(false);
   const [slideIndex, setSlideIndex] = useState(0);
 
-  const urls = useMemo(
-    () => resolveUrls(selectedPhoto, selectedBillPhotos, selectedJobPhotos),
-    [selectedPhoto, selectedBillPhotos, selectedJobPhotos],
-  );
+  const urls = useMemo(() => {
+    // Gallery grid already lets you pick photos — open a single slide only.
+    if (!showNavigation) {
+      return selectedPhoto?.url ? [selectedPhoto.url] : [];
+    }
+    return resolveUrls(selectedPhoto, selectedBillPhotos, selectedJobPhotos);
+  }, [showNavigation, selectedPhoto, selectedBillPhotos, selectedJobPhotos]);
   const urlsKey = urls.join('\n');
 
-  const parentDrivenNav = urls.length === 1 && Boolean(selectedPhoto && selectedPhoto.total > 1);
+  const parentDrivenNav =
+    showNavigation && urls.length === 1 && Boolean(selectedPhoto && selectedPhoto.total > 1);
   const hasNav = Boolean(
-    selectedPhoto && (selectedPhoto.total > 1 || urls.length > 1),
+    showNavigation && selectedPhoto && (selectedPhoto.total > 1 || urls.length > 1),
   );
   const displayIndex = parentDrivenNav
     ? (selectedPhoto?.index ?? 0)

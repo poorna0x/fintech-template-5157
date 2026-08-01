@@ -6611,6 +6611,9 @@ const AdminDashboard = () => {
         onPrevious={goToPreviousPhoto}
         onNext={goToNextPhoto}
         onDownload={downloadPhoto}
+        // Gallery grids already pick the photo — hide arrows/counter there.
+        // Keep nav for bill/payment sequences (gallery dialogs closed).
+        showNavigation={!photoGalleryOpen && !customerPhotoGalleryOpen}
         onClose={() => {
           onAdminModalOpenChange('photo-viewer', false);
           setSelectedPhoto(null);
