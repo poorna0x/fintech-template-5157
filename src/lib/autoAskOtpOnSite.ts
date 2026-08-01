@@ -1,11 +1,10 @@
 /**
- * On-site OTP ask — SERVER owns the dwell clock (1 minute for testing).
+ * On-site OTP ask — SERVER owns the dwell clock (3 minutes after GPS near).
  *
  * Phone:
  *  1) GPS near customer → POST near:true (arms otp_onsite_detected_at)
  *  2) Open / every 15s / resume → POST check (fires Ask OTP when dwell elapsed)
  */
-import { toast } from 'sonner';
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import { getStoredOtpFromRequirements } from '@/lib/technicianOtpRequests';
 import { haversineDistanceMeters } from '@/lib/googleMapsDistance';
@@ -21,7 +20,6 @@ const ACTIVE_STATUSES = new Set(['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS
 
 const lastCallAt = new Map<string, number>();
 const MIN_CALL_GAP_MS = 5_000;
-const armedToastShown = new Set<string>();
 
 export type AutoAskOtpJobLike = {
   id: string;
@@ -149,16 +147,6 @@ async function callServer(jobId: string, near: boolean): Promise<void> {
 
     if (!res.ok) {
       console.warn('[auto-ask-otp] server error', out?.error || out?.details || res.status);
-      return;
-    }
-
-    if (near && out?.waiting && !armedToastShown.has(jobId)) {
-      armedToastShown.add(jobId);
-      const secs = Math.max(1, Math.ceil((out.remainingMs || 60_000) / 1000));
-      toast.message(`On-site OTP timer started (~${secs}s)`);
-    }
-    if (out?.asked) {
-      toast.success(out.sent ? 'OTP requested' : 'OTP request created');
     }
   } catch (err) {
     console.warn('[auto-ask-otp] error', err);
