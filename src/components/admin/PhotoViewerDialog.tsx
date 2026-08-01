@@ -51,31 +51,37 @@ function loadNaturalSize(src: string): Promise<{ width: number; height: number }
   });
 }
 
-function refineSlideSize(pswp: PhotoSwipe, slideIndex: number, img: HTMLImageElement) {
-  const w = img.naturalWidth;
-  const h = img.naturalHeight;
-  if (!w || !h) return;
+/** Apply real pixel size and re-fit so portrait payment shots fill the screen (not a tiny landscape box). */
+function applyRealSizeAndFit(pswp: PhotoSwipe, slideIndex: number, width: number, height: number) {
+  if (!width || !height) return;
   const dataSource = pswp.options.dataSource;
   if (!Array.isArray(dataSource)) return;
   const item = dataSource[slideIndex] as Slide | undefined;
-  if (!item || (item.width === w && item.height === h)) return;
-  item.width = w;
-  item.height = h;
+  if (!item) return;
+
+  const changed = item.width !== width || item.height !== height;
+  item.width = width;
+  item.height = height;
+
   const slide = pswp.currSlide;
-  if (slide && slide.index === slideIndex) {
-    try {
-      slide.updateContentSize(true);
-    } catch {
-      /* ignore */
+  if (!slide || slide.index !== slideIndex) return;
+
+  try {
+    if (changed) slide.updateContentSize(true);
+    const fit = slide.zoomLevels?.fit;
+    if (typeof fit === 'number' && Number.isFinite(fit)) {
+      const cx = pswp.viewportSize.x / 2;
+      const cy = pswp.viewportSize.y / 2;
+      slide.zoomTo(fit, { x: cx, y: cy }, 0);
     }
+  } catch {
+    /* ignore */
   }
 }
 
 /**
  * Old HRO chrome + PhotoSwipe zoom only.
- * - Black stage immediately (like before)
- * - No arrows/download until the photo has loaded
- * - Real image dimensions before open so size matches the old object-contain look
+ * Real image dimensions before open — wrong 4:3 placeholders made payment photos tiny.
  */
 const PSWP_CSS = `
 .pswp { --pswp-bg: #000; z-index: 200 !important; }
@@ -88,10 +94,6 @@ const PSWP_CSS = `
 .pswp__counter,
 .pswp__preloader {
   display: none !important;
-}
-.pswp__img {
-  object-fit: contain !important;
-  object-position: center center !important;
 }
 `;
 
@@ -168,26 +170,12 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
     }
 
     const openViewer = async () => {
-      // Size every slide we can from cache before open — correct fit like old object-contain.
+      // Always resolve real w/h for every slide (bill+payment sets are tiny).
+      // Landscape 4:3 placeholders made portrait payment shots look tiny on phone.
       const slides: Slide[] = await Promise.all(
         list.map(async (src, i) => {
-          // Prioritize current slide; neighbors can use cache if available without blocking forever.
-          if (i === startIndex) {
-            const size = await loadNaturalSize(src);
-            return { src, width: size.width, height: size.height, alt: `Photo ${i + 1}` };
-          }
-          // Neighbors: try sync cache via complete Image, else 4:3 fallback refined on load.
-          const probe = new Image();
-          probe.src = src;
-          if (probe.complete && probe.naturalWidth > 0) {
-            return {
-              src,
-              width: probe.naturalWidth,
-              height: probe.naturalHeight,
-              alt: `Photo ${i + 1}`,
-            };
-          }
-          return { src, width: 1600, height: 1200, alt: `Photo ${i + 1}` };
+          const size = await loadNaturalSize(src);
+          return { src, width: size.width, height: size.height, alt: `Photo ${i + 1}` };
         }),
       );
       if (cancelled) return;
@@ -203,6 +191,7 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
         doubleTapAction: 'zoom',
         secondaryZoomLevel: 2.5,
         maxZoomLevel: 4,
+        // Same as old object-contain: largest size that still shows the full photo
         initialZoomLevel: 'fit',
         padding: { top: 0, bottom: 0, left: 0, right: 0 },
         preload: [1, 1],
@@ -220,21 +209,19 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
         if (cancelled) return;
         const el = pswp.currSlide?.content?.element;
         if (el instanceof HTMLImageElement && el.complete && el.naturalWidth > 0) {
-          refineSlideSize(pswp, pswp.currIndex, el);
+          applyRealSizeAndFit(pswp, pswp.currIndex, el.naturalWidth, el.naturalHeight);
           setPhotoReady(true);
         }
       };
 
       pswp.on('change', () => {
         setSlideIndex(pswp.currIndex);
-        // Preloaded/cached next slides often skip a second loadComplete — re-check now.
         const el = pswp.currSlide?.content?.element;
         if (el instanceof HTMLImageElement && el.complete && el.naturalWidth > 0) {
-          refineSlideSize(pswp, pswp.currIndex, el);
+          applyRealSizeAndFit(pswp, pswp.currIndex, el.naturalWidth, el.naturalHeight);
           setPhotoReady(true);
         } else {
           setPhotoReady(false);
-          // Next frame: content may attach after change.
           requestAnimationFrame(syncReadyFromCurrent);
         }
       });
@@ -242,8 +229,8 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
       pswp.on('loadComplete', (e) => {
         if (cancelled || e.isError) return;
         const el = e.content?.element;
-        if (el instanceof HTMLImageElement) {
-          refineSlideSize(pswp, e.slide.index, el);
+        if (el instanceof HTMLImageElement && el.naturalWidth > 0) {
+          applyRealSizeAndFit(pswp, e.slide.index, el.naturalWidth, el.naturalHeight);
         }
         if (e.slide.index === pswp.currIndex) {
           setPhotoReady(true);
