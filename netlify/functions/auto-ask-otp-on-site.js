@@ -1,4 +1,4 @@
-// Technician on-site for ~5 min on an OTP-required job → Ask OTP once.
+// Technician on-site (~10s dwell in app; was 5 min) on an OTP-required job → Ask OTP once.
 // Auth: technician JWT (must be assigned to the job).
 // Idempotent: jobs.otp_auto_asked_at is set atomically (NULL → now).
 // If OTP already entered, does nothing. Reuses same FCM path as admin Ask OTP.
