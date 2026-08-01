@@ -216,9 +216,27 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
       const pswp = new PhotoSwipe(options);
       pswpRef.current = pswp;
 
+      const syncReadyFromCurrent = () => {
+        if (cancelled) return;
+        const el = pswp.currSlide?.content?.element;
+        if (el instanceof HTMLImageElement && el.complete && el.naturalWidth > 0) {
+          refineSlideSize(pswp, pswp.currIndex, el);
+          setPhotoReady(true);
+        }
+      };
+
       pswp.on('change', () => {
         setSlideIndex(pswp.currIndex);
-        setPhotoReady(false);
+        // Preloaded/cached next slides often skip a second loadComplete — re-check now.
+        const el = pswp.currSlide?.content?.element;
+        if (el instanceof HTMLImageElement && el.complete && el.naturalWidth > 0) {
+          refineSlideSize(pswp, pswp.currIndex, el);
+          setPhotoReady(true);
+        } else {
+          setPhotoReady(false);
+          // Next frame: content may attach after change.
+          requestAnimationFrame(syncReadyFromCurrent);
+        }
       });
 
       pswp.on('loadComplete', (e) => {
@@ -244,15 +262,7 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
 
       pswp.init();
       setSlideIndex(pswp.currIndex);
-      // If image was already decoded/cached, loadComplete may have fired; mark ready next frame.
-      requestAnimationFrame(() => {
-        if (cancelled) return;
-        const el = pswp.currSlide?.content?.element;
-        if (el instanceof HTMLImageElement && el.complete && el.naturalWidth > 0) {
-          refineSlideSize(pswp, pswp.currIndex, el);
-          setPhotoReady(true);
-        }
-      });
+      requestAnimationFrame(syncReadyFromCurrent);
     };
 
     void openViewer();
@@ -375,7 +385,9 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
           </div>
         )}
 
-        {photoReady && showDownload && currentUrl && (
+        {/* Download stays available on every slide (not gated on photoReady —
+            next/prev with a cached image was leaving ready=false forever). */}
+        {showDownload && currentUrl && (
           <div
             className="pointer-events-none absolute inset-x-0 flex justify-center"
             style={{ bottom: 'max(1rem, env(safe-area-inset-bottom))' }}
