@@ -7,7 +7,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Copy, KeyRound, Loader2, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -17,7 +16,6 @@ import {
   watchOtpRequest,
   type OtpRequestRow,
 } from '@/lib/technicianOtpRequests';
-import { getOtpPushOverlayPref, setOtpPushOverlayPref } from '@/lib/techPushDeliveryPrefs';
 import type { Job } from '@/types';
 
 type AskTechnicianOtpDialogProps = {
@@ -29,8 +27,7 @@ type AskTechnicianOtpDialogProps = {
 
 /**
  * Admin asks the assigned technician for the customer's 4-digit OTP.
- * Overlay is ON by default (tech can enter OTP on the card). Live-updates
- * when the tech submits.
+ * Always pushes tray + on-screen overlay (tech enters code on the card).
  */
 const AskTechnicianOtpDialog = ({
   open,
@@ -42,7 +39,6 @@ const AskTechnicianOtpDialog = ({
   const [storedOtp, setStoredOtp] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [failed, setFailed] = useState(false);
-  const [showOverlay, setShowOverlay] = useState(() => getOtpPushOverlayPref());
   const unwatchRef = useRef<(() => void) | null>(null);
   const toastedOtpRef = useRef<string | null>(null);
 
@@ -72,7 +68,6 @@ const AskTechnicianOtpDialog = ({
   const ask = async (jobRow: Job, reAsk: boolean) => {
     setStarting(true);
     setFailed(false);
-    setOtpPushOverlayPref(showOverlay);
     if (reAsk) {
       setStoredOtp(null);
       toastedOtpRef.current = null;
@@ -102,7 +97,7 @@ const AskTechnicianOtpDialog = ({
         jobId: jobRow.id,
         technicianId,
         customerName,
-        overlay: showOverlay,
+        overlay: true,
       });
       if (row) beginWatching(row);
       else setFailed(true);
@@ -120,7 +115,6 @@ const AskTechnicianOtpDialog = ({
       setRequest(null);
       setStoredOtp(null);
       setFailed(false);
-      setShowOverlay(getOtpPushOverlayPref());
       toastedOtpRef.current = null;
       return;
     }
@@ -152,24 +146,6 @@ const AskTechnicianOtpDialog = ({
                 : "The technician has been asked to enter the customer's OTP."}
           </DialogDescription>
         </DialogHeader>
-
-        <label className="flex cursor-pointer items-start gap-2.5 rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5">
-          <Checkbox
-            checked={showOverlay}
-            onCheckedChange={(v) => {
-              const on = v === true;
-              setShowOverlay(on);
-              setOtpPushOverlayPref(on);
-            }}
-            disabled={starting}
-            className="mt-0.5"
-          />
-          <span className="text-xs text-muted-foreground leading-snug">
-            <span className="font-medium text-foreground">Show on-screen overlay</span>
-            {' — '}on by default. Tech enters the 4-digit code on the card (tray still works).
-            Change applies on Ask again.
-          </span>
-        </label>
 
         {starting && (
           <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">

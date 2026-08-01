@@ -335,7 +335,7 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
         String tag = data.get("tag");
         if (tag == null || tag.isEmpty()) tag = "job_alert_overlay";
 
-        JobAlertOverlay.show(context, title, body, jobId, color, event);
+        JobAlertOverlay.show(context, title, body, jobId, color, event, tag);
         postJobAlertTray(context, title, body, jobId, color, tag, event);
     }
 

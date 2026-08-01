@@ -57,6 +57,11 @@ public class MessageReplyReceiver extends BroadcastReceiver {
 
     private static final int NOTIFICATION_ID = 0x0FF1CE;
     private static final int GOING_NOTIFICATION_ID = 0x060166;
+    /** Same ids used when posting tray alerts — overlay cancels these on dismiss/action. */
+    public static final int TRAY_OFFICE_ID = NOTIFICATION_ID;
+    public static final int TRAY_CALL_ID = NOTIFICATION_ID + 17;
+    public static final int TRAY_GOING_ID = GOING_NOTIFICATION_ID;
+    public static final int TRAY_START_ID = GOING_NOTIFICATION_ID + 3;
 
     public static void showOfficeMessageNotification(
         Context context,

@@ -13,10 +13,8 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
-import android.text.Editable;
 import android.text.InputFilter;
 import android.text.InputType;
-import android.text.TextWatcher;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.util.TypedValue;
@@ -32,6 +30,7 @@ import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
+import androidx.core.app.NotificationManagerCompat;
 import java.util.Map;
 
 /**
@@ -64,8 +63,12 @@ public final class TechActionOverlay {
     }
 
     private static View currentView;
+    private static String currentTrayTag;
+    private static int currentTrayId;
+    private static boolean currentTrayTagged;
+    private static Context currentAppContext;
     private static final Handler mainHandler = new Handler(Looper.getMainLooper());
-    private static final Runnable autoDismiss = TechActionOverlay::dismiss;
+    private static final Runnable autoDismiss = () -> dismiss(true);
 
     private TechActionOverlay() {}
 
@@ -110,12 +113,75 @@ public final class TechActionOverlay {
                     data.get("jobId")));
     }
 
+    /** Close overlay and clear the matching tray notification. */
     public static void dismiss() {
+        dismiss(true);
+    }
+
+    /**
+     * @param cancelTray when true, remove the push notification that paired with this card.
+     *                   Pass false after a successful Reply/OTP/Yes (tray already updated).
+     */
+    public static void dismiss(boolean cancelTray) {
         mainHandler.post(
             () -> {
                 mainHandler.removeCallbacks(autoDismiss);
+                if (cancelTray) cancelPairedTray();
                 removeCurrent();
             });
+    }
+
+    private static void rememberTray(Mode mode, String tag, String requestId) {
+        currentTrayTagged = true;
+        String t = (tag != null && !tag.isEmpty()) ? tag : null;
+        switch (mode) {
+            case REPLY:
+                currentTrayTag = t != null ? t : "office_message";
+                currentTrayId = MessageReplyReceiver.TRAY_OFFICE_ID;
+                break;
+            case CALL:
+                currentTrayTag = t != null ? t : "call_customer";
+                currentTrayId = MessageReplyReceiver.TRAY_CALL_ID;
+                break;
+            case GOING:
+                currentTrayTag = t != null ? t : "going_now";
+                currentTrayId = MessageReplyReceiver.TRAY_GOING_ID;
+                break;
+            case START:
+                currentTrayTag = t != null ? t : "start_job";
+                currentTrayId = MessageReplyReceiver.TRAY_START_ID;
+                break;
+            case INFO:
+                currentTrayTag = t != null ? t : "tech_nudge";
+                currentTrayId = Math.abs(currentTrayTag.hashCode());
+                break;
+            case OTP:
+                currentTrayTagged = false;
+                currentTrayTag = null;
+                currentTrayId =
+                    requestId != null ? OtpReplyReceiver.notificationIdFor(requestId) : 0;
+                break;
+            default:
+                currentTrayTag = t;
+                currentTrayId = 0;
+                break;
+        }
+    }
+
+    private static void cancelPairedTray() {
+        if (currentAppContext == null) return;
+        if (!currentTrayTagged && currentTrayId == 0) return;
+        try {
+            NotificationManagerCompat nm = NotificationManagerCompat.from(currentAppContext);
+            if (currentTrayTagged && currentTrayTag != null) {
+                nm.cancel(currentTrayTag, currentTrayId);
+            } else if (currentTrayId != 0) {
+                nm.cancel(currentTrayId);
+            }
+            Log.i(TAG, "Cancelled paired tray tag=" + currentTrayTag + " id=" + currentTrayId);
+        } catch (Throwable t) {
+            Log.w(TAG, "Cancel tray failed", t);
+        }
     }
 
     private static void showOnMain(
@@ -136,6 +202,8 @@ public final class TechActionOverlay {
         String jobId
     ) {
         removeCurrent();
+        currentAppContext = context.getApplicationContext();
+        rememberTray(mode, tag, requestId);
 
         int accent = accentFor(mode, colorHex);
         float density = context.getResources().getDisplayMetrics().density;
@@ -321,7 +389,7 @@ public final class TechActionOverlay {
         final boolean[] otpSubmitting = { false };
 
         if (mode != Mode.GOING) {
-            secondary.setOnClickListener(v -> dismiss());
+            secondary.setOnClickListener(v -> dismiss(true));
         } else {
             secondary.setOnClickListener(
                 v -> {
@@ -339,7 +407,7 @@ public final class TechActionOverlay {
                                     setBusy(false, primaryFinal, secondaryFinal, spinnerFinal);
                                     if (ok) {
                                         toast(context, "Told office — not going");
-                                        dismiss();
+                                        dismiss(true);
                                     } else {
                                         toast(context, "Couldn't send — try again");
                                     }
@@ -373,23 +441,7 @@ public final class TechActionOverlay {
 
         primary.setOnClickListener(v -> doPrimary.run());
 
-        // OTP: auto-send as soon as 4 digits are typed (no extra tap).
         if (mode == Mode.OTP && input != null) {
-            input.addTextChangedListener(
-                new TextWatcher() {
-                    @Override
-                    public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-
-                    @Override
-                    public void onTextChanged(CharSequence s, int start, int before, int count) {}
-
-                    @Override
-                    public void afterTextChanged(Editable s) {
-                        if (s != null && s.length() == 4 && !otpSubmitting[0]) {
-                            doPrimary.run();
-                        }
-                    }
-                });
             input.setOnEditorActionListener(
                 (v, actionId, event) -> {
                     if (actionId == EditorInfo.IME_ACTION_DONE) {
@@ -483,7 +535,7 @@ public final class TechActionOverlay {
         switch (mode) {
             case CALL: {
                 String digits = callPhone != null ? callPhone.replaceAll("[^0-9+]", "") : "";
-                dismiss();
+                dismiss(true);
                 if (!digits.isEmpty()) {
                     try {
                         context.startActivity(
@@ -496,7 +548,7 @@ public final class TechActionOverlay {
                 break;
             }
             case INFO: {
-                dismiss();
+                dismiss(true);
                 openApp(context, jobId);
                 break;
             }
@@ -514,7 +566,7 @@ public final class TechActionOverlay {
                                 setBusy(false, primary, secondary, spinner);
                                 if (ok) {
                                     toast(context, mode == Mode.START ? "Job started" : "You're on the way");
-                                    dismiss();
+                                    dismiss(true);
                                 } else {
                                     toast(context, "Couldn't start — open the app");
                                 }
@@ -543,7 +595,7 @@ public final class TechActionOverlay {
                                 setBusy(false, primary, secondary, spinner);
                                 if (ok) {
                                     toast(context, "Reply sent to office");
-                                    dismiss();
+                                    dismiss(false);
                                 } else {
                                     toast(context, "Couldn't send — try again");
                                 }
@@ -573,7 +625,7 @@ public final class TechActionOverlay {
                                 setBusy(false, primary, secondary, spinner);
                                 if (ok) {
                                     toast(context, "OTP sent to office");
-                                    dismiss();
+                                    dismiss(false);
                                 } else {
                                     toast(context, "Couldn't send — try again");
                                 }
@@ -582,7 +634,7 @@ public final class TechActionOverlay {
                 break;
             }
             default:
-                dismiss();
+                dismiss(true);
         }
     }
 

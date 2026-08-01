@@ -6,7 +6,6 @@
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
-import { getOtpPushOverlayPref } from '@/lib/techPushDeliveryPrefs';
 
 export type OtpRequestRow = {
   id: string;
@@ -81,10 +80,10 @@ export async function createOtpRequest(opts: {
   jobId: string;
   technicianId: string;
   customerName?: string;
-  /** Also show draw-over-apps card (tech APK + overlay permission). */
+  /** Always overlay for OTP (tray + card). Ignored if false is passed for tests. */
   overlay?: boolean;
 }): Promise<OtpRequestRow | null> {
-  const { jobId, technicianId, customerName, overlay } = opts;
+  const { jobId, technicianId, customerName, overlay = true } = opts;
 
   const { data, error } = await supabase
     .from('technician_otp_requests')
@@ -119,8 +118,7 @@ export async function createOtpRequest(opts: {
           requestId: row.id,
           technicianId,
           customerName,
-          // Always send boolean so server can default ON without breaking uncheck.
-          overlay: overlay ?? getOtpPushOverlayPref(),
+          overlay: overlay !== false,
         }),
         keepalive: true,
       });

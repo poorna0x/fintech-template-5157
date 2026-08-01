@@ -23,6 +23,7 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import androidx.core.app.NotificationManagerCompat;
 
 /**
  * Truecaller-style draw-over-apps card for job assign / reassign / unassign / edit.
@@ -54,6 +55,8 @@ public final class JobAlertOverlay {
     private static final int AMBER = 0xFFD97706;
 
     private static View currentView;
+    private static String currentTrayTag;
+    private static Context currentAppContext;
     private static final Handler mainHandler = new Handler(Looper.getMainLooper());
     private static final Runnable autoDismiss = JobAlertOverlay::dismiss;
 
@@ -95,7 +98,7 @@ public final class JobAlertOverlay {
     public static void show(
         Context context, String title, String body, String jobId, String colorHex
     ) {
-        show(context, title, body, jobId, colorHex, null);
+        show(context, title, body, jobId, colorHex, null, null);
     }
 
     public static void show(
@@ -106,18 +109,31 @@ public final class JobAlertOverlay {
         String colorHex,
         String event
     ) {
+        show(context, title, body, jobId, colorHex, event, null);
+    }
+
+    public static void show(
+        Context context,
+        String title,
+        String body,
+        String jobId,
+        String colorHex,
+        String event,
+        String trayTag
+    ) {
         if (context == null) return;
         Context app = context.getApplicationContext();
         if (!canDraw(app)) {
             Log.i(TAG, "Overlay permission missing — skip card");
             return;
         }
-        mainHandler.post(() -> showOnMain(app, title, body, jobId, colorHex, event));
+        mainHandler.post(() -> showOnMain(app, title, body, jobId, colorHex, event, trayTag));
     }
 
     public static void dismiss() {
         mainHandler.post(() -> {
             mainHandler.removeCallbacks(autoDismiss);
+            cancelPairedTray();
             if (currentView == null) return;
             try {
                 WindowManager wm =
@@ -130,15 +146,29 @@ public final class JobAlertOverlay {
         });
     }
 
+    private static void cancelPairedTray() {
+        if (currentAppContext == null || currentTrayTag == null || currentTrayTag.isEmpty()) return;
+        try {
+            NotificationManagerCompat.from(currentAppContext).cancel(currentTrayTag, 0);
+            Log.i(TAG, "Cancelled paired tray tag=" + currentTrayTag);
+        } catch (Throwable t) {
+            Log.w(TAG, "Cancel tray failed", t);
+        }
+        currentTrayTag = null;
+    }
+
     private static void showOnMain(
         Context context,
         String title,
         String body,
         String jobId,
         String colorHex,
-        String eventRaw
+        String eventRaw,
+        String trayTag
     ) {
         dismissImmediate(context);
+        currentAppContext = context.getApplicationContext();
+        currentTrayTag = trayTag;
 
         Theme theme = themeFor(normalizeEvent(eventRaw, title), colorHex);
         String safeTitle = safe(title, theme.defaultTitle);
