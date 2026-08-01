@@ -92,11 +92,14 @@ function buildJobCompletionWhatsApp(
 ): AdminWhatsAppMessageResult {
   const brand = data.documentBrand;
   const brandName = getDocumentBrandLabel(brand);
+  const pendingAmount = parseAmountCollected(data.completionPendingAmount || '');
   const text = buildJobCompletionWhatsAppMessage({
     customerName: data.customerName,
     serviceType: data.completionServiceType || '',
     serviceSubType: data.completionServiceSubType || '',
     amountCollected: parseAmountCollected(data.amount),
+    amountPending: pendingAmount,
+    pendingDueDate: data.completionPendingDueDate || data.dueDate || null,
     documentBrand: brand,
   });
   const ref = data.documentRef.trim();

@@ -30,9 +30,13 @@ export type TechnicianCompleteJobDraft = {
   amcServicePeriodKind: '' | '4' | '6' | 'custom' | 'no_auto';
   amcServicePeriodCustomMonths: number;
   hasAMC: boolean | null;
-  paymentMode: 'CASH' | 'ONLINE' | 'PARTIAL' | '';
+  paymentMode: 'CASH' | 'ONLINE' | 'PARTIAL' | 'PENDING_PAYMENT' | '';
   partialCashAmount: string;
   partialOnlineAmount: string;
+  pendingPaidTodayEnabled?: boolean;
+  pendingPaidTodayMode?: 'CASH' | 'ONLINE' | 'PARTIAL' | '';
+  pendingPaidTodayAmount?: string;
+  promisedPaymentDate?: string;
   customerHasPrefilter: boolean | null;
   rawWaterTds: string;
   qrCodeType: string;
@@ -108,6 +112,8 @@ export function isCompleteJobDraftMeaningful(draft: TechnicianCompleteJobDraft |
   if ((draft.paymentScreenshot ?? '').trim() !== '') return true;
   if ((draft.partialCashAmount ?? '').trim() !== '') return true;
   if ((draft.partialOnlineAmount ?? '').trim() !== '') return true;
+  if (draft.pendingPaidTodayEnabled) return true;
+  if ((draft.promisedPaymentDate ?? '').trim() !== '') return true;
   if ((draft.selectedQrCodeId ?? '').trim() !== '') return true;
   if (Array.isArray(draft.otpInput) && draft.otpInput.some((d) => (d ?? '').trim() !== '')) return true;
   if (draft.dontSendMessageToCustomer === true) return true;

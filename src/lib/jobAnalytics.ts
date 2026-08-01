@@ -2,6 +2,8 @@
  * Shared job completion + billing rules (matches Postgres analytics_job_* functions).
  */
 
+import { resolveReceivedCashAndOnline } from '@/lib/jobPendingPayment';
+
 export type JobCompletionFields = {
   status?: string;
   completed_at?: string | null;
@@ -57,15 +59,26 @@ export function jobHasBillableAmount(job: JobBillingFields): boolean {
   return resolveJobBillingAmount(job.payment_amount, job.actual_cost) > 0;
 }
 
-/** Amounts for technician / QR breakdown (PARTIAL uses cash + online split). */
+/** Amounts for technician / QR breakdown (PARTIAL uses cash + online split).
+ *  Pending-payment jobs count only paid-today cash/online toward cash/QR, not the unpaid balance. */
 export function resolveJobPaymentBreakdown(job: JobBillingFields): {
   total: number;
   cash: number;
   qr: number;
   other: number;
 } {
-  const paymentMethod = (job.payment_method || 'OTHER').toUpperCase();
   const billingTotal = resolveJobBillingAmount(job.payment_amount, job.actual_cost);
+  const received = resolveReceivedCashAndOnline(job);
+  if (received.isPendingOpen) {
+    return {
+      total: billingTotal,
+      cash: received.cash,
+      qr: received.online,
+      other: 0,
+    };
+  }
+
+  const paymentMethod = (job.payment_method || 'OTHER').toUpperCase();
   let cash = 0;
   let qr = 0;
 

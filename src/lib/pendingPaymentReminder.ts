@@ -25,24 +25,31 @@ export function isPendingPaymentReminderTitle(title: string | null | undefined):
 
 export function parsePendingPaymentReminderNotes(
   notes: string | null | undefined
-): { amount_pending: number; note?: string } {
+): { amount_pending: number; note?: string; job_id?: string; job_number?: string } {
   const raw = (notes ?? '').toString().trim();
   if (!raw) return { amount_pending: 0 };
   if (raw.startsWith('{')) {
     try {
-      const parsed = JSON.parse(raw) as { amount_pending?: unknown; note?: unknown };
+      const parsed = JSON.parse(raw) as {
+        amount_pending?: unknown;
+        note?: unknown;
+        job_id?: unknown;
+        job_number?: unknown;
+      };
       const amount_pending =
         typeof parsed.amount_pending === 'number'
           ? parsed.amount_pending
           : Number(String(raw).replace(/[^0-9.-]/g, '')) || 0;
       const note = typeof parsed.note === 'string' && parsed.note.trim() ? parsed.note.trim() : undefined;
-      return { amount_pending, note };
+      const job_id = typeof parsed.job_id === 'string' ? parsed.job_id : undefined;
+      const job_number = typeof parsed.job_number === 'string' ? parsed.job_number : undefined;
+      return { amount_pending, note, job_id, job_number };
     } catch {
       // fallthrough
     }
   }
   const n = Number(raw.replace(/[^0-9.-]/g, ''));
-  return { amount_pending: Number.isFinite(n) ? n : 0, note: undefined };
+  return { amount_pending: Number.isFinite(n) ? n : 0 };
 }
 
 /**
@@ -50,14 +57,30 @@ export function parsePendingPaymentReminderNotes(
  * show the wrong calendar day in some timezones; use local midnight instead.
  */
 /** Pre-filled WhatsApp reminder — shared by Settings and admin push deep-links. */
+export function formatPendingPaymentDueLabel(dueDateYmd: string | null | undefined): string | null {
+  const raw = (dueDateYmd ?? '').toString().trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
+  try {
+    return format(parseReminderAtLocalDate(raw), 'd MMM yyyy');
+  } catch {
+    return raw;
+  }
+}
+
 export function buildPendingPaymentWhatsAppMessage(
   customerName: string,
-  amountPending: number
+  amountPending: number,
+  dueDateYmd?: string | null
 ): string {
   const formattedAmount = amountPending.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+  const dueLabel = formatPendingPaymentDueLabel(dueDateYmd);
+  const dueLine = dueLabel
+    ? `\nPayment due date: ${dueLabel}.`
+    : '';
+
   return `Hi ${customerName} 😊
 
-Hope you're doing well. Just a quick reminder that you have a pending payment of ₹${formattedAmount}.
+Hope you're doing well. Just a quick reminder that you have a pending payment of ₹${formattedAmount}.${dueLine}
 
 Request you to please clear the payment at your earliest convenience. If you have already paid, kindly ignore this message.
 

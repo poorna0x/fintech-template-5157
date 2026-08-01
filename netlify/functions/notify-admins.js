@@ -81,6 +81,101 @@ function formatRupees(value) {
   return `₹${n.toLocaleString('en-IN')}`;
 }
 
+/** Parse jobs.requirements into a flat array of objects. */
+function parseRequirements(job) {
+  let reqs = [];
+  try {
+    const raw = job.requirements;
+    if (typeof raw === 'string') reqs = JSON.parse(raw);
+    else if (Array.isArray(raw)) reqs = raw;
+    else if (raw && typeof raw === 'object') reqs = [raw];
+  } catch {
+    reqs = [];
+  }
+  return reqs.flat().filter((r) => r && typeof r === 'object');
+}
+
+/**
+ * Billing lines for the admin "job completed" push.
+ * Pending payment jobs: show paid today (cash/online/partial) + still pending —
+ * not the full bill as if it were collected.
+ */
+function buildCompletedBillingLines(job) {
+  const reqs = parseRequirements(job);
+  const pendingRow = reqs.find((r) => r.pending_payment && typeof r.pending_payment === 'object');
+  const pending = pendingRow?.pending_payment;
+  const pendingOpen =
+    pending &&
+    !pending.settled_at &&
+    Number(pending.amount_pending) > 0;
+
+  const bill =
+    (Number(job.payment_amount) || 0) > 0
+      ? Number(job.payment_amount) || 0
+      : Number(job.actual_cost) || 0;
+  const billLabel = formatRupees(bill);
+
+  if (pendingOpen) {
+    const lines = [];
+    if (billLabel) lines.push(`Bill: ${billLabel}`);
+
+    const paidToday = Number(pending.paid_today) || 0;
+    const mode = String(pending.paid_today_mode || '').toUpperCase();
+    const balance = Number(pending.amount_pending) || 0;
+    const balanceLabel = formatRupees(balance);
+
+    if (paidToday > 0) {
+      if (mode === 'PARTIAL') {
+        const partialReq = reqs.find(
+          (r) => r.partial_cash_amount != null || r.partial_online_amount != null
+        );
+        const cash = Number(partialReq?.partial_cash_amount) || 0;
+        const online = Number(partialReq?.partial_online_amount) || 0;
+        const parts = [];
+        if (cash > 0) parts.push(`${formatRupees(cash)} cash`);
+        if (online > 0) parts.push(`${formatRupees(online)} online`);
+        lines.push(
+          parts.length
+            ? `Paid today: ${parts.join(' + ')}`
+            : `Paid today: ${formatRupees(paidToday)} (partial)`
+        );
+      } else if (mode === 'CASH') {
+        lines.push(`Paid today: ${formatRupees(paidToday)} cash`);
+      } else if (mode === 'ONLINE') {
+        lines.push(`Paid today: ${formatRupees(paidToday)} online`);
+      } else {
+        lines.push(`Paid today: ${formatRupees(paidToday)}`);
+      }
+    } else {
+      lines.push('Paid today: nothing');
+    }
+
+    if (balanceLabel) {
+      const due = String(pending.promised_date || '').trim().slice(0, 10);
+      lines.push(
+        due
+          ? `Still pending: ${balanceLabel} (due ${due})`
+          : `Still pending: ${balanceLabel}`
+      );
+    }
+    return { lines, isPending: true };
+  }
+
+  const lines = [];
+  const amount = formatRupees(job.payment_amount ?? job.actual_cost);
+  const rawMethod = String(job.payment_method || '').trim();
+  const method =
+    rawMethod.toUpperCase() === 'UPI'
+      ? 'UPI'
+      : rawMethod
+        ? rawMethod.charAt(0).toUpperCase() + rawMethod.slice(1).toLowerCase()
+        : '';
+  if (amount) {
+    lines.push(`Billing: ${amount}${method ? ` (${method})` : ''}`);
+  }
+  return { lines, isPending: false };
+}
+
 exports.handler = async (event) => {
   const corsHeaders = getCorsHeaders(event.headers.origin || event.headers.Origin);
   const headers = { ...corsHeaders, 'Content-Type': 'application/json' };
@@ -198,28 +293,24 @@ exports.handler = async (event) => {
     message = `${service} — ${customerName}`;
     color = COLOR_EN_ROUTE;
   } else {
+    const billing = buildCompletedBillingLines(job);
     title = billMissing
       ? `Bill photo missing — ${techName}`
-      : `${techName} completed a job`;
-    const lines = [`${service} — ${customerName}`];
-    const amount = formatRupees(job.payment_amount ?? job.actual_cost);
-    const rawMethod = String(job.payment_method || '').trim();
-    const method =
-      rawMethod.toUpperCase() === 'UPI'
-        ? 'UPI'
-        : rawMethod
-          ? rawMethod.charAt(0).toUpperCase() + rawMethod.slice(1).toLowerCase()
-          : '';
-    if (amount) {
-      lines.push(`Billing: ${amount}${method ? ` (${method})` : ''}`);
-    }
+      : billing.isPending
+        ? `${techName} completed — payment pending`
+        : `${techName} completed a job`;
+    const lines = [`${service} — ${customerName}`, ...billing.lines];
     if (billMissing) {
       lines.push('Bill photo not uploaded');
     }
     const leadSource = resolveLeadSource(job);
     if (leadSource) lines.push(`Lead: ${leadSource}`);
     message = lines.join('\n');
-    color = billMissing ? COLOR_BILL_MISSING : COLOR_COMPLETED;
+    color = billMissing
+      ? COLOR_BILL_MISSING
+      : billing.isPending
+        ? COLOR_EN_ROUTE // blue — pending stands out vs green "fully paid"
+        : COLOR_COMPLETED;
   }
 
   try {

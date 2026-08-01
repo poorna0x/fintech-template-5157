@@ -127,10 +127,11 @@ exports.handler = async () => {
       const amount = parsePendingAmount(r.notes);
       const phone = normalizePhone(customer?.phone || customer?.alternate_phone || '');
       const amountStr = String(Math.round(amount * 100) / 100);
+      const dueDate = String(r.reminder_at || '').slice(0, 10);
       const title = `Pending ₹${amount.toLocaleString('en-IN', { maximumFractionDigits: 0 })} — ${customerName}`;
       const body = phone
-        ? 'Due today — tap Open or WhatsApp from the notification'
-        : 'Due today — tap to open Pending payments';
+        ? `Due ${dueDate || 'today'} — tap Open or WhatsApp from the notification`
+        : `Due ${dueDate || 'today'} — tap to open Pending payments`;
 
       const data = {
         type: 'admin_reminder',
@@ -139,6 +140,7 @@ exports.handler = async () => {
         reminderId,
         customerName,
         amount: amountStr,
+        dueDate,
         entityId: r.entity_id ? String(r.entity_id) : '',
         phone,
         title,

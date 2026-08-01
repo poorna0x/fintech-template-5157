@@ -4,6 +4,19 @@ import { supabase, db } from '@/lib/supabase';
 import { toDateOnly } from '@/lib/amcAutoJobSchedule';
 import type { Job } from '@/types';
 import type { AdminStatusFilter } from '@/lib/adminDashboardCache';
+import {
+  type PaidTodayMode,
+  validatePendingPaymentInputs,
+  resolveDbPaymentMethodFromUi,
+  resolveJobCustomerPaymentStatus,
+  computePendingBalance,
+  upsertPendingPaymentInRequirements,
+  parseJobPendingPayment,
+  markPendingPaymentSettledInRequirements,
+  createPendingPaymentReminderFromJob,
+  updatePendingPaymentReminderFromJob,
+  completePendingPaymentReminder,
+} from '@/lib/jobPendingPayment';
 
 export type SaveAdminCompletedJobEditParams = {
   selectedCompletedJob: Job | null;
@@ -45,6 +58,30 @@ try {
     const sum = Math.round((pc + po) * 100) / 100;
     if (!Number.isFinite(totalShown) || Math.abs(totalShown - sum) > 0.02) {
       toast.error('Total amount must equal cash plus online amounts.');
+      return;
+    }
+  } else if (pm === 'PENDING_PAYMENT') {
+    const bill = parseFloat(String(completedJobEditData.amount ?? '').trim()) || 0;
+    const paidTodayEnabled = Boolean(completedJobEditData.pendingPaidTodayEnabled);
+    const paidTodayMode = (completedJobEditData.pendingPaidTodayMode || '') as PaidTodayMode | '';
+    const paidTodayAmount =
+      paidTodayEnabled && paidTodayMode === 'PARTIAL'
+        ? (parseFloat(String(completedJobEditData.partialCashAmount ?? '')) || 0) +
+          (parseFloat(String(completedJobEditData.partialOnlineAmount ?? '')) || 0)
+        : paidTodayEnabled
+          ? parseFloat(String(completedJobEditData.pendingPaidTodayAmount ?? '')) || 0
+          : 0;
+    const err = validatePendingPaymentInputs({
+      billAmount: bill,
+      paidTodayEnabled,
+      paidTodayMode,
+      paidTodayAmount,
+      partialCash: parseFloat(String(completedJobEditData.partialCashAmount ?? '')) || 0,
+      partialOnline: parseFloat(String(completedJobEditData.partialOnlineAmount ?? '')) || 0,
+      promisedDate: String(completedJobEditData.promisedPaymentDate || ''),
+    });
+    if (err) {
+      toast.error(err);
       return;
     }
   } else {
@@ -91,8 +128,13 @@ try {
     });
   }
 
-  // Update or add partial amounts when PARTIAL
-  if (completedJobEditData.paymentMethod === 'PARTIAL') {
+  // Update or add partial amounts when PARTIAL or pending paid-today PARTIAL
+  if (
+    completedJobEditData.paymentMethod === 'PARTIAL' ||
+    (completedJobEditData.paymentMethod === 'PENDING_PAYMENT' &&
+      completedJobEditData.pendingPaidTodayEnabled &&
+      completedJobEditData.pendingPaidTodayMode === 'PARTIAL')
+  ) {
     const cash = parseFloat(completedJobEditData.partialCashAmount) || 0;
     const online = parseFloat(completedJobEditData.partialOnlineAmount) || 0;
     const partialIndex = requirements.findIndex((r: any) => r?.partial_cash_amount != null || r?.partial_online_amount != null);
@@ -102,10 +144,28 @@ try {
     } else {
       requirements.push({ partial_cash_amount: cash, partial_online_amount: online });
     }
+  } else if (completedJobEditData.paymentMethod === 'PENDING_PAYMENT') {
+    // Clear leftover partial amounts when paid today is not PARTIAL
+    requirements.forEach((r: any) => {
+      if (r && typeof r === 'object') {
+        if (r.partial_cash_amount != null) delete r.partial_cash_amount;
+        if (r.partial_online_amount != null) delete r.partial_online_amount;
+      }
+    });
   }
 
-  // Update QR photos if QR code name changed (only for non-CASH / online / partial payments)
-  if (completedJobEditData.paymentMethod !== 'CASH' && completedJobEditData.qrCodeName) {
+  // Update QR photos if QR code name changed (only for non-CASH / online / partial / pending online)
+  const pendingNeedsQrName =
+    completedJobEditData.paymentMethod === 'PENDING_PAYMENT' &&
+    completedJobEditData.pendingPaidTodayEnabled &&
+    (completedJobEditData.pendingPaidTodayMode === 'ONLINE' ||
+      (completedJobEditData.pendingPaidTodayMode === 'PARTIAL' &&
+        (parseFloat(String(completedJobEditData.partialOnlineAmount ?? '')) || 0) > 0));
+  if (
+    completedJobEditData.paymentMethod !== 'CASH' &&
+    (completedJobEditData.paymentMethod !== 'PENDING_PAYMENT' || pendingNeedsQrName) &&
+    completedJobEditData.qrCodeName
+  ) {
     const qrIndex = requirements.findIndex((r: any) => r?.qr_photos);
     if (qrIndex >= 0) {
       requirements[qrIndex].qr_photos = {
@@ -159,7 +219,10 @@ try {
     ? completedJobEditData.paymentScreenshots.filter((u: any) => typeof u === 'string' && (u as string).trim()).map((u: any) => (u as string).trim())
     : [];
   const firstPaymentScreenshot = paymentScreenshotsList.length > 0 ? paymentScreenshotsList[0] : null;
-  if (completedJobEditData.paymentMethod !== 'CASH') {
+  if (
+    completedJobEditData.paymentMethod !== 'CASH' &&
+    (completedJobEditData.paymentMethod !== 'PENDING_PAYMENT' || pendingNeedsQrName)
+  ) {
     const qrIndex = requirements.findIndex((r: any) => r?.qr_photos);
     if (qrIndex >= 0) {
       requirements[qrIndex].qr_photos = {
@@ -239,20 +302,122 @@ try {
     });
   }
 
-  // UI: CASH | ONLINE | PARTIAL → DB: CASH | UPI | PARTIAL
+  // UI: CASH | ONLINE | PARTIAL | PENDING_PAYMENT → DB payment_method
   const uiPaymentMethod = completedJobEditData.paymentMethod || 'CASH';
-  const jobsPaymentMethod =
-    uiPaymentMethod === 'ONLINE'
-      ? 'UPI'
-      : uiPaymentMethod === 'PARTIAL'
-        ? 'PARTIAL'
-        : 'CASH';
+  const existingPending = parseJobPendingPayment(requirements);
+  const previousReminderId = existingPending?.reminder_id || null;
+
+  let paidTodayForPending = 0;
+  let jobsPaymentMethod: 'CASH' | 'UPI' | 'PARTIAL' | null = 'CASH';
+  let paymentStatus: 'PENDING' | 'PARTIAL' | 'PAID' =
+    amount > 0 ? 'PAID' : 'PENDING';
+
+  if (uiPaymentMethod === 'PENDING_PAYMENT') {
+    const paidTodayEnabled = Boolean(completedJobEditData.pendingPaidTodayEnabled);
+    const paidTodayMode = (completedJobEditData.pendingPaidTodayMode || '') as PaidTodayMode | '';
+    paidTodayForPending =
+      paidTodayEnabled && paidTodayMode === 'PARTIAL'
+        ? (parseFloat(String(completedJobEditData.partialCashAmount ?? '')) || 0) +
+          (parseFloat(String(completedJobEditData.partialOnlineAmount ?? '')) || 0)
+        : paidTodayEnabled
+          ? parseFloat(String(completedJobEditData.pendingPaidTodayAmount ?? '')) || 0
+          : 0;
+    jobsPaymentMethod = resolveDbPaymentMethodFromUi(
+      'PENDING_PAYMENT',
+      paidTodayMode || null,
+      paidTodayForPending
+    );
+    paymentStatus = resolveJobCustomerPaymentStatus({
+      billAmount: amount,
+      mode: 'PENDING_PAYMENT',
+      paidTodayAmount: paidTodayForPending,
+    });
+
+    const balance = computePendingBalance(amount, paidTodayForPending);
+    const promisedDate = String(completedJobEditData.promisedPaymentDate || '');
+    const customerId =
+      (selectedCompletedJob as any).customer?.id ??
+      (selectedCompletedJob as any).customer_id ??
+      (selectedCompletedJob as Job).customerId;
+
+    let reminderId: string | null = previousReminderId;
+    if (customerId && balance > 0) {
+      if (previousReminderId) {
+        const { error: remErr } = await updatePendingPaymentReminderFromJob({
+          reminderId: previousReminderId,
+          amountPending: balance,
+          promisedDate,
+          jobId: selectedCompletedJob.id,
+          jobNumber:
+            (selectedCompletedJob as any).job_number ||
+            (selectedCompletedJob as Job).jobNumber,
+        });
+        if (remErr) {
+          console.error('[pending-payment] reminder update failed', remErr);
+          toast.warning('Job will save, but pending payment reminder update failed.');
+        }
+      } else {
+        const { id, error: remErr } = await createPendingPaymentReminderFromJob({
+          customerId: String(customerId),
+          jobId: selectedCompletedJob.id,
+          jobNumber:
+            (selectedCompletedJob as any).job_number ||
+            (selectedCompletedJob as Job).jobNumber,
+          amountPending: balance,
+          promisedDate,
+        });
+        if (remErr) {
+          console.error('[pending-payment] reminder create failed', remErr);
+          toast.warning('Job will save, but pending payment reminder failed — add it in Settings.');
+        } else {
+          reminderId = id;
+        }
+      }
+    }
+
+    requirements = upsertPendingPaymentInRequirements(requirements, {
+      promised_date: promisedDate,
+      amount_pending: balance,
+      paid_today: paidTodayForPending,
+      paid_today_mode: paidTodayEnabled
+        ? (paidTodayMode as PaidTodayMode) || null
+        : null,
+      reminder_id: reminderId,
+      settled_at: null,
+    });
+  } else {
+    jobsPaymentMethod =
+      uiPaymentMethod === 'ONLINE'
+        ? 'UPI'
+        : uiPaymentMethod === 'PARTIAL'
+          ? 'PARTIAL'
+          : 'CASH';
+    paymentStatus = resolveJobCustomerPaymentStatus({
+      billAmount: amount,
+      mode: uiPaymentMethod as any,
+    });
+
+    // Switching away from open pending → complete reminder + mark settled
+    if (existingPending && !existingPending.settled_at) {
+      if (existingPending.reminder_id) {
+        const { error: remErr } = await completePendingPaymentReminder(existingPending.reminder_id);
+        if (remErr) {
+          console.error('[pending-payment] reminder complete failed', remErr);
+          toast.warning('Job saved, but linked pending payment reminder was not marked complete.');
+        }
+      }
+      requirements = markPendingPaymentSettledInRequirements(requirements);
+    } else if (!existingPending) {
+      // Ensure no stale pending_payment entry remains when never pending
+      requirements = upsertPendingPaymentInRequirements(requirements, null);
+    }
+  }
   
   const updateData: any = {
     actual_cost: amount,
     payment_amount: amount,
     payment_method: jobsPaymentMethod,
-    payment_status: amount > 0 ? 'PAID' : 'PENDING',
+    payment_status: paymentStatus,
     completion_notes: completedJobEditData.completionNotes || '',
     completed_by: isOfficeCompletion ? null : rawCompletedBy,
     lead_cost: leadCost,

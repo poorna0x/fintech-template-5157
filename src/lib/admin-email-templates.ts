@@ -1,6 +1,7 @@
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getDocumentBrandLabel } from '@/lib/service-brands';
 import { buildJobCompletionLine } from '@/lib/job-completion-message';
+import { formatPendingPaymentDueLabel } from '@/lib/pendingPaymentReminder';
 import {
   buildBookingConfirmationEmail,
   buildEmailLogoHeaderBlock,
@@ -42,6 +43,10 @@ export interface AdminDocumentEmailData {
   /** job_completion template — rebuilds the completion line when the message is edited. */
   completionServiceType?: string;
   completionServiceSubType?: string;
+  /** job_completion — open pending balance (formatted, e.g. ₹1,500). */
+  completionPendingAmount?: string;
+  /** job_completion — promised payment date YYYY-MM-DD when balance is pending. */
+  completionPendingDueDate?: string;
 }
 
 export interface AdminEmailBuildOptions {
@@ -305,21 +310,49 @@ function buildJobCompletionEmailBody(
     .map((line) => line.trim())
     .filter(Boolean);
   const headline = messageLines[0] || completionLine;
-  const note =
-    messageLines.slice(1).join(' ') ||
-    `Thank you for choosing ${brandName}. We appreciate your trust and hope you're satisfied with our work.`;
 
   const jobRef = data.documentRef.trim();
   const amountDisplay = formatCollectedAmountDisplay(data.amount);
+  const pendingAmountDisplay = formatCollectedAmountDisplay(
+    (data.completionPendingAmount || '').trim()
+  );
+  const pendingDueLabel = formatPendingPaymentDueLabel(
+    data.completionPendingDueDate || data.dueDate || null
+  );
+  const hasPending = Boolean(pendingAmountDisplay);
+
+  // Message field already includes payment lines from buildJobCompletionMessage —
+  // keep the thank-you note only (skip duplicate payment lines in the body copy).
+  const thankYouNote =
+    messageLines
+      .slice(1)
+      .filter(
+        (line) =>
+          !/^Amount of /i.test(line) &&
+          !/^Balance of /i.test(line) &&
+          !/^Payment due/i.test(line)
+      )
+      .join(' ') ||
+    `Thank you for choosing ${brandName}. We appreciate your trust and hope you're satisfied with our work.`;
 
   const jobRefBlock = jobRef
     ? `<p style="margin:14px 0 0;font-family:${EMAIL_FONT};font-size:11px;font-weight:600;line-height:1.4;text-transform:uppercase;letter-spacing:0.6px;opacity:0.75;">Job reference</p>
                     <p style="margin:4px 0 0;font-family:${EMAIL_FONT};font-size:14px;font-weight:600;line-height:1.4;">${escapeHtml(jobRef)}</p>`
     : '';
 
+  const amountLabel = hasPending ? 'Amount collected today' : 'Amount collected';
   const amountBlock = amountDisplay
-    ? `<p style="margin:12px 0 0;font-family:${EMAIL_FONT};font-size:11px;font-weight:600;line-height:1.4;text-transform:uppercase;letter-spacing:0.6px;opacity:0.75;">Amount collected</p>
+    ? `<p style="margin:12px 0 0;font-family:${EMAIL_FONT};font-size:11px;font-weight:600;line-height:1.4;text-transform:uppercase;letter-spacing:0.6px;opacity:0.75;">${amountLabel}</p>
                     <p style="margin:4px 0 0;font-family:${EMAIL_FONT};font-size:18px;font-weight:700;line-height:1.3;">${escapeHtml(amountDisplay)}</p>`
+    : '';
+
+  const pendingBlock = hasPending
+    ? `<p style="margin:12px 0 0;font-family:${EMAIL_FONT};font-size:11px;font-weight:600;line-height:1.4;text-transform:uppercase;letter-spacing:0.6px;opacity:0.75;">Balance pending</p>
+                    <p style="margin:4px 0 0;font-family:${EMAIL_FONT};font-size:18px;font-weight:700;line-height:1.3;">${escapeHtml(pendingAmountDisplay)}</p>${
+                      pendingDueLabel
+                        ? `<p style="margin:6px 0 0;font-family:${EMAIL_FONT};font-size:13px;font-weight:500;line-height:1.4;opacity:0.9;">Payment due date: ${escapeHtml(pendingDueLabel)}</p>`
+                        : ''
+                    }`
     : '';
 
   return `
@@ -336,10 +369,11 @@ function buildJobCompletionEmailBody(
                     <p style="margin:0;font-family:${EMAIL_FONT};font-size:17px;font-weight:600;line-height:1.45;">${escapeHtml(headline)}</p>
                     ${jobRefBlock}
                     ${amountBlock}
+                    ${pendingBlock}
                   </td>
                 </tr>
               </table>
-              <p class="email-body-text" style="margin:0 0 20px;font-family:${EMAIL_FONT};font-size:15px;line-height:1.65;text-align:center;">${escapeHtml(note)}</p>`;
+              <p class="email-body-text" style="margin:0 0 20px;font-family:${EMAIL_FONT};font-size:15px;line-height:1.65;text-align:center;">${escapeHtml(thankYouNote)}</p>`;
 }
 
 function attachmentNoticeBlock(names: string[]): string {
@@ -704,10 +738,42 @@ function buildAdminDocumentEmail(
             'Your service has been completed successfully.',
           ...(data.documentRef.trim() ? [`Job reference: ${data.documentRef.trim()}`] : []),
           ...(data.amount.trim()
-            ? [`Amount collected: ${formatCollectedAmountDisplay(data.amount)}`]
+            ? [
+                `${
+                  (data.completionPendingAmount || '').trim()
+                    ? 'Amount collected today'
+                    : 'Amount collected'
+                }: ${formatCollectedAmountDisplay(data.amount)}`,
+              ]
+            : []),
+          ...((data.completionPendingAmount || '').trim()
+            ? [
+                `Balance pending: ${formatCollectedAmountDisplay(data.completionPendingAmount || '')}`,
+                ...(formatPendingPaymentDueLabel(
+                  data.completionPendingDueDate || data.dueDate || null
+                )
+                  ? [
+                      `Payment due date: ${formatPendingPaymentDueLabel(
+                        data.completionPendingDueDate || data.dueDate || null
+                      )}`,
+                    ]
+                  : []),
+              ]
             : []),
           '',
-          message.split('\n').slice(1).join(' ').trim() ||
+          message
+            .split('\n')
+            .slice(1)
+            .map((l) => l.trim())
+            .filter(
+              (line) =>
+                line &&
+                !/^Amount of /i.test(line) &&
+                !/^Balance of /i.test(line) &&
+                !/^Payment due/i.test(line)
+            )
+            .join(' ')
+            .trim() ||
             `Thank you for choosing ${brandName}. We appreciate your trust.`,
           '',
           `WhatsApp: https://wa.me/${contact.whatsapp}`,

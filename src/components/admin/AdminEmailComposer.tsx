@@ -287,6 +287,8 @@ export function AdminEmailComposerPanel({
     setDocumentForm((prev) => {
       const amountCollected =
         parseFloat(String(prev.amount || '').replace(/[^\d.-]/g, '')) || 0;
+      const amountPending =
+        parseFloat(String(prev.completionPendingAmount || '').replace(/[^\d.-]/g, '')) || 0;
       return {
         ...prev,
         documentBrand: forcedBrand,
@@ -295,6 +297,8 @@ export function AdminEmailComposerPanel({
           serviceType: prev.completionServiceType || '',
           serviceSubType: prev.completionServiceSubType || '',
           amountCollected,
+          amountPending,
+          pendingDueDate: prev.completionPendingDueDate || prev.dueDate || null,
           documentBrand: forcedBrand,
         }),
       };
@@ -1038,7 +1042,11 @@ export function AdminEmailComposerPanel({
                   {templateMeta.showAmount && (
                     <div className="space-y-2">
                       <Label>
-                        {templateType === 'job_completion' ? 'Amount collected' : 'Amount'}
+                        {templateType === 'job_completion'
+                          ? documentForm.completionPendingAmount?.trim()
+                            ? 'Amount collected today'
+                            : 'Amount collected'
+                          : 'Amount'}
                       </Label>
                       <Input
                         value={documentForm.amount}

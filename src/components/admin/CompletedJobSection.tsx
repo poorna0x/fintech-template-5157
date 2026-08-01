@@ -21,6 +21,10 @@ import { db } from '@/lib/supabase';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import { getValidCustomerEmail } from '@/lib/customer-email';
 import {
+  isJobPendingPaymentOpen,
+  parseJobPendingPayment,
+} from '@/lib/jobPendingPayment';
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -382,15 +386,52 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
           {paymentMethod && (
             <div className="text-gray-700 break-words flex flex-wrap items-baseline gap-x-1">
               <span className="text-gray-500 font-medium whitespace-nowrap">Payment Mode:</span>
-              <span className="whitespace-nowrap">{
-                paymentMethod === 'CASH' ? 'Cash' : 
-                paymentMethod === 'ONLINE' || paymentMethod === 'UPI' || paymentMethod === 'CARD' || paymentMethod === 'BANK_TRANSFER' ? 'Online' : 
-                paymentMethod
-              }</span>
+              <span className="whitespace-nowrap">
+                {isJobPendingPaymentOpen(requirements)
+                  ? 'Pending Payment'
+                  : paymentMethod === 'CASH'
+                    ? 'Cash'
+                    : paymentMethod === 'ONLINE' ||
+                        paymentMethod === 'UPI' ||
+                        paymentMethod === 'CARD' ||
+                        paymentMethod === 'BANK_TRANSFER'
+                      ? 'Online'
+                      : paymentMethod === 'PARTIAL'
+                        ? 'Partial'
+                        : paymentMethod}
+              </span>
             </div>
           )}
+          {isJobPendingPaymentOpen(requirements) &&
+            (() => {
+              const pending = parseJobPendingPayment(requirements);
+              if (!pending) return null;
+              const dueLabel = pending.promised_date
+                ? new Date(`${pending.promised_date}T12:00:00`).toLocaleDateString('en-IN', {
+                    day: 'numeric',
+                    month: 'short',
+                    year: 'numeric',
+                  })
+                : '—';
+              return (
+                <div className="inline-flex flex-wrap items-center gap-x-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-amber-950">
+                  <span className="font-medium">
+                    Payment pending ₹
+                    {pending.amount_pending.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                  </span>
+                  <span className="text-amber-800/80">· due {dueLabel}</span>
+                  {pending.paid_today > 0 ? (
+                    <span className="text-amber-800/80">
+                      · paid today ₹
+                      {pending.paid_today.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                      {pending.paid_today_mode ? ` (${pending.paid_today_mode === 'ONLINE' ? 'Online' : pending.paid_today_mode === 'PARTIAL' ? 'Partial' : 'Cash'})` : ''}
+                    </span>
+                  ) : null}
+                </div>
+              );
+            })()}
           {/* Partial payment breakdown: show how much cash and how much online */}
-          {paymentMethod === 'PARTIAL' && requirements && Array.isArray(requirements) && (() => {
+          {paymentMethod === 'PARTIAL' && !isJobPendingPaymentOpen(requirements) && requirements && Array.isArray(requirements) && (() => {
             const partialReq = requirements.find((r: any) => r?.partial_cash_amount != null || r?.partial_online_amount != null);
             const cash = Number(partialReq?.partial_cash_amount) || 0;
             const online = Number(partialReq?.partial_online_amount) || 0;
@@ -656,6 +697,14 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
                 (r: any) => r?.partial_cash_amount != null || r?.partial_online_amount != null
               );
 
+              const pendingPayload = parseJobPendingPayment(requirements);
+              const pendingOpen = Boolean(
+                pendingPayload && !pendingPayload.settled_at && pendingPayload.amount_pending > 0
+              );
+              if (pendingOpen && pendingPayload) {
+                paymentMethodForEdit = 'PENDING_PAYMENT';
+              }
+
               const editData: any = {
                 amount: amountStr,
                 paymentMethod: paymentMethodForEdit,
@@ -666,6 +715,24 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
                 partialOnlineAmount:
                   partialReq && partialReq.partial_online_amount != null
                     ? String(partialReq.partial_online_amount)
+                    : '',
+                pendingPaidTodayEnabled: Boolean(
+                  pendingOpen && pendingPayload && pendingPayload.paid_today > 0
+                ),
+                pendingPaidTodayMode:
+                  pendingOpen && pendingPayload?.paid_today_mode
+                    ? pendingPayload.paid_today_mode
+                    : '',
+                pendingPaidTodayAmount:
+                  pendingOpen &&
+                  pendingPayload &&
+                  pendingPayload.paid_today > 0 &&
+                  pendingPayload.paid_today_mode !== 'PARTIAL'
+                    ? String(pendingPayload.paid_today)
+                    : '',
+                promisedPaymentDate:
+                  pendingOpen && pendingPayload?.promised_date
+                    ? pendingPayload.promised_date
                     : '',
                 serviceBrand:
                   (job as any).service_brand === 'elevenro'

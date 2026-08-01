@@ -19,6 +19,34 @@ import {
   type AmcServicePeriodKind,
 } from '@/lib/amcAutoJobSchedule';
 import { getDefaultLeadCost } from '@/lib/adminUtils';
+import PendingPaymentFields from '@/components/job/PendingPaymentFields';
+import {
+  type PaidTodayMode,
+} from '@/lib/jobPendingPayment';
+
+function sanitizeMoneyInput(raw: string): string {
+  if (raw == null) return '';
+  let cleaned = String(raw).replace(/[^0-9.]/g, '');
+  const firstDot = cleaned.indexOf('.');
+  if (firstDot !== -1) {
+    cleaned =
+      cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '');
+  }
+  const dotIdx = cleaned.indexOf('.');
+  if (dotIdx !== -1 && cleaned.length - dotIdx - 1 > 2) {
+    cleaned = cleaned.slice(0, dotIdx + 3);
+  }
+  return cleaned;
+}
+
+function parseMoneyAmount(raw: string): number {
+  if (raw == null) return NaN;
+  const trimmed = String(raw).trim();
+  if (trimmed === '') return NaN;
+  const n = Number(trimmed);
+  if (!Number.isFinite(n) || n < 0) return NaN;
+  return n;
+}
 
 type ServiceBrand = 'elevenro' | 'hydrogenro';
 
@@ -354,7 +382,7 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
             )}
           </div>
 
-          {/* Payment Method — Cash / Online / Partial only (DB stores UPI for online) */}
+          {/* Payment Method — Cash / Online / Partial / Pending */}
           <div>
             <Label htmlFor="edit-payment-method">Payment Method</Label>
             <Select
@@ -367,12 +395,23 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
               }
               onValueChange={(value) => {
                 const next: any = { ...editData, paymentMethod: value };
-                if (value !== 'PARTIAL') {
+                if (value !== 'PARTIAL' && value !== 'PENDING_PAYMENT') {
                   next.partialCashAmount = '';
                   next.partialOnlineAmount = '';
                 }
                 if (value === 'CASH') {
                   next.qrCodeName = '';
+                }
+                if (value === 'PENDING_PAYMENT') {
+                  next.pendingPaidTodayEnabled = Boolean(editData.pendingPaidTodayEnabled);
+                  next.pendingPaidTodayMode = editData.pendingPaidTodayMode || '';
+                  next.pendingPaidTodayAmount = editData.pendingPaidTodayAmount || '';
+                  next.promisedPaymentDate = editData.promisedPaymentDate || '';
+                } else {
+                  next.pendingPaidTodayEnabled = false;
+                  next.pendingPaidTodayMode = '';
+                  next.pendingPaidTodayAmount = '';
+                  next.promisedPaymentDate = '';
                 }
                 onEditDataChange(next);
               }}
@@ -384,9 +423,48 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
                 <SelectItem value="CASH">Cash</SelectItem>
                 <SelectItem value="ONLINE">Online</SelectItem>
                 <SelectItem value="PARTIAL">Partial (Cash + Online)</SelectItem>
+                <SelectItem value="PENDING_PAYMENT">Pending Payment</SelectItem>
               </SelectContent>
             </Select>
           </div>
+
+          {editData.paymentMethod === 'PENDING_PAYMENT' && (
+            <PendingPaymentFields
+              billAmount={parseMoneyAmount(String(editData.amount ?? '')) || 0}
+              paidTodayEnabled={Boolean(editData.pendingPaidTodayEnabled)}
+              onPaidTodayEnabledChange={(v) =>
+                onEditDataChange({ ...editData, pendingPaidTodayEnabled: v })
+              }
+              paidTodayMode={(editData.pendingPaidTodayMode || '') as PaidTodayMode | ''}
+              onPaidTodayModeChange={(v) =>
+                onEditDataChange({
+                  ...editData,
+                  pendingPaidTodayMode: v,
+                  pendingPaidTodayAmount: '',
+                  partialCashAmount: '',
+                  partialOnlineAmount: '',
+                })
+              }
+              paidTodayAmount={String(editData.pendingPaidTodayAmount ?? '')}
+              onPaidTodayAmountChange={(v) =>
+                onEditDataChange({ ...editData, pendingPaidTodayAmount: v })
+              }
+              partialCashAmount={String(editData.partialCashAmount ?? '')}
+              onPartialCashAmountChange={(v) =>
+                onEditDataChange({ ...editData, partialCashAmount: v })
+              }
+              partialOnlineAmount={String(editData.partialOnlineAmount ?? '')}
+              onPartialOnlineAmountChange={(v) =>
+                onEditDataChange({ ...editData, partialOnlineAmount: v })
+              }
+              promisedDate={String(editData.promisedPaymentDate || '')}
+              onPromisedDateChange={(v) =>
+                onEditDataChange({ ...editData, promisedPaymentDate: v })
+              }
+              sanitizeMoneyInput={sanitizeMoneyInput}
+              parseMoneyAmount={parseMoneyAmount}
+            />
+          )}
 
           {/* Partial amounts - required when PARTIAL */}
           {editData.paymentMethod === 'PARTIAL' && (
@@ -512,8 +590,14 @@ const EditCompletedJobDialog: React.FC<EditCompletedJobDialogProps> = ({
             <p className="text-xs text-muted-foreground mt-1">Edit if you need to update lead cost for this job</p>
           </div>
 
-          {/* QR code for online portion (online or partial) */}
-          {(editData.paymentMethod === 'ONLINE' || editData.paymentMethod === 'PARTIAL') && (
+          {/* QR code for online portion (online, partial, or pending paid-today online) */}
+          {(editData.paymentMethod === 'ONLINE' ||
+            editData.paymentMethod === 'PARTIAL' ||
+            (editData.paymentMethod === 'PENDING_PAYMENT' &&
+              editData.pendingPaidTodayEnabled &&
+              (editData.pendingPaidTodayMode === 'ONLINE' ||
+                (editData.pendingPaidTodayMode === 'PARTIAL' &&
+                  (parseMoneyAmount(String(editData.partialOnlineAmount ?? '')) || 0) > 0)))) && (
             <div>
               <Label htmlFor="edit-qr-code">QR Code Name</Label>
               <Select

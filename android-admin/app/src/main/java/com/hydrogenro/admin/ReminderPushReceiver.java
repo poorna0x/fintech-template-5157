@@ -29,6 +29,7 @@ public class ReminderPushReceiver extends BroadcastReceiver {
     private static final String EXTRA_PHONE = "phone";
     private static final String EXTRA_CUSTOMER_NAME = "customerName";
     private static final String EXTRA_AMOUNT = "amount";
+    private static final String EXTRA_DUE_DATE = "dueDate";
     private static final String EXTRA_TAG = "tag";
     private static final int COLOR_GENERAL = Color.parseColor("#D97706");
     private static final int COLOR_PENDING = Color.parseColor("#2563EB");
@@ -91,6 +92,7 @@ public class ReminderPushReceiver extends BroadcastReceiver {
                 .putExtra(EXTRA_PHONE, phone)
                 .putExtra(EXTRA_CUSTOMER_NAME, data.get("customerName"))
                 .putExtra(EXTRA_AMOUNT, data.get("amount"))
+                .putExtra(EXTRA_DUE_DATE, data.get("dueDate"))
                 .putExtra(EXTRA_TAG, tag);
             PendingIntent waPending = PendingIntent.getBroadcast(
                 context,
@@ -139,7 +141,7 @@ public class ReminderPushReceiver extends BroadcastReceiver {
         return digits.substring(digits.length() - 10);
     }
 
-    static String buildWhatsAppMessage(String customerName, String amountRaw) {
+    static String buildWhatsAppMessage(String customerName, String amountRaw, String dueDateRaw) {
         String name = customerName != null && !customerName.isEmpty() ? customerName : "Customer";
         double amount = 0;
         try {
@@ -148,9 +150,23 @@ public class ReminderPushReceiver extends BroadcastReceiver {
             /* keep 0 */
         }
         String formattedAmount = String.format(Locale.forLanguageTag("en-IN"), "%,.0f", amount);
+        String dueLine = "";
+        if (dueDateRaw != null && dueDateRaw.trim().length() >= 10) {
+            String ymd = dueDateRaw.trim().substring(0, 10);
+            String pretty = ymd;
+            try {
+                java.text.SimpleDateFormat in = new java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US);
+                java.text.SimpleDateFormat out = new java.text.SimpleDateFormat("d MMM yyyy", Locale.forLanguageTag("en-IN"));
+                java.util.Date d = in.parse(ymd);
+                if (d != null) pretty = out.format(d);
+            } catch (Exception ignored) {
+                /* keep ymd */
+            }
+            dueLine = "\nPayment due date: " + pretty + ".";
+        }
         return "Hi " + name + " \uD83D\uDE0A\n\n"
             + "Hope you're doing well. Just a quick reminder that you have a pending payment of \u20B9"
-            + formattedAmount + ".\n\n"
+            + formattedAmount + "." + dueLine + "\n\n"
             + "Request you to please clear the payment at your earliest convenience. If you have already paid, kindly ignore this message.\n\n"
             + "For any help/support:\n"
             + "\uD83D\uDCDE Phone: 8884944288\n"
@@ -168,7 +184,8 @@ public class ReminderPushReceiver extends BroadcastReceiver {
 
         String message = buildWhatsAppMessage(
             intent.getStringExtra(EXTRA_CUSTOMER_NAME),
-            intent.getStringExtra(EXTRA_AMOUNT)
+            intent.getStringExtra(EXTRA_AMOUNT),
+            intent.getStringExtra(EXTRA_DUE_DATE)
         );
 
         String encoded;

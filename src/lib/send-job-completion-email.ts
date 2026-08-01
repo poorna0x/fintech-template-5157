@@ -28,6 +28,8 @@ function applyForcedBrandToDocumentForm(
 ): AdminDocumentEmailData {
   const amountCollected =
     parseFloat(String(form.amount || '').replace(/[^\d.-]/g, '')) || 0;
+  const amountPending =
+    parseFloat(String(form.completionPendingAmount || '').replace(/[^\d.-]/g, '')) || 0;
   return {
     ...form,
     documentBrand: forcedBrand,
@@ -36,6 +38,8 @@ function applyForcedBrandToDocumentForm(
       serviceType: form.completionServiceType || '',
       serviceSubType: form.completionServiceSubType || '',
       amountCollected,
+      amountPending,
+      pendingDueDate: form.completionPendingDueDate || form.dueDate || null,
       documentBrand: forcedBrand,
     }),
   };

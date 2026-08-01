@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,47 +26,24 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { format } from 'date-fns';
-import { Check, ChevronsUpDown, Edit3, PhoneCall, Plus, RefreshCw, Search } from 'lucide-react';
+import { Check, ChevronsUpDown, Edit3, PhoneCall, Plus, RefreshCw, Search, UserRound } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Reminder } from '@/types';
 import { db, supabase, REMINDER_ROW_COLUMNS } from '@/lib/supabase';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
-import { PENDING_PAYMENT_REMINDER_TITLE, parseReminderAtLocalDate, buildPendingPaymentWhatsAppMessage } from '@/lib/pendingPaymentReminder';
+import { PENDING_PAYMENT_REMINDER_TITLE, parseReminderAtLocalDate, buildPendingPaymentWhatsAppMessage, parsePendingPaymentReminderNotes } from '@/lib/pendingPaymentReminder';
+import { markPendingPaymentSettledInRequirements } from '@/lib/jobPendingPayment';
 
 const PENDING_PAYMENT_TITLE = PENDING_PAYMENT_REMINDER_TITLE;
 const PAGE_SIZE = 20;
 
-function parsePendingAmount(notes: string | null | undefined): number {
-  const raw = (notes ?? '').toString().trim();
-  if (!raw) return 0;
-  // Allow values like "1234", "₹1234", "1,234.50", etc.
-  const normalized = raw.replace(/[^0-9.-]/g, '');
-  const n = Number(normalized);
-  return Number.isFinite(n) ? n : 0;
-}
-
-function parsePendingNotes(notes: string | null | undefined): { amount_pending: number; note?: string } {
-  const raw = (notes ?? '').toString().trim();
-  if (!raw) return { amount_pending: 0 };
-
-  // New format: JSON { amount_pending: number, note?: string|null }
-  if (raw.startsWith('{')) {
-    try {
-      const parsed = JSON.parse(raw) as { amount_pending?: unknown; note?: unknown };
-      const amount_pending = typeof parsed.amount_pending === 'number' ? parsed.amount_pending : parsePendingAmount(raw);
-      const note = typeof parsed.note === 'string' ? parsed.note : undefined;
-      return { amount_pending, note };
-    } catch {
-      // fallthrough to legacy parsing
-    }
-  }
-
-  // Legacy format: notes was just amount string
-  return { amount_pending: parsePendingAmount(raw), note: undefined };
-}
-
-type PendingPaymentReminder = Reminder & { amount_pending: number; note?: string };
+type PendingPaymentReminder = Reminder & {
+  amount_pending: number;
+  note?: string;
+  job_id?: string;
+  job_number?: string;
+};
 
 type CustomerLabel = {
   id: string;
@@ -138,7 +116,7 @@ function PendingPaymentFormDialogV2({
     if (isEdit && editReminder) {
       const nextCustomerId = (editReminder.entity_id as string) ?? '';
       setCustomerId(nextCustomerId);
-      const parsed = parsePendingNotes(editReminder.notes);
+      const parsed = parsePendingPaymentReminderNotes(editReminder.notes);
       setAmountStr(() => (parsed.amount_pending ? String(parsed.amount_pending) : ''));
       setNoteStr(parsed.note ?? '');
       setDueDate(
@@ -213,12 +191,16 @@ function PendingPaymentFormDialogV2({
     setSaveConfirmBusy(true);
     try {
       if (savePayload.mode === 'update' && savePayload.reminderId) {
+        const existing = parsePendingPaymentReminderNotes(editReminder?.notes);
+        const notesPayload: Record<string, unknown> = {
+          amount_pending: savePayload.parsedAmount,
+          note: savePayload.note,
+        };
+        if (existing.job_id) notesPayload.job_id = existing.job_id;
+        if (existing.job_number) notesPayload.job_number = existing.job_number;
         const { error } = await db.reminders.update(savePayload.reminderId, {
           title: PENDING_PAYMENT_TITLE,
-          notes: JSON.stringify({
-            amount_pending: savePayload.parsedAmount,
-            note: savePayload.note,
-          }),
+          notes: JSON.stringify(notesPayload),
           reminder_at: savePayload.reminderAt,
         });
         if (error) throw new Error(error.message);
@@ -438,6 +420,7 @@ export function SettingsPendingPaymentsDialogV2({
   initialAction?: 'list' | 'add' | 'whatsapp';
   initialReminderId?: string | null;
 }) {
+  const navigate = useNavigate();
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -464,6 +447,7 @@ export function SettingsPendingPaymentsDialogV2({
   const [postCompleteWhatsappTarget, setPostCompleteWhatsappTarget] = useState<PendingPaymentReminder | null>(null);
   /** Captured before reload — `load()` drops completed customers from `customerLabels`. */
   const [postCompleteCustomerLabel, setPostCompleteCustomerLabel] = useState<CustomerLabel | null>(null);
+
   const [highlightReminderId, setHighlightReminderId] = useState<string | null>(null);
   const deepLinkHandledRef = useRef<string | null>(null);
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -488,7 +472,11 @@ export function SettingsPendingPaymentsDialogV2({
   };
 
   const buildPendingPaymentMessage = (payment: PendingPaymentReminder, customer: CustomerLabel) =>
-    buildPendingPaymentWhatsAppMessage(customer.name, Number(payment.amount_pending) || 0);
+    buildPendingPaymentWhatsAppMessage(
+      customer.name,
+      Number(payment.amount_pending) || 0,
+      payment.reminder_at ? String(payment.reminder_at).slice(0, 10) : null
+    );
 
   const buildPaymentReceivedMessage = (payment: PendingPaymentReminder, customer: CustomerLabel) => {
     const amount = Number(payment.amount_pending) || 0;
@@ -568,11 +556,13 @@ Hydrogen RO Team`;
       if (reminderError) throw reminderError;
 
       let list = ((reminderRows || []) as Reminder[]).map((r) => {
-        const parsed = parsePendingNotes(r.notes);
+        const parsed = parsePendingPaymentReminderNotes(r.notes);
         return {
           ...r,
           amount_pending: parsed.amount_pending,
           note: parsed.note,
+          job_id: parsed.job_id,
+          job_number: parsed.job_number,
         };
       }) as PendingPaymentReminder[];
 
@@ -583,12 +573,14 @@ Hydrogen RO Team`;
           .eq('id', focusId)
           .maybeSingle();
         if (!oneErr && oneRow) {
-          const parsed = parsePendingNotes(oneRow.notes);
+          const parsed = parsePendingPaymentReminderNotes(oneRow.notes);
           list = [
             {
               ...(oneRow as Reminder),
               amount_pending: parsed.amount_pending,
               note: parsed.note,
+              job_id: parsed.job_id,
+              job_number: parsed.job_number,
             } as PendingPaymentReminder,
             ...list,
           ];
@@ -709,8 +701,40 @@ Hydrogen RO Team`;
     let customerForReceipt = entityId ? customerLabels[entityId] : undefined;
     setCompleteConfirmBusy(true);
     try {
-      const { error } = await db.reminders.update(completeTarget.id, { completed_at: new Date().toISOString() });
+      const settledAt = new Date().toISOString();
+      const { error } = await db.reminders.update(completeTarget.id, { completed_at: settledAt });
       if (error) throw new Error(error.message);
+
+      // Linked job from complete-job pending payment — mark customer payment PAID + settle in requirements.
+      // Do not touch technician_payments (commission already based on full bill).
+      const linkedJobId =
+        marked.job_id || parsePendingPaymentReminderNotes(marked.notes).job_id;
+      if (linkedJobId) {
+        try {
+          const { data: jobRow, error: jobFetchErr } = await db.jobs.getById(linkedJobId);
+          if (jobFetchErr) {
+            console.error('[pending-payment] job fetch on collect failed', jobFetchErr);
+            toast.warning('Marked collected, but could not update the linked job.');
+          } else if (jobRow) {
+            const nextReqs = markPendingPaymentSettledInRequirements(
+              (jobRow as any).requirements,
+              settledAt
+            );
+            const { error: jobUpdateErr } = await db.jobs.update(linkedJobId, {
+              payment_status: 'PAID',
+              requirements: nextReqs,
+            });
+            if (jobUpdateErr) {
+              console.error('[pending-payment] job settle on collect failed', jobUpdateErr);
+              toast.warning('Marked collected, but linked job payment status update failed.');
+            }
+          }
+        } catch (jobErr) {
+          console.error('[pending-payment] job settle on collect exception', jobErr);
+          toast.warning('Marked collected, but linked job update failed.');
+        }
+      }
+
       toast.success('Marked pending payment as collected');
       await load(); // reload current page
       setCompleteConfirmOpen(false);
@@ -738,6 +762,20 @@ Hydrogen RO Team`;
     } finally {
       setCompleteConfirmBusy(false);
     }
+  };
+
+  const handleOpenCustomer = (p: PendingPaymentReminder) => {
+    const customer = p.entity_id ? customerLabels[p.entity_id as string] : undefined;
+    const query =
+      (customer?.phone || '').trim() ||
+      (customer?.customerId || '').trim() ||
+      (customer?.name || '').trim();
+    if (!query) {
+      toast.error('No phone or customer id to search');
+      return;
+    }
+    onOpenChange(false);
+    navigate(`/admin?search=${encodeURIComponent(query)}`);
   };
 
   const handleWhatsAppClick = (p: PendingPaymentReminder) => {
@@ -877,10 +915,15 @@ Hydrogen RO Team`;
                       }`}
                     >
                       <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <div className="font-medium text-gray-900 dark:text-gray-100 truncate">
+                          <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenCustomer(p)}
+                            className="font-medium text-gray-900 dark:text-gray-100 truncate text-left hover:underline underline-offset-2"
+                            title="Open on home and search"
+                          >
                             {customer?.name ?? 'Customer'}
-                          </div>
+                          </button>
                           {customer?.customerId && (
                             <span className="text-xs text-muted-foreground font-mono truncate">
                               ({customer.customerId})
@@ -889,6 +932,11 @@ Hydrogen RO Team`;
                           <span className="text-xs px-2 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200">
                             Due: {dueLabel}
                           </span>
+                          {(p.job_number || p.job_id) && (
+                            <span className="text-xs px-2 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-200">
+                              From job {p.job_number || String(p.job_id).slice(0, 8)}
+                            </span>
+                          )}
                         </div>
 
                         <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -908,9 +956,18 @@ Hydrogen RO Team`;
                         <Button
                           variant="outline"
                           size="icon"
+                          onClick={() => handleOpenCustomer(p)}
+                          className="h-9 w-9"
+                          title="Open on home and search"
+                        >
+                          <UserRound className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="icon"
                           onClick={() => openEdit(p)}
                           className="h-9 w-9"
-                          title="Edit"
+                          title="Edit pending payment"
                         >
                           <Edit3 className="w-4 h-4" />
                         </Button>
@@ -936,7 +993,7 @@ Hydrogen RO Team`;
                           className="h-9 w-9 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200"
                           title="Call customer"
                         >
-                          <PhoneCall className="h-4 w-4" />
+                          <PhoneCall className="h-4 h-4" />
                         </Button>
                       </div>
                     </div>

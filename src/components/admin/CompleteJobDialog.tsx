@@ -18,6 +18,40 @@ import { customerNameClassName } from '@/lib/customerDisplay';
 import { broadcastTechnicianJobListRefreshForJob } from '@/lib/technicianJobListSync';
 import { parseJobRequirements } from '@/lib/adminUtils';
 import { getStoredOtpFromRequirements } from '@/lib/technicianOtpRequests';
+import PendingPaymentFields from '@/components/job/PendingPaymentFields';
+import {
+  type PaidTodayMode,
+  validatePendingPaymentInputs,
+  resolveDbPaymentMethodFromUi,
+  resolveJobCustomerPaymentStatus,
+  computePendingBalance,
+  upsertPendingPaymentInRequirements,
+  createPendingPaymentReminderFromJob,
+} from '@/lib/jobPendingPayment';
+
+function sanitizeMoneyInput(raw: string): string {
+  if (raw == null) return '';
+  let cleaned = String(raw).replace(/[^0-9.]/g, '');
+  const firstDot = cleaned.indexOf('.');
+  if (firstDot !== -1) {
+    cleaned =
+      cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, '');
+  }
+  const dotIdx = cleaned.indexOf('.');
+  if (dotIdx !== -1 && cleaned.length - dotIdx - 1 > 2) {
+    cleaned = cleaned.slice(0, dotIdx + 3);
+  }
+  return cleaned;
+}
+
+function parseMoneyAmount(raw: string): number {
+  if (raw == null) return NaN;
+  const trimmed = String(raw).trim();
+  if (trimmed === '') return NaN;
+  const n = Number(trimmed);
+  if (!Number.isFinite(n) || n < 0) return NaN;
+  return n;
+}
 
 interface CompleteJobDialogProps {
   open: boolean;
@@ -98,9 +132,13 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
     return Number.isNaN(n) ? 4 : Math.max(1, n);
   });
   const [hasAMC, setHasAMC] = useState<boolean | null>(null);
-  const [paymentMode, setPaymentMode] = useState<'CASH' | 'ONLINE' | 'PARTIAL' | ''>('');
+  const [paymentMode, setPaymentMode] = useState<'CASH' | 'ONLINE' | 'PARTIAL' | 'PENDING_PAYMENT' | ''>('');
   const [partialCashAmount, setPartialCashAmount] = useState<string>('');
   const [partialOnlineAmount, setPartialOnlineAmount] = useState<string>('');
+  const [pendingPaidTodayEnabled, setPendingPaidTodayEnabled] = useState(false);
+  const [pendingPaidTodayMode, setPendingPaidTodayMode] = useState<PaidTodayMode | ''>('');
+  const [pendingPaidTodayAmount, setPendingPaidTodayAmount] = useState('');
+  const [promisedPaymentDate, setPromisedPaymentDate] = useState('');
   const [billAmountConfirmOpen, setBillAmountConfirmOpen] = useState(false);
   const [customerHasPrefilter, setCustomerHasPrefilter] = useState<boolean | null>(null);
   const [rawWaterTds, setRawWaterTds] = useState<string>('');
@@ -191,6 +229,10 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
       setPaymentMode('');
       setPartialCashAmount('');
       setPartialOnlineAmount('');
+      setPendingPaidTodayEnabled(false);
+      setPendingPaidTodayMode('');
+      setPendingPaidTodayAmount('');
+      setPromisedPaymentDate('');
       const customerPrefilter = job.customer 
         ? ((job.customer as any).has_prefilter ?? (job.customer as any).hasPrefilter ?? null)
         : null;
@@ -340,7 +382,9 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
     const uploadedBillPhotos = billPhotos.filter(isUploadedMediaUrl);
 
     // Determine payment mode - if bill is zero, payment mode should be empty
-    const finalPaymentMode = isBillAmountZero() ? '' : (paymentMode as 'CASH' | 'ONLINE' | 'PARTIAL' | '');
+    const finalPaymentMode = isBillAmountZero()
+      ? ''
+      : (paymentMode as 'CASH' | 'ONLINE' | 'PARTIAL' | 'PENDING_PAYMENT' | '');
     const finalPaymentScreenshot = isBillAmountZero()
       ? ''
       : isUploadedMediaUrl(paymentScreenshot)
@@ -354,6 +398,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
     try {
       let dbPaymentMethod: 'CASH' | 'CARD' | 'UPI' | 'BANK_TRANSFER' | 'PARTIAL' | null = null;
       let paymentAmount = parseFloat(billAmount) || 0;
+      let paidTodayForPending = 0;
       if (!isBillAmountZero()) {
         if (finalPaymentMode === 'CASH') {
           dbPaymentMethod = 'CASH';
@@ -364,6 +409,19 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
           const cash = parseFloat(partialCashAmount) || 0;
           const online = parseFloat(partialOnlineAmount) || 0;
           paymentAmount = cash + online;
+        } else if (finalPaymentMode === 'PENDING_PAYMENT') {
+          paidTodayForPending =
+            pendingPaidTodayEnabled && pendingPaidTodayMode === 'PARTIAL'
+              ? (parseMoneyAmount(partialCashAmount) || 0) + (parseMoneyAmount(partialOnlineAmount) || 0)
+              : pendingPaidTodayEnabled
+                ? parseMoneyAmount(pendingPaidTodayAmount) || 0
+                : 0;
+          dbPaymentMethod = resolveDbPaymentMethodFromUi(
+            'PENDING_PAYMENT',
+            pendingPaidTodayMode || null,
+            paidTodayForPending
+          );
+          paymentAmount = parseFloat(billAmount) || 0;
         }
       }
       
@@ -396,7 +454,14 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
         service_brand: serviceBrand,
         actual_cost: parseFloat(billAmount) || 0,
         payment_amount: paymentAmount,
-        payment_method: dbPaymentMethod || (isBillAmountZero() ? null : 'CASH'),
+        payment_method:
+          dbPaymentMethod ||
+          (isBillAmountZero() ? null : finalPaymentMode === 'PENDING_PAYMENT' ? null : 'CASH'),
+        payment_status: resolveJobCustomerPaymentStatus({
+          billAmount: parseFloat(billAmount) || 0,
+          mode: (finalPaymentMode || '') as any,
+          paidTodayAmount: paidTodayForPending,
+        }),
       };
 
       // If completing from admin page with selected technician, ensure job is assigned to that technician
@@ -449,7 +514,16 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
         }
       }
 
-      requirements = requirements.filter((req: any) => !req.bill_photos && !req.payment_photos && !req.qr_photos && !req.amc_info);
+      requirements = requirements.filter(
+        (req: any) =>
+          !req.bill_photos &&
+          !req.payment_photos &&
+          !req.qr_photos &&
+          !req.amc_info &&
+          req.partial_cash_amount === undefined &&
+          req.partial_online_amount === undefined &&
+          !req.pending_payment
+      );
 
       // Tag office completions (no field technician) so reports can show "Office".
       requirements = requirements.filter((req: any) => !req.completed_by_office);
@@ -475,7 +549,19 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
         updateData.after_photos = allAfterPhotos;
       }
 
-      if (!isBillAmountZero() && (finalPaymentMode === 'ONLINE' || finalPaymentMode === 'PARTIAL') && finalSelectedQrCodeId) {
+      const pendingNeedsQr =
+        finalPaymentMode === 'PENDING_PAYMENT' &&
+        pendingPaidTodayEnabled &&
+        (pendingPaidTodayMode === 'ONLINE' ||
+          (pendingPaidTodayMode === 'PARTIAL' && (parseMoneyAmount(partialOnlineAmount) || 0) > 0));
+
+      if (
+        !isBillAmountZero() &&
+        (finalPaymentMode === 'ONLINE' ||
+          (finalPaymentMode === 'PARTIAL' && finalSelectedQrCodeId) ||
+          (pendingNeedsQr && finalSelectedQrCodeId)) &&
+        finalSelectedQrCodeId
+      ) {
         const qrPhotos: any = {
           qr_code_type: finalQrCodeType,
           selected_qr_code_id: finalSelectedQrCodeId,
@@ -506,10 +592,50 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
         requirements.push({ qr_photos: qrPhotos });
       }
 
-      if (finalPaymentMode === 'PARTIAL') {
+      if (
+        finalPaymentMode === 'PARTIAL' ||
+        (finalPaymentMode === 'PENDING_PAYMENT' &&
+          pendingPaidTodayEnabled &&
+          pendingPaidTodayMode === 'PARTIAL')
+      ) {
         const cash = parseFloat(partialCashAmount) || 0;
         const online = parseFloat(partialOnlineAmount) || 0;
         requirements.push({ partial_cash_amount: cash, partial_online_amount: online });
+      }
+
+      if (finalPaymentMode === 'PENDING_PAYMENT') {
+        const bill = parseFloat(billAmount) || 0;
+        const balance = computePendingBalance(bill, paidTodayForPending);
+        const customerId =
+          (job as any).customer_id ||
+          (job as any).customerId ||
+          job.customer?.id ||
+          (job.customer as any)?.id;
+        let reminderId: string | null = null;
+        if (customerId && balance > 0) {
+          const { id, error: remErr } = await createPendingPaymentReminderFromJob({
+            customerId: String(customerId),
+            jobId: job.id,
+            jobNumber: (job as any).job_number || job.jobNumber,
+            amountPending: balance,
+            promisedDate: promisedPaymentDate,
+          });
+          if (remErr) {
+            console.error('[pending-payment] reminder create failed', remErr);
+            toast.error('Job will save, but pending payment reminder failed — add it in Settings.');
+          } else {
+            reminderId = id;
+          }
+        }
+        requirements = upsertPendingPaymentInRequirements(requirements, {
+          promised_date: promisedPaymentDate,
+          amount_pending: balance,
+          paid_today: paidTodayForPending,
+          paid_today_mode: pendingPaidTodayEnabled
+            ? (pendingPaidTodayMode as PaidTodayMode) || null
+            : null,
+          reminder_id: reminderId,
+        });
       }
 
       // Only add AMC if it was actually set (hasAMC === true and years > 0)
@@ -823,6 +949,36 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
         }
         if (online > 0 && !selectedQrCodeId) {
           toast.error('Please select a QR code for the online part');
+          return;
+        }
+      }
+      if (paymentMode === 'PENDING_PAYMENT') {
+        const bill = parseMoneyAmount(billAmount);
+        const paidToday =
+          pendingPaidTodayEnabled && pendingPaidTodayMode === 'PARTIAL'
+            ? (parseMoneyAmount(partialCashAmount) || 0) + (parseMoneyAmount(partialOnlineAmount) || 0)
+            : pendingPaidTodayEnabled
+              ? parseMoneyAmount(pendingPaidTodayAmount) || 0
+              : 0;
+        const err = validatePendingPaymentInputs({
+          billAmount: bill,
+          paidTodayEnabled: pendingPaidTodayEnabled,
+          paidTodayMode: pendingPaidTodayMode,
+          paidTodayAmount: paidToday,
+          partialCash: parseMoneyAmount(partialCashAmount) || 0,
+          partialOnline: parseMoneyAmount(partialOnlineAmount) || 0,
+          promisedDate: promisedPaymentDate,
+        });
+        if (err) {
+          toast.error(err);
+          return;
+        }
+        const needsQr =
+          pendingPaidTodayEnabled &&
+          (pendingPaidTodayMode === 'ONLINE' ||
+            (pendingPaidTodayMode === 'PARTIAL' && (parseMoneyAmount(partialOnlineAmount) || 0) > 0));
+        if (needsQr && !selectedQrCodeId) {
+          toast.error('Please select a QR code for today’s online payment');
           return;
         }
       }
@@ -1340,7 +1496,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                   <Label htmlFor="payment-mode">Payment Mode *</Label>
                   <Select 
                     value={paymentMode} 
-                    onValueChange={(value: 'CASH' | 'ONLINE' | 'PARTIAL') => {
+                    onValueChange={(value: 'CASH' | 'ONLINE' | 'PARTIAL' | 'PENDING_PAYMENT') => {
                       setPaymentMode(value);
                       if (value === 'CASH') {
                         setQrCodeType('');
@@ -1354,6 +1510,21 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                         setSelectedQrCodeId('');
                         setPaymentScreenshot('');
                       }
+                      if (value === 'PENDING_PAYMENT') {
+                        setPendingPaidTodayEnabled(false);
+                        setPendingPaidTodayMode('');
+                        setPendingPaidTodayAmount('');
+                        setPartialCashAmount('');
+                        setPartialOnlineAmount('');
+                        setPromisedPaymentDate('');
+                        setQrCodeType('');
+                        setSelectedQrCodeId('');
+                        setPaymentScreenshot('');
+                      } else {
+                        setPendingPaidTodayEnabled(false);
+                        setPendingPaidTodayMode('');
+                        setPendingPaidTodayAmount('');
+                      }
                     }}
                   >
                     <SelectTrigger className="mt-1">
@@ -1363,9 +1534,30 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                       <SelectItem value="CASH">Cash</SelectItem>
                       <SelectItem value="ONLINE">Online</SelectItem>
                       <SelectItem value="PARTIAL">Partial (Cash + Online)</SelectItem>
+                      <SelectItem value="PENDING_PAYMENT">Pending Payment</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
+
+                {paymentMode === 'PENDING_PAYMENT' && (
+                  <PendingPaymentFields
+                    billAmount={parseMoneyAmount(billAmount) || 0}
+                    paidTodayEnabled={pendingPaidTodayEnabled}
+                    onPaidTodayEnabledChange={setPendingPaidTodayEnabled}
+                    paidTodayMode={pendingPaidTodayMode}
+                    onPaidTodayModeChange={setPendingPaidTodayMode}
+                    paidTodayAmount={pendingPaidTodayAmount}
+                    onPaidTodayAmountChange={setPendingPaidTodayAmount}
+                    partialCashAmount={partialCashAmount}
+                    onPartialCashAmountChange={setPartialCashAmount}
+                    partialOnlineAmount={partialOnlineAmount}
+                    onPartialOnlineAmountChange={setPartialOnlineAmount}
+                    promisedDate={promisedPaymentDate}
+                    onPromisedDateChange={setPromisedPaymentDate}
+                    sanitizeMoneyInput={sanitizeMoneyInput}
+                    parseMoneyAmount={parseMoneyAmount}
+                  />
+                )}
 
                 {paymentMode === 'PARTIAL' && (
                   <div className="space-y-3 pl-4 border-l-2 border-border">
@@ -1420,7 +1612,13 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                   </div>
                 )}
                 
-                {(paymentMode === 'ONLINE' || paymentMode === 'PARTIAL') && (
+                {(paymentMode === 'ONLINE' ||
+                  paymentMode === 'PARTIAL' ||
+                  (paymentMode === 'PENDING_PAYMENT' &&
+                    pendingPaidTodayEnabled &&
+                    (pendingPaidTodayMode === 'ONLINE' ||
+                      (pendingPaidTodayMode === 'PARTIAL' &&
+                        (parseMoneyAmount(partialOnlineAmount) || 0) > 0)))) && (
                   <div className="space-y-4 pl-4 border-l-2 border-border">
                     <div>
                       <Label htmlFor="qr-code-type">Select QR Code *</Label>
@@ -1811,6 +2009,22 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                   (parseFloat(partialCashAmount) || 0) + (parseFloat(partialOnlineAmount) || 0) <= 0 ||
                   (parseFloat(partialOnlineAmount) || 0) > 0 && !selectedQrCodeId
                 )) ||
+                (completeJobStep === 4 &&
+                  !isBillAmountZero() &&
+                  paymentMode === 'PENDING_PAYMENT' &&
+                  (!promisedPaymentDate ||
+                    (pendingPaidTodayEnabled &&
+                      (!pendingPaidTodayMode ||
+                        (pendingPaidTodayMode === 'PARTIAL'
+                          ? !(
+                              parseMoneyAmount(partialCashAmount) > 0 &&
+                              parseMoneyAmount(partialOnlineAmount) > 0
+                            )
+                          : !(parseMoneyAmount(pendingPaidTodayAmount) > 0)) ||
+                        ((pendingPaidTodayMode === 'ONLINE' ||
+                          (pendingPaidTodayMode === 'PARTIAL' &&
+                            (parseMoneyAmount(partialOnlineAmount) || 0) > 0)) &&
+                          !selectedQrCodeId))))) ||
                 // Step 7 validation: require OTP if step is 7
                 (completeJobStep === 7 && otpInput.join('').length !== 4)
               }

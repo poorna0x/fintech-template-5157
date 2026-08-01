@@ -32,22 +32,38 @@ function signCashCheck(technicianId, date, amount, secret) {
     .digest('hex');
 }
 
-/** Cash portion of a completed job (0 when paid online). */
+/** Cash portion of a completed job (0 when paid online). Honors pending_payment.paid_today. */
 function cashAmountForJob(job) {
+  let reqs = [];
+  try {
+    const raw = job.requirements;
+    if (typeof raw === 'string') reqs = JSON.parse(raw);
+    else if (Array.isArray(raw)) reqs = raw;
+  } catch {
+    reqs = [];
+  }
+  const pendingRow = reqs.find((r) => r && r.pending_payment && typeof r.pending_payment === 'object');
+  const pending = pendingRow?.pending_payment;
+  if (pending && !pending.settled_at) {
+    const mode = String(pending.paid_today_mode || '').toUpperCase();
+    const paid = Number(pending.paid_today) || 0;
+    if (mode === 'PARTIAL') {
+      const partial = reqs.find((r) => r && r.partial_cash_amount != null);
+      const n = Number(partial?.partial_cash_amount);
+      return Number.isFinite(n) && n > 0 ? n : 0;
+    }
+    if (mode === 'CASH') {
+      return Number.isFinite(paid) && paid > 0 ? paid : 0;
+    }
+    return 0;
+  }
+
   const method = String(job.payment_method || '').toUpperCase();
   if (method === 'CASH') {
     const n = Number(job.payment_amount ?? job.actual_cost);
     return Number.isFinite(n) && n > 0 ? n : 0;
   }
   if (method === 'PARTIAL') {
-    let reqs = [];
-    try {
-      const raw = job.requirements;
-      if (typeof raw === 'string') reqs = JSON.parse(raw);
-      else if (Array.isArray(raw)) reqs = raw;
-    } catch {
-      return 0;
-    }
     const partial = reqs.find((r) => r && r.partial_cash_amount != null);
     const n = Number(partial?.partial_cash_amount);
     return Number.isFinite(n) && n > 0 ? n : 0;
@@ -68,14 +84,15 @@ exports.handler = async () => {
 
   const { startUtc, dateLabel } = istToday();
 
-  // One query: today's completed jobs with any payment info.
+  // Include null payment_method (pending with nothing paid today still has jobs;
+  // cashAmountForJob returns 0 for those). Also CASH/PARTIAL for paid-today cash.
   const { data: jobs, error: jobsErr } = await db
     .from('jobs')
     .select('assigned_technician_id,payment_method,payment_amount,actual_cost,requirements')
     .eq('status', 'COMPLETED')
     .gte('completed_at', startUtc.toISOString())
     .not('assigned_technician_id', 'is', null)
-    .in('payment_method', ['CASH', 'PARTIAL']);
+    .or('payment_method.in.(CASH,PARTIAL),payment_method.is.null');
   if (jobsErr) {
     console.error('[daily-cash-check] jobs query failed', jobsErr.message);
     return { statusCode: 500, body: 'Query failed' };

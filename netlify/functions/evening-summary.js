@@ -55,17 +55,39 @@ exports.handler = async () => {
     if (Number.isFinite(amount) && amount > 0) total += amount;
 
     const method = String(job.payment_method || '').toUpperCase();
-    if (method === 'CASH') {
-      if (Number.isFinite(amount) && amount > 0) cash += amount;
-    } else if (method === 'PARTIAL') {
-      try {
-        const raw = job.requirements;
-        const reqs = typeof raw === 'string' ? JSON.parse(raw) : Array.isArray(raw) ? raw : [];
-        const partial = reqs.find((r) => r && r.partial_cash_amount != null);
-        const c = Number(partial?.partial_cash_amount);
-        if (Number.isFinite(c) && c > 0) cash += c;
-      } catch {
-        // ignore malformed requirements
+    let cashAdded = false;
+    try {
+      const raw = job.requirements;
+      const reqs = typeof raw === 'string' ? JSON.parse(raw) : Array.isArray(raw) ? raw : [];
+      const pending = reqs.find((r) => r && r.pending_payment)?.pending_payment;
+      if (pending && !pending.settled_at) {
+        const mode = String(pending.paid_today_mode || '').toUpperCase();
+        const paid = Number(pending.paid_today) || 0;
+        if (mode === 'PARTIAL') {
+          const partial = reqs.find((r) => r && r.partial_cash_amount != null);
+          const c = Number(partial?.partial_cash_amount);
+          if (Number.isFinite(c) && c > 0) cash += c;
+        } else if (mode === 'CASH' && Number.isFinite(paid) && paid > 0) {
+          cash += paid;
+        }
+        cashAdded = true;
+      }
+    } catch {
+      // ignore
+    }
+    if (!cashAdded) {
+      if (method === 'CASH') {
+        if (Number.isFinite(amount) && amount > 0) cash += amount;
+      } else if (method === 'PARTIAL') {
+        try {
+          const raw = job.requirements;
+          const reqs = typeof raw === 'string' ? JSON.parse(raw) : Array.isArray(raw) ? raw : [];
+          const partial = reqs.find((r) => r && r.partial_cash_amount != null);
+          const c = Number(partial?.partial_cash_amount);
+          if (Number.isFinite(c) && c > 0) cash += c;
+        } catch {
+          // ignore malformed requirements
+        }
       }
     }
   }

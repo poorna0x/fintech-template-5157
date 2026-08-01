@@ -114,6 +114,18 @@ import {
   TECHNICIAN_JOB_LIST_BROADCAST_EVENT,
   type TechnicianJobListRefreshPayload,
 } from '@/lib/technicianJobListSync';
+import PendingPaymentFields from '@/components/job/PendingPaymentFields';
+import {
+  computePendingBalance,
+  createPendingPaymentReminderFromJob,
+  resolveDbPaymentMethodFromUi,
+  resolveJobCustomerPaymentStatus,
+  resolveReceivedCashAndOnline,
+  upsertPendingPaymentInRequirements,
+  validatePendingPaymentInputs,
+  type PaidTodayMode,
+} from '@/lib/jobPendingPayment';
+import { resolveJobBillingAmount } from '@/lib/jobAnalytics';
 import { compareJobsByVisitOrder, getJobVisitOrder, getVisitOrderVisibleForTechnician } from '@/lib/adminVisitOrder';
 import {
   aggregateCustomerPhotoUrls,
@@ -651,7 +663,7 @@ const TechnicianDashboard = () => {
   const [amcServicePeriodCustomMonths, setAmcServicePeriodCustomMonths] = useState<number>(4);
   const [hasAMC, setHasAMC] = useState<boolean | null>(null);
   const [completeJobCustomerDoc, setCompleteJobCustomerDoc] = useState<Customer | null>(null);
-  const [paymentMode, setPaymentMode] = useState<'CASH' | 'ONLINE' | 'PARTIAL' | ''>('');
+  const [paymentMode, setPaymentMode] = useState<'CASH' | 'ONLINE' | 'PARTIAL' | 'PENDING_PAYMENT' | ''>('');
   const [billAmountConfirmOpen, setBillAmountConfirmOpen] = useState(false);
   const [billPhotosSkipConfirmOpen, setBillPhotosSkipConfirmOpen] = useState(false);
   const [customerHasPrefilter, setCustomerHasPrefilter] = useState<boolean | null>(null);
@@ -669,6 +681,10 @@ const TechnicianDashboard = () => {
   const [paymentScreenshot, setPaymentScreenshot] = useState<string>('');
   const [partialCashAmount, setPartialCashAmount] = useState<string>('');
   const [partialOnlineAmount, setPartialOnlineAmount] = useState<string>('');
+  const [pendingPaidTodayEnabled, setPendingPaidTodayEnabled] = useState(false);
+  const [pendingPaidTodayMode, setPendingPaidTodayMode] = useState<PaidTodayMode | ''>('');
+  const [pendingPaidTodayAmount, setPendingPaidTodayAmount] = useState('');
+  const [promisedPaymentDate, setPromisedPaymentDate] = useState('');
   const [isSubmittingJobCompletion, setIsSubmittingJobCompletion] = useState(false);
   const [isBillPhotosUploading, setIsBillPhotosUploading] = useState(false);
   const [isPaymentScreenshotUploading, setIsPaymentScreenshotUploading] = useState(false);
@@ -3661,6 +3677,10 @@ const TechnicianDashboard = () => {
     setPaymentMode('');
     setPartialCashAmount('');
     setPartialOnlineAmount('');
+    setPendingPaidTodayEnabled(false);
+    setPendingPaidTodayMode('');
+    setPendingPaidTodayAmount('');
+    setPromisedPaymentDate('');
     setCustomerHasPrefilter(null);
     setRawWaterTds('');
     setQrCodeType('');
@@ -3700,6 +3720,10 @@ const TechnicianDashboard = () => {
       paymentMode,
       partialCashAmount,
       partialOnlineAmount,
+      pendingPaidTodayEnabled,
+      pendingPaidTodayMode,
+      pendingPaidTodayAmount,
+      promisedPaymentDate,
       selectedQrCodeId,
       paymentScreenshot,
       hasAMC,
@@ -3728,6 +3752,10 @@ const TechnicianDashboard = () => {
     paymentMode,
     partialCashAmount,
     partialOnlineAmount,
+    pendingPaidTodayEnabled,
+    pendingPaidTodayMode,
+    pendingPaidTodayAmount,
+    promisedPaymentDate,
     selectedQrCodeId,
     paymentScreenshot,
     hasAMC,
@@ -3791,6 +3819,10 @@ const TechnicianDashboard = () => {
       paymentMode,
       partialCashAmount,
       partialOnlineAmount,
+      pendingPaidTodayEnabled,
+      pendingPaidTodayMode,
+      pendingPaidTodayAmount,
+      promisedPaymentDate,
       customerHasPrefilter,
       rawWaterTds,
       qrCodeType,
@@ -3824,6 +3856,10 @@ const TechnicianDashboard = () => {
     paymentMode,
     partialCashAmount,
     partialOnlineAmount,
+    pendingPaidTodayEnabled,
+    pendingPaidTodayMode,
+    pendingPaidTodayAmount,
+    promisedPaymentDate,
     customerHasPrefilter,
     rawWaterTds,
     qrCodeType,
@@ -3856,6 +3892,10 @@ const TechnicianDashboard = () => {
     setPaymentMode(draft.paymentMode);
     setPartialCashAmount(draft.partialCashAmount);
     setPartialOnlineAmount(draft.partialOnlineAmount);
+    setPendingPaidTodayEnabled(Boolean(draft.pendingPaidTodayEnabled));
+    setPendingPaidTodayMode(draft.pendingPaidTodayMode || '');
+    setPendingPaidTodayAmount(draft.pendingPaidTodayAmount || '');
+    setPromisedPaymentDate(draft.promisedPaymentDate || '');
     setCustomerHasPrefilter(draft.customerHasPrefilter);
     setRawWaterTds(draft.rawWaterTds);
     setQrCodeType(draft.qrCodeType);
@@ -4864,6 +4904,36 @@ const TechnicianDashboard = () => {
           return;
         }
       }
+      if (paymentMode === 'PENDING_PAYMENT') {
+        const bill = parseMoneyAmount(billAmount);
+        const paidToday =
+          pendingPaidTodayEnabled && pendingPaidTodayMode === 'PARTIAL'
+            ? (parseMoneyAmount(partialCashAmount) || 0) + (parseMoneyAmount(partialOnlineAmount) || 0)
+            : pendingPaidTodayEnabled
+              ? parseMoneyAmount(pendingPaidTodayAmount) || 0
+              : 0;
+        const err = validatePendingPaymentInputs({
+          billAmount: bill,
+          paidTodayEnabled: pendingPaidTodayEnabled,
+          paidTodayMode: pendingPaidTodayMode,
+          paidTodayAmount: paidToday,
+          partialCash: parseMoneyAmount(partialCashAmount) || 0,
+          partialOnline: parseMoneyAmount(partialOnlineAmount) || 0,
+          promisedDate: promisedPaymentDate,
+        });
+        if (err) {
+          toast.error(err);
+          return;
+        }
+        const needsQr =
+          pendingPaidTodayEnabled &&
+          (pendingPaidTodayMode === 'ONLINE' ||
+            (pendingPaidTodayMode === 'PARTIAL' && parseMoneyAmount(partialOnlineAmount) > 0));
+        if (needsQr && !selectedQrCodeId) {
+          toast.error('Please select a QR code for today’s online payment');
+          return;
+        }
+      }
       // Move to step 5 (Payment Screenshot)
       setCompleteJobStep(5);
         return;
@@ -5043,6 +5113,7 @@ const TechnicianDashboard = () => {
         let dbPaymentMethod: 'CASH' | 'CARD' | 'UPI' | 'BANK_TRANSFER' | 'PARTIAL' | null = null;
         const parsedBill = parseMoneyAmount(billAmount);
         let paymentAmount = Number.isFinite(parsedBill) ? parsedBill : 0;
+        let paidTodayForPending = 0;
         if (!isBillAmountZero()) {
           if (paymentMode === 'CASH') {
             dbPaymentMethod = 'CASH';
@@ -5054,6 +5125,20 @@ const TechnicianDashboard = () => {
             const online = parseMoneyAmount(partialOnlineAmount);
             paymentAmount =
               (Number.isFinite(cash) ? cash : 0) + (Number.isFinite(online) ? online : 0);
+          } else if (paymentMode === 'PENDING_PAYMENT') {
+            paidTodayForPending =
+              pendingPaidTodayEnabled && pendingPaidTodayMode === 'PARTIAL'
+                ? (parseMoneyAmount(partialCashAmount) || 0) + (parseMoneyAmount(partialOnlineAmount) || 0)
+                : pendingPaidTodayEnabled
+                  ? parseMoneyAmount(pendingPaidTodayAmount) || 0
+                  : 0;
+            dbPaymentMethod = resolveDbPaymentMethodFromUi(
+              'PENDING_PAYMENT',
+              pendingPaidTodayMode || null,
+              paidTodayForPending
+            );
+            // Full bill for commission trigger / salary
+            paymentAmount = Number.isFinite(parsedBill) ? parsedBill : 0;
           }
         }
         
@@ -5066,7 +5151,12 @@ const TechnicianDashboard = () => {
           service_brand: serviceBrand,
           actual_cost: Number.isFinite(parsedBill) ? parsedBill : 0,
           payment_amount: paymentAmount,
-          payment_method: dbPaymentMethod || (isBillAmountZero() ? null : 'CASH'),
+          payment_method: dbPaymentMethod || (isBillAmountZero() ? null : paymentMode === 'PENDING_PAYMENT' ? null : 'CASH'),
+          payment_status: resolveJobCustomerPaymentStatus({
+            billAmount: Number.isFinite(parsedBill) ? parsedBill : 0,
+            mode: (paymentMode || '') as any,
+            paidTodayAmount: paidTodayForPending,
+          }),
         };
 
         // Fetch latest job data to ensure we have the most up-to-date requirements
@@ -5114,6 +5204,7 @@ const TechnicianDashboard = () => {
           if (req.amc_info !== undefined) return false;
           if (req.dont_send_message !== undefined) return false;
           if (req.partial_cash_amount !== undefined || req.partial_online_amount !== undefined) return false;
+          if (req.pending_payment !== undefined) return false;
           return true;
         });
 
@@ -5190,7 +5281,16 @@ const TechnicianDashboard = () => {
         }
         
         // Add qr_photos to requirements for ONLINE and PARTIAL (online part) payments
-        if (paymentMode === 'ONLINE' || (paymentMode === 'PARTIAL' && selectedQrCodeId)) {
+        const pendingNeedsQr =
+          paymentMode === 'PENDING_PAYMENT' &&
+          pendingPaidTodayEnabled &&
+          (pendingPaidTodayMode === 'ONLINE' ||
+            (pendingPaidTodayMode === 'PARTIAL' && parseMoneyAmount(partialOnlineAmount) > 0));
+        if (
+          paymentMode === 'ONLINE' ||
+          (paymentMode === 'PARTIAL' && selectedQrCodeId) ||
+          (pendingNeedsQr && selectedQrCodeId)
+        ) {
           if (selectedQrCodeUrl && !(
             selectedQrCodeUrl.includes('cloudinary.com') || 
             selectedQrCodeUrl.includes('res.cloudinary.com') ||
@@ -5209,7 +5309,12 @@ const TechnicianDashboard = () => {
           requirements.push({ qr_photos: qrPhotos });
           console.log('✅ Added qr_photos to requirements:', qrPhotos);
         }
-        if (paymentMode === 'PARTIAL') {
+        if (
+          paymentMode === 'PARTIAL' ||
+          (paymentMode === 'PENDING_PAYMENT' &&
+            pendingPaidTodayEnabled &&
+            pendingPaidTodayMode === 'PARTIAL')
+        ) {
           const cash = parseMoneyAmount(partialCashAmount);
           const online = parseMoneyAmount(partialOnlineAmount);
           requirements.push({
@@ -5217,7 +5322,49 @@ const TechnicianDashboard = () => {
             partial_online_amount: Number.isFinite(online) ? online : 0,
           });
         }
-        if ((paymentMode !== 'ONLINE' && paymentMode !== 'PARTIAL') && isPaymentScreenshotUploaded) {
+        if (paymentMode === 'PENDING_PAYMENT') {
+          const bill = Number.isFinite(parsedBill) ? parsedBill : 0;
+          const balance = computePendingBalance(bill, paidTodayForPending);
+          const customerId =
+            (selectedJobForComplete as any).customer_id ||
+            (selectedJobForComplete as any).customerId ||
+            selectedJobForComplete.customer?.id;
+          let reminderId: string | null = null;
+          if (customerId && balance > 0) {
+            const { id, error: remErr } = await createPendingPaymentReminderFromJob({
+              customerId,
+              jobId: selectedJobForComplete.id,
+              jobNumber: selectedJobForComplete.jobNumber || (selectedJobForComplete as any).job_number,
+              amountPending: balance,
+              promisedDate: promisedPaymentDate,
+            });
+            if (remErr) {
+              console.error('[pending-payment] reminder create failed', remErr);
+              toast.error('Job will save, but pending payment reminder failed — add it in Settings.');
+            } else {
+              reminderId = id;
+            }
+          }
+          requirements = upsertPendingPaymentInRequirements(requirements, {
+            promised_date: promisedPaymentDate,
+            amount_pending: balance,
+            paid_today: paidTodayForPending,
+            paid_today_mode: pendingPaidTodayEnabled
+              ? (pendingPaidTodayMode as PaidTodayMode) || null
+              : null,
+            reminder_id: reminderId,
+          });
+        }
+        if (
+          paymentMode !== 'ONLINE' &&
+          paymentMode !== 'PARTIAL' &&
+          !(
+            paymentMode === 'PENDING_PAYMENT' &&
+            pendingPaidTodayEnabled &&
+            (pendingPaidTodayMode === 'ONLINE' || pendingPaidTodayMode === 'PARTIAL')
+          ) &&
+          isPaymentScreenshotUploaded
+        ) {
           // For CASH payments, still save payment screenshot in requirements for easy access
           // Store it in a payment_photos array in requirements
           requirements.push({ payment_photos: [paymentScreenshot] });
@@ -7310,25 +7457,15 @@ const TechnicianDashboard = () => {
               let totalAmount = 0;
               
               filteredJobs.forEach((job) => {
-                const paymentAmount = (job as any).payment_amount || (job as any).actual_cost || 0;
-                const paymentMethod = (job as any).payment_method || '';
-                if (paymentAmount <= 0) return;
-                totalAmount += paymentAmount;
-                if (paymentMethod === 'PARTIAL') {
-                  try {
-                    const req = typeof (job as any).requirements === 'string' ? JSON.parse((job as any).requirements) : (job as any).requirements || [];
-                    const arr = Array.isArray(req) ? req : [];
-                    const partialReq = arr.find((r: any) => r?.partial_cash_amount != null || r?.partial_online_amount != null);
-                    totalCash += Number(partialReq?.partial_cash_amount) || 0;
-                    totalOnline += Number(partialReq?.partial_online_amount) || 0;
-                  } catch {
-                    totalCash += paymentAmount;
-                  }
-                } else if (paymentMethod === 'CASH') {
-                  totalCash += paymentAmount;
-                } else if (paymentMethod && paymentMethod !== 'CASH') {
-                  totalOnline += paymentAmount;
-                }
+                const billing = resolveJobBillingAmount(
+                  (job as any).payment_amount,
+                  (job as any).actual_cost
+                );
+                if (billing <= 0) return;
+                totalAmount += billing;
+                const received = resolveReceivedCashAndOnline(job as any);
+                totalCash += received.cash;
+                totalOnline += received.online;
               });
               
               if (totalAmount > 0) {
@@ -8890,7 +9027,7 @@ const TechnicianDashboard = () => {
                       <Label htmlFor="payment-mode">Payment Mode *</Label>
                       <Select 
                         value={paymentMode} 
-                        onValueChange={(value: 'CASH' | 'ONLINE' | 'PARTIAL') => {
+                        onValueChange={(value: 'CASH' | 'ONLINE' | 'PARTIAL' | 'PENDING_PAYMENT') => {
                           setPaymentMode(value);
                           if (value === 'CASH') {
                             setQrCodeType('');
@@ -8901,6 +9038,20 @@ const TechnicianDashboard = () => {
                             setPartialCashAmount('');
                             setPartialOnlineAmount('');
                           }
+                          if (value === 'PENDING_PAYMENT') {
+                            setPendingPaidTodayEnabled(false);
+                            setPendingPaidTodayMode('');
+                            setPendingPaidTodayAmount('');
+                            setPartialCashAmount('');
+                            setPartialOnlineAmount('');
+                            setPromisedPaymentDate('');
+                            setQrCodeType('');
+                            setSelectedQrCodeId('');
+                          } else {
+                            setPendingPaidTodayEnabled(false);
+                            setPendingPaidTodayMode('');
+                            setPendingPaidTodayAmount('');
+                          }
                         }}
                       >
                         <SelectTrigger className="mt-1">
@@ -8910,9 +9061,30 @@ const TechnicianDashboard = () => {
                           <SelectItem value="CASH">Cash</SelectItem>
                           <SelectItem value="ONLINE">Online</SelectItem>
                           <SelectItem value="PARTIAL">Partial (Cash + Online)</SelectItem>
+                          <SelectItem value="PENDING_PAYMENT">Pending Payment</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
+
+                  {paymentMode === 'PENDING_PAYMENT' && (
+                    <PendingPaymentFields
+                      billAmount={parseMoneyAmount(billAmount) || 0}
+                      paidTodayEnabled={pendingPaidTodayEnabled}
+                      onPaidTodayEnabledChange={setPendingPaidTodayEnabled}
+                      paidTodayMode={pendingPaidTodayMode}
+                      onPaidTodayModeChange={setPendingPaidTodayMode}
+                      paidTodayAmount={pendingPaidTodayAmount}
+                      onPaidTodayAmountChange={setPendingPaidTodayAmount}
+                      partialCashAmount={partialCashAmount}
+                      onPartialCashAmountChange={setPartialCashAmount}
+                      partialOnlineAmount={partialOnlineAmount}
+                      onPartialOnlineAmountChange={setPartialOnlineAmount}
+                      promisedDate={promisedPaymentDate}
+                      onPromisedDateChange={setPromisedPaymentDate}
+                      sanitizeMoneyInput={sanitizeMoneyInput}
+                      parseMoneyAmount={parseMoneyAmount}
+                    />
+                  )}
 
                   {(paymentMode === 'PARTIAL') && (
                     <div className="space-y-3 pl-4 border-l-2 border-gray-200">
@@ -8980,7 +9152,13 @@ const TechnicianDashboard = () => {
                     </div>
                   )}
                   
-                  {(paymentMode === 'ONLINE' || paymentMode === 'PARTIAL') && (
+                  {(paymentMode === 'ONLINE' ||
+                    paymentMode === 'PARTIAL' ||
+                    (paymentMode === 'PENDING_PAYMENT' &&
+                      pendingPaidTodayEnabled &&
+                      (pendingPaidTodayMode === 'ONLINE' ||
+                        (pendingPaidTodayMode === 'PARTIAL' &&
+                          parseMoneyAmount(partialOnlineAmount) > 0)))) && (
                     <div className="space-y-4 pl-4 border-l-2 border-gray-200">
                       <div>
                         <Label htmlFor="qr-code-type">Select QR Code *</Label>
@@ -9403,6 +9581,19 @@ const TechnicianDashboard = () => {
                   (completeJobStep === 6 && !isSoftenerService() && !rawWaterTds.trim() && !completionRetryPhaseBOnly) ||
                   (completeJobStep === 4 && !isBillAmountZero() && !paymentMode) ||
                   (completeJobStep === 4 && !isBillAmountZero() && (paymentMode === 'ONLINE' || paymentMode === 'PARTIAL') && (paymentMode === 'ONLINE' ? !selectedQrCodeId : (parseMoneyAmount(partialOnlineAmount) > 0 && !selectedQrCodeId))) ||
+                  (completeJobStep === 4 &&
+                    !isBillAmountZero() &&
+                    paymentMode === 'PENDING_PAYMENT' &&
+                    (!promisedPaymentDate ||
+                      (pendingPaidTodayEnabled &&
+                        (!pendingPaidTodayMode ||
+                          (pendingPaidTodayMode === 'PARTIAL'
+                            ? !(parseMoneyAmount(partialCashAmount) > 0 && parseMoneyAmount(partialOnlineAmount) > 0)
+                            : !(parseMoneyAmount(pendingPaidTodayAmount) > 0)) ||
+                          ((pendingPaidTodayMode === 'ONLINE' ||
+                            (pendingPaidTodayMode === 'PARTIAL' &&
+                              parseMoneyAmount(partialOnlineAmount) > 0)) &&
+                            !selectedQrCodeId))))) ||
                   // #6 Block Next on step 4 when partial cash + online don't
                   // add up to the bill (allowing 0.01 for rounding).
                   (completeJobStep === 4 && !isBillAmountZero() && paymentMode === 'PARTIAL' && (() => {
