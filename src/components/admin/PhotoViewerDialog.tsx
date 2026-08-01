@@ -97,7 +97,10 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
 
         <div className="relative h-full w-full min-h-0 min-w-0 overflow-hidden">
           {/* Image stage — below controls; must never cover nav hits */}
-          <div className="absolute inset-0 z-0 overflow-hidden">
+          <div
+            className="absolute inset-0 z-0 overflow-hidden"
+            style={{ touchAction: 'none', WebkitUserSelect: 'none', userSelect: 'none' }}
+          >
             {selectedPhoto && !loadError && (
               <ZoomableImage
                 src={selectedPhoto.url}
