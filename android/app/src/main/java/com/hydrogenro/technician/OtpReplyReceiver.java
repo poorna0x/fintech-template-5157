@@ -196,4 +196,65 @@ public class OtpReplyReceiver extends BroadcastReceiver {
             Log.w(TAG, "Notifications not permitted", e);
         }
     }
+
+    public interface ResultCallback {
+        void onDone(boolean ok);
+    }
+
+    /** Same network path as notification Enter OTP — used by TechActionOverlay. */
+    public static void submitOtp(
+        Context context,
+        String requestId,
+        String nonce,
+        String submitUrl,
+        String otp,
+        ResultCallback callback
+    ) {
+        if (requestId == null || nonce == null || submitUrl == null || otp == null || !otp.matches("\\d{4}")) {
+            if (callback != null) callback.onDone(false);
+            return;
+        }
+        final int notificationId = notificationIdFor(requestId);
+        new Thread(() -> {
+            boolean ok = false;
+            HttpURLConnection conn = null;
+            try {
+                String payload = "{\"requestId\":\"" + requestId + "\"," +
+                    "\"nonce\":\"" + nonce + "\"," +
+                    "\"otp\":\"" + otp + "\"}";
+                conn = (HttpURLConnection) new URL(submitUrl).openConnection();
+                conn.setRequestMethod("POST");
+                conn.setRequestProperty("Content-Type", "application/json");
+                conn.setDoOutput(true);
+                conn.setConnectTimeout(10_000);
+                conn.setReadTimeout(10_000);
+                try (OutputStream os = conn.getOutputStream()) {
+                    os.write(payload.getBytes(StandardCharsets.UTF_8));
+                }
+                ok = conn.getResponseCode() == 200;
+            } catch (Exception e) {
+                Log.w(TAG, "Overlay OTP submit failed", e);
+            } finally {
+                if (conn != null) conn.disconnect();
+            }
+            if (ok) {
+                try {
+                    NotificationChannels.ensureJobAlerts(context);
+                    Notification notification = new NotificationCompat.Builder(context, CHANNEL_ID)
+                        .setSmallIcon(R.drawable.ic_stat_notify)
+                        .setColor(COLOR_SUCCESS)
+                        .setContentTitle("OTP delivered")
+                        .setContentText("OTP " + otp + " sent to the office \u2713")
+                        .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                        .setOnlyAlertOnce(true)
+                        .setAutoCancel(true)
+                        .build();
+                    NotificationManagerCompat.from(context).notify(notificationId, notification);
+                } catch (Throwable ignored) {
+                    /* */
+                }
+            }
+            if (callback != null) callback.onDone(ok);
+        }).start();
+    }
 }

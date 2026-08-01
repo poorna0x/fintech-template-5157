@@ -72,6 +72,10 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             showOfficeMessage(data);
             return;
         }
+        if ("tech_nudge".equals(data.get("type"))) {
+            showTechNudge(data);
+            return;
+        }
         if ("job_alert_overlay".equals(data.get("type"))) {
             showJobAlertOverlay(data);
             return;
@@ -222,6 +226,8 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
 
         OtpReplyReceiver.showOtpRequestNotification(
             getApplicationContext(), requestId, nonce, submitUrl, body);
+        TechActionOverlay.maybeShowFromPush(
+            getApplicationContext(), TechActionOverlay.Mode.OTP, data);
     }
 
     /** Office message with optional inline Reply (admin checked Allow reply). */
@@ -241,6 +247,61 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             replyUrl,
             data.get("tag")
         );
+        TechActionOverlay.maybeShowFromPush(
+            getApplicationContext(), TechActionOverlay.Mode.REPLY, data);
+    }
+
+    /** Simple nudge (e.g. photo) with optional overlay — no Reply actions. */
+    private void showTechNudge(Map<String, String> data) {
+        Context context = getApplicationContext();
+        String title = data.get("msgTitle");
+        if (title == null || title.isEmpty()) title = data.get("title");
+        if (title == null || title.isEmpty()) title = "Message from office";
+        String body = data.get("msgBody");
+        if (body == null) body = data.get("body");
+        if (body == null) body = "";
+        String tag = data.get("tag");
+        if (tag == null || tag.isEmpty()) tag = "tech_nudge";
+        String colorHex = data.get("color");
+        int color = Color.parseColor("#7C3AED");
+        if (colorHex != null && colorHex.matches("#[0-9a-fA-F]{6}")) {
+            try {
+                color = Color.parseColor(colorHex);
+            } catch (IllegalArgumentException ignored) {
+                /* keep violet */
+            }
+        }
+        NotificationChannels.ensureJobAlerts(context);
+        Intent openIntent =
+            new Intent(context, MainActivity.class)
+                .setFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK
+                        | Intent.FLAG_ACTIVITY_SINGLE_TOP
+                        | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        PendingIntent openPending =
+            PendingIntent.getActivity(
+                context,
+                Math.abs(tag.hashCode()),
+                openIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        Notification notification =
+            new NotificationCompat.Builder(context, NotificationChannels.JOB_ALERTS)
+                .setSmallIcon(R.drawable.ic_stat_notify)
+                .setColor(color)
+                .setContentTitle(title)
+                .setContentText(body)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setDefaults(Notification.DEFAULT_ALL)
+                .setContentIntent(openPending)
+                .setAutoCancel(true)
+                .build();
+        try {
+            NotificationManagerCompat.from(context).notify(tag, Math.abs(tag.hashCode()), notification);
+        } catch (SecurityException e) {
+            Log.w(TAG, "Notifications not permitted", e);
+        }
+        TechActionOverlay.maybeShowFromPush(context, TechActionOverlay.Mode.INFO, data);
     }
 
     /**
@@ -358,6 +419,10 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             data.get("tag"),
             startOnly
         );
+        TechActionOverlay.maybeShowFromPush(
+            getApplicationContext(),
+            startOnly ? TechActionOverlay.Mode.START : TechActionOverlay.Mode.GOING,
+            data);
     }
 
     /** Job nudge: Call customer — Call action opens dialer (no Reply). */
@@ -376,6 +441,8 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             phone,
             data.get("tag")
         );
+        TechActionOverlay.maybeShowFromPush(
+            getApplicationContext(), TechActionOverlay.Mode.CALL, data);
     }
 
     /**

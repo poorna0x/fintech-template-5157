@@ -14,6 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { AlertTriangle, BellOff, CheckCircle2, Loader2, MessageSquare, Send } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
+import { getTechPushOverlayPref, setTechPushOverlayPref } from '@/lib/techPushDeliveryPrefs';
 import type { Technician } from '@/types';
 
 type MessageTechnicianDialogProps = {
@@ -47,6 +48,7 @@ const MessageTechnicianDialog = ({
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
   const [allowReply, setAllowReply] = useState(true);
+  const [showOverlay, setShowOverlay] = useState(() => getTechPushOverlayPref());
   const [sending, setSending] = useState(false);
   const [results, setResults] = useState<Record<string, SendStatus>>({});
 
@@ -61,6 +63,7 @@ const MessageTechnicianDialog = ({
       setTitle('');
       setMessage('');
       setAllowReply(true);
+      setShowOverlay(getTechPushOverlayPref());
       setResults({});
       setSending(false);
     }
@@ -92,6 +95,7 @@ const MessageTechnicianDialog = ({
     if (selected.size === 0 || (mode === 'send' && !body)) return;
     setSending(true);
     setResults({});
+    setTechPushOverlayPref(showOverlay);
 
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -109,6 +113,7 @@ const MessageTechnicianDialog = ({
               color: '#2563EB',
               tag: MESSAGE_TAG,
               allowReply,
+              ...(showOverlay ? { overlay: true } : {}),
             }
           : { clear: true };
 
@@ -292,6 +297,26 @@ const MessageTechnicianDialog = ({
               <p className="text-xs text-muted-foreground leading-snug">
                 Shows a Reply button on their notification. They reply → you get a push and can
                 reply back. Nothing is saved. Uncheck for one-way alerts only.
+              </p>
+            </div>
+          </label>
+
+          <label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3">
+            <Checkbox
+              checked={showOverlay}
+              onCheckedChange={(c) => {
+                const on = c === true;
+                setShowOverlay(on);
+                setTechPushOverlayPref(on);
+              }}
+              disabled={sending}
+              className="mt-0.5"
+            />
+            <div className="min-w-0 space-y-0.5">
+              <span className="text-sm font-semibold leading-none">Also show on-screen overlay</span>
+              <p className="text-xs text-muted-foreground leading-snug">
+                Tray notification always. Overlay draws over other apps (needs Display over other
+                apps). Same Reply button on the card.
               </p>
             </div>
           </label>

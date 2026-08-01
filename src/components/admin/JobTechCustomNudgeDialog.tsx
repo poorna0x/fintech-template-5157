@@ -18,6 +18,7 @@ import {
   getJobCustomerName,
   sendJobCustomNudge,
 } from '@/lib/adminJobTechNudges';
+import { getTechPushOverlayPref, setTechPushOverlayPref } from '@/lib/techPushDeliveryPrefs';
 
 type Props = {
   open: boolean;
@@ -37,12 +38,14 @@ export default function JobTechCustomNudgeDialog({
 }: Props) {
   const [message, setMessage] = useState('');
   const [allowReply, setAllowReply] = useState(true);
+  const [showOverlay, setShowOverlay] = useState(() => getTechPushOverlayPref());
   const [sending, setSending] = useState(false);
 
   useEffect(() => {
     if (!open) {
       setMessage('');
       setAllowReply(true);
+      setShowOverlay(getTechPushOverlayPref());
       setSending(false);
     }
   }, [open]);
@@ -54,8 +57,12 @@ export default function JobTechCustomNudgeDialog({
   const handleSend = async () => {
     if (!job || !techId || !message.trim()) return;
     setSending(true);
+    setTechPushOverlayPref(showOverlay);
     try {
-      const result = await sendJobCustomNudge(job as any, message, { allowReply });
+      const result = await sendJobCustomNudge(job as any, message, {
+        allowReply,
+        overlay: showOverlay,
+      });
       if (result === 'sent') onOpenChange(false);
     } finally {
       setSending(false);
@@ -109,6 +116,18 @@ export default function JobTechCustomNudgeDialog({
               {message.length}/{BODY_MAX}
             </span>
           </div>
+          <label className="flex items-center gap-2 cursor-pointer text-xs text-muted-foreground">
+            <Checkbox
+              checked={showOverlay}
+              onCheckedChange={(v) => {
+                const on = v === true;
+                setShowOverlay(on);
+                setTechPushOverlayPref(on);
+              }}
+              disabled={sending}
+            />
+            <span>Also show on-screen overlay (with Reply)</span>
+          </label>
         </div>
 
         <DialogFooter className="gap-2 sm:gap-0">

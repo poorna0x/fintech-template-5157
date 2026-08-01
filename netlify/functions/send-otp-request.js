@@ -38,6 +38,9 @@ exports.handler = async (event) => {
   const requestId = String(body.requestId || '').trim();
   const technicianId = String(body.technicianId || '').trim();
   const customerName = String(body.customerName || '').trim().slice(0, 80);
+  const showOverlay =
+    body.overlay === true || body.overlay === 'true' || body.overlay === 1 ||
+    body.showOverlay === true || body.showOverlay === 'true' || body.showOverlay === 1;
   if (!requestId || !technicianId) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'requestId and technicianId required' }) };
   }
@@ -79,6 +82,7 @@ exports.handler = async (event) => {
         nonce,
         ...(customerName ? { customerName } : {}),
         submitUrl: `${siteUrl}/.netlify/functions/submit-tech-otp`,
+        ...(showOverlay ? { showOverlay: '1' } : {}),
       },
       android: { priority: 'high' },
     }), 'otp_request');

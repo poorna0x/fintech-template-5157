@@ -6,6 +6,7 @@
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
+import { getTechPushOverlayPref } from '@/lib/techPushDeliveryPrefs';
 
 export type OtpRequestRow = {
   id: string;
@@ -80,8 +81,10 @@ export async function createOtpRequest(opts: {
   jobId: string;
   technicianId: string;
   customerName?: string;
+  /** Also show draw-over-apps card (tech APK + overlay permission). */
+  overlay?: boolean;
 }): Promise<OtpRequestRow | null> {
-  const { jobId, technicianId, customerName } = opts;
+  const { jobId, technicianId, customerName, overlay } = opts;
 
   const { data, error } = await supabase
     .from('technician_otp_requests')
@@ -112,7 +115,12 @@ export async function createOtpRequest(opts: {
       const res = await fetch('/.netlify/functions/send-otp-request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ requestId: row.id, technicianId, customerName }),
+        body: JSON.stringify({
+          requestId: row.id,
+          technicianId,
+          customerName,
+          ...( (overlay ?? getTechPushOverlayPref()) ? { overlay: true } : {}),
+        }),
         keepalive: true,
       });
       const out = (await res.json().catch(() => null)) as

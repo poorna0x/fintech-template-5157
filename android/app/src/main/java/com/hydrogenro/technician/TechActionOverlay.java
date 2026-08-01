@@ -1,0 +1,723 @@
+package com.hydrogenro.technician;
+
+import android.animation.AnimatorSet;
+import android.animation.ObjectAnimator;
+import android.content.Context;
+import android.content.Intent;
+import android.graphics.Color;
+import android.graphics.PixelFormat;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
+import android.provider.Settings;
+import android.text.InputFilter;
+import android.text.InputType;
+import android.util.DisplayMetrics;
+import android.util.Log;
+import android.util.TypedValue;
+import android.view.Gravity;
+import android.view.View;
+import android.view.WindowManager;
+import android.view.animation.DecelerateInterpolator;
+import android.view.inputmethod.EditorInfo;
+import android.widget.EditText;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.ProgressBar;
+import android.widget.TextView;
+import android.widget.Toast;
+import java.util.Map;
+
+/**
+ * Interactive draw-over-apps card for office nudges / OTP — same actions as the
+ * tray notification (Reply, Enter OTP, Call, Yes/No, Start). Tray is always
+ * posted separately; this is optional when FCM includes showOverlay=1.
+ */
+public final class TechActionOverlay {
+
+    private static final String TAG = "HroTechActionOverlay";
+    private static final long AUTO_DISMISS_MS = 90_000L;
+
+    private static final int WHITE = 0xFFFFFFFF;
+    private static final int INK = 0xFF0F172A;
+    private static final int BODY = 0xFF334155;
+    private static final int MUTED = 0xFF64748B;
+    private static final int VIOLET = 0xFF7C3AED;
+    private static final int AMBER = 0xFFD97706;
+    private static final int BLUE = 0xFF2563EB;
+    private static final int GREEN = 0xFF16A34A;
+
+    public enum Mode {
+        REPLY,
+        OTP,
+        CALL,
+        GOING,
+        START,
+        INFO
+    }
+
+    private static View currentView;
+    private static final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private static final Runnable autoDismiss = TechActionOverlay::dismiss;
+
+    private TechActionOverlay() {}
+
+    public static boolean canDraw(Context context) {
+        if (context == null) return false;
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true;
+        return Settings.canDrawOverlays(context);
+    }
+
+    public static boolean wantsOverlay(Map<String, String> data) {
+        if (data == null) return false;
+        String v = data.get("showOverlay");
+        return "1".equals(v) || "true".equalsIgnoreCase(v);
+    }
+
+    public static void maybeShowFromPush(Context context, Mode mode, Map<String, String> data) {
+        if (context == null || data == null || !wantsOverlay(data)) return;
+        if (!canDraw(context)) {
+            Log.i(TAG, "Overlay permission missing — tray only");
+            return;
+        }
+        String title = first(data.get("msgTitle"), data.get("title"), defaultTitle(mode));
+        String body = first(data.get("msgBody"), data.get("body"), "");
+        String color = data.get("color");
+        mainHandler.post(
+            () ->
+                showOnMain(
+                    context.getApplicationContext(),
+                    mode,
+                    title,
+                    body,
+                    color,
+                    data.get("replyToken"),
+                    data.get("replyUrl"),
+                    data.get("tag"),
+                    data.get("callPhone"),
+                    data.get("startToken"),
+                    data.get("startUrl"),
+                    data.get("requestId"),
+                    data.get("nonce"),
+                    data.get("submitUrl"),
+                    data.get("jobId")));
+    }
+
+    public static void dismiss() {
+        mainHandler.post(
+            () -> {
+                mainHandler.removeCallbacks(autoDismiss);
+                removeCurrent();
+            });
+    }
+
+    private static void showOnMain(
+        Context context,
+        Mode mode,
+        String title,
+        String body,
+        String colorHex,
+        String replyToken,
+        String replyUrl,
+        String tag,
+        String callPhone,
+        String startToken,
+        String startUrl,
+        String requestId,
+        String nonce,
+        String submitUrl,
+        String jobId
+    ) {
+        removeCurrent();
+
+        int accent = accentFor(mode, colorHex);
+        float density = context.getResources().getDisplayMetrics().density;
+        int pad = dp(density, 18);
+
+        LinearLayout card = new LinearLayout(context);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setElevation(dp(density, 18));
+        card.setClipToOutline(true);
+        GradientDrawable cardBg = new GradientDrawable();
+        cardBg.setColor(WHITE);
+        cardBg.setCornerRadius(dp(density, 22));
+        cardBg.setStroke(dp(density, 1), mix(accent, WHITE, 0.7f));
+        card.setBackground(cardBg);
+
+        LinearLayout header = new LinearLayout(context);
+        header.setOrientation(LinearLayout.VERTICAL);
+        header.setPadding(pad, dp(density, 14), pad, dp(density, 14));
+        GradientDrawable headerBg =
+            new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                new int[] { accent, darken(accent, 0.12f) });
+        header.setBackground(headerBg);
+
+        LinearLayout brandRow = new LinearLayout(context);
+        brandRow.setOrientation(LinearLayout.HORIZONTAL);
+        brandRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        FrameLayout logoWrap = new FrameLayout(context);
+        GradientDrawable logoBg = new GradientDrawable();
+        logoBg.setColor(0xFF111111);
+        logoBg.setCornerRadius(dp(density, 10));
+        logoWrap.setBackground(logoBg);
+        ImageView logo = new ImageView(context);
+        logo.setImageResource(R.drawable.ic_droplets);
+        logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        FrameLayout.LayoutParams logoInnerLp =
+            new FrameLayout.LayoutParams(dp(density, 20), dp(density, 20));
+        logoInnerLp.gravity = Gravity.CENTER;
+        logoWrap.addView(logo, logoInnerLp);
+        int logoSize = dp(density, 36);
+        brandRow.addView(logoWrap, new LinearLayout.LayoutParams(logoSize, logoSize));
+
+        TextView brand = new TextView(context);
+        brand.setText("HydrogenRO");
+        brand.setTextColor(WHITE);
+        brand.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        brand.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        LinearLayout.LayoutParams brandLp =
+            new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        brandLp.leftMargin = dp(density, 10);
+        brandRow.addView(brand, brandLp);
+
+        TextView pill = new TextView(context);
+        pill.setText(pillFor(mode));
+        pill.setTextColor(accent);
+        pill.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+        pill.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        pill.setPadding(dp(density, 10), dp(density, 5), dp(density, 10), dp(density, 5));
+        GradientDrawable pillBg = new GradientDrawable();
+        pillBg.setCornerRadius(dp(density, 20));
+        pillBg.setColor(WHITE);
+        pill.setBackground(pillBg);
+        brandRow.addView(
+            pill,
+            new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        header.addView(
+            brandRow,
+            new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        card.addView(
+            header,
+            new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        LinearLayout content = new LinearLayout(context);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(pad, pad, pad, pad);
+        GradientDrawable wash = new GradientDrawable();
+        wash.setColor(mix(accent, WHITE, 0.92f));
+        content.setBackground(wash);
+
+        TextView titleView = new TextView(context);
+        titleView.setText(safe(title, defaultTitle(mode)));
+        titleView.setTextColor(INK);
+        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        titleView.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        content.addView(titleView);
+
+        if (body != null && !body.trim().isEmpty()) {
+            TextView bodyView = new TextView(context);
+            bodyView.setText(body.trim());
+            bodyView.setTextColor(BODY);
+            bodyView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+            bodyView.setLineSpacing(dp(density, 2), 1f);
+            LinearLayout.LayoutParams bodyLp =
+                new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            bodyLp.topMargin = dp(density, 10);
+            content.addView(bodyView, bodyLp);
+        }
+
+        EditText input = null;
+        if (mode == Mode.REPLY || mode == Mode.OTP) {
+            input = new EditText(context);
+            input.setHint(mode == Mode.OTP ? "4-digit code" : "Type your reply…");
+            input.setTextColor(INK);
+            input.setHintTextColor(MUTED);
+            input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+            input.setBackgroundColor(WHITE);
+            input.setPadding(dp(density, 12), dp(density, 12), dp(density, 12), dp(density, 12));
+            GradientDrawable inputBg = new GradientDrawable();
+            inputBg.setColor(WHITE);
+            inputBg.setCornerRadius(dp(density, 12));
+            inputBg.setStroke(dp(density, 1), mix(accent, WHITE, 0.65f));
+            input.setBackground(inputBg);
+            if (mode == Mode.OTP) {
+                input.setInputType(InputType.TYPE_CLASS_NUMBER);
+                input.setFilters(new InputFilter[] { new InputFilter.LengthFilter(4) });
+                input.setImeOptions(EditorInfo.IME_ACTION_DONE);
+            } else {
+                input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+                input.setMaxLines(4);
+                input.setFilters(new InputFilter[] { new InputFilter.LengthFilter(300) });
+            }
+            LinearLayout.LayoutParams inputLp =
+                new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+            inputLp.topMargin = dp(density, 12);
+            content.addView(input, inputLp);
+        }
+
+        ProgressBar spinner = new ProgressBar(context);
+        spinner.setVisibility(View.GONE);
+        LinearLayout.LayoutParams spinLp =
+            new LinearLayout.LayoutParams(dp(density, 28), dp(density, 28));
+        spinLp.gravity = Gravity.CENTER_HORIZONTAL;
+        spinLp.topMargin = dp(density, 8);
+        content.addView(spinner, spinLp);
+
+        LinearLayout actions = new LinearLayout(context);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.setWeightSum(2f);
+        LinearLayout.LayoutParams actionsLp =
+            new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        actionsLp.topMargin = dp(density, 14);
+
+        TextView secondary = makeBtn(context, density, "Dismiss", false, accent);
+        LinearLayout.LayoutParams secLp =
+            new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        secLp.rightMargin = dp(density, 8);
+        actions.addView(secondary, secLp);
+
+        String primaryLabel = primaryLabel(mode);
+        TextView primary = makeBtn(context, density, primaryLabel, true, accent);
+        actions.addView(
+            primary, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        content.addView(actions, actionsLp);
+
+        // Going mode: Yes + No (replace primary/secondary labels already set)
+        TextView noBtn = null;
+        if (mode == Mode.GOING) {
+            secondary.setText("No");
+            primary.setText("Yes");
+            noBtn = secondary;
+        }
+
+        card.addView(
+            content,
+            new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        final EditText inputFinal = input;
+        final TextView primaryFinal = primary;
+        final TextView secondaryFinal = secondary;
+        final ProgressBar spinnerFinal = spinner;
+
+        if (mode != Mode.GOING) {
+            secondary.setOnClickListener(v -> dismiss());
+        } else {
+            secondary.setOnClickListener(
+                v -> {
+                    setBusy(true, primaryFinal, secondaryFinal, spinnerFinal);
+                    MessageReplyReceiver.submitGoingNo(
+                        context,
+                        replyToken,
+                        replyUrl,
+                        title,
+                        body,
+                        tag,
+                        ok -> {
+                            mainHandler.post(
+                                () -> {
+                                    setBusy(false, primaryFinal, secondaryFinal, spinnerFinal);
+                                    if (ok) {
+                                        toast(context, "Told office — not going");
+                                        dismiss();
+                                    } else {
+                                        toast(context, "Couldn't send — try again");
+                                    }
+                                });
+                        });
+                });
+        }
+
+        primary.setOnClickListener(
+            v ->
+                onPrimary(
+                    context,
+                    mode,
+                    inputFinal,
+                    primaryFinal,
+                    secondaryFinal,
+                    spinnerFinal,
+                    replyToken,
+                    replyUrl,
+                    title,
+                    body,
+                    tag,
+                    callPhone,
+                    startToken,
+                    startUrl,
+                    requestId,
+                    nonce,
+                    submitUrl,
+                    jobId));
+
+        FrameLayout root = new FrameLayout(context);
+        root.setPadding(dp(density, 12), dp(density, 12), dp(density, 12), dp(density, 12));
+        FrameLayout.LayoutParams cardLp =
+            new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT);
+        cardLp.gravity = Gravity.CENTER;
+        root.addView(card, cardLp);
+
+        WindowManager wm = (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
+        if (wm == null) return;
+
+        DisplayMetrics metrics = new DisplayMetrics();
+        wm.getDefaultDisplay().getMetrics(metrics);
+        int width = Math.min(metrics.widthPixels - dp(density, 20), dp(density, 400));
+
+        int type =
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                : WindowManager.LayoutParams.TYPE_PHONE;
+
+        WindowManager.LayoutParams lp =
+            new WindowManager.LayoutParams(
+                width,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                type,
+                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                    | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                    | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+                PixelFormat.TRANSLUCENT);
+        lp.gravity = Gravity.CENTER;
+        lp.softInputMode =
+            WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN
+                | WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE;
+
+        try {
+            card.setAlpha(0f);
+            card.setScaleX(0.94f);
+            card.setScaleY(0.94f);
+            wm.addView(root, lp);
+            currentView = root;
+            AnimatorSet enter = new AnimatorSet();
+            enter.playTogether(
+                ObjectAnimator.ofFloat(card, View.ALPHA, 0f, 1f),
+                ObjectAnimator.ofFloat(card, View.SCALE_X, 0.94f, 1f),
+                ObjectAnimator.ofFloat(card, View.SCALE_Y, 0.94f, 1f));
+            enter.setDuration(200);
+            enter.setInterpolator(new DecelerateInterpolator());
+            enter.start();
+            mainHandler.removeCallbacks(autoDismiss);
+            mainHandler.postDelayed(autoDismiss, AUTO_DISMISS_MS);
+            if (input != null) input.requestFocus();
+            Log.i(TAG, "Overlay shown mode=" + mode);
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed to add overlay", t);
+            currentView = null;
+        }
+    }
+
+    private static void onPrimary(
+        Context context,
+        Mode mode,
+        EditText input,
+        TextView primary,
+        TextView secondary,
+        ProgressBar spinner,
+        String replyToken,
+        String replyUrl,
+        String title,
+        String body,
+        String tag,
+        String callPhone,
+        String startToken,
+        String startUrl,
+        String requestId,
+        String nonce,
+        String submitUrl,
+        String jobId
+    ) {
+        switch (mode) {
+            case CALL: {
+                String digits = callPhone != null ? callPhone.replaceAll("[^0-9+]", "") : "";
+                dismiss();
+                if (!digits.isEmpty()) {
+                    try {
+                        context.startActivity(
+                            new Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + digits))
+                                .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                    } catch (Throwable t) {
+                        Log.w(TAG, "Dial failed", t);
+                    }
+                }
+                break;
+            }
+            case INFO: {
+                dismiss();
+                openApp(context, jobId);
+                break;
+            }
+            case START:
+            case GOING: {
+                setBusy(true, primary, secondary, spinner);
+                MessageReplyReceiver.submitGoingYes(
+                    context,
+                    startToken,
+                    startUrl,
+                    tag,
+                    ok -> {
+                        mainHandler.post(
+                            () -> {
+                                setBusy(false, primary, secondary, spinner);
+                                if (ok) {
+                                    toast(context, mode == Mode.START ? "Job started" : "You're on the way");
+                                    dismiss();
+                                } else {
+                                    toast(context, "Couldn't start — open the app");
+                                }
+                            });
+                    });
+                break;
+            }
+            case REPLY: {
+                String text = input != null ? input.getText().toString().trim() : "";
+                if (text.isEmpty()) {
+                    toast(context, "Type a reply first");
+                    return;
+                }
+                setBusy(true, primary, secondary, spinner);
+                MessageReplyReceiver.submitReply(
+                    context,
+                    replyToken,
+                    replyUrl,
+                    text,
+                    title,
+                    body,
+                    tag,
+                    ok -> {
+                        mainHandler.post(
+                            () -> {
+                                setBusy(false, primary, secondary, spinner);
+                                if (ok) {
+                                    toast(context, "Reply sent to office");
+                                    dismiss();
+                                } else {
+                                    toast(context, "Couldn't send — try again");
+                                }
+                            });
+                    });
+                break;
+            }
+            case OTP: {
+                String otp = input != null ? input.getText().toString().trim() : "";
+                if (!otp.matches("\\d{4}")) {
+                    toast(context, "Enter exactly 4 digits");
+                    return;
+                }
+                setBusy(true, primary, secondary, spinner);
+                OtpReplyReceiver.submitOtp(
+                    context,
+                    requestId,
+                    nonce,
+                    submitUrl,
+                    otp,
+                    ok -> {
+                        mainHandler.post(
+                            () -> {
+                                setBusy(false, primary, secondary, spinner);
+                                if (ok) {
+                                    toast(context, "OTP sent to office");
+                                    dismiss();
+                                } else {
+                                    toast(context, "Couldn't send — try again");
+                                }
+                            });
+                    });
+                break;
+            }
+            default:
+                dismiss();
+        }
+    }
+
+    private static void setBusy(boolean busy, TextView a, TextView b, ProgressBar spinner) {
+        if (a != null) a.setEnabled(!busy);
+        if (b != null) b.setEnabled(!busy);
+        if (spinner != null) spinner.setVisibility(busy ? View.VISIBLE : View.GONE);
+    }
+
+    private static void openApp(Context context, String jobId) {
+        try {
+            Intent intent =
+                new Intent(context, MainActivity.class)
+                    .setFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK
+                            | Intent.FLAG_ACTIVITY_SINGLE_TOP
+                            | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            if (jobId != null && !jobId.isEmpty()) {
+                intent.putExtra(JobAlertOverlay.EXTRA_JOB_ID, jobId);
+            }
+            context.startActivity(intent);
+        } catch (Throwable t) {
+            Log.w(TAG, "Open app failed", t);
+        }
+    }
+
+    private static void removeCurrent() {
+        if (currentView == null) return;
+        try {
+            WindowManager wm =
+                (WindowManager) currentView.getContext().getSystemService(Context.WINDOW_SERVICE);
+            if (wm != null) wm.removeView(currentView);
+        } catch (Throwable ignored) {
+            /* already gone */
+        }
+        currentView = null;
+    }
+
+    private static TextView makeBtn(
+        Context context, float density, String label, boolean filled, int accent
+    ) {
+        TextView btn = new TextView(context);
+        btn.setText(label);
+        btn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        btn.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        btn.setGravity(Gravity.CENTER);
+        btn.setPadding(dp(density, 10), dp(density, 13), dp(density, 10), dp(density, 13));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setCornerRadius(dp(density, 12));
+        if (filled) {
+            bg.setColor(accent);
+            btn.setTextColor(WHITE);
+        } else {
+            bg.setColor(WHITE);
+            bg.setStroke(dp(density, 1), mix(accent, WHITE, 0.65f));
+            btn.setTextColor(BODY);
+        }
+        btn.setBackground(bg);
+        btn.setClickable(true);
+        return btn;
+    }
+
+    private static int accentFor(Mode mode, String colorHex) {
+        int fallback;
+        switch (mode) {
+            case OTP:
+                fallback = AMBER;
+                break;
+            case CALL:
+                fallback = BLUE;
+                break;
+            case START:
+            case GOING:
+                fallback = GREEN;
+                break;
+            default:
+                fallback = VIOLET;
+                break;
+        }
+        if (colorHex != null && colorHex.matches("#[0-9a-fA-F]{6}")) {
+            try {
+                return Color.parseColor(colorHex);
+            } catch (IllegalArgumentException ignored) {
+                /* keep fallback */
+            }
+        }
+        return fallback;
+    }
+
+    private static String pillFor(Mode mode) {
+        switch (mode) {
+            case OTP:
+                return "OTP";
+            case CALL:
+                return "CALL";
+            case GOING:
+                return "GOING?";
+            case START:
+                return "START";
+            case REPLY:
+                return "MESSAGE";
+            default:
+                return "NUDGE";
+        }
+    }
+
+    private static String primaryLabel(Mode mode) {
+        switch (mode) {
+            case OTP:
+                return "Send OTP";
+            case CALL:
+                return "Call";
+            case START:
+                return "Start";
+            case GOING:
+                return "Yes";
+            case REPLY:
+                return "Send reply";
+            default:
+                return "Open app";
+        }
+    }
+
+    private static String defaultTitle(Mode mode) {
+        switch (mode) {
+            case OTP:
+                return "Office needs the customer's OTP";
+            case CALL:
+                return "Call customer now";
+            case START:
+                return "Start this job";
+            case GOING:
+                return "Are you going?";
+            default:
+                return "Message from office";
+        }
+    }
+
+    private static void toast(Context context, String msg) {
+        try {
+            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show();
+        } catch (Throwable ignored) {
+            /* */
+        }
+    }
+
+    private static String first(String a, String b, String fallback) {
+        if (a != null && !a.trim().isEmpty()) return a.trim();
+        if (b != null && !b.trim().isEmpty()) return b.trim();
+        return fallback;
+    }
+
+    private static String safe(String v, String fallback) {
+        if (v == null || v.trim().isEmpty()) return fallback;
+        return v.trim();
+    }
+
+    private static int mix(int color, int toward, float amount) {
+        amount = Math.max(0f, Math.min(1f, amount));
+        int r = Math.round(Color.red(color) + (Color.red(toward) - Color.red(color)) * amount);
+        int g = Math.round(Color.green(color) + (Color.green(toward) - Color.green(color)) * amount);
+        int b = Math.round(Color.blue(color) + (Color.blue(toward) - Color.blue(color)) * amount);
+        return Color.rgb(clamp(r), clamp(g), clamp(b));
+    }
+
+    private static int darken(int color, float amount) {
+        amount = Math.max(0f, Math.min(1f, amount));
+        return Color.rgb(
+            clamp(Math.round(Color.red(color) * (1f - amount))),
+            clamp(Math.round(Color.green(color) * (1f - amount))),
+            clamp(Math.round(Color.blue(color) * (1f - amount))));
+    }
+
+    private static int clamp(int v) {
+        return Math.max(0, Math.min(255, v));
+    }
+
+    private static int dp(float density, int value) {
+        return Math.round(value * density);
+    }
+}

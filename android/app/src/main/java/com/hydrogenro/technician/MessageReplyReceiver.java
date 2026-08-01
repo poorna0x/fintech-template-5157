@@ -558,4 +558,116 @@ public class MessageReplyReceiver extends BroadcastReceiver {
             Log.w(TAG, "Notifications not permitted", e);
         }
     }
+
+    public interface ResultCallback {
+        void onDone(boolean ok);
+    }
+
+    /** Same network path as notification Reply — used by TechActionOverlay. */
+    public static void submitReply(
+        Context context,
+        String replyToken,
+        String replyUrl,
+        String reply,
+        String title,
+        String body,
+        String tag,
+        ResultCallback callback
+    ) {
+        if (replyToken == null || replyUrl == null || reply == null || reply.trim().isEmpty()) {
+            if (callback != null) callback.onDone(false);
+            return;
+        }
+        final String replyFinal = reply.trim().length() > 300 ? reply.trim().substring(0, 300) : reply.trim();
+        final String notifTag = (tag != null && !tag.isEmpty()) ? tag : "office_message";
+        new Thread(() -> {
+            boolean ok = false;
+            HttpURLConnection conn = null;
+            try {
+                JSONObject payload = new JSONObject();
+                payload.put("replyToken", replyToken);
+                payload.put("reply", replyFinal);
+                if (title != null && !title.isEmpty()) payload.put("originalTitle", title);
+                if (body != null && !body.isEmpty()) payload.put("originalBody", body);
+                conn = (HttpURLConnection) new URL(replyUrl).openConnection();
+                conn.setRequestMethod("POST");
+                conn.setRequestProperty("Content-Type", "application/json");
+                conn.setDoOutput(true);
+                conn.setConnectTimeout(10_000);
+                conn.setReadTimeout(10_000);
+                byte[] bytes = payload.toString().getBytes(StandardCharsets.UTF_8);
+                try (OutputStream os = conn.getOutputStream()) {
+                    os.write(bytes);
+                }
+                ok = conn.getResponseCode() == 200;
+            } catch (Exception e) {
+                Log.w(TAG, "Overlay reply failed", e);
+            } finally {
+                if (conn != null) conn.disconnect();
+            }
+            if (ok) {
+                try {
+                    NotificationChannels.ensureJobAlerts(context);
+                    Notification notification = new NotificationCompat.Builder(context, CHANNEL_ID)
+                        .setSmallIcon(R.drawable.ic_stat_notify)
+                        .setColor(COLOR_SUCCESS)
+                        .setContentTitle("Reply sent")
+                        .setContentText("Reply sent to office \u2713")
+                        .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                        .setOnlyAlertOnce(true)
+                        .setAutoCancel(true)
+                        .build();
+                    NotificationManagerCompat.from(context).notify(notifTag, NOTIFICATION_ID, notification);
+                } catch (Throwable ignored) {
+                    /* */
+                }
+            }
+            if (callback != null) callback.onDone(ok);
+        }).start();
+    }
+
+    public static void submitGoingYes(
+        Context context, String startToken, String startUrl, String tag, ResultCallback callback
+    ) {
+        if (startToken == null || startUrl == null) {
+            if (callback != null) callback.onDone(false);
+            return;
+        }
+        new Thread(() -> {
+            boolean ok = false;
+            HttpURLConnection conn = null;
+            try {
+                JSONObject payload = new JSONObject();
+                payload.put("startToken", startToken);
+                conn = (HttpURLConnection) new URL(startUrl).openConnection();
+                conn.setRequestMethod("POST");
+                conn.setRequestProperty("Content-Type", "application/json");
+                conn.setDoOutput(true);
+                conn.setConnectTimeout(10_000);
+                conn.setReadTimeout(10_000);
+                byte[] bytes = payload.toString().getBytes(StandardCharsets.UTF_8);
+                try (OutputStream os = conn.getOutputStream()) {
+                    os.write(bytes);
+                }
+                ok = conn.getResponseCode() == 200;
+            } catch (Exception e) {
+                Log.w(TAG, "Overlay going-yes failed", e);
+            } finally {
+                if (conn != null) conn.disconnect();
+            }
+            if (callback != null) callback.onDone(ok);
+        }).start();
+    }
+
+    public static void submitGoingNo(
+        Context context,
+        String replyToken,
+        String replyUrl,
+        String title,
+        String body,
+        String tag,
+        ResultCallback callback
+    ) {
+        submitReply(context, replyToken, replyUrl, "No", title, body, tag, callback);
+    }
 }

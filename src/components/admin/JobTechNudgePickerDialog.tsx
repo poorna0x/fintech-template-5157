@@ -7,6 +7,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   AlertCircle,
   Clock,
@@ -33,6 +34,7 @@ import {
   sendJobStartNudge,
   sendJobTimeToFinishNudge,
 } from '@/lib/adminJobTechNudges';
+import { getTechPushOverlayPref, setTechPushOverlayPref } from '@/lib/techPushDeliveryPrefs';
 
 type Props = {
   open: boolean;
@@ -55,6 +57,7 @@ export default function JobTechNudgePickerDialog({
   onCustomMessage,
 }: Props) {
   const [busy, setBusy] = useState<string | null>(null);
+  const [showOverlay, setShowOverlay] = useState(() => getTechPushOverlayPref());
 
   const customerName = job ? getJobCustomerName(job as any) : '';
   const customerLabel = formatNudgeCustomerLabel(customerName || 'Customer');
@@ -68,6 +71,7 @@ export default function JobTechNudgePickerDialog({
 
   const run = async (key: string, fn: () => Promise<unknown>) => {
     if (!job || !techId || busy) return;
+    setTechPushOverlayPref(showOverlay);
     setBusy(key);
     try {
       const result = await fn();
@@ -94,6 +98,23 @@ export default function JobTechNudgePickerDialog({
             </div>
           </DialogDescription>
         </DialogHeader>
+
+        <label className="flex cursor-pointer items-start gap-2.5 rounded-md border px-3 py-2.5">
+          <Checkbox
+            checked={showOverlay}
+            onCheckedChange={(v) => {
+              const on = v === true;
+              setShowOverlay(on);
+              setTechPushOverlayPref(on);
+            }}
+            disabled={!!busy}
+            className="mt-0.5"
+          />
+          <span className="text-xs text-muted-foreground leading-snug">
+            <span className="font-medium text-foreground">Also show on-screen overlay</span>
+            {' — '}same buttons as the notification (Reply / Call / Yes). Needs Display over other apps.
+          </span>
+        </label>
 
         <div className="flex flex-col gap-1.5">
           {showPhoto && (

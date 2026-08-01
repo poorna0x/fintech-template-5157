@@ -82,6 +82,11 @@ exports.handler = async (event) => {
     'updated',
   ]);
   const overlayEvent = overlayEvents.has(eventRaw) ? eventRaw : '';
+  // Optional draw-over-apps card on top of tray (nudges / messages).
+  const showOverlay =
+    body.overlay === true || body.overlay === 'true' || body.overlay === 1 ||
+    body.showOverlay === true || body.showOverlay === 'true' || body.showOverlay === 1;
+  const overlayFlag = showOverlay ? { showOverlay: '1' } : {};
   const replyAbout = String(body.replyAbout || body.about || '').trim().slice(0, 80)
     || replyAboutFromBody(message);
   if (
@@ -139,6 +144,7 @@ exports.handler = async (event) => {
           callPhone,
           tag: tag || 'call_customer',
           ...(color ? { color } : {}),
+          ...overlayFlag,
         },
         android: { priority: 'high' },
       });
@@ -167,6 +173,7 @@ exports.handler = async (event) => {
           actionMode: startOnly ? 'start' : 'going',
           tag: tag || (startOnly ? 'start_job' : 'going_now'),
           ...(color ? { color } : {}),
+          ...overlayFlag,
         },
         android: { priority: 'high' },
       });
@@ -177,6 +184,7 @@ exports.handler = async (event) => {
         technicianId,
         hasToken: !!replyToken,
         about: replyAbout || null,
+        overlay: showOverlay,
       });
       buildMessage = (token) => ({
         token,
@@ -191,6 +199,7 @@ exports.handler = async (event) => {
           replyUrl: `${siteUrl}/.netlify/functions/submit-tech-message-reply`,
           tag: tag || 'office_message',
           ...(color ? { color } : {}),
+          ...overlayFlag,
         },
         android: { priority: 'high' },
       });
@@ -215,6 +224,22 @@ exports.handler = async (event) => {
           ...(jobId ? { jobId } : {}),
           tag: tag || `job_alert_${overlayEvent}`,
           ...(color ? { color } : {}),
+        },
+        android: { priority: 'high' },
+      });
+    } else if (showOverlay) {
+      // Tray-only nudges (e.g. photo) that also want the on-screen card.
+      // Data-only so Java runs when the app is killed.
+      const notifTitle = title || 'Message from office';
+      buildMessage = (token) => ({
+        token,
+        data: {
+          type: 'tech_nudge',
+          msgTitle: notifTitle,
+          msgBody: message || '',
+          tag: tag || 'tech_nudge',
+          ...(color ? { color } : {}),
+          showOverlay: '1',
         },
         android: { priority: 'high' },
       });

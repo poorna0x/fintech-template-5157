@@ -7,6 +7,7 @@ import { supabase, db } from '@/lib/supabase';
 import { extractPhotoUrls, getJobCustomTimeLabel } from '@/lib/adminUtils';
 import { aggregateCustomerPhotoUrls } from '@/lib/jobReportPhotos';
 import { customerHasPurifierPhoto } from '@/lib/jobAssignMessageDetails';
+import { getTechPushOverlayPref } from '@/lib/techPushDeliveryPrefs';
 
 export const TECH_NUDGE_COLOR = '#7C3AED'; // violet: office nudge
 
@@ -190,6 +191,8 @@ export async function sendTechnicianPush(opts: {
   jobId?: string;
   /** Short label baked into reply token (e.g. "Time to finish?"). */
   replyAbout?: string;
+  /** Also show draw-over-apps card (tech APK + overlay permission). */
+  overlay?: boolean;
 }): Promise<TechPushSendResult> {
   const {
     technicianId,
@@ -203,6 +206,7 @@ export async function sendTechnicianPush(opts: {
     startOnly,
     jobId,
     replyAbout,
+    overlay,
   } = opts;
   if (!technicianId || !title) return 'skipped';
 
@@ -234,6 +238,7 @@ export async function sendTechnicianPush(opts: {
           ? { goingNow: true, jobId, ...(startOnly ? { startOnly: true } : {}) }
           : {}),
         ...(replyAbout ? { replyAbout } : {}),
+        ...((overlay ?? getTechPushOverlayPref()) ? { overlay: true } : {}),
       }),
     });
     const out = (await res.json().catch(() => null)) as
@@ -465,7 +470,7 @@ export async function sendJobCustomerWaitingNudge(job: Record<string, unknown>):
 export async function sendJobCustomNudge(
   job: Record<string, unknown>,
   message: string,
-  opts?: { title?: string; allowReply?: boolean }
+  opts?: { title?: string; allowReply?: boolean; overlay?: boolean }
 ): Promise<TechPushSendResult> {
   const techId = getJobAssignedTechnicianId(job);
   if (!techId) {
@@ -485,6 +490,7 @@ export async function sendJobCustomNudge(
     title,
     body,
     allowReply: opts?.allowReply !== false,
+    overlay: opts?.overlay,
     tag: `job_nudge_msg_${String((job as { id?: string }).id || '').slice(0, 24)}`,
   });
 }

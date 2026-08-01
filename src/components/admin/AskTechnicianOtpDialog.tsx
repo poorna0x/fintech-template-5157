@@ -7,6 +7,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Copy, KeyRound, Loader2, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -16,6 +17,7 @@ import {
   watchOtpRequest,
   type OtpRequestRow,
 } from '@/lib/technicianOtpRequests';
+import { getTechPushOverlayPref, setTechPushOverlayPref } from '@/lib/techPushDeliveryPrefs';
 import type { Job } from '@/types';
 
 type AskTechnicianOtpDialogProps = {
@@ -42,6 +44,7 @@ const AskTechnicianOtpDialog = ({
   const [storedOtp, setStoredOtp] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [showOverlay, setShowOverlay] = useState(() => getTechPushOverlayPref());
   const unwatchRef = useRef<(() => void) | null>(null);
 
   const stopWatching = () => {
@@ -60,6 +63,7 @@ const AskTechnicianOtpDialog = ({
   const ask = async (jobRow: Job, reAsk: boolean) => {
     setStarting(true);
     setFailed(false);
+    setTechPushOverlayPref(showOverlay);
     // Re-asking: stop showing the previously stored code so the dialog
     // clearly waits for the fresh one instead of displaying the old code.
     if (reAsk) setStoredOtp(null);
@@ -85,7 +89,12 @@ const AskTechnicianOtpDialog = ({
         ((jobRow.customer as any)?.full_name as string) ||
         ((jobRow.customer as any)?.fullName as string) ||
         undefined;
-      const row = await createOtpRequest({ jobId: jobRow.id, technicianId, customerName });
+      const row = await createOtpRequest({
+        jobId: jobRow.id,
+        technicianId,
+        customerName,
+        overlay: showOverlay,
+      });
       if (row) beginWatching(row);
       else setFailed(true);
     } catch {
@@ -102,6 +111,7 @@ const AskTechnicianOtpDialog = ({
       setRequest(null);
       setStoredOtp(null);
       setFailed(false);
+      setShowOverlay(getTechPushOverlayPref());
       return;
     }
     // The OTP may already live on the job (entered at Start Work or during
@@ -134,6 +144,23 @@ const AskTechnicianOtpDialog = ({
                 : "The technician has been asked to enter the customer's OTP."}
           </DialogDescription>
         </DialogHeader>
+
+        <label className="flex cursor-pointer items-start gap-2.5 rounded-md border px-3 py-2.5">
+          <Checkbox
+            checked={showOverlay}
+            onCheckedChange={(v) => {
+              const on = v === true;
+              setShowOverlay(on);
+              setTechPushOverlayPref(on);
+            }}
+            disabled={starting}
+            className="mt-0.5"
+          />
+          <span className="text-xs text-muted-foreground leading-snug">
+            <span className="font-medium text-foreground">Also show on-screen overlay</span>
+            {' — '}Enter OTP on the card (same as notification). Applies on Ask again.
+          </span>
+        </label>
 
         {starting && (
           <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
