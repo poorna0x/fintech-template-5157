@@ -3313,43 +3313,42 @@ const TechnicianDashboard = () => {
   };
 
   /**
-   * Open Start Work confirm. If Ask OTP already captured the code (DB or
-   * request row) but local job list is stale, merge it in so we don't ask again
-   * and don't push OTP to admins a second time.
+   * Open Start Work confirm only after OTP status is known — otherwise the OTP
+   * boxes flash for a split second when Ask OTP already captured the code.
    */
   const openStartWorkConfirm = async (job: Job) => {
     setStartWorkOtp('');
     setStartWorkOtpError('');
-    setConfirmStartWorkDialog({ open: true, job });
 
-    if (!jobRequiresOtp(job) || getJobEnteredOtp(job)) return;
-
-    try {
-      const [{ data: fresh }, answered] = await Promise.all([
-        supabase.from('jobs').select('requirements').eq('id', job.id).maybeSingle(),
-        getSubmittedOtpForJob(job.id),
-      ]);
-      let reqs = parseJobRequirements(
-        (fresh as { requirements?: unknown } | null)?.requirements ??
-          (job as any).requirements ??
-          job.requirements
-      );
-      const fromJob = getStoredOtpFromRequirements(reqs);
-      const entered = fromJob || answered;
-      if (!entered) return;
-      if (!fromJob && answered) {
-        reqs = applyOtpToRequirements(reqs, answered);
+    let jobForDialog = job;
+    if (jobRequiresOtp(job) && !getJobEnteredOtp(job)) {
+      try {
+        const [{ data: fresh }, answered] = await Promise.all([
+          supabase.from('jobs').select('requirements').eq('id', job.id).maybeSingle(),
+          getSubmittedOtpForJob(job.id),
+        ]);
+        let reqs = parseJobRequirements(
+          (fresh as { requirements?: unknown } | null)?.requirements ??
+            (job as any).requirements ??
+            job.requirements
+        );
+        const fromJob = getStoredOtpFromRequirements(reqs);
+        const entered = fromJob || answered;
+        if (entered) {
+          if (!fromJob && answered) {
+            reqs = applyOtpToRequirements(reqs, answered);
+          }
+          jobForDialog = { ...job, requirements: reqs as any };
+          setJobs((prev) =>
+            prev.map((j) => (j.id === job.id ? { ...j, requirements: reqs as any } : j))
+          );
+        }
+      } catch {
+        /* open with local job */
       }
-      const patched = { ...job, requirements: reqs as any };
-      setJobs((prev) =>
-        prev.map((j) => (j.id === job.id ? { ...j, requirements: reqs as any } : j))
-      );
-      setConfirmStartWorkDialog((prev) =>
-        prev.open && prev.job?.id === job.id ? { open: true, job: patched } : prev
-      );
-    } catch {
-      /* keep dialog with local job */
     }
+
+    setConfirmStartWorkDialog({ open: true, job: jobForDialog });
   };
 
   // Actually perform the start work action
