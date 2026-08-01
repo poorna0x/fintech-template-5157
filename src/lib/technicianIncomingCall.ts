@@ -5,6 +5,7 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 import { normalizePhoneForSearch } from '@/lib/utils';
 import { notifyAdminsTechnicianCall } from '@/lib/technicianCallAlert';
+import { isTechnicianCallDetectEnabled } from '@/lib/technicianPush';
 
 type RecentCallPlugin = {
   consumeRecentCall(): Promise<{
@@ -96,6 +97,7 @@ export async function peekRecentTechnicianCaller(): Promise<{
 }
 
 export function reportRecentTechnicianCallToAdmins(): void {
+  if (!isTechnicianCallDetectEnabled()) return;
   void peekRecentTechnicianCaller().then((hit) => {
     if (!hit || hit.alreadyAlerted || !hit.callId || !hit.callAt) return;
     notifyAdminsTechnicianCall(hit.digits, { callId: hit.callId, callAt: hit.callAt });

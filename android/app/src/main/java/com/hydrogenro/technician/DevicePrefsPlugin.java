@@ -14,6 +14,8 @@ public class DevicePrefsPlugin extends Plugin {
 
     static final String PREFS = "hro_device_prefs";
     static final String KEY_CALL_ALERTS = "call_alerts_enabled";
+    /** Device Tracker → All push notifications (master mute). */
+    static final String KEY_PUSH_ENABLED = "push_enabled";
     /**
      * Device Tracker → “Wrong company-line reminder”. When false, this handset
      * still reports wrong-line to admins (if Detect calls is on) but skips the
@@ -120,8 +122,17 @@ public class DevicePrefsPlugin extends Plugin {
         return prefs(context).getBoolean(KEY_CALL_ALERTS, true);
     }
 
+    static boolean pushEnabled(Context context) {
+        return prefs(context).getBoolean(KEY_PUSH_ENABLED, true);
+    }
+
     static boolean wrongLineReminderEnabled(Context context) {
         return prefs(context).getBoolean(KEY_WRONG_LINE_REMINDER, true);
+    }
+
+    /** Self wrong-line overlay/tray — needs reminder + master push on. */
+    static boolean shouldShowWrongLineReminder(Context context) {
+        return pushEnabled(context) && wrongLineReminderEnabled(context);
     }
 
     static boolean shouldProcessIncomingCall(Context context) {
@@ -131,6 +142,10 @@ public class DevicePrefsPlugin extends Plugin {
     /** Apply prefs from a silent FCM (app may be killed). */
     static void applyCallAlertsEnabled(Context context, boolean enabled) {
         prefs(context).edit().putBoolean(KEY_CALL_ALERTS, enabled).apply();
+    }
+
+    static void applyPushEnabled(Context context, boolean enabled) {
+        prefs(context).edit().putBoolean(KEY_PUSH_ENABLED, enabled).apply();
     }
 
     static void applyWrongLineReminderEnabled(Context context, boolean enabled) {
@@ -171,6 +186,10 @@ public class DevicePrefsPlugin extends Plugin {
         if (call.getData().has("callAlertsEnabled")) {
             Boolean alerts = call.getBoolean("callAlertsEnabled", true);
             edit.putBoolean(KEY_CALL_ALERTS, alerts == null || alerts);
+        }
+        if (call.getData().has("pushEnabled")) {
+            Boolean push = call.getBoolean("pushEnabled", true);
+            edit.putBoolean(KEY_PUSH_ENABLED, push == null || push);
         }
         if (call.getData().has("wrongLineReminderEnabled")) {
             Boolean wr = call.getBoolean("wrongLineReminderEnabled", true);

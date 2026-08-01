@@ -5,6 +5,7 @@ export async function syncDeviceCallPrefsPush(opts: {
   token: string;
   kind: 'admin' | 'technician';
   callAlertsEnabled?: boolean;
+  pushEnabled?: boolean;
   wrongLineReminderEnabled?: boolean;
 }): Promise<void> {
   const { data: sessionData } = await supabase.auth.getSession();
@@ -16,6 +17,9 @@ export async function syncDeviceCallPrefsPush(opts: {
   };
   if (typeof opts.callAlertsEnabled === 'boolean') {
     body.callAlertsEnabled = opts.callAlertsEnabled;
+  }
+  if (typeof opts.pushEnabled === 'boolean') {
+    body.pushEnabled = opts.pushEnabled;
   }
   if (typeof opts.wrongLineReminderEnabled === 'boolean') {
     body.wrongLineReminderEnabled = opts.wrongLineReminderEnabled;

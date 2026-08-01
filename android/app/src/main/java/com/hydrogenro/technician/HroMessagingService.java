@@ -95,6 +95,11 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
                     !"false".equalsIgnoreCase(String.valueOf(data.get("callAlertsEnabled")));
                 DevicePrefsPlugin.applyCallAlertsEnabled(app, enabled);
             }
+            if (data.containsKey("pushEnabled")) {
+                boolean enabled =
+                    !"false".equalsIgnoreCase(String.valueOf(data.get("pushEnabled")));
+                DevicePrefsPlugin.applyPushEnabled(app, enabled);
+            }
             if (data.containsKey("wrongLineReminderEnabled")) {
                 boolean enabled =
                     !"false".equalsIgnoreCase(String.valueOf(data.get("wrongLineReminderEnabled")));
@@ -320,6 +325,10 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
     /** Wrong company SIM — tray + big full-screen warning overlay. */
     private void showWrongLineCall(Map<String, String> data) {
         Context context = getApplicationContext();
+        if (!DevicePrefsPlugin.shouldShowWrongLineReminder(context)) {
+            Log.i(TAG, "Wrong-line FCM ignored — reminder or master push muted");
+            return;
+        }
         String title = data.get("msgTitle");
         if (title == null || title.isEmpty()) title = data.get("title");
         if (title == null || title.isEmpty()) title = "Please call from company number";

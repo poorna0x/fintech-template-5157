@@ -174,15 +174,17 @@ async function saveToken(technicianId: string, token: string): Promise<boolean> 
     lastToken = token;
     const { data: prefsRow } = await supabase
       .from('technician_push_tokens')
-      .select('call_alerts_enabled, push_prefs')
+      .select('call_alerts_enabled, push_enabled, push_prefs')
       .eq('token', token)
       .maybeSingle();
     const callAlertsEnabled = prefsRow?.call_alerts_enabled !== false;
+    const pushEnabled = prefsRow?.push_enabled !== false;
     const wrongLineReminderEnabled =
       normalizeTechPushPrefs(prefsRow?.push_prefs).wrong_line !== false;
     writePersist({ ...cached, callAlertsEnabled });
     await syncDevicePrefsToNative({
       callAlertsEnabled,
+      pushEnabled,
       wrongLineReminderEnabled,
       fcmToken: token,
       companyPhone: readCompanyPhoneCache()?.phone,
@@ -230,11 +232,12 @@ async function saveToken(technicianId: string, token: string): Promise<boolean> 
 
   const { data: prefsRow } = await supabase
     .from('technician_push_tokens')
-    .select('call_alerts_enabled, push_prefs')
+    .select('call_alerts_enabled, push_enabled, push_prefs')
     .eq('token', token)
     .maybeSingle();
 
   const callAlertsEnabled = prefsRow?.call_alerts_enabled !== false;
+  const pushEnabled = prefsRow?.push_enabled !== false;
   const wrongLineReminderEnabled =
     normalizeTechPushPrefs(prefsRow?.push_prefs).wrong_line !== false;
   writePersist({ token, technicianId, callAlertsEnabled });
@@ -243,6 +246,7 @@ async function saveToken(technicianId: string, token: string): Promise<boolean> 
   rememberTokenLocally(token);
   await syncDevicePrefsToNative({
     callAlertsEnabled,
+    pushEnabled,
     wrongLineReminderEnabled,
     fcmToken: token,
     companyPhone: readCompanyPhoneCache()?.phone,
@@ -391,6 +395,13 @@ export async function registerTechnicianPushToken(technicianId: string): Promise
 /** FCM token for this technician phone, if already registered (local only). */
 export function getThisTechnicianDeviceToken(): string | null {
   return lastToken || readRememberedToken() || readNativeInjectedToken();
+}
+
+/** True unless Device Tracker → Detect calls is explicitly off for this phone. */
+export function isTechnicianCallDetectEnabled(): boolean {
+  const c = readPersist();
+  if (!c) return true;
+  return c.callAlertsEnabled !== false;
 }
 
 /** Update cached call-detect flag after Settings toggle (same phone). */

@@ -8,6 +8,7 @@ import { Capacitor } from '@capacitor/core';
 import type { PluginListenerHandle } from '@capacitor/core';
 import { peekRecentTechnicianCaller } from '@/lib/technicianIncomingCall';
 import { notifyAdminsTechnicianCall } from '@/lib/technicianCallAlert';
+import { isTechnicianCallDetectEnabled } from '@/lib/technicianPush';
 
 const LAST_AUTO_KEY = 'hro_tech_incoming_bg_lookup';
 const POLL_MS = 1_000;
@@ -49,6 +50,8 @@ export function initTechnicianIncomingCallBackgroundLookup(): () => void {
   const deliver = async () => {
     if (disposed) return;
     try {
+      // Respect Device Tracker → Detect calls (JS CallLog backup must not bypass).
+      if (!isTechnicianCallDetectEnabled()) return;
       const hit = await peekRecentTechnicianCaller();
       if (!hit || disposed) return;
       // Wait for CallLog DATE so callId matches native hangup POST (phone:dateMs).

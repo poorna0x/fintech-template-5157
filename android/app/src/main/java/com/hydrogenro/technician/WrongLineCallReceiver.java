@@ -144,7 +144,7 @@ public class WrongLineCallReceiver {
         String officeLabel =
             companySlot > 0 ? company + " (SIM " + companySlot + ")" : company;
         // Always warn locally on detect — unless this phone muted “Wrong company-line reminder”.
-        if (DevicePrefsPlugin.wrongLineReminderEnabled(context)) {
+        if (DevicePrefsPlugin.shouldShowWrongLineReminder(context)) {
             TechActionOverlay.showWrongLineWarning(
                 context,
                 "Please call from company number",

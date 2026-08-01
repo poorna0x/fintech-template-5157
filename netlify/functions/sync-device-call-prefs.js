@@ -36,8 +36,10 @@ exports.handler = async (event) => {
   const token = String(body.token || '').trim();
   const kind = String(body.kind || '').trim();
   const hasCallAlerts = Object.prototype.hasOwnProperty.call(body, 'callAlertsEnabled');
+  const hasPushEnabled = Object.prototype.hasOwnProperty.call(body, 'pushEnabled');
   const hasWrongLine = Object.prototype.hasOwnProperty.call(body, 'wrongLineReminderEnabled');
   const callAlertsEnabled = body.callAlertsEnabled !== false;
+  const pushEnabled = body.pushEnabled !== false;
   const wrongLineReminderEnabled = body.wrongLineReminderEnabled !== false;
   if (!token || (kind !== 'admin' && kind !== 'technician')) {
     return {
@@ -46,11 +48,13 @@ exports.handler = async (event) => {
       body: JSON.stringify({ error: 'token and kind (admin|technician) required' }),
     };
   }
-  if (!hasCallAlerts && !hasWrongLine) {
+  if (!hasCallAlerts && !hasPushEnabled && !hasWrongLine) {
     return {
       statusCode: 400,
       headers,
-      body: JSON.stringify({ error: 'callAlertsEnabled or wrongLineReminderEnabled required' }),
+      body: JSON.stringify({
+        error: 'callAlertsEnabled, pushEnabled, or wrongLineReminderEnabled required',
+      }),
     };
   }
 
@@ -77,6 +81,9 @@ exports.handler = async (event) => {
     const data = { type: 'device_prefs' };
     if (hasCallAlerts) {
       data.callAlertsEnabled = callAlertsEnabled ? 'true' : 'false';
+    }
+    if (hasPushEnabled) {
+      data.pushEnabled = pushEnabled ? 'true' : 'false';
     }
     if (hasWrongLine) {
       data.wrongLineReminderEnabled = wrongLineReminderEnabled ? 'true' : 'false';

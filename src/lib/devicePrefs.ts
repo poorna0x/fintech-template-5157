@@ -7,6 +7,8 @@ import { Capacitor, registerPlugin } from '@capacitor/core';
 
 export interface DeviceNativePrefs {
   callAlertsEnabled?: boolean;
+  /** Device Tracker → All push notifications. */
+  pushEnabled?: boolean;
   /** Tech Device Tracker → Wrong company-line reminder (self overlay / tray). */
   wrongLineReminderEnabled?: boolean;
   fcmToken?: string | null;
@@ -17,6 +19,7 @@ export interface DeviceNativePrefs {
 interface DevicePrefsPlugin {
   setPrefs(options: {
     callAlertsEnabled?: boolean;
+    pushEnabled?: boolean;
     wrongLineReminderEnabled?: boolean;
     fcmToken?: string;
     companyPhone?: string;
@@ -24,6 +27,7 @@ interface DevicePrefsPlugin {
   setCompanyPhone(options: { phone: string }): Promise<{ companyPhone: string }>;
   getPrefs(): Promise<{
     callAlertsEnabled: boolean;
+    pushEnabled?: boolean;
     wrongLineReminderEnabled?: boolean;
     companyPhone?: string;
   }>;
@@ -47,12 +51,16 @@ export async function syncDevicePrefsToNative(prefs: DeviceNativePrefs): Promise
   try {
     const payload: {
       callAlertsEnabled?: boolean;
+      pushEnabled?: boolean;
       wrongLineReminderEnabled?: boolean;
       fcmToken?: string;
       companyPhone?: string;
     } = {};
     if (typeof prefs.callAlertsEnabled === 'boolean') {
       payload.callAlertsEnabled = prefs.callAlertsEnabled !== false;
+    }
+    if (typeof prefs.pushEnabled === 'boolean') {
+      payload.pushEnabled = prefs.pushEnabled !== false;
     }
     if (typeof prefs.wrongLineReminderEnabled === 'boolean') {
       payload.wrongLineReminderEnabled = prefs.wrongLineReminderEnabled !== false;

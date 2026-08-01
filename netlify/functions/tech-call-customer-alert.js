@@ -7,8 +7,8 @@
 //    (covers FCM auth failures and OEM missing EXTRA_INCOMING_NUMBER via CallLog)
 //  - Admin phone MISSED a call → { token, number, missed: true }
 //
-// Admin push uses customer_calls tokens ∪ tech_search tokens so admins who
-// get search alerts also get call alerts.
+// Admin push uses Device Tracker → “Customer call alerts” only.
+// (tech_search is a separate toggle for search alerts.)
 
 const { createClient } = require('@supabase/supabase-js');
 const {
@@ -35,11 +35,8 @@ function normalizePhone(raw) {
 }
 
 async function resolveAdminCallTokens(db) {
-  const [callTokens, searchTokens] = await Promise.all([
-    getAdminFcmTokens(db, 'customer_calls'),
-    getAdminFcmTokens(db, 'tech_search'),
-  ]);
-  return [...new Set([...(callTokens || []), ...(searchTokens || [])])];
+  // Only “Customer call alerts” — not tech_search (that toggle is search-only).
+  return getAdminFcmTokens(db, 'customer_calls');
 }
 
 exports.handler = async (event) => {

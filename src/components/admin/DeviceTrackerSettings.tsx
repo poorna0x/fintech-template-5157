@@ -334,6 +334,17 @@ export function DeviceTrackerSettings() {
         });
         return next;
       });
+      if (typeof patch.push_enabled === 'boolean') {
+        const thisToken = getThisTechnicianDeviceToken();
+        if (thisToken && thisToken === token) {
+          await syncDevicePrefsToNative({ pushEnabled: patch.push_enabled });
+        }
+        void syncDeviceCallPrefsPush({
+          token,
+          kind: 'technician',
+          pushEnabled: patch.push_enabled,
+        }).catch(() => {});
+      }
       if (typeof patch.call_alerts_enabled === 'boolean') {
         const thisToken = getThisTechnicianDeviceToken();
         if (thisToken && thisToken === token) {

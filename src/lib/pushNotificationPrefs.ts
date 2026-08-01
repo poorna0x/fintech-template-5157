@@ -36,16 +36,16 @@ export const ADMIN_PUSH_LABELS: Record<AdminPushCategory, { label: string; descr
   customer_calls: {
     label: 'Customer call alerts (incl. missed)',
     description:
-      'Push when a customer rings a tech/admin phone, or an admin misses a known customer call. Turn this OFF to stop receiving those notifications.',
+      'Push when a customer rings a tech/admin phone, or an admin misses a known customer call. Off = this phone stops those call pushes only (other types unchanged).',
   },
   wrong_line: {
     label: 'Wrong company-line calls',
     description:
-      'Push when a technician dials a known customer from a line that is not their company SIM (e.g. personal / SIM 1).',
+      'Push when a technician dials a known customer from a non-company SIM. Off = this admin phone stops those alerts.',
   },
   tech_search: {
     label: 'Technician customer search',
-    description: 'When a technician searches customers in the app.',
+    description: 'When a technician searches customers in the app. Separate from customer call alerts.',
   },
   tech_messages: {
     label: 'Technician message replies',
