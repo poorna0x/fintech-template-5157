@@ -2516,6 +2516,19 @@ const TechnicianDashboard = () => {
     }
   }, [currentLocation, jobs, assignmentRequests]);
 
+  // OTP-required jobs: if GPS is near the customer, wait 5 minutes then Ask OTP once.
+  useEffect(() => {
+    if (!user?.technicianId || !currentLocation || jobs.length === 0) return;
+    void import('@/lib/autoAskOtpOnSite').then(({ evaluateAutoAskOtpOnSite }) => {
+      evaluateAutoAskOtpOnSite({
+        technicianId: user.technicianId!,
+        jobs,
+        lat: currentLocation.lat,
+        lng: currentLocation.lng,
+      });
+    });
+  }, [user?.technicianId, currentLocation, jobs]);
+
   // Realtime for assignment requests — no 5s polling; refresh when requests change
   useEffect(() => {
     if (!user?.technicianId) return;
