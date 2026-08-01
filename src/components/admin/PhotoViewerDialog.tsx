@@ -40,23 +40,35 @@ function resolveUrls(
   return [];
 }
 
-/** Placeholder size so PhotoSwipe can open instantly (no preload wait). */
-function placeholderSize(): { width: number; height: number } {
-  if (typeof window === 'undefined') return { width: 1600, height: 1200 };
-  return {
-    width: Math.max(1200, Math.round(window.innerWidth * 2)),
-    height: Math.max(900, Math.round(window.innerHeight * 2)),
-  };
-}
+/** Neutral 4:3 placeholder — never use viewport size (that stretches photos on desktop). */
+const PLACEHOLDER_W = 1600;
+const PLACEHOLDER_H = 1200;
 
 function slidesFromUrls(urls: string[]): Slide[] {
-  const { width, height } = placeholderSize();
   return urls.map((src, i) => ({
     src,
-    width,
-    height,
+    width: PLACEHOLDER_W,
+    height: PLACEHOLDER_H,
     alt: `Photo ${i + 1}`,
   }));
+}
+
+/** Resolve natural size (usually instant if the gallery thumb already cached the URL). */
+function loadNaturalSize(src: string): Promise<{ width: number; height: number } | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const done = () => {
+      if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+        resolve({ width: img.naturalWidth, height: img.naturalHeight });
+      } else {
+        resolve(null);
+      }
+    };
+    img.onload = done;
+    img.onerror = () => resolve(null);
+    img.src = src;
+    if (img.complete) done();
+  });
 }
 
 /** After decode, fix real dimensions so pinch zoom bounds match the image. */
@@ -83,7 +95,7 @@ function refineSlideSize(pswp: PhotoSwipe, slideIndex: number, img: HTMLImageEle
   }
 }
 
-/** Hide PhotoSwipe’s default chrome — we render the previous HRO controls on top. */
+/** Hide PhotoSwipe chrome; never stretch photos to the slide box. */
 const PSWP_CHROME_CSS = `
 .pswp { --pswp-bg: #000; z-index: 200 !important; }
 .pswp__top-bar,
@@ -93,6 +105,9 @@ const PSWP_CHROME_CSS = `
 .pswp__button--arrow--next,
 .pswp__counter {
   display: none !important;
+}
+.pswp__img {
+  object-fit: contain !important;
 }
 `;
 
@@ -174,57 +189,73 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
       pswpRef.current = null;
     }
 
-    const options: PhotoSwipeOptions = {
-      dataSource: slidesFromUrls(list),
-      index: startIndex,
-      bgOpacity: 1,
-      showHideAnimationType: 'none',
-      pinchToClose: false,
-      closeOnVerticalDrag: false,
-      tapAction: 'toggle-controls',
-      doubleTapAction: 'zoom',
-      secondaryZoomLevel: 2.5,
-      maxZoomLevel: 4,
-      initialZoomLevel: 'fit',
-      padding: { top: 0, bottom: 0, left: 0, right: 0 },
-      preload: [1, 1],
-      zoom: false,
-      close: false,
-      arrowPrev: false,
-      arrowNext: false,
-      counter: false,
+    const openViewer = async () => {
+      const slides = slidesFromUrls(list);
+      // Current slide only — usually cache-hit from the thumb, keeps aspect correct on desktop.
+      const natural = await loadNaturalSize(list[startIndex]);
+      if (cancelled) return;
+      if (natural) {
+        slides[startIndex] = {
+          ...slides[startIndex],
+          width: natural.width,
+          height: natural.height,
+        };
+      }
+
+      const options: PhotoSwipeOptions = {
+        dataSource: slides,
+        index: startIndex,
+        bgOpacity: 1,
+        showHideAnimationType: 'none',
+        pinchToClose: false,
+        closeOnVerticalDrag: false,
+        tapAction: 'toggle-controls',
+        doubleTapAction: 'zoom',
+        secondaryZoomLevel: 2.5,
+        maxZoomLevel: 4,
+        initialZoomLevel: 'fit',
+        padding: { top: 0, bottom: 0, left: 0, right: 0 },
+        preload: [1, 1],
+        zoom: false,
+        close: false,
+        arrowPrev: false,
+        arrowNext: false,
+        counter: false,
+      };
+
+      const pswp = new PhotoSwipe(options);
+      pswpRef.current = pswp;
+
+      pswp.on('change', () => {
+        setSlideIndex(pswp.currIndex);
+      });
+
+      pswp.on('loadComplete', (e) => {
+        if (cancelled || e.isError) return;
+        const el = e.content?.element;
+        if (el instanceof HTMLImageElement) {
+          refineSlideSize(pswp, e.slide.index, el);
+        }
+      });
+
+      pswp.on('close', () => {
+        setPswpReady(false);
+        onCloseRef.current();
+      });
+
+      pswp.on('destroy', () => {
+        if (pswpRef.current === pswp) pswpRef.current = null;
+        setPswpReady(false);
+      });
+
+      pswp.init();
+      if (!cancelled) {
+        setSlideIndex(pswp.currIndex);
+        setPswpReady(true);
+      }
     };
 
-    const pswp = new PhotoSwipe(options);
-    pswpRef.current = pswp;
-
-    pswp.on('change', () => {
-      setSlideIndex(pswp.currIndex);
-    });
-
-    pswp.on('loadComplete', (e) => {
-      if (cancelled || e.isError) return;
-      const el = e.content?.element;
-      if (el instanceof HTMLImageElement) {
-        refineSlideSize(pswp, e.slide.index, el);
-      }
-    });
-
-    pswp.on('close', () => {
-      setPswpReady(false);
-      onCloseRef.current();
-    });
-
-    pswp.on('destroy', () => {
-      if (pswpRef.current === pswp) pswpRef.current = null;
-      setPswpReady(false);
-    });
-
-    pswp.init();
-    if (!cancelled) {
-      setSlideIndex(pswp.currIndex);
-      setPswpReady(true);
-    }
+    void openViewer();
 
     return () => {
       cancelled = true;
