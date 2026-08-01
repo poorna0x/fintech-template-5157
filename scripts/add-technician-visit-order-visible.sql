@@ -7,7 +7,7 @@ ALTER TABLE public.technicians
   ADD COLUMN IF NOT EXISTS visit_order_visible boolean NOT NULL DEFAULT false;
 
 COMMENT ON COLUMN public.technicians.visit_order_visible IS
-  'When true, this technician sees visit-order stop numbers (#1, #2…) on their app. Toggled per tech in Arrange visit order.';
+  'When true, this technician sees visit-order stop numbers (#1, #2…) on their app for the IST day in visit_order_visible_on. Toggled per tech in Arrange visit order.';
 
 -- technicians uses column-level SELECT grants — new columns need an explicit grant.
 GRANT SELECT (visit_order_visible) ON TABLE public.technicians TO authenticated;

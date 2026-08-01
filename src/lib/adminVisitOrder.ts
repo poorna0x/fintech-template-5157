@@ -276,7 +276,20 @@ export async function clearJobVisitOrder(jobId: string): Promise<void> {
   }
 }
 
-/** Per-technician: is visit-order UI enabled for this tech? Default false. */
+/** Asia/Kolkata calendar date as YYYY-MM-DD (en-CA). */
+function visitOrderVisibleTodayIst(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+}
+
+function normalizeVisitOrderVisibleOn(raw: unknown): string | null {
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  // Postgres date / ISO timestamp → YYYY-MM-DD
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : null;
+}
+
+/** Per-technician: is visit-order UI enabled for this tech today (IST)? Default false. */
 export async function getVisitOrderVisibleForTechnician(
   technicianId: string
 ): Promise<boolean> {
@@ -284,7 +297,7 @@ export async function getVisitOrderVisibleForTechnician(
   try {
     const { data, error } = await supabase
       .from('technicians')
-      .select('visit_order_visible')
+      .select('visit_order_visible, visit_order_visible_on')
       .eq('id', technicianId)
       .maybeSingle();
     if (error) {
@@ -293,30 +306,62 @@ export async function getVisitOrderVisibleForTechnician(
       console.warn('[visit_order] visibility read failed:', error.message);
       return false;
     }
-    return (data as { visit_order_visible?: boolean } | null)?.visit_order_visible === true;
+    const row = data as {
+      visit_order_visible?: boolean;
+      visit_order_visible_on?: string | null;
+    } | null;
+    if (row?.visit_order_visible !== true) return false;
+
+    const onDate = normalizeVisitOrderVisibleOn(row.visit_order_visible_on);
+    const today = visitOrderVisibleTodayIst();
+    if (onDate === today) return true;
+
+    // Stale / missing day stamp — treat as off and clear so it stays off overnight.
+    void supabase
+      .from('technicians')
+      .update({
+        visit_order_visible: false,
+        visit_order_visible_on: null,
+        updated_at: new Date().toISOString(),
+      } as any)
+      .eq('id', technicianId)
+      .then(({ error: clearErr }) => {
+        if (clearErr && !/visit_order_visible/i.test(clearErr.message)) {
+          console.warn('[visit_order] stale visibility clear failed:', clearErr.message);
+        }
+      });
+    return false;
   } catch {
     return false;
   }
 }
 
-/** Admin only: turn visit-order numbers on/off for one technician. */
+/** Admin only: turn visit-order numbers on/off for one technician (ON lasts until end of IST day). */
 export async function setVisitOrderVisibleForTechnician(
   technicianId: string,
   visible: boolean
 ): Promise<{ error: Error | null }> {
   if (!technicianId) return { error: new Error('No technician selected') };
+  const payload = visible
+    ? {
+        visit_order_visible: true,
+        visit_order_visible_on: visitOrderVisibleTodayIst(),
+        updated_at: new Date().toISOString(),
+      }
+    : {
+        visit_order_visible: false,
+        visit_order_visible_on: null,
+        updated_at: new Date().toISOString(),
+      };
   const { error } = await supabase
     .from('technicians')
-    .update({
-      visit_order_visible: visible,
-      updated_at: new Date().toISOString(),
-    } as any)
+    .update(payload as any)
     .eq('id', technicianId);
   if (error) {
     if (/visit_order_visible/i.test(error.message)) {
       return {
         error: new Error(
-          'Visit order visibility column is missing. Run scripts/add-technician-visit-order-visible.sql in Supabase, then try again.'
+          'Visit order visibility column is missing. Run scripts/add-technician-visit-order-visible.sql and scripts/add-technician-visit-order-visible-on.sql in Supabase, then try again.'
         ),
       };
     }

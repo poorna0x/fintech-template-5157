@@ -231,6 +231,8 @@ export interface Technician {
 
   /** When true, this technician sees visit-order stop numbers on their app. Default false. */
   visit_order_visible?: boolean;
+  /** IST date (YYYY-MM-DD) when visit_order_visible was turned on; stale → treated as off. */
+  visit_order_visible_on?: string | null;
 
   // Current Status
   status: 'AVAILABLE' | 'BUSY' | 'OFFLINE' | 'ON_BREAK';

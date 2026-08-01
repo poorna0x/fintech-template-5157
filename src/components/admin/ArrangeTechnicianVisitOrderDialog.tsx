@@ -237,7 +237,7 @@ export default function ArrangeTechnicianVisitOrderDialog({
         'technician';
       toast.success(
         next
-          ? `Visit order shown for ${name}`
+          ? `Visit order shown for ${name} (today only — off tomorrow)`
           : `Visit order hidden for ${name}`
       );
     } finally {
@@ -583,7 +583,7 @@ export default function ArrangeTechnicianVisitOrderDialog({
                 Show order on this technician&apos;s app
               </Label>
               <p className="text-[11px] text-sky-900/70 sm:text-xs">
-                Off by default — only this technician sees #1, #2… when on.
+                Off by default — on only for today (IST); turns off automatically tomorrow.
               </p>
             </div>
             <Switch
