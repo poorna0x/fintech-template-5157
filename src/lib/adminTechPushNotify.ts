@@ -29,8 +29,15 @@ export function notifyTechnicianJobPush(opts: {
   color?: string;
   /** When true, skip admin toasts (e.g. technician self-nudge). */
   silent?: boolean;
+  /** Job id for overlay deep-open (assign / reassign). */
+  jobId?: string;
+  /**
+   * Assign/reassign-to-you → technician APK shows a draw-over-apps card.
+   * Other pushes stay as normal tray notifications.
+   */
+  event?: 'assigned' | 'reassigned';
 }): void {
-  const { technicianId, title, body, color, silent } = opts;
+  const { technicianId, title, body, color, silent, jobId, event } = opts;
   if (!technicianId || !title) return;
 
   void (async () => {
@@ -46,7 +53,14 @@ export function notifyTechnicianJobPush(opts: {
       const res = await fetch('/.netlify/functions/send-tech-push', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ technicianId, title, body, color }),
+        body: JSON.stringify({
+          technicianId,
+          title,
+          body,
+          color,
+          ...(jobId ? { jobId } : {}),
+          ...(event ? { event } : {}),
+        }),
         keepalive: true,
       });
       const out = (await res.json().catch(() => null)) as
@@ -125,7 +139,7 @@ export function jobAssignPushText(opts: {
   job: Record<string, unknown>;
   customer?: Record<string, unknown> | null;
   reassigned?: boolean;
-}): { title: string; body: string; color: string } {
+}): { title: string; body: string; color: string; event: 'assigned' | 'reassigned' } {
   const { job, customer, reassigned } = opts;
   const { serviceSubType, body } = jobPushDetails(job, customer);
   return {
@@ -134,6 +148,7 @@ export function jobAssignPushText(opts: {
       : `New ${serviceSubType.toLowerCase()} assigned`,
     body,
     color: TECH_PUSH_COLOR_ASSIGNED,
+    event: reassigned ? 'reassigned' : 'assigned',
   };
 }
 

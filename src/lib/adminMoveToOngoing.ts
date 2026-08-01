@@ -202,6 +202,7 @@ export async function performAdminMoveToOngoing(ctx: AdminMoveToOngoingCtx) {
       }).catch(() => {});
       notifyTechnicianJobPush({
         technicianId: ctx.followUpAssignTechnicianId,
+        jobId: ctx.selectedJob.id,
         ...jobAssignPushText({ job: ctx.selectedJob as any }),
       });
     }

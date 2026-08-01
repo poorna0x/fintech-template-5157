@@ -81,6 +81,10 @@ public class MainActivity extends BridgeActivity {
         getWindow()
             .getDecorView()
             .postDelayed(this::dismissBootLoader, BOOT_LOADER_MAX_MS);
+        // After boot settles, ask once for draw-over-apps (assign/reassign cards).
+        getWindow()
+            .getDecorView()
+            .postDelayed(this::maybePromptOverlayPermission, 3_500L);
     }
 
     /**
@@ -112,6 +116,50 @@ public class MainActivity extends BridgeActivity {
             }
         } catch (Exception e) {
             android.util.Log.w("HRO-Main", "Call permission request failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * One-time prompt for SYSTEM_ALERT_WINDOW so assign/reassign cards can
+     * appear over Instagram/WhatsApp like Truecaller. Android requires the
+     * user to toggle it in system settings — we cannot grant it ourselves.
+     */
+    private void maybePromptOverlayPermission() {
+        try {
+            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M) return;
+            if (JobAlertOverlay.canDraw(this)) return;
+            android.content.SharedPreferences prefs =
+                getSharedPreferences("hro_tech_prefs", MODE_PRIVATE);
+            if (prefs.getBoolean("overlay_permission_prompted", false)) return;
+            prefs.edit().putBoolean("overlay_permission_prompted", true).apply();
+
+            new android.app.AlertDialog.Builder(this)
+                .setTitle("Never miss a job assign")
+                .setMessage(
+                    "Allow HydrogenRO to display over other apps so new job assigns "
+                        + "and reassigns pop up on your screen even when you are in WhatsApp or Instagram."
+                )
+                .setPositiveButton(
+                    "Allow",
+                    (d, w) -> {
+                        try {
+                            android.content.Intent intent =
+                                new android.content.Intent(
+                                    android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    android.net.Uri.parse("package:" + getPackageName())
+                                );
+                            startActivity(intent);
+                        } catch (Exception e) {
+                            android.util.Log.w(
+                                "HRO-Main", "Open overlay settings failed: " + e.getMessage());
+                        }
+                    }
+                )
+                .setNegativeButton("Not now", null)
+                .setCancelable(true)
+                .show();
+        } catch (Exception e) {
+            android.util.Log.w("HRO-Main", "Overlay permission prompt failed: " + e.getMessage());
         }
     }
 

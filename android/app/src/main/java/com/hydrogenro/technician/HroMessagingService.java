@@ -1,11 +1,16 @@
 package com.hydrogenro.technician;
 
 import android.Manifest;
+import android.app.Notification;
+import android.app.PendingIntent;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.location.Location;
 import android.util.Log;
 import androidx.annotation.NonNull;
+import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
 import com.google.android.gms.location.CurrentLocationRequest;
@@ -65,6 +70,10 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
         }
         if ("office_message".equals(data.get("type"))) {
             showOfficeMessage(data);
+            return;
+        }
+        if ("job_alert_overlay".equals(data.get("type"))) {
+            showJobAlertOverlay(data);
             return;
         }
         if ("clear_notifications".equals(data.get("type"))) {
@@ -232,6 +241,76 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             replyUrl,
             data.get("tag")
         );
+    }
+
+    /**
+     * Assign / reassign: draw-over-apps card (if permitted) + tray alert with
+     * job_alerts_v2 sound. Data-only FCM so this runs even when the app is killed.
+     */
+    private void showJobAlertOverlay(Map<String, String> data) {
+        Context context = getApplicationContext();
+        String title = data.get("msgTitle");
+        if (title == null || title.isEmpty()) title = data.get("title");
+        if (title == null || title.isEmpty()) {
+            title = "reassigned".equalsIgnoreCase(data.get("event"))
+                ? "Job reassigned to you"
+                : "New job assigned";
+        }
+        String body = data.get("msgBody");
+        if (body == null) body = data.get("body");
+        if (body == null) body = "";
+        String jobId = data.get("jobId");
+        String color = data.get("color");
+        String tag = data.get("tag");
+        if (tag == null || tag.isEmpty()) tag = "job_alert_overlay";
+
+        JobAlertOverlay.show(context, title, body, jobId, color);
+        postJobAlertTray(context, title, body, jobId, color, tag);
+    }
+
+    private void postJobAlertTray(
+        Context context, String title, String body, String jobId, String colorHex, String tag
+    ) {
+        NotificationChannels.ensureJobAlerts(context);
+        int color = Color.parseColor("#16A34A");
+        if (colorHex != null && colorHex.matches("#[0-9a-fA-F]{6}")) {
+            try {
+                color = Color.parseColor(colorHex);
+            } catch (IllegalArgumentException ignored) {
+                /* keep green */
+            }
+        }
+
+        Intent openIntent = new Intent(context, MainActivity.class)
+            .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        if (jobId != null && !jobId.isEmpty()) {
+            openIntent.putExtra(JobAlertOverlay.EXTRA_JOB_ID, jobId);
+        }
+        PendingIntent openPending = PendingIntent.getActivity(
+            context,
+            Math.abs(tag.hashCode()),
+            openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+
+        Notification notification = new NotificationCompat.Builder(context, NotificationChannels.JOB_ALERTS)
+            .setSmallIcon(R.drawable.ic_stat_notify)
+            .setColor(color)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setDefaults(Notification.DEFAULT_ALL)
+            .setContentIntent(openPending)
+            .setAutoCancel(true)
+            .build();
+
+        try {
+            NotificationManagerCompat.from(context).notify(tag, 0, notification);
+        } catch (SecurityException e) {
+            Log.w(TAG, "Notifications not permitted", e);
+        }
     }
 
     /** Are you going? / Start job — Start/Yes sets EN_ROUTE; optional No. */

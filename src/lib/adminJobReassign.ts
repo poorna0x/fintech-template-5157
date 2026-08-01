@@ -72,6 +72,7 @@ export async function submitAdminJobReassign(
 
     notifyTechnicianJobPush({
       technicianId: ctx.selectedTechnicianForReassign,
+      jobId: ctx.jobToReassign.id,
       ...jobAssignPushText({ job: ctx.jobToReassign as any, reassigned: true }),
     });
     // Tell the technician who lost the job too (red accent).

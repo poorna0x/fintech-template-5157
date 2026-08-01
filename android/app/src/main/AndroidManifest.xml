@@ -128,6 +128,9 @@
 
     <!-- navigator.vibrate in the WebView (button haptics) is silently ignored without this -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Assign/reassign draw-over-apps card (Truecaller-style). User must enable
+         in system Settings → Display over other apps. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <!-- Caller check: detect ringing + read the incoming number
          (Android 9+ only includes the number when READ_CALL_LOG is granted) -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />

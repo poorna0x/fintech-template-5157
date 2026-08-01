@@ -75,6 +75,7 @@ export async function saveAdminJobAssignment(ctx: AdminSaveJobAssignmentCtx) {
 
     notifyTechnicianJobPush({
       technicianId: ctx.selectedTechnicianId,
+      jobId: ctx.jobToAssign.id,
       ...jobAssignPushText({ job: ctx.jobToAssign as any }),
     });
 
