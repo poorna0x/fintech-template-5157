@@ -100,7 +100,13 @@ public class CallAlertReceiver extends BroadcastReceiver {
                     .putBoolean(KEY_HAD_INCOMING_RING, true)
                     .putLong(KEY_PENDING_RING_AT, ringAt);
 
-            String number = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER);
+            String number = extractIncomingNumber(intent);
+            if (number == null || number.isEmpty()) {
+                // Truecaller often blanks EXTRA — try CallLog mid-ring (rare but cheap).
+                CallLogHelper.Entry early =
+                    CallLogHelper.bestIncomingForSession(app, ringAt, ringAt - 30_000L);
+                if (early != null) number = early.number;
+            }
             if (number != null && !number.trim().isEmpty()) {
                 String cleaned = number.trim();
                 ed.putString(KEY_PENDING_NUMBER, cleaned)
@@ -118,6 +124,25 @@ public class CallAlertReceiver extends BroadcastReceiver {
 
         if (TelephonyManager.EXTRA_STATE_OFFHOOK.equals(state)) {
             prefs.edit().putBoolean(KEY_IN_CALL, true).apply();
+            // While connected, keep trying to learn the number (Truecaller lag).
+            if (prefs.getBoolean(KEY_HAD_INCOMING_RING, false)) {
+                long ringAt = prefs.getLong(KEY_RING_SEEN_AT, 0L);
+                String existing = prefs.getString(KEY_PENDING_NUMBER, null);
+                if ((existing == null || existing.isEmpty()) && ringAt > 0) {
+                    CallLogHelper.Entry early =
+                        CallLogHelper.bestIncomingForSession(app, ringAt, ringAt - 30_000L);
+                    if (early != null && early.number != null && !early.number.isEmpty()) {
+                        prefs
+                            .edit()
+                            .putString(KEY_PENDING_NUMBER, early.number)
+                            .putString(KEY_LAST_NUMBER, early.number)
+                            .putLong(KEY_LAST_AT, System.currentTimeMillis())
+                            .putLong(RecentCallPlugin.KEY_LAST_CALLLOG_DATE, early.dateMs)
+                            .apply();
+                        Log.i(TAG, "OFFHOOK — cached number from CallLog");
+                    }
+                }
+            }
             return;
         }
 
@@ -150,9 +175,9 @@ public class CallAlertReceiver extends BroadcastReceiver {
         final PendingResult pending = goAsync();
         new Thread(() -> {
             try {
-                // Brief pause so OEMs flush CallLog after hangup.
+                // Brief pause so OEMs / Truecaller flush CallLog after hangup.
                 try {
-                    Thread.sleep(800);
+                    Thread.sleep(1_200);
                 } catch (InterruptedException ignored) {
                     /* continue */
                 }
@@ -173,6 +198,10 @@ public class CallAlertReceiver extends BroadcastReceiver {
      * @return true if handled (alerted, claimed, or nothing to do); false if still waiting on CallLog
      */
     static boolean finalizeAndUpload(Context context, long ringAt) {
+        return finalizeAndUpload(context, ringAt, false);
+    }
+
+    static boolean finalizeAndUpload(Context context, long ringAt, boolean allowPendingFallback) {
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         if (ringAt <= 0) {
             ringAt = prefs.getLong(KEY_RING_SEEN_AT, 0L);
@@ -184,17 +213,38 @@ public class CallAlertReceiver extends BroadcastReceiver {
             return true;
         }
 
-        // Always wait for CallLog DATE so callId = phone:dateMs matches the JS
-        // backup. Uploading early with ringAt as callAt caused 2–4 admin pushes
-        // (native phone:ringAt + JS phone:dateMs + retries).
+        // Prefer CallLog DATE so callId = phone:dateMs (matches JS backup).
+        // Truecaller often blanks EXTRA and writes CallLog late — keep waiting
+        // unless allowPendingFallback (RINGING cache / last resort).
         CallLogHelper.Entry log =
-            CallLogHelper.bestIncomingForSession(context, ringAt, ringAt - 15_000L);
-        if (log == null || log.number == null || log.number.trim().isEmpty()) {
+            CallLogHelper.bestIncomingForSession(context, ringAt, ringAt - 3 * 60_000L);
+        String number = null;
+        long callAt = ringAt;
+        if (log != null && log.number != null && !log.number.trim().isEmpty()) {
+            number = log.number.trim();
+            callAt = log.dateMs > 0 ? log.dateMs : ringAt;
+        } else if (allowPendingFallback) {
+            number = prefs.getString(KEY_PENDING_NUMBER, null);
+            if (number == null || number.trim().isEmpty()) {
+                // Only reuse LAST_NUMBER if it was cached during this ring session.
+                long lastAt = prefs.getLong(KEY_LAST_AT, 0L);
+                if (lastAt >= ringAt - 5_000L && lastAt <= System.currentTimeMillis() + 5_000L) {
+                    number = prefs.getString(KEY_LAST_NUMBER, null);
+                }
+            }
+            if (number != null) number = number.trim();
+            callAt = ringAt;
+            if (number != null && !number.isEmpty()) {
+                Log.w(TAG, "Finalize — using RINGING/pending number (no CallLog yet)");
+            }
+        } else {
             Log.i(TAG, "Finalize — waiting CallLog for stable callId");
             return false;
         }
-        String number = log.number.trim();
-        long callAt = log.dateMs > 0 ? log.dateMs : ringAt;
+        if (number == null || number.isEmpty()) {
+            Log.i(TAG, "Finalize — no number yet");
+            return false;
+        }
 
         prefs
             .edit()
@@ -209,20 +259,11 @@ public class CallAlertReceiver extends BroadcastReceiver {
     }
 
     /**
-     * Last resort when CallLog never appears (OEM / privacy). Uses ring session
-     * as callAt — prefer {@link #finalizeAndUpload} whenever CallLog is ready.
+     * Last resort when CallLog never appears (OEM / privacy / Truecaller).
+     * Uses RINGING-cached number with ring session as callAt.
      */
     static void uploadPendingFallback(Context context, long ringAt) {
-        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        if (ringAt <= 0) return;
-        if (prefs.getLong(KEY_ALERTED_RING_AT, 0L) == ringAt) return;
-        String number = prefs.getString(KEY_PENDING_NUMBER, null);
-        if (number == null || number.trim().isEmpty()) {
-            number = prefs.getString(KEY_LAST_NUMBER, null);
-        }
-        if (number == null || number.trim().isEmpty()) return;
-        Log.w(TAG, "Fallback upload with ring session id (no CallLog)");
-        uploadCallerNow(context, number.trim(), ringAt, ringAt);
+        finalizeAndUpload(context, ringAt, true);
     }
 
     /** Legacy 3-arg entry — callAt defaults to ringAt. */
@@ -358,6 +399,32 @@ public class CallAlertReceiver extends BroadcastReceiver {
         if (digits.length() >= 12 && digits.startsWith("91")) digits = digits.substring(2);
         digits = digits.replaceFirst("^0+", "");
         return digits.length() >= 10 ? digits.substring(digits.length() - 10) : "";
+    }
+
+    /**
+     * OEMs / dialers disagree on the EXTRA key. Try every common one.
+     * Truecaller often returns null for all of these — CallLog is then required.
+     */
+    private static String extractIncomingNumber(Intent intent) {
+        if (intent == null) return null;
+        String[] keys = {
+            TelephonyManager.EXTRA_INCOMING_NUMBER,
+            "incoming_number",
+            "incomingNumber",
+            "number",
+            "android.intent.extra.PHONE_NUMBER",
+        };
+        for (String key : keys) {
+            try {
+                String v = intent.getStringExtra(key);
+                if (v != null && !v.trim().isEmpty() && !CallLogHelper.isUselessNumber(v)) {
+                    return v.trim();
+                }
+            } catch (Exception ignored) {
+                /* ignore */
+            }
+        }
+        return null;
     }
 
     private static String jsonEscape(String value) {

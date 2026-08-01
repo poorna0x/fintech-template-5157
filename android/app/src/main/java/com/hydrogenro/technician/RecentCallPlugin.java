@@ -87,15 +87,16 @@ public class RecentCallPlugin extends Plugin {
 
         if (prefsNumber != null && !prefsNumber.isEmpty() && prefsAt > 0 && prefsAt != consumedAt) {
             String prefsDigits = digitsOnly(prefsNumber);
+            long stableAt = lastLogDate > 0 ? lastLogDate : prefsAt;
             String callId =
-                !prefsDigits.isEmpty() && lastLogDate > 0
-                    ? (prefsDigits + ":" + lastLogDate)
+                !prefsDigits.isEmpty() && stableAt > 0
+                    ? (prefsDigits + ":" + stableAt)
                     : "";
             if (!callId.isEmpty() && callId.equals(alertedCallId)) {
                 ret.put("alerted", true);
                 ret.put("number", prefsNumber);
                 ret.put("at", prefsAt);
-                ret.put("callLogDate", lastLogDate);
+                ret.put("callLogDate", stableAt);
                 ret.put("callId", callId);
                 ret.put("source", "prefs_alerted");
                 return ret;
@@ -105,7 +106,7 @@ public class RecentCallPlugin extends Plugin {
             }
             ret.put("number", prefsNumber);
             ret.put("at", prefsAt);
-            if (lastLogDate > 0) ret.put("callLogDate", lastLogDate);
+            ret.put("callLogDate", stableAt);
             if (!callId.isEmpty()) ret.put("callId", callId);
             ret.put("source", "prefs");
         }

@@ -242,14 +242,18 @@ public class CallAlertUploadService extends Service {
         }
         final long session = ringAt;
         Log.i(TAG, "Watch CallLog for ring " + session);
+        // Truecaller often writes CallLog 2–15s after hangup. Prefer CallLog;
+        // after ~5s fall back to RINGING-cached number so admins still get a push.
+        final int earlyPendingTry = 12; // ~4.8s
         for (int i = 0; i < WATCH_MAX_TRIES; i++) {
             if (prefs.getLong(CallAlertReceiver.KEY_ALERTED_RING_AT, 0L) == session) {
                 Log.i(TAG, "Watch stop — already alerted");
                 cancelKicks(app, session);
                 return;
             }
-            if (CallAlertReceiver.finalizeAndUpload(app, session)) {
-                Log.i(TAG, "Watch finalize done");
+            boolean allowPending = i >= earlyPendingTry;
+            if (CallAlertReceiver.finalizeAndUpload(app, session, allowPending)) {
+                Log.i(TAG, "Watch finalize done (try=" + i + " pending=" + allowPending + ")");
                 return;
             }
             try {
