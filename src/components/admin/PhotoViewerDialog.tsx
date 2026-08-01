@@ -18,10 +18,15 @@ interface PhotoViewerDialogProps {
   showDownload?: boolean;
 }
 
+const LOCKED_VIEWPORT =
+  'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+/** While open: Android/Chrome will deliver pinch to JS. ZoomableImage preventDefaults page zoom. */
+const OPEN_VIEWPORT =
+  'width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=5.0, user-scalable=yes';
+
 /**
- * Full-viewport photo viewer (portal, not Radix Dialog).
- * Radix RemoveScroll / nested dialogs were eating pinch gestures on APK + PWA.
- * Visual style matches the previous black fullscreen viewer.
+ * Fullscreen photo viewer (body portal — not Radix Dialog).
+ * Same black UI / controls as before. No +/- zoom buttons.
  */
 const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
   open,
@@ -39,18 +44,26 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
   const hasNav = Boolean(selectedPhoto && selectedPhoto.total > 1);
 
   useEffect(() => {
-    if (open && selectedPhoto?.url) {
-      setLoadError(false);
-    }
+    if (open && selectedPhoto?.url) setLoadError(false);
   }, [open, selectedPhoto?.url]);
 
+  // Unlock viewport for pinch delivery; restore app lock when closed.
   useEffect(() => {
     if (!open) return;
 
+    const meta =
+      document.querySelector('meta[name="viewport"]') ||
+      (() => {
+        const m = document.createElement('meta');
+        m.setAttribute('name', 'viewport');
+        document.head.appendChild(m);
+        return m;
+      })();
+    const prev = meta.getAttribute('content') || LOCKED_VIEWPORT;
+    meta.setAttribute('content', OPEN_VIEWPORT);
+
     const prevOverflow = document.body.style.overflow;
-    const prevTouchAction = document.body.style.touchAction;
     document.body.style.overflow = 'hidden';
-    document.body.style.touchAction = 'none';
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -67,9 +80,16 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
     window.addEventListener('keydown', onKey);
 
     return () => {
+      meta.setAttribute('content', LOCKED_VIEWPORT);
+      // Some WebViews keep a visual page zoom after unlocking; force reset.
+      meta.setAttribute('content', LOCKED_VIEWPORT);
       document.body.style.overflow = prevOverflow;
-      document.body.style.touchAction = prevTouchAction;
+      const bodyStyle = document.body.style as CSSStyleDeclaration & { zoom?: string };
+      if (typeof bodyStyle.zoom === 'string') bodyStyle.zoom = '1';
+      window.scrollTo(0, 0);
       window.removeEventListener('keydown', onKey);
+      // Restore prior content after reset (usually same locked string).
+      meta.setAttribute('content', prev || LOCKED_VIEWPORT);
     };
   }, [open, onClose, onPrevious, onNext, hasNav]);
 
@@ -88,7 +108,6 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
         height: '100dvh',
         maxHeight: '100dvh',
         margin: 0,
-        // Beat react-remove-scroll's body pointer-events:none when opened over another dialog
         pointerEvents: 'auto',
         touchAction: 'none',
         WebkitUserSelect: 'none',
@@ -118,7 +137,6 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
           )}
         </div>
 
-        {/* Controls — pointer-events only on buttons so pinch hits the image */}
         <div className="pointer-events-none absolute inset-0 z-[60]">
           <button
             type="button"
