@@ -105,8 +105,14 @@ function containZoom(z: ZoomLevelLike): number {
   return Number.isFinite(level) && level > 0 ? level : z.fit;
 }
 
-/** Update slide pixel size and re-apply the same contain zoom. */
-function applyRealSizeAndFit(pswp: PhotoSwipe, slideIndex: number, width: number, height: number) {
+/** Update slide pixel size; re-fit only when size changes or forceFit (never mid-pinch). */
+function applyRealSizeAndFit(
+  pswp: PhotoSwipe,
+  slideIndex: number,
+  width: number,
+  height: number,
+  opts?: { forceFit?: boolean },
+) {
   if (!width || !height) return;
   const dataSource = pswp.options.dataSource;
   if (!Array.isArray(dataSource)) return;
@@ -119,6 +125,11 @@ function applyRealSizeAndFit(pswp: PhotoSwipe, slideIndex: number, width: number
 
   const slide = pswp.currSlide;
   if (!slide || slide.index !== slideIndex) return;
+
+  // loadComplete / decode finishing mid-pinch was snapping zoom back → mobile jerk
+  const gestures = (pswp as unknown as { gestures?: { isMultitouch?: boolean; isDragging?: boolean } }).gestures;
+  if (gestures?.isMultitouch || gestures?.isDragging) return;
+  if (!changed && !opts?.forceFit) return;
 
   try {
     if (changed) slide.updateContentSize(true);
@@ -140,6 +151,11 @@ function applyRealSizeAndFit(pswp: PhotoSwipe, slideIndex: number, width: number
 const PSWP_CSS = `
 .pswp { --pswp-bg: #000; z-index: 200 !important; }
 .pswp__bg { background: #000 !important; }
+.pswp__img,
+.pswp__zoom-wrap {
+  will-change: transform;
+  backface-visibility: hidden;
+}
 .pswp__top-bar,
 .pswp__button--close,
 .pswp__button--zoom,
@@ -272,17 +288,21 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
         if (cancelled) return;
         const el = pswp.currSlide?.content?.element;
         if (el instanceof HTMLImageElement && el.complete && el.naturalWidth > 0) {
-          applyRealSizeAndFit(pswp, pswp.currIndex, el.naturalWidth, el.naturalHeight);
+          applyRealSizeAndFit(pswp, pswp.currIndex, el.naturalWidth, el.naturalHeight, {
+            forceFit: true,
+          });
           setPhotoReady(true);
         }
       };
 
       pswp.on('change', () => {
         setSlideIndex(pswp.currIndex);
-        // Always reset to contain when changing slides (no leftover zoom).
+        // Reset to contain when changing slides (no leftover zoom).
         const el = pswp.currSlide?.content?.element;
         if (el instanceof HTMLImageElement && el.complete && el.naturalWidth > 0) {
-          applyRealSizeAndFit(pswp, pswp.currIndex, el.naturalWidth, el.naturalHeight);
+          applyRealSizeAndFit(pswp, pswp.currIndex, el.naturalWidth, el.naturalHeight, {
+            forceFit: true,
+          });
           setPhotoReady(true);
         } else {
           setPhotoReady(false);
@@ -304,6 +324,7 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
       pswp.on('loadComplete', (e) => {
         if (cancelled || e.isError) return;
         const el = e.content?.element;
+        // Only correct size if wrong — never re-fit (that jerked active pinches).
         if (el instanceof HTMLImageElement && el.naturalWidth > 0) {
           applyRealSizeAndFit(pswp, e.slide.index, el.naturalWidth, el.naturalHeight);
         }
