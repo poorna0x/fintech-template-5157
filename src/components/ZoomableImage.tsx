@@ -9,320 +9,361 @@ interface ZoomableImageProps {
 
 const MIN_SCALE = 1;
 const MAX_SCALE = 5;
-const DOUBLE_TAP_MS = 400;
-const TAP_MOVE_PX = 18;
+const DOUBLE_TAP_MS = 320;
+const TAP_SLOP_PX = 16;
 const DOUBLE_TAP_SCALE = 2.5;
 
-type Point = { x: number; y: number };
+type Pt = { x: number; y: number };
 
-function distance(a: Point, b: Point): number {
+function dist(a: Pt, b: Pt) {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
-function midpoint(a: Point, b: Point): Point {
+function mid(a: Pt, b: Pt): Pt {
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 }
 
-function touchPoint(t: Touch): Point {
-  return { x: t.clientX, y: t.clientY };
-}
-
 /**
- * Photo zoom owned by native touch listeners (no react-zoom-pan-pinch).
- * Capacitor Android WebView: touch-action:none + non-passive preventDefault
- * so pinch / double-tap / pan always work.
+ * Capacitor WebView + mobile PWA photo zoom.
+ * - No react-zoom-pan-pinch (unreliable in APK WebViews)
+ * - No +/- controls
+ * - Never preventDefault on touch/pointer *start* (Android cancels the gesture)
+ * - Window-level move/up so nested dialogs / RemoveScroll can't swallow the stream
  */
 export function ZoomableImage({ src, alt = '', className, onError }: ZoomableImageProps) {
-  const viewportRef = useRef<HTMLDivElement | null>(null);
-  const imgRef = useRef<HTMLImageElement | null>(null);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const layerRef = useRef<HTMLDivElement | null>(null);
 
   const scaleRef = useRef(1);
   const xRef = useRef(0);
   const yRef = useRef(0);
 
-  const pointersRef = useRef<Map<number, Point>>(new Map());
-  const pinchStartDistRef = useRef(0);
-  const pinchStartScaleRef = useRef(1);
-  const panOriginRef = useRef<Point | null>(null);
-  const panStartXRef = useRef(0);
-  const panStartYRef = useRef(0);
+  const pointsRef = useRef<Map<number, Pt>>(new Map());
+  const pinchDist0Ref = useRef(0);
+  const pinchScale0Ref = useRef(1);
+  const panOriginRef = useRef<Pt | null>(null);
+  const panX0Ref = useRef(0);
+  const panY0Ref = useRef(0);
   const movedRef = useRef(false);
   const pinchedRef = useRef(false);
-  const lastTapRef = useRef<{ point: Point; t: number } | null>(null);
+  const lastTapRef = useRef<{ pt: Pt; t: number } | null>(null);
+  const activeRef = useRef(false);
 
-  const applyTransform = useCallback(() => {
-    const img = imgRef.current;
-    if (!img) return;
-    img.style.transform = `translate(${xRef.current}px, ${yRef.current}px) scale(${scaleRef.current})`;
-    const viewport = viewportRef.current;
-    if (viewport) {
-      viewport.style.cursor = scaleRef.current > 1.02 ? 'grab' : 'default';
-    }
+  const paint = useCallback(() => {
+    const layer = layerRef.current;
+    if (!layer) return;
+    layer.style.transform = `translate3d(${xRef.current}px, ${yRef.current}px, 0) scale(${scaleRef.current})`;
   }, []);
 
-  const clampTranslation = useCallback(() => {
-    const viewport = viewportRef.current;
-    if (!viewport) return;
-
-    const scale = scaleRef.current;
-    if (scale <= 1.02) {
+  const clamp = useCallback(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const s = scaleRef.current;
+    if (s <= 1.02) {
       xRef.current = 0;
       yRef.current = 0;
       return;
     }
-
-    // Image box fills the viewport (object-fit: contain); overflow grows with scale.
-    const maxX = (viewport.clientWidth * (scale - 1)) / 2;
-    const maxY = (viewport.clientHeight * (scale - 1)) / 2;
+    const maxX = (stage.clientWidth * (s - 1)) / 2;
+    const maxY = (stage.clientHeight * (s - 1)) / 2;
     xRef.current = Math.min(maxX, Math.max(-maxX, xRef.current));
     yRef.current = Math.min(maxY, Math.max(-maxY, yRef.current));
   }, []);
 
   const setScaleAt = useCallback(
-    (nextScale: number, focalClient: Point) => {
-      const viewport = viewportRef.current;
-      if (!viewport) return;
-
-      const rect = viewport.getBoundingClientRect();
+    (next: number, focal: Pt) => {
+      const stage = stageRef.current;
+      if (!stage) return;
+      const rect = stage.getBoundingClientRect();
       const ox = rect.width / 2;
       const oy = rect.height / 2;
-      const fx = focalClient.x - rect.left;
-      const fy = focalClient.y - rect.top;
-
+      const fx = focal.x - rect.left;
+      const fy = focal.y - rect.top;
       const prev = scaleRef.current;
-      const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, nextScale));
       if (prev <= 0) return;
-
-      // Keep the focal point fixed under the finger while scaling (origin: center).
+      const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, next));
       const ratio = scale / prev;
       xRef.current = fx - ox - (fx - ox - xRef.current) * ratio;
       yRef.current = fy - oy - (fy - oy - yRef.current) * ratio;
       scaleRef.current = scale;
-      clampTranslation();
-      applyTransform();
+      clamp();
+      paint();
     },
-    [applyTransform, clampTranslation],
+    [clamp, paint],
   );
 
-  const resetView = useCallback(() => {
+  const reset = useCallback(() => {
     scaleRef.current = 1;
     xRef.current = 0;
     yRef.current = 0;
-    applyTransform();
-  }, [applyTransform]);
+    paint();
+  }, [paint]);
 
-  const toggleZoomAt = useCallback(
-    (focal: Point) => {
-      if (scaleRef.current > 1.05) {
-        resetView();
-        return;
-      }
-      setScaleAt(DOUBLE_TAP_SCALE, focal);
+  const toggleAt = useCallback(
+    (focal: Pt) => {
+      if (scaleRef.current > 1.05) reset();
+      else setScaleAt(DOUBLE_TAP_SCALE, focal);
     },
-    [resetView, setScaleAt],
+    [reset, setScaleAt],
   );
 
   useEffect(() => {
-    resetView();
-    pointersRef.current.clear();
+    reset();
+    pointsRef.current.clear();
     lastTapRef.current = null;
     pinchedRef.current = false;
-  }, [src, resetView]);
+    movedRef.current = false;
+    activeRef.current = false;
+  }, [src, reset]);
 
   useEffect(() => {
-    const viewport = viewportRef.current;
-    if (!viewport) return;
+    const stage = stageRef.current;
+    if (!stage) return;
 
-    const onTouchStart = (e: TouchEvent) => {
-      if (e.cancelable) e.preventDefault();
-
-      for (let i = 0; i < e.changedTouches.length; i++) {
-        const t = e.changedTouches[i];
-        pointersRef.current.set(t.identifier, touchPoint(t));
+    const syncFromTouches = (touches: TouchList) => {
+      pointsRef.current.clear();
+      for (let i = 0; i < touches.length; i++) {
+        const t = touches[i];
+        pointsRef.current.set(t.identifier, { x: t.clientX, y: t.clientY });
       }
+    };
 
-      const pts = [...pointersRef.current.values()];
+    const beginPinchOrPan = () => {
+      const pts = [...pointsRef.current.values()];
       if (pts.length >= 2) {
         pinchedRef.current = true;
         movedRef.current = true;
         lastTapRef.current = null;
         panOriginRef.current = null;
-        pinchStartDistRef.current = distance(pts[0], pts[1]);
-        pinchStartScaleRef.current = scaleRef.current;
+        pinchDist0Ref.current = dist(pts[0], pts[1]);
+        pinchScale0Ref.current = scaleRef.current;
         return;
       }
-
       if (pts.length === 1) {
         movedRef.current = false;
         panOriginRef.current = pts[0];
-        panStartXRef.current = xRef.current;
-        panStartYRef.current = yRef.current;
+        panX0Ref.current = xRef.current;
+        panY0Ref.current = yRef.current;
+        pinchDist0Ref.current = 0;
       }
     };
 
-    const onTouchMove = (e: TouchEvent) => {
-      if (e.cancelable) e.preventDefault();
-
-      for (let i = 0; i < e.changedTouches.length; i++) {
-        const t = e.changedTouches[i];
-        if (pointersRef.current.has(t.identifier)) {
-          pointersRef.current.set(t.identifier, touchPoint(t));
-        }
-      }
-
-      const pts = [...pointersRef.current.values()];
+    const applyMove = () => {
+      const pts = [...pointsRef.current.values()];
       if (pts.length >= 2) {
         pinchedRef.current = true;
         movedRef.current = true;
-        const dist = distance(pts[0], pts[1]);
-        if (pinchStartDistRef.current > 0) {
-          const next = pinchStartScaleRef.current * (dist / pinchStartDistRef.current);
-          setScaleAt(next, midpoint(pts[0], pts[1]));
+        const d = dist(pts[0], pts[1]);
+        if (pinchDist0Ref.current > 0) {
+          setScaleAt(pinchScale0Ref.current * (d / pinchDist0Ref.current), mid(pts[0], pts[1]));
         }
         return;
       }
-
       if (pts.length === 1 && panOriginRef.current) {
         const cur = pts[0];
         const dx = cur.x - panOriginRef.current.x;
         const dy = cur.y - panOriginRef.current.y;
-
         if (scaleRef.current > 1.02) {
           if (Math.abs(dx) > 2 || Math.abs(dy) > 2) movedRef.current = true;
-          xRef.current = panStartXRef.current + dx;
-          yRef.current = panStartYRef.current + dy;
-          clampTranslation();
-          applyTransform();
-        } else if (Math.abs(dx) > TAP_MOVE_PX || Math.abs(dy) > TAP_MOVE_PX) {
+          xRef.current = panX0Ref.current + dx;
+          yRef.current = panY0Ref.current + dy;
+          clamp();
+          paint();
+        } else if (Math.abs(dx) > TAP_SLOP_PX || Math.abs(dy) > TAP_SLOP_PX) {
           movedRef.current = true;
         }
       }
     };
 
-    const onTouchEnd = (e: TouchEvent) => {
-      if (e.cancelable) e.preventDefault();
-
-      const ended: Point[] = [];
-      for (let i = 0; i < e.changedTouches.length; i++) {
-        const t = e.changedTouches[i];
-        const prev = pointersRef.current.get(t.identifier);
-        ended.push(prev ?? touchPoint(t));
-        pointersRef.current.delete(t.identifier);
-      }
-
-      const remaining = [...pointersRef.current.values()];
+    const endGesture = (endedPt: Pt | null) => {
+      const remaining = [...pointsRef.current.values()];
       if (remaining.length >= 2) {
-        pinchStartDistRef.current = distance(remaining[0], remaining[1]);
-        pinchStartScaleRef.current = scaleRef.current;
+        pinchDist0Ref.current = dist(remaining[0], remaining[1]);
+        pinchScale0Ref.current = scaleRef.current;
         panOriginRef.current = null;
         return;
       }
-
       if (remaining.length === 1) {
         panOriginRef.current = remaining[0];
-        panStartXRef.current = xRef.current;
-        panStartYRef.current = yRef.current;
-        pinchStartDistRef.current = 0;
+        panX0Ref.current = xRef.current;
+        panY0Ref.current = yRef.current;
+        pinchDist0Ref.current = 0;
         return;
       }
 
-      pinchStartDistRef.current = 0;
+      activeRef.current = false;
+      pinchDist0Ref.current = 0;
       panOriginRef.current = null;
 
       if (pinchedRef.current) {
         pinchedRef.current = false;
         lastTapRef.current = null;
-        if (scaleRef.current < 1.05) resetView();
+        if (scaleRef.current < 1.05) reset();
         return;
       }
 
-      if (movedRef.current || ended.length === 0) {
+      if (movedRef.current || !endedPt) {
         lastTapRef.current = null;
         return;
       }
 
-      const point = ended[0];
       const now = Date.now();
       const last = lastTapRef.current;
       if (
         last &&
         now - last.t <= DOUBLE_TAP_MS &&
-        Math.abs(point.x - last.point.x) <= TAP_MOVE_PX * 2 &&
-        Math.abs(point.y - last.point.y) <= TAP_MOVE_PX * 2
+        Math.abs(endedPt.x - last.pt.x) <= TAP_SLOP_PX * 2 &&
+        Math.abs(endedPt.y - last.pt.y) <= TAP_SLOP_PX * 2
       ) {
         lastTapRef.current = null;
-        toggleZoomAt(point);
+        toggleAt(endedPt);
         return;
       }
+      lastTapRef.current = { pt: endedPt, t: now };
+    };
 
-      lastTapRef.current = { point, t: now };
+    /* ---- Touch (primary on Android WebView / iOS) ---- */
+    const onTouchStart = (e: TouchEvent) => {
+      activeRef.current = true;
+      syncFromTouches(e.touches);
+      beginPinchOrPan();
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (!activeRef.current && e.touches.length === 0) return;
+      activeRef.current = true;
+      syncFromTouches(e.touches);
+      // Only block browser scroll/zoom once we are actually zooming or pinching.
+      if (e.cancelable && (pointsRef.current.size >= 2 || scaleRef.current > 1.02)) {
+        e.preventDefault();
+      }
+      applyMove();
+    };
+
+    const onTouchEnd = (e: TouchEvent) => {
+      let ended: Pt | null = null;
+      if (e.changedTouches.length > 0) {
+        const t = e.changedTouches[0];
+        ended = { x: t.clientX, y: t.clientY };
+      }
+      syncFromTouches(e.touches);
+      endGesture(ended);
+    };
+
+    /* ---- Pointer (desktop + some PWAs) ---- */
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      // Prefer touch handlers when the browser also fires TouchEvents (avoid double-counting).
+      if (e.pointerType === 'touch') return;
+      activeRef.current = true;
+      pointsRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      beginPinchOrPan();
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') return;
+      if (!pointsRef.current.has(e.pointerId)) return;
+      pointsRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (e.cancelable && (pointsRef.current.size >= 2 || scaleRef.current > 1.02)) {
+        e.preventDefault();
+      }
+      applyMove();
+    };
+
+    const onPointerUp = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') return;
+      if (!pointsRef.current.has(e.pointerId)) return;
+      const ended = pointsRef.current.get(e.pointerId) ?? { x: e.clientX, y: e.clientY };
+      pointsRef.current.delete(e.pointerId);
+      endGesture(ended);
     };
 
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      const delta = e.deltaY > 0 ? -0.12 : 0.12;
-      setScaleAt(scaleRef.current * (1 + delta), { x: e.clientX, y: e.clientY });
-      if (scaleRef.current <= 1.02) resetView();
+      const factor = e.deltaY > 0 ? 0.9 : 1.1;
+      setScaleAt(scaleRef.current * factor, { x: e.clientX, y: e.clientY });
+      if (scaleRef.current <= 1.02) reset();
     };
 
     const onDblClick = (e: MouseEvent) => {
       e.preventDefault();
-      toggleZoomAt({ x: e.clientX, y: e.clientY });
+      toggleAt({ x: e.clientX, y: e.clientY });
     };
 
     const opts: AddEventListenerOptions = { passive: false };
-    viewport.addEventListener('touchstart', onTouchStart, opts);
-    viewport.addEventListener('touchmove', onTouchMove, opts);
-    viewport.addEventListener('touchend', onTouchEnd, opts);
-    viewport.addEventListener('touchcancel', onTouchEnd, opts);
-    viewport.addEventListener('wheel', onWheel, opts);
-    viewport.addEventListener('dblclick', onDblClick);
+    // Capture on stage so we win against overlays that are pointer-events:none parents.
+    stage.addEventListener('touchstart', onTouchStart, opts);
+    stage.addEventListener('pointerdown', onPointerDown, opts);
+    stage.addEventListener('wheel', onWheel, opts);
+    stage.addEventListener('dblclick', onDblClick);
+    // Move/up on window so a finger sliding off the image / nested dialogs still update.
+    window.addEventListener('touchmove', onTouchMove, opts);
+    window.addEventListener('touchend', onTouchEnd, opts);
+    window.addEventListener('touchcancel', onTouchEnd, opts);
+    window.addEventListener('pointermove', onPointerMove, opts);
+    window.addEventListener('pointerup', onPointerUp, opts);
+    window.addEventListener('pointercancel', onPointerUp, opts);
 
     return () => {
-      viewport.removeEventListener('touchstart', onTouchStart);
-      viewport.removeEventListener('touchmove', onTouchMove);
-      viewport.removeEventListener('touchend', onTouchEnd);
-      viewport.removeEventListener('touchcancel', onTouchEnd);
-      viewport.removeEventListener('wheel', onWheel);
-      viewport.removeEventListener('dblclick', onDblClick);
+      stage.removeEventListener('touchstart', onTouchStart);
+      stage.removeEventListener('pointerdown', onPointerDown);
+      stage.removeEventListener('wheel', onWheel);
+      stage.removeEventListener('dblclick', onDblClick);
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchend', onTouchEnd);
+      window.removeEventListener('touchcancel', onTouchEnd);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
     };
-  }, [applyTransform, clampTranslation, resetView, setScaleAt, src, toggleZoomAt]);
+  }, [clamp, paint, reset, setScaleAt, src, toggleAt]);
 
   return (
     <div
-      ref={viewportRef}
+      ref={stageRef}
       className="relative h-full w-full min-h-0 min-w-0 overflow-hidden"
       style={{
         touchAction: 'none',
+        overscrollBehavior: 'none',
         WebkitUserSelect: 'none',
         userSelect: 'none',
         WebkitTouchCallout: 'none',
+        pointerEvents: 'auto',
       }}
     >
-      <img
-        ref={imgRef}
-        src={src}
-        alt={alt}
-        draggable={false}
-        className={className ?? 'select-none object-contain'}
+      <div
+        ref={layerRef}
         style={{
           position: 'absolute',
           inset: 0,
-          width: '100%',
-          height: '100%',
-          objectFit: 'contain',
-          transform: 'translate(0px, 0px) scale(1)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          transform: 'translate3d(0px, 0px, 0) scale(1)',
           transformOrigin: 'center center',
           willChange: 'transform',
-          touchAction: 'none',
-          WebkitUserSelect: 'none',
-          userSelect: 'none',
-          WebkitTouchCallout: 'none',
-          // Touches hit the viewport; image must not capture/steal them.
           pointerEvents: 'none',
         }}
-        onError={onError}
-      />
+      >
+        <img
+          src={src}
+          alt={alt}
+          draggable={false}
+          className={className ?? 'max-h-full max-w-full select-none object-contain'}
+          style={{
+            maxWidth: '100%',
+            maxHeight: '100%',
+            width: 'auto',
+            height: 'auto',
+            objectFit: 'contain',
+            WebkitUserSelect: 'none',
+            userSelect: 'none',
+            WebkitTouchCallout: 'none',
+            pointerEvents: 'none',
+          }}
+          onError={onError}
+        />
+      </div>
     </div>
   );
 }
