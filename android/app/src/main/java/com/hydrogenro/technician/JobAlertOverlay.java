@@ -20,6 +20,7 @@ import android.view.View;
 import android.view.WindowManager;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -62,9 +63,7 @@ public final class JobAlertOverlay {
         final int accent;
         final int wash; // very light tint for card wash / body panel
         final int border;
-        final int pillBg;
         final String pill;
-        final String mono;
         final String defaultTitle;
         final boolean deepLinkJob;
 
@@ -72,7 +71,6 @@ public final class JobAlertOverlay {
             String event,
             int accent,
             String pill,
-            String mono,
             String defaultTitle,
             boolean deepLinkJob
         ) {
@@ -80,9 +78,7 @@ public final class JobAlertOverlay {
             this.accent = accent;
             this.wash = mix(accent, WHITE, 0.92f);
             this.border = mix(accent, WHITE, 0.72f);
-            this.pillBg = mix(accent, WHITE, 0.82f);
             this.pill = pill;
-            this.mono = mono;
             this.defaultTitle = defaultTitle;
             this.deepLinkJob = deepLinkJob;
         }
@@ -176,18 +172,23 @@ public final class JobAlertOverlay {
         brandRow.setOrientation(LinearLayout.HORIZONTAL);
         brandRow.setGravity(Gravity.CENTER_VERTICAL);
 
-        TextView mono = new TextView(context);
-        mono.setText(theme.mono);
-        mono.setGravity(Gravity.CENTER);
-        mono.setTextColor(theme.accent);
-        mono.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
-        mono.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
-        GradientDrawable monoBg = new GradientDrawable();
-        monoBg.setShape(GradientDrawable.OVAL);
-        monoBg.setColor(WHITE);
-        mono.setBackground(monoBg);
-        int monoSize = dp(density, 36);
-        brandRow.addView(mono, new LinearLayout.LayoutParams(monoSize, monoSize));
+        // Official brand mark: black rounded square + white droplets logo
+        FrameLayout logoWrap = new FrameLayout(context);
+        GradientDrawable logoBg = new GradientDrawable();
+        logoBg.setColor(0xFF111111); // boot_brand
+        logoBg.setCornerRadius(dp(density, 11));
+        logoWrap.setBackground(logoBg);
+        ImageView logo = new ImageView(context);
+        logo.setImageResource(R.drawable.ic_droplets);
+        logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        logo.setContentDescription("HydrogenRO");
+        int logoInner = dp(density, 22);
+        FrameLayout.LayoutParams logoInnerLp =
+            new FrameLayout.LayoutParams(logoInner, logoInner);
+        logoInnerLp.gravity = Gravity.CENTER;
+        logoWrap.addView(logo, logoInnerLp);
+        int logoSize = dp(density, 40);
+        brandRow.addView(logoWrap, new LinearLayout.LayoutParams(logoSize, logoSize));
 
         LinearLayout brandCol = new LinearLayout(context);
         brandCol.setOrientation(LinearLayout.VERTICAL);
@@ -380,7 +381,6 @@ public final class JobAlertOverlay {
                         "reassigned",
                         BLUE,
                         "REASSIGNED",
-                        "R",
                         "Job reassigned to you",
                         true);
                 break;
@@ -390,7 +390,6 @@ public final class JobAlertOverlay {
                         "unassigned",
                         RED,
                         "UNASSIGNED",
-                        "!",
                         "Job unassigned from you",
                         false);
                 break;
@@ -400,7 +399,6 @@ public final class JobAlertOverlay {
                         "removed",
                         RED,
                         "REMOVED",
-                        "!",
                         "Job moved to another technician",
                         false);
                 break;
@@ -410,7 +408,6 @@ public final class JobAlertOverlay {
                         "updated",
                         AMBER,
                         "UPDATED",
-                        "U",
                         "Job updated",
                         true);
                 break;
@@ -420,7 +417,6 @@ public final class JobAlertOverlay {
                         "assigned",
                         GREEN,
                         "NEW JOB",
-                        "H",
                         "New job assigned",
                         true);
                 break;
@@ -434,7 +430,6 @@ public final class JobAlertOverlay {
                         base.event,
                         parsed,
                         base.pill,
-                        base.mono,
                         base.defaultTitle,
                         base.deepLinkJob);
                 }
