@@ -86,7 +86,7 @@ exports.handler = async (event) => {
 
     const { data: tokenRow } = await db
       .from('technician_push_tokens')
-      .select('technician_id, call_alerts_enabled')
+      .select('technician_id, call_alerts_enabled, push_prefs')
       .eq('token', deviceToken)
       .maybeSingle();
     technicianId = tokenRow?.technician_id || null;
@@ -95,6 +95,13 @@ exports.handler = async (event) => {
         statusCode: 200,
         headers: HEADERS,
         body: JSON.stringify({ found: false, reason: 'call_detect_off' }),
+      };
+    }
+    if (technicianId && tokenRow?.push_prefs && tokenRow.push_prefs.wrong_line === false) {
+      return {
+        statusCode: 200,
+        headers: HEADERS,
+        body: JSON.stringify({ found: false, reason: 'wrong_line_off' }),
       };
     }
     if (!technicianId) {

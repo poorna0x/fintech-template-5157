@@ -89,6 +89,12 @@ public class WrongLineCallReceiver {
             return;
         }
 
+        // Device Tracker → Wrong company-line reminder off = no overlay and no admin report.
+        if (!DevicePrefsPlugin.wrongLineReminderEnabled(context)) {
+            Log.i(TAG, "Wrong-line reminder off — skip overlay and admin alert");
+            return;
+        }
+
         String dialed = SimLineHelper.normalize10(call.dialedNumber);
         String from = SimLineHelper.normalize10(call.fromNumber);
         if (from.isEmpty() && call.fromSimSlot > 0) {

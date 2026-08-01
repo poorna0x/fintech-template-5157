@@ -554,8 +554,8 @@ export function DeviceTrackerSettings() {
                       { push_prefs: { ...device.push_prefs, [key]: enabled } },
                       key === 'wrong_line'
                         ? enabled
-                          ? 'Wrong-line reminder on for this phone'
-                          : 'Wrong-line reminder off (Detect calls still reports to admins)'
+                          ? 'Wrong-line alerts on for this phone (tech + admins)'
+                          : 'Wrong-line alerts off — this phone will not report to admins'
                         : 'Notification preference saved'
                     )
                   }
