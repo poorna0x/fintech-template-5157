@@ -1,32 +1,37 @@
 /**
- * On-site OTP ask — SERVER owns the 5‑minute clock.
+ * On-site OTP ask — SERVER owns the dwell clock (1 minute for testing).
  *
- * Phone only:
- *  1) When GPS is near → POST near:true (arms otp_onsite_detected_at on the job)
- *  2) On open / every 30s / resume → POST again (server fires Ask OTP once dwell elapsed)
- *
- * This survives screen lock and WebView timer death (the bug with local 5‑min setTimeout).
+ * Phone:
+ *  1) GPS near customer → POST near:true (arms otp_onsite_detected_at)
+ *  2) Open / every 15s / resume → POST check (fires Ask OTP when dwell elapsed)
  */
+import { toast } from 'sonner';
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import { getStoredOtpFromRequirements } from '@/lib/technicianOtpRequests';
 import { haversineDistanceMeters } from '@/lib/googleMapsDistance';
+import { getJobLocationDisplay } from '@/lib/customer-locations';
+import { extractCoordinates } from '@/lib/maps';
+import { extractCoordinatesFromGoogleMapsLink } from '@/lib/googleMapsLink';
 
 const ENDPOINT = '/.netlify/functions/auto-ask-otp-on-site';
-const NEAR_METERS = 200;
-const MAX_ACCURACY_METERS = 500;
+/** Was 200m — too tight for typical phone GPS + apartment offset. */
+const NEAR_METERS = 600;
+const MAX_ACCURACY_METERS = 800;
 const ACTIVE_STATUSES = new Set(['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS']);
 
-/** Avoid spamming the same job more than once every few seconds. */
 const lastCallAt = new Map<string, number>();
-const MIN_CALL_GAP_MS = 8_000;
+const MIN_CALL_GAP_MS = 5_000;
+const armedToastShown = new Set<string>();
 
 export type AutoAskOtpJobLike = {
   id: string;
   status?: string | null;
   requirements?: unknown;
-  customer?: { location?: { latitude?: number; longitude?: number; lat?: number; lng?: number } | null } | null;
-  serviceLocation?: { latitude?: number; longitude?: number } | null;
-  service_location?: { latitude?: number; longitude?: number } | null;
+  customer?: unknown;
+  serviceLocation?: unknown;
+  service_location?: unknown;
+  service_site?: string | null;
+  serviceSite?: string | null;
   otp_auto_asked_at?: string | null;
   otp_onsite_detected_at?: string | null;
 };
@@ -53,14 +58,35 @@ function jobRequiresOtp(job: { requirements?: unknown }): boolean {
   );
 }
 
+/** Same pin the tech Maps button uses (primary/secondary site + googleLocation). */
 function getCustomerCoords(job: any): { lat: number; lng: number } | null {
-  const site = String(job?.service_site || job?.serviceSite || 'primary').toLowerCase();
-  const customer = job?.customer;
+  try {
+    const display = getJobLocationDisplay(job, job?.customer);
+    const fromExtract = extractCoordinates(display.location);
+    if (
+      fromExtract &&
+      fromExtract.latitude &&
+      fromExtract.longitude &&
+      (fromExtract.latitude !== 0 || fromExtract.longitude !== 0)
+    ) {
+      return { lat: fromExtract.latitude, lng: fromExtract.longitude };
+    }
+
+    const googleHref =
+      (display.location as any)?.googleLocation ||
+      (display.location as any)?.google_location ||
+      '';
+    if (typeof googleHref === 'string' && googleHref.trim()) {
+      const fromLink = extractCoordinatesFromGoogleMapsLink(googleHref);
+      if (fromLink) return { lat: fromLink.latitude, lng: fromLink.longitude };
+    }
+  } catch (err) {
+    console.warn('[auto-ask-otp] getJobLocationDisplay failed', err);
+  }
+
+  // Fallbacks matching dashboard distance calc
   const loc =
-    (site === 'alternate' || site === 'alt'
-      ? customer?.alternate_location || customer?.alternateLocation
-      : null) ||
-    customer?.location ||
+    job?.customer?.location ||
     job?.serviceLocation ||
     job?.service_location ||
     null;
@@ -106,15 +132,41 @@ async function callServer(jobId: string, near: boolean): Promise<void> {
       keepalive: true,
     });
 
-    const out = await res.json().catch(() => null);
+    const out = (await res.json().catch(() => null)) as {
+      waiting?: boolean;
+      armed?: boolean;
+      remainingMs?: number;
+      asked?: boolean;
+      sent?: boolean;
+      skipped?: boolean;
+      reason?: string;
+      error?: string;
+      details?: string;
+      dwellMs?: number;
+    } | null;
+
     console.log('[auto-ask-otp]', near ? 'near' : 'check', jobId, res.status, out);
+
+    if (!res.ok) {
+      console.warn('[auto-ask-otp] server error', out?.error || out?.details || res.status);
+      return;
+    }
+
+    if (near && out?.waiting && !armedToastShown.has(jobId)) {
+      armedToastShown.add(jobId);
+      const secs = Math.max(1, Math.ceil((out.remainingMs || 60_000) / 1000));
+      toast.message(`On-site OTP timer started (~${secs}s)`);
+    }
+    if (out?.asked) {
+      toast.success(out.sent ? 'OTP requested' : 'OTP request created');
+    }
   } catch (err) {
     console.warn('[auto-ask-otp] error', err);
   }
 }
 
 /**
- * Fresh GPS: if near an OTP job, arm the server clock (near:true) and check dwell.
+ * Fresh GPS: if near an OTP job, arm the server clock (near:true).
  */
 export function evaluateAutoAskOtpOnSite(opts: {
   technicianId: string;
@@ -122,6 +174,8 @@ export function evaluateAutoAskOtpOnSite(opts: {
   lat: number;
   lng: number;
   accuracyMeters?: number | null;
+  /** Optional precomputed distances (km) from the dashboard — same as UI. */
+  distancesKm?: Record<string, number>;
 }): void {
   const { technicianId, jobs, lat, lng } = opts;
   if (!technicianId || !Number.isFinite(lat) || !Number.isFinite(lng)) return;
@@ -133,40 +187,69 @@ export function evaluateAutoAskOtpOnSite(opts: {
     accuracy > MAX_ACCURACY_METERS
   );
 
+  let otpJobCount = 0;
+  let nearCount = 0;
+  let noCoordCount = 0;
+
   for (const job of jobs) {
     if (!isActiveOtpJob(job)) continue;
+    otpJobCount += 1;
 
-    // Always ping server for jobs already armed on the server (or locally known).
-    // near:false still fires Ask OTP once 5 min have passed server-side.
     if (job.otp_onsite_detected_at) {
       void callServer(job.id, false);
     }
 
-    if (!accuracyOk) continue;
+    let meters: number | null = null;
 
-    const dest = getCustomerCoords(job);
-    if (!dest) continue;
+    if (typeof opts.distancesKm?.[job.id] === 'number') {
+      meters = opts.distancesKm[job.id] * 1000;
+    }
 
-    const meters = haversineDistanceMeters({ lat, lng }, dest);
+    if (meters == null) {
+      if (!accuracyOk) {
+        console.log('[auto-ask-otp] skip near-check — GPS accuracy coarse', accuracy);
+        void callServer(job.id, false);
+        continue;
+      }
+      const dest = getCustomerCoords(job);
+      if (!dest) {
+        noCoordCount += 1;
+        console.log('[auto-ask-otp] no customer coords', job.id);
+        void callServer(job.id, false);
+        continue;
+      }
+      meters = haversineDistanceMeters({ lat, lng }, dest);
+    }
+
     if (meters > NEAR_METERS) {
-      console.log('[auto-ask-otp] not near', { jobId: job.id, meters: Math.round(meters) });
-      // Still check dwell if we may have armed earlier this session before jobs refreshed.
+      console.log('[auto-ask-otp] not near', {
+        jobId: job.id,
+        meters: Math.round(meters),
+        limit: NEAR_METERS,
+      });
       void callServer(job.id, false);
       continue;
     }
 
-    console.log('[auto-ask-otp] near — arm/check server clock', {
+    nearCount += 1;
+    console.log('[auto-ask-otp] NEAR — arming server clock', {
       jobId: job.id,
       meters: Math.round(meters),
     });
     void callServer(job.id, true);
   }
+
+  if (otpJobCount > 0) {
+    console.log('[auto-ask-otp] evaluate summary', {
+      otpJobs: otpJobCount,
+      near: nearCount,
+      noCoords: noCoordCount,
+      tech: { lat, lng, accuracy },
+    });
+  }
 }
 
-/**
- * Resume / interval: check server clock for every active OTP job (no GPS required).
- * Fires Ask OTP if otp_onsite_detected_at + 5 min has passed.
- */
+/** Resume / interval: check server clock for every active OTP job. */
 export function flushDueAutoAskOtpOnSite(opts: {
   technicianId: string;
   jobs: AutoAskOtpJobLike[];

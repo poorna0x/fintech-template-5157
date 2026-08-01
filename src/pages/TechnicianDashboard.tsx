@@ -2516,7 +2516,7 @@ const TechnicianDashboard = () => {
     }
   }, [currentLocation, jobs, assignmentRequests]);
 
-  // OTP-required jobs: GPS near customer starts a 5‑min dwell, then Ask OTP once.
+  // OTP-required jobs: GPS near customer arms server dwell, then Ask OTP once.
   useEffect(() => {
     if (!user?.technicianId || !currentLocation || jobs.length === 0) return;
     void import('@/lib/autoAskOtpOnSite').then(({ evaluateAutoAskOtpOnSite }) => {
@@ -2525,12 +2525,12 @@ const TechnicianDashboard = () => {
         jobs,
         lat: currentLocation.lat,
         lng: currentLocation.lng,
+        distancesKm: distances,
       });
     });
-  }, [user?.technicianId, currentLocation, jobs]);
+  }, [user?.technicianId, currentLocation, jobs, distances]);
 
-  // Long dwells: WebView setTimeout often dies when the screen locks. Flush overdue
-  // Ask OTP on resume and every 30s while the dashboard is open.
+  // Flush overdue Ask OTP on resume and every 15s while the dashboard is open.
   useEffect(() => {
     if (!user?.technicianId || jobs.length === 0) return;
     const technicianId = user.technicianId;
@@ -2542,7 +2542,7 @@ const TechnicianDashboard = () => {
     };
 
     flush();
-    const intervalId = window.setInterval(flush, 30_000);
+    const intervalId = window.setInterval(flush, 15_000);
 
     const onVisibility = () => {
       if (!document.hidden) flush();
