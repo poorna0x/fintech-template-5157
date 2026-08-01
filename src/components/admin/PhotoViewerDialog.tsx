@@ -35,20 +35,49 @@ function resolveUrls(
   return [];
 }
 
+/** Portrait-friendly fallback — never landscape 4:3 (that made payment shots tiny). */
+const FALLBACK_W = 1080;
+const FALLBACK_H = 1920;
+
 function loadNaturalSize(src: string): Promise<{ width: number; height: number }> {
   return new Promise((resolve) => {
     const img = new Image();
-    const finish = () => {
-      resolve({
-        width: img.naturalWidth || 1600,
-        height: img.naturalHeight || 1200,
-      });
+    let settled = false;
+    const finish = (width: number, height: number) => {
+      if (settled) return;
+      settled = true;
+      resolve({ width, height });
     };
-    img.onload = finish;
-    img.onerror = () => resolve({ width: 1600, height: 1200 });
+    // Don't freeze the UI if a URL hangs.
+    const timer = window.setTimeout(() => finish(FALLBACK_W, FALLBACK_H), 1200);
+    img.onload = () => {
+      window.clearTimeout(timer);
+      finish(img.naturalWidth || FALLBACK_W, img.naturalHeight || FALLBACK_H);
+    };
+    img.onerror = () => {
+      window.clearTimeout(timer);
+      finish(FALLBACK_W, FALLBACK_H);
+    };
     img.src = src;
-    if (img.complete) finish();
+    if (img.complete && img.naturalWidth > 0) {
+      window.clearTimeout(timer);
+      finish(img.naturalWidth, img.naturalHeight);
+    }
   });
+}
+
+/** Clear PhotoSwipe leftovers that can leave buttons untappable. */
+function scrubPhotoViewerSideEffects() {
+  if (typeof document === 'undefined') return;
+  document.querySelectorAll('.pswp').forEach((el) => {
+    try {
+      el.remove();
+    } catch {
+      /* ignore */
+    }
+  });
+  document.body.style.removeProperty('overflow');
+  document.body.style.removeProperty('touch-action');
 }
 
 /** Apply real pixel size and re-fit so portrait payment shots fill the screen (not a tiny landscape box). */
@@ -170,15 +199,17 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
     }
 
     const openViewer = async () => {
-      // Always resolve real w/h for every slide (bill+payment sets are tiny).
-      // Landscape 4:3 placeholders made portrait payment shots look tiny on phone.
-      const slides: Slide[] = await Promise.all(
-        list.map(async (src, i) => {
-          const size = await loadNaturalSize(src);
-          return { src, width: size.width, height: size.height, alt: `Photo ${i + 1}` };
-        }),
-      );
+      // Only block on the current photo size (fast). Neighbors refine on load.
+      const startSize = await loadNaturalSize(list[startIndex]);
       if (cancelled) return;
+
+      const slides: Slide[] = list.map((src, i) => ({
+        src,
+        // Portrait fallback for unpaid sizes — avoids tiny payment fit
+        width: i === startIndex ? startSize.width : FALLBACK_W,
+        height: i === startIndex ? startSize.height : FALLBACK_H,
+        alt: `Photo ${i + 1}`,
+      }));
 
       const options: PhotoSwipeOptions = {
         dataSource: slides,
@@ -191,7 +222,6 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
         doubleTapAction: 'zoom',
         secondaryZoomLevel: 2.5,
         maxZoomLevel: 4,
-        // Same as old object-contain: largest size that still shows the full photo
         initialZoomLevel: 'fit',
         padding: { top: 0, bottom: 0, left: 0, right: 0 },
         preload: [1, 1],
@@ -239,17 +269,36 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
 
       pswp.on('close', () => {
         setPhotoReady(false);
+        scrubPhotoViewerSideEffects();
         onCloseRef.current();
       });
 
       pswp.on('destroy', () => {
         if (pswpRef.current === pswp) pswpRef.current = null;
         setPhotoReady(false);
+        scrubPhotoViewerSideEffects();
       });
 
       pswp.init();
       setSlideIndex(pswp.currIndex);
       requestAnimationFrame(syncReadyFromCurrent);
+
+      // Warm real sizes for neighbors in background (no UI wait)
+      list.forEach((src, i) => {
+        if (i === startIndex) return;
+        void loadNaturalSize(src).then((size) => {
+          if (cancelled || !pswpRef.current) return;
+          const dataSource = pswp.options.dataSource;
+          if (!Array.isArray(dataSource)) return;
+          const item = dataSource[i] as Slide | undefined;
+          if (!item) return;
+          item.width = size.width;
+          item.height = size.height;
+          if (pswp.currIndex === i) {
+            applyRealSizeAndFit(pswp, i, size.width, size.height);
+          }
+        });
+      });
     };
 
     void openViewer();
@@ -265,19 +314,39 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
         }
         pswpRef.current = null;
       }
+      scrubPhotoViewerSideEffects();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionKey]);
 
   const handleClose = () => {
-    if (pswpRef.current) {
+    const pswp = pswpRef.current;
+    if (pswp) {
       try {
-        pswpRef.current.close();
+        pswp.close(); // normal path: 'close' handler calls onClose
       } catch {
+        scrubPhotoViewerSideEffects();
         onClose();
+        return;
       }
+      // If close() was a no-op, force unlock so the app isn't stuck
+      window.setTimeout(() => {
+        if (pswpRef.current !== pswp) {
+          scrubPhotoViewerSideEffects();
+          return;
+        }
+        try {
+          pswp.destroy();
+        } catch {
+          /* ignore */
+        }
+        pswpRef.current = null;
+        scrubPhotoViewerSideEffects();
+        onClose();
+      }, 80);
       return;
     }
+    scrubPhotoViewerSideEffects();
     onClose();
   };
 
@@ -302,10 +371,10 @@ const PhotoViewerDialog: React.FC<PhotoViewerDialogProps> = ({
   return createPortal(
     <>
       <style>{PSWP_CSS}</style>
-      {/* Instant black stage — same as old viewer while photo/zoom mounts */}
+      {/* Visual black only — must not capture taps or buttons feel stuck */}
       <div
-        className="fixed inset-0 z-[199] bg-black"
-        style={{ zIndex: 199 }}
+        className="pointer-events-none fixed inset-0 z-[199] bg-black"
+        style={{ zIndex: 199, pointerEvents: 'none' }}
         aria-hidden
       />
 
