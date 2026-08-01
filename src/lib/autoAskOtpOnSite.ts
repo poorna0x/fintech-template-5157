@@ -1,20 +1,17 @@
 /**
- * On-site OTP ask (test dwell: 10 seconds after GPS near customer).
- * Opens app → location fix → if near OTP job → wait 10s → Ask OTP once.
- * Server skips if OTP already entered or jobs.otp_auto_asked_at is set.
+ * On-site OTP ask: after GPS near customer on an OTP-required job, wait 5 minutes
+ * then Ask OTP once. Server skips if OTP already entered or otp_auto_asked_at is set.
  */
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import { getStoredOtpFromRequirements } from '@/lib/technicianOtpRequests';
 import { haversineDistanceMeters } from '@/lib/googleMapsDistance';
 
 const ENDPOINT = '/.netlify/functions/auto-ask-otp-on-site';
-/** Bumped so old 5‑min dwell / fired flags don't block the 10s test. */
-const STORAGE_KEY = 'hro_otp_onsite_dwell_v2';
+const STORAGE_KEY = 'hro_otp_onsite_dwell_v3';
 const NEAR_METERS = 200;
 /** Ignore only very coarse fixes; outdoor GPS often reports 50–300 m. */
 const MAX_ACCURACY_METERS = 500;
-/** Temporary test value — was 5 minutes. */
-const DWELL_MS = 10_000;
+const DWELL_MS = 5 * 60 * 1000;
 const ACTIVE_STATUSES = new Set(['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS']);
 
 type DwellEntry = { nearAt: number; fired?: boolean };
