@@ -535,19 +535,33 @@ public final class TechActionOverlay {
                 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                 : WindowManager.LayoutParams.TYPE_PHONE;
 
+        int flags =
+            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN;
+        if (mode == Mode.WRONG_LINE) {
+            // Full-screen: consume touches so the WebView underneath doesn't
+            // get stray taps / focus fights (looked like a "page error").
+            flags |= WindowManager.LayoutParams.FLAG_DIM_BEHIND;
+        } else {
+            flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL;
+        }
+
         WindowManager.LayoutParams lp =
             new WindowManager.LayoutParams(
                 width,
                 height,
                 type,
-                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
-                    | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                    | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+                flags,
                 PixelFormat.TRANSLUCENT);
         lp.gravity = Gravity.CENTER;
-        lp.softInputMode =
-            WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN
-                | WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE;
+        if (mode == Mode.WRONG_LINE) {
+            lp.dimAmount = 0.72f;
+            lp.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN;
+        } else {
+            lp.softInputMode =
+                WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN
+                    | WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE;
+        }
 
         try {
             card.setAlpha(0f);

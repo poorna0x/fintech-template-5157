@@ -132,6 +132,21 @@ public class WrongLineCallReceiver {
         }
 
         int companySlot = DevicePrefsPlugin.readCompanySimSlot(context);
+        String usedLabel = from.isEmpty() ? "another SIM" : from;
+        String officeLabel =
+            companySlot > 0 ? company + " (SIM " + companySlot + ")" : company;
+        // Always warn locally on detect — don't wait for customer lookup / FCM.
+        TechActionOverlay.showWrongLineWarning(
+            context,
+            "Please call from company number",
+            "You called a customer from "
+                + usedLabel
+                + ".\n\nPlease call from the company number: "
+                + officeLabel
+                + ".",
+            "wrong_line_self_" + dialed
+        );
+
         String body = postOnce(token, dialed, from, company, call.fromSimSlot, companySlot);
         boolean found = body != null && body.contains("\"found\":true");
         Log.i(TAG, "Wrong-line POST found=" + found + " body=" + body);
@@ -141,19 +156,14 @@ public class WrongLineCallReceiver {
                 .putString(KEY_LAST_ALERT_KEY, dedupeKey)
                 .putLong(KEY_LAST_ALERT_AT, now)
                 .apply();
-            String usedLabel = from.isEmpty() ? "another SIM" : from;
-            String officeLabel =
-                companySlot > 0 ? company + " (SIM " + companySlot + ")" : company;
-            TechActionOverlay.showWrongLineWarning(
-                context,
-                "Please call from company number",
-                "You called a customer from "
-                    + usedLabel
-                    + ".\n\nPlease call from the company number: "
-                    + officeLabel
-                    + ".",
-                "wrong_line_self_" + dialed
-            );
+        } else if (body != null && body.contains("\"found\":false")) {
+            // Server rejected (same line / no customer / detect off) — still
+            // remember so we don't spam local overlay on CallLog re-reads.
+            prefs
+                .edit()
+                .putString(KEY_LAST_ALERT_KEY, dedupeKey)
+                .putLong(KEY_LAST_ALERT_AT, now)
+                .apply();
         }
     }
 

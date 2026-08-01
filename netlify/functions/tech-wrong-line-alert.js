@@ -242,6 +242,7 @@ exports.handler = async (event) => {
 
     const techTitle = 'Please call from company number';
     const techBody = `You called ${customer.full_name} (${customerPhone}) from ${usedLine}.\n\nPlease call from the company number: ${officeLine}.`;
+    const techTrayBody = `You called ${customer.full_name} (${customerPhone}) from ${usedLine}. Use company ${officeLine}.`;
     const techTag = `wrong_line_self_${customerPhone}`;
 
     const techResult = await sendToTechnicianDevices(
@@ -250,7 +251,13 @@ exports.handler = async (event) => {
       technicianId,
       (token) => ({
         token,
-        // Data-only: native builds tray + big overlay (notification payload would skip onMessageReceived when killed).
+        // Tray notification so the tech always sees an alert (even if the app
+        // was killed and onMessageReceived does not run). Data fields still
+        // drive the big overlay when HroMessagingService handles the message.
+        notification: {
+          title: techTitle,
+          body: techTrayBody,
+        },
         data: {
           ...dataPayload,
           type: 'wrong_line_call',
@@ -262,6 +269,12 @@ exports.handler = async (event) => {
         },
         android: {
           priority: 'high',
+          notification: {
+            channelId: 'job_alerts_v2',
+            defaultSound: true,
+            color: '#B45309',
+            tag: techTag,
+          },
         },
       }),
       'wrong_line'
