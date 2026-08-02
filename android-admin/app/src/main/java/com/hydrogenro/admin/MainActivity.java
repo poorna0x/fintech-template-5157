@@ -9,6 +9,7 @@ import android.view.animation.Animation;
 import android.view.animation.AnimationUtils;
 import android.webkit.ValueCallback;
 import android.webkit.WebView;
+import androidx.core.app.NotificationManagerCompat;
 import androidx.core.splashscreen.SplashScreen;
 import androidx.core.splashscreen.SplashScreenViewProvider;
 import com.getcapacitor.BridgeActivity;
@@ -93,6 +94,18 @@ public class MainActivity extends BridgeActivity {
             expenseDate != null && expenseDate.matches("\\d{4}-\\d{2}-\\d{2}")
                 ? expenseDate
                 : "";
+
+        // Dismiss the tray notification when opened via No / body tap.
+        int notificationId = intent.getIntExtra("notificationId", 0);
+        if (notificationId == 0) {
+            notificationId = ExpenseReviewReceiver.notificationIdFor(addExpense, safeDate);
+        }
+        try {
+            NotificationManagerCompat.from(this).cancel(notificationId);
+        } catch (Throwable ignored) {
+            /* */
+        }
+
         getSharedPreferences("hro_admin_deeplink", MODE_PRIVATE)
             .edit()
             .putString("addExpense", addExpense)
@@ -133,6 +146,7 @@ public class MainActivity extends BridgeActivity {
         decor.post(inject);
         decor.postDelayed(inject, 800);
         decor.postDelayed(inject, 2000);
+        decor.postDelayed(inject, 4000);
     }
 
     /** Keep system splash until boot overlay has actually drawn (no blank gap). */

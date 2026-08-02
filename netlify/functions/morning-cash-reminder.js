@@ -1,9 +1,17 @@
 // Scheduled: every day at 8:30 AM IST (03:00 UTC — see netlify.toml).
-// Re-pushes technicians who still owe yesterday's cash (admin tapped No on
-// the 9 PM cash check). Rows come from technician_cash_pending.
+// For technicians still owed yesterday's cash (admin tapped No at 9 PM):
+//  1) Push the technician again to hand over yesterday's cash
+//  2) Ask admins Yes/No: "Has he handed over yesterday's remaining cash?"
+// Yes clears technician_cash_pending; No re-pushes the technician.
 
+const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
-const { getMessaging } = require('./fcm-helper');
+const {
+  getMessaging,
+  isStaleTokenError,
+  getAdminFcmTokens,
+  pruneAdminFcmTokens,
+} = require('./fcm-helper');
 const { sendCashHandoverReminder } = require('./cash-handover-push');
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
@@ -12,6 +20,13 @@ const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 function istYesterdayLabel() {
   const ist = new Date(Date.now() + IST_OFFSET_MS - 24 * 60 * 60 * 1000);
   return `${ist.getUTCFullYear()}-${String(ist.getUTCMonth() + 1).padStart(2, '0')}-${String(ist.getUTCDate()).padStart(2, '0')}`;
+}
+
+function signCashCheck(technicianId, date, amount, secret) {
+  return crypto
+    .createHmac('sha256', secret)
+    .update(`cash-check|${technicianId}|${date}|${amount}`)
+    .digest('hex');
 }
 
 exports.handler = async () => {
@@ -45,44 +60,105 @@ exports.handler = async () => {
     return { statusCode: 200, body: JSON.stringify({ sent: 0, reason: 'none_pending', date: yesterday }) };
   }
 
-  const messaging = await getMessaging(db);
-  let pushed = 0;
+  const technicianIds = [...new Set(rows.map((r) => r.technician_id))];
+  const [{ data: techs }, adminTokens, messaging] = await Promise.all([
+    db.from('technicians').select('id,full_name').in('id', technicianIds),
+    getAdminFcmTokens(db, 'cash_check'),
+    getMessaging(db),
+  ]);
+  const nameById = new Map((techs || []).map((t) => [t.id, t.full_name || 'Technician']));
+
+  const siteUrl = (process.env.URL || 'https://hydrogenro.com').replace(/\/$/, '');
+  const replyUrl = `${siteUrl}/.netlify/functions/cash-check-response`;
+
+  let techPushed = 0;
+  let adminPushed = 0;
+  const staleTokens = new Set();
   const nowIso = new Date().toISOString();
 
   for (const row of rows) {
+    const amountInr = Math.round(Number(row.amount_inr) || 0);
+    if (amountInr <= 0) continue;
+    const amount = String(amountInr);
+    const techName = nameById.get(row.technician_id) || 'Technician';
+
+    // 1) Remind the technician.
     try {
       const { sent, tokens } = await sendCashHandoverReminder(
         db,
         messaging,
         row.technician_id,
-        row.amount_inr,
+        amountInr,
         { forYesterday: true }
       );
       if (tokens === 0) {
         console.warn('[morning-cash-reminder] no token for', row.technician_id);
-        continue;
-      }
-      if (sent === 0) {
+      } else if (sent === 0) {
         console.warn('[morning-cash-reminder] stale tokens for', row.technician_id);
-        continue;
+      } else {
+        techPushed += 1;
       }
-      await db
-        .from('technician_cash_pending')
-        .update({ morning_sent_at: nowIso })
-        .eq('id', row.id);
-      pushed += 1;
     } catch (err) {
       console.warn(
-        '[morning-cash-reminder] push failed for',
+        '[morning-cash-reminder] tech push failed for',
         row.technician_id,
         err?.message || err
       );
     }
+
+    // 2) Ask admins Yes/No about yesterday's remaining cash.
+    if (adminTokens.length > 0) {
+      try {
+        const sig = signCashCheck(row.technician_id, yesterday, amount, serviceKey);
+        const rupees = amount.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        const res = await messaging.sendEachForMulticast({
+          tokens: adminTokens,
+          data: {
+            type: 'cash_check',
+            technicianId: row.technician_id,
+            techName,
+            amount,
+            date: yesterday,
+            sig,
+            replyUrl,
+            title: `Yesterday's cash — ${techName}`,
+            body: `${techName} still owes ₹${rupees} from yesterday. Has he handed it over?`,
+          },
+          android: { priority: 'high' },
+        });
+        adminPushed += res.successCount;
+        res.responses.forEach((r, i) => {
+          if (!r.success && isStaleTokenError(r.error)) staleTokens.add(adminTokens[i]);
+        });
+      } catch (err) {
+        console.warn(
+          '[morning-cash-reminder] admin ask failed for',
+          row.technician_id,
+          err?.message || err
+        );
+      }
+    }
+
+    await db
+      .from('technician_cash_pending')
+      .update({ morning_sent_at: nowIso })
+      .eq('id', row.id);
   }
 
-  console.log(`[morning-cash-reminder] ${yesterday}: ${pushed}/${rows.length} technician(s) reminded`);
+  if (staleTokens.size > 0) {
+    await pruneAdminFcmTokens(db, [...staleTokens]);
+  }
+
+  console.log(
+    `[morning-cash-reminder] ${yesterday}: tech=${techPushed}/${rows.length}, admin=${adminPushed}`
+  );
   return {
     statusCode: 200,
-    body: JSON.stringify({ date: yesterday, pending: rows.length, sent: pushed }),
+    body: JSON.stringify({
+      date: yesterday,
+      pending: rows.length,
+      techSent: techPushed,
+      adminSent: adminPushed,
+    }),
   };
 };

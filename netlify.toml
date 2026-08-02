@@ -33,8 +33,9 @@
 [functions."daily-expense-review"]
   schedule = "45 15 * * *"
 
-# Morning cash reminder: 8:30 AM IST = 03:00 UTC. Re-pushes technicians who
-# still owe yesterday's cash (admin tapped No on the 9 PM check).
+# Morning cash reminder: 8:30 AM IST = 03:00 UTC. For techs still owed
+# yesterday's cash (admin tapped No at 9 PM): remind the technician AND ask
+# admins Yes/No whether yesterday's remaining cash was handed over.
 [functions."morning-cash-reminder"]
   schedule = "0 3 * * *"
 

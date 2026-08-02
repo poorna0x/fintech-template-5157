@@ -16,10 +16,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 /**
- * The nightly cash-check notification (see HroMessagingService) and its
- * Yes/No buttons. Yes: dismiss — nothing else to do. No: call
- * cash-check-response (authenticated by the HMAC signature from the push),
- * which pushes a "hand over the cash" reminder to that technician.
+ * Cash-check notification (nightly "today" or morning "yesterday remaining")
+ * and its Yes/No buttons. Both answers POST to cash-check-response (HMAC from
+ * the push). No: remind the technician. Yes: clear any pending follow-up.
  */
 public class CashCheckReceiver extends BroadcastReceiver {
 
@@ -27,6 +26,7 @@ public class CashCheckReceiver extends BroadcastReceiver {
     private static final String CHANNEL_ID = NotificationChannels.JOB_ALERTS;
     private static final int COLOR_ASK = Color.parseColor("#F59E0B");
     private static final int COLOR_REMINDED = Color.parseColor("#DC2626");
+    private static final int COLOR_OK = Color.parseColor("#16A34A");
 
     private static final String ACTION_RESPOND = "com.hydrogenro.admin.CASH_CHECK_RESPONSE";
     private static final String EXTRA_RESPONSE = "response";
@@ -58,7 +58,14 @@ public class CashCheckReceiver extends BroadcastReceiver {
         NotificationChannels.ensureJobAlerts(context);
 
         int notificationId = notificationIdFor(technicianId, date);
-        String body = techName + " collected \u20B9" + amount + " in cash today. Has he given the cash?";
+
+        // Server may send title/body (morning yesterday follow-up). Fall back to tonight's copy.
+        String title = data.get("title");
+        if (title == null || title.isEmpty()) title = "Cash check \u2014 " + techName;
+        String body = data.get("body");
+        if (body == null || body.isEmpty()) {
+            body = techName + " collected \u20B9" + amount + " in cash today. Has he given the cash?";
+        }
 
         NotificationCompat.Action yesAction = buildAction(
             context, "Yes", "yes", notificationId, technicianId, techName, amount, date, sig, replyUrl);
@@ -68,7 +75,7 @@ public class CashCheckReceiver extends BroadcastReceiver {
         Notification notification = new NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_notify)
             .setColor(COLOR_ASK)
-            .setContentTitle("Cash check \u2014 " + techName)
+            .setContentTitle(title)
             .setContentText(body)
             .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -132,16 +139,19 @@ public class CashCheckReceiver extends BroadcastReceiver {
         int notificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, 0);
         if (technicianId == null || amount == null || date == null || sig == null || replyUrl == null) return;
         if (techName == null || techName.isEmpty()) techName = "the technician";
+        if (response == null) response = "no";
 
-        if ("yes".equals(response)) {
-            // Cash received — nothing to do, dismiss the question.
-            NotificationManagerCompat.from(context).cancel(notificationId);
-            return;
-        }
-
-        showResult(context, notificationId, "Sending reminder to " + techName + "\u2026", COLOR_ASK, false);
+        final boolean isYes = "yes".equals(response);
+        showResult(
+            context,
+            notificationId,
+            isYes ? "Marking cash received\u2026" : ("Sending reminder to " + techName + "\u2026"),
+            COLOR_ASK,
+            false
+        );
 
         final String fTechName = techName;
+        final String fResponse = response;
         final PendingResult pendingResult = goAsync();
         new Thread(() -> {
             boolean ok = false;
@@ -150,7 +160,8 @@ public class CashCheckReceiver extends BroadcastReceiver {
                 String payload = "{\"technicianId\":\"" + technicianId + "\"," +
                     "\"date\":\"" + date + "\"," +
                     "\"amount\":\"" + amount + "\"," +
-                    "\"sig\":\"" + sig + "\"}";
+                    "\"sig\":\"" + sig + "\"," +
+                    "\"response\":\"" + fResponse + "\"}";
                 conn = (HttpURLConnection) new URL(replyUrl).openConnection();
                 conn.setRequestMethod("POST");
                 conn.setRequestProperty("Content-Type", "application/json");
@@ -161,20 +172,28 @@ public class CashCheckReceiver extends BroadcastReceiver {
                     os.write(payload.getBytes(StandardCharsets.UTF_8));
                 }
                 ok = conn.getResponseCode() == 200;
-                if (!ok) Log.w(TAG, "Reminder rejected: HTTP " + conn.getResponseCode());
+                if (!ok) Log.w(TAG, "Cash check reply rejected: HTTP " + conn.getResponseCode());
             } catch (Exception e) {
-                Log.w(TAG, "Reminder failed", e);
+                Log.w(TAG, "Cash check reply failed", e);
             } finally {
                 if (conn != null) conn.disconnect();
             }
 
             if (ok) {
-                showResult(context, notificationId,
-                    "Reminder sent to " + fTechName + " to hand over \u20B9" + amount + " \u2713",
-                    COLOR_REMINDED, true);
+                if (isYes) {
+                    showResult(context, notificationId,
+                        "Cash from " + fTechName + " marked received \u2713",
+                        COLOR_OK, true);
+                } else {
+                    showResult(context, notificationId,
+                        "Reminder sent to " + fTechName + " to hand over \u20B9" + amount + " \u2713",
+                        COLOR_REMINDED, true);
+                }
             } else {
                 showResult(context, notificationId,
-                    "Couldn't send the reminder \u2014 check internet and try again from the app.",
+                    isYes
+                        ? "Couldn't mark received \u2014 check internet and try again."
+                        : "Couldn't send the reminder \u2014 check internet and try again from the app.",
                     COLOR_ASK, false);
             }
             pendingResult.finish();

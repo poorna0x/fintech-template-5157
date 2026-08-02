@@ -16,6 +16,10 @@ import java.util.UUID;
  * Nightly expense-review push (daily-expense-review Netlify cron).
  * Yes: dismiss. No / tap body: open the app on Payments → Add technician
  * or Add business expense (deep-linked via Capacitor push extras).
+ *
+ * Important: "No" must use an Activity PendingIntent. Starting MainActivity
+ * from a BroadcastReceiver while the app is backgrounded is blocked on
+ * modern Android, so the old No → startActivity path never opened the APK.
  */
 public class ExpenseReviewReceiver extends BroadcastReceiver {
 
@@ -23,15 +27,12 @@ public class ExpenseReviewReceiver extends BroadcastReceiver {
     private static final String CHANNEL_ID = NotificationChannels.JOB_ALERTS;
     private static final int COLOR_ASK = Color.parseColor("#7C3AED");
 
-    private static final String ACTION_RESPOND = "com.hydrogenro.admin.EXPENSE_REVIEW_RESPONSE";
-    private static final String EXTRA_RESPONSE = "response";
+    private static final String ACTION_YES = "com.hydrogenro.admin.EXPENSE_REVIEW_YES";
     private static final String EXTRA_KIND = "kind";
     private static final String EXTRA_DATE = "date";
-    private static final String EXTRA_TITLE = "title";
-    private static final String EXTRA_BODY = "body";
     private static final String EXTRA_NOTIFICATION_ID = "notificationId";
 
-    private static int notificationIdFor(String kind, String date) {
+    static int notificationIdFor(String kind, String date) {
         return 0x0E71 ^ ((kind == null ? "" : kind) + "|" + (date == null ? "" : date)).hashCode();
     }
 
@@ -60,17 +61,39 @@ public class ExpenseReviewReceiver extends BroadcastReceiver {
 
         int notificationId = notificationIdFor(kind, date);
 
+        // Tap body or No → open Payments → Add expense (Activity PI works from tray).
         PendingIntent openPending = PendingIntent.getActivity(
             context,
             notificationId,
-            buildOpenPaymentsIntent(context, kind, date, title, body),
+            buildOpenPaymentsIntent(context, kind, date, title, body, notificationId),
             PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
-        NotificationCompat.Action yesAction = buildAction(
-            context, "Yes", "yes", notificationId, kind, date, title, body);
-        NotificationCompat.Action noAction = buildAction(
-            context, "No", "no", notificationId, kind, date, title, body);
+        PendingIntent noPending = PendingIntent.getActivity(
+            context,
+            notificationId + 2,
+            buildOpenPaymentsIntent(context, kind, date, title, body, notificationId),
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+
+        Intent yesIntent = new Intent(context, ExpenseReviewReceiver.class)
+            .setAction(ACTION_YES)
+            .putExtra(EXTRA_KIND, kind)
+            .putExtra(EXTRA_DATE, date)
+            .putExtra(EXTRA_NOTIFICATION_ID, notificationId);
+        PendingIntent yesPending = PendingIntent.getBroadcast(
+            context,
+            notificationId + 1,
+            yesIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+        );
+
+        NotificationCompat.Action yesAction =
+            new NotificationCompat.Action.Builder(R.drawable.ic_stat_notify, "Yes", yesPending)
+                .build();
+        NotificationCompat.Action noAction =
+            new NotificationCompat.Action.Builder(R.drawable.ic_stat_notify, "No", noPending)
+                .build();
 
         Notification notification = new NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_notify)
@@ -98,7 +121,8 @@ public class ExpenseReviewReceiver extends BroadcastReceiver {
         String kind,
         String date,
         String title,
-        String body
+        String body,
+        int notificationId
     ) {
         String messageId = "expense-review-" + kind + "-" + UUID.randomUUID();
         Intent intent = new Intent(context, MainActivity.class)
@@ -111,56 +135,18 @@ public class ExpenseReviewReceiver extends BroadcastReceiver {
         intent.putExtra("title", title != null ? title : "");
         intent.putExtra("body", body != null ? body : "");
         intent.putExtra("view", "payments");
+        intent.putExtra("notificationId", notificationId);
         return intent;
-    }
-
-    private static NotificationCompat.Action buildAction(
-        Context context,
-        String label,
-        String response,
-        int notificationId,
-        String kind,
-        String date,
-        String title,
-        String body
-    ) {
-        Intent intent = new Intent(context, ExpenseReviewReceiver.class)
-            .setAction(ACTION_RESPOND)
-            .putExtra(EXTRA_RESPONSE, response)
-            .putExtra(EXTRA_KIND, kind)
-            .putExtra(EXTRA_DATE, date)
-            .putExtra(EXTRA_TITLE, title)
-            .putExtra(EXTRA_BODY, body)
-            .putExtra(EXTRA_NOTIFICATION_ID, notificationId);
-        PendingIntent pending = PendingIntent.getBroadcast(
-            context,
-            notificationId + ("yes".equals(response) ? 1 : 2),
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
-        );
-        return new NotificationCompat.Action.Builder(R.drawable.ic_stat_notify, label, pending).build();
     }
 
     @Override
     public void onReceive(Context context, Intent intent) {
-        if (!ACTION_RESPOND.equals(intent.getAction())) return;
-
-        String response = intent.getStringExtra(EXTRA_RESPONSE);
-        String kind = intent.getStringExtra(EXTRA_KIND);
-        String date = intent.getStringExtra(EXTRA_DATE);
-        String title = intent.getStringExtra(EXTRA_TITLE);
-        String body = intent.getStringExtra(EXTRA_BODY);
+        if (intent == null || !ACTION_YES.equals(intent.getAction())) return;
         int notificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, 0);
-        if (kind == null) return;
-
-        NotificationManagerCompat.from(context).cancel(notificationId);
-
-        if ("yes".equals(response)) {
-            return;
+        try {
+            NotificationManagerCompat.from(context).cancel(notificationId);
+        } catch (Throwable t) {
+            Log.w(TAG, "Cancel failed", t);
         }
-
-        // No → open Payments and add expense dialog.
-        Intent open = buildOpenPaymentsIntent(context, kind, date, title, body);
-        context.startActivity(open);
     }
 }
