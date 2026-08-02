@@ -100,7 +100,21 @@ type BlockItem = {
 type ItemSummary = { count: number; labels: string[] };
 
 const FLOOR_DROP_ID = 'drop-floor';
-const CATALOG_CACHE_KEY = 'inventory_items';
+const CATALOG_CACHE_KEY = 'inventory_catalog_slim';
+
+async function loadCatalogSlimCached(): Promise<InventorySlim[]> {
+  const cached = inventoryCache.get<InventorySlim[]>(CATALOG_CACHE_KEY);
+  if (cached?.length) return cached;
+  const { data, error } = await db.inventory.getCatalogSlim();
+  if (error) throw error;
+  const slim = (data || []).map((c: { id: string; product_name: string; code: string | null }) => ({
+    id: c.id,
+    product_name: c.product_name,
+    code: c.code ?? null,
+  }));
+  inventoryCache.set(CATALOG_CACHE_KEY, slim);
+  return slim;
+}
 
 const boxDragId = (boxId: string) => `box:${boxId}`;
 const boxDropId = (boxId: string) => `box-drop:${boxId}`;
@@ -447,14 +461,11 @@ const StorageLocationsMap: React.FC = () => {
   const loadPlaceMap = useCallback(async (placeId: string) => {
     setLoading(true);
     try {
-      const [blocksRes, itemsRes] = await Promise.all([
-        db.storageBlocks.getByPlace(placeId),
-        db.storageBlockItems.getByPlace(placeId),
-      ]);
-      if (blocksRes.error) throw blocksRes.error;
-      if (itemsRes.error) throw itemsRes.error;
-      setBlocks((blocksRes.data || []) as StorageBlock[]);
-      setPlaceItems((itemsRes.data || []) as BlockItem[]);
+      const { blocks: nextBlocks, items: nextItems, error } =
+        await db.storageBlocks.getMapByPlace(placeId);
+      if (error) throw error;
+      setBlocks(nextBlocks as StorageBlock[]);
+      setPlaceItems(nextItems as BlockItem[]);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Failed to load boxes');
     } finally {
@@ -505,25 +516,12 @@ const StorageLocationsMap: React.FC = () => {
 
   const ensureWhereCatalog = useCallback(async () => {
     if (whereCatalog.length > 0) return;
-    const cached = inventoryCache.get<InventorySlim[]>(CATALOG_CACHE_KEY);
-    if (cached?.length) {
-      setWhereCatalog(
-        cached.map((c) => ({ id: c.id, product_name: c.product_name, code: c.code ?? null }))
-      );
-      return;
+    try {
+      const slim = await loadCatalogSlimCached();
+      setWhereCatalog(slim);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to load products');
     }
-    const { data, error } = await db.inventory.getAll();
-    if (error) {
-      toast.error(error.message || 'Failed to load products');
-      return;
-    }
-    const slim = (data || []).map((c: { id: string; product_name: string; code: string | null }) => ({
-      id: c.id,
-      product_name: c.product_name,
-      code: c.code,
-    }));
-    setWhereCatalog(slim);
-    inventoryCache.set(CATALOG_CACHE_KEY, data || []);
   }, [whereCatalog.length]);
 
   useEffect(() => {
@@ -592,27 +590,8 @@ const StorageLocationsMap: React.FC = () => {
       } else {
         let catalogRows = whereCatalog;
         if (!catalogRows.length) {
-          const cached = inventoryCache.get<InventorySlim[]>(CATALOG_CACHE_KEY);
-          if (cached?.length) {
-            catalogRows = cached.map((c) => ({
-              id: c.id,
-              product_name: c.product_name,
-              code: c.code ?? null,
-            }));
-            setWhereCatalog(catalogRows);
-          } else {
-            const { data, error } = await db.inventory.getAll();
-            if (error) throw error;
-            catalogRows = (data || []).map(
-              (c: { id: string; product_name: string; code: string | null }) => ({
-                id: c.id,
-                product_name: c.product_name,
-                code: c.code,
-              })
-            );
-            setWhereCatalog(catalogRows);
-            inventoryCache.set(CATALOG_CACHE_KEY, data || []);
-          }
+          catalogRows = await loadCatalogSlimCached();
+          setWhereCatalog(catalogRows);
         }
         ids = filterInventoryByApproxSearch(catalogRows, q)
           .slice(0, 30)
@@ -852,21 +831,8 @@ const StorageLocationsMap: React.FC = () => {
     setAddQty('1');
     setBoxItemsLoading(true);
     try {
-      const cached = inventoryCache.get<InventorySlim[]>(CATALOG_CACHE_KEY);
-      if (cached?.length) {
-        setCatalog(cached.map((c) => ({ id: c.id, product_name: c.product_name, code: c.code })));
-      } else {
-        const { data, error } = await db.inventory.getAll();
-        if (error) throw error;
-        setCatalog(
-          (data || []).map((c: { id: string; product_name: string; code: string | null }) => ({
-            id: c.id,
-            product_name: c.product_name,
-            code: c.code,
-          }))
-        );
-        inventoryCache.set(CATALOG_CACHE_KEY, data || []);
-      }
+      const slim = await loadCatalogSlimCached();
+      setCatalog(slim);
       const { data: items, error: itemsError } = await db.storageBlockItems.getByBlock(box.id);
       if (itemsError) throw itemsError;
       setBoxItems((items || []) as BlockItem[]);

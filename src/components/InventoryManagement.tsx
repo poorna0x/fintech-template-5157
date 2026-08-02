@@ -326,7 +326,7 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
           inventoryCache.clear(cacheKey);
         }
         // Clear main inventory cache
-        if (key.startsWith('inventory_cache_') && (key.includes('main_inventory') || key.includes('inventory_items'))) {
+        if (key.startsWith('inventory_cache_') && (key.includes('main_inventory') || key.includes('inventory_items') || key.includes('inventory_catalog_slim'))) {
           const cacheKey = key.replace('inventory_cache_', '');
           inventoryCache.clear(cacheKey);
         }
@@ -476,7 +476,7 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
           inventoryCache.clear(cacheKey);
         }
         // Clear main inventory cache
-        if (key.startsWith('inventory_cache_') && (key.includes('main_inventory') || key.includes('inventory_items'))) {
+        if (key.startsWith('inventory_cache_') && (key.includes('main_inventory') || key.includes('inventory_items') || key.includes('inventory_catalog_slim'))) {
           const cacheKey = key.replace('inventory_cache_', '');
           inventoryCache.clear(cacheKey);
         }

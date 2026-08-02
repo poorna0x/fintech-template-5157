@@ -278,6 +278,47 @@ export const CUSTOMER_ROW_COLUMNS = [
   'updated_at',
 ].join(',');
 
+/** Full tax invoice row for detail / PDF / edit (no `*`). */
+export const TAX_INVOICE_ROW_COLUMNS = [
+  'id',
+  'invoice_number',
+  'invoice_date',
+  'invoice_type',
+  'customer_id',
+  'customer_name',
+  'customer_address',
+  'customer_phone',
+  'customer_email',
+  'customer_gstin',
+  'company_info',
+  'items',
+  'place_of_supply',
+  'place_of_supply_code',
+  'is_intra_state',
+  'reverse_charge',
+  'e_way_bill_no',
+  'transport_mode',
+  'vehicle_no',
+  'subtotal',
+  'total_discount',
+  'service_charge',
+  'total_tax',
+  'cgst',
+  'sgst',
+  'igst',
+  'round_off',
+  'total_amount',
+  'gst_breakup',
+  'invoice_details',
+  'bank_details',
+  'notes',
+  'terms',
+  'validity_note',
+  'service_type',
+  'created_at',
+  'updated_at',
+].join(',');
+
 /** Document modals (AMC, tax invoice, quotation) — omit photos, notes, location. */
 export const CUSTOMER_DOCUMENT_COLUMNS = [
   'id',
@@ -1144,7 +1185,7 @@ export const db = {
 
       const { data: existing, error: findError } = await supabase
         .from('customers')
-        .select('*')
+        .select(CUSTOMER_ROW_COLUMNS)
         .eq('full_name', WALK_IN_NAME)
         .limit(1)
         .maybeSingle();
@@ -4577,7 +4618,7 @@ export const db = {
     async getByInvoiceNumber(invoiceNumber: string) {
       const { data, error } = await supabase
         .from('tax_invoices')
-        .select('*')
+        .select(TAX_INVOICE_ROW_COLUMNS)
         .eq('invoice_number', invoiceNumber)
         .single();
       
@@ -4587,7 +4628,7 @@ export const db = {
     async getByCustomerId(customerId: string) {
       const { data, error } = await supabase
         .from('tax_invoices')
-        .select('*')
+        .select(TAX_INVOICE_ROW_COLUMNS)
         .eq('customer_id', customerId)
         .order('created_at', { ascending: false });
       
@@ -6267,6 +6308,15 @@ export const db = {
       return { data, error };
     },
 
+    /** Name/code only — pickers, where-is, typeahead (same fuzzy UX, less egress than getAll). */
+    async getCatalogSlim() {
+      const { data, error } = await supabase
+        .from('inventory')
+        .select('id, product_name, code')
+        .order('product_name', { ascending: true });
+      return { data: data || [], error };
+    },
+
     /** Batch qty+price for specific ids (bundle shortfall checks). */
     async getQtyPriceByIds(ids: string[]) {
       const unique = [...new Set(ids.filter(Boolean))];
@@ -6509,6 +6559,43 @@ export const db = {
       return { data: data || [], error };
     },
 
+    /**
+     * One round-trip for the Locations map: boxes + items (+ inventory labels).
+     * Same UX as parallel getByPlace + storageBlockItems.getByPlace.
+     */
+    async getMapByPlace(placeId: string) {
+      const { data, error } = await supabase
+        .from('storage_blocks')
+        .select(`
+          id,
+          place_id,
+          name,
+          notes,
+          sort_order,
+          parent_block_id,
+          created_at,
+          updated_at,
+          items:storage_block_items(
+            id,
+            block_id,
+            inventory_id,
+            quantity,
+            inventory:inventory(id, product_name, code)
+          )
+        `)
+        .eq('place_id', placeId)
+        .order('sort_order', { ascending: true })
+        .order('name', { ascending: true });
+      if (error) return { blocks: [], items: [], error };
+      const rows = data || [];
+      const blocks = rows.map(({ items: _items, ...block }) => block);
+      const items = rows.flatMap((row) => {
+        const embedded = Array.isArray(row.items) ? row.items : [];
+        return embedded;
+      });
+      return { blocks, items, error: null };
+    },
+
     async getAllSlim() {
       const { data, error } = await supabase
         .from('storage_blocks')
@@ -6579,15 +6666,8 @@ export const db = {
       return { data: data || [], error };
     },
 
-    /** Slim item rows for all boxes in a place (for map summaries). */
+    /** Slim item rows for all boxes in a place (for map summaries / refresh). */
     async getByPlace(placeId: string) {
-      const { data: blocks, error: blocksError } = await supabase
-        .from('storage_blocks')
-        .select('id')
-        .eq('place_id', placeId);
-      if (blocksError) return { data: [], error: blocksError };
-      const ids = (blocks || []).map((b) => b.id);
-      if (ids.length === 0) return { data: [], error: null };
       const { data, error } = await supabase
         .from('storage_block_items')
         .select(`
@@ -6595,10 +6675,14 @@ export const db = {
           block_id,
           inventory_id,
           quantity,
-          inventory:inventory(id, product_name, code)
+          inventory:inventory(id, product_name, code),
+          block:storage_blocks!inner(place_id)
         `)
-        .in('block_id', ids);
-      return { data: data || [], error };
+        .eq('block.place_id', placeId);
+      if (error) return { data: [], error };
+      // Drop nested block filter helper from row shape (map only needs item fields).
+      const items = (data || []).map(({ block: _block, ...item }) => item);
+      return { data: items, error: null };
     },
 
     /** Find where a product sits (for global where-is search). */
@@ -7618,15 +7702,31 @@ export const db = {
       const lim = Math.min(Math.max(1, limit), 20);
       // Egress guard: only fetch recent rows (live intent banner is only useful short-term).
       const cutoff = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+      const INTENT_LIVE_COLUMNS =
+        'id, full_name, phone, current_step, created_at, updated_at, site_key, booked_at, booked_job_number, dismissed_at, quarantined';
       const { data, error } = await supabase
         .from('website_booking_intent')
-        // Use '*' so this query stays compatible even if optional columns
-        // (e.g. booked_at/booked_job_number) haven't been migrated yet.
-        .select('*')
+        .select(INTENT_LIVE_COLUMNS)
         .is('dismissed_at', null)
         .gte('updated_at', cutoff)
         .order('updated_at', { ascending: false })
         .limit(lim);
+      if (error) {
+        // Older DBs may lack booked_*/quarantined — fall back to core columns only.
+        const { data: fallback, error: fallbackError } = await supabase
+          .from('website_booking_intent')
+          .select(
+            'id, full_name, phone, current_step, created_at, updated_at, site_key, dismissed_at'
+          )
+          .is('dismissed_at', null)
+          .gte('updated_at', cutoff)
+          .order('updated_at', { ascending: false })
+          .limit(lim);
+        const rows = (fallback || []).filter(
+          (row) => (row as { quarantined?: boolean }).quarantined !== true
+        );
+        return { data: rows, error: fallbackError };
+      }
       const rows = (data || []).filter((row) => (row as { quarantined?: boolean }).quarantined !== true);
       return { data: rows, error };
     },
@@ -7642,9 +7742,11 @@ export const db = {
     async list(opts?: { limit?: number; offset?: number; search?: string }) {
       const lim = Math.min(Math.max(1, opts?.limit ?? 50), 100);
       const offset = Math.max(0, opts?.offset ?? 0);
+      const ARCHIVE_COLUMNS =
+        'id, source_id, full_name, phone, phone_normalized, site_key, current_step, intent_created_at, intent_updated_at, booked_at, booked_job_number, archived_at';
       let query = supabase
         .from('website_booking_intent_archive')
-        .select('*', { count: 'exact' })
+        .select(ARCHIVE_COLUMNS, { count: 'exact' })
         .order('archived_at', { ascending: false })
         .range(offset, offset + lim - 1);
       const q = opts?.search?.trim();
