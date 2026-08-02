@@ -487,7 +487,7 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
               type="button"
               onClick={() => setProfitRevealed((v) => !v)}
               className="w-full text-left text-gray-700 break-words pt-2 border-t border-green-200 touch-manipulation"
-              title={profitRevealed ? 'Tap to hide profit' : 'Tap to show profit'}
+              title={profitRevealed ? 'Hide profit' : 'Show profit'}
             >
               <span className="text-gray-500 font-medium">Profit:</span>{' '}
               {profitRevealed ? (
@@ -501,7 +501,7 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
                 </>
               ) : (
                 <span className="text-gray-400 font-medium tracking-wider select-none">
-                  ₹•••••• <span className="text-xs font-normal normal-case tracking-normal">(tap to show)</span>
+                  ₹••••••
                 </span>
               )}
             </button>

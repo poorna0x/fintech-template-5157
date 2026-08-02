@@ -6408,18 +6408,18 @@ const AdminDashboard = () => {
               type="button"
               onClick={() => setCompletedDayProfitRevealed((v) => !v)}
               className="mt-6 w-full rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-left text-sm text-gray-800 touch-manipulation"
-              title={completedDayProfitRevealed ? 'Tap to hide profit' : 'Tap to show profit'}
+              title={completedDayProfitRevealed ? 'Hide profit' : 'Show profit'}
             >
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <div className="font-semibold text-green-900">
                     Profit of Day
                   </div>
-                  <div className="text-xs text-gray-600">
-                    {completedDayProfitRevealed
-                      ? 'Amount - spare parts - lead cost - technician commission'
-                      : 'Tap to show'}
-                  </div>
+                  {completedDayProfitRevealed ? (
+                    <div className="text-xs text-gray-600">
+                      Amount - spare parts - lead cost - technician commission
+                    </div>
+                  ) : null}
                 </div>
                 {completedDayProfitRevealed ? (
                   <div className={completedProfitSummary.profit >= 0 ? 'text-lg font-bold text-green-700' : 'text-lg font-bold text-red-600'}>
