@@ -7371,6 +7371,7 @@ export const db = {
         .from('reminders')
         .select(REMINDER_ROW_COLUMNS)
         .in('reminder_at', [today, tomorrow])
+        .neq('title', PENDING_PAYMENT_REMINDER_TITLE)
         .is('completed_at', null)
         .order('reminder_at', { ascending: true })
         .order('created_at', { ascending: true });
@@ -7380,6 +7381,7 @@ export const db = {
       let query = supabase
         .from('reminders')
         .select(REMINDER_ROW_COLUMNS)
+        .neq('title', PENDING_PAYMENT_REMINDER_TITLE)
         .order('reminder_at', { ascending: true })
         .order('created_at', { ascending: false })
         .limit(Math.min(limitCount, 2000));
@@ -7396,6 +7398,7 @@ export const db = {
         .select(REMINDER_ROW_COLUMNS)
         .eq('entity_type', entityType)
         .eq('entity_id', entityId)
+        .neq('title', PENDING_PAYMENT_REMINDER_TITLE)
         .order('reminder_at', { ascending: true })
         .order('created_at', { ascending: false });
       if (!includeCompleted) {

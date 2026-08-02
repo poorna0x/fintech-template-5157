@@ -27,9 +27,11 @@ function reminderLoadErrorMessage(error: { message?: string; code?: string }): s
   return error.message || 'Reminders could not be loaded.';
 }
 
-/** Pending payments are handled by morning push + Settings → Pending payments — not this popup. */
-function isGeneralTodayReminder(r: Reminder): boolean {
-  return !isPendingPaymentReminderTitle(r.title);
+/** Pending payments → morning push + Pending payments. Unattached general reminders → morning push + Reminders. */
+function isPopupReminder(r: Reminder): boolean {
+  if (isPendingPaymentReminderTitle(r.title)) return false;
+  if (r.entity_type === 'general' || !r.entity_id) return false;
+  return true;
 }
 
 export function TodayRemindersPopup() {
@@ -54,7 +56,7 @@ export function TodayRemindersPopup() {
       if (!data) return;
       const forToday = (data as Reminder[])
         .filter((r) => r.reminder_at === today)
-        .filter(isGeneralTodayReminder);
+        .filter(isPopupReminder);
       setTodayReminders(forToday);
       const customerIds = [...new Set(
         forToday
@@ -72,7 +74,7 @@ export function TodayRemindersPopup() {
   }, [user, isAdmin]);
 
   const REMINDERS_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours (only if REMINDERS_POPUP_SESSION_CACHE_ENABLED)
-  const REMINDERS_CACHE_KEY = 'reminders_today_cache';
+  const REMINDERS_CACHE_KEY = 'reminders_today_cache_v3';
 
   useEffect(() => {
     if (authInitializing || !user || !isAdmin) return;
@@ -82,7 +84,7 @@ export function TodayRemindersPopup() {
     let cancelled = false;
 
     const applyReminders = (forToday: Reminder[]) => {
-      const visibleReminders = forToday.filter(isGeneralTodayReminder);
+      const visibleReminders = forToday.filter(isPopupReminder);
 
       if (visibleReminders.length > 0) {
         const sorted = [...visibleReminders].sort((a, b) => {
