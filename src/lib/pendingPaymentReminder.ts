@@ -1,4 +1,6 @@
 import { addMonths, format } from 'date-fns';
+import type { DocumentBrand } from '@/lib/service-brands';
+import { getDocumentBrandLabel, normalizeDocumentBrand } from '@/lib/service-brands';
 
 /** Must match reminders created from Settings → Pending payments. */
 export const PENDING_PAYMENT_REMINDER_TITLE = 'Pending payment';
@@ -67,29 +69,77 @@ export function formatPendingPaymentDueLabel(dueDateYmd: string | null | undefin
   }
 }
 
+const PENDING_PAYMENT_CONTACT: Record<
+  DocumentBrand,
+  { phone: string; email: string; website: string; team: string }
+> = {
+  hydrogenro: {
+    phone: '8884944288',
+    email: 'mail@hydrogenro.com',
+    website: 'https://hydrogenro.com',
+    team: 'Hydrogen RO Team',
+  },
+  elevenro: {
+    phone: '9880693311',
+    email: 'mail@elevenro.com',
+    website: 'https://elevenro.com',
+    team: 'Eleven RO Team',
+  },
+};
+
+/** Resolve brand for pending-payment WhatsApp (defaults to Hydrogen RO when unknown). */
+export function resolvePendingPaymentMessageBrand(value: unknown): DocumentBrand {
+  return normalizeDocumentBrand(value) || 'hydrogenro';
+}
+
 export function buildPendingPaymentWhatsAppMessage(
   customerName: string,
   amountPending: number,
-  dueDateYmd?: string | null
+  dueDateYmd?: string | null,
+  brand?: DocumentBrand | string | null
 ): string {
+  const resolved = resolvePendingPaymentMessageBrand(brand);
+  const contact = PENDING_PAYMENT_CONTACT[resolved];
+  const brandLabel = getDocumentBrandLabel(resolved);
   const formattedAmount = amountPending.toLocaleString('en-IN', { maximumFractionDigits: 2 });
   const dueLabel = formatPendingPaymentDueLabel(dueDateYmd);
-  const dueLine = dueLabel
-    ? `\nPayment due date: ${dueLabel}.`
-    : '';
+  const dueLine = dueLabel ? `\nPayment due date: ${dueLabel}.` : '';
 
   return `Hi ${customerName} 😊
 
-Hope you're doing well. Just a quick reminder that you have a pending payment of ₹${formattedAmount}.${dueLine}
+Hope you're doing well. Just a quick reminder from ${brandLabel} that you have a pending payment of ₹${formattedAmount}.${dueLine}
 
 Request you to please clear the payment at your earliest convenience. If you have already paid, kindly ignore this message.
 
 For any help/support:
-📞 Phone: 8884944288
-📧 Email: info@hydrogenro.com
-🌐 Website: https://hydrogenro.com
+📞 Phone: ${contact.phone}
+📧 Email: ${contact.email}
+🌐 Website: ${contact.website}
 
-Thanks & regards 🙏`;
+Thanks & regards 🙏
+${contact.team}`;
+}
+
+export function buildPendingPaymentReceivedWhatsAppMessage(
+  customerName: string,
+  amountPending: number,
+  brand?: DocumentBrand | string | null
+): string {
+  const resolved = resolvePendingPaymentMessageBrand(brand);
+  const contact = PENDING_PAYMENT_CONTACT[resolved];
+  const formattedAmount = amountPending.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+
+  return `Hi ${customerName} 😊
+
+Thank you! We have received your payment of ₹${formattedAmount}.
+
+We appreciate your trust. For any help or support:
+📞 Phone: ${contact.phone}
+📧 Email: ${contact.email}
+🌐 Website: ${contact.website}
+
+Thanks & regards 🙏
+${contact.team}`;
 }
 
 export function parseReminderAtLocalDate(reminderAt: string | Date): Date {

@@ -32,8 +32,10 @@ import type { Reminder } from '@/types';
 import { db, supabase, REMINDER_ROW_COLUMNS } from '@/lib/supabase';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
-import { PENDING_PAYMENT_REMINDER_TITLE, parseReminderAtLocalDate, buildPendingPaymentWhatsAppMessage, parsePendingPaymentReminderNotes } from '@/lib/pendingPaymentReminder';
+import { PENDING_PAYMENT_REMINDER_TITLE, parseReminderAtLocalDate, buildPendingPaymentWhatsAppMessage, buildPendingPaymentReceivedWhatsAppMessage, parsePendingPaymentReminderNotes } from '@/lib/pendingPaymentReminder';
 import { markPendingPaymentSettledInRequirements } from '@/lib/jobPendingPayment';
+import type { DocumentBrand } from '@/lib/service-brands';
+import { normalizeDocumentBrand } from '@/lib/service-brands';
 
 const PENDING_PAYMENT_TITLE = PENDING_PAYMENT_REMINDER_TITLE;
 const PAGE_SIZE = 20;
@@ -434,6 +436,8 @@ export function SettingsPendingPaymentsDialogV2({
 
   const [whatsappDialogOpen, setWhatsappDialogOpen] = useState(false);
   const [whatsappTarget, setWhatsappTarget] = useState<PendingPaymentReminder | null>(null);
+  /** Last completed job service_brand per customer — drives WhatsApp brand contact. */
+  const [brandByCustomerId, setBrandByCustomerId] = useState<Record<string, DocumentBrand | null>>({});
 
   const [callDialogOpen, setCallDialogOpen] = useState(false);
   const [callTarget, setCallTarget] = useState<PendingPaymentReminder | null>(null);
@@ -471,29 +475,23 @@ export function SettingsPendingPaymentsDialogV2({
     window.location.href = `tel:${tel}`;
   };
 
+  const brandForCustomer = (customerId: string | null | undefined): DocumentBrand =>
+    normalizeDocumentBrand(customerId ? brandByCustomerId[customerId] : null) || 'hydrogenro';
+
   const buildPendingPaymentMessage = (payment: PendingPaymentReminder, customer: CustomerLabel) =>
     buildPendingPaymentWhatsAppMessage(
       customer.name,
       Number(payment.amount_pending) || 0,
-      payment.reminder_at ? String(payment.reminder_at).slice(0, 10) : null
+      payment.reminder_at ? String(payment.reminder_at).slice(0, 10) : null,
+      brandForCustomer(payment.entity_id as string | undefined)
     );
 
-  const buildPaymentReceivedMessage = (payment: PendingPaymentReminder, customer: CustomerLabel) => {
-    const amount = Number(payment.amount_pending) || 0;
-    const formattedAmount = amount.toLocaleString('en-IN', { maximumFractionDigits: 2 });
-
-    return `Hi ${customer.name} 😊
-
-Thank you! We have received your payment of ₹${formattedAmount}.
-
-We appreciate your trust. For any help or support:
-📞 Phone: 8884944288
-📧 Email: info@hydrogenro.com
-🌐 Website: https://hydrogenro.com
-
-Thanks & regards 🙏
-Hydrogen RO Team`;
-  };
+  const buildPaymentReceivedMessage = (payment: PendingPaymentReminder, customer: CustomerLabel) =>
+    buildPendingPaymentReceivedWhatsAppMessage(
+      customer.name,
+      Number(payment.amount_pending) || 0,
+      brandForCustomer(payment.entity_id as string | undefined)
+    );
 
   useEffect(() => {
     if (!open) return;
@@ -503,6 +501,7 @@ Hydrogen RO Team`;
       setLoaded(false);
       setPayments([]);
       setCustomerLabels({});
+      setBrandByCustomerId({});
       setSearchQuery('');
       setLoading(false);
       setEditReminder(null);
@@ -537,9 +536,12 @@ Hydrogen RO Team`;
     [filteredPayments]
   );
 
-  const load = async (focusId?: string | null): Promise<PendingPaymentReminder[]> => {
+  const load = async (
+    focusId?: string | null
+  ): Promise<{ list: PendingPaymentReminder[]; brands: Record<string, DocumentBrand | null> }> => {
     setLoading(true);
     let result: PendingPaymentReminder[] = [];
+    let brandMap: Record<string, DocumentBrand | null> = {};
     try {
       const from = 0;
       const to = PAGE_SIZE - 1;
@@ -599,8 +601,18 @@ Hydrogen RO Team`;
         if (c?.id) labelMap[c.id] = getCustomerLabelFromRow(c);
       });
 
+      const brandMapNext: Record<string, DocumentBrand | null> = {};
+      if (customerIds.length > 0) {
+        const { data: brands } = await db.jobs.getLastServiceBrandByCustomerIds(customerIds);
+        for (const id of customerIds) {
+          brandMapNext[id] = normalizeDocumentBrand(brands?.[id]) || null;
+        }
+      }
+      brandMap = brandMapNext;
+
       setPayments(list);
       setCustomerLabels(labelMap);
+      setBrandByCustomerId(brandMapNext);
       setLoaded(true);
       result = list;
     } catch (err: any) {
@@ -608,7 +620,7 @@ Hydrogen RO Team`;
     } finally {
       setLoading(false);
     }
-    return result;
+    return { list: result, brands: brandMap };
   };
 
   useEffect(() => {
@@ -618,7 +630,7 @@ Hydrogen RO Team`;
     deepLinkHandledRef.current = key;
 
     void (async () => {
-      const list = await load(initialReminderId);
+      const { list, brands } = await load(initialReminderId);
       setHighlightReminderId(initialReminderId);
       window.setTimeout(() => {
         rowRefs.current[initialReminderId]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -639,7 +651,15 @@ Hydrogen RO Team`;
         toast.error('Customer info not loaded');
         return;
       }
-      const message = buildPendingPaymentMessage(target, label);
+      const brand =
+        normalizeDocumentBrand(target.entity_id ? brands[target.entity_id as string] : null) ||
+        'hydrogenro';
+      const message = buildPendingPaymentWhatsAppMessage(
+        label.name,
+        Number(target.amount_pending) || 0,
+        target.reminder_at ? String(target.reminder_at).slice(0, 10) : null,
+        brand
+      );
       const primary = label.phone;
       const alternate = label.alternatePhone;
       if (!primary && !alternate) {
@@ -670,6 +690,7 @@ Hydrogen RO Team`;
           setLoaded(false);
           setPayments([]);
           setCustomerLabels({});
+          setBrandByCustomerId({});
           setSearchQuery('');
         }}
       />

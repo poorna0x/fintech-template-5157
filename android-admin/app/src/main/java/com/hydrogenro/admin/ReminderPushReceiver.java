@@ -30,10 +30,14 @@ public class ReminderPushReceiver extends BroadcastReceiver {
     private static final String EXTRA_CUSTOMER_NAME = "customerName";
     private static final String EXTRA_AMOUNT = "amount";
     private static final String EXTRA_DUE_DATE = "dueDate";
+    private static final String EXTRA_SERVICE_BRAND = "serviceBrand";
     private static final String EXTRA_TAG = "tag";
     private static final int COLOR_GENERAL = Color.parseColor("#D97706");
     private static final int COLOR_PENDING = Color.parseColor("#2563EB");
 
+    private static boolean isElevenRo(String brand) {
+        return brand != null && "elevenro".equalsIgnoreCase(brand.trim());
+    }
     public static void showReminderNotification(Context context, Map<String, String> data) {
         if (data == null) return;
         String reminderId = data.get("reminderId");
@@ -93,6 +97,7 @@ public class ReminderPushReceiver extends BroadcastReceiver {
                 .putExtra(EXTRA_CUSTOMER_NAME, data.get("customerName"))
                 .putExtra(EXTRA_AMOUNT, data.get("amount"))
                 .putExtra(EXTRA_DUE_DATE, data.get("dueDate"))
+                .putExtra(EXTRA_SERVICE_BRAND, data.get("serviceBrand"))
                 .putExtra(EXTRA_TAG, tag);
             PendingIntent waPending = PendingIntent.getBroadcast(
                 context,
@@ -141,7 +146,12 @@ public class ReminderPushReceiver extends BroadcastReceiver {
         return digits.substring(digits.length() - 10);
     }
 
-    static String buildWhatsAppMessage(String customerName, String amountRaw, String dueDateRaw) {
+    static String buildWhatsAppMessage(
+        String customerName,
+        String amountRaw,
+        String dueDateRaw,
+        String serviceBrand
+    ) {
         String name = customerName != null && !customerName.isEmpty() ? customerName : "Customer";
         double amount = 0;
         try {
@@ -164,15 +174,23 @@ public class ReminderPushReceiver extends BroadcastReceiver {
             }
             dueLine = "\nPayment due date: " + pretty + ".";
         }
+        boolean eleven = isElevenRo(serviceBrand);
+        String brandLabel = eleven ? "Eleven RO" : "Hydrogen RO";
+        String phone = eleven ? "9880693311" : "8884944288";
+        String email = eleven ? "mail@elevenro.com" : "mail@hydrogenro.com";
+        String website = eleven ? "https://elevenro.com" : "https://hydrogenro.com";
+        String team = eleven ? "Eleven RO Team" : "Hydrogen RO Team";
         return "Hi " + name + " \uD83D\uDE0A\n\n"
-            + "Hope you're doing well. Just a quick reminder that you have a pending payment of \u20B9"
+            + "Hope you're doing well. Just a quick reminder from " + brandLabel
+            + " that you have a pending payment of \u20B9"
             + formattedAmount + "." + dueLine + "\n\n"
             + "Request you to please clear the payment at your earliest convenience. If you have already paid, kindly ignore this message.\n\n"
             + "For any help/support:\n"
-            + "\uD83D\uDCDE Phone: 8884944288\n"
-            + "\uD83D\uDCE7 Email: info@hydrogenro.com\n"
-            + "\uD83C\uDF10 Website: https://hydrogenro.com\n\n"
-            + "Thanks & regards \uD83D\uDE4F";
+            + "\uD83D\uDCDE Phone: " + phone + "\n"
+            + "\uD83D\uDCE7 Email: " + email + "\n"
+            + "\uD83C\uDF10 Website: " + website + "\n\n"
+            + "Thanks & regards \uD83D\uDE4F\n"
+            + team;
     }
 
     @Override
@@ -185,7 +203,8 @@ public class ReminderPushReceiver extends BroadcastReceiver {
         String message = buildWhatsAppMessage(
             intent.getStringExtra(EXTRA_CUSTOMER_NAME),
             intent.getStringExtra(EXTRA_AMOUNT),
-            intent.getStringExtra(EXTRA_DUE_DATE)
+            intent.getStringExtra(EXTRA_DUE_DATE),
+            intent.getStringExtra(EXTRA_SERVICE_BRAND)
         );
 
         String encoded;

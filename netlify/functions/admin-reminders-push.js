@@ -111,6 +111,30 @@ exports.handler = async (event) => {
     }
   }
 
+  // Latest completed job brand per customer (for pending-payment WhatsApp copy).
+  const brandByCustomerId = new Map();
+  if (customerIds.length > 0) {
+    const { data: brandJobs, error: brandErr } = await db
+      .from('jobs')
+      .select('customer_id,service_brand,completed_at,end_time,created_at')
+      .in('customer_id', customerIds)
+      .eq('status', 'COMPLETED')
+      .not('service_brand', 'is', null)
+      .order('completed_at', { ascending: false, nullsFirst: false })
+      .order('end_time', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false });
+    if (brandErr) {
+      console.warn('[admin-reminders-push] service_brand lookup failed', brandErr.message);
+    } else {
+      for (const row of brandJobs || []) {
+        const cid = row.customer_id;
+        if (!cid || brandByCustomerId.has(cid)) continue;
+        const b = String(row.service_brand || '').trim().toLowerCase();
+        brandByCustomerId.set(cid, b === 'elevenro' ? 'elevenro' : 'hydrogenro');
+      }
+    }
+  }
+
   let messaging;
   try {
     messaging = await getMessaging(db);
@@ -134,6 +158,8 @@ exports.handler = async (event) => {
       const phone = normalizePhone(customer?.phone || customer?.alternate_phone || '');
       const amountStr = String(Math.round(amount * 100) / 100);
       const dueDate = String(r.reminder_at || '').slice(0, 10);
+      const serviceBrand =
+        (r.entity_id && brandByCustomerId.get(r.entity_id)) || 'hydrogenro';
       const title = `Pending ₹${amount.toLocaleString('en-IN', { maximumFractionDigits: 0 })} — ${customerName}`;
       const body = phone
         ? `Due ${dueDate || 'today'} — tap Open or WhatsApp from the notification`
@@ -149,6 +175,7 @@ exports.handler = async (event) => {
         dueDate,
         entityId: r.entity_id ? String(r.entity_id) : '',
         phone,
+        serviceBrand,
         title,
         body,
         color: COLOR_PENDING,
