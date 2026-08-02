@@ -26,12 +26,14 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { format } from 'date-fns';
-import { Check, ChevronsUpDown, Edit3, PhoneCall, Plus, RefreshCw, Search, UserRound } from 'lucide-react';
+import { Check, ChevronsUpDown, Edit3, FileText, PhoneCall, Plus, RefreshCw, Search, UserRound } from 'lucide-react';
 import { toast } from 'sonner';
-import type { Reminder } from '@/types';
+import type { Customer, Reminder, Technician } from '@/types';
 import { db, supabase, REMINDER_ROW_COLUMNS } from '@/lib/supabase';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
+import CustomerReportDialog from '@/components/admin/CustomerReportDialog';
+import PhotoViewerDialog from '@/components/admin/PhotoViewerDialog';
 import { PENDING_PAYMENT_REMINDER_TITLE, parseReminderAtLocalDate, buildPendingPaymentWhatsAppMessage, buildPendingPaymentReceivedWhatsAppMessage, parsePendingPaymentReminderNotes } from '@/lib/pendingPaymentReminder';
 import { markPendingPaymentSettledInRequirements } from '@/lib/jobPendingPayment';
 import type { DocumentBrand } from '@/lib/service-brands';
@@ -456,6 +458,21 @@ export function SettingsPendingPaymentsDialogV2({
   const deepLinkHandledRef = useRef<string | null>(null);
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
+  const [customerActionOpen, setCustomerActionOpen] = useState(false);
+  const [customerActionTarget, setCustomerActionTarget] = useState<PendingPaymentReminder | null>(null);
+  const [reportDialogOpen, setReportDialogOpen] = useState(false);
+  const [reportCustomer, setReportCustomer] = useState<Customer | null>(null);
+  const [reportTechnicians, setReportTechnicians] = useState<Technician[]>([]);
+  const [reportOpening, setReportOpening] = useState(false);
+  const [reportPhotoViewerOpen, setReportPhotoViewerOpen] = useState(false);
+  const [reportSelectedPhoto, setReportSelectedPhoto] = useState<{
+    url: string;
+    index: number;
+    total: number;
+  } | null>(null);
+  const [reportSelectedBillPhotos, setReportSelectedBillPhotos] = useState<string[] | null>(null);
+  const reportTechsLoadedRef = useRef(false);
+
   const openWhatsApp = (phone: string, message: string) => {
     if (!phone) return;
     const formatted = formatPhoneForWhatsApp(phone);
@@ -786,6 +803,15 @@ export function SettingsPendingPaymentsDialogV2({
   };
 
   const handleOpenCustomer = (p: PendingPaymentReminder) => {
+    setCustomerActionTarget(p);
+    setCustomerActionOpen(true);
+  };
+
+  const handleCustomerSearch = () => {
+    const p = customerActionTarget;
+    setCustomerActionOpen(false);
+    setCustomerActionTarget(null);
+    if (!p) return;
     const customer = p.entity_id ? customerLabels[p.entity_id as string] : undefined;
     const query =
       (customer?.phone || '').trim() ||
@@ -797,6 +823,41 @@ export function SettingsPendingPaymentsDialogV2({
     }
     onOpenChange(false);
     navigate(`/admin?search=${encodeURIComponent(query)}`);
+  };
+
+  const handleCustomerReports = async () => {
+    const p = customerActionTarget;
+    setCustomerActionOpen(false);
+    if (!p?.entity_id) {
+      setCustomerActionTarget(null);
+      toast.error('Customer not linked to this payment');
+      return;
+    }
+    setReportOpening(true);
+    try {
+      const [{ data: customer, error }, techResult] = await Promise.all([
+        db.customers.getById(String(p.entity_id)),
+        reportTechsLoadedRef.current
+          ? Promise.resolve({ data: reportTechnicians })
+          : db.technicians.getList(100),
+      ]);
+      if (error || !customer) {
+        toast.error(error?.message || 'Failed to load customer for report');
+        return;
+      }
+      if (!reportTechsLoadedRef.current) {
+        const techs = ((techResult as any)?.data || []) as Technician[];
+        setReportTechnicians(techs);
+        reportTechsLoadedRef.current = true;
+      }
+      setReportCustomer(customer as Customer);
+      setReportDialogOpen(true);
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to open customer report');
+    } finally {
+      setReportOpening(false);
+      setCustomerActionTarget(null);
+    }
   };
 
   const handleWhatsAppClick = (p: PendingPaymentReminder) => {
@@ -885,37 +946,35 @@ export function SettingsPendingPaymentsDialogV2({
             </div>
           ) : (
             <div className="space-y-3">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-2">
                 <div className="relative flex-1 min-w-0">
                   <Input
-                    placeholder="Search in this page (customer, due date, amount)..."
+                    placeholder="Search customer, due date, amount..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="min-h-9 border border-input focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none focus:outline-none"
+                    className="min-h-10 sm:min-h-9 border border-input focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none focus:outline-none"
                   />
                 </div>
-                <div className="flex gap-2">
-                  <Button
-                    onClick={handleOpenAdd}
-                    variant="outline"
-                    size="icon"
-                    className="h-10 w-10"
-                    disabled={loading}
-                    title="Add pending payment"
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={load}
-                    disabled={loading}
-                    size="icon"
-                    className="h-10 w-10"
-                    title="Refresh"
-                  >
-                    <RefreshCw className="h-4 w-4" />
-                  </Button>
-                </div>
+                <Button
+                  onClick={handleOpenAdd}
+                  variant="outline"
+                  size="icon"
+                  className="h-10 w-10 shrink-0"
+                  disabled={loading}
+                  title="Add pending payment"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={load}
+                  disabled={loading}
+                  size="icon"
+                  className="h-10 w-10 shrink-0"
+                  title="Refresh"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                </Button>
               </div>
 
               <div className="space-y-3">
@@ -931,55 +990,59 @@ export function SettingsPendingPaymentsDialogV2({
                       ref={(el) => {
                         rowRefs.current[p.id] = el;
                       }}
-                      className={`flex items-start justify-between gap-3 rounded-lg border p-3 bg-background ${
+                      className={`flex flex-col gap-3 rounded-lg border p-3 bg-background sm:flex-row sm:items-start sm:justify-between ${
                         highlightReminderId === p.id ? 'ring-2 ring-amber-500 border-amber-300' : ''
                       }`}
                     >
-                      <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenCustomer(p)}
-                            className="font-medium text-gray-900 dark:text-gray-100 truncate text-left hover:underline underline-offset-2"
-                            title="Open on home and search"
-                          >
-                            {customer?.name ?? 'Customer'}
-                          </button>
-                          {customer?.customerId && (
-                            <span className="text-xs text-muted-foreground font-mono truncate">
-                              ({customer.customerId})
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <div className="min-w-0">
+                          <div className="flex items-baseline gap-1.5 min-w-0">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenCustomer(p)}
+                              className="font-medium text-gray-900 dark:text-gray-100 truncate text-left hover:underline underline-offset-2"
+                              title="Open customer"
+                            >
+                              {customer?.name ?? 'Customer'}
+                            </button>
+                            {customer?.customerId && (
+                              <span className="text-xs text-muted-foreground font-mono shrink-0">
+                                ({customer.customerId})
+                              </span>
+                            )}
+                          </div>
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                            <span className="text-xs px-2 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200">
+                              Due: {dueLabel}
                             </span>
-                          )}
-                          <span className="text-xs px-2 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200">
-                            Due: {dueLabel}
-                          </span>
-                          {(p.job_number || p.job_id) && (
-                            <span className="text-xs px-2 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-200">
-                              From job {p.job_number || String(p.job_id).slice(0, 8)}
-                            </span>
-                          )}
+                            {(p.job_number || p.job_id) && (
+                              <span className="text-xs px-2 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-200">
+                                From job {p.job_number || String(p.job_id).slice(0, 8)}
+                              </span>
+                            )}
+                          </div>
                         </div>
 
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
-                          <span className="text-sm text-muted-foreground">Pending amount</span>
-                          <span className="text-base font-semibold text-gray-900 dark:text-gray-100">
+                        <div>
+                          <div className="text-xs text-muted-foreground">Pending amount</div>
+                          <div className="text-lg font-semibold tabular-nums text-gray-900 dark:text-gray-100">
                             ₹{(Number(p.amount_pending) || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                          </span>
+                          </div>
                         </div>
                         {p.note && (
-                          <div className="mt-1 text-xs text-muted-foreground break-words">
+                          <div className="text-xs text-muted-foreground break-words">
                             Note: {p.note}
                           </div>
                         )}
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="grid grid-cols-5 gap-2 sm:flex sm:shrink-0 sm:items-center sm:gap-2 border-t pt-2.5 sm:border-0 sm:pt-0">
                         <Button
                           variant="outline"
                           size="icon"
                           onClick={() => handleOpenCustomer(p)}
-                          className="h-9 w-9"
-                          title="Open on home and search"
+                          className="h-10 w-full sm:h-9 sm:w-9"
+                          title="Open customer"
                         >
                           <UserRound className="w-4 h-4" />
                         </Button>
@@ -987,7 +1050,7 @@ export function SettingsPendingPaymentsDialogV2({
                           variant="outline"
                           size="icon"
                           onClick={() => openEdit(p)}
-                          className="h-9 w-9"
+                          className="h-10 w-full sm:h-9 sm:w-9"
                           title="Edit pending payment"
                         >
                           <Edit3 className="w-4 h-4" />
@@ -995,7 +1058,7 @@ export function SettingsPendingPaymentsDialogV2({
                         <Button
                           size="icon"
                           onClick={() => handleMarkCompleted(p)}
-                          className="h-9 w-9 bg-green-600 hover:bg-green-700"
+                          className="h-10 w-full sm:h-9 sm:w-9 bg-green-600 hover:bg-green-700"
                           title="Completed"
                         >
                           <Check className="w-4 h-4" />
@@ -1003,7 +1066,7 @@ export function SettingsPendingPaymentsDialogV2({
                         <Button
                           size="icon"
                           onClick={() => handleWhatsAppClick(p)}
-                          className="h-9 w-9 bg-green-50 hover:bg-green-100 text-green-700 border border-green-200"
+                          className="h-10 w-full sm:h-9 sm:w-9 bg-green-50 hover:bg-green-100 text-green-700 border border-green-200"
                           title="Notify on WhatsApp"
                         >
                           <WhatsAppIcon className="h-4 w-4" />
@@ -1011,7 +1074,7 @@ export function SettingsPendingPaymentsDialogV2({
                         <Button
                           size="icon"
                           onClick={() => handleCallClick(p)}
-                          className="h-9 w-9 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200"
+                          className="h-10 w-full sm:h-9 sm:w-9 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200"
                           title="Call customer"
                         >
                           <PhoneCall className="h-4 h-4" />
@@ -1030,6 +1093,136 @@ export function SettingsPendingPaymentsDialogV2({
             </div>
           )}
         </div>
+
+        <Dialog
+          open={customerActionOpen}
+          onOpenChange={(o) => {
+            setCustomerActionOpen(o);
+            if (!o) setCustomerActionTarget(null);
+          }}
+        >
+          <DialogContent className="sm:max-w-sm p-4 sm:p-6">
+            <DialogHeader>
+              <DialogTitle>Open customer</DialogTitle>
+              <DialogDescription>
+                {(() => {
+                  const c = customerActionTarget?.entity_id
+                    ? customerLabels[customerActionTarget.entity_id as string]
+                    : undefined;
+                  return c
+                    ? `${c.name}${c.customerId ? ` (${c.customerId})` : ''}`
+                    : 'Choose where to open this customer.';
+                })()}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-2 pt-1">
+              <Button
+                onClick={() => void handleCustomerReports()}
+                disabled={reportOpening}
+                className="min-h-11 justify-start gap-2"
+              >
+                <FileText className="h-4 w-4" />
+                {reportOpening ? 'Opening report…' : 'Reports'}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleCustomerSearch}
+                disabled={reportOpening}
+                className="min-h-11 justify-start gap-2"
+              >
+                <Search className="h-4 w-4" />
+                Search
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {reportCustomer && (
+          <CustomerReportDialog
+            open={reportDialogOpen}
+            photoViewerOpen={reportPhotoViewerOpen}
+            onOpenChange={(o) => {
+              setReportDialogOpen(o);
+              if (!o) {
+                setReportCustomer(null);
+                setReportPhotoViewerOpen(false);
+              }
+            }}
+            customer={reportCustomer}
+            technicians={reportTechnicians}
+            onPhotoClick={(url, index, total, photos) => {
+              const list = photos && photos.length > 0 ? photos : [url];
+              setReportSelectedBillPhotos(list);
+              setReportSelectedPhoto({ url: list[index] || url, index, total: list.length || total });
+              setReportPhotoViewerOpen(true);
+            }}
+            onBillPhotosClick={(photos, index) => {
+              setReportSelectedBillPhotos(photos);
+              setReportSelectedPhoto({
+                url: photos[index],
+                index,
+                total: photos.length,
+              });
+              setReportPhotoViewerOpen(true);
+            }}
+          />
+        )}
+
+        {reportPhotoViewerOpen && (
+          <PhotoViewerDialog
+            open={reportPhotoViewerOpen}
+            onOpenChange={setReportPhotoViewerOpen}
+            selectedPhoto={reportSelectedPhoto}
+            selectedBillPhotos={reportSelectedBillPhotos}
+            selectedJobPhotos={null}
+            showNavigation={Boolean(reportSelectedBillPhotos && reportSelectedBillPhotos.length > 1)}
+            onPrevious={() => {
+              if (
+                !reportSelectedPhoto ||
+                !reportSelectedBillPhotos ||
+                reportSelectedBillPhotos.length <= 1
+              ) {
+                return;
+              }
+              const newIndex =
+                reportSelectedPhoto.index > 0
+                  ? reportSelectedPhoto.index - 1
+                  : reportSelectedBillPhotos.length - 1;
+              setReportSelectedPhoto({
+                url: reportSelectedBillPhotos[newIndex],
+                index: newIndex,
+                total: reportSelectedBillPhotos.length,
+              });
+            }}
+            onNext={() => {
+              if (
+                !reportSelectedPhoto ||
+                !reportSelectedBillPhotos ||
+                reportSelectedBillPhotos.length <= 1
+              ) {
+                return;
+              }
+              const newIndex =
+                reportSelectedPhoto.index < reportSelectedBillPhotos.length - 1
+                  ? reportSelectedPhoto.index + 1
+                  : 0;
+              setReportSelectedPhoto({
+                url: reportSelectedBillPhotos[newIndex],
+                index: newIndex,
+                total: reportSelectedBillPhotos.length,
+              });
+            }}
+            onDownload={(photoUrl) => {
+              const a = document.createElement('a');
+              a.href = photoUrl;
+              a.download = 'photo';
+              a.target = '_blank';
+              a.rel = 'noopener noreferrer';
+              a.click();
+            }}
+            onClose={() => setReportPhotoViewerOpen(false)}
+          />
+        )}
 
         <AlertDialog
           open={completeConfirmOpen}

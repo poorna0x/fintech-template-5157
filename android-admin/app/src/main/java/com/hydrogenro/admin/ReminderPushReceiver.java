@@ -20,18 +20,15 @@ import java.util.UUID;
  * Morning reminder / pending-payment pushes (admin-reminders-push Netlify cron).
  * Pending payments: Open → Settings on that customer; WhatsApp → wa.me with the
  * same pre-filled message as Settings → Pending payments.
+ *
+ * Important: WhatsApp must use an Activity PendingIntent. Starting wa.me from a
+ * BroadcastReceiver while backgrounded is blocked on modern Android (same fix as
+ * ExpenseReviewReceiver "No").
  */
 public class ReminderPushReceiver extends BroadcastReceiver {
 
     private static final String TAG = "HroReminderPush";
     private static final String CHANNEL_ID = NotificationChannels.JOB_ALERTS;
-    private static final String ACTION_WHATSAPP = "com.hydrogenro.admin.REMINDER_WHATSAPP";
-    private static final String EXTRA_PHONE = "phone";
-    private static final String EXTRA_CUSTOMER_NAME = "customerName";
-    private static final String EXTRA_AMOUNT = "amount";
-    private static final String EXTRA_DUE_DATE = "dueDate";
-    private static final String EXTRA_SERVICE_BRAND = "serviceBrand";
-    private static final String EXTRA_TAG = "tag";
     private static final int COLOR_GENERAL = Color.parseColor("#D97706");
     private static final int COLOR_PENDING = Color.parseColor("#2563EB");
 
@@ -91,15 +88,23 @@ public class ReminderPushReceiver extends BroadcastReceiver {
 
         String phone = normalizePhone(data.get("phone"));
         if ("pending_payment".equals(kind) && phone != null) {
-            Intent waIntent = new Intent(context, ReminderPushReceiver.class)
-                .setAction(ACTION_WHATSAPP)
-                .putExtra(EXTRA_PHONE, phone)
-                .putExtra(EXTRA_CUSTOMER_NAME, data.get("customerName"))
-                .putExtra(EXTRA_AMOUNT, data.get("amount"))
-                .putExtra(EXTRA_DUE_DATE, data.get("dueDate"))
-                .putExtra(EXTRA_SERVICE_BRAND, data.get("serviceBrand"))
-                .putExtra(EXTRA_TAG, tag);
-            PendingIntent waPending = PendingIntent.getBroadcast(
+            String message = buildWhatsAppMessage(
+                data.get("customerName"),
+                data.get("amount"),
+                data.get("dueDate"),
+                data.get("serviceBrand")
+            );
+            String encoded;
+            try {
+                encoded = URLEncoder.encode(message, "UTF-8");
+            } catch (UnsupportedEncodingException e) {
+                encoded = message.replace(" ", "%20");
+            }
+            Intent waIntent = new Intent(
+                Intent.ACTION_VIEW,
+                Uri.parse("https://wa.me/91" + phone + "?text=" + encoded)
+            );
+            PendingIntent waPending = PendingIntent.getActivity(
                 context,
                 reminderId.hashCode() + 1,
                 waIntent,
@@ -195,37 +200,7 @@ public class ReminderPushReceiver extends BroadcastReceiver {
 
     @Override
     public void onReceive(Context context, Intent intent) {
-        if (!ACTION_WHATSAPP.equals(intent.getAction())) return;
-
-        String phone = intent.getStringExtra(EXTRA_PHONE);
-        if (phone == null || phone.isEmpty()) return;
-
-        String message = buildWhatsAppMessage(
-            intent.getStringExtra(EXTRA_CUSTOMER_NAME),
-            intent.getStringExtra(EXTRA_AMOUNT),
-            intent.getStringExtra(EXTRA_DUE_DATE),
-            intent.getStringExtra(EXTRA_SERVICE_BRAND)
-        );
-
-        String encoded;
-        try {
-            encoded = URLEncoder.encode(message, "UTF-8");
-        } catch (UnsupportedEncodingException e) {
-            encoded = message.replace(" ", "%20");
-        }
-
-        String url = "https://wa.me/91" + phone + "?text=" + encoded;
-        Intent wa = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-        wa.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        try {
-            context.startActivity(wa);
-        } catch (Exception e) {
-            Log.w(TAG, "Could not open WhatsApp", e);
-        }
-
-        String tag = intent.getStringExtra(EXTRA_TAG);
-        if (tag != null && !tag.isEmpty()) {
-            NotificationManagerCompat.from(context).cancel(tag, 0);
-        }
+        // WhatsApp / Open use Activity PendingIntents (see showReminderNotification).
+        Log.d(TAG, "onReceive ignored action=" + (intent != null ? intent.getAction() : null));
     }
 }
