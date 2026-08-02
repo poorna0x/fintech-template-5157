@@ -370,9 +370,11 @@ const Settings = () => {
   const [showCallingPage, setShowCallingPage] = useState(
     () => parseSettingsUrl(location.search).panel === 'calling'
   );
+  const [showRecurringServicePage, setShowRecurringServicePage] = useState(
+    () => parseSettingsUrl(location.search).panel === 'recurring-service'
+  );
 
   const [remindersDialogOpen, setRemindersDialogOpen] = useState(false);
-  const [recurringServiceOpen, setRecurringServiceOpen] = useState(false);
   const [advancedSearchDialogOpen, setAdvancedSearchDialogOpen] = useState(false);
   const [addGeneralReminderOpen, setAddGeneralReminderOpen] = useState(false);
   const [addCustomerReminderOpen, setAddCustomerReminderOpen] = useState(false);
@@ -439,8 +441,8 @@ const Settings = () => {
     prevSettingsPanelRef.current = panel;
 
     setShowCallingPage(panel === 'calling');
+    setShowRecurringServicePage(panel === 'recurring-service');
     setRemindersDialogOpen(panel === 'reminders');
-    setRecurringServiceOpen(panel === 'recurring-service');
     setAdvancedSearchDialogOpen(panel === 'advanced-search');
     setAddGeneralReminderOpen(panel === 'add-general-reminder');
     setAddCustomerReminderOpen(panel === 'add-customer-reminder');
@@ -1834,6 +1836,41 @@ const Settings = () => {
     );
   }
 
+  // Dedicated recurring service worklist (Tools → Recurring Service)
+  if (showRecurringServicePage) {
+    return (
+      <div className="admin-page">
+        <div className="bg-card border-b border-border">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 py-4 sm:py-0 sm:h-16">
+              <div className="flex items-center">
+                <Repeat className="w-6 h-6 sm:w-8 sm:h-8 text-sky-700 mr-2 sm:mr-3 shrink-0" />
+                <div>
+                  <h1 className="text-lg sm:text-xl font-bold text-foreground">Recurring Service</h1>
+                  <p className="text-xs sm:text-sm text-muted-foreground">
+                    6-month / yearly service reminders
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={closeSettingsPanel}
+                className="text-muted-foreground hover:text-foreground -ml-2"
+              >
+                <ArrowLeft className="w-4 h-4 mr-1" />
+                Back
+              </Button>
+            </div>
+          </div>
+        </div>
+        <div className="container mx-auto px-4 py-4 sm:py-8 flex flex-col min-h-[70vh]">
+          <RecurringServiceTracker variant="page" />
+        </div>
+      </div>
+    );
+  }
+
   const activeTechniciansList = technicians.filter((t) => t.account_status !== 'INACTIVE');
   const inactiveTechniciansList = technicians.filter((t) => t.account_status === 'INACTIVE');
 
@@ -2269,8 +2306,8 @@ const Settings = () => {
 
           {/* Recurring service tracking */}
           <SettingsActionCard
-            title="Reminder Tracking"
-            description="All active reminders in one worklist, due ones first (one-time or recurring). Call the customer, log the outcome (no response / waiting / will return / confirmed), snooze, view reports, or create a job. Mark done to clear it."
+            title="Recurring Service Tracker"
+            description="Dedicated worklist for customers who want service every 6 months or yearly. Call, create a job, view reports, or remove a reminder."
             icon={<Repeat />}
             actions={
               <Button
@@ -2279,13 +2316,9 @@ const Settings = () => {
                 onClick={() => openSettingsPanel('recurring-service')}
               >
                 <Repeat className="w-4 h-4 shrink-0" />
-                Open reminder tracker
+                Open tracker
               </Button>
             }
-          />
-          <RecurringServiceTracker
-            open={recurringServiceOpen}
-            onOpenChange={bindSettingsPanelDismiss('recurring-service', () => setRecurringServiceOpen(false))}
           />
 
           {/* Pending payments */}

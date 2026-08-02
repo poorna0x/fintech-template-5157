@@ -22,6 +22,7 @@ import {
   PhoneCall,
   Receipt,
   RefreshCw,
+  Repeat,
   Search,
   Settings,
   ShoppingCart,
@@ -33,6 +34,7 @@ import {
 } from 'lucide-react';
 import { hapticTap } from '@/lib/haptics';
 import { settingsPath } from '@/lib/settingsSections';
+import { settingsPanelPath } from '@/lib/settingsUrl';
 import type { AdminDashboardView, AdminToolDialog } from '@/lib/adminDashboardUrl';
 
 export type UnknownCallerChipProps = {
@@ -220,6 +222,16 @@ export function AdminDashboardHeader({
                   >
                     <PhoneCall className="w-4 h-4 mr-2" />
                     Calling Page
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      hapticTap();
+                      onToolsMenuOpenChange(false);
+                      navigate(settingsPanelPath('recurring-service'));
+                    }}
+                  >
+                    <Repeat className="w-4 h-4 mr-2" />
+                    Recurring Service
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={() => {

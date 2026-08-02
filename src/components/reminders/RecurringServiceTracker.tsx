@@ -27,6 +27,7 @@ import {
   Repeat,
   RotateCcw,
   StickyNote,
+  Trash2,
 } from 'lucide-react';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import { addDays, addMonths, format } from 'date-fns';
@@ -44,10 +45,14 @@ import { mapCustomerGstFields } from '@/lib/customerGst';
 import NewJobDialog from '@/components/admin/NewJobDialog';
 import CustomerReportDialog from '@/components/admin/CustomerReportDialog';
 import PhotoViewerDialog from '@/components/admin/PhotoViewerDialog';
+import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
 
 interface RecurringServiceTrackerProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  /** Dialog mode (Settings card). Ignored when variant is `page`. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** `page` = dedicated full-screen worklist (Tools / Settings). */
+  variant?: 'dialog' | 'page';
 }
 
 type CustomerLabel = {
@@ -58,12 +63,21 @@ type CustomerLabel = {
   altPhone: string | null;
 };
 
-type FilterKey = 'all' | 'week' | 'due' | 'done_today' | ServiceReminderStatus;
+type FilterKey = 'all' | 'week' | 'due' | 'done_today' | 'called' | ServiceReminderStatus;
 
 /** Default window: reminders due up to this many days ahead (includes overdue). */
 const WEEK_WINDOW_DAYS = 7;
 
 const PAGE_SIZE = 12;
+
+/** Statuses that mean we already called / reached out this cycle. */
+const CALLED_STATUSES: ServiceReminderStatus[] = [
+  'no_response',
+  'waiting',
+  'will_return',
+  'confirmed',
+  'job_created',
+];
 
 const STATUS_META: Record<ServiceReminderStatus, { label: string; cls: string }> = {
   pending: { label: 'Pending', cls: 'bg-slate-100 text-slate-700 border-slate-200' },
@@ -86,17 +100,22 @@ const SETTABLE_STATUSES: ServiceReminderStatus[] = [
 ];
 
 const FILTERS: { key: FilterKey; label: string }[] = [
-  { key: 'week', label: 'This week' },
+  { key: 'week', label: 'Due this week' },
   { key: 'due', label: 'Due now' },
-  { key: 'done_today', label: 'Done today' },
-  { key: 'all', label: 'All' },
+  { key: 'all', label: 'All recurring' },
   { key: 'not_called', label: 'Not called' },
+  { key: 'called', label: 'Called' },
+  { key: 'done_today', label: 'Done today' },
   { key: 'no_response', label: 'No response' },
   { key: 'waiting', label: 'Waiting' },
   { key: 'will_return', label: 'Will return' },
   { key: 'confirmed', label: 'Confirmed' },
   { key: 'job_created', label: 'Job created' },
 ];
+
+function isRecurringReminder(r: Reminder): boolean {
+  return r.interval_type === 'months' && !!r.interval_value && r.interval_value > 0;
+}
 
 function labelFromRow(c: any): CustomerLabel {
   return {
@@ -163,6 +182,13 @@ function statusOf(r: Reminder): ServiceReminderStatus {
   return (r.service_status as ServiceReminderStatus) || 'pending';
 }
 
+function isMarkedCalled(r: Reminder): boolean {
+  const st = statusOf(r);
+  if (st === 'not_called') return false;
+  if (CALLED_STATUSES.includes(st)) return true;
+  return !!r.last_contacted_at && st !== 'pending';
+}
+
 function relativeFromNow(iso: string | null | undefined): string {
   if (!iso) return '';
   const then = new Date(iso).getTime();
@@ -178,7 +204,13 @@ function relativeFromNow(iso: string | null | undefined): string {
   return format(new Date(iso), 'd MMM yyyy');
 }
 
-export function RecurringServiceTracker({ open, onOpenChange }: RecurringServiceTrackerProps) {
+export function RecurringServiceTracker({
+  open = false,
+  onOpenChange,
+  variant = 'dialog',
+}: RecurringServiceTrackerProps) {
+  const isPage = variant === 'page';
+  const isActive = isPage || open;
   const [loading, setLoading] = useState(false);
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [labels, setLabels] = useState<Record<string, CustomerLabel>>({});
@@ -209,6 +241,13 @@ export function RecurringServiceTracker({ open, onOpenChange }: RecurringService
   // Mark-done (complete cycle) confirm
   const [doneTarget, setDoneTarget] = useState<Reminder | null>(null);
   const [doneSaving, setDoneSaving] = useState(false);
+
+  // Remove (delete) confirm
+  const [removeTarget, setRemoveTarget] = useState<Reminder | null>(null);
+  const [removeSaving, setRemoveSaving] = useState(false);
+
+  // Add new service reminder (6 / 12 months etc.)
+  const [addReminderOpen, setAddReminderOpen] = useState(false);
 
   // Reopen dialog (undo a done / pick a new due date)
   const [reopenTarget, setReopenTarget] = useState<Reminder | null>(null);
@@ -281,11 +320,15 @@ export function RecurringServiceTracker({ open, onOpenChange }: RecurringService
         const ids = Object.keys(labelMap);
         const { data, error } = await db.reminders.getActiveByCustomerIds(ids);
         if (error) throw new Error(error.message);
-        let rows = data || [];
+        let rows = (data || []).filter((r) =>
+          filter === 'done_today' ? true : isRecurringReminder(r)
+        );
         if (filter === 'due') {
           rows = rows.filter((r) => r.reminder_at <= todayYmd);
         } else if (filter === 'week') {
           rows = rows.filter((r) => r.reminder_at <= weekEndYmd);
+        } else if (filter === 'called') {
+          rows = rows.filter((r) => isMarkedCalled(r));
         } else if (filter !== 'all') {
           rows = rows.filter((r) => statusOf(r) === filter);
         }
@@ -297,13 +340,18 @@ export function RecurringServiceTracker({ open, onOpenChange }: RecurringService
         setTotalCount(rows.length);
       } else {
         const status: ServiceReminderStatus | 'all' =
-          filter === 'all' || filter === 'due' || filter === 'week' ? 'all' : filter;
+          filter === 'all' || filter === 'due' || filter === 'week' || filter === 'called'
+            ? 'all'
+            : filter;
         const { data, error, count } = await db.reminders.getActiveRemindersPaginated({
           page,
           pageSize: PAGE_SIZE,
           status,
+          statuses: filter === 'called' ? CALLED_STATUSES : undefined,
           dueOnly: filter === 'due',
           untilDate: filter === 'week' ? weekEndYmd : undefined,
+          // Tracker is for every-N-months service cadence (incl. due months later).
+          recurringOnly: filter !== 'done_today',
         });
         if (error) throw new Error(error.message);
         setReminders(data);
@@ -320,8 +368,8 @@ export function RecurringServiceTracker({ open, onOpenChange }: RecurringService
   }, [search, filter, page, todayYmd, weekEndYmd, loadMissingLabels]);
 
   useEffect(() => {
-    if (open) load();
-  }, [open, load]);
+    if (isActive) load();
+  }, [isActive, load]);
 
   // Keep labelsRef in sync so `load` can dedupe customer fetches without depending on `labels`.
   useEffect(() => {
@@ -351,6 +399,7 @@ export function RecurringServiceTracker({ open, onOpenChange }: RecurringService
       if (filter === 'done_today') return !!r.completed_at;
       if (filter === 'due') return r.reminder_at <= todayYmd;
       if (filter === 'week') return r.reminder_at <= weekEndYmd;
+      if (filter === 'called') return isMarkedCalled(r);
       return statusOf(r) === filter;
     },
     [filter, todayYmd, weekEndYmd]
@@ -410,6 +459,38 @@ export function RecurringServiceTracker({ open, onOpenChange }: RecurringService
     window.location.href = `tel:${tel}`;
   };
 
+  const markCalled = async (r: Reminder) => {
+    try {
+      // Default outcome after dialing: waiting for their reply. Refine via Call result.
+      const { error } = await db.reminders.updateServiceStatus(r.id, 'waiting', r.status_note ?? null);
+      if (error) throw new Error(error.message);
+      toast.success('Marked as called');
+      commitUpdate(r, {
+        service_status: 'waiting',
+        last_contacted_at: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to update');
+    }
+  };
+
+  const markNotCalled = async (r: Reminder) => {
+    try {
+      const { error } = await db.reminders.update(r.id, {
+        service_status: 'not_called',
+        last_contacted_at: null,
+      });
+      if (error) throw new Error(error.message);
+      toast.success('Marked as not called');
+      commitUpdate(r, {
+        service_status: 'not_called',
+        last_contacted_at: null,
+      });
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to update');
+    }
+  };
+
   const openWhatsApp = (r: Reminder) => {
     const c = r.entity_id ? labels[r.entity_id] : undefined;
     if (!c?.phone) {
@@ -446,14 +527,28 @@ Thanks & regards 🙏`;
     setStatusSaving(true);
     try {
       const note = statusNote.trim() || null;
-      const { error } = await db.reminders.updateServiceStatus(statusTarget.id, statusValue, note);
-      if (error) throw new Error(error.message);
-      toast.success('Status updated');
-      commitUpdate(statusTarget, {
-        service_status: statusValue,
-        status_note: note,
-        last_contacted_at: new Date().toISOString(),
-      });
+      if (statusValue === 'not_called') {
+        const { error } = await db.reminders.update(statusTarget.id, {
+          service_status: 'not_called',
+          status_note: note,
+          last_contacted_at: null,
+        });
+        if (error) throw new Error(error.message);
+        commitUpdate(statusTarget, {
+          service_status: 'not_called',
+          status_note: note,
+          last_contacted_at: null,
+        });
+      } else {
+        const { error } = await db.reminders.updateServiceStatus(statusTarget.id, statusValue, note);
+        if (error) throw new Error(error.message);
+        commitUpdate(statusTarget, {
+          service_status: statusValue,
+          status_note: note,
+          last_contacted_at: new Date().toISOString(),
+        });
+      }
+      toast.success('Call result saved');
       setStatusTarget(null);
     } catch (err: any) {
       toast.error(err?.message || 'Failed to update status');
@@ -586,6 +681,22 @@ Thanks & regards 🙏`;
     }
   };
 
+  const confirmRemove = async () => {
+    if (!removeTarget) return;
+    setRemoveSaving(true);
+    try {
+      const { error } = await db.reminders.delete(removeTarget.id);
+      if (error) throw new Error(error.message);
+      toast.success('Reminder removed');
+      removeLocal(removeTarget.id);
+      setRemoveTarget(null);
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to remove reminder');
+    } finally {
+      setRemoveSaving(false);
+    }
+  };
+
   // ---- Create job / reports ----
   const loadFullCustomer = async (entityId: string | null): Promise<Customer | null> => {
     if (!entityId) return null;
@@ -632,29 +743,16 @@ Thanks & regards 🙏`;
 
   const summary = useMemo(() => {
     if (isSearching) return `${reminders.length} match${reminders.length === 1 ? '' : 'es'}`;
-    const noun = `${totalCount} reminder${totalCount === 1 ? '' : 's'}`;
+    const noun = `${totalCount} recurring reminder${totalCount === 1 ? '' : 's'}`;
+    if (filter === 'all') return `${noun} (all due dates — overdue first)`;
     if (filter === 'week') return `${noun} due within ${WEEK_WINDOW_DAYS} days (incl. overdue)`;
     if (filter === 'due') return `${noun} due now`;
-    if (filter === 'done_today') return `${noun} marked done today`;
+    if (filter === 'done_today') return `${totalCount} marked done today`;
     return noun;
   }, [isSearching, reminders.length, totalCount, filter]);
 
-  return (
+  const trackerMain = (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-3xl max-h-[92vh] p-0 flex flex-col overflow-hidden">
-          <DialogHeader className="px-4 pt-4 sm:px-6">
-            <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
-              <Repeat className="w-5 h-5 text-primary" />
-              Reminder Tracking
-            </DialogTitle>
-            <DialogDescription className="text-xs sm:text-sm">
-              Shows reminders due within a week by default (overdue first). Switch to “All” for later
-              ones, or “Done today” to see what was cleared today (incl. the “Got it” popup) and still
-              call, create a job, or reopen it.
-            </DialogDescription>
-          </DialogHeader>
-
           {/* Search + filters */}
           <div className="px-4 sm:px-6 pb-2 space-y-2 border-b border-border">
             <div className="flex gap-2">
@@ -682,6 +780,14 @@ Thanks & regards 🙏`;
               )}
               <Button type="button" variant="outline" size="icon" className="h-9 w-9 shrink-0" onClick={() => load()} title="Refresh" disabled={loading}>
                 <RefreshCw className={cn('h-4 w-4', loading && 'animate-spin')} />
+              </Button>
+              <Button
+                type="button"
+                className="h-9 shrink-0 gap-1.5 px-3"
+                onClick={() => setAddReminderOpen(true)}
+              >
+                <Plus className="h-4 w-4" />
+                Add reminder
               </Button>
             </div>
             <div className="flex flex-wrap gap-1.5">
@@ -712,7 +818,7 @@ Thanks & regards 🙏`;
                 <div className="mt-1 text-xs">
                   {filter === 'done_today'
                     ? 'Reminders you clear here or via the “Got it” popup will appear here for today.'
-                    : 'Add reminders from Settings or a customer. They’ll show up here, due ones first.'}
+                    : 'Tap Add reminder for 6-month / yearly service customers. Due ones show first.'}
                 </div>
               </div>
             )}
@@ -759,8 +865,18 @@ Thanks & regards 🙏`;
                         {overdue ? 'Due' : 'Next'}: {format(parseReminderAtLocalDate(r.reminder_at), 'd MMM yyyy')}
                       </span>
                     )}
-                    {r.last_contacted_at && (
-                      <span className="text-muted-foreground">Last contacted {relativeFromNow(r.last_contacted_at)}</span>
+                    {!isDone && (
+                      <span
+                        className={cn(
+                          'inline-flex items-center gap-1 font-medium',
+                          isMarkedCalled(r) ? 'text-sky-700' : 'text-amber-700'
+                        )}
+                      >
+                        <Phone className="w-3 h-3" />
+                        {isMarkedCalled(r)
+                          ? `Called${r.last_contacted_at ? ` · ${relativeFromNow(r.last_contacted_at)}` : ''}`
+                          : 'Not called yet'}
+                      </span>
                     )}
                     {c?.phone && <span className="text-muted-foreground font-mono">{c.phone}</span>}
                   </div>
@@ -782,8 +898,36 @@ Thanks & regards 🙏`;
                         </Button>
                       </>
                     )}
+                    {!isDone && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant={isMarkedCalled(r) ? 'default' : 'outline'}
+                          className={cn(
+                            'h-8 px-2.5 text-xs',
+                            isMarkedCalled(r) && 'bg-sky-700 hover:bg-sky-800'
+                          )}
+                          onClick={() => void markCalled(r)}
+                        >
+                          <Phone className="w-3.5 h-3.5 mr-1" /> Called
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant={!isMarkedCalled(r) && statusOf(r) === 'not_called' ? 'default' : 'outline'}
+                          className={cn(
+                            'h-8 px-2.5 text-xs',
+                            !isMarkedCalled(r) &&
+                              statusOf(r) === 'not_called' &&
+                              'bg-amber-600 hover:bg-amber-700 text-white'
+                          )}
+                          onClick={() => void markNotCalled(r)}
+                        >
+                          Not called
+                        </Button>
+                      </>
+                    )}
                     <Button size="sm" variant="outline" className="h-8 px-2.5 text-xs" onClick={() => openStatusDialog(r)}>
-                      Set status
+                      Call result
                     </Button>
                     <Button size="sm" variant="outline" className="h-8 px-2.5 text-xs" onClick={() => openNoteDialog(r)}>
                       <StickyNote className="w-3.5 h-3.5 mr-1" /> {r.notes ? 'Edit note' : 'Add note'}
@@ -812,6 +956,14 @@ Thanks & regards 🙏`;
                         <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Mark done
                       </Button>
                     )}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 px-2.5 text-xs text-red-700 border-red-200 hover:bg-red-50"
+                      onClick={() => setRemoveTarget(r)}
+                    >
+                      <Trash2 className="w-3.5 h-3.5 mr-1" /> Remove
+                    </Button>
                   </div>
                 </div>
               );
@@ -844,16 +996,49 @@ Thanks & regards 🙏`;
               </Button>
             </div>
           )}
-        </DialogContent>
-      </Dialog>
+    </>
+  );
+
+  return (
+    <>
+      {isPage ? (
+        <div className="flex min-h-0 flex-1 flex-col rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+          <div className="px-4 pt-4 sm:px-6 sm:pt-5 shrink-0">
+            <h2 className="flex items-center gap-2 text-base sm:text-lg font-semibold text-foreground">
+              <Repeat className="w-5 h-5 text-sky-700" />
+              Recurring Service Tracker
+            </h2>
+            <p className="mt-1 text-xs sm:text-sm text-muted-foreground">
+              Due this week by default (overdue first). Switch to All recurring for later dates (e.g. Sep). Call, create a job, view reports, or remove from here.
+            </p>
+          </div>
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{trackerMain}</div>
+        </div>
+      ) : (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+          <DialogContent className="sm:max-w-3xl max-h-[92vh] p-0 flex flex-col overflow-hidden">
+            <DialogHeader className="px-4 pt-4 sm:px-6">
+              <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
+                <Repeat className="w-5 h-5 text-primary" />
+                Reminder Tracking
+              </DialogTitle>
+              <DialogDescription className="text-xs sm:text-sm">
+                Due this week by default (overdue first). Use “All recurring” for later dates, then
+                call, create a job, or mark called.
+              </DialogDescription>
+            </DialogHeader>
+            {trackerMain}
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* Status edit dialog */}
       <Dialog open={!!statusTarget} onOpenChange={(o) => !o && setStatusTarget(null)}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-base">Update status</DialogTitle>
+            <DialogTitle className="text-base">Call result</DialogTitle>
             <DialogDescription className="text-xs">
-              Track the outcome of your call / follow-up.
+              Did you reach them? Pick the outcome after the call.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -1032,6 +1217,43 @@ Thanks & regards 🙏`;
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Remove confirm */}
+      <Dialog open={!!removeTarget} onOpenChange={(o) => !o && setRemoveTarget(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-base">Remove this reminder?</DialogTitle>
+            <DialogDescription className="text-xs">
+              This permanently deletes the reminder. It will not come back on a cycle.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-1">
+            <Button variant="outline" onClick={() => setRemoveTarget(null)} className="w-full sm:w-auto">
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmRemove}
+              disabled={removeSaving}
+              className="w-full sm:w-auto"
+            >
+              {removeSaving ? 'Removing…' : 'Remove'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <AddReminderDialog
+        open={addReminderOpen}
+        onOpenChange={setAddReminderOpen}
+        entity={{ type: 'general', id: null }}
+        requireCustomerPick
+        dialogTitle="Add recurring service reminder"
+        onSaved={() => {
+          setAddReminderOpen(false);
+          void load();
+        }}
+      />
 
       {/* Reuse existing job creation + report dialogs */}
       <NewJobDialog

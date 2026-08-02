@@ -7152,9 +7152,13 @@ export const db = {
       page?: number;
       pageSize?: number;
       status?: ServiceReminderStatus | 'all';
+      /** When set, match any of these statuses (overrides single `status`). */
+      statuses?: ServiceReminderStatus[];
       dueOnly?: boolean;
       /** Upper bound (inclusive) on reminder_at, e.g. today+7 for a "this week" window. YYYY-MM-DD. */
       untilDate?: string;
+      /** Only every-N-months reminders (6 / 12 month service cadence). */
+      recurringOnly?: boolean;
     } = {}) {
       const page = Math.max(1, opts.page ?? 1);
       const pageSize = Math.min(Math.max(opts.pageSize ?? 15, 1), 50);
@@ -7165,7 +7169,12 @@ export const db = {
         .select(REMINDER_TRACKER_COLUMNS, { count: 'exact' })
         .neq('title', PENDING_PAYMENT_REMINDER_TITLE)
         .is('completed_at', null);
-      if (opts.status && opts.status !== 'all') {
+      if (opts.recurringOnly) {
+        query = query.eq('interval_type', 'months').gt('interval_value', 0);
+      }
+      if (opts.statuses?.length) {
+        query = query.in('service_status', opts.statuses);
+      } else if (opts.status && opts.status !== 'all') {
         query = query.eq('service_status', opts.status);
       }
       // `dueOnly` (<= today) and `untilDate` (<= given date) are both upper bounds; apply the tighter one.
