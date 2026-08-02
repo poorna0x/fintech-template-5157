@@ -1104,8 +1104,13 @@ const TechnicianPayments = () => {
   };
 
   // Deep-link from nightly expense-review push (No → Payments → Add expense).
+  // Dedupe: native inject + URL + custom event can all fire; open the dialog once.
+  const expenseDeepLinkHandledRef = useRef<string | null>(null);
   useEffect(() => {
     const openFromKind = (kind: 'technician' | 'business', expenseDate?: string | null) => {
+      const key = `${kind}|${expenseDate || ''}`;
+      if (expenseDeepLinkHandledRef.current === key) return;
+      expenseDeepLinkHandledRef.current = key;
       try {
         localStorage.removeItem('hro_admin_add_expense');
         localStorage.removeItem('hro_admin_add_expense_date');
@@ -1137,15 +1142,18 @@ const TechnicianPayments = () => {
         });
         setExpenseDialogOpen(true);
       }
-      navigate(
-        adminDashboardLocation(
-          buildAdminDashboardSearch(
-            { addExpense: null, expenseDate: null, view: 'payments' },
-            location.search
-          )
-        ),
-        { replace: true }
-      );
+      const parsedNow = parseAdminDashboardUrl(location.search);
+      if (parsedNow.addExpense || parsedNow.expenseDate) {
+        navigate(
+          adminDashboardLocation(
+            buildAdminDashboardSearch(
+              { addExpense: null, expenseDate: null, view: 'payments' },
+              location.search
+            )
+          ),
+          { replace: true }
+        );
+      }
     };
 
     const parsed = parseAdminDashboardUrl(location.search);

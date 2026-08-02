@@ -80,6 +80,7 @@ public class MainActivity extends BridgeActivity {
     /**
      * Expense-review "No" opens Payments → Add expense. Persist + navigate even
      * when Capacitor's push tap listener has not attached yet (cold start).
+     * Single-shot: avoid location.assign / custom-event loops that refresh the page.
      */
     private void deliverExpenseReviewIfNeeded(Intent intent) {
         if (intent == null) return;
@@ -94,6 +95,7 @@ public class MainActivity extends BridgeActivity {
             expenseDate != null && expenseDate.matches("\\d{4}-\\d{2}-\\d{2}")
                 ? expenseDate
                 : "";
+        final String deliveryKey = addExpense + "|" + safeDate;
 
         // Dismiss the tray notification when opened via No / body tap.
         int notificationId = intent.getIntExtra("notificationId", 0);
@@ -112,41 +114,69 @@ public class MainActivity extends BridgeActivity {
             .putString("expenseDate", safeDate)
             .apply();
 
-        Runnable inject = () -> {
+        // Consume extras so rotation / onNewIntent does not re-deliver.
+        intent.removeExtra("type");
+        intent.removeExtra("addExpense");
+        intent.removeExtra("kind");
+        intent.removeExtra("date");
+        setIntent(intent);
+
+        final int[] attempts = { 0 };
+        final Runnable[] injectHolder = new Runnable[1];
+        injectHolder[0] = () -> {
+            attempts[0] += 1;
             WebView webView = webViewOrNull();
-            if (webView == null) return;
+            if (webView == null) {
+                if (attempts[0] < 6) {
+                    getWindow().getDecorView().postDelayed(injectHolder[0], 500);
+                }
+                return;
+            }
             String js =
                 "(function(){try{"
-                    + "localStorage.setItem('hro_admin_add_expense','"
-                    + addExpense
-                    + "');"
+                    + "var key="
+                    + jsonString(deliveryKey)
+                    + ";"
+                    + "if(sessionStorage.getItem('hro_er_delivered')===key)return;"
+                    + "sessionStorage.setItem('hro_er_delivered',key);"
+                    + "localStorage.setItem('hro_admin_add_expense',"
+                    + jsonString(addExpense)
+                    + ");"
                     + (safeDate.isEmpty()
                         ? "localStorage.removeItem('hro_admin_add_expense_date');"
-                        : "localStorage.setItem('hro_admin_add_expense_date','"
-                            + safeDate
-                            + "');")
-                    + "window.dispatchEvent(new CustomEvent('hro-admin-add-expense',{detail:{addExpense:'"
-                    + addExpense
-                    + "'"
-                    + (safeDate.isEmpty() ? "" : ",expenseDate:'" + safeDate + "'")
-                    + "}}));"
+                        : "localStorage.setItem('hro_admin_add_expense_date',"
+                            + jsonString(safeDate)
+                            + ");")
                     + "var need='/admin?view=payments&addExpense="
                     + addExpense
                     + (safeDate.isEmpty() ? "" : "&expenseDate=" + safeDate)
                     + "';"
-                    + "if(location.pathname.indexOf('/admin')!==0||location.search.indexOf('view=payments')<0||location.search.indexOf('addExpense=')<0){"
-                    + "location.assign(need);"
+                    + "var onPayments=location.pathname.indexOf('/admin')===0"
+                    + "&&location.search.indexOf('view=payments')>=0;"
+                    + "var hasParam=location.search.indexOf('addExpense="
+                    + addExpense
+                    + "')>=0;"
+                    + "if(hasParam){return;}"
+                    + "if(onPayments){"
+                    + "window.dispatchEvent(new CustomEvent('hro-admin-add-expense',{detail:{addExpense:"
+                    + jsonString(addExpense)
+                    + (safeDate.isEmpty() ? "" : ",expenseDate:" + jsonString(safeDate))
+                    + "}}));"
+                    + "return;"
                     + "}"
+                    + "location.replace(need);"
                     + "}catch(e){}})();";
             webView.evaluateJavascript(js, null);
         };
 
-        // WebView may not exist yet on cold open — retry a few times.
-        View decor = getWindow().getDecorView();
-        decor.post(inject);
-        decor.postDelayed(inject, 800);
-        decor.postDelayed(inject, 2000);
-        decor.postDelayed(inject, 4000);
+        getWindow().getDecorView().post(injectHolder[0]);
+    }
+
+    private static String jsonString(String raw) {
+        if (raw == null) return "''";
+        return "'"
+            + raw.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "")
+            + "'";
     }
 
     /** Keep system splash until boot overlay has actually drawn (no blank gap). */
