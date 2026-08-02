@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -9,7 +9,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Bell, Search } from 'lucide-react';
-import { format, addMonths, addDays, subDays, startOfDay, endOfDay } from 'date-fns';
+import { format } from 'date-fns';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { ReminderRow } from '@/components/reminders/RemindersList';
@@ -34,13 +34,26 @@ import {
 const RECENT_COMPLETED_DAYS = 7;
 const UPCOMING_DAYS = 7;
 const PAGE_SIZE = 20;
+const SEARCH_DEBOUNCE_MS = 300;
 
 type CustomerLabel = { name: string; customerId: string };
+type SettingsRemindersMode = 'upcoming' | 'active' | 'completed_recent';
 
 interface SettingsRemindersDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialReminderId?: string | null;
+}
+
+function modeFromFlags(
+  includeCompleted: boolean,
+  showAllReminders: boolean,
+  showUpcomingOnly: boolean
+): SettingsRemindersMode {
+  if (includeCompleted) return 'completed_recent';
+  if (showAllReminders) return 'active';
+  if (showUpcomingOnly) return 'upcoming';
+  return 'active';
 }
 
 export function SettingsRemindersDialog({
@@ -50,130 +63,177 @@ export function SettingsRemindersDialog({
 }: SettingsRemindersDialogProps) {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [customerLabels, setCustomerLabels] = useState<Record<string, CustomerLabel>>({});
+  const [totalCount, setTotalCount] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [includeCompleted, setIncludeCompleted] = useState(false);
   const [showAllReminders, setShowAllReminders] = useState(false);
   const [showUpcomingOnly, setShowUpcomingOnly] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1);
   const [editReminder, setEditReminder] = useState<Reminder | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [highlightReminderId, setHighlightReminderId] = useState<string | null>(null);
+  const [deepLinkOnly, setDeepLinkOnly] = useState(false);
   const deepLinkHandledRef = useRef<string | null>(null);
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const loadGenRef = useRef(0);
+  /** Skip the auto-reload effect once after an explicit loadPage that already fetched. */
+  const suppressAutoLoadRef = useRef(false);
 
-  const load = (overrides?: { includeCompleted?: boolean; showAll?: boolean }) => {
-    const include = overrides?.includeCompleted ?? includeCompleted;
-    const showAll = overrides?.showAll ?? showAllReminders;
-    setLoading(true);
-    // showAll = only active; include = active + recent completed; neither = active only
-    db.reminders.getAll(include && !showAll).then(({ data, error }) => {
-      if (error) {
-        setLoading(false);
-        toast.error(error.message);
-        return;
-      }
-      let list = (data as Reminder[]) || [];
-      if (showAll || !include) {
-        // Show only active reminders
-        list = list.filter((r) => !r.completed_at);
-        list.sort((a, b) => new Date(a.reminder_at).getTime() - new Date(b.reminder_at).getTime());
-      } else {
-        // Include recent completed: only completed on or after start of day N days ago (no active reminders)
-        const cutoff = startOfDay(subDays(new Date(), RECENT_COMPLETED_DAYS)).getTime();
-        list = list.filter(
-          (r) => r.completed_at != null && new Date(r.completed_at).getTime() >= cutoff
-        );
-        list.sort((a, b) => {
-          if (a.completed_at && b.completed_at)
-            return new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime();
-          if (a.completed_at) return 1;
-          if (b.completed_at) return -1;
-          return new Date(b.reminder_at).getTime() - new Date(a.reminder_at).getTime();
-        });
-      }
-      setReminders(list);
-      const customerIds = [
-        ...new Set(
-          list.filter((r) => r.entity_type === 'customer' && r.entity_id).map((r) => r.entity_id as string)
-        ),
-      ];
-      const labels: Record<string, CustomerLabel> = {};
-      db.customers.getByIds(customerIds).then(({ data: customers }) => {
-        (customers || []).forEach((c: any) => {
-          if (c?.id) labels[c.id] = { name: c.full_name || 'Customer', customerId: c.customer_id || c.id.slice(0, 8) };
-        });
-        setCustomerLabels(labels);
-      });
-      setLoaded(true);
-      setLoading(false);
-      setPage(1);
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedSearch(searchQuery.trim()), SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(t);
+  }, [searchQuery]);
+
+  const loadLabelsFor = useCallback(async (list: Reminder[]) => {
+    const customerIds = [
+      ...new Set(
+        list.filter((r) => r.entity_type === 'customer' && r.entity_id).map((r) => r.entity_id as string)
+      ),
+    ];
+    if (customerIds.length === 0) {
+      setCustomerLabels({});
+      return;
+    }
+    const labels: Record<string, CustomerLabel> = {};
+    const { data: customers } = await db.customers.getByIds(customerIds);
+    (customers || []).forEach((c: any) => {
+      if (c?.id) labels[c.id] = { name: c.full_name || 'Customer', customerId: c.customer_id || c.id.slice(0, 8) };
     });
-  };
+    setCustomerLabels(labels);
+  }, []);
+
+  const loadPage = useCallback(
+    async (opts?: {
+      page?: number;
+      includeCompleted?: boolean;
+      showAll?: boolean;
+      showUpcoming?: boolean;
+      search?: string;
+    }) => {
+      const nextPage = opts?.page ?? page;
+      const include = opts?.includeCompleted ?? includeCompleted;
+      const showAll = opts?.showAll ?? showAllReminders;
+      const showUpcoming = opts?.showUpcoming ?? showUpcomingOnly;
+      const search = opts?.search ?? debouncedSearch;
+      const mode = modeFromFlags(include, showAll, showUpcoming);
+
+      const gen = ++loadGenRef.current;
+      setLoading(true);
+      setDeepLinkOnly(false);
+      try {
+        let customerIds: string[] | undefined;
+        if (search) {
+          const { data: custs } = await db.customers.searchSlim(search, 40);
+          customerIds = (custs || []).map((c: any) => c?.id).filter(Boolean) as string[];
+        }
+        const { data, error, count } = await db.reminders.getSettingsRemindersPaginated({
+          page: nextPage,
+          pageSize: PAGE_SIZE,
+          mode,
+          upcomingDays: UPCOMING_DAYS,
+          completedDays: RECENT_COMPLETED_DAYS,
+          search: search || undefined,
+          customerIds,
+        });
+        if (gen !== loadGenRef.current) return;
+        if (error) {
+          toast.error(error.message);
+          return;
+        }
+        const list = data || [];
+        setReminders(list);
+        setTotalCount(count || 0);
+        setPage(nextPage);
+        await loadLabelsFor(list);
+        suppressAutoLoadRef.current = true;
+        setLoaded(true);
+      } catch (err: any) {
+        if (gen !== loadGenRef.current) return;
+        toast.error(err?.message || 'Failed to load reminders');
+      } finally {
+        if (gen === loadGenRef.current) setLoading(false);
+      }
+    },
+    [
+      page,
+      includeCompleted,
+      showAllReminders,
+      showUpcomingOnly,
+      debouncedSearch,
+      loadLabelsFor,
+    ]
+  );
 
   useEffect(() => {
     if (!open || !initialReminderId) return;
     if (deepLinkHandledRef.current === initialReminderId) return;
     deepLinkHandledRef.current = initialReminderId;
-    setShowUpcomingOnly(false);
-    setHighlightReminderId(initialReminderId);
-    load({ showAll: true });
-  }, [open, initialReminderId]);
 
-  const filteredReminders = useMemo(() => {
-    let list = reminders;
-    const q = searchQuery.trim().toLowerCase();
-    if (q) {
-      list = list.filter((r) => {
-        const label =
-          r.entity_type === 'customer' && r.entity_id ? customerLabels[r.entity_id] : null;
-        const matchLabel =
-          label &&
-          (label.name.toLowerCase().includes(q) || label.customerId.toLowerCase().includes(q));
-        const matchTitle =
-          r.title.toLowerCase().includes(q) || (r.notes && r.notes.toLowerCase().includes(q));
-        const matchGeneral = r.entity_type === 'general' && q.includes('general');
-        return !!(matchLabel || matchTitle || matchGeneral);
-      });
-    }
-    if (showUpcomingOnly) {
-      const now = new Date();
-      const weekEnd = endOfDay(addDays(now, UPCOMING_DAYS));
-      list = list.filter((r) => {
-        if (r.completed_at) return false;
-        const at = new Date(r.reminder_at).getTime();
-        return at >= startOfDay(now).getTime() && at <= weekEnd.getTime();
-      });
-      list = [...list].sort((a, b) => new Date(a.reminder_at).getTime() - new Date(b.reminder_at).getTime());
-    }
-    return list;
-  }, [reminders, customerLabels, searchQuery, showUpcomingOnly]);
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setShowUpcomingOnly(false);
+      setShowAllReminders(true);
+      setIncludeCompleted(false);
+      setHighlightReminderId(initialReminderId);
+      try {
+        const { data, error } = await db.reminders.getById(initialReminderId);
+        if (cancelled) return;
+        if (error || !data) {
+          toast.error(error?.message || 'Reminder not found');
+          setLoaded(true);
+          return;
+        }
+        setReminders([data]);
+        setTotalCount(1);
+        setPage(1);
+        setDeepLinkOnly(true);
+        await loadLabelsFor([data]);
+        setLoaded(true);
+        window.setTimeout(() => {
+          rowRefs.current[initialReminderId]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 100);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
 
-  const totalPages = Math.max(1, Math.ceil(filteredReminders.length / PAGE_SIZE));
-  const currentPage = Math.min(page, totalPages);
-  const paginatedReminders = useMemo(
-    () =>
-      filteredReminders.slice(
-        (currentPage - 1) * PAGE_SIZE,
-        currentPage * PAGE_SIZE
-      ),
-    [filteredReminders, currentPage]
-  );
+    return () => {
+      cancelled = true;
+    };
+  }, [open, initialReminderId, loadLabelsFor]);
+
+  // Re-fetch when page / filters / debounced search change (after first Load / Refresh).
+  useEffect(() => {
+    if (!loaded || deepLinkOnly) return;
+    if (suppressAutoLoadRef.current) {
+      suppressAutoLoadRef.current = false;
+      return;
+    }
+    void loadPage({ page, search: debouncedSearch });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadPage identity changes often; deps are the real triggers
+  }, [
+    page,
+    includeCompleted,
+    showAllReminders,
+    showUpcomingOnly,
+    debouncedSearch,
+    loaded,
+    deepLinkOnly,
+  ]);
 
   useEffect(() => {
     if (!highlightReminderId || !loaded) return;
-    const idx = filteredReminders.findIndex((r) => r.id === highlightReminderId);
-    if (idx < 0) return;
-    const targetPage = Math.floor(idx / PAGE_SIZE) + 1;
-    if (targetPage !== page) {
-      setPage(targetPage);
-      return;
-    }
     window.setTimeout(() => {
       rowRefs.current[highlightReminderId]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, 100);
-  }, [highlightReminderId, loaded, filteredReminders, page]);
+  }, [highlightReminderId, loaded, reminders]);
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
 
   const handleDelete = async (id: string) => {
     const { error } = await db.reminders.delete(id);
@@ -181,7 +241,7 @@ export function SettingsRemindersDialog({
     else {
       toast.success('Reminder deleted');
       setDeleteId(null);
-      load();
+      void loadPage({ page: currentPage });
     }
   };
 
@@ -216,7 +276,7 @@ export function SettingsRemindersDialog({
     } else {
       toast.success('Marked done');
     }
-    load();
+    void loadPage({ page: currentPage });
   };
 
   const handleIncludeChange = (checked: boolean) => {
@@ -225,7 +285,8 @@ export function SettingsRemindersDialog({
       setShowAllReminders(false);
       setShowUpcomingOnly(false);
     }
-    if (loaded) load({ includeCompleted: checked, showAll: checked ? false : showAllReminders });
+    setPage(1);
+    setDeepLinkOnly(false);
   };
 
   const handleShowAllChange = (checked: boolean) => {
@@ -234,7 +295,8 @@ export function SettingsRemindersDialog({
       setIncludeCompleted(false);
       setShowUpcomingOnly(false);
     }
-    if (loaded) load({ showAll: checked, includeCompleted: checked ? false : includeCompleted });
+    setPage(1);
+    setDeepLinkOnly(false);
   };
 
   const handleShowUpcomingChange = (checked: boolean) => {
@@ -244,6 +306,7 @@ export function SettingsRemindersDialog({
       setShowAllReminders(false);
     }
     setPage(1);
+    setDeepLinkOnly(false);
   };
 
   return (
@@ -261,7 +324,18 @@ export function SettingsRemindersDialog({
 
         <div className="flex flex-col gap-3 flex-1 min-h-0">
           {!loaded ? (
-            <Button onClick={() => load({ includeCompleted: false, showAll: false })} disabled={loading} className="w-full sm:w-auto min-h-9">
+            <Button
+              onClick={() =>
+                void loadPage({
+                  page: 1,
+                  includeCompleted: false,
+                  showAll: false,
+                  showUpcoming: true,
+                })
+              }
+              disabled={loading}
+              className="w-full sm:w-auto min-h-9"
+            >
               {loading ? 'Loading...' : 'Load reminders'}
             </Button>
           ) : (
@@ -303,6 +377,7 @@ export function SettingsRemindersDialog({
                   onChange={(e) => {
                     setSearchQuery(e.target.value);
                     setPage(1);
+                    setDeepLinkOnly(false);
                   }}
                   className="pl-9 min-h-9"
                 />
@@ -310,7 +385,10 @@ export function SettingsRemindersDialog({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => load({})}
+                onClick={() => {
+                  setDeepLinkOnly(false);
+                  void loadPage({ page: currentPage });
+                }}
                 disabled={loading}
                 className="w-full sm:w-auto min-h-9"
               >
@@ -321,7 +399,7 @@ export function SettingsRemindersDialog({
 
           {loaded && (
             <div className="flex-1 overflow-y-auto min-h-0 space-y-3 pr-1">
-              {filteredReminders.length === 0 ? (
+              {reminders.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   {searchQuery.trim()
                     ? 'No reminders match your search.'
@@ -334,7 +412,7 @@ export function SettingsRemindersDialog({
               ) : (
                 <>
                   <div className="space-y-3">
-                    {paginatedReminders.map((r) => (
+                    {reminders.map((r) => (
                       <div
                         key={r.id}
                         ref={(el) => {
@@ -358,17 +436,17 @@ export function SettingsRemindersDialog({
                       </div>
                     ))}
                   </div>
-                  {totalPages > 1 && (
+                  {!deepLinkOnly && totalPages > 1 && (
                     <div className="flex items-center justify-between gap-4 pt-3 border-t sticky bottom-0 bg-background">
                       <span className="text-sm text-muted-foreground">
-                        Page {currentPage} of {totalPages} ({filteredReminders.length} reminder
-                        {filteredReminders.length !== 1 ? 's' : ''})
+                        Page {currentPage} of {totalPages} ({totalCount} reminder
+                        {totalCount !== 1 ? 's' : ''})
                       </span>
                       <div className="flex gap-2">
                         <Button
                           variant="outline"
                           size="sm"
-                          disabled={currentPage <= 1}
+                          disabled={currentPage <= 1 || loading}
                           onClick={() => setPage((p) => Math.max(1, p - 1))}
                         >
                           Previous
@@ -376,7 +454,7 @@ export function SettingsRemindersDialog({
                         <Button
                           variant="outline"
                           size="sm"
-                          disabled={currentPage >= totalPages}
+                          disabled={currentPage >= totalPages || loading}
                           onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                         >
                           Next
@@ -403,7 +481,8 @@ export function SettingsRemindersDialog({
           editReminder={editReminder || undefined}
           onSaved={() => {
             setEditReminder(null);
-            load();
+            setDeepLinkOnly(false);
+            void loadPage({ page: currentPage });
           }}
         />
 

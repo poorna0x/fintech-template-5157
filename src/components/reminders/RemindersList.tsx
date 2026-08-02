@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { format, addMonths, subDays, startOfDay } from 'date-fns';
+import { format } from 'date-fns';
 import { Bell, Plus, Pencil, Trash2, Calendar, Check } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -142,42 +142,69 @@ export function ReminderRow({
 export function RemindersList() {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [customerLabels, setCustomerLabels] = useState<Record<string, CustomerLabel>>({});
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
   const [editReminder, setEditReminder] = useState<Reminder | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [includeCompleted, setIncludeCompleted] = useState(false);
+  const [page, setPage] = useState(1);
+  const loadGenRef = useRef(0);
 
-  const load = () => {
-    setLoading(true);
-    db.reminders.getAll(includeCompleted).then(({ data, error }) => {
-      if (error) {
-        setLoading(false);
-        toast.error(error.message);
-        return;
-      }
-      let list = (data as Reminder[]) || [];
-      if (includeCompleted) {
-        const cutoff = startOfDay(subDays(new Date(), RECENT_COMPLETED_DAYS)).getTime();
-        list = list.filter((r) => r.completed_at && new Date(r.completed_at).getTime() >= cutoff);
-        list.sort((a, b) => (b.completed_at && a.completed_at ? new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime() : 0));
-      }
-      setReminders(list);
-      const customerIds = [...new Set(list.filter((r) => r.entity_type === 'customer' && r.entity_id).map((r) => r.entity_id as string))];
-      const labels: Record<string, CustomerLabel> = {};
-      db.customers.getByIds(customerIds).then(({ data: customers }) => {
-        (customers || []).forEach((c: any) => {
-          if (c?.id) labels[c.id] = { name: c.full_name || 'Customer', customerId: c.customer_id || c.id.slice(0, 8) };
+  const PAGE_SIZE = 20;
+
+  const load = useCallback(
+    async (opts?: { page?: number; includeCompleted?: boolean }) => {
+      const nextPage = opts?.page ?? page;
+      const include = opts?.includeCompleted ?? includeCompleted;
+      const gen = ++loadGenRef.current;
+      setLoading(true);
+      try {
+        const { data, error, count } = await db.reminders.getSettingsRemindersPaginated({
+          page: nextPage,
+          pageSize: PAGE_SIZE,
+          mode: include ? 'completed_recent' : 'active',
+          completedDays: RECENT_COMPLETED_DAYS,
         });
+        if (gen !== loadGenRef.current) return;
+        if (error) {
+          toast.error(error.message);
+          return;
+        }
+        const list = data || [];
+        setReminders(list);
+        setTotalCount(count || 0);
+        setPage(nextPage);
+        const customerIds = [
+          ...new Set(
+            list.filter((r) => r.entity_type === 'customer' && r.entity_id).map((r) => r.entity_id as string)
+          ),
+        ];
+        const labels: Record<string, CustomerLabel> = {};
+        if (customerIds.length > 0) {
+          const { data: customers } = await db.customers.getByIds(customerIds);
+          (customers || []).forEach((c: any) => {
+            if (c?.id) labels[c.id] = { name: c.full_name || 'Customer', customerId: c.customer_id || c.id.slice(0, 8) };
+          });
+        }
         setCustomerLabels(labels);
-      });
-      setLoading(false);
-    });
-  };
+      } catch (err: any) {
+        if (gen !== loadGenRef.current) return;
+        toast.error(err?.message || 'Failed to load reminders');
+      } finally {
+        if (gen === loadGenRef.current) setLoading(false);
+      }
+    },
+    [page, includeCompleted]
+  );
 
   useEffect(() => {
-    load();
-  }, [includeCompleted]);
+    void load({ page, includeCompleted });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, includeCompleted]);
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
 
   const handleEdit = (r: Reminder) => {
     setEditReminder(r);
@@ -189,7 +216,7 @@ export function RemindersList() {
     else {
       toast.success('Reminder deleted');
       setDeleteId(null);
-      load();
+      void load({ page: currentPage });
     }
   };
 
@@ -223,7 +250,7 @@ export function RemindersList() {
     } else {
       toast.success('Marked done');
     }
-    load();
+    void load({ page: currentPage });
   };
 
   return (
@@ -245,7 +272,10 @@ export function RemindersList() {
               <input
                 type="checkbox"
                 checked={includeCompleted}
-                onChange={(e) => setIncludeCompleted(e.target.checked)}
+                onChange={(e) => {
+                  setIncludeCompleted(e.target.checked);
+                  setPage(1);
+                }}
                 className="rounded"
               />
               Show completed (last {RECENT_COMPLETED_DAYS} days)
@@ -276,6 +306,31 @@ export function RemindersList() {
                 onMarkDone={() => handleMarkDone(r)}
               />
             ))}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between gap-4 pt-3 border-t">
+                <span className="text-sm text-muted-foreground">
+                  Page {currentPage} of {totalPages} ({totalCount} reminder{totalCount !== 1 ? 's' : ''})
+                </span>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={currentPage <= 1 || loading}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={currentPage >= totalPages || loading}
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </CardContent>
@@ -284,10 +339,10 @@ export function RemindersList() {
         open={addOpen}
         onOpenChange={(o) => {
           setAddOpen(o);
-          if (!o) load();
+          if (!o) void load({ page: currentPage });
         }}
         entity={{ type: 'general', id: null }}
-        onSaved={load}
+        onSaved={() => void load({ page: currentPage })}
       />
       <AddReminderDialog
         open={!!editReminder}
@@ -302,7 +357,7 @@ export function RemindersList() {
         editReminder={editReminder || undefined}
         onSaved={() => {
           setEditReminder(null);
-          load();
+          void load({ page: currentPage });
         }}
       />
 

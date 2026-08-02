@@ -4395,6 +4395,23 @@ export const db = {
         .limit(50);
       return { data, error };
     },
+    /** Settings list / assign checkboxes — names only (no image URL egress). */
+    async getNames() {
+      const { data, error } = await supabase
+        .from('technician_common_qr')
+        .select('id, name')
+        .order('created_at', { ascending: false })
+        .limit(50);
+      return { data, error };
+    },
+    async getById(id: string) {
+      const { data, error } = await supabase
+        .from('technician_common_qr')
+        .select('id, name, qr_code_url, created_at, updated_at')
+        .eq('id', id)
+        .single();
+      return { data, error };
+    },
     async update(id: string, updates: { name?: string; qr_code_url?: string }) {
       const { data, error } = await supabase
         .from('technician_common_qr')
@@ -4444,6 +4461,17 @@ export const db = {
         .order('created_at', { ascending: false })
         .limit(50);
       
+      return { data, error };
+    },
+
+    /** Settings list — names only (no image / product detail egress). */
+    async getNames() {
+      const { data, error } = await supabase
+        .from('product_qr_codes')
+        .select('id, name')
+        .order('created_at', { ascending: false })
+        .limit(50);
+
       return { data, error };
     },
     
@@ -7406,6 +7434,94 @@ export const db = {
       }
       const { data, error } = await query;
       return { data: data || [], error };
+    },
+
+    /** Single reminder row for Settings deep-links (excludes pending-payment title). */
+    async getById(id: string) {
+      if (!id) return { data: null, error: null };
+      const { data, error } = await supabase
+        .from('reminders')
+        .select(REMINDER_ROW_COLUMNS)
+        .eq('id', id)
+        .neq('title', PENDING_PAYMENT_REMINDER_TITLE)
+        .maybeSingle();
+      return { data: (data as Reminder | null) ?? null, error };
+    },
+
+    /**
+     * Settings → Reminders list: server-paginated (page size ~20). Pending-payment
+     * rows are excluded. Search matches title/notes, optional customer ids from
+     * searchSlim, and entity_type=general when the query contains "general".
+     */
+    async getSettingsRemindersPaginated(opts: {
+      page?: number;
+      pageSize?: number;
+      mode?: 'upcoming' | 'active' | 'completed_recent';
+      upcomingDays?: number;
+      completedDays?: number;
+      search?: string;
+      /** Pre-resolved customer UUIDs from searchSlim (caller supplies to avoid duplicate search). */
+      customerIds?: string[];
+    } = {}) {
+      const page = Math.max(1, opts.page ?? 1);
+      const pageSize = Math.min(Math.max(opts.pageSize ?? 20, 1), 50);
+      const from = (page - 1) * pageSize;
+      const to = from + pageSize - 1;
+      const mode = opts.mode ?? 'upcoming';
+      const upcomingDays = Math.max(1, opts.upcomingDays ?? 7);
+      const completedDays = Math.max(1, opts.completedDays ?? 7);
+
+      const now = new Date();
+      const todayYmd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const untilDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + upcomingDays);
+      const untilYmd = `${untilDate.getFullYear()}-${String(untilDate.getMonth() + 1).padStart(2, '0')}-${String(untilDate.getDate()).padStart(2, '0')}`;
+      const completedCutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate() - completedDays).toISOString();
+
+      let query = supabase
+        .from('reminders')
+        .select(REMINDER_ROW_COLUMNS, { count: 'exact' })
+        .neq('title', PENDING_PAYMENT_REMINDER_TITLE);
+
+      if (mode === 'completed_recent') {
+        query = query
+          .not('completed_at', 'is', null)
+          .gte('completed_at', completedCutoff)
+          .order('completed_at', { ascending: false });
+      } else {
+        query = query.is('completed_at', null);
+        if (mode === 'upcoming') {
+          query = query.gte('reminder_at', todayYmd).lte('reminder_at', untilYmd);
+        }
+        query = query
+          .order('reminder_at', { ascending: true })
+          .order('created_at', { ascending: true });
+      }
+
+      const rawSearch = (opts.search || '').trim();
+      if (rawSearch) {
+        const escaped = escapeForLike(rawSearch).replace(/,/g, '');
+        const orParts: string[] = [];
+        if (escaped) {
+          orParts.push(`title.ilike.%${escaped}%`, `notes.ilike.%${escaped}%`);
+        }
+        if (rawSearch.toLowerCase().includes('general')) {
+          orParts.push('entity_type.eq.general');
+        }
+        const customerIds = (opts.customerIds || []).filter(Boolean).slice(0, 40);
+        if (customerIds.length > 0) {
+          orParts.push(`entity_id.in.(${customerIds.join(',')})`);
+        }
+        if (orParts.length > 0) {
+          query = query.or(orParts.join(','));
+        }
+      }
+
+      const { data, error, count } = await query.range(from, to);
+      return {
+        data: (data || []) as unknown as Reminder[],
+        error,
+        count: count ?? 0,
+      };
     },
     async update(id: string, updates: {
       title?: string;

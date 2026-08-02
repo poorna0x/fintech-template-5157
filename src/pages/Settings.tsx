@@ -50,7 +50,7 @@ import { buildTechnicianSalaryPayload, getCurrentMonthKey } from '@/lib/technici
 import { Technician } from '@/types';
 import ImageUpload from '@/components/ImageUpload';
 import { TechnicianIdCardLinks } from '@/components/admin/TechnicianIdCardLinks';
-import { CommonQrCode, invalidateQrCodesCache, cacheQrCodes, normalizeTechnicianAssignedCommonQrIds } from '@/lib/qrCodeManager';
+import { CommonQrCode, invalidateQrCodesCache, cacheQrCodes, getCachedQrCodes, normalizeTechnicianAssignedCommonQrIds } from '@/lib/qrCodeManager';
 // NOTE: `jszip` and `qr-code-styling` are heavy and only used by specific
 // button actions (data export ZIP, styled QR image). They are dynamically
 // imported at their call sites so they stay out of the main Settings chunk.
@@ -124,6 +124,7 @@ const DATABASE_EXPORT_TABLES: {
   { name: 'admin_audit_log', orderBy: 'created_at', label: 'Admin Audit Log', optional: true },
   { name: 'amc_contracts', orderBy: 'created_at', label: 'AMC Contracts' },
   { name: 'amount_trackers', orderBy: 'created_at', label: 'Amount Trackers' },
+  { name: 'app_crash_reports', orderBy: 'last_seen_at', label: 'App Crash Reports', optional: true },
   { name: 'booking_abandonments', orderBy: 'created_at', label: 'Booking Abandonments', optional: true },
   { name: 'business_expenses', orderBy: 'expense_date', label: 'Business Expenses' },
   { name: 'call_history', orderBy: 'contacted_at', label: 'Call History' },
@@ -145,7 +146,11 @@ const DATABASE_EXPORT_TABLES: {
   { name: 'reminders', orderBy: 'reminder_at', label: 'Reminders' },
   { name: 'sent_email_logs', orderBy: 'sent_at', label: 'Sent Email Logs', optional: true },
   { name: 'service_areas', orderBy: 'id', label: 'Service Areas' },
+  { name: 'storage_block_items', orderBy: 'created_at', label: 'Storage Block Items', optional: true },
+  { name: 'storage_blocks', orderBy: 'created_at', label: 'Storage Blocks', optional: true },
+  { name: 'storage_places', orderBy: 'created_at', label: 'Storage Places', optional: true },
   { name: 'tax_invoices', orderBy: 'created_at', label: 'Tax Invoices' },
+  { name: 'tech_call_alert_events', orderBy: 'created_at', label: 'Tech Call Alert Events', optional: true },
   { name: 'technician_advances', orderBy: 'created_at', label: 'Technician Advances' },
   { name: 'technician_common_qr', orderBy: 'created_at', label: 'Technician Common QR' },
   { name: 'technician_expenses', orderBy: 'created_at', label: 'Technician Expenses' },
@@ -389,15 +394,21 @@ const Settings = () => {
   >(null);
   const [remindersInitialReminderId, setRemindersInitialReminderId] = useState<string | null>(null);
 
-  // Load data on component mount
-  useEffect(() => {
-    loadTechnicians();
-    loadCommonQrCodes();
-    loadTechnicianCommonQrCodes();
-    loadProductQrCodes();
-    loadTodos();
-    loadAmountTrackers();
-  }, []);
+  // Below-the-fold Settings sections — load once when near viewport (or when a panel needs them).
+  type SettingsLazySection = 'todos' | 'trackers' | 'commonQr' | 'techQr' | 'productQr';
+  const settingsLazyStartedRef = useRef<Record<SettingsLazySection, boolean>>({
+    todos: false,
+    trackers: false,
+    commonQr: false,
+    techQr: false,
+    productQr: false,
+  });
+  const todosSectionRef = useRef<HTMLDivElement | null>(null);
+  const trackersSectionRef = useRef<HTMLDivElement | null>(null);
+  const commonQrSectionRef = useRef<HTMLDivElement | null>(null);
+  const techQrSectionRef = useRef<HTMLDivElement | null>(null);
+  const productQrSectionRef = useRef<HTMLDivElement | null>(null);
+  const ensureSettingsSectionLoadedRef = useRef<(key: SettingsLazySection) => void>(() => {});
 
   // Reminder / pending-payment push tap while already on Settings.
   useEffect(() => {
@@ -514,7 +525,7 @@ const Settings = () => {
       const qr = technicianCommonQrCodes.find((q) => q.id === parsed.panelId);
       if (qr && selectedTechnicianCommonQr?.id !== qr.id) {
         setSelectedTechnicianCommonQr(qr);
-        setTechnicianCommonQrFormData({ name: qr.name, qrCodeUrl: qr.qrCodeUrl || '' });
+        setTechnicianCommonQrFormData({ name: qr.name, qrCodeUrl: '' });
       }
     }
 
@@ -524,11 +535,11 @@ const Settings = () => {
         setSelectedProductQrCode(qr);
         setProductQrCodeFormData({
           name: qr.name || '',
-          qrCodeUrl: qr.qrCodeUrl || '',
-          productImageUrl: qr.productImageUrl || '',
-          productName: qr.productName || '',
-          productDescription: qr.productDescription || '',
-          productMrp: qr.productMrp != null ? String(qr.productMrp) : '',
+          qrCodeUrl: '',
+          productImageUrl: '',
+          productName: '',
+          productDescription: '',
+          productMrp: '',
         });
       }
     }
@@ -690,6 +701,8 @@ const Settings = () => {
       toast.error(managerRestrictedTitle);
       return;
     }
+    ensureSettingsSectionLoadedRef.current('commonQr');
+    ensureSettingsSectionLoadedRef.current('techQr');
     setTechnicianFormData({
       fullName: '',
       phone: '',
@@ -715,6 +728,8 @@ const Settings = () => {
       toast.error(managerRestrictedTitle);
       return;
     }
+    ensureSettingsSectionLoadedRef.current('commonQr');
+    ensureSettingsSectionLoadedRef.current('techQr');
     setSelectedTechnician(technician);
     setTechnicianFormData({
       fullName: technician.fullName,
@@ -1166,15 +1181,15 @@ const Settings = () => {
   // Common QR (non-payment) management functions
   const loadTechnicianCommonQrCodes = async () => {
     try {
-      const { data, error } = await db.technicianCommonQr.getAll();
+      const { data, error } = await db.technicianCommonQr.getNames();
       if (error) throw error;
       if (data) {
-        const transformed = data.map((qr: any) => ({
+        const transformed = data.map((qr: { id: string; name: string }) => ({
           id: qr.id,
           name: qr.name,
-          qrCodeUrl: qr.qr_code_url,
-          createdAt: qr.created_at,
-          updatedAt: qr.updated_at
+          qrCodeUrl: '',
+          createdAt: '',
+          updatedAt: '',
         }));
         setTechnicianCommonQrCodes(transformed);
       } else {
@@ -1186,6 +1201,29 @@ const Settings = () => {
     }
   };
 
+  const loadTechnicianCommonQrForEdit = async (id: string, fallbackName?: string) => {
+    try {
+      const { data, error } = await db.technicianCommonQr.getById(id);
+      if (error) throw error;
+      if (!data) return;
+      const full: CommonQrCode = {
+        id: data.id,
+        name: data.name,
+        qrCodeUrl: data.qr_code_url || '',
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+      };
+      setSelectedTechnicianCommonQr(full);
+      setTechnicianCommonQrFormData({ name: full.name, qrCodeUrl: full.qrCodeUrl });
+    } catch (error) {
+      console.error('Error loading Common QR for edit:', error);
+      if (fallbackName) {
+        setTechnicianCommonQrFormData((prev) => ({ ...prev, name: fallbackName }));
+      }
+      toast.error('Failed to load QR image for editing');
+    }
+  };
+
   const handleAddTechnicianCommonQr = () => {
     setTechnicianCommonQrFormData({ name: '', qrCodeUrl: '' });
     openSettingsPanel('add-tech-qr');
@@ -1193,9 +1231,18 @@ const Settings = () => {
 
   const handleEditTechnicianCommonQr = (qrCode: CommonQrCode) => {
     setSelectedTechnicianCommonQr(qrCode);
-    setTechnicianCommonQrFormData({ name: qrCode.name, qrCodeUrl: qrCode.qrCodeUrl });
+    setTechnicianCommonQrFormData({ name: qrCode.name, qrCodeUrl: '' });
     openSettingsPanel('edit-tech-qr', { id: qrCode.id });
   };
+
+  // List is names-only; fetch image URL when edit panel opens.
+  useEffect(() => {
+    const parsed = parseSettingsUrl(location.search);
+    if (parsed.panel !== 'edit-tech-qr' || !parsed.panelId) return;
+    if (technicianCommonQrFormData.qrCodeUrl) return;
+    void loadTechnicianCommonQrForEdit(parsed.panelId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once per edit-panel open
+  }, [location.search]);
 
   const handleSaveTechnicianCommonQr = async () => {
     try {
@@ -1247,37 +1294,64 @@ const Settings = () => {
   // Product QR Code management functions
   const loadProductQrCodes = async () => {
     try {
-      console.log('Loading product QR codes...');
-      const { data, error } = await db.productQrCodes.getAll();
-      if (error) {
-        console.error('Error fetching product QR codes:', error);
-        throw error;
-      }
-      
-      console.log('Product QR codes fetched:', data);
-      
+      const { data, error } = await db.productQrCodes.getNames();
+      if (error) throw error;
+
       if (data) {
-        const transformed = data.map((qr: any) => ({
-          id: qr.id,
-          name: qr.name,
-          qrCodeUrl: qr.qr_code_url,
-          productImageUrl: qr.product_image_url || '',
-          productName: qr.product_name || '',
-          productDescription: qr.product_description || '',
-          productMrp: qr.product_mrp || '',
-          createdAt: qr.created_at,
-          updatedAt: qr.updated_at
-        }));
-        console.log('Transformed product QR codes:', transformed);
-        setProductQrCodes(transformed);
+        setProductQrCodes(
+          data.map((qr: { id: string; name: string }) => ({
+            id: qr.id,
+            name: qr.name,
+            qrCodeUrl: '',
+            productImageUrl: '',
+            productName: '',
+            productDescription: '',
+            productMrp: '',
+            createdAt: '',
+            updatedAt: '',
+          }))
+        );
       } else {
-        console.log('No product QR codes found in database');
         setProductQrCodes([]);
       }
     } catch (error) {
       console.error('Error loading product QR codes:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       toast.error(`Failed to load product QR codes: ${errorMessage}`);
+    }
+  };
+
+  const loadProductQrForEdit = async (id: string, fallbackName?: string) => {
+    try {
+      const { data, error } = await db.productQrCodes.getById(id);
+      if (error) throw error;
+      if (!data) return;
+      const full = {
+        id: data.id,
+        name: data.name,
+        qrCodeUrl: data.qr_code_url || '',
+        productImageUrl: data.product_image_url || '',
+        productName: data.product_name || '',
+        productDescription: data.product_description || '',
+        productMrp: data.product_mrp || '',
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+      };
+      setSelectedProductQrCode(full);
+      setProductQrCodeFormData({
+        name: full.name || '',
+        qrCodeUrl: full.qrCodeUrl,
+        productImageUrl: full.productImageUrl,
+        productName: full.productName,
+        productDescription: full.productDescription,
+        productMrp: full.productMrp != null ? String(full.productMrp) : '',
+      });
+    } catch (error) {
+      console.error('Error loading product QR for edit:', error);
+      if (fallbackName) {
+        setProductQrCodeFormData((prev) => ({ ...prev, name: fallbackName }));
+      }
+      toast.error('Failed to load product QR for editing');
     }
   };
 
@@ -1289,15 +1363,23 @@ const Settings = () => {
   const handleEditProductQrCode = (qrCode: any) => {
     setSelectedProductQrCode(qrCode);
     setProductQrCodeFormData({
-      name: qrCode.name,
-      qrCodeUrl: qrCode.qrCodeUrl,
-      productImageUrl: qrCode.productImageUrl || '',
-      productName: qrCode.productName || '',
-      productDescription: qrCode.productDescription || '',
-      productMrp: qrCode.productMrp || ''
+      name: qrCode.name || '',
+      qrCodeUrl: '',
+      productImageUrl: '',
+      productName: '',
+      productDescription: '',
+      productMrp: '',
     });
     openSettingsPanel('edit-product-qr', { id: qrCode.id });
   };
+
+  // List is names-only; fetch full row when edit panel opens.
+  useEffect(() => {
+    const parsed = parseSettingsUrl(location.search);
+    if (parsed.panel !== 'edit-product-qr' || !parsed.panelId) return;
+    void loadProductQrForEdit(parsed.panelId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once per edit-panel open
+  }, [location.search]);
 
   const handleSaveProductQrCode = async () => {
     try {
@@ -1627,6 +1709,103 @@ const Settings = () => {
       setTrackerToDelete(null);
     }
   };
+
+  const ensureSettingsSectionLoaded = useCallback((key: SettingsLazySection) => {
+    if (settingsLazyStartedRef.current[key]) return;
+    settingsLazyStartedRef.current[key] = true;
+
+    if (key === 'todos') {
+      void loadTodos();
+      return;
+    }
+    if (key === 'trackers') {
+      void loadAmountTrackers();
+      return;
+    }
+    if (key === 'commonQr') {
+      const cached = getCachedQrCodes();
+      if (cached) {
+        setCommonQrCodes(cached);
+        return;
+      }
+      void loadCommonQrCodes();
+      return;
+    }
+    if (key === 'techQr') {
+      void loadTechnicianCommonQrCodes();
+      return;
+    }
+    void loadProductQrCodes();
+  }, []);
+  ensureSettingsSectionLoadedRef.current = ensureSettingsSectionLoaded;
+
+  // Locations + management need technicians on open; defer QR / todos / trackers.
+  useEffect(() => {
+    void loadTechnicians();
+  }, []);
+
+  useEffect(() => {
+    if (showCallingPage || showRecurringServicePage) return;
+
+    const pairs: Array<[SettingsLazySection, React.RefObject<HTMLDivElement | null>]> = [
+      ['todos', todosSectionRef],
+      ['trackers', trackersSectionRef],
+      ['commonQr', commonQrSectionRef],
+      ['techQr', techQrSectionRef],
+      ['productQr', productQrSectionRef],
+    ];
+
+    if (typeof IntersectionObserver === 'undefined') {
+      pairs.forEach(([key]) => ensureSettingsSectionLoaded(key));
+      return;
+    }
+
+    const observers: IntersectionObserver[] = [];
+    for (const [key, ref] of pairs) {
+      const el = ref.current;
+      if (!el) continue;
+      const obs = new IntersectionObserver(
+        (entries) => {
+          if (entries.some((e) => e.isIntersecting)) {
+            ensureSettingsSectionLoaded(key);
+            obs.disconnect();
+          }
+        },
+        { rootMargin: '240px 0px', threshold: 0 }
+      );
+      obs.observe(el);
+      observers.push(obs);
+    }
+    return () => observers.forEach((o) => o.disconnect());
+  }, [ensureSettingsSectionLoaded, showCallingPage, showRecurringServicePage]);
+
+  // Deep-link / panel open: fetch only what that panel needs.
+  useEffect(() => {
+    const panel = parseSettingsUrl(location.search).panel;
+    if (!panel) return;
+
+    if (
+      panel === 'add-technician' ||
+      panel === 'edit-technician' ||
+      panel === 'add-payment-qr' ||
+      panel === 'edit-payment-qr'
+    ) {
+      ensureSettingsSectionLoaded('commonQr');
+    }
+    if (
+      panel === 'add-technician' ||
+      panel === 'edit-technician' ||
+      panel === 'add-tech-qr' ||
+      panel === 'edit-tech-qr'
+    ) {
+      ensureSettingsSectionLoaded('techQr');
+    }
+    if (panel === 'add-product-qr' || panel === 'edit-product-qr') {
+      ensureSettingsSectionLoaded('productQr');
+    }
+    if (panel === 'add-todo') ensureSettingsSectionLoaded('todos');
+    if (panel === 'add-tracker') ensureSettingsSectionLoaded('trackers');
+  }, [location.search, ensureSettingsSectionLoaded]);
 
   // Helper function to convert data to CSV
   const convertToCSV = (data: any[], tableName: string): string => {
@@ -2064,7 +2243,7 @@ const Settings = () => {
           </Card>
 
           {/* Todo Tasks */}
-          <Card>
+          <Card ref={todosSectionRef}>
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
@@ -2120,7 +2299,7 @@ const Settings = () => {
           </Card>
 
           {/* Amount Trackers */}
-          <Card id="section-amount-trackers" className="scroll-mt-24">
+          <Card id="section-amount-trackers" className="scroll-mt-24" ref={trackersSectionRef}>
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
@@ -2616,7 +2795,7 @@ const Settings = () => {
           </Card>
 
           {/* Common QR Codes Management */}
-          <Card>
+          <Card ref={commonQrSectionRef}>
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
@@ -2701,7 +2880,7 @@ const Settings = () => {
           </Card>
 
           {/* Common QR (non-payment) - shown below payment QR on technician app */}
-          <Card>
+          <Card ref={techQrSectionRef}>
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
@@ -2724,64 +2903,56 @@ const Settings = () => {
               </div>
             </CardHeader>
             <CardContent className="p-4 sm:p-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="space-y-2">
                 {technicianCommonQrCodes.map((qrCode) => (
-                  <Card key={qrCode.id} className="hover:shadow-md transition-shadow overflow-hidden">
-                    <CardContent className="p-4">
-                      <div className="flex flex-col sm:flex-row sm:items-start gap-3 mb-3">
-                        {qrCode.qrCodeUrl ? (
-                          <div className="shrink-0 mx-auto sm:mx-0">
-                            <img
-                              src={qrCode.qrCodeUrl}
-                              alt={qrCode.name}
-                              className="w-24 h-24 sm:w-20 sm:h-20 object-contain border border-border rounded bg-white"
-                            />
-                          </div>
-                        ) : null}
-                        <div className="flex-1 min-w-0 text-center sm:text-left">
-                          <h3 className="font-semibold text-foreground text-sm sm:text-base break-words">{qrCode.name}</h3>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
+                  <div
+                    key={qrCode.id}
+                    className="flex items-center gap-2 p-3 rounded-lg border border-border bg-card"
+                  >
+                    <h3 className="flex-1 min-w-0 font-medium text-sm sm:text-base text-foreground truncate">
+                      {qrCode.name}
+                    </h3>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleEditTechnicianCommonQr(qrCode)}
+                      className="shrink-0 text-xs sm:text-sm"
+                    >
+                      <Edit className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
+                      Edit
+                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleEditTechnicianCommonQr(qrCode)}
-                          className="flex-1 text-xs sm:text-sm"
+                          className="shrink-0 text-red-600 hover:text-red-700 px-2 sm:px-3"
                         >
-                          <Edit className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
-                          Edit
+                          <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
                         </Button>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700 px-2 sm:px-3">
-                              <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent className="mx-4 sm:mx-0">
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Delete Common QR</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                Are you sure you want to delete "{qrCode.name}"? Technicians assigned this QR will see none until you assign another.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter className="flex-col sm:flex-row gap-2">
-                              <AlertDialogCancel className="w-full sm:w-auto">Cancel</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => handleDeleteTechnicianCommonQr(qrCode.id)}
-                                className="bg-red-600 hover:bg-red-700 w-full sm:w-auto"
-                              >
-                                Delete
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </div>
-                    </CardContent>
-                  </Card>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent className="mx-4 sm:mx-0">
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete Common QR</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Are you sure you want to delete "{qrCode.name}"? Technicians assigned this QR will see none until you assign another.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+                          <AlertDialogCancel className="w-full sm:w-auto">Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => handleDeleteTechnicianCommonQr(qrCode.id)}
+                            className="bg-red-600 hover:bg-red-700 w-full sm:w-auto"
+                          >
+                            Delete
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
                 ))}
                 {technicianCommonQrCodes.length === 0 && (
-                  <div className="col-span-full text-center py-8 text-muted-foreground">
+                  <div className="text-center py-8 text-muted-foreground">
                     No Common QR added yet. Click "Add Common QR" to create one.
                   </div>
                 )}
@@ -2790,7 +2961,7 @@ const Settings = () => {
           </Card>
 
           {/* Product QR Codes Management */}
-          <Card>
+          <Card ref={productQrSectionRef}>
             <CardHeader>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
@@ -2813,96 +2984,68 @@ const Settings = () => {
               </div>
             </CardHeader>
             <CardContent className="p-4 sm:p-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="space-y-2">
                 {productQrCodes.map((qrCode) => (
-                  <Card key={qrCode.id} className="hover:shadow-md transition-shadow">
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between mb-3 gap-2">
-                        <div className="flex-1 min-w-0">
-                          <h3 className="font-semibold text-foreground text-sm sm:text-base truncate">{qrCode.name}</h3>
-                          {qrCode.productName && (
-                            <p className="text-xs text-muted-foreground mt-1 truncate">Product: {qrCode.productName}</p>
-                          )}
-                        </div>
-                      </div>
-                      
-                      {qrCode.qrCodeUrl && (
-                        <div className="mb-4 flex justify-center">
-                          <img 
-                            src={qrCode.qrCodeUrl} 
-                            alt={qrCode.name} 
-                            className="w-32 h-32 object-contain border border-border rounded"
-                          />
-                        </div>
-                      )}
-
-                      {/* Verification Link */}
-                      <div className="mb-3 p-2 bg-green-50 dark:bg-green-900/20 rounded border border-green-200 dark:border-green-800">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-medium text-green-900 dark:text-green-200 mb-1">Verification Link:</p>
-                            <p className="text-xs text-green-700 dark:text-green-300 truncate font-mono">
-                              {generateProductVerificationLink(qrCode.id)}
-                            </p>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              navigator.clipboard.writeText(generateProductVerificationLink(qrCode.id));
-                              toast.success('Verification link copied!');
-                            }}
-                            className="shrink-0 h-8 w-8 p-0"
-                          >
-                            <Copy className="w-3 h-3" />
-                          </Button>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2">
+                  <div
+                    key={qrCode.id}
+                    className="flex items-center gap-2 p-3 rounded-lg border border-border bg-card"
+                  >
+                    <h3 className="flex-1 min-w-0 font-medium text-sm sm:text-base text-foreground truncate">
+                      {qrCode.name}
+                    </h3>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      title="Copy verification link"
+                      onClick={() => {
+                        navigator.clipboard.writeText(generateProductVerificationLink(qrCode.id));
+                        toast.success('Verification link copied!');
+                      }}
+                      className="shrink-0 h-8 w-8 p-0"
+                    >
+                      <Copy className="w-3 h-3" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleEditProductQrCode(qrCode)}
+                      className="shrink-0 text-xs sm:text-sm"
+                    >
+                      <Edit className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
+                      Edit
+                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleEditProductQrCode(qrCode)}
-                          className="flex-1 text-xs sm:text-sm"
+                          className="shrink-0 text-red-600 hover:text-red-700 px-2 sm:px-3"
                         >
-                          <Edit className="w-3 h-3 sm:w-4 sm:h-4 mr-1" />
-                          Edit
+                          <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
                         </Button>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button 
-                              variant="outline" 
-                              size="sm" 
-                              className="text-red-600 hover:text-red-700 px-2 sm:px-3"
-                            >
-                              <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent className="mx-4 sm:mx-0">
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Delete Product QR Code</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                Are you sure you want to delete "{qrCode.name}"? This action cannot be undone.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter className="flex-col sm:flex-row gap-2">
-                              <AlertDialogCancel className="w-full sm:w-auto">Cancel</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => handleDeleteProductQrCode(qrCode.id)}
-                                className="bg-red-600 hover:bg-red-700 w-full sm:w-auto"
-                              >
-                                Delete
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </div>
-                    </CardContent>
-                  </Card>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent className="mx-4 sm:mx-0">
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete Product QR Code</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Are you sure you want to delete "{qrCode.name}"? This action cannot be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+                          <AlertDialogCancel className="w-full sm:w-auto">Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => handleDeleteProductQrCode(qrCode.id)}
+                            className="bg-red-600 hover:bg-red-700 w-full sm:w-auto"
+                          >
+                            Delete
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
                 ))}
                 {productQrCodes.length === 0 && (
-                  <div className="col-span-full text-center py-8 text-muted-foreground">
+                  <div className="text-center py-8 text-muted-foreground">
                     No product QR codes added yet. Click "Add Product QR Code" to create one.
                   </div>
                 )}
