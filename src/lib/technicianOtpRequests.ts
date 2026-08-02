@@ -197,6 +197,27 @@ export async function getPendingOtpRequests(technicianId: string): Promise<OtpRe
   return (data as OtpRequestRow[]) ?? [];
 }
 
+/**
+ * When OTP is captured elsewhere (Start Work / completion), mark the pending
+ * Ask OTP row answered so the home-page card disappears. Does not re-push —
+ * the caller already notified the office if needed.
+ */
+export async function markOtpRequestAnsweredForJob(
+  jobId: string,
+  otp: string
+): Promise<void> {
+  if (!jobId || !/^\d{4}$/.test(otp)) return;
+  try {
+    await supabase
+      .from('technician_otp_requests')
+      .update({ otp, submitted_at: new Date().toISOString() })
+      .eq('job_id', jobId)
+      .is('otp', null);
+  } catch (err) {
+    console.warn('[otp] could not clear pending Ask OTP row:', err);
+  }
+}
+
 /** Technician: submit the code the customer gave them. */
 export async function submitOtp(requestId: string, otp: string, jobId?: string): Promise<boolean> {
   // First answer wins for the admin push. Later overwrites (typo fix) update

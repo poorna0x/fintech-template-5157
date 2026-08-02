@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import {
   getPendingOtpRequests,
+  getStoredOtpFromRequirements,
   submitOtp,
   type OtpRequestRow,
 } from '@/lib/technicianOtpRequests';
@@ -23,8 +24,9 @@ type TechnicianOtpRequestCardProps = {
  * Shows when the office has asked for the customer's OTP (Home Triangle /
  * Require OTP jobs). Fetched on load and whenever the app returns to the
  * foreground (e.g. after tapping the push notification). While a request is
- * visible, a realtime watch removes it the moment it's answered — including
- * when the technician replies from the notification instead of here.
+ * visible, realtime + short polling remove it the moment it's answered —
+ * including when the technician replies from the notification / overlay
+ * instead of here.
  */
 const TechnicianOtpRequestCard = ({
   technicianId,
@@ -36,15 +38,67 @@ const TechnicianOtpRequestCard = ({
   const [submitting, setSubmitting] = useState<string | null>(null);
   const onOtpSubmittedRef = useRef(onOtpSubmitted);
   onOtpSubmittedRef.current = onOtpSubmitted;
+  const syncedJobIdsRef = useRef<Set<string>>(new Set());
+
+  const jobOtpById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const job of jobs) {
+      const otp = getStoredOtpFromRequirements(
+        (job as any).requirements ?? job.requirements
+      );
+      if (otp && /^\d{4}$/.test(otp)) map.set(job.id, otp);
+    }
+    return map;
+  }, [jobs]);
+
+  const notifySubmitted = useCallback((jobId: string, otp: string) => {
+    if (syncedJobIdsRef.current.has(jobId)) return;
+    syncedJobIdsRef.current.add(jobId);
+    onOtpSubmittedRef.current?.(jobId, otp);
+  }, []);
+
+  const pruneAnswered = useCallback(
+    (rows: OtpRequestRow[]): OtpRequestRow[] => {
+      const kept: OtpRequestRow[] = [];
+      for (const row of rows) {
+        const rowOtp =
+          typeof row.otp === 'string' && /^\d{4}$/.test(row.otp.trim())
+            ? row.otp.trim()
+            : null;
+        if (rowOtp) {
+          notifySubmitted(row.job_id, rowOtp);
+          continue;
+        }
+        const fromJob = jobOtpById.get(row.job_id);
+        if (fromJob) {
+          notifySubmitted(row.job_id, fromJob);
+          continue;
+        }
+        kept.push(row);
+      }
+      return kept;
+    },
+    [jobOtpById, notifySubmitted]
+  );
 
   const refresh = useCallback(async () => {
     if (!technicianId) return;
     try {
-      setRequests(await getPendingOtpRequests(technicianId));
+      const pending = await getPendingOtpRequests(technicianId);
+      setRequests((prev) => {
+        const next = pruneAnswered(pending);
+        if (
+          next.length === prev.length &&
+          next.every((r, i) => r.id === prev[i]?.id)
+        ) {
+          return prev;
+        }
+        return next;
+      });
     } catch {
       // Table may not exist yet; stay hidden.
     }
-  }, [technicianId]);
+  }, [technicianId, pruneAnswered]);
 
   useEffect(() => {
     void refresh();
@@ -55,34 +109,72 @@ const TechnicianOtpRequestCard = ({
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, [refresh]);
 
-  // Only while a request card is on screen: drop it live once it's answered
-  // anywhere (notification reply or another device). No channel otherwise.
-  const hasPending = requests.length > 0;
+  // OTP already on the job (Start Work) — drop matching Ask OTP cards immediately.
   useEffect(() => {
-    if (!hasPending || !technicianId) return;
-    const channel = supabase
-      .channel(`otp-pending-${technicianId}`)
-      .on(
+    if (jobOtpById.size === 0) return;
+    setRequests((prev) => {
+      if (prev.length === 0) return prev;
+      const next = pruneAnswered(prev);
+      if (
+        next.length === prev.length &&
+        next.every((r, i) => r.id === prev[i]?.id)
+      ) {
+        return prev;
+      }
+      return next;
+    });
+  }, [jobOtpById, pruneAnswered]);
+
+  const pendingIds = useMemo(
+    () =>
+      requests
+        .map((r) => r.id)
+        .sort()
+        .join(','),
+    [requests]
+  );
+  const hasPending = requests.length > 0;
+
+  // Realtime: filter by request id (PK) so UPDATE events aren't dropped.
+  // technician_id filters need REPLICA IDENTITY FULL; id works with default.
+  useEffect(() => {
+    if (!hasPending || !technicianId || !pendingIds) return;
+    const ids = pendingIds.split(',');
+    const channel = supabase.channel(`otp-pending-${technicianId}-${pendingIds}`);
+
+    for (const id of ids) {
+      channel.on(
         'postgres_changes',
         {
           event: 'UPDATE',
           schema: 'public',
           table: 'technician_otp_requests',
-          filter: `technician_id=eq.${technicianId}`,
+          filter: `id=eq.${id}`,
         },
         (payload) => {
           const next = payload.new as OtpRequestRow | undefined;
-          if (next?.otp) {
-            setRequests((prev) => prev.filter((r) => r.id !== next.id));
-            if (/^\d{4}$/.test(String(next.otp).trim())) {
-              onOtpSubmittedRef.current?.(next.job_id, String(next.otp).trim());
-            }
+          if (!next?.otp) return;
+          const otp = String(next.otp).trim();
+          setRequests((prev) => prev.filter((r) => r.id !== next.id));
+          if (/^\d{4}$/.test(otp)) {
+            notifySubmitted(next.job_id, otp);
           }
         }
-      )
-      .subscribe();
+      );
+    }
+
+    channel.subscribe();
     return () => void supabase.removeChannel(channel);
-  }, [hasPending, technicianId]);
+  }, [hasPending, technicianId, pendingIds, notifySubmitted]);
+
+  // Poll while a card is showing — covers missed realtime (overlay / notification).
+  useEffect(() => {
+    if (!hasPending) return;
+    const timer = window.setInterval(() => {
+      void refresh();
+    }, 4000);
+    return () => window.clearInterval(timer);
+  }, [hasPending, refresh]);
 
   if (!hasPending) return null;
 
@@ -98,7 +190,7 @@ const TechnicianOtpRequestCard = ({
       if (ok) {
         toast.success('OTP sent to the office');
         setRequests((prev) => prev.filter((r) => r.id !== request.id));
-        onOtpSubmittedRef.current?.(request.job_id, code);
+        notifySubmitted(request.job_id, code);
       } else {
         toast.error('Could not send the OTP. Try again.');
       }

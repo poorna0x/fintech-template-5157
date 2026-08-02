@@ -63,7 +63,12 @@ import { getAmcDocumentBrandLabel } from '@/lib/amc-brand';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { formatCompletedWhen } from '@/lib/relativeTime';
 import { getJobEquipmentDisplay, parseJobRequirements, isOfficeCompletedJob } from '@/lib/adminUtils';
-import { applyOtpToRequirements, getStoredOtpFromRequirements, getSubmittedOtpForJob } from '@/lib/technicianOtpRequests';
+import {
+  applyOtpToRequirements,
+  getStoredOtpFromRequirements,
+  getSubmittedOtpForJob,
+  markOtpRequestAnsweredForJob,
+} from '@/lib/technicianOtpRequests';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { db, supabase, fetchCustomerIdsWithCompletedJobsMap } from '@/lib/supabase';
 import { mapCustomerGstFields } from '@/lib/customerGst';
@@ -3407,6 +3412,11 @@ const TechnicianDashboard = () => {
         );
       }
 
+      // Clear the home-page Ask OTP card if office had already requested this job.
+      if (customerOtp && /^\d{4}$/.test(customerOtp)) {
+        void markOtpRequestAnsweredForJob(job.id, customerOtp);
+      }
+
       // Freeze the current on-screen order so this job stays where it is instead of
       // jumping to the top now; a fresh page load will re-sort (active jobs on top).
       ongoingOrderRef.current = filteredJobs.map(j => j.id);
@@ -5288,6 +5298,8 @@ const TechnicianDashboard = () => {
             otpReq.otp_verified_at = new Date().toISOString();
             otpReq.otp_entered = otpValue; // Store the entered OTP for manual verification
           }
+          // Clear home Ask OTP card if office still had a pending request.
+          void markOtpRequestAnsweredForJob(selectedJobForComplete.id, otpValue);
         }
 
         // Remove existing photo-related requirements to avoid duplicates
