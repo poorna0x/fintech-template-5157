@@ -149,7 +149,15 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
     : officePartsDialogLocal;
   const [officePartsOverride, setOfficePartsOverride] = useState<number | null>(null);
   const [sparePartsCost, setSparePartsCost] = useState<number>(0);
+  const [profitRevealed, setProfitRevealed] = useState(false);
   const [sendMessageConfirmOpen, setSendMessageConfirmOpen] = useState(false);
+
+  useEffect(() => {
+    if (!profitRevealed) return;
+    const t = window.setTimeout(() => setProfitRevealed(false), 10_000);
+    return () => window.clearTimeout(t);
+  }, [profitRevealed]);
+
   const [completionEmailLocal, setCompletionEmailLocal] = useState(false);
   const completionEmailOpen = onCompletionEmailOpenChange
     ? (completionEmailOpenProp ?? false)
@@ -473,17 +481,30 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
             </div>
           )}
 
-          {/* Profit: Amount - spare parts - lead cost - technician commission */}
+          {/* Profit: masked until tapped (Amount − spare parts − lead − commission) */}
           {showProfit && (
-            <div className="text-gray-700 break-words pt-2 border-t border-green-200">
+            <button
+              type="button"
+              onClick={() => setProfitRevealed((v) => !v)}
+              className="w-full text-left text-gray-700 break-words pt-2 border-t border-green-200 touch-manipulation"
+              title={profitRevealed ? 'Tap to hide profit' : 'Tap to show profit'}
+            >
               <span className="text-gray-500 font-medium">Profit:</span>{' '}
-              <span className={profit >= 0 ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold'}>
-                ₹{profit.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
-              <span className="text-xs text-gray-500 ml-1">
-                (Amount − spare parts ₹{sparePartsCostDisplay.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} − lead ₹{leadCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} − 10% commission ₹{commission10.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
-              </span>
-            </div>
+              {profitRevealed ? (
+                <>
+                  <span className={profit >= 0 ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold'}>
+                    ₹{profit.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                  <span className="text-xs text-gray-500 ml-1">
+                    (Amount − spare parts ₹{sparePartsCostDisplay.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} − lead ₹{leadCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} − 10% commission ₹{commission10.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                  </span>
+                </>
+              ) : (
+                <span className="text-gray-400 font-medium tracking-wider select-none">
+                  ₹•••••• <span className="text-xs font-normal normal-case tracking-normal">(tap to show)</span>
+                </span>
+              )}
+            </button>
           )}
           
           {/* QR Code Info (online / partial online — show name, id fallback if name missing) */}

@@ -1169,6 +1169,14 @@ const AdminDashboard = () => {
   const [draftCompletedLeadTypeFilter, setDraftCompletedLeadTypeFilter] = useState<string>('all');
   const [draftCompletedServiceSubTypeFilter, setDraftCompletedServiceSubTypeFilter] = useState<string>('all');
   const [draftCompletedByFilter, setDraftCompletedByFilter] = useState<string>('all');
+  const [completedDayProfitRevealed, setCompletedDayProfitRevealed] = useState(false);
+
+  useEffect(() => {
+    if (!completedDayProfitRevealed) return;
+    const t = window.setTimeout(() => setCompletedDayProfitRevealed(false), 10_000);
+    return () => window.clearTimeout(t);
+  }, [completedDayProfitRevealed]);
+
   // Job counts for stats cards (loaded separately)
   const [jobCounts, setJobCounts] = useState<{ongoing: number; followup: number; denied: number; completed: number}>(() =>
     initialDashboardCache?.jobCounts ?? {
@@ -6396,27 +6404,42 @@ const AdminDashboard = () => {
           </div>
 
           {completedProfitSummary && completedProfitSummary.jobCount > 0 && (
-            <div className="mt-6 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-gray-800">
+            <button
+              type="button"
+              onClick={() => setCompletedDayProfitRevealed((v) => !v)}
+              className="mt-6 w-full rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-left text-sm text-gray-800 touch-manipulation"
+              title={completedDayProfitRevealed ? 'Tap to hide profit' : 'Tap to show profit'}
+            >
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <div className="font-semibold text-green-900">
                     Profit of Day
                   </div>
                   <div className="text-xs text-gray-600">
-                    Amount - spare parts - lead cost - technician commission
+                    {completedDayProfitRevealed
+                      ? 'Amount - spare parts - lead cost - technician commission'
+                      : 'Tap to show'}
                   </div>
                 </div>
-                <div className={completedProfitSummary.profit >= 0 ? 'text-lg font-bold text-green-700' : 'text-lg font-bold text-red-600'}>
-                  ₹{completedProfitSummary.profit.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {completedDayProfitRevealed ? (
+                  <div className={completedProfitSummary.profit >= 0 ? 'text-lg font-bold text-green-700' : 'text-lg font-bold text-red-600'}>
+                    ₹{completedProfitSummary.profit.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                ) : (
+                  <div className="text-lg font-bold text-gray-400 tracking-wider select-none">
+                    ₹••••••
+                  </div>
+                )}
+              </div>
+              {completedDayProfitRevealed ? (
+                <div className="mt-2 text-xs text-gray-600">
+                  Amount ₹{completedProfitSummary.revenue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {' '}− spare parts ₹{completedProfitSummary.sparePartsCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {' '}− lead ₹{completedProfitSummary.leadCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {' '}− commission ₹{completedProfitSummary.commission.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
-              </div>
-              <div className="mt-2 text-xs text-gray-600">
-                Amount ₹{completedProfitSummary.revenue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                {' '}− spare parts ₹{completedProfitSummary.sparePartsCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                {' '}− lead ₹{completedProfitSummary.leadCost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                {' '}− commission ₹{completedProfitSummary.commission.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </div>
-            </div>
+              ) : null}
+            </button>
           )}
           
           {/* Pagination — compact, wraps on small screens (no horizontal scroll) */}
