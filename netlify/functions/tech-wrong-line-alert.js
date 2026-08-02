@@ -295,6 +295,7 @@ exports.handler = async (event) => {
         adminSent,
         techSent: techResult?.sent || 0,
         customerId: customer.id,
+        customerName: customer.full_name || '',
       }),
     };
   } catch (err) {

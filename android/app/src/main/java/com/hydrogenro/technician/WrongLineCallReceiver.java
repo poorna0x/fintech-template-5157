@@ -149,40 +149,68 @@ public class WrongLineCallReceiver {
         String usedLabel = from.isEmpty() ? "another SIM" : from;
         String officeLabel =
             companySlot > 0 ? company + " (SIM " + companySlot + ")" : company;
-        // Always warn locally on detect — unless this phone muted “Wrong company-line reminder”.
-        if (DevicePrefsPlugin.shouldShowWrongLineReminder(context)) {
-            TechActionOverlay.showWrongLineWarning(
-                context,
-                "Please call from company number",
-                "You called a customer from "
-                    + usedLabel
-                    + ".\n\nPlease call from the company number: "
-                    + officeLabel
-                    + ".",
-                "wrong_line_self_" + dialed
-            );
-        } else {
-            Log.i(TAG, "Wrong-line reminder muted on this phone — overlay skipped");
-        }
 
+        // Customer check MUST run before any local warning — dialing friends/family
+        // on the personal SIM must not say "you called a customer".
         String body = postOnce(token, dialed, from, company, call.fromSimSlot, companySlot);
         boolean found = body != null && body.contains("\"found\":true");
         Log.i(TAG, "Wrong-line POST found=" + found + " body=" + body);
+
         if (found) {
             prefs
                 .edit()
                 .putString(KEY_LAST_ALERT_KEY, dedupeKey)
                 .putLong(KEY_LAST_ALERT_AT, now)
                 .apply();
+            if (DevicePrefsPlugin.shouldShowWrongLineReminder(context)) {
+                String who = extractJsonString(body, "customerName");
+                if (who == null || who.isEmpty()) who = "a customer";
+                TechActionOverlay.showWrongLineWarning(
+                    context,
+                    "Please call from company number",
+                    "You called "
+                        + who
+                        + " from "
+                        + usedLabel
+                        + ".\n\nPlease call from the company number: "
+                        + officeLabel
+                        + ".",
+                    "wrong_line_self_" + dialed
+                );
+            } else {
+                Log.i(TAG, "Wrong-line reminder muted on this phone — overlay skipped");
+            }
         } else if (body != null && body.contains("\"found\":false")) {
-            // Server rejected (same line / no customer / detect off) — still
-            // remember so we don't spam local overlay on CallLog re-reads.
+            // Not a customer / same line / detect off — remember so CallLog
+            // re-reads do not re-POST. Never show the customer warning.
             prefs
                 .edit()
                 .putString(KEY_LAST_ALERT_KEY, dedupeKey)
                 .putLong(KEY_LAST_ALERT_AT, now)
                 .apply();
+            Log.i(TAG, "Not a CRM customer (or skipped) — no wrong-line overlay");
         }
+    }
+
+    /** Minimal JSON string field reader (avoids pulling a full JSON library). */
+    private static String extractJsonString(String json, String key) {
+        if (json == null || key == null) return null;
+        String needle = "\"" + key + "\":\"";
+        int start = json.indexOf(needle);
+        if (start < 0) return null;
+        start += needle.length();
+        StringBuilder sb = new StringBuilder();
+        for (int i = start; i < json.length(); i++) {
+            char c = json.charAt(i);
+            if (c == '\\' && i + 1 < json.length()) {
+                sb.append(json.charAt(i + 1));
+                i++;
+                continue;
+            }
+            if (c == '"') break;
+            sb.append(c);
+        }
+        return sb.toString();
     }
 
     private static String jsonEscape(String value) {
