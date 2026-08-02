@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { format, addMonths } from 'date-fns';
-import { Bell, Calendar, CalendarClock, IndianRupee } from 'lucide-react';
+import { Bell, Calendar, CalendarClock } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { ensureAdminSupabaseSession } from '@/lib/auth';
 import { isPostgrestPermissionDenied } from '@/lib/ensureSupabaseSession';
@@ -12,7 +12,6 @@ import { AddReminderDialog } from './AddReminderDialog';
 import type { Reminder } from '@/types';
 import {
   isPendingPaymentReminderTitle,
-  parsePendingPaymentReminderNotes,
   parseReminderAtLocalDate,
 } from '@/lib/pendingPaymentReminder';
 
@@ -20,35 +19,17 @@ type CustomerLabel = { name: string; customerId: string };
 
 /** Session cache: reuse today's reminder list for up to 6h to reduce refetches. */
 const REMINDERS_POPUP_SESSION_CACHE_ENABLED = true;
-const DISMISSED_PENDING_PAYMENT_REMINDERS_KEY = 'dismissed_pending_payment_reminders_today';
-
-function getDismissedPendingPaymentReminderIds(today: string): Set<string> {
-  if (typeof localStorage === 'undefined') return new Set();
-  try {
-    const parsed = JSON.parse(localStorage.getItem(DISMISSED_PENDING_PAYMENT_REMINDERS_KEY) || '{}') as {
-      date?: string;
-      ids?: string[];
-    };
-    if (parsed.date !== today || !Array.isArray(parsed.ids)) return new Set();
-    return new Set(parsed.ids);
-  } catch {
-    return new Set();
-  }
-}
-
-function saveDismissedPendingPaymentReminderIds(today: string, ids: Set<string>): void {
-  if (typeof localStorage === 'undefined') return;
-  localStorage.setItem(
-    DISMISSED_PENDING_PAYMENT_REMINDERS_KEY,
-    JSON.stringify({ date: today, ids: Array.from(ids) })
-  );
-}
 
 function reminderLoadErrorMessage(error: { message?: string; code?: string }): string {
   if (isPostgrestPermissionDenied(error)) {
     return 'Reminders could not be loaded. Confirm your email is in admin_users and RLS helper grants are applied.';
   }
   return error.message || 'Reminders could not be loaded.';
+}
+
+/** Pending payments are handled by morning push + Settings → Pending payments — not this popup. */
+function isGeneralTodayReminder(r: Reminder): boolean {
+  return !isPendingPaymentReminderTitle(r.title);
 }
 
 export function TodayRemindersPopup() {
@@ -71,10 +52,12 @@ export function TodayRemindersPopup() {
         return;
       }
       if (!data) return;
-      const forToday = (data as Reminder[]).filter((r) => r.reminder_at === today);
+      const forToday = (data as Reminder[])
+        .filter((r) => r.reminder_at === today)
+        .filter(isGeneralTodayReminder);
       setTodayReminders(forToday);
       const customerIds = [...new Set(
-        (data as Reminder[])
+        forToday
           .filter((r) => r.entity_type === 'customer' && r.entity_id)
           .map((r) => r.entity_id as string)
       )];
@@ -98,15 +81,11 @@ export function TodayRemindersPopup() {
     let retryTimeoutId: ReturnType<typeof setTimeout> | null = null;
     let cancelled = false;
 
-    const applyReminders = (forToday: Reminder[], list: Reminder[]) => {
-      const dismissedPendingPaymentIds = getDismissedPendingPaymentReminderIds(today);
-      const visibleReminders = forToday.filter(
-        (r) => !isPendingPaymentReminderTitle(r.title) || !dismissedPendingPaymentIds.has(r.id)
-      );
+    const applyReminders = (forToday: Reminder[]) => {
+      const visibleReminders = forToday.filter(isGeneralTodayReminder);
 
       if (visibleReminders.length > 0) {
         const sorted = [...visibleReminders].sort((a, b) => {
-          // Keep non-pending reminders stable; sort by title as a deterministic fallback.
           return String(a.title).localeCompare(String(b.title));
         });
         setTodayReminders(sorted);
@@ -134,7 +113,7 @@ export function TodayRemindersPopup() {
             const { date, data: list, fetchedAt } = JSON.parse(cached) as { date: string; data: Reminder[]; fetchedAt: number };
             if (date === today && Date.now() - fetchedAt < REMINDERS_CACHE_TTL_MS && Array.isArray(list)) {
               const forToday = list.filter((r) => r.reminder_at === today);
-              applyReminders(forToday, list);
+              applyReminders(forToday);
               return;
             }
           } catch {
@@ -164,7 +143,7 @@ export function TodayRemindersPopup() {
           sessionStorage.setItem(REMINDERS_CACHE_KEY, JSON.stringify({ date: today, data: list, fetchedAt: Date.now() }));
         }
         const forToday = list.filter((r) => r.reminder_at === today);
-        applyReminders(forToday, list);
+        applyReminders(forToday);
         if (forToday.length === 0 && !isRetry && list.length === 0) {
           retryTimeoutId = setTimeout(() => {
             void tryLoad(true);
@@ -184,10 +163,6 @@ export function TodayRemindersPopup() {
   }, [authInitializing, user?.id, isAdmin]);
 
   const markOneCompleted = async (r: Reminder) => {
-    if (isPendingPaymentReminderTitle(r.title)) {
-      return;
-    }
-
     const now = new Date().toISOString();
     if (r.entity_type === 'job' && r.entity_id) {
       const { error: jobError } = await db.jobs.update(r.entity_id, {
@@ -232,18 +207,7 @@ export function TodayRemindersPopup() {
       for (const r of todayReminders) {
         await markOneCompleted(r);
       }
-      const pendingPaymentReminders = todayReminders.filter((r) => isPendingPaymentReminderTitle(r.title));
-      if (pendingPaymentReminders.length > 0) {
-        const today = format(new Date(), 'yyyy-MM-dd');
-        const dismissedIds = getDismissedPendingPaymentReminderIds(today);
-        pendingPaymentReminders.forEach((r) => dismissedIds.add(r.id));
-        saveDismissedPendingPaymentReminderIds(today, dismissedIds);
-      }
-      toast.success(
-        pendingPaymentReminders.length === todayReminders.length
-          ? 'Pending payment reminder hidden. Mark it collected inside Pending payments.'
-          : 'Reminders marked done. Pending payments remain active until collected.'
-      );
+      toast.success('Reminders marked done');
       setOpen(false);
     } catch {
       toast.error('Failed to mark some reminders');
@@ -265,8 +229,6 @@ export function TodayRemindersPopup() {
           <div className="space-y-2 sm:space-y-3 max-h-[50vh] sm:max-h-[60vh] overflow-y-auto min-h-0 -mx-1 px-1">
             {todayReminders.map((r) => {
               const customer = r.entity_type === 'customer' && r.entity_id ? customerLabels[r.entity_id] : null;
-              const isPendingPayment = isPendingPaymentReminderTitle(r.title);
-              const pendingParsed = isPendingPayment ? parsePendingPaymentReminderNotes(r.notes) : null;
               const dueDate = parseReminderAtLocalDate(r.reminder_at);
               return (
                 <div
@@ -274,35 +236,23 @@ export function TodayRemindersPopup() {
                   className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-2.5 sm:p-3"
                 >
                   <div className="flex items-start gap-2 sm:gap-3">
-                    {isPendingPayment ? (
-                      <IndianRupee className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
-                    ) : (
-                      <Calendar className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
-                    )}
+                    <Calendar className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
                     <div className="min-w-0 flex-1">
                       <p className="font-medium text-sm sm:text-base text-gray-900 dark:text-gray-100">
-                        {isPendingPayment ? 'Pending payment due' : r.title}
+                        {r.title}
                       </p>
                       {customer && (
                         <p className="text-xs sm:text-sm text-gray-700 dark:text-gray-300 mt-0.5">
                           {customer.name} <span className="font-mono text-gray-500">({customer.customerId})</span>
                         </p>
                       )}
-                      {isPendingPayment && pendingParsed && pendingParsed.amount_pending > 0 && (
-                        <p className="text-sm font-semibold text-amber-900 dark:text-amber-200 mt-0.5">
-                          ₹{pendingParsed.amount_pending.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                        </p>
-                      )}
-                      {isPendingPayment && pendingParsed?.note && (
-                        <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-0.5">{pendingParsed.note}</p>
-                      )}
-                      {!isPendingPayment && r.notes && (
+                      {r.notes && (
                         <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 mt-0.5">{r.notes}</p>
                       )}
                       <p className="text-xs text-gray-500 mt-0.5 sm:mt-1">
                         Due: {format(dueDate, 'PPP')}
                       </p>
-                      {!isPendingPayment && r.interval_type === 'months' && r.interval_value && (
+                      {r.interval_type === 'months' && r.interval_value && (
                         <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
                           Repeats every {r.interval_value} months – next reminder will be created for {format(addMonths(dueDate, r.interval_value), 'PPP')} when you click Got it.
                         </p>
@@ -333,7 +283,7 @@ export function TodayRemindersPopup() {
             </Button>
           </div>
           <p className="text-xs text-muted-foreground pt-1">
-            &quot;Got it&quot; marks normal reminders as done and creates the next recurring reminder when applicable. Pending payment reminders are only hidden here; mark them collected inside Pending payments.
+            &quot;Got it&quot; marks reminders as done and creates the next recurring reminder when applicable.
           </p>
         </DialogContent>
       </Dialog>
