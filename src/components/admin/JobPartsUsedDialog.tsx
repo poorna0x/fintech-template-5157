@@ -430,24 +430,85 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     qty: number
   ): Promise<void> => {
     if (!technician?.id || qty <= 0) return;
-    const techItem = technicianInventory.find(i => i.inventory_id === inventoryId);
+
+    const applyLocal = (id: string, newQty: number) => {
+      setTechnicianInventoryAndCache((prev) => {
+        const existing = prev.find((i) => i.id === id || i.inventory_id === inventoryId);
+        if (existing) {
+          return prev.map((i) =>
+            i.id === existing.id || i.inventory_id === inventoryId
+              ? { ...i, id, quantity: newQty }
+              : i
+          );
+        }
+        return [
+          {
+            id,
+            technician_id: technician.id,
+            inventory_id: inventoryId,
+            quantity: newQty,
+          } as TechnicianInventoryItem,
+          ...prev,
+        ];
+      });
+    };
+
+    const techItem = technicianInventory.find((i) => i.inventory_id === inventoryId);
     if (techItem) {
       const newQty = techItem.quantity + qty;
       const { error } = await db.technicianInventory.updateQuantity(techItem.id, newQty);
       if (error) throw error;
-      setTechnicianInventoryAndCache(prev =>
-        prev.map(i => (i.id === techItem.id ? { ...i, quantity: newQty } : i))
-      );
+      applyLocal(techItem.id, newQty);
       return;
     }
+
+    // Bag list may be empty/stale (delete before load finishes) while a DB row
+    // already exists — inserting would hit technician_inventory unique constraint.
+    const { data: existingRows, error: lookupError } = await db.technicianInventory.getAssignmentKeys(
+      [technician.id],
+      [inventoryId]
+    );
+    if (lookupError) throw lookupError;
+    const existing = existingRows?.[0];
+    if (existing) {
+      const newQty = (existing.quantity || 0) + qty;
+      const { error } = await db.technicianInventory.updateQuantity(existing.id, newQty);
+      if (error) throw error;
+      applyLocal(existing.id, newQty);
+      return;
+    }
+
     const { data, error } = await db.technicianInventory.create({
       technician_id: technician.id,
       inventory_id: inventoryId,
       quantity: qty,
     });
-    if (error) throw error;
+    if (error) {
+      // Race: another path created the row between lookup and insert.
+      if (
+        String(error.message || '').includes('unique') ||
+        String(error.message || '').includes('duplicate') ||
+        (error as { code?: string }).code === '23505'
+      ) {
+        const { data: retryRows, error: retryLookupError } =
+          await db.technicianInventory.getAssignmentKeys([technician.id], [inventoryId]);
+        if (retryLookupError) throw retryLookupError;
+        const retry = retryRows?.[0];
+        if (retry) {
+          const newQty = (retry.quantity || 0) + qty;
+          const { error: updateError } = await db.technicianInventory.updateQuantity(
+            retry.id,
+            newQty
+          );
+          if (updateError) throw updateError;
+          applyLocal(retry.id, newQty);
+          return;
+        }
+      }
+      throw error;
+    }
     if (data) {
-      setTechnicianInventoryAndCache(prev => [data as TechnicianInventoryItem, ...prev]);
+      setTechnicianInventoryAndCache((prev) => [data as TechnicianInventoryItem, ...prev]);
     }
   };
 
