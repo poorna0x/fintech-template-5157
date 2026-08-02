@@ -26,7 +26,7 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { format } from 'date-fns';
-import { Check, ChevronsUpDown, Edit3, FileText, PhoneCall, Plus, RefreshCw, Search, UserRound } from 'lucide-react';
+import { Check, ChevronsUpDown, Edit3, FileText, Loader2, PhoneCall, Plus, RefreshCw, Search, UserRound } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Customer, Reminder, Technician } from '@/types';
 import { db, supabase, REMINDER_ROW_COLUMNS } from '@/lib/supabase';
@@ -464,6 +464,7 @@ export function SettingsPendingPaymentsDialogV2({
   const [reportCustomer, setReportCustomer] = useState<Customer | null>(null);
   const [reportTechnicians, setReportTechnicians] = useState<Technician[]>([]);
   const [reportOpening, setReportOpening] = useState(false);
+  const [reportOpeningName, setReportOpeningName] = useState('');
   const [reportPhotoViewerOpen, setReportPhotoViewerOpen] = useState(false);
   const [reportSelectedPhoto, setReportSelectedPhoto] = useState<{
     url: string;
@@ -827,35 +828,49 @@ export function SettingsPendingPaymentsDialogV2({
 
   const handleCustomerReports = async () => {
     const p = customerActionTarget;
+    const label = p?.entity_id ? customerLabels[p.entity_id as string] : undefined;
     setCustomerActionOpen(false);
     if (!p?.entity_id) {
       setCustomerActionTarget(null);
       toast.error('Customer not linked to this payment');
       return;
     }
+    setReportOpeningName(label?.name || 'customer');
     setReportOpening(true);
     try {
       const [{ data: customer, error }, techResult] = await Promise.all([
         db.customers.getById(String(p.entity_id)),
         reportTechsLoadedRef.current
           ? Promise.resolve({ data: reportTechnicians })
-          : db.technicians.getList(100),
+          : db.technicians.getList(100, { activeRosterOnly: false }),
       ]);
       if (error || !customer) {
         toast.error(error?.message || 'Failed to load customer for report');
         return;
       }
       if (!reportTechsLoadedRef.current) {
-        const techs = ((techResult as any)?.data || []) as Technician[];
+        const techs = (((techResult as any)?.data || []) as any[]).map((t) => ({
+          ...t,
+          fullName: t.fullName || t.full_name,
+          full_name: t.full_name || t.fullName,
+        })) as Technician[];
         setReportTechnicians(techs);
         reportTechsLoadedRef.current = true;
       }
-      setReportCustomer(customer as Customer);
+      const row = customer as any;
+      setReportCustomer({
+        ...row,
+        fullName: row.fullName || row.full_name || '',
+        full_name: row.full_name || row.fullName || '',
+        customerId: row.customerId || row.customer_id || '',
+        customer_id: row.customer_id || row.customerId || '',
+      } as Customer);
       setReportDialogOpen(true);
     } catch (err: any) {
       toast.error(err?.message || 'Failed to open customer report');
     } finally {
       setReportOpening(false);
+      setReportOpeningName('');
       setCustomerActionTarget(null);
     }
   };
@@ -908,7 +923,10 @@ export function SettingsPendingPaymentsDialogV2({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col p-4 sm:p-6">
+      <DialogContent
+        className="sm:max-w-2xl max-h-[90vh] flex flex-col p-4 sm:p-6"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-lg sm:text-xl">
             <Badge className="bg-blue-600 text-white">₹</Badge>
@@ -952,6 +970,7 @@ export function SettingsPendingPaymentsDialogV2({
                     placeholder="Search customer, due date, amount..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
+                    autoFocus={false}
                     className="min-h-10 sm:min-h-9 border border-input focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:outline-none focus:outline-none"
                   />
                 </div>
@@ -1093,6 +1112,25 @@ export function SettingsPendingPaymentsDialogV2({
             </div>
           )}
         </div>
+
+        <Dialog open={reportOpening}>
+          <DialogContent
+            className="sm:max-w-sm p-6"
+            hideCloseButton
+            dismissible={false}
+            onOpenAutoFocus={(e) => e.preventDefault()}
+          >
+            <div className="flex flex-col items-center gap-3 py-2 text-center">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              <DialogHeader className="space-y-1">
+                <DialogTitle className="text-base">Opening report</DialogTitle>
+                <DialogDescription>
+                  Loading {reportOpeningName || 'customer'}…
+                </DialogDescription>
+              </DialogHeader>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         <Dialog
           open={customerActionOpen}

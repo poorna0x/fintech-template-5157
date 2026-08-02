@@ -77,6 +77,10 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
 
   if (!customer) return null;
 
+  const displayName =
+    customer.fullName || (customer as any).full_name || 'Unknown';
+  const displayCustomerId =
+    customer.customerId || (customer as any).customer_id || '';
   const customerGstin = getCustomerGstNumber(customer);
 
   const completedJobs = customerReportJobs
@@ -113,7 +117,7 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
         <DialogHeader className="px-10 sm:px-0">
           <DialogTitle>
             Customer Report -{' '}
-            <span className={customerNameClassName(customer)}>{customer.fullName || 'Unknown'}</span>
+            <span className={customerNameClassName(customer)}>{displayName}</span>
           </DialogTitle>
           <DialogDescription>
             Complete service history and job details
@@ -127,10 +131,10 @@ const CustomerReportDialog: React.FC<CustomerReportDialogProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
               <div className="min-w-0 break-words">
                 <span className="text-muted-foreground">Name:</span>{' '}
-                <span className={customerNameClassName(customer)}>{customer.fullName}</span>
+                <span className={customerNameClassName(customer)}>{displayName}</span>
               </div>
               <div className="min-w-0 break-words">
-                <span className="text-muted-foreground">Customer ID:</span> {customer.customerId}
+                <span className="text-muted-foreground">Customer ID:</span> {displayCustomerId}
               </div>
               <div className="min-w-0 break-words">
                 <span className="text-muted-foreground">Phone:</span> {customer.phone}
