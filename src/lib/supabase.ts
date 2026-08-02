@@ -6459,6 +6459,211 @@ export const db = {
     }
   },
 
+  // Warehouse places → boxes (stackable) → items (location ledger)
+  storagePlaces: {
+    async getAll() {
+      const { data, error } = await supabase
+        .from('storage_places')
+        .select('id, name, sort_order, created_at, updated_at')
+        .order('sort_order', { ascending: true })
+        .order('name', { ascending: true });
+      return { data: data || [], error };
+    },
+
+    async create(place: { name: string; sort_order?: number }) {
+      const { data, error } = await supabase
+        .from('storage_places')
+        .insert({
+          name: place.name,
+          sort_order: place.sort_order ?? 0,
+        })
+        .select('id, name, sort_order, created_at, updated_at')
+        .single();
+      return { data, error };
+    },
+
+    async update(id: string, updates: { name?: string; sort_order?: number }) {
+      const { data, error } = await supabase
+        .from('storage_places')
+        .update({ ...updates, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .select('id, name, sort_order, created_at, updated_at')
+        .single();
+      return { data, error };
+    },
+
+    async delete(id: string) {
+      const { error } = await supabase.from('storage_places').delete().eq('id', id);
+      return { error };
+    },
+  },
+
+  storageBlocks: {
+    async getByPlace(placeId: string) {
+      const { data, error } = await supabase
+        .from('storage_blocks')
+        .select('id, place_id, name, notes, sort_order, parent_block_id, created_at, updated_at')
+        .eq('place_id', placeId)
+        .order('sort_order', { ascending: true })
+        .order('name', { ascending: true });
+      return { data: data || [], error };
+    },
+
+    async getAllSlim() {
+      const { data, error } = await supabase
+        .from('storage_blocks')
+        .select('id, place_id, name, parent_block_id')
+        .order('name', { ascending: true });
+      return { data: data || [], error };
+    },
+
+    async create(block: {
+      place_id: string;
+      name: string;
+      notes?: string;
+      sort_order?: number;
+      parent_block_id?: string | null;
+    }) {
+      const { data, error } = await supabase
+        .from('storage_blocks')
+        .insert({
+          place_id: block.place_id,
+          name: block.name,
+          notes: block.notes || null,
+          sort_order: block.sort_order ?? 0,
+          parent_block_id: block.parent_block_id ?? null,
+        })
+        .select('id, place_id, name, notes, sort_order, parent_block_id, created_at, updated_at')
+        .single();
+      return { data, error };
+    },
+
+    async update(
+      id: string,
+      updates: {
+        name?: string;
+        notes?: string | null;
+        sort_order?: number;
+        parent_block_id?: string | null;
+        place_id?: string;
+      }
+    ) {
+      const { data, error } = await supabase
+        .from('storage_blocks')
+        .update({ ...updates, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .select('id, place_id, name, notes, sort_order, parent_block_id, created_at, updated_at')
+        .single();
+      return { data, error };
+    },
+
+    async delete(id: string) {
+      const { error } = await supabase.from('storage_blocks').delete().eq('id', id);
+      return { error };
+    },
+  },
+
+  storageBlockItems: {
+    async getByBlock(blockId: string) {
+      const { data, error } = await supabase
+        .from('storage_block_items')
+        .select(`
+          id,
+          block_id,
+          inventory_id,
+          quantity,
+          inventory:inventory(id, product_name, code)
+        `)
+        .eq('block_id', blockId)
+        .order('created_at', { ascending: true });
+      return { data: data || [], error };
+    },
+
+    /** Slim item rows for all boxes in a place (for map summaries). */
+    async getByPlace(placeId: string) {
+      const { data: blocks, error: blocksError } = await supabase
+        .from('storage_blocks')
+        .select('id')
+        .eq('place_id', placeId);
+      if (blocksError) return { data: [], error: blocksError };
+      const ids = (blocks || []).map((b) => b.id);
+      if (ids.length === 0) return { data: [], error: null };
+      const { data, error } = await supabase
+        .from('storage_block_items')
+        .select(`
+          id,
+          block_id,
+          inventory_id,
+          quantity,
+          inventory:inventory(id, product_name, code)
+        `)
+        .in('block_id', ids);
+      return { data: data || [], error };
+    },
+
+    /** Find where a product sits (for global where-is search). */
+    async findByInventoryIds(inventoryIds: string[]) {
+      const unique = [...new Set(inventoryIds.filter(Boolean))];
+      if (unique.length === 0) return { data: [], error: null };
+      const { data, error } = await supabase
+        .from('storage_block_items')
+        .select(`
+          id,
+          block_id,
+          inventory_id,
+          quantity,
+          inventory:inventory(id, product_name, code),
+          block:storage_blocks(id, name, place_id, parent_block_id, place:storage_places(id, name))
+        `)
+        .in('inventory_id', unique);
+      return { data: data || [], error };
+    },
+
+    async upsert(blockId: string, inventoryId: string, quantity: number) {
+      const { data, error } = await supabase
+        .from('storage_block_items')
+        .upsert(
+          {
+            block_id: blockId,
+            inventory_id: inventoryId,
+            quantity,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'block_id,inventory_id' }
+        )
+        .select(`
+          id,
+          block_id,
+          inventory_id,
+          quantity,
+          inventory:inventory(id, product_name, code)
+        `)
+        .single();
+      return { data, error };
+    },
+
+    async updateQuantity(id: string, quantity: number) {
+      const { data, error } = await supabase
+        .from('storage_block_items')
+        .update({ quantity, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .select(`
+          id,
+          block_id,
+          inventory_id,
+          quantity,
+          inventory:inventory(id, product_name, code)
+        `)
+        .single();
+      return { data, error };
+    },
+
+    async delete(id: string) {
+      const { error } = await supabase.from('storage_block_items').delete().eq('id', id);
+      return { error };
+    },
+  },
+
   // Technician Inventory operations
   technicianInventory: {
     async getAll() {

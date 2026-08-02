@@ -7,12 +7,13 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious, PaginationEllipsis } from '@/components/ui/pagination';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ShoppingCart, Plus, Edit, Trash2, Search, X, RefreshCw, User, Package } from 'lucide-react';
+import { ShoppingCart, Plus, Edit, Trash2, Search, X, RefreshCw, User, Package, MapPin } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { inventoryCache } from '@/lib/inventoryCache';
 import { filterInventoryByApproxSearch, scoreInventoryMatch } from '@/lib/inventorySearch';
 import TechnicianInventoryManagement from './TechnicianInventoryManagement';
+import StorageLocationsMap from './admin/StorageLocationsMap';
 
 interface InventoryItem {
   id: string;
@@ -494,21 +495,44 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
   };
 
   return (
-    <div className="space-y-6">
-      {/* Tabs for Main Inventory, Bundles, and Technician Inventory */}
+    <div className="space-y-4 sm:space-y-6">
+      {/* Tabs for Main Inventory, Locations, Bundles, and Technician Inventory */}
       <Tabs defaultValue="main" className="w-full">
-        <TabsList className="grid w-full grid-cols-3 h-auto">
-          <TabsTrigger value="main" className="flex items-center gap-1.5 min-w-0 overflow-hidden px-2 sm:px-3">
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 h-auto gap-1.5 p-1.5">
+          <TabsTrigger
+            value="main"
+            className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 min-w-0 px-2 py-2.5 sm:py-2 text-xs sm:text-sm rounded-md"
+          >
             <ShoppingCart className="w-4 h-4 shrink-0" />
-            <span className="min-w-0 truncate">Main Inventory</span>
+            <span className="min-w-0 truncate leading-tight">
+              <span className="sm:hidden">Main</span>
+              <span className="hidden sm:inline">Main Inventory</span>
+            </span>
           </TabsTrigger>
-          <TabsTrigger value="bundles" className="flex items-center gap-1.5 min-w-0 overflow-hidden px-2 sm:px-3" onClick={() => !bundlesLoaded && loadBundles()}>
+          <TabsTrigger
+            value="locations"
+            className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 min-w-0 px-2 py-2.5 sm:py-2 text-xs sm:text-sm rounded-md"
+          >
+            <MapPin className="w-4 h-4 shrink-0" />
+            <span className="min-w-0 truncate leading-tight">Locations</span>
+          </TabsTrigger>
+          <TabsTrigger
+            value="bundles"
+            className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 min-w-0 px-2 py-2.5 sm:py-2 text-xs sm:text-sm rounded-md"
+            onClick={() => !bundlesLoaded && loadBundles()}
+          >
             <Package className="w-4 h-4 shrink-0" />
-            <span className="min-w-0 truncate">Bundles</span>
+            <span className="min-w-0 truncate leading-tight">Bundles</span>
           </TabsTrigger>
-          <TabsTrigger value="technician" className="flex items-center gap-1.5 min-w-0 overflow-hidden px-2 sm:px-3">
+          <TabsTrigger
+            value="technician"
+            className="flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 min-w-0 px-2 py-2.5 sm:py-2 text-xs sm:text-sm rounded-md"
+          >
             <User className="w-4 h-4 shrink-0" />
-            <span className="min-w-0 truncate">Technician Inventory</span>
+            <span className="min-w-0 truncate leading-tight">
+              <span className="sm:hidden">Tech</span>
+              <span className="hidden sm:inline">Technician Inventory</span>
+            </span>
           </TabsTrigger>
         </TabsList>
 
@@ -1005,6 +1029,11 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Locations Tab — places → stackable boxes → items */}
+        <TabsContent value="locations" className="space-y-6">
+          <StorageLocationsMap />
         </TabsContent>
 
         {/* Technician Inventory Tab */}
