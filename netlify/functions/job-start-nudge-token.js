@@ -1,14 +1,15 @@
 // HMAC token for "Are you going?" Yes → auto start job (EN_ROUTE). No DB.
 const crypto = require('crypto');
+const { requirePushHmacSecret } = require('./push-hmac-secret');
 
 const TTL_MS = 30 * 60 * 1000;
 
 function secret() {
-  return (
-    (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim() ||
-    (process.env.ALTCHA_HMAC_KEY || '').trim() ||
-    'hro-job-start-nudge'
-  );
+  const got = requirePushHmacSecret();
+  if (!got.ok) {
+    throw new Error(got.error);
+  }
+  return got.secret;
 }
 
 /** @returns {string} technicianId.jobId.exp.sig */
@@ -28,6 +29,9 @@ function makeJobStartNudgeToken(technicianId, jobId) {
  * @returns {{ ok: true, technicianId: string, jobId: string } | { ok: false, error: string }}
  */
 function verifyJobStartNudgeToken(token) {
+  const got = requirePushHmacSecret();
+  if (!got.ok) return { ok: false, error: got.error };
+
   const raw = String(token || '').trim();
   const parts = raw.split('.');
   if (parts.length !== 4) return { ok: false, error: 'Invalid token' };
@@ -38,7 +42,7 @@ function verifyJobStartNudgeToken(token) {
   }
   if (Date.now() > exp) return { ok: false, error: 'Action expired' };
   const expected = crypto
-    .createHmac('sha256', secret())
+    .createHmac('sha256', got.secret)
     .update(`${technicianId}.${jobId}.${expStr}`)
     .digest('hex')
     .slice(0, 32);

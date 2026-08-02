@@ -1,6 +1,18 @@
 --
 -- PostgreSQL database dump
 --
+-- =============================================================================
+-- WARNING — HISTORICAL / BOOTSTRAP DUMP ONLY. DO NOT APPLY TO PRODUCTION.
+-- =============================================================================
+-- This file is a stale pg_dump and still contains legacy permissive RLS
+-- (e.g. allow_all_jobs, USING (true) on expenses/inventory). Live security is
+-- maintained by scripts/secure-*.sql and scripts/*-rls.sql.
+--
+-- Before trusting a environment, run in the Supabase SQL Editor:
+--   scripts/verify-all-rls.sql
+-- Also confirm is_admin_user() matches:
+--   scripts/secure-auth-helpers-repatch-2026-05-24.sql
+-- =============================================================================
 
 \restrict D7NUovo1xMTzc7nLETKxTMBxkPnV3bofSBtek1ytHJk2QZhXRFtTaesj118JM1t
 

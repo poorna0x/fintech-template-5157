@@ -3,10 +3,16 @@
 // One DB round trip: indexed DELETEs + post-delete verification counts.
 
 const { createClient } = require('@supabase/supabase-js');
+const { assertScheduledInvoke } = require('./schedule-guard');
 
 const RETENTION_DAYS = 7;
 
-exports.handler = async () => {
+exports.handler = async (event) => {
+  const cron = assertScheduledInvoke(event);
+  if (!cron.ok) {
+    return { statusCode: cron.statusCode, body: cron.body };
+  }
+
   const supabaseUrl = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
   const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
   if (!supabaseUrl || !serviceKey) {

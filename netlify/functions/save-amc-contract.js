@@ -4,6 +4,7 @@ const { createClient } = require('@supabase/supabase-js');
 const { authorizeStaffAmcEmailRequest } = require('./admin-auth-guard');
 const { verifyTechnicianAmcSaveAccess } = require('./staff-access');
 const { findActiveAmcIdByAgreementNumber, parseAgreementNumberFromAdditionalInfo, findActiveAmcIdCreatedTodayIst } = require('./amc-agreement-number');
+const { getCorsHeaders, isOriginAllowed } = require('./cors-helper');
 
 function jsonResponse(statusCode, headers, body) {
   return {
@@ -14,11 +15,15 @@ function jsonResponse(statusCode, headers, body) {
 }
 
 function corsHeaders(event) {
-  const origin = event.headers.origin || event.headers.Origin || '*';
+  const origin = event.headers.origin || event.headers.Origin;
+  const base = getCorsHeaders(origin);
+  if (!base['Access-Control-Allow-Origin']) {
+    return base;
+  }
   return {
-    'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Email-Preview-Secret',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    ...base,
+    'Access-Control-Allow-Headers':
+      'Content-Type, Authorization, X-Email-Preview-Secret',
   };
 }
 
@@ -243,10 +248,18 @@ async function upsertAmcContract(admin, payload) {
 }
 
 exports.handler = async (event) => {
+  const requestOrigin = event.headers.origin || event.headers.Origin;
   const cors = corsHeaders(event);
 
   if (event.httpMethod === 'OPTIONS') {
+    if (requestOrigin && !isOriginAllowed(requestOrigin)) {
+      return { statusCode: 403, headers: { 'Content-Type': 'application/json' }, body: '' };
+    }
     return { statusCode: 204, headers: cors, body: '' };
+  }
+
+  if (requestOrigin && !isOriginAllowed(requestOrigin)) {
+    return jsonResponse(403, { 'Content-Type': 'application/json' }, { error: 'Forbidden: Origin not allowed' });
   }
 
   if (event.httpMethod !== 'POST') {

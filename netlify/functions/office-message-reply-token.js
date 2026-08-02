@@ -3,15 +3,16 @@
 // Optional "about" (nudge label) is embedded so admin formatting works even when
 // the technician APK does not echo originalTitle/originalBody.
 const crypto = require('crypto');
+const { requirePushHmacSecret } = require('./push-hmac-secret');
 
 const REPLY_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 function replySecret() {
-  return (
-    (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim() ||
-    (process.env.ALTCHA_HMAC_KEY || '').trim() ||
-    'hro-office-message-reply'
-  );
+  const got = requirePushHmacSecret();
+  if (!got.ok) {
+    throw new Error(got.error);
+  }
+  return got.secret;
 }
 
 function encodeAbout(about) {
@@ -54,6 +55,9 @@ function makeOfficeMessageReplyToken(technicianId, about) {
  * @returns {{ ok: true, technicianId: string, about: string } | { ok: false, error: string }}
  */
 function verifyOfficeMessageReplyToken(token) {
+  const got = requirePushHmacSecret();
+  if (!got.ok) return { ok: false, error: got.error };
+
   const raw = String(token || '').trim();
   const parts = raw.split('.');
   if (parts.length !== 3 && parts.length !== 4) {
@@ -76,7 +80,7 @@ function verifyOfficeMessageReplyToken(token) {
 
   const payload = aboutEnc ? `${technicianId}.${expStr}.${aboutEnc}` : `${technicianId}.${expStr}`;
   const expected = crypto
-    .createHmac('sha256', replySecret())
+    .createHmac('sha256', got.secret)
     .update(payload)
     .digest('hex')
     .slice(0, 32);

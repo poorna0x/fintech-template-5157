@@ -10,6 +10,7 @@
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 const { getMessaging, isStaleTokenError, getAdminFcmTokens, pruneAdminFcmTokens } = require('./fcm-helper');
+const { assertScheduledInvoke } = require('./schedule-guard');
 
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 
@@ -71,7 +72,12 @@ function cashAmountForJob(job) {
   return 0;
 }
 
-exports.handler = async () => {
+exports.handler = async (event) => {
+  const cron = assertScheduledInvoke(event);
+  if (!cron.ok) {
+    return { statusCode: cron.statusCode, body: cron.body };
+  }
+
   const supabaseUrl = (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim();
   const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
   if (!supabaseUrl || !serviceKey) {

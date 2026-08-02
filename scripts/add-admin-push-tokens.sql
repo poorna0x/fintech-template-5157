@@ -27,9 +27,9 @@ CREATE POLICY admin_push_tokens_insert
 
 CREATE POLICY admin_push_tokens_update
   ON public.admin_push_tokens FOR UPDATE TO authenticated
-  USING (public.is_admin_user())
-  WITH CHECK (public.is_admin_user());
+  USING (public.is_admin_user() AND user_id = auth.uid())
+  WITH CHECK (public.is_admin_user() AND user_id = auth.uid());
 
 CREATE POLICY admin_push_tokens_delete
   ON public.admin_push_tokens FOR DELETE TO authenticated
-  USING (public.is_admin_user());
+  USING (public.is_admin_user() AND user_id = auth.uid());
