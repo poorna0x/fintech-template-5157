@@ -1,14 +1,9 @@
 package com.hydrogenro.technician;
 
-import android.app.Notification;
-import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.graphics.Color;
 import android.util.Log;
-import androidx.core.app.NotificationCompat;
-import androidx.core.app.NotificationManagerCompat;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -19,13 +14,13 @@ import java.nio.charset.StandardCharsets;
 import org.json.JSONObject;
 
 /**
- * Fires after on-site dwell: calls auto-ask-otp-on-site, then shows a local OTP
- * notification (with inline reply when nonce is returned) even if FCM is dead.
+ * Fires after on-site dwell: calls auto-ask-otp-on-site. Shows the on-screen
+ * OTP overlay (and a replyable tray only if FCM did not already send one).
+ * Never posts the old "OTP needed / open app" fallback — that duplicated FCM.
  */
 public class AutoAskOtpAlarmReceiver extends BroadcastReceiver {
 
     private static final String TAG = "HroAutoAskOtp";
-    private static final int COLOR = Color.parseColor("#F59E0B");
 
     @Override
     public void onReceive(Context context, Intent intent) {
@@ -44,7 +39,6 @@ public class AutoAskOtpAlarmReceiver extends BroadcastReceiver {
                             fire(app, jobId);
                         } catch (Throwable t) {
                             Log.w(TAG, "fire failed", t);
-                            showOpenAppFallback(app, jobId, null);
                         } finally {
                             AutoAskOtpAlarmScheduler.cancel(app, jobId);
                             pending.finish();
@@ -60,9 +54,8 @@ public class AutoAskOtpAlarmReceiver extends BroadcastReceiver {
         String raw = AutoAskOtpAlarmScheduler.prefs(app)
             .getString(AutoAskOtpAlarmScheduler.keyPayload(jobId), null);
         if (raw == null || raw.isEmpty()) {
-            // Payload cleared (e.g. JS cancel after cron claim) — still nudge in case FCM failed.
-            Log.w(TAG, "no payload for " + jobId + " — open-app fallback");
-            showOpenAppFallback(app, jobId, null);
+            // Payload cleared after cron/FCM claimed — nothing else to post.
+            Log.i(TAG, "no payload for " + jobId + " — skip (FCM path owns UI)");
             return;
         }
         JSONObject payload = new JSONObject(raw);
@@ -70,7 +63,7 @@ public class AutoAskOtpAlarmReceiver extends BroadcastReceiver {
         String endpointUrl = payload.optString("endpointUrl", "");
         String customerName = payload.optString("customerName", "");
         if (accessToken.isEmpty() || endpointUrl.isEmpty()) {
-            showOpenAppFallback(app, jobId, customerName);
+            Log.w(TAG, "missing token/url for " + jobId);
             return;
         }
 
@@ -99,8 +92,7 @@ public class AutoAskOtpAlarmReceiver extends BroadcastReceiver {
             Log.i(TAG, "auto-ask HTTP " + code + " " + respText);
 
             if (code == 401 || code == 403) {
-                // Token expired — still nudge so tech opens app (card / re-auth).
-                showOpenAppFallback(app, jobId, customerName);
+                Log.w(TAG, "auth failed for " + jobId + " — no open-app fallback");
                 return;
             }
 
@@ -110,42 +102,48 @@ public class AutoAskOtpAlarmReceiver extends BroadcastReceiver {
             } catch (Throwable ignored) {
                 /* */
             }
+            if (out == null) return;
 
-            if (out != null) {
-                String requestId = out.optString("requestId", "");
-                String nonce = out.optString("nonce", "");
-                String submitUrl = out.optString("submitUrl", "");
-                if (!requestId.isEmpty() && !nonce.isEmpty() && !submitUrl.isEmpty()) {
-                    String notifBody =
-                        customerName != null && !customerName.isEmpty()
-                            ? "Ask " + customerName + " for the code, then tap Enter OTP."
-                            : "Ask the customer for the code, then tap Enter OTP.";
-                    OtpReplyReceiver.showOtpRequestNotification(
-                        app, requestId, nonce, submitUrl, notifBody);
-                    // Same on-screen OTP card as FCM — tray alone is not enough.
-                    java.util.HashMap<String, String> overlayData = new java.util.HashMap<>();
-                    overlayData.put("showOverlay", "1");
-                    overlayData.put("type", "otp_request");
-                    overlayData.put("requestId", requestId);
-                    overlayData.put("nonce", nonce);
-                    overlayData.put("submitUrl", submitUrl);
-                    overlayData.put("title", "OTP needed");
-                    overlayData.put("body", notifBody);
-                    if (customerName != null && !customerName.isEmpty()) {
-                        overlayData.put("customerName", customerName);
-                        overlayData.put("msgTitle", "OTP — " + customerName);
-                    }
-                    TechActionOverlay.maybeShowFromPush(
-                        app, TechActionOverlay.Mode.OTP, overlayData);
-                    return;
-                }
-                String reason = out.optString("reason", "");
-                if ("otp_already_entered".equals(reason)) {
-                    return;
-                }
+            String reason = out.optString("reason", "");
+            // Cron/JS already claimed — FCM (or prior ask) owns the tray + overlay.
+            if (out.optBoolean("skipped", false)
+                || "already_asked".equals(reason)
+                || "ask_already_pending".equals(reason)
+                || "otp_already_on_request".equals(reason)
+                || "otp_already_entered".equals(reason)) {
+                return;
             }
 
-            showOpenAppFallback(app, jobId, customerName);
+            String requestId = out.optString("requestId", "");
+            String nonce = out.optString("nonce", "");
+            String submitUrl = out.optString("submitUrl", "");
+            if (requestId.isEmpty() || nonce.isEmpty() || submitUrl.isEmpty()) {
+                return;
+            }
+
+            String notifBody =
+                customerName != null && !customerName.isEmpty()
+                    ? "Ask " + customerName + " for the code, then tap Enter OTP."
+                    : "Ask the customer for the code, then tap Enter OTP.";
+            // If FCM already delivered the replyable tray, don't post a second one.
+            boolean fcmSent = out.optBoolean("sent", false);
+            if (!fcmSent) {
+                OtpReplyReceiver.showOtpRequestNotification(
+                    app, requestId, nonce, submitUrl, notifBody);
+            }
+            java.util.HashMap<String, String> overlayData = new java.util.HashMap<>();
+            overlayData.put("showOverlay", "1");
+            overlayData.put("type", "otp_request");
+            overlayData.put("requestId", requestId);
+            overlayData.put("nonce", nonce);
+            overlayData.put("submitUrl", submitUrl);
+            overlayData.put("title", "Office needs the customer's OTP");
+            overlayData.put("body", notifBody);
+            if (customerName != null && !customerName.isEmpty()) {
+                overlayData.put("customerName", customerName);
+                overlayData.put("msgTitle", "OTP — " + customerName);
+            }
+            TechActionOverlay.maybeShowFromPush(app, TechActionOverlay.Mode.OTP, overlayData);
         } finally {
             if (conn != null) conn.disconnect();
         }
@@ -160,44 +158,5 @@ public class AutoAskOtpAlarmReceiver extends BroadcastReceiver {
             while ((line = br.readLine()) != null) sb.append(line);
         }
         return sb.toString();
-    }
-
-    private static void showOpenAppFallback(Context app, String jobId, String customerName) {
-        try {
-            NotificationChannels.ensureJobAlerts(app);
-            int notifId = Math.abs(("auto_ask_otp:" + jobId).hashCode());
-            Intent open = new Intent(app, MainActivity.class);
-            open.addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK
-                    | Intent.FLAG_ACTIVITY_CLEAR_TOP
-                    | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-            PendingIntent openPi =
-                PendingIntent.getActivity(
-                    app,
-                    notifId,
-                    open,
-                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-
-            String body =
-                customerName != null && !customerName.isEmpty()
-                    ? "Ask " + customerName + " for their 4-digit OTP (open app)."
-                    : "Ask the customer for their 4-digit OTP (open app).";
-
-            Notification notification =
-                new NotificationCompat.Builder(app, NotificationChannels.JOB_ALERTS)
-                    .setSmallIcon(R.drawable.ic_stat_notify)
-                    .setColor(COLOR)
-                    .setContentTitle("OTP needed")
-                    .setContentText(body)
-                    .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
-                    .setPriority(NotificationCompat.PRIORITY_HIGH)
-                    .setCategory(NotificationCompat.CATEGORY_ALARM)
-                    .setAutoCancel(true)
-                    .setContentIntent(openPi)
-                    .build();
-            NotificationManagerCompat.from(app).notify(notifId, notification);
-        } catch (Throwable t) {
-            Log.w(TAG, "fallback notification failed", t);
-        }
     }
 }
