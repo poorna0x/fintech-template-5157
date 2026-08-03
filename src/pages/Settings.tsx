@@ -68,6 +68,7 @@ import { SettingsRemindersDialog } from '@/components/reminders/SettingsReminder
 import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
 import { RecurringServiceTracker } from '@/components/reminders/RecurringServiceTracker';
 import { SettingsPendingPaymentsDialogV2 } from '@/components/reminders/PendingPaymentsDialogV2';
+import UpiPaymentAccountsManager from '@/components/UpiPaymentAccountsManager';
 import AdvancedCustomerSearchDialog from '@/components/admin/AdvancedCustomerSearchDialog';
 import { SettingsActionCard } from '@/components/admin/SettingsActionCard';
 import MergeCustomersDialog from '@/components/admin/MergeCustomersDialog';
@@ -2876,6 +2877,26 @@ const Settings = () => {
                   </div>
                 )}
               </div>
+            </CardContent>
+          </Card>
+
+          {/* UPI accounts for pending-payment WhatsApp pay links */}
+          <Card>
+            <CardHeader>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+                    <DollarSign className="w-5 h-5" />
+                    UPI payment accounts
+                  </CardTitle>
+                  <CardDescription className="text-sm mt-1">
+                    Named UPI IDs and payment phone numbers for pending-payment WhatsApp. After you run the SQL setup once, accounts sync across all admin devices.
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-4 sm:p-6">
+              <UpiPaymentAccountsManager />
             </CardContent>
           </Card>
 

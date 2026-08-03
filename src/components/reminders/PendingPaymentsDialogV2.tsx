@@ -34,10 +34,20 @@ import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import CustomerReportDialog from '@/components/admin/CustomerReportDialog';
 import PhotoViewerDialog from '@/components/admin/PhotoViewerDialog';
+import UpiPaymentAccountsManager from '@/components/UpiPaymentAccountsManager';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { PENDING_PAYMENT_REMINDER_TITLE, parseReminderAtLocalDate, buildPendingPaymentWhatsAppMessage, buildPendingPaymentReceivedWhatsAppMessage, parsePendingPaymentReminderNotes } from '@/lib/pendingPaymentReminder';
 import { markPendingPaymentSettledInRequirements } from '@/lib/jobPendingPayment';
 import type { DocumentBrand } from '@/lib/service-brands';
 import { normalizeDocumentBrand } from '@/lib/service-brands';
+import {
+  buildPendingPaymentUpiShare,
+  fetchUpiPaymentAccounts,
+  loadUpiPaymentAccounts,
+  resolvePreferredUpiAccount,
+  setLastSelectedUpiAccountId,
+  type UpiPaymentAccount,
+} from '@/lib/upiPaymentAccounts';
 
 const PENDING_PAYMENT_TITLE = PENDING_PAYMENT_REMINDER_TITLE;
 const PAGE_SIZE = 20;
@@ -438,6 +448,12 @@ export function SettingsPendingPaymentsDialogV2({
 
   const [whatsappDialogOpen, setWhatsappDialogOpen] = useState(false);
   const [whatsappTarget, setWhatsappTarget] = useState<PendingPaymentReminder | null>(null);
+  const [upiAccounts, setUpiAccounts] = useState<UpiPaymentAccount[]>(() => loadUpiPaymentAccounts());
+  /** Which UPI account to use when include-UPI is on. */
+  const [whatsappUpiAccountId, setWhatsappUpiAccountId] = useState<string>('');
+  /** Checkbox: include UPI ID + pay link in the WhatsApp message. */
+  const [whatsappIncludeUpi, setWhatsappIncludeUpi] = useState(false);
+  const [whatsappManageUpiOpen, setWhatsappManageUpiOpen] = useState(false);
   /** Last completed job service_brand per customer — drives WhatsApp brand contact. */
   const [brandByCustomerId, setBrandByCustomerId] = useState<Record<string, DocumentBrand | null>>({});
 
@@ -496,13 +512,58 @@ export function SettingsPendingPaymentsDialogV2({
   const brandForCustomer = (customerId: string | null | undefined): DocumentBrand =>
     normalizeDocumentBrand(customerId ? brandByCustomerId[customerId] : null) || 'hydrogenro';
 
-  const buildPendingPaymentMessage = (payment: PendingPaymentReminder, customer: CustomerLabel) =>
-    buildPendingPaymentWhatsAppMessage(
+  const syncUpiAccountsFromStorage = async () => {
+    const { accounts: next } = await fetchUpiPaymentAccounts();
+    setUpiAccounts(next);
+    return next;
+  };
+
+  const openPendingWhatsAppDialog = async (payment: PendingPaymentReminder) => {
+    const accounts = await syncUpiAccountsFromStorage();
+    const preferred = resolvePreferredUpiAccount(accounts);
+    setWhatsappUpiAccountId(preferred?.id ?? accounts[0]?.id ?? '');
+    setWhatsappIncludeUpi(Boolean(preferred || accounts[0]));
+    setWhatsappManageUpiOpen(false);
+    setWhatsappTarget(payment);
+    setWhatsappDialogOpen(true);
+  };
+
+  const buildPendingPaymentMessage = (
+    payment: PendingPaymentReminder,
+    customer: CustomerLabel,
+    opts?: { includeUpi?: boolean; upiAccountId?: string }
+  ) => {
+    const includeUpi = opts?.includeUpi ?? whatsappIncludeUpi;
+    const upiAccountId = opts?.upiAccountId ?? whatsappUpiAccountId;
+    let upiOpts = null as
+      | { label: string; upiId: string; phone?: string; deepLink?: string | null }
+      | null;
+    if (includeUpi && upiAccountId) {
+      const account = upiAccounts.find((a) => a.id === upiAccountId);
+      if (account) {
+        const share = buildPendingPaymentUpiShare(
+          account,
+          Number(payment.amount_pending) || 0,
+          payment.job_number || payment.job_id || null
+        );
+        if (share) {
+          upiOpts = {
+            label: share.account.label,
+            upiId: share.account.upiId,
+            phone: share.account.phone || undefined,
+            deepLink: share.deepLink,
+          };
+        }
+      }
+    }
+    return buildPendingPaymentWhatsAppMessage(
       customer.name,
       Number(payment.amount_pending) || 0,
       payment.reminder_at ? String(payment.reminder_at).slice(0, 10) : null,
-      brandForCustomer(payment.entity_id as string | undefined)
+      brandForCustomer(payment.entity_id as string | undefined),
+      upiOpts
     );
+  };
 
   const buildPaymentReceivedMessage = (payment: PendingPaymentReminder, customer: CustomerLabel) =>
     buildPendingPaymentReceivedWhatsAppMessage(
@@ -648,7 +709,7 @@ export function SettingsPendingPaymentsDialogV2({
     deepLinkHandledRef.current = key;
 
     void (async () => {
-      const { list, brands } = await load(initialReminderId);
+      const { list } = await load(initialReminderId);
       setHighlightReminderId(initialReminderId);
       window.setTimeout(() => {
         rowRefs.current[initialReminderId]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -669,27 +730,17 @@ export function SettingsPendingPaymentsDialogV2({
         toast.error('Customer info not loaded');
         return;
       }
-      const brand =
-        normalizeDocumentBrand(target.entity_id ? brands[target.entity_id as string] : null) ||
-        'hydrogenro';
-      const message = buildPendingPaymentWhatsAppMessage(
-        label.name,
-        Number(target.amount_pending) || 0,
-        target.reminder_at ? String(target.reminder_at).slice(0, 10) : null,
-        brand
-      );
       const primary = label.phone;
       const alternate = label.alternatePhone;
       if (!primary && !alternate) {
         toast.error('Customer phone number is missing');
         return;
       }
-      if (alternate && alternate.trim() && alternate.trim() !== primary?.trim()) {
-        setWhatsappTarget(target);
-        setWhatsappDialogOpen(true);
-        return;
-      }
-      openWhatsApp(primary || alternate || '', message);
+      setCustomerLabels((prev) => ({
+        ...prev,
+        [target.entity_id as string]: label,
+      }));
+      void openPendingWhatsAppDialog(target);
     })();
   }, [open, initialReminderId, initialAction]);
 
@@ -888,15 +939,7 @@ export function SettingsPendingPaymentsDialogV2({
       return;
     }
 
-    const message = buildPendingPaymentMessage(p, customer);
-
-    if (alternate && alternate.trim() && alternate.trim() !== primary?.trim()) {
-      setWhatsappTarget(p);
-      setWhatsappDialogOpen(true);
-      return;
-    }
-
-    openWhatsApp(primary || alternate || '', message);
+    void openPendingWhatsAppDialog(p);
   };
 
   const handleCallClick = (p: PendingPaymentReminder) => {
@@ -1424,18 +1467,47 @@ export function SettingsPendingPaymentsDialogV2({
           open={whatsappDialogOpen}
           onOpenChange={(o) => {
             setWhatsappDialogOpen(o);
-            if (!o) setWhatsappTarget(null);
+            if (!o) {
+              setWhatsappTarget(null);
+              setWhatsappManageUpiOpen(false);
+              setWhatsappIncludeUpi(false);
+            }
           }}
         >
           <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto p-4 sm:p-6">
             {whatsappTarget && (
               <>
                 {(() => {
-                  const customer = whatsappTarget.entity_id ? customerLabels[whatsappTarget.entity_id as string] : undefined;
+                  const customer = whatsappTarget.entity_id
+                    ? customerLabels[whatsappTarget.entity_id as string]
+                    : undefined;
                   const primaryPhone = customer?.phone;
                   const alternatePhone = customer?.alternatePhone;
-                  const message = customer ? buildPendingPaymentMessage(whatsappTarget, customer) : '';
-                  const hasAlternate = !!alternatePhone && alternatePhone.trim() !== (primaryPhone || '').trim();
+                  const message = customer
+                    ? buildPendingPaymentMessage(whatsappTarget, customer, {
+                        includeUpi: whatsappIncludeUpi,
+                        upiAccountId: whatsappUpiAccountId,
+                      })
+                    : '';
+                  const hasAlternate =
+                    !!alternatePhone && alternatePhone.trim() !== (primaryPhone || '').trim();
+                  const canIncludeUpi =
+                    whatsappIncludeUpi &&
+                    Boolean(whatsappUpiAccountId) &&
+                    upiAccounts.some((a) => a.id === whatsappUpiAccountId);
+
+                  const sendWithPhone = (phone: string) => {
+                    if (!phone) return;
+                    if (whatsappIncludeUpi && !canIncludeUpi) {
+                      toast.error('Select a UPI account, or uncheck “Include UPI pay details”');
+                      return;
+                    }
+                    if (canIncludeUpi) {
+                      setLastSelectedUpiAccountId(whatsappUpiAccountId);
+                    }
+                    openWhatsApp(phone, message);
+                    setWhatsappDialogOpen(false);
+                  };
 
                   return (
                     <>
@@ -1445,28 +1517,124 @@ export function SettingsPendingPaymentsDialogV2({
                           Notify via WhatsApp
                         </DialogTitle>
                         <DialogDescription>
-                          Send a pending payment notification to the customer.
+                          Optionally include UPI ID + payment phone (iPhone-friendly) and Android tap-to-pay.
                         </DialogDescription>
                       </DialogHeader>
 
                       <div className="py-4 space-y-3">
-                        <div className="bg-gray-50 rounded-lg p-4 space-y-2">
-                          <div className="text-sm text-gray-700">
+                        <div className="bg-gray-50 dark:bg-muted/40 rounded-lg p-4 space-y-2">
+                          <div className="text-sm text-foreground">
                             <strong>Customer:</strong> {customer?.name ?? 'Customer'}
                           </div>
-                          <div className="text-sm text-gray-700">
+                          <div className="text-sm text-foreground">
+                            <strong>Amount:</strong> ₹
+                            {(Number(whatsappTarget.amount_pending) || 0).toLocaleString('en-IN', {
+                              maximumFractionDigits: 2,
+                            })}
+                          </div>
+                          <div className="text-sm text-foreground">
                             <strong>Primary:</strong> {primaryPhone ?? '—'}
                           </div>
                           {hasAlternate && (
-                            <div className="text-sm text-gray-700">
+                            <div className="text-sm text-foreground">
                               <strong>Alternate:</strong> {alternatePhone}
                             </div>
                           )}
                         </div>
 
+                        <div className="rounded-md border p-3 space-y-3">
+                          <div className="flex items-start gap-3">
+                            <Checkbox
+                              id="include-upi-pay"
+                              checked={whatsappIncludeUpi}
+                              onCheckedChange={(v) => {
+                                const on = v === true;
+                                setWhatsappIncludeUpi(on);
+                                if (on && !whatsappUpiAccountId && upiAccounts[0]) {
+                                  setWhatsappUpiAccountId(
+                                    resolvePreferredUpiAccount(upiAccounts)?.id ?? upiAccounts[0].id
+                                  );
+                                }
+                              }}
+                              className="mt-0.5"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <label
+                                htmlFor="include-upi-pay"
+                                className="text-sm font-medium cursor-pointer leading-snug"
+                              >
+                                Include UPI pay details in message
+                              </label>
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                Adds UPI ID, payment phone, amount, and Android tap-to-pay. Uncheck for reminder-only.
+                              </p>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 text-xs shrink-0"
+                              onClick={() => setWhatsappManageUpiOpen((v) => !v)}
+                            >
+                              {whatsappManageUpiOpen ? 'Hide' : 'Manage'}
+                            </Button>
+                          </div>
+
+                          {whatsappIncludeUpi ? (
+                            <div className="space-y-2 pl-7">
+                              <Label>Pay to UPI</Label>
+                              <Select
+                                value={whatsappUpiAccountId || undefined}
+                                onValueChange={setWhatsappUpiAccountId}
+                                disabled={upiAccounts.length === 0}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select UPI account" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {upiAccounts.map((a) => (
+                                    <SelectItem key={a.id} value={a.id}>
+                                      {a.label} — {a.upiId}
+                                      {a.phone ? ` · ${a.phone}` : ''}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              {upiAccounts.length === 0 && (
+                                <p className="text-xs text-amber-700 dark:text-amber-400">
+                                  Add a UPI account below, or uncheck to send without UPI.
+                                </p>
+                              )}
+                            </div>
+                          ) : null}
+
+                          {whatsappManageUpiOpen || (whatsappIncludeUpi && upiAccounts.length === 0) ? (
+                            <div className="rounded-md border p-3 bg-background">
+                              <UpiPaymentAccountsManager
+                                compact
+                                onAccountsChange={(next) => {
+                                  setUpiAccounts(next);
+                                  if (
+                                    whatsappUpiAccountId &&
+                                    !next.some((a) => a.id === whatsappUpiAccountId)
+                                  ) {
+                                    const preferred = resolvePreferredUpiAccount(next);
+                                    setWhatsappUpiAccountId(preferred?.id ?? '');
+                                    if (!preferred) setWhatsappIncludeUpi(false);
+                                  } else if (!whatsappUpiAccountId && next.length > 0) {
+                                    setWhatsappUpiAccountId(
+                                      resolvePreferredUpiAccount(next)?.id ?? next[0].id
+                                    );
+                                  }
+                                }}
+                              />
+                            </div>
+                          ) : null}
+                        </div>
+
                         <div className="space-y-2">
-                          <Label>Message Preview</Label>
-                          <div className="mt-1 p-3 bg-white border border-gray-200 rounded text-sm text-gray-700 whitespace-pre-wrap max-h-40 overflow-y-auto">
+                          <Label>Message preview</Label>
+                          <div className="mt-1 p-3 bg-white dark:bg-background border border-gray-200 dark:border-border rounded text-sm text-foreground whitespace-pre-wrap max-h-48 overflow-y-auto">
                             {message}
                           </div>
                         </div>
@@ -1479,8 +1647,7 @@ export function SettingsPendingPaymentsDialogV2({
                                 className="bg-green-600 hover:bg-green-700 text-white"
                                 onClick={() => {
                                   if (!primaryPhone) return;
-                                  openWhatsApp(primaryPhone, message);
-                                  setWhatsappDialogOpen(false);
+                                  sendWithPhone(primaryPhone);
                                 }}
                               >
                                 <WhatsAppIcon className="w-4 h-4 mr-2" />
@@ -1491,8 +1658,7 @@ export function SettingsPendingPaymentsDialogV2({
                                 className="bg-green-600 hover:bg-green-700 text-white"
                                 onClick={() => {
                                   if (!alternatePhone) return;
-                                  openWhatsApp(alternatePhone, message);
-                                  setWhatsappDialogOpen(false);
+                                  sendWithPhone(alternatePhone);
                                 }}
                               >
                                 <WhatsAppIcon className="w-4 h-4 mr-2" />
@@ -1504,13 +1670,13 @@ export function SettingsPendingPaymentsDialogV2({
                               variant="default"
                               className="w-full bg-green-600 hover:bg-green-700 text-white"
                               onClick={() => {
-                                if (!primaryPhone) return;
-                                openWhatsApp(primaryPhone, message);
-                                setWhatsappDialogOpen(false);
+                                const phone = primaryPhone || alternatePhone;
+                                if (!phone) return;
+                                sendWithPhone(phone);
                               }}
                             >
                               <WhatsAppIcon className="w-4 h-4 mr-2" />
-                              Send WhatsApp Message
+                              Send WhatsApp message
                             </Button>
                           )}
                         </div>

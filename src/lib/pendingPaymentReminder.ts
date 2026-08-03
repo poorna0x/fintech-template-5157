@@ -92,11 +92,23 @@ export function resolvePendingPaymentMessageBrand(value: unknown): DocumentBrand
   return normalizeDocumentBrand(value) || 'hydrogenro';
 }
 
+export type PendingPaymentWhatsAppUpiOptions = {
+  /** Display label for the account (e.g. Hydrogen RO HDFC). */
+  label: string;
+  /** VPA shown to the customer (works on iPhone — copy into GPay/PhonePe). */
+  upiId: string;
+  /** Optional payment mobile number (UPI to phone / call). */
+  phone?: string;
+  /** Full upi://pay?... deep link — mainly Android. */
+  deepLink?: string | null;
+};
+
 export function buildPendingPaymentWhatsAppMessage(
   customerName: string,
   amountPending: number,
   dueDateYmd?: string | null,
-  brand?: DocumentBrand | string | null
+  brand?: DocumentBrand | string | null,
+  upi?: PendingPaymentWhatsAppUpiOptions | null
 ): string {
   const resolved = resolvePendingPaymentMessageBrand(brand);
   const contact = PENDING_PAYMENT_CONTACT[resolved];
@@ -105,9 +117,27 @@ export function buildPendingPaymentWhatsAppMessage(
   const dueLabel = formatPendingPaymentDueLabel(dueDateYmd);
   const dueLine = dueLabel ? `\nPayment due date: ${dueLabel}.` : '';
 
+  let upiBlock = '';
+  if (upi?.upiId) {
+    const accountLine = upi.label?.trim() ? ` (${upi.label.trim()})` : '';
+    const phoneLine = upi.phone?.trim()
+      ? `\nPayment phone: ${upi.phone.trim()}`
+      : '';
+    const androidLine = upi.deepLink?.trim()
+      ? `\n\nAndroid — tap to pay:\n${upi.deepLink.trim()}`
+      : '';
+    upiBlock = `
+
+Pay via UPI${accountLine}:
+UPI ID: ${upi.upiId}${phoneLine}
+Amount: ₹${formattedAmount}
+
+iPhone: copy the UPI ID into GPay / PhonePe / Paytm${upi.phone?.trim() ? ', or pay using the payment phone number' : ''}.${androidLine}`;
+  }
+
   return `Hi ${customerName} 😊
 
-Hope you're doing well. Just a quick reminder from ${brandLabel} that you have a pending payment of ₹${formattedAmount}.${dueLine}
+Hope you're doing well. Just a quick reminder from ${brandLabel} that you have a pending payment of ₹${formattedAmount}.${dueLine}${upiBlock}
 
 Request you to please clear the payment at your earliest convenience. If you have already paid, kindly ignore this message.
 
