@@ -122,6 +122,21 @@ public class AutoAskOtpAlarmReceiver extends BroadcastReceiver {
                             : "Ask the customer for the code, then tap Enter OTP.";
                     OtpReplyReceiver.showOtpRequestNotification(
                         app, requestId, nonce, submitUrl, notifBody);
+                    // Same on-screen OTP card as FCM — tray alone is not enough.
+                    java.util.HashMap<String, String> overlayData = new java.util.HashMap<>();
+                    overlayData.put("showOverlay", "1");
+                    overlayData.put("type", "otp_request");
+                    overlayData.put("requestId", requestId);
+                    overlayData.put("nonce", nonce);
+                    overlayData.put("submitUrl", submitUrl);
+                    overlayData.put("title", "OTP needed");
+                    overlayData.put("body", notifBody);
+                    if (customerName != null && !customerName.isEmpty()) {
+                        overlayData.put("customerName", customerName);
+                        overlayData.put("msgTitle", "OTP — " + customerName);
+                    }
+                    TechActionOverlay.maybeShowFromPush(
+                        app, TechActionOverlay.Mode.OTP, overlayData);
                     return;
                 }
                 String reason = out.optString("reason", "");

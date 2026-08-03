@@ -91,13 +91,21 @@ public final class TechActionOverlay {
     public static boolean wantsOverlay(Map<String, String> data) {
         if (data == null) return false;
         String v = data.get("showOverlay");
-        return "1".equals(v) || "true".equalsIgnoreCase(v);
+        if ("1".equals(v) || "true".equalsIgnoreCase(v)) return true;
+        // OTP auto-ask / alarm paths must get the card even if flag was dropped.
+        String type = data.get("type");
+        return "otp_request".equals(type)
+            && data.get("requestId") != null
+            && data.get("nonce") != null
+            && data.get("submitUrl") != null;
     }
 
     public static void maybeShowFromPush(Context context, Mode mode, Map<String, String> data) {
-        if (context == null || data == null || !wantsOverlay(data)) return;
+        if (context == null || data == null) return;
+        if (mode != Mode.OTP && !wantsOverlay(data)) return;
+        if (mode == Mode.OTP && !wantsOverlay(data)) return;
         if (!canDraw(context)) {
-            Log.i(TAG, "Overlay permission missing — tray only");
+            Log.i(TAG, "Overlay permission missing — tray only (enable Display over other apps)");
             return;
         }
         String title = first(data.get("msgTitle"), data.get("title"), defaultTitle(mode));
