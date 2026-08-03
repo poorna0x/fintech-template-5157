@@ -3,7 +3,8 @@
 const crypto = require('crypto');
 const { requirePushHmacSecret } = require('./push-hmac-secret');
 
-const ACK_TTL_MS = 60 * 60 * 1000; // 60 minutes
+// Long enough for tray leftovers overnight / weekend; late dismiss still notifies.
+const ACK_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 const ACK_SOURCES = new Set(['direct_message', 'nudge', 'job_alert', 'other']);
 

@@ -500,6 +500,7 @@ public class MessageReplyReceiver extends BroadcastReceiver {
 
         // Free-text Reply: still send silent "saw" in case reply POST fails later.
         TechPushAckReceiver.postSeen(
+            context,
             intent.getStringExtra(EXTRA_ACK_TOKEN),
             intent.getStringExtra(EXTRA_ACK_URL),
             intent.getStringExtra(EXTRA_TITLE),
@@ -714,7 +715,7 @@ public class MessageReplyReceiver extends BroadcastReceiver {
         String ackUrl,
         ResultCallback callback
     ) {
-        TechPushAckReceiver.postSeen(ackToken, ackUrl, title, body, tag);
+        TechPushAckReceiver.postSeen(context, ackToken, ackUrl, title, body, tag);
         if (replyToken == null || replyUrl == null || reply == null || reply.trim().isEmpty()) {
             if (callback != null) callback.onDone(false);
             return;

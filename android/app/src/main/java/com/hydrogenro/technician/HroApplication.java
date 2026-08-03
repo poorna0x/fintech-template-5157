@@ -15,5 +15,7 @@ public class HroApplication extends Application {
         CrashReporter.install(this);
         // Ships whatever the previous (crashed) process left behind.
         CrashReporter.uploadPendingAsync(this);
+        // Retry any dismiss/open acks that failed while offline.
+        TechPushAckReceiver.flushPendingAsync(this);
     }
 }

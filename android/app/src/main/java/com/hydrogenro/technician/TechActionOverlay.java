@@ -660,7 +660,12 @@ public final class TechActionOverlay {
         switch (mode) {
             case CALL: {
                 TechPushAckReceiver.postSeen(
-                    currentAckToken, currentAckUrl, currentAckTitle, currentAckBody, currentTrayTag);
+                    context,
+                    currentAckToken,
+                    currentAckUrl,
+                    currentAckTitle,
+                    currentAckBody,
+                    currentTrayTag);
                 String digits = callPhone != null ? callPhone.replaceAll("[^0-9+]", "") : "";
                 dismiss(true);
                 if (!digits.isEmpty()) {
@@ -676,14 +681,24 @@ public final class TechActionOverlay {
             }
             case INFO: {
                 TechPushAckReceiver.postSeen(
-                    currentAckToken, currentAckUrl, currentAckTitle, currentAckBody, currentTrayTag);
+                    context,
+                    currentAckToken,
+                    currentAckUrl,
+                    currentAckTitle,
+                    currentAckBody,
+                    currentTrayTag);
                 dismiss(true);
                 openApp(context, jobId);
                 break;
             }
             case WRONG_LINE: {
                 TechPushAckReceiver.postSeen(
-                    currentAckToken, currentAckUrl, currentAckTitle, currentAckBody, currentTrayTag);
+                    context,
+                    currentAckToken,
+                    currentAckUrl,
+                    currentAckTitle,
+                    currentAckBody,
+                    currentTrayTag);
                 dismiss(true);
                 break;
             }

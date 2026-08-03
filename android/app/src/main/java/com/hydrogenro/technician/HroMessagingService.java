@@ -54,6 +54,8 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
     }
 
     private void handleMessage(@NonNull RemoteMessage remoteMessage) {
+        // Opportunistic retry of any offline dismiss/open acks.
+        TechPushAckReceiver.flushPendingAsync(getApplicationContext());
         Map<String, String> data = remoteMessage.getData();
         // Handle our custom types before Capacitor so tray UI is ours (with Reply).
         if ("otp_request".equals(data.get("type"))) {
