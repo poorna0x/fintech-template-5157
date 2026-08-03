@@ -341,26 +341,69 @@ export function buildUpiPayDeepLink(input: {
   return `upi://pay?${parts.join('&')}`;
 }
 
+/**
+ * HTTPS wrapper for WhatsApp — `upi://` is not auto-linked there.
+ * Opens /pay-upi which redirects Android into the UPI intent.
+ */
+export function buildUpiPayHttpsLink(
+  origin: string,
+  input: {
+    upiId: string;
+    payeeName?: string;
+    amount?: number;
+    note?: string;
+  }
+): string | null {
+  const pa = normalizeUpiId(input.upiId);
+  if (!isValidUpiId(pa)) return null;
+  const base = String(origin || '')
+    .trim()
+    .replace(/\/$/, '');
+  if (!base) return null;
+  const q = new URLSearchParams();
+  q.set('pa', pa);
+  q.set('cu', 'INR');
+  const pn = String(input.payeeName || '').trim().slice(0, 100);
+  if (pn) q.set('pn', pn);
+  const am = Number(input.amount);
+  if (Number.isFinite(am) && am > 0) q.set('am', am.toFixed(2));
+  const tn = String(input.note || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .slice(0, 80);
+  if (tn) q.set('tn', tn);
+  return `${base}/pay-upi?${q.toString()}`;
+}
+
 export type PendingPaymentUpiShare = {
   account: UpiPaymentAccount;
+  /** Raw upi:// intent (for /pay-upi page). */
   deepLink: string | null;
+  /** HTTPS link for WhatsApp (clickable). */
+  httpsLink: string | null;
 };
 
 export function buildPendingPaymentUpiShare(
   account: UpiPaymentAccount,
   amountPending: number,
-  jobRef?: string | null
+  jobRef?: string | null,
+  origin?: string | null
 ): PendingPaymentUpiShare | null {
   if (!isValidUpiId(account.upiId)) return null;
   const noteParts = ['Pending payment'];
   if (jobRef && String(jobRef).trim()) noteParts.push(String(jobRef).trim());
-  const deepLink = buildUpiPayDeepLink({
+  const payInput = {
     upiId: account.upiId,
     payeeName: account.payeeName || account.label,
     amount: amountPending,
     note: noteParts.join(' '),
-  });
-  return { account, deepLink };
+  };
+  const deepLink = buildUpiPayDeepLink(payInput);
+  const siteOrigin =
+    (origin && String(origin).trim()) ||
+    (typeof window !== 'undefined' ? window.location.origin : '');
+  const httpsLink = buildUpiPayHttpsLink(siteOrigin, payInput);
+  return { account, deepLink, httpsLink };
 }
 
 export function isUpiRemoteUnavailable(): boolean {

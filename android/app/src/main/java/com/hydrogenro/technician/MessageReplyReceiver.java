@@ -71,6 +71,21 @@ public class MessageReplyReceiver extends BroadcastReceiver {
         String replyUrl,
         String tag
     ) {
+        showOfficeMessageNotification(
+            context, title, body, replyToken, replyUrl, tag, null, null, null);
+    }
+
+    public static void showOfficeMessageNotification(
+        Context context,
+        String title,
+        String body,
+        String replyToken,
+        String replyUrl,
+        String tag,
+        String ackToken,
+        String ackUrl,
+        String source
+    ) {
         NotificationChannels.ensureJobAlerts(context);
 
         String safeTitle = (title != null && !title.isEmpty()) ? title : "Message from office";
@@ -103,13 +118,17 @@ public class MessageReplyReceiver extends BroadcastReceiver {
             .setAllowGeneratedReplies(false)
             .build();
 
-        Intent openIntent = new Intent(context, MainActivity.class)
-            .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        PendingIntent openPending = PendingIntent.getActivity(
+        PendingIntent openPending = TechPushAckReceiver.openPending(
             context,
             NOTIFICATION_ID,
-            openIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+            ackToken,
+            ackUrl,
+            source,
+            safeTitle,
+            safeBody,
+            notifTag,
+            NOTIFICATION_ID,
+            null
         );
 
         // BigTextStyle keeps the full message visible/expanded in the shade.
@@ -131,6 +150,20 @@ public class MessageReplyReceiver extends BroadcastReceiver {
             .setContentIntent(openPending)
             .addAction(replyAction)
             .setAutoCancel(false);
+        PendingIntent deletePending = TechPushAckReceiver.dismissPending(
+            context,
+            NOTIFICATION_ID + 50,
+            ackToken,
+            ackUrl,
+            source,
+            safeTitle,
+            safeBody,
+            notifTag,
+            NOTIFICATION_ID
+        );
+        if (deletePending != null) {
+            builder.setDeleteIntent(deletePending);
+        }
         Bitmap officeAvatar = loadOfficeAvatarBitmap(context);
         if (officeAvatar != null) {
             builder.setLargeIcon(officeAvatar);
@@ -154,6 +187,19 @@ public class MessageReplyReceiver extends BroadcastReceiver {
         String body,
         String phone,
         String tag
+    ) {
+        showCallCustomerNotification(context, title, body, phone, tag, null, null, null);
+    }
+
+    public static void showCallCustomerNotification(
+        Context context,
+        String title,
+        String body,
+        String phone,
+        String tag,
+        String ackToken,
+        String ackUrl,
+        String source
     ) {
         NotificationChannels.ensureJobAlerts(context);
 
@@ -197,6 +243,20 @@ public class MessageReplyReceiver extends BroadcastReceiver {
             .setContentIntent(callPending)
             .addAction(callAction)
             .setAutoCancel(true);
+        PendingIntent deletePending = TechPushAckReceiver.dismissPending(
+            context,
+            notifId + 50,
+            ackToken,
+            ackUrl,
+            source,
+            safeTitle,
+            safeBody,
+            notifTag,
+            notifId
+        );
+        if (deletePending != null) {
+            builder.setDeleteIntent(deletePending);
+        }
         Bitmap officeAvatar = loadOfficeAvatarBitmap(context);
         if (officeAvatar != null) {
             builder.setLargeIcon(officeAvatar);
@@ -224,6 +284,25 @@ public class MessageReplyReceiver extends BroadcastReceiver {
         String replyUrl,
         String tag,
         boolean startOnly
+    ) {
+        showGoingNowNotification(
+            context, title, body, startToken, startUrl, replyToken, replyUrl, tag, startOnly,
+            null, null, null);
+    }
+
+    public static void showGoingNowNotification(
+        Context context,
+        String title,
+        String body,
+        String startToken,
+        String startUrl,
+        String replyToken,
+        String replyUrl,
+        String tag,
+        boolean startOnly,
+        String ackToken,
+        String ackUrl,
+        String source
     ) {
         NotificationChannels.ensureJobAlerts(context);
 
@@ -259,13 +338,17 @@ public class MessageReplyReceiver extends BroadcastReceiver {
                 R.drawable.ic_stat_notify, yesLabel, yesPending)
             .build();
 
-        Intent openIntent = new Intent(context, MainActivity.class)
-            .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        PendingIntent openPending = PendingIntent.getActivity(
+        PendingIntent openPending = TechPushAckReceiver.openPending(
             context,
             notifId,
-            openIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+            ackToken,
+            ackUrl,
+            source,
+            safeTitle,
+            safeBody,
+            notifTag,
+            notifId,
+            null
         );
 
         NotificationCompat.BigTextStyle style = new NotificationCompat.BigTextStyle()
@@ -304,6 +387,21 @@ public class MessageReplyReceiver extends BroadcastReceiver {
             builder.addAction(new NotificationCompat.Action.Builder(
                     R.drawable.ic_stat_notify, "No", noPending)
                 .build());
+        }
+
+        PendingIntent deletePending = TechPushAckReceiver.dismissPending(
+            context,
+            notifId + 50,
+            ackToken,
+            ackUrl,
+            source,
+            safeTitle,
+            safeBody,
+            notifTag,
+            notifId
+        );
+        if (deletePending != null) {
+            builder.setDeleteIntent(deletePending);
         }
 
         Bitmap officeAvatar = loadOfficeAvatarBitmap(context);

@@ -263,7 +263,10 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             body,
             replyToken,
             replyUrl,
-            data.get("tag")
+            data.get("tag"),
+            data.get("ackToken"),
+            data.get("ackUrl"),
+            data.get("source")
         );
         TechActionOverlay.maybeShowFromPush(
             getApplicationContext(), TechActionOverlay.Mode.REPLY, data);
@@ -289,20 +292,21 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
                 /* keep violet */
             }
         }
+        int notifId = Math.abs(tag.hashCode());
         NotificationChannels.ensureJobAlerts(context);
-        Intent openIntent =
-            new Intent(context, MainActivity.class)
-                .setFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK
-                        | Intent.FLAG_ACTIVITY_SINGLE_TOP
-                        | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent openPending =
-            PendingIntent.getActivity(
+            TechPushAckReceiver.openPending(
                 context,
-                Math.abs(tag.hashCode()),
-                openIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-        Notification notification =
+                notifId,
+                data.get("ackToken"),
+                data.get("ackUrl"),
+                data.get("source"),
+                title,
+                body,
+                tag,
+                notifId,
+                null);
+        NotificationCompat.Builder builder =
             new NotificationCompat.Builder(context, NotificationChannels.JOB_ALERTS)
                 .setSmallIcon(R.drawable.ic_stat_notify)
                 .setColor(color)
@@ -312,10 +316,23 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setDefaults(Notification.DEFAULT_ALL)
                 .setContentIntent(openPending)
-                .setAutoCancel(true)
-                .build();
+                .setAutoCancel(true);
+        PendingIntent deletePending =
+            TechPushAckReceiver.dismissPending(
+                context,
+                notifId + 50,
+                data.get("ackToken"),
+                data.get("ackUrl"),
+                data.get("source"),
+                title,
+                body,
+                tag,
+                notifId);
+        if (deletePending != null) {
+            builder.setDeleteIntent(deletePending);
+        }
         try {
-            NotificationManagerCompat.from(context).notify(tag, Math.abs(tag.hashCode()), notification);
+            NotificationManagerCompat.from(context).notify(tag, notifId, builder.build());
         } catch (SecurityException e) {
             Log.w(TAG, "Notifications not permitted", e);
         }
@@ -410,8 +427,20 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
         String tag = data.get("tag");
         if (tag == null || tag.isEmpty()) tag = "job_alert_overlay";
 
-        JobAlertOverlay.show(context, title, body, jobId, color, event, tag);
-        postJobAlertTray(context, title, body, jobId, color, tag, event);
+        JobAlertOverlay.show(
+            context,
+            title,
+            body,
+            jobId,
+            color,
+            event,
+            tag,
+            data.get("ackToken"),
+            data.get("ackUrl"),
+            data.get("source"));
+        postJobAlertTray(
+            context, title, body, jobId, color, tag, event,
+            data.get("ackToken"), data.get("ackUrl"), data.get("source"));
     }
 
     private void postJobAlertTray(
@@ -421,7 +450,10 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
         String jobId,
         String colorHex,
         String tag,
-        String event
+        String event,
+        String ackToken,
+        String ackUrl,
+        String source
     ) {
         NotificationChannels.ensureJobAlerts(context);
         int color = Color.parseColor("#16A34A");
@@ -440,33 +472,49 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             }
         }
 
-        Intent openIntent = new Intent(context, MainActivity.class)
-            .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        if (jobId != null && !jobId.isEmpty()) {
-            openIntent.putExtra(JobAlertOverlay.EXTRA_JOB_ID, jobId);
-        }
-        PendingIntent openPending = PendingIntent.getActivity(
-            context,
-            Math.abs(tag.hashCode()),
-            openIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
-        );
+        int notifId = 0;
+        PendingIntent openPending =
+            TechPushAckReceiver.openPending(
+                context,
+                Math.abs(tag.hashCode()),
+                ackToken,
+                ackUrl,
+                source,
+                title,
+                body,
+                tag,
+                notifId,
+                jobId);
 
-        Notification notification = new NotificationCompat.Builder(context, NotificationChannels.JOB_ALERTS)
-            .setSmallIcon(R.drawable.ic_stat_notify)
-            .setColor(color)
-            .setContentTitle(title)
-            .setContentText(body)
-            .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
-            .setDefaults(Notification.DEFAULT_ALL)
-            .setContentIntent(openPending)
-            .setAutoCancel(true)
-            .build();
+        NotificationCompat.Builder builder =
+            new NotificationCompat.Builder(context, NotificationChannels.JOB_ALERTS)
+                .setSmallIcon(R.drawable.ic_stat_notify)
+                .setColor(color)
+                .setContentTitle(title)
+                .setContentText(body)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                .setDefaults(Notification.DEFAULT_ALL)
+                .setContentIntent(openPending)
+                .setAutoCancel(true);
+        PendingIntent deletePending =
+            TechPushAckReceiver.dismissPending(
+                context,
+                Math.abs(tag.hashCode()) + 50,
+                ackToken,
+                ackUrl,
+                source,
+                title,
+                body,
+                tag,
+                notifId);
+        if (deletePending != null) {
+            builder.setDeleteIntent(deletePending);
+        }
 
         try {
-            NotificationManagerCompat.from(context).notify(tag, 0, notification);
+            NotificationManagerCompat.from(context).notify(tag, notifId, builder.build());
         } catch (SecurityException e) {
             Log.w(TAG, "Notifications not permitted", e);
         }
@@ -492,7 +540,10 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             data.get("replyToken"),
             data.get("replyUrl"),
             data.get("tag"),
-            startOnly
+            startOnly,
+            data.get("ackToken"),
+            data.get("ackUrl"),
+            data.get("source")
         );
         TechActionOverlay.maybeShowFromPush(
             getApplicationContext(),
@@ -514,7 +565,10 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             title,
             body,
             phone,
-            data.get("tag")
+            data.get("tag"),
+            data.get("ackToken"),
+            data.get("ackUrl"),
+            data.get("source")
         );
         TechActionOverlay.maybeShowFromPush(
             getApplicationContext(), TechActionOverlay.Mode.CALL, data);

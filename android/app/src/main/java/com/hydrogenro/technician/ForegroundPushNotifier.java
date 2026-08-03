@@ -3,7 +3,6 @@ package com.hydrogenro.technician;
 import android.app.Notification;
 import android.app.PendingIntent;
 import android.content.Context;
-import android.content.Intent;
 import android.graphics.Color;
 import android.util.Log;
 import androidx.core.app.NotificationCompat;
@@ -75,16 +74,23 @@ public final class ForegroundPushNotifier {
             }
         }
 
-        Intent openIntent = new Intent(context, MainActivity.class)
-            .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        PendingIntent openPending = PendingIntent.getActivity(
+        String ackToken = data != null ? data.get("ackToken") : null;
+        String ackUrl = data != null ? data.get("ackUrl") : null;
+        String source = data != null ? data.get("source") : null;
+        PendingIntent openPending = TechPushAckReceiver.openPending(
             context,
             FALLBACK_ID,
-            openIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+            ackToken,
+            ackUrl,
+            source,
+            title,
+            body,
+            tag,
+            FALLBACK_ID,
+            null
         );
 
-        Notification notification = new NotificationCompat.Builder(context, NotificationChannels.JOB_ALERTS)
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, NotificationChannels.JOB_ALERTS)
             .setSmallIcon(R.drawable.ic_stat_notify)
             .setColor(color)
             .setContentTitle(title)
@@ -93,11 +99,24 @@ public final class ForegroundPushNotifier {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setDefaults(Notification.DEFAULT_ALL)
             .setContentIntent(openPending)
-            .setAutoCancel(true)
-            .build();
+            .setAutoCancel(true);
+        PendingIntent deletePending = TechPushAckReceiver.dismissPending(
+            context,
+            FALLBACK_ID + 50,
+            ackToken,
+            ackUrl,
+            source,
+            title,
+            body,
+            tag,
+            FALLBACK_ID
+        );
+        if (deletePending != null) {
+            builder.setDeleteIntent(deletePending);
+        }
 
         try {
-            NotificationManagerCompat.from(context).notify(tag, 0, notification);
+            NotificationManagerCompat.from(context).notify(tag, 0, builder.build());
             Log.i(TAG, "Posted foreground tray notification tag=" + tag);
         } catch (SecurityException e) {
             Log.w(TAG, "Notifications not permitted", e);

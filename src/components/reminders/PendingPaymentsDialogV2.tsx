@@ -536,7 +536,7 @@ export function SettingsPendingPaymentsDialogV2({
     const includeUpi = opts?.includeUpi ?? whatsappIncludeUpi;
     const upiAccountId = opts?.upiAccountId ?? whatsappUpiAccountId;
     let upiOpts = null as
-      | { label: string; upiId: string; phone?: string; deepLink?: string | null }
+      | { label: string; upiId: string; phone?: string; deepLink?: string | null; httpsLink?: string | null }
       | null;
     if (includeUpi && upiAccountId) {
       const account = upiAccounts.find((a) => a.id === upiAccountId);
@@ -552,6 +552,7 @@ export function SettingsPendingPaymentsDialogV2({
             upiId: share.account.upiId,
             phone: share.account.phone || undefined,
             deepLink: share.deepLink,
+            httpsLink: share.httpsLink,
           };
         }
       }

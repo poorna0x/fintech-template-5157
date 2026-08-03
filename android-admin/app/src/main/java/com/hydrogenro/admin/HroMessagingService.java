@@ -36,6 +36,11 @@ public class HroMessagingService extends com.capacitorjs.plugins.pushnotificatio
             TechMessageReplyReceiver.showTechReplyNotification(getApplicationContext(), data);
             return;
         }
+        if ("tech_push_dismissed".equals(data.get("type"))
+            || "tech_message_opened".equals(data.get("type"))) {
+            TechPushAckNotifier.show(getApplicationContext(), data);
+            return;
+        }
         if ("device_prefs".equals(data.get("type"))) {
             boolean enabled = !"false".equalsIgnoreCase(String.valueOf(data.get("callAlertsEnabled")));
             DevicePrefsPlugin.applyCallAlertsEnabled(getApplicationContext(), enabled);

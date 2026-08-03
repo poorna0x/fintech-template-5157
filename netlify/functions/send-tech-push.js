@@ -11,6 +11,10 @@ const { authorizeAdminBearer } = require('./admin-auth-guard');
 const { getMessaging, sendToTechnicianDevices } = require('./fcm-helper');
 const { makeOfficeMessageReplyToken } = require('./office-message-reply-token');
 const { makeJobStartNudgeToken } = require('./job-start-nudge-token');
+const {
+  makeTechPushAckToken,
+  normalizeSource,
+} = require('./tech-push-ack-token');
 
 /** First phrase of nudge body before em dash / newline — embed in reply token. */
 function replyAboutFromBody(message) {
@@ -19,6 +23,21 @@ function replyAboutFromBody(message) {
   const head = body.split(/[—\n]/)[0].trim();
   if (head && head.length <= 80 && !/^★/.test(head)) return head;
   return '';
+}
+
+/** Ack payload fields for dismiss / open callbacks on the tech APK. */
+function ackDataFields(siteUrl, technicianId, source, about) {
+  try {
+    const ackToken = makeTechPushAckToken(technicianId, source, about);
+    return {
+      ackToken,
+      ackUrl: `${siteUrl}/.netlify/functions/submit-tech-push-ack`,
+      source: normalizeSource(source),
+    };
+  } catch (err) {
+    console.warn('[send-tech-push] ack token skipped:', err?.message || err);
+    return {};
+  }
 }
 
 exports.handler = async (event) => {
@@ -125,6 +144,18 @@ exports.handler = async (event) => {
       'https://hydrogenro.com'
     ).replace(/\/$/, '');
 
+    // Client can pass source; job overlay events always win as job_alert.
+    let pushSource = String(body.source || '').trim().toLowerCase();
+    if (overlayEvent) {
+      pushSource = 'job_alert';
+    } else if (!pushSource) {
+      if (callPhone || goingNow) pushSource = 'nudge';
+      else if (allowReply) pushSource = 'nudge';
+      else pushSource = 'other';
+    }
+    pushSource = normalizeSource(pushSource);
+    const ackAbout = replyAbout || title || '';
+
     let buildMessage;
     if (clear) {
       buildMessage = (token) => ({
@@ -135,6 +166,7 @@ exports.handler = async (event) => {
     } else if (callPhone) {
       // Call-customer nudge: Call action only (no Reply). New tech APK required.
       const notifTitle = title || 'Call customer now';
+      const ack = ackDataFields(siteUrl, technicianId, pushSource, ackAbout || notifTitle);
       buildMessage = (token) => ({
         token,
         data: {
@@ -145,6 +177,7 @@ exports.handler = async (event) => {
           tag: tag || 'call_customer',
           ...(color ? { color } : {}),
           ...overlayFlag,
+          ...ack,
         },
         android: { priority: 'high' },
       });
@@ -159,6 +192,7 @@ exports.handler = async (event) => {
       const defaultBody = startOnly
         ? 'Tap Start to mark this job on the way.'
         : 'Tap Yes to start this job, or No to tell the office.';
+      const ack = ackDataFields(siteUrl, technicianId, pushSource, ackAbout || notifTitle);
       buildMessage = (token) => ({
         token,
         data: {
@@ -174,17 +208,20 @@ exports.handler = async (event) => {
           tag: tag || (startOnly ? 'start_job' : 'going_now'),
           ...(color ? { color } : {}),
           ...overlayFlag,
+          ...ack,
         },
         android: { priority: 'high' },
       });
     } else if (allowReply) {
       const replyToken = makeOfficeMessageReplyToken(technicianId, replyAbout);
       const notifTitle = title || 'Message from office';
+      const ack = ackDataFields(siteUrl, technicianId, pushSource, ackAbout || notifTitle);
       console.log('[send-tech-push] allowReply path', {
         technicianId,
         hasToken: !!replyToken,
         about: replyAbout || null,
         overlay: showOverlay,
+        source: pushSource,
       });
       buildMessage = (token) => ({
         token,
@@ -200,6 +237,7 @@ exports.handler = async (event) => {
           tag: tag || 'office_message',
           ...(color ? { color } : {}),
           ...overlayFlag,
+          ...ack,
         },
         android: { priority: 'high' },
       });
@@ -214,6 +252,7 @@ exports.handler = async (event) => {
         updated: 'Job updated',
       };
       const notifTitle = title || overlayDefaults[overlayEvent] || 'Job alert';
+      const ack = ackDataFields(siteUrl, technicianId, 'job_alert', ackAbout || notifTitle);
       buildMessage = (token) => ({
         token,
         data: {
@@ -224,6 +263,7 @@ exports.handler = async (event) => {
           ...(jobId ? { jobId } : {}),
           tag: tag || `job_alert_${overlayEvent}`,
           ...(color ? { color } : {}),
+          ...ack,
         },
         android: { priority: 'high' },
       });
@@ -231,6 +271,7 @@ exports.handler = async (event) => {
       // Tray-only nudges (e.g. photo) that also want the on-screen card.
       // Data-only so Java runs when the app is killed.
       const notifTitle = title || 'Message from office';
+      const ack = ackDataFields(siteUrl, technicianId, pushSource, ackAbout || notifTitle);
       buildMessage = (token) => ({
         token,
         data: {
@@ -240,23 +281,25 @@ exports.handler = async (event) => {
           tag: tag || 'tech_nudge',
           ...(color ? { color } : {}),
           showOverlay: '1',
+          ...ack,
         },
         android: { priority: 'high' },
       });
     } else {
+      // Data-only so tech APK can attach dismiss/open ack (system notification+data cannot).
+      const notifTitle = title || 'Message from office';
+      const ack = ackDataFields(siteUrl, technicianId, pushSource, ackAbout || notifTitle);
       buildMessage = (token) => ({
         token,
-        notification: { title, body: message || undefined },
-        data: { type: 'job_notification' },
-        android: {
-          priority: 'high',
-          notification: {
-            channelId: 'job_alerts_v2',
-            defaultSound: true,
-            ...(color ? { color } : {}),
-            ...(tag ? { tag } : {}),
-          },
+        data: {
+          type: 'tech_nudge',
+          msgTitle: notifTitle,
+          msgBody: message || '',
+          tag: tag || 'tech_nudge',
+          ...(color ? { color } : {}),
+          ...ack,
         },
+        android: { priority: 'high' },
       });
     }
 

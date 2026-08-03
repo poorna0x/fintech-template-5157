@@ -57,8 +57,14 @@ public final class JobAlertOverlay {
     private static View currentView;
     private static String currentTrayTag;
     private static Context currentAppContext;
+    private static String currentAckToken;
+    private static String currentAckUrl;
+    private static String currentAckSource;
+    private static String currentAckTitle;
+    private static String currentAckBody;
     private static final Handler mainHandler = new Handler(Looper.getMainLooper());
-    private static final Runnable autoDismiss = JobAlertOverlay::dismiss;
+    /** Auto-timeout: close locally only — do not notify admins. */
+    private static final Runnable autoDismiss = () -> dismissQuiet();
 
     /** Per-event palette: accent + soft wash surfaces. */
     private static final class Theme {
@@ -121,29 +127,82 @@ public final class JobAlertOverlay {
         String event,
         String trayTag
     ) {
+        show(context, title, body, jobId, colorHex, event, trayTag, null, null, null);
+    }
+
+    public static void show(
+        Context context,
+        String title,
+        String body,
+        String jobId,
+        String colorHex,
+        String event,
+        String trayTag,
+        String ackToken,
+        String ackUrl,
+        String source
+    ) {
         if (context == null) return;
         Context app = context.getApplicationContext();
         if (!canDraw(app)) {
             Log.i(TAG, "Overlay permission missing — skip card");
             return;
         }
-        mainHandler.post(() -> showOnMain(app, title, body, jobId, colorHex, event, trayTag));
+        mainHandler.post(
+            () ->
+                showOnMain(
+                    app, title, body, jobId, colorHex, event, trayTag, ackToken, ackUrl, source));
     }
 
+    /** User tapped Dismiss — notify admins (silent). */
     public static void dismiss() {
-        mainHandler.post(() -> {
-            mainHandler.removeCallbacks(autoDismiss);
-            cancelPairedTray();
-            if (currentView == null) return;
-            try {
-                WindowManager wm =
-                    (WindowManager) currentView.getContext().getSystemService(Context.WINDOW_SERVICE);
-                if (wm != null) wm.removeView(currentView);
-            } catch (Throwable t) {
-                Log.w(TAG, "Dismiss overlay failed", t);
-            }
-            currentView = null;
-        });
+        mainHandler.post(
+            () -> {
+                postUserDismissAck();
+                dismissQuietInternal();
+            });
+    }
+
+    /** Auto-timeout / open-app cleanup — no admin ack. */
+    public static void dismissQuiet() {
+        mainHandler.post(JobAlertOverlay::dismissQuietInternal);
+    }
+
+    private static void postUserDismissAck() {
+        TechPushAckReceiver.postDismiss(
+            currentAppContext,
+            currentAckToken,
+            currentAckUrl,
+            currentAckSource,
+            currentAckTitle,
+            currentAckBody,
+            currentTrayTag);
+    }
+
+    private static void dismissQuietInternal() {
+        mainHandler.removeCallbacks(autoDismiss);
+        cancelPairedTray();
+        if (currentView == null) {
+            clearAckState();
+            return;
+        }
+        try {
+            WindowManager wm =
+                (WindowManager) currentView.getContext().getSystemService(Context.WINDOW_SERVICE);
+            if (wm != null) wm.removeView(currentView);
+        } catch (Throwable t) {
+            Log.w(TAG, "Dismiss overlay failed", t);
+        }
+        currentView = null;
+        clearAckState();
+    }
+
+    private static void clearAckState() {
+        currentAckToken = null;
+        currentAckUrl = null;
+        currentAckSource = null;
+        currentAckTitle = null;
+        currentAckBody = null;
     }
 
     private static void cancelPairedTray() {
@@ -164,11 +223,19 @@ public final class JobAlertOverlay {
         String jobId,
         String colorHex,
         String eventRaw,
-        String trayTag
+        String trayTag,
+        String ackToken,
+        String ackUrl,
+        String source
     ) {
         dismissImmediate(context);
         currentAppContext = context.getApplicationContext();
         currentTrayTag = trayTag;
+        currentAckToken = ackToken;
+        currentAckUrl = ackUrl;
+        currentAckSource = source;
+        currentAckTitle = title;
+        currentAckBody = body;
 
         Theme theme = themeFor(normalizeEvent(eventRaw, title), colorHex);
         String safeTitle = safe(title, theme.defaultTitle);
@@ -344,7 +411,7 @@ public final class JobAlertOverlay {
         dismissBtn.setOnClickListener(v -> dismiss());
         openBtn.setOnClickListener(
             v -> {
-                dismiss();
+                dismissQuiet();
                 openApp(context, theme.deepLinkJob ? jobId : null);
             });
 

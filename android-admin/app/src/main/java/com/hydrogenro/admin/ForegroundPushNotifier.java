@@ -34,7 +34,7 @@ public final class ForegroundPushNotifier {
         Map<String, String> data = remoteMessage.getData();
         String type = data != null ? data.get("type") : null;
         // Silent / already handled elsewhere — never toast these in the tray.
-        if ("cash_check".equals(type) || "expense_review".equals(type) || "tech_message_reply".equals(type) || "admin_reminder".equals(type)) return;
+        if ("cash_check".equals(type) || "expense_review".equals(type) || "tech_message_reply".equals(type) || "admin_reminder".equals(type) || "tech_push_dismissed".equals(type) || "tech_message_opened".equals(type)) return;
 
         String title = null;
         String body = null;

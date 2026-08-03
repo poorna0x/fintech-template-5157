@@ -46,6 +46,11 @@
             android:name=".MessageReplyReceiver"
             android:exported="false" />
 
+        <!-- Dismiss / open acknowledgments → silent or normal admin push -->
+        <receiver
+            android:name=".TechPushAckReceiver"
+            android:exported="false" />
+
         <!-- Silent caller check: POSTs the incoming number to the server so
              ADMINS get notified when a customer calls a technician. Shows
              nothing on this phone. PHONE_STATE is a protected system

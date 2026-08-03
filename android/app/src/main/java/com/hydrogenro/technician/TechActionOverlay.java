@@ -71,8 +71,14 @@ public final class TechActionOverlay {
     private static int currentTrayId;
     private static boolean currentTrayTagged;
     private static Context currentAppContext;
+    private static String currentAckToken;
+    private static String currentAckUrl;
+    private static String currentAckSource;
+    private static String currentAckTitle;
+    private static String currentAckBody;
     private static final Handler mainHandler = new Handler(Looper.getMainLooper());
-    private static final Runnable autoDismiss = () -> dismiss(true);
+    /** Auto-timeout: close locally only — do not notify admins. */
+    private static final Runnable autoDismiss = () -> dismiss(true, false);
 
     private TechActionOverlay() {}
 
@@ -114,7 +120,10 @@ public final class TechActionOverlay {
                     data.get("requestId"),
                     data.get("nonce"),
                     data.get("submitUrl"),
-                    data.get("jobId")));
+                    data.get("jobId"),
+                    data.get("ackToken"),
+                    data.get("ackUrl"),
+                    data.get("source")));
     }
 
     /** Immediate full-screen wrong-line warning (detecting handset — no FCM wait). */
@@ -151,12 +160,15 @@ public final class TechActionOverlay {
                     null,
                     null,
                     null,
+                    null,
+                    null,
+                    null,
                     null));
     }
 
-    /** Close overlay and clear the matching tray notification. */
+    /** User Dismiss — notify admins (silent) and clear tray. */
     public static void dismiss() {
-        dismiss(true);
+        dismiss(true, true);
     }
 
     /**
@@ -164,12 +176,38 @@ public final class TechActionOverlay {
      *                   Pass false after a successful Reply/OTP/Yes (tray already updated).
      */
     public static void dismiss(boolean cancelTray) {
+        dismiss(cancelTray, false);
+    }
+
+    /**
+     * @param notifyAdmin when true, POST dismiss ack (user tapped Dismiss only).
+     */
+    public static void dismiss(boolean cancelTray, boolean notifyAdmin) {
         mainHandler.post(
             () -> {
                 mainHandler.removeCallbacks(autoDismiss);
+                if (notifyAdmin) {
+                    TechPushAckReceiver.postDismiss(
+                        currentAppContext,
+                        currentAckToken,
+                        currentAckUrl,
+                        currentAckSource,
+                        currentAckTitle,
+                        currentAckBody,
+                        currentTrayTag);
+                }
                 if (cancelTray) cancelPairedTray();
                 removeCurrent();
+                clearAckState();
             });
+    }
+
+    private static void clearAckState() {
+        currentAckToken = null;
+        currentAckUrl = null;
+        currentAckSource = null;
+        currentAckTitle = null;
+        currentAckBody = null;
     }
 
     private static void rememberTray(Mode mode, String tag, String requestId) {
@@ -244,10 +282,18 @@ public final class TechActionOverlay {
         String requestId,
         String nonce,
         String submitUrl,
-        String jobId
+        String jobId,
+        String ackToken,
+        String ackUrl,
+        String source
     ) {
         removeCurrent();
         currentAppContext = context.getApplicationContext();
+        currentAckToken = ackToken;
+        currentAckUrl = ackUrl;
+        currentAckSource = source;
+        currentAckTitle = title;
+        currentAckBody = body;
         rememberTray(mode, tag, requestId);
 
         int accent = accentFor(mode, colorHex);
@@ -441,7 +487,7 @@ public final class TechActionOverlay {
         final boolean[] otpSubmitting = { false };
 
         if (mode != Mode.GOING) {
-            secondary.setOnClickListener(v -> dismiss(true));
+            secondary.setOnClickListener(v -> dismiss());
         } else {
             secondary.setOnClickListener(
                 v -> {

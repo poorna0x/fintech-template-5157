@@ -9,6 +9,7 @@ const ADMIN_PUSH_CATEGORIES = [
   'wrong_line',
   'tech_search',
   'tech_messages',
+  'tech_dismiss_acks',
   'reminders',
   'cash_check',
   'day_summary',

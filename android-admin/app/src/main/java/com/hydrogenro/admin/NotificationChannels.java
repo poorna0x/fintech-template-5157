@@ -22,11 +22,15 @@ public final class NotificationChannels {
     /** Job completed by technician — uses complete_job.wav. */
     public static final String JOB_COMPLETE = "job_complete_v1";
 
+    /** Silent tech dismiss/seen acks — no sound, low importance. */
+    public static final String TECH_ACKS_SILENT = "tech_acks_silent_v1";
+
     private NotificationChannels() {}
 
     public static void ensureAll(Context context) {
         ensureJobAlerts(context);
         ensureJobComplete(context);
+        ensureTechAcksSilent(context);
     }
 
     public static void ensureJobAlerts(Context context) {
@@ -62,6 +66,20 @@ public final class NotificationChannels {
         channel.setSound(sound, attrs);
         channel.enableVibration(true);
         channel.enableLights(true);
+        nm.createNotificationChannel(channel);
+    }
+
+    public static void ensureTechAcksSilent(Context context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+        NotificationManager nm = context.getSystemService(NotificationManager.class);
+        if (nm == null || nm.getNotificationChannel(TECH_ACKS_SILENT) != null) return;
+
+        NotificationChannel channel = new NotificationChannel(
+            TECH_ACKS_SILENT, "Technician seen (silent)", NotificationManager.IMPORTANCE_LOW);
+        channel.setDescription("When a technician dismisses a push — no sound");
+        channel.setSound(null, null);
+        channel.enableVibration(false);
+        channel.enableLights(false);
         nm.createNotificationChannel(channel);
     }
 

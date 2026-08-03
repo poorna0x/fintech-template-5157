@@ -231,6 +231,7 @@ export async function sendTechnicianPush(opts: {
         title,
         body,
         color: color || TECH_NUDGE_COLOR,
+        source: 'nudge',
         ...(tag ? { tag } : {}),
         ...(allowReply && !phoneDigits && !goingNow ? { allowReply: true } : {}),
         ...(phoneDigits ? { callPhone: phoneDigits } : {}),

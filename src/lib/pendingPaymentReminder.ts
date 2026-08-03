@@ -99,8 +99,12 @@ export type PendingPaymentWhatsAppUpiOptions = {
   upiId: string;
   /** Optional payment mobile number (UPI to phone / call). */
   phone?: string;
-  /** Full upi://pay?... deep link — mainly Android. */
+  /**
+   * HTTPS pay page (preferred for WhatsApp — clickable).
+   * Falls back to raw upi:// only if httpsLink is missing.
+   */
   deepLink?: string | null;
+  httpsLink?: string | null;
 };
 
 export function buildPendingPaymentWhatsAppMessage(
@@ -123,8 +127,9 @@ export function buildPendingPaymentWhatsAppMessage(
     const phoneLine = upi.phone?.trim()
       ? `\nPayment phone: ${upi.phone.trim()}`
       : '';
-    const androidLine = upi.deepLink?.trim()
-      ? `\n\nAndroid — tap to pay:\n${upi.deepLink.trim()}`
+    const payUrl = (upi.httpsLink || upi.deepLink || '').trim();
+    const androidLine = payUrl
+      ? `\n\nAndroid — tap to pay:\n${payUrl}`
       : '';
     upiBlock = `
 

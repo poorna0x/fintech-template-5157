@@ -4,6 +4,7 @@ export const ADMIN_PUSH_CATEGORIES = [
   'wrong_line',
   'tech_search',
   'tech_messages',
+  'tech_dismiss_acks',
   'reminders',
   'cash_check',
   'day_summary',
@@ -48,8 +49,14 @@ export const ADMIN_PUSH_LABELS: Record<AdminPushCategory, { label: string; descr
     description: 'When a technician searches customers in the app. Separate from customer call alerts.',
   },
   tech_messages: {
-    label: 'Technician message replies',
-    description: 'When a technician replies to an office message.',
+    label: 'Technician message replies & opens',
+    description:
+      'When a technician replies to an office message, or taps open a Message technician alert.',
+  },
+  tech_dismiss_acks: {
+    label: 'Technician dismiss acknowledgments',
+    description:
+      'Silent (no sound) ping when a technician swipes away or taps Dismiss on a push. Off = this phone stops those acks.',
   },
   reminders: {
     label: 'Reminders & pending payments',

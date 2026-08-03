@@ -113,6 +113,7 @@ const MessageTechnicianDialog = ({
               color: '#2563EB',
               tag: MESSAGE_TAG,
               allowReply,
+              source: 'direct_message',
               ...(showOverlay ? { overlay: true } : {}),
             }
           : { clear: true };
