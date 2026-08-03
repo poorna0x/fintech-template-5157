@@ -13,6 +13,7 @@ import {
   jobRemovedPushText,
   notifyTechnicianJobPush,
 } from '@/lib/adminTechPushNotify';
+import { clearPendingOtpAskForJob } from '@/lib/technicianOtpRequests';
 import { db } from '@/lib/supabase';
 import type { Job, Technician } from '@/types';
 
@@ -59,6 +60,11 @@ export async function submitAdminJobReassign(
 
     const previousTechnicianId =
       (ctx.jobToReassign as any).assigned_technician_id || ctx.jobToReassign.assignedTechnicianId;
+
+    // Old tech must not keep an unanswered OTP card for a job they no longer own.
+    if (previousTechnicianId && previousTechnicianId !== ctx.selectedTechnicianForReassign) {
+      void clearPendingOtpAskForJob(ctx.jobToReassign.id);
+    }
 
     const scheduledDate =
       (ctx.jobToReassign as any).scheduled_date || ctx.jobToReassign.scheduledDate || null;
@@ -155,6 +161,9 @@ export async function unassignAdminJob(
       toast.error('Failed to unassign job');
       return;
     }
+
+    // Drop unanswered Ask OTP so it does not stay on the old technician's screen.
+    void clearPendingOtpAskForJob(job.id);
 
     broadcastTechnicianJobListRefresh([previousTechnicianId, ...teamMemberIds]);
 

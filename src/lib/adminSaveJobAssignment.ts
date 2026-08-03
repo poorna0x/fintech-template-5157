@@ -8,6 +8,7 @@ import { createJobAssignedNotification, sendNotification } from '@/lib/notificat
 import { broadcastTechnicianJobListRefresh } from '@/lib/technicianJobListSync';
 import { appendJobToTechnicianVisitOrder } from '@/lib/adminVisitOrder';
 import { jobAssignPushText, notifyTechnicianJobPush } from '@/lib/adminTechPushNotify';
+import { clearPendingOtpAskForJob } from '@/lib/technicianOtpRequests';
 import { db } from '@/lib/supabase';
 import type { Job, Technician } from '@/types';
 
@@ -62,6 +63,9 @@ export async function saveAdminJobAssignment(ctx: AdminSaveJobAssignmentCtx) {
     } as any);
 
     if (error) throw error;
+
+    // Clear any leftover unanswered Ask OTP from a previous technician.
+    void clearPendingOtpAskForJob(ctx.jobToAssign.id);
 
     const scheduledDate =
       (ctx.jobToAssign as any).scheduled_date || ctx.jobToAssign.scheduledDate || null;

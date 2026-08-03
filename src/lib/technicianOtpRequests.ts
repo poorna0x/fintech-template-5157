@@ -198,6 +198,23 @@ export async function getPendingOtpRequests(technicianId: string): Promise<OtpRe
 }
 
 /**
+ * Clear unanswered Ask OTP when a job is unassigned / moved to another tech
+ * so the old technician's home card disappears.
+ */
+export async function clearPendingOtpAskForJob(jobId: string): Promise<void> {
+  if (!jobId) return;
+  try {
+    await supabase
+      .from('technician_otp_requests')
+      .delete()
+      .eq('job_id', jobId)
+      .is('otp', null);
+  } catch (err) {
+    console.warn('[otp] could not clear pending Ask OTP on unassign:', err);
+  }
+}
+
+/**
  * When OTP is captured elsewhere (Start Work / completion), mark the pending
  * Ask OTP row answered so the home-page card disappears. Does not re-push —
  * the caller already notified the office if needed.

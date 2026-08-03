@@ -59,8 +59,11 @@ const TechnicianOtpRequestCard = ({
 
   const pruneAnswered = useCallback(
     (rows: OtpRequestRow[]): OtpRequestRow[] => {
+      const assignedJobIds = new Set(jobs.map((j) => j.id));
       const kept: OtpRequestRow[] = [];
       for (const row of rows) {
+        // Job unassigned / moved away — hide immediately even if DB row is stale.
+        if (!assignedJobIds.has(row.job_id)) continue;
         const rowOtp =
           typeof row.otp === 'string' && /^\d{4}$/.test(row.otp.trim())
             ? row.otp.trim()
@@ -78,7 +81,7 @@ const TechnicianOtpRequestCard = ({
       }
       return kept;
     },
-    [jobOtpById, notifySubmitted]
+    [jobOtpById, jobs, notifySubmitted]
   );
 
   const refresh = useCallback(async () => {
@@ -109,9 +112,8 @@ const TechnicianOtpRequestCard = ({
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, [refresh]);
 
-  // OTP already on the job (Start Work) — drop matching Ask OTP cards immediately.
+  // Drop cards when OTP is already on the job, or the job left this tech's list (unassign).
   useEffect(() => {
-    if (jobOtpById.size === 0) return;
     setRequests((prev) => {
       if (prev.length === 0) return prev;
       const next = pruneAnswered(prev);
@@ -123,7 +125,7 @@ const TechnicianOtpRequestCard = ({
       }
       return next;
     });
-  }, [jobOtpById, pruneAnswered]);
+  }, [pruneAnswered]);
 
   const pendingIds = useMemo(
     () =>
