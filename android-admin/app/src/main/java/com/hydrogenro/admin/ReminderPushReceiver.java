@@ -88,12 +88,16 @@ public class ReminderPushReceiver extends BroadcastReceiver {
 
         String phone = normalizePhone(data.get("phone"));
         if ("pending_payment".equals(kind) && phone != null) {
-            String message = buildWhatsAppMessage(
-                data.get("customerName"),
-                data.get("amount"),
-                data.get("dueDate"),
-                data.get("serviceBrand")
-            );
+            String fromPush = data.get("whatsappText");
+            String message =
+                fromPush != null && !fromPush.trim().isEmpty()
+                    ? fromPush
+                    : buildWhatsAppMessage(
+                        data.get("customerName"),
+                        data.get("amount"),
+                        data.get("dueDate"),
+                        data.get("serviceBrand")
+                    );
             String encoded;
             try {
                 encoded = URLEncoder.encode(message, "UTF-8");
@@ -165,6 +169,9 @@ public class ReminderPushReceiver extends BroadcastReceiver {
             /* keep 0 */
         }
         String formattedAmount = String.format(Locale.forLanguageTag("en-IN"), "%,.0f", amount);
+        boolean eleven = isElevenRo(serviceBrand);
+        String brandLabel = eleven ? "Eleven RO" : "Hydrogen RO";
+        String team = eleven ? "Eleven RO Team" : "Hydrogen RO Team";
         String dueLine = "";
         if (dueDateRaw != null && dueDateRaw.trim().length() >= 10) {
             String ymd = dueDateRaw.trim().substring(0, 10);
@@ -177,23 +184,15 @@ public class ReminderPushReceiver extends BroadcastReceiver {
             } catch (Exception ignored) {
                 /* keep ymd */
             }
-            dueLine = "\nPayment due date: " + pretty + ".";
+            dueLine = "\n• Due date: " + pretty;
         }
-        boolean eleven = isElevenRo(serviceBrand);
-        String brandLabel = eleven ? "Eleven RO" : "Hydrogen RO";
-        String phone = eleven ? "9880693311" : "8884944288";
-        String email = eleven ? "mail@elevenro.com" : "mail@hydrogenro.com";
-        String website = eleven ? "https://elevenro.com" : "https://hydrogenro.com";
-        String team = eleven ? "Eleven RO Team" : "Hydrogen RO Team";
         return "Hi " + name + " \uD83D\uDE0A\n\n"
-            + "Hope you're doing well. Just a quick reminder from " + brandLabel
-            + " that you have a pending payment of \u20B9"
-            + formattedAmount + "." + dueLine + "\n\n"
-            + "Request you to please clear the payment at your earliest convenience. If you have already paid, kindly ignore this message.\n\n"
-            + "For any help/support:\n"
-            + "\uD83D\uDCDE Phone: " + phone + "\n"
-            + "\uD83D\uDCE7 Email: " + email + "\n"
-            + "\uD83C\uDF10 Website: " + website + "\n\n"
+            + "Hope you're doing well. Quick reminder from *" + brandLabel
+            + "* regarding your water filter service.\n\n"
+            + "*Pending payment*\n"
+            + "• Amount: \u20B9" + formattedAmount
+            + dueLine + "\n\n"
+            + "Please clear this at your earliest convenience. If you have already paid, kindly ignore this message.\n\n"
             + "Thanks & regards \uD83D\uDE4F\n"
             + team;
     }

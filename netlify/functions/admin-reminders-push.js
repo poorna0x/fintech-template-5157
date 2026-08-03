@@ -6,6 +6,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const { getMessaging, isStaleTokenError, getAdminFcmTokens, pruneAdminFcmTokens } = require('./fcm-helper');
 const { assertScheduledInvoke } = require('./schedule-guard');
+const { buildPendingPaymentWhatsAppForPush } = require('./pending-payment-whatsapp');
 
 const PENDING_PAYMENT_TITLE = 'Pending payment';
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
@@ -46,7 +47,6 @@ function normalizePhone(raw) {
   return digits.length >= 10 ? digits.slice(-10) : '';
 }
 
-
 exports.handler = async (event) => {
   const cron = assertScheduledInvoke(event);
   if (!cron.ok) {
@@ -66,7 +66,7 @@ exports.handler = async (event) => {
 
   const today = istTodayYmd();
 
-  const [{ data: reminders, error: remErr }, tokens] = await Promise.all([
+  const [{ data: reminders, error: remErr }, tokens, upiAccountsRes] = await Promise.all([
     db
       .from('reminders')
       .select('id,title,notes,entity_type,entity_id,reminder_at')
@@ -74,6 +74,11 @@ exports.handler = async (event) => {
       .is('completed_at', null)
       .order('created_at', { ascending: true }),
     getAdminFcmTokens(db, 'reminders'),
+    db
+      .from('upi_payment_accounts')
+      .select('id,label,upi_id,payee_name,phone,created_at')
+      .order('created_at', { ascending: true })
+      .limit(20),
   ]);
 
   if (remErr) {
@@ -89,6 +94,15 @@ exports.handler = async (event) => {
   if (rows.length === 0) {
     return { statusCode: 200, body: JSON.stringify({ sent: 0, reason: 'none_due', today }) };
   }
+
+  if (upiAccountsRes.error) {
+    console.warn(
+      '[admin-reminders-push] upi_payment_accounts lookup failed',
+      upiAccountsRes.error.message
+    );
+  }
+  const upiAccounts = upiAccountsRes.data || [];
+  const preferredUpi = upiAccounts[0] || null;
 
   const customerIds = [
     ...new Set(
@@ -165,6 +179,22 @@ exports.handler = async (event) => {
         ? `Due ${dueDate || 'today'} — tap Open or WhatsApp from the notification`
         : `Due ${dueDate || 'today'} — tap to open Pending payments`;
 
+      let whatsappText = '';
+      try {
+        whatsappText = await buildPendingPaymentWhatsAppForPush(db, {
+          customerName,
+          amount,
+          dueDate,
+          serviceBrand,
+          upiAccount: preferredUpi,
+        });
+      } catch (err) {
+        console.warn(
+          '[admin-reminders-push] whatsapp text build failed',
+          err?.message || err
+        );
+      }
+
       const data = {
         type: 'admin_reminder',
         kind: 'pending_payment',
@@ -176,6 +206,7 @@ exports.handler = async (event) => {
         entityId: r.entity_id ? String(r.entity_id) : '',
         phone,
         serviceBrand,
+        whatsappText: whatsappText || '',
         title,
         body,
         color: COLOR_PENDING,

@@ -1,6 +1,6 @@
 /** UPI app open buttons using real brand logos from /public/upi-apps. */
 
-type UpiAppId = 'gpay' | 'phonepe' | 'paytm' | 'bhim';
+type UpiAppId = 'gpay' | 'phonepe' | 'paytm';
 
 type UpiAppButtonProps = {
   id: string;
@@ -12,7 +12,6 @@ const LOGO_SRC: Record<UpiAppId, string> = {
   gpay: '/upi-apps/gpay.svg',
   phonepe: '/upi-apps/phonepe.svg',
   paytm: '/upi-apps/paytm.png',
-  bhim: '/upi-apps/bhim.svg',
 };
 
 /** Small square app icons for the Open UPI app button. */
@@ -20,14 +19,12 @@ const ICON_SRC: Record<UpiAppId, string> = {
   gpay: '/upi-apps/icons/gpay.png',
   phonepe: '/upi-apps/icons/phonepe.png',
   paytm: '/upi-apps/icons/paytm.png',
-  bhim: '/upi-apps/icons/bhim.svg',
 };
 
 const MINI_APPS: { id: UpiAppId; name: string }[] = [
   { id: 'gpay', name: 'GPay' },
   { id: 'phonepe', name: 'PhonePe' },
   { id: 'paytm', name: 'Paytm' },
-  { id: 'bhim', name: 'BHIM' },
 ];
 
 /** Official brand button surfaces. */
@@ -35,11 +32,10 @@ const STYLES: Record<UpiAppId, { bg: string; border: string }> = {
   gpay: { bg: '#FFFFFF', border: '#DADCE0' },
   phonepe: { bg: '#FFFFFF', border: '#E8DFF3' },
   paytm: { bg: '#FFFFFF', border: '#B3E9FA' },
-  bhim: { bg: '#FFFFFF', border: '#E5E7EB' },
 };
 
 function isKnownApp(id: string): id is UpiAppId {
-  return id === 'gpay' || id === 'phonepe' || id === 'paytm' || id === 'bhim';
+  return id === 'gpay' || id === 'phonepe' || id === 'paytm';
 }
 
 /** Tiny brand icons shown on the main Open UPI app CTA (soft, low-contrast). */
