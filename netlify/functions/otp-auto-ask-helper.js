@@ -5,7 +5,7 @@ const crypto = require('crypto');
 const { getMessaging, sendToTechnicianDevices } = require('./fcm-helper');
 
 const ACTIVE_STATUSES = new Set(['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS']);
-const DWELL_MS = 7 * 60 * 1000;
+const DWELL_MS = 2 * 60 * 1000; // testing — was 7 min
 
 function parseRequirements(raw) {
   try {

@@ -1,7 +1,7 @@
 // Auto Ask OTP using a SERVER-side on-site clock (survives phone lock / WebView kill).
 //
 // Body: { jobId, near?: boolean }
-//  - near:true  → first time: set jobs.otp_onsite_detected_at = now (arm dwell; 7 min)
+//  - near:true  → first time: set jobs.otp_onsite_detected_at = now (arm dwell; 2 min testing)
 //  - any call   → if onsite + dwell elapsed + OTP still missing → Ask OTP once
 //
 // Auth: technician JWT assigned to the job.

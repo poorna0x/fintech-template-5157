@@ -1,5 +1,5 @@
 // Scheduled every minute: fire Auto Ask OTP for jobs whose on-site dwell
-// (7 min after GPS near) has elapsed — even if the technician app is closed.
+// (2 min after GPS near — testing) has elapsed — even if the technician app is closed.
 //
 // Phone still arms otp_onsite_detected_at when near; this cron owns the push
 // so technicians get the notification in the background instead of only on open.
