@@ -1,8 +1,9 @@
 /**
- * On-site OTP ask — SERVER owns the dwell clock (2 minutes after GPS near — testing).
+ * On-site OTP ask — only for the job the tech started (EN_ROUTE / IN_PROGRESS).
+ * SERVER owns the dwell clock (2 minutes after GPS near — testing).
  *
  * Phone:
- *  1) GPS near customer → POST near:true (arms otp_onsite_detected_at)
+ *  1) GPS near that job's customer → POST near:true (arms otp_onsite_detected_at)
  *  2) Open / every 15s / resume → POST check (fires Ask OTP when dwell elapsed)
  */
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
@@ -20,7 +21,8 @@ const ENDPOINT = '/.netlify/functions/auto-ask-otp-on-site';
 /** Was 200m — too tight for typical phone GPS + apartment offset. */
 const NEAR_METERS = 600;
 const MAX_ACCURACY_METERS = 800;
-const ACTIVE_STATUSES = new Set(['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS']);
+/** Only after Start Job (EN_ROUTE) or Start Work (IN_PROGRESS) — not every assigned job. */
+const ACTIVE_STATUSES = new Set(['EN_ROUTE', 'IN_PROGRESS']);
 
 const lastCallAt = new Map<string, number>();
 const MIN_CALL_GAP_MS = 5_000;
