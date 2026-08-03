@@ -76,7 +76,7 @@ public final class NotificationChannels {
 
         NotificationChannel channel = new NotificationChannel(
             TECH_ACKS_SILENT, "Technician seen (silent)", NotificationManager.IMPORTANCE_LOW);
-        channel.setDescription("When a technician dismisses a push — no sound");
+        channel.setDescription("When a technician saw/cleared a push — no sound");
         channel.setSound(null, null);
         channel.enableVibration(false);
         channel.enableLights(false);

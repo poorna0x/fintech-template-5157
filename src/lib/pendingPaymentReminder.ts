@@ -95,14 +95,11 @@ export function resolvePendingPaymentMessageBrand(value: unknown): DocumentBrand
 export type PendingPaymentWhatsAppUpiOptions = {
   /** Display label for the account (e.g. Hydrogen RO HDFC). */
   label: string;
-  /** VPA shown to the customer (works on iPhone — copy into GPay/PhonePe). */
+  /** VPA shown to the customer (copy into GPay/PhonePe). */
   upiId: string;
   /** Optional payment mobile number (UPI to phone / call). */
   phone?: string;
-  /**
-   * HTTPS pay page (preferred for WhatsApp — clickable).
-   * Falls back to raw upi:// only if httpsLink is missing.
-   */
+  /** Raw upi://pay?... deep link for Android “Tap to Pay”. */
   deepLink?: string | null;
   httpsLink?: string | null;
 };
@@ -119,43 +116,56 @@ export function buildPendingPaymentWhatsAppMessage(
   const brandLabel = getDocumentBrandLabel(resolved);
   const formattedAmount = amountPending.toLocaleString('en-IN', { maximumFractionDigits: 2 });
   const dueLabel = formatPendingPaymentDueLabel(dueDateYmd);
-  const dueLine = dueLabel ? `\nPayment due date: ${dueLabel}.` : '';
+  const upiPayLink = (upi?.deepLink || '').trim();
 
-  let upiBlock = '';
-  if (upi?.upiId) {
-    const accountLine = upi.label?.trim() ? ` (${upi.label.trim()})` : '';
-    const phoneLine = upi.phone?.trim()
-      ? `\nPayment phone: ${upi.phone.trim()}`
-      : '';
-    const payUrl = (upi.httpsLink || '').trim();
-    // WhatsApp only makes https:// clickable — plain UPI IDs cannot be
-    // "tap to copy". Send one HTTPS page with Pay + Copy buttons.
-    const linkBlock = payUrl
-      ? `\n\nTap to pay (Android) or copy UPI ID (iPhone):\n${payUrl}`
-      : `\n\nUPI ID: ${upi.upiId}\n(Copy this UPI ID into GPay / PhonePe / Paytm)`;
-    const fallbackId =
-      payUrl && upi.upiId
-        ? `\n\nUPI ID (long-press to copy if needed): ${upi.upiId}`
-        : '';
-    upiBlock = `
+  const lines: string[] = [
+    `Hi ${customerName} 😊`,
+    '',
+    `Hope you're doing well. Quick reminder from *${brandLabel}*:`,
+    '',
+    '*Pending payment*',
+    `• Amount: ₹${formattedAmount}`,
+  ];
 
-Pay via UPI${accountLine}:
-Amount: ₹${formattedAmount}${phoneLine}${linkBlock}${fallbackId}`;
+  if (dueLabel) {
+    lines.push(`• Due date: ${dueLabel}`);
   }
 
-  return `Hi ${customerName} 😊
+  if (upi?.upiId) {
+    lines.push('');
+    lines.push('────────────────');
+    lines.push('*How to pay (UPI)*');
+    if (upi.label?.trim()) {
+      lines.push(`Account: ${upi.label.trim()}`);
+    }
+    lines.push(`UPI ID: ${upi.upiId}`);
+    if (upi.phone?.trim()) {
+      lines.push(`Payment phone: ${upi.phone.trim()}`);
+    }
+    if (upiPayLink) {
+      lines.push('');
+      lines.push('*Tap to Pay (Android):*');
+      lines.push(upiPayLink);
+    }
+    lines.push('');
+    lines.push('_iPhone: long-press UPI ID → Copy → paste in GPay / PhonePe / Paytm_');
+    lines.push('────────────────');
+  }
 
-Hope you're doing well. Just a quick reminder from ${brandLabel} that you have a pending payment of ₹${formattedAmount}.${dueLine}${upiBlock}
+  lines.push('');
+  lines.push(
+    'Please clear this at your earliest convenience. If you have already paid, kindly ignore this message.'
+  );
+  lines.push('');
+  lines.push('*Need help?*');
+  lines.push(`📞 ${contact.phone}`);
+  lines.push(`📧 ${contact.email}`);
+  lines.push(`🌐 ${contact.website}`);
+  lines.push('');
+  lines.push(`Thanks & regards 🙏`);
+  lines.push(contact.team);
 
-Request you to please clear the payment at your earliest convenience. If you have already paid, kindly ignore this message.
-
-For any help/support:
-📞 Phone: ${contact.phone}
-📧 Email: ${contact.email}
-🌐 Website: ${contact.website}
-
-Thanks & regards 🙏
-${contact.team}`;
+  return lines.join('\n');
 }
 
 export function buildPendingPaymentReceivedWhatsAppMessage(

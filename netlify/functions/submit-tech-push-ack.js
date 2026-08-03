@@ -87,12 +87,12 @@ exports.handler = async (event) => {
   let silent;
   if (action === 'dismissed') {
     type = 'tech_push_dismissed';
-    title = `${techName} dismissed`;
-    msgBody = about || 'Notification cleared';
+    title = `${techName} saw the notification`;
+    msgBody = about || 'Cleared from their phone';
     silent = true;
   } else {
     type = 'tech_message_opened';
-    title = `${techName} opened message`;
+    title = `${techName} opened the message`;
     msgBody = about || 'Opened office message';
     silent = false;
   }

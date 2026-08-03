@@ -37,8 +37,8 @@ public final class TechPushAckNotifier {
 
     private static void showDismissed(Context context, Map<String, String> data) {
         NotificationChannels.ensureTechAcksSilent(context);
-        String title = first(data.get("msgTitle"), data.get("title"), "Technician dismissed");
-        String body = first(data.get("msgBody"), data.get("body"), "Notification cleared");
+        String title = first(data.get("msgTitle"), data.get("title"), "Technician saw the notification");
+        String body = first(data.get("msgBody"), data.get("body"), "Cleared from their phone");
         String tag = data.get("tag");
         if (tag == null || tag.isEmpty()) tag = "tech_push_dismissed";
 

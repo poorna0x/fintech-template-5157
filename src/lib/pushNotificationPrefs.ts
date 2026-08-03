@@ -54,9 +54,9 @@ export const ADMIN_PUSH_LABELS: Record<AdminPushCategory, { label: string; descr
       'When a technician replies to an office message, or taps open a Message technician alert.',
   },
   tech_dismiss_acks: {
-    label: 'Technician dismiss acknowledgments',
+    label: 'Technician saw notification',
     description:
-      'Silent (no sound) ping when a technician swipes away or taps Dismiss on a push. Off = this phone stops those acks.',
+      'Silent (no sound) ping when a technician clears a push (“saw the notification”). Off = this phone stops those acks.',
   },
   reminders: {
     label: 'Reminders & pending payments',
