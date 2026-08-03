@@ -378,6 +378,30 @@ const TechnicianLocation = () => {
     window.addEventListener('storage', handleStorageChange);
     window.addEventListener('locationTrackingChanged', handleLocationTrackingChanged as EventListener);
 
+    // APK: catch resumes when visibilitychange alone is missed
+    let removeAppListener: (() => void) | undefined;
+    void import('@capacitor/app')
+      .then(({ App }) =>
+        App.addListener('appStateChange', ({ isActive }) => {
+          if (!isActive) return;
+          const stillEnabled =
+            localStorage.getItem('technician_location_tracking_enabled') !== 'false';
+          if (!stillEnabled) return;
+          const timeSinceLastUpdate = Date.now() - lastUpdateAttemptRef.current;
+          if (timeSinceLastUpdate > 60000) {
+            setTimeout(() => getCurrentLocation(true), 500);
+          }
+        })
+      )
+      .then((handle) => {
+        removeAppListener = () => {
+          void handle.remove();
+        };
+      })
+      .catch(() => {
+        /* web */
+      });
+
     // Update on page refresh (beforeunload won't work, but we can use pageshow)
     const handlePageShow = (e: PageTransitionEvent) => {
       const stillEnabled = localStorage.getItem('technician_location_tracking_enabled') !== 'false';
@@ -397,6 +421,7 @@ const TechnicianLocation = () => {
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('locationTrackingChanged', handleLocationTrackingChanged as EventListener);
       window.removeEventListener('pageshow', handlePageShow);
+      removeAppListener?.();
     };
   }, [getCurrentLocation]); // Include getCurrentLocation in dependencies
 

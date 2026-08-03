@@ -2639,15 +2639,32 @@ const TechnicianDashboard = () => {
       console.log('🚫 [TechnicianDashboard] Location tracking is DISABLED - skipping periodic location updates');
       console.log('🚫 [TechnicianDashboard] - No automatic updates on mount');
       console.log('🚫 [TechnicianDashboard] - No 5-minute interval updates');
-      console.log('🚫 [TechnicianDashboard] - No visibility change updates');
+      console.log('🚫 [TechnicianDashboard] - No visibility / appState resume updates');
       return;
     }
     
     console.log('✅ [TechnicianDashboard] Location tracking ENABLED - setting up periodic updates');
 
+    // visibilitychange + appStateChange often both fire on APK resume — only one GPS write.
+    let lastResumeLocationAt = 0;
+    const RESUME_DEDUPE_MS = 2_000;
+    const requestLocationOnResume = (source: string) => {
+      const stillEnabled = localStorage.getItem('technician_location_tracking_enabled') !== 'false';
+      if (!stillEnabled || !user?.technicianId) return;
+      const now = Date.now();
+      if (now - lastResumeLocationAt < RESUME_DEDUPE_MS) {
+        console.log('⏸️ [TechnicianDashboard] Resume location deduped', { source });
+        return;
+      }
+      lastResumeLocationAt = now;
+      console.log('🔄 [TechnicianDashboard] Resume — location update', { source });
+      getCurrentLocation(true);
+    };
+
     // Update location immediately on mount (only if page is visible)
     if (!document.hidden) {
       console.log('🔄 [TechnicianDashboard] Page visible on mount - triggering initial location update');
+      lastResumeLocationAt = Date.now();
       getCurrentLocation(true);
     } else {
       console.log('⏸️ [TechnicianDashboard] Page hidden on mount - skipping initial location update');
@@ -2671,22 +2688,29 @@ const TechnicianDashboard = () => {
       }
     }, 5 * 60 * 1000); // 5 minutes
 
-    // Also listen for visibility changes to update when app becomes visible again
+    // WebView signal — works on browser + most APK resumes
     const handleVisibilityChange = () => {
-      const stillEnabled = localStorage.getItem('technician_location_tracking_enabled') !== 'false';
-      console.log('👁️ [TechnicianDashboard] Visibility change:', {
-        hidden: document.hidden,
-        stillEnabled,
-        willUpdate: !document.hidden && user?.technicianId && stillEnabled
-      });
-      
-      if (!document.hidden && user?.technicianId && stillEnabled) {
-        console.log('🔄 [TechnicianDashboard] Page became visible - triggering location update');
-        getCurrentLocation(true);
-      } else if (!stillEnabled) {
-        console.log('🚫 [TechnicianDashboard] Location tracking disabled - skipping visibility update');
+      if (!document.hidden) {
+        requestLocationOnResume('visibilitychange');
       }
     };
+
+    // Native APK signal — catches OEMs that miss visibilitychange alone
+    let removeAppListener: (() => void) | undefined;
+    void import('@capacitor/app')
+      .then(({ App }) =>
+        App.addListener('appStateChange', ({ isActive }) => {
+          if (isActive) requestLocationOnResume('appStateChange');
+        })
+      )
+      .then((handle) => {
+        removeAppListener = () => {
+          void handle.remove();
+        };
+      })
+      .catch(() => {
+        /* web / plugin missing */
+      });
 
     // Listen for storage changes (when setting is toggled in Settings page - cross-tab)
     const handleStorageChange = (e: StorageEvent) => {
@@ -2726,6 +2750,7 @@ const TechnicianDashboard = () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('storage', handleStorageChange);
       window.removeEventListener('locationTrackingChanged', handleLocationTrackingChanged as EventListener);
+      removeAppListener?.();
     };
   }, [user?.technicianId, getCurrentLocation]);
 
