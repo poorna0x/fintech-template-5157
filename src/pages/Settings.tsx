@@ -50,7 +50,8 @@ import { buildTechnicianSalaryPayload, getCurrentMonthKey } from '@/lib/technici
 import { Technician } from '@/types';
 import ImageUpload from '@/components/ImageUpload';
 import { TechnicianIdCardLinks } from '@/components/admin/TechnicianIdCardLinks';
-import { CommonQrCode, invalidateQrCodesCache, cacheQrCodes, getCachedQrCodes, normalizeTechnicianAssignedCommonQrIds } from '@/lib/qrCodeManager';
+import { CommonQrCode, invalidateQrCodesCache, cacheQrCodes, getCachedQrCodes, normalizeTechnicianAssignedCommonQrIds, mapCommonQrRow } from '@/lib/qrCodeManager';
+import { isValidUpiId, normalizeUpiId } from '@/lib/upiPaymentAccounts';
 // NOTE: `jszip` and `qr-code-styling` are heavy and only used by specific
 // button actions (data export ZIP, styled QR image). They are dynamically
 // imported at their call sites so they stay out of the main Settings chunk.
@@ -292,7 +293,10 @@ const Settings = () => {
   const [selectedQrCode, setSelectedQrCode] = useState<CommonQrCode | null>(null);
   const [qrCodeFormData, setQrCodeFormData] = useState({
     name: '',
-    qrCodeUrl: ''
+    qrCodeUrl: '',
+    upiId: '',
+    payeeName: '',
+    dynamicUpiEnabled: false,
   });
   const [qrImageGeneratorData, setQrImageGeneratorData] = useState({
     content: '',
@@ -518,7 +522,13 @@ const Settings = () => {
       const qr = commonQrCodes.find((q) => q.id === parsed.panelId);
       if (qr && selectedQrCode?.id !== qr.id) {
         setSelectedQrCode(qr);
-        setQrCodeFormData({ name: qr.name, qrCodeUrl: qr.qrCodeUrl || '' });
+        setQrCodeFormData({
+          name: qr.name,
+          qrCodeUrl: qr.qrCodeUrl || '',
+          upiId: qr.upiId || '',
+          payeeName: qr.payeeName || '',
+          dynamicUpiEnabled: !!qr.dynamicUpiEnabled,
+        });
       }
     }
 
@@ -989,13 +999,9 @@ const Settings = () => {
       console.log('QR codes fetched:', data);
       
       if (data) {
-        const transformed = data.map((qr: any) => ({
-          id: qr.id,
-          name: qr.name,
-          qrCodeUrl: qr.qr_code_url,
-          createdAt: qr.created_at,
-          updatedAt: qr.updated_at
-        }));
+        const transformed = data
+          .map((qr: any) => mapCommonQrRow(qr))
+          .filter(Boolean) as CommonQrCode[];
         console.log('Transformed QR codes:', transformed);
         setCommonQrCodes(transformed);
         cacheQrCodes(transformed);
@@ -1012,7 +1018,13 @@ const Settings = () => {
   };
 
   const handleAddQrCode = () => {
-    setQrCodeFormData({ name: '', qrCodeUrl: '' });
+    setQrCodeFormData({
+      name: '',
+      qrCodeUrl: '',
+      upiId: '',
+      payeeName: '',
+      dynamicUpiEnabled: false,
+    });
     openSettingsPanel('add-payment-qr');
   };
 
@@ -1020,85 +1032,89 @@ const Settings = () => {
     setSelectedQrCode(qrCode);
     setQrCodeFormData({
       name: qrCode.name,
-      qrCodeUrl: qrCode.qrCodeUrl
+      qrCodeUrl: qrCode.qrCodeUrl,
+      upiId: qrCode.upiId || '',
+      payeeName: qrCode.payeeName || '',
+      dynamicUpiEnabled: !!qrCode.dynamicUpiEnabled,
     });
     openSettingsPanel('edit-payment-qr', { id: qrCode.id });
   };
 
   const handleSaveQrCode = async () => {
     try {
-      // Validate form data
       if (!qrCodeFormData.name || !qrCodeFormData.name.trim()) {
         toast.error('Please provide a QR code name');
         return;
       }
 
-      if (!qrCodeFormData.qrCodeUrl || !qrCodeFormData.qrCodeUrl.trim()) {
+      const dynamicOn = qrCodeFormData.dynamicUpiEnabled === true;
+      const upiId = normalizeUpiId(qrCodeFormData.upiId);
+      if (dynamicOn) {
+        if (!isValidUpiId(upiId)) {
+          toast.error('Enter a valid UPI ID (e.g. business@oksbi) to enable dynamic QR');
+          return;
+        }
+      }
+
+      const hasImage =
+        !!qrCodeFormData.qrCodeUrl &&
+        qrCodeFormData.qrCodeUrl.trim() !== '' &&
+        qrCodeFormData.qrCodeUrl.startsWith('http');
+
+      if (!dynamicOn && !hasImage) {
         toast.error('Please upload a QR code image');
         return;
       }
 
-      // Validate URL format
-      if (!qrCodeFormData.qrCodeUrl.startsWith('http')) {
+      if (qrCodeFormData.qrCodeUrl && !qrCodeFormData.qrCodeUrl.startsWith('http')) {
         toast.error('Invalid QR code URL. Please upload the image again.');
         return;
       }
 
-      console.log('Saving QR code:', { 
-        name: qrCodeFormData.name, 
-        qrCodeUrl: qrCodeFormData.qrCodeUrl,
-        urlLength: qrCodeFormData.qrCodeUrl.length 
-      });
-
-      // Check authentication
-      const { data: sessionData } = await supabase.auth.getSession();
-      console.log('Current session:', sessionData?.session ? 'Authenticated' : 'Not authenticated');
+      const payload = {
+        name: qrCodeFormData.name.trim(),
+        qr_code_url: hasImage ? qrCodeFormData.qrCodeUrl.trim() : '',
+        upi_id: upiId,
+        payee_name: String(qrCodeFormData.payeeName || '').trim().slice(0, 100),
+        dynamic_upi_enabled: dynamicOn,
+      };
 
       if (editQrCodeDialogOpen && selectedQrCode) {
-        console.log('Updating QR code with ID:', selectedQrCode.id);
-        const { data, error } = await db.commonQrCodes.update(selectedQrCode.id, {
-          name: qrCodeFormData.name.trim(),
-          qr_code_url: qrCodeFormData.qrCodeUrl.trim()
-        });
+        const { data, error } = await db.commonQrCodes.update(selectedQrCode.id, payload);
         if (error) {
           console.error('Error updating QR code:', error);
-          console.error('Error details:', JSON.stringify(error, null, 2));
           toast.error(`Failed to update QR code: ${error.message || JSON.stringify(error)}`);
           return;
         }
         console.log('QR code updated successfully:', data);
         toast.success('QR code updated successfully');
-        // Invalidate cache so AdminDashboard will reload
         invalidateQrCodesCache();
       } else {
-        console.log('Creating new QR code...');
-        const { data, error } = await db.commonQrCodes.create({
-          name: qrCodeFormData.name.trim(),
-          qr_code_url: qrCodeFormData.qrCodeUrl.trim()
-        });
+        const { data, error } = await db.commonQrCodes.create(payload);
         if (error) {
           console.error('Error creating QR code:', error);
-          console.error('Error details:', JSON.stringify(error, null, 2));
           toast.error(`Failed to create QR code: ${error.message || JSON.stringify(error)}`);
           return;
         }
         console.log('QR code created successfully:', data);
         toast.success('QR code created successfully');
-        // Invalidate cache so AdminDashboard will reload
         invalidateQrCodesCache();
       }
 
-      // Reload QR codes after successful save
-      console.log('Reloading QR codes...');
       await loadCommonQrCodes();
       
       closeSettingsPanel();
       setSelectedQrCode(null);
-      setQrCodeFormData({ name: '', qrCodeUrl: '' });
+      setQrCodeFormData({
+        name: '',
+        qrCodeUrl: '',
+        upiId: '',
+        payeeName: '',
+        dynamicUpiEnabled: false,
+      });
     } catch (error) {
       console.error('Error saving QR code:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.error('Full error:', error);
       toast.error(`Failed to save QR code: ${errorMessage}`);
     }
   };
@@ -2805,7 +2821,8 @@ const Settings = () => {
                     Common Payment QR Codes
                   </CardTitle>
                   <CardDescription className="text-sm mt-1">
-                    Manage QR codes available to all technicians for payment scanning
+                    Manage QR codes for technicians. Optionally enable Dynamic UPI so the app
+                    generates a live QR with the bill amount from a UPI ID.
                   </CardDescription>
                 </div>
                 <Button 
@@ -2826,6 +2843,14 @@ const Settings = () => {
                       <div className="flex items-start justify-between mb-3 gap-2">
                         <div className="flex-1 min-w-0">
                           <h3 className="font-semibold text-foreground text-sm sm:text-base truncate">{qrCode.name}</h3>
+                          {qrCode.dynamicUpiEnabled && qrCode.upiId ? (
+                            <Badge variant="secondary" className="mt-1 text-[10px] sm:text-xs">
+                              Dynamic UPI
+                            </Badge>
+                          ) : null}
+                          {qrCode.upiId ? (
+                            <p className="text-[11px] text-muted-foreground mt-1 truncate">{qrCode.upiId}</p>
+                          ) : null}
                         </div>
                       </div>
 
@@ -3768,7 +3793,13 @@ const Settings = () => {
             onSettingsPanelOpenChange(panel, false);
           }
           setSelectedQrCode(null);
-          setQrCodeFormData({ name: '', qrCodeUrl: '' });
+          setQrCodeFormData({
+            name: '',
+            qrCodeUrl: '',
+            upiId: '',
+            payeeName: '',
+            dynamicUpiEnabled: false,
+          });
           setQrCodeUploading(false);
         }
       }}>
@@ -3786,15 +3817,6 @@ const Settings = () => {
           </DialogHeader>
           
           <div className="space-y-6">
-            {/* Debug info - remove in production */}
-            {import.meta.env.DEV && (
-              <div className="p-2 bg-gray-100 rounded text-xs">
-                <p><strong>Debug Info:</strong></p>
-                <p>Name: {qrCodeFormData.name || '(empty)'}</p>
-                <p>URL: {qrCodeFormData.qrCodeUrl ? `${qrCodeFormData.qrCodeUrl.substring(0, 50)}...` : '(empty)'}</p>
-                <p>Button disabled: {(!qrCodeFormData.name || !qrCodeFormData.qrCodeUrl) ? 'YES' : 'NO'}</p>
-              </div>
-            )}
             <div className="space-y-4">
               <div>
                 <Label htmlFor="qrCodeName">QR Code Name *</Label>
@@ -3802,16 +3824,71 @@ const Settings = () => {
                   id="qrCodeName"
                   value={qrCodeFormData.name}
                   onChange={(e) => {
-                    console.log('Name changed:', e.target.value);
                     setQrCodeFormData(prev => ({ ...prev, name: e.target.value }));
                   }}
                   placeholder="e.g., Company UPI QR, Main Account QR"
                 />
               </div>
+
+              <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
+                <div className="min-w-0">
+                  <Label htmlFor="dynamic-upi-toggle" className="text-sm font-medium">
+                    Dynamic UPI QR
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    When on, technician job-complete builds a live QR with the bill amount.
+                  </p>
+                </div>
+                <Switch
+                  id="dynamic-upi-toggle"
+                  checked={qrCodeFormData.dynamicUpiEnabled}
+                  onCheckedChange={(checked) =>
+                    setQrCodeFormData((prev) => ({ ...prev, dynamicUpiEnabled: checked }))
+                  }
+                />
+              </div>
+
+              {qrCodeFormData.dynamicUpiEnabled && (
+                <div className="space-y-3 rounded-lg border border-sky-200 bg-sky-50/50 p-3">
+                  <div>
+                    <Label htmlFor="qrUpiId">UPI ID *</Label>
+                    <Input
+                      id="qrUpiId"
+                      value={qrCodeFormData.upiId}
+                      onChange={(e) =>
+                        setQrCodeFormData((prev) => ({ ...prev, upiId: e.target.value }))
+                      }
+                      placeholder="business@oksbi"
+                      className="mt-1"
+                      autoCapitalize="off"
+                      autoCorrect="off"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="qrPayeeName">Payee name (optional)</Label>
+                    <Input
+                      id="qrPayeeName"
+                      value={qrCodeFormData.payeeName}
+                      onChange={(e) =>
+                        setQrCodeFormData((prev) => ({ ...prev, payeeName: e.target.value }))
+                      }
+                      placeholder="Defaults to QR name"
+                      className="mt-1"
+                    />
+                  </div>
+                </div>
+              )}
               
               <div>
-                <Label>Upload QR Code Image *</Label>
-                <p className="text-sm text-muted-foreground mb-2">Upload QR code image for payment scanning</p>
+                <Label>
+                  Upload QR Code Image
+                  {qrCodeFormData.dynamicUpiEnabled ? ' (optional fallback)' : ' *'}
+                </Label>
+                <p className="text-sm text-muted-foreground mb-2">
+                  {qrCodeFormData.dynamicUpiEnabled
+                    ? 'Optional static image if dynamic UPI is off later, or as a backup'
+                    : 'Upload QR code image for payment scanning'}
+                </p>
                 <ImageUpload
                   key={selectedQrCode?.id ?? (addQrCodeDialogOpen ? 'new-payment-qr' : 'closed-payment-qr')}
                   onImagesChange={(images) => {
@@ -3831,7 +3908,11 @@ const Settings = () => {
                   skipOfflineQueue
                 />
                 {!qrCodeFormData.qrCodeUrl && !qrCodeUploading && (
-                  <p className="text-xs text-muted-foreground mt-1">No QR code uploaded yet</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {qrCodeFormData.dynamicUpiEnabled
+                      ? 'No fallback image (dynamic UPI will be used)'
+                      : 'No QR code uploaded yet'}
+                  </p>
                 )}
                 {qrCodeUploading && (
                   <p className="text-xs text-muted-foreground mt-1">Uploading image…</p>
@@ -3846,7 +3927,13 @@ const Settings = () => {
               onClick={() => {
                 closeSettingsPanel();
                 setSelectedQrCode(null);
-                setQrCodeFormData({ name: '', qrCodeUrl: '' });
+                setQrCodeFormData({
+                  name: '',
+                  qrCodeUrl: '',
+                  upiId: '',
+                  payeeName: '',
+                  dynamicUpiEnabled: false,
+                });
               }}
               className="w-full sm:w-auto"
             >
@@ -3854,17 +3941,15 @@ const Settings = () => {
             </Button>
             <Button
               onClick={() => {
-                console.log('Create/Update QR Code button clicked');
-                console.log('Current form data:', qrCodeFormData);
-                console.log('Form validation:', {
-                  hasName: !!qrCodeFormData.name,
-                  hasUrl: !!qrCodeFormData.qrCodeUrl,
-                  nameValue: qrCodeFormData.name,
-                  urlValue: qrCodeFormData.qrCodeUrl
-                });
                 handleSaveQrCode();
               }}
-              disabled={!qrCodeFormData.name || !qrCodeFormData.qrCodeUrl || qrCodeUploading}
+              disabled={
+                !qrCodeFormData.name ||
+                qrCodeUploading ||
+                (qrCodeFormData.dynamicUpiEnabled
+                  ? !qrCodeFormData.upiId.trim()
+                  : !qrCodeFormData.qrCodeUrl)
+              }
               className=" w-full sm:w-auto"
             >
               {editQrCodeDialogOpen ? 'Update QR Code' : 'Create QR Code'}

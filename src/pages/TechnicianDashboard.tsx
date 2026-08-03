@@ -90,6 +90,8 @@ import {
   CommonQrCode,
   getTechnicianCommonQrImageCache,
   getTechnicianQrSnapshot,
+  isDynamicUpiQr,
+  mapCommonQrRow,
   normalizeTechnicianAssignedCommonQrIds,
   prefetchTechnicianCommonQrImages,
   QR_NETWORK_MIN_INTERVAL_MS,
@@ -97,6 +99,7 @@ import {
   TechnicianQrPickerRow,
   TechnicianQrSnapshotV1,
 } from '@/lib/qrCodeManager';
+import DynamicUpiQrDisplay from '@/components/DynamicUpiQrDisplay';
 import { extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
 import { applyAutoMoveToOngoingOnDateFlag } from '@/lib/followUpToOngoing';
 import ImageUpload from '@/components/ImageUpload';
@@ -1427,13 +1430,9 @@ const TechnicianDashboard = () => {
 
         let allCommonQrCodesData: CommonQrCode[] = [];
         if (commonResult.data) {
-          allCommonQrCodesData = commonResult.data.map((qr: any) => ({
-            id: qr.id,
-            name: qr.name,
-            qrCodeUrl: qr.qr_code_url,
-            createdAt: qr.created_at,
-            updatedAt: qr.updated_at,
-          }));
+          allCommonQrCodesData = commonResult.data
+            .map((qr: any) => mapCommonQrRow(qr))
+            .filter(Boolean) as CommonQrCode[];
           setAllCommonQrCodes(allCommonQrCodesData);
           cacheQrCodes(allCommonQrCodesData);
         }
@@ -1683,13 +1682,11 @@ const TechnicianDashboard = () => {
             qrLiveRef.current.allCommon = qrLiveRef.current.allCommon.filter((q) => q.id !== payload.old!.id);
           } else if (payload.new?.id) {
             const row = payload.new;
-            const item: CommonQrCode = {
-              id: row.id,
-              name: row.name ?? '',
-              qrCodeUrl: row.qr_code_url ?? '',
-              createdAt: row.created_at ?? '',
-              updatedAt: row.updated_at ?? '',
-            };
+            const item = mapCommonQrRow(row as Record<string, unknown>);
+            if (!item) {
+              loadQrCodes({ force: true });
+              return;
+            }
             const prev = qrLiveRef.current.allCommon;
             const i = prev.findIndex((q) => q.id === item.id);
             qrLiveRef.current.allCommon =
@@ -5415,6 +5412,17 @@ const TechnicianDashboard = () => {
             selected_qr_code_url: selectedQrCodeUrl,
             selected_qr_code_name: selectedQrCodeNameLocal,
           };
+          if (selectedQrCodeId.startsWith('common_')) {
+            const qrId = selectedQrCodeId.replace('common_', '');
+            const selectedQr =
+              commonQrCodes.find((qr) => qr.id === qrId) ||
+              allCommonQrCodes.find((qr) => qr.id === qrId);
+            if (selectedQr && isDynamicUpiQr(selectedQr)) {
+              qrPhotos.dynamic_upi = true;
+              qrPhotos.upi_id = selectedQr.upiId;
+              qrPhotos.payee_name = selectedQr.payeeName || selectedQr.name;
+            }
+          }
           requirements.push({ qr_photos: qrPhotos });
           console.log('✅ Added qr_photos to requirements:', qrPhotos);
         }
@@ -9341,6 +9349,7 @@ const TechnicianDashboard = () => {
                             {commonQrCodes.map((qr) => (
                               <SelectItem key={`common_${qr.id}`} value={`common_${qr.id}`}>
                                 {qr.name}
+                                {qr.dynamicUpiEnabled ? ' · Dynamic UPI' : ''}
                               </SelectItem>
                             ))}
                                   </>
@@ -9369,11 +9378,51 @@ const TechnicianDashboard = () => {
                           <div className="flex justify-center">
                             {selectedQrCodeId.startsWith('common_') ? (() => {
                               const qrId = selectedQrCodeId.replace('common_', '');
-                              const selectedQr = commonQrCodes.find(qr => qr.id === qrId);
+                              const selectedQr =
+                                commonQrCodes.find(qr => qr.id === qrId) ||
+                                allCommonQrCodes.find(qr => qr.id === qrId) ||
+                                commonQrCodesForTechnician.find(qr => qr.id === qrId);
                               if (!selectedQr) {
                                 return (
                                   <div className="text-center p-4">
                                     <p className="text-sm text-red-500">QR code not found</p>
+                                  </div>
+                                );
+                              }
+                              const onlineAmt = (() => {
+                                if (
+                                  paymentMode === 'PARTIAL' ||
+                                  (paymentMode === 'PENDING_PAYMENT' &&
+                                    pendingPaidTodayMode === 'PARTIAL')
+                                ) {
+                                  return parseMoneyAmount(partialOnlineAmount);
+                                }
+                                if (
+                                  paymentMode === 'PENDING_PAYMENT' &&
+                                  pendingPaidTodayMode === 'ONLINE'
+                                ) {
+                                  const paid = parseMoneyAmount(pendingPaidTodayAmount);
+                                  return Number.isFinite(paid) && paid > 0
+                                    ? paid
+                                    : parseMoneyAmount(billAmount);
+                                }
+                                return parseMoneyAmount(billAmount);
+                              })();
+                              if (isDynamicUpiQr(selectedQr)) {
+                                return (
+                                  <DynamicUpiQrDisplay
+                                    upiId={selectedQr.upiId || ''}
+                                    payeeName={selectedQr.payeeName || selectedQr.name}
+                                    amount={onlineAmt}
+                                    note={selectedJobForComplete?.customerName || selectedQr.name}
+                                    label={selectedQr.name}
+                                  />
+                                );
+                              }
+                              if (!selectedQr.qrCodeUrl) {
+                                return (
+                                  <div className="text-center p-4">
+                                    <p className="text-sm text-red-500">No QR image — enable Dynamic UPI or upload an image in Settings</p>
                                   </div>
                                 );
                               }

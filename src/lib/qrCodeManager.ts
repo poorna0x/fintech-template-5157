@@ -7,6 +7,71 @@ export interface CommonQrCode {
   qrCodeUrl: string;
   createdAt: string;
   updatedAt: string;
+  /** VPA for live UPI QR when dynamicUpiEnabled. */
+  upiId?: string;
+  /** Payee name (pn); falls back to name. */
+  payeeName?: string;
+  /** When true, job-complete shows a generated UPI QR with the bill amount. */
+  dynamicUpiEnabled?: boolean;
+}
+
+/** Map a DB / API row into CommonQrCode (payment QRs + cache). */
+export function mapCommonQrRow(qr: Record<string, unknown> | null | undefined): CommonQrCode | null {
+  if (!qr || typeof qr !== 'object') return null;
+  const id = typeof qr.id === 'string' ? qr.id : '';
+  const name = typeof qr.name === 'string' ? qr.name : '';
+  if (!id || !name) return null;
+  const qrCodeUrl =
+    typeof qr.qr_code_url === 'string'
+      ? qr.qr_code_url
+      : typeof qr.qrCodeUrl === 'string'
+        ? qr.qrCodeUrl
+        : '';
+  const upiRaw =
+    typeof qr.upi_id === 'string' ? qr.upi_id : typeof qr.upiId === 'string' ? qr.upiId : '';
+  const upiId = String(upiRaw || '')
+    .trim()
+    .replace(/\s+/g, '')
+    .toLowerCase();
+  const payeeRaw =
+    typeof qr.payee_name === 'string'
+      ? qr.payee_name
+      : typeof qr.payeeName === 'string'
+        ? qr.payeeName
+        : '';
+  const payeeName = String(payeeRaw || '').trim();
+  const dynamicUpiEnabled = Boolean(
+    qr.dynamic_upi_enabled ?? qr.dynamicUpiEnabled ?? false
+  );
+  return {
+    id,
+    name,
+    qrCodeUrl,
+    createdAt:
+      typeof qr.created_at === 'string'
+        ? qr.created_at
+        : typeof qr.createdAt === 'string'
+          ? qr.createdAt
+          : '',
+    updatedAt:
+      typeof qr.updated_at === 'string'
+        ? qr.updated_at
+        : typeof qr.updatedAt === 'string'
+          ? qr.updatedAt
+          : '',
+    upiId,
+    payeeName,
+    dynamicUpiEnabled,
+  };
+}
+
+/** True when this common QR should render a live amount UPI QR. */
+export function isDynamicUpiQr(qr: CommonQrCode | null | undefined): boolean {
+  if (!qr?.dynamicUpiEnabled) return false;
+  const id = String(qr.upiId || '')
+    .trim()
+    .toLowerCase();
+  return /^[a-z0-9.\-_]{2,256}@[a-z0-9.\-]{2,64}$/i.test(id);
 }
 
 /** Technician row as used in payment QR picker (3-dots flow). */

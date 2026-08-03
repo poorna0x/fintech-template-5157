@@ -11,7 +11,8 @@ import ImageUpload from '@/components/ImageUpload';
 import { Job, Technician } from '@/types';
 import { db, supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { CommonQrCode } from '@/lib/qrCodeManager';
+import { CommonQrCode, isDynamicUpiQr } from '@/lib/qrCodeManager';
+import DynamicUpiQrDisplay from '@/components/DynamicUpiQrDisplay';
 import { useAuth } from '@/contexts/AuthContext';
 import { RefreshCw } from 'lucide-react';
 import { customerNameClassName } from '@/lib/customerDisplay';
@@ -1648,6 +1649,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                                   {localCommonQrCodes.map((qr) => (
                                     <SelectItem key={`common_${qr.id}`} value={`common_${qr.id}`}>
                                       {qr.name}
+                                      {qr.dynamicUpiEnabled ? ' · Dynamic UPI' : ''}
                                     </SelectItem>
                                   ))}
                                 </>
@@ -1678,6 +1680,51 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                               return (
                                 <div className="text-center p-4">
                                   <p className="text-sm text-red-500">QR code not found</p>
+                                </div>
+                              );
+                            }
+                            const onlineAmt = (() => {
+                              if (paymentMode === 'PARTIAL') {
+                                return parseMoneyAmount(partialOnlineAmount);
+                              }
+                              if (
+                                paymentMode === 'PENDING_PAYMENT' &&
+                                pendingPaidTodayMode === 'PARTIAL'
+                              ) {
+                                return parseMoneyAmount(partialOnlineAmount);
+                              }
+                              if (
+                                paymentMode === 'PENDING_PAYMENT' &&
+                                pendingPaidTodayMode === 'ONLINE'
+                              ) {
+                                const paid = parseMoneyAmount(pendingPaidTodayAmount);
+                                return Number.isFinite(paid) && paid > 0
+                                  ? paid
+                                  : parseMoneyAmount(billAmount);
+                              }
+                              return parseMoneyAmount(billAmount);
+                            })();
+                            if (isDynamicUpiQr(selectedQr)) {
+                              return (
+                                <DynamicUpiQrDisplay
+                                  upiId={selectedQr.upiId || ''}
+                                  payeeName={selectedQr.payeeName || selectedQr.name}
+                                  amount={onlineAmt}
+                                  note={
+                                    job?.customer?.fullName ||
+                                    (job?.customer as any)?.full_name ||
+                                    selectedQr.name
+                                  }
+                                  label={selectedQr.name}
+                                />
+                              );
+                            }
+                            if (!selectedQr.qrCodeUrl) {
+                              return (
+                                <div className="text-center p-4">
+                                  <p className="text-sm text-red-500">
+                                    No QR image — enable Dynamic UPI or upload an image in Settings
+                                  </p>
                                 </div>
                               );
                             }

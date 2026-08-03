@@ -164,7 +164,7 @@ import { toast } from 'sonner';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { isNativeApp } from '@/lib/isNativeApp';
 import { shouldUseFileInputFallback, requestCameraAccess, createVideoElement, filesToFileList, captureVideoFrameToFile, captureNativeCameraPhoto } from '@/lib/cameraUtils';
-import { getCachedQrCodes, cacheQrCodes, shouldUseCache, CommonQrCode } from '@/lib/qrCodeManager';
+import { getCachedQrCodes, cacheQrCodes, shouldUseCache, CommonQrCode, mapCommonQrRow } from '@/lib/qrCodeManager';
 import { openInGoogleMaps, extractCoordinates, formatAddressForDisplay, openGoogleMapsDirectionsBetween } from '@/lib/maps';
 import {
   geolocationFailureMessage,
@@ -1438,13 +1438,9 @@ const AdminDashboard = () => {
       }
 
         if (commonResult.data) {
-          const transformed = commonResult.data.map((qr: any) => ({
-            id: qr.id,
-            name: qr.name,
-            qrCodeUrl: qr.qr_code_url,
-            createdAt: qr.created_at,
-            updatedAt: qr.updated_at
-          }));
+          const transformed = commonResult.data
+            .map((qr: any) => mapCommonQrRow(qr))
+            .filter(Boolean) as CommonQrCode[];
         console.log('QR codes loaded from DB:', transformed.length, 'items');
           setCommonQrCodes(transformed);
         // Always update cache with fresh data

@@ -4314,12 +4314,21 @@ export const db = {
 
   // Common QR Codes operations (for payment QR codes shared by all technicians)
   commonQrCodes: {
-    async create(qrCode: { name: string; qr_code_url: string }) {
+    async create(qrCode: {
+      name: string;
+      qr_code_url: string;
+      upi_id?: string;
+      payee_name?: string;
+      dynamic_upi_enabled?: boolean;
+    }) {
       const { data, error } = await supabase
         .from('common_qr_codes')
         .insert({
           name: qrCode.name,
           qr_code_url: qrCode.qr_code_url,
+          upi_id: qrCode.upi_id ?? '',
+          payee_name: qrCode.payee_name ?? '',
+          dynamic_upi_enabled: qrCode.dynamic_upi_enabled === true,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
@@ -4332,7 +4341,9 @@ export const db = {
     async getAll() {
       const { data, error } = await supabase
         .from('common_qr_codes')
-        .select('id, name, qr_code_url, created_at, updated_at')
+        .select(
+          'id, name, qr_code_url, upi_id, payee_name, dynamic_upi_enabled, created_at, updated_at'
+        )
         .order('created_at', { ascending: false })
         .limit(50);
       
@@ -4348,7 +4359,16 @@ export const db = {
       return { data, error };
     },
     
-    async update(id: string, updates: { name?: string; qr_code_url?: string }) {
+    async update(
+      id: string,
+      updates: {
+        name?: string;
+        qr_code_url?: string;
+        upi_id?: string;
+        payee_name?: string;
+        dynamic_upi_enabled?: boolean;
+      }
+    ) {
       const { data, error } = await supabase
         .from('common_qr_codes')
         .update({
