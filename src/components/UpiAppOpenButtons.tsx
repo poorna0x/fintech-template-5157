@@ -79,28 +79,36 @@ export function UpiAppOpenButton({ id, name, href }: UpiAppButtonProps) {
     ? STYLES[id]
     : { bg: '#FFFFFF', border: '#E5E7EB' };
   const logoSrc = isKnownApp(id) ? LOGO_SRC[id] : null;
+  const iconSrc = isKnownApp(id) ? ICON_SRC[id] : null;
 
   return (
     <a
       href={href}
       aria-label={`Open ${name}`}
-      className="flex h-[56px] items-center justify-center rounded-xl border px-4 shadow-sm transition hover:bg-slate-50 active:scale-[0.98]"
+      className="flex min-w-0 flex-col items-center justify-center gap-1.5 rounded-xl border px-1.5 py-2.5 shadow-sm transition hover:bg-slate-50 active:scale-[0.98]"
       style={{
         backgroundColor: style.bg,
         borderColor: style.border,
       }}
     >
-      {logoSrc ? (
+      {iconSrc ? (
         <img
-          src={logoSrc}
-          alt={name}
-          className="h-8 w-auto max-w-[150px] object-contain"
+          src={iconSrc}
+          alt=""
+          className="h-8 w-8 object-contain"
           loading="lazy"
           decoding="async"
         />
-      ) : (
-        <span className="text-sm font-semibold text-slate-800">{name}</span>
-      )}
+      ) : logoSrc ? (
+        <img
+          src={logoSrc}
+          alt={name}
+          className="h-7 w-auto max-w-full object-contain"
+          loading="lazy"
+          decoding="async"
+        />
+      ) : null}
+      <span className="truncate text-[11px] font-semibold leading-none text-slate-800">{name}</span>
     </a>
   );
 }
@@ -111,7 +119,7 @@ export function UpiAppOpenGrid({
   apps: { id: string; name: string; href: string }[];
 }) {
   return (
-    <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+    <div className="mt-3 grid grid-cols-3 gap-2">
       {apps.map((app) => (
         <UpiAppOpenButton key={app.id} id={app.id} name={app.name} href={app.href} />
       ))}
