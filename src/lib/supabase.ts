@@ -13,7 +13,9 @@ import {
 } from './dual-site-columns';
 import {
   isMissingVisitOrderColumnError,
+  isMissingTechArrivedColumnError,
   markVisitOrderColumnMissing,
+  markTechArrivedColumnMissing,
   resolveJobSelect,
 } from './visit-order-columns';
 import {
@@ -92,6 +94,7 @@ const JOB_SELECT_ONGOING_AND_TECH = [
   'payment_status',
   'lead_cost',
   'parts_cost_total',
+  'tech_arrived_at',
 ].join(',');
 
 /** Job list select — strips `visit_order` if the DB column is not migrated yet. */
@@ -2220,6 +2223,10 @@ export const db = {
         markVisitOrderColumnMissing();
         ({ data, error } = await run());
       }
+      if (error && isMissingTechArrivedColumnError(error)) {
+        markTechArrivedColumnMissing();
+        ({ data, error } = await run());
+      }
       return { data, error };
     },
 
@@ -2692,6 +2699,11 @@ export const db = {
       const firstPassError = resultSets.find((res) => res.error)?.error;
       if (firstPassError && isMissingVisitOrderColumnError(firstPassError)) {
         markVisitOrderColumnMissing();
+        resultSets = await runSlice();
+      }
+      const secondPassError = resultSets.find((res) => res.error)?.error;
+      if (secondPassError && isMissingTechArrivedColumnError(secondPassError)) {
+        markTechArrivedColumnMissing();
         resultSets = await runSlice();
       }
 
@@ -3855,6 +3867,10 @@ export const db = {
       let { data: rows, error: err } = await run();
       if (err && isMissingVisitOrderColumnError(err)) {
         markVisitOrderColumnMissing();
+        ({ data: rows, error: err } = await run());
+      }
+      if (err && isMissingTechArrivedColumnError(err)) {
+        markTechArrivedColumnMissing();
         ({ data: rows, error: err } = await run());
       }
 

@@ -48,18 +48,22 @@ export async function submitAdminJobReassign(
   const scrollY = window.scrollY;
 
   try {
+    const previousTechnicianId =
+      (ctx.jobToReassign as any).assigned_technician_id || ctx.jobToReassign.assignedTechnicianId;
+
     const { error } = await db.jobs.update(ctx.jobToReassign.id, {
       assigned_technician_id: ctx.selectedTechnicianForReassign,
-    });
+      // New tech must get a fresh arrival notify when they reach the customer.
+      ...(previousTechnicianId && previousTechnicianId !== ctx.selectedTechnicianForReassign
+        ? { tech_arrived_at: null }
+        : {}),
+    } as any);
 
     if (error) {
       console.error('Reassign job error:', error);
       toast.error(`Failed to reassign job: ${error.message || 'Unknown error'}`);
       return;
     }
-
-    const previousTechnicianId =
-      (ctx.jobToReassign as any).assigned_technician_id || ctx.jobToReassign.assignedTechnicianId;
 
     // Old tech must not keep an unanswered OTP card for a job they no longer own.
     if (previousTechnicianId && previousTechnicianId !== ctx.selectedTechnicianForReassign) {
@@ -155,6 +159,7 @@ export async function unassignAdminJob(
       assigned_date: null,
       status: 'PENDING',
       visit_order: null,
+      tech_arrived_at: null,
     } as any);
 
     if (error) {

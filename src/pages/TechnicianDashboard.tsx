@@ -2523,10 +2523,21 @@ const TechnicianDashboard = () => {
   }, [currentLocation, jobs, assignmentRequests]);
 
   // OTP-required jobs: GPS near customer arms server dwell, then Ask OTP once.
+  // All Start Job jobs: GPS near → one admin "at customer" push (independent of OTP dwell).
   useEffect(() => {
     if (!user?.technicianId || !currentLocation || jobs.length === 0) return;
     void import('@/lib/autoAskOtpOnSite').then(({ evaluateAutoAskOtpOnSite }) => {
       evaluateAutoAskOtpOnSite({
+        technicianId: user.technicianId!,
+        jobs,
+        lat: currentLocation.lat,
+        lng: currentLocation.lng,
+        accuracyMeters: currentLocationAccuracyM,
+        distancesKm: distances,
+      });
+    });
+    void import('@/lib/reportTechArrived').then(({ evaluateTechArrivedOnSite }) => {
+      evaluateTechArrivedOnSite({
         technicianId: user.technicianId!,
         jobs,
         lat: currentLocation.lat,
