@@ -11,6 +11,10 @@ import { haversineDistanceMeters } from '@/lib/googleMapsDistance';
 import { getJobLocationDisplay } from '@/lib/customer-locations';
 import { extractCoordinates } from '@/lib/maps';
 import { extractCoordinatesFromGoogleMapsLink } from '@/lib/googleMapsLink';
+import {
+  cancelNativeAutoAskDwell,
+  scheduleNativeAutoAskDwell,
+} from '@/lib/autoAskOtpNativeAlarm';
 
 const ENDPOINT = '/.netlify/functions/auto-ask-otp-on-site';
 /** Was 200m — too tight for typical phone GPS + apartment offset. */
@@ -141,12 +145,33 @@ async function callServer(jobId: string, near: boolean): Promise<void> {
       error?: string;
       details?: string;
       dwellMs?: number;
+      requestId?: string;
+      nonce?: string;
     } | null;
 
     console.log('[auto-ask-otp]', near ? 'near' : 'check', jobId, res.status, out);
 
     if (!res.ok) {
       console.warn('[auto-ask-otp] server error', out?.error || out?.details || res.status);
+      return;
+    }
+
+    // Arm native AlarmManager so Ask OTP still fires with the app closed.
+    if (out?.waiting && typeof out.remainingMs === 'number' && out.remainingMs > 0) {
+      void scheduleNativeAutoAskDwell({
+        jobId,
+        remainingMs: out.remainingMs,
+        accessToken,
+      });
+    }
+
+    if (
+      out?.asked ||
+      out?.reason === 'already_asked' ||
+      out?.reason === 'otp_already_entered' ||
+      out?.reason === 'otp_already_on_request'
+    ) {
+      void cancelNativeAutoAskDwell(jobId);
     }
   } catch (err) {
     console.warn('[auto-ask-otp] error', err);

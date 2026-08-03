@@ -123,6 +123,7 @@ async function sendOtpAsk(db, { jobId, technicianId, customerId }) {
   }
 
   const siteUrl = (process.env.URL || '').replace(/\/$/, '');
+  const submitUrl = `${siteUrl}/.netlify/functions/submit-tech-otp`;
   try {
     const messaging = await getMessaging(db);
     const { sent, tokens } = await sendToTechnicianDevices(
@@ -136,7 +137,7 @@ async function sendOtpAsk(db, { jobId, technicianId, customerId }) {
           requestId,
           nonce,
           ...(customerName ? { customerName } : {}),
-          submitUrl: `${siteUrl}/.netlify/functions/submit-tech-otp`,
+          submitUrl,
           showOverlay: '1',
         },
         android: { priority: 'high' },
@@ -145,15 +146,15 @@ async function sendOtpAsk(db, { jobId, technicianId, customerId }) {
     );
 
     if (tokens === 0) {
-      return { asked: true, sent: false, reason: 'no_token', requestId };
+      return { asked: true, sent: false, reason: 'no_token', requestId, nonce, submitUrl, customerName };
     }
     if (sent === 0) {
-      return { asked: true, sent: false, reason: 'stale_token', requestId };
+      return { asked: true, sent: false, reason: 'stale_token', requestId, nonce, submitUrl, customerName };
     }
-    return { asked: true, sent: true, devices: sent, requestId };
+    return { asked: true, sent: true, devices: sent, requestId, nonce, submitUrl, customerName };
   } catch (err) {
     console.error('[otp-auto-ask] push failed', err?.message || err);
-    return { asked: true, sent: false, reason: 'push_failed', requestId };
+    return { asked: true, sent: false, reason: 'push_failed', requestId, nonce, submitUrl, customerName };
   }
 }
 

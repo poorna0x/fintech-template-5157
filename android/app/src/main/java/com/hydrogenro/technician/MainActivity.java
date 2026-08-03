@@ -39,6 +39,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(RecentCallPlugin.class);
         registerPlugin(PdfSavePlugin.class);
         registerPlugin(DevicePrefsPlugin.class);
+        registerPlugin(AutoAskOtpPlugin.class);
         final SplashScreen splash = SplashScreen.installSplashScreen(this);
         splash.setKeepOnScreenCondition(() -> !bootUiReady.get() && !pageReady.get());
         // No fade-out — cut straight to our boot overlay (logo already on splash).
