@@ -19,6 +19,7 @@ import {
 import Logo from '@/components/Logo';
 import PhotoViewerDialog from '@/components/admin/PhotoViewerDialog';
 import TechnicianOtpRequestCard from '@/components/technician/TechnicianOtpRequestCard';
+import TechnicianAutoAskOtpDebugCard from '@/components/technician/TechnicianAutoAskOtpDebugCard';
 import {
   buildAdminPhotoViewerSelection,
 } from '@/lib/adminPhotoViewerNav';
@@ -538,6 +539,7 @@ const TechnicianDashboard = () => {
   const [responseNotes, setResponseNotes] = useState('');
   const [isResponding, setIsResponding] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<{lat: number, lng: number} | null>(null);
+  const [currentLocationAccuracyM, setCurrentLocationAccuracyM] = useState<number | null>(null);
   const [distances, setDistances] = useState<{[jobId: string]: number}>({});
   const [locationError, setLocationError] = useState<string | null>(null);
   const [locationErrorType, setLocationErrorType] = useState<'permission' | 'upload' | 'location' | 'other' | null>(null);
@@ -2337,6 +2339,9 @@ const TechnicianDashboard = () => {
           lng: position.coords.longitude
         };
         setCurrentLocation(location);
+        setCurrentLocationAccuracyM(
+          Number.isFinite(position.coords.accuracy) ? position.coords.accuracy : null
+        );
         console.log('📍 [TechnicianDashboard] Current location set in state:', location);
 
         // Update technician location and set status to AVAILABLE in database
@@ -2527,10 +2532,11 @@ const TechnicianDashboard = () => {
         jobs,
         lat: currentLocation.lat,
         lng: currentLocation.lng,
+        accuracyMeters: currentLocationAccuracyM,
         distancesKm: distances,
       });
     });
-  }, [user?.technicianId, currentLocation, jobs, distances]);
+  }, [user?.technicianId, currentLocation, currentLocationAccuracyM, jobs, distances]);
 
   // Flush overdue Ask OTP on resume and every 15s while the dashboard is open.
   useEffect(() => {
@@ -6471,6 +6477,9 @@ const TechnicianDashboard = () => {
             }}
           />
         )}
+
+        {/* Live Auto Ask OTP diagnostics (near / timer / server) */}
+        <TechnicianAutoAskOtpDebugCard />
 
         {/* Job Assignment Requests Section */}
         {assignmentRequests.length > 0 && (
