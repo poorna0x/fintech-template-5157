@@ -5,7 +5,6 @@
  *  1) GPS near customer → POST near:true (arms otp_onsite_detected_at)
  *  2) Open / every 15s / resume → POST check (fires Ask OTP when dwell elapsed)
  */
-import { Capacitor } from '@capacitor/core';
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import { getStoredOtpFromRequirements } from '@/lib/technicianOtpRequests';
 import { haversineDistanceMeters } from '@/lib/googleMapsDistance';
@@ -16,22 +15,11 @@ import {
   cancelNativeAutoAskDwell,
   scheduleNativeAutoAskDwell,
 } from '@/lib/autoAskOtpNativeAlarm';
-import {
-  autoAskOtpDebugLog,
-  autoAskOtpDebugMarkEvaluate,
-  autoAskOtpDebugMarkFlush,
-  autoAskOtpDebugServerReply,
-  autoAskOtpDebugSetJobs,
-  autoAskOtpDebugSetMeta,
-  type AutoAskOtpDebugJobRow,
-} from '@/lib/autoAskOtpDebug';
 
 const ENDPOINT = '/.netlify/functions/auto-ask-otp-on-site';
 /** Was 200m — too tight for typical phone GPS + apartment offset. */
-export const AUTO_ASK_OTP_NEAR_METERS = 600;
-const NEAR_METERS = AUTO_ASK_OTP_NEAR_METERS;
-export const AUTO_ASK_OTP_MAX_ACCURACY_METERS = 800;
-const MAX_ACCURACY_METERS = AUTO_ASK_OTP_MAX_ACCURACY_METERS;
+const NEAR_METERS = 600;
+const MAX_ACCURACY_METERS = 800;
 const ACTIVE_STATUSES = new Set(['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS']);
 
 const lastCallAt = new Map<string, number>();
@@ -39,8 +27,6 @@ const MIN_CALL_GAP_MS = 5_000;
 
 export type AutoAskOtpJobLike = {
   id: string;
-  job_number?: string | null;
-  jobNumber?: string | null;
   status?: string | null;
   requirements?: unknown;
   customer?: unknown;
@@ -74,16 +60,8 @@ function jobRequiresOtp(job: { requirements?: unknown }): boolean {
   );
 }
 
-function customerNameOf(job: any): string | undefined {
-  const n =
-    job?.customer?.full_name ||
-    job?.customer?.fullName ||
-    null;
-  return typeof n === 'string' && n.trim() ? n.trim() : undefined;
-}
-
 /** Same pin the tech Maps button uses (primary/secondary site + googleLocation). */
-export function getAutoAskOtpCustomerCoords(job: any): { lat: number; lng: number } | null {
+function getCustomerCoords(job: any): { lat: number; lng: number } | null {
   try {
     const display = getJobLocationDisplay(job, job?.customer);
     const fromExtract = extractCoordinates(display.location);
@@ -120,10 +98,6 @@ export function getAutoAskOtpCustomerCoords(job: any): { lat: number; lng: numbe
   return { lat, lng };
 }
 
-function getCustomerCoords(job: any): { lat: number; lng: number } | null {
-  return getAutoAskOtpCustomerCoords(job);
-}
-
 function isActiveOtpJob(job: AutoAskOtpJobLike): boolean {
   if (!job?.id) return false;
   const status = String(job.status || '').toUpperCase();
@@ -134,77 +108,17 @@ function isActiveOtpJob(job: AutoAskOtpJobLike): boolean {
   return true;
 }
 
-function buildDebugRows(
-  jobs: AutoAskOtpJobLike[],
-  lat: number,
-  lng: number,
-  accuracyMeters: number | null | undefined,
-  distancesKm?: Record<string, number>
-): AutoAskOtpDebugJobRow[] {
-  const accuracyOk = !(
-    typeof accuracyMeters === 'number' &&
-    Number.isFinite(accuracyMeters) &&
-    accuracyMeters > MAX_ACCURACY_METERS
-  );
-
-  const rows: AutoAskOtpDebugJobRow[] = [];
-  for (const job of jobs) {
-    const status = String(job.status || '').toUpperCase();
-    const requireOtp = jobRequiresOtp(job);
-    const otpEntered = !!getStoredOtpFromRequirements(job.requirements);
-    const dest = getCustomerCoords(job);
-    let meters: number | null = null;
-    let skipReason: string | undefined;
-
-    if (!ACTIVE_STATUSES.has(status)) skipReason = `status ${status || '—'}`;
-    else if (job.otp_auto_asked_at) skipReason = 'already auto-asked';
-    else if (!requireOtp) skipReason = 'OTP not required';
-    else if (otpEntered) skipReason = 'OTP already entered';
-    else if (!dest) skipReason = 'no customer coords';
-    else if (!accuracyOk && typeof distancesKm?.[job.id] !== 'number') {
-      skipReason = `GPS accuracy coarse (${Math.round(Number(accuracyMeters))}m)`;
-    }
-
-    if (typeof distancesKm?.[job.id] === 'number') {
-      meters = distancesKm[job.id] * 1000;
-    } else if (dest && accuracyOk) {
-      meters = haversineDistanceMeters({ lat, lng }, dest);
-    }
-
-    const isNear = meters == null ? null : meters <= NEAR_METERS;
-
-    rows.push({
-      jobId: job.id,
-      jobNumber: String(job.job_number || job.jobNumber || '').trim() || undefined,
-      customerName: customerNameOf(job),
-      status: status || undefined,
-      requireOtp,
-      otpEntered,
-      meters: meters == null ? null : Math.round(meters),
-      nearLimitMeters: NEAR_METERS,
-      isNear,
-      hasCustomerCoords: !!dest,
-      skipReason,
-    });
-  }
-  return rows;
-}
-
 async function callServer(jobId: string, near: boolean): Promise<void> {
   const now = Date.now();
   const key = `${jobId}:${near ? 'near' : 'check'}`;
   const last = lastCallAt.get(key) || 0;
-  if (now - last < MIN_CALL_GAP_MS) {
-    autoAskOtpDebugLog(`${jobId.slice(0, 8)}… throttled (${near ? 'near' : 'check'})`);
-    return;
-  }
+  if (now - last < MIN_CALL_GAP_MS) return;
   lastCallAt.set(key, now);
 
   try {
     const accessToken = await resolveSupabaseAccessTokenForApi();
     if (!accessToken) {
       console.warn('[auto-ask-otp] no session');
-      autoAskOtpDebugLog('no session — cannot call server');
       return;
     }
 
@@ -230,28 +144,11 @@ async function callServer(jobId: string, near: boolean): Promise<void> {
       error?: string;
       details?: string;
       dwellMs?: number;
-      onsiteDetectedAt?: string;
       requestId?: string;
       nonce?: string;
     } | null;
 
     console.log('[auto-ask-otp]', near ? 'near' : 'check', jobId, res.status, out);
-
-    autoAskOtpDebugServerReply(jobId, {
-      at: new Date().toISOString(),
-      near,
-      httpStatus: res.status,
-      waiting: out?.waiting,
-      remainingMs: out?.remainingMs,
-      asked: out?.asked,
-      sent: out?.sent,
-      skipped: out?.skipped,
-      reason: out?.reason || out?.error,
-      error: out?.error || out?.details,
-      dwellMs: out?.dwellMs,
-      onsiteDetectedAt: out?.onsiteDetectedAt,
-      requestId: out?.requestId,
-    });
 
     if (!res.ok) {
       console.warn('[auto-ask-otp] server error', out?.error || out?.details || res.status);
@@ -259,9 +156,6 @@ async function callServer(jobId: string, near: boolean): Promise<void> {
     }
 
     if (out?.waiting && typeof out.remainingMs === 'number' && out.remainingMs > 0) {
-      autoAskOtpDebugLog(
-        `${jobId.slice(0, 8)}… timer armed — ${Math.ceil(out.remainingMs / 1000)}s left + native alarm`
-      );
       void scheduleNativeAutoAskDwell({
         jobId,
         remainingMs: out.remainingMs,
@@ -275,18 +169,10 @@ async function callServer(jobId: string, near: boolean): Promise<void> {
     ) {
       void cancelNativeAutoAskDwell(jobId);
     } else if (out?.asked && out?.sent) {
-      autoAskOtpDebugLog(`${jobId.slice(0, 8)}… ASKED + push sent`);
       void cancelNativeAutoAskDwell(jobId);
-    } else if (out?.asked) {
-      autoAskOtpDebugLog(
-        `${jobId.slice(0, 8)}… ASKED but push not sent (${out.reason || 'unknown'})`
-      );
     }
   } catch (err) {
     console.warn('[auto-ask-otp] error', err);
-    autoAskOtpDebugLog(
-      `${jobId.slice(0, 8)}… error ${err instanceof Error ? err.message : String(err)}`
-    );
   }
 }
 
@@ -312,24 +198,6 @@ export function evaluateAutoAskOtpOnSite(opts: {
     accuracy > MAX_ACCURACY_METERS
   );
 
-  const trackingEnabled =
-    typeof localStorage !== 'undefined' &&
-    localStorage.getItem('technician_location_tracking_enabled') !== 'false';
-
-  autoAskOtpDebugSetMeta({
-    locationTrackingEnabled: trackingEnabled,
-    techLat: lat,
-    techLng: lng,
-    accuracyMeters:
-      typeof accuracy === 'number' && Number.isFinite(accuracy) ? accuracy : null,
-    accuracyOk,
-    nativePlatform: Capacitor.isNativePlatform(),
-  });
-  autoAskOtpDebugSetJobs(
-    buildDebugRows(jobs, lat, lng, accuracy, opts.distancesKm)
-  );
-  autoAskOtpDebugMarkEvaluate();
-
   let otpJobCount = 0;
   let nearCount = 0;
   let noCoordCount = 0;
@@ -351,7 +219,6 @@ export function evaluateAutoAskOtpOnSite(opts: {
     if (meters == null) {
       if (!accuracyOk) {
         console.log('[auto-ask-otp] skip near-check — GPS accuracy coarse', accuracy);
-        autoAskOtpDebugLog(`${job.id.slice(0, 8)}… skip near — coarse GPS`);
         void callServer(job.id, false);
         continue;
       }
@@ -359,7 +226,6 @@ export function evaluateAutoAskOtpOnSite(opts: {
       if (!dest) {
         noCoordCount += 1;
         console.log('[auto-ask-otp] no customer coords', job.id);
-        autoAskOtpDebugLog(`${job.id.slice(0, 8)}… no customer coords`);
         void callServer(job.id, false);
         continue;
       }
@@ -372,9 +238,6 @@ export function evaluateAutoAskOtpOnSite(opts: {
         meters: Math.round(meters),
         limit: NEAR_METERS,
       });
-      autoAskOtpDebugLog(
-        `${job.id.slice(0, 8)}… NOT near (${Math.round(meters)}m > ${NEAR_METERS}m)`
-      );
       void callServer(job.id, false);
       continue;
     }
@@ -384,9 +247,6 @@ export function evaluateAutoAskOtpOnSite(opts: {
       jobId: job.id,
       meters: Math.round(meters),
     });
-    autoAskOtpDebugLog(
-      `${job.id.slice(0, 8)}… NEAR (${Math.round(meters)}m) — arming timer`
-    );
     void callServer(job.id, true);
   }
 
@@ -397,8 +257,6 @@ export function evaluateAutoAskOtpOnSite(opts: {
       noCoords: noCoordCount,
       tech: { lat, lng, accuracy },
     });
-  } else {
-    autoAskOtpDebugLog('no active OTP jobs to evaluate');
   }
 }
 
@@ -410,7 +268,6 @@ export function flushDueAutoAskOtpOnSite(opts: {
   const { technicianId, jobs } = opts;
   if (!technicianId || !jobs?.length) return;
 
-  autoAskOtpDebugMarkFlush();
   for (const job of jobs) {
     if (!isActiveOtpJob(job)) continue;
     void callServer(job.id, false);

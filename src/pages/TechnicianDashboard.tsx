@@ -19,7 +19,6 @@ import {
 import Logo from '@/components/Logo';
 import PhotoViewerDialog from '@/components/admin/PhotoViewerDialog';
 import TechnicianOtpRequestCard from '@/components/technician/TechnicianOtpRequestCard';
-import TechnicianAutoAskOtpDebugCard from '@/components/technician/TechnicianAutoAskOtpDebugCard';
 import {
   buildAdminPhotoViewerSelection,
 } from '@/lib/adminPhotoViewerNav';
@@ -6477,9 +6476,6 @@ const TechnicianDashboard = () => {
             }}
           />
         )}
-
-        {/* Live Auto Ask OTP diagnostics (near / timer / server) */}
-        <TechnicianAutoAskOtpDebugCard />
 
         {/* Job Assignment Requests Section */}
         {assignmentRequests.length > 0 && (
