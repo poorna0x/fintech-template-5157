@@ -499,8 +499,6 @@ public final class TechActionOverlay {
                         title,
                         body,
                         tag,
-                        currentAckToken,
-                        currentAckUrl,
                         ok -> {
                             mainHandler.post(
                                 () -> {
@@ -697,10 +695,6 @@ public final class TechActionOverlay {
                     startToken,
                     startUrl,
                     tag,
-                    currentAckToken,
-                    currentAckUrl,
-                    currentAckTitle,
-                    currentAckBody,
                     ok -> {
                         mainHandler.post(
                             () -> {

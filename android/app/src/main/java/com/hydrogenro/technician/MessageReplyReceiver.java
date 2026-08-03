@@ -486,7 +486,19 @@ public class MessageReplyReceiver extends BroadcastReceiver {
     private void handleReceive(Context context, Intent intent) {
         if (intent == null || intent.getAction() == null) return;
 
-        // Any button = they saw it (silent admin ack, deduped).
+        if (ACTION_GOING_YES.equals(intent.getAction())) {
+            // Yes/Start already pushes admins (job on the way) — no extra "saw" ack.
+            handleGoingYes(context, intent);
+            return;
+        }
+        if (ACTION_GOING_NO.equals(intent.getAction())) {
+            // No already pushes admins as a tech reply — no extra "saw" ack.
+            handleGoingNo(context, intent);
+            return;
+        }
+        if (!ACTION_REPLY.equals(intent.getAction())) return;
+
+        // Free-text Reply: still send silent "saw" in case reply POST fails later.
         TechPushAckReceiver.postSeen(
             intent.getStringExtra(EXTRA_ACK_TOKEN),
             intent.getStringExtra(EXTRA_ACK_URL),
@@ -494,16 +506,6 @@ public class MessageReplyReceiver extends BroadcastReceiver {
             intent.getStringExtra(EXTRA_BODY),
             intent.getStringExtra(EXTRA_TAG)
         );
-
-        if (ACTION_GOING_YES.equals(intent.getAction())) {
-            handleGoingYes(context, intent);
-            return;
-        }
-        if (ACTION_GOING_NO.equals(intent.getAction())) {
-            handleGoingNo(context, intent);
-            return;
-        }
-        if (!ACTION_REPLY.equals(intent.getAction())) return;
 
         Bundle results = RemoteInput.getResultsFromIntent(intent);
         CharSequence typed = results != null ? results.getCharSequence(KEY_REPLY) : null;
@@ -782,7 +784,7 @@ public class MessageReplyReceiver extends BroadcastReceiver {
         String body,
         ResultCallback callback
     ) {
-        TechPushAckReceiver.postSeen(ackToken, ackUrl, title, body, tag);
+        // Do not postSeen — Yes/Start already notifies admins via job status push.
         if (startToken == null || startUrl == null) {
             if (callback != null) callback.onDone(false);
             return;
