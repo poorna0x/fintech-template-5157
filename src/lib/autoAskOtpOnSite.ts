@@ -156,7 +156,7 @@ async function callServer(jobId: string, near: boolean): Promise<void> {
       return;
     }
 
-    // Arm native AlarmManager so Ask OTP still fires with the app closed.
+    // Arm / refresh native AlarmManager so Ask OTP still fires with the app closed.
     if (out?.waiting && typeof out.remainingMs === 'number' && out.remainingMs > 0) {
       void scheduleNativeAutoAskDwell({
         jobId,
@@ -165,12 +165,14 @@ async function callServer(jobId: string, near: boolean): Promise<void> {
       });
     }
 
+    // Only cancel when OTP is actually entered — keep alarm as FCM backup otherwise.
     if (
-      out?.asked ||
-      out?.reason === 'already_asked' ||
       out?.reason === 'otp_already_entered' ||
       out?.reason === 'otp_already_on_request'
     ) {
+      void cancelNativeAutoAskDwell(jobId);
+    } else if (out?.asked && out?.sent) {
+      // FCM delivered — alarm backup no longer needed.
       void cancelNativeAutoAskDwell(jobId);
     }
   } catch (err) {

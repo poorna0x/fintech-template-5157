@@ -17,14 +17,9 @@ type AutoAskOtpPlugin = {
 
 const AutoAskOtp = registerPlugin<AutoAskOtpPlugin>('AutoAskOtp');
 
-const scheduledJobIds = new Set<string>();
-
-function absoluteAutoAskEndpoint(): string {
-  if (typeof window !== 'undefined' && window.location?.origin) {
-    return `${window.location.origin}/.netlify/functions/auto-ask-otp-on-site`;
-  }
-  return 'https://hydrogenro.com/.netlify/functions/auto-ask-otp-on-site';
-}
+/** Always production HTTPS — never capacitor:// or localhost for native HttpURLConnection. */
+const NATIVE_AUTO_ASK_ENDPOINT =
+  'https://hydrogenro.com/.netlify/functions/auto-ask-otp-on-site';
 
 /** Persist arm marker so a cold open can still flush (web + APK). */
 export function rememberAutoAskArmed(jobId: string, fireAtMs: number): void {
@@ -52,6 +47,10 @@ export function clearAutoAskArmed(jobId: string): void {
   }
 }
 
+/**
+ * Schedule / refresh the native dwell alarm.
+ * Always re-schedules while waiting so the JWT stays fresh and remainingMs stays accurate.
+ */
 export async function scheduleNativeAutoAskDwell(opts: {
   jobId: string;
   remainingMs: number;
@@ -65,17 +64,15 @@ export async function scheduleNativeAutoAskDwell(opts: {
   rememberAutoAskArmed(jobId, fireAt);
 
   if (!Capacitor.isNativePlatform()) return;
-  if (scheduledJobIds.has(jobId)) return;
 
   try {
     await AutoAskOtp.scheduleDwellAlarm({
       jobId,
       delayMs: remainingMs,
       accessToken,
-      endpointUrl: absoluteAutoAskEndpoint(),
+      endpointUrl: NATIVE_AUTO_ASK_ENDPOINT,
       ...(customerName ? { customerName } : {}),
     });
-    scheduledJobIds.add(jobId);
     console.log('[auto-ask-otp] native dwell alarm scheduled', {
       jobId,
       remainingMs,
@@ -85,9 +82,9 @@ export async function scheduleNativeAutoAskDwell(opts: {
   }
 }
 
+/** Cancel only when OTP is truly done (entered) — not when FCM may have failed. */
 export async function cancelNativeAutoAskDwell(jobId: string): Promise<void> {
   clearAutoAskArmed(jobId);
-  scheduledJobIds.delete(jobId);
   if (!Capacitor.isNativePlatform()) return;
   try {
     await AutoAskOtp.cancelDwellAlarm({ jobId });

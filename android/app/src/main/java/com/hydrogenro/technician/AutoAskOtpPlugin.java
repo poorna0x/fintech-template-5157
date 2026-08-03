@@ -38,14 +38,19 @@ public class AutoAskOtpPlugin extends Plugin {
             return;
         }
 
-        AutoAskOtpAlarmScheduler.schedule(
-            getContext(),
-            jobId,
-            delayMs.longValue(),
-            accessToken,
-            endpointUrl,
-            customerName
-        );
+        boolean ok =
+            AutoAskOtpAlarmScheduler.schedule(
+                getContext(),
+                jobId,
+                delayMs.longValue(),
+                accessToken,
+                endpointUrl,
+                customerName
+            );
+        if (!ok) {
+            call.reject("schedule failed");
+            return;
+        }
         JSObject ret = new JSObject();
         ret.put("ok", true);
         call.resolve(ret);

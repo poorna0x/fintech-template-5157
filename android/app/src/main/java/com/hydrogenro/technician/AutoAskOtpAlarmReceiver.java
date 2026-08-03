@@ -58,9 +58,11 @@ public class AutoAskOtpAlarmReceiver extends BroadcastReceiver {
 
     private static void fire(Context app, String jobId) throws Exception {
         String raw = AutoAskOtpAlarmScheduler.prefs(app)
-            .getString("payload:" + jobId, null);
+            .getString(AutoAskOtpAlarmScheduler.keyPayload(jobId), null);
         if (raw == null || raw.isEmpty()) {
-            Log.w(TAG, "no payload for " + jobId);
+            // Payload cleared (e.g. JS cancel after cron claim) — still nudge in case FCM failed.
+            Log.w(TAG, "no payload for " + jobId + " — open-app fallback");
+            showOpenAppFallback(app, jobId, null);
             return;
         }
         JSONObject payload = new JSONObject(raw);
@@ -82,8 +84,6 @@ public class AutoAskOtpAlarmReceiver extends BroadcastReceiver {
             conn.setRequestMethod("POST");
             conn.setRequestProperty("Content-Type", "application/json");
             conn.setRequestProperty("Authorization", "Bearer " + accessToken);
-            // Native calls often omit Origin; server allows missing Origin for some paths —
-            // auto-ask rejects missing Origin. Send a production Origin.
             conn.setRequestProperty("Origin", "https://hydrogenro.com");
             conn.setDoOutput(true);
             conn.setConnectTimeout(20_000);
@@ -97,6 +97,12 @@ public class AutoAskOtpAlarmReceiver extends BroadcastReceiver {
                 code >= 200 && code < 300 ? conn.getInputStream() : conn.getErrorStream();
             String respText = readAll(stream);
             Log.i(TAG, "auto-ask HTTP " + code + " " + respText);
+
+            if (code == 401 || code == 403) {
+                // Token expired — still nudge so tech opens app (card / re-auth).
+                showOpenAppFallback(app, jobId, customerName);
+                return;
+            }
 
             JSONObject out = null;
             try {
@@ -122,10 +128,8 @@ public class AutoAskOtpAlarmReceiver extends BroadcastReceiver {
                 if ("otp_already_entered".equals(reason)) {
                     return;
                 }
-                // already_asked / pending: FCM may have failed — still nudge open.
             }
 
-            // Pending ask without nonce in response, or network partial — open-app nudge.
             showOpenAppFallback(app, jobId, customerName);
         } finally {
             if (conn != null) conn.disconnect();
@@ -148,7 +152,10 @@ public class AutoAskOtpAlarmReceiver extends BroadcastReceiver {
             NotificationChannels.ensureJobAlerts(app);
             int notifId = Math.abs(("auto_ask_otp:" + jobId).hashCode());
             Intent open = new Intent(app, MainActivity.class);
-            open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+            open.addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK
+                    | Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    | Intent.FLAG_ACTIVITY_SINGLE_TOP);
             PendingIntent openPi =
                 PendingIntent.getActivity(
                     app,
