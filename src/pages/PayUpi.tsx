@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Check, Copy, Droplets, Phone } from 'lucide-react';
 import { getDocumentBrandLabel, normalizeDocumentBrand, type DocumentBrand } from '@/lib/service-brands';
-import { UpiAppOpenGrid } from '@/components/UpiAppOpenButtons';
+import { UpiOpenAppCta, UpiAppOpenGrid } from '@/components/UpiAppOpenButtons';
 import {
   buildUpiAppDeepLinks,
   buildUpiPayDeepLink,
@@ -82,12 +82,18 @@ const PayUpi = () => {
 
   const upiLink = useMemo(() => (valid ? buildUpiPayDeepLink(payInput) : null), [valid, payInput]);
   const appLinks = useMemo(() => (valid ? buildUpiAppDeepLinks(payInput) : []), [valid, payInput]);
-  const platform = useMemo(() => detectPayPlatform(), []);
+  const detected = useMemo(() => detectPayPlatform(), []);
+  const [pickedDevice, setPickedDevice] = useState<'android' | 'ios' | null>(null);
+  const platform = detected === 'other' ? pickedDevice ?? 'other' : detected;
+  const needsDevicePick = detected === 'other' && !pickedDevice;
+  const showAndroidOpen = platform === 'android';
+  const showIosApps = platform === 'ios';
 
   useEffect(() => {
     document.title = `Pay via UPI | ${brandLabel}`;
   }, [brandLabel]);
 
+  // Android: soft-open system UPI chooser once.
   useEffect(() => {
     if (!upiLink || platform !== 'android' || launchTried) return;
     setLaunchTried(true);
@@ -249,53 +255,63 @@ const PayUpi = () => {
           </p>
         </div>
 
-        {platform === 'android' && upiLink ? (
-          <div className="mt-6">
-            <a
-              href={upiLink}
-              className="flex w-full items-center justify-center rounded-xl bg-sky-700 py-3.5 text-base font-semibold text-white shadow-sm transition hover:bg-sky-800 active:scale-[0.99]"
-            >
-              Open UPI app
-            </a>
-          </div>
-        ) : null}
-
-        {platform === 'ios' ? (
-          <div className="mt-6">
-            <p className="text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Open UPI app <span className="font-medium normal-case tracking-normal text-slate-400">(iPhone)</span>
-            </p>
-            <UpiAppOpenGrid apps={appLinks} />
-            <p className="mt-4 px-1 text-center text-sm leading-relaxed text-slate-500">
-              (You can also scan the QR above, or copy the UPI ID / phone number and paste it in your UPI app.)
-            </p>
-          </div>
-        ) : null}
-
-        {platform === 'other' ? (
-          <div className="mt-6 space-y-4">
-            {upiLink ? (
-              <a
-                href={upiLink}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-sky-700 py-3.5 text-base font-semibold text-white shadow-sm transition hover:bg-sky-800 active:scale-[0.99]"
+        {needsDevicePick ? (
+          <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <p className="text-center text-sm font-semibold text-slate-900">Are you using Android or iPhone?</p>
+            <p className="mt-1 text-center text-xs text-slate-500">We’ll show the right payment buttons for your phone.</p>
+            <div className="mt-4 grid grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={() => setPickedDevice('android')}
+                className="rounded-xl border border-slate-200 bg-slate-50 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-100"
               >
-                Open UPI app
-                <span className="text-sm font-medium text-sky-100">(Android)</span>
-              </a>
-            ) : null}
-            {appLinks.length ? (
-              <div>
-                <p className="text-center text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Open UPI app <span className="font-medium normal-case tracking-normal text-slate-400">(iPhone)</span>
-                </p>
-                <UpiAppOpenGrid apps={appLinks} />
-              </div>
-            ) : null}
-            <p className="px-1 text-center text-sm leading-relaxed text-slate-500">
-              (You can also scan the QR above, or copy the UPI ID / phone number and paste it in your UPI app.)
-            </p>
+                Android
+              </button>
+              <button
+                type="button"
+                onClick={() => setPickedDevice('ios')}
+                className="rounded-xl border border-slate-200 bg-slate-50 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-100"
+              >
+                iPhone
+              </button>
+            </div>
           </div>
         ) : null}
+
+        {!needsDevicePick && showAndroidOpen && upiLink ? (
+          <div className="mt-6">
+            {detected === 'other' ? (
+              <button
+                type="button"
+                onClick={() => setPickedDevice(null)}
+                className="mb-2 w-full text-center text-xs font-medium text-sky-700 hover:underline"
+              >
+                Change device
+              </button>
+            ) : null}
+            <UpiOpenAppCta href={upiLink} />
+          </div>
+        ) : null}
+
+        {!needsDevicePick && showIosApps && appLinks.length ? (
+          <div className="mt-6">
+            {detected === 'other' ? (
+              <button
+                type="button"
+                onClick={() => setPickedDevice(null)}
+                className="mb-2 w-full text-center text-xs font-medium text-sky-700 hover:underline"
+              >
+                Change device
+              </button>
+            ) : null}
+            <p className="text-center text-xs font-semibold uppercase tracking-wide text-slate-500">Open with</p>
+            <UpiAppOpenGrid apps={appLinks} />
+          </div>
+        ) : null}
+
+        <p className="mt-4 px-1 text-center text-sm leading-relaxed text-slate-500">
+          (You can also scan the QR above, or copy the UPI ID / phone number and paste it in your UPI app.)
+        </p>
 
         <p className="mt-8 text-center text-[11px] leading-relaxed text-slate-400">
           Secured UPI payment page for {brandLabel}. If you’ve already paid, you can ignore this link.

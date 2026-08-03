@@ -353,10 +353,11 @@ export function buildUpiPayDeepLink(input: UpiPayLinkInput): string | null {
 
 export type PayPlatform = 'android' | 'ios' | 'other';
 
-/** Best-effort UA detection for /pay-upi layout. */
+/** Best-effort UA detection for /pay-upi layout (WhatsApp in-app browsers included). */
 export function detectPayPlatform(): PayPlatform {
   if (typeof navigator === 'undefined') return 'other';
   const ua = navigator.userAgent || '';
+  // Android first — covers Chrome, WhatsApp, Samsung Internet, etc.
   if (/android/i.test(ua)) return 'android';
   if (/iPhone|iPad|iPod/i.test(ua)) return 'ios';
   // iPadOS 13+ can report as Macintosh with touch

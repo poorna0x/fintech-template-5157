@@ -15,6 +15,21 @@ const LOGO_SRC: Record<UpiAppId, string> = {
   bhim: '/upi-apps/bhim.svg',
 };
 
+/** Small square app icons for the Open UPI app button. */
+const ICON_SRC: Record<UpiAppId, string> = {
+  gpay: '/upi-apps/icons/gpay.png',
+  phonepe: '/upi-apps/icons/phonepe.png',
+  paytm: '/upi-apps/icons/paytm.png',
+  bhim: '/upi-apps/icons/bhim.svg',
+};
+
+const MINI_APPS: { id: UpiAppId; name: string }[] = [
+  { id: 'gpay', name: 'GPay' },
+  { id: 'phonepe', name: 'PhonePe' },
+  { id: 'paytm', name: 'Paytm' },
+  { id: 'bhim', name: 'BHIM' },
+];
+
 /** Official brand button surfaces. */
 const STYLES: Record<UpiAppId, { bg: string; border: string }> = {
   gpay: { bg: '#FFFFFF', border: '#DADCE0' },
@@ -25,6 +40,42 @@ const STYLES: Record<UpiAppId, { bg: string; border: string }> = {
 
 function isKnownApp(id: string): id is UpiAppId {
   return id === 'gpay' || id === 'phonepe' || id === 'paytm' || id === 'bhim';
+}
+
+/** Tiny brand icons shown on the main Open UPI app CTA (soft, low-contrast). */
+export function UpiAppMiniLogoRow({ className = '' }: { className?: string }) {
+  return (
+    <span className={`inline-flex items-center -space-x-1.5 ${className}`} aria-hidden>
+      {MINI_APPS.map((app) => (
+        <span
+          key={app.id}
+          className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full border border-slate-200/80 bg-slate-50"
+          title={app.name}
+        >
+          <img
+            src={ICON_SRC[app.id]}
+            alt=""
+            className="h-[15px] w-[15px] object-contain opacity-90"
+            loading="lazy"
+            decoding="async"
+          />
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** Soft primary CTA — avoids harsh white-on-blue logo contrast. */
+export function UpiOpenAppCta({ href }: { href: string }) {
+  return (
+    <a
+      href={href}
+      className="flex w-full items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3.5 text-base font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50 active:scale-[0.99]"
+    >
+      <UpiAppMiniLogoRow />
+      <span>Open UPI app</span>
+    </a>
+  );
 }
 
 export function UpiAppOpenButton({ id, name, href }: UpiAppButtonProps) {
