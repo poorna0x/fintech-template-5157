@@ -77,8 +77,19 @@ export function notifyTechnicianJobPush(opts: {
         | null;
       if (silent) return;
       if (!res.ok) {
-        console.warn('[tech-push] failed:', res.status, out?.error || '');
-        toast.warning('App notification could not be sent to the technician.');
+        const detail = out?.error || `HTTP ${res.status}`;
+        console.warn('[tech-push] failed:', res.status, detail);
+        if (res.status === 401 || res.status === 403) {
+          toast.warning(
+            'App notification blocked — refresh the page and sign in again as admin, then retry.'
+          );
+        } else if (res.status >= 500) {
+          toast.warning(
+            'App notification failed on the server (FCM). Try again in a minute; if it keeps failing, check Netlify logs for send-tech-push.'
+          );
+        } else {
+          toast.warning(`App notification could not be sent (${detail}).`);
+        }
       } else if (out?.sent === false) {
         console.warn('[tech-push] not sent:', out.reason);
         if (out.reason === 'no_token') {
@@ -89,10 +100,17 @@ export function notifyTechnicianJobPush(opts: {
           toast.warning(
             'Push token expired — ask them to reopen HRO Technician (Allow Notifications).'
           );
+        } else {
+          toast.warning(
+            `App notification not delivered (${out.reason || 'unknown'}).`
+          );
         }
       }
     } catch (err) {
       console.warn('[tech-push] error:', err);
+      if (!silent) {
+        toast.warning('App notification could not be sent (network error). Try again.');
+      }
     }
   })();
 }

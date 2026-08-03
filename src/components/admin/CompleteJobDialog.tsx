@@ -1716,6 +1716,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                                     selectedQr.name
                                   }
                                   label={selectedQr.name}
+                                  fallbackImageUrl={selectedQr.qrCodeUrl}
                                 />
                               );
                             }

@@ -14,14 +14,17 @@ import java.util.Map;
  * Shows technician push acknowledgments:
  * - dismissed → silent low-importance channel
  * - opened (direct message) → normal job_alerts_v2 with sound
+ *
+ * Tray identity is per-technician (tag + id) so two techs seeing the same
+ * office push each keep their own admin notification instead of overwriting.
  */
 public final class TechPushAckNotifier {
 
     private static final String TAG = "HroTechAckAdmin";
     private static final int COLOR_DISMISS = Color.parseColor("#64748B");
     private static final int COLOR_OPENED = Color.parseColor("#2563EB");
-    private static final int NOTIF_ID_DISMISS = 0x0ACD15;
-    private static final int NOTIF_ID_OPENED = 0x0AC0E1;
+    private static final int NOTIF_ID_DISMISS_BASE = 0x0ACD15;
+    private static final int NOTIF_ID_OPENED_BASE = 0x0AC0E1;
 
     private TechPushAckNotifier() {}
 
@@ -39,8 +42,15 @@ public final class TechPushAckNotifier {
         NotificationChannels.ensureTechAcksSilent(context);
         String title = first(data.get("msgTitle"), data.get("title"), "Technician saw the notification");
         String body = first(data.get("msgBody"), data.get("body"), "Cleared from their phone");
+        String technicianId = data.get("technicianId");
         String tag = data.get("tag");
-        if (tag == null || tag.isEmpty()) tag = "tech_push_dismissed";
+        if (tag == null || tag.isEmpty()) {
+            tag =
+                (technicianId != null && !technicianId.isEmpty())
+                    ? "tech_push_dismissed_" + technicianId
+                    : "tech_push_dismissed";
+        }
+        int notifId = slotId(NOTIF_ID_DISMISS_BASE, technicianId, tag);
 
         Intent openIntent =
             new Intent(context, MainActivity.class)
@@ -48,7 +58,7 @@ public final class TechPushAckNotifier {
         PendingIntent openPending =
             PendingIntent.getActivity(
                 context,
-                NOTIF_ID_DISMISS,
+                notifId,
                 openIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
@@ -66,8 +76,8 @@ public final class TechPushAckNotifier {
                 .setAutoCancel(true)
                 .build();
         try {
-            NotificationManagerCompat.from(context).notify(tag, NOTIF_ID_DISMISS, notification);
-            Log.i(TAG, "Posted silent dismiss ack");
+            NotificationManagerCompat.from(context).notify(tag, notifId, notification);
+            Log.i(TAG, "Posted silent dismiss ack tag=" + tag);
         } catch (SecurityException e) {
             Log.w(TAG, "Notifications not permitted", e);
         }
@@ -77,9 +87,15 @@ public final class TechPushAckNotifier {
         NotificationChannels.ensureJobAlerts(context);
         String title = first(data.get("msgTitle"), data.get("title"), "Technician opened message");
         String body = first(data.get("msgBody"), data.get("body"), "Opened office message");
+        String technicianId = data.get("technicianId");
         String tag = data.get("tag");
-        if (tag == null || tag.isEmpty()) tag = "tech_message_opened";
-        int notifId = NOTIF_ID_OPENED;
+        if (tag == null || tag.isEmpty()) {
+            tag =
+                (technicianId != null && !technicianId.isEmpty())
+                    ? "tech_message_opened_" + technicianId
+                    : "tech_message_opened";
+        }
+        int notifId = slotId(NOTIF_ID_OPENED_BASE, technicianId, tag);
 
         Intent openIntent =
             new Intent(context, MainActivity.class)
@@ -105,10 +121,19 @@ public final class TechPushAckNotifier {
                 .build();
         try {
             NotificationManagerCompat.from(context).notify(tag, notifId, notification);
-            Log.i(TAG, "Posted opened-message ack");
+            Log.i(TAG, "Posted opened-message ack tag=" + tag);
         } catch (SecurityException e) {
             Log.w(TAG, "Notifications not permitted", e);
         }
+    }
+
+    /** Stable per-technician notification id so slots don't collide. */
+    private static int slotId(int base, String technicianId, String tag) {
+        String key =
+            (technicianId != null && !technicianId.isEmpty())
+                ? technicianId
+                : (tag != null ? tag : "default");
+        return base ^ key.hashCode();
     }
 
     private static String first(String a, String b, String fallback) {

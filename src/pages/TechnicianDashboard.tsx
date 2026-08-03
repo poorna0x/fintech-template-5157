@@ -9416,6 +9416,7 @@ const TechnicianDashboard = () => {
                                     amount={onlineAmt}
                                     note={selectedJobForComplete?.customerName || selectedQr.name}
                                     label={selectedQr.name}
+                                    fallbackImageUrl={selectedQr.qrCodeUrl}
                                   />
                                 );
                               }

@@ -121,7 +121,10 @@ exports.handler = async (event) => {
             technicianId,
             source: String(source),
             silent: silent ? '1' : '0',
-            tag: silent ? 'tech_push_dismissed' : 'tech_message_opened',
+            // One tray slot per technician so two techs seeing a message don't overwrite each other.
+            tag: silent
+              ? `tech_push_dismissed_${technicianId || 'unknown'}`
+              : `tech_message_opened_${technicianId || 'unknown'}`,
           },
           android: { priority: 'high' },
         })
