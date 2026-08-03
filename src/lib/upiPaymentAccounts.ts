@@ -418,8 +418,8 @@ export function resolveUpiPaySiteOrigin(
 }
 
 /**
- * HTTPS wrapper for WhatsApp — `upi://` is not auto-linked there.
- * Opens /pay-upi which shows QR + opens UPI apps.
+ * HTTPS wrapper for WhatsApp — prefer short /p/{code} links when created.
+ * Falls back to long /pay-upi?… query links if short-link creation fails.
  */
 export function buildUpiPayHttpsLink(
   origin: string,
@@ -433,7 +433,6 @@ export function buildUpiPayHttpsLink(
   if (!base) return null;
   const q = new URLSearchParams();
   q.set('pa', pa);
-  q.set('cu', 'INR');
   const pn = String(input.payeeName || '').trim().slice(0, 100);
   if (pn) q.set('pn', pn);
   const am = Number(input.amount);
@@ -450,15 +449,125 @@ export function buildUpiPayHttpsLink(
   return `${base}/pay-upi?${q.toString()}`;
 }
 
+export function buildUpiPayShortHttpsLink(origin: string, code: string): string | null {
+  const base = String(origin || '')
+    .trim()
+    .replace(/\/$/, '');
+  const c = String(code || '')
+    .trim()
+    .replace(/[^a-zA-Z0-9]/g, '');
+  if (!base || c.length < 6) return null;
+  return `${base}/p/${c}`;
+}
+
+export type UpiPayLinkRecord = {
+  code: string;
+  upiId: string;
+  payeeName: string;
+  amount: number | null;
+  note: string;
+  phone: string;
+  brand: 'hydrogenro' | 'elevenro';
+};
+
+const shortLinkCache = new Map<string, string>();
+
+function shortLinkCacheKey(input: UpiPayLinkInput): string {
+  return [
+    normalizeUpiId(input.upiId),
+    String(input.payeeName || '').trim(),
+    Number(input.amount) > 0 ? Number(input.amount).toFixed(2) : '',
+    String(input.note || '').trim(),
+    normalizePaymentPhone(input.phone || ''),
+    input.brand === 'elevenro' ? 'elevenro' : 'hydrogenro',
+  ].join('|');
+}
+
+/** Admin-only: create a short /p/{code} pay link (shared Supabase). */
+export async function createUpiPayShortLink(
+  input: UpiPayLinkInput
+): Promise<string | null> {
+  const pa = normalizeUpiId(input.upiId);
+  if (!isValidUpiId(pa)) return null;
+  const cacheKey = shortLinkCacheKey(input);
+  const cached = shortLinkCache.get(cacheKey);
+  if (cached) return cached;
+  const brand = input.brand === 'elevenro' ? 'elevenro' : 'hydrogenro';
+  const am = Number(input.amount);
+  try {
+    const { data, error } = await supabase.rpc('create_upi_pay_link', {
+      p_upi_id: pa,
+      p_payee_name: String(input.payeeName || '').trim().slice(0, 100),
+      p_amount: Number.isFinite(am) && am > 0 ? Number(am.toFixed(2)) : null,
+      p_note: String(input.note || '')
+        .trim()
+        .replace(/\s+/g, ' ')
+        .slice(0, 80),
+      p_phone: normalizePaymentPhone(input.phone || ''),
+      p_brand: brand,
+    });
+    if (error) {
+      console.warn('[upi] create_upi_pay_link failed', error.message);
+      return null;
+    }
+    const code = typeof data === 'string' ? data.trim() : '';
+    if (code.length < 6) return null;
+    shortLinkCache.set(cacheKey, code);
+    return code;
+  } catch (e) {
+    console.warn('[upi] create_upi_pay_link error', e);
+    return null;
+  }
+}
+
+/** Public: resolve short pay link (anon/authenticated). */
+export async function fetchUpiPayShortLink(code: string): Promise<UpiPayLinkRecord | null> {
+  const c = String(code || '')
+    .trim()
+    .replace(/[^a-zA-Z0-9]/g, '');
+  if (c.length < 6 || c.length > 16) return null;
+  try {
+    const { data, error } = await supabase.rpc('get_upi_pay_link', { p_code: c });
+    if (error) {
+      console.warn('[upi] get_upi_pay_link failed', error.message);
+      return null;
+    }
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row || typeof row !== 'object') return null;
+    const r = row as Record<string, unknown>;
+    const upiId = normalizeUpiId(typeof r.upi_id === 'string' ? r.upi_id : '');
+    if (!isValidUpiId(upiId)) return null;
+    const amountRaw = r.amount;
+    const amount =
+      typeof amountRaw === 'number'
+        ? amountRaw
+        : amountRaw != null && amountRaw !== ''
+          ? Number(amountRaw)
+          : null;
+    return {
+      code: typeof r.code === 'string' ? r.code : c,
+      upiId,
+      payeeName: typeof r.payee_name === 'string' ? r.payee_name : '',
+      amount: Number.isFinite(amount as number) && (amount as number) > 0 ? (amount as number) : null,
+      note: typeof r.note === 'string' ? r.note : '',
+      phone: normalizePaymentPhone(typeof r.phone === 'string' ? r.phone : ''),
+      brand: r.brand === 'elevenro' ? 'elevenro' : 'hydrogenro',
+    };
+  } catch (e) {
+    console.warn('[upi] get_upi_pay_link error', e);
+    return null;
+  }
+}
+
 export type PendingPaymentUpiShare = {
   account: UpiPaymentAccount;
   /** Raw upi:// intent (for /pay-upi page). */
   deepLink: string | null;
-  /** HTTPS link for WhatsApp (clickable). */
+  /** HTTPS link for WhatsApp (clickable) — short /p/{code} when possible. */
   httpsLink: string | null;
 };
 
-export function buildPendingPaymentUpiShare(
+export async function buildPendingPaymentUpiShare(
   account: UpiPaymentAccount,
   amountPending: number,
   jobRef?: string | null,
@@ -466,7 +575,7 @@ export function buildPendingPaymentUpiShare(
     origin?: string | null;
     brand?: 'hydrogenro' | 'elevenro' | string | null;
   } | null
-): PendingPaymentUpiShare | null {
+): Promise<PendingPaymentUpiShare | null> {
   if (!isValidUpiId(account.upiId)) return null;
   const brand = options?.brand === 'elevenro' ? 'elevenro' : 'hydrogenro';
   const noteParts = ['Pending payment'];
@@ -481,7 +590,9 @@ export function buildPendingPaymentUpiShare(
   };
   const deepLink = buildUpiPayDeepLink(payInput);
   const siteOrigin = resolveUpiPaySiteOrigin(brand, options?.origin);
-  const httpsLink = buildUpiPayHttpsLink(siteOrigin, payInput);
+  const code = await createUpiPayShortLink(payInput);
+  const shortHttps = code ? buildUpiPayShortHttpsLink(siteOrigin, code) : null;
+  const httpsLink = shortHttps || buildUpiPayHttpsLink(siteOrigin, payInput);
   return { account, deepLink, httpsLink };
 }
 

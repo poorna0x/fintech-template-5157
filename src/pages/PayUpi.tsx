@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { Check, Copy, Droplets, Phone } from 'lucide-react';
 import { getDocumentBrandLabel, normalizeDocumentBrand, type DocumentBrand } from '@/lib/service-brands';
 import { UpiOpenAppCta, UpiAppOpenGrid } from '@/components/UpiAppOpenButtons';
@@ -7,9 +7,11 @@ import {
   buildUpiAppDeepLinks,
   buildUpiPayDeepLink,
   detectPayPlatform,
+  fetchUpiPayShortLink,
   isValidUpiId,
   normalizePaymentPhone,
   normalizeUpiId,
+  type UpiPayLinkRecord,
 } from '@/lib/upiPaymentAccounts';
 
 async function copyText(value: string): Promise<boolean> {
@@ -33,6 +35,11 @@ async function copyText(value: string): Promise<boolean> {
   }
 }
 
+function defaultBrandFromHost(): DocumentBrand {
+  if (typeof window === 'undefined') return 'hydrogenro';
+  return /elevenro/i.test(window.location.hostname) ? 'elevenro' : 'hydrogenro';
+}
+
 /** Same mark as the public website header (droplet + brand name). */
 function PayBrandMark({ brand }: { brand: DocumentBrand }) {
   const name = brand === 'elevenro' ? 'ElevenRO' : 'Hydrogen RO';
@@ -48,23 +55,51 @@ function PayBrandMark({ brand }: { brand: DocumentBrand }) {
 
 /**
  * Public HTTPS landing for WhatsApp UPI pay links.
- * Dynamic QR + copy details; Android opens UPI apps; iOS guides scan/copy.
+ * Supports short /p/:code and legacy /pay-upi?... query links.
  */
 const PayUpi = () => {
+  const { code: codeParam } = useParams<{ code?: string }>();
   const [params] = useSearchParams();
   const qrRef = useRef<HTMLDivElement>(null);
   const [copiedField, setCopiedField] = useState<'upi' | 'phone' | null>(null);
   const [copyError, setCopyError] = useState(false);
   const [launchTried, setLaunchTried] = useState(false);
   const [qrReady, setQrReady] = useState(false);
+  const [shortLink, setShortLink] = useState<UpiPayLinkRecord | null>(null);
+  const [shortLinkLoading, setShortLinkLoading] = useState(() => Boolean(codeParam?.trim()));
+  const [shortLinkMissing, setShortLinkMissing] = useState(false);
 
-  const pa = normalizeUpiId(params.get('pa') || '');
-  const pn = String(params.get('pn') || '').trim().slice(0, 100);
-  const amRaw = params.get('am');
+  useEffect(() => {
+    const code = String(codeParam || '').trim();
+    if (!code) {
+      setShortLink(null);
+      setShortLinkLoading(false);
+      setShortLinkMissing(false);
+      return;
+    }
+    let cancelled = false;
+    setShortLinkLoading(true);
+    setShortLinkMissing(false);
+    void (async () => {
+      const row = await fetchUpiPayShortLink(code);
+      if (cancelled) return;
+      setShortLink(row);
+      setShortLinkMissing(!row);
+      setShortLinkLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [codeParam]);
+
+  const pa = normalizeUpiId(shortLink?.upiId || params.get('pa') || '');
+  const pn = String(shortLink?.payeeName || params.get('pn') || '').trim().slice(0, 100);
+  const amRaw = shortLink?.amount != null ? String(shortLink.amount) : params.get('am');
   const am = amRaw != null && amRaw !== '' ? Number(amRaw) : NaN;
-  const tn = String(params.get('tn') || '').trim().slice(0, 80);
-  const ph = normalizePaymentPhone(params.get('ph') || '');
-  const brand: DocumentBrand = normalizeDocumentBrand(params.get('brand')) || 'hydrogenro';
+  const tn = String(shortLink?.note || params.get('tn') || '').trim().slice(0, 80);
+  const ph = normalizePaymentPhone(shortLink?.phone || params.get('ph') || '');
+  const brand: DocumentBrand =
+    normalizeDocumentBrand(shortLink?.brand || params.get('brand')) || defaultBrandFromHost();
   const valid = isValidUpiId(pa);
   const brandLabel = getDocumentBrandLabel(brand);
 
@@ -158,14 +193,29 @@ const PayUpi = () => {
   const shellClass =
     'min-h-screen bg-gradient-to-b from-sky-50 via-white to-slate-50 px-4 py-10 font-sans text-slate-900';
 
-  if (!valid) {
+  if (shortLinkLoading) {
+    return (
+      <div className={shellClass}>
+        <div className="mx-auto max-w-md text-center">
+          <PayBrandMark brand={defaultBrandFromHost()} />
+          <p className="mt-6 text-sm text-slate-600">Loading payment…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (shortLinkMissing || !valid) {
     return (
       <div className={shellClass}>
         <div className="mx-auto max-w-md text-center">
           <PayBrandMark brand={brand} />
-          <h1 className="mt-6 text-xl font-semibold">Invalid payment link</h1>
+          <h1 className="mt-6 text-xl font-semibold">
+            {shortLinkMissing ? 'Payment link expired' : 'Invalid payment link'}
+          </h1>
           <p className="mt-2 text-sm text-slate-600">
-            This UPI link is missing a valid UPI ID. Ask {brandLabel} for a new payment message.
+            {shortLinkMissing
+              ? `This pay link is no longer available. Ask ${brandLabel} for a new payment message.`
+              : `This UPI link is missing a valid UPI ID. Ask ${brandLabel} for a new payment message.`}
           </p>
         </div>
       </div>
@@ -236,25 +286,6 @@ const PayUpi = () => {
           </p>
         ) : null}
 
-        <div className="mt-6 rounded-2xl border border-slate-200/80 bg-white p-5 text-center shadow-sm shadow-slate-200/60">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Scan to pay</p>
-          <div className="mt-3 flex justify-center">
-            <div
-              ref={qrRef}
-              className="flex h-[220px] w-[220px] items-center justify-center bg-white"
-              aria-label="UPI payment QR code"
-            />
-          </div>
-          {!qrReady ? <p className="mt-2 text-xs text-slate-400">Loading QR…</p> : null}
-          {amountLabel ? (
-            <p className="mt-4 text-3xl font-bold tabular-nums tracking-tight text-slate-900">{amountLabel}</p>
-          ) : null}
-          {pn ? <p className="mt-1 text-sm text-slate-600">{pn}</p> : null}
-          <p className="mt-3 text-xs leading-relaxed text-slate-500">
-            Scan with any UPI app — amount and payee are filled in automatically.
-          </p>
-        </div>
-
         {needsDevicePick ? (
           <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <p className="text-center text-sm font-semibold text-slate-900">Are you using Android or iPhone?</p>
@@ -309,8 +340,27 @@ const PayUpi = () => {
           </div>
         ) : null}
 
+        <div className="mt-6 rounded-2xl border border-slate-200/80 bg-white p-5 text-center shadow-sm shadow-slate-200/60">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Scan to pay</p>
+          <div className="mt-3 flex justify-center">
+            <div
+              ref={qrRef}
+              className="flex h-[220px] w-[220px] items-center justify-center bg-white"
+              aria-label="UPI payment QR code"
+            />
+          </div>
+          {!qrReady ? <p className="mt-2 text-xs text-slate-400">Loading QR…</p> : null}
+          {amountLabel ? (
+            <p className="mt-4 text-3xl font-bold tabular-nums tracking-tight text-slate-900">{amountLabel}</p>
+          ) : null}
+          {pn ? <p className="mt-1 text-sm text-slate-600">{pn}</p> : null}
+          <p className="mt-3 text-xs leading-relaxed text-slate-500">
+            Scan with any UPI app — amount and payee are filled in automatically.
+          </p>
+        </div>
+
         <p className="mt-4 px-1 text-center text-sm leading-relaxed text-slate-500">
-          (You can also scan the QR above, or copy the UPI ID / phone number and paste it in your UPI app.)
+          (Or copy the UPI ID / phone number above and paste it in your UPI app.)
         </p>
 
         <p className="mt-8 text-center text-[11px] leading-relaxed text-slate-400">

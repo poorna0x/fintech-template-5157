@@ -233,7 +233,8 @@ const App = () => (
                   {/* Product Verification - Public route */}
                   <Route path="/product-verify/:id" element={<ProductVerification />} />
 
-                  {/* WhatsApp UPI pay — HTTPS wrapper opens upi:// on Android */}
+                  {/* Short UPI pay links: /p/xK9m2q — also legacy /pay-upi?... */}
+                  <Route path="/p/:code" element={<PayUpi />} />
                   <Route path="/pay-upi" element={<PayUpi />} />
                   
                   {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

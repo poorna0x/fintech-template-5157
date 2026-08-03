@@ -454,6 +454,8 @@ export function SettingsPendingPaymentsDialogV2({
   /** Checkbox: include UPI ID + pay link in the WhatsApp message. */
   const [whatsappIncludeUpi, setWhatsappIncludeUpi] = useState(false);
   const [whatsappManageUpiOpen, setWhatsappManageUpiOpen] = useState(false);
+  const [whatsappDraftMessage, setWhatsappDraftMessage] = useState('');
+  const [whatsappDraftLoading, setWhatsappDraftLoading] = useState(false);
   /** Last completed job service_brand per customer — drives WhatsApp brand contact. */
   const [brandByCustomerId, setBrandByCustomerId] = useState<Record<string, DocumentBrand | null>>({});
 
@@ -528,7 +530,7 @@ export function SettingsPendingPaymentsDialogV2({
     setWhatsappDialogOpen(true);
   };
 
-  const buildPendingPaymentMessage = (
+  const buildPendingPaymentMessage = async (
     payment: PendingPaymentReminder,
     customer: CustomerLabel,
     opts?: { includeUpi?: boolean; upiAccountId?: string }
@@ -541,7 +543,7 @@ export function SettingsPendingPaymentsDialogV2({
     if (includeUpi && upiAccountId) {
       const account = upiAccounts.find((a) => a.id === upiAccountId);
       if (account) {
-        const share = buildPendingPaymentUpiShare(
+        const share = await buildPendingPaymentUpiShare(
           account,
           Number(payment.amount_pending) || 0,
           payment.job_number || payment.job_id || null,
@@ -566,6 +568,46 @@ export function SettingsPendingPaymentsDialogV2({
       upiOpts
     );
   };
+
+  useEffect(() => {
+    if (!whatsappDialogOpen || !whatsappTarget) {
+      setWhatsappDraftMessage('');
+      setWhatsappDraftLoading(false);
+      return;
+    }
+    const customer = whatsappTarget.entity_id
+      ? customerLabels[whatsappTarget.entity_id as string]
+      : undefined;
+    if (!customer) {
+      setWhatsappDraftMessage('');
+      return;
+    }
+    let cancelled = false;
+    setWhatsappDraftLoading(true);
+    void (async () => {
+      try {
+        const msg = await buildPendingPaymentMessage(whatsappTarget, customer, {
+          includeUpi: whatsappIncludeUpi,
+          upiAccountId: whatsappUpiAccountId,
+        });
+        if (!cancelled) setWhatsappDraftMessage(msg);
+      } finally {
+        if (!cancelled) setWhatsappDraftLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- rebuild when dialog UPI options change
+  }, [
+    whatsappDialogOpen,
+    whatsappTarget,
+    whatsappIncludeUpi,
+    whatsappUpiAccountId,
+    upiAccounts,
+    customerLabels,
+    brandByCustomerId,
+  ]);
 
   const buildPaymentReceivedMessage = (payment: PendingPaymentReminder, customer: CustomerLabel) =>
     buildPendingPaymentReceivedWhatsAppMessage(
@@ -1485,12 +1527,7 @@ export function SettingsPendingPaymentsDialogV2({
                     : undefined;
                   const primaryPhone = customer?.phone;
                   const alternatePhone = customer?.alternatePhone;
-                  const message = customer
-                    ? buildPendingPaymentMessage(whatsappTarget, customer, {
-                        includeUpi: whatsappIncludeUpi,
-                        upiAccountId: whatsappUpiAccountId,
-                      })
-                    : '';
+                  const message = whatsappDraftMessage;
                   const hasAlternate =
                     !!alternatePhone && alternatePhone.trim() !== (primaryPhone || '').trim();
                   const canIncludeUpi =
@@ -1502,6 +1539,10 @@ export function SettingsPendingPaymentsDialogV2({
                     if (!phone) return;
                     if (whatsappIncludeUpi && !canIncludeUpi) {
                       toast.error('Select a UPI account, or uncheck “Include UPI pay details”');
+                      return;
+                    }
+                    if (whatsappDraftLoading || !message.trim()) {
+                      toast.error('Preparing pay link… try again in a moment');
                       return;
                     }
                     if (canIncludeUpi) {
@@ -1519,7 +1560,7 @@ export function SettingsPendingPaymentsDialogV2({
                           Notify via WhatsApp
                         </DialogTitle>
                         <DialogDescription>
-                          Optionally include UPI ID + payment phone (iPhone-friendly) and Android tap-to-pay.
+                          Optionally include a short UPI pay link customers can open to pay.
                         </DialogDescription>
                       </DialogHeader>
 
@@ -1568,7 +1609,7 @@ export function SettingsPendingPaymentsDialogV2({
                                 Include UPI pay details in message
                               </label>
                               <p className="text-xs text-muted-foreground mt-0.5">
-                                Adds UPI ID, payment phone, amount, and Android tap-to-pay. Uncheck for reminder-only.
+                                Adds a short pay link (QR + UPI apps). Uncheck for reminder-only.
                               </p>
                             </div>
                             <Button
@@ -1637,7 +1678,7 @@ export function SettingsPendingPaymentsDialogV2({
                         <div className="space-y-2">
                           <Label>Message preview</Label>
                           <div className="mt-1 p-3 bg-white dark:bg-background border border-gray-200 dark:border-border rounded text-sm text-foreground whitespace-pre-wrap max-h-48 overflow-y-auto">
-                            {message}
+                            {whatsappDraftLoading ? 'Preparing short pay link…' : message || '—'}
                           </div>
                         </div>
 
