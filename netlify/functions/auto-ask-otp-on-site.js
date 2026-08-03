@@ -5,9 +5,9 @@
 //  - any call   → if onsite + dwell elapsed + OTP still missing → Ask OTP once
 //
 // Auth: technician JWT assigned to the job.
+// Background: flush-auto-ask-otp cron also fires due asks without the app open.
 
 const { createClient } = require('@supabase/supabase-js');
-const crypto = require('crypto');
 const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
 const { addSecurityHeaders } = require('./security-headers');
 const {
@@ -15,10 +15,14 @@ const {
   readAccessTokenFromEvent,
 } = require('./admin-auth-guard');
 const { checkRateLimit } = require('./rate-limiter');
-const { getMessaging, sendToTechnicianDevices } = require('./fcm-helper');
-
-const ACTIVE_STATUSES = new Set(['PENDING', 'ASSIGNED', 'EN_ROUTE', 'IN_PROGRESS']);
-const DWELL_MS = 7 * 60 * 1000;
+const {
+  ACTIVE_STATUSES,
+  DWELL_MS,
+  parseRequirements,
+  getOtpRequirement,
+  hasOtpEntered,
+  sendOtpAsk,
+} = require('./otp-auto-ask-helper');
 
 function jsonResponse(statusCode, corsHeaders, body) {
   return {
@@ -26,156 +30,6 @@ function jsonResponse(statusCode, corsHeaders, body) {
     headers: addSecurityHeaders({ ...corsHeaders, 'Content-Type': 'application/json' }),
     body: JSON.stringify(body),
   };
-}
-
-function parseRequirements(raw) {
-  try {
-    if (typeof raw === 'string') {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
-      if (parsed && typeof parsed === 'object') return [parsed];
-      return [];
-    }
-    if (Array.isArray(raw)) return raw;
-    if (raw && typeof raw === 'object') return [raw];
-  } catch {
-    /* ignore */
-  }
-  return [];
-}
-
-function getOtpRequirement(requirements) {
-  return requirements.find((r) => r && typeof r === 'object' && r.require_otp === true) || null;
-}
-
-function hasOtpEntered(otpReq) {
-  const otp = otpReq?.otp_entered;
-  return typeof otp === 'string' && otp.trim().length > 0;
-}
-
-async function sendOtpAsk(db, { jobId, technicianId, customerId }) {
-  const askedAt = new Date().toISOString();
-  const { data: claimed, error: claimErr } = await db
-    .from('jobs')
-    .update({ otp_auto_asked_at: askedAt, updated_at: askedAt })
-    .eq('id', jobId)
-    .eq('assigned_technician_id', technicianId)
-    .is('otp_auto_asked_at', null)
-    .select('id');
-
-  if (claimErr) {
-    throw new Error(`claim failed: ${claimErr.message}`);
-  }
-  if (!claimed?.length) {
-    return { skipped: true, reason: 'already_asked' };
-  }
-
-  // Never wipe an existing Ask OTP row. Admin may already have asked (pending),
-  // or the tech may already have answered via overlay/card — a blind upsert with
-  // otp:null would force them to enter the code a second time.
-  const { data: existingReq } = await db
-    .from('technician_otp_requests')
-    .select('id, otp')
-    .eq('job_id', jobId)
-    .maybeSingle();
-
-  if (existingReq?.id) {
-    const answered =
-      typeof existingReq.otp === 'string' && /^\d{4}$/.test(String(existingReq.otp).trim());
-    return {
-      skipped: true,
-      reason: answered ? 'otp_already_on_request' : 'ask_already_pending',
-      requestId: existingReq.id,
-    };
-  }
-
-  let customerName = '';
-  if (customerId) {
-    const { data: customer } = await db
-      .from('customers')
-      .select('full_name')
-      .eq('id', customerId)
-      .maybeSingle();
-    customerName = String(customer?.full_name || '').trim().slice(0, 80);
-  }
-
-  const { data: requestRow, error: insertErr } = await db
-    .from('technician_otp_requests')
-    .insert({
-      job_id: jobId,
-      technician_id: technicianId,
-      otp: null,
-      created_at: askedAt,
-      submitted_at: null,
-      reply_nonce: null,
-    })
-    .select('id')
-    .single();
-
-  // Race: admin Ask OTP inserted between our check and insert — keep their row.
-  if (insertErr || !requestRow?.id) {
-    const { data: raced } = await db
-      .from('technician_otp_requests')
-      .select('id, otp')
-      .eq('job_id', jobId)
-      .maybeSingle();
-    if (raced?.id) {
-      const answered =
-        typeof raced.otp === 'string' && /^\d{4}$/.test(String(raced.otp).trim());
-      return {
-        skipped: true,
-        reason: answered ? 'otp_already_on_request' : 'ask_already_pending',
-        requestId: raced.id,
-      };
-    }
-    throw new Error(`insert request failed: ${insertErr?.message || 'no id'}`);
-  }
-
-  const requestId = requestRow.id;
-  const nonce = crypto.randomUUID();
-  const { error: nonceErr } = await db
-    .from('technician_otp_requests')
-    .update({ reply_nonce: nonce })
-    .eq('id', requestId)
-    .eq('technician_id', technicianId);
-
-  if (nonceErr) {
-    return { asked: true, sent: false, reason: 'nonce_failed', requestId };
-  }
-
-  const siteUrl = (process.env.URL || '').replace(/\/$/, '');
-  try {
-    const messaging = await getMessaging(db);
-    const { sent, tokens } = await sendToTechnicianDevices(
-      db,
-      messaging,
-      technicianId,
-      (deviceToken) => ({
-        token: deviceToken,
-        data: {
-          type: 'otp_request',
-          requestId,
-          nonce,
-          ...(customerName ? { customerName } : {}),
-          submitUrl: `${siteUrl}/.netlify/functions/submit-tech-otp`,
-          showOverlay: '1',
-        },
-        android: { priority: 'high' },
-      }),
-      'otp_request'
-    );
-
-    if (tokens === 0) {
-      return { asked: true, sent: false, reason: 'no_token', requestId };
-    }
-    if (sent === 0) {
-      return { asked: true, sent: false, reason: 'stale_token', requestId };
-    }
-    return { asked: true, sent: true, devices: sent, requestId };
-  } catch (err) {
-    console.error('[auto-ask-otp-on-site] push failed', err?.message || err);
-    return { asked: true, sent: false, reason: 'push_failed', requestId };
-  }
 }
 
 exports.handler = async (event) => {
@@ -244,7 +98,6 @@ exports.handler = async (event) => {
     .maybeSingle();
 
   if (jobErr) {
-    // Column missing until SQL is applied — surface clearly.
     console.error('[auto-ask-otp-on-site] job lookup', jobErr.message);
     return jsonResponse(500, corsHeaders, {
       error: 'Lookup failed',
@@ -299,7 +152,6 @@ exports.handler = async (event) => {
       onsiteAt = new Date(armed[0].otp_onsite_detected_at).getTime();
       console.log('[auto-ask-otp-on-site] armed', { jobId, onsiteAt: armed[0].otp_onsite_detected_at });
     } else {
-      // Race: another call armed it — re-read.
       const { data: again } = await db
         .from('jobs')
         .select('otp_onsite_detected_at')

@@ -58,6 +58,11 @@
 [functions."ephemeral-data-cleanup"]
   schedule = "30 20 * * 0"
 
+# Auto Ask OTP flush: every minute. After GPS arms on-site dwell (7 min),
+# fire Ask OTP push even if the technician app is closed / locked.
+[functions."flush-auto-ask-otp"]
+  schedule = "* * * * *"
+
 # Force HTTPS - redirect HTTP to HTTPS
 [[redirects]]
   from = "http://hydrogenro.com/*"
