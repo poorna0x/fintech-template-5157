@@ -4050,6 +4050,37 @@ const TechnicianDashboard = () => {
         // Continue with the job data we have
       }
     }
+
+    // Same sync as Start Work: OTP may already be on the Ask OTP row / requirements
+    // from notification, overlay, or card — don't force step 7 again.
+    if (jobRequiresOtp(jobWithCustomer) && !getJobEnteredOtp(jobWithCustomer)) {
+      try {
+        const [{ data: fresh }, answered] = await Promise.all([
+          supabase.from('jobs').select('requirements').eq('id', jobWithCustomer.id).maybeSingle(),
+          getSubmittedOtpForJob(jobWithCustomer.id),
+        ]);
+        let reqs = parseJobRequirements(
+          (fresh as { requirements?: unknown } | null)?.requirements ??
+            (jobWithCustomer as any).requirements ??
+            jobWithCustomer.requirements
+        );
+        const fromJob = getStoredOtpFromRequirements(reqs);
+        const entered = fromJob || answered;
+        if (entered) {
+          if (!fromJob && answered) {
+            reqs = applyOtpToRequirements(reqs, answered);
+          }
+          jobWithCustomer = { ...jobWithCustomer, requirements: reqs as any };
+          setJobs((prev) =>
+            prev.map((j) =>
+              j.id === jobWithCustomer.id ? { ...j, requirements: reqs as any } : j
+            )
+          );
+        }
+      } catch {
+        /* open with local job */
+      }
+    }
     
     setSelectedJobForComplete(jobWithCustomer);
     resetCompleteJobFormState();
@@ -6401,6 +6432,17 @@ const TechnicianDashboard = () => {
                   };
                 })
               );
+              // If Complete Job wizard is open for this job, drop step 7 without re-entry.
+              setSelectedJobForComplete((prev) => {
+                if (!prev || prev.id !== jobId) return prev;
+                return {
+                  ...prev,
+                  requirements: applyOtpToRequirements(
+                    parseJobRequirements((prev as any).requirements ?? prev.requirements),
+                    otp
+                  ) as any,
+                };
+              });
             }}
           />
         )}
@@ -8093,8 +8135,22 @@ const TechnicianDashboard = () => {
           <AlertDialogContent>
             {(() => {
               const startWorkJob = confirmStartWorkDialog.job;
+              // Prefer live jobs[] requirements — Ask OTP card / overlay may have
+              // answered while this dialog was already open.
+              const liveJob = startWorkJob
+                ? jobs.find((j) => j.id === startWorkJob.id)
+                : null;
+              const effectiveStartWorkJob =
+                startWorkJob && liveJob
+                  ? {
+                      ...startWorkJob,
+                      requirements:
+                        (liveJob as any).requirements ?? liveJob.requirements,
+                    }
+                  : startWorkJob;
               const startWorkNeedsOtp =
-                jobRequiresOtp(startWorkJob) && !getJobEnteredOtp(startWorkJob);
+                jobRequiresOtp(effectiveStartWorkJob) &&
+                !getJobEnteredOtp(effectiveStartWorkJob);
               return (
                 <>
             <AlertDialogHeader>
@@ -9562,7 +9618,7 @@ const TechnicianDashboard = () => {
                       <p className="text-sm text-red-500 mt-2 text-center">{otpError}</p>
                     )}
                     <p className="text-xs text-gray-500 mt-2 text-center">
-                      The OTP was generated when this job was created
+                      Ask the customer for their 4-digit code
                     </p>
                   </div>
                 </div>

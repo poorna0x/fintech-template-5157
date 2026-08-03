@@ -70,6 +70,25 @@ async function sendOtpAsk(db, { jobId, technicianId, customerId }) {
     return { skipped: true, reason: 'already_asked' };
   }
 
+  // Never wipe an existing Ask OTP row. Admin may already have asked (pending),
+  // or the tech may already have answered via overlay/card — a blind upsert with
+  // otp:null would force them to enter the code a second time.
+  const { data: existingReq } = await db
+    .from('technician_otp_requests')
+    .select('id, otp')
+    .eq('job_id', jobId)
+    .maybeSingle();
+
+  if (existingReq?.id) {
+    const answered =
+      typeof existingReq.otp === 'string' && /^\d{4}$/.test(String(existingReq.otp).trim());
+    return {
+      skipped: true,
+      reason: answered ? 'otp_already_on_request' : 'ask_already_pending',
+      requestId: existingReq.id,
+    };
+  }
+
   let customerName = '';
   if (customerId) {
     const { data: customer } = await db
@@ -80,24 +99,36 @@ async function sendOtpAsk(db, { jobId, technicianId, customerId }) {
     customerName = String(customer?.full_name || '').trim().slice(0, 80);
   }
 
-  const { data: requestRow, error: upsertErr } = await db
+  const { data: requestRow, error: insertErr } = await db
     .from('technician_otp_requests')
-    .upsert(
-      {
-        job_id: jobId,
-        technician_id: technicianId,
-        otp: null,
-        created_at: askedAt,
-        submitted_at: null,
-        reply_nonce: null,
-      },
-      { onConflict: 'job_id' }
-    )
+    .insert({
+      job_id: jobId,
+      technician_id: technicianId,
+      otp: null,
+      created_at: askedAt,
+      submitted_at: null,
+      reply_nonce: null,
+    })
     .select('id')
     .single();
 
-  if (upsertErr || !requestRow?.id) {
-    throw new Error(`upsert request failed: ${upsertErr?.message || 'no id'}`);
+  // Race: admin Ask OTP inserted between our check and insert — keep their row.
+  if (insertErr || !requestRow?.id) {
+    const { data: raced } = await db
+      .from('technician_otp_requests')
+      .select('id, otp')
+      .eq('job_id', jobId)
+      .maybeSingle();
+    if (raced?.id) {
+      const answered =
+        typeof raced.otp === 'string' && /^\d{4}$/.test(String(raced.otp).trim());
+      return {
+        skipped: true,
+        reason: answered ? 'otp_already_on_request' : 'ask_already_pending',
+        requestId: raced.id,
+      };
+    }
+    throw new Error(`insert request failed: ${insertErr?.message || 'no id'}`);
   }
 
   const requestId = requestRow.id;
