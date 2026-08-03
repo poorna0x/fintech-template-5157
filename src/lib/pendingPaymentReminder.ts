@@ -127,17 +127,20 @@ export function buildPendingPaymentWhatsAppMessage(
     const phoneLine = upi.phone?.trim()
       ? `\nPayment phone: ${upi.phone.trim()}`
       : '';
-    const payUrl = (upi.httpsLink || upi.deepLink || '').trim();
-    const androidLine = payUrl
-      ? `\n\nAndroid — tap to pay:\n${payUrl}`
-      : '';
+    const payUrl = (upi.httpsLink || '').trim();
+    // WhatsApp only makes https:// clickable — plain UPI IDs cannot be
+    // "tap to copy". Send one HTTPS page with Pay + Copy buttons.
+    const linkBlock = payUrl
+      ? `\n\nTap to pay (Android) or copy UPI ID (iPhone):\n${payUrl}`
+      : `\n\nUPI ID: ${upi.upiId}\n(Copy this UPI ID into GPay / PhonePe / Paytm)`;
+    const fallbackId =
+      payUrl && upi.upiId
+        ? `\n\nUPI ID (long-press to copy if needed): ${upi.upiId}`
+        : '';
     upiBlock = `
 
 Pay via UPI${accountLine}:
-UPI ID: ${upi.upiId}${phoneLine}
-Amount: ₹${formattedAmount}
-
-iPhone: copy the UPI ID into GPay / PhonePe / Paytm${upi.phone?.trim() ? ', or pay using the payment phone number' : ''}.${androidLine}`;
+Amount: ₹${formattedAmount}${phoneLine}${linkBlock}${fallbackId}`;
   }
 
   return `Hi ${customerName} 😊

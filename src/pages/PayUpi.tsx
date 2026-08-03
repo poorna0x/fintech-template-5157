@@ -4,12 +4,14 @@ import { buildUpiPayDeepLink, isValidUpiId, normalizeUpiId } from '@/lib/upiPaym
 
 /**
  * Public HTTPS landing page for WhatsApp UPI pay links.
- * WhatsApp only auto-links https:// — this page opens upi:// on Android.
+ * WhatsApp only auto-links https:// — this page opens upi:// on Android
+ * and offers a one-tap Copy UPI ID (needed on iPhone).
  */
 const PayUpi = () => {
   const [params] = useSearchParams();
   const [copied, setCopied] = useState(false);
   const [launchTried, setLaunchTried] = useState(false);
+  const [copyError, setCopyError] = useState(false);
 
   const pa = normalizeUpiId(params.get('pa') || '');
   const pn = String(params.get('pn') || '').trim().slice(0, 100);
@@ -40,7 +42,6 @@ const PayUpi = () => {
   useEffect(() => {
     if (!upiLink || !isAndroid || launchTried) return;
     setLaunchTried(true);
-    // Give the page a tick to paint the fallback button, then open UPI apps.
     const t = window.setTimeout(() => {
       window.location.href = upiLink;
     }, 250);
@@ -53,12 +54,25 @@ const PayUpi = () => {
       : null;
 
   const copyUpiId = async () => {
+    setCopyError(false);
     try {
-      await navigator.clipboard.writeText(pa);
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(pa);
+      } else {
+        const el = document.createElement('textarea');
+        el.value = pa;
+        el.setAttribute('readonly', '');
+        el.style.position = 'fixed';
+        el.style.left = '-9999px';
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand('copy');
+        document.body.removeChild(el);
+      }
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
+      window.setTimeout(() => setCopied(false), 2500);
     } catch {
-      /* ignore */
+      setCopyError(true);
     }
   };
 
@@ -87,29 +101,53 @@ const PayUpi = () => {
 
         <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-xs font-medium uppercase tracking-wide text-slate-500">UPI ID</p>
-          <p className="mt-1 break-all font-mono text-base font-semibold">{pa}</p>
+          <p className="mt-1 select-all break-all font-mono text-base font-semibold">{pa}</p>
+        </div>
+
+        {/* iPhone: Copy is the main action. Android: Pay first, Copy second. */}
+        {!isAndroid ? (
           <button
             type="button"
             onClick={() => void copyUpiId()}
-            className="mt-3 w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 text-sm font-medium text-slate-800 hover:bg-slate-100"
+            className="mt-4 w-full rounded-xl bg-sky-700 py-3.5 text-base font-semibold text-white hover:bg-sky-800"
           >
-            {copied ? 'Copied' : 'Copy UPI ID'}
+            {copied ? 'UPI ID copied' : 'Copy UPI ID'}
           </button>
-        </div>
+        ) : null}
 
         {upiLink ? (
           <a
             href={upiLink}
-            className="mt-4 flex w-full items-center justify-center rounded-xl bg-sky-700 py-3.5 text-base font-semibold text-white hover:bg-sky-800"
+            className={
+              isAndroid
+                ? 'mt-4 flex w-full items-center justify-center rounded-xl bg-sky-700 py-3.5 text-base font-semibold text-white hover:bg-sky-800'
+                : 'mt-3 flex w-full items-center justify-center rounded-xl border border-slate-200 bg-white py-3 text-base font-semibold text-slate-800 hover:bg-slate-50'
+            }
           >
-            {isAndroid ? 'Open UPI app' : 'Open payment app'}
+            {isAndroid ? 'Open UPI app' : 'Try open payment app'}
           </a>
+        ) : null}
+
+        {isAndroid ? (
+          <button
+            type="button"
+            onClick={() => void copyUpiId()}
+            className="mt-3 w-full rounded-xl border border-slate-200 bg-white py-3 text-base font-semibold text-slate-800 hover:bg-slate-50"
+          >
+            {copied ? 'UPI ID copied' : 'Copy UPI ID'}
+          </button>
+        ) : null}
+
+        {copyError ? (
+          <p className="mt-3 text-center text-sm text-amber-700">
+            Couldn’t copy automatically — long-press the UPI ID above and choose Copy.
+          </p>
         ) : null}
 
         <p className="mt-4 text-center text-sm text-slate-500">
           {isAndroid
-            ? 'If nothing opens, tap Open UPI app or copy the UPI ID into GPay / PhonePe / Paytm.'
-            : 'On iPhone, copy the UPI ID and paste it into GPay, PhonePe, or Paytm.'}
+            ? 'If nothing opens, tap Open UPI app or Copy UPI ID into GPay / PhonePe / Paytm.'
+            : 'Tap Copy UPI ID, then paste it into GPay, PhonePe, or Paytm.'}
         </p>
       </div>
     </div>
