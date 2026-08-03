@@ -314,16 +314,17 @@ export function resolvePreferredUpiAccount(
   return accounts[0];
 }
 
-/**
- * Build a standard UPI intent deep link (Android).
- * `pa` is left unencoded (NPCI / app convention); other fields are URI-encoded.
- */
-export function buildUpiPayDeepLink(input: {
+export type UpiPayLinkInput = {
   upiId: string;
   payeeName?: string;
   amount?: number;
   note?: string;
-}): string | null {
+  phone?: string;
+  brand?: 'hydrogenro' | 'elevenro' | string | null;
+};
+
+/** Query string shared by upi:// and app-specific schemes (pa unencoded). */
+export function buildUpiPayQuery(input: UpiPayLinkInput): string | null {
   const pa = normalizeUpiId(input.upiId);
   if (!isValidUpiId(pa)) return null;
   const parts = [`pa=${pa}`, 'cu=INR'];
@@ -338,21 +339,90 @@ export function buildUpiPayDeepLink(input: {
     .replace(/\s+/g, ' ')
     .slice(0, 80);
   if (tn) parts.push(`tn=${encodeURIComponent(tn)}`);
-  return `upi://pay?${parts.join('&')}`;
+  return parts.join('&');
+}
+
+/**
+ * Build a standard UPI intent deep link (Android system chooser).
+ * `pa` is left unencoded (NPCI / app convention); other fields are URI-encoded.
+ */
+export function buildUpiPayDeepLink(input: UpiPayLinkInput): string | null {
+  const q = buildUpiPayQuery(input);
+  return q ? `upi://pay?${q}` : null;
+}
+
+export type PayPlatform = 'android' | 'ios' | 'other';
+
+/** Best-effort UA detection for /pay-upi layout. */
+export function detectPayPlatform(): PayPlatform {
+  if (typeof navigator === 'undefined') return 'other';
+  const ua = navigator.userAgent || '';
+  if (/android/i.test(ua)) return 'android';
+  if (/iPhone|iPad|iPod/i.test(ua)) return 'ios';
+  // iPadOS 13+ can report as Macintosh with touch
+  if (
+    typeof navigator.platform === 'string' &&
+    navigator.platform === 'MacIntel' &&
+    Number(navigator.maxTouchPoints || 0) > 1
+  ) {
+    return 'ios';
+  }
+  return 'other';
+}
+
+/**
+ * App-specific UPI openers (needed on iOS — generic upi:// has no chooser there).
+ * Android usually prefers buildUpiPayDeepLink() instead.
+ */
+export function buildUpiAppDeepLinks(input: UpiPayLinkInput): {
+  id: string;
+  name: string;
+  href: string;
+  color: string;
+}[] {
+  const q = buildUpiPayQuery(input);
+  if (!q) return [];
+  return [
+    { id: 'gpay', name: 'GPay', href: `tez://upi/pay?${q}`, color: '#4285F4' },
+    { id: 'phonepe', name: 'PhonePe', href: `phonepe://pay?${q}`, color: '#5F259F' },
+    { id: 'paytm', name: 'Paytm', href: `paytmmp://upi/pay?${q}`, color: '#00BAF2' },
+    { id: 'bhim', name: 'BHIM', href: `bhim://upi/pay?${q}`, color: '#007272' },
+  ];
+}
+
+const PROD_UPI_ORIGINS: Record<'hydrogenro' | 'elevenro', string> = {
+  hydrogenro: 'https://hydrogenro.com',
+  elevenro: 'https://elevenro.com',
+};
+
+function isLocalOrPreviewOrigin(origin: string): boolean {
+  return /localhost|127\.0\.0\.1|netlify\.app|:5173|:4173|:3000|:8080/i.test(origin);
+}
+
+/**
+ * Always use the live brand site for WhatsApp pay links
+ * (hydrogenro.com / elevenro.com). Local CRM must not put localhost in messages.
+ */
+export function resolveUpiPaySiteOrigin(
+  brand?: 'hydrogenro' | 'elevenro' | string | null,
+  originOverride?: string | null
+): string {
+  const override = String(originOverride || '')
+    .trim()
+    .replace(/\/$/, '');
+  // Ignore localhost/preview overrides — WhatsApp customers need the public site.
+  if (override && !isLocalOrPreviewOrigin(override)) return override;
+  const key = brand === 'elevenro' ? 'elevenro' : 'hydrogenro';
+  return PROD_UPI_ORIGINS[key];
 }
 
 /**
  * HTTPS wrapper for WhatsApp — `upi://` is not auto-linked there.
- * Opens /pay-upi which redirects Android into the UPI intent.
+ * Opens /pay-upi which shows QR + opens UPI apps.
  */
 export function buildUpiPayHttpsLink(
   origin: string,
-  input: {
-    upiId: string;
-    payeeName?: string;
-    amount?: number;
-    note?: string;
-  }
+  input: UpiPayLinkInput
 ): string | null {
   const pa = normalizeUpiId(input.upiId);
   if (!isValidUpiId(pa)) return null;
@@ -372,6 +442,10 @@ export function buildUpiPayHttpsLink(
     .replace(/\s+/g, ' ')
     .slice(0, 80);
   if (tn) q.set('tn', tn);
+  const ph = normalizePaymentPhone(input.phone || '');
+  if (ph) q.set('ph', ph);
+  const brand = input.brand === 'elevenro' ? 'elevenro' : input.brand === 'hydrogenro' ? 'hydrogenro' : '';
+  if (brand) q.set('brand', brand);
   return `${base}/pay-upi?${q.toString()}`;
 }
 
@@ -387,21 +461,25 @@ export function buildPendingPaymentUpiShare(
   account: UpiPaymentAccount,
   amountPending: number,
   jobRef?: string | null,
-  origin?: string | null
+  options?: {
+    origin?: string | null;
+    brand?: 'hydrogenro' | 'elevenro' | string | null;
+  } | null
 ): PendingPaymentUpiShare | null {
   if (!isValidUpiId(account.upiId)) return null;
+  const brand = options?.brand === 'elevenro' ? 'elevenro' : 'hydrogenro';
   const noteParts = ['Pending payment'];
   if (jobRef && String(jobRef).trim()) noteParts.push(String(jobRef).trim());
-  const payInput = {
+  const payInput: UpiPayLinkInput = {
     upiId: account.upiId,
     payeeName: account.payeeName || account.label,
     amount: amountPending,
     note: noteParts.join(' '),
+    phone: account.phone || undefined,
+    brand,
   };
   const deepLink = buildUpiPayDeepLink(payInput);
-  const siteOrigin =
-    (origin && String(origin).trim()) ||
-    (typeof window !== 'undefined' ? window.location.origin : '');
+  const siteOrigin = resolveUpiPaySiteOrigin(brand, options?.origin);
   const httpsLink = buildUpiPayHttpsLink(siteOrigin, payInput);
   return { account, deepLink, httpsLink };
 }

@@ -544,7 +544,8 @@ export function SettingsPendingPaymentsDialogV2({
         const share = buildPendingPaymentUpiShare(
           account,
           Number(payment.amount_pending) || 0,
-          payment.job_number || payment.job_id || null
+          payment.job_number || payment.job_id || null,
+          { brand: brandForCustomer(payment.entity_id as string | undefined) }
         );
         if (share) {
           upiOpts = {

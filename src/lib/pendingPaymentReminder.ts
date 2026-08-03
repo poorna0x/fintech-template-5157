@@ -99,8 +99,9 @@ export type PendingPaymentWhatsAppUpiOptions = {
   upiId: string;
   /** Optional payment mobile number (UPI to phone / call). */
   phone?: string;
-  /** Raw upi://pay?... deep link for Android “Tap to Pay”. */
+  /** Raw upi://pay?... (used by /pay-upi page; not put in WhatsApp). */
   deepLink?: string | null;
+  /** HTTPS /pay-upi link for WhatsApp (clickable). */
   httpsLink?: string | null;
 };
 
@@ -116,12 +117,12 @@ export function buildPendingPaymentWhatsAppMessage(
   const brandLabel = getDocumentBrandLabel(resolved);
   const formattedAmount = amountPending.toLocaleString('en-IN', { maximumFractionDigits: 2 });
   const dueLabel = formatPendingPaymentDueLabel(dueDateYmd);
-  const upiPayLink = (upi?.deepLink || '').trim();
+  const payLink = (upi?.httpsLink || '').trim();
 
   const lines: string[] = [
     `Hi ${customerName} 😊`,
     '',
-    `Hope you're doing well. Quick reminder from *${brandLabel}*:`,
+    `Hope you're doing well. Quick reminder from *${brandLabel}* regarding your water filter service.`,
     '',
     '*Pending payment*',
     `• Amount: ₹${formattedAmount}`,
@@ -131,36 +132,14 @@ export function buildPendingPaymentWhatsAppMessage(
     lines.push(`• Due date: ${dueLabel}`);
   }
 
-  if (upi?.upiId) {
+  if (payLink) {
     lines.push('');
-    lines.push('────────────────');
-    lines.push('*How to pay (UPI)*');
-    if (upi.label?.trim()) {
-      lines.push(`Account: ${upi.label.trim()}`);
-    }
-    lines.push(`UPI ID: ${upi.upiId}`);
-    if (upi.phone?.trim()) {
-      lines.push(`Payment phone: ${upi.phone.trim()}`);
-    }
-    if (upiPayLink) {
-      lines.push('');
-      lines.push('*Tap to Pay (Android):*');
-      lines.push(upiPayLink);
-    }
-    lines.push('');
-    lines.push('_iPhone: long-press UPI ID → Copy → paste in GPay / PhonePe / Paytm_');
-    lines.push('────────────────');
+    lines.push(`*Payment info / Pay now:*`);
+    lines.push(payLink);
   }
 
   lines.push('');
-  lines.push(
-    'Please clear this at your earliest convenience. If you have already paid, kindly ignore this message.'
-  );
-  lines.push('');
-  lines.push('*Need help?*');
-  lines.push(`📞 ${contact.phone}`);
-  lines.push(`📧 ${contact.email}`);
-  lines.push(`🌐 ${contact.website}`);
+  lines.push('Please clear this at your earliest convenience. If you have already paid, kindly ignore this message.');
   lines.push('');
   lines.push(`Thanks & regards 🙏`);
   lines.push(contact.team);
