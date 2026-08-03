@@ -92,7 +92,7 @@ public final class TechActionOverlay {
         if (data == null) return false;
         String v = data.get("showOverlay");
         if ("1".equals(v) || "true".equalsIgnoreCase(v)) return true;
-        // OTP auto-ask / alarm paths must get the card even if flag was dropped.
+        // OTP Ask paths must get the card even if showOverlay flag was dropped.
         String type = data.get("type");
         return "otp_request".equals(type)
             && data.get("requestId") != null

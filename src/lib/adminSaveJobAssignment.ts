@@ -60,7 +60,6 @@ export async function saveAdminJobAssignment(ctx: AdminSaveJobAssignmentCtx) {
       assigned_technician_id: ctx.selectedTechnicianId,
       status: 'ASSIGNED',
       assigned_date: new Date().toISOString(),
-      tech_arrived_at: null,
     } as any);
 
     if (error) throw error;

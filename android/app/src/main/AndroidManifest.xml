@@ -41,23 +41,6 @@
             android:name=".OtpReplyReceiver"
             android:exported="false" />
 
-        <!-- After on-site dwell: wake and Ask OTP even if WebView is dead -->
-        <receiver
-            android:name=".AutoAskOtpAlarmReceiver"
-            android:exported="false" />
-
-        <!-- Re-arm Auto Ask OTP alarms after reboot / APK update -->
-        <receiver
-            android:name=".AutoAskOtpBootReceiver"
-            android:exported="false"
-            android:directBootAware="true">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
-                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-            </intent-filter>
-        </receiver>
-
         <!-- Handles free-text reply on office Message technician pushes -->
         <receiver
             android:name=".MessageReplyReceiver"

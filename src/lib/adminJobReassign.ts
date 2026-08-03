@@ -53,11 +53,7 @@ export async function submitAdminJobReassign(
 
     const { error } = await db.jobs.update(ctx.jobToReassign.id, {
       assigned_technician_id: ctx.selectedTechnicianForReassign,
-      // New tech must get a fresh arrival notify when they reach the customer.
-      ...(previousTechnicianId && previousTechnicianId !== ctx.selectedTechnicianForReassign
-        ? { tech_arrived_at: null }
-        : {}),
-    } as any);
+    });
 
     if (error) {
       console.error('Reassign job error:', error);
@@ -159,7 +155,6 @@ export async function unassignAdminJob(
       assigned_date: null,
       status: 'PENDING',
       visit_order: null,
-      tech_arrived_at: null,
     } as any);
 
     if (error) {

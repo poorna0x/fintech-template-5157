@@ -88,7 +88,7 @@ const AskTechnicianOtpDialog = ({
           beginWatching(existing);
           return;
         }
-        // Pending Ask OTP already exists (e.g. auto-ask on-site) — watch it;
+        // Pending Ask OTP already exists — watch it;
         // do NOT createOtpRequest again or the tech gets a duplicate push.
         if (existing) {
           beginWatching(existing);
