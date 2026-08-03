@@ -29,7 +29,7 @@ function newId(): string {
   return `upi_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
-function normalizeUpiId(raw: string): string {
+export function normalizeUpiId(raw: string): string {
   return String(raw || '')
     .trim()
     .replace(/\s+/g, '')
