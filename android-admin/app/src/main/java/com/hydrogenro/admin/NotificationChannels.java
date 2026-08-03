@@ -22,8 +22,8 @@ public final class NotificationChannels {
     /** Job completed by technician — uses complete_job.wav. */
     public static final String JOB_COMPLETE = "job_complete_v1";
 
-    /** Silent tech dismiss/seen acks — no sound, low importance. */
-    public static final String TECH_ACKS_SILENT = "tech_acks_silent_v1";
+    /** Silent tech seen acks — no sound, but DEFAULT so they still show in the tray. */
+    public static final String TECH_ACKS_SILENT = "tech_acks_silent_v2";
 
     private NotificationChannels() {}
 
@@ -75,11 +75,11 @@ public final class NotificationChannels {
         if (nm == null || nm.getNotificationChannel(TECH_ACKS_SILENT) != null) return;
 
         NotificationChannel channel = new NotificationChannel(
-            TECH_ACKS_SILENT, "Technician seen (silent)", NotificationManager.IMPORTANCE_LOW);
+            TECH_ACKS_SILENT, "Technician seen (silent)", NotificationManager.IMPORTANCE_DEFAULT);
         channel.setDescription("When a technician saw/cleared a push — no sound");
         channel.setSound(null, null);
         channel.enableVibration(false);
-        channel.enableLights(false);
+        channel.enableLights(true);
         nm.createNotificationChannel(channel);
     }
 

@@ -59,8 +59,9 @@ public final class TechPushAckNotifier {
                 .setContentTitle(title)
                 .setContentText(body)
                 .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
-                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                 .setSilent(true)
+                .setOnlyAlertOnce(true)
                 .setContentIntent(openPending)
                 .setAutoCancel(true)
                 .build();

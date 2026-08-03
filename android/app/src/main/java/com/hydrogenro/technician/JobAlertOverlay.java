@@ -411,6 +411,7 @@ public final class JobAlertOverlay {
         dismissBtn.setOnClickListener(v -> dismiss());
         openBtn.setOnClickListener(
             v -> {
+                postUserDismissAck();
                 dismissQuiet();
                 openApp(context, theme.deepLinkJob ? jobId : null);
             });

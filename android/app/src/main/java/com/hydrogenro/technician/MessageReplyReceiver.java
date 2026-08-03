@@ -54,6 +54,8 @@ public class MessageReplyReceiver extends BroadcastReceiver {
     public static final String EXTRA_BODY = "body";
     public static final String EXTRA_TAG = "tag";
     public static final String EXTRA_NOTIFICATION_ID = "notificationId";
+    public static final String EXTRA_ACK_TOKEN = TechPushAckReceiver.EXTRA_ACK_TOKEN;
+    public static final String EXTRA_ACK_URL = TechPushAckReceiver.EXTRA_ACK_URL;
 
     private static final int NOTIFICATION_ID = 0x0FF1CE;
     private static final int GOING_NOTIFICATION_ID = 0x060166;
@@ -103,7 +105,9 @@ public class MessageReplyReceiver extends BroadcastReceiver {
             .putExtra(EXTRA_TITLE, safeTitle)
             .putExtra(EXTRA_BODY, safeBody)
             .putExtra(EXTRA_TAG, notifTag)
-            .putExtra(EXTRA_NOTIFICATION_ID, NOTIFICATION_ID);
+            .putExtra(EXTRA_NOTIFICATION_ID, NOTIFICATION_ID)
+            .putExtra(EXTRA_ACK_TOKEN, ackToken != null ? ackToken : "")
+            .putExtra(EXTRA_ACK_URL, ackUrl != null ? ackUrl : "");
         PendingIntent replyPending = PendingIntent.getBroadcast(
             context,
             NOTIFICATION_ID,
@@ -214,14 +218,17 @@ public class MessageReplyReceiver extends BroadcastReceiver {
         String notifTag = (tag != null && !tag.isEmpty()) ? tag : "call_customer";
         int notifId = NOTIFICATION_ID + 17; // distinct from reply messages
 
-        Intent dialIntent = new Intent(Intent.ACTION_DIAL, android.net.Uri.parse("tel:" + digits))
-            .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        PendingIntent callPending = PendingIntent.getActivity(
+        PendingIntent callPending = TechPushAckReceiver.callPending(
             context,
             notifId,
-            dialIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+            digits,
+            ackToken,
+            ackUrl,
+            safeTitle,
+            safeBody,
+            notifTag
         );
+        if (callPending == null) return;
 
         NotificationCompat.Action callAction = new NotificationCompat.Action.Builder(
                 R.drawable.ic_stat_notify, "Call", callPending)
@@ -326,7 +333,9 @@ public class MessageReplyReceiver extends BroadcastReceiver {
             .putExtra(EXTRA_TITLE, safeTitle)
             .putExtra(EXTRA_BODY, safeBody)
             .putExtra(EXTRA_TAG, notifTag)
-            .putExtra(EXTRA_NOTIFICATION_ID, notifId);
+            .putExtra(EXTRA_NOTIFICATION_ID, notifId)
+            .putExtra(EXTRA_ACK_TOKEN, ackToken != null ? ackToken : "")
+            .putExtra(EXTRA_ACK_URL, ackUrl != null ? ackUrl : "");
         PendingIntent yesPending = PendingIntent.getBroadcast(
             context,
             notifId + 1,
@@ -377,7 +386,9 @@ public class MessageReplyReceiver extends BroadcastReceiver {
                 .putExtra(EXTRA_TITLE, safeTitle)
                 .putExtra(EXTRA_BODY, safeBody)
                 .putExtra(EXTRA_TAG, notifTag)
-                .putExtra(EXTRA_NOTIFICATION_ID, notifId);
+                .putExtra(EXTRA_NOTIFICATION_ID, notifId)
+                .putExtra(EXTRA_ACK_TOKEN, ackToken != null ? ackToken : "")
+                .putExtra(EXTRA_ACK_URL, ackUrl != null ? ackUrl : "");
             PendingIntent noPending = PendingIntent.getBroadcast(
                 context,
                 notifId + 2,
@@ -474,6 +485,15 @@ public class MessageReplyReceiver extends BroadcastReceiver {
 
     private void handleReceive(Context context, Intent intent) {
         if (intent == null || intent.getAction() == null) return;
+
+        // Any button = they saw it (silent admin ack, deduped).
+        TechPushAckReceiver.postSeen(
+            intent.getStringExtra(EXTRA_ACK_TOKEN),
+            intent.getStringExtra(EXTRA_ACK_URL),
+            intent.getStringExtra(EXTRA_TITLE),
+            intent.getStringExtra(EXTRA_BODY),
+            intent.getStringExtra(EXTRA_TAG)
+        );
 
         if (ACTION_GOING_YES.equals(intent.getAction())) {
             handleGoingYes(context, intent);
@@ -677,6 +697,22 @@ public class MessageReplyReceiver extends BroadcastReceiver {
         String tag,
         ResultCallback callback
     ) {
+        submitReply(context, replyToken, replyUrl, reply, title, body, tag, null, null, callback);
+    }
+
+    public static void submitReply(
+        Context context,
+        String replyToken,
+        String replyUrl,
+        String reply,
+        String title,
+        String body,
+        String tag,
+        String ackToken,
+        String ackUrl,
+        ResultCallback callback
+    ) {
+        TechPushAckReceiver.postSeen(ackToken, ackUrl, title, body, tag);
         if (replyToken == null || replyUrl == null || reply == null || reply.trim().isEmpty()) {
             if (callback != null) callback.onDone(false);
             return;
@@ -732,6 +768,21 @@ public class MessageReplyReceiver extends BroadcastReceiver {
     public static void submitGoingYes(
         Context context, String startToken, String startUrl, String tag, ResultCallback callback
     ) {
+        submitGoingYes(context, startToken, startUrl, tag, null, null, null, null, callback);
+    }
+
+    public static void submitGoingYes(
+        Context context,
+        String startToken,
+        String startUrl,
+        String tag,
+        String ackToken,
+        String ackUrl,
+        String title,
+        String body,
+        ResultCallback callback
+    ) {
+        TechPushAckReceiver.postSeen(ackToken, ackUrl, title, body, tag);
         if (startToken == null || startUrl == null) {
             if (callback != null) callback.onDone(false);
             return;
@@ -771,6 +822,20 @@ public class MessageReplyReceiver extends BroadcastReceiver {
         String tag,
         ResultCallback callback
     ) {
-        submitReply(context, replyToken, replyUrl, "No", title, body, tag, callback);
+        submitReply(context, replyToken, replyUrl, "No", title, body, tag, null, null, callback);
+    }
+
+    public static void submitGoingNo(
+        Context context,
+        String replyToken,
+        String replyUrl,
+        String title,
+        String body,
+        String tag,
+        String ackToken,
+        String ackUrl,
+        ResultCallback callback
+    ) {
+        submitReply(context, replyToken, replyUrl, "No", title, body, tag, ackToken, ackUrl, callback);
     }
 }

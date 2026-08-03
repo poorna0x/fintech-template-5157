@@ -46,7 +46,7 @@ exports.handler = async (event) => {
   const originalTitle = String(body.originalTitle || body.aboutTitle || '').trim().slice(0, 120);
   const originalBody = String(body.originalBody || body.aboutBody || '').trim().slice(0, 300);
 
-  if (!ackToken || (action !== 'dismissed' && action !== 'opened')) {
+  if (!ackToken || (action !== 'dismissed' && action !== 'seen' && action !== 'opened')) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'Missing fields' }) };
   }
 
@@ -85,10 +85,10 @@ exports.handler = async (event) => {
   let msgBody;
   let type;
   let silent;
-  if (action === 'dismissed') {
+  if (action === 'dismissed' || action === 'seen') {
     type = 'tech_push_dismissed';
     title = `${techName} saw the notification`;
-    msgBody = about || 'Cleared from their phone';
+    msgBody = about || 'Opened or cleared on their phone';
     silent = true;
   } else {
     type = 'tech_message_opened';
@@ -97,8 +97,9 @@ exports.handler = async (event) => {
     silent = false;
   }
 
-  // Dismiss acks use their own Device Tracker toggle; open uses tech_messages.
-  const category = action === 'dismissed' ? 'tech_dismiss_acks' : 'tech_messages';
+  // Dismiss/seen acks use their own Device Tracker toggle; open uses tech_messages.
+  const category =
+    action === 'dismissed' || action === 'seen' ? 'tech_dismiss_acks' : 'tech_messages';
   const tokens = await getAdminFcmTokens(db, category);
   if (tokens.length === 0) {
     return { statusCode: 200, headers, body: JSON.stringify({ ok: true, admins: 0 }) };
@@ -122,7 +123,7 @@ exports.handler = async (event) => {
             silent: silent ? '1' : '0',
             tag: silent ? 'tech_push_dismissed' : 'tech_message_opened',
           },
-          android: { priority: silent ? 'normal' : 'high' },
+          android: { priority: 'high' },
         })
       )
     );
