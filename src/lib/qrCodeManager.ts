@@ -11,6 +11,8 @@ export interface CommonQrCode {
   upiId?: string;
   /** Payee name (pn); falls back to name. */
   payeeName?: string;
+  /** Payment phone for dynamic UPI / share pay links. */
+  phone?: string;
   /** When true, job-complete shows a generated UPI QR with the bill amount. */
   dynamicUpiEnabled?: boolean;
 }
@@ -40,6 +42,14 @@ export function mapCommonQrRow(qr: Record<string, unknown> | null | undefined): 
         ? qr.payeeName
         : '';
   const payeeName = String(payeeRaw || '').trim();
+  const phoneRaw =
+    typeof qr.phone === 'string'
+      ? qr.phone
+      : '';
+  const phone = String(phoneRaw || '')
+    .trim()
+    .replace(/\D/g, '')
+    .slice(-10);
   const dynamicUpiEnabled = Boolean(
     qr.dynamic_upi_enabled ?? qr.dynamicUpiEnabled ?? false
   );
@@ -61,6 +71,7 @@ export function mapCommonQrRow(qr: Record<string, unknown> | null | undefined): 
           : '',
     upiId,
     payeeName,
+    phone,
     dynamicUpiEnabled,
   };
 }

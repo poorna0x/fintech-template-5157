@@ -100,6 +100,7 @@ import {
   TechnicianQrSnapshotV1,
 } from '@/lib/qrCodeManager';
 import DynamicUpiQrDisplay from '@/components/DynamicUpiQrDisplay';
+import ShareQrLinkPanel, { SHARE_QR_LINK_VALUE } from '@/components/job/ShareQrLinkPanel';
 import { extractCoordinates, formatAddressForDisplay } from '@/lib/maps';
 import { applyAutoMoveToOngoingOnDateFlag } from '@/lib/followUpToOngoing';
 import ImageUpload from '@/components/ImageUpload';
@@ -133,6 +134,15 @@ import {
   validatePendingPaymentInputs,
   type PaidTodayMode,
 } from '@/lib/jobPendingPayment';
+
+/** Resolve the QR id stored on the job when tech uses Share QR Link mode. */
+function resolveEffectiveQrCodeId(selectedQrCodeId: string, shareLinkUpiQrId: string): string {
+  if (selectedQrCodeId === SHARE_QR_LINK_VALUE) {
+    return shareLinkUpiQrId ? `common_${shareLinkUpiQrId}` : '';
+  }
+  if (!selectedQrCodeId || selectedQrCodeId === 'no-qr') return '';
+  return selectedQrCodeId;
+}
 import { resolveJobBillingAmount } from '@/lib/jobAnalytics';
 import { compareJobsByVisitOrder, getJobVisitOrder, getVisitOrderVisibleForTechnician } from '@/lib/adminVisitOrder';
 import {
@@ -679,6 +689,8 @@ const TechnicianDashboard = () => {
   const [rawWaterTds, setRawWaterTds] = useState<string>('');
   const [qrCodeType, setQrCodeType] = useState<string>('');
   const [selectedQrCodeId, setSelectedQrCodeId] = useState<string>('');
+  /** When Select QR = Share QR Link, which Dynamic UPI common QR to use. */
+  const [shareLinkUpiQrId, setShareLinkUpiQrId] = useState<string>('');
   const [commonQrCodes, setCommonQrCodes] = useState<CommonQrCode[]>([]);
   const [allCommonQrCodes, setAllCommonQrCodes] = useState<CommonQrCode[]>([]); // Store all QR codes
   const [technicians, setTechnicians] = useState<any[]>([]);
@@ -3762,6 +3774,7 @@ const TechnicianDashboard = () => {
     setRawWaterTds('');
     setQrCodeType('');
     setSelectedQrCodeId('');
+    setShareLinkUpiQrId('');
     setSelectedQrCodeName('');
     setSelectedQrCodeUrlState('');
     setOtpInput(['', '', '', '']);
@@ -3802,6 +3815,7 @@ const TechnicianDashboard = () => {
       pendingPaidTodayAmount,
       promisedPaymentDate,
       selectedQrCodeId,
+      shareLinkUpiQrId,
       paymentScreenshot,
       hasAMC,
       amcYears,
@@ -3834,6 +3848,7 @@ const TechnicianDashboard = () => {
     pendingPaidTodayAmount,
     promisedPaymentDate,
     selectedQrCodeId,
+    shareLinkUpiQrId,
     paymentScreenshot,
     hasAMC,
     amcYears,
@@ -3904,6 +3919,7 @@ const TechnicianDashboard = () => {
       rawWaterTds,
       qrCodeType,
       selectedQrCodeId,
+      shareLinkUpiQrId,
       paymentScreenshot,
       otpInput,
       serviceBrand,
@@ -3941,6 +3957,7 @@ const TechnicianDashboard = () => {
     rawWaterTds,
     qrCodeType,
     selectedQrCodeId,
+    shareLinkUpiQrId,
     paymentScreenshot,
     otpInput,
     serviceBrand,
@@ -3977,6 +3994,7 @@ const TechnicianDashboard = () => {
     setRawWaterTds(draft.rawWaterTds);
     setQrCodeType(draft.qrCodeType);
     setSelectedQrCodeId(draft.selectedQrCodeId);
+    setShareLinkUpiQrId(draft.shareLinkUpiQrId || '');
     setSelectedQrCodeName(draft.selectedQrCodeName || '');
     setSelectedQrCodeUrlState(draft.selectedQrCodeUrl || '');
     setPaymentScreenshot(draft.paymentScreenshot);
@@ -5007,9 +5025,35 @@ const TechnicianDashboard = () => {
         return;
       }
       if (paymentMode === 'ONLINE') {
-        if (!selectedQrCodeId) {
-          toast.error('Please select a QR code');
+        if (!resolveEffectiveQrCodeId(selectedQrCodeId, shareLinkUpiQrId)) {
+          toast.error(
+            selectedQrCodeId === SHARE_QR_LINK_VALUE
+              ? 'Select which UPI to use for the share link'
+              : 'Please select a QR code'
+          );
           return;
+        }
+      }
+      if (paymentMode === 'PARTIAL') {
+        const bill = parseMoneyAmount(billAmount);
+        const cash = parseMoneyAmount(partialCashAmount);
+        const online = parseMoneyAmount(partialOnlineAmount);
+        if (Number.isFinite(bill) && bill > 0) {
+          const sum = (Number.isFinite(cash) ? cash : 0) + (Number.isFinite(online) ? online : 0);
+          if (Math.abs(sum - bill) > 0.01) {
+            toast.error('Cash + Online must equal the bill amount');
+            return;
+          }
+        }
+        if (Number.isFinite(online) && online > 0) {
+          if (!resolveEffectiveQrCodeId(selectedQrCodeId, shareLinkUpiQrId)) {
+            toast.error(
+              selectedQrCodeId === SHARE_QR_LINK_VALUE
+                ? 'Select which UPI to use for the share link'
+                : 'Please select a QR code for the online part'
+            );
+            return;
+          }
         }
       }
       if (paymentMode === 'PENDING_PAYMENT') {
@@ -5037,8 +5081,12 @@ const TechnicianDashboard = () => {
           pendingPaidTodayEnabled &&
           (pendingPaidTodayMode === 'ONLINE' ||
             (pendingPaidTodayMode === 'PARTIAL' && parseMoneyAmount(partialOnlineAmount) > 0));
-        if (needsQr && !selectedQrCodeId) {
-          toast.error('Please select a QR code for today’s online payment');
+        if (needsQr && !resolveEffectiveQrCodeId(selectedQrCodeId, shareLinkUpiQrId)) {
+          toast.error(
+            selectedQrCodeId === SHARE_QR_LINK_VALUE
+              ? 'Select which UPI to use for the share link'
+              : 'Please select a QR code for today’s online payment'
+          );
           return;
         }
       }
@@ -5123,7 +5171,9 @@ const TechnicianDashboard = () => {
       const finalPaymentMode = isBillAmountZero() ? '' : (paymentMode as 'CASH' | 'ONLINE' | '');
       const finalPaymentScreenshot = isBillAmountZero() ? '' : paymentScreenshot;
       const finalQrCodeType = isBillAmountZero() ? '' : qrCodeType;
-      const finalSelectedQrCodeId = isBillAmountZero() ? '' : selectedQrCodeId;
+      const finalSelectedQrCodeId = isBillAmountZero()
+        ? ''
+        : resolveEffectiveQrCodeId(selectedQrCodeId, shareLinkUpiQrId);
       
       // Submit path below requires all bill/payment/optional/step-6 photos to be real URLs
     }
@@ -5191,11 +5241,12 @@ const TechnicianDashboard = () => {
       // QR codes are already stored in the database (common_qr_codes table) or technician profiles
       // If the QR code URL is already a Cloudinary URL, we use it as-is without uploading
       // Resolve QR code details with multiple fallbacks (handles draft restore + visibility filtering)
+      const effectiveQrId = resolveEffectiveQrCodeId(selectedQrCodeId, shareLinkUpiQrId);
       let selectedQrCodeUrl: string | undefined = selectedQrCodeUrlState || undefined;
       let selectedQrCodeNameLocal: string | undefined = selectedQrCodeName || undefined;
 
-      if (selectedQrCodeId && selectedQrCodeId.startsWith('common_')) {
-        const qrId = selectedQrCodeId.replace('common_', '');
+      if (effectiveQrId && effectiveQrId.startsWith('common_')) {
+        const qrId = effectiveQrId.replace('common_', '');
         const selectedQr =
           commonQrCodes.find(qr => qr.id === qrId) ||
           allCommonQrCodes.find(qr => qr.id === qrId) ||
@@ -5204,8 +5255,8 @@ const TechnicianDashboard = () => {
           selectedQrCodeUrl = selectedQr.qrCodeUrl || selectedQrCodeUrl;
           selectedQrCodeNameLocal = selectedQr.name || selectedQrCodeNameLocal;
         }
-      } else if (selectedQrCodeId && selectedQrCodeId.startsWith('technician_')) {
-        const techId = selectedQrCodeId.replace('technician_', '');
+      } else if (effectiveQrId && effectiveQrId.startsWith('technician_')) {
+        const techId = effectiveQrId.replace('technician_', '');
         const selectedTech =
           technicians.find(t => t.id === techId) ||
           allTechnicians.find(t => t.id === techId);
@@ -5398,8 +5449,8 @@ const TechnicianDashboard = () => {
             (pendingPaidTodayMode === 'PARTIAL' && parseMoneyAmount(partialOnlineAmount) > 0));
         if (
           paymentMode === 'ONLINE' ||
-          (paymentMode === 'PARTIAL' && selectedQrCodeId) ||
-          (pendingNeedsQr && selectedQrCodeId)
+          (paymentMode === 'PARTIAL' && effectiveQrId) ||
+          (pendingNeedsQr && effectiveQrId)
         ) {
           if (selectedQrCodeUrl && !(
             selectedQrCodeUrl.includes('cloudinary.com') || 
@@ -5410,14 +5461,16 @@ const TechnicianDashboard = () => {
             console.warn('⚠️ QR code URL is not a valid URL format:', selectedQrCodeUrl);
           }
           const qrPhotos: any = {
-            qr_code_type: qrCodeType,
-            selected_qr_code_id: selectedQrCodeId,
+            qr_code_type:
+              selectedQrCodeId === SHARE_QR_LINK_VALUE ? 'share_link' : qrCodeType,
+            selected_qr_code_id: effectiveQrId,
             payment_screenshot: isPaymentScreenshotUploaded ? paymentScreenshot : null,
             selected_qr_code_url: selectedQrCodeUrl,
             selected_qr_code_name: selectedQrCodeNameLocal,
+            shared_via_whatsapp: selectedQrCodeId === SHARE_QR_LINK_VALUE,
           };
-          if (selectedQrCodeId.startsWith('common_')) {
-            const qrId = selectedQrCodeId.replace('common_', '');
+          if (effectiveQrId.startsWith('common_')) {
+            const qrId = effectiveQrId.replace('common_', '');
             const selectedQr =
               commonQrCodes.find((qr) => qr.id === qrId) ||
               allCommonQrCodes.find((qr) => qr.id === qrId);
@@ -5425,6 +5478,7 @@ const TechnicianDashboard = () => {
               qrPhotos.dynamic_upi = true;
               qrPhotos.upi_id = selectedQr.upiId;
               qrPhotos.payee_name = selectedQr.payeeName || selectedQr.name;
+              if (selectedQr.phone) qrPhotos.phone = selectedQr.phone;
             }
           }
           requirements.push({ qr_photos: qrPhotos });
@@ -9195,6 +9249,7 @@ const TechnicianDashboard = () => {
                           if (value === 'CASH') {
                             setQrCodeType('');
                             setSelectedQrCodeId('');
+                            setShareLinkUpiQrId('');
                             setPaymentScreenshot('');
                           }
                           if (value === 'PARTIAL') {
@@ -9210,6 +9265,7 @@ const TechnicianDashboard = () => {
                             setPromisedPaymentDate('');
                             setQrCodeType('');
                             setSelectedQrCodeId('');
+                            setShareLinkUpiQrId('');
                           } else {
                             setPendingPaidTodayEnabled(false);
                             setPendingPaidTodayMode('');
@@ -9333,7 +9389,11 @@ const TechnicianDashboard = () => {
                             let qrUrl = '';
                             let qrName = '';
 
-                            if (value.startsWith('common_')) {
+                            if (value === SHARE_QR_LINK_VALUE) {
+                              qrType = 'share_link';
+                              setShareLinkUpiQrId('');
+                            } else if (value.startsWith('common_')) {
+                              setShareLinkUpiQrId('');
                               qrType = 'common';
                               const qrId = value.replace('common_', '');
                               const selectedQr =
@@ -9345,6 +9405,7 @@ const TechnicianDashboard = () => {
                                 qrName = selectedQr.name;
                               }
                             } else if (value.startsWith('technician_')) {
+                              setShareLinkUpiQrId('');
                               qrType = 'technician';
                               const techId = value.replace('technician_', '');
                               const selectedTech =
@@ -9378,7 +9439,6 @@ const TechnicianDashboard = () => {
                             {commonQrCodes.map((qr) => (
                               <SelectItem key={`common_${qr.id}`} value={`common_${qr.id}`}>
                                 {qr.name}
-                                {qr.dynamicUpiEnabled ? ' · Dynamic UPI' : ''}
                               </SelectItem>
                             ))}
                                   </>
@@ -9392,14 +9452,83 @@ const TechnicianDashboard = () => {
                                       {tech.fullName}'s QR Code
                             </SelectItem>
                                   ))}
+                                <SelectItem value={SHARE_QR_LINK_VALUE}>
+                                  Share QR Link (customer not on site)
+                                </SelectItem>
                               </>
                             )}
                           </SelectContent>
                         </Select>
                       </div>
 
+                      {selectedQrCodeId === SHARE_QR_LINK_VALUE ? (
+                        <ShareQrLinkPanel
+                          commonQrCodes={
+                            commonQrCodes.length > 0 ? commonQrCodes : allCommonQrCodes
+                          }
+                          selectedUpiQrId={shareLinkUpiQrId}
+                          onSelectUpiQrId={(id) => {
+                            setShareLinkUpiQrId(id);
+                            const selectedQr =
+                              commonQrCodes.find((qr) => qr.id === id) ||
+                              allCommonQrCodes.find((qr) => qr.id === id);
+                            if (selectedQr) {
+                              setQrCodeType('common');
+                              setSelectedQrCodeName(selectedQr.name);
+                              setSelectedQrCodeUrlState(selectedQr.qrCodeUrl || '');
+                            }
+                          }}
+                          amount={(() => {
+                            if (
+                              paymentMode === 'PARTIAL' ||
+                              (paymentMode === 'PENDING_PAYMENT' &&
+                                pendingPaidTodayMode === 'PARTIAL')
+                            ) {
+                              return parseMoneyAmount(partialOnlineAmount) || 0;
+                            }
+                            if (
+                              paymentMode === 'PENDING_PAYMENT' &&
+                              pendingPaidTodayMode === 'ONLINE'
+                            ) {
+                              const paid = parseMoneyAmount(pendingPaidTodayAmount);
+                              return Number.isFinite(paid) && paid > 0
+                                ? paid
+                                : parseMoneyAmount(billAmount) || 0;
+                            }
+                            return parseMoneyAmount(billAmount) || 0;
+                          })()}
+                          brand={normalizeDocumentBrand(serviceBrand) || 'hydrogenro'}
+                          customerPhone={
+                            (selectedJobForComplete?.customer as { phone?: string } | undefined)
+                              ?.phone ||
+                            completeJobCustomerDoc?.phone ||
+                            (selectedJobForComplete?.customer as { alternatePhone?: string; alternate_phone?: string } | undefined)
+                              ?.alternatePhone ||
+                            (selectedJobForComplete?.customer as { alternate_phone?: string } | undefined)
+                              ?.alternate_phone ||
+                            (selectedJobForComplete as { customerPhone?: string } | null)
+                              ?.customerPhone ||
+                            ''
+                          }
+                          customerName={
+                            selectedJobForComplete?.customerName ||
+                            (selectedJobForComplete?.customer as { fullName?: string; full_name?: string } | undefined)
+                              ?.fullName ||
+                            (selectedJobForComplete?.customer as { full_name?: string } | undefined)
+                              ?.full_name ||
+                            completeJobCustomerDoc?.fullName ||
+                            ''
+                          }
+                          note={
+                            selectedJobForComplete?.customerName ||
+                            selectedJobForComplete?.jobNumber ||
+                            ''
+                          }
+                        />
+                      ) : null}
+
                       {/* Display selected QR code image immediately */}
-                      {selectedQrCodeId && (
+                      {selectedQrCodeId && selectedQrCodeId !== SHARE_QR_LINK_VALUE && (
                         <div className="mt-4 p-4 bg-primary/10 border border-primary rounded-lg">
                           <p className="text-sm font-semibold text-primary mb-3 text-center">
                             QR Code - Show to Customer
@@ -9444,6 +9573,7 @@ const TechnicianDashboard = () => {
                                     payeeName={selectedQr.payeeName || selectedQr.name}
                                     amount={onlineAmt}
                                     note={selectedJobForComplete?.customerName || selectedQr.name}
+                                    phone={selectedQr.phone}
                                     label={selectedQr.name}
                                     fallbackImageUrl={selectedQr.qrCodeUrl}
                                   />
@@ -9785,7 +9915,7 @@ const TechnicianDashboard = () => {
                   (isCompleteJobFooterSubmit() && hasAnyPendingCompletionUploads() && !completionRetryPhaseBOnly) ||
                   (completeJobStep === 6 && !isSoftenerService() && !rawWaterTds.trim() && !completionRetryPhaseBOnly) ||
                   (completeJobStep === 4 && !isBillAmountZero() && !paymentMode) ||
-                  (completeJobStep === 4 && !isBillAmountZero() && (paymentMode === 'ONLINE' || paymentMode === 'PARTIAL') && (paymentMode === 'ONLINE' ? !selectedQrCodeId : (parseMoneyAmount(partialOnlineAmount) > 0 && !selectedQrCodeId))) ||
+                  (completeJobStep === 4 && !isBillAmountZero() && (paymentMode === 'ONLINE' || paymentMode === 'PARTIAL') && (paymentMode === 'ONLINE' ? !resolveEffectiveQrCodeId(selectedQrCodeId, shareLinkUpiQrId) : (parseMoneyAmount(partialOnlineAmount) > 0 && !resolveEffectiveQrCodeId(selectedQrCodeId, shareLinkUpiQrId)))) ||
                   (completeJobStep === 4 &&
                     !isBillAmountZero() &&
                     paymentMode === 'PENDING_PAYMENT' &&
@@ -9798,7 +9928,7 @@ const TechnicianDashboard = () => {
                           ((pendingPaidTodayMode === 'ONLINE' ||
                             (pendingPaidTodayMode === 'PARTIAL' &&
                               parseMoneyAmount(partialOnlineAmount) > 0)) &&
-                            !selectedQrCodeId))))) ||
+                            !resolveEffectiveQrCodeId(selectedQrCodeId, shareLinkUpiQrId)))))) ||
                   // #6 Block Next on step 4 when partial cash + online don't
                   // add up to the bill (allowing 0.01 for rounding).
                   (completeJobStep === 4 && !isBillAmountZero() && paymentMode === 'PARTIAL' && (() => {

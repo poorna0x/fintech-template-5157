@@ -48,7 +48,11 @@ DECLARE
   v_i int;
   v_try int := 0;
 BEGIN
-  IF NOT public.is_admin_user() THEN
+  IF public.is_admin_user() THEN
+    NULL; -- allowed
+  ELSIF EXISTS (SELECT 1 FROM public.technicians t WHERE t.id = auth.uid()) THEN
+    NULL; -- technicians may mint short pay links for remote customers
+  ELSE
     RAISE EXCEPTION 'not authorized';
   END IF;
 

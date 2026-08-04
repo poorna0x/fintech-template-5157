@@ -1649,7 +1649,6 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                                   {localCommonQrCodes.map((qr) => (
                                     <SelectItem key={`common_${qr.id}`} value={`common_${qr.id}`}>
                                       {qr.name}
-                                      {qr.dynamicUpiEnabled ? ' · Dynamic UPI' : ''}
                                     </SelectItem>
                                   ))}
                                 </>

@@ -443,7 +443,7 @@ function shortLinkCacheKey(input: UpiPayLinkInput): string {
   ].join('|');
 }
 
-/** Admin-only: create a short /p/{code} pay link (shared Supabase). */
+/** Admin-only historically; technicians may also mint links (RPC allows both). */
 export async function createUpiPayShortLink(
   input: UpiPayLinkInput
 ): Promise<string | null> {

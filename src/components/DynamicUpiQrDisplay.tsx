@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   buildUpiPayDeepLink,
   isValidUpiId,
+  normalizePaymentPhone,
   normalizeUpiId,
 } from '@/lib/upiPaymentAccounts';
 
@@ -10,6 +11,8 @@ type DynamicUpiQrDisplayProps = {
   payeeName?: string;
   amount?: number;
   note?: string;
+  /** Optional payment phone shown under the QR. */
+  phone?: string;
   /** Optional label under the QR (e.g. account name). */
   label?: string;
   size?: number;
@@ -32,6 +35,7 @@ export default function DynamicUpiQrDisplay({
   payeeName,
   amount,
   note,
+  phone: phoneProp,
   label,
   size = 256,
   className,
@@ -43,6 +47,7 @@ export default function DynamicUpiQrDisplay({
   const [fallbackBroken, setFallbackBroken] = useState(false);
 
   const pa = normalizeUpiId(upiId);
+  const phone = normalizePaymentPhone(phoneProp || '');
   const valid = isValidUpiId(pa);
   const am = Number(amount);
   const amountOk = Number.isFinite(am) && am > 0;
@@ -182,6 +187,9 @@ export default function DynamicUpiQrDisplay({
         <p className="text-xs text-muted-foreground mt-2">Generating QR…</p>
       ) : null}
       <p className="text-xs text-muted-foreground mt-2 break-all">{pa}</p>
+      {phone ? (
+        <p className="text-xs text-muted-foreground mt-0.5 tabular-nums">{phone}</p>
+      ) : null}
       {amountOk ? (
         <p className="text-[11px] text-muted-foreground mt-1">Dynamic UPI — amount included</p>
       ) : null}

@@ -41,6 +41,8 @@ export type TechnicianCompleteJobDraft = {
   rawWaterTds: string;
   qrCodeType: string;
   selectedQrCodeId: string;
+  /** When selectedQrCodeId is share_qr_link, the Dynamic UPI common QR id. */
+  shareLinkUpiQrId?: string;
   paymentScreenshot: string;
   otpInput: string[];
   serviceBrand: ServiceBrand | null;

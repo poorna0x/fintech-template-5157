@@ -4319,6 +4319,7 @@ export const db = {
       qr_code_url: string;
       upi_id?: string;
       payee_name?: string;
+      phone?: string;
       dynamic_upi_enabled?: boolean;
     }) {
       const { data, error } = await supabase
@@ -4328,6 +4329,7 @@ export const db = {
           qr_code_url: qrCode.qr_code_url,
           upi_id: qrCode.upi_id ?? '',
           payee_name: qrCode.payee_name ?? '',
+          phone: qrCode.phone ?? '',
           dynamic_upi_enabled: qrCode.dynamic_upi_enabled === true,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
@@ -4339,14 +4341,25 @@ export const db = {
     },
     
     async getAll() {
-      const { data, error } = await supabase
+      const colsWithPhone =
+        'id, name, qr_code_url, upi_id, payee_name, phone, dynamic_upi_enabled, created_at, updated_at';
+      const colsNoPhone =
+        'id, name, qr_code_url, upi_id, payee_name, dynamic_upi_enabled, created_at, updated_at';
+      let { data, error } = await supabase
         .from('common_qr_codes')
-        .select(
-          'id, name, qr_code_url, upi_id, payee_name, dynamic_upi_enabled, created_at, updated_at'
-        )
+        .select(colsWithPhone)
         .order('created_at', { ascending: false })
         .limit(50);
-      
+
+      // phone column added later — fall back if migration not applied yet
+      if (error && /phone/i.test(String(error.message || error.code || ''))) {
+        ({ data, error } = await supabase
+          .from('common_qr_codes')
+          .select(colsNoPhone)
+          .order('created_at', { ascending: false })
+          .limit(50));
+      }
+
       return { data, error };
     },
 
@@ -4366,6 +4379,7 @@ export const db = {
         qr_code_url?: string;
         upi_id?: string;
         payee_name?: string;
+        phone?: string;
         dynamic_upi_enabled?: boolean;
       }
     ) {

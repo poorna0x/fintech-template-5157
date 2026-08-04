@@ -51,7 +51,7 @@ import { Technician } from '@/types';
 import ImageUpload from '@/components/ImageUpload';
 import { TechnicianIdCardLinks } from '@/components/admin/TechnicianIdCardLinks';
 import { CommonQrCode, invalidateQrCodesCache, cacheQrCodes, getCachedQrCodes, normalizeTechnicianAssignedCommonQrIds, mapCommonQrRow } from '@/lib/qrCodeManager';
-import { isValidUpiId, normalizeUpiId } from '@/lib/upiPaymentAccounts';
+import { isValidUpiId, normalizeUpiId, normalizePaymentPhone } from '@/lib/upiPaymentAccounts';
 // NOTE: `jszip` and `qr-code-styling` are heavy and only used by specific
 // button actions (data export ZIP, styled QR image). They are dynamically
 // imported at their call sites so they stay out of the main Settings chunk.
@@ -296,6 +296,7 @@ const Settings = () => {
     qrCodeUrl: '',
     upiId: '',
     payeeName: '',
+    phone: '',
     dynamicUpiEnabled: false,
   });
   const [qrImageGeneratorData, setQrImageGeneratorData] = useState({
@@ -527,6 +528,7 @@ const Settings = () => {
           qrCodeUrl: qr.qrCodeUrl || '',
           upiId: qr.upiId || '',
           payeeName: qr.payeeName || '',
+          phone: qr.phone || '',
           dynamicUpiEnabled: !!qr.dynamicUpiEnabled,
         });
       }
@@ -1023,6 +1025,7 @@ const Settings = () => {
       qrCodeUrl: '',
       upiId: '',
       payeeName: '',
+      phone: '',
       dynamicUpiEnabled: false,
     });
     openSettingsPanel('add-payment-qr');
@@ -1035,6 +1038,7 @@ const Settings = () => {
       qrCodeUrl: qrCode.qrCodeUrl,
       upiId: qrCode.upiId || '',
       payeeName: qrCode.payeeName || '',
+      phone: qrCode.phone || '',
       dynamicUpiEnabled: !!qrCode.dynamicUpiEnabled,
     });
     openSettingsPanel('edit-payment-qr', { id: qrCode.id });
@@ -1076,6 +1080,7 @@ const Settings = () => {
         qr_code_url: hasImage ? qrCodeFormData.qrCodeUrl.trim() : '',
         upi_id: upiId,
         payee_name: String(qrCodeFormData.payeeName || '').trim().slice(0, 100),
+        phone: normalizePaymentPhone(qrCodeFormData.phone || ''),
         dynamic_upi_enabled: dynamicOn,
       };
 
@@ -1110,6 +1115,7 @@ const Settings = () => {
         qrCodeUrl: '',
         upiId: '',
         payeeName: '',
+        phone: '',
         dynamicUpiEnabled: false,
       });
     } catch (error) {
@@ -3798,6 +3804,7 @@ const Settings = () => {
             qrCodeUrl: '',
             upiId: '',
             payeeName: '',
+            phone: '',
             dynamicUpiEnabled: false,
           });
           setQrCodeUploading(false);
@@ -3876,6 +3883,22 @@ const Settings = () => {
                       className="mt-1"
                     />
                   </div>
+                  <div>
+                    <Label htmlFor="qrPayPhone">Payment phone (optional)</Label>
+                    <Input
+                      id="qrPayPhone"
+                      value={qrCodeFormData.phone}
+                      onChange={(e) =>
+                        setQrCodeFormData((prev) => ({ ...prev, phone: e.target.value }))
+                      }
+                      placeholder="10-digit number for pay links"
+                      className="mt-1"
+                      inputMode="tel"
+                    />
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      Shown on the customer pay page and in WhatsApp share text.
+                    </p>
+                  </div>
                 </div>
               )}
               
@@ -3932,6 +3955,7 @@ const Settings = () => {
                   qrCodeUrl: '',
                   upiId: '',
                   payeeName: '',
+                  phone: '',
                   dynamicUpiEnabled: false,
                 });
               }}
