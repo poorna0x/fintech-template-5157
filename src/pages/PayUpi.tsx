@@ -340,7 +340,6 @@ const PayUpi = () => {
               {amountLabel}
             </p>
           ) : null}
-          {pn ? <p className="mt-0.5 text-sm text-slate-600">To: {pn}</p> : null}
         </div>
 
         <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm shadow-slate-200/60">
@@ -349,6 +348,15 @@ const PayUpi = () => {
           </div>
 
           <div className="space-y-0 divide-y divide-slate-100">
+            {pn ? (
+              <div className="flex items-start gap-3 px-4 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs text-slate-500">Payee name</p>
+                  <p className="mt-0.5 text-sm font-semibold text-slate-900">{pn}</p>
+                </div>
+              </div>
+            ) : null}
+
             <div className="flex items-start gap-3 px-4 py-2.5">
               <div className="min-w-0 flex-1">
                 <p className="text-xs text-slate-500">UPI ID</p>
