@@ -109,6 +109,8 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <!-- navigator.vibrate in the WebView (button haptics) is silently ignored without this -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Fingerprint / face unlock (Admin app lock) -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <!-- Caller lookup: detect ringing + read the incoming number
          (Android 9+ only includes the number when READ_CALL_LOG is granted) -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />

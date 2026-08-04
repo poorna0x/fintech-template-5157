@@ -1,10 +1,12 @@
 /**
  * Deep-link bridge: admin push tap → dashboard focuses that job.
  * registerAdminPushToken wires Capacitor; AdminDashboard registers the handler.
- * Pending payloads are queued until the dashboard handler is ready (cold start).
+ * Pending payloads are queued until the dashboard handler is ready (cold start)
+ * or until biometric unlock completes (app lock).
  */
 
 import type { SettingsPanelSlug } from '@/lib/settingsUrl';
+import { isAdminAppLocked } from '@/lib/adminBiometricLock';
 
 export type AdminPushDeepLinkPayload = {
   /** 'job' (default) → focus a job; 'tech_call' → search the caller's number; 'settings' → Settings panel; 'payments' → Payments tab + optional add-expense dialog. */
@@ -39,11 +41,19 @@ let pending: AdminPushDeepLinkPayload | null = null;
 
 export function setAdminPushDeepLinkHandler(next: Handler | null): void {
   handler = next;
-  if (handler && pending) {
+  if (handler && pending && !isAdminAppLocked()) {
     const queued = pending;
     pending = null;
     handler(queued);
   }
+}
+
+/** After biometric unlock — deliver any push tap that waited on the lock screen. */
+export function flushPendingAdminPushDeepLink(): void {
+  if (!handler || !pending || isAdminAppLocked()) return;
+  const queued = pending;
+  pending = null;
+  handler(queued);
 }
 
 /** Extract jobId/event from FCM / Capacitor notification data. */
@@ -126,7 +136,8 @@ export function deliverAdminPushDeepLink(
 ): boolean {
   const parsed = parseAdminPushDeepLinkData(raw);
   if (!parsed) return false;
-  if (!handler) {
+  // Hold until fingerprint unlock so navigation happens after the lock screen.
+  if (!handler || isAdminAppLocked()) {
     pending = parsed;
     return true;
   }

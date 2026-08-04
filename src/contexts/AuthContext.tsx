@@ -467,6 +467,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         /* best-effort */
       }
       try {
+        const { clearAdminBiometricLockOnLogout } = await import('@/lib/adminBiometricLock');
+        clearAdminBiometricLockOnLogout();
+      } catch {
+        /* best-effort */
+      }
+      try {
         const { unregisterTechnicianPushToken } = await import('@/lib/technicianPush');
         await unregisterTechnicianPushToken();
       } catch {

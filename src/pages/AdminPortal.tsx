@@ -5,6 +5,11 @@ import AdminLogin from '@/components/AdminLogin';
 import { startAdminDashboardPrefetch } from '@/lib/adminDashboardCache';
 import { markNativeBootReady } from '@/lib/nativeBootReady';
 import { AdminScreenLoader } from '@/components/admin/AdminLoaders';
+import { AdminBiometricLockScreen } from '@/components/admin/AdminBiometricLockScreen';
+import {
+  startAdminBiometricLockController,
+  stopAdminBiometricLockController,
+} from '@/lib/adminBiometricLock';
 
 const adminDashboardImport = () => import('@/components/AdminDashboard');
 const settingsImport = () => import('./Settings');
@@ -61,6 +66,18 @@ export default function AdminPortal() {
     }
   }, [user, isAdmin]);
 
+  // Admin APK: fingerprint lock controller (no-op in browser / old APKs).
+  useEffect(() => {
+    if (!user || !isAdmin) {
+      stopAdminBiometricLockController();
+      return;
+    }
+    void startAdminBiometricLockController();
+    return () => {
+      stopAdminBiometricLockController();
+    };
+  }, [user, isAdmin]);
+
   const booting =
     authInitializing ||
     (user && isAdmin && (onSettings ? !Settings : !Dashboard));
@@ -80,9 +97,18 @@ export default function AdminPortal() {
     return <AdminLogin />;
   }
 
-  if (onSettings) {
-    return Settings ? <Settings /> : null;
-  }
+  const shell = onSettings
+    ? Settings
+      ? <Settings />
+      : null
+    : Dashboard
+      ? <Dashboard />
+      : null;
 
-  return Dashboard ? <Dashboard /> : null;
+  return (
+    <>
+      {shell}
+      <AdminBiometricLockScreen />
+    </>
+  );
 }

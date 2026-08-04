@@ -60,6 +60,7 @@ import { registerAdminPWA } from '@/lib/pwa';
 import { EmailTrackingSettings } from '@/components/admin/EmailTrackingSettings';
 import { BookingIntentArchiveSettings } from '@/components/admin/BookingIntentArchiveSettings';
 import { DeviceTrackerSettings } from '@/components/admin/DeviceTrackerSettings';
+import { AdminAppLockSettings } from '@/components/admin/AdminAppLockSettings';
 import { AppCrashReports } from '@/components/admin/AppCrashReports';
 import {
   isFollowUpGlowEnabled,
@@ -2462,6 +2463,8 @@ const Settings = () => {
               </div>
             </CardContent>
           </Card>
+
+          <AdminAppLockSettings />
 
           <DeviceTrackerSettings />
 

@@ -35,6 +35,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(AdminClipboardPlugin.class);
         registerPlugin(PdfSavePlugin.class);
         registerPlugin(DevicePrefsPlugin.class);
+        registerPlugin(BiometricAuthPlugin.class);
         final SplashScreen splash = SplashScreen.installSplashScreen(this);
         splash.setKeepOnScreenCondition(() -> !bootUiReady.get() && !pageReady.get());
         splash.setOnExitAnimationListener(SplashScreenViewProvider::remove);
