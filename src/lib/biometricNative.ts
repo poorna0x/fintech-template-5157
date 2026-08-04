@@ -52,7 +52,7 @@ export async function promptBiometricUnlock(options?: {
     await BiometricAuth.authenticate({
       title: options?.title || 'Unlock Admin',
       reason: options?.reason || 'Confirm it is you',
-      subtitle: options?.subtitle || options?.reason || 'Use fingerprint or phone PIN',
+      subtitle: options?.subtitle || options?.reason || 'Confirm it is you',
     });
     return 'ok';
   } catch (err: unknown) {

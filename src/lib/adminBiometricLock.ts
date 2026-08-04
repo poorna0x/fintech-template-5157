@@ -228,7 +228,7 @@ export async function unlockAdminAppWithBiometric(): Promise<'ok' | 'canceled' |
     const result = await promptBiometricUnlock({
       title: 'Unlock Admin',
       reason: 'Unlock Hydrogen RO Admin',
-      subtitle: 'Fingerprint, face, or phone PIN',
+      subtitle: 'Confirm it is you',
     });
     if (result === 'ok') {
       locked = false;
@@ -260,8 +260,8 @@ export async function enableAdminBiometricLock(): Promise<
   const avail = await checkBiometricAvailable();
   if (!avail.available) return 'unavailable';
   const result = await promptBiometricUnlock({
-    title: 'Enable fingerprint lock',
-    reason: 'Confirm fingerprint to turn on app lock',
+    title: 'Enable app lock',
+    reason: 'Confirm to turn on app lock',
     subtitle: formatAdminLockDelayLabel(),
   });
   if (result !== 'ok') return result;
@@ -275,9 +275,9 @@ export async function enableAdminBiometricLock(): Promise<
 export async function disableAdminBiometricLock(): Promise<'ok' | 'canceled' | 'failed'> {
   if (!isAdminBiometricLockEnabled()) return 'ok';
   const result = await promptBiometricUnlock({
-    title: 'Turn off fingerprint lock',
+    title: 'Turn off app lock',
     reason: 'Confirm to disable app lock',
-    subtitle: 'Fingerprint, face, or phone PIN',
+    subtitle: 'Confirm it is you',
   });
   if (result !== 'ok') return result;
   setAdminBiometricLockEnabled(false);

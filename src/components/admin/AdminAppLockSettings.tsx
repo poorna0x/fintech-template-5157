@@ -75,21 +75,21 @@ export function AdminAppLockSettings() {
         const result = await enableAdminBiometricLock();
         if (result === 'ok') {
           setEnabled(true);
-          toast.success('Fingerprint lock on');
+          toast.success('App lock on');
         } else if (result === 'unavailable') {
-          toast.error('No fingerprint or screen lock set up on this phone');
+          toast.error('No screen lock set up on this phone');
         } else if (result === 'canceled') {
           /* leave off */
         } else {
-          toast.error('Could not enable fingerprint lock');
+          toast.error('Could not enable app lock');
         }
       } else {
         const result = await disableAdminBiometricLock();
         if (result === 'ok') {
           setEnabled(false);
-          toast.success('Fingerprint lock off');
+          toast.success('App lock off');
         } else if (result !== 'canceled') {
-          toast.error('Could not turn off fingerprint lock');
+          toast.error('Could not turn off app lock');
         }
       }
     } finally {
@@ -131,19 +131,18 @@ export function AdminAppLockSettings() {
           App lock
         </CardTitle>
         <CardDescription>
-          Require fingerprint (or phone PIN) after leaving the app. Choose
-          immediately, 2 minutes, 5 minutes, or a custom time. Push taps still
-          open the right screen after unlock.
+          Lock the Admin app after you leave. Choose immediately, 2 minutes,
+          5 minutes, or a custom time.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-card px-3 py-2.5">
           <div className="min-w-0 space-y-0.5">
-            <Label className="text-sm font-medium">Fingerprint unlock</Label>
+            <Label className="text-sm font-medium">App lock</Label>
             <p className="text-xs text-muted-foreground leading-snug">
               {available
                 ? delayLabel
-                : 'Set up a fingerprint or screen lock in Android Settings first.'}
+                : 'Set up a screen lock on this phone first.'}
             </p>
           </div>
           <Switch

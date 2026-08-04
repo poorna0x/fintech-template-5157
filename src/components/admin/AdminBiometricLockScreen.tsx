@@ -29,7 +29,6 @@ export function AdminBiometricLockScreen() {
 
   useEffect(() => {
     if (!locked || busy) return;
-    // Auto-prompt on lock appear and when returning from background (push tap).
     const t = window.setTimeout(() => {
       void handleUnlock();
     }, 350);
@@ -62,10 +61,6 @@ export function AdminBiometricLockScreen() {
           <h1 className="text-xl font-semibold tracking-tight text-foreground">
             Unlock Admin
           </h1>
-          <p className="text-sm text-muted-foreground leading-relaxed">
-            Use fingerprint, face, or your phone PIN. After unlock, any notification
-            you opened will open normally.
-          </p>
         </div>
         {error ? (
           <p className="text-sm text-red-600 dark:text-red-400" role="alert">
@@ -78,7 +73,7 @@ export function AdminBiometricLockScreen() {
           onClick={() => void handleUnlock()}
           disabled={busy}
         >
-          {busy ? 'Waiting…' : 'Unlock with fingerprint'}
+          {busy ? 'Waiting…' : 'Unlock'}
         </Button>
       </div>
     </div>
