@@ -247,7 +247,7 @@ const PayUpi = () => {
         pn ? `Payee name: ${pn}` : null,
         `UPI ID: ${pa}`,
         ph ? `Phone: ${ph}` : null,
-        typeof window !== 'undefined' ? window.location.href : null,
+        typeof window !== 'undefined' ? `Pay link: ${window.location.href}` : null,
       ]
         .filter(Boolean)
         .join('\n');
