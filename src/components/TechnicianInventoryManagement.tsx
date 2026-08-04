@@ -891,8 +891,8 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
                     onClick={() => setTopUpDialogOpen(true)}
                     className="w-full sm:w-auto text-sm"
                   >
-                    <ArrowUpCircle className="w-4 h-4 sm:mr-2" />
-                    <span className="sm:inline">Top Up Used Items</span>
+                    <ArrowUpCircle className="w-4 h-4 mr-2" />
+                    Top Up Used Items
                   </Button>
                   {loadedForTechnicianId === selectedTechnicianId && (
                     <Button 

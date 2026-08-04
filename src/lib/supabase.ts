@@ -7053,10 +7053,17 @@ export const db = {
           job_id,
           technician_id,
           inventory_id,
+          custom_name,
           quantity_used,
           created_at,
           inventory:inventory(id, product_name, code),
-          job:jobs(completed_at, end_time, requirements)
+          job:jobs(
+            completed_at,
+            end_time,
+            requirements,
+            job_number,
+            customer:customers(full_name)
+          )
         `)
         .eq('technician_id', technicianId)
         .order('created_at', { ascending: false });
