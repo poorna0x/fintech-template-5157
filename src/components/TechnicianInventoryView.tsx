@@ -127,8 +127,8 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
     }
   }, [technicianId]);
 
-  // Load main inventory with caching (only when dialog opens)
-  const loadMainInventory = useCallback(async (forceReload = false) => {
+  // Load main inventory with caching. revalidate=true shows cache then refreshes.
+  const loadMainInventory = useCallback(async (forceReload = false, revalidate = false) => {
     const cacheKey = 'main_inventory';
     
     // If force reload, clear cache first
@@ -141,13 +141,12 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
       const cached = inventoryCache.get<InventoryItem[]>(cacheKey);
       if (cached) {
         setMainInventory(cached);
-        return;
+        if (!revalidate) return;
       }
     }
 
     try {
       setMainInventoryLoading(true);
-      // Always fetch fresh data from database
       const { data, error } = await db.inventory.getAll();
       if (error) throw error;
       const inventoryData = data || [];
@@ -192,12 +191,11 @@ const TechnicianInventoryView: React.FC<TechnicianInventoryViewProps> = ({ techn
     };
   }, [technicianId, loadMyInventory]);
 
-  // Load main inventory only when dialog opens (lazy loading)
+  // Load main inventory when dialog opens; revalidate so new products aren't missed
   useEffect(() => {
-    if (requestDialogOpen && mainInventory.length === 0) {
-      loadMainInventory();
-    }
-  }, [requestDialogOpen, mainInventory.length, loadMainInventory]);
+    if (!requestDialogOpen) return;
+    void loadMainInventory(false, true);
+  }, [requestDialogOpen, loadMainInventory]);
 
   // Filter my inventory list by search (product name or code) — client-side approx match
   const filteredMyInventory = useMemo(() => {

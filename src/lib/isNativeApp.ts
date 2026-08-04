@@ -9,33 +9,24 @@ export function isNativeApp(): boolean {
   }
 }
 
-/**
- * Android WebView scrolls the focused input above the IME, which often
- * jumps the admin dashboard down when tapping customer search. Pin scroll
- * for the keyboard open animation so the page stays put.
- */
-export function pinWindowScrollWhileKeyboardOpens(): void {
-  if (typeof window === 'undefined') return;
-  let isAndroid = /Android/i.test(navigator.userAgent || '');
+function isAndroidWebView(): boolean {
+  if (typeof window === 'undefined') return false;
   try {
-    if (Capacitor.isNativePlatform()) isAndroid = Capacitor.getPlatform() === 'android';
+    if (Capacitor.isNativePlatform()) return Capacitor.getPlatform() === 'android';
   } catch {
-    /* keep UA fallback */
+    /* UA fallback below */
   }
-  if (!isAndroid) return;
+  return /Android/i.test(navigator.userAgent || '');
+}
 
-  const y = window.scrollY ?? document.documentElement.scrollTop ?? 0;
-  const pin = () => {
-    const current = window.scrollY ?? document.documentElement.scrollTop ?? 0;
-    if (Math.abs(current - y) > 1) window.scrollTo(0, y);
-  };
-
-  pin();
-  requestAnimationFrame(() => {
-    pin();
-    requestAnimationFrame(pin);
-  });
-  for (const ms of [50, 120, 250, 400]) {
-    window.setTimeout(pin, ms);
-  }
+/**
+ * Android WebView auto-scrolls focused inputs above the keyboard.
+ * Intercept the tap, focus with preventScroll, and never let the page jump.
+ */
+export function focusAndroidInputWithoutScroll(
+  e: { preventDefault(): void; currentTarget: HTMLInputElement },
+): void {
+  if (!isAndroidWebView()) return;
+  e.preventDefault();
+  e.currentTarget.focus({ preventScroll: true });
 }

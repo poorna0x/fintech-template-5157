@@ -233,16 +233,16 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     }
   }, [addBundleDialogOpen]);
 
-  const loadMainInventory = useCallback(async (opts?: { force?: boolean }) => {
-    if (mainInventoryLoaded && !opts?.force) return;
+  const loadMainInventory = useCallback(async (opts?: { force?: boolean; revalidate?: boolean }) => {
+    if (mainInventoryLoaded && !opts?.force && !opts?.revalidate) return;
 
-    // Prefer valid cache (including empty catalog) — do not silently re-fetch
+    // Prefer valid cache (including empty catalog), then optionally revalidate in background
     if (!opts?.force) {
       const cached = inventoryCache.get<InventoryItem[]>(MAIN_AVAILABLE_CACHE_KEY);
       if (cached !== null) {
         setMainInventoryItems(cached);
         setMainInventoryLoaded(true);
-        return;
+        if (!opts?.revalidate) return;
       }
     }
 
@@ -256,11 +256,13 @@ const JobPartsUsedDialog: React.FC<JobPartsUsedDialogProps> = ({
     setMainInventoryLoaded(true);
   }, [mainInventoryLoaded]);
 
-  // Main catalog only needed for Add Part picker (bundle checks shortfall ids on apply)
+  // Main catalog only needed for Add Part picker — revalidate so restocks/new SKUs show up
   useEffect(() => {
     if (!addPartDialogOpen) return;
-    void loadMainInventory();
-  }, [addPartDialogOpen, loadMainInventory]);
+    void loadMainInventory({ revalidate: true });
+    // Once per open; don't re-run when mainInventoryLoaded flips (would double-fetch)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- open-only
+  }, [addPartDialogOpen]);
 
   // Memoize inventory lookup map for O(1) access
   const inventoryMap = useMemo(() => {

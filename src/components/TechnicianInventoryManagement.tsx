@@ -123,15 +123,15 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
     }
   }, []);
 
-  // Load inventory items with caching
-  const loadInventoryItems = useCallback(async (forceReload = false) => {
+  // Load inventory items with caching. revalidate=true shows cache immediately then refreshes.
+  const loadInventoryItems = useCallback(async (forceReload = false, revalidate = false) => {
     const cacheKey = 'inventory_items';
     
     if (!forceReload) {
       const cached = inventoryCache.get<InventoryItem[]>(cacheKey);
       if (cached) {
         setInventoryItems(cached);
-        return;
+        if (!revalidate) return;
       }
     }
 
@@ -359,6 +359,8 @@ const TechnicianInventoryManagement: React.FC<TechnicianInventoryManagementProps
     setInventorySearchQuery('');
     setInventorySearchOpen(false);
     setAddDialogOpen(true);
+    // Stale-while-revalidate so search isn't stuck on a 5-min localStorage catalog
+    void loadInventoryItems(false, true);
   };
 
   const handleAssignTargetModeChange = (mode: AssignTargetMode) => {
