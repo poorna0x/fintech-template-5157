@@ -244,6 +244,7 @@ const PayUpi = () => {
       const shareText = [
         `Pay ${brandLabel} via UPI`,
         amountLabel ? `Amount: ${amountLabel}` : null,
+        pn ? `Payee name: ${pn}` : null,
         `UPI ID: ${pa}`,
         ph ? `Phone: ${ph}` : null,
         typeof window !== 'undefined' ? window.location.href : null,
