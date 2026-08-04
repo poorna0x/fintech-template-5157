@@ -2,7 +2,7 @@
  * Admin APK app-lock: fingerprint / face / device PIN after login.
  *
  * - Preference lives in localStorage (per device).
- * - Only locks after the app has been in the background for LOCK_AFTER_MS (2 min).
+ * - Locks after configurable away time: immediate / 2 min / 5 min / custom.
  * - Push deep-links are held in adminPushDeepLink until unlock, then delivered.
  */
 import { Capacitor } from '@capacitor/core';
@@ -15,8 +15,25 @@ import {
 const ENABLED_KEY = 'hro_admin_biometric_lock_v1';
 /** When the app last went to background (survives process kill). */
 const BACKGROUNDED_AT_KEY = 'hro_admin_biometric_bg_at_v1';
-/** Require fingerprint only after this long away. */
-const LOCK_AFTER_MS = 2 * 60 * 1000;
+/** Away delay in milliseconds before lock is required. */
+const DELAY_MS_KEY = 'hro_admin_biometric_delay_ms_v1';
+
+export type AdminLockDelayPreset = 'immediate' | '2m' | '5m' | 'custom';
+
+export const ADMIN_LOCK_DELAY_PRESETS: {
+  id: AdminLockDelayPreset;
+  label: string;
+  ms: number | null;
+}[] = [
+  { id: 'immediate', label: 'Immediately', ms: 0 },
+  { id: '2m', label: 'After 2 minutes', ms: 2 * 60 * 1000 },
+  { id: '5m', label: 'After 5 minutes', ms: 5 * 60 * 1000 },
+  { id: 'custom', label: 'Custom…', ms: null },
+];
+
+const DEFAULT_DELAY_MS = 2 * 60 * 1000;
+const MIN_CUSTOM_MINUTES = 1;
+const MAX_CUSTOM_MINUTES = 120;
 
 type Listener = () => void;
 
@@ -65,12 +82,60 @@ function clearBackgroundedAt(): void {
   }
 }
 
+function clampDelayMs(ms: number): number {
+  if (!Number.isFinite(ms) || ms < 0) return DEFAULT_DELAY_MS;
+  const max = MAX_CUSTOM_MINUTES * 60 * 1000;
+  return Math.min(Math.round(ms), max);
+}
+
+/** Current lock-after-away delay in ms (0 = immediate). */
+export function getAdminLockDelayMs(): number {
+  try {
+    const raw = localStorage.getItem(DELAY_MS_KEY);
+    if (raw == null || raw === '') return DEFAULT_DELAY_MS;
+    return clampDelayMs(Number(raw));
+  } catch {
+    return DEFAULT_DELAY_MS;
+  }
+}
+
+export function setAdminLockDelayMs(ms: number): void {
+  try {
+    localStorage.setItem(DELAY_MS_KEY, String(clampDelayMs(ms)));
+  } catch {
+    /* ignore */
+  }
+  notify();
+}
+
+export function getAdminLockDelayPreset(): AdminLockDelayPreset {
+  const ms = getAdminLockDelayMs();
+  if (ms === 0) return 'immediate';
+  if (ms === 2 * 60 * 1000) return '2m';
+  if (ms === 5 * 60 * 1000) return '5m';
+  return 'custom';
+}
+
+/** Custom minutes when preset is custom (rounded, at least 1). */
+export function getAdminLockCustomMinutes(): number {
+  const ms = getAdminLockDelayMs();
+  const mins = Math.round(ms / 60_000);
+  return Math.min(MAX_CUSTOM_MINUTES, Math.max(MIN_CUSTOM_MINUTES, mins || MIN_CUSTOM_MINUTES));
+}
+
+export function formatAdminLockDelayLabel(ms: number = getAdminLockDelayMs()): string {
+  if (ms <= 0) return 'Immediately when you leave the app';
+  const mins = Math.round(ms / 60_000);
+  if (mins === 1) return 'After 1 minute away';
+  return `After ${mins} minutes away`;
+}
+
 /** True when away long enough that fingerprint is required. */
 function shouldLockAfterAway(): boolean {
   if (!isAdminBiometricLockEnabled() || !isBiometricPluginPresent()) return false;
   const bg = readBackgroundedAt();
   if (bg == null) return false;
-  return Date.now() - bg >= LOCK_AFTER_MS;
+  return Date.now() - bg >= getAdminLockDelayMs();
 }
 
 export function isAdminBiometricLockEnabled(): boolean {
@@ -115,8 +180,7 @@ export function lockAdminApp(): void {
 }
 
 /**
- * On resume / cold start: lock only if backgrounded for ≥ 2 minutes.
- * Short switches (notifications shade, quick app switch) stay unlocked.
+ * On resume / cold start: lock only if backgrounded longer than the chosen delay.
  */
 function applyLockPolicyOnResume(): void {
   if (!isAdminBiometricLockEnabled() || !isBiometricPluginPresent()) {
@@ -198,7 +262,7 @@ export async function enableAdminBiometricLock(): Promise<
   const result = await promptBiometricUnlock({
     title: 'Enable fingerprint lock',
     reason: 'Confirm fingerprint to turn on app lock',
-    subtitle: 'Asked again only after 2 minutes away',
+    subtitle: formatAdminLockDelayLabel(),
   });
   if (result !== 'ok') return result;
   setAdminBiometricLockEnabled(true);
@@ -227,7 +291,7 @@ export async function disableAdminBiometricLock(): Promise<'ok' | 'canceled' | '
 export function clearAdminBiometricLockOnLogout(): void {
   locked = false;
   clearBackgroundedAt();
-  // Keep ENABLED_KEY — same phone still wants fingerprint after re-login.
+  // Keep ENABLED_KEY + delay — same phone prefs after re-login.
   notify();
 }
 
@@ -238,7 +302,7 @@ export function clearAdminBiometricLockOnLogout(): void {
 export async function startAdminBiometricLockController(): Promise<void> {
   if (!Capacitor.isNativePlatform() || !isBiometricPluginPresent()) return;
 
-  // Cold start: lock only if we were away ≥ 2 minutes before the process died.
+  // Cold start: lock only if away longer than the chosen delay.
   if (!started && isAdminBiometricLockEnabled()) {
     applyLockPolicyOnResume();
   }
@@ -251,7 +315,6 @@ export async function startAdminBiometricLockController(): Promise<void> {
     appStateHandle = await App.addListener('appStateChange', ({ isActive }) => {
       if (!isAdminBiometricLockEnabled()) return;
       if (!isActive) {
-        // Start the 2-minute grace timer — do not lock yet.
         writeBackgroundedAt(Date.now());
         return;
       }
