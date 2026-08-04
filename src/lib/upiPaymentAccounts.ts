@@ -323,7 +323,7 @@ export type UpiPayLinkInput = {
   brand?: 'hydrogenro' | 'elevenro' | string | null;
 };
 
-/** Query string shared by upi:// and app-specific schemes (pa unencoded). */
+/** Query string for upi://pay (QR payload; pa unencoded). */
 export function buildUpiPayQuery(input: UpiPayLinkInput): string | null {
   const pa = normalizeUpiId(input.upiId);
   if (!isValidUpiId(pa)) return null;
@@ -349,46 +349,6 @@ export function buildUpiPayQuery(input: UpiPayLinkInput): string | null {
 export function buildUpiPayDeepLink(input: UpiPayLinkInput): string | null {
   const q = buildUpiPayQuery(input);
   return q ? `upi://pay?${q}` : null;
-}
-
-export type PayPlatform = 'android' | 'ios' | 'other';
-
-/** Best-effort UA detection for /pay-upi layout (WhatsApp in-app browsers included). */
-export function detectPayPlatform(): PayPlatform {
-  if (typeof navigator === 'undefined') return 'other';
-  const ua = navigator.userAgent || '';
-  // Android first — covers Chrome, WhatsApp, Samsung Internet, etc.
-  if (/android/i.test(ua)) return 'android';
-  if (/iPhone|iPad|iPod/i.test(ua)) return 'ios';
-  // iPadOS 13+ can report as Macintosh with touch
-  if (
-    typeof navigator.platform === 'string' &&
-    navigator.platform === 'MacIntel' &&
-    Number(navigator.maxTouchPoints || 0) > 1
-  ) {
-    return 'ios';
-  }
-  return 'other';
-}
-
-/**
- * App-specific UPI openers (needed on iOS — generic upi:// has no chooser there).
- * Android usually prefers buildUpiPayDeepLink() instead.
- */
-export function buildUpiAppDeepLinks(input: UpiPayLinkInput): {
-  id: string;
-  name: string;
-  href: string;
-  color: string;
-}[] {
-  const q = buildUpiPayQuery(input);
-  if (!q) return [];
-  // BHIM omitted: often rejects personal-VPA intent ("mode not supported").
-  return [
-    { id: 'gpay', name: 'GPay', href: `tez://upi/pay?${q}`, color: '#4285F4' },
-    { id: 'phonepe', name: 'PhonePe', href: `phonepe://pay?${q}`, color: '#5F259F' },
-    { id: 'paytm', name: 'Paytm', href: `paytmmp://upi/pay?${q}`, color: '#00BAF2' },
-  ];
 }
 
 const PROD_UPI_ORIGINS: Record<'hydrogenro' | 'elevenro', string> = {
