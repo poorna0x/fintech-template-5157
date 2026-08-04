@@ -33,6 +33,7 @@ import {
   X,
 } from 'lucide-react';
 import { hapticTap } from '@/lib/haptics';
+import { pinWindowScrollWhileKeyboardOpens } from '@/lib/isNativeApp';
 import { settingsPath } from '@/lib/settingsSections';
 import { settingsPanelPath } from '@/lib/settingsUrl';
 import type { AdminDashboardView, AdminToolDialog } from '@/lib/adminDashboardUrl';
@@ -90,6 +91,7 @@ function AdminSearchField({
         value={searchQuery}
         onChange={(e) => onSearchQueryChange(e.target.value)}
         onPaste={onSearchPaste}
+        onFocus={pinWindowScrollWhileKeyboardOpens}
         onBlur={handleBlur}
         onKeyPress={onSearchKeyPress}
         className={inputClassName}
@@ -360,6 +362,7 @@ export function AdminDashboardHeader({
               value={searchQuery}
               onChange={(e) => onSearchQueryChange(e.target.value)}
               onPaste={onSearchPaste}
+              onFocus={pinWindowScrollWhileKeyboardOpens}
               onBlur={trimSearchOnBlur}
               onKeyPress={onSearchKeyPress}
               className="pl-10 h-9 bg-white border-gray-300 focus:border-blue-500 focus:ring-blue-500 text-sm"
