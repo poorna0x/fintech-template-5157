@@ -11,7 +11,7 @@ import ImageUpload from '@/components/ImageUpload';
 import { Job, Technician } from '@/types';
 import { db, supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { CommonQrCode, isDynamicUpiQr } from '@/lib/qrCodeManager';
+import { CommonQrCode, isDynamicUpiQr, isDynamicUpiTechnician, technicianHasPaymentQr } from '@/lib/qrCodeManager';
 import DynamicUpiQrDisplay from '@/components/DynamicUpiQrDisplay';
 import { useAuth } from '@/contexts/AuthContext';
 import { RefreshCw } from 'lucide-react';
@@ -576,6 +576,12 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
           if (selectedQr) {
             qrPhotos.selected_qr_code_url = selectedQr.qrCodeUrl;
             qrPhotos.selected_qr_code_name = selectedQr.name;
+            if (isDynamicUpiQr(selectedQr)) {
+              qrPhotos.dynamic_upi = true;
+              qrPhotos.upi_id = selectedQr.upiId;
+              qrPhotos.payee_name = selectedQr.payeeName || selectedQr.name;
+              if (selectedQr.phone) qrPhotos.phone = selectedQr.phone;
+            }
           } else {
             qrPhotos.selected_qr_code_name = `Common QR (${qrId.slice(0, 8)}…)`;
           }
@@ -587,6 +593,15 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
               qrPhotos.selected_qr_code_url = (selectedTech as any).qrCode;
             }
             qrPhotos.selected_qr_code_name = `${selectedTech.fullName || 'Technician'}'s QR`;
+            if (isDynamicUpiTechnician(selectedTech as any)) {
+              qrPhotos.dynamic_upi = true;
+              qrPhotos.upi_id = (selectedTech as any).upiId;
+              qrPhotos.payee_name =
+                (selectedTech as any).payeeName || selectedTech.fullName;
+              if ((selectedTech as any).upiPhone) {
+                qrPhotos.phone = (selectedTech as any).upiPhone;
+              }
+            }
           }
         }
 
@@ -1638,7 +1653,9 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                           <SelectValue placeholder="Select QR code" />
                         </SelectTrigger>
                         <SelectContent className="!z-[100]">
-                          {localCommonQrCodes.length === 0 && technicians.filter(t => (t as any).qrCode).length === 0 ? (
+                          {localCommonQrCodes.length === 0 &&
+                          technicians.filter((t) => technicianHasPaymentQr(t as any)).length ===
+                            0 ? (
                             <SelectItem value="no-qr" disabled>
                               No QR codes available
                             </SelectItem>
@@ -1654,7 +1671,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                                 </>
                               )}
                               {technicians
-                                .filter(t => (t as any).qrCode && (t as any).qrCode.trim() !== '')
+                                .filter((t) => technicianHasPaymentQr(t as any))
                                 .map((tech) => (
                                   <SelectItem key={`technician_${tech.id}`} value={`technician_${tech.id}`}>
                                     {tech.fullName}'s QR Code
@@ -1714,6 +1731,7 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                                     (job?.customer as any)?.full_name ||
                                     selectedQr.name
                                   }
+                                  phone={selectedQr.phone}
                                   label={selectedQr.name}
                                   fallbackImageUrl={selectedQr.qrCodeUrl}
                                 />
@@ -1744,12 +1762,52 @@ export const CompleteJobDialog: React.FC<CompleteJobDialogProps> = ({
                           })() : selectedQrCodeId.startsWith('technician_') ? (() => {
                             const techId = selectedQrCodeId.replace('technician_', '');
                             const selectedTech = technicians.find(t => t.id === techId);
-                            if (!selectedTech || !(selectedTech as any).qrCode) {
+                            if (!selectedTech || !technicianHasPaymentQr(selectedTech as any)) {
                               return (
                                 <div className="text-center p-4">
                                   <p className="text-sm text-red-500">QR code not found</p>
                                   <p className="text-xs text-muted-foreground mt-1">Technician QR code not available</p>
                                 </div>
+                              );
+                            }
+                            const onlineAmt = (() => {
+                              if (paymentMode === 'PARTIAL') {
+                                return parseMoneyAmount(partialOnlineAmount);
+                              }
+                              if (
+                                paymentMode === 'PENDING_PAYMENT' &&
+                                pendingPaidTodayMode === 'PARTIAL'
+                              ) {
+                                return parseMoneyAmount(partialOnlineAmount);
+                              }
+                              if (
+                                paymentMode === 'PENDING_PAYMENT' &&
+                                pendingPaidTodayMode === 'ONLINE'
+                              ) {
+                                const paid = parseMoneyAmount(pendingPaidTodayAmount);
+                                return Number.isFinite(paid) && paid > 0
+                                  ? paid
+                                  : parseMoneyAmount(billAmount);
+                              }
+                              return parseMoneyAmount(billAmount);
+                            })();
+                            if (isDynamicUpiTechnician(selectedTech as any)) {
+                              return (
+                                <DynamicUpiQrDisplay
+                                  upiId={(selectedTech as any).upiId || ''}
+                                  payeeName={
+                                    (selectedTech as any).payeeName || selectedTech.fullName
+                                  }
+                                  amount={onlineAmt}
+                                  note={
+                                    job?.customer?.fullName ||
+                                    (job?.customer as any)?.full_name ||
+                                    selectedTech.fullName
+                                  }
+                                  phone={(selectedTech as any).upiPhone}
+                                  label={`${selectedTech.fullName}'s QR`}
+                                  fallbackImageUrl={(selectedTech as any).qrCode}
+                                />
                               );
                             }
                             return (

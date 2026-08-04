@@ -279,6 +279,15 @@ export interface Technician {
       effectiveFrom: string;
     }>;
   };
+
+  /** Personal payment QR image URL (optional if Dynamic UPI is on). */
+  qrCode?: string;
+  /** VPA for Dynamic UPI on technician personal QR. */
+  upiId?: string;
+  payeeName?: string;
+  /** Payment phone for Dynamic UPI / share (separate from contact phone). */
+  upiPhone?: string;
+  dynamicUpiEnabled?: boolean;
   
   // QR Code Visibility
   visibleQrCodes?: string[]; // Array of QR code IDs visible to this technician. Empty = none, ["all"] = all, or specific IDs
@@ -509,6 +518,11 @@ export interface Database {
           performance: any;
           vehicle?: any;
           salary: any;
+          qr_code?: string | null;
+          upi_id?: string;
+          payee_name?: string;
+          upi_phone?: string;
+          dynamic_upi_enabled?: boolean;
           created_at: string;
           updated_at: string;
         };

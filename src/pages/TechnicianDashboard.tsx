@@ -91,11 +91,13 @@ import {
   getTechnicianCommonQrImageCache,
   getTechnicianQrSnapshot,
   isDynamicUpiQr,
+  isDynamicUpiTechnician,
   mapCommonQrRow,
   normalizeTechnicianAssignedCommonQrIds,
   prefetchTechnicianCommonQrImages,
   QR_NETWORK_MIN_INTERVAL_MS,
   saveTechnicianQrSnapshot,
+  technicianHasPaymentQr,
   TechnicianQrPickerRow,
   TechnicianQrSnapshotV1,
 } from '@/lib/qrCodeManager';
@@ -138,7 +140,10 @@ import {
 /** Resolve the QR id stored on the job when tech uses Share QR Link mode. */
 function resolveEffectiveQrCodeId(selectedQrCodeId: string, shareLinkUpiQrId: string): string {
   if (selectedQrCodeId === SHARE_QR_LINK_VALUE) {
-    return shareLinkUpiQrId ? `common_${shareLinkUpiQrId}` : '';
+    // shareLinkUpiQrId is already common_<id> or technician_<id>
+    const v = String(shareLinkUpiQrId || '').trim();
+    if (v.startsWith('common_') || v.startsWith('technician_')) return v;
+    return v ? `common_${v}` : '';
   }
   if (!selectedQrCodeId || selectedQrCodeId === 'no-qr') return '';
   return selectedQrCodeId;
@@ -1476,6 +1481,12 @@ const TechnicianDashboard = () => {
               fullName: tech.full_name,
               qrCode: tech.qr_code,
               visibleQrCodes: tech.visible_qr_codes || [],
+              upiId: String(tech.upi_id || '').trim().toLowerCase(),
+              payeeName: String(tech.payee_name || '').trim(),
+              upiPhone: String(tech.upi_phone || '')
+                .replace(/\D/g, '')
+                .slice(-10),
+              dynamicUpiEnabled: Boolean(tech.dynamic_upi_enabled),
             }));
 
           setAllTechnicians(allTechniciansData);
@@ -1765,6 +1776,12 @@ const TechnicianDashboard = () => {
                 fullName: prevName,
                 qrCode: qr,
                 visibleQrCodes: row.visible_qr_codes || [],
+                upiId: String(row.upi_id || '').trim().toLowerCase(),
+                payeeName: String(row.payee_name || '').trim(),
+                upiPhone: String(row.upi_phone || '')
+                  .replace(/\D/g, '')
+                  .slice(-10),
+                dynamicUpiEnabled: Boolean(row.dynamic_upi_enabled),
               },
             ];
           }
@@ -5479,6 +5496,20 @@ const TechnicianDashboard = () => {
               qrPhotos.upi_id = selectedQr.upiId;
               qrPhotos.payee_name = selectedQr.payeeName || selectedQr.name;
               if (selectedQr.phone) qrPhotos.phone = selectedQr.phone;
+            }
+          } else if (effectiveQrId.startsWith('technician_')) {
+            const techId = effectiveQrId.replace('technician_', '');
+            const selectedTech =
+              technicians.find((t) => t.id === techId) ||
+              allTechnicians.find((t) => t.id === techId);
+            if (selectedTech && isDynamicUpiTechnician(selectedTech as any)) {
+              qrPhotos.dynamic_upi = true;
+              qrPhotos.upi_id = (selectedTech as any).upiId;
+              qrPhotos.payee_name =
+                (selectedTech as any).payeeName || selectedTech.fullName;
+              if ((selectedTech as any).upiPhone) {
+                qrPhotos.phone = (selectedTech as any).upiPhone;
+              }
             }
           }
           requirements.push({ qr_photos: qrPhotos });
@@ -9411,8 +9442,8 @@ const TechnicianDashboard = () => {
                               const selectedTech =
                                 technicians.find(t => t.id === techId) ||
                                 allTechnicians.find(t => t.id === techId);
-                              if (selectedTech && (selectedTech as any).qrCode) {
-                                qrUrl = (selectedTech as any).qrCode;
+                              if (selectedTech) {
+                                qrUrl = String((selectedTech as any).qrCode || '');
                                 qrName = (selectedTech as any).fullName || 'Technician';
                               }
                             }
@@ -9427,7 +9458,9 @@ const TechnicianDashboard = () => {
                           </SelectTrigger>
                           <SelectContent className="!z-[100]">
                             {/* Common QR Codes - show by name */}
-                            {commonQrCodes.length === 0 && technicians.filter(t => (t as any).qrCode).length === 0 ? (
+                            {commonQrCodes.length === 0 &&
+                            technicians.filter((t) => technicianHasPaymentQr(t as any)).length ===
+                              0 ? (
                               <SelectItem value="no-qr" disabled>
                                 No QR codes available
                               </SelectItem>
@@ -9446,7 +9479,7 @@ const TechnicianDashboard = () => {
                                 
                                 {/* Technician QR Codes Section */}
                                 {technicians
-                                  .filter(t => (t as any).qrCode && (t as any).qrCode.trim() !== '')
+                                  .filter((t) => technicianHasPaymentQr(t as any))
                                   .map((tech) => (
                                     <SelectItem key={`technician_${tech.id}`} value={`technician_${tech.id}`}>
                                       {tech.fullName}'s QR Code
@@ -9466,12 +9499,36 @@ const TechnicianDashboard = () => {
                           commonQrCodes={
                             commonQrCodes.length > 0 ? commonQrCodes : allCommonQrCodes
                           }
+                          technicians={
+                            (technicians.length > 0
+                              ? technicians
+                              : allTechnicians) as TechnicianQrPickerRow[]
+                          }
                           selectedUpiQrId={shareLinkUpiQrId}
                           onSelectUpiQrId={(id) => {
                             setShareLinkUpiQrId(id);
+                            if (id.startsWith('technician_')) {
+                              const techId = id.replace('technician_', '');
+                              const selectedTech =
+                                technicians.find((t) => t.id === techId) ||
+                                allTechnicians.find((t) => t.id === techId);
+                              if (selectedTech) {
+                                setQrCodeType('technician');
+                                setSelectedQrCodeName(
+                                  `${(selectedTech as any).fullName || 'Technician'}'s QR`
+                                );
+                                setSelectedQrCodeUrlState(
+                                  String((selectedTech as any).qrCode || '')
+                                );
+                              }
+                              return;
+                            }
+                            const bareId = id.startsWith('common_')
+                              ? id.replace('common_', '')
+                              : id;
                             const selectedQr =
-                              commonQrCodes.find((qr) => qr.id === id) ||
-                              allCommonQrCodes.find((qr) => qr.id === id);
+                              commonQrCodes.find((qr) => qr.id === bareId) ||
+                              allCommonQrCodes.find((qr) => qr.id === bareId);
                             if (selectedQr) {
                               setQrCodeType('common');
                               setSelectedQrCodeName(selectedQr.name);
@@ -9601,13 +9658,51 @@ const TechnicianDashboard = () => {
                               );
                             })() : selectedQrCodeId.startsWith('technician_') ? (() => {
                               const techId = selectedQrCodeId.replace('technician_', '');
-                              const selectedTech = technicians.find(t => t.id === techId);
-                              if (!selectedTech || !(selectedTech as any).qrCode) {
+                              const selectedTech =
+                                technicians.find((t) => t.id === techId) ||
+                                allTechnicians.find((t) => t.id === techId);
+                              if (!selectedTech || !technicianHasPaymentQr(selectedTech as any)) {
                                 return (
                                   <div className="text-center p-4">
                                     <p className="text-sm text-red-500">QR code not found</p>
                                     <p className="text-xs text-gray-500 mt-1">Technician QR code not available</p>
                                   </div>
+                                );
+                              }
+                              const onlineAmt = (() => {
+                                if (
+                                  paymentMode === 'PARTIAL' ||
+                                  (paymentMode === 'PENDING_PAYMENT' &&
+                                    pendingPaidTodayMode === 'PARTIAL')
+                                ) {
+                                  return parseMoneyAmount(partialOnlineAmount);
+                                }
+                                if (
+                                  paymentMode === 'PENDING_PAYMENT' &&
+                                  pendingPaidTodayMode === 'ONLINE'
+                                ) {
+                                  const paid = parseMoneyAmount(pendingPaidTodayAmount);
+                                  return Number.isFinite(paid) && paid > 0
+                                    ? paid
+                                    : parseMoneyAmount(billAmount);
+                                }
+                                return parseMoneyAmount(billAmount);
+                              })();
+                              if (isDynamicUpiTechnician(selectedTech as any)) {
+                                return (
+                                  <DynamicUpiQrDisplay
+                                    upiId={(selectedTech as any).upiId || ''}
+                                    payeeName={
+                                      (selectedTech as any).payeeName || selectedTech.fullName
+                                    }
+                                    amount={onlineAmt}
+                                    note={
+                                      selectedJobForComplete?.customerName || selectedTech.fullName
+                                    }
+                                    phone={(selectedTech as any).upiPhone}
+                                    label={`${selectedTech.fullName}'s QR`}
+                                    fallbackImageUrl={(selectedTech as any).qrCode}
+                                  />
                                 );
                               }
                               return (

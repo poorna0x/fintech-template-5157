@@ -105,6 +105,37 @@ GRANT SELECT (
   updated_at
 ) ON TABLE public.technicians TO authenticated;
 
+-- Later migrations add columns under the same column-level SELECT model.
+-- Grant them when present so re-running this lockdown does not 403 the app.
+DO $$
+DECLARE
+  col text;
+BEGIN
+  FOREACH col IN ARRAY ARRAY[
+    'whatsapp_phone',
+    'push_notifications_enabled',
+    'visit_order_visible',
+    'visit_order_visible_on',
+    'upi_id',
+    'payee_name',
+    'upi_phone',
+    'dynamic_upi_enabled'
+  ]
+  LOOP
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'technicians'
+        AND column_name = col
+    ) THEN
+      EXECUTE format(
+        'GRANT SELECT (%I) ON TABLE public.technicians TO authenticated',
+        col
+      );
+    END IF;
+  END LOOP;
+END $$;
+
 -- Belt-and-braces: also revoke `salary` / `push_subscription` from anon
 -- (anon should already have only ID-card columns granted, but this is
 -- harmless if it's already revoked).

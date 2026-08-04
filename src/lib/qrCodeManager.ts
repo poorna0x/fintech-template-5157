@@ -91,6 +91,35 @@ export interface TechnicianQrPickerRow {
   fullName: string;
   qrCode: string;
   visibleQrCodes: string[];
+  upiId?: string;
+  payeeName?: string;
+  /** Payment phone for dynamic UPI / share (not contact phone). */
+  upiPhone?: string;
+  dynamicUpiEnabled?: boolean;
+}
+
+/** True when a technician personal QR should render a live amount UPI QR. */
+export function isDynamicUpiTechnician(
+  tech: { upiId?: string; dynamicUpiEnabled?: boolean } | null | undefined
+): boolean {
+  if (!tech?.dynamicUpiEnabled) return false;
+  const id = String(tech.upiId || '')
+    .trim()
+    .toLowerCase();
+  return /^[a-z0-9.\-_]{2,256}@[a-z0-9.\-]{2,64}$/i.test(id);
+}
+
+/** True when a technician has a usable payment QR (static image and/or Dynamic UPI). */
+export function technicianHasPaymentQr(
+  tech:
+    | { qrCode?: string; upiId?: string; dynamicUpiEnabled?: boolean }
+    | null
+    | undefined
+): boolean {
+  if (!tech) return false;
+  if (isDynamicUpiTechnician(tech)) return true;
+  const url = String(tech.qrCode || '').trim();
+  return url.startsWith('http') || url.startsWith('data:');
 }
 
 export interface TechnicianForReportRef {

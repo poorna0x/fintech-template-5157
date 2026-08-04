@@ -336,6 +336,10 @@ const Settings = () => {
     password: '',
     qrCode: '', // QR code image URL
     photo: '', // Technician photo URL
+    upiId: '',
+    payeeName: '',
+    upiPhone: '',
+    dynamicUpiEnabled: false,
     baseSalary: 0,
     salaryEffectiveFromMonth: getCurrentMonthKey(),
     accountStatus: 'ACTIVE' as 'ACTIVE' | 'INACTIVE' | 'SUSPENDED',
@@ -508,6 +512,10 @@ const Settings = () => {
           password: '',
           qrCode: (tech as any).qrCode || '',
           photo: (tech as any).photo || '',
+          upiId: (tech as any).upiId || '',
+          payeeName: (tech as any).payeeName || '',
+          upiPhone: (tech as any).upiPhone || '',
+          dynamicUpiEnabled: !!(tech as any).dynamicUpiEnabled,
           baseSalary: tech.salary?.baseSalary || 0,
           salaryEffectiveFromMonth: getCurrentMonthKey(),
           visibleQrCodes: tech.visibleQrCodes || [],
@@ -630,6 +638,10 @@ const Settings = () => {
     salary: tech.salary,
     qrCode: tech.qr_code || tech.qrCode || '',
     photo: tech.photo || '',
+    upiId: tech.upi_id || tech.upiId || '',
+    payeeName: tech.payee_name || tech.payeeName || '',
+    upiPhone: tech.upi_phone || tech.upiPhone || '',
+    dynamicUpiEnabled: !!(tech.dynamic_upi_enabled ?? tech.dynamicUpiEnabled),
     visibleQrCodes: tech.visible_qr_codes || [],
     commonQrCodeIds: normalizeTechnicianAssignedCommonQrIds({
       common_qr_code_ids: tech.common_qr_code_ids,
@@ -725,6 +737,10 @@ const Settings = () => {
       password: '',
       qrCode: '',
       photo: '',
+      upiId: '',
+      payeeName: '',
+      upiPhone: '',
+      dynamicUpiEnabled: false,
       baseSalary: 0,
       salaryEffectiveFromMonth: getCurrentMonthKey(),
       visibleQrCodes: [],
@@ -753,6 +769,10 @@ const Settings = () => {
       password: '', // Don't show existing password for security
       qrCode: (technician as any).qrCode || '',
       photo: (technician as any).photo || '',
+      upiId: (technician as any).upiId || '',
+      payeeName: (technician as any).payeeName || '',
+      upiPhone: (technician as any).upiPhone || '',
+      dynamicUpiEnabled: !!(technician as any).dynamicUpiEnabled,
       baseSalary: technician.salary?.baseSalary || 0,
       salaryEffectiveFromMonth: getCurrentMonthKey(),
       visibleQrCodes: technician.visibleQrCodes || [],
@@ -773,6 +793,20 @@ const Settings = () => {
       // Password (if provided) is forwarded as plaintext to sync-technician-auth-user,
       // which writes it to Supabase Auth via admin.updateUserById. The DB no longer
       // stores a password hash (column dropped 2026-05-24).
+
+      const dynamicOn = technicianFormData.dynamicUpiEnabled === true;
+      const upiId = normalizeUpiId(technicianFormData.upiId || '');
+      if (dynamicOn && !isValidUpiId(upiId)) {
+        toast.error('Enter a valid UPI ID (e.g. name@oksbi) to enable Dynamic UPI');
+        return;
+      }
+      if (
+        technicianFormData.qrCode &&
+        !String(technicianFormData.qrCode).startsWith('http')
+      ) {
+        toast.error('Invalid QR code URL. Please upload the image again.');
+        return;
+      }
 
       const previousBaseSalary =
         selectedTechnician?.salary?.baseSalary !== undefined
@@ -808,6 +842,10 @@ const Settings = () => {
         employee_id: technicianFormData.employeeId,
         qr_code: technicianFormData.qrCode || null,
         photo: technicianFormData.photo || null,
+        upi_id: dynamicOn ? upiId : '',
+        payee_name: String(technicianFormData.payeeName || '').trim().slice(0, 100),
+        upi_phone: normalizePaymentPhone(technicianFormData.upiPhone || ''),
+        dynamic_upi_enabled: dynamicOn,
         visible_qr_codes: technicianFormData.visibleQrCodes || [],
         common_qr_code_ids: technicianFormData.commonQrCodeIds || [],
         skills: {
@@ -3510,9 +3548,81 @@ const Settings = () => {
             
             <div className="space-y-3 sm:space-y-4">
               <h3 className="text-base sm:text-lg font-semibold text-foreground">Payment QR Code</h3>
+              <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
+                <div className="min-w-0">
+                  <Label htmlFor="tech-dynamic-upi-toggle" className="text-sm font-medium">
+                    Dynamic UPI QR
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    When on, job-complete builds a live QR with the bill amount from this UPI ID.
+                  </p>
+                </div>
+                <Switch
+                  id="tech-dynamic-upi-toggle"
+                  checked={technicianFormData.dynamicUpiEnabled}
+                  onCheckedChange={(checked) =>
+                    setTechnicianFormData((prev) => ({ ...prev, dynamicUpiEnabled: checked }))
+                  }
+                />
+              </div>
+
+              {technicianFormData.dynamicUpiEnabled && (
+                <div className="space-y-3 rounded-lg border border-sky-200 bg-sky-50/50 p-3">
+                  <div>
+                    <Label htmlFor="techQrUpiId">UPI ID *</Label>
+                    <Input
+                      id="techQrUpiId"
+                      value={technicianFormData.upiId}
+                      onChange={(e) =>
+                        setTechnicianFormData((prev) => ({ ...prev, upiId: e.target.value }))
+                      }
+                      placeholder="name@oksbi"
+                      className="mt-1"
+                      autoCapitalize="off"
+                      autoCorrect="off"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="techQrPayeeName">Payee name (optional)</Label>
+                    <Input
+                      id="techQrPayeeName"
+                      value={technicianFormData.payeeName}
+                      onChange={(e) =>
+                        setTechnicianFormData((prev) => ({ ...prev, payeeName: e.target.value }))
+                      }
+                      placeholder="Defaults to technician name"
+                      className="mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="techQrUpiPhone">Payment phone (optional)</Label>
+                    <Input
+                      id="techQrUpiPhone"
+                      value={technicianFormData.upiPhone}
+                      onChange={(e) =>
+                        setTechnicianFormData((prev) => ({ ...prev, upiPhone: e.target.value }))
+                      }
+                      placeholder="10-digit number for pay links"
+                      className="mt-1"
+                      inputMode="tel"
+                    />
+                    <p className="text-[11px] text-muted-foreground mt-1">
+                      Shown on the customer pay page / WhatsApp share — separate from contact phone.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div>
-                <Label className="text-sm sm:text-base">Upload Payment QR Code (Optional)</Label>
-                <p className="text-xs sm:text-sm text-muted-foreground mb-2">Upload QR code for payment scanning</p>
+                <Label className="text-sm sm:text-base">
+                  Upload Payment QR Code
+                  {technicianFormData.dynamicUpiEnabled ? ' (optional fallback)' : ' (Optional)'}
+                </Label>
+                <p className="text-xs sm:text-sm text-muted-foreground mb-2">
+                  {technicianFormData.dynamicUpiEnabled
+                    ? 'Optional static image if dynamic UPI is off later, or as a backup'
+                    : 'Upload QR code for payment scanning'}
+                </p>
                 <ImageUpload
                   onImagesChange={(images) => setTechnicianFormData(prev => ({ ...prev, qrCode: images[0] || '' }))}
                   maxImages={1}

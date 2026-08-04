@@ -369,6 +369,10 @@ const AdminDashboard = () => {
       vehicle: tech.vehicle,
       salary: tech.salary,
       qrCode: tech.qr_code || tech.qrCode || '',
+      upiId: String(tech.upi_id || tech.upiId || '').trim().toLowerCase(),
+      payeeName: String(tech.payee_name || tech.payeeName || '').trim(),
+      upiPhone: String(tech.upi_phone || tech.upiPhone || '').replace(/\D/g, '').slice(-10),
+      dynamicUpiEnabled: !!(tech.dynamic_upi_enabled ?? tech.dynamicUpiEnabled),
       createdAt: tech.created_at,
       updatedAt: tech.updated_at,
     }));

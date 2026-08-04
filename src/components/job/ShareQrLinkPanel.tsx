@@ -16,6 +16,8 @@ import { getDocumentBrandLabel, type DocumentBrand } from '@/lib/service-brands'
 import {
   CommonQrCode,
   isDynamicUpiQr,
+  isDynamicUpiTechnician,
+  TechnicianQrPickerRow,
 } from '@/lib/qrCodeManager';
 import {
   buildUpiPayShortHttpsLink,
@@ -26,8 +28,20 @@ import {
 
 export const SHARE_QR_LINK_VALUE = 'share_qr_link';
 
+type ShareUpiOption = {
+  /** Prefixed id: common_<uuid> or technician_<uuid> */
+  key: string;
+  name: string;
+  upiId: string;
+  payeeName?: string;
+  phone?: string;
+  imageUrl?: string;
+};
+
 type ShareQrLinkPanelProps = {
   commonQrCodes: CommonQrCode[];
+  /** Technician personal Dynamic UPI options (optional). */
+  technicians?: TechnicianQrPickerRow[];
   selectedUpiQrId: string;
   onSelectUpiQrId: (id: string) => void;
   amount: number;
@@ -69,6 +83,7 @@ export function buildTechSharePayMessage(input: {
  */
 export default function ShareQrLinkPanel({
   commonQrCodes,
+  technicians = [],
   selectedUpiQrId,
   onSelectUpiQrId,
   amount,
@@ -85,15 +100,47 @@ export default function ShareQrLinkPanel({
     setWaPhone(String(customerPhone || '').trim());
   }, [customerPhone]);
 
-  const dynamicOptions = useMemo(
-    () => commonQrCodes.filter((qr) => isDynamicUpiQr(qr)),
-    [commonQrCodes]
-  );
+  const dynamicOptions = useMemo((): ShareUpiOption[] => {
+    const fromCommon: ShareUpiOption[] = commonQrCodes
+      .filter((qr) => isDynamicUpiQr(qr))
+      .map((qr) => ({
+        key: `common_${qr.id}`,
+        name: qr.name,
+        upiId: qr.upiId || '',
+        payeeName: qr.payeeName || qr.name,
+        phone: qr.phone,
+        imageUrl: qr.qrCodeUrl,
+      }));
+    const fromTech: ShareUpiOption[] = technicians
+      .filter((t) => isDynamicUpiTechnician(t))
+      .map((t) => ({
+        key: `technician_${t.id}`,
+        name: `${t.fullName}'s QR`,
+        upiId: t.upiId || '',
+        payeeName: t.payeeName || t.fullName,
+        phone: t.upiPhone,
+        imageUrl: t.qrCode,
+      }));
+    return [...fromCommon, ...fromTech];
+  }, [commonQrCodes, technicians]);
 
   const selectedQr = useMemo(
-    () => dynamicOptions.find((q) => q.id === selectedUpiQrId) || null,
+    () => dynamicOptions.find((q) => q.key === selectedUpiQrId) || null,
     [dynamicOptions, selectedUpiQrId]
   );
+
+  // Migrate legacy bare common-QR UUIDs to prefixed keys.
+  useEffect(() => {
+    if (!selectedUpiQrId) return;
+    if (
+      selectedUpiQrId.startsWith('common_') ||
+      selectedUpiQrId.startsWith('technician_')
+    ) {
+      return;
+    }
+    const legacy = dynamicOptions.find((o) => o.key === `common_${selectedUpiQrId}`);
+    if (legacy) onSelectUpiQrId(legacy.key);
+  }, [selectedUpiQrId, dynamicOptions, onSelectUpiQrId]);
 
   const handleShare = async () => {
     if (!selectedQr) {
@@ -171,7 +218,8 @@ export default function ShareQrLinkPanel({
         <Label>Which UPI / QR? *</Label>
         {dynamicOptions.length === 0 ? (
           <p className="mt-1 text-xs text-amber-800">
-            No Dynamic UPI QR codes assigned. Enable Dynamic UPI on a common QR in Settings.
+            No Dynamic UPI accounts available. Enable Dynamic UPI on a common QR or
+            technician QR in Settings.
           </p>
         ) : (
           <Select value={selectedUpiQrId || undefined} onValueChange={onSelectUpiQrId}>
@@ -180,7 +228,7 @@ export default function ShareQrLinkPanel({
             </SelectTrigger>
             <SelectContent className="!z-[110]">
               {dynamicOptions.map((qr) => (
-                <SelectItem key={qr.id} value={qr.id}>
+                <SelectItem key={qr.key} value={qr.key}>
                   {qr.name}
                   {qr.upiId ? ` · ${qr.upiId}` : ''}
                 </SelectItem>
