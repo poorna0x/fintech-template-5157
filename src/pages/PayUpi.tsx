@@ -1,18 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { Check, Copy, Droplets, Phone } from 'lucide-react';
+import { Check, Copy, Download, Droplets, Phone, Share2 } from 'lucide-react';
 import { getDocumentBrandLabel, normalizeDocumentBrand, type DocumentBrand } from '@/lib/service-brands';
-import { UpiOpenAppCta, UpiAppOpenGrid } from '@/components/UpiAppOpenButtons';
 import {
-  buildUpiAppDeepLinks,
   buildUpiPayDeepLink,
-  detectPayPlatform,
   fetchUpiPayShortLink,
   isValidUpiId,
   normalizePaymentPhone,
   normalizeUpiId,
   type UpiPayLinkRecord,
 } from '@/lib/upiPaymentAccounts';
+
+type QrCodeInstance = {
+  append: (parent: HTMLElement) => void;
+  getRawData: (extension?: 'png' | 'jpeg' | 'webp' | 'svg') => Promise<Blob | Buffer | null>;
+};
 
 async function copyText(value: string): Promise<boolean> {
   try {
@@ -40,6 +42,29 @@ function defaultBrandFromHost(): DocumentBrand {
   return /elevenro/i.test(window.location.hostname) ? 'elevenro' : 'hydrogenro';
 }
 
+function triggerBlobDownload(blob: Blob, filename: string) {
+  const objectUrl = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = objectUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(objectUrl);
+}
+
+async function getQrPngBlob(qr: QrCodeInstance | null): Promise<Blob | null> {
+  if (!qr) return null;
+  try {
+    const raw = await qr.getRawData('png');
+    if (!raw) return null;
+    if (raw instanceof Blob) return raw;
+    return new Blob([raw as BlobPart], { type: 'image/png' });
+  } catch {
+    return null;
+  }
+}
+
 /** Same mark as the public website header (droplet + brand name). */
 function PayBrandMark({ brand }: { brand: DocumentBrand }) {
   const name = brand === 'elevenro' ? 'ElevenRO' : 'Hydrogen RO';
@@ -56,15 +81,20 @@ function PayBrandMark({ brand }: { brand: DocumentBrand }) {
 /**
  * Public HTTPS landing for WhatsApp UPI pay links.
  * Supports short /p/:code and legacy /pay-upi?... query links.
+ *
+ * UPI app deep-links are intentionally omitted — NPCI / store policy blocks
+ * third-party “Open in GPay/PhonePe” from web. Customers scan or save the QR.
  */
 const PayUpi = () => {
   const { code: codeParam } = useParams<{ code?: string }>();
   const [params] = useSearchParams();
   const qrRef = useRef<HTMLDivElement>(null);
+  const qrInstanceRef = useRef<QrCodeInstance | null>(null);
   const [copiedField, setCopiedField] = useState<'upi' | 'phone' | null>(null);
   const [copyError, setCopyError] = useState(false);
-  const [launchTried, setLaunchTried] = useState(false);
   const [qrReady, setQrReady] = useState(false);
+  const [actionBusy, setActionBusy] = useState<'download' | 'share' | null>(null);
+  const [actionHint, setActionHint] = useState<string | null>(null);
   const [shortLink, setShortLink] = useState<UpiPayLinkRecord | null>(null);
   const [shortLinkLoading, setShortLinkLoading] = useState(() => Boolean(codeParam?.trim()));
   const [shortLinkMissing, setShortLinkMissing] = useState(false);
@@ -116,32 +146,16 @@ const PayUpi = () => {
   );
 
   const upiLink = useMemo(() => (valid ? buildUpiPayDeepLink(payInput) : null), [valid, payInput]);
-  const appLinks = useMemo(() => (valid ? buildUpiAppDeepLinks(payInput) : []), [valid, payInput]);
-  const detected = useMemo(() => detectPayPlatform(), []);
-  const [pickedDevice, setPickedDevice] = useState<'android' | 'ios' | null>(null);
-  const platform = detected === 'other' ? pickedDevice ?? 'other' : detected;
-  const needsDevicePick = detected === 'other' && !pickedDevice;
-  const showAndroidOpen = platform === 'android';
-  const showIosApps = platform === 'ios';
 
   useEffect(() => {
     document.title = `Pay via UPI | ${brandLabel}`;
   }, [brandLabel]);
 
-  // Android: soft-open system UPI chooser once.
-  useEffect(() => {
-    if (!upiLink || platform !== 'android' || launchTried) return;
-    setLaunchTried(true);
-    const t = window.setTimeout(() => {
-      window.location.href = upiLink;
-    }, 400);
-    return () => window.clearTimeout(t);
-  }, [upiLink, platform, launchTried]);
-
   useEffect(() => {
     if (!upiLink || !qrRef.current) return;
     let cancelled = false;
     setQrReady(false);
+    qrInstanceRef.current = null;
     const host = qrRef.current;
     host.innerHTML = '';
 
@@ -150,26 +164,29 @@ const PayUpi = () => {
         const { default: QRCodeStyling } = await import('qr-code-styling');
         if (cancelled || !qrRef.current) return;
         const qr = new QRCodeStyling({
-          width: 220,
-          height: 220,
+          width: 280,
+          height: 280,
           type: 'canvas',
           data: upiLink,
-          margin: 8,
+          margin: 10,
           qrOptions: { errorCorrectionLevel: 'M' },
           dotsOptions: { color: '#000000', type: 'square' },
           cornersSquareOptions: { color: '#000000', type: 'square' },
           cornersDotOptions: { color: '#000000', type: 'square' },
           backgroundOptions: { color: '#ffffff' },
-        });
+        }) as QrCodeInstance;
         qr.append(qrRef.current);
+        qrInstanceRef.current = qr;
         if (!cancelled) setQrReady(true);
       } catch {
+        qrInstanceRef.current = null;
         if (!cancelled) setQrReady(false);
       }
     })();
 
     return () => {
       cancelled = true;
+      qrInstanceRef.current = null;
       host.innerHTML = '';
     };
   }, [upiLink]);
@@ -178,6 +195,13 @@ const PayUpi = () => {
     Number.isFinite(am) && am > 0
       ? `₹${am.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
       : null;
+
+  const qrFileName = useMemo(() => {
+    const safeBrand = brand === 'elevenro' ? 'elevenro' : 'hydrogen-ro';
+    const amt =
+      Number.isFinite(am) && am > 0 ? `-${am.toFixed(0)}` : '';
+    return `${safeBrand}-upi-pay${amt}.png`;
+  }, [brand, am]);
 
   const handleCopy = async (field: 'upi' | 'phone', value: string) => {
     setCopyError(false);
@@ -188,6 +212,83 @@ const PayUpi = () => {
     }
     setCopiedField(field);
     window.setTimeout(() => setCopiedField(null), 2200);
+  };
+
+  const handleDownloadQr = async () => {
+    setActionHint(null);
+    setActionBusy('download');
+    try {
+      const blob = await getQrPngBlob(qrInstanceRef.current);
+      if (!blob) {
+        setActionHint('QR isn’t ready yet — wait a moment and try again.');
+        return;
+      }
+      triggerBlobDownload(blob, qrFileName);
+      setActionHint('QR saved to your downloads.');
+      window.setTimeout(() => setActionHint(null), 2800);
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
+  /**
+   * Share QR to WhatsApp (or any app): Web Share with image when supported,
+   * so the user can pick any contact. Falls back to WhatsApp text + download.
+   */
+  const handleShareWhatsApp = async () => {
+    setActionHint(null);
+    setActionBusy('share');
+    try {
+      const blob = await getQrPngBlob(qrInstanceRef.current);
+      const shareText = [
+        `Pay ${brandLabel} via UPI`,
+        amountLabel ? `Amount: ${amountLabel}` : null,
+        `UPI ID: ${pa}`,
+        ph ? `Phone: ${ph}` : null,
+        typeof window !== 'undefined' ? window.location.href : null,
+      ]
+        .filter(Boolean)
+        .join('\n');
+
+      if (blob && typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+        const file = new File([blob], qrFileName, { type: 'image/png' });
+        const payloadWithFile: ShareData = {
+          files: [file],
+          title: `Pay ${brandLabel}`,
+          text: shareText,
+        };
+        const canFile =
+          typeof navigator.canShare !== 'function' || navigator.canShare(payloadWithFile);
+        if (canFile) {
+          try {
+            await navigator.share(payloadWithFile);
+            return;
+          } catch (e) {
+            // User cancelled share sheet — don't fall through to WhatsApp text.
+            if (e instanceof DOMException && e.name === 'AbortError') return;
+          }
+        }
+        try {
+          await navigator.share({ title: `Pay ${brandLabel}`, text: shareText });
+          return;
+        } catch (e) {
+          if (e instanceof DOMException && e.name === 'AbortError') return;
+        }
+      }
+
+      // Desktop / no Web Share: save QR, then open WhatsApp contact picker with text.
+      if (blob) triggerBlobDownload(blob, qrFileName);
+      const waUrl = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
+      window.open(waUrl, '_blank', 'noopener,noreferrer');
+      setActionHint(
+        blob
+          ? 'QR downloaded — attach that image in WhatsApp after you pick a contact.'
+          : 'Opened WhatsApp — pick a contact to send the payment details.'
+      );
+      window.setTimeout(() => setActionHint(null), 5000);
+    } finally {
+      setActionBusy(null);
+    }
   };
 
   const shellClass =
@@ -231,6 +332,53 @@ const PayUpi = () => {
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-700">Secure UPI payment</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">Pay {brandLabel}</h1>
           {pn ? <p className="mt-1 text-sm text-slate-600">To: {pn}</p> : null}
+        </div>
+
+        <div className="mt-6 rounded-2xl border border-slate-200/80 bg-white p-5 text-center shadow-sm shadow-slate-200/60">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Scan to pay</p>
+          {amountLabel ? (
+            <p className="mt-3 text-3xl font-bold tabular-nums tracking-tight text-slate-900">{amountLabel}</p>
+          ) : null}
+          {pn ? <p className="mt-1 text-sm text-slate-600">{pn}</p> : null}
+          <div className="mt-4 flex justify-center">
+            <div
+              ref={qrRef}
+              className="flex h-[280px] w-[280px] items-center justify-center bg-white"
+              aria-label="UPI payment QR code"
+            />
+          </div>
+          {!qrReady ? <p className="mt-2 text-xs text-slate-400">Loading QR…</p> : null}
+          <p className="mt-3 text-xs leading-relaxed text-slate-500">
+            Open any UPI app and scan this QR — amount and payee fill in automatically.
+          </p>
+
+          <div className="mt-5 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+            <button
+              type="button"
+              disabled={!qrReady || actionBusy !== null}
+              onClick={() => void handleDownloadQr()}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-800 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Download className="h-4 w-4" />
+              {actionBusy === 'download' ? 'Saving…' : 'Download QR'}
+            </button>
+            <button
+              type="button"
+              disabled={!qrReady || actionBusy !== null}
+              onClick={() => void handleShareWhatsApp()}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Share2 className="h-4 w-4" />
+              {actionBusy === 'share' ? 'Opening…' : 'Share to WhatsApp'}
+            </button>
+          </div>
+          {actionHint ? (
+            <p className="mt-3 text-xs leading-relaxed text-sky-800">{actionHint}</p>
+          ) : (
+            <p className="mt-3 text-[11px] leading-relaxed text-slate-400">
+              Share opens your phone’s share sheet so you can send the QR to any WhatsApp contact.
+            </p>
+          )}
         </div>
 
         <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm shadow-slate-200/60">
@@ -286,81 +434,8 @@ const PayUpi = () => {
           </p>
         ) : null}
 
-        {needsDevicePick ? (
-          <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-center text-sm font-semibold text-slate-900">Are you using Android or iPhone?</p>
-            <p className="mt-1 text-center text-xs text-slate-500">We’ll show the right payment buttons for your phone.</p>
-            <div className="mt-4 grid grid-cols-2 gap-2.5">
-              <button
-                type="button"
-                onClick={() => setPickedDevice('android')}
-                className="rounded-xl border border-slate-200 bg-slate-50 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-100"
-              >
-                Android
-              </button>
-              <button
-                type="button"
-                onClick={() => setPickedDevice('ios')}
-                className="rounded-xl border border-slate-200 bg-slate-50 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-100"
-              >
-                iPhone
-              </button>
-            </div>
-          </div>
-        ) : null}
-
-        {!needsDevicePick && showAndroidOpen && upiLink ? (
-          <div className="mt-6">
-            {detected === 'other' ? (
-              <button
-                type="button"
-                onClick={() => setPickedDevice(null)}
-                className="mb-2 w-full text-center text-xs font-medium text-sky-700 hover:underline"
-              >
-                Change device
-              </button>
-            ) : null}
-            <UpiOpenAppCta href={upiLink} />
-          </div>
-        ) : null}
-
-        {!needsDevicePick && showIosApps && appLinks.length ? (
-          <div className="mt-6">
-            {detected === 'other' ? (
-              <button
-                type="button"
-                onClick={() => setPickedDevice(null)}
-                className="mb-2 w-full text-center text-xs font-medium text-sky-700 hover:underline"
-              >
-                Change device
-              </button>
-            ) : null}
-            <p className="text-center text-xs font-semibold uppercase tracking-wide text-slate-500">Open with</p>
-            <UpiAppOpenGrid apps={appLinks} />
-          </div>
-        ) : null}
-
-        <div className="mt-6 rounded-2xl border border-slate-200/80 bg-white p-5 text-center shadow-sm shadow-slate-200/60">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Scan to pay</p>
-          <div className="mt-3 flex justify-center">
-            <div
-              ref={qrRef}
-              className="flex h-[220px] w-[220px] items-center justify-center bg-white"
-              aria-label="UPI payment QR code"
-            />
-          </div>
-          {!qrReady ? <p className="mt-2 text-xs text-slate-400">Loading QR…</p> : null}
-          {amountLabel ? (
-            <p className="mt-4 text-3xl font-bold tabular-nums tracking-tight text-slate-900">{amountLabel}</p>
-          ) : null}
-          {pn ? <p className="mt-1 text-sm text-slate-600">{pn}</p> : null}
-          <p className="mt-3 text-xs leading-relaxed text-slate-500">
-            Scan with any UPI app — amount and payee are filled in automatically.
-          </p>
-        </div>
-
         <p className="mt-4 px-1 text-center text-sm leading-relaxed text-slate-500">
-          (Or copy the UPI ID / phone number above and paste it in your UPI app.)
+          Or copy the UPI ID / phone number above and paste it in your UPI app.
         </p>
 
         <p className="mt-8 text-center text-[11px] leading-relaxed text-slate-400">
