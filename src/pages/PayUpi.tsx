@@ -233,8 +233,8 @@ const PayUpi = () => {
   };
 
   /**
-   * Share QR to WhatsApp (or any app): Web Share with image when supported,
-   * so the user can pick any contact. Falls back to WhatsApp text + download.
+   * Share QR to WhatsApp (or any app). Never auto-downloads —
+   * use Download QR for that. Prefers Web Share with the image when available.
    */
   const handleShareWhatsApp = async () => {
     setActionHint(null);
@@ -251,22 +251,23 @@ const PayUpi = () => {
         .filter(Boolean)
         .join('\n');
 
-      if (blob && typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
-        const file = new File([blob], qrFileName, { type: 'image/png' });
-        const payloadWithFile: ShareData = {
-          files: [file],
-          title: `Pay ${brandLabel}`,
-          text: shareText,
-        };
-        const canFile =
-          typeof navigator.canShare !== 'function' || navigator.canShare(payloadWithFile);
-        if (canFile) {
-          try {
-            await navigator.share(payloadWithFile);
-            return;
-          } catch (e) {
-            // User cancelled share sheet — don't fall through to WhatsApp text.
-            if (e instanceof DOMException && e.name === 'AbortError') return;
+      if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+        if (blob) {
+          const file = new File([blob], qrFileName, { type: 'image/png' });
+          const payloadWithFile: ShareData = {
+            files: [file],
+            title: `Pay ${brandLabel}`,
+            text: shareText,
+          };
+          const canFile =
+            typeof navigator.canShare !== 'function' || navigator.canShare(payloadWithFile);
+          if (canFile) {
+            try {
+              await navigator.share(payloadWithFile);
+              return;
+            } catch (e) {
+              if (e instanceof DOMException && e.name === 'AbortError') return;
+            }
           }
         }
         try {
@@ -277,13 +278,13 @@ const PayUpi = () => {
         }
       }
 
-      // Desktop / no Web Share: save QR, then open WhatsApp contact picker with text.
-      if (blob) triggerBlobDownload(blob, qrFileName);
+      // No Web Share (typical desktop): open WhatsApp contact picker with text only.
+      // Do not download — Download QR is a separate action.
       const waUrl = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
       window.open(waUrl, '_blank', 'noopener,noreferrer');
       setActionHint(
         blob
-          ? 'QR downloaded — attach that image in WhatsApp after you pick a contact.'
+          ? 'Opened WhatsApp — use Download QR if you want to attach the image.'
           : 'Opened WhatsApp — pick a contact to send the payment details.'
       );
       window.setTimeout(() => setActionHint(null), 5000);
