@@ -28,6 +28,16 @@ REVOKE ALL ON public.upi_pay_links FROM authenticated;
 
 GRANT SELECT, INSERT ON public.upi_pay_links TO service_role;
 
+-- Admins may SELECT for Settings database export (anon stays locked out).
+GRANT SELECT ON public.upi_pay_links TO authenticated;
+DROP POLICY IF EXISTS upi_pay_links_admin_select ON public.upi_pay_links;
+CREATE POLICY upi_pay_links_admin_select
+  ON public.upi_pay_links
+  FOR SELECT
+  TO authenticated
+  USING (public.is_admin_user());
+
+
 CREATE OR REPLACE FUNCTION public.create_upi_pay_link(
   p_upi_id text,
   p_payee_name text DEFAULT '',
