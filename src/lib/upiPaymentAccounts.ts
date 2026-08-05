@@ -351,44 +351,6 @@ export function buildUpiPayDeepLink(input: UpiPayLinkInput): string | null {
   return q ? `upi://pay?${q}` : null;
 }
 
-export type PayPlatform = 'android' | 'ios' | 'other';
-
-/** Best-effort UA detection for /pay-upi layout (WhatsApp in-app browsers included). */
-export function detectPayPlatform(): PayPlatform {
-  if (typeof navigator === 'undefined') return 'other';
-  const ua = navigator.userAgent || '';
-  if (/android/i.test(ua)) return 'android';
-  if (/iPhone|iPad|iPod/i.test(ua)) return 'ios';
-  if (
-    typeof navigator.platform === 'string' &&
-    navigator.platform === 'MacIntel' &&
-    Number(navigator.maxTouchPoints || 0) > 1
-  ) {
-    return 'ios';
-  }
-  return 'other';
-}
-
-/**
- * App-specific UPI openers (needed on iOS — generic upi:// has no chooser there).
- * Android usually prefers buildUpiPayDeepLink() instead.
- */
-export function buildUpiAppDeepLinks(input: UpiPayLinkInput): {
-  id: string;
-  name: string;
-  href: string;
-  color: string;
-}[] {
-  const q = buildUpiPayQuery(input);
-  if (!q) return [];
-  return [
-    { id: 'gpay', name: 'GPay', href: `tez://upi/pay?${q}`, color: '#4285F4' },
-    { id: 'phonepe', name: 'PhonePe', href: `phonepe://pay?${q}`, color: '#5F259F' },
-    { id: 'paytm', name: 'Paytm', href: `paytmmp://upi/pay?${q}`, color: '#00BAF2' },
-    { id: 'bhim', name: 'BHIM', href: `bhim://upi/pay?${q}`, color: '#007272' },
-  ];
-}
-
 const PROD_UPI_ORIGINS: Record<'hydrogenro' | 'elevenro', string> = {
   hydrogenro: 'https://hydrogenro.com',
   elevenro: 'https://elevenro.com',
