@@ -28,6 +28,9 @@ export type CustomerTrackSnapshot = {
   destLongitude?: number | null;
   durationText?: string | null;
   estimatedArrival?: string | null;
+  distanceText?: string | null;
+  /** Google Directions overview_polyline (encoded). */
+  routePolyline?: string | null;
 };
 
 const PROD_TRACK_ORIGINS: Record<'hydrogenro' | 'elevenro', string> = {

@@ -7,8 +7,10 @@ import {
   fetchCustomerTrackSnapshot,
   type CustomerTrackSnapshot,
 } from '@/lib/jobTrackLink';
+import CustomerTrackLiveMap from '@/components/CustomerTrackLiveMap';
 
-const POLL_MS = 60_000;
+/** Poll often enough for a moving bike feel; server still rate-limits pings. */
+const POLL_MS = 25_000;
 
 function defaultBrandFromHost(): DocumentBrand {
   if (typeof window === 'undefined') return 'hydrogenro';
@@ -26,27 +28,6 @@ function PayBrandMark({ brand }: { brand: DocumentBrand }) {
     </div>
   );
 }
-
-const TrackMap = ({
-  latitude,
-  longitude,
-}: {
-  latitude: number;
-  longitude: number;
-}) => {
-  const src = `https://maps.google.com/maps?q=${latitude},${longitude}&z=15&output=embed`;
-  return (
-    <div className="overflow-hidden rounded-xl border border-slate-200">
-      <iframe
-        title="Technician location"
-        src={src}
-        className="h-56 w-full sm:h-64"
-        loading="lazy"
-        referrerPolicy="no-referrer-when-downgrade"
-      />
-    </div>
-  );
-};
 
 const CustomerTrackPage = () => {
   const { code: codeParam } = useParams<{ code?: string }>();
@@ -106,12 +87,19 @@ const CustomerTrackPage = () => {
   const showMap =
     snapshot?.latitude != null &&
     snapshot?.longitude != null &&
-    (snapshot.phase === 'en_route' || snapshot.phase === 'working_away');
+    (snapshot.phase === 'en_route' ||
+      snapshot.phase === 'working_away' ||
+      snapshot.phase === 'arrived');
 
   const locationAgo = useMemo(
     () => agoLabel(snapshot?.fixTime || snapshot?.locationUpdatedAt),
     [snapshot?.fixTime, snapshot?.locationUpdatedAt]
   );
+
+  const customerPoint =
+    snapshot?.destLatitude != null && snapshot?.destLongitude != null
+      ? { lat: snapshot.destLatitude, lng: snapshot.destLongitude }
+      : null;
 
   const shellClass =
     'min-h-[100dvh] bg-gradient-to-b from-sky-50 via-white to-slate-50 px-4 py-5 font-sans text-slate-900 sm:py-8';
@@ -137,7 +125,7 @@ const CustomerTrackPage = () => {
 
         <div className="mt-4 text-center">
           <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-700">
-            Technician tracking
+            Live tracking
           </p>
           <h1 className="mt-1 text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl">
             {brandLabel}
@@ -173,6 +161,81 @@ const CustomerTrackPage = () => {
 
         {(phase === 'en_route' || phase === 'arrived' || phase === 'working_away') && snapshot ? (
           <div className="mt-4 space-y-3">
+            {showMap && snapshot.latitude != null && snapshot.longitude != null ? (
+              <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm shadow-slate-200/60">
+                <CustomerTrackLiveMap
+                  tech={{ lat: snapshot.latitude, lng: snapshot.longitude }}
+                  customer={customerPoint}
+                  routePolyline={
+                    phase === 'arrived' ? null : snapshot.routePolyline || null
+                  }
+                  techLabel={snapshot.techName || 'Technician'}
+                  animate={phase === 'en_route'}
+                />
+                <div className="flex items-center justify-between gap-2 border-t border-slate-100 px-3 py-2">
+                  <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-600">
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="h-2.5 w-2.5 rounded-full bg-sky-500" />
+                      Technician
+                    </span>
+                    {customerPoint ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="h-2.5 w-2.5 rounded-full bg-orange-500" />
+                        You
+                      </span>
+                    ) : null}
+                    {phase !== 'arrived' && snapshot.routePolyline ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="h-0.5 w-4 rounded bg-sky-600" />
+                        Route
+                      </span>
+                    ) : null}
+                  </div>
+                  {locationAgo ? (
+                    <p className="shrink-0 text-[11px] text-slate-400">Updated {locationAgo}</p>
+                  ) : null}
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 text-center text-sm text-slate-600">
+                Location not available yet — check back shortly.
+              </div>
+            )}
+
+            {phase === 'en_route' ? (
+              <div className="rounded-2xl border border-sky-200/80 bg-sky-50 px-4 py-3 text-center">
+                <p className="text-sm font-semibold text-sky-950">On the way</p>
+                {snapshot.estimatedArrival ? (
+                  <p className="mt-1 text-xs text-sky-800">
+                    Estimated arrival{' '}
+                    <span className="font-semibold">{snapshot.estimatedArrival}</span>
+                    {snapshot.durationText ? ` (${snapshot.durationText} away)` : ''}
+                    {snapshot.distanceText ? ` · ${snapshot.distanceText}` : ''}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-xs text-sky-800">Your technician is heading to you.</p>
+                )}
+              </div>
+            ) : null}
+
+            {phase === 'arrived' ? (
+              <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50 px-4 py-3 text-center">
+                <p className="text-sm font-semibold text-emerald-950">Technician has arrived</p>
+                <p className="mt-1 text-xs text-emerald-800">
+                  They are at your location and working on your service.
+                </p>
+              </div>
+            ) : null}
+
+            {phase === 'working_away' ? (
+              <div className="rounded-2xl border border-sky-200/80 bg-sky-50 px-4 py-3 text-center">
+                <p className="text-sm font-semibold text-sky-950">Service in progress</p>
+                <p className="mt-1 text-xs text-sky-800">
+                  Your technician is working on your service.
+                </p>
+              </div>
+            ) : null}
+
             <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
               <div className="flex items-start gap-3">
                 <User className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
@@ -198,59 +261,6 @@ const CustomerTrackPage = () => {
                 </div>
               ) : null}
             </div>
-
-            {phase === 'arrived' ? (
-              <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50 px-4 py-3 text-center">
-                <p className="text-sm font-semibold text-emerald-950">Technician has arrived</p>
-                <p className="mt-1 text-xs text-emerald-800">
-                  They are at your location and working on your service.
-                </p>
-              </div>
-            ) : null}
-
-            {phase === 'working_away' ? (
-              <div className="rounded-2xl border border-sky-200/80 bg-sky-50 px-4 py-3 text-center">
-                <p className="text-sm font-semibold text-sky-950">Service in progress</p>
-                <p className="mt-1 text-xs text-sky-800">
-                  Your technician is working on your service.
-                </p>
-              </div>
-            ) : null}
-
-            {phase === 'en_route' ? (
-              <div className="rounded-2xl border border-sky-200/80 bg-sky-50 px-4 py-3 text-center">
-                <p className="text-sm font-semibold text-sky-950">On the way</p>
-                {snapshot.estimatedArrival ? (
-                  <p className="mt-1 text-xs text-sky-800">
-                    Estimated arrival{' '}
-                    <span className="font-semibold">{snapshot.estimatedArrival}</span>
-                    {snapshot.durationText ? ` (${snapshot.durationText} away)` : ''}
-                  </p>
-                ) : (
-                  <p className="mt-1 text-xs text-sky-800">Your technician is heading to you.</p>
-                )}
-              </div>
-            ) : null}
-
-            {showMap && snapshot.latitude != null && snapshot.longitude != null ? (
-              <div className="rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm">
-                <p className="text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  {phase === 'en_route' ? 'Live location' : 'Last known location'}
-                </p>
-                <div className="mt-2">
-                  <TrackMap latitude={snapshot.latitude} longitude={snapshot.longitude} />
-                </div>
-                {locationAgo ? (
-                  <p className="mt-2 text-center text-[11px] text-slate-500">
-                    Updated {locationAgo}
-                  </p>
-                ) : null}
-              </div>
-            ) : (
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 text-center text-sm text-slate-600">
-                Location not available yet — check back shortly.
-              </div>
-            )}
           </div>
         ) : null}
 
@@ -261,7 +271,8 @@ const CustomerTrackPage = () => {
         ) : null}
 
         <p className="mt-6 text-center text-[11px] leading-relaxed text-slate-400">
-          Updates about once a minute while this page is open. Secured tracking for {brandLabel}.
+          Map updates about every 25 seconds while this page is open. Secured tracking for{' '}
+          {brandLabel}.
         </p>
       </div>
     </div>

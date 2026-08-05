@@ -52,4 +52,56 @@ async function fetchDrivingEta(origin, destination, fixTimeIso) {
   }
 }
 
-module.exports = { fetchDrivingEta, formatTime12Hour };
+/**
+ * Driving route + ETA via Directions API (server key).
+ * Returns encoded overview polyline for the client map.
+ * @returns {{
+ *   durationText: string,
+ *   estimatedArrival: string,
+ *   distanceText: string | null,
+ *   routePolyline: string
+ * } | null}
+ */
+async function fetchDrivingRoute(origin, destination, fixTimeIso) {
+  const apiKey = getGoogleMapsServerKey();
+  if (!apiKey) return null;
+  if (!origin?.lat || !origin?.lng || !destination?.lat || !destination?.lng) return null;
+
+  try {
+    const url = new URL('https://maps.googleapis.com/maps/api/directions/json');
+    url.searchParams.set('origin', `${origin.lat},${origin.lng}`);
+    url.searchParams.set('destination', `${destination.lat},${destination.lng}`);
+    url.searchParams.set('mode', 'driving');
+    url.searchParams.set('units', 'metric');
+    url.searchParams.set('key', apiKey);
+
+    const res = await fetch(url.toString());
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.status !== 'OK' || !data.routes?.[0]) return null;
+
+    const route = data.routes[0];
+    const leg = route.legs?.[0];
+    const routePolyline = route.overview_polyline?.points;
+    if (!routePolyline || typeof routePolyline !== 'string') return null;
+
+    const durationText = leg?.duration?.text || '';
+    const durationValue = leg?.duration?.value ?? 0;
+    const distanceText = leg?.distance?.text || null;
+    if (!durationText || durationValue <= 0) return null;
+
+    const base = fixTimeIso ? new Date(fixTimeIso) : new Date();
+    const estimatedArrival = formatTime12Hour(new Date(base.getTime() + durationValue * 1000));
+
+    return {
+      durationText,
+      estimatedArrival,
+      distanceText,
+      routePolyline,
+    };
+  } catch {
+    return null;
+  }
+}
+
+module.exports = { fetchDrivingEta, fetchDrivingRoute, formatTime12Hour };
