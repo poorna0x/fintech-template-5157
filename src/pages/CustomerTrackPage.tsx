@@ -173,24 +173,11 @@ const CustomerTrackPage = () => {
                   animate={phase === 'en_route'}
                 />
                 <div className="flex items-center justify-between gap-2 border-t border-slate-100 px-3 py-2">
-                  <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-600">
-                    <span className="inline-flex items-center gap-1.5">
-                      <span className="h-2.5 w-2.5 rounded-full bg-sky-500" />
-                      Technician
-                    </span>
-                    {customerPoint ? (
-                      <span className="inline-flex items-center gap-1.5">
-                        <span className="h-2.5 w-2.5 rounded-full bg-orange-500" />
-                        You
-                      </span>
-                    ) : null}
-                    {phase !== 'arrived' && snapshot.routePolyline ? (
-                      <span className="inline-flex items-center gap-1.5">
-                        <span className="h-0.5 w-4 rounded bg-sky-600" />
-                        Route
-                      </span>
-                    ) : null}
-                  </div>
+                  <p className="text-[11px] text-slate-600">
+                    {customerPoint
+                      ? 'Blue route is the driving path from technician → you'
+                      : 'Technician location on Google Maps'}
+                  </p>
                   {locationAgo ? (
                     <p className="shrink-0 text-[11px] text-slate-400">Updated {locationAgo}</p>
                   ) : null}
