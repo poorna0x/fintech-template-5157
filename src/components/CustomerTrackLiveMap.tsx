@@ -1,19 +1,33 @@
-import { useEffect, useRef } from 'react';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
+import { useEffect, useRef, useState } from 'react';
 
 export type LatLng = { lat: number; lng: number };
 
 type CustomerTrackLiveMapProps = {
   tech: LatLng;
   customer?: LatLng | null;
-  /** Google encoded overview polyline */
+  /** Google encoded overview polyline from server Directions */
   routePolyline?: string | null;
   techLabel?: string;
   animate?: boolean;
 };
 
-/** Decode Google encoded polyline → lat/lng pairs. */
+/** Soft sky / water map — not default Google grey. */
+const TRACK_MAP_STYLES: google.maps.MapTypeStyle[] = [
+  { elementType: 'geometry', stylers: [{ color: '#e8f4fc' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#4b6478' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#ffffff' }] },
+  { featureType: 'administrative', elementType: 'geometry.stroke', stylers: [{ color: '#b8d4e8' }] },
+  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi.park', elementType: 'geometry', stylers: [{ color: '#c8ebd8' }, { visibility: 'on' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#ffffff' }] },
+  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#c5d9e8' }] },
+  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#fef3c7' }] },
+  { featureType: 'road.highway', elementType: 'geometry.stroke', stylers: [{ color: '#fcd34d' }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#7dd3fc' }] },
+  { featureType: 'water', elementType: 'labels.text.fill', stylers: [{ color: '#0369a1' }] },
+];
+
 export function decodeGooglePolyline(encoded: string): LatLng[] {
   const points: LatLng[] = [];
   let index = 0;
@@ -48,46 +62,117 @@ export function decodeGooglePolyline(encoded: string): LatLng[] {
   return points;
 }
 
-function bikeIconHtml(): string {
-  return `
-    <div class="hro-track-bike" style="
-      width:44px;height:44px;border-radius:9999px;
-      background:linear-gradient(135deg,#0ea5e9,#0284c7);
-      box-shadow:0 6px 16px rgba(2,132,199,.45);
-      border:3px solid #fff;display:flex;align-items:center;justify-content:center;
-    ">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <circle cx="5.5" cy="17.5" r="3" stroke="#fff" stroke-width="1.8"/>
-        <circle cx="18.5" cy="17.5" r="3" stroke="#fff" stroke-width="1.8"/>
-        <path d="M5.5 17.5 L10 9.5 L14 9.5 L18.5 17.5" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M10 9.5 L12 5.5 L15.5 5.5" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-        <circle cx="12" cy="12.5" r="1.2" fill="#fff"/>
-      </svg>
-    </div>`;
+function loadGoogleMapsJs(): Promise<typeof google.maps> {
+  return new Promise((resolve, reject) => {
+    const g = (window as any).google;
+    if (g?.maps?.Map) {
+      resolve(g.maps);
+      return;
+    }
+
+    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+    if (!apiKey) {
+      reject(new Error('Google Maps API key not configured'));
+      return;
+    }
+
+    const existing = document.querySelector('script[src*="maps.googleapis.com/maps/api/js"]');
+    const waitForMaps = () => {
+      let attempts = 0;
+      const t = setInterval(() => {
+        attempts += 1;
+        const maps = (window as any).google?.maps;
+        if (maps?.Map) {
+          clearInterval(t);
+          resolve(maps);
+        } else if (attempts >= 80) {
+          clearInterval(t);
+          reject(new Error('Google Maps failed to load (check API key referrer allowlist for /track)'));
+        }
+      }, 100);
+    };
+
+    if (existing) {
+      waitForMaps();
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&loading=async`;
+    script.async = true;
+    script.defer = true;
+    script.onload = () => waitForMaps();
+    script.onerror = () => reject(new Error('Failed to load Google Maps script'));
+    document.head.appendChild(script);
+  });
 }
 
-function homeIconHtml(): string {
-  return `
-    <div style="
-      width:38px;height:38px;border-radius:9999px;
-      background:linear-gradient(135deg,#f97316,#ea580c);
-      box-shadow:0 6px 16px rgba(234,88,12,.4);
-      border:3px solid #fff;display:flex;align-items:center;justify-content:center;
-    ">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <path d="M4 10.5 L12 4 L20 10.5 V19 A1 1 0 0 1 19 20 H5 A1 1 0 0 1 4 19 Z" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/>
-        <path d="M10 20 V13 H14 V20" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/>
-      </svg>
-    </div>`;
+function bikeIconUrl(): string {
+  const svg = encodeURIComponent(`
+    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+      <circle cx="24" cy="24" r="20" fill="#0284c7" stroke="#fff" stroke-width="4"/>
+      <g fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="15" cy="31" r="5"/>
+        <circle cx="33" cy="31" r="5"/>
+        <path d="M15 31 L22 18 H28 L33 31"/>
+        <path d="M22 18 L25 12 H31"/>
+        <circle cx="25" cy="24" r="2" fill="#fff" stroke="none"/>
+      </g>
+    </svg>
+  `);
+  return `data:image/svg+xml;charset=UTF-8,${svg}`;
+}
+
+function homeIconUrl(): string {
+  const svg = encodeURIComponent(`
+    <svg xmlns="http://www.w3.org/2000/svg" width="42" height="42" viewBox="0 0 42 42">
+      <circle cx="21" cy="21" r="17" fill="#ea580c" stroke="#fff" stroke-width="3.5"/>
+      <path d="M12 20 L21 12 L30 20 V30 H12 Z" fill="none" stroke="#fff" stroke-width="2.2" stroke-linejoin="round"/>
+      <path d="M18 30 V23 H24 V30" fill="none" stroke="#fff" stroke-width="2.2" stroke-linejoin="round"/>
+    </svg>
+  `);
+  return `data:image/svg+xml;charset=UTF-8,${svg}`;
 }
 
 function lerp(a: number, b: number, t: number) {
   return a + (b - a) * t;
 }
 
+function requestDrivingPath(
+  maps: typeof google.maps,
+  origin: LatLng,
+  destination: LatLng
+): Promise<LatLng[] | null> {
+  return new Promise((resolve) => {
+    try {
+      const service = new maps.DirectionsService();
+      service.route(
+        {
+          origin,
+          destination,
+          travelMode: maps.TravelMode.DRIVING,
+        },
+        (result, status) => {
+          if (status !== maps.DirectionsStatus.OK || !result?.routes?.[0]) {
+            resolve(null);
+            return;
+          }
+          const overview = result.routes[0].overview_path;
+          if (overview?.length) {
+            resolve(overview.map((p) => ({ lat: p.lat(), lng: p.lng() })));
+            return;
+          }
+          resolve(null);
+        }
+      );
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
 /**
- * Zepto-style live track map: soft colored tiles, road route line,
- * animated bike marker for the technician, home pin for the customer.
+ * Zepto-style Google Map: custom colors, road route, animated bike marker.
  */
 export default function CustomerTrackLiveMap({
   tech,
@@ -97,165 +182,187 @@ export default function CustomerTrackLiveMap({
   animate = true,
 }: CustomerTrackLiveMapProps) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<L.Map | null>(null);
-  const techMarkerRef = useRef<L.Marker | null>(null);
-  const customerMarkerRef = useRef<L.Marker | null>(null);
-  const routeLineRef = useRef<L.Polyline | null>(null);
+  const mapRef = useRef<google.maps.Map | null>(null);
+  const techMarkerRef = useRef<google.maps.Marker | null>(null);
+  const customerMarkerRef = useRef<google.maps.Marker | null>(null);
+  const routeLineRef = useRef<google.maps.Polyline | null>(null);
   const animRef = useRef<number | null>(null);
   const displayedTechRef = useRef<LatLng>(tech);
   const fittedRef = useRef(false);
+  const mapsRef = useRef<typeof google.maps | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
 
-  // Init map once
+  // Init Google Map once
   useEffect(() => {
-    if (!hostRef.current || mapRef.current) return;
+    let cancelled = false;
+    void (async () => {
+      if (!hostRef.current) return;
+      try {
+        const maps = await loadGoogleMapsJs();
+        if (cancelled || !hostRef.current) return;
+        mapsRef.current = maps;
 
-    const map = L.map(hostRef.current, {
-      zoomControl: false,
-      attributionControl: true,
-      scrollWheelZoom: false,
-    }).setView([tech.lat, tech.lng], 14);
+        const map = new maps.Map(hostRef.current, {
+          center: tech,
+          zoom: 14,
+          disableDefaultUI: true,
+          zoomControl: true,
+          zoomControlOptions: { position: maps.ControlPosition.RIGHT_BOTTOM },
+          mapTypeControl: false,
+          streetViewControl: false,
+          fullscreenControl: false,
+          clickableIcons: false,
+          gestureHandling: 'cooperative',
+          styles: TRACK_MAP_STYLES,
+        });
 
-    // Soft blue/teal tiles — different from default Google grey
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-      attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
-      subdomains: 'abcd',
-      maxZoom: 19,
-    }).addTo(map);
+        techMarkerRef.current = new maps.Marker({
+          map,
+          position: tech,
+          title: techLabel,
+          zIndex: 10,
+          icon: {
+            url: bikeIconUrl(),
+            scaledSize: new maps.Size(48, 48),
+            anchor: new maps.Point(24, 24),
+          },
+        });
 
-    L.control.zoom({ position: 'bottomright' }).addTo(map);
-
-    const bikeIcon = L.divIcon({
-      className: 'hro-track-bike-icon',
-      html: bikeIconHtml(),
-      iconSize: [44, 44],
-      iconAnchor: [22, 22],
-    });
-
-    techMarkerRef.current = L.marker([tech.lat, tech.lng], {
-      icon: bikeIcon,
-      zIndexOffset: 600,
-      title: techLabel,
-    }).addTo(map);
-
-    displayedTechRef.current = tech;
-    mapRef.current = map;
-
-    // Fix Leaflet sizing inside rounded card
-    requestAnimationFrame(() => {
-      map.invalidateSize();
-    });
+        displayedTechRef.current = tech;
+        mapRef.current = map;
+        setReady(true);
+        setError(null);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Could not load Google Maps';
+        setError(msg);
+      }
+    })();
 
     return () => {
+      cancelled = true;
       if (animRef.current != null) cancelAnimationFrame(animRef.current);
-      map.remove();
-      mapRef.current = null;
+      techMarkerRef.current?.setMap(null);
+      customerMarkerRef.current?.setMap(null);
+      routeLineRef.current?.setMap(null);
       techMarkerRef.current = null;
       customerMarkerRef.current = null;
       routeLineRef.current = null;
+      mapRef.current = null;
+      mapsRef.current = null;
       fittedRef.current = false;
+      setReady(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount once
   }, []);
 
   // Customer pin
   useEffect(() => {
+    const maps = mapsRef.current;
     const map = mapRef.current;
-    if (!map) return;
+    if (!maps || !map || !ready) return;
 
     if (!customer) {
-      if (customerMarkerRef.current) {
-        customerMarkerRef.current.remove();
-        customerMarkerRef.current = null;
-      }
+      customerMarkerRef.current?.setMap(null);
+      customerMarkerRef.current = null;
       return;
     }
-
-    const homeIcon = L.divIcon({
-      className: 'hro-track-home-icon',
-      html: homeIconHtml(),
-      iconSize: [38, 38],
-      iconAnchor: [19, 19],
-    });
 
     if (!customerMarkerRef.current) {
-      customerMarkerRef.current = L.marker([customer.lat, customer.lng], {
-        icon: homeIcon,
-        zIndexOffset: 500,
+      customerMarkerRef.current = new maps.Marker({
+        map,
+        position: customer,
         title: 'Your location',
-      }).addTo(map);
+        zIndex: 5,
+        icon: {
+          url: homeIconUrl(),
+          scaledSize: new maps.Size(42, 42),
+          anchor: new maps.Point(21, 21),
+        },
+      });
     } else {
-      customerMarkerRef.current.setLatLng([customer.lat, customer.lng]);
+      customerMarkerRef.current.setPosition(customer);
     }
-  }, [customer?.lat, customer?.lng]);
+  }, [customer?.lat, customer?.lng, ready]);
 
-  // Route line
+  // Road route polyline (server encoded → client Directions fallback)
   useEffect(() => {
+    const maps = mapsRef.current;
     const map = mapRef.current;
-    if (!map) return;
+    if (!maps || !map || !ready) return;
 
-    let path: LatLng[] = [];
-    if (routePolyline) {
-      try {
-        path = decodeGooglePolyline(routePolyline);
-      } catch {
-        path = [];
+    let cancelled = false;
+
+    void (async () => {
+      let path: LatLng[] = [];
+      if (routePolyline) {
+        try {
+          path = decodeGooglePolyline(routePolyline);
+        } catch {
+          path = [];
+        }
       }
-    }
-    if (!path.length && customer) {
-      path = [displayedTechRef.current, customer];
-    }
 
-    if (!path.length) {
-      if (routeLineRef.current) {
-        routeLineRef.current.remove();
+      if (!path.length && customer) {
+        const fromDirections = await requestDrivingPath(maps, tech, customer);
+        if (cancelled) return;
+        if (fromDirections?.length) path = fromDirections;
+      }
+
+      if (cancelled) return;
+
+      if (!path.length) {
+        routeLineRef.current?.setMap(null);
         routeLineRef.current = null;
+        return;
       }
-      return;
-    }
 
-    const latlngs = path.map((p) => [p.lat, p.lng] as L.LatLngExpression);
+      if (!routeLineRef.current) {
+        routeLineRef.current = new maps.Polyline({
+          map,
+          path,
+          geodesic: false,
+          strokeColor: '#0284c7',
+          strokeOpacity: 0.95,
+          strokeWeight: 5,
+          zIndex: 2,
+        });
+      } else {
+        routeLineRef.current.setPath(path);
+        routeLineRef.current.setMap(map);
+      }
 
-    if (!routeLineRef.current) {
-      routeLineRef.current = L.polyline(latlngs, {
-        color: '#0284c7',
-        weight: 5,
-        opacity: 0.9,
-        lineCap: 'round',
-        lineJoin: 'round',
-      }).addTo(map);
-    } else {
-      routeLineRef.current.setLatLngs(latlngs);
-    }
+      if (!fittedRef.current) {
+        const bounds = new maps.LatLngBounds();
+        path.forEach((p) => bounds.extend(p));
+        bounds.extend(tech);
+        if (customer) bounds.extend(customer);
+        map.fitBounds(bounds, { top: 48, right: 48, bottom: 48, left: 48 });
+        fittedRef.current = true;
+      }
+    })();
 
-    if (!fittedRef.current) {
-      const bounds = L.latLngBounds(latlngs);
-      if (customer) bounds.extend([customer.lat, customer.lng]);
-      bounds.extend([tech.lat, tech.lng]);
-      map.fitBounds(bounds.pad(0.18), { animate: false, maxZoom: 15 });
-      fittedRef.current = true;
-    }
-  }, [routePolyline, customer?.lat, customer?.lng, tech.lat, tech.lng]);
+    return () => {
+      cancelled = true;
+    };
+  }, [routePolyline, customer?.lat, customer?.lng, tech.lat, tech.lng, ready]);
 
-  // Animate bike to new tech position
+  // Animate bike marker
   useEffect(() => {
     const marker = techMarkerRef.current;
-    const map = mapRef.current;
-    if (!marker || !map) return;
+    if (!marker || !ready) return;
 
     const from = displayedTechRef.current;
     const to = tech;
-    const dist =
-      Math.abs(from.lat - to.lat) + Math.abs(from.lng - to.lng);
+    const dist = Math.abs(from.lat - to.lat) + Math.abs(from.lng - to.lng);
 
     if (animRef.current != null) {
       cancelAnimationFrame(animRef.current);
       animRef.current = null;
     }
 
-    // Tiny / first move — snap
     if (!animate || dist < 1e-7) {
-      marker.setLatLng([to.lat, to.lng]);
+      marker.setPosition(to);
       displayedTechRef.current = to;
       return;
     }
@@ -265,39 +372,51 @@ export default function CustomerTrackLiveMap({
 
     const step = (now: number) => {
       const t = Math.min(1, (now - start) / durationMs);
-      // ease-out cubic
       const e = 1 - Math.pow(1 - t, 3);
-      const lat = lerp(from.lat, to.lat, e);
-      const lng = lerp(from.lng, to.lng, e);
-      marker.setLatLng([lat, lng]);
-      displayedTechRef.current = { lat, lng };
-      if (t < 1) {
-        animRef.current = requestAnimationFrame(step);
-      } else {
-        animRef.current = null;
-      }
+      const next = { lat: lerp(from.lat, to.lat, e), lng: lerp(from.lng, to.lng, e) };
+      marker.setPosition(next);
+      displayedTechRef.current = next;
+      if (t < 1) animRef.current = requestAnimationFrame(step);
+      else animRef.current = null;
     };
 
     animRef.current = requestAnimationFrame(step);
-  }, [tech.lat, tech.lng, animate]);
+  }, [tech.lat, tech.lng, animate, ready]);
+
+  const openInMaps =
+    customer != null
+      ? `https://www.google.com/maps/dir/?api=1&origin=${tech.lat},${tech.lng}&destination=${customer.lat},${customer.lng}&travelmode=driving`
+      : `https://www.google.com/maps?q=${tech.lat},${tech.lng}`;
 
   return (
     <div className="relative overflow-hidden rounded-xl">
       <div
         ref={hostRef}
-        className="h-[280px] w-full sm:h-[320px]"
+        className="h-[280px] w-full bg-sky-50 sm:h-[320px]"
         aria-label="Live technician map"
       />
-      <style>{`
-        .hro-track-bike-icon, .hro-track-home-icon {
-          background: transparent !important;
-          border: none !important;
-        }
-        .leaflet-control-attribution {
-          font-size: 9px;
-          background: rgba(255,255,255,.75) !important;
-        }
-      `}</style>
+      {!ready && !error ? (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-sky-50/80 text-xs text-slate-600">
+          Loading Google Maps…
+        </div>
+      ) : null}
+      {error ? (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-slate-50 px-4 text-center">
+          <p className="text-sm font-medium text-slate-800">Google Map could not load</p>
+          <p className="text-xs text-slate-600">
+            Add <span className="font-mono">https://hydrogenro.com/*</span> to your Maps API key
+            HTTP referrer list in Google Cloud.
+          </p>
+          <a
+            href={openInMaps}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-1 text-xs font-semibold text-sky-700 underline"
+          >
+            Open route in Google Maps
+          </a>
+        </div>
+      ) : null}
     </div>
   );
 }
