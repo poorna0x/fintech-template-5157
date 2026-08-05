@@ -186,6 +186,8 @@ const DATABASE_EXPORT_TABLES: {
     optional: true,
   },
   { name: 'technicians', orderBy: 'created_at', label: 'Technicians' },
+  { name: 'upi_pay_links', orderBy: 'created_at', label: 'UPI Pay Links', optional: true },
+  { name: 'upi_payment_accounts', orderBy: 'created_at', label: 'UPI Payment Accounts', optional: true },
   { name: 'warranties', orderBy: 'created_at', label: 'Warranties', optional: true },
   { name: 'warranty_items', orderBy: 'created_at', label: 'Warranty Items', optional: true },
   {
