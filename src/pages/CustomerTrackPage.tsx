@@ -4,7 +4,6 @@ import { Droplets, Loader2, MapPin, Phone, User } from 'lucide-react';
 import { getDocumentBrandLabel, normalizeDocumentBrand, type DocumentBrand } from '@/lib/service-brands';
 import {
   agoLabel,
-  computeCustomerTrackEta,
   fetchCustomerTrackSnapshot,
   type CustomerTrackSnapshot,
 } from '@/lib/jobTrackLink';
@@ -57,8 +56,6 @@ const CustomerTrackPage = () => {
 
   const [snapshot, setSnapshot] = useState<CustomerTrackSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
-  const [eta, setEta] = useState<{ durationText?: string; estimatedArrival?: string } | null>(null);
-  const [etaLoading, setEtaLoading] = useState(false);
 
   const brand: DocumentBrand =
     normalizeDocumentBrand(snapshot?.brand) || defaultBrandFromHost();
@@ -110,50 +107,6 @@ const CustomerTrackPage = () => {
     snapshot?.latitude != null &&
     snapshot?.longitude != null &&
     (snapshot.phase === 'en_route' || snapshot.phase === 'working_away');
-
-  useEffect(() => {
-    if (!showMap || snapshot?.latitude == null || snapshot?.longitude == null) {
-      setEta(null);
-      return;
-    }
-    const destLat = snapshot.destLatitude;
-    const destLng = snapshot.destLongitude;
-    if (destLat == null || destLng == null) {
-      setEta(null);
-      return;
-    }
-    if (snapshot.phase !== 'en_route') {
-      setEta(null);
-      return;
-    }
-
-    let cancelled = false;
-    setEtaLoading(true);
-    void computeCustomerTrackEta(
-      { lat: snapshot.latitude, lng: snapshot.longitude },
-      { lat: destLat, lng: destLng },
-      snapshot.fixTime || snapshot.locationUpdatedAt
-    )
-      .then((result) => {
-        if (!cancelled) setEta(result);
-      })
-      .finally(() => {
-        if (!cancelled) setEtaLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    showMap,
-    snapshot?.latitude,
-    snapshot?.longitude,
-    snapshot?.destLatitude,
-    snapshot?.destLongitude,
-    snapshot?.phase,
-    snapshot?.fixTime,
-    snapshot?.locationUpdatedAt,
-  ]);
 
   const locationAgo = useMemo(
     () => agoLabel(snapshot?.fixTime || snapshot?.locationUpdatedAt),
@@ -267,13 +220,11 @@ const CustomerTrackPage = () => {
             {phase === 'en_route' ? (
               <div className="rounded-2xl border border-sky-200/80 bg-sky-50 px-4 py-3 text-center">
                 <p className="text-sm font-semibold text-sky-950">On the way</p>
-                {etaLoading ? (
-                  <p className="mt-1 text-xs text-sky-800">Calculating arrival time…</p>
-                ) : eta?.estimatedArrival ? (
+                {snapshot.estimatedArrival ? (
                   <p className="mt-1 text-xs text-sky-800">
                     Estimated arrival{' '}
-                    <span className="font-semibold">{eta.estimatedArrival}</span>
-                    {eta.durationText ? ` (${eta.durationText} away)` : ''}
+                    <span className="font-semibold">{snapshot.estimatedArrival}</span>
+                    {snapshot.durationText ? ` (${snapshot.durationText} away)` : ''}
                   </p>
                 ) : (
                   <p className="mt-1 text-xs text-sky-800">Your technician is heading to you.</p>

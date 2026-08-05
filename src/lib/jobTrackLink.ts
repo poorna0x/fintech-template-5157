@@ -26,6 +26,8 @@ export type CustomerTrackSnapshot = {
   distanceToCustomerM?: number | null;
   destLatitude?: number | null;
   destLongitude?: number | null;
+  durationText?: string | null;
+  estimatedArrival?: string | null;
 };
 
 const PROD_TRACK_ORIGINS: Record<'hydrogenro' | 'elevenro', string> = {
@@ -127,48 +129,4 @@ export function agoLabel(iso: string | null | undefined): string {
   const hours = Math.floor(mins / 60);
   if (hours < 24) return `${hours}h ${mins % 60}m ago`;
   return new Date(iso).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
-}
-
-export async function computeCustomerTrackEta(
-  origin: { lat: number; lng: number },
-  destination: { lat: number; lng: number },
-  fixTimeIso?: string | null
-): Promise<{ durationText?: string; estimatedArrival?: string } | null> {
-  try {
-    const { ensureGoogleMapsLoaded } = await import('@/lib/adminGoogleMapsDistance');
-    const { formatTime12Hour } = await import('@/lib/adminRouteMeasureHelpers');
-    await ensureGoogleMapsLoaded();
-    const distanceMatrix = new (window as any).google.maps.DistanceMatrixService();
-    return new Promise((resolve) => {
-      distanceMatrix.getDistanceMatrix(
-        {
-          origins: [origin],
-          destinations: [destination],
-          travelMode: (window as any).google.maps.TravelMode.DRIVING,
-          unitSystem: (window as any).google.maps.UnitSystem.METRIC,
-        },
-        (response: any, status: any) => {
-          if (status !== (window as any).google.maps.DistanceMatrixStatus.OK || !response) {
-            resolve(null);
-            return;
-          }
-          const result = response.rows?.[0]?.elements?.[0];
-          if (!result || result.status !== (window as any).google.maps.DistanceMatrixElementStatus.OK) {
-            resolve(null);
-            return;
-          }
-          const durationText = result.duration?.text || '';
-          const durationValue = result.duration?.value ?? 0;
-          let estimatedArrival: string | undefined;
-          if (durationValue > 0) {
-            const base = fixTimeIso ? new Date(fixTimeIso) : new Date();
-            estimatedArrival = formatTime12Hour(new Date(base.getTime() + durationValue * 1000));
-          }
-          resolve({ durationText, estimatedArrival });
-        }
-      );
-    });
-  } catch {
-    return null;
-  }
 }

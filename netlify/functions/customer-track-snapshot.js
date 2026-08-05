@@ -3,6 +3,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders } = require('./cors-helper');
 const { sendTechnicianLocationPing } = require('./location-ping-core');
+const { fetchDrivingEta } = require('./google-driving-eta');
 
 const PING_COOLDOWN_MS = 45_000;
 const FRESH_FIX_MAX_AGE_MS = 2 * 60_000;
@@ -225,6 +226,20 @@ exports.handler = async (event) => {
     phase = arrived ? 'arrived' : 'working_away';
   }
 
+  let durationText = null;
+  let estimatedArrival = null;
+  if (phase === 'en_route' && techCoords && destCoords) {
+    const eta = await fetchDrivingEta(
+      { lat: techCoords.lat, lng: techCoords.lng },
+      destCoords,
+      techCoords.fixTime || techCoords.updatedAt
+    );
+    if (eta) {
+      durationText = eta.durationText;
+      estimatedArrival = eta.estimatedArrival;
+    }
+  }
+
   return {
     statusCode: 200,
     headers,
@@ -243,6 +258,8 @@ exports.handler = async (event) => {
       distanceToCustomerM,
       destLatitude: destCoords?.lat ?? null,
       destLongitude: destCoords?.lng ?? null,
+      durationText,
+      estimatedArrival,
     }),
   };
 };
