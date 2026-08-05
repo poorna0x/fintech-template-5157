@@ -57,6 +57,7 @@ const ProductVerification = lazy(() => import("./pages/ProductVerification"));
 const SpareParts = lazy(() => import("./pages/SpareParts"));
 const Warranty = lazy(() => import("./pages/Warranty"));
 const PayUpi = lazy(() => import("./pages/PayUpi"));
+const CustomerTrackPage = lazy(() => import("./pages/CustomerTrackPage"));
 
 /** Plain bounce — used for in-session Suspense (Settings, previews, tech dashboard, …). */
 function PlainPortalSuspenseLoader() {
@@ -236,6 +237,7 @@ const App = () => (
                   {/* Short UPI pay links: /p/xK9m2q — also legacy /pay-upi?... */}
                   <Route path="/p/:code" element={<PayUpi />} />
                   <Route path="/pay-upi" element={<PayUpi />} />
+                  <Route path="/track/:code" element={<CustomerTrackPage />} />
                   
                   {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                   <Route path="*" element={<NotFound />} />

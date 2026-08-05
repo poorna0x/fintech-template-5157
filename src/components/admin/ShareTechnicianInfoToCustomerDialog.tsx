@@ -5,6 +5,8 @@ import { Label } from '@/components/ui/label';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import { Job } from '@/types';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
+import { buildJobTrackShareUrl } from '@/lib/jobTrackLink';
+import { getPublicSiteKey } from '@/lib/websiteSiteKey';
 
 export interface ShareTechnicianInfoToCustomerDialogProps {
   open: boolean;
@@ -32,6 +34,8 @@ const ShareTechnicianInfoToCustomerDialog: React.FC<ShareTechnicianInfoToCustome
 }) => {
   const [etaResult, setEtaResult] = useState<{ durationText?: string; estimatedArrival?: string } | null>(null);
   const [etaLoading, setEtaLoading] = useState(false);
+  const [trackLink, setTrackLink] = useState<string | null>(null);
+  const [trackLinkLoading, setTrackLinkLoading] = useState(false);
 
   const assignedTechnicianId = job ? (job as any).assigned_technician_id || (job as any).assignedTechnicianId : null;
   const assignedTechnician = assignedTechnicianId
@@ -61,16 +65,37 @@ const ShareTechnicianInfoToCustomerDialog: React.FC<ShareTechnicianInfoToCustome
     ? `📍 *Current location:* ${locationLink}`
     : '📍 *Current location:* Not shared yet';
 
+  const trackLine = trackLinkLoading
+    ? '🛵 *Track technician:* Preparing link…'
+    : trackLink
+      ? `🛵 *Track technician:* ${trackLink}`
+      : '🛵 *Track technician:* —';
+
   // Customer-facing contact only — admin WhatsApp number is never shared here.
   const whatsappMessage = `*Technician assigned for your service*
 
 👤 *Name:* ${techName}
 📞 *Phone:* ${techPhone}
+${trackLine}
 ${locationLine}
 ${etaLine}
 🪪 *ID card:* ${idCardLink}
 
 We'll reach you soon. For any queries, contact the technician directly.`;
+
+  useEffect(() => {
+    if (!open || !job?.id) {
+      setTrackLink(null);
+      setTrackLinkLoading(false);
+      return;
+    }
+    setTrackLinkLoading(true);
+    setTrackLink(null);
+    void buildJobTrackShareUrl(job.id, getPublicSiteKey())
+      .then((url) => setTrackLink(url))
+      .catch(() => setTrackLink(null))
+      .finally(() => setTrackLinkLoading(false));
+  }, [open, job?.id]);
 
   useEffect(() => {
     if (!open || !job || !getEta || !assignedTechnicianId) {
@@ -107,7 +132,7 @@ We'll reach you soon. For any queries, contact the technician directly.`;
         <DialogHeader>
           <DialogTitle>Share technician info to customer</DialogTitle>
           <DialogDescription>
-            Send technician name, contact phone, location, estimated time and ID card link via WhatsApp
+            Send technician name, contact phone, track link, location, estimated time and ID card via WhatsApp
           </DialogDescription>
         </DialogHeader>
 
@@ -139,6 +164,7 @@ We'll reach you soon. For any queries, contact the technician directly.`;
                   <Button
                     variant="default"
                     className="bg-green-600 text-white hover:bg-green-700"
+                    disabled={trackLinkLoading}
                     onClick={() => sendTo(customerPhone)}
                   >
                     <WhatsAppIcon className="mr-2 h-4 w-4" />
@@ -147,6 +173,7 @@ We'll reach you soon. For any queries, contact the technician directly.`;
                   <Button
                     variant="default"
                     className="bg-green-600 text-white hover:bg-green-700"
+                    disabled={trackLinkLoading}
                     onClick={() => sendTo(alternatePhone)}
                   >
                     <WhatsAppIcon className="mr-2 h-4 w-4" />
@@ -155,6 +182,7 @@ We'll reach you soon. For any queries, contact the technician directly.`;
                   <Button
                     variant="default"
                     className="bg-green-600 text-white hover:bg-green-700 sm:col-span-2"
+                    disabled={trackLinkLoading}
                     onClick={() => {
                       sendTo(customerPhone);
                       setTimeout(() => sendTo(alternatePhone), 300);
@@ -169,6 +197,7 @@ We'll reach you soon. For any queries, contact the technician directly.`;
               <Button
                 variant="default"
                 className="w-full bg-green-600 text-white hover:bg-green-700"
+                disabled={trackLinkLoading}
                 onClick={() => sendTo(customerPhone)}
               >
                 <WhatsAppIcon className="mr-2 h-4 w-4" />

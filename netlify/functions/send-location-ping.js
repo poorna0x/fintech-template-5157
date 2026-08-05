@@ -5,7 +5,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
 const { authorizeAdminBearer } = require('./admin-auth-guard');
-const { getMessaging, sendToTechnicianDevices } = require('./fcm-helper');
+const { sendTechnicianLocationPing } = require('./location-ping-core');
 
 exports.handler = async (event) => {
   const corsHeaders = getCorsHeaders(event.headers.origin || event.headers.Origin);
@@ -48,61 +48,20 @@ exports.handler = async (event) => {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  const { data: row, error: rowErr } = await db
-    .from('technician_live_locations')
-    .select('is_tracking')
-    .eq('technician_id', technicianId)
-    .maybeSingle();
-
-  if (rowErr) {
-    console.error('[send-location-ping] lookup failed', rowErr.message);
+  const result = await sendTechnicianLocationPing(db, technicianId);
+  if (result.reason === 'lookup_failed') {
     return { statusCode: 500, headers, body: JSON.stringify({ error: 'Lookup failed' }) };
   }
-  if (!row) {
-    return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'no_row' }) };
-  }
-  if (!row.is_tracking) {
-    return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'sharing_off' }) };
-  }
-
-  // One-time nonce: the app's native handler echoes it back to
-  // upload-tech-location as proof it received this specific push.
-  const nonce = require('crypto').randomUUID();
-  const { error: nonceErr } = await db
-    .from('technician_live_locations')
-    .update({ ping_nonce: nonce, ping_requested_at: new Date().toISOString() })
-    .eq('technician_id', technicianId);
-  if (nonceErr) {
-    // ping_nonce column missing (patch SQL not run yet) — the JS path in the
-    // awake app still works, so send the push without native upload support.
-    console.error('[send-location-ping] nonce save failed', nonceErr.message);
-  }
-
-  const siteUrl = (process.env.URL || '').replace(/\/$/, '');
-
-  try {
-    const messaging = await getMessaging(db);
-    // Wake every device the technician is logged in on — whichever phone is
-    // actually with them responds; uploads just overwrite the same row.
-    const { sent, tokens } = await sendToTechnicianDevices(db, messaging, technicianId, (token) => ({
-      token,
-      data: {
-        type: 'location_request',
-        technicianId,
-        ...(nonceErr ? {} : { nonce }),
-        ...(siteUrl ? { uploadUrl: `${siteUrl}/.netlify/functions/upload-tech-location` } : {}),
-      },
-      android: { priority: 'high' },
-    }), 'location_ping');
-    if (tokens === 0) {
-      return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'no_token' }) };
-    }
-    if (sent === 0) {
-      return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'stale_token' }) };
-    }
-    return { statusCode: 200, headers, body: JSON.stringify({ sent: true, devices: sent }) };
-  } catch (err) {
-    console.error('[send-location-ping] send failed', err?.message || err);
+  if (result.reason === 'push_failed') {
     return { statusCode: 500, headers, body: JSON.stringify({ error: 'Push send failed' }) };
   }
+  return {
+    statusCode: 200,
+    headers,
+    body: JSON.stringify({
+      sent: result.sent,
+      ...(result.reason ? { reason: result.reason } : {}),
+      ...(result.devices != null ? { devices: result.devices } : {}),
+    }),
+  };
 };

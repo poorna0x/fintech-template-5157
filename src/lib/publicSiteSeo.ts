@@ -126,6 +126,7 @@ export function buildPublicLocalBusinessJsonLd(siteKey?: PublicSiteKey) {
 export const NO_INDEX_PREFIXES = [
   '/technician-id/',
   '/technician/',
+  '/track/',
   '/admin',
   '/dashboard',
   '/search',
