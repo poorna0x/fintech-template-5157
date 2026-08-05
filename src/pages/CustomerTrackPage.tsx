@@ -205,15 +205,28 @@ const CustomerTrackPage = () => {
             {phase === 'en_route' ? (
               <div className="rounded-2xl border border-sky-200/80 bg-sky-50 px-4 py-3 text-center">
                 <p className="text-sm font-semibold text-sky-950">On the way</p>
-                {snapshot.estimatedArrival ? (
+                {snapshot.estimatedArrival || snapshot.durationText ? (
                   <p className="mt-1 text-xs text-sky-800">
-                    Estimated arrival{' '}
-                    <span className="font-semibold">{snapshot.estimatedArrival}</span>
-                    {snapshot.durationText ? ` (${snapshot.durationText} away)` : ''}
+                    {snapshot.estimatedArrival ? (
+                      <>
+                        Estimated arrival{' '}
+                        <span className="font-semibold">{snapshot.estimatedArrival}</span>
+                      </>
+                    ) : (
+                      'Estimated travel time'
+                    )}
+                    {snapshot.durationText
+                      ? ` (${snapshot.durationText}${snapshot.etaApproximate ? ' approx' : ''} away)`
+                      : ''}
                     {snapshot.distanceText ? ` · ${snapshot.distanceText}` : ''}
                   </p>
                 ) : (
-                  <p className="mt-1 text-xs text-sky-800">Your technician is heading to you.</p>
+                  <p className="mt-1 text-xs text-sky-800">
+                    Your technician is heading to you
+                    {!snapshot.destLatitude
+                      ? ' — arrival time needs the customer map location on the job.'
+                      : '.'}
+                  </p>
                 )}
               </div>
             ) : null}

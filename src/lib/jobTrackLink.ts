@@ -29,6 +29,8 @@ export type CustomerTrackSnapshot = {
   durationText?: string | null;
   estimatedArrival?: string | null;
   distanceText?: string | null;
+  /** True when ETA is approximate (Google Directions unavailable). */
+  etaApproximate?: boolean;
   /** Google Directions overview_polyline (encoded). */
   routePolyline?: string | null;
 };

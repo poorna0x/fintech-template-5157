@@ -3,7 +3,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const { getCorsHeaders } = require('./cors-helper');
 const { sendTechnicianLocationPing } = require('./location-ping-core');
-const { fetchDrivingEta, fetchDrivingRoute } = require('./google-driving-eta');
+const { fetchDrivingEta, fetchDrivingRoute, estimateEtaFromMeters } = require('./google-driving-eta');
 
 const PING_COOLDOWN_MS = 30_000;
 const FRESH_FIX_MAX_AGE_MS = 2 * 60_000;
@@ -31,10 +31,56 @@ function pickCoords(loc) {
   return { lat, lng };
 }
 
+/** Pull lat/lng from a Google Maps URL when JSON coords are missing. */
+function coordsFromMapsText(raw) {
+  if (typeof raw !== 'string' || !raw.trim()) return null;
+  const patterns = [
+    /!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/,
+    /@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/,
+    /\/place\/(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/,
+    /[?&](?:q|query)=(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/,
+  ];
+  for (const pattern of patterns) {
+    const match = raw.match(pattern);
+    if (!match) continue;
+    const lat = Number(match[1]);
+    const lng = Number(match[2]);
+    if (
+      Number.isFinite(lat) &&
+      Number.isFinite(lng) &&
+      lat !== 0 &&
+      lng !== 0 &&
+      lat >= -90 &&
+      lat <= 90 &&
+      lng >= -180 &&
+      lng <= 180
+    ) {
+      return { lat, lng };
+    }
+  }
+  return null;
+}
+
+function resolveLocBlob(loc) {
+  const direct = pickCoords(loc);
+  if (direct) return direct;
+  if (!loc || typeof loc !== 'object') return null;
+  for (const key of ['googleLocation', 'google_location', 'formattedAddress', 'formatted_address']) {
+    const found = coordsFromMapsText(loc[key]);
+    if (found) return found;
+  }
+  return null;
+}
+
 function resolveJobDestinationCoords(job) {
   const customer = job?.customer || {};
-  for (const loc of [customer.location, job.service_location, job.serviceLocation]) {
-    const coords = pickCoords(loc);
+  for (const loc of [
+    customer.location,
+    customer.alternate_location,
+    job.service_location,
+    job.serviceLocation,
+  ]) {
+    const coords = resolveLocBlob(loc);
     if (coords) return coords;
   }
   return null;
@@ -136,7 +182,7 @@ exports.handler = async (event) => {
   const { data: job, error: jobErr } = await db
     .from('jobs')
     .select(
-      'id, status, assigned_technician_id, service_location, customer:customers(full_name, location)'
+      'id, status, assigned_technician_id, service_location, customer:customers(full_name, location, alternate_location)'
     )
     .eq('id', link.job_id)
     .maybeSingle();
@@ -230,30 +276,35 @@ exports.handler = async (event) => {
   let estimatedArrival = null;
   let distanceText = null;
   let routePolyline = null;
+  let etaApproximate = false;
   if (
     (phase === 'en_route' || phase === 'working_away') &&
     techCoords &&
     destCoords
   ) {
-    const route = await fetchDrivingRoute(
-      { lat: techCoords.lat, lng: techCoords.lng },
-      destCoords,
-      techCoords.fixTime || techCoords.updatedAt
-    );
+    const origin = { lat: techCoords.lat, lng: techCoords.lng };
+    const fixIso = techCoords.fixTime || techCoords.updatedAt;
+
+    const route = await fetchDrivingRoute(origin, destCoords, fixIso);
     if (route) {
       durationText = route.durationText;
       estimatedArrival = route.estimatedArrival;
       distanceText = route.distanceText;
       routePolyline = route.routePolyline;
-    } else if (phase === 'en_route') {
-      const eta = await fetchDrivingEta(
-        { lat: techCoords.lat, lng: techCoords.lng },
-        destCoords,
-        techCoords.fixTime || techCoords.updatedAt
-      );
+    } else {
+      const eta = await fetchDrivingEta(origin, destCoords, fixIso);
       if (eta) {
         durationText = eta.durationText;
         estimatedArrival = eta.estimatedArrival;
+        distanceText = eta.distanceText || null;
+      } else if (distanceToCustomerM != null) {
+        const approx = estimateEtaFromMeters(distanceToCustomerM, fixIso);
+        if (approx) {
+          durationText = approx.durationText;
+          estimatedArrival = approx.estimatedArrival;
+          distanceText = approx.distanceText;
+          etaApproximate = true;
+        }
       }
     }
   }
@@ -280,6 +331,7 @@ exports.handler = async (event) => {
       estimatedArrival,
       distanceText,
       routePolyline,
+      etaApproximate,
     }),
   };
 };
