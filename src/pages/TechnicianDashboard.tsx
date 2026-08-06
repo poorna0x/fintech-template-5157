@@ -21,6 +21,7 @@ import PhotoViewerDialog from '@/components/admin/PhotoViewerDialog';
 import TechnicianOtpRequestCard from '@/components/technician/TechnicianOtpRequestCard';
 import {
   buildAdminPhotoViewerSelection,
+  resolveAdminPhotoViewerSources,
 } from '@/lib/adminPhotoViewerNav';
 import { 
   Wrench, 
@@ -581,43 +582,6 @@ const TechnicianDashboard = () => {
   const [selectedCustomerForReport, setSelectedCustomerForReport] = useState<any>(null);
   const [customerReportJobs, setCustomerReportJobs] = useState<any[]>([]);
   const [loadingCustomerReportJobs, setLoadingCustomerReportJobs] = useState(false);
-  // Photo viewer — completed jobs, job gallery, and customer report (same path as View Bill)
-  const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
-  const [selectedPhoto, setSelectedPhoto] = useState<{url: string, index: number, total: number} | null>(null);
-  const [selectedBillPhotos, setSelectedBillPhotos] = useState<string[]>([]);
-  /** Re-open customer report after fullscreen photo viewer closes (report dialog must hide for pinch zoom). */
-  const reopenReportAfterPhotoRef = useRef(false);
-  /** Skip one report refetch when resuming from photo viewer (jobs already in memory). */
-  const skipNextReportFetchRef = useRef(false);
-
-  /** Report photos must use the same viewer as completed View Bill — hide report dialog first so Radix scroll-lock does not block pinch zoom. */
-  const openReportPhotoViewer = useCallback((photos: string[], index: number) => {
-    if (!photos.length) return;
-    const safeIndex = Math.min(Math.max(0, index), photos.length - 1);
-    reopenReportAfterPhotoRef.current = true;
-    skipNextReportFetchRef.current = true;
-    setCustomerReportDialogOpen(false);
-    window.setTimeout(() => {
-      setSelectedBillPhotos(photos);
-      setSelectedPhoto({
-        url: photos[safeIndex],
-        index: safeIndex,
-        total: photos.length,
-      });
-      setPhotoViewerOpen(true);
-    }, 50);
-  }, []);
-
-  const closePhotoViewer = useCallback(() => {
-    setPhotoViewerOpen(false);
-    setSelectedPhoto(null);
-    setSelectedBillPhotos([]);
-    if (reopenReportAfterPhotoRef.current) {
-      reopenReportAfterPhotoRef.current = false;
-      setCustomerReportDialogOpen(true);
-    }
-  }, []);
-
   const [partsUsedDialogOpen, setPartsUsedDialogOpen] = useState(false);
   const [selectedJobForParts, setSelectedJobForParts] = useState<Job | null>(null);
   const [addReminderDialogOpen, setAddReminderDialogOpen] = useState(false);
@@ -803,6 +767,121 @@ const TechnicianDashboard = () => {
   const [photosDialogOpen, setPhotosDialogOpen] = useState(false);
   const [selectedJobPhotos, setSelectedJobPhotos] = useState<{jobId: string, photos: string[], customerId?: string} | null>(null);
   const [loadingCustomerPhotos, setLoadingCustomerPhotos] = useState(false);
+
+  // Photo viewer — completed jobs, job gallery, and customer report
+  const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
+  const [selectedPhoto, setSelectedPhoto] = useState<{url: string, index: number, total: number} | null>(null);
+  const [selectedBillPhotos, setSelectedBillPhotos] = useState<string[]>([]);
+  const reportDialogScrollRef = useRef<HTMLDivElement>(null);
+  const galleryDialogScrollRef = useRef<HTMLDivElement>(null);
+  const suspendedDialogRef = useRef<{ type: 'report' | 'gallery'; scrollTop: number } | null>(null);
+  const skipNextReportFetchRef = useRef(false);
+
+  type TechnicianJobPhotos = { jobId: string; photos: string[]; customerId?: string };
+
+  const openPhotoViewerSuspended = useCallback(
+    (
+      suspendType: 'report' | 'gallery',
+      photos: string[],
+      index: number,
+      opts?: { jobPhotosMeta?: TechnicianJobPhotos | null },
+    ) => {
+      if (!photos.length) return;
+      const safeIndex = Math.min(Math.max(0, index), photos.length - 1);
+      const scrollEl =
+        suspendType === 'report' ? reportDialogScrollRef.current : galleryDialogScrollRef.current;
+      suspendedDialogRef.current = {
+        type: suspendType,
+        scrollTop: scrollEl?.scrollTop ?? 0,
+      };
+
+      if (suspendType === 'report') {
+        skipNextReportFetchRef.current = true;
+        setCustomerReportDialogOpen(false);
+      } else {
+        setPhotosDialogOpen(false);
+      }
+
+      window.setTimeout(() => {
+        if (opts?.jobPhotosMeta) {
+          setSelectedJobPhotos(opts.jobPhotosMeta);
+          setSelectedBillPhotos([]);
+        } else {
+          setSelectedBillPhotos(photos);
+          setSelectedJobPhotos(null);
+        }
+        setSelectedPhoto({
+          url: photos[safeIndex],
+          index: safeIndex,
+          total: photos.length,
+        });
+        setPhotoViewerOpen(true);
+      }, 50);
+    },
+    [],
+  );
+
+  const restoreDialogScroll = useCallback((el: HTMLDivElement | null, scrollTop: number) => {
+    if (!el) return;
+    const apply = () => {
+      el.scrollTop = scrollTop;
+    };
+    requestAnimationFrame(() => {
+      apply();
+      requestAnimationFrame(apply);
+    });
+  }, []);
+
+  const closePhotoViewer = useCallback(() => {
+    const suspended = suspendedDialogRef.current;
+    setPhotoViewerOpen(false);
+    setSelectedPhoto(null);
+    setSelectedBillPhotos([]);
+
+    if (!suspended) {
+      setSelectedJobPhotos(null);
+      return;
+    }
+
+    suspendedDialogRef.current = null;
+    const { type, scrollTop } = suspended;
+
+    if (type === 'report') {
+      skipNextReportFetchRef.current = true;
+      setCustomerReportDialogOpen(true);
+      window.setTimeout(() => restoreDialogScroll(reportDialogScrollRef.current, scrollTop), 80);
+      return;
+    }
+
+    setPhotosDialogOpen(true);
+    window.setTimeout(() => restoreDialogScroll(galleryDialogScrollRef.current, scrollTop), 80);
+  }, [restoreDialogScroll]);
+
+  const goToPreviousPhoto = useCallback(() => {
+    if (!selectedPhoto) return;
+    const photos = resolveAdminPhotoViewerSources({
+      selectedBillPhotos,
+      selectedCustomerPhotos: null,
+      selectedJobPhotos: selectedJobPhotos
+        ? { photos: selectedJobPhotos.photos }
+        : null,
+    });
+    if (!photos?.length) return;
+    setSelectedPhoto(buildAdminPhotoViewerSelection(photos, 'prev', selectedPhoto));
+  }, [selectedPhoto, selectedBillPhotos, selectedJobPhotos]);
+
+  const goToNextPhoto = useCallback(() => {
+    if (!selectedPhoto) return;
+    const photos = resolveAdminPhotoViewerSources({
+      selectedBillPhotos,
+      selectedCustomerPhotos: null,
+      selectedJobPhotos: selectedJobPhotos
+        ? { photos: selectedJobPhotos.photos }
+        : null,
+    });
+    if (!photos?.length) return;
+    setSelectedPhoto(buildAdminPhotoViewerSelection(photos, 'next', selectedPhoto));
+  }, [selectedPhoto, selectedBillPhotos, selectedJobPhotos]);
 
   // Address dialog state
   const [addressDialogOpen, setAddressDialogOpen] = useState<{[jobId: string]: boolean}>({});
@@ -2026,7 +2105,7 @@ const TechnicianDashboard = () => {
     const fetchCustomerReportJobs = async () => {
       if (!customerReportDialogOpen || !selectedCustomerForReport) {
         // Photo viewer temporarily hides the report — keep cached jobs for instant resume.
-        if (reopenReportAfterPhotoRef.current) return;
+        if (suspendedDialogRef.current?.type === 'report') return;
         setCustomerReportJobs([]);
         return;
       }
@@ -7490,6 +7569,7 @@ const TechnicianDashboard = () => {
                                 variant="outline"
                                 onClick={() => {
                                   if (billPhotos.length > 0) {
+                                    setSelectedJobPhotos(null);
                                     setSelectedBillPhotos(billPhotos);
                                     setSelectedPhoto({ url: billPhotos[0], index: 0, total: billPhotos.length });
                                     setPhotoViewerOpen(true);
@@ -10228,8 +10308,12 @@ const TechnicianDashboard = () => {
         </Dialog>
 
         {/* Photos Dialog */}
-        <Dialog open={photosDialogOpen} onOpenChange={setPhotosDialogOpen}>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <Dialog open={photosDialogOpen} onOpenChange={(open) => {
+          if (!open && suspendedDialogRef.current?.type === 'gallery') return;
+          setPhotosDialogOpen(open);
+          if (!open) setSelectedJobPhotos(null);
+        }}>
+          <DialogContent ref={galleryDialogScrollRef} className="max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Camera className="w-5 h-5 text-blue-600" />
@@ -10258,13 +10342,9 @@ const TechnicianDashboard = () => {
                         onClick={() => {
                           if (!selectedJobPhotos?.photos?.length) return;
                           const list = selectedJobPhotos.photos;
-                          setSelectedBillPhotos(list);
-                          setSelectedPhoto({
-                            url: photo,
-                            index,
-                            total: list.length,
+                          openPhotoViewerSuspended('gallery', list, index, {
+                            jobPhotosMeta: selectedJobPhotos,
                           });
-                          setPhotoViewerOpen(true);
                         }}
                       />
                       <div 
@@ -10861,11 +10941,11 @@ const TechnicianDashboard = () => {
       <Dialog
         open={customerReportDialogOpen}
         onOpenChange={(open) => {
-          if (!open && photoViewerOpen && reopenReportAfterPhotoRef.current) return;
+          if (!open && suspendedDialogRef.current?.type === 'report') return;
           setCustomerReportDialogOpen(open);
         }}
       >
-        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent ref={reportDialogScrollRef} className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               Customer Report -{' '}
@@ -11121,7 +11201,7 @@ const TechnicianDashboard = () => {
                                       <div 
                                         className="relative group cursor-pointer rounded-lg overflow-hidden border-2 border-blue-300 hover:border-blue-500 transition-all"
                                         onClick={() => {
-                                          openReportPhotoViewer(reportBillAllPhotos, 0);
+                                          openPhotoViewerSuspended('report', reportBillAllPhotos, 0);
                                         }}
                                       >
                                         <img 
@@ -11152,7 +11232,8 @@ const TechnicianDashboard = () => {
                                         key={idx}
                                         className="relative group cursor-pointer rounded-lg overflow-hidden border-2 border-green-300 hover:border-green-500 transition-all"
                                         onClick={() => {
-                                          openReportPhotoViewer(
+                                          openPhotoViewerSuspended(
+                                            'report',
                                             reportBillAllPhotos,
                                             photoIndex >= 0 ? photoIndex : idx,
                                           );
@@ -11334,21 +11415,22 @@ const TechnicianDashboard = () => {
         }}
         selectedPhoto={selectedPhoto}
         selectedBillPhotos={selectedBillPhotos}
-        selectedJobPhotos={null}
+        selectedJobPhotos={
+          selectedJobPhotos
+            ? {
+                jobId: selectedJobPhotos.jobId,
+                photos: selectedJobPhotos.photos,
+                type: 'after' as const,
+              }
+            : null
+        }
         showDownload={false}
-        showNavigation={Boolean(selectedBillPhotos && selectedBillPhotos.length > 1)}
-        onPrevious={() => {
-          if (!selectedPhoto || selectedBillPhotos.length === 0) return;
-          setSelectedPhoto(
-            buildAdminPhotoViewerSelection(selectedBillPhotos, 'prev', selectedPhoto)
-          );
-        }}
-        onNext={() => {
-          if (!selectedPhoto || selectedBillPhotos.length === 0) return;
-          setSelectedPhoto(
-            buildAdminPhotoViewerSelection(selectedBillPhotos, 'next', selectedPhoto)
-          );
-        }}
+        showNavigation={Boolean(
+          (selectedBillPhotos && selectedBillPhotos.length > 1) ||
+            (selectedJobPhotos?.photos && selectedJobPhotos.photos.length > 1),
+        )}
+        onPrevious={goToPreviousPhoto}
+        onNext={goToNextPhoto}
         onDownload={() => {}}
         onClose={closePhotoViewer}
       />
