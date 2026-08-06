@@ -63,7 +63,7 @@ import { toast } from 'sonner';
 import { getAmcDocumentBrandLabel } from '@/lib/amc-brand';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { formatCompletedWhen } from '@/lib/relativeTime';
-import { getJobEquipmentDisplay, parseJobRequirements, isOfficeCompletedJob } from '@/lib/adminUtils';
+import { getJobEquipmentDisplay, resolveJobEquipment, parseJobRequirements, isOfficeCompletedJob } from '@/lib/adminUtils';
 import {
   applyOtpToRequirements,
   getStoredOtpFromRequirements,
@@ -2633,7 +2633,8 @@ const TechnicianDashboard = () => {
 
     // Calculate distances for assigned jobs
     jobs.forEach(job => {
-      const customerLocation = ((job.customer as any)?.location || job.serviceLocation || (job as any).service_location) as any;
+      const locDisplay = getJobLocationDisplay(job, job.customer);
+      const customerLocation = locDisplay.location as any;
       if (customerLocation?.latitude && customerLocation?.longitude) {
         const distance = calculateDistance(
           currentLocation.lat,
@@ -2648,7 +2649,8 @@ const TechnicianDashboard = () => {
     // Calculate distances for assignment requests
     assignmentRequests.forEach(request => {
       const job = request.job as any;
-      const customerLocation = job?.customer?.location;
+      const locDisplay = getJobLocationDisplay(job, job?.customer);
+      const customerLocation = locDisplay.location as any;
       if (customerLocation?.latitude && customerLocation?.longitude) {
         const distance = calculateDistance(
           currentLocation.lat,
@@ -7237,125 +7239,21 @@ const TechnicianDashboard = () => {
                           <span className="text-gray-600">{(job as any).service_type || job.serviceType} - {(job as any).service_sub_type || job.serviceSubType}</span>
                         </div>
                         {(() => {
-                          const customer = job.customer as any;
-                          const jobData = job as any;
-                          
-                          // Helper function to check if value is valid (not empty, not "Not specified")
-                          const isValidValue = (val: string) => {
-                            return val && 
-                              val !== 'Not specified' && 
-                              val.toLowerCase() !== 'not specified' && 
-                              val.trim() !== '';
-                          };
-
-                          const normalizeServiceType = (raw: string) => {
-                            const v = (raw || '').toString().trim().toUpperCase();
-                            if (!v) return '';
-                            if (v === 'SOFTENER' || v.includes('SOFTENER') || v.includes('SOFTNER') || v.includes('WATER SOFT')) return 'SOFTENER';
-                            if (v === 'RO' || v.includes('REVERSE OSMOSIS') || v.includes('REVERSE-OSMOSIS') || v.includes('RO')) return 'RO';
-                            return v;
-                          };
-                          
-                          const jobServiceType = normalizeServiceType(jobData.service_type || job.serviceType || jobData.serviceType || '');
-                          const customerServiceType = normalizeServiceType(customer?.service_type || customer?.serviceType || '');
-
-                          // Get job brand/model
-                          const jobBrand = jobData.brand || job.brand || '';
-                          const jobModel = jobData.model || job.model || '';
-                          
-                          // Check if job has valid brand/model (treat "Not specified" as empty)
-                          // For SOFTENER jobs, ignore job.brand/model to avoid showing RO equipment by mistake.
-                          const hasValidJobBrand = jobServiceType === 'SOFTENER' ? false : isValidValue(jobBrand);
-                          const hasValidJobModel = jobServiceType === 'SOFTENER' ? false : isValidValue(jobModel);
-                          
-                          let brand = hasValidJobBrand ? jobBrand : '';
-                          let model = hasValidJobModel ? jobModel : '';
-                          
-                          // If job doesn't have valid brand/model, try to get from customer
-                          if (!brand || !model) {
-                            const customerBrand = customer?.brand || '';
-                            const customerModel = customer?.model || '';
-                            
-                            // If customer has comma-separated values, parse them based on service type
-                            if (customerBrand && customerBrand.includes(',')) {
-                              const brands = customerBrand.split(',').map((b: string) => b.trim());
-                              const models = customerModel ? customerModel.split(',').map((m: string) => m.trim()) : [];
-                              
-                              // Try to match service type to get the right brand/model
-                              // For RO jobs, use first brand/model; for SOFTENER, use second if available
-                              if (jobServiceType === 'RO' || jobServiceType === '') {
-                                if (!brand) brand = brands[0] || '';
-                                if (!model) model = models[0] || '';
-                              } else if (jobServiceType === 'SOFTENER') {
-                                // Never fall back to RO equipment for softener jobs
-                                if (!brand) brand = (brands.length > 1 ? (brands[1] || '') : '');
-                                if (!model) model = (models.length > 1 ? (models[1] || '') : '');
-                              } else {
-                                // Fallback: use first available
-                                if (!brand) brand = brands[0] || '';
-                                if (!model) model = models[0] || '';
-                              }
-                            } else {
-                              // Customer has single brand/model values - only use if valid
-                              if (jobServiceType === 'SOFTENER') {
-                                // Only trust single value if customer is softener-only.
-                                if (customerServiceType === 'SOFTENER') {
-                                  if (!brand && isValidValue(customerBrand)) brand = customerBrand;
-                                  if (!model && isValidValue(customerModel)) model = customerModel;
-                                }
-                              } else {
-                                if (!brand && isValidValue(customerBrand)) brand = customerBrand;
-                                if (!model && isValidValue(customerModel)) model = customerModel;
-                              }
-                            }
-                          }
-                          
-                          // Filter out "Not specified" values - only show if we have actual values
-                          const validBrand = isValidValue(brand) ? brand.trim() : '';
-                          const validModel = isValidValue(model) ? model.trim() : '';
-                          
-                          // Debug logging (removed to prevent duplicate logs in React Strict Mode)
-                          // Equipment data is processed correctly, logging was causing duplicate console entries
-                          
-                          // Show equipment if we have a valid brand or model (only once)
-                          if (validBrand || validModel) {
-                            const displayText = validBrand && validModel 
-                              ? `${validBrand} - ${validModel}` 
+                          const { brand: validBrand, model: validModel } = resolveJobEquipment(
+                            job as unknown as Record<string, unknown>,
+                            (job.customer as Record<string, unknown>) || null
+                          );
+                          if (!validBrand && !validModel) return null;
+                          const displayText =
+                            validBrand && validModel
+                              ? `${validBrand} - ${validModel}`
                               : validBrand || validModel;
-                            
-                            return (
+                          return (
                               <div className="text-sm">
                                 <span className="font-medium text-gray-700 inline-block w-28">Equipment:</span>
                                 <span className="text-gray-600">{displayText}</span>
                               </div>
-                            );
-                          }
-                          
-                          // Fallback: If no valid brand/model but we have customer data, show it anyway (only if first check didn't return)
-                          if (customer?.brand && customer.brand.trim() !== '') {
-                            const displayBrand = customer.brand.includes(',') 
-                              ? customer.brand.split(',')[0].trim() 
-                              : customer.brand.trim();
-                            const displayModel = customer?.model && customer.model.includes(',')
-                              ? customer.model.split(',')[0].trim()
-                              : customer?.model ? customer.model.trim() : '';
-                            
-                            // Only show if brand is valid and we didn't already show equipment above
-                            if (displayBrand && displayBrand !== 'Not specified' && !validBrand && !validModel) {
-                              const displayText = displayModel && displayModel !== 'Not specified'
-                                ? `${displayBrand} - ${displayModel}`
-                                : displayBrand;
-                              
-                              return (
-                                <div className="text-sm">
-                                  <span className="font-medium text-gray-700 inline-block w-28">Equipment:</span>
-                                  <span className="text-gray-600">{displayText}</span>
-                                </div>
-                              );
-                            }
-                          }
-                          
-                          return null;
+                          );
                         })()}
                         {/* Scheduled Date and Time */}
                         {(() => {
@@ -7913,113 +7811,18 @@ const TechnicianDashboard = () => {
                           <div>
                             <p><strong>Service Type:</strong> {job?.service_type} - {job?.service_sub_type}</p>
                             {(() => {
-                              const customer = job?.customer as any;
-                              const jobData = job as any;
-                              
-                              // Helper function to check if value is valid (not empty, not "Not specified")
-                              const isValidValue = (val: string) => {
-                                return val && 
-                                  val !== 'Not specified' && 
-                                  val.toLowerCase() !== 'not specified' && 
-                                  val.trim() !== '';
-                              };
-
-                              const normalizeServiceType = (raw: string) => {
-                                const v = (raw || '').toString().trim().toUpperCase();
-                                if (!v) return '';
-                                if (v === 'SOFTENER' || v.includes('SOFTENER') || v.includes('SOFTNER') || v.includes('WATER SOFT')) return 'SOFTENER';
-                                if (v === 'RO' || v.includes('REVERSE OSMOSIS') || v.includes('REVERSE-OSMOSIS') || v.includes('RO')) return 'RO';
-                                return v;
-                              };
-                              
-                              // Get job brand/model
-                              const jobBrand = jobData.brand || job?.brand || '';
-                              const customerBrand = customer?.brand || '';
-                              
-                              // Check if job has valid brand (treat "Not specified" as empty)
-                              const hasValidJobBrand = isValidValue(jobBrand);
-                              
-                              let brand = hasValidJobBrand ? jobBrand : '';
-                              
-                              // If job doesn't have valid brand, try to get from customer
-                              if (!brand && customerBrand) {
-                                const jobServiceType = normalizeServiceType(jobData.service_type || job?.service_type || jobData.serviceType || job?.serviceType || '');
-                                const customerServiceType = normalizeServiceType(customer?.service_type || customer?.serviceType || '');
-                                
-                                // If customer has comma-separated values, parse them based on service type
-                                if (customerBrand.includes(',')) {
-                                  const brands = customerBrand.split(',').map((b: string) => b.trim());
-                                  
-                                  // For RO jobs, use first brand; for SOFTENER, use second if available
-                                  if (jobServiceType === 'RO' || jobServiceType === '') {
-                                    brand = brands[0] || '';
-                                  } else if (jobServiceType === 'SOFTENER') {
-                                    // Never fall back to RO equipment for softener jobs
-                                    brand = (brands.length > 1 ? (brands[1] || '') : '');
-                                  } else {
-                                    brand = brands[0] || '';
-                                  }
-                                } else {
-                                  // Customer has single brand value - only use if valid.
-                                  // For softener jobs, only trust the single value if customer is softener-only.
-                                  if (jobServiceType === 'SOFTENER') {
-                                    if (customerServiceType === 'SOFTENER' && isValidValue(customerBrand)) brand = customerBrand;
-                                  } else {
-                                    if (isValidValue(customerBrand)) brand = customerBrand;
-                                  }
-                                }
-                              }
-                              
-                              // Get model if available
-                              const jobModel = jobData.model || job?.model || '';
-                              const customerModel = customer?.model || '';
-                              
-                              const hasValidJobModel = isValidValue(jobModel);
-                              let model = hasValidJobModel ? jobModel : '';
-                              
-                              // If job doesn't have valid model, try to get from customer
-                              if (!model && customerModel) {
-                                const jobServiceType = normalizeServiceType(jobData.service_type || job?.service_type || jobData.serviceType || job?.serviceType || '');
-                                const customerServiceType = normalizeServiceType(customer?.service_type || customer?.serviceType || '');
-                                
-                                // If customer has comma-separated values, parse them based on service type
-                                if (customerModel.includes(',')) {
-                                  const models = customerModel.split(',').map((m: string) => m.trim());
-                                  
-                                  // For RO jobs, use first model; for SOFTENER, use second if available
-                                  if (jobServiceType === 'RO' || jobServiceType === '') {
-                                    model = models[0] || '';
-                                  } else if (jobServiceType === 'SOFTENER') {
-                                    // Never fall back to RO equipment for softener jobs
-                                    model = (models.length > 1 ? (models[1] || '') : '');
-                                  } else {
-                                    model = models[0] || '';
-                                  }
-                                } else {
-                                  // Customer has single model value - only use if valid.
-                                  // For softener jobs, only trust the single value if customer is softener-only.
-                                  if (jobServiceType === 'SOFTENER') {
-                                    if (customerServiceType === 'SOFTENER' && isValidValue(customerModel)) model = customerModel;
-                                  } else {
-                                    if (isValidValue(customerModel)) model = customerModel;
-                                  }
-                                }
-                              }
-                              
-                              // Filter out "Not specified" values - only show if we have actual values
-                              const validBrand = isValidValue(brand) ? brand.trim() : '';
-                              const validModel = isValidValue(model) ? model.trim() : '';
-                              
-                              if (validBrand || validModel) {
-                                const displayText = validBrand && validModel 
-                                  ? `${validBrand} - ${validModel}` 
+                              const { brand: validBrand, model: validModel } = resolveJobEquipment(
+                                (job || {}) as Record<string, unknown>,
+                                (job?.customer as Record<string, unknown>) || null
+                              );
+                              if (!validBrand && !validModel) return null;
+                              const displayText =
+                                validBrand && validModel
+                                  ? `${validBrand} - ${validModel}`
                                   : validBrand || validModel;
-                                
-                                return (
+                              return (
                                   <p><strong>Equipment:</strong> {displayText}</p>
-                                );
-                              }
-                              return null;
+                              );
                             })()}
                             <p><strong>Priority:</strong> {job?.priority}</p>
                             <p><strong>Estimated Cost:</strong> ₹{job?.estimated_cost}</p>

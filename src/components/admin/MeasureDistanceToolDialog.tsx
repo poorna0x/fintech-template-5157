@@ -32,6 +32,7 @@ import {
 import { cn } from '@/lib/utils';
 import { db } from '@/lib/supabase';
 import { resolveJobLatLngFromRow } from '@/lib/jobLocationHelpers';
+import { getJobLocationLabelForWhatsApp } from '@/lib/customer-locations';
 import { openGoogleMapsDirectionsBetween } from '@/lib/maps';
 import { calculateDrivingDistance } from '@/lib/googleMapsDistance';
 import { toast } from 'sonner';
@@ -70,22 +71,13 @@ function jobNumberOf(job: JobRow): string {
   return String((job as any).job_number || (job as Job).jobNumber || '').trim();
 }
 
-/** Customer "Location" field (`visible_address`) — one-word identifier from add/edit customer form. */
+/** Customer "Location" field — site-aware (primary vs secondary). */
 function getJobLocationWord(job: JobRow): string {
   const cust = (job as any).customer;
-  const customerAddress =
-    typeof cust?.address === 'object' && cust?.address ? cust.address : {};
-  const serviceAddress = (job as any).service_address || (job as Job).serviceAddress || {};
-
-  const raw =
-    cust?.visible_address ||
-    cust?.visibleAddress ||
-    customerAddress?.visible_address ||
-    customerAddress?.visibleAddress ||
-    serviceAddress?.visible_address ||
-    serviceAddress?.visibleAddress ||
-    '';
-
+  const raw = getJobLocationLabelForWhatsApp(
+    job as { service_site?: string; service_address?: any },
+    cust
+  );
   return String(raw).replace(/[\s\u00a0\u2000-\u200B\uFEFF]+/g, ' ').trim();
 }
 

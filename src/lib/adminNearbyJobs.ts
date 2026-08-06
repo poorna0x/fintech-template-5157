@@ -12,6 +12,7 @@ import { haversineDistanceMeters } from '@/lib/adminGoogleMapsDistance';
 import { resolveJobLatLngFromRow, resolveJobDestinationCoordsSync } from '@/lib/jobLocationHelpers';
 import { readLocationLatLng } from '@/lib/maps';
 import { VISIT_ORDER_STATUSES } from '@/lib/adminVisitOrder';
+import { getJobLocationLabelForWhatsApp } from '@/lib/customer-locations';
 
 export type NearbyJobsMode = 'ongoing' | 'followup';
 
@@ -48,7 +49,7 @@ const ORIGIN_JOB_SELECT = [
   'service_location',
   'service_address',
   'service_site',
-  'customer:customers(id,full_name,visible_address,location,alternate_location)',
+  'customer:customers(id,full_name,visible_address,location,alternate_location,alternate_visible_address,alternate_address)',
 ].join(',');
 
 const ONGOING_NEAR_SELECT = ORIGIN_JOB_SELECT;
@@ -64,7 +65,7 @@ const FOLLOW_UP_NEAR_SELECT = [
   'service_location',
   'service_address',
   'service_site',
-  'customer:customers(id,full_name,visible_address,location,alternate_location)',
+  'customer:customers(id,full_name,visible_address,location,alternate_location,alternate_visible_address,alternate_address)',
 ].join(',');
 
 /** Preset radii in kilometers (0.5 = 500 m). */
@@ -119,7 +120,10 @@ export function parseNearbyKmInput(raw: string): number | null {
 function customerLabel(job: Record<string, unknown>): { name: string; address: string } {
   const cust = (job.customer || {}) as Record<string, unknown>;
   const name = String(cust.full_name || cust.fullName || 'Customer').trim() || 'Customer';
-  const address = String(cust.visible_address || cust.visibleAddress || '')
+  const address = getJobLocationLabelForWhatsApp(
+    job as { service_site?: string; service_address?: any },
+    cust
+  )
     .replace(/[\s\u00a0\u2000-\u200B\uFEFF]+/g, ' ')
     .trim();
   return { name, address };

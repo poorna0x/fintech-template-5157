@@ -1,4 +1,5 @@
 import type { Job } from '@/types';
+import { getJobLocationLabelForWhatsApp } from '@/lib/customer-locations';
 
 // Helper function to format time in 12-hour format
 export function formatTime12Hour(date: Date | string): string {
@@ -136,14 +137,23 @@ export function getRouteLocationWord(jobRow: Job | any): string {
   const customerAddress = cust?.address || {};
   const serviceAddress = jobRow?.service_address || jobRow?.serviceAddress || {};
 
-  let visibleLocation =
-    normalizeWs(
+  // Prefer site-aware label (primary vs secondary) before primary-only fields
+  let visibleLocation = normalizeWs(
+    getJobLocationLabelForWhatsApp(
+      jobRow as { service_site?: string; service_address?: any },
+      cust
+    )
+  );
+
+  if (!visibleLocation) {
+    visibleLocation = normalizeWs(
       str(customerAddress?.visible_address) ||
         str(customerAddress?.visibleAddress) ||
         str(cust?.visible_address) ||
         str(serviceAddress?.visible_address) ||
         str(serviceAddress?.visibleAddress)
     );
+  }
 
   if (visibleLocation.includes(',')) {
     visibleLocation = localityBeforeCity(visibleLocation);
@@ -176,7 +186,13 @@ export function getRouteLocationWord(jobRow: Job | any): string {
   const pin = normalizeWs(str(customerAddress?.pincode) || str(serviceAddress?.pincode));
   if (pin) return pin;
 
-  const svcLoc = cust?.location || jobRow?.service_location || jobRow?.serviceLocation || {};
+  const svcLoc =
+    jobRow?.service_location ||
+    jobRow?.serviceLocation ||
+    (String(jobRow?.service_site || jobRow?.serviceSite || '').toLowerCase() === 'secondary'
+      ? cust?.alternate_location || cust?.alternateLocation
+      : cust?.location) ||
+    {};
   const formatted = normalizeWs(str(svcLoc?.formattedAddress) || str(svcLoc?.formatted_address));
   if (formatted) {
     const joined = localityBeforeCity(formatted);

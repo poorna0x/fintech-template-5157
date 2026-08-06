@@ -1,6 +1,11 @@
 // Admin Dashboard Utility Functions
 
 import type { Job } from '@/types';
+import { getJobServiceSite, getSiteEquipment } from '@/lib/customer-locations';
+import {
+  parseDbServiceType,
+  readCustomerEquipmentSlot,
+} from '@/lib/equipment-suggestions';
 
 /** Technician employee id used for zero-commission (office) completions. */
 export const ZERO_COMMISSION_EMPLOYEE_ID = 'TECH851703400';
@@ -727,42 +732,65 @@ export function getEquipmentModelLabel(serviceType: string | undefined): string 
   return 'Purifier Model';
 }
 
-/** Resolve brand/model for a job, with customer fallback (incl. comma-separated multi-service). */
+/**
+ * Resolve brand/model for a job using the job's service_site.
+ * Missing job fields fall back as a pair from that site only — never mix
+ * primary brand with secondary model (or vice versa).
+ */
+export function resolveJobEquipment(
+  job: Record<string, unknown>,
+  customer?: Record<string, unknown> | null
+): { brand: string; model: string } {
+  const jobServiceType = String(job.service_type ?? job.serviceType ?? '').toUpperCase();
+  const isSoftener = jobServiceType.includes('SOFTENER');
+  const site = getJobServiceSite(job);
+
+  let brand = isMeaningfulEquipmentValue(String(job.brand ?? ''))
+    ? String(job.brand).trim()
+    : '';
+  let model = isMeaningfulEquipmentValue(String(job.model ?? ''))
+    ? String(job.model).trim()
+    : '';
+
+  if ((!brand || !model) && customer) {
+    let fallbackBrand = '';
+    let fallbackModel = '';
+
+    if (site === 'secondary') {
+      const eq = getSiteEquipment(customer, 'secondary');
+      fallbackBrand = eq.brand;
+      fallbackModel = eq.model;
+    } else {
+      const wanted: 'RO' | 'SOFTENER' = isSoftener ? 'SOFTENER' : 'RO';
+      const serviceTypes = parseDbServiceType(String(customer.service_type ?? customer.serviceType ?? 'RO'));
+      // Softener jobs must not fall back to primary RO slot when customer has no softener.
+      if (wanted === 'SOFTENER' && !serviceTypes.some((t) => String(t).toUpperCase().includes('SOFTENER'))) {
+        fallbackBrand = '';
+        fallbackModel = '';
+      } else {
+        const slot = readCustomerEquipmentSlot(customer, wanted);
+        fallbackBrand = slot.brand;
+        fallbackModel = slot.model;
+      }
+    }
+
+    if (!brand && isMeaningfulEquipmentValue(fallbackBrand)) brand = fallbackBrand.trim();
+    if (!model && isMeaningfulEquipmentValue(fallbackModel)) model = fallbackModel.trim();
+  }
+
+  return {
+    brand: isMeaningfulEquipmentValue(brand) ? brand : '',
+    model: isMeaningfulEquipmentValue(model) ? model : '',
+  };
+}
+
+/** Resolve brand/model for a job, with site-aware customer fallback. */
 export function getJobEquipmentDisplay(
   job: Record<string, unknown>,
   customer?: Record<string, unknown> | null
 ): { label: string; value: string } | null {
   const jobServiceType = String(job.service_type ?? job.serviceType ?? '').toUpperCase();
-  const jobBrand = String(job.brand ?? '');
-  const jobModel = String(job.model ?? '');
-  const customerBrand = String(customer?.brand ?? '');
-  const customerModel = String(customer?.model ?? '');
-
-  let brand = isMeaningfulEquipmentValue(jobBrand) ? jobBrand.trim() : '';
-  let model = isMeaningfulEquipmentValue(jobModel) ? jobModel.trim() : '';
-
-  if (!brand || !model) {
-    if (customerBrand.includes(',')) {
-      const brands = customerBrand.split(',').map((b) => b.trim());
-      const models = customerModel ? customerModel.split(',').map((m) => m.trim()) : [];
-      if (jobServiceType === 'RO' || jobServiceType === '') {
-        if (!brand) brand = brands[0] || '';
-        if (!model) model = models[0] || '';
-      } else if (jobServiceType === 'SOFTENER' && brands.length > 1) {
-        if (!brand) brand = brands[1] || brands[0] || '';
-        if (!model) model = models[1] || models[0] || '';
-      } else {
-        if (!brand) brand = brands[0] || '';
-        if (!model) model = models[0] || '';
-      }
-    } else {
-      if (!brand && isMeaningfulEquipmentValue(customerBrand)) brand = customerBrand.trim();
-      if (!model && isMeaningfulEquipmentValue(customerModel)) model = customerModel.trim();
-    }
-  }
-
-  const validBrand = isMeaningfulEquipmentValue(brand) ? brand : '';
-  const validModel = isMeaningfulEquipmentValue(model) ? model : '';
+  const { brand: validBrand, model: validModel } = resolveJobEquipment(job, customer);
   if (!validBrand && !validModel) return null;
 
   const value =

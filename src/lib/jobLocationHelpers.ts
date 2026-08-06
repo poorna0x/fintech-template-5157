@@ -121,17 +121,73 @@ export function getLocationLinkFromObject(location: any): string {
   return '';
 }
 
-export function getGoogleMapsLinkForJobRow(jobRow: any): string {
+/** Prefer this job's service_site — never put primary pin ahead of secondary. */
+function isSecondaryServiceSite(jobRow: any): boolean {
+  const site = String(jobRow?.service_site ?? jobRow?.serviceSite ?? '')
+    .trim()
+    .toLowerCase();
+  return site === 'secondary';
+}
+
+function getCustomerSiteLocation(customer: any, secondary: boolean): any {
+  if (!customer || typeof customer !== 'object') return null;
+  if (secondary) {
+    return customer.alternate_location || customer.alternateLocation || null;
+  }
+  return customer.location || null;
+}
+
+function getCustomerSiteAddress(customer: any, secondary: boolean): any {
+  if (!customer || typeof customer !== 'object') return null;
+  if (secondary) {
+    const alt = customer.alternate_address || customer.alternateAddress;
+    if (alt && typeof alt === 'object') {
+      const vis =
+        customer.alternate_visible_address ||
+        customer.alternateVisibleAddress ||
+        alt.visible_address ||
+        alt.visibleAddress;
+      return vis ? { ...alt, visible_address: vis } : alt;
+    }
+    const visOnly = customer.alternate_visible_address || customer.alternateVisibleAddress;
+    return visOnly ? { visible_address: visOnly } : null;
+  }
+  const addr = customer.address;
+  if (addr && typeof addr === 'object') {
+    const vis = customer.visible_address || customer.visibleAddress || addr.visible_address;
+    return vis ? { ...addr, visible_address: vis } : addr;
+  }
+  return customer.visible_address ? { visible_address: customer.visible_address } : null;
+}
+
+/** Ordered location objects for this job's site (job snapshot first, then matching customer site). */
+function getOrderedLocationObjects(jobRow: any): any[] {
   const customer = jobRow?.customer || {};
-  const customerLocation = customer?.location || {};
-  const serviceLocation = jobRow?.service_location || jobRow?.serviceLocation || {};
-  const serviceAddress = jobRow?.service_address || jobRow?.serviceAddress;
-  return (
-    getLocationLinkFromObject(customerLocation) ||
-    getLocationLinkFromObject(serviceLocation) ||
-    getMapsSearchLinkFromAddress(serviceAddress) ||
-    getMapsSearchLinkFromAddress(customer?.address)
-  );
+  const secondary = isSecondaryServiceSite(jobRow);
+  const serviceLocation = jobRow?.service_location || jobRow?.serviceLocation || null;
+  const siteLocation = getCustomerSiteLocation(customer, secondary);
+  return [serviceLocation, siteLocation].filter((loc) => loc && typeof loc === 'object');
+}
+
+/** Ordered address objects for maps search fallback (site-aware). */
+function getOrderedAddressObjects(jobRow: any): any[] {
+  const customer = jobRow?.customer || {};
+  const secondary = isSecondaryServiceSite(jobRow);
+  const serviceAddress = jobRow?.service_address || jobRow?.serviceAddress || null;
+  const siteAddress = getCustomerSiteAddress(customer, secondary);
+  return [serviceAddress, siteAddress].filter((addr) => addr && typeof addr === 'object');
+}
+
+export function getGoogleMapsLinkForJobRow(jobRow: any): string {
+  for (const loc of getOrderedLocationObjects(jobRow)) {
+    const link = getLocationLinkFromObject(loc);
+    if (link) return link;
+  }
+  for (const addr of getOrderedAddressObjects(jobRow)) {
+    const link = getMapsSearchLinkFromAddress(addr);
+    if (link) return link;
+  }
+  return '';
 }
 
 export async function getFreshGoogleMapsLinkForJobRow(
@@ -141,16 +197,24 @@ export async function getFreshGoogleMapsLinkForJobRow(
     getJobByIdFull?: (jobId: string) => Promise<{ data?: any; error?: any }>;
   } = {}
 ): Promise<string> {
+  const secondary = isSecondaryServiceSite(jobRow);
   const customer = jobRow?.customer || {};
-  const embeddedCustomerLink = getLocationLinkFromObject(customer?.location);
-  if (embeddedCustomerLink) return embeddedCustomerLink;
+
+  // Prefer job snapshot / correct site — not always primary customer.location
+  const embeddedSiteLink = getLocationLinkFromObject(getCustomerSiteLocation(customer, secondary));
+  const embeddedServiceLink = getLocationLinkFromObject(
+    jobRow?.service_location || jobRow?.serviceLocation
+  );
+  if (embeddedServiceLink) return embeddedServiceLink;
+  if (embeddedSiteLink) return embeddedSiteLink;
 
   const customerId = customer?.id || jobRow?.customer_id || jobRow?.customerId;
   if (customerId && loaders.getCustomerById) {
     const { data, error } = await loaders.getCustomerById(String(customerId));
-    if (!error) {
-      const freshCustomerLink = getLocationLinkFromObject(data?.location);
-      if (freshCustomerLink) return freshCustomerLink;
+    if (!error && data) {
+      const merged = { ...jobRow, customer: data };
+      const fresh = getGoogleMapsLinkForJobRow(merged);
+      if (fresh) return fresh;
     }
   }
 
@@ -187,17 +251,11 @@ function pushMapsCandidate(out: MapsLinkCandidate[], shareText: string, addressH
 
 function collectMapsLinkCandidates(jobRow: any): MapsLinkCandidate[] {
   const out: MapsLinkCandidate[] = [];
-  const customer = jobRow?.customer || {};
-  const customerLocation = customer?.location || {};
-  const serviceLocation = jobRow?.service_location || jobRow?.serviceLocation || {};
   const streetHint =
-    customerLocation?.street ||
-    customerLocation?.visible_address ||
-    customer?.address?.street ||
-    customer?.visible_address ||
+    formatAddressForMapsSearch(getOrderedAddressObjects(jobRow)[0]) ||
     '';
 
-  for (const loc of [customerLocation, serviceLocation]) {
+  for (const loc of getOrderedLocationObjects(jobRow)) {
     if (!loc || typeof loc !== 'object') continue;
     const gl = loc.googleLocation || loc.google_location;
     if (typeof gl === 'string') {
@@ -209,10 +267,11 @@ function collectMapsLinkCandidates(jobRow: any): MapsLinkCandidate[] {
     }
   }
 
-  const serviceAddress = jobRow?.service_address || jobRow?.serviceAddress;
-  const serviceAddrText = formatAddressForMapsSearch(serviceAddress);
-  if (serviceAddrText) {
-    pushMapsCandidate(out, serviceAddrText, serviceAddrText);
+  for (const addr of getOrderedAddressObjects(jobRow)) {
+    const serviceAddrText = formatAddressForMapsSearch(addr);
+    if (serviceAddrText) {
+      pushMapsCandidate(out, serviceAddrText, serviceAddrText);
+    }
   }
 
   return out;
@@ -236,11 +295,7 @@ export function jobRowNeedsMapsLinkResolve(jobRow: any): boolean {
 
 /** Lat/lng from stored coordinates or coords embedded in a full Maps URL (not short links). */
 export function resolveJobDestinationCoordsSync(jobRow: any): { lat: number; lng: number } | null {
-  const customer = jobRow?.customer || {};
-  const customerLocation = customer?.location || {};
-  const serviceLocation = jobRow?.service_location || jobRow?.serviceLocation || {};
-
-  for (const loc of [customerLocation, serviceLocation]) {
+  for (const loc of getOrderedLocationObjects(jobRow)) {
     if (!loc || typeof loc !== 'object') continue;
 
     if (

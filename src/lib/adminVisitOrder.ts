@@ -9,6 +9,7 @@ import {
   markVisitOrderColumnMissing,
   omitVisitOrderFromSelect,
 } from '@/lib/visit-order-columns';
+import { getJobLocationLabelForWhatsApp } from '@/lib/customer-locations';
 import type { Job } from '@/types';
 
 export const VISIT_ORDER_STATUSES = new Set([
@@ -29,7 +30,9 @@ const VISIT_ORDER_JOB_SELECT = [
   'requirements',
   'created_at',
   'assigned_technician_id',
-  'customer:customers(full_name,visible_address)',
+  'service_site',
+  'service_address',
+  'customer:customers(full_name,visible_address,alternate_visible_address,alternate_address)',
 ].join(',');
 
 const VISIT_ORDER_SIBLING_SELECT =
@@ -72,7 +75,10 @@ export function sortJobsForVisitOrder<T extends Job | Record<string, unknown>>(j
 export function visitOrderStopLabel(job: Job | Record<string, unknown>): string {
   const cust = (job as any)?.customer as any;
   const displayName = (cust?.full_name || cust?.fullName || 'Customer').trim() || 'Customer';
-  const loc = String(cust?.visible_address || cust?.visibleAddress || '')
+  const loc = getJobLocationLabelForWhatsApp(
+    job as { service_site?: string; service_address?: any },
+    cust
+  )
     .replace(/[\s\u00a0\u2000-\u200B\uFEFF]+/g, ' ')
     .trim();
   const dateKey = getJobScheduledDateKey(job);

@@ -10,6 +10,7 @@ import { calculateHaversineDistance } from '@/lib/distance';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import { db } from '@/lib/supabase';
 import { getFreshGoogleMapsLinkForJobRow, getLocationUnavailableMessage, jobRowNeedsMapsLinkResolve, resolveJobLatLngFromRow } from '@/lib/jobLocationHelpers';
+import { getJobLocationLabelForWhatsApp } from '@/lib/customer-locations';
 
 interface AssignJobDialogProps {
   open: boolean;
@@ -452,50 +453,27 @@ const AssignJobDialog: React.FC<AssignJobDialogProps> = ({
               {customer?.full_name || customer?.fullName || 'Customer'}
             </div>
             {(() => {
-              // Check all possible locations for visible_address
-              const customerAddress = customer?.address || (customer as any)?.address || {};
-              const serviceAddress = (job.service_address as any) || (job as any).service_address || job.serviceAddress || {};
-              
-              // Try multiple possible locations for visible_address (prioritize this)
-              let visibleLocation = 
-                customerAddress?.visible_address || 
-                (customerAddress as any)?.visibleAddress ||
-                (customer as any)?.visible_address ||
-                serviceAddress?.visible_address ||
-                (serviceAddress as any)?.visibleAddress ||
-                '';
-              
-              // If visible_location contains a full address (has commas), extract just the first part (area name)
+              let visibleLocation = getJobLocationLabelForWhatsApp(
+                job as { service_site?: string; service_address?: any },
+                customer
+              );
               if (visibleLocation && visibleLocation.includes(',')) {
                 visibleLocation = visibleLocation.split(',')[0].trim();
               }
-              
-              // If no visible_address or it's invalid, try using the area field as fallback
-              if (!visibleLocation || visibleLocation.trim().length === 0) {
-                visibleLocation = customerAddress?.area || serviceAddress?.area || '';
-                // If area also contains commas, extract first part
-                if (visibleLocation && visibleLocation.includes(',')) {
-                  visibleLocation = visibleLocation.split(',')[0].trim();
-                }
-              }
-              
-              // Filter out common city/state/country names
               const lowerLocation = visibleLocation?.toLowerCase() || '';
-              const isCityOrState = 
-                lowerLocation === 'bengaluru' || 
+              const isCityOrState =
+                lowerLocation === 'bengaluru' ||
                 lowerLocation === 'bangalore' ||
                 lowerLocation === 'karnataka' ||
                 lowerLocation === 'india' ||
-                lowerLocation.includes('bengaluru') && lowerLocation.length < 15; // If it's just "Bengaluru" or very short with bengaluru
-              
-              // Only show if we have a valid visible location (not empty and not a full address)
-              const isValidVisibleLocation = visibleLocation && 
-                visibleLocation.trim().length > 0 && 
-                visibleLocation.length < 50 && // Visible location should be short (one word/area name)
-                !isCityOrState && // Should not be just city/state name
-                !visibleLocation.includes('India') && // Should not contain country name
-                !lowerLocation.includes('karnataka'); // Should not contain state name
-              
+                (lowerLocation.includes('bengaluru') && lowerLocation.length < 15);
+              const isValidVisibleLocation =
+                visibleLocation &&
+                visibleLocation.trim().length > 0 &&
+                visibleLocation.length < 50 &&
+                !isCityOrState &&
+                !visibleLocation.includes('India') &&
+                !lowerLocation.includes('karnataka');
               return isValidVisibleLocation ? (
                 <div className="text-xs sm:text-sm text-muted-foreground mt-1">
                   <strong>Location:</strong> {visibleLocation}

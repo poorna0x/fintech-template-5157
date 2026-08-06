@@ -1393,8 +1393,11 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
           const { data: customerJobs, error: jobsError } = await db.jobs.getByCustomerId(customer.id);
           
           if (!jobsError && customerJobs && customerJobs.length > 0) {
-            // Update all RO jobs for this customer
-            const roJobs = customerJobs.filter((job: any) => job.service_type === 'RO');
+            // Only primary-site RO jobs — secondary sites use alternate_brand/model
+            const roJobs = customerJobs.filter((job: any) => {
+              if (job.service_type !== 'RO') return false;
+              return getJobServiceSite(job) !== 'secondary';
+            });
             
             if (roJobs.length > 0) {
               const updatePromises = roJobs.map(async (job: any) => {
@@ -1405,13 +1408,52 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
               });
 
               await Promise.all(updatePromises);
-              console.log(`Updated ${updatePromises.length} RO job(s) with new brand/model`);
+              console.log(`Updated ${updatePromises.length} primary-site RO job(s) with new brand/model`);
             }
           }
         } catch (jobsUpdateError) {
           console.error('Error updating jobs:', jobsUpdateError);
           // Don't fail the customer update if job update fails, but log it
           toast.warning('Customer updated, but some jobs may not have been updated');
+        }
+      }
+
+      // Sync secondary-site job snapshots when alternate equipment changes
+      const originalAltBrand = String(
+        (customer as any).alternate_brand || (customer as any).alternateBrand || ''
+      ).trim();
+      const originalAltModel = String(
+        (customer as any).alternate_model || (customer as any).alternateModel || ''
+      ).trim();
+      const newAltBrand = form.alternate_brand?.trim() || '';
+      const newAltModel = form.alternate_model?.trim() || '';
+      const altBrandChanged = newAltBrand !== originalAltBrand;
+      const altModelChanged = newAltModel !== originalAltModel;
+
+      if (altBrandChanged || altModelChanged) {
+        try {
+          const { data: customerJobs, error: jobsError } = await db.jobs.getByCustomerId(customer.id);
+          if (!jobsError && customerJobs?.length) {
+            const secondaryJobs = customerJobs.filter(
+              (job: any) => getJobServiceSite(job) === 'secondary'
+            );
+            if (secondaryJobs.length > 0) {
+              await Promise.all(
+                secondaryJobs.map((job: any) =>
+                  db.jobs.update(job.id, {
+                    brand: newAltBrand,
+                    model: newAltModel,
+                  })
+                )
+              );
+              console.log(
+                `Updated ${secondaryJobs.length} secondary-site job(s) with alternate brand/model`
+              );
+            }
+          }
+        } catch (jobsUpdateError) {
+          console.error('Error updating secondary-site jobs:', jobsUpdateError);
+          toast.warning('Customer updated, but some secondary-site jobs may not have been updated');
         }
       }
 
@@ -1429,7 +1471,10 @@ const EditCustomerDialog: React.FC<EditCustomerDialogProps> = ({
         // Get job count for message
         try {
           const { data: customerJobs } = await db.jobs.getByCustomerId(customer.id);
-          const roJobsCount = customerJobs?.filter((job: any) => job.service_type === 'RO').length || 0;
+          const roJobsCount = customerJobs?.filter((job: any) => {
+            if (job.service_type !== 'RO') return false;
+            return getJobServiceSite(job) !== 'secondary';
+          }).length || 0;
           if (roJobsCount > 0) {
             toast.success(`Customer and ${roJobsCount} job(s) updated successfully!`);
           } else {

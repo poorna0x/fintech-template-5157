@@ -284,15 +284,17 @@ export const getJobLocationLabelForWhatsApp = (
   customer?: unknown
 ): string => {
   const site = getJobServiceSite(job);
-  if (site === 'secondary') {
-    const vis = getAlternateVisibleAddress(customer);
-    if (vis) return vis;
-    const addr = getAlternateAddress(customer);
-    return addr?.area || addr?.city || 'Secondary';
-  }
   const serviceAddr = job.service_address;
   const visFromJob =
     trim(serviceAddr?.visible_address) || trim((serviceAddr as any)?.visibleAddress);
+
+  if (site === 'secondary') {
+    const vis = getAlternateVisibleAddress(customer);
+    if (vis) return vis;
+    if (visFromJob) return visFromJob;
+    const addr = getAlternateAddress(customer);
+    return addr?.area || addr?.city || serviceAddr?.area || serviceAddr?.city || 'Secondary';
+  }
   if (visFromJob) return visFromJob;
   if (customer) {
     const vis = trim(

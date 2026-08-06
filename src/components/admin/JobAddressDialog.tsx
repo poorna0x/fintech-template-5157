@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { MapPin } from 'lucide-react';
 import { Job } from '@/types';
 import { getLocationLinkFromObject } from '@/lib/jobLocationHelpers';
+import { getJobLocationDisplay } from '@/lib/customer-locations';
 
 interface JobAddressDialogProps {
   open: { [jobId: string]: boolean };
@@ -16,16 +17,15 @@ const JobAddressDialog: React.FC<JobAddressDialogProps> = ({ open, onOpenChange,
     <>
       {jobs.map((job) => {
         const jobCustomer = job.customer as any;
-        const customerAddress = jobCustomer?.address || {};
-        const jobAddress = (job as any)?.service_address || {};
-        const serviceAddress = Object.values(customerAddress).some(Boolean) ? customerAddress : jobAddress;
-        const serviceLocation = jobCustomer?.location || (job as any)?.service_location || {};
+        const display = getJobLocationDisplay(job, jobCustomer);
+        const serviceAddress = display.address || {};
+        const serviceLocation = display.location || {};
         const googleMapsLink = getLocationLinkFromObject(serviceLocation);
         const locationDisplay =
           serviceLocation?.googleLocation ||
-          serviceLocation?.google_location ||
+          (serviceLocation as any)?.google_location ||
           serviceLocation?.formattedAddress ||
-          serviceLocation?.formatted_address ||
+          (serviceLocation as any)?.formatted_address ||
           googleMapsLink;
         
         return (
@@ -41,19 +41,21 @@ const JobAddressDialog: React.FC<JobAddressDialogProps> = ({ open, onOpenChange,
                 <DialogTitle>Full Address</DialogTitle>
                 <DialogDescription>
                   Complete address for job {job?.job_number || job?.jobNumber || job.id}
+                  {display.variant === 'secondary' ? ' (secondary site)' : ''}
                 </DialogDescription>
               </DialogHeader>
               <div className="py-4">
                 <div className="text-sm text-foreground whitespace-pre-wrap break-words">
                   {(() => {
-                    const address = serviceAddress;
-                    if (!address || (!address.street && !address.area)) {
+                    const address = serviceAddress as any;
+                    if (!address || (!address.street && !address.area && !display.visibleLabel)) {
                       return 'No address available';
                     }
                     
                     const parts = [];
-                    if (address.visible_address) {
-                      parts.push(`Location: ${address.visible_address}`);
+                    const visible = address.visible_address || display.visibleLabel;
+                    if (visible) {
+                      parts.push(`Location: ${visible}`);
                     }
                     if (address.street) parts.push(address.street);
                     if (address.area) parts.push(address.area);
@@ -104,4 +106,3 @@ const JobAddressDialog: React.FC<JobAddressDialogProps> = ({ open, onOpenChange,
 };
 
 export default JobAddressDialog;
-

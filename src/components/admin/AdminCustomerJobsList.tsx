@@ -69,6 +69,7 @@ import {
   completedJobMatchesDashboardClientFilters,
   isOfficeCompletedJob,
   ZERO_COMMISSION_EMPLOYEE_ID,
+  resolveJobEquipment,
 } from '@/lib/adminUtils';
 import type { Job } from '@/types';
 import { useFollowUpGlowEnabled } from '@/hooks/useFollowUpGlowEnabled';
@@ -789,53 +790,14 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
                             (job as any).technician_name ||
                             (assignedTechnicianId ? technicians.find(t => t.id === assignedTechnicianId)?.fullName : null);
                           
-                          // Get brand/model for display
-                          const jobBrand = (job as any).brand || job.brand;
-                          const jobModel = (job as any).model || job.model;
-                          const customerBrand = customer.brand || '';
-                          const customerModel = customer.model || '';
-                          
-                          const isValidValue = (val: string) => {
-                            return val && 
-                              val !== 'Not specified' && 
-                              val.toLowerCase() !== 'not specified' && 
-                              val.trim() !== '';
-                          };
-                          
-                          const hasValidJobBrand = isValidValue(jobBrand);
-                          const hasValidJobModel = isValidValue(jobModel);
-                          
-                          let brand = hasValidJobBrand ? jobBrand : '';
-                          let model = hasValidJobModel ? jobModel : '';
-                          
-                          // Fallback to customer if job doesn't have valid values
-                          if (!brand || !model) {
-                            if (customerBrand && customerBrand.includes(',')) {
-                              const brands = customerBrand.split(',').map((b: string) => b.trim());
-                              const models = customerModel ? customerModel.split(',').map((m: string) => m.trim()) : [];
-                              const jobServiceType = ((job.service_type || job.serviceType || '') as string).toUpperCase();
-                              
-                              if (jobServiceType === 'RO' || jobServiceType === '') {
-                                if (!brand) brand = brands[0] || '';
-                                if (!model) model = models[0] || '';
-                              } else if (jobServiceType === 'SOFTENER' && brands.length > 1) {
-                                if (!brand) brand = brands[1] || brands[0] || '';
-                                if (!model) model = models[1] || models[0] || '';
-                                  } else {
-                                if (!brand) brand = brands[0] || '';
-                                if (!model) model = models[0] || '';
-                              }
-                            } else {
-                              if (!brand && isValidValue(customerBrand)) brand = customerBrand;
-                              if (!model && isValidValue(customerModel)) model = customerModel;
-                            }
-                          }
-                          
-                          const validBrand = isValidValue(brand) ? brand : '';
-                          const validModel = isValidValue(model) ? model : '';
+                          // Get brand/model for display (site-aware: no primary/secondary mix)
+                          const { brand: validBrand, model: validModel } = resolveJobEquipment(
+                            job as unknown as Record<string, unknown>,
+                            customer as unknown as Record<string, unknown>
+                          );
                           
                           // Show both Equipment and Assigned To if they exist
-                          const hasEquipment = validBrand || validModel;
+                          const hasEquipment = Boolean(validBrand || validModel);
                           const hasTechnician = technicianName || assignedTechnicianId;
                           
                           if (!hasEquipment && !hasTechnician) {
