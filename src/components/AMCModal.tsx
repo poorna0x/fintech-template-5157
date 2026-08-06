@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import { Loader2, X } from 'lucide-react';
 import { Customer } from '@/types';
+import type { JobAmcPrefill } from '@/lib/jobAmcInfo';
 
 const AMCGenerator = lazy(() => import('@/components/AMCGenerator'));
 
@@ -10,10 +11,18 @@ interface AMCModalProps {
   isOpen: boolean;
   onClose: () => void;
   customer: Customer | null;
+  /** Prefill from a completed job's technician/admin AMC reference fields. */
+  initialFromJob?: JobAmcPrefill | null;
   onAMCSaved?: () => void;
 }
 
-export default function AMCModal({ isOpen, onClose, customer, onAMCSaved }: AMCModalProps) {
+export default function AMCModal({
+  isOpen,
+  onClose,
+  customer,
+  initialFromJob,
+  onAMCSaved,
+}: AMCModalProps) {
   const handleClose = () => {
     onClose();
   };
@@ -57,7 +66,9 @@ export default function AMCModal({ isOpen, onClose, customer, onAMCSaved }: AMCM
               }
             >
               <AMCGenerator
+                key={customer.id}
                 customer={customer}
+                initialFromJob={initialFromJob ?? null}
                 onAMCSaved={onAMCSaved}
                 embedded
               />

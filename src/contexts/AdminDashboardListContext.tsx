@@ -58,7 +58,10 @@ export interface AdminDashboardListActions {
   handleViewPhotos: (customer: Customer) => void;
   handleGenerateBill: (customer: Customer) => void;
   handleGenerateQuotation: (customer: Customer) => void;
-  handleGenerateAMC: (customer: Customer) => void;
+  handleGenerateAMC: (
+    customer: Customer,
+    fromJob?: import('@/lib/jobAmcInfo').JobAmcPrefill | null
+  ) => void;
   handleGenerateTaxInvoice: (customer: Customer) => void;
   handleOpenCustomerReport: (customer: Customer) => void;
   handleViewAMCInfo: (customer: Customer) => void;

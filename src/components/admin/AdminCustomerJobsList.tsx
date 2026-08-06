@@ -547,6 +547,22 @@ export const AdminCustomerJobsList = memo(function AdminCustomerJobsList() {
                   onSendCompletionEmail={a.sendCompletionEmailQuick}
                   onEditCompletionEmail={a.openCompletionEmailComposer}
                   setSelectedBillPhotos={a.setSelectedBillPhotos}
+                  onGenerateAMCFromJob={
+                    amcInfo
+                      ? () => {
+                          const brandRaw = (fullJob as any).service_brand;
+                          const brand =
+                            brandRaw === 'elevenro' || brandRaw === 'hydrogenro'
+                              ? brandRaw
+                              : undefined;
+                          a.handleGenerateAMC(customer, {
+                            jobId: fullJob.id,
+                            amcInfo,
+                            serviceBrand: brand,
+                          });
+                        }
+                      : undefined
+                  }
                   setSelectedPhoto={a.setSelectedPhoto}
                   onOpenPaymentBillPhotos={(photos, startIdx = 0) => {
                     a.setSelectedBillPhotos(photos);

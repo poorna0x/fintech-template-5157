@@ -48,6 +48,11 @@ export function setAdminPushDeepLinkHandler(next: Handler | null): void {
   }
 }
 
+/** Queue a deep-link for the next dashboard handler (e.g. while on Settings). */
+export function queueAdminPushDeepLink(payload: AdminPushDeepLinkPayload): void {
+  pending = payload;
+}
+
 /** After biometric unlock — deliver any push tap that waited on the lock screen. */
 export function flushPendingAdminPushDeepLink(): void {
   if (!handler || !pending || isAdminAppLocked()) return;

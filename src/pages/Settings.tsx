@@ -424,21 +424,28 @@ const Settings = () => {
   const ensureSettingsSectionLoadedRef = useRef<(key: SettingsLazySection) => void>(() => {});
 
   // Reminder / pending-payment push tap while already on Settings.
+  // Non-settings payloads (tech_call, job focus, payments) are queued and
+  // forwarded to /admin so they are not swallowed by this handler.
   useEffect(() => {
     let cancelled = false;
-    void import('@/lib/adminPushDeepLink').then(({ setAdminPushDeepLinkHandler }) => {
-      if (cancelled) return;
-      setAdminPushDeepLinkHandler((payload) => {
-        if (payload.kind === 'settings' && payload.panel && payload.reminderId) {
-          navigate(
-            settingsPanelPath(payload.panel, {
-              id: payload.reminderId,
-              action: payload.action,
-            })
-          );
-        }
-      });
-    });
+    void import('@/lib/adminPushDeepLink').then(
+      ({ setAdminPushDeepLinkHandler, queueAdminPushDeepLink }) => {
+        if (cancelled) return;
+        setAdminPushDeepLinkHandler((payload) => {
+          if (payload.kind === 'settings' && payload.panel && payload.reminderId) {
+            navigate(
+              settingsPanelPath(payload.panel, {
+                id: payload.reminderId,
+                action: payload.action,
+              })
+            );
+            return;
+          }
+          queueAdminPushDeepLink(payload);
+          navigate('/admin');
+        });
+      }
+    );
     return () => {
       cancelled = true;
       void import('@/lib/adminPushDeepLink').then(({ setAdminPushDeepLinkHandler }) =>

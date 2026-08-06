@@ -21,8 +21,10 @@ import {
   parseEditableNumberInput,
 } from '@/lib/editable-number-input';
 import { cn } from '@/lib/utils';
-import { AMC_REMINDER_DAYS_BEFORE } from '@/lib/amcAutoJobSchedule';
+import { AMC_REMINDER_DAYS_BEFORE, deriveAmcServicePeriodKind } from '@/lib/amcAutoJobSchedule';
 import { db } from '@/lib/supabase';
+import type { JobAmcPrefill } from '@/lib/jobAmcInfo';
+import { jobAmcNotesText } from '@/lib/jobAmcInfo';
 import DocumentBrandPickerDialog from '@/components/DocumentBrandPickerDialog';
 import {
   DocumentBrand,
@@ -68,6 +70,8 @@ interface AMCGeneratorProps {
   customer: Customer;
   onAMCSaved?: () => void;
   embedded?: boolean;
+  /** Prefill amount / validity / prefilter / auto-visit from a completed job. */
+  initialFromJob?: JobAmcPrefill | null;
 }
 
 const defaultCompanyInfo: CompanyInfo = {
@@ -83,7 +87,14 @@ const defaultCompanyInfo: CompanyInfo = {
   website: "hydrogenro.com"
 };
 
-export default function AMCGenerator({ customer, onAMCSaved, embedded = false }: AMCGeneratorProps) {
+export default function AMCGenerator({
+  customer,
+  onAMCSaved,
+  embedded = false,
+  initialFromJob = null,
+}: AMCGeneratorProps) {
+  const jobPrefillAppliedRef = useRef<string | null>(null);
+  const sourceJobIdRef = useRef<string | null>(initialFromJob?.jobId ?? null);
   const [billNumber, setBillNumber] = useState(() => suggestAmcAgreementNumber());
   const [billDate, setBillDate] = useState(new Date().toISOString().split('T')[0]);
   const [company, setCompany] = useState<CompanyInfo>(defaultCompanyInfo);
@@ -149,6 +160,77 @@ export default function AMCGenerator({ customer, onAMCSaved, embedded = false }:
   const [documentBrand, setDocumentBrand] = useState<DocumentBrand>('hydrogenro');
   /** Skip one terms auto-regen after loading a draft (preserves custom/edited terms). */
   const skipTermsAutoGenRef = useRef(0);
+
+  // Prefill from last completed job AMC reference (amount, validity, prefilter, auto-visit).
+  React.useEffect(() => {
+    if (!initialFromJob?.jobId || !initialFromJob.amcInfo) return;
+    if (jobPrefillAppliedRef.current === initialFromJob.jobId) return;
+    jobPrefillAppliedRef.current = initialFromJob.jobId;
+    sourceJobIdRef.current = initialFromJob.jobId;
+
+    const amc = initialFromJob.amcInfo;
+    const start = typeof amc.date_given === 'string' ? amc.date_given.split('T')[0] : '';
+    const end = typeof amc.end_date === 'string' ? amc.end_date.split('T')[0] : '';
+    const yearsNum = Number(amc.years);
+
+    skipTermsAutoGenRef.current = 1;
+
+    if (start) setBillDate(start);
+
+    if (start && end) {
+      setValidity('Custom');
+      setCustomFromDate(start);
+      setCustomToDate(end);
+    } else if (yearsNum === 1) {
+      setValidity('1 Year');
+    } else if (yearsNum === 2) {
+      setValidity('2 Years');
+    } else if (yearsNum === 3) {
+      setValidity('3 Years');
+    }
+
+    if (amc.amount != null && Number(amc.amount) > 0) {
+      const amt = Number(amc.amount);
+      setAmcCost(amt);
+      setAmountReceived(amt);
+      setPaymentStatus('PAID');
+    }
+
+    if (typeof amc.includes_prefilter === 'boolean') {
+      setIncludesPreSedimentFiltration(amc.includes_prefilter);
+    }
+
+    if (amc.service_period_months !== undefined) {
+      const derived = deriveAmcServicePeriodKind(amc.service_period_months);
+      setServicePeriodKind(derived.kind);
+      setServicePeriodCustomMonths(derived.custom);
+    }
+
+    const noteText = jobAmcNotesText(amc);
+    if (noteText) {
+      setNotes(noteText);
+      setDescription(noteText);
+    }
+
+    if (initialFromJob.serviceBrand) {
+      setDocumentBrand(initialFromJob.serviceBrand);
+      setCompany(getCompanyInfoForBrand(initialFromJob.serviceBrand));
+      setAgreementIntro(getDefaultAgreementIntro(initialFromJob.serviceBrand));
+    }
+
+    // Apply terms once with the prefilled period/prefilter (skip auto-regen above).
+    const period =
+      amc.service_period_months !== undefined
+        ? deriveAmcServicePeriodKind(amc.service_period_months)
+        : { kind: servicePeriodKind, custom: num(servicePeriodCustomMonths) };
+    const prefilter =
+      typeof amc.includes_prefilter === 'boolean'
+        ? amc.includes_prefilter
+        : includesPreSedimentFiltration;
+    setTerms(generateAmcTerms(prefilter, period.kind, period.custom));
+
+    toast.success('Filled from last completed job AMC details');
+  }, [initialFromJob]);
 
   // Update terms when pre-sediment filtration or AMC service period (auto job creation) changes
   React.useEffect(() => {
@@ -408,7 +490,7 @@ export default function AMCGenerator({ customer, onAMCSaved, embedded = false }:
 
       const { error: amcError, updated } = await db.amcContracts.create({
         customer_id: customer.id,
-        job_id: null,
+        job_id: sourceJobIdRef.current || null,
         start_date: startDate,
         end_date: endDate,
         years: years,

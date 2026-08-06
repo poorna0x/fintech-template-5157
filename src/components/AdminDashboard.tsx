@@ -416,6 +416,9 @@ const AdminDashboard = () => {
   const [selectedCustomerForQuotation, setSelectedCustomerForQuotation] = useState<Customer | null>(null);
   const [amcModalOpen, setAmcModalOpen] = useState(false);
   const [selectedCustomerForAMC, setSelectedCustomerForAMC] = useState<Customer | null>(null);
+  const [amcPrefillFromJob, setAmcPrefillFromJob] = useState<import('@/lib/jobAmcInfo').JobAmcPrefill | null>(
+    null
+  );
   const [amcInfoDialogOpen, setAmcInfoDialogOpen] = useState(false);
   const [amcInfo, setAmcInfo] = useState<any>(null);
   const [loadingAMCInfo, setLoadingAMCInfo] = useState(false);
@@ -4724,6 +4727,33 @@ const AdminDashboard = () => {
     };
   }, []);
 
+  // After Settings (or any remount): restore incoming-call auto-search from
+  // sessionStorage while the 1.5-min window is still open. Local prefs / shared
+  // board are already consumed/"handled", so without this Home opens empty.
+  useEffect(() => {
+    const record = readIncomingAutoSearch();
+    if (!record?.phone) return;
+    if (Date.now() - record.at >= INCOMING_CALL_SEARCH_WINDOW_MS) {
+      clearIncomingAutoSearch();
+      setIncomingAutoSearch(null);
+      return;
+    }
+    setIncomingAutoSearch(record);
+    const searchParam =
+      new URLSearchParams(window.location.search).get('search')?.trim() ?? '';
+    if (
+      searchParam &&
+      normalizePhoneForSearch(searchParam) === normalizePhoneForSearch(record.phone)
+    ) {
+      // URL-sync effect will run the customer search for ?search=.
+      return;
+    }
+    callerLookupSearchRef.current(record.phone, {
+      offerNotFound: false,
+      ringAt: record.at,
+    });
+  }, []);
+
   const handleClearSearch = () => {
     hapticTap();
     clearIncomingAutoSearch();
@@ -4939,11 +4969,22 @@ const AdminDashboard = () => {
     setSelectedCustomerForQuotation(null);
   };
 
-  const handleGenerateAMC = (customer: Customer) => {
+  const handleGenerateAMC = (
+    customer: Customer,
+    fromJob?: import('@/lib/jobAmcInfo').JobAmcPrefill | null
+  ) => {
     preloadDocumentGeneratorModals();
     setSelectedCustomerForAMC(customer);
+    setAmcPrefillFromJob(fromJob ?? null);
     setAmcModalOpen(true);
     void loadCustomerForDocuments(customer).then(setSelectedCustomerForAMC);
+    if (fromJob) return;
+    // Menu → Generate AMC: pull AMC fields from the latest completed job (if any).
+    void import('@/lib/jobAmcInfo').then(({ fetchLatestJobAmcPrefill }) =>
+      fetchLatestJobAmcPrefill(customer.id).then((prefill) => {
+        if (prefill) setAmcPrefillFromJob(prefill);
+      })
+    );
   };
 
   const handleViewAMCInfo = async (customer: Customer) => {
@@ -4969,6 +5010,7 @@ const AdminDashboard = () => {
   const handleAMCModalClose = () => {
     setAmcModalOpen(false);
     setSelectedCustomerForAMC(null);
+    setAmcPrefillFromJob(null);
   };
 
   // Reload AMC status from database
@@ -6946,6 +6988,7 @@ const AdminDashboard = () => {
             isOpen={amcModalOpen}
             onClose={handleAMCModalClose}
             customer={selectedCustomerForAMC}
+            initialFromJob={amcPrefillFromJob}
             onAMCSaved={reloadAMCStatus}
           />
         </Suspense>

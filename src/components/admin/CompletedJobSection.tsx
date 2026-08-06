@@ -96,6 +96,8 @@ interface CompletedJobSectionProps {
   detailsLoaded?: boolean;
   loadingDetails?: boolean;
   onLoadDetails?: () => void;
+  /** Open official AMC generator prefilled from this job's AMC reference. */
+  onGenerateAMCFromJob?: () => void;
 }
 
 export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
@@ -138,6 +140,7 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
   detailsLoaded,
   loadingDetails,
   onLoadDetails,
+  onGenerateAMCFromJob,
 }) => {
   const [partsUsedDialogLocal, setPartsUsedDialogLocal] = useState(false);
   const [officePartsDialogLocal, setOfficePartsDialogLocal] = useState(false);
@@ -532,7 +535,20 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
           {/* AMC Details */}
           {amcInfo && (
             <div className="mt-2 pt-2 border-t border-green-200">
-              <div className="font-medium text-green-900 mb-1">AMC Details:</div>
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <div className="font-medium text-green-900">AMC Details:</div>
+                {onGenerateAMCFromJob && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs border-green-300 text-green-900 hover:bg-green-50"
+                    onClick={onGenerateAMCFromJob}
+                  >
+                    Generate AMC
+                  </Button>
+                )}
+              </div>
               <div className="text-gray-700 space-y-1">
                 <div>
                   <span className="text-gray-500">Start Date:</span> {amcInfo.date_given ? new Date(amcInfo.date_given).toLocaleDateString('en-IN') : 'N/A'}
