@@ -28,16 +28,17 @@ export default function BillModal({ isOpen, onClose, customer }: BillModalProps)
       items: bill.items,
       subtotal: bill.subtotal,
       totalTax: bill.totalTax,
-      serviceCharge: bill.serviceCharge || 0,
-      totalAmount: bill.totalAmount,
+    serviceCharge: bill.serviceCharge || 0,
+    totalAmount: bill.totalAmount,
     paymentStatus: bill.paymentStatus,
     paymentMethod: bill.paymentMethod,
+    amountPaid: bill.amountPaid,
     notes: bill.notes,
     notesHeading: (bill as { notesHeading?: string }).notesHeading,
     terms: bill.terms,
     hideGstInHeader: (bill as any).hideGstInHeader || false,
     documentBrand: (bill as any).documentBrand,
-    amountPaid: bill.amountPaid,
+    serviceChargeLabel: (bill as { serviceChargeLabel?: string }).serviceChargeLabel,
   };
 
     try {

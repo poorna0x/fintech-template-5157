@@ -48,6 +48,7 @@ import DocumentPreviewDialog from '@/components/document/DocumentPreviewDialog';
 import DocumentEmailSendDialog from '@/components/document/DocumentEmailSendDialog';
 import DocumentPaymentStatusCard from '@/components/document/DocumentPaymentStatusCard';
 import DocumentTermsEditor from '@/components/document/DocumentTermsEditor';
+import InventoryItemSearchField from '@/components/document/InventoryItemSearchField';
 import RichTextEditor from '@/components/letterhead/RichTextEditor';
 import { joinNotesHtml, sanitizeHTML, stripHtmlToText } from '@/lib/sanitize';
 import { normalizeRecipientList } from '@/lib/email-recipients';
@@ -1610,10 +1611,10 @@ export default function TaxInvoiceGenerator({
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
                   <div className="sm:col-span-2 lg:col-span-2">
                     <Label>Description</Label>
-                    <Input
+                    <InventoryItemSearchField
                       value={item.description}
-                      onChange={(e) => updateItem(item.id, 'description', e.target.value)}
-                      placeholder="Item description"
+                      onChange={(v) => updateItem(item.id, 'description', v)}
+                      placeholder="Item description or search inventory…"
                     />
                   </div>
                   <div>

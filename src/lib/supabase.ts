@@ -1903,7 +1903,7 @@ export const db = {
     async getByCustomerIdForPicker(customerId: string) {
       const { data, error } = await supabase
         .from('jobs')
-        .select('id, job_number, status, service_type, scheduled_date, completed_at')
+        .select('id, job_number, status, service_type, service_sub_type, scheduled_date, completed_at')
         .eq('customer_id', customerId)
         .order('created_at', { ascending: false })
         .limit(100);
@@ -6360,19 +6360,32 @@ export const db = {
   inventory: {
     async getAll() {
       // Only select needed fields to reduce egress
-      const { data, error } = await supabase
+      const withFull = await supabase
         .from('inventory')
-        .select('id, product_name, code, price, quantity, created_at, updated_at')
+        .select('id, product_name, full_name, code, price, quantity, created_at, updated_at')
         .order('created_at', { ascending: false });
-      
-      return { data, error };
+      if (!withFull.error) {
+        return { data: withFull.data, error: null };
+      }
+      const msg = String(withFull.error.message || '');
+      if (msg.includes('full_name') || msg.includes('column')) {
+        const fallback = await supabase
+          .from('inventory')
+          .select('id, product_name, code, price, quantity, created_at, updated_at')
+          .order('created_at', { ascending: false });
+        return {
+          data: (fallback.data || []).map((r: any) => ({ ...r, full_name: null })),
+          error: fallback.error,
+        };
+      }
+      return { data: withFull.data, error: withFull.error };
     },
 
     /** In-stock rows only — for Add Parts main-fallback picker (much smaller than getAll). */
     async getAvailableSlim() {
       const { data, error } = await supabase
         .from('inventory')
-        .select('id, product_name, code, price, quantity')
+        .select('id, product_name, full_name, code, price, quantity')
         .gt('quantity', 0)
         .order('product_name', { ascending: true });
       return { data, error };
@@ -6380,11 +6393,26 @@ export const db = {
 
     /** Name/code only — pickers, where-is, typeahead (same fuzzy UX, less egress than getAll). */
     async getCatalogSlim() {
-      const { data, error } = await supabase
+      const withFull = await supabase
         .from('inventory')
-        .select('id, product_name, code')
+        .select('id, product_name, full_name, code')
         .order('product_name', { ascending: true });
-      return { data: data || [], error };
+      if (!withFull.error) {
+        return { data: withFull.data || [], error: null };
+      }
+      // Fallback before full_name migration is applied
+      const msg = String(withFull.error.message || '');
+      if (msg.includes('full_name') || msg.includes('column')) {
+        const fallback = await supabase
+          .from('inventory')
+          .select('id, product_name, code')
+          .order('product_name', { ascending: true });
+        return {
+          data: (fallback.data || []).map((r: any) => ({ ...r, full_name: null })),
+          error: fallback.error,
+        };
+      }
+      return { data: [], error: withFull.error };
     },
 
     /** Batch qty+price for specific ids (bundle shortfall checks). */
@@ -6401,18 +6429,25 @@ export const db = {
     async getById(id: string) {
       const { data, error } = await supabase
         .from('inventory')
-        .select('id, product_name, code, price, quantity')
+        .select('id, product_name, full_name, code, price, quantity')
         .eq('id', id)
         .single();
       
       return { data, error };
     },
 
-    async create(item: { product_name: string; code?: string; price: number; quantity: number }) {
+    async create(item: {
+      product_name: string;
+      full_name?: string | null;
+      code?: string;
+      price: number;
+      quantity: number;
+    }) {
       const { data, error } = await supabase
         .from('inventory')
         .insert({
           product_name: item.product_name,
+          full_name: item.full_name?.trim() || null,
           code: item.code || null,
           price: item.price,
           quantity: item.quantity
@@ -6423,10 +6458,20 @@ export const db = {
       return { data, error };
     },
 
-    async update(id: string, updates: { product_name?: string; code?: string; price?: number; quantity?: number }) {
+    async update(id: string, updates: {
+      product_name?: string;
+      full_name?: string | null;
+      code?: string;
+      price?: number;
+      quantity?: number;
+    }) {
+      const payload = { ...updates };
+      if ('full_name' in payload) {
+        payload.full_name = payload.full_name?.trim() || null;
+      }
       const { data, error } = await supabase
         .from('inventory')
-        .update(updates)
+        .update(payload)
         .eq('id', id)
         .select()
         .single();
@@ -7026,7 +7071,7 @@ export const db = {
   // Job Parts Used operations
   jobPartsUsed: {
     async getByJob(jobId: string) {
-      const { data, error } = await supabase
+      const withFull = await supabase
         .from('job_parts_used')
         .select(`
           id,
@@ -7037,12 +7082,33 @@ export const db = {
           quantity_used,
           price_at_time_of_use,
           source,
-          inventory:inventory(id, product_name, code)
+          inventory:inventory(id, product_name, full_name, code)
         `)
         .eq('job_id', jobId)
         .order('created_at', { ascending: false });
-
-      return { data, error };
+      if (!withFull.error) {
+        return { data: withFull.data, error: null };
+      }
+      const msg = String(withFull.error.message || '');
+      if (msg.includes('full_name') || msg.includes('column')) {
+        const fallback = await supabase
+          .from('job_parts_used')
+          .select(`
+            id,
+            job_id,
+            technician_id,
+            inventory_id,
+            custom_name,
+            quantity_used,
+            price_at_time_of_use,
+            source,
+            inventory:inventory(id, product_name, code)
+          `)
+          .eq('job_id', jobId)
+          .order('created_at', { ascending: false });
+        return { data: fallback.data, error: fallback.error };
+      }
+      return { data: withFull.data, error: withFull.error };
     },
 
     async getByTechnician(technicianId: string) {
@@ -7056,7 +7122,7 @@ export const db = {
           custom_name,
           quantity_used,
           created_at,
-          inventory:inventory(id, product_name, code),
+          inventory:inventory(id, product_name, full_name, code),
           job:jobs(
             completed_at,
             end_time,

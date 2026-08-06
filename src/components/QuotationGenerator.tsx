@@ -44,6 +44,7 @@ import { quotationToPreviewHtml, runAfterDialogClose } from '@/lib/document-prev
 import DocumentPreviewDialog from '@/components/document/DocumentPreviewDialog';
 import DocumentEmailSendDialog from '@/components/document/DocumentEmailSendDialog';
 import DocumentTermsEditor from '@/components/document/DocumentTermsEditor';
+import InventoryItemSearchField from '@/components/document/InventoryItemSearchField';
 import RichTextEditor from '@/components/letterhead/RichTextEditor';
 import { joinNotesHtml, sanitizeHTML, stripHtmlToText } from '@/lib/sanitize';
 import { normalizeRecipientList } from '@/lib/email-recipients';
@@ -1098,10 +1099,10 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
                 >
                   <div className={gstOption === 'include' ? 'sm:col-span-2 lg:col-span-2' : 'sm:col-span-2'}>
                     <Label>Description</Label>
-                    <Input
+                    <InventoryItemSearchField
                       value={item.description}
-                      onChange={(e) => updateItem(item.id, 'description', e.target.value)}
-                      placeholder="Item description"
+                      onChange={(v) => updateItem(item.id, 'description', v)}
+                      placeholder="Item description or search inventory…"
                     />
                   </div>
                   {gstOption === 'include' && (

@@ -1,11 +1,18 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Plus, Trash2, Download, Edit, X, FileText, Printer, Eye, Mail } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Plus, Trash2, Download, Edit, X, FileText, Printer, Eye, Mail, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Bill, BillItem, CompanyInfo, Customer } from '@/types';
 import { getCustomerGstNumber } from '@/lib/customerGst';
@@ -28,6 +35,7 @@ import DocumentPreviewDialog from '@/components/document/DocumentPreviewDialog';
 import DocumentEmailSendDialog from '@/components/document/DocumentEmailSendDialog';
 import DocumentPaymentStatusCard from '@/components/document/DocumentPaymentStatusCard';
 import DocumentTermsEditor from '@/components/document/DocumentTermsEditor';
+import InventoryItemSearchField from '@/components/document/InventoryItemSearchField';
 import RichTextEditor from '@/components/letterhead/RichTextEditor';
 import { joinNotesHtml, sanitizeHTML, stripHtmlToText } from '@/lib/sanitize';
 import { normalizeRecipientList } from '@/lib/email-recipients';
@@ -51,6 +59,51 @@ import {
   type EditableNumber,
   num,
 } from '@/lib/editable-number-input';
+import { db } from '@/lib/supabase';
+import { getOfficeJobParts } from '@/lib/adminUtils';
+import { getInventoryBillName } from '@/lib/inventoryBillName';
+
+type BillMode = 'normal' | 'set';
+type ExtraChargeKind = 'service' | 'visiting';
+
+const EXTRA_CHARGE_LABELS: Record<ExtraChargeKind, string> = {
+  service: 'Service Charge',
+  visiting: 'Visiting Charge',
+};
+
+const SET_TOTAL_LINE_ID = 'set-total';
+
+const makeSetTotalLine = (amount = 0): BillItem => ({
+  id: SET_TOTAL_LINE_ID,
+  description: 'Set total',
+  quantity: 1,
+  unitPrice: amount,
+  total: amount,
+  taxRate: 0,
+  taxAmount: 0,
+});
+
+const makeZeroPriceLine = (description: string, quantity: number): BillItem => ({
+  id: `part-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+  description,
+  quantity: Math.max(1, quantity),
+  unitPrice: 0,
+  total: 0,
+  taxRate: 0,
+  taxAmount: 0,
+});
+
+const isSetTotalLine = (item: BillItem) => item.id === SET_TOTAL_LINE_ID;
+
+type CompletedJobOption = {
+  id: string;
+  job_number: string | null;
+  status: string | null;
+  service_type: string | null;
+  completed_at: string | null;
+  label: string;
+  isToday: boolean;
+};
 
 interface BillGeneratorProps {
   customer?: Customer;
@@ -107,6 +160,11 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
   const [billDate, setBillDate] = useState(new Date().toISOString().split('T')[0]);
   const [company, setCompany] = useState<CompanyInfo>(defaultCompanyInfo);
   const [items, setItems] = useState<BillItem[]>(defaultBillItems);
+  const [billMode, setBillMode] = useState<BillMode>('normal');
+  const [completedJobs, setCompletedJobs] = useState<CompletedJobOption[]>([]);
+  const [selectedJobId, setSelectedJobId] = useState('');
+  const [jobsLoading, setJobsLoading] = useState(false);
+  const [autofillLoading, setAutofillLoading] = useState(false);
   const [notes, setNotes] = useState<string[]>([]);
   const [newNote, setNewNote] = useState('');
   const [notesHeading, setNotesHeading] = useState('Additional Info');
@@ -118,6 +176,8 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
   );
   const termsForPdf = useMemo(() => formatServiceDocumentTermsForPdf(termItems), [termItems]);
   const [serviceCharge, setServiceCharge] = useState(0);
+  const [extraChargeKind, setExtraChargeKind] = useState<ExtraChargeKind>('service');
+  const extraChargeLabel = EXTRA_CHARGE_LABELS[extraChargeKind];
   const [paymentStatus, setPaymentStatus] = useState<DocumentPaymentStatus>('PAID');
   const [amountReceived, setAmountReceived] = useState<EditableNumber>(0);
   const [isEditingNotes, setIsEditingNotes] = useState(false);
@@ -167,9 +227,233 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
     });
   }, [customerName, customerPhone, customerEmail, customerGst, customerAddress]);
 
-  // Calculate totals
-  const subtotal = items.reduce((sum, item) => sum + item.total, 0);
+  // Calculate totals — set mode uses package amount only (ignore any leaked part prices)
+  const rawSubtotal = items.reduce((sum, item) => sum + item.total, 0);
+  const setTotalAmount = items.find(isSetTotalLine)?.unitPrice ?? 0;
+  const subtotal = billMode === 'set' ? setTotalAmount : rawSubtotal;
   const totalAmount = subtotal + serviceCharge;
+
+  const updateSetTotalAmount = (amount: number) => {
+    const safe = Math.max(0, Number.isFinite(amount) ? amount : 0);
+    setItems((prev) => {
+      const others = prev.filter((i) => !isSetTotalLine(i)).map((i) => ({
+        ...i,
+        unitPrice: 0,
+        total: 0,
+      }));
+      return [...others, makeSetTotalLine(safe)];
+    });
+  };
+
+  const zeroPartPrices = (list: BillItem[]): BillItem[] =>
+    list.map((i) =>
+      isSetTotalLine(i) ? i : { ...i, unitPrice: 0, total: 0 }
+    );
+
+  // Keep a set-total line present whenever set mode is active; keep part prices at 0
+  useEffect(() => {
+    if (billMode !== 'set') return;
+    setItems((prev) => {
+      let next = zeroPartPrices(prev);
+      if (!next.some(isSetTotalLine)) {
+        next = [...next, makeSetTotalLine(0)];
+      }
+      const changed =
+        next.length !== prev.length ||
+        next.some((n, idx) => {
+          const p = prev[idx];
+          return !p || n.unitPrice !== p.unitPrice || n.total !== p.total || n.id !== p.id;
+        });
+      return changed ? next : prev;
+    });
+  }, [billMode]);
+
+  const todayJobId = useMemo(
+    () => completedJobs.find((j) => j.isToday)?.id || '',
+    [completedJobs]
+  );
+  const lastJobId = useMemo(() => completedJobs[0]?.id || '', [completedJobs]);
+
+  const loadCompletedJobs = useCallback(async (customerId: string) => {
+    setJobsLoading(true);
+    try {
+      const { data, error } = await db.jobs.getByCustomerIdForPicker(customerId);
+      if (error) throw error;
+      const now = new Date();
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      const completed = (data || [])
+        .filter((j: any) => String(j.status || '').toUpperCase() === 'COMPLETED' && j.completed_at)
+        .sort(
+          (a: any, b: any) =>
+            new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime()
+        )
+        .map((j: any): CompletedJobOption => {
+          const completedAt = j.completed_at ? new Date(j.completed_at) : null;
+          const isToday = !!completedAt && completedAt.getTime() >= startOfToday;
+          const dateLabel = completedAt
+            ? completedAt.toLocaleDateString('en-IN', {
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric',
+              })
+            : '';
+          const typeLabel = [j.service_type, j.service_sub_type].filter(Boolean).join(' · ') || 'Job';
+          return {
+            id: j.id,
+            job_number: j.job_number || null,
+            status: j.status || null,
+            service_type: j.service_type || null,
+            completed_at: j.completed_at || null,
+            isToday,
+            label: `${isToday ? 'Today · ' : ''}${j.job_number || 'Job'} · ${typeLabel}${dateLabel ? ` · ${dateLabel}` : ''}`,
+          };
+        });
+      setCompletedJobs(completed);
+      const preferred = completed.find((j) => j.isToday)?.id || completed[0]?.id || '';
+      setSelectedJobId((prev) => (prev && completed.some((j) => j.id === prev) ? prev : preferred));
+    } catch (e: any) {
+      console.error('Failed to load completed jobs for bill autofill', e);
+      setCompletedJobs([]);
+      setSelectedJobId('');
+    } finally {
+      setJobsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!customer?.id) {
+      setCompletedJobs([]);
+      setSelectedJobId('');
+      return;
+    }
+    void loadCompletedJobs(customer.id);
+  }, [customer?.id, loadCompletedJobs]);
+
+  const switchBillMode = (mode: BillMode) => {
+    if (mode === billMode) return;
+    setBillMode(mode);
+    if (mode === 'set') {
+      setItems((prev) => {
+        const parts = prev
+          .filter((i) => !isSetTotalLine(i) && i.description.trim())
+          .map((p) => ({ ...p, unitPrice: 0, total: 0 }));
+        const setLine = prev.find(isSetTotalLine) || makeSetTotalLine(0);
+        if (parts.length === 0) return [setLine];
+        return [...parts, isSetTotalLine(setLine) ? setLine : makeSetTotalLine(0)];
+      });
+    } else {
+      setItems((prev) => {
+        const parts = prev.filter((i) => !isSetTotalLine(i));
+        if (parts.length === 0) {
+          return defaultBillItems.map((it) => ({ ...it, id: Date.now().toString() }));
+        }
+        return parts;
+      });
+    }
+  };
+
+  const autofillFromJob = async (jobId?: string, modeOverride?: BillMode) => {
+    const id = jobId || selectedJobId;
+    const mode = modeOverride ?? billMode;
+    if (!id) {
+      toast.error('Select a completed job first');
+      return;
+    }
+    setAutofillLoading(true);
+    try {
+      const [{ data: parts, error: partsError }, { data: job, error: jobError }] =
+        await Promise.all([
+          db.jobPartsUsed.getByJob(id),
+          db.jobs.getByIdSlim(id),
+        ]);
+      if (partsError) throw partsError;
+      if (jobError) throw jobError;
+
+      const lines: BillItem[] = [];
+      const seen = new Set<string>();
+
+      for (const part of parts || []) {
+        const inv = (part as any).inventory as
+          | { product_name?: string; full_name?: string | null; code?: string | null }
+          | null
+          | undefined;
+        const description = getInventoryBillName({
+          product_name: inv?.product_name,
+          full_name: inv?.full_name,
+          custom_name: (part as any).custom_name,
+        });
+        if (!description) continue;
+        const qty = Math.max(1, Math.floor(Number((part as any).quantity_used) || 1));
+        if (seen.has(description.toLowerCase())) {
+          const existing = lines.find(
+            (l) => l.description.toLowerCase() === description.toLowerCase()
+          );
+          if (existing) {
+            existing.quantity += qty;
+            continue;
+          }
+        }
+        seen.add(description.toLowerCase());
+        lines.push(makeZeroPriceLine(description, qty));
+      }
+
+      const officeParts = getOfficeJobParts(job);
+      if (officeParts.length > 0) {
+        const ids = officeParts.map((p) => p.inventory_id).filter(Boolean);
+        let fullNameById = new Map<string, string | null>();
+        if (ids.length > 0) {
+          const { data: catalog } = await db.inventory.getCatalogSlim();
+          fullNameById = new Map(
+            (catalog || []).map((c: any) => [c.id, c.full_name ?? null])
+          );
+        }
+        for (const op of officeParts) {
+          const description = getInventoryBillName({
+            product_name: op.product_name,
+            full_name: fullNameById.get(op.inventory_id) || null,
+          });
+          if (!description) continue;
+          const qty = Math.max(1, op.quantity || 1);
+          const existing = lines.find(
+            (l) => l.description.toLowerCase() === description.toLowerCase()
+          );
+          if (existing) {
+            existing.quantity += qty;
+          } else {
+            lines.push(makeZeroPriceLine(description, qty));
+          }
+        }
+      }
+
+      setItems((prev) => {
+        if (mode === 'set') {
+          const prevSet = prev.find(isSetTotalLine);
+          const setLine = makeSetTotalLine(prevSet?.unitPrice || 0);
+          if (lines.length === 0) return [setLine];
+          return [...lines, setLine];
+        }
+        if (lines.length === 0) {
+          return defaultBillItems.map((it) => ({ ...it, id: Date.now().toString() }));
+        }
+        return lines;
+      });
+      if (lines.length === 0) {
+        toast.message(
+          mode === 'set'
+            ? 'No parts found on that job — add items or enter set total'
+            : 'No parts found on that job'
+        );
+      } else {
+        toast.success(`Loaded ${lines.length} item${lines.length === 1 ? '' : 's'} from job`);
+      }
+      setSelectedJobId(id);
+    } catch (e: any) {
+      console.error('Bill autofill failed', e);
+      toast.error(e?.message || 'Failed to load job parts');
+    } finally {
+      setAutofillLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (paymentStatus === 'PAID') {
@@ -206,10 +490,20 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
       taxRate: 0,
       taxAmount: 0
     };
-    setItems([...items, newItem]);
+    if (billMode === 'set') {
+      const setLine = items.find(isSetTotalLine) || makeSetTotalLine(0);
+      const others = items.filter((i) => !isSetTotalLine(i));
+      setItems([...others, newItem, setLine]);
+    } else {
+      setItems([...items, newItem]);
+    }
   };
 
   const removeItem = (id: string) => {
+    if (isSetTotalLine({ id } as BillItem) && billMode === 'set') {
+      toast.error('Set total line cannot be removed in set bill mode');
+      return;
+    }
     if (items.length > 1) {
       setItems(items.filter(item => item.id !== id));
     }
@@ -250,12 +544,20 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
     setItems(items.map(item => {
       if (item.id === id) {
         const updatedItem = { ...item, [field]: value };
-        
-        // Recalculate totals when quantity or unitPrice changes
+
+        if (isSetTotalLine(item) && field === 'quantity') {
+          updatedItem.quantity = 1;
+        }
+
+        // In set mode, part lines stay at price 0
+        if (billMode === 'set' && !isSetTotalLine(item) && field === 'unitPrice') {
+          updatedItem.unitPrice = 0;
+        }
+
         if (field === 'quantity' || field === 'unitPrice') {
           updatedItem.total = updatedItem.quantity * updatedItem.unitPrice;
         }
-        
+
         return updatedItem;
       }
       return item;
@@ -267,6 +569,11 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
   const buildBillDocument = (brand: DocumentBrand): Bill | null => {
     if (!customer) {
       toast.error('Please select a customer first');
+      return null;
+    }
+
+    if (billMode === 'set' && setTotalAmount <= 0) {
+      toast.error('Enter the set total amount');
       return null;
     }
 
@@ -282,6 +589,15 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
 
     const brandCompany = getCompanyInfoForBrand(brand);
     setCompany(brandCompany);
+
+    const billItems =
+      billMode === 'set'
+        ? items
+            .filter((item) => !isSetTotalLine(item))
+            .map((item) => ({ ...item, unitPrice: 0, total: 0 }))
+        : items;
+    const billSubtotal = billMode === 'set' ? setTotalAmount : subtotal;
+    const billTotal = billSubtotal + serviceCharge;
 
     return {
       id: Date.now().toString(),
@@ -299,11 +615,12 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
         email: editableCustomer.email,
         gstNumber: editableCustomer.gst
       },
-      items,
-      subtotal,
+      items: billItems,
+      subtotal: billSubtotal,
       totalTax: 0,
       serviceCharge,
-      totalAmount,
+      serviceChargeLabel: extraChargeLabel,
+      totalAmount: billTotal,
       paymentStatus: resolvedPayment.status,
       amountPaid: resolvedPayment.paid,
       paymentMethod: 'CASH',
@@ -378,6 +695,8 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
     v: 1,
     billNumber,
     billDate,
+    billMode,
+    selectedJobId,
     items,
     notes,
     notesHeading,
@@ -386,23 +705,43 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
     termItems: serializeTermItems(termItems),
     terms: termsForPdf,
     serviceCharge,
+    extraChargeKind,
     paymentStatus,
     amountReceived: num(amountReceived),
     hideGstInHeader,
     editableCustomer,
   });
 
-  const applyDraftSnapshot = (snap: ReturnType<typeof getDraftSnapshot>) => {
+  const applyDraftSnapshot = (snap: ReturnType<typeof getDraftSnapshot> & {
+    billMode?: BillMode;
+    selectedJobId?: string;
+  }) => {
     if (!snap || typeof snap !== 'object') return;
     if (typeof snap.billNumber === 'string') setBillNumber(snap.billNumber);
     if (typeof snap.billDate === 'string') setBillDate(snap.billDate);
-    if (Array.isArray(snap.items)) setItems(snap.items as BillItem[]);
+    if (snap.billMode === 'set' || snap.billMode === 'normal') setBillMode(snap.billMode);
+    if (typeof snap.selectedJobId === 'string') setSelectedJobId(snap.selectedJobId);
+    if (Array.isArray(snap.items)) {
+      let next = snap.items as BillItem[];
+      if (snap.billMode === 'set') {
+        next = zeroPartPrices(next);
+        if (!next.some(isSetTotalLine)) {
+          next = [...next, makeSetTotalLine(0)];
+        }
+      } else {
+        next = next.filter((i) => !isSetTotalLine(i));
+      }
+      setItems(next);
+    }
     if (Array.isArray(snap.notes)) setNotes(snap.notes as string[]);
     if (typeof snap.notesHeading === 'string') setNotesHeading(snap.notesHeading);
     if (typeof snap.validityNote === 'string') setValidityNote(snap.validityNote);
     if (typeof snap.showValidityNote === 'boolean') setShowValidityNote(snap.showValidityNote);
     setTermItems(coerceTermItemsFromSnapshot(snap));
     if (typeof snap.serviceCharge === 'number') setServiceCharge(snap.serviceCharge);
+    if (snap.extraChargeKind === 'service' || snap.extraChargeKind === 'visiting') {
+      setExtraChargeKind(snap.extraChargeKind);
+    }
     if (isDocumentPaymentStatus(snap.paymentStatus)) setPaymentStatus(snap.paymentStatus);
     if (typeof snap.amountReceived === 'number') setAmountReceived(snap.amountReceived);
     if (typeof snap.hideGstInHeader === 'boolean') setHideGstInHeader(snap.hideGstInHeader);
@@ -675,10 +1014,123 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
       <Card>
         <CardHeader>
           <div className="flex flex-col gap-3 sm:gap-4">
-            <CardTitle className={documentSectionTitleClass}>Bill Items</CardTitle>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <CardTitle className={documentSectionTitleClass}>Bill Items</CardTitle>
+              <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 self-start">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={billMode === 'normal' ? 'default' : 'ghost'}
+                  className="h-8"
+                  onClick={() => switchBillMode('normal')}
+                >
+                  Normal
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={billMode === 'set' ? 'default' : 'ghost'}
+                  className="h-8"
+                  onClick={() => switchBillMode('set')}
+                >
+                  Set bill
+                </Button>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3 space-y-3">
+              {billMode === 'set' ? (
+                <p className="text-sm text-slate-700">
+                  Items list name + qty at ₹0. Type the package amount in <span className="font-medium">Set total</span> below — that becomes the bill total.
+                </p>
+              ) : (
+                <p className="text-sm text-slate-700">
+                  Autofill parts from a completed job (name + qty). Enter prices per item as needed.
+                </p>
+              )}
+              {!customer?.id ? (
+                <p className="text-sm text-amber-800">Select a customer to autofill from a completed job.</p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2 sm:items-end">
+                    <div className="flex-1 space-y-1.5">
+                      <Label>Completed job</Label>
+                      <Select
+                        value={selectedJobId || undefined}
+                        onValueChange={setSelectedJobId}
+                        disabled={jobsLoading || completedJobs.length === 0}
+                      >
+                        <SelectTrigger>
+                          <SelectValue
+                            placeholder={
+                              jobsLoading
+                                ? 'Loading jobs…'
+                                : completedJobs.length === 0
+                                  ? 'No completed jobs'
+                                  : 'Select job'
+                            }
+                          />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {completedJobs.map((j) => (
+                            <SelectItem key={j.id} value={j.id}>
+                              {j.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => void autofillFromJob()}
+                      disabled={!selectedJobId || autofillLoading}
+                      className="w-full sm:w-auto"
+                    >
+                      {autofillLoading ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : null}
+                      Autofill items
+                    </Button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={!todayJobId || autofillLoading}
+                      onClick={() => void autofillFromJob(todayJobId)}
+                    >
+                      Today&apos;s job
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={!lastJobId || autofillLoading}
+                      onClick={() => void autofillFromJob(lastJobId)}
+                    >
+                      Last completed
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4">
               <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                <Label htmlFor="serviceCharge" className="text-sm font-medium whitespace-nowrap">Service Charge:</Label>
+                <Select
+                  value={extraChargeKind}
+                  onValueChange={(v) => setExtraChargeKind(v as ExtraChargeKind)}
+                >
+                  <SelectTrigger className="w-full sm:w-[160px]" id="extraChargeKind">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="service">Service Charge</SelectItem>
+                    <SelectItem value="visiting">Visiting Charge</SelectItem>
+                  </SelectContent>
+                </Select>
                 <Input
                   id="serviceCharge"
                   type="number"
@@ -688,6 +1140,7 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
                   step="0.01"
                   className="w-full sm:w-24"
                   placeholder="0"
+                  aria-label={extraChargeLabel}
                 />
               </div>
               <Button onClick={addItem} size="sm" className="w-full sm:w-auto">
@@ -699,16 +1152,23 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
         </CardHeader>
         <CardContent className="space-y-3 sm:space-y-4">
           <div className="space-y-3 sm:space-y-4">
-            {items.map((item, index) => (
-              <div key={item.id} className="space-y-3 sm:space-y-4 p-3 sm:p-4 border rounded-lg">
+            {items
+              .filter((item) => !(billMode === 'set' && isSetTotalLine(item)))
+              .map((item) => {
+              const partInSetMode = billMode === 'set';
+              return (
+              <div
+                key={item.id}
+                className="space-y-3 sm:space-y-4 p-3 sm:p-4 border rounded-lg"
+              >
                 {/* Mobile-first grid layout */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
                   <div className="sm:col-span-2 lg:col-span-1">
                     <Label>Description</Label>
-                    <Input
+                    <InventoryItemSearchField
                       value={item.description}
-                      onChange={(e) => updateItem(item.id, 'description', e.target.value)}
-                      placeholder="Item description"
+                      onChange={(v) => updateItem(item.id, 'description', v)}
+                      placeholder="Item description or search inventory…"
                     />
                   </div>
                   <div>
@@ -723,19 +1183,25 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
                   <div className="flex items-end gap-2">
                     <div className="flex-1">
                       <Label>Price</Label>
-                      <Input
-                        type="number"
-                        value={item.unitPrice}
-                        onChange={(e) => updateItem(item.id, 'unitPrice', parseFloat(e.target.value) || 0)}
-                        min="0"
-                        step="0.01"
-                      />
+                      {partInSetMode ? (
+                        <div className="flex h-10 items-center rounded-md border border-input bg-muted/40 px-3 text-sm text-muted-foreground">
+                          —
+                        </div>
+                      ) : (
+                        <Input
+                          type="number"
+                          value={item.unitPrice}
+                          onChange={(e) => updateItem(item.id, 'unitPrice', parseFloat(e.target.value) || 0)}
+                          min="0"
+                          step="0.01"
+                        />
+                      )}
                     </div>
                     <Button
                       variant="destructive"
                       size="sm"
                       onClick={() => removeItem(item.id)}
-                      disabled={items.length === 1}
+                      disabled={billMode === 'normal' && items.length === 1}
                       className="h-10"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -751,12 +1217,57 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
                   </div>
                   <div className="text-sm">
                     <span className="text-gray-500">Total: </span>
-                    <span className="font-semibold">₹{item.total.toLocaleString()}</span>
+                    <span className="font-semibold">
+                      {billMode === 'set' || item.total === 0
+                        ? '—'
+                        : `₹${item.total.toLocaleString()}`}
+                    </span>
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
+          {billMode === 'set' && (
+            <div className="rounded-lg border-2 border-emerald-300 bg-emerald-50 p-4 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+                <div className="flex-1 space-y-1.5">
+                  <Label htmlFor="setTotalAmount" className="text-emerald-950 font-semibold">
+                    Set total (₹) *
+                  </Label>
+                  <Input
+                    id="setTotalAmount"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={setTotalAmount || ''}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      if (raw === '') {
+                        updateSetTotalAmount(0);
+                        return;
+                      }
+                      updateSetTotalAmount(parseFloat(raw) || 0);
+                    }}
+                    placeholder="Enter package amount"
+                    className="bg-white text-lg font-semibold h-11"
+                  />
+                  <p className="text-xs text-emerald-800">
+                    This is the one price for all items on this set bill.
+                  </p>
+                </div>
+                <div className="sm:text-right shrink-0 pb-1">
+                  <div className="text-sm text-emerald-800">Grand total</div>
+                  <div className="text-xl font-bold text-emerald-950">
+                    ₹{totalAmount.toLocaleString()}
+                  </div>
+                  {serviceCharge > 0 && (
+                    <div className="text-xs text-emerald-700">includes {extraChargeLabel.toLowerCase()}</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -783,7 +1294,7 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
             </div>
             {serviceCharge > 0 && (
               <div className="flex justify-between text-lg">
-                <span>Service Charge:</span>
+                <span>{extraChargeLabel}:</span>
                 <span>₹{serviceCharge.toLocaleString()}</span>
               </div>
             )}

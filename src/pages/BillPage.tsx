@@ -126,6 +126,7 @@ export default function BillPage() {
              items: bill.items,
              subtotal: bill.subtotal,
              serviceCharge: bill.serviceCharge || 0,
+             serviceChargeLabel: (bill as { serviceChargeLabel?: string }).serviceChargeLabel,
              totalAmount: bill.totalAmount,
              paymentStatus: bill.paymentStatus,
              paymentMethod: bill.paymentMethod,

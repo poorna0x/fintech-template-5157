@@ -11,6 +11,7 @@
 
 export type InventorySearchable = {
   product_name?: string | null;
+  full_name?: string | null;
   code?: string | null;
 };
 
@@ -85,49 +86,34 @@ function tokenMatchesNormalized(hayNorm: string, token: string): boolean {
   return false;
 }
 
-/**
- * Higher score = better match. Returns null if no match.
- * Scores are designed so callers can sort descending.
- */
-export function scoreInventoryMatch(
-  productName: string | null | undefined,
-  code: string | null | undefined,
+function scoreOneNameField(
+  name: string,
+  codeStr: string,
   query: string
 ): number | null {
-  const q = query.trim();
-  if (!q) return 0;
-
-  const name = productName ?? '';
-  const codeStr = code ?? '';
   const nameLower = name.toLowerCase();
   const codeLower = codeStr.toLowerCase();
-  const qLower = q.toLowerCase();
+  const qLower = query.toLowerCase();
   const nameNorm = normalizeInventoryText(name);
   const codeNorm = normalizeInventoryText(codeStr);
-  const qNorm = normalizeInventoryText(q);
-  const tokens = tokenizeInventoryQuery(q);
+  const qNorm = normalizeInventoryText(query);
+  const tokens = tokenizeInventoryQuery(query);
 
-  // Punctuation / symbol-only query (nothing alphanumeric to match)
   if (!qNorm && tokens.length === 0) return null;
 
-  // Exact normalized code / name
   if (codeNorm && codeNorm === qNorm) return 1000;
   if (nameNorm && nameNorm === qNorm) return 950;
 
-  // Starts-with (raw or normalized)
   if (codeLower.startsWith(qLower) || (codeNorm && qNorm && codeNorm.startsWith(qNorm))) return 900;
   if (nameLower.startsWith(qLower) || (nameNorm && qNorm && nameNorm.startsWith(qNorm))) return 850;
 
-  // Contiguous substring (legacy includes)
   if (codeLower.includes(qLower) || (codeNorm && qNorm && codeNorm.includes(qNorm))) return 800;
   if (nameLower.includes(qLower) || (nameNorm && qNorm && nameNorm.includes(qNorm))) return 750;
 
-  // All tokens present (order-independent) on name or code
   if (tokens.length > 0) {
     const hay = `${nameNorm} ${codeNorm}`;
     const allHit = tokens.every((t) => tokenMatchesNormalized(hay, t));
     if (allHit) {
-      // Prefer more specific (fewer leftover chars)
       const coverage = Math.min(100, Math.round((qNorm.length / Math.max(nameNorm.length, 1)) * 100));
       return 500 + coverage;
     }
@@ -136,13 +122,36 @@ export function scoreInventoryMatch(
   return null;
 }
 
+/**
+ * Higher score = better match. Returns null if no match.
+ * Scores are designed so callers can sort descending.
+ * Optional fullName is also matched (customer-facing alias).
+ */
+export function scoreInventoryMatch(
+  productName: string | null | undefined,
+  code: string | null | undefined,
+  query: string,
+  fullName?: string | null | undefined
+): number | null {
+  const q = query.trim();
+  if (!q) return 0;
+
+  const productScore = scoreOneNameField(productName ?? '', code ?? '', q);
+  const full = (fullName ?? '').trim();
+  const fullScore = full ? scoreOneNameField(full, '', q) : null;
+
+  if (productScore == null && fullScore == null) return null;
+  return Math.max(productScore ?? 0, fullScore ?? 0);
+}
+
 export function matchesInventorySearch(
   productName: string | null | undefined,
   code: string | null | undefined,
-  query: string
+  query: string,
+  fullName?: string | null | undefined
 ): boolean {
   if (!query.trim()) return true;
-  return scoreInventoryMatch(productName, code, query) != null;
+  return scoreInventoryMatch(productName, code, query, fullName) != null;
 }
 
 /**
@@ -157,7 +166,7 @@ export function filterInventoryByApproxSearch<T extends InventorySearchable>(
 
   const scored: Array<{ item: T; score: number }> = [];
   for (const item of items) {
-    const score = scoreInventoryMatch(item.product_name, item.code, q);
+    const score = scoreInventoryMatch(item.product_name, item.code, q, item.full_name);
     if (score != null) scored.push({ item, score });
   }
   scored.sort((a, b) => {
@@ -185,7 +194,7 @@ export function filterNestedInventoryByApproxSearch<
   const scored: Array<{ item: T; score: number; name: string }> = [];
   for (const item of items) {
     const inv = resolve?.(item) ?? item.inventory ?? null;
-    const score = scoreInventoryMatch(inv?.product_name, inv?.code, q);
+    const score = scoreInventoryMatch(inv?.product_name, inv?.code, q, inv?.full_name);
     if (score != null) {
       scored.push({ item, score, name: inv?.product_name || '' });
     }

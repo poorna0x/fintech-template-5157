@@ -14,10 +14,12 @@ import { inventoryCache } from '@/lib/inventoryCache';
 import { filterInventoryByApproxSearch, scoreInventoryMatch } from '@/lib/inventorySearch';
 import TechnicianInventoryManagement from './TechnicianInventoryManagement';
 import StorageLocationsMap from './admin/StorageLocationsMap';
+import { invalidateDocumentInventoryCatalog } from '@/components/document/InventoryItemSearchField';
 
 interface InventoryItem {
   id: string;
   product_name: string;
+  full_name?: string | null;
   code: string | null;
   price: number;
   quantity: number;
@@ -36,6 +38,7 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
   const [selectedInventoryItem, setSelectedInventoryItem] = useState<InventoryItem | null>(null);
   const [inventoryFormData, setInventoryFormData] = useState({
     product_name: '',
+    full_name: '',
     code: '',
     price: '',
     quantity: ''
@@ -151,7 +154,7 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
     const ranked = filterInventoryByApproxSearch(inventoryItems, searchQuery).slice(0, 8);
     const suggestions: Array<{ type: 'name' | 'code'; value: string; item: InventoryItem }> = [];
     for (const item of ranked) {
-      const score = scoreInventoryMatch(item.product_name, item.code, searchQuery) ?? 0;
+      const score = scoreInventoryMatch(item.product_name, item.code, searchQuery, item.full_name) ?? 0;
       const codeNormHit =
         item.code &&
         score >= 800 &&
@@ -216,6 +219,7 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
   const handleAddInventory = () => {
     setInventoryFormData({
       product_name: '',
+      full_name: '',
       code: '',
       price: '',
       quantity: ''
@@ -228,6 +232,7 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
     setSelectedInventoryItem(item);
     setInventoryFormData({
       product_name: item.product_name || '',
+      full_name: item.full_name || '',
       code: item.code || '',
       price: item.price?.toString() || '',
       quantity: item.quantity?.toString() || ''
@@ -272,6 +277,7 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
       if (editInventoryDialogOpen && selectedInventoryItem) {
         const { error } = await db.inventory.update(selectedInventoryItem.id, {
           product_name: inventoryFormData.product_name,
+          full_name: inventoryFormData.full_name.trim() || null,
           code: inventoryFormData.code || null,
           price: price,
           quantity: quantity
@@ -290,6 +296,7 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
       } else {
         const { error } = await db.inventory.create({
           product_name: inventoryFormData.product_name,
+          full_name: inventoryFormData.full_name.trim() || null,
           code: inventoryFormData.code || undefined,
           price: price,
           quantity: quantity
@@ -309,6 +316,7 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
 
       setInventoryFormData({
         product_name: '',
+        full_name: '',
         code: '',
         price: '',
         quantity: ''
@@ -331,6 +339,7 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
           inventoryCache.clear(cacheKey);
         }
       });
+      invalidateDocumentInventoryCatalog();
 
       const scrollY = window.scrollY ?? document.documentElement.scrollTop;
       await loadInventory(true); // Force reload after save
@@ -481,6 +490,7 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
           inventoryCache.clear(cacheKey);
         }
       });
+      invalidateDocumentInventoryCatalog();
       
       // Optimistically update local state instead of reloading
       setInventoryItems(prev => prev.filter(item => item.id !== id));
@@ -867,6 +877,7 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
           setEditInventoryDialogOpen(false);
           setInventoryFormData({
             product_name: '',
+            full_name: '',
             code: '',
             price: '',
             quantity: ''
@@ -890,6 +901,18 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
                 onChange={(e) => setInventoryFormData({ ...inventoryFormData, product_name: e.target.value })}
                 placeholder="Enter product name"
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="full_name">Full name (customer)</Label>
+              <Input
+                id="full_name"
+                value={inventoryFormData.full_name}
+                onChange={(e) => setInventoryFormData({ ...inventoryFormData, full_name: e.target.value })}
+                placeholder="Name shown on bills / quotes / invoices"
+              />
+              <p className="text-xs text-muted-foreground">
+                Optional. Used on customer documents when set; otherwise product name is used.
+              </p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="code">Product Code (Optional)</Label>
@@ -932,6 +955,7 @@ const InventoryManagement: React.FC<InventoryManagementProps> = ({ onBack }) => 
                 setEditInventoryDialogOpen(false);
                 setInventoryFormData({
                   product_name: '',
+                  full_name: '',
                   code: '',
                   price: '',
                   quantity: ''

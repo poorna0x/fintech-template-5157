@@ -884,6 +884,7 @@ COMMENT ON COLUMN public.follow_ups.completed IS 'Whether this follow-up was com
 CREATE TABLE public.inventory (
     id uuid DEFAULT extensions.uuid_generate_v4() NOT NULL,
     product_name character varying(255) NOT NULL,
+    full_name text,
     code character varying(100),
     price numeric(10,2) DEFAULT 0 NOT NULL,
     quantity integer DEFAULT 0 NOT NULL,

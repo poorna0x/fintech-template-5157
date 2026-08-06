@@ -15,6 +15,7 @@ export function billToBillPdfData(bill: Bill) {
     subtotal: bill.subtotal,
     totalTax: bill.totalTax,
     serviceCharge: bill.serviceCharge || 0,
+    serviceChargeLabel: (bill as { serviceChargeLabel?: string }).serviceChargeLabel,
     totalAmount: bill.totalAmount,
     paymentStatus: bill.paymentStatus,
     paymentMethod: bill.paymentMethod,

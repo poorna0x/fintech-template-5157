@@ -54,6 +54,8 @@ export interface PDFBillData {
   }>;
   subtotal: number;
   serviceCharge?: number;
+  /** Label for the extra charge line on the PDF (e.g. Service Charge / Visiting Charge). */
+  serviceChargeLabel?: string;
   totalAmount: number;
   paymentStatus: string;
   paymentMethod?: string;
@@ -805,8 +807,8 @@ function createBillContent(data: PDFBillData): string {
             <tr>
                 <td>${sanitizeForTemplate(item.description)}</td>
               <td>${item.quantity}</td>
-              <td>₹${item.unitPrice.toLocaleString()}</td>
-              <td>₹${item.total.toLocaleString()}</td>
+              <td>${item.unitPrice === 0 ? '—' : `₹${item.unitPrice.toLocaleString()}`}</td>
+              <td>${item.total === 0 ? '—' : `₹${item.total.toLocaleString()}`}</td>
             </tr>
           `).join('')}
         </tbody>
@@ -820,7 +822,7 @@ function createBillContent(data: PDFBillData): string {
         </div>
         ${data.serviceCharge && data.serviceCharge > 0 ? `
           <div class="summary-row">
-            <span>Service Charge:</span>
+            <span>${sanitizeForTemplate(data.serviceChargeLabel || 'Service Charge')}:</span>
             <span>₹${data.serviceCharge.toLocaleString()}</span>
           </div>
         ` : ''}
