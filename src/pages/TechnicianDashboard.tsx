@@ -581,10 +581,14 @@ const TechnicianDashboard = () => {
   const [selectedCustomerForReport, setSelectedCustomerForReport] = useState<any>(null);
   const [customerReportJobs, setCustomerReportJobs] = useState<any[]>([]);
   const [loadingCustomerReportJobs, setLoadingCustomerReportJobs] = useState(false);
-  // Photo viewer state for customer report
+  // Photo viewer — completed jobs / job gallery (not customer report)
   const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<{url: string, index: number, total: number} | null>(null);
   const [selectedBillPhotos, setSelectedBillPhotos] = useState<string[]>([]);
+  // Dedicated report photo viewer (matches admin — avoids report dialog stealing pinch/zoom)
+  const [reportPhotoViewerOpen, setReportPhotoViewerOpen] = useState(false);
+  const [reportViewerPhoto, setReportViewerPhoto] = useState<{ url: string; index: number; total: number } | null>(null);
+  const [reportViewerBillPhotos, setReportViewerBillPhotos] = useState<string[] | null>(null);
   const [partsUsedDialogOpen, setPartsUsedDialogOpen] = useState(false);
   const [selectedJobForParts, setSelectedJobForParts] = useState<Job | null>(null);
   const [addReminderDialogOpen, setAddReminderDialogOpen] = useState(false);
@@ -10821,11 +10825,27 @@ const TechnicianDashboard = () => {
       <Dialog
         open={customerReportDialogOpen}
         onOpenChange={(open) => {
-          if (!open && photoViewerOpen) return;
+          if (!open && reportPhotoViewerOpen) return;
           setCustomerReportDialogOpen(open);
+          if (!open) {
+            setReportPhotoViewerOpen(false);
+            setReportViewerPhoto(null);
+            setReportViewerBillPhotos(null);
+          }
         }}
       >
-        <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent
+          className="sm:max-w-4xl max-h-[90vh] overflow-y-auto"
+          onPointerDownOutside={(e) => {
+            if (reportPhotoViewerOpen) e.preventDefault();
+          }}
+          onInteractOutside={(e) => {
+            if (reportPhotoViewerOpen) e.preventDefault();
+          }}
+          onEscapeKeyDown={(e) => {
+            if (reportPhotoViewerOpen) e.preventDefault();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>
               Customer Report -{' '}
@@ -11081,13 +11101,13 @@ const TechnicianDashboard = () => {
                                       <div 
                                         className="relative group cursor-pointer rounded-lg overflow-hidden border-2 border-blue-300 hover:border-blue-500 transition-all"
                                         onClick={() => {
-                                          setSelectedBillPhotos(reportBillAllPhotos);
-                                          setSelectedPhoto({
+                                          setReportViewerBillPhotos(reportBillAllPhotos);
+                                          setReportViewerPhoto({
                                             url: paymentScreenshot!,
                                             index: 0,
                                             total: reportBillAllPhotos.length,
                                           });
-                                          setPhotoViewerOpen(true);
+                                          setReportPhotoViewerOpen(true);
                                         }}
                                       >
                                         <img 
@@ -11118,13 +11138,13 @@ const TechnicianDashboard = () => {
                                         key={idx}
                                         className="relative group cursor-pointer rounded-lg overflow-hidden border-2 border-green-300 hover:border-green-500 transition-all"
                                         onClick={() => {
-                                          setSelectedBillPhotos(reportBillAllPhotos);
-                                          setSelectedPhoto({
+                                          setReportViewerBillPhotos(reportBillAllPhotos);
+                                          setReportViewerPhoto({
                                             url: photo,
                                             index: photoIndex >= 0 ? photoIndex : idx,
                                             total: reportBillAllPhotos.length,
                                           });
-                                          setPhotoViewerOpen(true);
+                                          setReportPhotoViewerOpen(true);
                                         }}
                                       >
                                         <img 
@@ -11294,17 +11314,21 @@ const TechnicianDashboard = () => {
         </React.Suspense>
       )}
 
-      {/* Photo Viewer — shared fullscreen viewer (iOS-safe layout + working arrows) */}
+      {/* Photo viewer for completed jobs / job gallery */}
       <PhotoViewerDialog
         open={photoViewerOpen}
         onOpenChange={(open) => {
           setPhotoViewerOpen(open);
-          if (!open) setSelectedPhoto(null);
+          if (!open) {
+            setSelectedPhoto(null);
+            setSelectedBillPhotos([]);
+          }
         }}
         selectedPhoto={selectedPhoto}
         selectedBillPhotos={selectedBillPhotos}
         selectedJobPhotos={null}
         showDownload={false}
+        showNavigation={Boolean(selectedBillPhotos && selectedBillPhotos.length > 1)}
         onPrevious={() => {
           if (!selectedPhoto || selectedBillPhotos.length === 0) return;
           setSelectedPhoto(
@@ -11321,6 +11345,46 @@ const TechnicianDashboard = () => {
         onClose={() => {
           setPhotoViewerOpen(false);
           setSelectedPhoto(null);
+          setSelectedBillPhotos([]);
+        }}
+      />
+
+      {/* Photo viewer overlay for customer report — separate from job gallery (matches admin) */}
+      <PhotoViewerDialog
+        open={reportPhotoViewerOpen}
+        onOpenChange={setReportPhotoViewerOpen}
+        selectedPhoto={reportViewerPhoto}
+        selectedBillPhotos={reportViewerBillPhotos}
+        selectedJobPhotos={null}
+        showDownload={false}
+        showNavigation={Boolean(reportViewerBillPhotos && reportViewerBillPhotos.length > 1)}
+        onPrevious={() => {
+          if (!reportViewerPhoto || !reportViewerBillPhotos || reportViewerBillPhotos.length <= 1) return;
+          const newIndex =
+            reportViewerPhoto.index > 0 ? reportViewerPhoto.index - 1 : reportViewerBillPhotos.length - 1;
+          setReportViewerPhoto({
+            url: reportViewerBillPhotos[newIndex],
+            index: newIndex,
+            total: reportViewerBillPhotos.length,
+          });
+        }}
+        onNext={() => {
+          if (!reportViewerPhoto || !reportViewerBillPhotos || reportViewerBillPhotos.length <= 1) return;
+          const newIndex =
+            reportViewerPhoto.index < reportViewerBillPhotos.length - 1
+              ? reportViewerPhoto.index + 1
+              : 0;
+          setReportViewerPhoto({
+            url: reportViewerBillPhotos[newIndex],
+            index: newIndex,
+            total: reportViewerBillPhotos.length,
+          });
+        }}
+        onDownload={() => {}}
+        onClose={() => {
+          setReportPhotoViewerOpen(false);
+          setReportViewerPhoto(null);
+          setReportViewerBillPhotos(null);
         }}
       />
 
