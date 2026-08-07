@@ -29,10 +29,11 @@ import {
   type AdminEmailTemplateType,
 } from '@/lib/admin-email-templates';
 import { buildAdminWhatsAppMessage } from '@/lib/admin-whatsapp-templates';
+import { buildComposerAutoAttachments } from '@/lib/admin-composer-auto-attachments';
 import type { BookingConfirmationEmailData } from '@/lib/booking-confirmation-email';
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getCompanyInfoForBrand, getDocumentBrandLabel } from '@/lib/service-brands';
-import { formatPhoneForWhatsApp } from '@/lib/utils';
+import { sendAdminWhatsAppDocument, sendAdminWhatsAppText, sendColdDocumentInvite } from '@/lib/sendAdminWhatsAppApi';
 
 type PreviewMode = 'mobile' | 'desktop';
 type MobilePanel = 'compose' | 'preview';
@@ -42,6 +43,7 @@ interface SentWhatsAppSummary {
   to: string;
   brandLabel: string;
   previewTitle: string;
+  via?: 'api' | 'wa_me';
 }
 
 const TEMPLATE_ORDER: AdminEmailTemplateType[] = [
@@ -58,11 +60,6 @@ export interface AdminWhatsAppComposerPanelProps {
   initialCustomerId?: string | null;
   initialTemplate?: AdminEmailTemplateType;
   onClose?: () => void;
-}
-
-function openWhatsAppWithMessage(phone: string, message: string) {
-  const url = `https://wa.me/${formatPhoneForWhatsApp(phone)}?text=${encodeURIComponent(message)}`;
-  window.open(url, '_blank', 'noopener,noreferrer');
 }
 
 export function AdminWhatsAppComposerPanel({
@@ -92,6 +89,7 @@ export function AdminWhatsAppComposerPanel({
   const [sendBrand, setSendBrand] = useState<DocumentBrand>('hydrogenro');
   const [lastServiceBrand, setLastServiceBrand] = useState<DocumentBrand | null>(null);
   const [linkedCustomerId, setLinkedCustomerId] = useState<string | null>(initialCustomerId ?? null);
+  const [sending, setSending] = useState(false);
 
   const templateMeta = ADMIN_EMAIL_TEMPLATE_META[templateType];
   const activeBrand: DocumentBrand = sendBrand;
@@ -319,20 +317,122 @@ export function AdminWhatsAppComposerPanel({
     setSendPhase('confirm');
   };
 
-  const handleOpenWhatsApp = (phone: string) => {
+  const handleOpenWhatsApp = async (phone: string) => {
     if (!phone.trim()) {
       toast.error('Enter a recipient phone number');
       return;
     }
+    if (sending) return;
+    setSending(true);
+    try {
+      const wantsPdf = Boolean(templateMeta.autoAttachPdf && selectedSourceId);
+      if (wantsPdf) {
+        toast.message('Generating PDF…');
+        let attachments;
+        try {
+          attachments = await buildComposerAutoAttachments({
+            templateType,
+            sourceRecordId: selectedSourceId,
+            documentBrand: activeBrand,
+          });
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : 'Could not generate PDF');
+          return;
+        }
+        const pdf = attachments[0];
+        if (!pdf?.content) {
+          toast.error('No PDF to send');
+          return;
+        }
+        const docResult = await sendAdminWhatsAppDocument({
+          to: phone.trim(),
+          pdfBase64: pdf.content,
+          filename: pdf.filename,
+          caption: whatsappPreview.text.slice(0, 1024),
+          customerId: linkedCustomerId,
+        });
+        if (!docResult.ok) {
+          if (docResult.needsWindowOrTemplate) {
+            const customerName =
+              (templateType === 'booking_confirmation'
+                ? bookingForm.customerName
+                : documentForm.customerName
+              ).trim() || 'Customer';
+            const invite = await sendColdDocumentInvite({
+              to: phone.trim(),
+              kind: templateType,
+              customerName,
+              customerId: linkedCustomerId,
+              ref: documentForm.documentRef?.trim() || undefined,
+              amount: undefined,
+              documentLabel:
+                templateType === 'quotation'
+                  ? 'quotation'
+                  : templateType === 'invoice'
+                    ? 'tax invoice'
+                    : templateType === 'service_bill'
+                      ? 'service bill'
+                      : templateType === 'amc_document'
+                        ? 'AMC agreement'
+                        : templateType === 'warranty_document'
+                          ? 'warranty card'
+                          : 'document',
+            });
+            if (invite.ok) {
+              toast.success(
+                '24h window closed — invite template sent. When they reply, send the PDF again.'
+              );
+              return;
+            }
+            toast.error(
+              invite.error ||
+                '24h window closed — customer must message first before PDF can send'
+            );
+            return;
+          }
+          toast.error(docResult.error || 'PDF send failed');
+          return;
+        }
+        setSentSummary({
+          to: phone.trim(),
+          brandLabel: activeBrandLabel,
+          previewTitle: whatsappPreview.previewTitle,
+          via: 'api',
+        });
+        setSendPhase('sent');
+        toast.success(`PDF sent via WhatsApp to ${phone.trim()}`);
+        return;
+      }
 
-    openWhatsAppWithMessage(phone.trim(), whatsappPreview.text);
-    setSentSummary({
-      to: phone.trim(),
-      brandLabel: activeBrandLabel,
-      previewTitle: whatsappPreview.previewTitle,
-    });
-    setSendPhase('sent');
-    toast.success(`Opened WhatsApp for ${phone.trim()}`);
+      const result = await sendAdminWhatsAppText({
+        to: phone.trim(),
+        text: whatsappPreview.text,
+        customerId: linkedCustomerId,
+        fallbackWaMe: true,
+      });
+      if (!result.ok) {
+        toast.error(result.error || 'Send failed');
+        return;
+      }
+      setSentSummary({
+        to: phone.trim(),
+        brandLabel: activeBrandLabel,
+        previewTitle: whatsappPreview.previewTitle,
+        via: result.via,
+      });
+      setSendPhase('sent');
+      if (result.via === 'api') {
+        toast.success(`Sent via WhatsApp API to ${phone.trim()}`);
+      } else {
+        toast.message(
+          result.needsWindowOrTemplate
+            ? '24h window closed — opened phone WhatsApp instead'
+            : `Opened WhatsApp for ${phone.trim()}`
+        );
+      }
+    } finally {
+      setSending(false);
+    }
   };
 
   const renderSendCard = (compact = false) => (
@@ -341,7 +441,8 @@ export function AdminWhatsAppComposerPanel({
         <CardHeader className="pb-3">
           <CardTitle className="text-base sm:text-lg">Send WhatsApp</CardTitle>
           <CardDescription className="text-xs sm:text-sm">
-            Opens WhatsApp with your message pre-filled. Attach PDFs manually in WhatsApp if needed.
+            Sends via WhatsApp Cloud API when the 24h window is open. Service bill / tax invoice
+            PDFs attach automatically when a source is selected.
           </CardDescription>
         </CardHeader>
       )}
@@ -394,7 +495,7 @@ export function AdminWhatsAppComposerPanel({
               </p>
             </div>
 
-            <p className="text-sm font-semibold text-slate-900">Confirm before opening WhatsApp</p>
+            <p className="text-sm font-semibold text-slate-900">Confirm before sending</p>
             <div className="rounded-lg border border-white/80 bg-white p-3 text-sm space-y-2">
               <div className="flex flex-wrap gap-x-4 gap-y-1">
                 <span className="text-slate-500">Send as</span>
@@ -423,17 +524,27 @@ export function AdminWhatsAppComposerPanel({
                   <Button
                     type="button"
                     className="w-full sm:flex-1 bg-black hover:bg-gray-800 text-white"
-                    onClick={() => handleOpenWhatsApp(sendTo)}
+                    disabled={sending}
+                    onClick={() => void handleOpenWhatsApp(sendTo)}
                   >
-                    <WhatsAppIcon className="w-4 h-4 mr-2" />
+                    {sending ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <WhatsAppIcon className="w-4 h-4 mr-2" />
+                    )}
                     Primary: {sendTo}
                   </Button>
                   <Button
                     type="button"
                     className="w-full sm:flex-1 bg-black hover:bg-gray-800 text-white"
-                    onClick={() => handleOpenWhatsApp(alternatePhone)}
+                    disabled={sending}
+                    onClick={() => void handleOpenWhatsApp(alternatePhone)}
                   >
-                    <WhatsAppIcon className="w-4 h-4 mr-2" />
+                    {sending ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <WhatsAppIcon className="w-4 h-4 mr-2" />
+                    )}
                     Alternate: {alternatePhone}
                   </Button>
                 </>
@@ -441,10 +552,15 @@ export function AdminWhatsAppComposerPanel({
                 <Button
                   type="button"
                   className="w-full sm:flex-1 bg-black hover:bg-gray-800 text-white"
-                  onClick={() => handleOpenWhatsApp(sendTo)}
+                  disabled={sending}
+                  onClick={() => void handleOpenWhatsApp(sendTo)}
                 >
-                  <WhatsAppIcon className="w-4 h-4 mr-2" />
-                  Open WhatsApp
+                  {sending ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <WhatsAppIcon className="w-4 h-4 mr-2" />
+                  )}
+                  Send WhatsApp
                 </Button>
               )}
             </div>

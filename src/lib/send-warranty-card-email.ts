@@ -46,6 +46,20 @@ function overallWarrantyEnd(data: WarrantyCardPDFData): string {
   );
 }
 
+/** PDF base64 for WhatsApp document send. */
+export async function generateWarrantyCardPdfBase64(
+  data: WarrantyCardPDFData
+): Promise<{ pdfBase64: string; filename: string; size: number }> {
+  const sessionReady = await ensureSupabaseSessionForWrite();
+  if (!sessionReady.ok) {
+    throw new Error('Could not verify your session. Please try again.');
+  }
+  return generateDocumentPdfBase64({
+    html: generateWarrantyCardHTML(data),
+    filename: warrantyPdfFilename(data),
+  });
+}
+
 export async function sendWarrantyCardEmail(
   params: SendWarrantyCardEmailParams
 ): Promise<SendWarrantyCardEmailResult> {

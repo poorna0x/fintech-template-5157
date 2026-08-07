@@ -995,8 +995,8 @@ export default function WarrantyManagementDialog({
                                 className="h-8 w-8 p-0"
                                 title={
                                   customerEmail
-                                    ? 'Email warranty card PDF'
-                                    : 'Email warranty card (add customer email)'
+                                    ? 'Send warranty card PDF'
+                                    : 'Send warranty card (add email or use WhatsApp)'
                                 }
                                 disabled={generatingId === w.id || downloadingId === w.id}
                                 onClick={() => openWarrantyEmail(w as unknown as PublicWarranty)}
@@ -1422,7 +1422,7 @@ export default function WarrantyManagementDialog({
                           onClick={() => openDraftWarrantyEmail()}
                         >
                           <Mail className="h-4 w-4 mr-2" />
-                          Email PDF
+                          Send PDF
                         </Button>
                       </div>
                       <div className="flex flex-col-reverse sm:flex-row gap-2">
@@ -1458,6 +1458,7 @@ export default function WarrantyManagementDialog({
         brand={documentBrand}
         customerEmailOnFile={customer?.email}
         customerId={customer?.id}
+        defaultPhone={customer?.phone}
         onSaveCustomerEmail={handleSaveCustomerEmail}
       />
     </Dialog>

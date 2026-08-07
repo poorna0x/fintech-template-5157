@@ -56,6 +56,8 @@ import { isValidUpiId, normalizeUpiId, normalizePaymentPhone } from '@/lib/upiPa
 // button actions (data export ZIP, styled QR image). They are dynamically
 // imported at their call sites so they stay out of the main Settings chunk.
 import CallingPage from '@/pages/CallingPage';
+import WhatsAppInboxPage from '@/pages/WhatsAppInboxPage';
+import WhatsAppSettingsPage from '@/pages/WhatsAppSettingsPage';
 import { registerAdminPWA } from '@/lib/pwa';
 import { EmailTrackingSettings } from '@/components/admin/EmailTrackingSettings';
 import { BookingIntentArchiveSettings } from '@/components/admin/BookingIntentArchiveSettings';
@@ -388,6 +390,12 @@ const Settings = () => {
   const [showCallingPage, setShowCallingPage] = useState(
     () => parseSettingsUrl(location.search).panel === 'calling'
   );
+  const [showWhatsAppInboxPage, setShowWhatsAppInboxPage] = useState(
+    () => parseSettingsUrl(location.search).panel === 'whatsapp-inbox'
+  );
+  const [showWhatsAppSettingsPage, setShowWhatsAppSettingsPage] = useState(
+    () => parseSettingsUrl(location.search).panel === 'whatsapp-settings'
+  );
   const [showRecurringServicePage, setShowRecurringServicePage] = useState(
     () => parseSettingsUrl(location.search).panel === 'recurring-service'
   );
@@ -472,6 +480,8 @@ const Settings = () => {
     prevSettingsPanelRef.current = panel;
 
     setShowCallingPage(panel === 'calling');
+    setShowWhatsAppInboxPage(panel === 'whatsapp-inbox');
+    setShowWhatsAppSettingsPage(panel === 'whatsapp-settings');
     setShowRecurringServicePage(panel === 'recurring-service');
     setRemindersDialogOpen(panel === 'reminders');
     setAdvancedSearchDialogOpen(panel === 'advanced-search');
@@ -1816,7 +1826,7 @@ const Settings = () => {
   }, []);
 
   useEffect(() => {
-    if (showCallingPage || showRecurringServicePage) return;
+    if (showCallingPage || showWhatsAppInboxPage || showWhatsAppSettingsPage || showRecurringServicePage) return;
 
     const pairs: Array<[SettingsLazySection, React.RefObject<HTMLDivElement | null>]> = [
       ['todos', todosSectionRef],
@@ -1848,7 +1858,7 @@ const Settings = () => {
       observers.push(obs);
     }
     return () => observers.forEach((o) => o.disconnect());
-  }, [ensureSettingsSectionLoaded, showCallingPage, showRecurringServicePage]);
+  }, [ensureSettingsSectionLoaded, showCallingPage, showWhatsAppInboxPage, showWhatsAppSettingsPage, showRecurringServicePage]);
 
   // Deep-link / panel open: fetch only what that panel needs.
   useEffect(() => {
@@ -2080,6 +2090,88 @@ const Settings = () => {
           <CallingPage
             hideHeader={true}
             onBack={closeSettingsPanel}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (showWhatsAppSettingsPage) {
+    return (
+      <div className="admin-page">
+        <div className="bg-card border-b border-border">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 py-4 sm:py-0 sm:h-16">
+              <div className="flex items-center">
+                <img
+                  src="/whatsapp.png"
+                  alt=""
+                  className="w-7 h-7 sm:w-8 sm:h-8 mr-2 sm:mr-3 shrink-0 rounded-md object-contain"
+                  width={32}
+                  height={32}
+                />
+                <div>
+                  <h1 className="text-lg sm:text-xl font-bold text-foreground">WhatsApp settings</h1>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={closeSettingsPanel}
+                className="text-muted-foreground hover:text-foreground -ml-2"
+              >
+                <ArrowLeft className="w-4 h-4 mr-1" />
+                Back
+              </Button>
+            </div>
+          </div>
+        </div>
+        <div className="container mx-auto px-4 py-4 sm:py-8">
+          <WhatsAppSettingsPage
+            hideHeader
+            onBack={closeSettingsPanel}
+            onOpenInbox={() => openSettingsPanel('whatsapp-inbox')}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (showWhatsAppInboxPage) {
+    return (
+      <div className="admin-page">
+        <div className="bg-card border-b border-border">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 py-4 sm:py-0 sm:h-16">
+              <div className="flex items-center">
+                <img
+                  src="/whatsapp.png"
+                  alt=""
+                  className="w-7 h-7 sm:w-8 sm:h-8 mr-2 sm:mr-3 shrink-0 rounded-md object-contain"
+                  width={32}
+                  height={32}
+                />
+                <div>
+                  <h1 className="text-lg sm:text-xl font-bold text-foreground">WhatsApp</h1>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={closeSettingsPanel}
+                className="text-muted-foreground hover:text-foreground -ml-2"
+              >
+                <ArrowLeft className="w-4 h-4 mr-1" />
+                Back
+              </Button>
+            </div>
+          </div>
+        </div>
+        <div className="container mx-auto px-4 py-4 sm:py-8">
+          <WhatsAppInboxPage
+            hideHeader
+            onBack={closeSettingsPanel}
+            initialPhone={parseSettingsUrl(location.search).panelId}
           />
         </div>
       </div>
@@ -2726,6 +2818,35 @@ const Settings = () => {
                 <PhoneCall className="w-4 h-4 shrink-0" />
                 Open Calling Page
               </Button>
+            }
+          />
+
+          {/* WhatsApp Cloud API inbox */}
+          <SettingsActionCard
+            sectionId="whatsapp-inbox"
+            title="WhatsApp"
+            description="Inbox, send controls, rate card, and expected Meta bill"
+            icon={<img src="/whatsapp.png" alt="" className="w-5 h-5 object-contain" width={20} height={20} />}
+            actions={
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9"
+                  onClick={() => openSettingsPanel('whatsapp-inbox')}
+                >
+                  <img src="/whatsapp.png" alt="" className="w-4 h-4 object-contain" width={16} height={16} />
+                  Open inbox
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9"
+                  onClick={() => openSettingsPanel('whatsapp-settings')}
+                >
+                  Settings
+                </Button>
+              </div>
             }
           />
 

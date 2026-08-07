@@ -102,7 +102,7 @@ export default function DocumentPreviewDialog({
               onClick={onEmail}
             >
               <Mail className="w-4 h-4 shrink-0" />
-              <span className="truncate">Email PDF</span>
+              <span className="truncate">Send PDF</span>
             </Button>
           ) : null}
           {onDownload ? (

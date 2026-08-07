@@ -1,5 +1,6 @@
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getCompanyInfoForBrand, getDocumentBrandLabel } from '@/lib/service-brands';
+import { WA_COLD } from '@/lib/whatsappColdTemplates';
 
 export type CallingWhatsAppTemplate =
   | 'service_due'
@@ -243,4 +244,44 @@ export function buildCallingWhatsAppMessage(
         brandFooter(documentBrand),
       ].join('\n');
   }
+}
+
+/** Meta cold template when Calling free-form fails outside the 24h window. */
+export function callingColdTemplateFor(
+  template: CallingWhatsAppTemplate,
+  customerName: string,
+  freeformMessage: string
+): { name: string; languageCode: string; bodyParams: string[] } {
+  const name = String(customerName || 'Customer').trim() || 'Customer';
+  if (template === 'service_due') {
+    return {
+      name: WA_COLD.service_reminder.name,
+      languageCode: WA_COLD.service_reminder.language,
+      bodyParams: WA_COLD.service_reminder.bodyParams(name),
+    };
+  }
+  if (template === 'follow_up') {
+    return {
+      name: WA_COLD.customer_followup.name,
+      languageCode: WA_COLD.customer_followup.language,
+      bodyParams: WA_COLD.customer_followup.bodyParams(name, 'your recent service'),
+    };
+  }
+  if (template === 'easy_booking') {
+    return {
+      name: WA_COLD.appointment_reminder.name,
+      languageCode: WA_COLD.appointment_reminder.language,
+      bodyParams: WA_COLD.appointment_reminder.bodyParams(name, 'a convenient time'),
+    };
+  }
+  const notice =
+    String(freeformMessage || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 120) || 'please reply on this chat';
+  return {
+    name: WA_COLD.general_notice.name,
+    languageCode: WA_COLD.general_notice.language,
+    bodyParams: WA_COLD.general_notice.bodyParams(name, notice),
+  };
 }

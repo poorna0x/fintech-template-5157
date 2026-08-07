@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { WhatsAppIcon } from '../WhatsAppIcon';
 import { getAdminEmailComposerUrl, getAdminWhatsAppComposerUrl, getValidCustomerEmail } from '@/lib/customer-email';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
+import { settingsPanelPath } from '@/lib/settingsUrl';
 import WhatsAppActionDialog from '@/components/admin/WhatsAppActionDialog';
 import PhoneNumbersDialog from '@/components/admin/PhoneNumbersDialog';
 import LocationsDialog from '@/components/admin/LocationsDialog';
@@ -77,10 +78,10 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
       setWhatsappNumbersOpen(true);
       return;
     }
-    window.open(
-      `https://wa.me/${formatPhoneForWhatsApp(customer.phone)}`,
-      '_blank',
-      'noopener,noreferrer'
+    navigate(
+      settingsPanelPath('whatsapp-inbox', {
+        id: formatPhoneForWhatsApp(customer.phone),
+      })
     );
   };
 
@@ -193,6 +194,13 @@ export const ContactSection: React.FC<ContactSectionProps> = ({
         onOpenChange={setWhatsappNumbersOpen}
         customer={customer}
         mode="whatsapp"
+        onWhatsAppPhone={(phone) => {
+          navigate(
+            settingsPanelPath('whatsapp-inbox', {
+              id: formatPhoneForWhatsApp(phone),
+            })
+          );
+        }}
       />
       <LocationsDialog
         open={locationsDialogOpen}

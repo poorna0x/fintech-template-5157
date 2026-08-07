@@ -1,6 +1,8 @@
 /** Full-screen overlays and dialogs on /settings (mobile back / swipe-back). */
 export const SETTINGS_PANELS = [
   'calling',
+  'whatsapp-inbox',
+  'whatsapp-settings',
   'reminders',
   'recurring-service',
   'pending-payments',

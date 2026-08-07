@@ -31,6 +31,12 @@ import { toast } from 'sonner';
 import type { Customer, Reminder, Technician } from '@/types';
 import { db, supabase, REMINDER_ROW_COLUMNS } from '@/lib/supabase';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
+import {
+  openWhatsAppMeDeepLink,
+  sendAdminWhatsAppTemplate,
+  sendAdminWhatsAppText,
+} from '@/lib/sendAdminWhatsAppApi';
+import { WA_COLD } from '@/lib/whatsappColdTemplates';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import CustomerReportDialog from '@/components/admin/CustomerReportDialog';
 import PhotoViewerDialog from '@/components/admin/PhotoViewerDialog';
@@ -492,11 +498,60 @@ export function SettingsPendingPaymentsDialogV2({
   const [reportSelectedBillPhotos, setReportSelectedBillPhotos] = useState<string[] | null>(null);
   const reportTechsLoadedRef = useRef(false);
 
-  const openWhatsApp = (phone: string, message: string) => {
+  const openWhatsApp = (
+    phone: string,
+    message: string,
+    opts?: {
+      customerName?: string;
+      amount?: number;
+      customerId?: string | null;
+      /** Use pending_payment Meta template when 24h window is closed (default true). */
+      coldPendingTemplate?: boolean;
+    }
+  ) => {
     if (!phone) return;
-    const formatted = formatPhoneForWhatsApp(phone);
-    const url = `https://wa.me/${formatted}?text=${encodeURIComponent(message)}`;
-    window.open(url, '_blank', 'noopener,noreferrer');
+    void (async () => {
+      const result = await sendAdminWhatsAppText({
+        to: phone,
+        text: message,
+        customerId: opts?.customerId,
+        fallbackWaMe: false,
+      });
+      if (result.ok) {
+        toast.success('WhatsApp reminder sent');
+        return;
+      }
+
+      const allowColdTpl = opts?.coldPendingTemplate !== false;
+      if (result.needsWindowOrTemplate && allowColdTpl) {
+        const tpl = WA_COLD.pending_payment;
+        const tplResult = await sendAdminWhatsAppTemplate({
+          to: phone,
+          templateName: tpl.name,
+          languageCode: tpl.language,
+          bodyParams: tpl.bodyParams(opts?.customerName || 'Customer', opts?.amount ?? 0),
+          customerId: opts?.customerId,
+        });
+        if (tplResult.ok) {
+          toast.success('Cold template sent (24h window was closed)');
+          return;
+        }
+        openWhatsAppMeDeepLink(phone, message);
+        toast.message(
+          tplResult.error?.includes('not approved') || /template/i.test(tplResult.error || '')
+            ? 'Template not ready yet — opened phone WhatsApp'
+            : 'Opened phone WhatsApp (template send failed)'
+        );
+        return;
+      }
+
+      openWhatsAppMeDeepLink(phone, message);
+      if (result.needsWindowOrTemplate) {
+        toast.message('24h window closed — opened phone WhatsApp');
+      } else {
+        toast.error(result.error || 'WhatsApp send failed — opened phone WhatsApp');
+      }
+    })();
   };
 
   const openCall = (phone: string) => {
@@ -1449,7 +1504,12 @@ export function SettingsPendingPaymentsDialogV2({
                                 className="bg-green-600 hover:bg-green-700 text-white"
                                 onClick={() => {
                                   if (!primaryPhone) return;
-                                  openWhatsApp(primaryPhone, message);
+                                  openWhatsApp(primaryPhone, message, {
+                                    customerName: customer?.name,
+                                    amount: Number(postCompleteWhatsappTarget.amount_pending) || 0,
+                                    customerId: postCompleteWhatsappTarget.entity_id as string | undefined,
+                                    coldPendingTemplate: false,
+                                  });
                                   setPostCompleteWhatsappOpen(false);
                                 }}
                               >
@@ -1461,7 +1521,12 @@ export function SettingsPendingPaymentsDialogV2({
                                 className="bg-green-600 hover:bg-green-700 text-white"
                                 onClick={() => {
                                   if (!alternatePhone) return;
-                                  openWhatsApp(alternatePhone, message);
+                                  openWhatsApp(alternatePhone, message, {
+                                    customerName: customer?.name,
+                                    amount: Number(postCompleteWhatsappTarget.amount_pending) || 0,
+                                    customerId: postCompleteWhatsappTarget.entity_id as string | undefined,
+                                    coldPendingTemplate: false,
+                                  });
                                   setPostCompleteWhatsappOpen(false);
                                 }}
                               >
@@ -1476,7 +1541,12 @@ export function SettingsPendingPaymentsDialogV2({
                               onClick={() => {
                                 const phone = primaryPhone || alternatePhone;
                                 if (!phone) return;
-                                openWhatsApp(phone, message);
+                                openWhatsApp(phone, message, {
+                                  customerName: customer?.name,
+                                  amount: Number(postCompleteWhatsappTarget.amount_pending) || 0,
+                                  customerId: postCompleteWhatsappTarget.entity_id as string | undefined,
+                                  coldPendingTemplate: false,
+                                });
                                 setPostCompleteWhatsappOpen(false);
                               }}
                             >
@@ -1548,7 +1618,11 @@ export function SettingsPendingPaymentsDialogV2({
                     if (canIncludeUpi) {
                       setLastSelectedUpiAccountId(whatsappUpiAccountId);
                     }
-                    openWhatsApp(phone, message);
+                    openWhatsApp(phone, message, {
+                      customerName: customer?.name,
+                      amount: Number(whatsappTarget.amount_pending) || 0,
+                      customerId: whatsappTarget.entity_id as string | undefined,
+                    });
                     setWhatsappDialogOpen(false);
                   };
 

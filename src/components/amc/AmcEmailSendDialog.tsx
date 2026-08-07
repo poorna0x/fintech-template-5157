@@ -14,6 +14,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import { getDefaultDocumentMessage } from '@/lib/admin-email-templates';
 import { ensureSupabaseSessionForWrite } from '@/lib/ensureSupabaseSession';
 import {
@@ -33,8 +35,19 @@ import {
 } from '@/lib/send-amc-agreement-email';
 import { forceLightThemeClass } from '@/lib/force-light-theme';
 import type { AMCPDFOptions } from '@/lib/amc-pdf-generator';
+import { generateAmcPdfBase64ForWhatsApp } from '@/lib/send-amc-whatsapp';
+import { sendAdminWhatsAppDocument, sendColdDocumentInvite, openWhatsAppMeDeepLink } from '@/lib/sendAdminWhatsAppApi';
+import { formatPhoneForWhatsApp, cn } from '@/lib/utils';
+import { supabase } from '@/lib/supabaseClient';
+import {
+  fetchLastInboundAt,
+  hoursLeftInWindow,
+  invalidateInboundWindowCache,
+  isWithinCustomerServiceWindow,
+} from '@/lib/whatsappInbox';
 
 export type AmcPersistResult = { ok: boolean; error?: string };
+export type AmcSendChannel = 'email' | 'whatsapp';
 
 export interface AmcEmailSendDialogProps {
   open: boolean;
@@ -55,6 +68,10 @@ export interface AmcEmailSendDialogProps {
   onPersistBeforeEmail?: (recipients: string[]) => Promise<AmcPersistResult>;
   /** Save AMC to DB after email sends successfully */
   onPersistAfterEmail?: (recipients: string[]) => Promise<AmcPersistResult>;
+  /** Save AMC to DB after WhatsApp PDF / invite sends successfully */
+  onPersistAfterWhatsApp?: () => Promise<AmcPersistResult>;
+  /** Allow Email | WhatsApp channel picker (AMC generator). Default true. */
+  allowWhatsApp?: boolean;
   onSent?: () => void;
 }
 
@@ -75,12 +92,19 @@ export default function AmcEmailSendDialog({
   onSaveCustomerEmail,
   onPersistBeforeEmail,
   onPersistAfterEmail,
+  onPersistAfterWhatsApp,
+  allowWhatsApp = true,
   onSent,
 }: AmcEmailSendDialogProps) {
+  const [channel, setChannel] = useState<AmcSendChannel>('email');
   const [recipientEmail, setRecipientEmail] = useState('');
   const [recipientRows, setRecipientRows] = useState<string[]>([emptyRow()]);
+  const [whatsappPhone, setWhatsappPhone] = useState('');
   const [message, setMessage] = useState(() => getDefaultDocumentMessage('amc_document'));
   const [sending, setSending] = useState(false);
+  const [windowChecking, setWindowChecking] = useState(false);
+  const [windowOpen, setWindowOpen] = useState<boolean | null>(null);
+  const [windowHoursLeft, setWindowHoursLeft] = useState<number | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -90,8 +114,45 @@ export default function AmcEmailSendDialog({
     } else {
       setRecipientRows(seeded.length ? seeded : [emptyRow()]);
     }
+    setWhatsappPhone(String(bill?.customer?.phone || '').trim());
     setMessage(getDefaultDocumentMessage('amc_document'));
-  }, [open, defaultRecipients, singleRecipient]);
+    setChannel('email');
+    setWindowOpen(null);
+    setWindowHoursLeft(null);
+  }, [open, defaultRecipients, singleRecipient, bill?.customer?.phone]);
+
+  useEffect(() => {
+    if (!open || channel !== 'whatsapp' || !allowWhatsApp) return;
+    const phone = formatPhoneForWhatsApp(whatsappPhone);
+    if (!phone || phone.length < 10) {
+      setWindowOpen(null);
+      setWindowHoursLeft(null);
+      return;
+    }
+    let cancelled = false;
+    setWindowChecking(true);
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const inboundAt = await fetchLastInboundAt(phone, supabase);
+          if (cancelled) return;
+          setWindowOpen(isWithinCustomerServiceWindow(inboundAt));
+          setWindowHoursLeft(hoursLeftInWindow(inboundAt));
+        } catch {
+          if (!cancelled) {
+            setWindowOpen(null);
+            setWindowHoursLeft(null);
+          }
+        } finally {
+          if (!cancelled) setWindowChecking(false);
+        }
+      })();
+    }, 400);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [open, channel, allowWhatsApp, whatsappPhone]);
 
   const normalizedRecipients = useMemo(() => {
     if (singleRecipient) {
@@ -119,7 +180,7 @@ export default function AmcEmailSendDialog({
     setRecipientRows((prev) => [...prev, emptyRow()]);
   };
 
-  const handleSend = async () => {
+  const handleSendEmail = async () => {
     if (!bill || !brand) {
       toast.error('Agreement details are missing');
       return;
@@ -239,22 +300,138 @@ export default function AmcEmailSendDialog({
     }
   };
 
+  const handleSendWhatsApp = async () => {
+    if (!bill || !brand) {
+      toast.error('Agreement details are missing');
+      return;
+    }
+    const phone = formatPhoneForWhatsApp(whatsappPhone);
+    if (!phone || phone.length < 10) {
+      toast.error('Enter a valid customer phone number');
+      return;
+    }
+
+    setSending(true);
+    const toastId = toast.loading('Preparing AMC for WhatsApp…');
+    try {
+      const sessionReady = await ensureSupabaseSessionForWrite();
+      if (!sessionReady.ok) {
+        toast.error('Could not refresh your session. Please try again.', { id: toastId });
+        return;
+      }
+
+      if (onPersistBeforeEmail) {
+        toast.loading('Saving AMC to database…', { id: toastId });
+        const preSaved = await onPersistBeforeEmail([]);
+        if (!preSaved.ok) {
+          toast.error(preSaved.error || 'Could not save AMC to database', { id: toastId });
+          return;
+        }
+      }
+
+      toast.loading('Generating PDF…', { id: toastId });
+      const pdf = await generateAmcPdfBase64ForWhatsApp(bill, pdfOptions);
+      toast.loading('Sending on WhatsApp…', { id: toastId });
+      const caption = (message.trim() || getDefaultDocumentMessage('amc_document')).slice(0, 1024);
+      const result = await sendAdminWhatsAppDocument({
+        to: phone,
+        pdfBase64: pdf.pdfBase64,
+        filename: pdf.filename,
+        caption,
+      });
+
+      if (!result.ok) {
+        if (result.needsWindowOrTemplate) {
+          toast.loading('24h window closed — sending invite template…', { id: toastId });
+          const invite = await sendColdDocumentInvite({
+            to: phone,
+            kind: 'amc',
+            customerName: bill.customer?.name || 'Customer',
+          });
+          if (invite.ok) {
+            if (onPersistAfterWhatsApp) {
+              await onPersistAfterWhatsApp();
+            }
+            toast.success(
+              'Invite sent — when they reply YES, open Send again and choose WhatsApp to deliver the PDF',
+              { id: toastId }
+            );
+            onSent?.();
+            onOpenChange(false);
+            return;
+          }
+          openWhatsAppMeDeepLink(phone, caption);
+          toast.success(
+            'Opened phone WhatsApp (invite failed) — attach the PDF manually if needed',
+            { id: toastId }
+          );
+          onSent?.();
+          onOpenChange(false);
+          return;
+        }
+        openWhatsAppMeDeepLink(phone, caption);
+        toast.success('Opened phone WhatsApp as backup', {
+          id: toastId,
+          description: result.error || 'API send failed',
+        });
+        onSent?.();
+        onOpenChange(false);
+        return;
+      }
+
+      if (onPersistAfterWhatsApp) {
+        toast.loading('Saving AMC to database…', { id: toastId });
+        const saved = await onPersistAfterWhatsApp();
+        if (!saved.ok) {
+          toast.warning('WhatsApp sent, but AMC could not be saved', {
+            id: toastId,
+            description: saved.error,
+          });
+          onSent?.();
+          onOpenChange(false);
+          return;
+        }
+      }
+
+      toast.success('AMC PDF sent on WhatsApp', { id: toastId });
+      invalidateInboundWindowCache(phone);
+      onSent?.();
+      onOpenChange(false);
+    } catch (error) {
+      console.error(error);
+      toast.error(error instanceof Error ? error.message : 'Could not send AMC on WhatsApp', {
+        id: toastId,
+      });
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleSend = () => {
+    if (channel === 'whatsapp') void handleSendWhatsApp();
+    else void handleSendEmail();
+  };
+
+  const canSendEmail = Boolean(bill && brand && normalizedRecipients.length);
+  const canSendWhatsApp = Boolean(bill && brand && formatPhoneForWhatsApp(whatsappPhone).length >= 10);
+  const canSend = channel === 'whatsapp' ? canSendWhatsApp : canSendEmail;
+
   return (
     <Dialog open={open} onOpenChange={(next) => !sending && onOpenChange(next)}>
       <DialogContent
         dismissible={false}
         className={forceLightThemeClass(
-          'max-w-lg w-[calc(100vw-1.5rem)] sm:w-full max-h-[min(90vh,720px)] overflow-y-auto p-0 gap-0'
+          'max-w-lg w-[calc(100vw-1.25rem)] sm:w-full max-h-[min(92dvh,720px)] overflow-y-auto p-0 gap-0'
         )}
       >
         <DialogHeader className="px-4 sm:px-6 pt-5 pb-3 border-b bg-violet-50/80">
           <DialogTitle className="text-base sm:text-lg text-violet-950 pr-8">
-            Email AMC agreement
+            Send AMC agreement
           </DialogTitle>
           <DialogDescription className="text-xs sm:text-sm text-violet-900/80">
             {brandLabel
-              ? `PDF attached · sent from ${brandLabel}`
-              : 'PDF will be attached to the email'}
+              ? `PDF · ${brandLabel} · Email or WhatsApp`
+              : 'Send the AMC PDF by email or WhatsApp'}
           </DialogDescription>
         </DialogHeader>
 
@@ -274,7 +451,71 @@ export default function AmcEmailSendDialog({
             </div>
           ) : null}
 
-          {singleRecipient ? (
+          {allowWhatsApp ? (
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Send via</Label>
+              <ToggleGroup
+                type="single"
+                value={channel}
+                onValueChange={(v) => {
+                  if (v === 'email' || v === 'whatsapp') setChannel(v);
+                }}
+                variant="outline"
+                className="grid w-full grid-cols-2 gap-0"
+                disabled={sending}
+              >
+                <ToggleGroupItem value="email" className="h-10 gap-2 data-[state=on]:bg-violet-100">
+                  <Mail className="h-4 w-4" />
+                  Email
+                </ToggleGroupItem>
+                <ToggleGroupItem
+                  value="whatsapp"
+                  className="h-10 gap-2 data-[state=on]:bg-emerald-50"
+                >
+                  <WhatsAppIcon className="h-4 w-4" />
+                  WhatsApp
+                </ToggleGroupItem>
+              </ToggleGroup>
+            </div>
+          ) : null}
+
+          {channel === 'whatsapp' && allowWhatsApp ? (
+            <div className="space-y-2">
+              <Label htmlFor="amc-recipient-phone" className="text-sm font-medium">
+                Customer WhatsApp
+              </Label>
+              <Input
+                id="amc-recipient-phone"
+                type="tel"
+                inputMode="tel"
+                placeholder="Phone with country code"
+                value={whatsappPhone}
+                onChange={(e) => setWhatsappPhone(e.target.value)}
+                className="h-10"
+                disabled={sending}
+              />
+              {windowChecking ? (
+                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Checking 24h window…
+                </p>
+              ) : windowOpen === true ? (
+                <p className="text-xs text-emerald-700">
+                  Window open
+                  {windowHoursLeft != null ? ` · ~${windowHoursLeft}h left to send PDF` : ''}
+                </p>
+              ) : windowOpen === false ? (
+                <p className="text-xs text-amber-800">
+                  Window closed — we&apos;ll try the PDF; if Meta blocks it, an invite template is
+                  sent so they can reply and you can resend.
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  PDF sends when the customer has messaged this business number in the last 24h.
+                </p>
+              )}
+            </div>
+          ) : singleRecipient ? (
             <div className="space-y-2">
               <Label htmlFor="amc-recipient-email" className="text-sm font-medium">
                 Customer email
@@ -353,7 +594,7 @@ export default function AmcEmailSendDialog({
 
           <div className="space-y-2">
             <Label htmlFor="amc-email-message" className="text-sm font-medium">
-              Email message
+              {channel === 'whatsapp' ? 'WhatsApp caption' : 'Email message'}
             </Label>
             <Textarea
               id="amc-email-message"
@@ -364,7 +605,9 @@ export default function AmcEmailSendDialog({
               disabled={sending}
             />
             <p className="text-xs text-muted-foreground">
-              Uses the standard AMC email template. Edit the message above if needed.
+              {channel === 'whatsapp'
+                ? 'Shown with the PDF on WhatsApp (max ~1024 characters).'
+                : 'Uses the standard AMC email template. Edit the message above if needed.'}
             </p>
           </div>
         </div>
@@ -381,14 +624,24 @@ export default function AmcEmailSendDialog({
           </Button>
           <Button
             type="button"
-            className="w-full sm:w-auto bg-violet-700 hover:bg-violet-800"
-            onClick={() => void handleSend()}
-            disabled={sending || !bill || !brand || !normalizedRecipients.length}
+            className={cn(
+              'w-full sm:w-auto',
+              channel === 'whatsapp'
+                ? 'bg-emerald-700 hover:bg-emerald-800'
+                : 'bg-violet-700 hover:bg-violet-800'
+            )}
+            onClick={handleSend}
+            disabled={sending || !canSend}
           >
             {sending ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 Sending…
+              </>
+            ) : channel === 'whatsapp' ? (
+              <>
+                <WhatsAppIcon className="h-4 w-4 mr-2" />
+                Send WhatsApp
               </>
             ) : (
               <>

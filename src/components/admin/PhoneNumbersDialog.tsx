@@ -14,14 +14,16 @@ interface PhoneNumbersDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   customer: Customer | null;
-  /** 'call' shows tel: links, 'whatsapp' opens wa.me. Defaults to 'call'. */
+  /** 'call' shows tel: links, 'whatsapp' opens chat. Defaults to 'call'. */
   mode?: ContactMode;
+  /** Optional override for WhatsApp number pick (e.g. open CRM inbox). */
+  onWhatsAppPhone?: (phone: string) => void;
 }
 
 const getAlternatePhone = (customer: Customer | null | undefined): string =>
   String((customer as any)?.alternate_phone || (customer as any)?.alternatePhone || '').trim();
 
-const openWhatsApp = (phone?: string | null) => {
+const openWhatsAppDefault = (phone?: string | null) => {
   const raw = (phone || '').trim();
   if (!raw) {
     toast.error('Phone number not available');
@@ -36,10 +38,20 @@ const PhoneNumbersDialog: React.FC<PhoneNumbersDialogProps> = ({
   onOpenChange,
   customer,
   mode = 'call',
+  onWhatsAppPhone,
 }) => {
   const isWhatsApp = mode === 'whatsapp';
   const primaryPhone = String(customer?.phone || '').trim();
   const alternatePhone = getAlternatePhone(customer);
+
+  const handleWhatsAppPhone = (phone: string) => {
+    onOpenChange(false);
+    if (onWhatsAppPhone) {
+      onWhatsAppPhone(phone);
+      return;
+    }
+    openWhatsAppDefault(phone);
+  };
 
   const renderCallAction = (phone: string, variant: 'primary' | 'secondary') => {
     const isPrimary = variant === 'primary';
@@ -64,8 +76,7 @@ const PhoneNumbersDialog: React.FC<PhoneNumbersDialogProps> = ({
       <button
         type="button"
         onClick={() => {
-          openWhatsApp(phone);
-          onOpenChange(false);
+          handleWhatsAppPhone(phone);
         }}
         className={
           isPrimary

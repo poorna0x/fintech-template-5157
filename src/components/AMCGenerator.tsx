@@ -913,7 +913,7 @@ export default function AMCGenerator({
                       disabled={!billNumber.trim()}
                     >
                       <Mail className="w-4 h-4 shrink-0" />
-                      <span className="truncate">Email PDF</span>
+                      <span className="truncate">Send PDF</span>
                     </Button>
                   </div>
                 </div>
@@ -1681,7 +1681,7 @@ export default function AMCGenerator({
           pendingBrandAction?.type === 'save'
             ? 'Select Hydrogen RO or Eleven RO. This brand is stored on the AMC contract when you save.'
             : pendingBrandAction?.type === 'email'
-              ? 'The PDF attachment and email will use the selected brand address, logo, and sender.'
+              ? 'The PDF will use the selected brand. Next you can send it by Email or WhatsApp.'
               : pendingBrandAction?.type === 'preview'
                 ? 'The preview will show the agreement with the selected brand logo and address.'
                 : 'The agreement PDF will use the selected brand address and logo.'
@@ -1744,7 +1744,7 @@ export default function AMCGenerator({
               onClick={openEmailFromPreview}
             >
               <Mail className="w-4 h-4 shrink-0" />
-              <span className="truncate">Email AMC</span>
+              <span className="truncate">Send AMC</span>
             </Button>
             <Button
               type="button"
@@ -1793,6 +1793,7 @@ export default function AMCGenerator({
           includeDetails: true,
           showComputerGeneratedText,
         }}
+        allowWhatsApp
         onPersistAfterEmail={async (recipients) => {
           const brand = emailSendContext?.brand;
           if (!brand) {
@@ -1801,6 +1802,15 @@ export default function AMCGenerator({
           return persistAmcToDatabase(brand, {
             emailedTo: recipients,
             sharedVia: 'admin_email',
+          });
+        }}
+        onPersistAfterWhatsApp={async () => {
+          const brand = emailSendContext?.brand;
+          if (!brand) {
+            return { ok: false, error: 'Agreement brand is missing' };
+          }
+          return persistAmcToDatabase(brand, {
+            sharedVia: 'admin_whatsapp',
           });
         }}
       />

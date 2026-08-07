@@ -229,6 +229,29 @@ export function AdminDashboardHeader({
                     onClick={() => {
                       hapticTap();
                       onToolsMenuOpenChange(false);
+                      navigate(settingsPanelPath('whatsapp-inbox'));
+                    }}
+                  >
+                    <MessageSquare className="w-4 h-4 mr-2" />
+                    WhatsApp
+                    {(() => {
+                      try {
+                        const n = Number(localStorage.getItem('wa_inbox_unread_count') || 0);
+                        if (!Number.isFinite(n) || n <= 0) return null;
+                        return (
+                          <span className="ml-auto rounded-full bg-emerald-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                            {n > 99 ? '99+' : n}
+                          </span>
+                        );
+                      } catch {
+                        return null;
+                      }
+                    })()}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      hapticTap();
+                      onToolsMenuOpenChange(false);
                       navigate(settingsPanelPath('recurring-service'));
                     }}
                   >

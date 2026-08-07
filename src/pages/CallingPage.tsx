@@ -42,6 +42,7 @@ import { registerAdminPWA } from '@/lib/pwa';
 import { db, supabase, type CallingPageRpcRow } from '@/lib/supabase';
 import { Customer } from '@/types';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
+import { sendAdminWhatsAppTextWithOptionalTemplate } from '@/lib/sendAdminWhatsAppApi';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import CustomerPhotoGalleryDialog from '@/components/admin/CustomerPhotoGalleryDialog';
 import CustomerReportDialog from '@/components/admin/CustomerReportDialog';
@@ -49,6 +50,7 @@ import PhotoViewerDialog from '@/components/admin/PhotoViewerDialog';
 import { resolveCustomerSendBrand } from '@/lib/admin-email-sources';
 import {
   buildCallingWhatsAppMessage,
+  callingColdTemplateFor,
   callingContextFromCustomer,
   CALLING_WA_TEMPLATE_META,
   CALLING_WA_TEMPLATE_ORDER,
@@ -528,9 +530,23 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
       return;
     }
 
-    const formattedPhone = formatPhoneForWhatsApp(customer.phone);
-    const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(message)}`;
-    window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+    const cold = callingColdTemplateFor(
+      waTemplate,
+      customer.fullName || customer.name || 'Customer',
+      message
+    );
+    const result = await sendAdminWhatsAppTextWithOptionalTemplate({
+      to: customer.phone,
+      text: message,
+      customerId: customer.id,
+      fallbackWaMe: true,
+      coldTemplate: cold,
+    });
+
+    if (!result.ok) {
+      toast.error(result.error || 'Send failed');
+      return;
+    }
 
     await recordCall(
       customer.id,
@@ -543,7 +559,17 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
     );
 
     resetWhatsAppComposer();
-    toast.success('WhatsApp opened — message saved to contact history');
+    if (result.via === 'api' && result.usedTemplate) {
+      toast.success('Cold template sent via API — saved to contact history');
+    } else if (result.via === 'api') {
+      toast.success('WhatsApp sent via API — saved to contact history');
+    } else {
+      toast.success(
+        result.needsWindowOrTemplate
+          ? '24h window closed — opened phone WhatsApp; saved to contact history'
+          : 'WhatsApp opened — message saved to contact history'
+      );
+    }
   };
 
   // Handle viewing photos
@@ -1449,7 +1475,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
               disabled={!waMessage.trim() || waBrandLoading}
             >
               <Send className="w-4 h-4 mr-2" />
-              Open in WhatsApp
+              Send WhatsApp
             </Button>
           </DialogFooter>
         </DialogContent>

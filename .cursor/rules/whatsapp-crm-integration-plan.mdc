@@ -1,0 +1,91 @@
+---
+description: WhatsApp Cloud API CRM integration — phased plan (security, 7-day store, chat UI)
+alwaysApply: true
+---
+
+# WhatsApp CRM Integration Plan
+
+Official Meta WhatsApp Cloud API → HydrogenRO CRM. Implement **one phase at a time**. Test **locally** (`npm run dev` + `.env.local`); do **not** Netlify-deploy unless the user asks.
+
+## Principles (every phase)
+
+- Secrets in **`app_secrets`** (fallback: env for local). Never expose tokens to the client.
+- New tables: **RLS + `public.is_admin_user()`**; webhook/send writes via **service role only**.
+- Store **metadata + text** (and media URLs), not full Meta JSON forever.
+- Media: short-lived object storage (Cloudinary/R2), not DB blobs.
+- **7-day retention** via `purge_ephemeral_data` / `ephemeral-data-cleanup` cron.
+- **No 3s polling** in production CRM — Realtime or fetch-on-open.
+- Chat UI **mobile-first**, WhatsApp-like.
+- Cold outbound (no open 24h window) needs **approved templates** (Phase 6). Free-form OK inside 24h after customer messages.
+
+## Current status
+
+- POC send works locally (text + PDF) with production number.
+- `hello_world` is **test-number only** (Meta #131058) — do not use on the real number.
+- CRM customer WhatsApp sends (composer, Calling, pending payments) use Cloud API with wa.me fallback when the 24h window is closed.
+- Technician job-share WhatsApp stays on `wa.me` (personal tech numbers, not the business API line).
+- Profile photos (DP) not available from Meta Cloud API — deferred.
+
+## Phases
+
+| Phase | Scope | Status |
+|-------|--------|--------|
+| **1. Foundation** | `whatsapp_messages` + RLS, 7-day purge, `whatsapp-helper` + `app_secrets`, harden `whatsapp-send` (admin auth + persist outbound) | Done (local) |
+| **2. Inbound webhook** | Persist inbound + statuses; media → storage URL; local verify via ngrok (no site deploy) | Done (local) |
+| **3. Chat UI** | Admin Tools → WhatsApp inbox (thread list + chat), mobile responsive, reply in 24h window | Done (local) |
+| **4. Wire CRM sends** | Composer / customer flows: API send (keep wa.me as fallback if useful) | Done (local) |
+| **5. AMC / bill / PDF** | Existing PDF generators → temp public HTTPS → document send; log in thread | Done (local) — quotation / invoice / bill / warranty share Email\|WhatsApp send UI (wa.me backup) |
+| **6. Templates** | Meta approved templates for cold outreach; inbox picker when 24h closed | Done (local) — **create/approve templates in Meta Manager**; Calling / service reminders / tech-assigned use API → template → wa.me |
+
+**Out of v1:** forever backup, multi-agent assignment, full bot menus.
+
+## Phase 6 — Meta templates (ops)
+
+Submitted to WABA `1854517668845707` (all UTILITY / `en`, await Meta APPROVED):
+
+| Name | Vars | Use |
+|------|------|-----|
+| `pending_payment` | name, amount | Cold pending payment |
+| `service_reminder` | name | Service due |
+| `amc_expiry_notice` | name, end date | AMC expiry **utility** notice (replaces `amc_renewal` which Meta marked MARKETING) |
+| `quotation_ready` | name, ref | Cold open for quotation PDF |
+| `service_bill_ready` | name, amount | Cold open for service bill PDF |
+| `invoice_ready` | name, amount | Cold open for tax invoice PDF |
+| `amc_document_ready` | name | Cold open for AMC PDF |
+| `warranty_ready` | name | Cold open for warranty PDF |
+| `receipt_ready` | name, amount | Cold open for receipt PDF |
+| `document_ready` | name, doc label | Generic cold open for any PDF |
+| `customer_followup` | name, topic | Generic follow-up |
+| `appointment_reminder` | name, when | Visit / schedule reminder |
+| `payment_received` | name, amount | Payment thanks |
+| `tech_assigned` | name, tech name | Technician assigned |
+| `general_notice` | name, notice | Catch-all cold text |
+
+Registry: `src/lib/whatsappColdTemplates.ts`. Inbox lists APPROVED via `whatsapp-templates`.  
+True cold PDF (DOCUMENT header) needs Meta media sample + app secret — use `document_ready` until then. `hello_world` blocked on production.
+
+## WhatsApp settings (CRM)
+
+Panel: Settings → WhatsApp → **Settings** (`?panel=whatsapp-settings`).  
+Table `whatsapp_crm_settings` (singleton): master enable, cold/PDF/freeform toggles, editable INR rates, monthly budget.  
+Usage RPC `whatsapp_usage_stats` → expected bill from last 7 days + monthly projection.  
+`whatsapp-send` enforces toggles server-side.
+
+## Data (Phase 1+)
+
+Table `whatsapp_messages`: `wa_message_id`, `direction` (in/out), `phone_e164`, `customer_id?`, `type`, `body`, `media_url?`, `media_mime?`, `filename?`, `status`, `template_name?`, `sent_by_user_id?`, `created_at`.  
+Index `(phone_e164, created_at DESC)`. Purge rows older than **7 days**.
+
+## Hook points
+
+- Send: `netlify/functions/whatsapp-send.js` + `whatsapp-helper.js`
+- Webhook: `netlify/functions/whatsapp-webhook.js` (Phase 2)
+- UI: Admin Tools → WhatsApp inbox / Settings panel `whatsapp-inbox` (Phase 3 done)
+- PDF: `whatsapp-send` accepts `pdfBase64` → Cloudinary (`whatsapp/outbound`) → Meta document. Composer auto-attaches bill/invoice; AMC has **WhatsApp AMC PDF** button.
+- Templates: `whatsapp-templates.js` lists APPROVED; inbox cold-send when 24h closed.
+
+## Auth
+
+- Production CRM send: **admin JWT** (`authorizeAdminRequest` / Bearer).
+- Local POC only: optional `WHATSAPP_POC_SECRET` (`pocSecret` body field).
+- Webhook verify: `VERIFY_TOKEN` / `app_secrets.whatsapp_verify_token`.

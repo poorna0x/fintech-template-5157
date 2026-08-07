@@ -702,7 +702,7 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
                     className={documentOutlineBtnClass}
                   >
                     <Mail className="w-4 h-4 shrink-0" />
-                    <span className="truncate">Email PDF</span>
+                    <span className="truncate">Send PDF</span>
                   </Button>
                 </div>
               </div>

@@ -95,6 +95,21 @@ function customerDisplayName(bill: Bill): string {
   return customer.name || customer.fullName || 'Customer';
 }
 
+/** PDF base64 for WhatsApp document send (same HTML as email). */
+export async function generateGeneratorDocumentPdfBase64(
+  kind: GeneratorDocumentEmailKind,
+  bill: Bill
+): Promise<{ pdfBase64: string; filename: string; size: number }> {
+  const sessionReady = await ensureSupabaseSessionForWrite();
+  if (!sessionReady.ok) {
+    throw new Error('Could not verify your session. Please try again.');
+  }
+  return generateDocumentPdfBase64({
+    html: pdfHtmlForKind(kind, bill),
+    filename: pdfFilenameForKind(kind, bill),
+  });
+}
+
 export async function sendGeneratorDocumentEmail(
   params: SendGeneratorDocumentEmailParams
 ): Promise<SendGeneratorDocumentEmailResult> {

@@ -816,7 +816,7 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
                     className={documentOutlineBtnClass}
                   >
                     <Mail className="w-4 h-4 shrink-0" />
-                    <span className="truncate">Email PDF</span>
+                    <span className="truncate">Send PDF</span>
                   </Button>
                 </div>
               </div>

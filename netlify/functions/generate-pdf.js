@@ -24,6 +24,14 @@ const ALLOWED_ASSET_HOSTS = [
   '127.0.0.1',
 ];
 
+function isPrivateOrLoopbackHost(host) {
+  const h = String(host || '').toLowerCase();
+  if (h === 'localhost' || h === '127.0.0.1' || h === '::1') return true;
+  if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(h)) return true;
+  if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h)) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/.test(h)) return true;
+  return false;
+}
 function jsonResponse(statusCode, corsHeaders, body) {
   return {
     statusCode,
@@ -58,7 +66,7 @@ function getAllowedAssetHosts() {
   return hosts;
 }
 
-function isAllowedPdfResourceUrl(url) {
+function isAllowedPdfResourceUrl(url, requestOrigin) {
   if (!url || typeof url !== 'string') return false;
   if (url.startsWith('data:') || url.startsWith('blob:')) return true;
 
@@ -72,6 +80,18 @@ function isAllowedPdfResourceUrl(url) {
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
 
   const host = parsed.hostname.toLowerCase();
+  // Local / LAN hosts (CRM often opened as http://192.168.x.x:8080)
+  if (isPrivateOrLoopbackHost(host)) return true;
+
+  if (requestOrigin) {
+    try {
+      const originHost = new URL(requestOrigin).hostname.toLowerCase();
+      if (host === originHost) return true;
+    } catch {
+      /* ignore */
+    }
+  }
+
   const allowedHosts = getAllowedAssetHosts();
   for (const allowed of allowedHosts) {
     if (host === allowed || host.endsWith(`.${allowed}`)) return true;
@@ -204,7 +224,30 @@ async function waitForDocumentFonts(page) {
   await new Promise((resolve) => setTimeout(resolve, 300));
 }
 
-async function renderHtmlToPdf(html) {
+async function waitForDocumentImages(page) {
+  await page
+    .evaluate(async () => {
+      const imgs = Array.from(document.images || []);
+      await Promise.all(
+        imgs.map(
+          (img) =>
+            new Promise((resolve) => {
+              if (img.complete) {
+                resolve();
+                return;
+              }
+              const done = () => resolve();
+              img.addEventListener('load', done, { once: true });
+              img.addEventListener('error', done, { once: true });
+            })
+        )
+      );
+    })
+    .catch(() => undefined);
+  await new Promise((resolve) => setTimeout(resolve, 200));
+}
+
+async function renderHtmlToPdf(html, requestOrigin) {
   let browser;
   try {
     browser = await launchBrowser();
@@ -217,10 +260,11 @@ async function renderHtmlToPdf(html) {
         req.continue();
         return;
       }
-      if (isAllowedPdfResourceUrl(req.url())) {
+      if (isAllowedPdfResourceUrl(req.url(), requestOrigin)) {
         req.continue();
         return;
       }
+      console.warn('[generate-pdf] blocked asset', resourceType, req.url());
       req.abort();
     });
 
@@ -230,6 +274,7 @@ async function renderHtmlToPdf(html) {
       timeout: 45000,
     });
     await waitForDocumentFonts(page);
+    await waitForDocumentImages(page);
     await page.emulateMediaType('print');
 
     const pdfBuffer = await page.pdf({
@@ -316,7 +361,7 @@ exports.handler = async (event) => {
   const filename = sanitizeFilename(body.filename);
 
   try {
-    const pdfBytes = await renderHtmlToPdf(html);
+    const pdfBytes = await renderHtmlToPdf(html, requestOrigin);
 
     return {
       statusCode: 200,

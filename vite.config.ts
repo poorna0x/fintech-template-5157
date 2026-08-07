@@ -20,6 +20,23 @@ export default defineConfig(({ mode }) => ({
       clientPort: 8080,
     },
     proxy: {
+      // WhatsApp Cloud API POC — local functions (reads WHATSAPP_* from .env.local).
+      '/.netlify/functions/whatsapp-send': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
+      '/.netlify/functions/whatsapp-webhook': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
+      '/.netlify/functions/whatsapp-events': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
+      '/.netlify/functions/whatsapp-templates': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
       // Proxy Netlify functions to avoid CORS issues
       '/.netlify/functions': {
         // Use production functions so nudges like goingNow work without netlify:dev.

@@ -56,6 +56,10 @@ const submitTechMessageReply = require('./submit-tech-message-reply');
 const submitAdminMessageReply = require('./submit-admin-message-reply');
 const notifyAdmins = require('./notify-admins');
 const sendLocationPing = require('./send-location-ping');
+const whatsappSend = require('./whatsapp-send');
+const whatsappWebhook = require('./whatsapp-webhook');
+const whatsappEvents = require('./whatsapp-events');
+const whatsappTemplates = require('./whatsapp-templates');
 
 const PORT = 8888;
 
@@ -134,6 +138,14 @@ const server = http.createServer((req, res) => {
     handler = notifyAdmins;
   } else if (req.url.startsWith('/.netlify/functions/send-location-ping')) {
     handler = sendLocationPing;
+  } else if (req.url.startsWith('/.netlify/functions/whatsapp-send')) {
+    handler = whatsappSend;
+  } else if (req.url.startsWith('/.netlify/functions/whatsapp-webhook')) {
+    handler = whatsappWebhook;
+  } else if (req.url.startsWith('/.netlify/functions/whatsapp-events')) {
+    handler = whatsappEvents;
+  } else if (req.url.startsWith('/.netlify/functions/whatsapp-templates')) {
+    handler = whatsappTemplates;
   } else {
     console.log('⚠️ No handler found for:', req.url);
   }
@@ -278,6 +290,9 @@ server.listen(PORT, '0.0.0.0', () => {
   }
   console.log(`📡 ALTCHA function: http://localhost:${PORT}/.netlify/functions/altcha-verify`);
   console.log(`📍 Distance Matrix: http://localhost:${PORT}/.netlify/functions/distance-matrix`);
+  console.log(
+    `💬 WhatsApp send POC: http://localhost:${PORT}/.netlify/functions/whatsapp-send`
+  );
   console.log(
     `🔐 Secure auth login: http://localhost:${PORT}/.netlify/functions/secure-auth-login`
   );

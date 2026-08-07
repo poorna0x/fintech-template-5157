@@ -52,9 +52,9 @@ const WhatsAppActionDialog: React.FC<WhatsAppActionDialogProps> = ({
           >
             <WhatsAppIcon className="w-4 h-4 mr-3 shrink-0 mt-0.5" />
             <span className="min-w-0 flex-1 text-left">
-              <span className="block font-medium">Open WhatsApp</span>
+              <span className="block font-medium">Open inbox chat</span>
               <span className="block text-xs font-normal text-white/80 leading-snug">
-                Go straight to chat — no pre-filled message
+                Jump to this customer&apos;s WhatsApp thread in CRM
               </span>
             </span>
           </Button>
@@ -69,9 +69,9 @@ const WhatsAppActionDialog: React.FC<WhatsAppActionDialogProps> = ({
           >
             <PenLine className="w-4 h-4 mr-3 shrink-0 mt-0.5" />
             <span className="min-w-0 flex-1 text-left">
-              <span className="block font-medium">WhatsApp template</span>
+              <span className="block font-medium">Compose message</span>
               <span className="block text-xs font-normal text-muted-foreground leading-snug">
-                Compose a branded message with booking, AMC, invoice, and more
+                Branded templates — booking, AMC, invoice, and more
               </span>
             </span>
           </Button>

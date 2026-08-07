@@ -33,6 +33,8 @@ import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import { addDays, addMonths, format } from 'date-fns';
 import { db, supabase } from '@/lib/supabase';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
+import { sendAdminWhatsAppTextWithOptionalTemplate } from '@/lib/sendAdminWhatsAppApi';
+import { WA_COLD } from '@/lib/whatsappColdTemplates';
 import {
   addMonthsToReminderAt,
   getLocalCalendarDateYmd,
@@ -491,13 +493,15 @@ export function RecurringServiceTracker({
     }
   };
 
-  const openWhatsApp = (r: Reminder) => {
+  const openWhatsApp = async (r: Reminder) => {
     const c = r.entity_id ? labels[r.entity_id] : undefined;
     if (!c?.phone) {
       toast.error('No phone number on file');
       return;
     }
-    const every = r.interval_value ? `every ${r.interval_value} month${r.interval_value > 1 ? 's' : ''}` : 'periodic';
+    const every = r.interval_value
+      ? `every ${r.interval_value} month${r.interval_value > 1 ? 's' : ''}`
+      : 'periodic';
     const message = `Hi ${c.name} 😊
 
 This is a friendly reminder for your scheduled ${r.title} (${every}). It's time for your next service.
@@ -510,8 +514,34 @@ For any help/support:
 🌐 Website: https://hydrogenro.com
 
 Thanks & regards 🙏`;
-    const url = `https://wa.me/${formatPhoneForWhatsApp(c.phone)}?text=${encodeURIComponent(message)}`;
-    window.open(url, '_blank', 'noopener,noreferrer');
+
+    const toastId = toast.loading('Sending WhatsApp…');
+    try {
+      const result = await sendAdminWhatsAppTextWithOptionalTemplate({
+        to: c.phone,
+        text: message,
+        customerId: r.entity_id || undefined,
+        fallbackWaMe: true,
+        coldTemplate: {
+          name: WA_COLD.service_reminder.name,
+          languageCode: WA_COLD.service_reminder.language,
+          bodyParams: WA_COLD.service_reminder.bodyParams(c.name || 'Customer'),
+        },
+      });
+      if (!result.ok) {
+        toast.error(result.error || 'Send failed', { id: toastId });
+        return;
+      }
+      if (result.via === 'api' && result.usedTemplate) {
+        toast.success('Service reminder template sent', { id: toastId });
+      } else if (result.via === 'api') {
+        toast.success('WhatsApp sent via API', { id: toastId });
+      } else {
+        toast.success('Opened phone WhatsApp as backup', { id: toastId });
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Send failed', { id: toastId });
+    }
   };
 
   // ---- Status edit ----
@@ -893,7 +923,7 @@ Thanks & regards 🙏`;
                         <Button size="sm" variant="outline" className="h-8 px-2.5 text-xs" onClick={() => openCall(c?.phone || null)}>
                           <Phone className="w-3.5 h-3.5 mr-1" /> Call
                         </Button>
-                        <Button size="sm" variant="outline" className="h-8 px-2.5 text-xs" onClick={() => openWhatsApp(r)}>
+                        <Button size="sm" variant="outline" className="h-8 px-2.5 text-xs" onClick={() => void openWhatsApp(r)}>
                           <WhatsAppIcon className="w-3.5 h-3.5 mr-1 text-green-600" /> WhatsApp
                         </Button>
                       </>
