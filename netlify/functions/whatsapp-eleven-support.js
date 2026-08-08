@@ -66,11 +66,11 @@ async function sendElevenSupportButtons({
         buttons: [
           {
             type: 'reply',
-            reply: { id: BTN_CALL, title: 'Call us' },
+            reply: { id: BTN_CALL, title: 'Call 3311' },
           },
           {
             type: 'reply',
-            reply: { id: BTN_WHATSAPP, title: 'WhatsApp' },
+            reply: { id: BTN_WHATSAPP, title: 'WhatsApp team' },
           },
         ],
       },
@@ -85,7 +85,7 @@ async function sendElevenSupportButtons({
     phone,
     waId,
     'interactive',
-    `${bodyText || ''} [Call us | WhatsApp]`,
+    `${bodyText || ''} [Call 3311 | WhatsApp team]`,
     result
   );
   return { ok: result.ok, error: result.data?.error?.message };
@@ -224,7 +224,7 @@ async function handleElevenSupportButton({
       accessToken,
       db,
       to,
-      bodyText: `WhatsApp ${ELEVEN_SUPPORT_LABEL} on ${ELEVEN_SUPPORT_DISPLAY}. Tap below to open the chat.`,
+      bodyText: `WhatsApp ${ELEVEN_SUPPORT_LABEL} team on ${ELEVEN_SUPPORT_DISPLAY}. Tap below to open the chat.`,
       prefill,
     });
     return { handled: true };

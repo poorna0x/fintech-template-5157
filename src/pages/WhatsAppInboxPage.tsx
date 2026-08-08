@@ -15,6 +15,7 @@ import {
   Trash2,
   UserRound,
   X,
+  Zap,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -23,6 +24,7 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -47,6 +49,10 @@ import { buildAdminDashboardSearch } from '@/lib/adminDashboardUrl';
 import { db, supabase } from '@/lib/supabase';
 import CustomerReportDialog from '@/components/admin/CustomerReportDialog';
 import type { Customer, Technician } from '@/types';
+import {
+  startWhatsAppBookingQuickAction,
+  type WhatsAppBookingQuickAction,
+} from '@/lib/whatsappBookingStart';
 import {
   WHATSAPP_INBOX_COLUMNS,
   WHATSAPP_THREAD_LIMIT,
@@ -129,6 +135,12 @@ type Props = {
   initialPhone?: string | null;
 };
 
+const QUICK_ACTION_LABELS: Record<WhatsAppBookingQuickAction, string> = {
+  book_service: 'Book service',
+  request_location: 'Request location',
+  request_photo: 'Request photo',
+};
+
 export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: Props) {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -163,6 +175,9 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const [mediaUrlCache, setMediaUrlCache] = useState<Record<string, string>>({});
   const [newChatOpen, setNewChatOpen] = useState(false);
   const [newChatPhone, setNewChatPhone] = useState('');
+  const [quickActionConfirm, setQuickActionConfirm] =
+    useState<WhatsAppBookingQuickAction | null>(null);
+  const [quickActionBusy, setQuickActionBusy] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const messagesScrollRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -692,6 +707,35 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     }
   };
 
+  const runQuickAction = async (action: WhatsAppBookingQuickAction) => {
+    if (!selectedPhone || quickActionBusy) return;
+    setQuickActionBusy(true);
+    try {
+      const result = await startWhatsAppBookingQuickAction({
+        phone: selectedPhone,
+        action,
+        customerId: activeThread?.customer_id,
+        customerName: activeThread?.customer_name,
+      });
+      if (!result.ok) {
+        toast.error(result.error || 'Quick action failed');
+        return;
+      }
+      if (result.via === 'template') {
+        toast.success(
+          `Cold template sent${result.templateName ? ` (${result.templateName})` : ''}. Bot continues when they reply.`
+        );
+      } else {
+        toast.success(`${QUICK_ACTION_LABELS[action]} started on WhatsApp`);
+      }
+      setQuickActionConfirm(null);
+      void loadInbox({ soft: true });
+      void loadThread(selectedPhone, { soft: true });
+    } finally {
+      setQuickActionBusy(false);
+    }
+  };
+
   const showList = !selectedPhone;
   const showChat = Boolean(selectedPhone);
 
@@ -1152,6 +1196,47 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                 >
                   <Copy className="h-4 w-4" />
                 </button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#54656f] transition hover:bg-black/5 disabled:opacity-40"
+                      title="Quick actions"
+                      disabled={quickActionBusy}
+                    >
+                      {quickActionBusy ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Zap className="h-4 w-4" />
+                      )}
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-52">
+                    <DropdownMenuLabel>Quick actions</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      disabled={quickActionBusy}
+                      onClick={() => setQuickActionConfirm('book_service')}
+                    >
+                      Book service
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      disabled={quickActionBusy}
+                      onClick={() => setQuickActionConfirm('request_location')}
+                    >
+                      Request location
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      disabled={quickActionBusy}
+                      onClick={() => setQuickActionConfirm('request_photo')}
+                    >
+                      Request photo
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button
@@ -1665,6 +1750,57 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
               onClick={openNewChat}
             >
               Open chat
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(quickActionConfirm)}
+        onOpenChange={(open) => {
+          if (!open && !quickActionBusy) setQuickActionConfirm(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {quickActionConfirm
+                ? QUICK_ACTION_LABELS[quickActionConfirm]
+                : 'Quick action'}
+            </DialogTitle>
+            <DialogDescription>
+              {windowOpen
+                ? 'Starts the booking bot on WhatsApp (step-by-step). Customer replies in this chat.'
+                : '24h window is closed — sends an approved cold template and resumes the bot when they reply.'}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={quickActionBusy}
+              onClick={() => setQuickActionConfirm(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="bg-[#25d366] text-white hover:bg-[#1da851]"
+              disabled={!quickActionConfirm || quickActionBusy}
+              onClick={() =>
+                quickActionConfirm ? void runQuickAction(quickActionConfirm) : undefined
+              }
+            >
+              {quickActionBusy ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Starting…
+                </>
+              ) : windowOpen ? (
+                'Start on WhatsApp'
+              ) : (
+                'Send template & wait'
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

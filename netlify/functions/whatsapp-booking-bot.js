@@ -1,9 +1,10 @@
 /**
  * In-session (24h) WhatsApp booking bot — reply buttons + lists + location.
  *
- * Hi → Book service | Call back | Talk to team
- * Book → Repair/Service | Installation | Custom → (name if new) → location →
- *   date list → time list → purifier photo → confirm → customer + PENDING job
+ * Hi → Service/Repair | Reinstallation | Chat with us
+ * Service paths → identity (if known) → (alt phone + pin if different location / secondary site) →
+ *   date · time · purifier photo → confirm → customer + PENDING job
+ * Chat with us / post-book free-form → Eleven RO main line 9880693311
  *
  * Customer messages stay simple (no lead source / CRM jargon).
  * Internal job still stores lead_source Direct call for admin.
@@ -28,9 +29,54 @@ const STATE_PREFIX = '[Booking bot state]';
 const AWAITING_CUSTOMER_MEDIA_MARKER = '[Awaiting customer media]';
 const POST_BOOKING_REDIRECT_MARKER = '[Post-booking human redirect]';
 
+/**
+ * Session (24h) greeting — interactive reply buttons.
+ * Cold templates cannot send this exact UI; after the customer replies we always
+ * resume with these same buttons / booking steps (see admin_pending + cold open).
+ */
+const GREETING_MENU = {
+  bodyNew: `Hi! Welcome to ${BRAND_LABEL} 💧\n\nHow can we help you today?`,
+  bodyReturning: `Hi! Welcome to ${BRAND_LABEL} 💧\n\nHow can we help you today?`,
+  footer: BRAND_LABEL,
+  buttons: [
+    { id: 'book_service', title: 'Service/Repair' },
+    { id: 'book_reinstall', title: 'Reinstallation' },
+    { id: 'talk_team', title: 'Chat with us' },
+  ],
+};
+
+/** Map interactive / template quick-reply / typed text → greeting intent. */
+function resolveGreetingIntent({ id, title, text } = {}) {
+  const blob = `${id || ''} ${title || ''} ${text || ''}`.toLowerCase().trim();
+  if (!blob) return null;
+  if (
+    /\bbook_reinstall\b/.test(blob) ||
+    /\breinstall/.test(blob) ||
+    /^reinstallation$/.test(String(title || '').trim().toLowerCase())
+  ) {
+    return 'book_reinstall';
+  }
+  if (
+    /\btalk_team\b/.test(blob) ||
+    /\bchat with us\b/.test(blob) ||
+    /\bchat_with_us\b/.test(blob)
+  ) {
+    return 'talk_team';
+  }
+  if (
+    /\bbook_service\b/.test(blob) ||
+    /\bservice\s*\/\s*repair\b/.test(blob) ||
+    /^service\/repair$/.test(String(title || '').trim().toLowerCase())
+  ) {
+    return 'book_service';
+  }
+  return null;
+}
+
 /** Steps where the customer is still mid-flow (not “after booking”). */
 const ACTIVE_BOOKING_STEPS = new Set([
   'await_name',
+  'await_alt_phone',
   'await_location',
   'await_loc_confirm',
   'await_date',
@@ -45,8 +91,16 @@ const ACTIVE_BOOKING_STEPS = new Set([
 ]);
 
 const GREETING_RE =
-  /^(hi+|hii+|hello|hey|hola|namaste|book|booking|service|start|menu)\b/i;
+  /^(hi+|hii+|hello|hey|hola|namaste|book|booking|service|start|menu|help)\b/i;
 const EDIT_RE = /^(edit|change|update|modify)\b/i;
+
+/** Clear booking intents in free-form first messages (no need to tap Hi). */
+const REINSTALL_INTENT_RE =
+  /\b(reinstall|re-install|re installation|relocation|shifting|shift(ing)?\s+(the\s+)?(ro|purifier))\b/i;
+const REPAIR_INTENT_RE =
+  /\b(repair|service|servicing|leak|leaking|not\s+working|no\s+water|filter|technician|tech|booking|book\b|amc|complaint|problem|issue|broken|ro\b|purifier|water\s*purifier)\b/i;
+const CHAT_INTENT_RE =
+  /\b(chat|talk|call\s*(me|back)?|speak|human|agent|support|help\s+me|customer\s*care)\b/i;
 
 const TIME_SLOTS = {
   '9-AM': { slot: 'MORNING', label: '9:00 AM', period: 'morning' },
@@ -83,7 +137,8 @@ const TIME_PERIODS = {
 };
 
 const SERVICE_CHOICES = {
-  svc_repair: { label: 'Repair / Service', subType: 'Repair' },
+  svc_repair: { label: 'Service / Repair', subType: 'Repair' },
+  svc_reinstall: { label: 'Reinstallation', subType: 'Reinstallation' },
   svc_install: { label: 'Installation', subType: 'Installation' },
   svc_custom: { label: 'Custom', subType: 'Service' },
 };
@@ -254,9 +309,46 @@ function formatDateIsoLabel(dateIso) {
 function serviceLabelFromState(state) {
   if (state?.serviceLabel) return state.serviceLabel;
   if (state?.customNote) return `Custom: ${String(state.customNote).slice(0, 40)}`;
-  if (state?.serviceSubType === 'Repair') return 'Repair / Service';
+  if (state?.serviceSubType === 'Repair') return 'Service / Repair';
+  if (state?.serviceSubType === 'Reinstallation') return 'Reinstallation';
   if (state?.serviceSubType === 'Installation') return 'Installation';
   return state?.serviceSubType || 'Service';
+}
+
+function hasUsableAlternatePhone(customer) {
+  const digits = String(customer?.alternate_phone || '').replace(/\D/g, '');
+  return digits.length >= 10;
+}
+
+function normalizeAltPhoneInput(text) {
+  const digits = String(text || '').replace(/\D/g, '');
+  if (digits.length === 10) return digits;
+  if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
+  if (digits.length === 11 && digits.startsWith('0')) return digits.slice(1);
+  return null;
+}
+
+function buildAlternateLocationPayload(loc) {
+  if (!loc || loc.lat == null || loc.lng == null) return null;
+  return {
+    latitude: Number(loc.lat),
+    longitude: Number(loc.lng),
+    formattedAddress: loc.formattedAddress || loc.address || loc.name || '',
+    googleLocation: `https://www.google.com/maps/place/${loc.lat},${loc.lng}`,
+    shortLocation: loc.shortLocation || null,
+  };
+}
+
+function buildAlternateAddressPayload(loc) {
+  if (!loc) return null;
+  return {
+    street: loc.address || loc.formattedAddress || '',
+    area: loc.shortLocation || '',
+    city: 'Bangalore',
+    state: 'Karnataka',
+    pincode: '',
+    landmark: loc.name || loc.shortLocation || '',
+  };
 }
 
 function generateJobNumber(serviceType = 'RO') {
@@ -621,7 +713,7 @@ async function lookupCustomerFull(db, phoneE164) {
   const { data: customer } = await db
     .from('customers')
     .select(
-      'id,full_name,phone,address,location,visible_address,brand,model,service_type'
+      'id,full_name,phone,alternate_phone,address,location,visible_address,alternate_address,alternate_location,alternate_visible_address,brand,model,service_type'
     )
     .or(`phone.like.%${phone},alternate_phone.like.%${phone}`)
     .limit(1)
@@ -706,6 +798,86 @@ async function clearBookingState(db, phone) {
   await setBookingState(db, phone, { step: 'idle' });
 }
 
+/** True when customer messaged inbound within last 24h. */
+async function hasOpenCustomerServiceWindow(db, phoneE164) {
+  const phone = normalizePhoneE164(phoneE164);
+  if (!db || !phone) return false;
+  try {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data } = await db
+      .from('whatsapp_messages')
+      .select('id')
+      .eq('phone_e164', phone)
+      .eq('direction', 'inbound')
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return Boolean(data?.id);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Admin inbox quick action while 24h window is open.
+ * @param {{ db: any, accessToken: string, phoneNumberId: string, to: string }} ctx
+ * @param {'book_service'|'request_location'|'request_photo'} action
+ */
+async function startAdminQuickAction(ctx, action) {
+  const act = String(action || '').trim();
+  await clearBookingState(ctx.db, ctx.to);
+
+  if (act === 'book_service') {
+    const customer = await lookupCustomerFull(ctx.db, ctx.to);
+    if (customer?.id) {
+      await setBookingState(ctx.db, ctx.to, {
+        serviceSubType: 'Repair',
+        serviceLabel: 'Service / Repair',
+      });
+      await sendIdentityConfirm(ctx, customer);
+      return { ok: true, started: 'book_service', mode: 'identity' };
+    }
+    await continueAfterServiceType(ctx, {
+      serviceSubType: 'Repair',
+      serviceLabel: 'Service / Repair',
+    });
+    return { ok: true, started: 'book_service', mode: 'service_repair' };
+  }
+
+  if (act === 'request_location') {
+    await setBookingState(ctx.db, ctx.to, {
+      step: 'await_location',
+      needNewLocation: true,
+      startedByAdmin: true,
+    });
+    const loc = await sendLocationRequest({
+      ...ctx,
+      bodyText:
+        'Please share your *service location*.\n\nTap *Send location* below so we can find you easily.',
+    });
+    return { ok: Boolean(loc?.ok), started: 'request_location', error: loc?.error };
+  }
+
+  if (act === 'request_photo') {
+    await askPurifierPhoto(ctx, { startedByAdmin: true });
+    return { ok: true, started: 'request_photo' };
+  }
+
+  return { ok: false, error: 'Unknown action' };
+}
+
+/** Seed pending action for cold-template reopen; resumed on next inbound. */
+async function seedAdminPendingAction(db, phoneE164, action) {
+  const phone = normalizePhoneE164(phoneE164);
+  if (!db || !phone) return;
+  await setBookingState(db, phone, {
+    step: 'admin_pending',
+    pendingAction: String(action || '').trim(),
+    startedByAdmin: true,
+  });
+}
+
 function isValidPersonName(text) {
   const t = String(text || '').trim();
   if (t.length < 2 || t.length > 80) return false;
@@ -783,6 +955,7 @@ async function createAutoBookingJob(db, {
   customNote,
   customTimeLabel,
   periodSlot,
+  serviceSite,
 }) {
   const phone10 = phone10FromE164(phoneE164);
   const known = TIME_SLOTS[slotKey];
@@ -803,6 +976,7 @@ async function createAutoBookingJob(db, {
     customer.model ||
     'Not specified';
   const noteBit = customNote ? ` · ${String(customNote).slice(0, 120)}` : '';
+  const site = serviceSite === 'secondary' ? 'secondary' : 'primary';
 
   const row = {
     job_number: jobNumber,
@@ -816,12 +990,14 @@ async function createAutoBookingJob(db, {
     estimated_duration: 120,
     service_address,
     service_location,
+    service_site: site,
     description: `WhatsApp booking · ${subType} · ${timeMeta.label}${noteBit}`,
     requirements: [
       {
         lead_source: LEAD_SOURCE,
         custom_time: timeMeta.label,
         booking_channel: 'whatsapp_bot',
+        service_site: site,
         ...(customNote ? { custom_note: String(customNote).slice(0, 200) } : {}),
       },
     ],
@@ -839,12 +1015,67 @@ async function createAutoBookingJob(db, {
     return { ok: false, error: error.message };
   }
   const job = Array.isArray(data) ? data[0] : data;
+
+  // Ensure service_site even if older RPC ignores the column.
+  if (job?.id && site === 'secondary') {
+    try {
+      await db.from('jobs').update({ service_site: 'secondary' }).eq('id', job.id);
+    } catch (err) {
+      console.warn('[whatsapp-booking-bot] service_site patch skipped', err?.message || err);
+    }
+  }
+
   return {
     ok: true,
     job,
     jobNumber: job?.job_number || jobNumber,
     timeLabel: timeMeta.label,
+    serviceSite: site,
   };
+}
+
+/** Persist secondary site (+ optional alt phone) without touching primary address. */
+async function saveSecondarySiteForBooking(db, customerId, phoneE164, loc, altPhone) {
+  if (!db || !customerId || !loc) return { ok: false, error: 'missing data' };
+  const phone10 = phone10FromE164(phoneE164);
+  const updates = {
+    alternate_location: buildAlternateLocationPayload(loc),
+    alternate_address: buildAlternateAddressPayload(loc),
+    alternate_visible_address:
+      loc.shortLocation || loc.address || loc.name || loc.formattedAddress || null,
+  };
+  if (altPhone) updates.alternate_phone = String(altPhone).replace(/\D/g, '').slice(-10);
+
+  try {
+    const { data, error } = await db.rpc('update_customer_for_booking', {
+      p_customer_id: customerId,
+      p_phone: phone10,
+      p_updates: updates,
+    });
+    if (!error) {
+      const row = Array.isArray(data) ? data[0] : data;
+      if (row?.id) return { ok: true, customer: row };
+    } else {
+      console.warn('[whatsapp-booking-bot] alternate RPC failed:', error.message);
+    }
+  } catch (err) {
+    console.warn('[whatsapp-booking-bot] alternate RPC threw:', err?.message || err);
+  }
+
+  // Service-role fallback when RPC does not yet accept alternate_* keys.
+  const { data: patched, error: patchErr } = await db
+    .from('customers')
+    .update(updates)
+    .eq('id', customerId)
+    .select(
+      'id,full_name,phone,alternate_phone,address,location,visible_address,alternate_address,alternate_location,alternate_visible_address,brand,model,service_type'
+    )
+    .maybeSingle();
+  if (patchErr) {
+    console.error('[whatsapp-booking-bot] alternate update failed:', patchErr.message);
+    return { ok: false, error: patchErr.message };
+  }
+  return { ok: true, customer: patched };
 }
 
 async function notifyOwnerBestEffort(customer, phoneE164, dateIso, timeLabel, jobNumber, serviceSubType) {
@@ -868,19 +1099,91 @@ async function notifyOwnerBestEffort(customer, phoneE164, dateIso, timeLabel, jo
 }
 
 async function sendGreetingMenu(ctx, { isNew } = {}) {
-  const body = isNew
-    ? `Hi! Welcome to ${BRAND_LABEL} 💧\n\nHow can we help you today?`
-    : `Hi! Welcome to ${BRAND_LABEL} 💧\n\nHow can we help you today?`;
   return sendButtons({
     ...ctx,
-    bodyText: body,
-    footer: BRAND_LABEL,
-    buttons: [
-      { id: 'book_service', title: 'Book service' },
-      { id: 'call_back', title: 'Call back' },
-      { id: 'talk_team', title: 'Talk to team' },
-    ],
+    bodyText: isNew ? GREETING_MENU.bodyNew : GREETING_MENU.bodyReturning,
+    footer: GREETING_MENU.footer,
+    buttons: GREETING_MENU.buttons,
   });
+}
+
+/** After a cold template opens the 24h window — same interactive UX as live chat. */
+async function resumeSessionStyleFromPending(ctx, pendingAction, interactive, text) {
+  const pending = String(pendingAction || '').trim();
+  const intent =
+    resolveGreetingIntent({
+      id: interactive?.id,
+      title: interactive?.title,
+      text,
+    }) ||
+    (pending === 'book_reinstall'
+      ? 'book_reinstall'
+      : pending === 'talk_team' || pending === 'show_menu'
+        ? null
+        : pending === 'book_service' ||
+            pending === 'request_location' ||
+            pending === 'request_photo'
+          ? pending
+          : null);
+
+  if (intent === 'book_reinstall') {
+    await beginServiceBooking(ctx, {
+      serviceSubType: 'Reinstallation',
+      serviceLabel: 'Reinstallation',
+    });
+    return { ok: true };
+  }
+  if (intent === 'book_service') {
+    await beginServiceBooking(ctx, {
+      serviceSubType: 'Repair',
+      serviceLabel: 'Service / Repair',
+    });
+    return { ok: true };
+  }
+  if (intent === 'talk_team' || pending === 'talk_team') {
+    const customer = await lookupCustomerFull(ctx.db, ctx.to);
+    const prefill = buildAdminHandoffPrefill({
+      customer,
+      state: {},
+      phoneE164: ctx.to,
+    });
+    await setBookingState(ctx.db, ctx.to, {
+      step: 'booking_complete',
+      supportPrefill: prefill,
+    });
+    await sendElevenSupportButtons({
+      ...ctx,
+      bodyText: [
+        `Chat with us on our main WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
+        '',
+        'Tap *Call 3311* to open the dialer, or *WhatsApp team* to message us.',
+      ].join('\n'),
+      footer: BRAND_LABEL,
+    });
+    return { ok: true };
+  }
+  if (pending === 'request_location' || pending === 'request_photo') {
+    return startAdminQuickAction(ctx, pending);
+  }
+  // show_menu / unknown — identical interactive greeting as in-session Hi
+  const customer = await lookupCustomerFull(ctx.db, ctx.to);
+  await sendGreetingMenu(ctx, { isNew: !customer?.id });
+  return { ok: true };
+}
+
+/** Start Service/Repair or Reinstallation from greeting (or admin). */
+async function beginServiceBooking(ctx, { serviceSubType, serviceLabel }) {
+  const customer = await lookupCustomerFull(ctx.db, ctx.to);
+  const base = {
+    serviceSubType,
+    serviceLabel: serviceLabel || serviceLabelFromState({ serviceSubType }),
+  };
+  if (customer?.id) {
+    await setBookingState(ctx.db, ctx.to, base);
+    await sendIdentityConfirm(ctx, customer);
+    return;
+  }
+  await continueAfterServiceType(ctx, base);
 }
 
 async function askServiceType(ctx, state = {}) {
@@ -888,6 +1191,7 @@ async function askServiceType(ctx, state = {}) {
   if (!state.existingCustomerId && !state.editing) {
     const existing = await lookupCustomerFull(ctx.db, ctx.to);
     if (existing?.id) {
+      await setBookingState(ctx.db, ctx.to, state);
       await sendIdentityConfirm(ctx, existing);
       return;
     }
@@ -898,8 +1202,8 @@ async function askServiceType(ctx, state = {}) {
     bodyText: 'What do you need help with?',
     footer: 'Choose one',
     buttons: [
-      { id: 'svc_repair', title: 'Repair / Service' },
-      { id: 'svc_install', title: 'Installation' },
+      { id: 'svc_repair', title: 'Service/Repair' },
+      { id: 'svc_reinstall', title: 'Reinstallation' },
       { id: 'svc_custom', title: 'Custom' },
     ],
   });
@@ -908,6 +1212,7 @@ async function askServiceType(ctx, state = {}) {
 async function startNewCustomerBooking(ctx, state = {}) {
   const existing = await lookupCustomerFull(ctx.db, ctx.to);
   if (existing?.id) {
+    await setBookingState(ctx.db, ctx.to, state);
     await sendIdentityConfirm(ctx, existing);
     return;
   }
@@ -918,15 +1223,90 @@ async function startNewCustomerBooking(ctx, state = {}) {
   });
 }
 
+async function askAltPhone(ctx, state = {}) {
+  await setBookingState(ctx.db, ctx.to, {
+    ...state,
+    useSecondarySite: true,
+    step: 'await_alt_phone',
+  });
+  await sendText({
+    ...ctx,
+    text: [
+      'This visit will be saved as a *second site* on your account (your main address stays unchanged).',
+      '',
+      'Please reply with an *alternate mobile* for this site, or type *skip*.',
+    ].join('\n'),
+  });
+}
+
+async function askSecondaryLocation(ctx, state = {}) {
+  await setBookingState(ctx.db, ctx.to, {
+    ...state,
+    useSecondarySite: true,
+    step: 'await_location',
+  });
+  await sendLocationRequest({
+    ...ctx,
+    bodyText:
+      'Please share the *location for this visit* (secondary site).\n\nTap *Send location* below.',
+  });
+}
+
+/** Reinstallation: always collect a pin and overwrite the saved (primary) address. */
+async function askReinstallLocationUpdate(ctx, state = {}) {
+  await setBookingState(ctx.db, ctx.to, {
+    ...state,
+    needNewLocation: true,
+    useSecondarySite: false,
+    reinstallUpdateLocation: true,
+    step: 'await_location',
+  });
+  const saved = formatAddressLine(await lookupCustomerFull(ctx.db, ctx.to));
+  const savedLine = saved ? `\n\nWe currently have:\n*${saved}*` : '';
+  await sendLocationRequest({
+    ...ctx,
+    bodyText: [
+      'For *Reinstallation*, please share the *new location pin* where the purifier should be installed.',
+      savedLine,
+      '',
+      'We’ll *update* your saved address with this pin.',
+      '',
+      'Tap *Send location* below.',
+    ]
+      .filter(Boolean)
+      .join('\n'),
+  });
+}
+
 async function continueAfterServiceType(ctx, state) {
   const customer = await lookupCustomerFull(ctx.db, ctx.to);
+  const isReinstall = String(state?.serviceSubType || '') === 'Reinstallation';
   if (state?.existingCustomerId || customer?.id) {
-    if (state?.existingCustomerId && !state?.loc && state?.needNewLocation) {
-      await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_location' });
-      await sendLocationRequest({
-        ...ctx,
-        bodyText: 'Please share the correct location for this visit.',
-      });
+    // Reinstallation always needs a fresh pin (update existing address).
+    // "Different location" (useSecondarySite) → secondary site path.
+    const needsLoc =
+      Boolean(state?.needNewLocation) ||
+      Boolean(state?.useSecondarySite) ||
+      Boolean(isReinstall && !state?.loc);
+
+    if (state?.existingCustomerId && !state?.loc && needsLoc) {
+      if (state?.useSecondarySite) {
+        const next = { ...state, useSecondarySite: true, needNewLocation: true };
+        if (!hasUsableAlternatePhone(customer) && !next.altPhone && !next.skipAltPhone) {
+          await askAltPhone(ctx, next);
+          return;
+        }
+        await askSecondaryLocation(ctx, next);
+        return;
+      }
+      if (isReinstall) {
+        await askReinstallLocationUpdate(ctx, {
+          ...state,
+          existingCustomerId: state.existingCustomerId || customer?.id,
+        });
+        return;
+      }
+      await askLocationForNew(ctx, { ...state, needNewLocation: true });
       return;
     }
     await sendDatePicker(ctx, state);
@@ -948,14 +1328,19 @@ async function askLocConfirm(ctx, state, locSummary) {
   await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_loc_confirm' });
   const short = state?.loc?.shortLocation ? `*Area:* ${state.loc.shortLocation}\n` : '';
   const locLine = formatServiceLocationLine(state) || locSummary || 'Shared pin';
+  const secondaryNote = state?.useSecondarySite
+    ? '\n\n_Saved as secondary site — primary address stays the same._'
+    : state?.reinstallUpdateLocation || state?.serviceSubType === 'Reinstallation'
+      ? '\n\n_We’ll update your saved address with this pin._'
+      : '';
   await sendButtons({
     ...ctx,
-    bodyText: `Location received:\n${short}*${locLine}*\n\nIs this correct?`,
+    bodyText: `Location received:\n${short}*${locLine}*${secondaryNote}\n\nIs this correct?`,
     footer: 'Confirm location',
     buttons: [
       { id: 'loc_yes', title: 'Yes, correct' },
       { id: 'loc_no', title: 'No, resend' },
-      { id: 'talk_team', title: 'Talk to team' },
+      { id: 'talk_team', title: 'Chat with us' },
     ],
   });
 }
@@ -978,7 +1363,7 @@ async function sendDatePicker(ctx, state) {
   }
   return sendList({
     ...ctx,
-    bodyText: 'Pick a date for the visit:',
+    bodyText: 'Step 2 of 5 · Pick a date for the visit:',
     buttonText: 'Choose date',
     sectionTitle: 'Next 7 days',
     footer: BRAND_LABEL,
@@ -1019,7 +1404,7 @@ async function sendPeriodPicker(ctx, dateIso, state) {
 
   return sendList({
     ...ctx,
-    bodyText: `Date: *${formatDateIsoLabel(dateIso)}*\n\nChoose a time of day:`,
+    bodyText: `Step 3 of 5 · Date: *${formatDateIsoLabel(dateIso)}*\n\nChoose a time of day:`,
     buttonText: 'Choose period',
     sectionTitle: 'Time of day',
     footer: 'Past times hidden',
@@ -1067,7 +1452,7 @@ async function sendTimePicker(ctx, dateIso, state, periodKey) {
 
   return sendList({
     ...ctx,
-    bodyText: `Date: *${formatDateIsoLabel(dateIso)}*\n*${periodMeta.label}* (${periodMeta.frame})\n\nPick a time:`,
+    bodyText: `Step 4 of 5 · Date: *${formatDateIsoLabel(dateIso)}*\n*${periodMeta.label}* (${periodMeta.frame})\n\nPick a time:`,
     buttonText: 'Choose time',
     sectionTitle: periodMeta.label,
     footer: 'Past times hidden',
@@ -1088,7 +1473,8 @@ async function askPurifierPhoto(ctx, state) {
   await sendText({
     ...ctx,
     text:
-      'Please *send a photo of your purifier* to continue.\n\n(Photo is required.)\n\n' +
+      'Step 5 of 5 · Please *send a photo of your purifier* to continue.\n\n' +
+      'Clear photo of the purifier label / unit.\n\n(Photo is required.)\n\n' +
       AWAITING_CUSTOMER_MEDIA_MARKER,
   });
 }
@@ -1108,8 +1494,10 @@ function buildBookingSummaryLines(state, customer) {
   lines.push(`*Service:* ${serviceLabelFromState(state)}`);
   if (state.dateIso) lines.push(`*Date:* ${formatDateIsoLabel(state.dateIso)}`);
   if (timeLabel) lines.push(`*Time:* ${timeLabel}`);
-  if (loc) lines.push(`*Location:* ${loc}`);
-  else if (existing && formatAddressLine(customer)) {
+  if (loc) {
+    lines.push(`*Location:* ${loc}`);
+    if (state.useSecondarySite) lines.push('_Secondary site_');
+  } else if (existing && formatAddressLine(customer)) {
     lines.push(`*Location:* ${formatAddressLine(customer)}`);
   }
   if (state.photoUrl) lines.push('*Photo:* Received');
@@ -1129,7 +1517,7 @@ async function sendNewCustomerConfirm(ctx, state) {
     buttons: [
       { id: 'confirm_new', title: 'Yes, book now' },
       { id: 'edit_details', title: 'Edit details' },
-      { id: 'talk_team', title: 'Talk to team' },
+      { id: 'talk_team', title: 'Chat with us' },
     ],
   });
 }
@@ -1140,18 +1528,16 @@ async function sendIdentityConfirm(ctx, customer) {
   return sendButtons({
     ...ctx,
     bodyText: [
-      `We found this number in our records.`,
+      `Is this booking for *${name}*?`,
+      `*${loc}*`,
       '',
-      `Is this booking for *${name}* at:`,
-      `*Location:* ${loc}`,
-      '',
-      'Tap *Yes* to continue — we’ll only add a new *job* (no new customer).',
+      'Tap *Yes* to use this address, or *Different location* to add a second site.',
     ].join('\n'),
     footer: 'Confirm account',
     buttons: [
       { id: 'identity_yes', title: "Yes, that's me" },
-      { id: 'identity_no', title: 'No / new address' },
-      { id: 'talk_team', title: 'Talk to team' },
+      { id: 'identity_no', title: 'Different location' },
+      { id: 'talk_team', title: 'Chat with us' },
     ],
   });
 }
@@ -1165,7 +1551,7 @@ async function sendConfirm(ctx, dateIso, slotKey, customer, state = {}) {
     buttons: [
       { id: `confirm__${dateIso}__${slotKey}`.slice(0, 256), title: 'Yes, book now' },
       { id: 'edit_details', title: 'Edit details' },
-      { id: 'talk_team', title: 'Talk to team' },
+      { id: 'talk_team', title: 'Chat with us' },
     ],
   });
 }
@@ -1181,7 +1567,7 @@ async function afterLocationSharedLegacy(ctx, locSummary) {
     footer: 'Next step',
     buttons: [
       { id: 'pick_date', title: 'Pick date & time' },
-      { id: 'talk_team', title: 'Talk to team' },
+      { id: 'talk_team', title: 'Chat with us' },
     ],
   });
 }
@@ -1246,7 +1632,7 @@ async function sendBookedConfirmation(ctx, state, { updated } = {}) {
     buttons: [
       { id: 'all_correct', title: 'All correct' },
       { id: 'edit_details', title: 'Edit details' },
-      { id: 'talk_team', title: 'Talk to team' },
+      { id: 'talk_team', title: 'Chat with us' },
     ],
   });
 }
@@ -1273,7 +1659,7 @@ async function sendEditMenu(ctx, state) {
       { id: 'edit_location', title: 'Location', description: 'Share a new location pin' },
       { id: 'edit_datetime', title: 'Date & time', description: 'Reschedule the visit' },
       { id: 'edit_photo', title: 'Purifier photo', description: 'Send a new photo' },
-      { id: 'edit_service', title: 'Service type', description: 'Repair, installation, custom' },
+      { id: 'edit_service', title: 'Service type', description: 'Repair, reinstall, custom' },
     ],
   });
 }
@@ -1488,7 +1874,9 @@ async function sendPostBookingHumanRedirect(ctx, state = null) {
     'Thanks for your message.',
     '',
     'Your booking on this number is already in progress.',
-    'Tap *Call us* to open the dialer, or *WhatsApp* to chat with our team (your details will be attached).',
+    `Message our team on Eleven RO WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
+    '',
+    'Tap *Call 3311* to open the dialer, or *WhatsApp team* to chat (your details will be attached).',
   ].join('\n');
 
   await sendElevenSupportButtons({
@@ -1496,10 +1884,10 @@ async function sendPostBookingHumanRedirect(ctx, state = null) {
     bodyText,
     footer: BRAND_LABEL,
   });
-  // Keep prefill on state for WhatsApp button tap
+  // Keep prefill on state for WhatsApp button tap — stay on booking_complete
   await setBookingState(ctx.db, ctx.to, {
     ...st,
-    step: st.step || 'booking_complete',
+    step: 'booking_complete',
     supportPrefill: prefill,
   });
   await insertWhatsAppMessage(ctx.db, {
@@ -1536,6 +1924,14 @@ async function handleBookingBotInbound({
   const state = await getBookingState(db, to);
   const msgType = String(msg.type || '');
 
+  // Admin inbox / cold template seeded intent — resume with *session* interactive UX.
+  if (state?.step === 'admin_pending' && state?.pendingAction) {
+    const pending = String(state.pendingAction || '').trim();
+    await clearBookingState(db, to);
+    await resumeSessionStyleFromPending(ctx, pending, interactive, text);
+    return { handled: true };
+  }
+
   // After booking: free-form messages → human WhatsApp (buttons / edit / new Hi still work).
   const midActiveFlow =
     Boolean(state?.editing) || (state?.step && ACTIVE_BOOKING_STEPS.has(state.step));
@@ -1548,12 +1944,33 @@ async function handleBookingBotInbound({
       (await recentlyCompletedBotBooking(db, to));
 
     if (postBookConfirm || bookingDone || recentBook) {
-      // New conversation starter → allow fresh menu
-      if (msgType === 'text' && text && GREETING_RE.test(text)) {
-        await clearBookingState(db, to);
-        const customer = await lookupCustomerFull(db, to);
-        await sendGreetingMenu(ctx, { isNew: !customer?.id });
-        return { handled: true };
+      // Fresh ask → menu or new booking (not everyone says Hi)
+      if (msgType === 'text' && text) {
+        if (REINSTALL_INTENT_RE.test(text)) {
+          await clearBookingState(db, to);
+          await beginServiceBooking(ctx, {
+            serviceSubType: 'Reinstallation',
+            serviceLabel: 'Reinstallation',
+          });
+          return { handled: true };
+        }
+        if (
+          GREETING_RE.test(text) ||
+          /\b(book|booking|again|another|new\s+(job|visit|service))\b/i.test(text)
+        ) {
+          await clearBookingState(db, to);
+          const customer = await lookupCustomerFull(db, to);
+          await sendGreetingMenu(ctx, { isNew: !customer?.id });
+          return { handled: true };
+        }
+        if (REPAIR_INTENT_RE.test(text)) {
+          await clearBookingState(db, to);
+          await beginServiceBooking(ctx, {
+            serviceSubType: 'Repair',
+            serviceLabel: 'Service / Repair',
+          });
+          return { handled: true };
+        }
       }
       // "edit" only while confirm buttons are still showing
       if (postBookConfirm && text && EDIT_RE.test(text)) {
@@ -1566,6 +1983,26 @@ async function handleBookingBotInbound({
   }
 
   // —— Stateful text / photo steps ——
+  if (state?.step === 'await_alt_phone' && msgType === 'text' && text && !GREETING_RE.test(text)) {
+    const raw = text.trim();
+    let next = { ...state, useSecondarySite: true };
+    if (/^skip$/i.test(raw)) {
+      next = { ...next, skipAltPhone: true, altPhone: null };
+    } else {
+      const alt = normalizeAltPhoneInput(raw);
+      if (!alt) {
+        await sendText({
+          ...ctx,
+          text: 'Please reply with a valid 10-digit mobile, or type *skip*.',
+        });
+        return { handled: true };
+      }
+      next = { ...next, altPhone: alt, skipAltPhone: false };
+    }
+    await askSecondaryLocation(ctx, next);
+    return { handled: true };
+  }
+
   if (state?.step === 'await_custom_note' && msgType === 'text' && text && !GREETING_RE.test(text)) {
     const next = {
       ...state,
@@ -1708,8 +2145,16 @@ async function handleBookingBotInbound({
     return { handled: true };
   }
 
-  if (interactive?.id) {
-    const id = interactive.id;
+  if (interactive?.id || interactive?.title) {
+    let id = interactive.id || '';
+    const menuIntentEarly = resolveGreetingIntent({
+      id,
+      title: interactive.title,
+      text: '',
+    });
+    if (menuIntentEarly === 'talk_team') id = 'talk_team';
+    if (menuIntentEarly === 'book_service') id = 'book_service';
+    if (menuIntentEarly === 'book_reinstall') id = 'book_reinstall';
 
     // Eleven RO Call / WhatsApp buttons (dialer contact + wa.me)
     if (id === 'support_call' || id === 'support_whatsapp') {
@@ -1727,60 +2172,45 @@ async function handleBookingBotInbound({
     }
 
     if (id === 'book_service') {
-      const customer = await lookupCustomerFull(db, to);
-      if (customer?.id) {
-        await clearBookingState(db, to);
-        await sendIdentityConfirm(ctx, customer);
-      } else {
-        await askServiceType(ctx, {});
-      }
+      await clearBookingState(db, to);
+      await beginServiceBooking(ctx, {
+        serviceSubType: 'Repair',
+        serviceLabel: 'Service / Repair',
+      });
       return { handled: true };
     }
 
-    if (id === 'call_back') {
+    if (id === 'book_reinstall') {
       await clearBookingState(db, to);
-      await sendText({
-        ...ctx,
-        text: `Got it — we’ll call you back on this number shortly.`,
+      await beginServiceBooking(ctx, {
+        serviceSubType: 'Reinstallation',
+        serviceLabel: 'Reinstallation',
       });
-      await insertWhatsAppMessage(db, {
-        direction: 'outbound',
-        phone_e164: to,
-        msg_type: 'text',
-        body: '[Booking bot] Call-back requested',
-        status: 'sent',
-      });
-      try {
-        const customer = await lookupCustomerFull(db, to);
-        const { sendBookingAdminNotification } = require('./booking-notify');
-        await sendBookingAdminNotification({
-          customerName: customer?.full_name || 'WhatsApp caller',
-          phone: phone10FromE164(to),
-          brandSource: 'elevenro',
-          bookingDomain: 'whatsapp',
-          serviceType: 'RO',
-          serviceSubType: 'Callback',
-          scheduledDate: '',
-          scheduledTimeSlot: 'Callback',
-          customTime: 'Call back ASAP',
-          jobNumber: 'CALLBACK',
-        });
-      } catch (err) {
-        console.warn('[whatsapp-booking-bot] callback notify skipped', err?.message || err);
-      }
+      return { handled: true };
+    }
+
+    // Legacy greeting button — redirect to Chat with us (Eleven 3311)
+    if (id === 'call_back') {
       const customer = await lookupCustomerFull(db, to);
       const prefill = buildAdminHandoffPrefill({ customer, state: {}, phoneE164: to });
       await setBookingState(db, to, { step: 'booking_complete', supportPrefill: prefill });
       await sendElevenSupportButtons({
         ...ctx,
-        bodyText: `If urgent, reach Eleven RO now on ${SUPPORT_PHONE_DISPLAY}:`,
+        bodyText: [
+          `Chat with us on our main WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
+          '',
+          'Tap *Call 3311* to open the dialer, or *WhatsApp team* to message us.',
+        ].join('\n'),
         footer: BRAND_LABEL,
       });
       return { handled: true };
     }
 
-    if (id === 'svc_repair' || id === 'svc_install' || id === 'svc_custom') {
-      const choice = SERVICE_CHOICES[id];
+    if (id === 'svc_repair' || id === 'svc_reinstall' || id === 'svc_install' || id === 'svc_custom') {
+      const choice = SERVICE_CHOICES[id] || {
+        label: 'Service',
+        subType: 'Service',
+      };
       const st = state || {};
       if (id === 'svc_custom') {
         await setBookingState(db, to, {
@@ -1840,7 +2270,8 @@ async function handleBookingBotInbound({
           '',
           'Your booking is confirmed. We’ll update you here once a technician is assigned.',
           '',
-          'Need anything else? Tap *Call us* (dialer) or *WhatsApp* (chat with your details attached).',
+          `Need anything else? Message our team on Eleven RO WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
+          'Tap *Call 3311* or *WhatsApp team* (details attached).',
         ].join('\n'),
         footer: BRAND_LABEL,
       });
@@ -1911,7 +2342,20 @@ async function handleBookingBotInbound({
 
     if (id === 'loc_no') {
       const st = state || { step: 'await_location' };
-      await askLocationForNew(ctx, { ...st, step: 'await_location', loc: undefined });
+      if (st.useSecondarySite) {
+        await askSecondaryLocation(ctx, { ...st, step: 'await_location', loc: undefined });
+      } else if (
+        st.reinstallUpdateLocation ||
+        String(st.serviceSubType || '') === 'Reinstallation'
+      ) {
+        await askReinstallLocationUpdate(ctx, {
+          ...st,
+          step: 'await_location',
+          loc: undefined,
+        });
+      } else {
+        await askLocationForNew(ctx, { ...st, step: 'await_location', loc: undefined });
+      }
       return { handled: true };
     }
 
@@ -1931,9 +2375,12 @@ async function handleBookingBotInbound({
       if ((!st?.name && !isExisting) || !st?.dateIso || !st?.slotKey) {
         await sendText({
           ...ctx,
-          text: 'Something is missing. Please tap *Book service* to start again.',
+          text: 'Something is missing. Please tap *Service/Repair* to start again.',
         });
-        await askServiceType(ctx, isExisting ? { existingCustomerId: existingByPhone?.id, name: existingByPhone?.full_name } : {});
+        await beginServiceBooking(ctx, {
+          serviceSubType: st?.serviceSubType || 'Repair',
+          serviceLabel: st?.serviceLabel || 'Service / Repair',
+        });
         return { handled: true };
       }
       if (!st.photoUrl) {
@@ -1957,36 +2404,51 @@ async function handleBookingBotInbound({
         if (!customer?.id) {
           await sendText({
             ...ctx,
-            text: 'We couldn’t load your account. Please tap *Book service* to try again.',
+            text: 'We couldn’t load your account. Please tap *Service/Repair* to try again.',
           });
           return { handled: true };
         }
         if (st.loc) {
+          // Secondary only when customer chose "Different location".
+          // Reinstallation updates the existing (primary) address.
+          const useSecondary = Boolean(st.useSecondarySite);
           try {
-            await db.rpc('update_customer_for_booking', {
-              p_customer_id: customer.id,
-              p_phone: phone10FromE164(to),
-              p_updates: {
-                location: {
-                  latitude: Number(st.loc.lat),
-                  longitude: Number(st.loc.lng),
-                  formattedAddress:
-                    st.loc.formattedAddress || st.loc.address || st.loc.name || '',
-                  googleLocation: `https://www.google.com/maps/place/${st.loc.lat},${st.loc.lng}`,
-                  shortLocation: st.loc.shortLocation || null,
+            if (useSecondary) {
+              const saved = await saveSecondarySiteForBooking(
+                db,
+                customer.id,
+                to,
+                st.loc,
+                st.altPhone || null
+              );
+              if (saved.customer) customer = saved.customer;
+              st.useSecondarySite = true;
+            } else {
+              await db.rpc('update_customer_for_booking', {
+                p_customer_id: customer.id,
+                p_phone: phone10FromE164(to),
+                p_updates: {
+                  location: {
+                    latitude: Number(st.loc.lat),
+                    longitude: Number(st.loc.lng),
+                    formattedAddress:
+                      st.loc.formattedAddress || st.loc.address || st.loc.name || '',
+                    googleLocation: `https://www.google.com/maps/place/${st.loc.lat},${st.loc.lng}`,
+                    shortLocation: st.loc.shortLocation || null,
+                  },
+                  visible_address: st.loc.shortLocation || st.loc.address || st.loc.name || null,
+                  address: {
+                    street: st.loc.address || st.loc.formattedAddress || '',
+                    area: st.loc.shortLocation || '',
+                    city: 'Bangalore',
+                    state: 'Karnataka',
+                    pincode: '',
+                    landmark: st.loc.name || st.loc.shortLocation || '',
+                  },
                 },
-                visible_address: st.loc.shortLocation || st.loc.address || st.loc.name || null,
-                address: {
-                  street: st.loc.address || st.loc.formattedAddress || '',
-                  area: st.loc.shortLocation || '',
-                  city: 'Bangalore',
-                  state: 'Karnataka',
-                  pincode: '',
-                  landmark: st.loc.name || st.loc.shortLocation || '',
-                },
-              },
-            });
-            customer = (await lookupCustomerFull(db, to)) || customer;
+              });
+              customer = (await lookupCustomerFull(db, to)) || customer;
+            }
           } catch (err) {
             console.warn('[whatsapp-booking-bot] update location skipped', err?.message || err);
           }
@@ -2018,7 +2480,7 @@ async function handleBookingBotInbound({
       if (!customer?.id) {
         await sendText({
           ...ctx,
-          text: `Please tap *Book service* to start again.`,
+          text: `Please tap *Service/Repair* to start again.`,
         });
         return { handled: true };
       }
@@ -2034,6 +2496,8 @@ async function handleBookingBotInbound({
           }
         : await getRememberedLocation(db, to);
 
+      const serviceSite = st.useSecondarySite ? 'secondary' : 'primary';
+
       const created = await createAutoBookingJob(db, {
         phoneE164: to,
         customer,
@@ -2046,6 +2510,7 @@ async function handleBookingBotInbound({
         customNote: st.customNote || null,
         customTimeLabel: st.customTimeLabel || null,
         periodSlot: st.periodSlot || null,
+        serviceSite,
       });
 
       if (!created.ok) {
@@ -2106,20 +2571,50 @@ async function handleBookingBotInbound({
 
     if (id === 'identity_yes') {
       const customer = await lookupCustomerFull(db, to);
-      await askServiceType(ctx, {
-        name: customer?.full_name || 'Customer',
+      const st = state || {};
+      const isReinstall = String(st.serviceSubType || '') === 'Reinstallation';
+      const base = {
+        name: customer?.full_name || st.name || 'Customer',
         existingCustomerId: customer?.id || null,
-      });
+        // Reinstallation: always ask for a new pin and update saved address.
+        needNewLocation: isReinstall,
+        useSecondarySite: false,
+        reinstallUpdateLocation: isReinstall,
+        serviceSubType: st.serviceSubType || null,
+        serviceLabel: st.serviceLabel || null,
+      };
+      if (base.serviceSubType) {
+        await continueAfterServiceType(ctx, {
+          ...st,
+          ...base,
+          serviceLabel: base.serviceLabel || serviceLabelFromState(base),
+        });
+      } else {
+        await askServiceType(ctx, base);
+      }
       return { handled: true };
     }
 
     if (id === 'identity_no') {
       const customer = await lookupCustomerFull(db, to);
-      await askServiceType(ctx, {
-        name: customer?.full_name || 'Customer',
+      const st = state || {};
+      const base = {
+        name: customer?.full_name || st.name || 'Customer',
         existingCustomerId: customer?.id || null,
         needNewLocation: true,
-      });
+        useSecondarySite: true,
+        serviceSubType: st.serviceSubType || null,
+        serviceLabel: st.serviceLabel || null,
+      };
+      if (base.serviceSubType) {
+        await continueAfterServiceType(ctx, {
+          ...st,
+          ...base,
+          serviceLabel: base.serviceLabel || serviceLabelFromState(base),
+        });
+      } else {
+        await askServiceType(ctx, base);
+      }
       return { handled: true };
     }
 
@@ -2148,10 +2643,10 @@ async function handleBookingBotInbound({
       await sendElevenSupportButtons({
         ...ctx,
         bodyText: [
-          'Okay — reach our Eleven RO team directly:',
+          `Chat with us on our main WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
           '',
-          `*Call us* opens your phone dialer.`,
-          `*WhatsApp* opens chat with ${SUPPORT_PHONE_DISPLAY} (details attached when available).`,
+          `*Call 3311* opens your phone dialer.`,
+          `*WhatsApp team* opens chat with details attached when available.`,
         ].join('\n'),
         footer: BRAND_LABEL,
       });
@@ -2272,9 +2767,12 @@ async function handleBookingBotInbound({
       if (!customer?.id) {
         await sendText({
           ...ctx,
-          text: `Please use *Book service* so we can collect your details first.`,
+          text: `Please use *Service/Repair* so we can collect your details first.`,
         });
-        await askServiceType(ctx, {});
+        await beginServiceBooking(ctx, {
+          serviceSubType: st.serviceSubType || 'Repair',
+          serviceLabel: st.serviceLabel || 'Service / Repair',
+        });
         return { handled: true };
       }
 
@@ -2290,6 +2788,7 @@ async function handleBookingBotInbound({
         customNote: st.customNote || null,
         customTimeLabel: st.customTimeLabel || null,
         periodSlot: st.periodSlot || null,
+        serviceSite: st.useSecondarySite ? 'secondary' : 'primary',
       });
 
       if (!created.ok) {
@@ -2369,8 +2868,56 @@ async function handleBookingBotInbound({
     return { handled: true };
   }
 
-  if (msgType === 'text' && text && GREETING_RE.test(text)) {
+  // Cold / idle inbound: not everyone says "Hi" — any text opens menu or starts an intent.
+  // (Post-book free-form already returned earlier via sendPostBookingHumanRedirect.)
+  if (
+    msgType === 'text' &&
+    text &&
+    !midActiveFlow &&
+    state?.step !== 'await_post_book' &&
+    state?.step !== 'booking_complete'
+  ) {
     const customer = await lookupCustomerFull(db, to);
+
+    if (REINSTALL_INTENT_RE.test(text)) {
+      await clearBookingState(db, to);
+      await beginServiceBooking(ctx, {
+        serviceSubType: 'Reinstallation',
+        serviceLabel: 'Reinstallation',
+      });
+      return { handled: true };
+    }
+
+    // Prefer chat handoff only when they clearly ask for a human (not "help me book").
+    if (CHAT_INTENT_RE.test(text) && !REPAIR_INTENT_RE.test(text)) {
+      const prefill = buildAdminHandoffPrefill({
+        customer,
+        state: {},
+        phoneE164: to,
+      });
+      await setBookingState(db, to, { step: 'booking_complete', supportPrefill: prefill });
+      await sendElevenSupportButtons({
+        ...ctx,
+        bodyText: [
+          `Chat with us on our main WhatsApp (*${SUPPORT_PHONE_DISPLAY}*).`,
+          '',
+          'Tap *Call 3311* to open the dialer, or *WhatsApp team* to message us.',
+        ].join('\n'),
+        footer: BRAND_LABEL,
+      });
+      return { handled: true };
+    }
+
+    if (REPAIR_INTENT_RE.test(text) && !GREETING_RE.test(text)) {
+      await clearBookingState(db, to);
+      await beginServiceBooking(ctx, {
+        serviceSubType: 'Repair',
+        serviceLabel: 'Service / Repair',
+      });
+      return { handled: true };
+    }
+
+    // Default: show the 3-button menu (Hi, "??", free text, etc.)
     await clearBookingState(db, to);
     await sendGreetingMenu(ctx, { isNew: !customer?.id });
     return { handled: true };
@@ -2387,4 +2934,17 @@ module.exports = {
   sendCtaUrl,
   lookupCustomerFull,
   createAutoBookingJob,
+  startAdminQuickAction,
+  seedAdminPendingAction,
+  hasOpenCustomerServiceWindow,
+  clearBookingState,
+  setBookingState,
+  getBookingState,
+  askServiceType,
+  sendIdentityConfirm,
+  askPurifierPhoto,
+  sendGreetingMenu,
+  GREETING_MENU,
+  resolveGreetingIntent,
+  resumeSessionStyleFromPending,
 };

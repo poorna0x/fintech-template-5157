@@ -49,6 +49,13 @@ const KEEP_NAMES = new Set(['hello_world']);
  */
 const MINIMAL_TEMPLATES = [
   {
+    name: 'svc_booking_menu',
+    body: 'Hi {{1}}, welcome to Eleven RO. How can we help you today? Choose an option below — same as our live chat: Service/Repair, Reinstallation, or Chat with us.',
+    examples: ['Rahul'],
+    /** Same labels as 24h interactive greeting (Meta QUICK_REPLY ≤20 chars). */
+    quickReplies: ['Service/Repair', 'Reinstallation', 'Chat with us'],
+  },
+  {
     name: 'svc_visit_reminder',
     body: 'Hi {{1}}, reminder: your water purifier service visit is scheduled for {{2}}. Reply on this chat to confirm or reschedule.',
     examples: ['Rahul', 'Tue 12 Aug, 10:00 AM'],
@@ -115,6 +122,13 @@ async function graph(token, path, opts = {}) {
 }
 
 function payloadFor(t) {
+  const buttons = Array.isArray(t.quickReplies) && t.quickReplies.length
+    ? t.quickReplies.slice(0, 3).map((text) => ({
+        type: 'QUICK_REPLY',
+        text: String(text).slice(0, 25),
+      }))
+    : [{ type: 'PHONE_NUMBER', text: 'Call us', phone_number: CALL_PHONE }];
+
   return {
     name: t.name,
     language: 'en',
@@ -128,7 +142,7 @@ function payloadFor(t) {
       },
       {
         type: 'BUTTONS',
-        buttons: [{ type: 'PHONE_NUMBER', text: 'Call us', phone_number: CALL_PHONE }],
+        buttons,
       },
     ],
   };

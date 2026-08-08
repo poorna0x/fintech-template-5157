@@ -38,9 +38,9 @@ function buildUnsolicitedMediaReply() {
     'Thanks for sharing this.',
     '',
     'This WhatsApp number is for booking and service updates only.',
-    'For photos, videos, or files, please contact our Eleven RO team:',
+    `Message our team on Eleven RO WhatsApp (*${ELEVEN_SUPPORT_DISPLAY}*).`,
     '',
-    `Tap *Call us* to open the dialer, or *WhatsApp* to chat on ${ELEVEN_SUPPORT_DISPLAY}.`,
+    'Tap *Call 3311* to open the dialer, or *WhatsApp team* to chat.',
   ].join('\n');
 }
 

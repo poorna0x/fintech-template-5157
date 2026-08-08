@@ -6,8 +6,19 @@
  * no URL / Book CTAs (faster Utility approval). Cold PDFs use DOCUMENT-header `svc_document_pdf`.
  *
  * Cold PDF: one-shot via `svc_document_pdf` (PDF in template header). No reply-YES invite.
+ *
+ * Session parity: Meta cannot send live interactive lists/location *inside* a cold template.
+ * After the customer replies (24h opens), the booking bot always continues with the same
+ * interactive UI as in-session (Service/Repair · Reinstallation · Chat with us). Prefer
+ * `svc_booking_menu` (quick replies matching those labels) when APPROVED.
  */
 export const WA_COLD = {
+  /** Same 3 options as the 24h greeting menu (quick replies). */
+  booking_menu: {
+    name: 'svc_booking_menu',
+    language: 'en',
+    bodyParams: (customerName: string) => [cleanName(customerName)],
+  },
   pending_payment: {
     name: 'svc_balance_due',
     language: 'en',
@@ -168,25 +179,22 @@ export const WA_COLD = {
       }`.slice(0, 160),
     ],
   },
-  // —— Booking flows (use svc_* until dual-brand CTA templates are re-approved) ——
+  // —— Booking flows (prefer svc_booking_menu → same options as 24h session) ——
   // Spec: src/lib/whatsappBookingCtaTemplates.ts → resolveBookingCta(kind, brand, ...)
   book_existing_customer: {
-    name: 'svc_visit_reminder',
+    name: 'svc_booking_menu',
     language: 'en',
-    bodyParams: (customerName: string) => [cleanName(customerName), 'your service schedule'],
+    bodyParams: (customerName: string) => [cleanName(customerName)],
   },
   book_new_customer: {
-    name: 'svc_visit_reminder',
+    name: 'svc_booking_menu',
     language: 'en',
-    bodyParams: (customerName: string) => [
-      cleanName(customerName) || 'there',
-      'service registration',
-    ],
+    bodyParams: (customerName: string) => [cleanName(customerName) || 'there'],
   },
   missed_call_book: {
-    name: 'svc_visit_reminder',
+    name: 'svc_booking_menu',
     language: 'en',
-    bodyParams: (customerName: string) => [cleanName(customerName), 'callback for your missed call'],
+    bodyParams: (customerName: string) => [cleanName(customerName)],
   },
   reschedule_visit: {
     name: 'svc_visit_reminder',
@@ -280,6 +288,7 @@ function cleanAmount(amount: number | string): string {
 
 /** Human labels for inbox / pickers */
 export const WA_COLD_LABELS: Record<keyof typeof WA_COLD, string> = {
+  booking_menu: 'Hi menu (svc_booking_menu — same as 24h)',
   pending_payment: 'Balance due (svc_balance_due)',
   service_reminder: 'Visit reminder (svc_visit_reminder)',
   amc_renewal: 'AMC expiry → document PDF',
@@ -299,9 +308,9 @@ export const WA_COLD_LABELS: Record<keyof typeof WA_COLD, string> = {
   general_notice: 'General notice → visit reminder',
   crm_notice: 'CRM notice → visit reminder',
   crm_update_details: 'CRM update → visit reminder',
-  book_existing_customer: 'Existing schedule → visit reminder',
-  book_new_customer: 'Unregistered → visit reminder',
-  missed_call_book: 'Missed call → visit reminder',
+  book_existing_customer: 'Booking menu (svc_booking_menu)',
+  book_new_customer: 'Booking menu (svc_booking_menu)',
+  missed_call_book: 'Booking menu (svc_booking_menu)',
   reschedule_visit: 'Reschedule → visit reminder',
   booking_confirmed: 'Booking confirmed (svc_visit_confirmed)',
 };

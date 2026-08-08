@@ -331,7 +331,7 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }
           />
           <ToggleRow
             label="Booking bot"
-            description="Hi → Book service / Call back / Talk to team. Book asks Repair·Service / Installation / Custom, then date·time lists, purifier photo, confirm. Customer messages stay simple (no lead-source text)."
+            description="Hi or any first message → Service/Repair · Reinstallation · Chat with us (Eleven 9880693311). Clear intents (repair/leak/reinstall) skip straight into booking. Different location saves a secondary site + optional alternate phone. After booking, free-form text/files redirect to Call 3311 / WhatsApp team."
             checked={settings.allow_booking_bot}
             disabled={!settings.enabled}
             onCheckedChange={(v) => patch('allow_booking_bot', v)}
