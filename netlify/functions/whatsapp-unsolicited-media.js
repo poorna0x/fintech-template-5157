@@ -1,7 +1,7 @@
 /**
  * Unsolicited inbound media (photo / video / file / audio):
  * - If we recently asked for media → allow (no auto-reply)
- * - Otherwise → polite redirect to Eleven RO main WhatsApp 9880693311
+ * - Otherwise → redirect to Eleven RO main line with Call + WhatsApp buttons
  *
  * Mark an ask by including AWAITING_CUSTOMER_MEDIA_MARKER in the outbound body
  * (or natural “please send a photo…” wording).
@@ -11,16 +11,18 @@ const {
   insertWhatsAppMessage,
   normalizePhoneE164,
 } = require('./whatsapp-helper');
+const {
+  ELEVEN_SUPPORT_DISPLAY,
+  ELEVEN_SUPPORT_WA_ME,
+  sendElevenSupportButtons,
+} = require('./whatsapp-eleven-support');
 
 /** Include this in outbound text when CRM/bot is expecting a customer upload. */
 const AWAITING_CUSTOMER_MEDIA_MARKER = '[Awaiting customer media]';
 
 const UNSOLICITED_REDIRECT_MARKER = '[Unsolicited media redirect]';
 
-/** Eleven RO main WhatsApp (personal/business line customers should message for files). */
-const ELEVEN_SUPPORT_WA_DISPLAY = '9880693311';
-const ELEVEN_SUPPORT_WA_E164 = '919880693311';
-const ELEVEN_SUPPORT_WA_ME = `https://wa.me/${ELEVEN_SUPPORT_WA_E164}`;
+const ELEVEN_SUPPORT_WA_DISPLAY = ELEVEN_SUPPORT_DISPLAY;
 
 const MEDIA_TYPES = new Set(['image', 'document', 'audio', 'video', 'sticker', 'voice']);
 
@@ -36,12 +38,9 @@ function buildUnsolicitedMediaReply() {
     'Thanks for sharing this.',
     '',
     'This WhatsApp number is for booking and service updates only.',
-    'For photos, videos, or files, please speak with our Eleven RO team on our main WhatsApp:',
+    'For photos, videos, or files, please contact our Eleven RO team:',
     '',
-    `📱 ${ELEVEN_SUPPORT_WA_DISPLAY}`,
-    ELEVEN_SUPPORT_WA_ME,
-    '',
-    'Message them there and our team will help you right away.',
+    `Tap *Call us* to open the dialer, or *WhatsApp* to chat on ${ELEVEN_SUPPORT_DISPLAY}.`,
   ].join('\n');
 }
 
@@ -87,31 +86,6 @@ async function recentlySentRedirect(db, phoneE164) {
   }
 }
 
-async function sendTextRedirect({ phoneNumberId, accessToken, db, to, text }) {
-  const phone = normalizePhoneE164(to);
-  if (!phone || !phoneNumberId || !accessToken || !text) return { ok: false };
-  const payload = {
-    messaging_product: 'whatsapp',
-    recipient_type: 'individual',
-    to: phone,
-    type: 'text',
-    text: { preview_url: true, body: String(text).slice(0, 4096) },
-  };
-  const result = await callWhatsAppApi(phoneNumberId, accessToken, payload);
-  const waId =
-    result.data?.messages?.[0]?.id || result.data?.messages?.[0]?.message_id || null;
-  await insertWhatsAppMessage(db, {
-    wa_message_id: waId,
-    direction: 'outbound',
-    phone_e164: phone,
-    msg_type: 'text',
-    body: `${UNSOLICITED_REDIRECT_MARKER}\n${text}`,
-    status: result.ok ? 'sent' : 'failed',
-    error_message: result.ok ? null : result.data?.error?.message || 'send failed',
-  });
-  return { ok: result.ok };
-}
-
 /**
  * @returns {{ handled: boolean, redirected?: boolean, reason?: string }}
  */
@@ -138,12 +112,21 @@ async function handleUnsolicitedInboundMedia({ db, accessToken, phoneNumberId, m
   }
 
   const text = buildUnsolicitedMediaReply();
-  const sent = await sendTextRedirect({
+  const sent = await sendElevenSupportButtons({
     phoneNumberId,
     accessToken,
     db,
     to: phone,
-    text,
+    bodyText: text,
+    footer: 'Eleven RO',
+  });
+
+  await insertWhatsAppMessage(db, {
+    direction: 'outbound',
+    phone_e164: phone,
+    msg_type: 'text',
+    body: `${UNSOLICITED_REDIRECT_MARKER}\n${text}`,
+    status: sent.ok ? 'sent' : 'failed',
   });
 
   return {
@@ -158,7 +141,6 @@ function stampAwaitingMediaIfAsking(text) {
   if (!t) return t;
   if (t.includes(AWAITING_CUSTOMER_MEDIA_MARKER)) return t;
   if (!ASK_MEDIA_RE.test(t)) return t;
-  // Append for DB matching only (caller must not send this string to Meta as customer text).
   return `${t}\n${AWAITING_CUSTOMER_MEDIA_MARKER}`;
 }
 

@@ -13,17 +13,14 @@ const {
   insertWhatsAppMessage,
   normalizePhoneE164,
 } = require('./whatsapp-helper');
+const {
+  ELEVEN_SUPPORT_DISPLAY,
+  sendElevenSupportButtons,
+  handleElevenSupportButton,
+} = require('./whatsapp-eleven-support');
+const { enrichWhatsAppLocation } = require('./whatsapp-location-enrich');
 
-const BOOK_URL = (
-  process.env.WHATSAPP_BOOK_URL ||
-  process.env.VITE_PUBLIC_SITE_URL ||
-  'https://elevenro.com/book'
-)
-  .trim()
-  .replace(/\/$/, '');
-const SUPPORT_PHONE_DISPLAY = '9880693311';
-const SUPPORT_WA_E164 = '919880693311';
-const SUPPORT_WA_ME = `https://wa.me/${SUPPORT_WA_E164}`;
+const SUPPORT_PHONE_DISPLAY = ELEVEN_SUPPORT_DISPLAY;
 const LEAD_SOURCE = 'Direct call';
 const BRAND_LABEL = 'Eleven RO';
 const STATE_PREFIX = '[Booking bot state]';
@@ -292,12 +289,22 @@ function formatServiceLocationLine(state, customer, locOverride) {
           lng: locOverride.lng,
           name: locOverride.name,
           address: locOverride.address,
+          shortLocation: locOverride.shortLocation,
+          formattedAddress: locOverride.formattedAddress,
         }
       : null);
 
   if (pin) {
-    const address = String(pin.address || '').trim();
+    const short = String(pin.shortLocation || '').trim();
+    const address = String(pin.address || pin.formattedAddress || '').trim();
     const name = String(pin.name || '').trim();
+    if (short && address && !address.toLowerCase().includes(short.toLowerCase())) {
+      return `${short} — ${address}`.slice(0, 180);
+    }
+    if (short && name && name.toLowerCase() !== short.toLowerCase()) {
+      return `${short} — ${name}`.slice(0, 180);
+    }
+    if (short) return short.slice(0, 180);
     if (address && name && address.toLowerCase() !== name.toLowerCase()) {
       return `${name}, ${address}`.slice(0, 180);
     }
@@ -314,20 +321,20 @@ function formatServiceLocationLine(state, customer, locOverride) {
 }
 
 function buildServiceAddress(customer, locOverride) {
-  if (locOverride?.address || locOverride?.name) {
+  if (locOverride?.address || locOverride?.name || locOverride?.shortLocation) {
     return {
-      street: locOverride.address || locOverride.name || '',
-      area: '',
+      street: locOverride.address || locOverride.formattedAddress || locOverride.name || '',
+      area: locOverride.shortLocation || '',
       city: 'Bangalore',
       state: 'Karnataka',
       pincode: '',
-      landmark: locOverride.name || '',
+      landmark: locOverride.name || locOverride.shortLocation || '',
     };
   }
   const a = customer?.address && typeof customer.address === 'object' ? customer.address : {};
   return {
     street: a.street || customer?.visible_address || '',
-    area: a.area || '',
+    area: a.area || customer?.visible_address || '',
     city: a.city || 'Bangalore',
     state: a.state || 'Karnataka',
     pincode: a.pincode || '',
@@ -343,8 +350,12 @@ function buildServiceLocation(customer, locOverride) {
       latitude: lat,
       longitude: lng,
       formattedAddress:
-        locOverride.address || locOverride.name || `${lat},${lng}`,
+        locOverride.formattedAddress ||
+        locOverride.address ||
+        locOverride.name ||
+        `${lat},${lng}`,
       googleLocation: `https://www.google.com/maps/place/${lat},${lng}`,
+      shortLocation: locOverride.shortLocation || null,
     };
   }
   const loc = customer?.location && typeof customer.location === 'object' ? customer.location : {};
@@ -628,6 +639,8 @@ async function rememberSharedLocation(db, phone, loc) {
       lng: loc.longitude,
       name: loc.name || null,
       address: loc.address || null,
+      shortLocation: loc.shortLocation || null,
+      formattedAddress: loc.formattedAddress || loc.address || null,
     })}`,
     status: 'sent',
   });
@@ -704,14 +717,15 @@ function isValidPersonName(text) {
 async function createCustomerFromDraft(db, phoneE164, draft) {
   const phone10 = phone10FromE164(phoneE164);
   const loc = draft.loc || {};
-  const addressLine = String(loc.address || loc.name || '').trim();
+  const addressLine = String(loc.address || loc.formattedAddress || loc.name || '').trim();
+  const shortLoc = String(loc.shortLocation || '').trim() || null;
   const address = {
     street: addressLine || '',
-    area: '',
+    area: shortLoc || '',
     city: 'Bangalore',
     state: 'Karnataka',
     pincode: '',
-    landmark: String(loc.name || '').trim() || '',
+    landmark: String(loc.name || shortLoc || '').trim() || '',
   };
   const location =
     loc.lat != null && loc.lng != null
@@ -720,6 +734,7 @@ async function createCustomerFromDraft(db, phoneE164, draft) {
           longitude: Number(loc.lng),
           formattedAddress: addressLine || `${loc.lat},${loc.lng}`,
           googleLocation: `https://www.google.com/maps/place/${loc.lat},${loc.lng}`,
+          shortLocation: shortLoc,
         }
       : {};
 
@@ -734,7 +749,7 @@ async function createCustomerFromDraft(db, phoneE164, draft) {
       email: '',
       address,
       location,
-      visible_address: addressLine || null,
+      visible_address: shortLoc || addressLine || null,
       service_type: 'RO',
       brand: draft.brand || 'Not specified',
       model: draft.model || 'Not specified',
@@ -869,6 +884,14 @@ async function sendGreetingMenu(ctx, { isNew } = {}) {
 }
 
 async function askServiceType(ctx, state = {}) {
+  // Phone already in CRM → confirm identity before collecting job details (unless already confirmed).
+  if (!state.existingCustomerId && !state.editing) {
+    const existing = await lookupCustomerFull(ctx.db, ctx.to);
+    if (existing?.id) {
+      await sendIdentityConfirm(ctx, existing);
+      return;
+    }
+  }
   await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_service_type' });
   return sendButtons({
     ...ctx,
@@ -883,6 +906,11 @@ async function askServiceType(ctx, state = {}) {
 }
 
 async function startNewCustomerBooking(ctx, state = {}) {
+  const existing = await lookupCustomerFull(ctx.db, ctx.to);
+  if (existing?.id) {
+    await sendIdentityConfirm(ctx, existing);
+    return;
+  }
   await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_name' });
   await sendText({
     ...ctx,
@@ -918,10 +946,11 @@ async function askLocationForNew(ctx, state) {
 
 async function askLocConfirm(ctx, state, locSummary) {
   await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_loc_confirm' });
+  const short = state?.loc?.shortLocation ? `*Area:* ${state.loc.shortLocation}\n` : '';
   const locLine = formatServiceLocationLine(state) || locSummary || 'Shared pin';
   await sendButtons({
     ...ctx,
-    bodyText: `Location received:\n*${locLine}*\n\nIs this correct?`,
+    bodyText: `Location received:\n${short}*${locLine}*\n\nIs this correct?`,
     footer: 'Confirm location',
     buttons: [
       { id: 'loc_yes', title: 'Yes, correct' },
@@ -1068,22 +1097,35 @@ function buildBookingSummaryLines(state, customer) {
   const timeLabel = timeLabelFromState(state);
   const name = state.name || customer?.full_name || '';
   const loc = formatServiceLocationLine(state, customer);
-  const lines = ['Please confirm your booking details:', ''];
+  const existing = Boolean(state?.existingCustomerId || customer?.id);
+  const lines = [
+    existing
+      ? 'Please confirm — we’ll add this *job* to your existing account:'
+      : 'Please confirm your booking details:',
+    '',
+  ];
   if (name) lines.push(`*Name:* ${name}`);
   lines.push(`*Service:* ${serviceLabelFromState(state)}`);
   if (state.dateIso) lines.push(`*Date:* ${formatDateIsoLabel(state.dateIso)}`);
   if (timeLabel) lines.push(`*Time:* ${timeLabel}`);
   if (loc) lines.push(`*Location:* ${loc}`);
+  else if (existing && formatAddressLine(customer)) {
+    lines.push(`*Location:* ${formatAddressLine(customer)}`);
+  }
   if (state.photoUrl) lines.push('*Photo:* Received');
   return lines.join('\n');
 }
 
 async function sendNewCustomerConfirm(ctx, state) {
+  let customer = null;
+  if (state?.existingCustomerId) {
+    customer = await lookupCustomerFull(ctx.db, ctx.to);
+  }
   await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_confirm', editing: false });
   return sendButtons({
     ...ctx,
-    bodyText: buildBookingSummaryLines(state),
-    footer: 'Almost done',
+    bodyText: buildBookingSummaryLines(state, customer),
+    footer: state?.existingCustomerId ? 'Add job only' : 'Almost done',
     buttons: [
       { id: 'confirm_new', title: 'Yes, book now' },
       { id: 'edit_details', title: 'Edit details' },
@@ -1097,8 +1139,15 @@ async function sendIdentityConfirm(ctx, customer) {
   const loc = formatAddressLine(customer) || 'your saved address';
   return sendButtons({
     ...ctx,
-    bodyText: `Is this booking for *${name}* at:\n*Location:* ${loc}`,
-    footer: 'Confirm details',
+    bodyText: [
+      `We found this number in our records.`,
+      '',
+      `Is this booking for *${name}* at:`,
+      `*Location:* ${loc}`,
+      '',
+      'Tap *Yes* to continue — we’ll only add a new *job* (no new customer).',
+    ].join('\n'),
+    footer: 'Confirm account',
     buttons: [
       { id: 'identity_yes', title: "Yes, that's me" },
       { id: 'identity_no', title: 'No / new address' },
@@ -1281,6 +1330,8 @@ async function persistBookingEditsToCrm(db, state) {
           lng: state.loc.lng,
           name: state.loc.name,
           address: state.loc.address,
+          shortLocation: state.loc.shortLocation,
+          formattedAddress: state.loc.formattedAddress,
         };
         jobPatch.service_location = buildServiceLocation(null, locOverride);
         jobPatch.service_address = buildServiceAddress(null, locOverride);
@@ -1331,20 +1382,26 @@ async function persistBookingEditsToCrm(db, state) {
 
       if (state.loc?.lat != null && state.loc?.lng != null) {
         const addressLine = formatServiceLocationLine(state);
+        const shortLoc = String(state.loc.shortLocation || '').trim() || null;
         custPatch.location = {
           latitude: Number(state.loc.lat),
           longitude: Number(state.loc.lng),
-          formattedAddress: addressLine || `${state.loc.lat},${state.loc.lng}`,
+          formattedAddress:
+            state.loc.formattedAddress ||
+            state.loc.address ||
+            addressLine ||
+            `${state.loc.lat},${state.loc.lng}`,
           googleLocation: `https://www.google.com/maps/place/${state.loc.lat},${state.loc.lng}`,
+          shortLocation: shortLoc,
         };
-        custPatch.visible_address = addressLine || null;
+        custPatch.visible_address = shortLoc || addressLine || null;
         custPatch.address = {
-          street: state.loc.address || addressLine || '',
-          area: '',
+          street: state.loc.address || state.loc.formattedAddress || addressLine || '',
+          area: shortLoc || '',
           city: 'Bangalore',
           state: 'Karnataka',
           pincode: '',
-          landmark: state.loc.name || '',
+          landmark: state.loc.name || shortLoc || '',
         };
       }
 
@@ -1387,25 +1444,71 @@ async function recentlyCompletedBotBooking(db, phoneE164) {
   return false;
 }
 
-async function sendPostBookingHumanRedirect(ctx) {
-  const text = [
+function buildAdminHandoffPrefill({ customer, state, phoneE164 }) {
+  const phone10 = phone10FromE164(phoneE164);
+  const name = String(customer?.full_name || state?.name || '').trim();
+  const loc =
+    formatServiceLocationLine(state, customer) ||
+    formatAddressLine(customer) ||
+    '';
+  const shortArea =
+    String(state?.loc?.shortLocation || customer?.visible_address || '').trim() || '';
+  const service = serviceLabelFromState(state || {}) || customer?.service_type || '';
+  const lines = [
+    'Hello Eleven RO team — customer needs help after WhatsApp booking.',
+    '',
+    `Phone: ${phone10}`,
+  ];
+  if (name) lines.push(`Name: ${name}`);
+  if (state?.jobNumber) lines.push(`Job: ${state.jobNumber}`);
+  if (service && service !== 'Service') lines.push(`Service: ${service}`);
+  else if (state?.serviceSubType) lines.push(`Service: ${state.serviceSubType}`);
+  if (state?.dateIso) {
+    lines.push(
+      `Visit: ${formatDateIsoLabel(state.dateIso)}${timeLabelFromState(state) ? ` · ${timeLabelFromState(state)}` : ''}`
+    );
+  }
+  if (shortArea) lines.push(`Area: ${shortArea}`);
+  if (loc && loc !== shortArea) lines.push(`Location: ${loc}`);
+  else if (loc) lines.push(`Location: ${loc}`);
+  lines.push('', 'Please assist.');
+  return lines.join('\n').slice(0, 900);
+}
+
+async function sendPostBookingHumanRedirect(ctx, state = null) {
+  const st = state || (await getBookingState(ctx.db, ctx.to)) || {};
+  const customer = await lookupCustomerFull(ctx.db, ctx.to);
+  const prefill = buildAdminHandoffPrefill({
+    customer,
+    state: st,
+    phoneE164: ctx.to,
+  });
+
+  const bodyText = [
     'Thanks for your message.',
     '',
     'Your booking on this number is already in progress.',
-    'For any further help, please chat with our team on WhatsApp:',
-    '',
-    `📱 ${SUPPORT_PHONE_DISPLAY}`,
-    SUPPORT_WA_ME,
-    '',
-    'They will assist you right away.',
+    'Tap *Call us* to open the dialer, or *WhatsApp* to chat with our team (your details will be attached).',
   ].join('\n');
-  await sendText({ ...ctx, text });
+
+  await sendElevenSupportButtons({
+    ...ctx,
+    bodyText,
+    footer: BRAND_LABEL,
+  });
+  // Keep prefill on state for WhatsApp button tap
+  await setBookingState(ctx.db, ctx.to, {
+    ...st,
+    step: st.step || 'booking_complete',
+    supportPrefill: prefill,
+  });
   await insertWhatsAppMessage(ctx.db, {
     direction: 'outbound',
     phone_e164: ctx.to,
     msg_type: 'text',
-    body: `${POST_BOOKING_REDIRECT_MARKER}\n${text}`,
+    body: `${POST_BOOKING_REDIRECT_MARKER}\n${bodyText}`,
     status: 'sent',
+    customer_id: customer?.id || st.customerId || null,
   });
   return { handled: true };
 }
@@ -1456,7 +1559,7 @@ async function handleBookingBotInbound({
       if (postBookConfirm && text && EDIT_RE.test(text)) {
         // fall through to edit handlers below
       } else {
-        await sendPostBookingHumanRedirect(ctx);
+        await sendPostBookingHumanRedirect(ctx, state);
         return { handled: true };
       }
     }
@@ -1561,26 +1664,67 @@ async function handleBookingBotInbound({
   // Customer shared a location pin
   if (msgType === 'location' && msg.location) {
     const { latitude, longitude, name, address } = msg.location;
-    const maps = `https://maps.google.com/?q=${latitude},${longitude}`;
-    const locSummary = [name, address, maps].filter(Boolean).join('\n');
-    await rememberSharedLocation(db, to, { latitude, longitude, name, address });
+    const enriched = await enrichWhatsAppLocation({
+      latitude,
+      longitude,
+      name,
+      address,
+    });
+    await rememberSharedLocation(db, to, {
+      latitude: enriched.lat,
+      longitude: enriched.lng,
+      name: enriched.name,
+      address: enriched.address,
+      shortLocation: enriched.shortLocation,
+      formattedAddress: enriched.formattedAddress,
+    });
 
     if (state?.step === 'await_location' || state?.step === 'await_loc_confirm') {
       const next = {
         ...state,
         step: 'await_loc_confirm',
-        loc: { lat: latitude, lng: longitude, name: name || null, address: address || null },
+        loc: {
+          lat: enriched.lat,
+          lng: enriched.lng,
+          name: enriched.name,
+          address: enriched.address,
+          shortLocation: enriched.shortLocation,
+          formattedAddress: enriched.formattedAddress,
+        },
       };
       await askLocConfirm(ctx, next, null);
       return { handled: true };
     }
 
+    const locSummary = [
+      enriched.shortLocation,
+      enriched.name,
+      enriched.address || enriched.formattedAddress,
+      `https://maps.google.com/?q=${enriched.lat},${enriched.lng}`,
+    ]
+      .filter(Boolean)
+      .join('\n');
     await afterLocationSharedLegacy(ctx, locSummary);
     return { handled: true };
   }
 
   if (interactive?.id) {
     const id = interactive.id;
+
+    // Eleven RO Call / WhatsApp buttons (dialer contact + wa.me)
+    if (id === 'support_call' || id === 'support_whatsapp') {
+      const customer = await lookupCustomerFull(db, to);
+      const st = state || {};
+      const prefill =
+        st.supportPrefill ||
+        buildAdminHandoffPrefill({ customer, state: st, phoneE164: to });
+      const handled = await handleElevenSupportButton({
+        id,
+        ...ctx,
+        prefill,
+      });
+      if (handled.handled) return { handled: true };
+    }
 
     if (id === 'book_service') {
       const customer = await lookupCustomerFull(db, to);
@@ -1597,7 +1741,7 @@ async function handleBookingBotInbound({
       await clearBookingState(db, to);
       await sendText({
         ...ctx,
-        text: `Got it — we’ll call you back on this number shortly.\n\nIf urgent, call ${SUPPORT_PHONE_DISPLAY}.`,
+        text: `Got it — we’ll call you back on this number shortly.`,
       });
       await insertWhatsAppMessage(db, {
         direction: 'outbound',
@@ -1624,6 +1768,14 @@ async function handleBookingBotInbound({
       } catch (err) {
         console.warn('[whatsapp-booking-bot] callback notify skipped', err?.message || err);
       }
+      const customer = await lookupCustomerFull(db, to);
+      const prefill = buildAdminHandoffPrefill({ customer, state: {}, phoneE164: to });
+      await setBookingState(db, to, { step: 'booking_complete', supportPrefill: prefill });
+      await sendElevenSupportButtons({
+        ...ctx,
+        bodyText: `If urgent, reach Eleven RO now on ${SUPPORT_PHONE_DISPLAY}:`,
+        footer: BRAND_LABEL,
+      });
       return { handled: true };
     }
 
@@ -1662,22 +1814,35 @@ async function handleBookingBotInbound({
     }
 
     if (id === 'all_correct') {
-      await setBookingState(db, to, {
+      const doneState = {
         step: 'booking_complete',
         jobNumber: state?.jobNumber || null,
         customerId: state?.customerId || null,
+        name: state?.name || null,
+        dateIso: state?.dateIso || null,
+        slotKey: state?.slotKey || null,
+        customTimeLabel: state?.customTimeLabel || state?.timeLabel || null,
+        serviceSubType: state?.serviceSubType || null,
+        serviceLabel: state?.serviceLabel || null,
+        loc: state?.loc || null,
+      };
+      const customer = await lookupCustomerFull(db, to);
+      const prefill = buildAdminHandoffPrefill({
+        customer,
+        state: { ...state, ...doneState },
+        phoneE164: to,
       });
-      await sendText({
+      await setBookingState(db, to, { ...doneState, supportPrefill: prefill });
+      await sendElevenSupportButtons({
         ...ctx,
-        text: [
+        bodyText: [
           'Perfect — thank you.',
           '',
           'Your booking is confirmed. We’ll update you here once a technician is assigned.',
           '',
-          'For any other questions, please WhatsApp our team:',
-          `📱 ${SUPPORT_PHONE_DISPLAY}`,
-          SUPPORT_WA_ME,
+          'Need anything else? Tap *Call us* (dialer) or *WhatsApp* (chat with your details attached).',
         ].join('\n'),
+        footer: BRAND_LABEL,
       });
       return { handled: true };
     }
@@ -1760,12 +1925,15 @@ async function handleBookingBotInbound({
 
     if (id === 'confirm_new') {
       const st = (await getBookingState(db, to)) || state;
-      if (!st?.name || !st?.dateIso || !st?.slotKey) {
+      const existingByPhone = await lookupCustomerFull(db, to);
+      const isExisting = Boolean(st?.existingCustomerId || existingByPhone?.id);
+
+      if ((!st?.name && !isExisting) || !st?.dateIso || !st?.slotKey) {
         await sendText({
           ...ctx,
           text: 'Something is missing. Please tap *Book service* to start again.',
         });
-        await askServiceType(ctx, {});
+        await askServiceType(ctx, isExisting ? { existingCustomerId: existingByPhone?.id, name: existingByPhone?.full_name } : {});
         return { handled: true };
       }
       if (!st.photoUrl) {
@@ -1773,14 +1941,27 @@ async function handleBookingBotInbound({
           ...ctx,
           text: 'A *purifier photo is required* before we can book.',
         });
-        await askPurifierPhoto(ctx, st);
+        await askPurifierPhoto(ctx, {
+          ...st,
+          existingCustomerId: st.existingCustomerId || existingByPhone?.id || null,
+          name: st.name || existingByPhone?.full_name || null,
+        });
         return { handled: true };
       }
 
       let customer = null;
-      if (st.existingCustomerId) {
-        customer = await lookupCustomerFull(db, to);
-        if (customer?.id && st.loc) {
+
+      // Phone already in CRM → confirm path already done; create *job only* (never a new customer).
+      if (isExisting) {
+        customer = existingByPhone || (await lookupCustomerFull(db, to));
+        if (!customer?.id) {
+          await sendText({
+            ...ctx,
+            text: 'We couldn’t load your account. Please tap *Book service* to try again.',
+          });
+          return { handled: true };
+        }
+        if (st.loc) {
           try {
             await db.rpc('update_customer_for_booking', {
               p_customer_id: customer.id,
@@ -1789,17 +1970,19 @@ async function handleBookingBotInbound({
                 location: {
                   latitude: Number(st.loc.lat),
                   longitude: Number(st.loc.lng),
-                  formattedAddress: st.loc.address || st.loc.name || '',
+                  formattedAddress:
+                    st.loc.formattedAddress || st.loc.address || st.loc.name || '',
                   googleLocation: `https://www.google.com/maps/place/${st.loc.lat},${st.loc.lng}`,
+                  shortLocation: st.loc.shortLocation || null,
                 },
-                visible_address: st.loc.address || st.loc.name || null,
+                visible_address: st.loc.shortLocation || st.loc.address || st.loc.name || null,
                 address: {
-                  street: st.loc.address || '',
-                  area: '',
+                  street: st.loc.address || st.loc.formattedAddress || '',
+                  area: st.loc.shortLocation || '',
                   city: 'Bangalore',
                   state: 'Karnataka',
                   pincode: '',
-                  landmark: st.loc.name || '',
+                  landmark: st.loc.name || st.loc.shortLocation || '',
                 },
               },
             });
@@ -1811,13 +1994,25 @@ async function handleBookingBotInbound({
       } else {
         const createdCustomer = await createCustomerFromDraft(db, to, st);
         if (!createdCustomer.ok || !createdCustomer.customer?.id) {
-          await sendText({
-            ...ctx,
-            text: `We couldn’t complete booking right now. Our team will help you shortly.\n\nCall ${SUPPORT_PHONE_DISPLAY} if urgent.`,
-          });
-          return { handled: true };
+          // Race: customer appeared — job-only fallback
+          const raced = await lookupCustomerFull(db, to);
+          if (raced?.id) {
+            customer = raced;
+          } else {
+            await sendText({
+              ...ctx,
+              text: `We couldn’t complete booking right now. Our team will help you shortly.`,
+            });
+            await sendElevenSupportButtons({
+              ...ctx,
+              bodyText: `Reach Eleven RO on ${SUPPORT_PHONE_DISPLAY}:`,
+              footer: BRAND_LABEL,
+            });
+            return { handled: true };
+          }
+        } else {
+          customer = createdCustomer.customer;
         }
-        customer = createdCustomer.customer;
       }
 
       if (!customer?.id) {
@@ -1834,6 +2029,8 @@ async function handleBookingBotInbound({
             lng: st.loc.lng,
             name: st.loc.name,
             address: st.loc.address,
+            shortLocation: st.loc.shortLocation,
+            formattedAddress: st.loc.formattedAddress,
           }
         : await getRememberedLocation(db, to);
 
@@ -1854,7 +2051,12 @@ async function handleBookingBotInbound({
       if (!created.ok) {
         await sendText({
           ...ctx,
-          text: `Booking didn’t go through. Our team will finish it for you.\n\nCall ${SUPPORT_PHONE_DISPLAY} if urgent.`,
+          text: `Booking didn’t go through. Our team will finish it for you.`,
+        });
+        await sendElevenSupportButtons({
+          ...ctx,
+          bodyText: `Reach Eleven RO on ${SUPPORT_PHONE_DISPLAY}:`,
+          footer: BRAND_LABEL,
         });
         await clearBookingState(db, to);
         return { handled: true };
@@ -1863,6 +2065,7 @@ async function handleBookingBotInbound({
       const bookedState = {
         ...st,
         name: customer.full_name || st.name,
+        existingCustomerId: customer.id,
         jobNumber: created.jobNumber,
         jobId: created.job?.id || null,
         customerId: customer.id,
@@ -1876,6 +2079,8 @@ async function handleBookingBotInbound({
                 lng: locOverride.lng,
                 name: locOverride.name,
                 address: locOverride.address,
+                shortLocation: locOverride.shortLocation,
+                formattedAddress: locOverride.formattedAddress,
               }
             : null),
       };
@@ -1884,7 +2089,7 @@ async function handleBookingBotInbound({
         direction: 'outbound',
         phone_e164: to,
         msg_type: 'text',
-        body: `[Booking bot] Job: ${created.jobNumber} · ${st.dateIso} ${created.timeLabel} · ${st.serviceSubType || 'Service'} · ${LEAD_SOURCE} · loc: ${formatServiceLocationLine(bookedState, customer, locOverride)}`,
+        body: `[Booking bot] Job: ${created.jobNumber} · ${st.dateIso} ${created.timeLabel} · ${st.serviceSubType || 'Service'} · ${LEAD_SOURCE} · ${isExisting ? 'existing_customer' : 'new_customer'} · loc: ${formatServiceLocationLine(bookedState, customer, locOverride)}`,
         status: 'sent',
         customer_id: customer.id,
       });
@@ -1929,16 +2134,26 @@ async function handleBookingBotInbound({
     }
 
     if (id === 'talk_team') {
-      await clearBookingState(db, to);
-      await sendText({
-        ...ctx,
-        text: `Okay — a team member will reply here shortly.\n\nYou can also WhatsApp/call ${SUPPORT_PHONE_DISPLAY}.`,
+      const customer = await lookupCustomerFull(db, to);
+      const prefill = buildAdminHandoffPrefill({
+        customer,
+        state: state || {},
+        phoneE164: to,
       });
-      await sendCtaUrl({
+      await setBookingState(db, to, {
+        ...(state || {}),
+        step: state?.jobNumber ? 'booking_complete' : state?.step || 'idle',
+        supportPrefill: prefill,
+      });
+      await sendElevenSupportButtons({
         ...ctx,
-        bodyText: 'Or book online anytime:',
-        displayText: 'Book online',
-        url: `${BOOK_URL.startsWith('http') ? BOOK_URL : `https://${BOOK_URL}`}`,
+        bodyText: [
+          'Okay — reach our Eleven RO team directly:',
+          '',
+          `*Call us* opens your phone dialer.`,
+          `*WhatsApp* opens chat with ${SUPPORT_PHONE_DISPLAY} (details attached when available).`,
+        ].join('\n'),
+        footer: BRAND_LABEL,
       });
       return { handled: true };
     }
@@ -2049,6 +2264,8 @@ async function handleBookingBotInbound({
             lng: st.loc.lng,
             name: st.loc.name,
             address: st.loc.address,
+            shortLocation: st.loc.shortLocation,
+            formattedAddress: st.loc.formattedAddress,
           }
         : await getRememberedLocation(db, to);
 
@@ -2078,7 +2295,12 @@ async function handleBookingBotInbound({
       if (!created.ok) {
         await sendText({
           ...ctx,
-          text: `We couldn’t complete booking right now. Our team will help shortly.\n\nCall ${SUPPORT_PHONE_DISPLAY} if urgent.`,
+          text: `We couldn’t complete booking right now. Our team will help shortly.`,
+        });
+        await sendElevenSupportButtons({
+          ...ctx,
+          bodyText: `Reach Eleven RO on ${SUPPORT_PHONE_DISPLAY}:`,
+          footer: BRAND_LABEL,
         });
         await insertWhatsAppMessage(db, {
           direction: 'outbound',
@@ -2109,6 +2331,8 @@ async function handleBookingBotInbound({
                 lng: locOverride.lng,
                 name: locOverride.name,
                 address: locOverride.address,
+                shortLocation: locOverride.shortLocation,
+                formattedAddress: locOverride.formattedAddress,
               }
             : null),
       };
