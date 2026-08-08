@@ -65,6 +65,14 @@ exports.handler = async (event) => {
       },
       android: { priority: 'high' },
     }), 'office_messages');
+    void require('./tech-push-whatsapp-helper')
+      .maybeSendTechnicianPushWhatsApp(db, {
+        technicianId,
+        category: 'office_messages',
+        title: 'HydrogenRO Office',
+        body: reply,
+      })
+      .catch(() => {});
     if (tokens === 0) {
       return { statusCode: 200, headers, body: JSON.stringify({ ok: true, devices: 0 }) };
     }

@@ -3799,10 +3799,10 @@ const Settings = () => {
                     </div>
                   ) : null}
                   <div className="space-y-2 rounded-md border border-emerald-200/80 bg-emerald-50/30 px-3 py-2.5 dark:bg-emerald-950/20">
-                    <p className="text-sm font-medium">WhatsApp job messages for this technician</p>
+                    <p className="text-sm font-medium">WhatsApp for this technician</p>
                     <p className="text-xs text-muted-foreground leading-snug mb-2">
-                      Assign/unassign WhatsApp to their phone, and customer “tech assigned” share.
-                      Master on/off: Dashboard Settings. Auto-send: Settings → WhatsApp.
+                      Same categories as push alerts, plus customer tech-share. Global: Settings →
+                      WhatsApp. Assign master: Dashboard Settings.
                     </p>
                     {TECH_WHATSAPP_CATEGORIES.map((key) => {
                       const meta = TECH_WHATSAPP_LABELS[key];

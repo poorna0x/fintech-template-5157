@@ -3205,6 +3205,28 @@ const AdminDashboard = () => {
           jobId: newJob.id,
           ...jobAssignPushText({ job: newJob as any, customer: selectedCustomerForJob as any }),
         });
+        const assignedTechDash = technicians.find(
+          (t) => t.id === newJobFormData.assigned_technician_id
+        );
+        if (assignedTechDash) {
+          void import('@/lib/jobTechnicianWhatsApp').then(({ notifyTechnicianJobWhatsApp }) =>
+            notifyTechnicianJobWhatsApp({
+              job: { ...(newJob as any), customer: selectedCustomerForJob } as any,
+              technician: {
+                id: assignedTechDash.id,
+                fullName:
+                  assignedTechDash.fullName ||
+                  (assignedTechDash as any).full_name ||
+                  'Technician',
+                phone: assignedTechDash.phone,
+                whatsappPhone: (assignedTechDash as any).whatsappPhone,
+                whatsapp_phone: (assignedTechDash as any).whatsapp_phone,
+              },
+              mode: 'assign',
+              ctx: null,
+            })
+          );
+        }
       }
 
       // Add to local state

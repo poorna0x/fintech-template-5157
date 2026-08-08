@@ -5,8 +5,11 @@
 import { supabase } from '@/lib/supabaseClient';
 import {
   isTechWhatsAppCategoryOn,
+  normalizeTechPushWhatsAppGlobal,
+  defaultTechPushWhatsAppGlobal,
   type TechWhatsAppCategory,
 } from '@/lib/techWhatsAppPrefs';
+import type { TechPushCategory } from '@/lib/pushNotificationPrefs';
 
 /** CRM surfaces that can send via Cloud API (passed as `source` to whatsapp-send). */
 export type WhatsAppSendSource =
@@ -46,6 +49,11 @@ export type WhatsAppCrmSettings = {
   allow_tech_assigned: boolean;
   /** Cloud API: notify customer tech was removed. */
   allow_tech_unassigned: boolean;
+  /**
+   * Mirror technician FCM categories → WhatsApp (same keys as TECH_PUSH_CATEGORIES).
+   * Missing key = enabled. Assign/unassign still also gated by Dashboard master.
+   */
+  tech_push_whatsapp: Record<TechPushCategory, boolean>;
   rate_utility_inr: number;
   rate_marketing_inr: number;
   rate_authentication_inr: number;
@@ -88,6 +96,7 @@ export const DEFAULT_WHATSAPP_CRM_SETTINGS: WhatsAppCrmSettings = {
   auto_send_job_unassign_whatsapp: false,
   allow_tech_assigned: true,
   allow_tech_unassigned: true,
+  tech_push_whatsapp: defaultTechPushWhatsAppGlobal(),
   rate_utility_inr: 0.115,
   rate_marketing_inr: 0.8631,
   rate_authentication_inr: 0.115,
@@ -98,7 +107,7 @@ export const DEFAULT_WHATSAPP_CRM_SETTINGS: WhatsAppCrmSettings = {
 };
 
 const SETTINGS_COLUMNS =
-  'id, enabled, allow_cold_templates, allow_pdf_send, allow_freeform, allow_booking_bot, allow_inbox, allow_calling, allow_service_reminder, allow_pending_payment, allow_documents, allow_composer, allow_job_assign_whatsapp, allow_job_unassign_whatsapp, auto_send_job_assign_whatsapp, auto_send_job_unassign_whatsapp, allow_tech_assigned, allow_tech_unassigned, rate_utility_inr, rate_marketing_inr, rate_authentication_inr, rate_service_inr, monthly_budget_inr, notes, updated_at';
+  'id, enabled, allow_cold_templates, allow_pdf_send, allow_freeform, allow_booking_bot, allow_inbox, allow_calling, allow_service_reminder, allow_pending_payment, allow_documents, allow_composer, allow_job_assign_whatsapp, allow_job_unassign_whatsapp, auto_send_job_assign_whatsapp, auto_send_job_unassign_whatsapp, allow_tech_assigned, allow_tech_unassigned, tech_push_whatsapp, rate_utility_inr, rate_marketing_inr, rate_authentication_inr, rate_service_inr, monthly_budget_inr, notes, updated_at';
 
 function num(v: unknown, fallback: number): number {
   const n = typeof v === 'number' ? v : Number(v);
@@ -135,6 +144,7 @@ export function normalizeWhatsAppCrmSettings(
     auto_send_job_unassign_whatsapp: row.auto_send_job_unassign_whatsapp === true,
     allow_tech_assigned: bool(row.allow_tech_assigned, true),
     allow_tech_unassigned: bool(row.allow_tech_unassigned, true),
+    tech_push_whatsapp: normalizeTechPushWhatsAppGlobal(row.tech_push_whatsapp),
     rate_utility_inr: num(row.rate_utility_inr, d.rate_utility_inr),
     rate_marketing_inr: num(row.rate_marketing_inr, d.rate_marketing_inr),
     rate_authentication_inr: num(row.rate_authentication_inr, d.rate_authentication_inr),
@@ -176,27 +186,25 @@ export function settingsKeyForSendSource(
   }
 }
 
-const GLOBAL_KEY_FOR_TECH_WA: Record<
-  TechWhatsAppCategory,
-  keyof WhatsAppCrmSettings
+const GLOBAL_KEY_FOR_TECH_WA: Partial<
+  Record<TechWhatsAppCategory, keyof WhatsAppCrmSettings>
 > = {
-  job_assign: 'allow_job_assign_whatsapp',
-  job_unassign: 'allow_job_unassign_whatsapp',
+  job_assigned: 'allow_job_assign_whatsapp',
+  job_unassigned: 'allow_job_unassign_whatsapp',
   tech_assigned_customer: 'allow_tech_assigned',
   tech_unassigned_customer: 'allow_tech_unassigned',
 };
 
 /**
  * Global WhatsApp settings + optional per-technician whatsapp_prefs.
- * job_assign / job_unassign = technician phone WhatsApp.
- * Master enable lives in Dashboard Settings (cached); auto-send in WhatsApp Settings.
- * Manual dialog is wa.me only. Customer Cloud API categories still require master `enabled`.
+ * job_assigned / job_unassigned use Dashboard master + tech prefs (assign dialog/auto).
+ * Other push-mirror categories use tech_push_whatsapp + tech prefs (server helper).
  */
 export async function isWhatsAppJobNotifyAllowed(
   category: TechWhatsAppCategory,
   technicianId?: string | null
 ): Promise<{ ok: boolean; reason?: string }> {
-  if (category === 'job_assign' || category === 'job_unassign') {
+  if (category === 'job_assigned' || category === 'job_unassigned') {
     const { ensureJobWhatsAppNotifyPrefs } = await import(
       '@/lib/jobAssignWhatsAppSettingsCache'
     );
@@ -204,21 +212,32 @@ export async function isWhatsAppJobNotifyAllowed(
     if (!prefs.enabled) {
       return { ok: false, reason: 'Job WhatsApp is off (Dashboard Settings)' };
     }
-  } else {
+  } else if (
+    category === 'tech_assigned_customer' ||
+    category === 'tech_unassigned_customer'
+  ) {
     const { settings, error } = await fetchWhatsAppCrmSettings();
     if (error) {
       console.warn('[whatsapp] settings load:', error);
     }
-
-    const needsCloudMaster =
-      category === 'tech_assigned_customer' || category === 'tech_unassigned_customer';
-    if (needsCloudMaster && settings.enabled === false) {
+    if (settings.enabled === false) {
       return { ok: false, reason: 'WhatsApp Cloud API is disabled in Settings' };
     }
-
     const globalKey = GLOBAL_KEY_FOR_TECH_WA[category];
-    if (settings[globalKey] === false) {
+    if (globalKey && settings[globalKey] === false) {
       return { ok: false, reason: 'This WhatsApp notify type is off in WhatsApp settings' };
+    }
+  } else {
+    // Mirror categories: global tech_push_whatsapp + Cloud API master
+    const { settings, error } = await fetchWhatsAppCrmSettings();
+    if (error) {
+      console.warn('[whatsapp] settings load:', error);
+    }
+    if (settings.enabled === false) {
+      return { ok: false, reason: 'WhatsApp Cloud API is disabled in Settings' };
+    }
+    if (settings.tech_push_whatsapp?.[category as TechPushCategory] === false) {
+      return { ok: false, reason: 'This push→WhatsApp category is off in WhatsApp settings' };
     }
   }
 
@@ -248,11 +267,11 @@ export async function fetchWhatsAppCrmSettings(): Promise<{
     .eq('id', 1)
     .maybeSingle();
   if (error) {
-    if (/allow_job_assign|auto_send_job|allow_tech_unassigned|column/i.test(error.message)) {
+    if (/allow_job_assign|auto_send_job|allow_tech_unassigned|tech_push_whatsapp|column/i.test(error.message)) {
       const legacy = await supabase
         .from('whatsapp_crm_settings')
         .select(
-          'id, enabled, allow_cold_templates, allow_pdf_send, allow_freeform, allow_booking_bot, allow_inbox, allow_calling, allow_service_reminder, allow_pending_payment, allow_documents, allow_composer, allow_tech_assigned, rate_utility_inr, rate_marketing_inr, rate_authentication_inr, rate_service_inr, monthly_budget_inr, notes, updated_at'
+          'id, enabled, allow_cold_templates, allow_pdf_send, allow_freeform, allow_booking_bot, allow_inbox, allow_calling, allow_service_reminder, allow_pending_payment, allow_documents, allow_composer, allow_job_assign_whatsapp, allow_job_unassign_whatsapp, auto_send_job_assign_whatsapp, auto_send_job_unassign_whatsapp, allow_tech_assigned, allow_tech_unassigned, rate_utility_inr, rate_marketing_inr, rate_authentication_inr, rate_service_inr, monthly_budget_inr, notes, updated_at'
         )
         .eq('id', 1)
         .maybeSingle();
@@ -300,6 +319,7 @@ export async function saveWhatsAppCrmSettings(
     auto_send_job_unassign_whatsapp: patch.auto_send_job_unassign_whatsapp === true,
     allow_tech_assigned: bool(patch.allow_tech_assigned, true),
     allow_tech_unassigned: bool(patch.allow_tech_unassigned, true),
+    tech_push_whatsapp: normalizeTechPushWhatsAppGlobal(patch.tech_push_whatsapp),
     rate_utility_inr: num(patch.rate_utility_inr, DEFAULT_WHATSAPP_CRM_SETTINGS.rate_utility_inr),
     rate_marketing_inr: num(
       patch.rate_marketing_inr,

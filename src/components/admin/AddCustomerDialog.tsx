@@ -1335,7 +1335,7 @@ const AddCustomerDialog: React.FC<AddCustomerDialogProps> = ({
                   (t) => t.id === step5JobData.assigned_technician_id
                 );
                 if (assignedTechRow) {
-                  await notifyTechnicianJobWhatsApp({
+                  void notifyTechnicianJobWhatsApp({
                     job: { ...(newJob as any), customer: newCustomer } as any,
                     technician: {
                       id: assignedTechRow.id,

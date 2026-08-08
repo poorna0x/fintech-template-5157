@@ -4,6 +4,7 @@ import type { AdminStatusFilter } from '@/lib/adminDashboardCache';
 import type { LoadFilteredJobsFn } from '@/lib/adminLoadDashboardData';
 import { openAdminWhatsappForJobAssign, openAdminWhatsappForJobUnassign, type OpenAdminWhatsappForJobCtx } from '@/lib/openAdminWhatsappForJobAssign';
 import { getTechnicianAdminWhatsAppPhone } from '@/lib/technicianContact';
+import { readJobWhatsAppNotifyPrefsCached } from '@/lib/jobAssignWhatsAppSettingsCache';
 import { broadcastTechnicianJobListRefresh } from '@/lib/technicianJobListSync';
 import {
   appendJobToTechnicianVisitOrder,
@@ -110,21 +111,30 @@ export async function submitAdminJobReassign(
       (t) => t.id === ctx.selectedTechnicianForReassign
     );
     if (reassignedTechnician && getTechnicianAdminWhatsAppPhone(reassignedTechnician)) {
-      const result = await openAdminWhatsappForJobAssign(
-        ctx,
-        ctx.jobToReassign,
-        {
-          id: reassignedTechnician.id,
-          fullName: reassignedTechnician.fullName || (reassignedTechnician as any).full_name || 'Technician',
-          phone: reassignedTechnician.phone,
-          whatsappPhone: (reassignedTechnician as any).whatsappPhone,
-          whatsapp_phone: (reassignedTechnician as any).whatsapp_phone,
-        },
-        scrollY
-      );
-      if (result !== 'dialog') {
+      const techPayload = {
+        id: reassignedTechnician.id,
+        fullName: reassignedTechnician.fullName || (reassignedTechnician as any).full_name || 'Technician',
+        phone: reassignedTechnician.phone,
+        whatsappPhone: (reassignedTechnician as any).whatsappPhone,
+        whatsapp_phone: (reassignedTechnician as any).whatsapp_phone,
+      };
+      const cached = readJobWhatsAppNotifyPrefsCached();
+      const willAuto = cached?.enabled !== false && cached?.autoAssign === true;
+      if (willAuto) {
         ctx.setReassignDialogOpen(false);
         ctx.closeAdminModal();
+        void openAdminWhatsappForJobAssign(ctx, ctx.jobToReassign, techPayload, scrollY);
+      } else {
+        const result = await openAdminWhatsappForJobAssign(
+          ctx,
+          ctx.jobToReassign,
+          techPayload,
+          scrollY
+        );
+        if (result !== 'dialog') {
+          ctx.setReassignDialogOpen(false);
+          ctx.closeAdminModal();
+        }
       }
     } else {
       ctx.setReassignDialogOpen(false);

@@ -326,6 +326,38 @@ exports.handler = async (event) => {
       buildMessage,
       category
     );
+
+    // Mirror nudge/office messages to WhatsApp (not assign/unassign — CRM handles those).
+    if (!clear && category) {
+      const waTitle =
+        title ||
+        (goingNow
+          ? startOnly
+            ? 'Start this job'
+            : 'Are you going?'
+          : callPhone
+            ? 'Call customer'
+            : allowReply
+              ? 'Message from office'
+              : 'Message from office');
+      const waBody =
+        message ||
+        (goingNow
+          ? startOnly
+            ? 'Tap Start to mark this job on the way.'
+            : 'Tap Yes to start this job, or No to tell the office.'
+          : '');
+      if (waTitle || waBody) {
+        const { maybeSendTechnicianPushWhatsApp } = require('./tech-push-whatsapp-helper');
+        void maybeSendTechnicianPushWhatsApp(db, {
+          technicianId,
+          category,
+          title: waTitle,
+          body: waBody,
+        });
+      }
+    }
+
     if (tokens === 0) {
       return { statusCode: 200, headers, body: JSON.stringify({ sent: false, reason: 'no_token' }) };
     }

@@ -3,12 +3,10 @@ import { getJobCustomTimeLabel, getLeadSourceFromJob } from '@/lib/adminUtils';
 import { getJobLocationLabelForWhatsApp } from '@/lib/customer-locations';
 import { getJobAgreedCostLabel, getJobDescriptionText } from '@/lib/jobAssignMessageDetails';
 import { getTechnicianAdminWhatsAppPhone } from '@/lib/technicianContact';
-import {
-  openWhatsAppMeDeepLink,
-  sendAdminWhatsAppText,
-} from '@/lib/sendAdminWhatsAppApi';
+import { sendAdminWhatsAppText } from '@/lib/sendAdminWhatsAppApi';
 import { ensureJobWhatsAppNotifyPrefs } from '@/lib/jobAssignWhatsAppSettingsCache';
 import { isWhatsAppJobNotifyAllowed } from '@/lib/whatsappCrmSettings';
+import { supabase } from '@/lib/supabaseClient';
 import type { Job } from '@/types';
 import type { OpenAdminWhatsappForJobCtx } from '@/lib/openAdminWhatsappForJobAssign';
 
@@ -130,9 +128,9 @@ async function autoSendJobTechWhatsApp(
   phone: string,
   message: string,
   mode: JobTechWhatsAppMode
-): Promise<'api' | 'wa_me' | 'failed'> {
+): Promise<'api' | 'failed'> {
   const toastId = toast.loading(
-    mode === 'unassign' ? 'Auto-sending unassign WhatsApp…' : 'Auto-sending assign WhatsApp…'
+    mode === 'unassign' ? 'Sending unassign WhatsApp…' : 'Sending assign WhatsApp…'
   );
   try {
     const result = await sendAdminWhatsAppText({
@@ -141,21 +139,22 @@ async function autoSendJobTechWhatsApp(
       fallbackWaMe: false,
     });
     if (result.ok && result.via === 'api') {
-      toast.success('WhatsApp sent to technician via API', { id: toastId });
+      toast.success('WhatsApp sent to technician', { id: toastId });
       return 'api';
     }
-    openWhatsAppMeDeepLink(phone, message);
-    toast.success(
-      result.needsWindowOrTemplate || result.featureDisabled
-        ? 'Opened phone WhatsApp (API window closed or unavailable)'
-        : 'Opened phone WhatsApp',
+    // Auto-send stays in-app: do not open wa.me (that steals focus after assign).
+    toast.message(
+      result.needsWindowOrTemplate
+        ? 'WhatsApp API window closed — message not sent (open chat or use manual dialog)'
+        : result.featureDisabled
+          ? 'WhatsApp send skipped (feature off)'
+          : 'WhatsApp auto-send failed',
       { id: toastId }
     );
-    return 'wa_me';
+    return 'failed';
   } catch {
-    openWhatsAppMeDeepLink(phone, message);
-    toast.success('Opened phone WhatsApp', { id: toastId });
-    return 'wa_me';
+    toast.message('WhatsApp auto-send failed', { id: toastId });
+    return 'failed';
   }
 }
 
@@ -164,7 +163,7 @@ export type NotifyJobTechWhatsAppResult = 'auto' | 'dialog' | 'skipped';
 /**
  * After assign/reassign/unassign:
  * - Dashboard master OFF → skipped (no popup)
- * - Auto-send ON (WhatsApp Settings) → Cloud API (wa.me backup), no dialog
+ * - Auto-send ON → return immediately; Cloud API runs in background (no dialog, no wa.me)
  * - Else if ctx → manual dialog (wa.me only on Send)
  * - Else → skipped
  */
@@ -175,7 +174,7 @@ export async function notifyTechnicianJobWhatsApp(opts: {
   scrollY?: number;
   ctx?: OpenAdminWhatsappForJobCtx | null;
 }): Promise<NotifyJobTechWhatsAppResult> {
-  const category = opts.mode === 'unassign' ? 'job_unassign' : 'job_assign';
+  const category = opts.mode === 'unassign' ? 'job_unassigned' : 'job_assigned';
   const techId = opts.technician.id || '';
   const phone =
     getTechnicianAdminWhatsAppPhone(opts.technician) || opts.technician.phone || '';
@@ -184,22 +183,37 @@ export async function notifyTechnicianJobWhatsApp(opts: {
     return 'skipped';
   }
 
+  // Cache-first master + auto flags (0 egress when warm) so assign UI can close instantly.
+  const prefs = await ensureJobWhatsAppNotifyPrefs();
+  if (!prefs.enabled) {
+    if (opts.mode === 'assign') {
+      toast.message('Job WhatsApp is off (Dashboard Settings) — skipped');
+    }
+    return 'skipped';
+  }
+
+  const autoSend = opts.mode === 'unassign' ? prefs.autoUnassign : prefs.autoAssign;
+  const payload = buildJobTechnicianWhatsAppPayload(opts.job, opts.mode);
+
+  if (autoSend) {
+    // Fire-and-forget: do not block assign/unassign dialogs on API latency.
+    void (async () => {
+      const allowed = await isWhatsAppJobNotifyAllowed(category, techId || null);
+      if (!allowed.ok) {
+        toast.message(allowed.reason || 'Job WhatsApp notify is off — skipped');
+        return;
+      }
+      await autoSendJobTechWhatsApp(phone, payload.message, opts.mode);
+    })();
+    return 'auto';
+  }
+
   const allowed = await isWhatsAppJobNotifyAllowed(category, techId || null);
   if (!allowed.ok) {
     if (opts.mode === 'assign') {
       toast.message(allowed.reason || 'Job WhatsApp notify is off — skipped');
     }
     return 'skipped';
-  }
-
-  const prefs = await ensureJobWhatsAppNotifyPrefs();
-  const autoSend = opts.mode === 'unassign' ? prefs.autoUnassign : prefs.autoAssign;
-
-  const payload = buildJobTechnicianWhatsAppPayload(opts.job, opts.mode);
-
-  if (autoSend) {
-    await autoSendJobTechWhatsApp(phone, payload.message, opts.mode);
-    return 'auto';
   }
 
   if (!opts.ctx) {
@@ -222,4 +236,80 @@ export async function notifyTechnicianJobWhatsApp(opts: {
   opts.ctx.openAdminWhatsappModal();
   opts.ctx.setWhatsappDialogOpen(true);
   return 'dialog';
+}
+
+/**
+ * Background WhatsApp for job updates / team / visit-order (no dialog).
+ * Needs Dashboard job WhatsApp master ON. Does NOT require Auto-send
+ * (Auto-send only controls assign/unassign dialog vs instant).
+ */
+export function queueTechnicianJobWhatsAppAutoMessage(opts: {
+  technicianId: string;
+  category?: 'job_assigned' | 'job_unassigned';
+  title: string;
+  body: string;
+  phone?: string;
+  whatsappPhone?: string;
+  /** When true, show why send was skipped (edit job). */
+  notifyIfSkipped?: boolean;
+}): void {
+  const category = opts.category || 'job_assigned';
+  const notify = opts.notifyIfSkipped === true;
+  void (async () => {
+    try {
+      const prefs = await ensureJobWhatsAppNotifyPrefs();
+      if (!prefs.enabled) {
+        if (notify) {
+          toast.message('Job WhatsApp is off (Dashboard Settings) — edit notify skipped');
+        }
+        return;
+      }
+
+      const allowed = await isWhatsAppJobNotifyAllowed(category, opts.technicianId);
+      if (!allowed.ok) {
+        if (notify) {
+          toast.message(allowed.reason || 'WhatsApp notify skipped for this technician');
+        }
+        return;
+      }
+
+      let phone =
+        getTechnicianAdminWhatsAppPhone({
+          phone: opts.phone || '',
+          whatsappPhone: opts.whatsappPhone,
+          whatsapp_phone: opts.whatsappPhone,
+        }) || '';
+
+      if (!phone.trim()) {
+        const { data } = await supabase
+          .from('technicians')
+          .select('phone, whatsapp_phone')
+          .eq('id', opts.technicianId)
+          .maybeSingle();
+        phone =
+          getTechnicianAdminWhatsAppPhone({
+            phone: data?.phone || '',
+            whatsapp_phone: data?.whatsapp_phone,
+          }) || '';
+      }
+      if (!phone.trim()) {
+        if (notify) toast.message('No technician phone for WhatsApp');
+        return;
+      }
+
+      const title = String(opts.title || '').trim();
+      const body = String(opts.body || '').trim();
+      const text = title && body ? `*${title}*\n\n${body}` : title || body;
+      if (!text.trim()) return;
+
+      await autoSendJobTechWhatsApp(
+        phone,
+        text,
+        category === 'job_unassigned' ? 'unassign' : 'assign'
+      );
+    } catch (err) {
+      console.warn('[job-wa] edit/update notify failed', err);
+      if (notify) toast.message('WhatsApp notify failed');
+    }
+  })();
 }

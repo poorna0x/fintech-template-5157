@@ -1,0 +1,20 @@
+---
+description: Technician push ↔ WhatsApp parity — always apply
+alwaysApply: true
+---
+
+# Technician push ↔ WhatsApp parity
+
+Until the user explicitly asks to change this policy:
+
+- **Every new or changed technician FCM/push alert** must also get a matching **WhatsApp** path (enable/disable + send when on), using the same category keys as `TECH_PUSH_CATEGORIES` in `src/lib/pushNotificationPrefs.ts`.
+- Wire sends through `netlify/functions/tech-push-whatsapp-helper.js` (`maybeSendTechnicianPushWhatsApp`) from the same Netlify function that sends the push (or the CRM assign helper for job assign/unassign).
+- Add/update toggles in:
+  - Global: Settings → WhatsApp → **Technician push → WhatsApp** (`whatsapp_crm_settings.tech_push_whatsapp`)
+  - Per tech: Edit technician → WhatsApp prefs (`technicians.whatsapp_prefs`)
+- Keep labels/descriptions aligned with `TECH_PUSH_LABELS`.
+- **Exceptions (do not invent WhatsApp unless asked):**
+  - `location_ping` — silent GPS only
+  - `job_assigned` / `job_unassigned` — already handled by Dashboard master + CRM dialog/auto-send (`jobTechnicianWhatsApp`); do not double-send from `send-tech-push`
+- Soft-fail WhatsApp (never break FCM). Prefer thin selects / existing prefs cache; no per-assign full settings fetch.
+- Prefer Cloud API text when a 24h window exists; do not add cold templates for tech mirrors unless the user asks.

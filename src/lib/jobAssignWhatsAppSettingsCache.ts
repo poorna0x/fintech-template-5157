@@ -6,7 +6,7 @@
  */
 import { supabase } from '@/lib/supabaseClient';
 
-export const JOB_WA_NOTIFY_CACHE_KEY = 'wa_job_notify_prefs_v2';
+export const JOB_WA_NOTIFY_CACHE_KEY = 'wa_job_notify_prefs_v3';
 export const JOB_WA_NOTIFY_CHANGED_EVENT = 'jobWaNotifyPrefsChanged';
 
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;

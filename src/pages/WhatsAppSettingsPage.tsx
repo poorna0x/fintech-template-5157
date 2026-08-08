@@ -27,6 +27,11 @@ import {
   type WhatsAppCrmSettings,
   type WhatsAppUsageStats,
 } from '@/lib/whatsappCrmSettings';
+import { TECH_PUSH_CATEGORIES, TECH_PUSH_LABELS } from '@/lib/pushNotificationPrefs';
+import {
+  TECH_WHATSAPP_AUTO_MIRROR_CATEGORIES,
+  normalizeTechPushWhatsAppGlobal,
+} from '@/lib/techWhatsAppPrefs';
 
 type Props = {
   hideHeader?: boolean;
@@ -310,6 +315,68 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }
             disabled={!settings.enabled}
             onCheckedChange={(v) => patch('allow_booking_bot', v)}
           />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Technician push → WhatsApp</CardTitle>
+          <CardDescription>
+            Same categories as FCM to technicians. When ON, those alerts also send via Cloud API to
+            the tech WhatsApp/phone (needs open 24h window). Assign/unassign stay on Dashboard +
+            auto-send above. Location ping has no WhatsApp (silent GPS only).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {TECH_PUSH_CATEGORIES.map((key) => {
+            const meta = TECH_PUSH_LABELS[key];
+            const isMirror = (TECH_WHATSAPP_AUTO_MIRROR_CATEGORIES as readonly string[]).includes(
+              key
+            );
+            const isAssign = key === 'job_assigned' || key === 'job_unassigned';
+            const isLocation = key === 'location_ping';
+            return (
+              <ToggleRow
+                key={key}
+                label={meta.label}
+                description={
+                  isLocation
+                    ? 'No WhatsApp — silent location request only.'
+                    : isAssign
+                      ? 'Also controlled by Dashboard master. Prefer Dashboard for quick on/off; Auto-send is above.'
+                      : isMirror
+                        ? `Also WhatsApp when this push fires. ${meta.description}`
+                        : meta.description
+                }
+                checked={
+                  isAssign
+                    ? key === 'job_assigned'
+                      ? settings.allow_job_assign_whatsapp
+                      : settings.allow_job_unassign_whatsapp
+                    : settings.tech_push_whatsapp?.[key] !== false
+                }
+                disabled={!settings.enabled || isLocation}
+                onCheckedChange={(v) => {
+                  if (isLocation) return;
+                  if (key === 'job_assigned') {
+                    patch('allow_job_assign_whatsapp', v);
+                    return;
+                  }
+                  if (key === 'job_unassigned') {
+                    patch('allow_job_unassign_whatsapp', v);
+                    return;
+                  }
+                  patch(
+                    'tech_push_whatsapp',
+                    normalizeTechPushWhatsAppGlobal({
+                      ...settings.tech_push_whatsapp,
+                      [key]: v,
+                    })
+                  );
+                }}
+              />
+            );
+          })}
         </CardContent>
       </Card>
 
