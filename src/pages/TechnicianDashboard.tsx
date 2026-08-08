@@ -4839,6 +4839,50 @@ const TechnicianDashboard = () => {
         notifyAdminsJobEvent(jobId, 'completed')
       );
 
+      // Brand completion WhatsApp (Settings → auto-send). Soft-fail; skips AMC / dont_send.
+      void (async () => {
+        try {
+          const { queueJobCompletionWhatsAppAutoSend } = await import(
+            '@/lib/jobCompletionWhatsApp'
+          );
+          let jobForWa: Record<string, unknown> = {
+            ...(selectedJobForComplete as Record<string, unknown>),
+            id: jobId,
+            status: 'COMPLETED',
+            actual_cost: Number.isFinite(parseMoneyAmount(billAmount))
+              ? parseMoneyAmount(billAmount)
+              : 0,
+            payment_amount: Number.isFinite(parseMoneyAmount(billAmount))
+              ? parseMoneyAmount(billAmount)
+              : 0,
+            service_brand:
+              serviceBrand ||
+              (selectedJobForComplete as any).service_brand ||
+              (selectedJobForComplete as any).serviceBrand,
+          };
+          if (dontSendMessageToCustomer) {
+            const prev = Array.isArray((jobForWa as any).requirements)
+              ? ([...(jobForWa as any).requirements] as unknown[])
+              : [];
+            jobForWa = { ...jobForWa, requirements: [...prev, { dont_send_message: true }] };
+          }
+          try {
+            const { data: fresh } = await db.jobs.getById(jobId);
+            if (fresh) {
+              jobForWa = {
+                ...(fresh as Record<string, unknown>),
+                customer: (fresh as any).customer || selectedJobForComplete.customer,
+              };
+            }
+          } catch {
+            /* use local snap */
+          }
+          queueJobCompletionWhatsAppAutoSend(jobForWa);
+        } catch {
+          /* never block completion */
+        }
+      })();
+
       // If customer still has no photos at finish, nudge again (even if they ignored at start).
       const endCustomerId =
         (selectedJobForComplete.customer as any)?.id ||
@@ -4973,6 +5017,8 @@ const TechnicianDashboard = () => {
       selectedJobForComplete,
       paymentScreenshot,
       billAmount,
+      serviceBrand,
+      dontSendMessageToCustomer,
       completionNotes,
       customerHasPrefilter,
       rawWaterTds,

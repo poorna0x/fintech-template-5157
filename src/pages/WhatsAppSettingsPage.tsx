@@ -283,6 +283,20 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }
             onCheckedChange={(v) => patch('allow_composer', v)}
           />
           <ToggleRow
+            label="Job completion → customer"
+            description="Allow completion confirmation WhatsApp (manual Send Message + auto-send). Uses Hydrogen RO / Eleven RO copy from the job brand."
+            checked={settings.allow_job_completion_whatsapp}
+            disabled={!settings.enabled}
+            onCheckedChange={(v) => patch('allow_job_completion_whatsapp', v)}
+          />
+          <ToggleRow
+            label="Auto-send completion message"
+            description="After a job is completed, send the brand completion WhatsApp via Cloud API when the 24h window is open. Skips jobs where the tech added AMC info or marked “Don’t send”. Cold template later when Meta-approved."
+            checked={settings.auto_send_job_completion_whatsapp}
+            disabled={!settings.enabled || !settings.allow_job_completion_whatsapp}
+            onCheckedChange={(v) => patch('auto_send_job_completion_whatsapp', v)}
+          />
+          <ToggleRow
             label="Auto-send on assign (instant)"
             description="When Dashboard job WhatsApp is ON: send via Cloud API immediately after assign (no dialog). OFF = open manual wa.me dialog."
             checked={settings.auto_send_job_assign_whatsapp}

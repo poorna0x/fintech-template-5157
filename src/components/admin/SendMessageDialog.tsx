@@ -3,9 +3,14 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
+import { Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Job } from '@/types';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { buildJobCompletionMessageFromJob } from '@/lib/job-completion-message';
+import { sendAdminWhatsAppText, openWhatsAppMeDeepLink } from '@/lib/sendAdminWhatsAppApi';
+import { fetchWhatsAppCrmSettings } from '@/lib/whatsappCrmSettings';
+import { getDocumentBrandLabel } from '@/lib/service-brands';
 
 interface SendMessageDialogProps {
   open: boolean;
@@ -21,11 +26,22 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
   onMessageSent
 }) => {
   const [brandConfirmed, setBrandConfirmed] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [autoSendEnabled, setAutoSendEnabled] = useState(false);
 
   useEffect(() => {
     if (!open) {
       setBrandConfirmed(false);
+      setSending(false);
+      return;
     }
+    void fetchWhatsAppCrmSettings().then(({ settings }) => {
+      setAutoSendEnabled(
+        settings.enabled &&
+          settings.allow_job_completion_whatsapp !== false &&
+          settings.auto_send_job_completion_whatsapp === true
+      );
+    });
   }, [open]);
 
   if (!job) return null;
@@ -35,9 +51,12 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
   const customerPhone = customer?.phone || '';
   const alternatePhone = customer?.alternate_phone || (customer as any)?.alternatePhone || '';
   const hasAlternate = alternatePhone?.trim() && alternatePhone.trim() !== customerPhone?.trim();
+  const customerId =
+    customer?.id || (job as any).customer_id || (job as any).customerId || null;
 
   const completion = buildJobCompletionMessageFromJob(job as Record<string, unknown>);
   const whatsappMessage = completion.whatsappMessage;
+  const brandLabel = getDocumentBrandLabel(completion.documentBrand);
   const brandContact =
     completion.documentBrand === 'elevenro'
       ? {
@@ -50,6 +69,47 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
           phone: '8884944288',
           email: 'info@hydrogenro.com',
         };
+
+  const sendToPhone = async (rawPhone: string) => {
+    const to = formatPhoneForWhatsApp(rawPhone);
+    if (!to || to.length < 10) {
+      toast.error('Invalid phone number');
+      return;
+    }
+    setSending(true);
+    try {
+      const result = await sendAdminWhatsAppText({
+        to,
+        text: whatsappMessage,
+        customerId: customerId ? String(customerId) : null,
+        source: 'job_completion',
+        fallbackWaMe: false,
+      });
+      if (result.ok && result.via === 'api') {
+        toast.success(`${brandLabel} completion WhatsApp sent`);
+        await onMessageSent(job.id);
+        onOpenChange(false);
+        return;
+      }
+      if (result.featureDisabled) {
+        toast.error(result.error || 'WhatsApp completion send is disabled in Settings');
+        return;
+      }
+      // Window closed or API failed — open phone WhatsApp as backup
+      openWhatsAppMeDeepLink(to, whatsappMessage);
+      toast.message(
+        result.needsWindowOrTemplate
+          ? '24h window closed — opened WhatsApp on phone. Attach/send there, then confirm below.'
+          : 'Opened WhatsApp on phone as backup'
+      );
+      await onMessageSent(job.id);
+      onOpenChange(false);
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to send');
+    } finally {
+      setSending(false);
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -70,6 +130,17 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                 Phone: {brandContact.phone} | Email: {brandContact.email}
               </div>
             </div>
+            {autoSendEnabled ? (
+              <p className="text-xs text-muted-foreground text-center leading-snug">
+                Auto-send is ON in Settings — new completions try Cloud API automatically (24h window).
+                This dialog is for manual send / retry.
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground text-center leading-snug">
+                Tip: turn on <span className="font-medium">Auto-send completion message</span> in
+                Settings → WhatsApp to send after each job (skips tech AMC info &amp; “don’t send”).
+              </p>
+            )}
             <div className="flex flex-col sm:flex-row sm:justify-end gap-2">
               <Button
                 className="w-full bg-black hover:bg-gray-800 text-white"
@@ -108,29 +179,27 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                     <Button
                       variant="default"
                       className="bg-black hover:bg-gray-800 text-white"
-                      onClick={async () => {
-                        const formattedPhone = formatPhoneForWhatsApp(customerPhone);
-                        const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(whatsappMessage)}`;
-                        window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
-                        await onMessageSent(job.id);
-                        onOpenChange(false);
-                      }}
+                      disabled={sending}
+                      onClick={() => void sendToPhone(customerPhone)}
                     >
-                      <WhatsAppIcon className="w-4 h-4 mr-2" />
+                      {sending ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <WhatsAppIcon className="w-4 h-4 mr-2" />
+                      )}
                       Primary: {customerPhone}
                     </Button>
                     <Button
                       variant="default"
                       className="bg-black hover:bg-gray-800 text-white"
-                      onClick={async () => {
-                        const formattedPhone = formatPhoneForWhatsApp(alternatePhone);
-                        const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(whatsappMessage)}`;
-                        window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
-                        await onMessageSent(job.id);
-                        onOpenChange(false);
-                      }}
+                      disabled={sending}
+                      onClick={() => void sendToPhone(alternatePhone)}
                     >
-                      <WhatsAppIcon className="w-4 h-4 mr-2" />
+                      {sending ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <WhatsAppIcon className="w-4 h-4 mr-2" />
+                      )}
                       Alternate: {alternatePhone}
                     </Button>
                   </div>
@@ -139,15 +208,14 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                 <Button
                   variant="default"
                   className="w-full bg-black hover:bg-gray-800 text-white"
-                  onClick={async () => {
-                    const formattedPhone = formatPhoneForWhatsApp(customerPhone);
-                    const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(whatsappMessage)}`;
-                    window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
-                    await onMessageSent(job.id);
-                    onOpenChange(false);
-                  }}
+                  disabled={sending}
+                  onClick={() => void sendToPhone(customerPhone)}
                 >
-                  <WhatsAppIcon className="w-4 h-4 mr-2" />
+                  {sending ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <WhatsAppIcon className="w-4 h-4 mr-2" />
+                  )}
                   Send WhatsApp Message
                 </Button>
               )}
@@ -160,6 +228,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
             <Button
               variant="outline"
               className="w-full sm:w-auto"
+              disabled={sending}
               onClick={() => setBrandConfirmed(false)}
             >
               Back
@@ -169,6 +238,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
             <Button
               variant="outline"
               className="w-full sm:w-auto"
+              disabled={sending}
               onClick={() => onOpenChange(false)}
             >
               Cancel

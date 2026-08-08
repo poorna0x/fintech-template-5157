@@ -90,7 +90,7 @@ exports.handler = async (event) => {
     const { data: waSettings } = await db
       .from('whatsapp_crm_settings')
       .select(
-        'enabled, allow_cold_templates, allow_pdf_send, allow_freeform, allow_booking_bot, allow_inbox, allow_calling, allow_service_reminder, allow_pending_payment, allow_documents, allow_composer, allow_tech_assigned, allow_tech_unassigned'
+        'enabled, allow_cold_templates, allow_pdf_send, allow_freeform, allow_booking_bot, allow_inbox, allow_calling, allow_service_reminder, allow_pending_payment, allow_documents, allow_composer, allow_tech_assigned, allow_tech_unassigned, allow_job_completion_whatsapp'
       )
       .eq('id', 1)
       .maybeSingle();
@@ -115,6 +115,7 @@ exports.handler = async (event) => {
         composer: 'allow_composer',
         tech_assigned: 'allow_tech_assigned',
         tech_unassigned: 'allow_tech_unassigned',
+        job_completion: 'allow_job_completion_whatsapp',
         booking_bot: 'allow_booking_bot',
       };
       const sourceKey = sourceKeyMap[source];
@@ -128,6 +129,7 @@ exports.handler = async (event) => {
           allow_composer: 'Customer composer',
           allow_tech_assigned: 'Technician assigned → customer',
           allow_tech_unassigned: 'Technician unassigned → customer',
+          allow_job_completion_whatsapp: 'Job completion → customer',
           allow_booking_bot: 'Booking bot',
         };
         return json(403, headers, {
