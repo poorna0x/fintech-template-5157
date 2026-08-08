@@ -55,6 +55,11 @@ export type WhatsAppCrmSettings = {
   /** Auto-send brand completion message after job complete (24h window). */
   auto_send_job_completion_whatsapp: boolean;
   /**
+   * After missed customer call alert (admin/tech APK): auto-send
+   * missed_call_callback_*_cta (requires allow_calling).
+   */
+  auto_send_missed_call_whatsapp: boolean;
+  /**
    * Mirror technician FCM categories → WhatsApp (same keys as TECH_PUSH_CATEGORIES).
    * Missing key = enabled. Assign/unassign still also gated by Dashboard master.
    */
@@ -103,6 +108,7 @@ export const DEFAULT_WHATSAPP_CRM_SETTINGS: WhatsAppCrmSettings = {
   allow_tech_unassigned: true,
   allow_job_completion_whatsapp: true,
   auto_send_job_completion_whatsapp: false,
+  auto_send_missed_call_whatsapp: false,
   tech_push_whatsapp: defaultTechPushWhatsAppGlobal(),
   rate_utility_inr: 0.115,
   rate_marketing_inr: 0.8631,
@@ -114,7 +120,7 @@ export const DEFAULT_WHATSAPP_CRM_SETTINGS: WhatsAppCrmSettings = {
 };
 
 const SETTINGS_COLUMNS =
-  'id, enabled, allow_cold_templates, allow_pdf_send, allow_freeform, allow_booking_bot, allow_inbox, allow_calling, allow_service_reminder, allow_pending_payment, allow_documents, allow_composer, allow_job_assign_whatsapp, allow_job_unassign_whatsapp, auto_send_job_assign_whatsapp, auto_send_job_unassign_whatsapp, allow_tech_assigned, allow_tech_unassigned, allow_job_completion_whatsapp, auto_send_job_completion_whatsapp, tech_push_whatsapp, rate_utility_inr, rate_marketing_inr, rate_authentication_inr, rate_service_inr, monthly_budget_inr, notes, updated_at';
+  'id, enabled, allow_cold_templates, allow_pdf_send, allow_freeform, allow_booking_bot, allow_inbox, allow_calling, allow_service_reminder, allow_pending_payment, allow_documents, allow_composer, allow_job_assign_whatsapp, allow_job_unassign_whatsapp, auto_send_job_assign_whatsapp, auto_send_job_unassign_whatsapp, allow_tech_assigned, allow_tech_unassigned, allow_job_completion_whatsapp, auto_send_job_completion_whatsapp, auto_send_missed_call_whatsapp, tech_push_whatsapp, rate_utility_inr, rate_marketing_inr, rate_authentication_inr, rate_service_inr, monthly_budget_inr, notes, updated_at';
 
 function num(v: unknown, fallback: number): number {
   const n = typeof v === 'number' ? v : Number(v);
@@ -153,6 +159,7 @@ export function normalizeWhatsAppCrmSettings(
     allow_tech_unassigned: bool(row.allow_tech_unassigned, true),
     allow_job_completion_whatsapp: bool(row.allow_job_completion_whatsapp, true),
     auto_send_job_completion_whatsapp: row.auto_send_job_completion_whatsapp === true,
+    auto_send_missed_call_whatsapp: row.auto_send_missed_call_whatsapp === true,
     tech_push_whatsapp: normalizeTechPushWhatsAppGlobal(row.tech_push_whatsapp),
     rate_utility_inr: num(row.rate_utility_inr, d.rate_utility_inr),
     rate_marketing_inr: num(row.rate_marketing_inr, d.rate_marketing_inr),
@@ -278,7 +285,7 @@ export async function fetchWhatsAppCrmSettings(): Promise<{
     .eq('id', 1)
     .maybeSingle();
   if (error) {
-    if (/allow_job_assign|auto_send_job|allow_tech_unassigned|allow_job_completion|tech_push_whatsapp|column/i.test(error.message)) {
+    if (/allow_job_assign|auto_send_job|auto_send_missed|allow_tech_unassigned|allow_job_completion|tech_push_whatsapp|column/i.test(error.message)) {
       const legacy = await supabase
         .from('whatsapp_crm_settings')
         .select(
@@ -332,6 +339,7 @@ export async function saveWhatsAppCrmSettings(
     allow_tech_unassigned: bool(patch.allow_tech_unassigned, true),
     allow_job_completion_whatsapp: bool(patch.allow_job_completion_whatsapp, true),
     auto_send_job_completion_whatsapp: patch.auto_send_job_completion_whatsapp === true,
+    auto_send_missed_call_whatsapp: patch.auto_send_missed_call_whatsapp === true,
     tech_push_whatsapp: normalizeTechPushWhatsAppGlobal(patch.tech_push_whatsapp),
     rate_utility_inr: num(patch.rate_utility_inr, DEFAULT_WHATSAPP_CRM_SETTINGS.rate_utility_inr),
     rate_marketing_inr: num(

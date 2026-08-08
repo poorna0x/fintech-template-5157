@@ -2,11 +2,11 @@ import type { DocumentBrand } from '@/lib/service-brands';
 import { getCompanyInfoForBrand, getDocumentBrandLabel } from '@/lib/service-brands';
 import { WA_COLD } from '@/lib/whatsappColdTemplates';
 import { resolveBookingCta } from '@/lib/whatsappBookingCtaTemplates';
-import type { DocumentBrand } from '@/lib/service-brands';
 
 export type CallingWhatsAppTemplate =
   | 'service_due'
   | 'easy_booking'
+  | 'missed_call'
   | 'follow_up'
   | 'contact'
   | 'website'
@@ -15,6 +15,7 @@ export type CallingWhatsAppTemplate =
 export const CALLING_WA_TEMPLATE_ORDER: CallingWhatsAppTemplate[] = [
   'service_due',
   'easy_booking',
+  'missed_call',
   'follow_up',
   'contact',
   'website',
@@ -32,6 +33,10 @@ export const CALLING_WA_TEMPLATE_META: Record<
   easy_booking: {
     label: 'Book online',
     description: 'Quick booking link + reply option',
+  },
+  missed_call: {
+    label: 'Missed call',
+    description: 'Callback after a missed customer call',
   },
   follow_up: {
     label: 'Follow up',
@@ -184,6 +189,22 @@ export function buildCallingWhatsAppMessage(
         brandFooter(documentBrand),
       ].join('\n');
 
+    case 'missed_call':
+      return [
+        `Hi ${name},`,
+        '',
+        `This is ${brandName}. We tried to reach you and could not connect.`,
+        '',
+        'Please reply on this chat so we can assist with your RO service,',
+        'or call / book online below.',
+        '',
+        `📞 ${info.phone}`,
+        `📅 Book: ${bookingUrl}`,
+        `💬 Reply here`,
+        '',
+        brandFooter(documentBrand),
+      ].join('\n');
+
     case 'follow_up':
       return [
         `Hi ${name},`,
@@ -277,6 +298,14 @@ export function callingColdTemplateFor(
       name: booking.name,
       languageCode: booking.language,
       bodyParams: booking.bodyParams,
+    };
+  }
+  if (template === 'missed_call') {
+    const missed = resolveBookingCta('missed_call_book', documentBrand, name);
+    return {
+      name: missed.name,
+      languageCode: missed.language,
+      bodyParams: missed.bodyParams,
     };
   }
   const notice =

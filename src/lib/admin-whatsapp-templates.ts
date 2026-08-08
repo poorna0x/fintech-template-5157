@@ -156,7 +156,28 @@ function buildDocumentWhatsApp(
           ? 'Quotation'
           : type === 'service_reminder'
             ? 'Service reminder'
-            : 'Message';
+            : type === 'tech_running_late'
+              ? 'Technician delayed'
+              : 'Message';
+
+  if (type === 'tech_running_late') {
+    const delayText =
+      message ||
+      'Sorry — our technician is facing an issue and will be a bit late. We will inform you shortly about the arrival time.';
+    const text = [
+      `Hi ${customerName},`,
+      '',
+      delayText,
+      '',
+      `Thank you for your patience.`,
+      '',
+      brandFooter(brand),
+    ].join('\n');
+    return {
+      text,
+      previewTitle: `Technician delayed · ${brandName}`,
+    };
+  }
 
   const text = [
     `Hi ${customerName},`,

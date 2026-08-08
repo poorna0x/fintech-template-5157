@@ -127,16 +127,22 @@ export function bookingCtaBody(
 
 /**
  * Resolve Meta send payload for CRM cold booking.
- * Uses minimal `svc_*` Utility templates (WA_COLD) until dual-brand `*_cta`
- * templates are re-approved (URL Book buttons stall Meta review).
+ * Missed-call uses dual-brand `missed_call_callback_*_cta`.
+ * Other kinds still use minimal `svc_*` Utility templates until CTAs are APPROVED.
  */
 export function resolveBookingCta(
   kind: BookingCtaKind,
   brand: DocumentBrand,
   ...paramArgs: string[]
 ): { name: string; language: string; bodyParams: string[] } {
-  void brand; // brand-specific Book URLs deferred until CTA templates approve
   const name = String(paramArgs[0] || 'Customer').trim() || 'Customer';
+  if (kind === 'missed_call_book') {
+    return {
+      name: bookingCtaTemplateName('missed_call_book', brand),
+      language: 'en',
+      bodyParams: [name],
+    };
+  }
   if (kind === 'booking_confirmed') {
     return {
       name: 'svc_visit_confirmed',
@@ -158,9 +164,7 @@ export function resolveBookingCta(
   const whenHint =
     kind === 'book_new_customer'
       ? 'service registration'
-      : kind === 'missed_call_book'
-        ? 'callback for your missed call'
-        : 'your service schedule';
+      : 'your service schedule';
   return {
     name: 'svc_visit_reminder',
     language: 'en',

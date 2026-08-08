@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle2, Eye, Loader2, Monitor, PenLine, Send, Smartphone, X } from 'lucide-react';
+import { CheckCircle2, Eye, Loader2, Monitor, Paperclip, PenLine, Send, Smartphone, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 import EmailSourcePicker from '@/components/admin/EmailSourcePicker';
@@ -33,12 +33,21 @@ import { buildComposerAutoAttachments } from '@/lib/admin-composer-auto-attachme
 import type { BookingConfirmationEmailData } from '@/lib/booking-confirmation-email';
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getCompanyInfoForBrand, getDocumentBrandLabel } from '@/lib/service-brands';
-import { sendAdminWhatsAppDocument, sendAdminWhatsAppText, sendColdDocumentInvite } from '@/lib/sendAdminWhatsAppApi';
+import {
+  readFileAsBase64,
+  sendAdminWhatsAppDocument,
+  sendAdminWhatsAppMedia,
+  sendAdminWhatsAppText,
+  sendColdDocumentInvite,
+  validateWhatsAppAttachFile,
+  WHATSAPP_ATTACH_ACCEPT,
+} from '@/lib/sendAdminWhatsAppApi';
 import { invalidateInboundWindowCache } from '@/lib/whatsappInbox';
 
 type PreviewMode = 'mobile' | 'desktop';
 type MobilePanel = 'compose' | 'preview';
 type SendPhase = 'compose' | 'confirm' | 'sent';
+type DeliveryMode = 'api' | 'wa_me';
 
 interface SentWhatsAppSummary {
   to: string;
@@ -54,6 +63,7 @@ const TEMPLATE_ORDER: AdminEmailTemplateType[] = [
   'amc_document',
   'quotation',
   'service_reminder',
+  'tech_running_late',
   'general',
 ];
 
@@ -83,6 +93,7 @@ export function AdminWhatsAppComposerPanel({
   const [previewMode, setPreviewMode] = useState<PreviewMode>('mobile');
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>('compose');
   const [sendPhase, setSendPhase] = useState<SendPhase>('compose');
+  const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>('api');
   const [sentSummary, setSentSummary] = useState<SentWhatsAppSummary | null>(null);
   const [sourceMode, setSourceMode] = useState<EmailSourceMode>('crm');
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
@@ -91,11 +102,49 @@ export function AdminWhatsAppComposerPanel({
   const [lastServiceBrand, setLastServiceBrand] = useState<DocumentBrand | null>(null);
   const [linkedCustomerId, setLinkedCustomerId] = useState<string | null>(initialCustomerId ?? null);
   const [sending, setSending] = useState(false);
+  const [attachFile, setAttachFile] = useState<File | null>(null);
+  const [attachPreviewUrl, setAttachPreviewUrl] = useState<string | null>(null);
+  const [attachDragOver, setAttachDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const templateMeta = ADMIN_EMAIL_TEMPLATE_META[templateType];
   const activeBrand: DocumentBrand = sendBrand;
   const activeBrandInfo = useMemo(() => getCompanyInfoForBrand(activeBrand), [activeBrand]);
   const activeBrandLabel = getDocumentBrandLabel(activeBrand);
+
+  const clearAttach = useCallback(() => {
+    setAttachFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }, []);
+
+  const pickAttachFile = (file: File | null | undefined) => {
+    if (!file) return;
+    const err = validateWhatsAppAttachFile(file);
+    if (err) {
+      toast.error(err);
+      return;
+    }
+    setAttachFile(file);
+  };
+
+  const setDeliveryModeSafe = (mode: DeliveryMode) => {
+    if (mode === 'wa_me' && attachFile) {
+      clearAttach();
+      toast.message('Attachment cleared — phone WhatsApp can’t send files from CRM');
+    }
+    if (mode === 'wa_me') setAttachDragOver(false);
+    setDeliveryMode(mode);
+  };
+
+  useEffect(() => {
+    if (!attachFile || !attachFile.type.startsWith('image/')) {
+      setAttachPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(attachFile);
+    setAttachPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [attachFile]);
 
   const whatsappPreview = useMemo(
     () => buildAdminWhatsAppMessage(templateType, bookingForm, documentForm),
@@ -134,12 +183,13 @@ export function AdminWhatsAppComposerPanel({
   const resetSendFlow = useCallback(() => {
     setSendPhase('compose');
     setSentSummary(null);
-  }, []);
+    clearAttach();
+  }, [clearAttach]);
 
   useEffect(() => {
     if (sendPhase === 'sent') return;
     setSendPhase('compose');
-  }, [templateType, sendTo, sendBrand, whatsappPreview.text]);
+  }, [templateType, sendTo, sendBrand, whatsappPreview.text, attachFile]);
 
   useEffect(() => {
     if (sendPhase === 'confirm') {
@@ -326,8 +376,74 @@ export function AdminWhatsAppComposerPanel({
     if (sending) return;
     setSending(true);
     try {
-      const wantsPdf = Boolean(templateMeta.autoAttachPdf && selectedSourceId);
-      if (wantsPdf) {
+      const wantsAutoPdf = Boolean(templateMeta.autoAttachPdf && selectedSourceId);
+      const useWaMe = deliveryMode === 'wa_me';
+      const manualAttach = attachFile;
+
+      if (useWaMe && manualAttach) {
+        toast.error('Switch to Cloud API to send a PDF or image');
+        return;
+      }
+
+      if (useWaMe && wantsAutoPdf) {
+        toast.message('PDF can’t go via phone WhatsApp — sending with Cloud API instead');
+      }
+
+      if (useWaMe && !wantsAutoPdf) {
+        const result = await sendAdminWhatsAppText({
+          to: phone.trim(),
+          text: whatsappPreview.text,
+          customerId: linkedCustomerId,
+          source: 'composer',
+          forceWaMe: true,
+          fallbackWaMe: false,
+        });
+        if (!result.ok) {
+          toast.error(result.error || 'Could not open WhatsApp');
+          return;
+        }
+        setSentSummary({
+          to: phone.trim(),
+          brandLabel: activeBrandLabel,
+          previewTitle: whatsappPreview.previewTitle,
+          via: 'wa_me',
+        });
+        setSendPhase('sent');
+        toast.message(`Opened phone WhatsApp for ${phone.trim()}`);
+        return;
+      }
+
+      // Manual PDF / image via Cloud API (takes priority over auto template PDF)
+      if (manualAttach) {
+        toast.message('Uploading attachment…');
+        const encoded = await readFileAsBase64(manualAttach);
+        const mediaResult = await sendAdminWhatsAppMedia({
+          to: phone.trim(),
+          fileBase64: encoded.base64,
+          filename: encoded.filename,
+          mimeType: encoded.mimeType,
+          caption: whatsappPreview.text.slice(0, 1024),
+          customerId: linkedCustomerId,
+          source: 'composer',
+        });
+        if (!mediaResult.ok) {
+          toast.error(mediaResult.error || 'Attachment send failed');
+          return;
+        }
+        setSentSummary({
+          to: phone.trim(),
+          brandLabel: activeBrandLabel,
+          previewTitle: `${whatsappPreview.previewTitle} · ${manualAttach.name}`,
+          via: 'api',
+        });
+        setSendPhase('sent');
+        clearAttach();
+        invalidateInboundWindowCache(phone.trim());
+        toast.success(`Sent with attachment to ${phone.trim()}`);
+        return;
+      }
+
+      if (wantsAutoPdf) {
         toast.message('Generating PDF…');
         let attachments;
         try {
@@ -448,8 +564,8 @@ export function AdminWhatsAppComposerPanel({
         <CardHeader className="pb-3">
           <CardTitle className="text-base sm:text-lg">Send WhatsApp</CardTitle>
           <CardDescription className="text-xs sm:text-sm">
-            Sends via WhatsApp Cloud API when the 24h window is open. Service bill / tax invoice
-            PDFs attach automatically when a source is selected.
+            Choose Cloud API (business line) or phone WhatsApp (wa.me). Attachments and template PDFs
+            only work with Cloud API.
           </CardDescription>
         </CardHeader>
       )}
@@ -457,7 +573,9 @@ export function AdminWhatsAppComposerPanel({
         {sendPhase === 'sent' && sentSummary && (
           <Alert className="border-emerald-200 bg-emerald-50 text-emerald-950">
             <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-            <AlertTitle className="text-emerald-900">WhatsApp opened</AlertTitle>
+            <AlertTitle className="text-emerald-900">
+              {sentSummary.via === 'api' ? 'Sent via Cloud API' : 'Opened phone WhatsApp'}
+            </AlertTitle>
             <AlertDescription className="text-emerald-800 space-y-2">
               <p>
                 Message prepared as <span className="font-medium">{sentSummary.brandLabel}</span> for{' '}
@@ -512,6 +630,62 @@ export function AdminWhatsAppComposerPanel({
                 <span className="text-slate-500">To</span>
                 <span className="font-medium text-slate-900 break-all">{sendTo.trim()}</span>
               </div>
+              <div className="space-y-1.5">
+                <span className="text-slate-500 text-xs font-medium uppercase tracking-wide">
+                  How to send
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    className={
+                      deliveryMode === 'api'
+                        ? 'rounded-lg border-2 border-emerald-600 bg-emerald-50 px-3 py-2 text-left text-sm font-medium text-emerald-950'
+                        : 'rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50'
+                    }
+                    onClick={() => setDeliveryModeSafe('api')}
+                  >
+                    <span className="block">Cloud API</span>
+                    <span className="block text-[11px] font-normal opacity-80">
+                      Business line · logs in inbox
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className={
+                      deliveryMode === 'wa_me'
+                        ? 'rounded-lg border-2 border-emerald-600 bg-emerald-50 px-3 py-2 text-left text-sm font-medium text-emerald-950'
+                        : 'rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50'
+                    }
+                    onClick={() => setDeliveryModeSafe('wa_me')}
+                  >
+                    <span className="block">Phone WhatsApp</span>
+                    <span className="block text-[11px] font-normal opacity-80">
+                      Opens wa.me on this device
+                    </span>
+                  </button>
+                </div>
+              </div>
+              {attachFile && (
+                <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5">
+                  {attachPreviewUrl ? (
+                    <img
+                      src={attachPreviewUrl}
+                      alt=""
+                      className="h-10 w-10 rounded object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-10 w-10 items-center justify-center rounded bg-white text-slate-500">
+                      <Paperclip className="h-4 w-4" />
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs font-medium text-slate-900">{attachFile.name}</p>
+                    <p className="text-[10px] text-slate-500">
+                      {(attachFile.size / 1024).toFixed(0)} KB · attached via Cloud API
+                    </p>
+                  </div>
+                </div>
+              )}
               <div className="rounded-md bg-slate-50 p-2 text-xs text-slate-700 whitespace-pre-wrap max-h-32 overflow-y-auto">
                 {whatsappPreview.text}
               </div>
@@ -539,7 +713,7 @@ export function AdminWhatsAppComposerPanel({
                     ) : (
                       <WhatsAppIcon className="w-4 h-4 mr-2" />
                     )}
-                    Primary: {sendTo}
+                    {deliveryMode === 'wa_me' ? 'Open' : 'API'} · Primary
                   </Button>
                   <Button
                     type="button"
@@ -552,7 +726,7 @@ export function AdminWhatsAppComposerPanel({
                     ) : (
                       <WhatsAppIcon className="w-4 h-4 mr-2" />
                     )}
-                    Alternate: {alternatePhone}
+                    {deliveryMode === 'wa_me' ? 'Open' : 'API'} · Alt
                   </Button>
                 </>
               ) : (
@@ -567,7 +741,7 @@ export function AdminWhatsAppComposerPanel({
                   ) : (
                     <WhatsAppIcon className="w-4 h-4 mr-2" />
                   )}
-                  Send WhatsApp
+                  {deliveryMode === 'wa_me' ? 'Open phone WhatsApp' : 'Send via Cloud API'}
                 </Button>
               )}
             </div>
@@ -592,13 +766,148 @@ export function AdminWhatsAppComposerPanel({
                 <p className="text-xs text-slate-500">Alternate on file: {alternatePhone}</p>
               )}
             </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm">How to send</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  className={
+                    deliveryMode === 'api'
+                      ? 'rounded-lg border-2 border-emerald-600 bg-emerald-50 px-3 py-2 text-left text-sm font-medium text-emerald-950'
+                      : 'rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50'
+                  }
+                  onClick={() => setDeliveryModeSafe('api')}
+                >
+                  <span className="block">Cloud API</span>
+                  <span className="block text-[11px] font-normal opacity-80">Business line</span>
+                </button>
+                <button
+                  type="button"
+                  className={
+                    deliveryMode === 'wa_me'
+                      ? 'rounded-lg border-2 border-emerald-600 bg-emerald-50 px-3 py-2 text-left text-sm font-medium text-emerald-950'
+                      : 'rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50'
+                  }
+                  onClick={() => setDeliveryModeSafe('wa_me')}
+                >
+                  <span className="block">Phone WhatsApp</span>
+                  <span className="block text-[11px] font-normal opacity-80">wa.me</span>
+                </button>
+              </div>
+            </div>
+
+            {deliveryMode === 'api' ? (
+              <div className="space-y-1.5">
+                <Label className="text-sm">Attach PDF or image</Label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept={WHATSAPP_ATTACH_ACCEPT}
+                  className="hidden"
+                  onChange={(e) => {
+                    pickAttachFile(e.target.files?.[0]);
+                    e.target.value = '';
+                  }}
+                />
+                <div
+                  role="button"
+                  tabIndex={0}
+                  className={
+                    attachDragOver
+                      ? 'relative rounded-lg border-2 border-dashed border-emerald-500 bg-emerald-50/80 p-3 outline-none'
+                      : 'relative rounded-lg border-2 border-dashed border-slate-200 bg-slate-50/60 p-3 outline-none hover:border-slate-300'
+                  }
+                  onClick={() => {
+                    if (!attachFile) fileInputRef.current?.click();
+                  }}
+                  onKeyDown={(e) => {
+                    if ((e.key === 'Enter' || e.key === ' ') && !attachFile) {
+                      e.preventDefault();
+                      fileInputRef.current?.click();
+                    }
+                  }}
+                  onDragEnter={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setAttachDragOver(true);
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setAttachDragOver(true);
+                  }}
+                  onDragLeave={(e) => {
+                    e.preventDefault();
+                    if (e.currentTarget === e.target) setAttachDragOver(false);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setAttachDragOver(false);
+                    pickAttachFile(e.dataTransfer.files?.[0]);
+                  }}
+                >
+                  {attachFile ? (
+                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                      {attachPreviewUrl ? (
+                        <img
+                          src={attachPreviewUrl}
+                          alt=""
+                          className="h-11 w-11 rounded object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-11 w-11 items-center justify-center rounded bg-white text-slate-500">
+                          <Paperclip className="h-4 w-4" />
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-slate-900">{attachFile.name}</p>
+                        <p className="text-[11px] text-slate-500">
+                          {(attachFile.size / 1024).toFixed(0)} KB · drop another file to replace
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8 shrink-0 text-slate-500"
+                        onClick={clearAttach}
+                        aria-label="Remove attachment"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center gap-1 py-4 text-center cursor-pointer">
+                      <Paperclip className="h-5 w-5 text-emerald-600" />
+                      <p className="text-sm font-medium text-slate-800">
+                        {attachDragOver ? 'Drop to attach' : 'Drop PDF or photo here'}
+                      </p>
+                      <p className="text-[11px] text-slate-500">
+                        or click to browse · JPEG / PNG / WebP / PDF · max 4MB
+                      </p>
+                    </div>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Message text is sent as the caption. Manual attach replaces auto template PDF for
+                  this send.
+                </p>
+              </div>
+            ) : (
+              <p className="text-xs text-slate-500 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-2">
+                Attachments aren’t available with phone WhatsApp — switch to Cloud API to send a PDF
+                or image.
+              </p>
+            )}
+
             <Button
               type="button"
               onClick={handleReviewSend}
               className="w-full bg-black hover:bg-gray-800 text-white hover:text-white"
             >
               <Send className="w-4 h-4 mr-2" />
-              Review & open WhatsApp
+              Review &amp; {deliveryMode === 'wa_me' ? 'open WhatsApp' : 'send'}
             </Button>
           </div>
         )}
@@ -648,6 +957,26 @@ export function AdminWhatsAppComposerPanel({
             </div>
           )}
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            {attachFile && (
+              <div className="flex justify-end">
+                <div className="max-w-[88%] rounded-lg rounded-tr-none bg-[#dcf8c6] px-2 py-2 shadow-sm">
+                  {attachPreviewUrl ? (
+                    <img
+                      src={attachPreviewUrl}
+                      alt=""
+                      className="max-h-40 w-full rounded object-cover"
+                    />
+                  ) : (
+                    <div className="flex items-center gap-2 px-1 py-1">
+                      <Paperclip className="h-4 w-4 shrink-0 text-slate-600" />
+                      <span className="truncate text-xs font-medium text-slate-900">
+                        {attachFile.name}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
             <div className="flex justify-end">
               <div className="max-w-[88%] rounded-lg rounded-tr-none bg-[#dcf8c6] px-3 py-2 text-sm text-slate-900 whitespace-pre-wrap shadow-sm">
                 {whatsappPreview.text}

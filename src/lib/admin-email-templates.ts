@@ -30,6 +30,7 @@ export type AdminEmailTemplateType =
   | 'quotation'
   | 'service_reminder'
   | 'job_completion'
+  | 'tech_running_late'
   | 'general';
 
 export interface AdminDocumentEmailData {
@@ -131,6 +132,14 @@ export const ADMIN_EMAIL_TEMPLATE_META: Record<AdminEmailTemplateType, AdminEmai
     description: 'Confirmation after a job is completed — same message as the WhatsApp completion send.',
     showDocumentRef: true,
     showAmount: true,
+    showDueDate: false,
+    showCustomSubject: false,
+  },
+  tech_running_late: {
+    label: 'Technician running late',
+    description: 'Apologize for a delay — technician facing an issue; arrival time shortly.',
+    showDocumentRef: false,
+    showAmount: false,
     showDueDate: false,
     showCustomSubject: false,
   },
@@ -406,6 +415,8 @@ function templateHeadline(type: AdminEmailTemplateType): string {
       return 'Service Reminder';
     case 'job_completion':
       return 'Service Completed';
+    case 'tech_running_late':
+      return 'Technician delayed';
     default:
       return 'Message';
   }
@@ -427,6 +438,8 @@ function templateEyebrow(type: AdminEmailTemplateType): string {
       return 'Maintenance';
     case 'job_completion':
       return 'Job completion';
+    case 'tech_running_late':
+      return 'Visit update';
     default:
       return 'Customer update';
   }
@@ -453,6 +466,8 @@ function buildSubject(
       return `RO Service Reminder — ${brandLabel}`;
     case 'job_completion':
       return ref ? `Service Completed — ${brandLabel} (${ref})` : `Service Completed — ${brandLabel}`;
+    case 'tech_running_late':
+      return `Technician delayed — ${brandLabel}`;
     case 'general':
       return data.customSubject.trim() || `Message from ${brandLabel}`;
     default:
@@ -824,15 +839,17 @@ export function getDefaultDocumentMessage(type: AdminEmailTemplateType): string 
     case 'warranty_document':
       return 'Please find your RO warranty card attached. Keep it safe and present it when you need warranty service.';
     case 'invoice':
-      return 'Please find your tax invoice attached. Payment details are included in the document.';
+      return 'Please find your tax invoice attached. Payment details are included in the document. For any queries, reply to this email or call us.';
     case 'service_bill':
-      return 'Please find your service bill attached for your recent visit. Let us know if you have any questions.';
+      return 'Please find your service bill attached for your recent visit. Thank you for choosing us — reply to this email or call us if you have any questions.';
     case 'quotation':
-      return 'Please find our quotation attached. Contact us to confirm or if you need any changes.';
+      return 'Please find our quotation attached. Kindly review the details and reply to confirm, or contact us if you need any changes.';
     case 'service_reminder':
       return 'This is a friendly reminder that your RO water purifier is due for service. Regular maintenance keeps your water safe and your purifier running smoothly.';
     case 'job_completion':
       return 'Your service has been completed successfully.\n\nThank you for choosing us. We appreciate your trust.';
+    case 'tech_running_late':
+      return 'Sorry — our technician is facing an issue and will be a bit late. We will inform you shortly about the arrival time.';
     case 'general':
       return 'Thank you for choosing us for your RO water purifier needs.';
     default:

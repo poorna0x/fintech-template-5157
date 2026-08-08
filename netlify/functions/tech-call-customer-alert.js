@@ -370,6 +370,21 @@ exports.handler = async (event) => {
       await pruneAdminFcmTokens(db, stale);
     }
 
+    let whatsapp = null;
+    if (missed) {
+      try {
+        const { maybeSendMissedCallCallbackWhatsApp } = require('./missed-call-whatsapp-helper');
+        whatsapp = await maybeSendMissedCallCallbackWhatsApp(db, {
+          phone,
+          customerId: customer.id,
+          customerName: customer.full_name,
+        });
+      } catch (waErr) {
+        console.warn('[tech-call-customer-alert] missed-call WhatsApp skipped', waErr?.message || waErr);
+        whatsapp = { sent: false, reason: 'error' };
+      }
+    }
+
     return {
       statusCode: 200,
       headers: HEADERS,
@@ -378,6 +393,7 @@ exports.handler = async (event) => {
         sent: res.successCount,
         authVia,
         adminDevices: tokens.length,
+        ...(whatsapp ? { whatsapp } : {}),
       }),
     };
   } catch (err) {
