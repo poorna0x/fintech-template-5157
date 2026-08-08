@@ -28,7 +28,8 @@ import {
   FileText,
   Loader2,
   Send,
-  ChevronDown
+  ChevronDown,
+  Users
 } from 'lucide-react';
 
 // WhatsApp Icon Component
@@ -42,20 +43,26 @@ import { registerAdminPWA } from '@/lib/pwa';
 import { db, supabase, type CallingPageRpcRow } from '@/lib/supabase';
 import { Customer } from '@/types';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
-import { sendAdminWhatsAppTextWithOptionalTemplate } from '@/lib/sendAdminWhatsAppApi';
+import { sendAdminWhatsAppText } from '@/lib/sendAdminWhatsAppApi';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import CustomerPhotoGalleryDialog from '@/components/admin/CustomerPhotoGalleryDialog';
 import CustomerReportDialog from '@/components/admin/CustomerReportDialog';
 import PhotoViewerDialog from '@/components/admin/PhotoViewerDialog';
+import CallingBulkWhatsAppDialog from '@/components/admin/CallingBulkWhatsAppDialog';
+import { Checkbox } from '@/components/ui/checkbox';
 import { resolveCustomerSendBrand } from '@/lib/admin-email-sources';
 import {
   buildCallingWhatsAppMessage,
-  callingColdTemplateFor,
   callingContextFromCustomer,
   CALLING_WA_TEMPLATE_META,
   CALLING_WA_TEMPLATE_ORDER,
   type CallingWhatsAppTemplate,
 } from '@/lib/calling-whatsapp-templates';
+import {
+  loadApprovedWhatsAppTemplateNameSet,
+  sendCallingWhatsAppOne,
+  type CallingDeliveryMode,
+} from '@/lib/callingBulkWhatsApp';
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getDocumentBrandLabel } from '@/lib/service-brands';
 
@@ -228,6 +235,11 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   const [waTemplate, setWaTemplate] = useState<CallingWhatsAppTemplate>('service_due');
   const [waMessage, setWaMessage] = useState('');
   const [waMessageTouched, setWaMessageTouched] = useState(false);
+  const [waDeliveryMode, setWaDeliveryMode] = useState<CallingDeliveryMode>('api');
+  const [waSending, setWaSending] = useState(false);
+  const [selectedBulkIds, setSelectedBulkIds] = useState<Set<string>>(new Set());
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+  const [bulkQueue, setBulkQueue] = useState<CustomerWithHistory[]>([]);
   const [customerPhotoGalleryOpen, setCustomerPhotoGalleryOpen] = useState(false);
   const [selectedCustomerForPhotos, setSelectedCustomerForPhotos] = useState<Customer | null>(null);
   const [customerPhotos, setCustomerPhotos] = useState<string[]>([]);
@@ -322,6 +334,11 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
     statusFilter,
     prefilterFilter,
   ]);
+
+  useEffect(() => {
+    // Clear bulk selection when filters/page change so we don't send stale rows.
+    setSelectedBulkIds(new Set());
+  }, [filterSignature, currentPage, itemsPerPage]);
 
   useEffect(() => {
     if (hideHeader || (!authInitializing && user && isAdmin)) {
@@ -496,6 +513,8 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
     setSelectedCustomerForWhatsApp(null);
     setWaMessageTouched(false);
     setWaTemplate('service_due');
+    setWaDeliveryMode('api');
+    setWaSending(false);
   };
 
   const handleWhatsApp = (customer: CustomerWithHistory) => {
@@ -505,6 +524,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
       return;
     }
     setSelectedCustomerForWhatsApp(customer);
+    setWaDeliveryMode('api');
     setWhatsappDialogOpen(true);
   };
 
@@ -516,6 +536,38 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   const handleWaBrandChange = (brand: DocumentBrand) => {
     setWaBrand(brand);
     setWaMessageTouched(false);
+  };
+
+  const pageSelectableIds = useMemo(
+    () =>
+      pageRows
+        .filter((c) => String(c.phone || '').replace(/\D/g, '').length >= 10)
+        .map((c) => c.id),
+    [pageRows]
+  );
+
+  const allPageSelected =
+    pageSelectableIds.length > 0 && pageSelectableIds.every((id) => selectedBulkIds.has(id));
+
+  const toggleBulkId = (id: string, checked: boolean) => {
+    setSelectedBulkIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllPage = (checked: boolean) => {
+    setSelectedBulkIds((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        for (const id of pageSelectableIds) next.add(id);
+      } else {
+        for (const id of pageSelectableIds) next.delete(id);
+      }
+      return next;
+    });
   };
 
   const sendWhatsAppMessage = async () => {
@@ -530,47 +582,62 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
       return;
     }
 
-    const cold = callingColdTemplateFor(
-      waTemplate,
-      customer.fullName || customer.name || 'Customer',
-      message,
-      waBrand
-    );
-    const result = await sendAdminWhatsAppTextWithOptionalTemplate({
-      to: customer.phone,
-      text: message,
-      customerId: customer.id,
-      source: 'calling',
-      fallbackWaMe: true,
-      coldTemplate: cold,
-    });
+    setWaSending(true);
+    try {
+      const to = formatPhoneForWhatsApp(customer.phone);
+      if (!to || to.length < 10) {
+        toast.error('Invalid phone number');
+        return;
+      }
 
-    if (!result.ok) {
-      toast.error(result.error || 'Send failed');
-      return;
-    }
+      if (waDeliveryMode === 'wa_me') {
+        const result = await sendAdminWhatsAppText({
+          to,
+          text: message,
+          customerId: customer.id,
+          source: 'calling',
+          forceWaMe: true,
+          fallbackWaMe: false,
+        });
+        if (!result.ok) {
+          toast.error(result.error || 'Could not open WhatsApp');
+          return;
+        }
+        await recordCall(customer.id, 'WHATSAPP', customer.phone, message, 'COMPLETED', undefined, {
+          quiet: true,
+        });
+        resetWhatsAppComposer();
+        toast.success('Phone WhatsApp opened — message saved to contact history');
+        return;
+      }
 
-    await recordCall(
-      customer.id,
-      'WHATSAPP',
-      customer.phone,
-      message,
-      'COMPLETED',
-      undefined,
-      { quiet: true }
-    );
+      const approvedNames = await loadApprovedWhatsAppTemplateNameSet();
+      const result = await sendCallingWhatsAppOne({
+        customer,
+        message,
+        template: waTemplate,
+        brand: waBrand,
+        deliveryMode: 'api',
+        approvedTemplateNames: approvedNames,
+      });
 
-    resetWhatsAppComposer();
-    if (result.via === 'api' && result.usedTemplate) {
-      toast.success('Cold template sent via API — saved to contact history');
-    } else if (result.via === 'api') {
-      toast.success('WhatsApp sent via API — saved to contact history');
-    } else {
-      toast.success(
-        result.needsWindowOrTemplate
-          ? '24h window closed — opened phone WhatsApp; saved to contact history'
-          : 'WhatsApp opened — message saved to contact history'
-      );
+      if (!result.ok) {
+        toast.error(result.error || 'Send failed');
+        return;
+      }
+
+      await recordCall(customer.id, 'WHATSAPP', customer.phone, message, 'COMPLETED', undefined, {
+        quiet: true,
+      });
+
+      resetWhatsAppComposer();
+      if (result.usedTemplate) {
+        toast.success('Cold template sent via API — saved to contact history');
+      } else {
+        toast.success('WhatsApp sent via API — saved to contact history');
+      }
+    } finally {
+      setWaSending(false);
     }
   };
 
@@ -1120,7 +1187,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
             <>
               {/* Results toolbar — sticky on mobile */}
               <div className="sticky top-0 z-10 -mx-3 px-3 py-2 mb-2 sm:static sm:mx-0 sm:px-0 sm:py-0 sm:mb-4 bg-muted/80 backdrop-blur-md sm:bg-transparent sm:backdrop-blur-none border-b border-border/40 sm:border-0">
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
                   <div className="text-[11px] sm:text-sm text-muted-foreground leading-tight min-w-0">
                     <span className="font-medium text-foreground tabular-nums">
                       {totalCount === 0 ? 0 : ((currentPage - 1) * itemsPerPage) + 1}–{Math.min(currentPage * itemsPerPage, totalCount)}
@@ -1128,10 +1195,40 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                     <span className="hidden sm:inline"> of {totalCount.toLocaleString()}</span>
                     <span className="sm:hidden"> / {totalCount.toLocaleString()}</span>
                   </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
+                  <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
                     {listLoading && (
                       <div className="w-3.5 h-3.5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
                     )}
+                    <label className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs text-muted-foreground cursor-pointer select-none">
+                      <Checkbox
+                        checked={allPageSelected}
+                        onCheckedChange={(v) => toggleSelectAllPage(v === true)}
+                        disabled={pageSelectableIds.length === 0}
+                        aria-label="Select all on this page"
+                      />
+                      <span className="hidden sm:inline">Select page</span>
+                      <span className="sm:hidden">All</span>
+                    </label>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-8 text-xs"
+                      disabled={selectedBulkIds.size === 0}
+                      onClick={() => {
+                        const queue = pageRows.filter((c) => selectedBulkIds.has(c.id));
+                        if (!queue.length) {
+                          toast.error('Select at least one customer');
+                          return;
+                        }
+                        setBulkQueue(queue);
+                        setBulkDialogOpen(true);
+                      }}
+                    >
+                      <Users className="w-3.5 h-3.5 mr-1.5" />
+                      Bulk WA
+                      {selectedBulkIds.size > 0 ? ` (${selectedBulkIds.size})` : ''}
+                    </Button>
                     <Select value={itemsPerPage.toString()} onValueChange={(value) => {
                       setItemsPerPage(parseInt(value));
                       setCurrentPage(1);
@@ -1164,6 +1261,13 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                 <CardContent className="p-0">
                   {/* Header */}
                   <div className="flex items-center gap-2 px-3 pt-2.5 pb-2">
+                    <Checkbox
+                      checked={selectedBulkIds.has(customer.id)}
+                      disabled={String(customer.phone || '').replace(/\D/g, '').length < 10}
+                      onCheckedChange={(v) => toggleBulkId(customer.id, v === true)}
+                      aria-label={`Select ${customer.fullName}`}
+                      className="shrink-0"
+                    />
                     <span className="shrink-0 font-mono text-[10px] font-semibold text-blue-700 bg-blue-50/80 px-1.5 py-0.5 rounded">
                       {customer.customerId}
                     </span>
@@ -1396,7 +1500,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                   </Select>
                   <p className="text-xs text-muted-foreground flex items-center gap-1.5">
                     {waBrandLoading && <Loader2 className="h-3 w-3 animate-spin shrink-0" />}
-                    {waBrandHint}
+                    {waBrandHint} Brand applies to message copy and cold templates.
                   </p>
                 </div>
                 {waMessageContext?.deviceBrand && (
@@ -1408,6 +1512,40 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
                     </div>
                   </div>
                 )}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>How to send</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    className={
+                      waDeliveryMode === 'api'
+                        ? 'rounded-lg border-2 border-emerald-600 bg-emerald-50 px-3 py-2 text-left text-sm font-medium text-emerald-950'
+                        : 'rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50'
+                    }
+                    onClick={() => setWaDeliveryMode('api')}
+                  >
+                    <span className="block">WhatsApp API</span>
+                    <span className="block text-[11px] font-normal opacity-80">
+                      Business Cloud API · inbox log
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className={
+                      waDeliveryMode === 'wa_me'
+                        ? 'rounded-lg border-2 border-emerald-600 bg-emerald-50 px-3 py-2 text-left text-sm font-medium text-emerald-950'
+                        : 'rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50'
+                    }
+                    onClick={() => setWaDeliveryMode('wa_me')}
+                  >
+                    <span className="block">wa.me</span>
+                    <span className="block text-[11px] font-normal opacity-80">
+                      Opens on this phone
+                    </span>
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -1473,15 +1611,33 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
             </Button>
             <Button
               className="bg-green-600 hover:bg-green-700 text-white"
-              onClick={sendWhatsAppMessage}
-              disabled={!waMessage.trim() || waBrandLoading}
+              onClick={() => void sendWhatsAppMessage()}
+              disabled={!waMessage.trim() || waBrandLoading || waSending}
             >
-              <Send className="w-4 h-4 mr-2" />
-              Send WhatsApp
+              {waSending ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Send className="w-4 h-4 mr-2" />
+              )}
+              {waDeliveryMode === 'wa_me' ? 'Open wa.me' : 'Send via WhatsApp API'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <CallingBulkWhatsAppDialog
+        open={bulkDialogOpen}
+        onOpenChange={(open) => {
+          setBulkDialogOpen(open);
+          if (!open) setBulkQueue([]);
+        }}
+        customers={bulkQueue}
+        onRecordSent={async (customerId, phone, message) => {
+          await recordCall(customerId, 'WHATSAPP', phone, message, 'COMPLETED', undefined, {
+            quiet: true,
+          });
+        }}
+      />
 
       {/* Status Dialog */}
       <Dialog open={statusDialogOpen} onOpenChange={handleStatusDialogClose}>

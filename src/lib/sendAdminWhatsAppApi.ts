@@ -373,6 +373,7 @@ export type SendAdminWhatsAppTextWithTemplateOptions = SendAdminWhatsAppTextOpti
 
 /**
  * Free-form API → optional cold template → wa.me backup (default).
+ * Never reports ok when free-form failed due to closed window and the cold template also failed.
  */
 export async function sendAdminWhatsAppTextWithOptionalTemplate(
   options: SendAdminWhatsAppTextWithTemplateOptions
@@ -389,12 +390,13 @@ export async function sendAdminWhatsAppTextWithOptionalTemplate(
     return textResult;
   }
 
-  if (textResult.needsWindowOrTemplate && options.coldTemplate?.name) {
+  const coldName = String(options.coldTemplate?.name || '').trim();
+  if (textResult.needsWindowOrTemplate && coldName) {
     const tpl = await sendAdminWhatsAppTemplate({
       to: options.to,
-      templateName: options.coldTemplate.name,
-      languageCode: options.coldTemplate.languageCode || 'en',
-      bodyParams: options.coldTemplate.bodyParams || [],
+      templateName: coldName,
+      languageCode: options.coldTemplate?.languageCode || 'en',
+      bodyParams: options.coldTemplate?.bodyParams || [],
       customerId: options.customerId,
       source: options.source,
     });
@@ -404,6 +406,47 @@ export async function sendAdminWhatsAppTextWithOptionalTemplate(
     if (tpl.featureDisabled) {
       return tpl;
     }
+
+    const templateFailError =
+      tpl.error ||
+      `Template "${coldName}" could not send (not approved or rejected by Meta)`;
+    const combinedError = `24h window closed — ${templateFailError}`;
+
+    if (options.fallbackWaMe !== false) {
+      openWhatsAppMeDeepLink(options.to, options.text);
+      return {
+        ok: true,
+        via: 'wa_me',
+        needsWindowOrTemplate: true,
+        error: combinedError,
+      };
+    }
+
+    return {
+      ok: false,
+      needsWindowOrTemplate: true,
+      error: combinedError,
+    };
+  }
+
+  if (textResult.needsWindowOrTemplate) {
+    const noTplError =
+      textResult.error ||
+      '24h window closed — send an approved Meta template, or wait for the customer to message first';
+    if (options.fallbackWaMe !== false) {
+      openWhatsAppMeDeepLink(options.to, options.text);
+      return {
+        ok: true,
+        via: 'wa_me',
+        needsWindowOrTemplate: true,
+        error: noTplError,
+      };
+    }
+    return {
+      ok: false,
+      needsWindowOrTemplate: true,
+      error: noTplError,
+    };
   }
 
   if (options.fallbackWaMe !== false) {
