@@ -1,6 +1,8 @@
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getCompanyInfoForBrand, getDocumentBrandLabel } from '@/lib/service-brands';
 import { WA_COLD } from '@/lib/whatsappColdTemplates';
+import { resolveBookingCta } from '@/lib/whatsappBookingCtaTemplates';
+import type { DocumentBrand } from '@/lib/service-brands';
 
 export type CallingWhatsAppTemplate =
   | 'service_due'
@@ -250,7 +252,8 @@ export function buildCallingWhatsAppMessage(
 export function callingColdTemplateFor(
   template: CallingWhatsAppTemplate,
   customerName: string,
-  freeformMessage: string
+  freeformMessage: string,
+  documentBrand: DocumentBrand = 'elevenro'
 ): { name: string; languageCode: string; bodyParams: string[] } {
   const name = String(customerName || 'Customer').trim() || 'Customer';
   if (template === 'service_due') {
@@ -268,10 +271,12 @@ export function callingColdTemplateFor(
     };
   }
   if (template === 'easy_booking') {
+    // Dual-brand booking CTA (*_ero_cta / *_hro_cta). Falls back if not yet APPROVED at send time.
+    const booking = resolveBookingCta('book_existing_customer', documentBrand, name);
     return {
-      name: WA_COLD.appointment_reminder.name,
-      languageCode: WA_COLD.appointment_reminder.language,
-      bodyParams: WA_COLD.appointment_reminder.bodyParams(name, 'a convenient time'),
+      name: booking.name,
+      languageCode: booking.language,
+      bodyParams: booking.bodyParams,
     };
   }
   const notice =

@@ -60,6 +60,14 @@ Submitted to WABA `1854517668845707` (all UTILITY / `en`, await Meta APPROVED):
 | `payment_received` | name, amount | Payment thanks |
 | `tech_assigned` | name, tech name | Technician assigned |
 | `general_notice` | name, notice | Catch-all cold text |
+| `existing_service_schedule_{ero|hro}_cta` | name | Existing customer schedule notice (UTILITY; replaces marketing `book_existing_*`) |
+| `unregistered_number_service_{ero|hro}_cta` | name | Unlinked number registration (UTILITY; replaces marketing `new_customer_service_setup_*`) |
+| `missed_call_callback_{ero|hro}_cta` | name | Missed-call callback (UTILITY; replaces marketing `missed_call_book_*`) |
+| `reschedule_visit_{ero|hro}_cta` | name, when | Reschedule |
+| `booking_confirmed_{ero|hro}_cta` | name, ref, when | Booking confirm |
+
+Pick with `resolveBookingCta(kind, brand, …)` (`book_existing_customer` → `existing_service_schedule_*`).  
+Submit: `node scripts/submit-whatsapp-booking-cta-templates.mjs --submit` (`--only-existing` for utility fix).
 
 Registry: `src/lib/whatsappColdTemplates.ts`. Inbox lists APPROVED via `whatsapp-templates`.  
 True cold PDF (DOCUMENT header) needs Meta media sample + app secret — use `document_ready` until then. `hello_world` blocked on production.

@@ -310,7 +310,7 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }
           />
           <ToggleRow
             label="Booking bot"
-            description="When customer says Hi — Book → confirm → auto job (24h window)"
+            description="Hi → Book service / Call back / Talk to team. Book asks Repair·Service / Installation / Custom, then date·time lists, purifier photo, confirm. Customer messages stay simple (no lead-source text)."
             checked={settings.allow_booking_bot}
             disabled={!settings.enabled}
             onCheckedChange={(v) => patch('allow_booking_bot', v)}

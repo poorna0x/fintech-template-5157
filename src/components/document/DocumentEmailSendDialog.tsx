@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import { getDefaultDocumentMessage, type AdminEmailTemplateType } from '@/lib/admin-email-templates';
+import { buildDocumentPdfWhatsAppCaption } from '@/lib/document-pdf-whatsapp-caption';
 import { ensureSupabaseSessionForWrite } from '@/lib/ensureSupabaseSession';
 import { isValidEmailFormat, normalizeRecipientList } from '@/lib/email-recipients';
 import type { Bill } from '@/types';
@@ -114,6 +115,32 @@ function emptyRow(): string {
   return '';
 }
 
+function defaultMessageForChannel(opts: {
+  channel: SendChannel;
+  kind: GeneratorDocumentEmailKind;
+  templateType: AdminEmailTemplateType;
+  bill: Bill | null;
+  brand: DocumentBrand | null;
+  dueDateIso?: string;
+}): string {
+  if (
+    (opts.channel === 'whatsapp' || opts.channel === 'both') &&
+    opts.bill &&
+    opts.brand
+  ) {
+    return buildDocumentPdfWhatsAppCaption({
+      kind: opts.kind,
+      brand: opts.brand,
+      customerName: opts.bill.customer?.name,
+      documentRef: opts.bill.billNumber,
+      amount: opts.bill.totalAmount,
+      dateIso: opts.dueDateIso || opts.bill.billDate,
+      paymentStatus: opts.bill.paymentStatus,
+    });
+  }
+  return getDefaultDocumentMessage(opts.templateType);
+}
+
 export default function DocumentEmailSendDialog({
   open,
   onOpenChange,
@@ -141,17 +168,34 @@ export default function DocumentEmailSendDialog({
     setRecipientRows(seeded.length ? seeded : [emptyRow()]);
     const phone = String(bill?.customer?.phone || '').trim();
     setWhatsappPhone(phone);
-    setMessage(getDefaultDocumentMessage(meta.templateType));
-    setChannel(
-      pickDefaultChannel({
-        allowWhatsApp,
-        hasEmail: seeded.length > 0,
-        hasPhone: formatPhoneForWhatsApp(phone).length >= 10,
+    const nextChannel = pickDefaultChannel({
+      allowWhatsApp,
+      hasEmail: seeded.length > 0,
+      hasPhone: formatPhoneForWhatsApp(phone).length >= 10,
+    });
+    setChannel(nextChannel);
+    setMessage(
+      defaultMessageForChannel({
+        channel: nextChannel,
+        kind,
+        templateType: meta.templateType,
+        bill,
+        brand,
+        dueDateIso,
       })
     );
     setWindowOpen(null);
     setWindowHoursLeft(null);
-  }, [open, defaultRecipients, meta.templateType, bill?.customer?.phone, allowWhatsApp]);
+  }, [
+    open,
+    defaultRecipients,
+    meta.templateType,
+    bill,
+    brand,
+    dueDateIso,
+    kind,
+    allowWhatsApp,
+  ]);
 
   useEffect(() => {
     if (!open || !allowWhatsApp) return;
@@ -241,13 +285,18 @@ export default function DocumentEmailSendDialog({
         return { ok: false as const };
       }
 
+      const emailBody =
+        channel === 'both'
+          ? getDefaultDocumentMessage(meta.templateType)
+          : message.trim() || undefined;
+
       const result = await sendGeneratorDocumentEmail({
         kind,
         bill,
         brand,
         recipientEmails: recipients,
         dueDateIso,
-        customMessage: message.trim() || undefined,
+        customMessage: emailBody,
       });
 
       if (!result.ok) {
@@ -297,7 +346,15 @@ export default function DocumentEmailSendDialog({
       const pdf = await generateGeneratorDocumentPdfBase64(kind, bill);
       toast.loading('Sending on WhatsApp…', { id: toastId });
       const caption = (
-        message.trim() || getDefaultDocumentMessage(meta.templateType)
+        message.trim() ||
+        defaultMessageForChannel({
+          channel: 'whatsapp',
+          kind,
+          templateType: meta.templateType,
+          bill,
+          brand,
+          dueDateIso,
+        })
       ).slice(0, 1024);
 
       const result = await sendAdminWhatsAppDocument({
@@ -471,7 +528,18 @@ export default function DocumentEmailSendDialog({
                 type="single"
                 value={channel}
                 onValueChange={(v) => {
-                  if (v === 'email' || v === 'whatsapp' || v === 'both') setChannel(v);
+                  if (v !== 'email' && v !== 'whatsapp' && v !== 'both') return;
+                  setChannel(v);
+                  setMessage(
+                    defaultMessageForChannel({
+                      channel: v,
+                      kind,
+                      templateType: meta.templateType,
+                      bill,
+                      brand,
+                      dueDateIso,
+                    })
+                  );
                 }}
                 variant="outline"
                 className="grid w-full grid-cols-3 gap-0"
@@ -603,17 +671,23 @@ export default function DocumentEmailSendDialog({
               {channel === 'whatsapp'
                 ? 'WhatsApp caption'
                 : channel === 'both'
-                  ? 'Message (email body + WhatsApp caption)'
+                  ? 'WhatsApp caption (email uses a plain professional message)'
                   : 'Email message'}
             </Label>
             <Textarea
               id="doc-email-message"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              rows={4}
-              className="min-h-[96px] resize-y text-sm"
+              rows={channel === 'whatsapp' || channel === 'both' ? 12 : 4}
+              className="min-h-[96px] resize-y text-sm font-sans whitespace-pre-wrap"
               disabled={sending}
             />
+            {(channel === 'whatsapp' || channel === 'both') && (
+              <p className="text-xs text-muted-foreground">
+                Sent with the PDF on WhatsApp — includes quote/bill details and our phone numbers
+                (max ~1024 characters).
+              </p>
+            )}
           </div>
         </div>
 

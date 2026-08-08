@@ -16,6 +16,7 @@ const {
   normalizePhoneE164,
 } = require('./whatsapp-helper');
 const { handleBookingBotInbound } = require('./whatsapp-booking-bot');
+const { handleUnsolicitedInboundMedia } = require('./whatsapp-unsolicited-media');
 
 function readRawBody(event) {
   if (!event.body) return '';
@@ -69,6 +70,20 @@ async function persistInboundMessages(db, accessToken, phoneNumberId, value, sum
       wa_message_id: msg.id || null,
     });
 
+    // Unsolicited photo/video/file → redirect to Eleven RO main WA (unless we asked for media).
+    if (accessToken && phoneNumberId) {
+      try {
+        await handleUnsolicitedInboundMedia({
+          db,
+          accessToken,
+          phoneNumberId,
+          msg,
+        });
+      } catch (err) {
+        console.warn('[whatsapp-webhook] unsolicited media handler error', err?.message || err);
+      }
+    }
+
     // 24h-window booking bot (reply buttons). Failures must not break webhook ACK.
     if (accessToken && phoneNumberId) {
       try {
@@ -77,6 +92,7 @@ async function persistInboundMessages(db, accessToken, phoneNumberId, value, sum
           accessToken,
           phoneNumberId,
           msg,
+          inboundMedia: media,
         });
       } catch (err) {
         console.warn('[whatsapp-webhook] booking bot error', err?.message || err);

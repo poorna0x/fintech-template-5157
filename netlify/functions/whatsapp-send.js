@@ -20,6 +20,7 @@ const {
   pdfBase64ToBuffer,
   fileBase64ToBuffer,
 } = require('./whatsapp-helper');
+const { stampAwaitingMediaIfAsking } = require('./whatsapp-unsolicited-media');
 
 const MAX_OUTBOUND_BYTES = 4.5 * 1024 * 1024;
 
@@ -195,7 +196,8 @@ exports.handler = async (event) => {
       type: 'text',
       text: { preview_url: false, body: text },
     };
-    persist.body = text;
+    // Keep customer-facing text clean; stamp ask-marker only on DB row for webhook allow-list.
+    persist.body = stampAwaitingMediaIfAsking(text);
     persist.msg_type = 'text';
   } else if (type === 'document' || type === 'pdf' || type === 'image') {
     let link = String(body.link || body.pdfUrl || body.url || '').trim();
@@ -307,7 +309,7 @@ exports.handler = async (event) => {
     // Prefer Cloudinary preview URL for CRM; fall back to opaque Meta media ref
     persist.media_url = link && /^https:\/\//i.test(link) ? link : mediaId ? `whatsapp-media:${mediaId}` : null;
     persist.filename = filename;
-    persist.body = caption || null;
+    persist.body = caption ? stampAwaitingMediaIfAsking(caption) : caption || null;
   } else if (type === 'template') {
     const templateName = String(body.templateName || '').trim();
     if (!templateName) {

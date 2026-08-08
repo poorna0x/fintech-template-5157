@@ -154,6 +154,40 @@ export const WA_COLD = {
       String(details || '').trim().slice(0, 160) || 'Please reply on this chat.',
     ],
   },
+  // —— Dual-brand booking CTAs (Eleven RO number; pick *_ero / *_hro by DocumentBrand) ——
+  // Spec: src/lib/whatsappBookingCtaTemplates.ts → resolveBookingCta(kind, brand, ...)
+  book_existing_customer: {
+    name: 'existing_service_schedule_ero_cta', // default Eleven; use resolveBookingCta for HRO
+    language: 'en',
+    bodyParams: (customerName: string) => [cleanName(customerName)],
+  },
+  book_new_customer: {
+    name: 'unregistered_number_service_ero_cta',
+    language: 'en',
+    bodyParams: (customerName: string) => [cleanName(customerName) || 'there'],
+  },
+  missed_call_book: {
+    name: 'missed_call_callback_ero_cta',
+    language: 'en',
+    bodyParams: (customerName: string) => [cleanName(customerName)],
+  },
+  reschedule_visit: {
+    name: 'reschedule_visit_ero_cta',
+    language: 'en',
+    bodyParams: (customerName: string, whenLabel: string) => [
+      cleanName(customerName),
+      String(whenLabel || '').trim() || 'your scheduled visit',
+    ],
+  },
+  booking_confirmed: {
+    name: 'booking_confirmed_ero_cta',
+    language: 'en',
+    bodyParams: (customerName: string, jobRef: string, whenLabel: string) => [
+      cleanName(customerName),
+      String(jobRef || '').trim() || 'your booking',
+      String(whenLabel || '').trim() || 'the scheduled time',
+    ],
+  },
 } as const;
 
 export type WaColdDocKind =
@@ -247,4 +281,9 @@ export const WA_COLD_LABELS: Record<keyof typeof WA_COLD, string> = {
   general_notice: 'General notice (Call + Book)',
   crm_notice: 'CRM notice (flexible)',
   crm_update_details: 'CRM update (topic + detail)',
+  book_existing_customer: 'Existing service schedule (utility · dual brand)',
+  book_new_customer: 'Unregistered number service (utility · dual brand)',
+  missed_call_book: 'Missed-call callback (utility · dual brand)',
+  reschedule_visit: 'Reschedule visit (use resolveBookingCta by brand)',
+  booking_confirmed: 'Booking confirmed (use resolveBookingCta by brand)',
 };

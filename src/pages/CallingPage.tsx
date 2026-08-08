@@ -533,7 +533,8 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
     const cold = callingColdTemplateFor(
       waTemplate,
       customer.fullName || customer.name || 'Customer',
-      message
+      message,
+      waBrand
     );
     const result = await sendAdminWhatsAppTextWithOptionalTemplate({
       to: customer.phone,
