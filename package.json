@@ -21,6 +21,8 @@
     "test:cors": "node test-cors-production.js"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1106.0",
+    "@aws-sdk/s3-request-presigner": "^3.1106.0",
     "@capacitor-community/background-geolocation": "^1.2.26",
     "@capacitor/android": "^8.4.2",
     "@capacitor/app": "^8.1.1",
@@ -90,6 +92,7 @@
     "lucide-react": "^0.462.0",
     "next-themes": "^0.3.0",
     "nodemailer": "^7.0.6",
+    "pdfjs-dist": "^4.10.38",
     "photoswipe": "^5.4.4",
     "qr-code-styling": "^1.9.2",
     "react": "^18.3.1",

@@ -362,21 +362,20 @@ export default function AmcEmailSendDialog({
 
       if (!result.ok) {
         if (result.needsWindowOrTemplate) {
-          toast.loading('24h window closed — sending invite template…', { id: toastId });
+          toast.loading('24h window closed — sending PDF via template…', { id: toastId });
           const invite = await sendColdDocumentInvite({
             to: phone,
             kind: 'amc',
             customerName: bill.customer?.name || 'Customer',
             source: 'documents',
+            pdfBase64: pdf.pdfBase64,
+            filename: pdf.filename,
           });
           if (invite.ok) {
             if (onPersistAfterWhatsApp) {
               await onPersistAfterWhatsApp();
             }
-            toast.success(
-              'Invite sent — when they reply YES, open Send again and choose WhatsApp to deliver the PDF',
-              { id: toastId }
-            );
+            toast.success('AMC PDF sent via WhatsApp template', { id: toastId });
             onSent?.();
             onOpenChange(false);
             return;
@@ -540,9 +539,11 @@ export default function AmcEmailSendDialog({
             amount: bill.totalAmount,
             documentLabel: 'AMC agreement',
             source: 'documents',
+            pdfBase64: pdf.pdfBase64,
+            filename: pdf.filename,
           });
           if (invite.ok) {
-            waNote = 'WhatsApp invite sent (PDF after they reply YES)';
+            waNote = 'WhatsApp PDF sent via template';
           } else {
             openWhatsAppMeDeepLink(phone, caption);
             waNote = 'WhatsApp opened on phone as backup';
@@ -672,8 +673,8 @@ export default function AmcEmailSendDialog({
                 </p>
               ) : windowOpen === false ? (
                 <p className="text-xs text-amber-800">
-                  Window closed — we&apos;ll try the PDF; if Meta blocks it, an invite template is
-                  sent so they can reply and you can resend.
+                  Window closed — we&apos;ll send the PDF via cold template if Meta blocks
+                  free-form.
                 </p>
               ) : (
                 <p className="text-xs text-muted-foreground">

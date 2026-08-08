@@ -160,7 +160,7 @@ export default function WhatsAppTest() {
           </h1>
           <p className="text-sm text-slate-600">
             Local Cloud API POC (Phase 1). Outbound is logged to{' '}
-            <code className="text-xs">whatsapp_messages</code> (7-day retention). Recipient as
+            <code className="text-xs">whatsapp_messages</code> (long retention; cleanup in inbox). Recipient as
             digits only, e.g. 9198XXXXXXXX.
           </p>
         </header>

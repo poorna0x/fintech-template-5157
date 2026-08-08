@@ -2,14 +2,16 @@
  * Meta WhatsApp UTILITY template names for cold outreach (outside 24h window).
  * Submit via Graph API / Meta Manager; status must be APPROVED before sends succeed.
  *
- * Cold PDF strategy: send `*_ready` / `document_ready` first (customer replies) → then
- * send PDF inside the 24h window. True DOCUMENT-header templates need Meta media + app secret.
+ * Prefer `svc_*` minimal set (scripts/submit-whatsapp-minimal-utility.mjs) — Call button only,
+ * no URL / Book CTAs (faster Utility approval). Cold PDFs use DOCUMENT-header `svc_document_pdf`.
+ *
+ * Cold PDF: one-shot via `svc_document_pdf` (PDF in template header). No reply-YES invite.
  */
 export const WA_COLD = {
   pending_payment: {
-    name: 'pending_payment_cta',
+    name: 'svc_balance_due',
     language: 'en',
-    /** {{1}}=name, {{2}}=amount digits — Call + Book online CTAs */
+    /** {{1}}=name, {{2}}=amount digits */
     bodyParams: (customerName: string, amount: number | string) => [
       cleanName(customerName),
       cleanAmount(amount),
@@ -17,30 +19,33 @@ export const WA_COLD = {
   },
   /** Prefer this name — Meta reclassified service_reminder_cta as MARKETING. */
   service_reminder: {
-    name: 'service_due_notice_cta',
+    name: 'svc_visit_reminder',
     language: 'en',
-    bodyParams: (customerName: string) => [cleanName(customerName)],
+    bodyParams: (customerName: string, whenLabel?: string) => [
+      cleanName(customerName),
+      String(whenLabel || '').trim() || 'your upcoming visit',
+    ],
   },
   amc_renewal: {
-    name: 'amc_expiry_notice',
+    name: 'svc_document_pdf',
     language: 'en',
     bodyParams: (customerName: string, endDate: string) => [
       cleanName(customerName),
-      String(endDate || '').trim() || 'soon',
+      `AMC expiry notice (${String(endDate || '').trim() || 'soon'})`,
     ],
   },
   /** Prefer this name — Meta reclassified amc_renewal as MARKETING. */
   amc_expiry_notice: {
-    name: 'amc_expiry_notice',
+    name: 'svc_document_pdf',
     language: 'en',
     bodyParams: (customerName: string, endDate: string) => [
       cleanName(customerName),
-      String(endDate || '').trim() || 'soon',
+      `AMC expiry notice (${String(endDate || '').trim() || 'soon'})`,
     ],
   },
-  /** {{1}}=name, {{2}}=doc label e.g. "AMC agreement" / "tax invoice" / "service bill" */
+  /** {{1}}=name, {{2}}=doc label — DOCUMENT header carries the PDF */
   document_ready: {
-    name: 'document_ready_cta',
+    name: 'svc_document_pdf',
     language: 'en',
     bodyParams: (customerName: string, documentLabel: string) => [
       cleanName(customerName),
@@ -48,51 +53,50 @@ export const WA_COLD = {
     ],
   },
   quotation_ready: {
-    name: 'quotation_ready',
+    name: 'svc_document_pdf',
     language: 'en',
-    /** {{1}}=name, {{2}}=ref */
     bodyParams: (customerName: string, ref: string) => [
       cleanName(customerName),
-      String(ref || '').trim() || 'quotation',
+      `quotation ${String(ref || '').trim() || ''}`.trim() || 'quotation',
     ],
   },
   service_bill_ready: {
-    name: 'service_bill_ready',
+    name: 'svc_document_pdf',
     language: 'en',
-    bodyParams: (customerName: string, amount: number | string) => [
+    bodyParams: (customerName: string, _amount?: number | string) => [
       cleanName(customerName),
-      cleanAmount(amount),
+      'service bill',
     ],
   },
   invoice_ready: {
-    name: 'invoice_ready',
+    name: 'svc_document_pdf',
     language: 'en',
-    bodyParams: (customerName: string, amount: number | string) => [
+    bodyParams: (customerName: string, _amount?: number | string) => [
       cleanName(customerName),
-      cleanAmount(amount),
+      'tax invoice',
     ],
   },
   amc_document_ready: {
-    name: 'amc_document_ready',
+    name: 'svc_document_pdf',
     language: 'en',
-    bodyParams: (customerName: string) => [cleanName(customerName)],
+    bodyParams: (customerName: string) => [cleanName(customerName), 'AMC agreement'],
   },
   warranty_ready: {
-    name: 'warranty_ready',
+    name: 'svc_document_pdf',
     language: 'en',
-    bodyParams: (customerName: string) => [cleanName(customerName)],
+    bodyParams: (customerName: string) => [cleanName(customerName), 'warranty card'],
   },
   receipt_ready: {
-    name: 'receipt_ready',
+    name: 'svc_document_pdf',
     language: 'en',
-    bodyParams: (customerName: string, amount: number | string) => [
+    bodyParams: (customerName: string, _amount?: number | string) => [
       cleanName(customerName),
-      cleanAmount(amount),
+      'payment receipt',
     ],
   },
   /** Prefer this name — Meta reclassified customer_followup_cta as MARKETING. */
   customer_followup: {
-    name: 'customer_update_notice_cta',
+    name: 'svc_visit_reminder',
     language: 'en',
     bodyParams: (customerName: string, topic: string) => [
       cleanName(customerName),
@@ -100,7 +104,7 @@ export const WA_COLD = {
     ],
   },
   appointment_reminder: {
-    name: 'appointment_reminder_cta',
+    name: 'svc_visit_reminder',
     language: 'en',
     bodyParams: (customerName: string, whenLabel: string) => [
       cleanName(customerName),
@@ -108,7 +112,7 @@ export const WA_COLD = {
     ],
   },
   payment_received: {
-    name: 'payment_received',
+    name: 'svc_payment_received',
     language: 'en',
     bodyParams: (customerName: string, amount: number | string) => [
       cleanName(customerName),
@@ -116,20 +120,29 @@ export const WA_COLD = {
     ],
   },
   tech_assigned: {
-    name: 'tech_assigned_cta',
+    name: 'svc_tech_assigned',
     language: 'en',
     bodyParams: (customerName: string, technicianName: string) => [
       cleanName(customerName),
       String(technicianName || 'our technician').trim() || 'our technician',
     ],
   },
-  /** Catch-all cold text: {{1}}=name, {{2}}=short notice — Call + Book CTAs */
+  /** Job completion cold open — {{1}}=name, {{2}}=amount collected */
+  job_completion: {
+    name: 'svc_completed',
+    language: 'en',
+    bodyParams: (customerName: string, amount: number | string) => [
+      cleanName(customerName),
+      cleanAmount(amount),
+    ],
+  },
+  /** Catch-all cold text: {{1}}=name, {{2}}=short notice */
   general_notice: {
-    name: 'general_notice_cta',
+    name: 'svc_visit_reminder',
     language: 'en',
     bodyParams: (customerName: string, notice: string) => [
       cleanName(customerName),
-      String(notice || '').trim().slice(0, 120) || 'please reply on this chat',
+      String(notice || '').trim().slice(0, 120) || 'update',
     ],
   },
   /**
@@ -137,42 +150,46 @@ export const WA_COLD = {
    * Not free-form — still fixed shell text around the variables.
    */
   crm_notice: {
-    name: 'crm_notice',
+    name: 'svc_visit_reminder',
     language: 'en',
     bodyParams: (customerName: string, details: string) => [
       cleanName(customerName),
       String(details || '').trim().slice(0, 200) || 'Please reply on this chat for details.',
     ],
   },
-  /** {{1}}=name, {{2}}=topic, {{3}}=detail */
+  /** {{1}}=name, {{2}}=topic+detail collapsed */
   crm_update_details: {
-    name: 'crm_update_details',
+    name: 'svc_visit_reminder',
     language: 'en',
     bodyParams: (customerName: string, topic: string, details: string) => [
       cleanName(customerName),
-      String(topic || '').trim().slice(0, 60) || 'your account',
-      String(details || '').trim().slice(0, 160) || 'Please reply on this chat.',
+      `${String(topic || '').trim().slice(0, 60) || 'update'}: ${
+        String(details || '').trim().slice(0, 100) || 'Please reply on this chat.'
+      }`.slice(0, 160),
     ],
   },
-  // —— Dual-brand booking CTAs (Eleven RO number; pick *_ero / *_hro by DocumentBrand) ——
+  // —— Booking flows (use svc_* until dual-brand CTA templates are re-approved) ——
   // Spec: src/lib/whatsappBookingCtaTemplates.ts → resolveBookingCta(kind, brand, ...)
   book_existing_customer: {
-    name: 'existing_service_schedule_ero_cta', // default Eleven; use resolveBookingCta for HRO
+    name: 'svc_visit_reminder',
     language: 'en',
-    bodyParams: (customerName: string) => [cleanName(customerName)],
+    bodyParams: (customerName: string) => [cleanName(customerName), 'your service schedule'],
   },
   book_new_customer: {
-    name: 'unregistered_number_service_ero_cta',
+    name: 'svc_visit_reminder',
     language: 'en',
-    bodyParams: (customerName: string) => [cleanName(customerName) || 'there'],
+    bodyParams: (customerName: string) => [
+      cleanName(customerName) || 'there',
+      'service registration',
+    ],
   },
   missed_call_book: {
-    name: 'missed_call_callback_ero_cta',
+    name: 'svc_visit_reminder',
     language: 'en',
-    bodyParams: (customerName: string) => [cleanName(customerName)],
+    bodyParams: (customerName: string) => [cleanName(customerName), 'callback for your missed call'],
   },
   reschedule_visit: {
-    name: 'reschedule_visit_ero_cta',
+    name: 'svc_visit_reminder',
     language: 'en',
     bodyParams: (customerName: string, whenLabel: string) => [
       cleanName(customerName),
@@ -180,7 +197,7 @@ export const WA_COLD = {
     ],
   },
   booking_confirmed: {
-    name: 'booking_confirmed_ero_cta',
+    name: 'svc_visit_confirmed',
     language: 'en',
     bodyParams: (customerName: string, jobRef: string, whenLabel: string) => [
       cleanName(customerName),
@@ -263,27 +280,28 @@ function cleanAmount(amount: number | string): string {
 
 /** Human labels for inbox / pickers */
 export const WA_COLD_LABELS: Record<keyof typeof WA_COLD, string> = {
-  pending_payment: 'Pending payment (Call + Book)',
-  service_reminder: 'Service due (Call + Book)',
-  amc_renewal: 'AMC expiry notice',
-  amc_expiry_notice: 'AMC expiry notice',
-  document_ready: 'Document ready (Call + Book)',
-  quotation_ready: 'Quotation ready',
-  service_bill_ready: 'Service bill ready',
-  invoice_ready: 'Tax invoice ready',
-  amc_document_ready: 'AMC PDF ready',
-  warranty_ready: 'Warranty card ready',
-  receipt_ready: 'Receipt ready',
-  customer_followup: 'Follow-up (Call + Book)',
-  appointment_reminder: 'Appointment reminder (Call + Book)',
-  payment_received: 'Payment received',
-  tech_assigned: 'Technician assigned (Call + Book)',
-  general_notice: 'General notice (Call + Book)',
-  crm_notice: 'CRM notice (flexible)',
-  crm_update_details: 'CRM update (topic + detail)',
-  book_existing_customer: 'Existing service schedule (utility · dual brand)',
-  book_new_customer: 'Unregistered number service (utility · dual brand)',
-  missed_call_book: 'Missed-call callback (utility · dual brand)',
-  reschedule_visit: 'Reschedule visit (use resolveBookingCta by brand)',
-  booking_confirmed: 'Booking confirmed (use resolveBookingCta by brand)',
+  pending_payment: 'Balance due (svc_balance_due)',
+  service_reminder: 'Visit reminder (svc_visit_reminder)',
+  amc_renewal: 'AMC expiry → document PDF',
+  amc_expiry_notice: 'AMC expiry → document PDF',
+  document_ready: 'Document PDF (svc_document_pdf)',
+  quotation_ready: 'Quotation PDF (svc_document_pdf)',
+  service_bill_ready: 'Service bill PDF (svc_document_pdf)',
+  invoice_ready: 'Tax invoice PDF (svc_document_pdf)',
+  amc_document_ready: 'AMC PDF (svc_document_pdf)',
+  warranty_ready: 'Warranty PDF (svc_document_pdf)',
+  receipt_ready: 'Receipt PDF (svc_document_pdf)',
+  customer_followup: 'Follow-up → visit reminder',
+  appointment_reminder: 'Appointment reminder (svc_visit_reminder)',
+  payment_received: 'Payment received (svc_payment_received)',
+  tech_assigned: 'Technician assigned (svc_tech_assigned)',
+  job_completion: 'Service completed (svc_completed)',
+  general_notice: 'General notice → visit reminder',
+  crm_notice: 'CRM notice → visit reminder',
+  crm_update_details: 'CRM update → visit reminder',
+  book_existing_customer: 'Existing schedule → visit reminder',
+  book_new_customer: 'Unregistered → visit reminder',
+  missed_call_book: 'Missed call → visit reminder',
+  reschedule_visit: 'Reschedule → visit reminder',
+  booking_confirmed: 'Booking confirmed (svc_visit_confirmed)',
 };

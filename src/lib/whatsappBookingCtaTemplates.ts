@@ -125,17 +125,46 @@ export function bookingCtaBody(
   }
 }
 
-/** Resolve Meta send payload fields for CRM cold booking CTAs. */
+/**
+ * Resolve Meta send payload for CRM cold booking.
+ * Uses minimal `svc_*` Utility templates (WA_COLD) until dual-brand `*_cta`
+ * templates are re-approved (URL Book buttons stall Meta review).
+ */
 export function resolveBookingCta(
   kind: BookingCtaKind,
   brand: DocumentBrand,
   ...paramArgs: string[]
 ): { name: string; language: string; bodyParams: string[] } {
-  const def = bookingCtaBody(kind, brand);
+  void brand; // brand-specific Book URLs deferred until CTA templates approve
+  const name = String(paramArgs[0] || 'Customer').trim() || 'Customer';
+  if (kind === 'booking_confirmed') {
+    return {
+      name: 'svc_visit_confirmed',
+      language: 'en',
+      bodyParams: [
+        name,
+        String(paramArgs[1] || '').trim() || 'your booking',
+        String(paramArgs[2] || '').trim() || 'the scheduled time',
+      ],
+    };
+  }
+  if (kind === 'reschedule_visit') {
+    return {
+      name: 'svc_visit_reminder',
+      language: 'en',
+      bodyParams: [name, String(paramArgs[1] || '').trim() || 'your scheduled visit'],
+    };
+  }
+  const whenHint =
+    kind === 'book_new_customer'
+      ? 'service registration'
+      : kind === 'missed_call_book'
+        ? 'callback for your missed call'
+        : 'your service schedule';
   return {
-    name: bookingCtaTemplateName(kind, brand),
+    name: 'svc_visit_reminder',
     language: 'en',
-    bodyParams: def.bodyParams(...(paramArgs as [string, string, string])),
+    bodyParams: [name, whenHint],
   };
 }
 

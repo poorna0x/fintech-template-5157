@@ -173,10 +173,114 @@ export function invalidateInboundWindowCache(phoneE164?: string | null): void {
   }
 }
 
-/** Inbox list: keep payload small — prefer ~200 newest rows (7-day table). */
-export const WHATSAPP_INBOX_LIST_LIMIT = 200;
+/** People list via RPC — not full message dump. */
+export const WHATSAPP_INBOX_LIST_LIMIT = 250;
 /** Active chat: enough history without over-fetching. */
-export const WHATSAPP_THREAD_LIMIT = 120;
+export const WHATSAPP_THREAD_LIMIT = 200;
+
+export function isR2MediaRef(mediaUrl: string | null | undefined): boolean {
+  const raw = String(mediaUrl || '').trim();
+  return raw.startsWith('r2:') || raw.startsWith('whatsapp/inbound/') || raw.startsWith('whatsapp/outbound/');
+}
+
+export async function fetchWhatsAppInboxThreads(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabaseClient: { rpc: (fn: string, args?: Record<string, unknown>) => any; from: (t: string) => any },
+  limit = WHATSAPP_INBOX_LIST_LIMIT
+): Promise<{ threads: WhatsAppThread[]; error?: string }> {
+  const { data, error } = await supabaseClient.rpc('whatsapp_inbox_threads', {
+    p_limit: limit,
+  });
+  if (error) {
+    return { threads: [], error: error.message };
+  }
+
+  const rows = (data || []) as Array<{
+    phone_e164: string;
+    customer_id: string | null;
+    last_at: string;
+    last_direction: string;
+    last_msg_type: string;
+    last_status: string | null;
+    last_error: string | null;
+    last_body: string | null;
+    inbound_at: string | null;
+    has_failed: boolean;
+  }>;
+
+  const customerIds = [
+    ...new Set(rows.map((r) => r.customer_id).filter(Boolean) as string[]),
+  ].slice(0, 120);
+
+  const nameByCustomerId = new Map<string, string>();
+  if (customerIds.length) {
+    const { data: customers } = await supabaseClient
+      .from('customers')
+      .select('id, name')
+      .in('id', customerIds);
+    for (const c of customers || []) {
+      if (c?.id) nameByCustomerId.set(c.id, c.name || 'Customer');
+    }
+  }
+
+  const threads: WhatsAppThread[] = rows.map((r) => ({
+    phone_e164: String(r.phone_e164 || '').replace(/\D/g, ''),
+    customer_id: r.customer_id,
+    customer_name: r.customer_id ? nameByCustomerId.get(r.customer_id) || null : null,
+    last_body: r.last_body,
+    last_at: r.last_at,
+    last_direction: (r.last_direction === 'inbound' ? 'inbound' : 'outbound') as
+      | 'inbound'
+      | 'outbound',
+    last_msg_type: r.last_msg_type || 'text',
+    last_status: r.last_status,
+    last_error: r.last_error,
+    inbound_at: r.inbound_at,
+    has_failed: Boolean(r.has_failed),
+  }));
+
+  return { threads };
+}
+
+export function patchThreadFromMessage(
+  threads: WhatsAppThread[],
+  row: WhatsAppMessageRow,
+  nameByCustomerId?: Map<string, string>
+): WhatsAppThread[] {
+  const phone = String(row.phone_e164 || '').replace(/\D/g, '');
+  if (!phone) return threads;
+  const preview = previewMessageBody(row);
+  const isInbound = row.direction === 'inbound';
+  const failed =
+    !isInbound &&
+    (isFailedDeliveryStatus(row.status) || Boolean(row.error_message?.trim()));
+
+  const idx = threads.findIndex((t) => t.phone_e164 === phone);
+  const next: WhatsAppThread = {
+    phone_e164: phone,
+    customer_id: row.customer_id || (idx >= 0 ? threads[idx].customer_id : null),
+    customer_name:
+      (row.customer_id && nameByCustomerId?.get(row.customer_id)) ||
+      (idx >= 0 ? threads[idx].customer_name : null),
+    last_body: preview,
+    last_at: row.created_at,
+    last_direction: row.direction,
+    last_msg_type: row.msg_type,
+    last_status: row.status,
+    last_error: row.error_message,
+    inbound_at: isInbound
+      ? row.created_at
+      : idx >= 0
+        ? threads[idx].inbound_at
+        : null,
+    has_failed: failed || (idx >= 0 ? threads[idx].has_failed : false),
+  };
+
+  if (idx < 0) return [next, ...threads].slice(0, WHATSAPP_INBOX_LIST_LIMIT);
+  const copy = [...threads];
+  copy.splice(idx, 1);
+  return [next, ...copy];
+}
 
 export function previewMessageBody(row: Pick<WhatsAppMessageRow, 'body' | 'msg_type' | 'filename'>): string {
   if (row.body?.trim()) return row.body.trim();

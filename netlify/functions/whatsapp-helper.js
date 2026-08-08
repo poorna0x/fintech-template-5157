@@ -264,11 +264,23 @@ function getCloudinaryConfig() {
   return { cloudName, uploadPreset };
 }
 
+const {
+  uploadWhatsAppMediaToR2,
+  uploadOutboundMediaToR2,
+  isR2MediaRef,
+  parseR2ObjectKey,
+} = require('./r2-helper');
+
 /**
- * Upload inbound media to Cloudinary (unsigned preset). Returns secure_url or null.
- * Folder: whatsapp/inbound
+ * Upload inbound media to private R2 (preferred). Falls back to Cloudinary if R2 unset.
+ * Returns { url, mime, filename } where url is r2:key or https Cloudinary URL.
  */
 async function uploadWhatsAppMediaToCloudinary(buffer, mime, filename) {
+  const r2 = await uploadWhatsAppMediaToR2(buffer, mime, filename, 'inbound');
+  if (r2?.url) {
+    return { url: r2.url, mime: r2.mime || mime || null, filename: r2.filename };
+  }
+
   const config = getCloudinaryConfig();
   if (!config || !buffer?.length) return null;
   try {
@@ -298,15 +310,18 @@ async function uploadWhatsAppMediaToCloudinary(buffer, mime, filename) {
   }
 }
 
-/** Upload PDF bytes for outbound WhatsApp document messages (folder whatsapp/outbound). */
+/** Upload PDF bytes for outbound — R2 first, Cloudinary fallback. */
 async function uploadOutboundPdfToCloudinary(buffer, filename) {
+  const name = String(filename || 'document.pdf').replace(/[^\w.\-]+/g, '_').slice(0, 80);
+  const pdfName = name.toLowerCase().endsWith('.pdf') ? name : `${name}.pdf`;
+  const r2 = await uploadOutboundMediaToR2(buffer, 'application/pdf', pdfName);
+  if (r2?.url) return { url: r2.url, filename: r2.filename || pdfName };
+
   const config = getCloudinaryConfig();
   if (!config || !buffer?.length) return null;
   try {
-    const safeName = String(filename || 'document.pdf').replace(/[^\w.\-]+/g, '_').slice(0, 80);
-    const name = safeName.toLowerCase().endsWith('.pdf') ? safeName : `${safeName}.pdf`;
     const form = new FormData();
-    form.append('file', new Blob([buffer], { type: 'application/pdf' }), name);
+    form.append('file', new Blob([buffer], { type: 'application/pdf' }), pdfName);
     form.append('upload_preset', config.uploadPreset);
     form.append('folder', 'whatsapp/outbound');
 
@@ -316,9 +331,8 @@ async function uploadOutboundPdfToCloudinary(buffer, filename) {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.secure_url) {
-      // Fallback: auto upload (some presets only allow auto)
       const form2 = new FormData();
-      form2.append('file', new Blob([buffer], { type: 'application/pdf' }), name);
+      form2.append('file', new Blob([buffer], { type: 'application/pdf' }), pdfName);
       form2.append('upload_preset', config.uploadPreset);
       form2.append('folder', 'whatsapp/outbound');
       const res2 = await fetch(`https://api.cloudinary.com/v1_1/${config.cloudName}/auto/upload`, {
@@ -336,9 +350,9 @@ async function uploadOutboundPdfToCloudinary(buffer, filename) {
         );
         return null;
       }
-      return { url: data2.secure_url, filename: name };
+      return { url: data2.secure_url, filename: pdfName };
     }
-    return { url: data.secure_url, filename: name };
+    return { url: data.secure_url, filename: pdfName };
   } catch (err) {
     console.warn('[whatsapp-helper] outbound pdf upload error', err?.message || err);
     return null;
@@ -390,6 +404,36 @@ async function uploadOutboundFileToWhatsAppMedia(
 }
 
 /**
+ * Meta image messages only allow JPEG/PNG (not WebP — that is stickers only).
+ * Convert webp/other → JPEG so Cloud API does not fail with 131053 Media upload error.
+ * @returns {{ buffer: Buffer, mime: string, filename: string }}
+ */
+async function normalizeOutboundImageForWhatsApp(buffer, mimeType, filename) {
+  const mime = String(mimeType || '').toLowerCase().trim();
+  let name = String(filename || 'image.jpg').replace(/[^\w.\-]+/g, '_').slice(0, 80) || 'image.jpg';
+
+  if (mime === 'image/jpeg' || mime === 'image/jpg') {
+    if (!/\.jpe?g$/i.test(name)) name = `${name.replace(/\.[^.]+$/, '') || 'image'}.jpg`;
+    return { buffer, mime: 'image/jpeg', filename: name };
+  }
+  if (mime === 'image/png') {
+    if (!/\.png$/i.test(name)) name = `${name.replace(/\.[^.]+$/, '') || 'image'}.png`;
+    return { buffer, mime: 'image/png', filename: name };
+  }
+
+  // webp / heic / empty mime with image ext → JPEG
+  try {
+    const sharp = require('sharp');
+    const out = await sharp(buffer).rotate().jpeg({ quality: 88, mozjpeg: true }).toBuffer();
+    const base = name.replace(/\.[^.]+$/, '') || 'image';
+    return { buffer: out, mime: 'image/jpeg', filename: `${base}.jpg` };
+  } catch (err) {
+    console.warn('[whatsapp-helper] image normalize failed', err?.message || err);
+    return { buffer, mime: mime || 'image/jpeg', filename: name };
+  }
+}
+
+/**
  * Upload PDF to Meta WhatsApp Media API (preferred for outbound documents).
  * Cloudinary public links often 401 for Meta crawlers; media-id send is reliable.
  * @returns {{ id: string, filename: string } | null}
@@ -422,8 +466,11 @@ function pdfBase64ToBuffer(pdfBase64) {
   return fileBase64ToBuffer(pdfBase64);
 }
 
-/** Optional Cloudinary copy for CRM inbox preview (7-day retention via Cloudinary lifecycle / unused). */
+/** Optional CRM inbox preview copy — private R2 preferred, Cloudinary fallback. */
 async function uploadOutboundMediaToCloudinary(buffer, mime, filename) {
+  const r2 = await uploadOutboundMediaToR2(buffer, mime, filename);
+  if (r2?.url) return { url: r2.url, filename: r2.filename };
+
   const config = getCloudinaryConfig();
   if (!config || !buffer?.length) return null;
   try {
@@ -522,9 +569,12 @@ module.exports = {
   uploadOutboundPdfToCloudinary,
   uploadOutboundPdfToWhatsAppMedia,
   uploadOutboundFileToWhatsAppMedia,
+  normalizeOutboundImageForWhatsApp,
   uploadOutboundMediaToCloudinary,
   pdfBase64ToBuffer,
   fileBase64ToBuffer,
   resolveInboundMedia,
   extractInboundBody,
+  isR2MediaRef,
+  parseR2ObjectKey,
 };

@@ -81,21 +81,13 @@ exports.handler = async (event) => {
     return json(200, headers, {
       templates,
       recommended: [
-        { name: 'pending_payment', language: 'en', hint: 'Pending ₹ ({{1}} name, {{2}} amount)' },
-        { name: 'service_reminder', language: 'en', hint: 'RO service due ({{1}} name)' },
-        { name: 'amc_renewal', language: 'en', hint: 'AMC ends ({{1}} name, {{2}} date)' },
-        { name: 'quotation_ready', language: 'en', hint: 'Quotation PDF invite ({{1}} name, {{2}} ref)' },
-        { name: 'service_bill_ready', language: 'en', hint: 'Service bill PDF invite ({{1}} name, {{2}} amount)' },
-        { name: 'invoice_ready', language: 'en', hint: 'Tax invoice PDF invite ({{1}} name, {{2}} amount)' },
-        { name: 'amc_document_ready', language: 'en', hint: 'AMC PDF invite ({{1}} name)' },
-        { name: 'warranty_ready', language: 'en', hint: 'Warranty card invite ({{1}} name)' },
-        { name: 'receipt_ready', language: 'en', hint: 'Receipt invite ({{1}} name, {{2}} amount)' },
-        { name: 'document_ready', language: 'en', hint: 'Generic doc invite ({{1}} name, {{2}} label)' },
-        { name: 'customer_followup', language: 'en', hint: 'Follow-up ({{1}} name, {{2}} topic)' },
-        { name: 'appointment_reminder', language: 'en', hint: 'Visit reminder ({{1}} name, {{2}} when)' },
-        { name: 'payment_received', language: 'en', hint: 'Payment thanks ({{1}} name, {{2}} amount)' },
-        { name: 'tech_assigned', language: 'en', hint: 'Tech assigned ({{1}} name, {{2}} tech)' },
-        { name: 'general_notice', language: 'en', hint: 'Catch-all ({{1}} name, {{2}} notice)' },
+        { name: 'svc_balance_due', language: 'en', hint: 'Balance due ({{1}} name, {{2}} amount)' },
+        { name: 'svc_visit_reminder', language: 'en', hint: 'Visit reminder ({{1}} name, {{2}} when)' },
+        { name: 'svc_visit_confirmed', language: 'en', hint: 'Booking confirmed ({{1}} name, {{2}} ref, {{3}} when)' },
+        { name: 'svc_tech_assigned', language: 'en', hint: 'Tech assigned ({{1}} name, {{2}} tech)' },
+        { name: 'svc_completed', language: 'en', hint: 'Service done ({{1}} name, {{2}} amount)' },
+        { name: 'svc_payment_received', language: 'en', hint: 'Payment thanks ({{1}} name, {{2}} amount)' },
+        { name: 'svc_document_pdf', language: 'en', hint: 'Cold PDF (DOCUMENT header · {{1}} name, {{2}} label)' },
       ],
     });
   } catch (err) {

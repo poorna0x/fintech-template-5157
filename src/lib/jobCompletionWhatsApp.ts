@@ -4,16 +4,17 @@
  * - Skips when technician set dont_send_message
  * - Skips when this job has technician AMC info (amc_info) — not DB active AMC
  * - Uses brand-correct copy from buildJobCompletionWhatsAppMessage
- * - Free-form Cloud API only while 24h window is open (no cold template yet)
+ * - Free-form Cloud API in 24h window; cold `svc_completed` when window closed
  */
 import { toast } from 'sonner';
 import { db } from '@/lib/supabase';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { parseRequirements } from '@/lib/followUpToOngoing';
 import { buildJobCompletionMessageFromJob } from '@/lib/job-completion-message';
-import { sendAdminWhatsAppText } from '@/lib/sendAdminWhatsAppApi';
+import { sendAdminWhatsAppTextWithOptionalTemplate } from '@/lib/sendAdminWhatsAppApi';
 import { fetchWhatsAppCrmSettings } from '@/lib/whatsappCrmSettings';
 import { getDocumentBrandLabel } from '@/lib/service-brands';
+import { WA_COLD } from '@/lib/whatsappColdTemplates';
 import type { Job } from '@/types';
 
 function requirementsList(job: Record<string, unknown>): Record<string, unknown>[] {
@@ -146,12 +147,20 @@ export async function maybeAutoSendJobCompletionWhatsApp(opts: {
       ? toast.loading(`Sending ${brandLabel} completion WhatsApp…`)
       : undefined;
 
-    const result = await sendAdminWhatsAppText({
+    const result = await sendAdminWhatsAppTextWithOptionalTemplate({
       to,
       text: built.whatsappMessage,
       customerId,
       source: 'job_completion',
       fallbackWaMe: false,
+      coldTemplate: {
+        name: WA_COLD.job_completion.name,
+        languageCode: WA_COLD.job_completion.language,
+        bodyParams: WA_COLD.job_completion.bodyParams(
+          built.customerName,
+          built.amountCollected
+        ),
+      },
     });
 
     if (result.ok && result.via === 'api') {
@@ -161,7 +170,12 @@ export async function maybeAutoSendJobCompletionWhatsApp(opts: {
         console.warn('[job-completion-wa] mark sent failed', err);
       }
       if (notify && toastId != null) {
-        toast.success(`${brandLabel} completion WhatsApp sent`, { id: toastId });
+        toast.success(
+          result.usedTemplate
+            ? `${brandLabel} completion template sent`
+            : `${brandLabel} completion WhatsApp sent`,
+          { id: toastId }
+        );
       }
       return 'sent';
     }
@@ -176,7 +190,7 @@ export async function maybeAutoSendJobCompletionWhatsApp(opts: {
     if (result.needsWindowOrTemplate) {
       if (notify && toastId != null) {
         toast.message(
-          'Completion WhatsApp not sent — 24h window closed (template later). Use Send Message manually if needed.',
+          'Completion WhatsApp not sent — 24h window closed and svc_completed not approved yet. Use Send Message manually if needed.',
           { id: toastId, duration: 6000 }
         );
       }

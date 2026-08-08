@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Loader2, Paperclip, RefreshCw, Search, Send, X } from 'lucide-react';
+import { ArrowLeft, FileText, Loader2, Paperclip, RefreshCw, Search, Send, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,30 +11,42 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabaseClient';
 import {
   WHATSAPP_INBOX_COLUMNS,
-  WHATSAPP_INBOX_LIST_LIMIT,
   WHATSAPP_THREAD_LIMIT,
-  buildThreadsFromMessages,
   countUnreadWhatsAppThreads,
   displayPhone,
+  fetchWhatsAppInboxThreads,
   formatBubbleTime,
   formatThreadTime,
   hoursLeftInWindow,
   invalidateInboundWindowCache,
   isFailedDeliveryStatus,
+  isR2MediaRef,
   isWhatsAppThreadUnread,
   isWithinCustomerServiceWindow,
   loadWhatsAppReadMap,
   markWhatsAppThreadRead,
+  patchThreadFromMessage,
   previewMessageBody,
   type WhatsAppMessageRow,
   type WhatsAppThread,
 } from '@/lib/whatsappInbox';
+import { WhatsAppPdfThumbnail } from '@/components/whatsapp/WhatsAppPdfThumbnail';
 import {
   fetchApprovedWhatsAppTemplates,
+  fetchWhatsAppR2SignedUrl,
+  purgeWhatsAppMessages,
   readFileAsBase64,
   sendAdminWhatsAppMedia,
   sendAdminWhatsAppTemplate,
@@ -54,8 +66,7 @@ type Props = {
 export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [messages, setMessages] = useState<WhatsAppMessageRow[]>([]);
-  const [nameByCustomerId, setNameByCustomerId] = useState<Map<string, string>>(new Map());
+  const [threads, setThreads] = useState<WhatsAppThread[]>([]);
   const [selectedPhone, setSelectedPhone] = useState<string | null>(
     initialPhone ? String(initialPhone).replace(/\D/g, '') : null
   );
@@ -63,6 +74,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const [threadLoading, setThreadLoading] = useState(false);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
+  const [purging, setPurging] = useState(false);
   const [query, setQuery] = useState('');
   const [templates, setTemplates] = useState<WhatsAppTemplateListItem[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
@@ -74,12 +86,11 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const [attachFile, setAttachFile] = useState<File | null>(null);
   const [attachPreviewUrl, setAttachPreviewUrl] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [mediaUrlCache, setMediaUrlCache] = useState<Record<string, string>>({});
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const selectedPhoneRef = useRef(selectedPhone);
   selectedPhoneRef.current = selectedPhone;
-  const messagesRef = useRef(messages);
-  messagesRef.current = messages;
 
   useEffect(() => {
     if (!attachFile || !attachFile.type.startsWith('image/')) {
@@ -121,37 +132,12 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     if (opts?.soft) setRefreshing(true);
     else setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('whatsapp_messages')
-        .select(WHATSAPP_INBOX_COLUMNS)
-        .order('created_at', { ascending: false })
-        .limit(WHATSAPP_INBOX_LIST_LIMIT);
-
-      if (error) {
-        toast.error(error.message || 'Failed to load WhatsApp messages');
+      const result = await fetchWhatsAppInboxThreads(supabase);
+      if (result.error) {
+        toast.error(result.error || 'Failed to load WhatsApp threads');
         return;
       }
-
-      const rows = (data || []) as WhatsAppMessageRow[];
-      setMessages(rows);
-
-      const customerIds = [
-        ...new Set(rows.map((r) => r.customer_id).filter(Boolean) as string[]),
-      ].slice(0, 80);
-
-      if (customerIds.length) {
-        const { data: customers } = await supabase
-          .from('customers')
-          .select('id, name')
-          .in('id', customerIds);
-        const map = new Map<string, string>();
-        for (const c of customers || []) {
-          if (c?.id) map.set(c.id, c.name || 'Customer');
-        }
-        setNameByCustomerId(map);
-      } else {
-        setNameByCustomerId(new Map());
-      }
+      setThreads(result.threads);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -165,28 +151,127 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         .from('whatsapp_messages')
         .select(WHATSAPP_INBOX_COLUMNS)
         .eq('phone_e164', phone)
-        .order('created_at', { ascending: true })
+        .order('created_at', { ascending: false })
         .limit(WHATSAPP_THREAD_LIMIT);
       if (error) {
         toast.error(error.message || 'Failed to load chat');
         return;
       }
-      setThreadMessages((data || []) as WhatsAppMessageRow[]);
+      const rows = ((data || []) as WhatsAppMessageRow[]).slice().reverse();
+      setThreadMessages(rows);
     } finally {
       if (!opts?.soft) setThreadLoading(false);
     }
   }, []);
 
-  const upsertMessageLocal = useCallback((row: WhatsAppMessageRow) => {
-    setMessages((prev) => {
-      const idx = prev.findIndex((m) => m.id === row.id);
-      if (idx >= 0) {
-        const next = [...prev];
-        next[idx] = { ...next[idx], ...row };
-        return next;
+  const openMedia = useCallback(
+    async (row: WhatsAppMessageRow) => {
+      const ref = row.media_url;
+      if (!ref) return;
+      if (!isR2MediaRef(ref) && /^https:\/\//i.test(ref)) {
+        window.open(ref, '_blank', 'noopener,noreferrer');
+        return;
       }
-      return [row, ...prev].slice(0, WHATSAPP_INBOX_LIST_LIMIT);
-    });
+      const cached = mediaUrlCache[row.id];
+      if (cached) {
+        window.open(cached, '_blank', 'noopener,noreferrer');
+        return;
+      }
+      const toastId = toast.loading('Opening attachment…');
+      const signed = await fetchWhatsAppR2SignedUrl({
+        mediaUrl: ref,
+        messageId: row.id,
+      });
+      if (!signed.ok || !signed.url) {
+        toast.error(signed.error || 'Could not open attachment', { id: toastId });
+        return;
+      }
+      setMediaUrlCache((prev) => ({ ...prev, [row.id]: signed.url! }));
+      toast.dismiss(toastId);
+      window.open(signed.url, '_blank', 'noopener,noreferrer');
+    },
+    [mediaUrlCache]
+  );
+
+  // Prefetch signed URLs for image bubbles in the open thread
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      for (const m of threadMessages) {
+        if (cancelled || !m.media_url) continue;
+        const isImage = m.msg_type === 'image' || m.media_mime?.startsWith('image/');
+        if (!isImage || !isR2MediaRef(m.media_url)) continue;
+        let already = false;
+        setMediaUrlCache((prev) => {
+          already = Boolean(prev[m.id]);
+          return prev;
+        });
+        if (already) continue;
+        const signed = await fetchWhatsAppR2SignedUrl({
+          mediaUrl: m.media_url,
+          messageId: m.id,
+        });
+        if (cancelled) return;
+        if (signed.ok && signed.url) {
+          setMediaUrlCache((prev) =>
+            prev[m.id] ? prev : { ...prev, [m.id]: signed.url! }
+          );
+        }
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [threadMessages]);
+
+  const runPurge = useCallback(
+    async (opts: { olderThanDays?: number; phoneE164?: string }) => {
+      const label = opts.phoneE164
+        ? `Delete chat for ${displayPhone(opts.phoneE164)}?`
+        : `Delete messages older than ${opts.olderThanDays} days (text + R2 media)?`;
+      if (!window.confirm(label)) return;
+      setPurging(true);
+      const toastId = toast.loading('Cleaning up…');
+      try {
+        const dry = await purgeWhatsAppMessages({ ...opts, dryRun: true });
+        if (!dry.ok) {
+          toast.error(dry.error || 'Cleanup failed', { id: toastId });
+          return;
+        }
+        const n = dry.wouldDeleteRows ?? 0;
+        if (n === 0) {
+          toast.message('Nothing to delete', { id: toastId });
+          return;
+        }
+        if (!window.confirm(`This will permanently delete ${n} message(s). Continue?`)) {
+          toast.dismiss(toastId);
+          return;
+        }
+        const result = await purgeWhatsAppMessages(opts);
+        if (!result.ok) {
+          toast.error(result.error || 'Cleanup failed', { id: toastId });
+          return;
+        }
+        toast.success(
+          `Deleted ${result.deletedRows ?? 0} messages` +
+            (result.deletedMedia ? ` · ${result.deletedMedia} files` : ''),
+          { id: toastId }
+        );
+        if (opts.phoneE164 && opts.phoneE164 === selectedPhoneRef.current) {
+          setSelectedPhone(null);
+          setThreadMessages([]);
+        }
+        await loadInbox({ soft: true });
+      } finally {
+        setPurging(false);
+      }
+    },
+    [loadInbox]
+  );
+
+  const upsertMessageLocal = useCallback((row: WhatsAppMessageRow) => {
+    setThreads((prev) => patchThreadFromMessage(prev, row));
     if (row.phone_e164 === selectedPhoneRef.current) {
       setThreadMessages((prev) => {
         const idx = prev.findIndex((m) => m.id === row.id);
@@ -212,13 +297,6 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       setThreadMessages([]);
       return;
     }
-    const cached = messagesRef.current
-      .filter((m) => m.phone_e164 === selectedPhone)
-      .slice()
-      .sort(
-        (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-      );
-    if (cached.length) setThreadMessages(cached);
     void loadThread(selectedPhone);
   }, [selectedPhone, loadThread]);
 
@@ -226,7 +304,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [threadMessages.length, selectedPhone]);
 
-  // Realtime: patch locally; soft-reload list at most every 12s (no 3s polling)
+  // Realtime: patch thread list + open chat; soft-reload people list at most every 12s
   useEffect(() => {
     let softReloadTimer: number | null = null;
     let lastSoftReload = 0;
@@ -250,7 +328,6 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         (payload) => {
           const row = (payload.new || payload.old) as Partial<WhatsAppMessageRow> | null;
           if (payload.eventType === 'DELETE' && row?.id) {
-            setMessages((prev) => prev.filter((m) => m.id !== row.id));
             setThreadMessages((prev) => prev.filter((m) => m.id !== row.id));
             scheduleSoftReload();
             return;
@@ -268,11 +345,6 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       void supabase.removeChannel(channel);
     };
   }, [loadInbox, upsertMessageLocal]);
-
-  const threads = useMemo(
-    () => buildThreadsFromMessages(messages, nameByCustomerId),
-    [messages, nameByCustomerId]
-  );
 
   const activeThread: WhatsAppThread | null = useMemo(() => {
     if (!selectedPhone) return null;
@@ -516,6 +588,45 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                 <RefreshCw className="h-4 w-4" />
               )}
             </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-10 w-10 shrink-0"
+                  disabled={purging}
+                  title="Cleanup"
+                >
+                  {purging ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-4 w-4" />
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>Delete older than</DropdownMenuLabel>
+                {[30, 90, 180, 365].map((days) => (
+                  <DropdownMenuItem
+                    key={days}
+                    onClick={() => void runPurge({ olderThanDays: days })}
+                  >
+                    {days} days
+                  </DropdownMenuItem>
+                ))}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-red-700"
+                  disabled={!selectedPhone}
+                  onClick={() =>
+                    selectedPhone ? void runPurge({ phoneE164: selectedPhone }) : undefined
+                  }
+                >
+                  Delete this chat
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto">
@@ -526,7 +637,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
               </div>
             ) : filteredThreads.length === 0 ? (
               <p className="p-6 text-center text-sm text-muted-foreground">
-                No WhatsApp threads in the last 7 days.
+                No WhatsApp conversations yet.
               </p>
             ) : (
               <ul>
@@ -699,6 +810,17 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       : ' · 24h window closed'}
                   </p>
                 </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="shrink-0 text-red-700"
+                  title="Delete this chat"
+                  disabled={purging}
+                  onClick={() => void runPurge({ phoneE164: selectedPhone })}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
               </div>
 
               <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-4 sm:px-6">
@@ -737,28 +859,79 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                           ) : null}
                           {m.media_url ? (
                             m.msg_type === 'image' || m.media_mime?.startsWith('image/') ? (
-                              <a href={m.media_url} target="_blank" rel="noreferrer">
-                                <img
-                                  src={m.media_url}
-                                  alt=""
-                                  className="mb-1 max-h-48 rounded-md object-cover"
-                                  loading="lazy"
-                                />
-                              </a>
-                            ) : (
-                              <a
-                                href={m.media_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="mb-1 block text-xs text-sky-700 underline"
+                              <button
+                                type="button"
+                                className="mb-1 block max-w-full overflow-hidden rounded-md text-left"
+                                onClick={() => void openMedia(m)}
                               >
-                                {m.filename || 'Open attachment'}
-                              </a>
+                                {mediaUrlCache[m.id] ||
+                                (!isR2MediaRef(m.media_url) &&
+                                  /^https:\/\//i.test(m.media_url)) ? (
+                                  <img
+                                    src={
+                                      mediaUrlCache[m.id] ||
+                                      (!isR2MediaRef(m.media_url) ? m.media_url : '') ||
+                                      ''
+                                    }
+                                    alt={m.filename || 'Photo'}
+                                    className="max-h-52 w-full rounded-md object-cover"
+                                    loading="lazy"
+                                  />
+                                ) : (
+                                  <span className="flex h-28 w-44 items-center justify-center rounded-md bg-slate-200/80 text-xs text-sky-800">
+                                    Tap to load photo
+                                  </span>
+                                )}
+                              </button>
+                            ) : m.media_mime?.includes('pdf') ||
+                              /\.pdf$/i.test(m.filename || '') ||
+                              m.msg_type === 'document' ||
+                              m.msg_type === 'pdf' ? (
+                              <WhatsAppPdfThumbnail
+                                messageId={m.id}
+                                mediaUrl={m.media_url}
+                                filename={m.filename}
+                                onOpen={() => void openMedia(m)}
+                              />
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => void openMedia(m)}
+                                className="mb-1 flex w-full min-w-[200px] max-w-[260px] items-center gap-3 rounded-md border border-slate-200/80 bg-white/90 px-3 py-2.5 text-left shadow-sm transition hover:bg-white"
+                              >
+                                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-red-50 text-red-600">
+                                  <FileText className="h-6 w-6" aria-hidden />
+                                </span>
+                                <span className="min-w-0 flex-1">
+                                  <span className="block truncate text-sm font-medium text-slate-900">
+                                    {m.filename || 'Document'}
+                                  </span>
+                                  <span className="mt-0.5 block text-[11px] uppercase tracking-wide text-slate-500">
+                                    File · Tap to open
+                                  </span>
+                                </span>
+                              </button>
                             )
                           ) : null}
-                          <p className="whitespace-pre-wrap break-words text-sm">
-                            {previewMessageBody(m)}
-                          </p>
+                          {(() => {
+                            const text = previewMessageBody(m);
+                            const file = (m.filename || '').trim();
+                            // Avoid repeating filename under the document card
+                            if (
+                              m.media_url &&
+                              file &&
+                              (text === file || text === `📄 ${file}` || text === '📄 Document')
+                            ) {
+                              return null;
+                            }
+                            if (m.media_url && !m.body?.trim() && (m.msg_type === 'document' || m.msg_type === 'pdf' || m.msg_type === 'image')) {
+                              return null;
+                            }
+                            if (!text?.trim()) return null;
+                            return (
+                              <p className="whitespace-pre-wrap break-words text-sm">{text}</p>
+                            );
+                          })()}
                           <div
                             className={cn(
                               'mt-1 flex items-center justify-end gap-2 text-[10px]',

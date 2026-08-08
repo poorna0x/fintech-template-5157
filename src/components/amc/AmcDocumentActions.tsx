@@ -126,23 +126,22 @@ export default function AmcDocumentActions({
       });
       if (!result.ok) {
         if (result.needsWindowOrTemplate) {
-          toast.loading('24h window closed — sending invite template…', { id: toastId });
+          toast.loading('24h window closed — sending PDF via template…', { id: toastId });
           const invite = await sendColdDocumentInvite({
             to: customerPhone,
             kind: 'amc',
             customerName: bill.customer?.name || 'Customer',
             source: 'documents',
+            pdfBase64: pdf.pdfBase64,
+            filename: pdf.filename,
           });
           if (invite.ok) {
-            toast.success(
-              'Invite sent — when they reply YES, tap WhatsApp AMC PDF again to send the file',
-              { id: toastId }
-            );
+            toast.success('AMC PDF sent via WhatsApp template', { id: toastId });
             return;
           }
           toast.error(
             invite.error ||
-              '24h window closed — ask the customer to message first, then resend',
+              '24h window closed — cold PDF template not approved yet (svc_document_pdf)',
             { id: toastId }
           );
           return;

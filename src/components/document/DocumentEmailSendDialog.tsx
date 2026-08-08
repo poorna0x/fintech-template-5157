@@ -368,7 +368,7 @@ export default function DocumentEmailSendDialog({
 
       if (!result.ok) {
         if (result.needsWindowOrTemplate) {
-          toast.loading('24h window closed — sending invite template…', { id: toastId });
+          toast.loading('24h window closed — sending PDF via template…', { id: toastId });
           const invite = await sendColdDocumentInvite({
             to: phone,
             kind,
@@ -378,13 +378,12 @@ export default function DocumentEmailSendDialog({
             ref: bill.billNumber,
             source: 'documents',
             documentLabel: meta.docLabel,
+            pdfBase64: pdf.pdfBase64,
+            filename: pdf.filename,
           });
           if (invite.ok) {
             if (!opts?.keepOpen) {
-              toast.success(
-                'Invite sent — when they reply YES, send again to deliver the PDF',
-                { id: toastId }
-              );
+              toast.success('PDF sent via WhatsApp template', { id: toastId });
               onSent?.();
               onOpenChange(false);
             }
@@ -393,7 +392,7 @@ export default function DocumentEmailSendDialog({
           openWhatsAppMeDeepLink(phone, caption);
           if (!opts?.keepOpen) {
             toast.success(
-              'Opened phone WhatsApp (invite failed) — attach the PDF manually if needed',
+              'Opened phone WhatsApp (template PDF failed) — attach the PDF manually if needed',
               { id: toastId }
             );
             onSent?.();
@@ -459,7 +458,7 @@ export default function DocumentEmailSendDialog({
 
       const waNote =
         waResult.via === 'invite'
-          ? 'WhatsApp invite sent (PDF after they reply YES)'
+          ? 'WhatsApp PDF sent via template'
           : waResult.via === 'wa_me'
             ? 'WhatsApp opened on phone as backup'
             : 'WhatsApp PDF sent';
@@ -604,8 +603,8 @@ export default function DocumentEmailSendDialog({
                 </p>
               ) : windowOpen === false ? (
                 <p className="text-xs text-amber-800">
-                  Window closed — PDF needs an open window; we&apos;ll send an invite template if
-                  Meta blocks the file.
+                  Window closed — we&apos;ll send the PDF via cold template (`svc_document_pdf`) if
+                  Meta blocks free-form.
                 </p>
               ) : (
                 <p className="text-xs text-muted-foreground">

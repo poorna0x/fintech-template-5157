@@ -2,7 +2,8 @@
  * WhatsApp Cloud API — send text / PDF (document) / template.
  * Auth: admin JWT (CRM) OR local WHATSAPP_POC_SECRET for /whatsapp-test.
  * Credentials: env or app_secrets via whatsapp-helper.
- * Persists outbound rows to whatsapp_messages (7-day retention).
+ * Persists outbound rows to whatsapp_messages (long retention; manual timeline delete).
+ * Media previews on private Cloudflare R2 (r2: keys).
  */
 const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
 const { authorizeAdminRequest } = require('./admin-auth-guard');
@@ -16,6 +17,7 @@ const {
   findCustomerIdByPhone,
   uploadOutboundPdfToWhatsAppMedia,
   uploadOutboundFileToWhatsAppMedia,
+  normalizeOutboundImageForWhatsApp,
   uploadOutboundMediaToCloudinary,
   pdfBase64ToBuffer,
   fileBase64ToBuffer,
@@ -32,6 +34,22 @@ function isPdfMime(mime, filename) {
   const m = String(mime || '').toLowerCase();
   const name = String(filename || '').toLowerCase();
   return m === 'application/pdf' || name.endsWith('.pdf');
+}
+
+/** Inbox-storable media ref: https (Cloudinary) or r2:key (private R2). */
+function isPersistableMediaUrl(link) {
+  const raw = String(link || '').trim();
+  if (!raw) return false;
+  if (/^https:\/\//i.test(raw)) return true;
+  if (raw.startsWith('r2:') && raw.includes('whatsapp/')) return true;
+  if (raw.startsWith('whatsapp/inbound/') || raw.startsWith('whatsapp/outbound/')) return true;
+  return false;
+}
+
+function persistMediaUrl(link, mediaId) {
+  if (isPersistableMediaUrl(link)) return String(link).trim();
+  if (mediaId) return `whatsapp-media:${mediaId}`;
+  return null;
 }
 
 function json(statusCode, headers, payload) {
@@ -223,7 +241,7 @@ exports.handler = async (event) => {
 
       const wantImage =
         type === 'image' || isImageMime(mimeHint) || /\.(jpe?g|png|webp)$/i.test(filename);
-      const mime = wantImage
+      let mime = wantImage
         ? mimeHint && isImageMime(mimeHint)
           ? mimeHint
           : /\.png$/i.test(filename)
@@ -234,6 +252,14 @@ exports.handler = async (event) => {
         : isPdfMime(mimeHint, filename)
           ? 'application/pdf'
           : mimeHint || 'application/octet-stream';
+
+      // Meta only accepts JPEG/PNG for image messages (WebP → 131053 Media upload error)
+      if (wantImage) {
+        const normalized = await normalizeOutboundImageForWhatsApp(buf, mime, filename);
+        buf = normalized.buffer;
+        mime = normalized.mime;
+        filename = normalized.filename;
+      }
 
       // Meta media id for delivery
       const uploaded = wantImage
@@ -292,7 +318,10 @@ exports.handler = async (event) => {
         },
       };
       persist.msg_type = 'image';
-      persist.media_mime = mimeHint || 'image/jpeg';
+      // After normalize, outbound images are jpeg/png only (webp converted server-side)
+      persist.media_mime = /\.png$/i.test(filename)
+        ? 'image/png'
+        : 'image/jpeg';
     } else {
       payload = {
         messaging_product: 'whatsapp',
@@ -308,8 +337,8 @@ exports.handler = async (event) => {
       persist.msg_type = 'document';
       persist.media_mime = mimeHint || 'application/pdf';
     }
-    // Prefer Cloudinary preview URL for CRM; fall back to opaque Meta media ref
-    persist.media_url = link && /^https:\/\//i.test(link) ? link : mediaId ? `whatsapp-media:${mediaId}` : null;
+    // Prefer R2 / Cloudinary preview URL for CRM; fall back to opaque Meta media ref
+    persist.media_url = persistMediaUrl(link, mediaId);
     persist.filename = filename;
     persist.body = caption ? stampAwaitingMediaIfAsking(caption) : caption || null;
   } else if (type === 'template') {
@@ -326,6 +355,65 @@ exports.handler = async (event) => {
     const languageCode = String(body.languageCode || 'en').trim() || 'en';
     const bodyParams = Array.isArray(body.bodyParams) ? body.bodyParams : [];
     const components = [];
+
+    // DOCUMENT-header templates (cold PDF): upload pdfBase64 → media id, attach as header
+    const headerDoc = body.headerDocument && typeof body.headerDocument === 'object' ? body.headerDocument : null;
+    const headerPdfB64 = headerDoc
+      ? headerDoc.pdfBase64 || headerDoc.fileBase64 || body.pdfBase64 || ''
+      : body.headerPdfBase64 || '';
+    if (headerPdfB64 || headerDoc?.mediaId || headerDoc?.link) {
+      let mediaId = String(headerDoc?.mediaId || '').trim();
+      let link = String(headerDoc?.link || headerDoc?.url || '').trim();
+      let filename =
+        String(headerDoc?.filename || body.filename || 'document.pdf').trim() || 'document.pdf';
+
+      if (!mediaId && headerPdfB64) {
+        const buf = fileBase64ToBuffer(headerPdfB64) || pdfBase64ToBuffer(headerPdfB64);
+        if (!buf || buf.length < 32) {
+          return json(400, headers, { error: 'Invalid header PDF base64' });
+        }
+        if (buf.length > MAX_OUTBOUND_BYTES) {
+          return json(413, headers, { error: 'File too large (max ~4.5MB for WhatsApp send)' });
+        }
+        const uploaded = await uploadOutboundPdfToWhatsAppMedia(
+          phoneNumberId,
+          accessToken,
+          buf,
+          filename
+        );
+        if (!uploaded?.id) {
+          return json(502, headers, { error: 'Could not upload PDF for template header' });
+        }
+        mediaId = uploaded.id;
+        filename = uploaded.filename || filename;
+        const preview = await uploadOutboundMediaToCloudinary(buf, 'application/pdf', filename);
+        if (preview?.url) link = preview.url;
+      }
+
+      if (!mediaId && (!link || !/^https:\/\//i.test(link))) {
+        return json(400, headers, {
+          error: 'headerDocument needs mediaId, https link, or pdfBase64',
+        });
+      }
+
+      components.push({
+        type: 'header',
+        parameters: [
+          {
+            type: 'document',
+            document: {
+              ...(mediaId ? { id: mediaId } : { link }),
+              filename,
+            },
+          },
+        ],
+      });
+      persist.msg_type = 'template';
+      persist.media_mime = 'application/pdf';
+      persist.filename = filename;
+      persist.media_url = persistMediaUrl(link, mediaId);
+    }
+
     if (bodyParams.length) {
       components.push({
         type: 'body',
@@ -345,7 +433,7 @@ exports.handler = async (event) => {
         ...(components.length ? { components } : {}),
       },
     };
-    persist.msg_type = 'template';
+    persist.msg_type = persist.msg_type || 'template';
     persist.template_name = templateName;
     persist.body =
       bodyParams.length > 0

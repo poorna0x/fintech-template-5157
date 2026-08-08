@@ -303,6 +303,11 @@ export type SendAdminWhatsAppTemplateOptions = {
   bodyParams?: string[];
   customerId?: string | null;
   source?: WhatsAppSendSource;
+  /** For DOCUMENT-header templates — attach PDF in the same cold send. */
+  headerDocument?: {
+    pdfBase64: string;
+    filename?: string;
+  } | null;
 };
 
 export async function sendAdminWhatsAppTemplate(
@@ -331,6 +336,14 @@ export async function sendAdminWhatsAppTemplate(
         templateName,
         languageCode: options.languageCode || 'en',
         bodyParams: options.bodyParams || [],
+        ...(options.headerDocument?.pdfBase64
+          ? {
+              headerDocument: {
+                pdfBase64: options.headerDocument.pdfBase64,
+                filename: options.headerDocument.filename || 'document.pdf',
+              },
+            }
+          : {}),
         ...(options.customerId ? { customerId: options.customerId } : {}),
         ...(options.source ? { source: options.source } : {}),
       }),
@@ -459,15 +472,22 @@ export type SendColdDocumentInviteOptions = {
   ref?: string;
   documentLabel?: string;
   source?: WhatsAppSendSource;
+  /** Required for one-shot cold PDF (DOCUMENT-header template). */
+  pdfBase64: string;
+  filename?: string;
 };
 
 /**
- * Cold outreach when PDF can't send outside 24h: invite customer to reply,
- * then staff can resend the PDF in-window.
+ * Cold PDF outside 24h: send DOCUMENT-header Utility template with the PDF attached
+ * (no "reply YES" invite). Requires `svc_document_pdf` APPROVED in Meta.
  */
 export async function sendColdDocumentInvite(
   options: SendColdDocumentInviteOptions
 ): Promise<AdminWhatsAppSendResult> {
+  const pdfBase64 = String(options.pdfBase64 || '').trim();
+  if (!pdfBase64) {
+    return { ok: false, error: 'PDF required for cold document send' };
+  }
   const meta = coldDocTemplateForKind(options.kind);
   return sendAdminWhatsAppTemplate({
     to: options.to,
@@ -479,7 +499,121 @@ export async function sendColdDocumentInvite(
       ref: options.ref,
       documentLabel: options.documentLabel,
     }),
+    headerDocument: {
+      pdfBase64,
+      filename: options.filename || 'document.pdf',
+    },
     customerId: options.customerId,
     source: options.source || 'documents',
   });
+}
+
+export async function fetchWhatsAppR2SignedUrl(opts: {
+  mediaUrl?: string | null;
+  messageId?: string | null;
+}): Promise<{ ok: boolean; url?: string; error?: string; expiresIn?: number | null }> {
+  const accessToken = await resolveSupabaseAccessTokenForApi();
+  if (!accessToken) return { ok: false, error: 'Not signed in' };
+  try {
+    const res = await fetch('/.netlify/functions/whatsapp-r2-signed-url', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        ...(opts.mediaUrl ? { mediaUrl: opts.mediaUrl } : {}),
+        ...(opts.messageId ? { messageId: opts.messageId } : {}),
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return { ok: false, error: String(data?.error || `HTTP ${res.status}`) };
+    }
+    return {
+      ok: true,
+      url: data.url,
+      expiresIn: data.expiresIn ?? null,
+    };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Signed URL failed' };
+  }
+}
+
+/** Bytes via same-origin proxy (PDF thumbnails — avoids R2 browser CORS). */
+export async function fetchWhatsAppR2MediaBytes(opts: {
+  mediaUrl?: string | null;
+  messageId?: string | null;
+}): Promise<{ ok: boolean; bytes?: ArrayBuffer; url?: string; error?: string }> {
+  const accessToken = await resolveSupabaseAccessTokenForApi();
+  if (!accessToken) return { ok: false, error: 'Not signed in' };
+  try {
+    const res = await fetch('/.netlify/functions/whatsapp-r2-signed-url', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        proxy: true,
+        ...(opts.mediaUrl ? { mediaUrl: opts.mediaUrl } : {}),
+        ...(opts.messageId ? { messageId: opts.messageId } : {}),
+      }),
+    });
+    const ct = (res.headers.get('content-type') || '').toLowerCase();
+    if (!res.ok) {
+      const data = ct.includes('json') ? await res.json().catch(() => ({})) : {};
+      return { ok: false, error: String((data as { error?: string })?.error || `HTTP ${res.status}`) };
+    }
+    if (ct.includes('application/json')) {
+      const data = (await res.json().catch(() => ({}))) as {
+        url?: string;
+        error?: string;
+        tooLargeForProxy?: boolean;
+        legacy?: boolean;
+      };
+      if (data.url) return { ok: true, url: data.url };
+      return { ok: false, error: String(data.error || 'No media') };
+    }
+    return { ok: true, bytes: await res.arrayBuffer() };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Media fetch failed' };
+  }
+}
+
+export async function purgeWhatsAppMessages(opts: {
+  olderThanDays?: number;
+  phoneE164?: string;
+  dryRun?: boolean;
+}): Promise<{
+  ok: boolean;
+  error?: string;
+  deletedRows?: number;
+  deletedMedia?: number;
+  wouldDeleteRows?: number;
+}> {
+  const accessToken = await resolveSupabaseAccessTokenForApi();
+  if (!accessToken) return { ok: false, error: 'Not signed in' };
+  try {
+    const res = await fetch('/.netlify/functions/whatsapp-purge-messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify(opts),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return { ok: false, error: String(data?.error || `HTTP ${res.status}`) };
+    }
+    return {
+      ok: true,
+      deletedRows: data.deletedRows,
+      deletedMedia: data.deletedMedia,
+      wouldDeleteRows: data.wouldDeleteRows,
+    };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Purge failed' };
+  }
 }

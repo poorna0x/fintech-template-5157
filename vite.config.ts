@@ -37,6 +37,14 @@ export default defineConfig(({ mode }) => ({
         target: 'http://localhost:8888',
         changeOrigin: true,
       },
+      '/.netlify/functions/whatsapp-r2-signed-url': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
+      '/.netlify/functions/whatsapp-purge-messages': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
       // Proxy Netlify functions to avoid CORS issues
       '/.netlify/functions': {
         // Use production functions so nudges like goingNow work without netlify:dev.

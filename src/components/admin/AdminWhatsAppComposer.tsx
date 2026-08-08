@@ -379,11 +379,11 @@ export function AdminWhatsAppComposerPanel({
                         : templateType === 'warranty_document'
                           ? 'warranty card'
                           : 'document',
+              pdfBase64: pdf.content,
+              filename: pdf.filename,
             });
             if (invite.ok) {
-              toast.success(
-                '24h window closed — invite template sent. When they reply, send the PDF again.'
-              );
+              toast.success('PDF sent via WhatsApp template');
               return;
             }
             toast.error(

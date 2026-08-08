@@ -60,6 +60,8 @@ const whatsappSend = require('./whatsapp-send');
 const whatsappWebhook = require('./whatsapp-webhook');
 const whatsappEvents = require('./whatsapp-events');
 const whatsappTemplates = require('./whatsapp-templates');
+const whatsappR2SignedUrl = require('./whatsapp-r2-signed-url');
+const whatsappPurgeMessages = require('./whatsapp-purge-messages');
 
 const PORT = 8888;
 
@@ -146,6 +148,10 @@ const server = http.createServer((req, res) => {
     handler = whatsappEvents;
   } else if (req.url.startsWith('/.netlify/functions/whatsapp-templates')) {
     handler = whatsappTemplates;
+  } else if (req.url.startsWith('/.netlify/functions/whatsapp-r2-signed-url')) {
+    handler = whatsappR2SignedUrl;
+  } else if (req.url.startsWith('/.netlify/functions/whatsapp-purge-messages')) {
+    handler = whatsappPurgeMessages;
   } else {
     console.log('⚠️ No handler found for:', req.url);
   }

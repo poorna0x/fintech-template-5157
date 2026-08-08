@@ -268,7 +268,7 @@ export default function WarrantyCardEmailSendDialog({
 
       if (!result.ok) {
         if (result.needsWindowOrTemplate) {
-          toast.loading('24h window closed — sending invite template…', { id: toastId });
+          toast.loading('24h window closed — sending PDF via template…', { id: toastId });
           const invite = await sendColdDocumentInvite({
             to: phone,
             kind: 'warranty',
@@ -276,12 +276,11 @@ export default function WarrantyCardEmailSendDialog({
             customerId,
             documentLabel: 'warranty card',
             source: 'documents',
+            pdfBase64: pdf.pdfBase64,
+            filename: pdf.filename,
           });
           if (invite.ok) {
-            toast.success(
-              'Invite sent — when they reply YES, send again to deliver the PDF',
-              { id: toastId }
-            );
+            toast.success('Warranty PDF sent via WhatsApp template', { id: toastId });
             onSent?.();
             onOpenChange(false);
             return;
@@ -390,9 +389,11 @@ export default function WarrantyCardEmailSendDialog({
             customerId,
             documentLabel: 'warranty card',
             source: 'documents',
+            pdfBase64: pdf.pdfBase64,
+            filename: pdf.filename,
           });
           if (invite.ok) {
-            waNote = 'WhatsApp invite sent (PDF after they reply YES)';
+            waNote = 'WhatsApp PDF sent via template';
           } else {
             openWhatsAppMeDeepLink(phone, caption);
             waNote = 'WhatsApp opened on phone as backup';
@@ -516,8 +517,8 @@ export default function WarrantyCardEmailSendDialog({
                 </p>
               ) : windowOpen === false ? (
                 <p className="text-xs text-amber-800">
-                  Window closed — we&apos;ll send an invite template if Meta blocks the PDF, then
-                  wa.me as backup.
+                  Window closed — we&apos;ll send the PDF via cold template if Meta blocks it,
+                  then wa.me as backup.
                 </p>
               ) : (
                 <p className="text-xs text-muted-foreground">
