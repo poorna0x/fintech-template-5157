@@ -822,8 +822,18 @@ export const CompletedJobSection: React.FC<CompletedJobSectionProps> = ({
                 }
               }
             }}
-            title={messageSent ? 'Send WhatsApp again' : 'Send WhatsApp message'}
-            className="text-xs flex-1 min-w-0 justify-center py-2 px-2"
+            title={
+              messageSent
+                ? messageSentAt
+                  ? `Already sent ${formatSentAt(messageSentAt)} — send again`
+                  : 'Send WhatsApp again'
+                : 'Send WhatsApp message'
+            }
+            className={
+              messageSent
+                ? 'text-xs flex-1 min-w-0 justify-center py-2 px-2 border-emerald-300 text-emerald-800 hover:bg-emerald-50'
+                : 'text-xs flex-1 min-w-0 justify-center py-2 px-2'
+            }
           >
             <WhatsAppIcon className="w-4 h-4 shrink-0" />
           </Button>

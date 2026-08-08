@@ -2,6 +2,12 @@ import type { DocumentBrand } from '@/lib/service-brands';
 import { getCompanyInfoForBrand, getDocumentBrandLabel } from '@/lib/service-brands';
 import { WA_COLD } from '@/lib/whatsappColdTemplates';
 import { resolveBookingCta } from '@/lib/whatsappBookingCtaTemplates';
+import {
+  waBrandBookingUrl,
+  waBrandWebsiteUrl,
+  waLabeledLink,
+  waLabeledValue,
+} from '@/lib/whatsappMessageFormat';
 
 export type CallingWhatsAppTemplate =
   | 'service_due'
@@ -110,14 +116,14 @@ export function callingContextFromCustomer(customer: {
 
 function brandFooter(brand: DocumentBrand): string {
   const info = getCompanyInfoForBrand(brand);
-  const website = info.website.startsWith('http') ? info.website : `https://${info.website}`;
-  const bookingUrl = `${website.replace(/\/$/, '')}/book`;
+  const website = waBrandWebsiteUrl(info.website);
+  const bookingUrl = waBrandBookingUrl(info.website);
   return [
     '—',
     brand === 'hydrogenro' ? 'Hydrogen RO Team' : 'Eleven RO Team',
-    `📞 ${info.phone}`,
-    `🌐 ${website}`,
-    `📅 Book online: ${bookingUrl}`,
+    waLabeledValue('📞', 'Phone', info.phone),
+    waLabeledLink('🌐', 'Website', website),
+    waLabeledLink('📅', 'Book online', bookingUrl),
   ].join('\n');
 }
 
@@ -142,8 +148,8 @@ export function buildCallingWhatsAppMessage(
 ): string {
   const brandName = getDocumentBrandLabel(documentBrand);
   const info = getCompanyInfoForBrand(documentBrand);
-  const website = info.website.startsWith('http') ? info.website : `https://${info.website}`;
-  const bookingUrl = `${website.replace(/\/$/, '')}/book`;
+  const website = waBrandWebsiteUrl(info.website);
+  const bookingUrl = waBrandBookingUrl(info.website);
   const name = ctx.fullName;
   const device = deviceLine(ctx);
 
@@ -163,8 +169,8 @@ export function buildCallingWhatsAppMessage(
         '',
         'Would you like to schedule a visit?',
         `💬 Reply to this message`,
-        `📞 ${info.phone}`,
-        `📅 Or book online: ${bookingUrl}`,
+        waLabeledValue('📞', 'Phone', info.phone),
+        waLabeledLink('📅', 'Book online', bookingUrl),
         '',
         brandFooter(documentBrand)
       );
@@ -177,13 +183,13 @@ export function buildCallingWhatsAppMessage(
         '',
         `Book your next service with ${brandName} in just a few taps 👇`,
         '',
-        `📅 ${bookingUrl}`,
+        waLabeledLink('📅', 'Book online', bookingUrl),
         '',
         'Pick your date & time — we’ll confirm on WhatsApp.',
         ...(device ? ['', device] : []),
         '',
         'Prefer a call?',
-        `📞 ${info.phone}`,
+        waLabeledValue('📞', 'Phone', info.phone),
         `💬 Or reply “BOOK” to this message`,
         '',
         brandFooter(documentBrand),
@@ -198,8 +204,8 @@ export function buildCallingWhatsAppMessage(
         'Please reply on this chat so we can assist with your RO service,',
         'or call / book online below.',
         '',
-        `📞 ${info.phone}`,
-        `📅 Book: ${bookingUrl}`,
+        waLabeledValue('📞', 'Phone', info.phone),
+        waLabeledLink('📅', 'Book online', bookingUrl),
         `💬 Reply here`,
         '',
         brandFooter(documentBrand),
@@ -214,7 +220,7 @@ export function buildCallingWhatsAppMessage(
         'Is everything working fine with your water purifier?',
         'Any questions or issues — we’re happy to help.',
         '',
-        `📞 ${info.phone}`,
+        waLabeledValue('📞', 'Phone', info.phone),
         `💬 Reply to this message`,
         '',
         `Thank you for choosing ${brandName}!`,
@@ -230,9 +236,9 @@ export function buildCallingWhatsAppMessage(
         ...(device ? ['', device] : []),
         '',
         'For service, spare parts, or questions:',
-        `📞 ${info.phone}`,
+        waLabeledValue('📞', 'Phone', info.phone),
         `💬 Reply to this message`,
-        `📅 Book online: ${bookingUrl}`,
+        waLabeledLink('📅', 'Book online', bookingUrl),
         '',
         brandFooter(documentBrand),
       ].join('\n');
@@ -243,11 +249,11 @@ export function buildCallingWhatsAppMessage(
         '',
         `Thank you for being a valued ${brandName} customer!`,
         '',
-        `🌐 ${website}`,
-        `📅 Book service: ${bookingUrl}`,
+        waLabeledLink('🌐', 'Website', website),
+        waLabeledLink('📅', 'Book service', bookingUrl),
         '',
         'For support or inquiries:',
-        `📞 ${info.phone}`,
+        waLabeledValue('📞', 'Phone', info.phone),
         `💬 WhatsApp: reply here`,
         '',
         brandFooter(documentBrand),
@@ -260,8 +266,8 @@ export function buildCallingWhatsAppMessage(
         '',
         `This is ${brandName}. How can we help you today?`,
         '',
-        `📞 ${info.phone}`,
-        `📅 Book online: ${bookingUrl}`,
+        waLabeledValue('📞', 'Phone', info.phone),
+        waLabeledLink('📅', 'Book online', bookingUrl),
         `💬 Reply to this message`,
         '',
         brandFooter(documentBrand),

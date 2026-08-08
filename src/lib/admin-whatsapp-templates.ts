@@ -1,3 +1,5 @@
+import type { DocumentBrand } from '@/lib/service-brands';
+import { getCompanyInfoForBrand, getDocumentBrandLabel } from '@/lib/service-brands';
 import {
   ADMIN_EMAIL_TEMPLATE_META,
   type AdminDocumentEmailData,
@@ -10,11 +12,14 @@ import {
   resolveBookingEmailDocumentBrand,
   type BookingConfirmationEmailData,
 } from '@/lib/booking-confirmation-email';
-import type { DocumentBrand } from '@/lib/service-brands';
-import { getCompanyInfoForBrand, getDocumentBrandLabel } from '@/lib/service-brands';
 import {
   buildJobCompletionWhatsAppMessage,
 } from '@/lib/job-completion-message';
+import {
+  waBrandWebsiteUrl,
+  waLabeledLink,
+  waLabeledValue,
+} from '@/lib/whatsappMessageFormat';
 
 export interface AdminWhatsAppMessageResult {
   text: string;
@@ -36,12 +41,12 @@ function formatDisplayDate(iso: string): string {
 
 function brandFooter(brand: DocumentBrand): string {
   const info = getCompanyInfoForBrand(brand);
-  const website = info.website.startsWith('http') ? info.website : `https://${info.website}`;
+  const website = waBrandWebsiteUrl(info.website);
   return [
     'For any help, contact us:',
-    `📞 ${info.phone}`,
-    `📧 ${info.email}`,
-    `🌐 ${website}`,
+    waLabeledValue('📞', 'Phone', info.phone),
+    waLabeledValue('📧', 'Email', info.email),
+    waLabeledLink('🌐', 'Website', website),
   ].join('\n');
 }
 

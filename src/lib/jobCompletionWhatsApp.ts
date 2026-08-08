@@ -209,6 +209,15 @@ export async function maybeAutoSendJobCompletionWhatsApp(opts: {
 }
 
 /** Fire-and-forget wrapper for completion success paths. */
-export function queueJobCompletionWhatsAppAutoSend(job: Job | Record<string, unknown>) {
-  void maybeAutoSendJobCompletionWhatsApp({ job }).catch(() => {});
+export function queueJobCompletionWhatsAppAutoSend(
+  job: Job | Record<string, unknown>,
+  opts?: { onResult?: (result: AutoSendJobCompletionResult) => void }
+) {
+  void maybeAutoSendJobCompletionWhatsApp({ job })
+    .then((result) => {
+      opts?.onResult?.(result);
+    })
+    .catch(() => {
+      opts?.onResult?.('failed');
+    });
 }

@@ -1,5 +1,10 @@
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getCompanyInfoForBrand, getDocumentBrandLabel } from '@/lib/service-brands';
+import {
+  waBrandWebsiteUrl,
+  waLabeledLink,
+  waLabeledValue,
+} from '@/lib/whatsappMessageFormat';
 
 export type DocumentPdfWhatsAppKind = 'service_bill' | 'quotation' | 'invoice';
 
@@ -27,11 +32,11 @@ function formatDisplayDate(iso: string | null | undefined): string {
 
 function brandContactLines(brand: DocumentBrand): string[] {
   const info = getCompanyInfoForBrand(brand);
-  const website = info.website.startsWith('http') ? info.website : `https://${info.website}`;
+  const website = waBrandWebsiteUrl(info.website);
   return [
-    `📞 Phone: ${info.phone}`,
-    `📧 Email: ${info.email}`,
-    `🌐 Website: ${website}`,
+    waLabeledValue('📞', 'Phone', info.phone),
+    waLabeledValue('📧', 'Email', info.email),
+    waLabeledLink('🌐', 'Website', website),
   ];
 }
 

@@ -2,6 +2,12 @@ import type { DocumentBrand } from '@/lib/service-brands';
 import { getCompanyInfoForBrand, getDocumentBrandLabel, normalizeDocumentBrand } from '@/lib/service-brands';
 import { isJobPendingPaymentOpen, parseJobPendingPayment } from '@/lib/jobPendingPayment';
 import { formatPendingPaymentDueLabel } from '@/lib/pendingPaymentReminder';
+import {
+  waBrandBookingUrl,
+  waBrandWebsiteUrl,
+  waLabeledLink,
+  waLabeledValue,
+} from '@/lib/whatsappMessageFormat';
 
 export interface JobCompletionMessageInput {
   customerName: string;
@@ -126,18 +132,18 @@ export function buildJobCompletionWhatsAppMessage(input: JobCompletionMessageInp
 
   const brand = input.documentBrand;
   const info = getCompanyInfoForBrand(brand);
-  const website = info.website.startsWith('http') ? info.website : `https://${info.website}`;
-  const bookingUrl = `${website.replace(/\/$/, '')}/book`;
+  const website = waBrandWebsiteUrl(info.website);
+  const bookingUrl = waBrandBookingUrl(info.website);
 
   return `Dear ${customerName},
 
 ✅ ${completionLine}
 ${amountBlock}For any queries or support, please contact us:
-📞 Phone: ${info.phone}
-📧 Email: ${info.email}
-🌐 Website: ${website}
+${waLabeledValue('📞', 'Phone', info.phone)}
+${waLabeledValue('📧', 'Email', info.email)}
+${waLabeledLink('🌐', 'Website', website)}
 
-📱 For future bookings, you can book directly on ${bookingUrl} for ease and convenience.`;
+${waLabeledLink('📱', 'Book your next service', bookingUrl)}`;
 }
 
 function resolveBillAmount(job: Record<string, unknown>): number {

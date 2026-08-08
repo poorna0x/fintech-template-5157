@@ -1,6 +1,7 @@
 import { addMonths, format } from 'date-fns';
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getDocumentBrandLabel, normalizeDocumentBrand } from '@/lib/service-brands';
+import { waLabeledLink, waLabeledValue } from '@/lib/whatsappMessageFormat';
 
 /** Must match reminders created from Settings → Pending payments. */
 export const PENDING_PAYMENT_REMINDER_TITLE = 'Pending payment';
@@ -134,8 +135,7 @@ export function buildPendingPaymentWhatsAppMessage(
 
   if (payLink) {
     lines.push('');
-    lines.push(`*Payment info / Pay now:*`);
-    lines.push(payLink);
+    lines.push(waLabeledLink('💳', 'Payment info / Pay now', payLink));
   }
 
   lines.push('');
@@ -161,9 +161,9 @@ export function buildPendingPaymentReceivedWhatsAppMessage(
 Thank you! We have received your payment of ₹${formattedAmount}.
 
 We appreciate your trust. For any help or support:
-📞 Phone: ${contact.phone}
-📧 Email: ${contact.email}
-🌐 Website: ${contact.website}
+${waLabeledValue('📞', 'Phone', contact.phone)}
+${waLabeledValue('📧', 'Email', contact.email)}
+${waLabeledLink('🌐', 'Website', contact.website)}
 
 Thanks & regards 🙏
 ${contact.team}`;

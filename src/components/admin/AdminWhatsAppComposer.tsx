@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle2, Eye, Loader2, Monitor, Paperclip, PenLine, Send, Smartphone, X } from 'lucide-react';
+import { CheckCircle2, Eye, FileText, Loader2, Monitor, Paperclip, PenLine, Send, Smartphone, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 import EmailSourcePicker from '@/components/admin/EmailSourcePicker';
@@ -137,7 +137,14 @@ export function AdminWhatsAppComposerPanel({
   };
 
   useEffect(() => {
-    if (!attachFile || !attachFile.type.startsWith('image/')) {
+    if (!attachFile) {
+      setAttachPreviewUrl(null);
+      return;
+    }
+    const isImage =
+      attachFile.type.startsWith('image/') ||
+      /\.(jpe?g|png|webp)$/i.test(attachFile.name || '');
+    if (!isImage) {
       setAttachPreviewUrl(null);
       return;
     }
@@ -145,6 +152,12 @@ export function AdminWhatsAppComposerPanel({
     setAttachPreviewUrl(url);
     return () => URL.revokeObjectURL(url);
   }, [attachFile]);
+
+  const attachIsPdf = Boolean(
+    attachFile &&
+      (attachFile.type === 'application/pdf' || /\.pdf$/i.test(attachFile.name || ''))
+  );
+  const attachIsImage = Boolean(attachFile && attachPreviewUrl);
 
   const whatsappPreview = useMemo(
     () => buildAdminWhatsAppMessage(templateType, bookingForm, documentForm),
@@ -166,6 +179,8 @@ export function AdminWhatsAppComposerPanel({
     }
     return !documentForm.customerName.trim() && !documentForm.message.trim() && !documentForm.documentRef.trim();
   }, [sourceMode, crmDataLoaded, customerLoading, templateType, bookingForm, documentForm]);
+
+  const showChatPreview = !isPreviewEmpty || Boolean(attachFile);
 
   const hasAlternate =
     alternatePhone.trim() !== '' && alternatePhone.trim() !== sendTo.trim();
@@ -922,11 +937,15 @@ export function AdminWhatsAppComposerPanel({
           Preview — {templateMeta.label} · {activeBrandLabel}
         </p>
         <p className="text-xs text-slate-500 sm:truncate sm:max-w-[50%]">
-          {isPreviewEmpty ? 'Select a record or enter details' : whatsappPreview.previewTitle}
+          {!showChatPreview
+            ? 'Select a record or enter details'
+            : attachFile
+              ? `${attachFile.name} · ${whatsappPreview.previewTitle || 'caption'}`
+              : whatsappPreview.previewTitle}
         </p>
       </div>
 
-      {isPreviewEmpty ? (
+      {!showChatPreview ? (
         <div
           className={
             previewMode === 'mobile'
@@ -939,7 +958,7 @@ export function AdminWhatsAppComposerPanel({
           <p className="text-sm font-medium text-slate-600">No preview yet</p>
           <p className="text-xs text-slate-500 mt-1 max-w-xs">
             Search and select a customer or job above — customer details and message preview appear
-            after you pick a record.
+            after you pick a record. You can also attach a PDF or photo to preview it here.
           </p>
         </div>
       ) : (
@@ -956,33 +975,86 @@ export function AdminWhatsAppComposerPanel({
               <div className="w-16 h-1 rounded-full bg-white/30" />
             </div>
           )}
+          <div className="shrink-0 flex items-center gap-2 bg-[#075e54] px-3 py-2.5 text-white">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/20 text-xs font-semibold">
+              {(
+                (templateType === 'booking_confirmation'
+                  ? bookingForm.customerName
+                  : documentForm.customerName
+                ).trim() || 'C'
+              )
+                .slice(0, 1)
+                .toUpperCase()}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium">
+                {(templateType === 'booking_confirmation'
+                  ? bookingForm.customerName
+                  : documentForm.customerName
+                ).trim() || sendTo.trim() || 'Customer'}
+              </p>
+              <p className="truncate text-[10px] text-white/70">WhatsApp preview</p>
+            </div>
+          </div>
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
-            {attachFile && (
-              <div className="flex justify-end">
-                <div className="max-w-[88%] rounded-lg rounded-tr-none bg-[#dcf8c6] px-2 py-2 shadow-sm">
-                  {attachPreviewUrl ? (
+            <div className="flex justify-end">
+              <div className="max-w-[88%] min-w-[160px] overflow-hidden rounded-lg rounded-tr-none bg-[#dcf8c6] shadow-sm">
+                {attachFile && attachIsImage && attachPreviewUrl ? (
+                  <div className="p-1 pb-0">
                     <img
                       src={attachPreviewUrl}
-                      alt=""
-                      className="max-h-40 w-full rounded object-cover"
+                      alt={attachFile.name}
+                      className="max-h-56 w-full rounded-md object-cover"
                     />
-                  ) : (
-                    <div className="flex items-center gap-2 px-1 py-1">
-                      <Paperclip className="h-4 w-4 shrink-0 text-slate-600" />
-                      <span className="truncate text-xs font-medium text-slate-900">
+                  </div>
+                ) : null}
+                {attachFile && attachIsPdf ? (
+                  <div className="m-1 mb-0 flex min-w-[200px] items-center gap-3 rounded-md bg-black/5 px-2 py-2">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-red-50 text-red-600">
+                      <FileText className="h-5 w-5" aria-hidden />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium text-slate-900">
                         {attachFile.name}
                       </span>
-                    </div>
-                  )}
+                      <span className="text-[11px] text-slate-500">
+                        PDF · {(attachFile.size / 1024).toFixed(0)} KB
+                      </span>
+                    </span>
+                  </div>
+                ) : null}
+                {attachFile && !attachIsImage && !attachIsPdf ? (
+                  <div className="m-1 mb-0 flex items-center gap-2 rounded-md bg-black/5 px-2 py-2">
+                    <Paperclip className="h-4 w-4 shrink-0 text-slate-600" />
+                    <span className="truncate text-xs font-medium text-slate-900">
+                      {attachFile.name}
+                    </span>
+                  </div>
+                ) : null}
+                {whatsappPreview.text.trim() ? (
+                  <div className="px-3 py-2 text-sm text-slate-900 whitespace-pre-wrap">
+                    {whatsappPreview.text}
+                  </div>
+                ) : attachFile ? (
+                  <div className="px-3 py-1.5 text-[11px] italic text-slate-500">
+                    No caption
+                  </div>
+                ) : null}
+                <div className="flex items-center justify-end gap-1 px-2 pb-1.5">
+                  <span className="text-[10px] text-slate-500">
+                    {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                  <span className="text-[11px] leading-none text-[#53bdeb]" aria-hidden>
+                    ✓✓
+                  </span>
                 </div>
               </div>
-            )}
-            <div className="flex justify-end">
-              <div className="max-w-[88%] rounded-lg rounded-tr-none bg-[#dcf8c6] px-3 py-2 text-sm text-slate-900 whitespace-pre-wrap shadow-sm">
-                {whatsappPreview.text}
-              </div>
             </div>
-            <p className="text-[10px] text-slate-500 text-right pr-1">Preview only</p>
+            <p className="text-[10px] text-slate-500 text-right pr-1">
+              {attachFile
+                ? 'Preview with attachment (Cloud API)'
+                : 'Preview only'}
+            </p>
           </div>
         </div>
       )}
