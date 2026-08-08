@@ -607,10 +607,10 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
       customer: {
         id: customer.id || '',
         name: editableCustomer.name,
-        address: `${editableCustomer.address.street || ''}, ${editableCustomer.address.area || ''}`.trim() || '',
-        city: editableCustomer.address.city || '',
-        state: editableCustomer.address.state || '',
-        pincode: editableCustomer.address.pincode || '',
+        address: '',
+        city: '',
+        state: '',
+        pincode: '',
         phone: editableCustomer.phone,
         email: editableCustomer.email,
         gstNumber: editableCustomer.gst
@@ -924,82 +924,14 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
                     />
                   </div>
                 </div>
-                  <div className="space-y-3">
-                    <Label className="text-sm font-medium">Address</Label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <Label htmlFor="address-street">Street</Label>
-                      <Input
-                        id="address-street"
-                        value={editableCustomer.address.street}
-                        onChange={(e) => setEditableCustomer(prev => ({ 
-                          ...prev, 
-                          address: { ...prev.address, street: e.target.value }
-                        }))}
-                        placeholder="Enter street address"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="address-area">Area</Label>
-                      <Input
-                        id="address-area"
-                        value={editableCustomer.address.area}
-                        onChange={(e) => setEditableCustomer(prev => ({ 
-                          ...prev, 
-                          address: { ...prev.address, area: e.target.value }
-                        }))}
-                        placeholder="Enter area"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="address-city">City</Label>
-                      <Input
-                        id="address-city"
-                        value={editableCustomer.address.city}
-                        onChange={(e) => setEditableCustomer(prev => ({ 
-                          ...prev, 
-                          address: { ...prev.address, city: e.target.value }
-                        }))}
-                        placeholder="Enter city"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="address-state">State</Label>
-                      <Input
-                        id="address-state"
-                        value={editableCustomer.address.state}
-                        onChange={(e) => setEditableCustomer(prev => ({ 
-                          ...prev, 
-                          address: { ...prev.address, state: e.target.value }
-                        }))}
-                        placeholder="Enter state"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="address-pincode">Pincode</Label>
-                      <Input
-                        id="address-pincode"
-                        value={editableCustomer.address.pincode}
-                        onChange={(e) => setEditableCustomer(prev => ({ 
-                          ...prev, 
-                          address: { ...prev.address, pincode: e.target.value }
-                        }))}
-                        placeholder="Enter pincode"
-                      />
-                    </div>
-                  </div>
-                </div>
+                <p className="text-xs text-muted-foreground">
+                  Name and phone are enough for the bill — address is optional and omitted from this form.
+                </p>
               </div>
             ) : (
             <div className="space-y-2">
                 <div className="font-semibold text-lg">{editableCustomer.name}</div>
               <div className="text-sm text-gray-600">
-                  {(editableCustomer.address.street || editableCustomer.address.area) && (
-                    <div>{editableCustomer.address.street || ''}, {editableCustomer.address.area || ''}</div>
-                  )}
-                  {(editableCustomer.address.city || editableCustomer.address.state || editableCustomer.address.pincode) && (
-                    <div>{editableCustomer.address.city || ''}, {editableCustomer.address.state || ''} - {editableCustomer.address.pincode || ''}</div>
-                  )}
                   {editableCustomer.phone && <div>Phone: {editableCustomer.phone}</div>}
                   {editableCustomer.email && <div>Email: {editableCustomer.email}</div>}
                   {editableCustomer.gst && <div>GST: {editableCustomer.gst}</div>}
