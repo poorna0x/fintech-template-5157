@@ -34,6 +34,7 @@ import type { BookingConfirmationEmailData } from '@/lib/booking-confirmation-em
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getCompanyInfoForBrand, getDocumentBrandLabel } from '@/lib/service-brands';
 import { sendAdminWhatsAppDocument, sendAdminWhatsAppText, sendColdDocumentInvite } from '@/lib/sendAdminWhatsAppApi';
+import { invalidateInboundWindowCache } from '@/lib/whatsappInbox';
 
 type PreviewMode = 'mobile' | 'desktop';
 type MobilePanel = 'compose' | 'preview';
@@ -384,6 +385,7 @@ export function AdminWhatsAppComposerPanel({
             });
             if (invite.ok) {
               toast.success('PDF sent via WhatsApp template');
+              invalidateInboundWindowCache(phone.trim());
               return;
             }
             toast.error(
@@ -402,6 +404,7 @@ export function AdminWhatsAppComposerPanel({
           via: 'api',
         });
         setSendPhase('sent');
+        invalidateInboundWindowCache(phone.trim());
         toast.success(`PDF sent via WhatsApp to ${phone.trim()}`);
         return;
       }
@@ -425,6 +428,7 @@ export function AdminWhatsAppComposerPanel({
       });
       setSendPhase('sent');
       if (result.via === 'api') {
+        invalidateInboundWindowCache(phone.trim());
         toast.success(`Sent via WhatsApp API to ${phone.trim()}`);
       } else {
         toast.message(

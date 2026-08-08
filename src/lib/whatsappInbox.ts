@@ -174,9 +174,9 @@ export function invalidateInboundWindowCache(phoneE164?: string | null): void {
 }
 
 /** People list via RPC — not full message dump. */
-export const WHATSAPP_INBOX_LIST_LIMIT = 250;
-/** Active chat: enough history without over-fetching. */
-export const WHATSAPP_THREAD_LIMIT = 200;
+export const WHATSAPP_INBOX_LIST_LIMIT = 120;
+/** Active chat: enough recent history without over-fetching. */
+export const WHATSAPP_THREAD_LIMIT = 80;
 
 export function isR2MediaRef(mediaUrl: string | null | undefined): boolean {
   const raw = String(mediaUrl || '').trim();
@@ -208,36 +208,107 @@ export async function fetchWhatsAppInboxThreads(
     has_failed: boolean;
   }>;
 
+  const nameByCustomerId = new Map<string, string>();
+  const customerIdByPhone = new Map<string, string>();
+
   const customerIds = [
     ...new Set(rows.map((r) => r.customer_id).filter(Boolean) as string[]),
   ].slice(0, 120);
 
-  const nameByCustomerId = new Map<string, string>();
+  const phonesMissing = [
+    ...new Set(
+      rows
+        .filter((r) => !r.customer_id)
+        .map((r) => String(r.phone_e164 || '').replace(/\D/g, ''))
+        .filter((p) => p.length >= 10)
+    ),
+  ].slice(0, 60);
+
+  const ingestCustomer = (c: {
+    id?: string;
+    full_name?: string | null;
+    phone?: string | null;
+    alternate_phone?: string | null;
+  }) => {
+    if (!c?.id) return;
+    const label = String(c.full_name || '').trim() || 'Customer';
+    nameByCustomerId.set(c.id, label);
+    for (const raw of [c.phone, c.alternate_phone]) {
+      const digits = String(raw || '').replace(/\D/g, '');
+      if (digits.length < 10) continue;
+      customerIdByPhone.set(digits, c.id);
+      customerIdByPhone.set(digits.slice(-10), c.id);
+    }
+  };
+
+  // Parallel CRM lookups (by id + by phone) — minimizes time-to-names
+  const lookups: Promise<void>[] = [];
+
   if (customerIds.length) {
-    const { data: customers } = await supabaseClient
-      .from('customers')
-      .select('id, name')
-      .in('id', customerIds);
-    for (const c of customers || []) {
-      if (c?.id) nameByCustomerId.set(c.id, c.name || 'Customer');
+    lookups.push(
+      (async () => {
+        const { data: customers } = await supabaseClient
+          .from('customers')
+          .select('id, full_name, phone, alternate_phone')
+          .in('id', customerIds);
+        for (const c of customers || []) ingestCustomer(c);
+      })()
+    );
+  }
+
+  if (phonesMissing.length) {
+    const last10s = [...new Set(phonesMissing.map((p) => p.slice(-10)))];
+    const orParts: string[] = [];
+    for (const d of last10s) {
+      orParts.push(
+        `phone.eq.${d}`,
+        `phone.eq.91${d}`,
+        `alternate_phone.eq.${d}`,
+        `alternate_phone.eq.91${d}`
+      );
+    }
+    for (let i = 0; i < orParts.length; i += 40) {
+      const chunk = orParts.slice(i, i + 40);
+      lookups.push(
+        (async () => {
+          const { data: byPhone } = await supabaseClient
+            .from('customers')
+            .select('id, full_name, phone, alternate_phone')
+            .or(chunk.join(','))
+            .limit(80);
+          for (const c of byPhone || []) ingestCustomer(c);
+        })()
+      );
     }
   }
 
-  const threads: WhatsAppThread[] = rows.map((r) => ({
-    phone_e164: String(r.phone_e164 || '').replace(/\D/g, ''),
-    customer_id: r.customer_id,
-    customer_name: r.customer_id ? nameByCustomerId.get(r.customer_id) || null : null,
-    last_body: r.last_body,
-    last_at: r.last_at,
-    last_direction: (r.last_direction === 'inbound' ? 'inbound' : 'outbound') as
-      | 'inbound'
-      | 'outbound',
-    last_msg_type: r.last_msg_type || 'text',
-    last_status: r.last_status,
-    last_error: r.last_error,
-    inbound_at: r.inbound_at,
-    has_failed: Boolean(r.has_failed),
-  }));
+  if (lookups.length) {
+    await Promise.all(lookups);
+  }
+
+  const threads: WhatsAppThread[] = rows.map((r) => {
+    const phone = String(r.phone_e164 || '').replace(/\D/g, '');
+    let customerId = r.customer_id || null;
+    if (!customerId && phone) {
+      customerId =
+        customerIdByPhone.get(phone) || customerIdByPhone.get(phone.slice(-10)) || null;
+    }
+    return {
+      phone_e164: phone,
+      customer_id: customerId,
+      customer_name: customerId ? nameByCustomerId.get(customerId) || null : null,
+      last_body: formatAdminWhatsAppBody(r.last_body, { compact: true }) || r.last_body,
+      last_at: r.last_at,
+      last_direction: (r.last_direction === 'inbound' ? 'inbound' : 'outbound') as
+        | 'inbound'
+        | 'outbound',
+      last_msg_type: r.last_msg_type || 'text',
+      last_status: r.last_status,
+      last_error: r.last_error,
+      inbound_at: r.inbound_at,
+      has_failed: Boolean(r.has_failed),
+    };
+  });
 
   return { threads };
 }
@@ -282,9 +353,26 @@ export function patchThreadFromMessage(
   return [next, ...copy];
 }
 
-export function previewMessageBody(row: Pick<WhatsAppMessageRow, 'body' | 'msg_type' | 'filename'>): string {
-  if (row.body?.trim()) return row.body.trim();
-  if (row.filename) return row.filename;
+export function previewMessageBody(
+  row: Pick<WhatsAppMessageRow, 'body' | 'msg_type' | 'filename' | 'media_url' | 'media_mime'>
+): string {
+  const file = (row.filename || '').trim();
+  const isDoc =
+    row.msg_type === 'document' ||
+    row.msg_type === 'pdf' ||
+    Boolean(row.media_mime?.includes('pdf')) ||
+    /\.pdf$/i.test(file);
+  const isImage =
+    row.msg_type === 'image' || Boolean(row.media_mime?.startsWith('image/'));
+
+  // Prefer filename for media so thread list shows the PDF/photo name
+  if (row.media_url && file && (isDoc || isImage)) {
+    if (isImage) return `📷 ${file}`;
+    return `📄 ${file}`;
+  }
+
+  if (row.body?.trim()) return formatAdminWhatsAppBody(row.body, { compact: true });
+  if (file) return isDoc ? `📄 ${file}` : isImage ? `📷 ${file}` : file;
   switch (row.msg_type) {
     case 'image':
       return '📷 Photo';
@@ -305,6 +393,135 @@ export function previewMessageBody(row: Pick<WhatsAppMessageRow, 'body' | 'msg_t
     default:
       return row.msg_type || 'Message';
   }
+}
+
+const BOOKING_BOT_STATE_PREFIX = '[Booking bot state]';
+const AWAITING_MEDIA_MARKER = '[Awaiting customer media]';
+const POST_BOOKING_REDIRECT_MARKER = '[Post-booking human redirect]';
+
+const BOOKING_STEP_LABELS: Record<string, string> = {
+  idle: 'Idle',
+  await_service_type: 'Choose service',
+  await_custom_note: 'Custom request note',
+  await_name: 'Ask name',
+  await_location: 'Ask location',
+  await_loc_confirm: 'Confirm location',
+  await_date: 'Pick date',
+  await_period: 'Pick time of day',
+  await_time: 'Pick time slot',
+  await_custom_time: 'Custom time',
+  await_model_or_photo: 'Purifier photo / model',
+  await_confirm: 'Confirm booking',
+  await_edit_menu: 'Edit details',
+  booking_complete: 'Booking complete',
+};
+
+function formatBookingDateIso(iso: string | undefined): string {
+  if (!iso) return '';
+  const d = new Date(`${iso}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString(undefined, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  });
+}
+
+function formatBookingBotState(
+  rawJson: string,
+  opts?: { compact?: boolean }
+): string {
+  try {
+    const state = JSON.parse(rawJson) as Record<string, unknown>;
+    const step = String(state.step || '').trim();
+    const stepLabel = BOOKING_STEP_LABELS[step] || step || 'In progress';
+    const name = String(state.name || '').trim();
+    const service =
+      String(state.serviceLabel || state.serviceSubType || '').trim();
+    const dateLabel = formatBookingDateIso(
+      typeof state.dateIso === 'string' ? state.dateIso : undefined
+    );
+    const timeLabel = String(
+      state.customTimeLabel || state.slotKey || state.periodKey || ''
+    ).trim();
+    const loc =
+      state.loc && typeof state.loc === 'object'
+        ? String(
+            (state.loc as { name?: string; address?: string }).name ||
+              (state.loc as { address?: string }).address ||
+              ''
+          ).trim()
+        : '';
+    const hasPhoto = Boolean(state.photoUrl);
+    const model = String(state.model || '').trim();
+
+    if (opts?.compact) {
+      const bits = [`Booking · ${stepLabel}`];
+      if (name) bits.push(name);
+      if (service) bits.push(service);
+      if (dateLabel) bits.push(dateLabel);
+      if (timeLabel) bits.push(timeLabel);
+      return bits.join(' · ');
+    }
+
+    const lines = [`Booking bot · ${stepLabel}`];
+    if (name) lines.push(`Name: ${name}`);
+    if (service) lines.push(`Service: ${service}`);
+    if (dateLabel) lines.push(`Date: ${dateLabel}`);
+    if (timeLabel) lines.push(`Time: ${timeLabel}`);
+    if (loc) lines.push(`Location: ${loc}`);
+    if (hasPhoto) lines.push('Photo: Received');
+    else if (model) lines.push(`Model: ${model}`);
+    if (state.editing) lines.push('Editing: yes');
+    return lines.join('\n');
+  } catch {
+    return opts?.compact ? 'Booking bot (state)' : 'Booking bot state (could not parse)';
+  }
+}
+
+/**
+ * Make CRM inbox text human-readable (booking-bot JSON, button footers, *bold*).
+ */
+export function formatAdminWhatsAppBody(
+  body: string | null | undefined,
+  opts?: { compact?: boolean }
+): string {
+  let text = String(body || '');
+  if (!text.trim()) return '';
+
+  if (text.startsWith(BOOKING_BOT_STATE_PREFIX)) {
+    return formatBookingBotState(text.slice(BOOKING_BOT_STATE_PREFIX.length), opts);
+  }
+
+  // Strip internal markers used by bots (keep the rest of the message)
+  text = text
+    .replace(AWAITING_MEDIA_MARKER, '')
+    .replace(POST_BOOKING_REDIRECT_MARKER, '')
+    .trim();
+
+  // WhatsApp interactive button footer: [Yes | No | …]
+  text = text.replace(/\[([^\]]+)\]/g, (_m, inner: string) => {
+    const parts = String(inner)
+      .split('|')
+      .map((p) => p.trim())
+      .filter(Boolean);
+    if (parts.length <= 1) return parts[0] ? `(${parts[0]})` : '';
+    return opts?.compact
+      ? `Buttons: ${parts.join(' · ')}`
+      : `Buttons:\n${parts.map((p) => `• ${p}`).join('\n')}`;
+  });
+
+  // WhatsApp bold *like this*
+  text = text.replace(/\*([^*]+)\*/g, '$1');
+
+  // Collapse leftover blank lines
+  text = text.replace(/\n{3,}/g, '\n\n').trim();
+  return text;
+}
+
+/** True when the row is an internal booking-bot state dump (not a customer-facing text). */
+export function isBookingBotStateMessage(body: string | null | undefined): boolean {
+  return String(body || '').startsWith(BOOKING_BOT_STATE_PREFIX);
 }
 
 /** Free-form text/PDF allowed if last inbound was within 24 hours. */

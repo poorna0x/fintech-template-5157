@@ -1,9 +1,33 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, FileText, Loader2, Paperclip, RefreshCw, Search, Send, Trash2, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import {
+  ArrowLeft,
+  Copy,
+  Download,
+  FileText,
+  Loader2,
+  MessageSquarePlus,
+  MoreVertical,
+  Paperclip,
+  Phone,
+  RefreshCw,
+  Search,
+  Send,
+  Trash2,
+  UserRound,
+  X,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   Select,
   SelectContent,
@@ -20,6 +44,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
+import { buildAdminDashboardSearch } from '@/lib/adminDashboardUrl';
 import { supabase } from '@/lib/supabaseClient';
 import {
   WHATSAPP_INBOX_COLUMNS,
@@ -39,12 +64,16 @@ import {
   markWhatsAppThreadRead,
   patchThreadFromMessage,
   previewMessageBody,
+  formatAdminWhatsAppBody,
+  isBookingBotStateMessage,
   type WhatsAppMessageRow,
   type WhatsAppThread,
 } from '@/lib/whatsappInbox';
 import { WhatsAppPdfThumbnail } from '@/components/whatsapp/WhatsAppPdfThumbnail';
+import { WhatsAppAvatar, WhatsAppTicks } from '@/components/whatsapp/WhatsAppTicks';
 import {
   fetchApprovedWhatsAppTemplates,
+  fetchWhatsAppR2MediaBytes,
   fetchWhatsAppR2SignedUrl,
   purgeWhatsAppMessages,
   readFileAsBase64,
@@ -56,6 +85,41 @@ import {
   type WhatsAppTemplateListItem,
 } from '@/lib/sendAdminWhatsAppApi';
 
+function dayKey(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+function formatDaySeparator(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const now = new Date();
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startMsg = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diffDays = Math.round((startToday.getTime() - startMsg.getTime()) / 86400000);
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  return d.toLocaleDateString(undefined, {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'short',
+    year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
+  });
+}
+
+function triggerBlobDownload(blob: Blob, filename: string) {
+  const href = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = href;
+  a.download = filename || 'download';
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(href), 2_000);
+}
+
 type Props = {
   hideHeader?: boolean;
   onBack?: () => void;
@@ -64,6 +128,7 @@ type Props = {
 };
 
 export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: Props) {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [threads, setThreads] = useState<WhatsAppThread[]>([]);
@@ -87,7 +152,10 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const [attachPreviewUrl, setAttachPreviewUrl] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [mediaUrlCache, setMediaUrlCache] = useState<Record<string, string>>({});
+  const [newChatOpen, setNewChatOpen] = useState(false);
+  const [newChatPhone, setNewChatPhone] = useState('');
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const messagesScrollRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const selectedPhoneRef = useRef(selectedPhone);
   selectedPhoneRef.current = selectedPhone;
@@ -164,40 +232,92 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     }
   }, []);
 
-  const openMedia = useCallback(
-    async (row: WhatsAppMessageRow) => {
+  const resolveMediaHref = useCallback(
+    async (row: WhatsAppMessageRow): Promise<string | null> => {
       const ref = row.media_url;
-      if (!ref) return;
-      if (!isR2MediaRef(ref) && /^https:\/\//i.test(ref)) {
-        window.open(ref, '_blank', 'noopener,noreferrer');
-        return;
-      }
+      if (!ref) return null;
+      if (!isR2MediaRef(ref) && /^https:\/\//i.test(ref)) return ref;
       const cached = mediaUrlCache[row.id];
-      if (cached) {
-        window.open(cached, '_blank', 'noopener,noreferrer');
-        return;
-      }
-      const toastId = toast.loading('Opening attachment…');
+      if (cached) return cached;
       const signed = await fetchWhatsAppR2SignedUrl({
         mediaUrl: ref,
         messageId: row.id,
       });
-      if (!signed.ok || !signed.url) {
-        toast.error(signed.error || 'Could not open attachment', { id: toastId });
-        return;
-      }
+      if (!signed.ok || !signed.url) return null;
       setMediaUrlCache((prev) => ({ ...prev, [row.id]: signed.url! }));
-      toast.dismiss(toastId);
-      window.open(signed.url, '_blank', 'noopener,noreferrer');
+      return signed.url;
     },
     [mediaUrlCache]
   );
 
-  // Prefetch signed URLs for image bubbles in the open thread
+  const openMedia = useCallback(
+    async (row: WhatsAppMessageRow) => {
+      if (!row.media_url) return;
+      const toastId = toast.loading('Opening…');
+      const href = await resolveMediaHref(row);
+      if (!href) {
+        toast.error('Could not open attachment', { id: toastId });
+        return;
+      }
+      toast.dismiss(toastId);
+      window.open(href, '_blank', 'noopener,noreferrer');
+    },
+    [resolveMediaHref]
+  );
+
+  const downloadMedia = useCallback(
+    async (row: WhatsAppMessageRow) => {
+      if (!row.media_url) return;
+      const name =
+        (row.filename || '').trim() ||
+        (row.msg_type === 'image' || row.media_mime?.startsWith('image/')
+          ? 'photo.jpg'
+          : 'document.pdf');
+      const toastId = toast.loading('Downloading…');
+      try {
+        const ref = row.media_url;
+        if (isR2MediaRef(ref) || ref.startsWith('whatsapp-media:')) {
+          const fetched = await fetchWhatsAppR2MediaBytes({
+            mediaUrl: ref,
+            messageId: row.id,
+          });
+          if (fetched.ok && fetched.bytes) {
+            const mime =
+              row.media_mime ||
+              (/\.pdf$/i.test(name) ? 'application/pdf' : 'application/octet-stream');
+            triggerBlobDownload(new Blob([fetched.bytes], { type: mime }), name);
+            toast.success('Downloaded', { id: toastId });
+            return;
+          }
+          if (fetched.ok && fetched.url) {
+            const res = await fetch(fetched.url);
+            if (!res.ok) throw new Error('Download failed');
+            triggerBlobDownload(await res.blob(), name);
+            toast.success('Downloaded', { id: toastId });
+            return;
+          }
+          throw new Error(fetched.error || 'Download failed');
+        }
+        const href = await resolveMediaHref(row);
+        if (!href) throw new Error('Could not download');
+        const res = await fetch(href);
+        if (!res.ok) throw new Error('Download failed');
+        triggerBlobDownload(await res.blob(), name);
+        toast.success('Downloaded', { id: toastId });
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Download failed', { id: toastId });
+      }
+    },
+    [resolveMediaHref]
+  );
+
+  // Prefetch only a few recent image signed URLs (faster open, less egress)
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
-      for (const m of threadMessages) {
+      let fetched = 0;
+      for (let i = threadMessages.length - 1; i >= 0 && fetched < 4; i--) {
+        const m = threadMessages[i];
         if (cancelled || !m.media_url) continue;
         const isImage = m.msg_type === 'image' || m.media_mime?.startsWith('image/');
         if (!isImage || !isR2MediaRef(m.media_url)) continue;
@@ -213,6 +333,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         });
         if (cancelled) return;
         if (signed.ok && signed.url) {
+          fetched += 1;
           setMediaUrlCache((prev) =>
             prev[m.id] ? prev : { ...prev, [m.id]: signed.url! }
           );
@@ -228,11 +349,11 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const runPurge = useCallback(
     async (opts: { olderThanDays?: number; phoneE164?: string }) => {
       const label = opts.phoneE164
-        ? `Delete chat for ${displayPhone(opts.phoneE164)}?`
-        : `Delete messages older than ${opts.olderThanDays} days (text + R2 media)?`;
+        ? `Delete entire chat with ${displayPhone(opts.phoneE164)}?\n\nThis removes all messages plus photos/PDFs from storage (frees space).`
+        : `Delete messages older than ${opts.olderThanDays} days?\n\nThis removes text plus photos/PDFs from storage (frees space).`;
       if (!window.confirm(label)) return;
       setPurging(true);
-      const toastId = toast.loading('Cleaning up…');
+      const toastId = toast.loading('Deleting messages and files…');
       try {
         const dry = await purgeWhatsAppMessages({ ...opts, dryRun: true });
         if (!dry.ok) {
@@ -240,11 +361,18 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
           return;
         }
         const n = dry.wouldDeleteRows ?? 0;
+        const mediaN = dry.withMedia ?? 0;
         if (n === 0) {
           toast.message('Nothing to delete', { id: toastId });
           return;
         }
-        if (!window.confirm(`This will permanently delete ${n} message(s). Continue?`)) {
+        if (
+          !window.confirm(
+            `Permanently delete ${n} message(s)` +
+              (mediaN > 0 ? ` and about ${mediaN} file(s)` : '') +
+              `?\n\nThis cannot be undone.`
+          )
+        ) {
           toast.dismiss(toastId);
           return;
         }
@@ -253,9 +381,10 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
           toast.error(result.error || 'Cleanup failed', { id: toastId });
           return;
         }
+        const files = result.deletedMedia ?? 0;
         toast.success(
           `Deleted ${result.deletedRows ?? 0} messages` +
-            (result.deletedMedia ? ` · ${result.deletedMedia} files` : ''),
+            (files > 0 ? ` · ${files} files removed from storage` : ' · no media files'),
           { id: toastId }
         );
         if (opts.phoneE164 && opts.phoneE164 === selectedPhoneRef.current) {
@@ -301,7 +430,12 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   }, [selectedPhone, loadThread]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = messagesScrollRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+      return;
+    }
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [threadMessages.length, selectedPhone]);
 
   // Realtime: patch thread list + open chat; soft-reload people list at most every 12s
@@ -311,13 +445,13 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
 
     const scheduleSoftReload = () => {
       const now = Date.now();
-      if (now - lastSoftReload < 12_000) return;
+      if (now - lastSoftReload < 25_000) return;
       if (softReloadTimer != null) return;
       softReloadTimer = window.setTimeout(() => {
         softReloadTimer = null;
         lastSoftReload = Date.now();
         void loadInbox({ soft: true });
-      }, 1500);
+      }, 2500);
     };
 
     const channel = supabase
@@ -521,124 +655,189 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const showList = !selectedPhone;
   const showChat = Boolean(selectedPhone);
 
+  const openNewChat = () => {
+    let digits = newChatPhone.replace(/\D/g, '');
+    if (digits.length === 10) digits = `91${digits}`;
+    if (digits.length < 12) {
+      toast.error('Enter a valid phone (10 digits or with 91)');
+      return;
+    }
+    setSelectedPhone(digits);
+    setNewChatOpen(false);
+    setNewChatPhone('');
+    void loadInbox({ soft: true });
+  };
+
+  const copyPhone = async () => {
+    if (!selectedPhone) return;
+    try {
+      await navigator.clipboard.writeText(selectedPhone);
+      toast.success('Number copied');
+    } catch {
+      toast.error('Could not copy');
+    }
+  };
+
+  const callPhone = () => {
+    if (!selectedPhone) return;
+    const local = selectedPhone.length > 10 ? selectedPhone.slice(-10) : selectedPhone;
+    window.location.href = `tel:${local}`;
+  };
+
+  const openCustomerInCrm = () => {
+    if (!activeThread?.customer_id) {
+      toast.message('No CRM customer linked to this number');
+      return;
+    }
+    navigate({
+      pathname: '/admin',
+      search: buildAdminDashboardSearch({
+        customerId: activeThread.customer_id,
+        modal: 'edit-customer',
+        clearView: true,
+        clearTool: true,
+      }),
+    });
+  };
+
   return (
-    <div className="flex h-[min(100dvh,900px)] min-h-[min(70vh,100dvh)] flex-col overflow-hidden border-border bg-card shadow-sm md:rounded-lg md:border">
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#f0f2f5]">
       {!hideHeader ? (
-        <div className="flex items-center gap-2 border-b border-border px-3 py-2.5 sm:gap-3 sm:px-4 sm:py-3">
+        <div className="flex shrink-0 items-center gap-2 border-b border-[#d1d7db] bg-[#f0f2f5] px-3 py-2">
           {onBack ? (
-            <Button type="button" variant="ghost" size="sm" onClick={onBack} className="-ml-2">
-              <ArrowLeft className="mr-1 h-4 w-4" />
+            <button
+              type="button"
+              onClick={onBack}
+              className="flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-sm text-[#54656f] transition hover:bg-black/5"
+            >
+              <ArrowLeft className="h-4 w-4" />
               Back
-            </Button>
+            </button>
           ) : null}
-          <img
-            src="/whatsapp.png"
-            alt=""
-            className="h-7 w-7 rounded-md object-contain"
-            width={28}
-            height={28}
-          />
-          <h1 className="text-base font-semibold text-foreground sm:text-lg">WhatsApp</h1>
+          <h1 className="text-base font-semibold text-[#111b21]">WhatsApp</h1>
           {unreadCount > 0 ? (
-            <span className="rounded-full bg-emerald-600 px-2 py-0.5 text-[11px] font-semibold text-white">
+            <span className="rounded-full bg-[#25d366] px-2 py-0.5 text-[11px] font-semibold text-white">
               {unreadCount > 99 ? '99+' : unreadCount}
             </span>
           ) : null}
         </div>
       ) : null}
 
-      <div className="flex min-h-0 flex-1">
-        {/* Thread list */}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        {/* Chat list — mobile: WA Business; desktop: WA Web */}
         <aside
           className={cn(
-            'flex w-full flex-col border-border bg-background md:w-[340px] md:border-r',
+            'relative flex min-h-0 w-full flex-col border-[#d1d7db] bg-white md:w-[380px] md:border-r',
             showChat ? 'hidden md:flex' : 'flex'
           )}
         >
-          <div className="flex items-center gap-2 border-b border-border p-3">
-            <div className="relative flex-1">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <div className="shrink-0 bg-white px-3 pb-2 pt-2 md:border-b md:border-[#e9edef] md:px-4 md:pt-3">
+            <div className="mb-2 flex items-center justify-between gap-2 md:mb-3">
+              <h2 className="text-[22px] font-bold tracking-tight text-[#111b21] md:hidden">
+                WhatsApp
+                {unreadCount > 0 ? (
+                  <span className="ml-2 align-middle text-[13px] font-semibold text-[#25d366]">
+                    ({unreadCount > 99 ? '99+' : unreadCount})
+                  </span>
+                ) : null}
+              </h2>
+              <h2 className="hidden text-[22px] font-bold tracking-tight text-[#111b21] md:block">
+                Chats
+              </h2>
+              <div className="flex items-center gap-0.5">
+                <button
+                  type="button"
+                  className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full text-[#54656f] transition hover:bg-[#f0f2f5] disabled:opacity-50"
+                  onClick={() => void loadInbox({ soft: true })}
+                  disabled={refreshing}
+                  title="Refresh"
+                >
+                  {refreshing ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4" />
+                  )}
+                </button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-full text-[#54656f] transition hover:bg-[#f0f2f5] disabled:opacity-50"
+                      disabled={purging}
+                      title="More"
+                    >
+                      {purging ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <MoreVertical className="h-5 w-5" />
+                      )}
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-64">
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      onClick={() => setNewChatOpen(true)}
+                    >
+                      <MessageSquarePlus className="mr-2 h-4 w-4" />
+                      New chat
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel className="font-normal text-muted-foreground">
+                      Delete older than — also removes photos &amp; PDFs from storage
+                    </DropdownMenuLabel>
+                    {[30, 90, 180, 365].map((days) => (
+                      <DropdownMenuItem
+                        key={days}
+                        className="cursor-pointer"
+                        onClick={() => void runPurge({ olderThanDays: days })}
+                      >
+                        {days} days
+                      </DropdownMenuItem>
+                    ))}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="cursor-pointer text-red-700 focus:text-red-700"
+                      disabled={!selectedPhone}
+                      onClick={() =>
+                        selectedPhone ? void runPurge({ phoneE164: selectedPhone }) : undefined
+                      }
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Delete this chat (+ files)
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#667781]" />
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search name or phone"
-                className="h-10 pl-8"
+                placeholder="Search..."
+                className="h-10 rounded-full border-0 bg-[#f0f2f5] pl-10 text-[15px] text-[#111b21] placeholder:text-[#667781] focus-visible:ring-0 md:h-9 md:rounded-lg md:focus-visible:ring-1 md:focus-visible:ring-[#25d366]"
               />
             </div>
-            {unreadCount > 0 ? (
-              <span
-                className="shrink-0 rounded-full bg-emerald-600 px-2 py-1 text-[11px] font-semibold text-white"
-                title="Unread chats"
-              >
-                {unreadCount > 99 ? '99+' : unreadCount}
-              </span>
-            ) : null}
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              className="h-10 w-10 shrink-0"
-              onClick={() => void loadInbox({ soft: true })}
-              disabled={refreshing}
-              title="Refresh"
-            >
-              {refreshing ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4" />
-              )}
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  className="h-10 w-10 shrink-0"
-                  disabled={purging}
-                  title="Cleanup"
-                >
-                  {purging ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Trash2 className="h-4 w-4" />
-                  )}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel>Delete older than</DropdownMenuLabel>
-                {[30, 90, 180, 365].map((days) => (
-                  <DropdownMenuItem
-                    key={days}
-                    onClick={() => void runPurge({ olderThanDays: days })}
-                  >
-                    {days} days
-                  </DropdownMenuItem>
-                ))}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="text-red-700"
-                  disabled={!selectedPhone}
-                  onClick={() =>
-                    selectedPhone ? void runPurge({ phoneE164: selectedPhone }) : undefined
-                  }
-                >
-                  Delete this chat
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-2 md:pb-0">
             {loading ? (
-              <div className="flex items-center justify-center gap-2 p-8 text-sm text-muted-foreground">
+              <div className="flex items-center justify-center gap-2 p-8 text-sm text-[#667781]">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Loading…
               </div>
             ) : filteredThreads.length === 0 ? (
-              <p className="p-6 text-center text-sm text-muted-foreground">
-                No WhatsApp conversations yet.
-              </p>
+              <div className="space-y-3 p-8 text-center">
+                <p className="text-sm text-[#667781]">No conversations yet</p>
+                <Button
+                  type="button"
+                  className="cursor-pointer bg-[#25d366] text-white hover:bg-[#1da851]"
+                  onClick={() => setNewChatOpen(true)}
+                >
+                  <MessageSquarePlus className="mr-2 h-4 w-4" />
+                  Start a chat
+                </Button>
+              </div>
             ) : (
               <ul>
                 {filteredThreads.map((t) => {
@@ -649,73 +848,70 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                     t.has_failed ||
                     isFailedDeliveryStatus(t.last_status) ||
                     Boolean(t.last_error?.trim());
+                  const title = t.customer_name || displayPhone(t.phone_e164);
                   return (
                     <li key={t.phone_e164}>
                       <button
                         type="button"
                         onClick={() => setSelectedPhone(t.phone_e164)}
                         className={cn(
-                          'flex w-full items-start gap-3 border-b border-border/60 px-3 py-3 text-left transition-colors',
-                          active ? 'bg-sky-50 dark:bg-sky-950/30' : 'hover:bg-muted/50'
+                          'flex w-full cursor-pointer items-center gap-3 px-3 py-2.5 text-left transition-colors md:py-3',
+                          active ? 'bg-[#f0f2f5]' : 'active:bg-[#f5f6f6] hover:bg-[#f5f6f6]'
                         )}
                       >
-                        <div className="relative flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-emerald-50">
-                          <img
-                            src="/whatsapp.png"
-                            alt=""
-                            className="h-6 w-6 object-contain"
-                            width={24}
-                            height={24}
-                          />
-                          {unread ? (
-                            <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-emerald-600 ring-2 ring-background" />
-                          ) : null}
-                        </div>
-                        <div className="min-w-0 flex-1">
+                        <WhatsAppAvatar name={t.customer_name} />
+                        <div className="min-w-0 flex-1 border-b border-[#e9edef] pb-2.5 md:pb-3">
                           <div className="flex items-baseline justify-between gap-2">
                             <p
                               className={cn(
-                                'truncate text-sm text-foreground',
-                                unread ? 'font-semibold' : 'font-medium'
+                                'truncate text-[16px] text-[#111b21]',
+                                unread ? 'font-semibold' : 'font-normal'
                               )}
                             >
-                              {t.customer_name || displayPhone(t.phone_e164)}
+                              {title}
                             </p>
-                            <span className="shrink-0 text-[11px] text-muted-foreground">
+                            <span
+                              className={cn(
+                                'shrink-0 text-[12px]',
+                                unread ? 'font-medium text-[#25d366]' : 'text-[#667781]'
+                              )}
+                            >
                               {formatThreadTime(t.last_at)}
                             </span>
                           </div>
-                          {t.customer_name ? (
-                            <p className="truncate text-xs text-muted-foreground">
-                              {displayPhone(t.phone_e164)}
+                          <div className="mt-0.5 flex items-center gap-1.5">
+                            <p
+                              className={cn(
+                                'min-w-0 flex-1 truncate text-[14px]',
+                                failed
+                                  ? 'text-red-600'
+                                  : unread
+                                    ? 'font-medium text-[#111b21]'
+                                    : 'text-[#667781]'
+                              )}
+                            >
+                              {failed ? 'Not delivered · ' : ''}
+                              {t.last_direction === 'outbound' ? (
+                                <span className="mr-0.5 inline-flex align-middle">
+                                  <WhatsAppTicks status={t.last_status} failed={failed} />
+                                </span>
+                              ) : null}
+                              {t.last_body}
                             </p>
-                          ) : null}
-                          <p
-                            className={cn(
-                              'mt-0.5 truncate text-xs',
-                              failed
-                                ? 'font-medium text-red-700'
-                                : unread
-                                  ? 'font-medium text-foreground'
-                                  : 'text-muted-foreground'
-                            )}
-                          >
-                            {failed ? 'Failed · ' : ''}
-                            {t.last_direction === 'outbound' ? 'You: ' : ''}
-                            {t.last_body}
-                          </p>
-                          <p
-                            className={cn(
-                              'mt-1 text-[10px] font-medium uppercase tracking-wide',
-                              failed
-                                ? 'text-red-700'
-                                : open
-                                  ? 'text-emerald-700'
-                                  : 'text-amber-700'
-                            )}
-                          >
-                            {failed ? 'Delivery failed' : open ? 'Window open' : 'Window closed'}
-                          </p>
+                            {unread ? (
+                              <span className="flex h-[20px] min-w-[20px] shrink-0 items-center justify-center rounded-full bg-[#25d366] px-1.5 text-[11px] font-semibold text-white">
+                                1
+                              </span>
+                            ) : null}
+                            {!open && !failed ? (
+                              <span
+                                className="hidden shrink-0 rounded bg-[#fff3e0] px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-[#ef6c00] md:inline"
+                                title="24h window closed"
+                              >
+                                Cold
+                              </span>
+                            ) : null}
+                          </div>
                         </div>
                       </button>
                     </li>
@@ -724,12 +920,23 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
               </ul>
             )}
           </div>
+
+          {/* Mobile FAB — new chat */}
+          <button
+            type="button"
+            onClick={() => setNewChatOpen(true)}
+            className="absolute bottom-[max(1rem,env(safe-area-inset-bottom))] right-4 z-10 flex h-14 w-14 cursor-pointer items-center justify-center rounded-2xl bg-[#1a1a1a] text-white shadow-lg transition active:scale-95 md:hidden"
+            title="New chat"
+            aria-label="New chat"
+          >
+            <MessageSquarePlus className="h-7 w-7" />
+          </button>
         </aside>
 
-        {/* Chat pane */}
+        {/* Chat pane — sticky header + scroll messages + sticky composer */}
         <section
           className={cn(
-            'relative flex min-w-0 flex-1 flex-col bg-[#eef6fb]',
+            'relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#efeae2]',
             showList && !showChat ? 'hidden md:flex' : 'flex'
           )}
           onDragEnter={(e) => {
@@ -753,201 +960,336 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
             e.stopPropagation();
             setDragOver(false);
             if (!windowOpen || !selectedPhone || sending) return;
-            const file = e.dataTransfer.files?.[0];
-            pickAttachFile(file);
+            pickAttachFile(e.dataTransfer.files?.[0]);
           }}
         >
           {dragOver && windowOpen ? (
-            <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-sky-900/40 px-4">
-              <div className="rounded-xl border-2 border-dashed border-white bg-white/95 px-6 py-8 text-center shadow-lg">
-                <Paperclip className="mx-auto mb-2 h-8 w-8 text-sky-700" />
-                <p className="text-sm font-semibold text-slate-900">Drop image or PDF</p>
-                <p className="mt-1 text-xs text-muted-foreground">JPEG, PNG, WebP, PDF · max 4MB</p>
+            <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-black/30 px-4">
+              <div className="rounded-2xl border-2 border-dashed border-[#25d366] bg-white px-8 py-10 text-center shadow-xl">
+                <Paperclip className="mx-auto mb-2 h-8 w-8 text-[#25d366]" />
+                <p className="text-sm font-semibold text-[#111b21]">Drop photo or PDF</p>
+                <p className="mt-1 text-xs text-[#667781]">JPEG, PNG, WebP, PDF · max 4MB</p>
               </div>
             </div>
           ) : null}
+
           {!selectedPhone ? (
-            <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center text-muted-foreground">
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 bg-[#f0f2f5] p-8 text-center">
               <img
                 src="/whatsapp.png"
                 alt=""
-                className="h-14 w-14 object-contain opacity-90"
-                width={56}
-                height={56}
+                className="h-20 w-20 object-contain opacity-90"
+                width={80}
+                height={80}
               />
-              <p className="text-sm">Select a chat to reply</p>
+              <p className="text-[28px] font-light text-[#41525d]">WhatsApp CRM</p>
+              <p className="max-w-md text-sm text-[#667781]">
+                Select a chat on the left, or start a new one. Only the chat list and messages
+                scroll — headers stay fixed.
+              </p>
+              <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
+                <Button
+                  type="button"
+                  className="cursor-pointer bg-[#25d366] text-white hover:bg-[#1da851]"
+                  onClick={() => setNewChatOpen(true)}
+                >
+                  <MessageSquarePlus className="mr-2 h-4 w-4" />
+                  New chat
+                </Button>
+              </div>
             </div>
           ) : (
             <>
-              <div className="flex items-center gap-2 border-b border-border bg-card px-2 py-2 sm:px-4">
-                <Button
+              <div className="flex shrink-0 items-center gap-1 border-b border-[#d1d7db] bg-[#f0f2f5] px-2 py-2 sm:gap-2 sm:px-4">
+                <button
                   type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="md:hidden"
+                  className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full text-[#54656f] transition hover:bg-black/5 md:hidden"
                   onClick={() => setSelectedPhone(null)}
                   aria-label="Back to chats"
                 >
                   <ArrowLeft className="h-5 w-5" />
-                </Button>
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-emerald-50">
-                  <img
-                    src="/whatsapp.png"
-                    alt=""
-                    className="h-5 w-5 object-contain"
-                    width={20}
-                    height={20}
-                  />
-                </div>
+                </button>
+                <WhatsAppAvatar name={activeThread?.customer_name} size="sm" />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-foreground">
+                  <p className="truncate text-[16px] font-medium text-[#111b21]">
                     {activeThread?.customer_name || displayPhone(selectedPhone)}
                   </p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {activeThread?.customer_name ? displayPhone(selectedPhone) : null}
+                  <p className="truncate text-[12px] text-[#667781]">
+                    {activeThread?.customer_name ? `${displayPhone(selectedPhone)} · ` : ''}
                     {windowOpen
-                      ? ` · ~${hoursLeft ?? '?'}h left to reply`
-                      : ' · 24h window closed'}
+                      ? `Window open · ~${hoursLeft ?? '?'}h left`
+                      : '24h window closed'}
                   </p>
                 </div>
-                <Button
+                <button
                   type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="shrink-0 text-red-700"
-                  title="Delete this chat"
-                  disabled={purging}
-                  onClick={() => void runPurge({ phoneE164: selectedPhone })}
+                  className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#54656f] transition hover:bg-black/5"
+                  title="Call"
+                  onClick={callPhone}
                 >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                  <Phone className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#54656f] transition hover:bg-black/5"
+                  title="Copy number"
+                  onClick={() => void copyPhone()}
+                >
+                  <Copy className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#54656f] transition hover:bg-black/5 disabled:opacity-40"
+                  title="Open customer in CRM"
+                  disabled={!activeThread?.customer_id}
+                  onClick={openCustomerInCrm}
+                >
+                  <UserRound className="h-4 w-4" />
+                </button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#54656f] transition hover:bg-black/5"
+                      title="More"
+                    >
+                      <MoreVertical className="h-4 w-4" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={callPhone}>Call</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => void copyPhone()}>
+                      Copy number
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={!activeThread?.customer_id}
+                      onClick={openCustomerInCrm}
+                    >
+                      Open in CRM
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="cursor-pointer text-red-700 focus:text-red-700"
+                      disabled={purging}
+                      onClick={() => void runPurge({ phoneE164: selectedPhone })}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Delete chat (+ files)
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
 
-              <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-4 sm:px-6">
+              <div
+                ref={messagesScrollRef}
+                className="min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-12"
+                style={{
+                  backgroundColor: '#efeae2',
+                  backgroundImage:
+                    'url("data:image/svg+xml,%3Csvg width=\'80\' height=\'80\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cpath d=\'M10 10h4v4h-4zm20 8h3v3h-3zm30-4h2v2h-2zM14 40h5v5h-5zm40 10h4v4h-4zM50 20h3v3h-3z\' fill=\'%23d1d7db\' fill-opacity=\'0.35\'/%3E%3C/svg%3E")',
+                }}
+              >
                 {threadLoading ? (
-                  <div className="flex justify-center py-10 text-sm text-muted-foreground">
+                  <div className="flex justify-center py-10 text-sm text-[#667781]">
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Loading chat…
                   </div>
                 ) : threadMessages.length === 0 ? (
-                  <p className="py-10 text-center text-sm text-muted-foreground">No messages</p>
+                  <p className="py-10 text-center text-sm text-[#667781]">
+                    No messages yet — say hello or send a template
+                  </p>
                 ) : (
-                  threadMessages.map((m) => {
+                  threadMessages.map((m, i) => {
                     const outbound = m.direction === 'outbound';
                     const failed =
                       outbound &&
                       (isFailedDeliveryStatus(m.status) || Boolean(m.error_message?.trim()));
+                    const prev = threadMessages[i - 1];
+                    const showDay = !prev || dayKey(prev.created_at) !== dayKey(m.created_at);
+                    const botState = isBookingBotStateMessage(m.body);
+                    const imageSrc =
+                      mediaUrlCache[m.id] ||
+                      (!isR2MediaRef(m.media_url || '') &&
+                      /^https:\/\//i.test(m.media_url || '')
+                        ? m.media_url
+                        : null);
+
+                    if (botState) {
+                      return (
+                        <div key={m.id}>
+                          {showDay ? (
+                            <div className="my-3 flex justify-center">
+                              <span className="rounded-lg bg-[#e1f2fa] px-3 py-1 text-[12px] font-medium text-[#54656f] shadow-sm">
+                                {formatDaySeparator(m.created_at)}
+                              </span>
+                            </div>
+                          ) : null}
+                          <div className="my-2 flex justify-center px-2">
+                            <div className="max-w-[90%] rounded-lg border border-[#d1d7db] bg-[#fffef5] px-3 py-2 text-left shadow-sm sm:max-w-[70%]">
+                              <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[#8696a0]">
+                                Booking bot (internal)
+                              </p>
+                              <p className="whitespace-pre-wrap break-words text-[13px] leading-[18px] text-[#3b4a54]">
+                                {formatAdminWhatsAppBody(m.body, { compact: false })}
+                              </p>
+                              <p className="mt-1 text-right text-[10px] text-[#8696a0]">
+                                {formatBubbleTime(m.created_at)}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+
                     return (
-                      <div
-                        key={m.id}
-                        className={cn('flex', outbound ? 'justify-end' : 'justify-start')}
-                      >
+                      <div key={m.id}>
+                        {showDay ? (
+                          <div className="my-3 flex justify-center">
+                            <span className="rounded-lg bg-[#e1f2fa] px-3 py-1 text-[12px] font-medium text-[#54656f] shadow-sm">
+                              {formatDaySeparator(m.created_at)}
+                            </span>
+                          </div>
+                        ) : null}
                         <div
-                          className={cn(
-                            'max-w-[85%] rounded-lg px-3 py-2 shadow-sm sm:max-w-[70%]',
-                            failed
-                              ? 'rounded-br-sm border border-red-300 bg-red-50 text-slate-900'
-                              : outbound
-                                ? 'rounded-br-sm bg-sky-100 text-slate-900'
-                                : 'rounded-bl-sm bg-white text-slate-900'
-                          )}
+                          className={cn('mb-1 flex', outbound ? 'justify-end' : 'justify-start')}
                         >
-                          {failed ? (
-                            <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-red-700">
-                              Not delivered
-                            </p>
-                          ) : null}
-                          {m.media_url ? (
-                            m.msg_type === 'image' || m.media_mime?.startsWith('image/') ? (
-                              <button
-                                type="button"
-                                className="mb-1 block max-w-full overflow-hidden rounded-md text-left"
-                                onClick={() => void openMedia(m)}
-                              >
-                                {mediaUrlCache[m.id] ||
-                                (!isR2MediaRef(m.media_url) &&
-                                  /^https:\/\//i.test(m.media_url)) ? (
-                                  <img
-                                    src={
-                                      mediaUrlCache[m.id] ||
-                                      (!isR2MediaRef(m.media_url) ? m.media_url : '') ||
-                                      ''
-                                    }
-                                    alt={m.filename || 'Photo'}
-                                    className="max-h-52 w-full rounded-md object-cover"
-                                    loading="lazy"
-                                  />
-                                ) : (
-                                  <span className="flex h-28 w-44 items-center justify-center rounded-md bg-slate-200/80 text-xs text-sky-800">
-                                    Tap to load photo
-                                  </span>
-                                )}
-                              </button>
-                            ) : m.media_mime?.includes('pdf') ||
-                              /\.pdf$/i.test(m.filename || '') ||
-                              m.msg_type === 'document' ||
-                              m.msg_type === 'pdf' ? (
-                              <WhatsAppPdfThumbnail
-                                messageId={m.id}
-                                mediaUrl={m.media_url}
-                                filename={m.filename}
-                                onOpen={() => void openMedia(m)}
-                              />
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => void openMedia(m)}
-                                className="mb-1 flex w-full min-w-[200px] max-w-[260px] items-center gap-3 rounded-md border border-slate-200/80 bg-white/90 px-3 py-2.5 text-left shadow-sm transition hover:bg-white"
-                              >
-                                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-red-50 text-red-600">
-                                  <FileText className="h-6 w-6" aria-hidden />
-                                </span>
-                                <span className="min-w-0 flex-1">
-                                  <span className="block truncate text-sm font-medium text-slate-900">
-                                    {m.filename || 'Document'}
-                                  </span>
-                                  <span className="mt-0.5 block text-[11px] uppercase tracking-wide text-slate-500">
-                                    File · Tap to open
-                                  </span>
-                                </span>
-                              </button>
-                            )
-                          ) : null}
-                          {(() => {
-                            const text = previewMessageBody(m);
-                            const file = (m.filename || '').trim();
-                            // Avoid repeating filename under the document card
-                            if (
-                              m.media_url &&
-                              file &&
-                              (text === file || text === `📄 ${file}` || text === '📄 Document')
-                            ) {
-                              return null;
-                            }
-                            if (m.media_url && !m.body?.trim() && (m.msg_type === 'document' || m.msg_type === 'pdf' || m.msg_type === 'image')) {
-                              return null;
-                            }
-                            if (!text?.trim()) return null;
-                            return (
-                              <p className="whitespace-pre-wrap break-words text-sm">{text}</p>
-                            );
-                          })()}
                           <div
                             className={cn(
-                              'mt-1 flex items-center justify-end gap-2 text-[10px]',
-                              failed ? 'text-red-700' : 'text-slate-500'
+                              'relative max-w-[85%] rounded-lg px-2 pb-1 pt-1.5 shadow-sm sm:max-w-[65%]',
+                              failed
+                                ? 'rounded-br-none border border-red-300 bg-[#ffebee] text-[#111b21]'
+                                : outbound
+                                  ? 'rounded-br-none bg-[#d9fdd3] text-[#111b21]'
+                                  : 'rounded-bl-none bg-white text-[#111b21]'
                             )}
                           >
-                            <span>{formatBubbleTime(m.created_at)}</span>
-                            {outbound && m.status ? (
-                              <span className="uppercase">{m.status}</span>
+                            {failed ? (
+                              <p className="mb-1 px-1 text-[11px] font-semibold uppercase tracking-wide text-red-600">
+                                Not delivered
+                              </p>
+                            ) : null}
+                            {m.media_url ? (
+                              m.msg_type === 'image' || m.media_mime?.startsWith('image/') ? (
+                                <div className="group relative mb-1 overflow-hidden rounded-md">
+                                  <button
+                                    type="button"
+                                    className="block w-full cursor-pointer text-left"
+                                    onClick={() => void openMedia(m)}
+                                  >
+                                    {imageSrc ? (
+                                      <img
+                                        src={imageSrc}
+                                        alt={m.filename || 'Photo'}
+                                        className="max-h-64 w-full min-w-[180px] rounded-md object-cover"
+                                        loading="lazy"
+                                      />
+                                    ) : (
+                                      <span className="flex h-32 w-48 items-center justify-center rounded-md bg-black/5 text-xs text-[#667781]">
+                                        Loading photo…
+                                      </span>
+                                    )}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void downloadMedia(m)}
+                                    className="absolute right-2 top-2 flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-black/50 text-white opacity-90 shadow transition hover:bg-black/70 sm:opacity-0 sm:group-hover:opacity-100"
+                                    title="Download"
+                                    aria-label="Download photo"
+                                  >
+                                    <Download className="h-4 w-4" />
+                                  </button>
+                                </div>
+                              ) : m.media_mime?.includes('pdf') ||
+                                /\.pdf$/i.test(m.filename || '') ||
+                                m.msg_type === 'document' ||
+                                m.msg_type === 'pdf' ? (
+                                <WhatsAppPdfThumbnail
+                                  messageId={m.id}
+                                  mediaUrl={m.media_url}
+                                  filename={m.filename}
+                                  onOpen={() => void openMedia(m)}
+                                  onDownload={() => void downloadMedia(m)}
+                                />
+                              ) : (
+                                <div className="mb-1 flex min-w-[200px] max-w-[260px] items-center gap-2 rounded-md bg-black/5 px-2 py-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => void openMedia(m)}
+                                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
+                                  >
+                                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-red-50 text-red-600">
+                                      <FileText className="h-5 w-5" aria-hidden />
+                                    </span>
+                                    <span className="min-w-0 flex-1">
+                                      <span className="block truncate text-sm font-medium">
+                                        {m.filename || 'Document'}
+                                      </span>
+                                      <span className="text-[11px] text-[#667781]">
+                                        Tap to open
+                                      </span>
+                                    </span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void downloadMedia(m)}
+                                    className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#54656f] transition hover:bg-black/5"
+                                    title="Download"
+                                    aria-label="Download file"
+                                  >
+                                    <Download className="h-4 w-4" />
+                                  </button>
+                                </div>
+                              )
+                            ) : null}
+                            {(() => {
+                              const text = formatAdminWhatsAppBody(m.body, { compact: false });
+                              const preview = previewMessageBody(m);
+                              const file = (m.filename || '').trim();
+                              if (
+                                m.media_url &&
+                                file &&
+                                (preview === file ||
+                                  preview === `📄 ${file}` ||
+                                  preview === `📷 ${file}` ||
+                                  preview === '📄 Document')
+                              ) {
+                                return null;
+                              }
+                              if (
+                                m.media_url &&
+                                !m.body?.trim() &&
+                                (m.msg_type === 'document' ||
+                                  m.msg_type === 'pdf' ||
+                                  m.msg_type === 'image')
+                              ) {
+                                return null;
+                              }
+                              if (!text?.trim()) return null;
+                              return (
+                                <p className="whitespace-pre-wrap break-words px-1 text-[14.2px] leading-[19px]">
+                                  {text}
+                                </p>
+                              );
+                            })()}
+                            <div
+                              className={cn(
+                                'mt-0.5 flex items-center justify-end gap-1 px-1',
+                                failed ? 'text-red-600' : 'text-[#667781]'
+                              )}
+                            >
+                              <span className="text-[11px] leading-none">
+                                {formatBubbleTime(m.created_at)}
+                              </span>
+                              {outbound ? (
+                                <WhatsAppTicks status={m.status} failed={failed} />
+                              ) : null}
+                            </div>
+                            {m.error_message ? (
+                              <p className="mt-1 px-1 text-[11px] font-medium text-red-600">
+                                {m.error_message}
+                              </p>
                             ) : null}
                           </div>
-                          {m.error_message ? (
-                            <p className="mt-1 text-[11px] font-medium text-red-700">
-                              {m.error_message}
-                            </p>
-                          ) : null}
                         </div>
                       </div>
                     );
@@ -956,15 +1298,14 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                 <div ref={bottomRef} />
               </div>
 
-              <div className="border-t border-border bg-card p-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] sm:p-3">
+              <div className="shrink-0 bg-[#f0f2f5] px-2 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:px-3">
                 {!windowOpen ? (
-                  <div className="mb-3 max-h-[40vh] space-y-2 overflow-y-auto sm:max-h-none">
-                    <p className="text-xs text-amber-800">
-                      Free-form text needs an open 24h window. Send an approved template to reopen
-                      the conversation.
+                  <div className="mb-2 max-h-[36vh] space-y-2 overflow-y-auto overscroll-contain rounded-xl bg-white p-3 shadow-sm sm:max-h-none">
+                    <p className="text-xs text-[#ef6c00]">
+                      Free-form reply needs an open 24h window. Send an approved template to reopen.
                     </p>
                     {templatesLoading ? (
-                      <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <p className="flex items-center gap-2 text-xs text-[#667781]">
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         Loading templates…
                       </p>
@@ -973,7 +1314,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       <p className="text-xs text-red-600">{templatesError}</p>
                     ) : null}
                     {templatesHint ? (
-                      <p className="text-xs text-muted-foreground">{templatesHint}</p>
+                      <p className="text-xs text-[#667781]">{templatesHint}</p>
                     ) : null}
                     {templates.length > 0 ? (
                       <>
@@ -987,7 +1328,10 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                           </SelectTrigger>
                           <SelectContent>
                             {templates.map((t) => (
-                              <SelectItem key={`${t.name}::${t.language}`} value={`${t.name}::${t.language}`}>
+                              <SelectItem
+                                key={`${t.name}::${t.language}`}
+                                value={`${t.name}::${t.language}`}
+                              >
                                 {t.name} ({t.language})
                                 {t.category ? ` · ${t.category}` : ''}
                               </SelectItem>
@@ -995,7 +1339,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                           </SelectContent>
                         </Select>
                         {selectedTemplate?.bodyPreview ? (
-                          <p className="rounded-md bg-muted/60 px-2 py-1.5 text-[11px] text-muted-foreground whitespace-pre-wrap">
+                          <p className="rounded-md bg-[#f0f2f5] px-2 py-1.5 text-[11px] text-[#667781] whitespace-pre-wrap">
                             {selectedTemplate.bodyPreview}
                           </p>
                         ) : null}
@@ -1017,7 +1361,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                           : null}
                         <Button
                           type="button"
-                          className="h-10 w-full bg-sky-700 hover:bg-sky-800"
+                          className="h-10 w-full cursor-pointer bg-[#25d366] text-white hover:bg-[#1da851]"
                           disabled={!selectedTemplate || sending}
                           onClick={() => void handleSendTemplate()}
                         >
@@ -1034,6 +1378,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                         type="button"
                         variant="outline"
                         size="sm"
+                        className="cursor-pointer"
                         onClick={() => void loadTemplates()}
                       >
                         Refresh templates
@@ -1044,37 +1389,35 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                 {windowOpen ? (
                   <div className="space-y-2">
                     {attachFile ? (
-                      <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-2 py-1.5">
+                      <div className="flex items-center gap-2 rounded-xl bg-white px-2 py-1.5 shadow-sm">
                         {attachPreviewUrl ? (
                           <img
                             src={attachPreviewUrl}
                             alt=""
-                            className="h-10 w-10 rounded object-cover"
+                            className="h-11 w-11 rounded-lg object-cover"
                           />
                         ) : (
-                          <div className="flex h-10 w-10 items-center justify-center rounded bg-slate-200 text-[10px] font-semibold uppercase text-slate-700">
+                          <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-[#f0f2f5] text-[10px] font-semibold uppercase text-[#54656f]">
                             PDF
                           </div>
                         )}
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-xs font-medium text-foreground">
+                          <p className="truncate text-xs font-medium text-[#111b21]">
                             {attachFile.name}
                           </p>
-                          <p className="text-[10px] text-muted-foreground">
-                            {(attachFile.size / 1024).toFixed(0)} KB · sent via Cloud API
+                          <p className="text-[10px] text-[#667781]">
+                            {(attachFile.size / 1024).toFixed(0)} KB
                           </p>
                         </div>
-                        <Button
+                        <button
                           type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 shrink-0"
+                          className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#54656f] transition hover:bg-black/5"
                           disabled={sending}
                           onClick={clearAttach}
                           aria-label="Remove attachment"
                         >
                           <X className="h-4 w-4" />
-                        </Button>
+                        </button>
                       </div>
                     ) : null}
                     <div className="flex items-end gap-2">
@@ -1088,63 +1431,56 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                           e.target.value = '';
                         }}
                       />
-                      <Button
+                      <button
                         type="button"
-                        variant="outline"
-                        size="icon"
-                        className="h-11 w-11 shrink-0"
+                        className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#54656f] transition hover:bg-black/5 disabled:opacity-50"
                         disabled={sending}
                         title="Attach image or PDF"
                         onClick={() => fileInputRef.current?.click()}
                       >
-                        <Paperclip className="h-4 w-4" />
-                      </Button>
-                      <Textarea
-                        value={draft}
-                        onChange={(e) => setDraft(e.target.value)}
-                        placeholder={attachFile ? 'Caption (optional)' : 'Type a message or drop a file'}
-                        disabled={sending}
-                        rows={2}
-                        className="min-h-[44px] max-h-[30vh] flex-1 resize-none text-base sm:text-sm"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && !e.shiftKey) {
-                            e.preventDefault();
-                            void handleSend();
-                          }
-                        }}
-                        onPaste={(e) => {
-                          const item = Array.from(e.clipboardData?.items || []).find((i) =>
-                            i.type.startsWith('image/')
-                          );
-                          if (!item) return;
-                          const file = item.getAsFile();
-                          if (file) {
-                            e.preventDefault();
-                            pickAttachFile(file);
-                          }
-                        }}
-                      />
-                      <Button
+                        <Paperclip className="h-5 w-5 rotate-45" />
+                      </button>
+                      <div className="relative flex min-h-[44px] flex-1 items-end rounded-[24px] bg-white px-3 py-1.5 shadow-sm">
+                        <Textarea
+                          value={draft}
+                          onChange={(e) => setDraft(e.target.value)}
+                          placeholder={attachFile ? 'Add a caption' : 'Type a message'}
+                          disabled={sending}
+                          rows={1}
+                          className="max-h-[28vh] min-h-[28px] flex-1 resize-none border-0 bg-transparent px-0 py-1.5 text-[15px] text-[#111b21] shadow-none placeholder:text-[#667781] focus-visible:ring-0"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              void handleSend();
+                            }
+                          }}
+                          onPaste={(e) => {
+                            const item = Array.from(e.clipboardData?.items || []).find((i) =>
+                              i.type.startsWith('image/')
+                            );
+                            if (!item) return;
+                            const file = item.getAsFile();
+                            if (file) {
+                              e.preventDefault();
+                              pickAttachFile(file);
+                            }
+                          }}
+                        />
+                      </div>
+                      <button
                         type="button"
-                        className="h-11 w-11 shrink-0 bg-sky-700 hover:bg-sky-800 sm:w-auto sm:px-4"
+                        className="flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-full bg-[#25d366] text-white shadow transition hover:bg-[#1da851] disabled:opacity-40"
                         disabled={sending || (!draft.trim() && !attachFile)}
                         onClick={() => void handleSend()}
                         aria-label="Send"
                       >
                         {sending ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <Loader2 className="h-5 w-5 animate-spin" />
                         ) : (
-                          <>
-                            <Send className="h-4 w-4 sm:mr-2" />
-                            <span className="hidden sm:inline">Send</span>
-                          </>
+                          <Send className="h-5 w-5" />
                         )}
-                      </Button>
+                      </button>
                     </div>
-                    <p className="text-[10px] text-muted-foreground">
-                      Attach or drag &amp; drop JPEG / PNG / WebP / PDF (max 4MB). Needs open 24h
-                      window.
-                    </p>
                   </div>
                 ) : null}
               </div>
@@ -1152,6 +1488,42 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
           )}
         </section>
       </div>
+
+      <Dialog open={newChatOpen} onOpenChange={setNewChatOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>New chat</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Enter the customer mobile number. If they already messaged, that thread opens.
+          </p>
+          <Input
+            value={newChatPhone}
+            onChange={(e) => setNewChatPhone(e.target.value)}
+            placeholder="9876543210 or 919876543210"
+            className="h-11"
+            inputMode="tel"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                openNewChat();
+              }
+            }}
+          />
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setNewChatOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="bg-[#25d366] text-white hover:bg-[#1da851]"
+              onClick={openNewChat}
+            >
+              Open chat
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

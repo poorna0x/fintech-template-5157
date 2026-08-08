@@ -52,6 +52,16 @@ function persistMediaUrl(link, mediaId) {
   return null;
 }
 
+/** Inbox preview text when caption is empty. */
+function inboxBodyForOutboundMedia(caption, filename, kind) {
+  const cap = String(caption || '').trim();
+  if (cap) return cap;
+  const name = String(filename || '').trim();
+  if (name) return name;
+  if (kind === 'image') return 'Photo';
+  return 'Document';
+}
+
 function json(statusCode, headers, payload) {
   return { statusCode, headers, body: JSON.stringify(payload) };
 }
@@ -340,7 +350,9 @@ exports.handler = async (event) => {
     // Prefer R2 / Cloudinary preview URL for CRM; fall back to opaque Meta media ref
     persist.media_url = persistMediaUrl(link, mediaId);
     persist.filename = filename;
-    persist.body = caption ? stampAwaitingMediaIfAsking(caption) : caption || null;
+    persist.body = stampAwaitingMediaIfAsking(
+      inboxBodyForOutboundMedia(caption, filename, sendAsImage ? 'image' : 'document')
+    );
   } else if (type === 'template') {
     const templateName = String(body.templateName || '').trim();
     if (!templateName) {
@@ -408,7 +420,8 @@ exports.handler = async (event) => {
           },
         ],
       });
-      persist.msg_type = 'template';
+      // Persist as document-like so inbox renders PDF thumbnail + download
+      persist.msg_type = 'document';
       persist.media_mime = 'application/pdf';
       persist.filename = filename;
       persist.media_url = persistMediaUrl(link, mediaId);
@@ -433,18 +446,32 @@ exports.handler = async (event) => {
         ...(components.length ? { components } : {}),
       },
     };
-    persist.msg_type = persist.msg_type || 'template';
+    if (!persist.msg_type || persist.msg_type === 'template') {
+      persist.msg_type = 'template';
+    }
     persist.template_name = templateName;
-    persist.body =
-      bodyParams.length > 0
-        ? `${templateName}: ${bodyParams.map(String).join(' · ')}`
-        : templateName;
+    if (persist.media_url && persist.filename) {
+      const tplNote =
+        bodyParams.length > 0
+          ? bodyParams.map(String).join(' · ')
+          : templateName;
+      persist.body = inboxBodyForOutboundMedia(tplNote, persist.filename, 'document');
+    } else {
+      persist.body =
+        bodyParams.length > 0
+          ? `${templateName}: ${bodyParams.map(String).join(' · ')}`
+          : templateName;
+    }
   } else {
     return json(400, headers, { error: 'type must be text, document, image, or template' });
   }
 
-  if (body.customerId && typeof body.customerId === 'string') {
-    persist.customer_id = body.customerId;
+  const customerIdRaw =
+    (typeof body.customerId === 'string' && body.customerId.trim()) ||
+    (typeof body.customer_id === 'string' && body.customer_id.trim()) ||
+    '';
+  if (customerIdRaw) {
+    persist.customer_id = customerIdRaw;
   } else {
     persist.customer_id = await findCustomerIdByPhone(db, to);
   }
@@ -471,13 +498,26 @@ exports.handler = async (event) => {
       result.data?.messages?.[0]?.message_id ||
       null;
 
-    await insertWhatsAppMessage(db, {
+    const inserted = await insertWhatsAppMessage(db, {
       ...persist,
       wa_message_id: waId,
       status: 'sent',
     });
+    if (!inserted?.id) {
+      console.warn('[whatsapp-send] Meta sent OK but inbox row missing', {
+        to,
+        type: persist.msg_type,
+        hasMedia: Boolean(persist.media_url),
+      });
+    }
 
-    return json(200, headers, { success: true, meta: result.data });
+    return json(200, headers, {
+      success: true,
+      meta: result.data,
+      phone: to,
+      messageId: inserted?.id || null,
+      customerId: persist.customer_id || null,
+    });
   } catch (err) {
     console.error('[whatsapp-send] failed', err?.message || err);
     await insertWhatsAppMessage(db, {

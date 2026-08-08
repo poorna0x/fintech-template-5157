@@ -2233,35 +2233,28 @@ const Settings = () => {
 
   if (showWhatsAppInboxPage) {
     return (
-      <div className="admin-page">
-        <div className="bg-card border-b border-border">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 py-4 sm:py-0 sm:h-16">
-              <div className="flex items-center">
-                <img
-                  src="/whatsapp.png"
-                  alt=""
-                  className="w-7 h-7 sm:w-8 sm:h-8 mr-2 sm:mr-3 shrink-0 rounded-md object-contain"
-                  width={32}
-                  height={32}
-                />
-                <div>
-                  <h1 className="text-lg sm:text-xl font-bold text-foreground">WhatsApp</h1>
-                </div>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={closeSettingsPanel}
-                className="text-muted-foreground hover:text-foreground -ml-2"
-              >
-                <ArrowLeft className="w-4 h-4 mr-1" />
-                Back
-              </Button>
-            </div>
-          </div>
+      <div className="admin-page flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-[#f0f2f5]">
+        <div className="flex shrink-0 items-center gap-2 border-b border-[#d1d7db] bg-[#f0f2f5] px-3 py-2 sm:px-4">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={closeSettingsPanel}
+            className="h-9 shrink-0 cursor-pointer text-[#54656f] hover:bg-black/5 hover:text-[#111b21]"
+          >
+            <ArrowLeft className="mr-1 h-4 w-4" />
+            Back
+          </Button>
+          <div className="min-w-0 flex-1" />
+          <img
+            src="/whatsapp.png"
+            alt=""
+            className="h-6 w-6 rounded object-contain"
+            width={24}
+            height={24}
+          />
+          <span className="text-sm font-semibold text-[#111b21]">WhatsApp</span>
         </div>
-        <div className="container mx-auto px-4 py-4 sm:py-8">
+        <div className="min-h-0 flex-1 overflow-hidden">
           <WhatsAppInboxPage
             hideHeader
             onBack={closeSettingsPanel}

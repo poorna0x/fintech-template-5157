@@ -591,6 +591,7 @@ export async function purgeWhatsAppMessages(opts: {
   deletedRows?: number;
   deletedMedia?: number;
   wouldDeleteRows?: number;
+  withMedia?: number;
 }> {
   const accessToken = await resolveSupabaseAccessTokenForApi();
   if (!accessToken) return { ok: false, error: 'Not signed in' };
@@ -612,6 +613,7 @@ export async function purgeWhatsAppMessages(opts: {
       deletedRows: data.deletedRows,
       deletedMedia: data.deletedMedia,
       wouldDeleteRows: data.wouldDeleteRows,
+      withMedia: data.withMedia,
     };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Purge failed' };

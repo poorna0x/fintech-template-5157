@@ -139,7 +139,10 @@ async function callWhatsAppApi(phoneNumberId, accessToken, payload) {
  * @returns {Promise<{ id?: string } | null>}
  */
 async function insertWhatsAppMessage(db, row) {
-  if (!db) return null;
+  if (!db) {
+    console.warn('[whatsapp-helper] insert skipped — no service Supabase client');
+    return null;
+  }
   const phone = normalizePhoneE164(row.phone_e164 || row.phone);
   if (!phone) return null;
 
@@ -162,11 +165,22 @@ async function insertWhatsAppMessage(db, row) {
     payload.created_at = row.created_at;
   }
 
-  const { data, error } = await db
+  let { data, error } = await db
     .from('whatsapp_messages')
     .insert(payload)
     .select('id')
     .maybeSingle();
+
+  // Bad/stale customer_id must not drop the inbox row
+  if (error && payload.customer_id && (error.code === '23503' || /customer_id|foreign key/i.test(error.message || ''))) {
+    console.warn('[whatsapp-helper] insert retry without customer_id', error.message);
+    payload.customer_id = null;
+    ({ data, error } = await db
+      .from('whatsapp_messages')
+      .insert(payload)
+      .select('id')
+      .maybeSingle());
+  }
 
   if (error) {
     if (error.code === '23505') return null;
@@ -200,12 +214,18 @@ async function findCustomerIdByPhone(db, phoneE164) {
   const phone = normalizePhoneE164(phoneE164);
   if (!phone || phone.length < 10) return null;
   const last10 = phone.slice(-10);
+  const candidates = Array.from(
+    new Set([phone, last10, `91${last10}`, `+${phone}`, `+91${last10}`].filter(Boolean))
+  );
 
   const { data, error } = await db
     .from('customers')
     .select('id')
     .or(
-      `phone.eq.${phone},phone.eq.${last10},alternate_phone.eq.${phone},alternate_phone.eq.${last10}`
+      [
+        ...candidates.map((p) => `phone.eq.${p}`),
+        ...candidates.map((p) => `alternate_phone.eq.${p}`),
+      ].join(',')
     )
     .limit(1)
     .maybeSingle();

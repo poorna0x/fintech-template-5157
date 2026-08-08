@@ -13,6 +13,7 @@ import { generateAmcPdfBase64ForWhatsApp } from '@/lib/send-amc-whatsapp';
 import { sendAdminWhatsAppDocument, sendColdDocumentInvite } from '@/lib/sendAdminWhatsAppApi';
 import type { AMCPDFOptions } from '@/lib/amc-pdf-generator';
 import { getDefaultDocumentMessage } from '@/lib/admin-email-templates';
+import { invalidateInboundWindowCache } from '@/lib/whatsappInbox';
 
 export interface AmcDocumentActionsProps {
   bill: Bill | null;
@@ -122,6 +123,7 @@ export default function AmcDocumentActions({
         pdfBase64: pdf.pdfBase64,
         filename: pdf.filename,
         caption,
+        customerId: bill.customer?.id || null,
         source: 'documents',
       });
       if (!result.ok) {
@@ -131,6 +133,7 @@ export default function AmcDocumentActions({
             to: customerPhone,
             kind: 'amc',
             customerName: bill.customer?.name || 'Customer',
+            customerId: bill.customer?.id || null,
             source: 'documents',
             pdfBase64: pdf.pdfBase64,
             filename: pdf.filename,
@@ -150,6 +153,7 @@ export default function AmcDocumentActions({
         return;
       }
       toast.success('AMC PDF sent on WhatsApp', { id: toastId });
+      invalidateInboundWindowCache(customerPhone);
       onSent?.();
     } catch (error) {
       console.error(error);

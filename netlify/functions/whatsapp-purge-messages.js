@@ -7,7 +7,7 @@
  */
 const { getCorsHeaders, shouldRejectMissingOrigin } = require('./cors-helper');
 const { authorizeAdminRequest } = require('./admin-auth-guard');
-const { getServiceSupabase, digitsOnly } = require('./whatsapp-helper');
+const { getServiceSupabase, digitsOnly, normalizePhoneE164 } = require('./whatsapp-helper');
 const { deleteR2Object, isR2MediaRef, parseR2ObjectKey } = require('./r2-helper');
 
 function json(statusCode, headers, payload) {
@@ -87,7 +87,8 @@ exports.handler = async (event) => {
   }
 
   const dryRun = body.dryRun === true;
-  const phone = digitsOnly(body.phoneE164 || body.phone || '');
+  const phoneRaw = digitsOnly(body.phoneE164 || body.phone || '');
+  const phone = phoneRaw ? normalizePhoneE164(phoneRaw) : '';
   const olderThanDays = body.olderThanDays != null ? Number(body.olderThanDays) : null;
 
   if (!phone && !(olderThanDays > 0)) {

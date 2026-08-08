@@ -357,6 +357,7 @@ export default function AmcEmailSendDialog({
         pdfBase64: pdf.pdfBase64,
         filename: pdf.filename,
         caption,
+        customerId: bill.customer?.id || null,
         source: 'documents',
       });
 
@@ -367,6 +368,7 @@ export default function AmcEmailSendDialog({
             to: phone,
             kind: 'amc',
             customerName: bill.customer?.name || 'Customer',
+            customerId: bill.customer?.id || null,
             source: 'documents',
             pdfBase64: pdf.pdfBase64,
             filename: pdf.filename,
@@ -526,6 +528,7 @@ export default function AmcEmailSendDialog({
         pdfBase64: pdf.pdfBase64,
         filename: pdf.filename,
         caption,
+        customerId: bill.customer?.id || null,
         source: 'documents',
       });
 
@@ -536,6 +539,7 @@ export default function AmcEmailSendDialog({
             to: phone,
             kind: 'amc',
             customerName: bill.customer?.name || 'Customer',
+            customerId: bill.customer?.id || null,
             amount: bill.totalAmount,
             documentLabel: 'AMC agreement',
             source: 'documents',
