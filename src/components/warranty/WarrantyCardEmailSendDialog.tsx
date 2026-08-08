@@ -240,6 +240,7 @@ export default function WarrantyCardEmailSendDialog({
         filename: pdf.filename,
         caption,
         customerId,
+        source: 'documents',
       });
 
       if (!result.ok) {
@@ -251,6 +252,7 @@ export default function WarrantyCardEmailSendDialog({
             customerName: pdfData.customer?.name || 'Customer',
             customerId,
             documentLabel: 'warranty card',
+            source: 'documents',
           });
           if (invite.ok) {
             toast.success(

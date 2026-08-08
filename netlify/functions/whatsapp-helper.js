@@ -346,19 +346,24 @@ async function uploadOutboundPdfToCloudinary(buffer, filename) {
 }
 
 /**
- * Upload PDF to Meta WhatsApp Media API (preferred for outbound documents).
- * Cloudinary public links often 401 for Meta crawlers; media-id send is reliable.
+ * Upload file to Meta WhatsApp Media API (preferred for outbound media).
  * @returns {{ id: string, filename: string } | null}
  */
-async function uploadOutboundPdfToWhatsAppMedia(phoneNumberId, accessToken, buffer, filename) {
+async function uploadOutboundFileToWhatsAppMedia(
+  phoneNumberId,
+  accessToken,
+  buffer,
+  filename,
+  mimeType
+) {
   if (!phoneNumberId || !accessToken || !buffer?.length) return null;
-  const safeName = String(filename || 'document.pdf').replace(/[^\w.\-]+/g, '_').slice(0, 80);
-  const name = safeName.toLowerCase().endsWith('.pdf') ? safeName : `${safeName}.pdf`;
+  const mime = String(mimeType || 'application/octet-stream').trim() || 'application/octet-stream';
+  const safeName = String(filename || 'file').replace(/[^\w.\-]+/g, '_').slice(0, 80) || 'file';
   try {
     const form = new FormData();
     form.append('messaging_product', 'whatsapp');
-    form.append('type', 'application/pdf');
-    form.append('file', new Blob([buffer], { type: 'application/pdf' }), name);
+    form.append('type', mime);
+    form.append('file', new Blob([buffer], { type: mime }), safeName);
 
     const res = await fetch(
       `https://graph.facebook.com/${GRAPH_VERSION}/${encodeURIComponent(phoneNumberId)}/media`,
@@ -377,20 +382,72 @@ async function uploadOutboundPdfToWhatsAppMedia(phoneNumberId, accessToken, buff
       );
       return null;
     }
-    return { id: String(data.id), filename: name };
+    return { id: String(data.id), filename: safeName };
   } catch (err) {
     console.warn('[whatsapp-helper] Meta media upload error', err?.message || err);
     return null;
   }
 }
 
-function pdfBase64ToBuffer(pdfBase64) {
-  const raw = String(pdfBase64 || '').trim();
+/**
+ * Upload PDF to Meta WhatsApp Media API (preferred for outbound documents).
+ * Cloudinary public links often 401 for Meta crawlers; media-id send is reliable.
+ * @returns {{ id: string, filename: string } | null}
+ */
+async function uploadOutboundPdfToWhatsAppMedia(phoneNumberId, accessToken, buffer, filename) {
+  const safeName = String(filename || 'document.pdf').replace(/[^\w.\-]+/g, '_').slice(0, 80);
+  const name = safeName.toLowerCase().endsWith('.pdf') ? safeName : `${safeName}.pdf`;
+  return uploadOutboundFileToWhatsAppMedia(
+    phoneNumberId,
+    accessToken,
+    buffer,
+    name,
+    'application/pdf'
+  );
+}
+
+/** Decode data-URL or raw base64 to Buffer. */
+function fileBase64ToBuffer(fileBase64) {
+  const raw = String(fileBase64 || '').trim();
   if (!raw) return null;
-  const cleaned = raw.replace(/^data:application\/pdf;base64,/i, '');
+  const cleaned = raw.replace(/^data:[^;]+;base64,/i, '');
   try {
     return Buffer.from(cleaned, 'base64');
   } catch {
+    return null;
+  }
+}
+
+function pdfBase64ToBuffer(pdfBase64) {
+  return fileBase64ToBuffer(pdfBase64);
+}
+
+/** Optional Cloudinary copy for CRM inbox preview (7-day retention via Cloudinary lifecycle / unused). */
+async function uploadOutboundMediaToCloudinary(buffer, mime, filename) {
+  const config = getCloudinaryConfig();
+  if (!config || !buffer?.length) return null;
+  try {
+    const safeName = String(filename || 'media').replace(/[^\w.\-]+/g, '_').slice(0, 80);
+    const form = new FormData();
+    form.append('file', new Blob([buffer], { type: mime || 'application/octet-stream' }), safeName);
+    form.append('upload_preset', config.uploadPreset);
+    form.append('folder', 'whatsapp/outbound');
+    const res = await fetch(`https://api.cloudinary.com/v1_1/${config.cloudName}/auto/upload`, {
+      method: 'POST',
+      body: form,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.secure_url) {
+      console.warn(
+        '[whatsapp-helper] outbound cloudinary preview failed',
+        res.status,
+        data?.error?.message
+      );
+      return null;
+    }
+    return { url: data.secure_url, filename: safeName };
+  } catch (err) {
+    console.warn('[whatsapp-helper] outbound cloudinary preview error', err?.message || err);
     return null;
   }
 }
@@ -464,7 +521,10 @@ module.exports = {
   uploadWhatsAppMediaToCloudinary,
   uploadOutboundPdfToCloudinary,
   uploadOutboundPdfToWhatsAppMedia,
+  uploadOutboundFileToWhatsAppMedia,
+  uploadOutboundMediaToCloudinary,
   pdfBase64ToBuffer,
+  fileBase64ToBuffer,
   resolveInboundMedia,
   extractInboundBody,
 };

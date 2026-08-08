@@ -281,6 +281,7 @@ export default function DocumentEmailSendDialog({
         filename: pdf.filename,
         caption,
         customerId: bill.customer?.id,
+        source: 'documents',
       });
 
       if (!result.ok) {
@@ -293,6 +294,7 @@ export default function DocumentEmailSendDialog({
             customerId: bill.customer?.id,
             amount: bill.totalAmount,
             ref: bill.billNumber,
+            source: 'documents',
             documentLabel: meta.docLabel,
           });
           if (invite.ok) {

@@ -7,16 +7,17 @@
  */
 export const WA_COLD = {
   pending_payment: {
-    name: 'pending_payment',
+    name: 'pending_payment_cta',
     language: 'en',
-    /** {{1}}=name, {{2}}=amount digits */
+    /** {{1}}=name, {{2}}=amount digits — Call + Book online CTAs */
     bodyParams: (customerName: string, amount: number | string) => [
       cleanName(customerName),
       cleanAmount(amount),
     ],
   },
+  /** Prefer this name — Meta reclassified service_reminder_cta as MARKETING. */
   service_reminder: {
-    name: 'service_reminder',
+    name: 'service_due_notice_cta',
     language: 'en',
     bodyParams: (customerName: string) => [cleanName(customerName)],
   },
@@ -39,7 +40,7 @@ export const WA_COLD = {
   },
   /** {{1}}=name, {{2}}=doc label e.g. "AMC agreement" / "tax invoice" / "service bill" */
   document_ready: {
-    name: 'document_ready',
+    name: 'document_ready_cta',
     language: 'en',
     bodyParams: (customerName: string, documentLabel: string) => [
       cleanName(customerName),
@@ -89,8 +90,9 @@ export const WA_COLD = {
       cleanAmount(amount),
     ],
   },
+  /** Prefer this name — Meta reclassified customer_followup_cta as MARKETING. */
   customer_followup: {
-    name: 'customer_followup',
+    name: 'customer_update_notice_cta',
     language: 'en',
     bodyParams: (customerName: string, topic: string) => [
       cleanName(customerName),
@@ -98,7 +100,7 @@ export const WA_COLD = {
     ],
   },
   appointment_reminder: {
-    name: 'appointment_reminder',
+    name: 'appointment_reminder_cta',
     language: 'en',
     bodyParams: (customerName: string, whenLabel: string) => [
       cleanName(customerName),
@@ -114,16 +116,16 @@ export const WA_COLD = {
     ],
   },
   tech_assigned: {
-    name: 'tech_assigned',
+    name: 'tech_assigned_cta',
     language: 'en',
     bodyParams: (customerName: string, technicianName: string) => [
       cleanName(customerName),
       String(technicianName || 'our technician').trim() || 'our technician',
     ],
   },
-  /** Catch-all cold text: {{1}}=name, {{2}}=short notice (keep under ~100 chars) */
+  /** Catch-all cold text: {{1}}=name, {{2}}=short notice — Call + Book CTAs */
   general_notice: {
-    name: 'general_notice',
+    name: 'general_notice_cta',
     language: 'en',
     bodyParams: (customerName: string, notice: string) => [
       cleanName(customerName),
@@ -227,22 +229,22 @@ function cleanAmount(amount: number | string): string {
 
 /** Human labels for inbox / pickers */
 export const WA_COLD_LABELS: Record<keyof typeof WA_COLD, string> = {
-  pending_payment: 'Pending payment',
-  service_reminder: 'Service due',
+  pending_payment: 'Pending payment (Call + Book)',
+  service_reminder: 'Service due (Call + Book)',
   amc_renewal: 'AMC expiry notice',
   amc_expiry_notice: 'AMC expiry notice',
-  document_ready: 'Document ready (generic)',
+  document_ready: 'Document ready (Call + Book)',
   quotation_ready: 'Quotation ready',
   service_bill_ready: 'Service bill ready',
   invoice_ready: 'Tax invoice ready',
   amc_document_ready: 'AMC PDF ready',
   warranty_ready: 'Warranty card ready',
   receipt_ready: 'Receipt ready',
-  customer_followup: 'Follow-up',
-  appointment_reminder: 'Appointment reminder',
+  customer_followup: 'Follow-up (Call + Book)',
+  appointment_reminder: 'Appointment reminder (Call + Book)',
   payment_received: 'Payment received',
-  tech_assigned: 'Technician assigned',
-  general_notice: 'General notice',
+  tech_assigned: 'Technician assigned (Call + Book)',
+  general_notice: 'General notice (Call + Book)',
   crm_notice: 'CRM notice (flexible)',
   crm_update_details: 'CRM update (topic + detail)',
 };

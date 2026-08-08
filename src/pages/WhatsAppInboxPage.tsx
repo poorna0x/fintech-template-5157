@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Loader2, RefreshCw, Search, Send } from 'lucide-react';
+import { ArrowLeft, Loader2, Paperclip, RefreshCw, Search, Send, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,8 +35,12 @@ import {
 } from '@/lib/whatsappInbox';
 import {
   fetchApprovedWhatsAppTemplates,
+  readFileAsBase64,
+  sendAdminWhatsAppMedia,
   sendAdminWhatsAppTemplate,
   sendAdminWhatsAppText,
+  validateWhatsAppAttachFile,
+  WHATSAPP_ATTACH_ACCEPT,
   type WhatsAppTemplateListItem,
 } from '@/lib/sendAdminWhatsAppApi';
 
@@ -67,11 +71,45 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const [selectedTemplateKey, setSelectedTemplateKey] = useState<string>('');
   const [templateParams, setTemplateParams] = useState<string[]>([]);
   const [readMap, setReadMap] = useState<Record<string, string>>(() => loadWhatsAppReadMap());
+  const [attachFile, setAttachFile] = useState<File | null>(null);
+  const [attachPreviewUrl, setAttachPreviewUrl] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const selectedPhoneRef = useRef(selectedPhone);
   selectedPhoneRef.current = selectedPhone;
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
+
+  useEffect(() => {
+    if (!attachFile || !attachFile.type.startsWith('image/')) {
+      setAttachPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(attachFile);
+    setAttachPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [attachFile]);
+
+  useEffect(() => {
+    setAttachFile(null);
+    setDraft('');
+  }, [selectedPhone]);
+
+  const pickAttachFile = (file: File | null | undefined) => {
+    if (!file) return;
+    const err = validateWhatsAppAttachFile(file);
+    if (err) {
+      toast.error(err);
+      return;
+    }
+    setAttachFile(file);
+  };
+
+  const clearAttach = () => {
+    setAttachFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   useEffect(() => {
     if (!initialPhone) return;
@@ -326,17 +364,43 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
 
   const handleSend = async () => {
     const text = draft.trim();
-    if (!selectedPhone || !text || sending) return;
+    if (!selectedPhone || sending) return;
     if (!windowOpen) {
       toast.error('24-hour window closed — use an approved template below');
       return;
     }
+    if (!attachFile && !text) return;
+
     setSending(true);
     try {
+      if (attachFile) {
+        const parsed = await readFileAsBase64(attachFile);
+        const result = await sendAdminWhatsAppMedia({
+          to: selectedPhone,
+          fileBase64: parsed.base64,
+          filename: parsed.filename,
+          mimeType: parsed.mimeType,
+          caption: text || undefined,
+          customerId: activeThread?.customer_id,
+          source: 'inbox',
+        });
+        if (!result.ok) {
+          toast.error(result.error || 'Attachment send failed');
+          return;
+        }
+        setDraft('');
+        clearAttach();
+        toast.success(parsed.mimeType.startsWith('image/') ? 'Image sent' : 'File sent');
+        void loadInbox({ soft: true });
+        void loadThread(selectedPhone, { soft: true });
+        return;
+      }
+
       const result = await sendAdminWhatsAppText({
         to: selectedPhone,
         text,
         customerId: activeThread?.customer_id,
+        source: 'inbox',
         fallbackWaMe: false,
       });
       if (!result.ok) {
@@ -345,7 +409,6 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       }
       setDraft('');
       toast.success('Sent');
-      // Realtime patches the thread; one soft list refresh is enough
       void loadInbox({ soft: true });
     } finally {
       setSending(false);
@@ -367,6 +430,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         languageCode: selectedTemplate.language,
         bodyParams: templateParams.map((p) => String(p).trim()),
         customerId: activeThread?.customer_id,
+        source: 'inbox',
       });
       if (!result.ok) {
         toast.error(result.error || 'Template send failed');
@@ -554,10 +618,43 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         {/* Chat pane */}
         <section
           className={cn(
-            'flex min-w-0 flex-1 flex-col bg-[#eef6fb]',
+            'relative flex min-w-0 flex-1 flex-col bg-[#eef6fb]',
             showList && !showChat ? 'hidden md:flex' : 'flex'
           )}
+          onDragEnter={(e) => {
+            if (!windowOpen || !selectedPhone) return;
+            e.preventDefault();
+            e.stopPropagation();
+            setDragOver(true);
+          }}
+          onDragOver={(e) => {
+            if (!windowOpen || !selectedPhone) return;
+            e.preventDefault();
+            e.stopPropagation();
+            setDragOver(true);
+          }}
+          onDragLeave={(e) => {
+            e.preventDefault();
+            if (e.currentTarget === e.target) setDragOver(false);
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setDragOver(false);
+            if (!windowOpen || !selectedPhone || sending) return;
+            const file = e.dataTransfer.files?.[0];
+            pickAttachFile(file);
+          }}
         >
+          {dragOver && windowOpen ? (
+            <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-sky-900/40 px-4">
+              <div className="rounded-xl border-2 border-dashed border-white bg-white/95 px-6 py-8 text-center shadow-lg">
+                <Paperclip className="mx-auto mb-2 h-8 w-8 text-sky-700" />
+                <p className="text-sm font-semibold text-slate-900">Drop image or PDF</p>
+                <p className="mt-1 text-xs text-muted-foreground">JPEG, PNG, WebP, PDF · max 4MB</p>
+              </div>
+            </div>
+          ) : null}
           {!selectedPhone ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center text-muted-foreground">
               <img
@@ -772,37 +869,109 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   </div>
                 ) : null}
                 {windowOpen ? (
-                  <div className="flex items-end gap-2">
-                    <Textarea
-                      value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
-                      placeholder="Type a message"
-                      disabled={sending}
-                      rows={2}
-                      className="min-h-[44px] max-h-[30vh] flex-1 resize-none text-base sm:text-sm"
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                          e.preventDefault();
-                          void handleSend();
-                        }
-                      }}
-                    />
-                    <Button
-                      type="button"
-                      className="h-11 w-11 shrink-0 bg-sky-700 hover:bg-sky-800 sm:w-auto sm:px-4"
-                      disabled={!draft.trim() || sending}
-                      onClick={() => void handleSend()}
-                      aria-label="Send"
-                    >
-                      {sending ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <>
-                          <Send className="h-4 w-4 sm:mr-2" />
-                          <span className="hidden sm:inline">Send</span>
-                        </>
-                      )}
-                    </Button>
+                  <div className="space-y-2">
+                    {attachFile ? (
+                      <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 px-2 py-1.5">
+                        {attachPreviewUrl ? (
+                          <img
+                            src={attachPreviewUrl}
+                            alt=""
+                            className="h-10 w-10 rounded object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-10 w-10 items-center justify-center rounded bg-slate-200 text-[10px] font-semibold uppercase text-slate-700">
+                            PDF
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-xs font-medium text-foreground">
+                            {attachFile.name}
+                          </p>
+                          <p className="text-[10px] text-muted-foreground">
+                            {(attachFile.size / 1024).toFixed(0)} KB · sent via Cloud API
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 shrink-0"
+                          disabled={sending}
+                          onClick={clearAttach}
+                          aria-label="Remove attachment"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ) : null}
+                    <div className="flex items-end gap-2">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept={WHATSAPP_ATTACH_ACCEPT}
+                        className="hidden"
+                        onChange={(e) => {
+                          pickAttachFile(e.target.files?.[0]);
+                          e.target.value = '';
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="h-11 w-11 shrink-0"
+                        disabled={sending}
+                        title="Attach image or PDF"
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        <Paperclip className="h-4 w-4" />
+                      </Button>
+                      <Textarea
+                        value={draft}
+                        onChange={(e) => setDraft(e.target.value)}
+                        placeholder={attachFile ? 'Caption (optional)' : 'Type a message or drop a file'}
+                        disabled={sending}
+                        rows={2}
+                        className="min-h-[44px] max-h-[30vh] flex-1 resize-none text-base sm:text-sm"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            void handleSend();
+                          }
+                        }}
+                        onPaste={(e) => {
+                          const item = Array.from(e.clipboardData?.items || []).find((i) =>
+                            i.type.startsWith('image/')
+                          );
+                          if (!item) return;
+                          const file = item.getAsFile();
+                          if (file) {
+                            e.preventDefault();
+                            pickAttachFile(file);
+                          }
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        className="h-11 w-11 shrink-0 bg-sky-700 hover:bg-sky-800 sm:w-auto sm:px-4"
+                        disabled={sending || (!draft.trim() && !attachFile)}
+                        onClick={() => void handleSend()}
+                        aria-label="Send"
+                      >
+                        {sending ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <>
+                            <Send className="h-4 w-4 sm:mr-2" />
+                            <span className="hidden sm:inline">Send</span>
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      Attach or drag &amp; drop JPEG / PNG / WebP / PDF (max 4MB). Needs open 24h
+                      window.
+                    </p>
                   </div>
                 ) : null}
               </div>

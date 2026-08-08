@@ -7,6 +7,14 @@ CREATE TABLE IF NOT EXISTS public.whatsapp_crm_settings (
   allow_cold_templates boolean NOT NULL DEFAULT true,
   allow_pdf_send boolean NOT NULL DEFAULT true,
   allow_freeform boolean NOT NULL DEFAULT true,
+  allow_booking_bot boolean NOT NULL DEFAULT true,
+  allow_inbox boolean NOT NULL DEFAULT true,
+  allow_calling boolean NOT NULL DEFAULT true,
+  allow_service_reminder boolean NOT NULL DEFAULT true,
+  allow_pending_payment boolean NOT NULL DEFAULT true,
+  allow_documents boolean NOT NULL DEFAULT true,
+  allow_composer boolean NOT NULL DEFAULT true,
+  allow_tech_assigned boolean NOT NULL DEFAULT true,
   rate_utility_inr numeric(12, 4) NOT NULL DEFAULT 0.1150,
   rate_marketing_inr numeric(12, 4) NOT NULL DEFAULT 0.8631,
   rate_authentication_inr numeric(12, 4) NOT NULL DEFAULT 0.1150,
@@ -23,6 +31,26 @@ COMMENT ON TABLE public.whatsapp_crm_settings IS
 INSERT INTO public.whatsapp_crm_settings (id)
 VALUES (1)
 ON CONFLICT (id) DO NOTHING;
+
+-- Safe re-run: add booking-bot toggle if table already existed without it
+ALTER TABLE public.whatsapp_crm_settings
+  ADD COLUMN IF NOT EXISTS allow_booking_bot boolean NOT NULL DEFAULT true;
+
+-- Per-surface Cloud API send toggles (where CRM sends WhatsApp)
+ALTER TABLE public.whatsapp_crm_settings
+  ADD COLUMN IF NOT EXISTS allow_inbox boolean NOT NULL DEFAULT true;
+ALTER TABLE public.whatsapp_crm_settings
+  ADD COLUMN IF NOT EXISTS allow_calling boolean NOT NULL DEFAULT true;
+ALTER TABLE public.whatsapp_crm_settings
+  ADD COLUMN IF NOT EXISTS allow_service_reminder boolean NOT NULL DEFAULT true;
+ALTER TABLE public.whatsapp_crm_settings
+  ADD COLUMN IF NOT EXISTS allow_pending_payment boolean NOT NULL DEFAULT true;
+ALTER TABLE public.whatsapp_crm_settings
+  ADD COLUMN IF NOT EXISTS allow_documents boolean NOT NULL DEFAULT true;
+ALTER TABLE public.whatsapp_crm_settings
+  ADD COLUMN IF NOT EXISTS allow_composer boolean NOT NULL DEFAULT true;
+ALTER TABLE public.whatsapp_crm_settings
+  ADD COLUMN IF NOT EXISTS allow_tech_assigned boolean NOT NULL DEFAULT true;
 
 ALTER TABLE public.whatsapp_crm_settings ENABLE ROW LEVEL SECURITY;
 

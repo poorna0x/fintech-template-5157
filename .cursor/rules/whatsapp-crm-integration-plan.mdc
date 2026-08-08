@@ -46,7 +46,7 @@ Submitted to WABA `1854517668845707` (all UTILITY / `en`, await Meta APPROVED):
 | Name | Vars | Use |
 |------|------|-----|
 | `pending_payment` | name, amount | Cold pending payment |
-| `service_reminder` | name | Service due |
+| `service_due_notice_cta` | name | Service due (Call + Book; replaces MARKETING `service_reminder_cta`) |
 | `amc_expiry_notice` | name, end date | AMC expiry **utility** notice (replaces `amc_renewal` which Meta marked MARKETING) |
 | `quotation_ready` | name, ref | Cold open for quotation PDF |
 | `service_bill_ready` | name, amount | Cold open for service bill PDF |
@@ -55,7 +55,7 @@ Submitted to WABA `1854517668845707` (all UTILITY / `en`, await Meta APPROVED):
 | `warranty_ready` | name | Cold open for warranty PDF |
 | `receipt_ready` | name, amount | Cold open for receipt PDF |
 | `document_ready` | name, doc label | Generic cold open for any PDF |
-| `customer_followup` | name, topic | Generic follow-up |
+| `customer_update_notice_cta` | name, topic | Follow-up (Call + Book; replaces MARKETING `customer_followup_cta`) |
 | `appointment_reminder` | name, when | Visit / schedule reminder |
 | `payment_received` | name, amount | Payment thanks |
 | `tech_assigned` | name, tech name | Technician assigned |

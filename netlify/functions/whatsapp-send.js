@@ -15,8 +15,23 @@ const {
   insertWhatsAppMessage,
   findCustomerIdByPhone,
   uploadOutboundPdfToWhatsAppMedia,
+  uploadOutboundFileToWhatsAppMedia,
+  uploadOutboundMediaToCloudinary,
   pdfBase64ToBuffer,
+  fileBase64ToBuffer,
 } = require('./whatsapp-helper');
+
+const MAX_OUTBOUND_BYTES = 4.5 * 1024 * 1024;
+
+function isImageMime(mime) {
+  return /^image\/(jpeg|jpg|png|webp)$/i.test(String(mime || ''));
+}
+
+function isPdfMime(mime, filename) {
+  const m = String(mime || '').toLowerCase();
+  const name = String(filename || '').toLowerCase();
+  return m === 'application/pdf' || name.endsWith('.pdf');
+}
 
 function json(statusCode, headers, payload) {
   return { statusCode, headers, body: JSON.stringify(payload) };
@@ -73,27 +88,76 @@ exports.handler = async (event) => {
   if (db) {
     const { data: waSettings } = await db
       .from('whatsapp_crm_settings')
-      .select('enabled, allow_cold_templates, allow_pdf_send, allow_freeform')
+      .select(
+        'enabled, allow_cold_templates, allow_pdf_send, allow_freeform, allow_booking_bot, allow_inbox, allow_calling, allow_service_reminder, allow_pending_payment, allow_documents, allow_composer, allow_tech_assigned'
+      )
       .eq('id', 1)
       .maybeSingle();
     if (waSettings) {
       if (waSettings.enabled === false) {
         return json(403, headers, {
+          code: 'WHATSAPP_FEATURE_DISABLED',
+          feature: 'enabled',
           error: 'WhatsApp Cloud API is disabled in Settings → WhatsApp settings',
         });
       }
+
+      const source = String(body.source || body.sendSource || '')
+        .trim()
+        .toLowerCase();
+      const sourceKeyMap = {
+        inbox: 'allow_inbox',
+        calling: 'allow_calling',
+        service_reminder: 'allow_service_reminder',
+        pending_payment: 'allow_pending_payment',
+        documents: 'allow_documents',
+        composer: 'allow_composer',
+        tech_assigned: 'allow_tech_assigned',
+        booking_bot: 'allow_booking_bot',
+      };
+      const sourceKey = sourceKeyMap[source];
+      if (sourceKey && waSettings[sourceKey] === false) {
+        const labels = {
+          allow_inbox: 'WhatsApp inbox',
+          allow_calling: 'Calling',
+          allow_service_reminder: 'Service reminders',
+          allow_pending_payment: 'Pending payments',
+          allow_documents: 'Document / PDF share',
+          allow_composer: 'Customer composer',
+          allow_tech_assigned: 'Technician assigned',
+          allow_booking_bot: 'Booking bot',
+        };
+        return json(403, headers, {
+          code: 'WHATSAPP_FEATURE_DISABLED',
+          feature: source,
+          error: `${labels[sourceKey] || source} WhatsApp sends are disabled in Settings → WhatsApp`,
+        });
+      }
+
       const sendType = String(body.type || 'text').trim().toLowerCase();
       if (sendType === 'template' && waSettings.allow_cold_templates === false) {
-        return json(403, headers, { error: 'Cold templates are disabled in WhatsApp settings' });
+        return json(403, headers, {
+          code: 'WHATSAPP_FEATURE_DISABLED',
+          feature: 'cold_templates',
+          error: 'Cold templates are disabled in WhatsApp settings',
+        });
       }
       if (
-        (sendType === 'document' || sendType === 'pdf') &&
+        (sendType === 'document' || sendType === 'pdf' || sendType === 'image') &&
         waSettings.allow_pdf_send === false
       ) {
-        return json(403, headers, { error: 'PDF / document send is disabled in WhatsApp settings' });
+        return json(403, headers, {
+          code: 'WHATSAPP_FEATURE_DISABLED',
+          feature: 'pdf_send',
+          error: 'Media / document send is disabled in WhatsApp settings',
+        });
       }
       if (sendType === 'text' && waSettings.allow_freeform === false) {
-        return json(403, headers, { error: 'Free-form text is disabled in WhatsApp settings' });
+        return json(403, headers, {
+          code: 'WHATSAPP_FEATURE_DISABLED',
+          feature: 'freeform',
+          error: 'Free-form text is disabled in WhatsApp settings',
+        });
       }
     }
   }
@@ -111,6 +175,7 @@ exports.handler = async (event) => {
     msg_type: type === 'pdf' ? 'document' : type,
     body: null,
     media_url: null,
+    media_mime: null,
     filename: null,
     template_name: null,
     sent_by_user_id: auth.userId || null,
@@ -130,52 +195,115 @@ exports.handler = async (event) => {
     };
     persist.body = text;
     persist.msg_type = 'text';
-  } else if (type === 'document' || type === 'pdf') {
+  } else if (type === 'document' || type === 'pdf' || type === 'image') {
     let link = String(body.link || body.pdfUrl || body.url || '').trim();
-    let mediaId = String(body.mediaId || body.documentId || '').trim();
-    const filename = String(body.filename || 'document.pdf').trim() || 'document.pdf';
+    let mediaId = String(body.mediaId || body.documentId || body.imageId || '').trim();
     const caption = String(body.caption || '').trim();
+    const mimeHint = String(body.mimeType || body.mime || '').trim();
+    let filename =
+      String(body.filename || (type === 'image' ? 'image.jpg' : 'document.pdf')).trim() ||
+      (type === 'image' ? 'image.jpg' : 'document.pdf');
 
-    if (!mediaId && !link && body.pdfBase64) {
-      const buf = pdfBase64ToBuffer(body.pdfBase64);
-      if (!buf || buf.length < 100) {
-        return json(400, headers, { error: 'Invalid pdfBase64' });
+    const fileB64 = body.fileBase64 || body.pdfBase64 || body.imageBase64 || '';
+    let buf = null;
+    if (!mediaId && !link && fileB64) {
+      buf = fileBase64ToBuffer(fileB64) || pdfBase64ToBuffer(fileB64);
+      if (!buf || buf.length < 32) {
+        return json(400, headers, { error: 'Invalid file base64' });
       }
-      // Netlify / Meta practical limit — keep bills/AMC small
-      if (buf.length > 4.5 * 1024 * 1024) {
-        return json(413, headers, { error: 'PDF too large (max ~4.5MB for WhatsApp send)' });
+      if (buf.length > MAX_OUTBOUND_BYTES) {
+        return json(413, headers, { error: 'File too large (max ~4.5MB for WhatsApp send)' });
       }
-      // Prefer Meta media API — Cloudinary raw URLs are often not publicly fetchable by Meta (401 → Media upload error)
-      const uploaded = await uploadOutboundPdfToWhatsAppMedia(
-        phoneNumberId,
-        accessToken,
-        buf,
-        filename
-      );
+
+      const wantImage =
+        type === 'image' || isImageMime(mimeHint) || /\.(jpe?g|png|webp)$/i.test(filename);
+      const mime = wantImage
+        ? mimeHint && isImageMime(mimeHint)
+          ? mimeHint
+          : /\.png$/i.test(filename)
+            ? 'image/png'
+            : /\.webp$/i.test(filename)
+              ? 'image/webp'
+              : 'image/jpeg'
+        : isPdfMime(mimeHint, filename)
+          ? 'application/pdf'
+          : mimeHint || 'application/octet-stream';
+
+      // Meta media id for delivery
+      const uploaded = wantImage
+        ? await uploadOutboundFileToWhatsAppMedia(
+            phoneNumberId,
+            accessToken,
+            buf,
+            filename,
+            mime
+          )
+        : mime === 'application/pdf'
+          ? await uploadOutboundPdfToWhatsAppMedia(phoneNumberId, accessToken, buf, filename)
+          : await uploadOutboundFileToWhatsAppMedia(
+              phoneNumberId,
+              accessToken,
+              buf,
+              filename,
+              mime
+            );
+
       if (!uploaded?.id) {
         return json(502, headers, {
-          error: 'Could not upload PDF to WhatsApp media API',
+          error: 'Could not upload file to WhatsApp media API',
         });
       }
       mediaId = uploaded.id;
+      filename = uploaded.filename || filename;
+
+      // Best-effort Cloudinary copy so inbox can show/open the file (Meta media ids expire)
+      const preview = await uploadOutboundMediaToCloudinary(buf, mime, filename);
+      if (preview?.url) {
+        link = preview.url;
+      }
     }
 
     if (!mediaId && (!link || !/^https:\/\//i.test(link))) {
-      return json(400, headers, { error: 'Public https PDF URL, mediaId, or pdfBase64 required' });
+      return json(400, headers, {
+        error: 'Public https URL, mediaId, or fileBase64 / pdfBase64 required',
+      });
     }
-    payload = {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to,
-      type: 'document',
-      document: {
-        ...(mediaId ? { id: mediaId } : { link }),
-        filename,
-        ...(caption ? { caption } : {}),
-      },
-    };
-    persist.msg_type = 'document';
-    persist.media_url = mediaId ? `whatsapp-media:${mediaId}` : link;
+
+    const sendAsImage =
+      type === 'image' ||
+      isImageMime(mimeHint) ||
+      (filename && /\.(jpe?g|png|webp)$/i.test(filename) && !isPdfMime(mimeHint, filename));
+
+    if (sendAsImage) {
+      payload = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to,
+        type: 'image',
+        image: {
+          ...(mediaId ? { id: mediaId } : { link }),
+          ...(caption ? { caption } : {}),
+        },
+      };
+      persist.msg_type = 'image';
+      persist.media_mime = mimeHint || 'image/jpeg';
+    } else {
+      payload = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to,
+        type: 'document',
+        document: {
+          ...(mediaId ? { id: mediaId } : { link }),
+          filename,
+          ...(caption ? { caption } : {}),
+        },
+      };
+      persist.msg_type = 'document';
+      persist.media_mime = mimeHint || 'application/pdf';
+    }
+    // Prefer Cloudinary preview URL for CRM; fall back to opaque Meta media ref
+    persist.media_url = link && /^https:\/\//i.test(link) ? link : mediaId ? `whatsapp-media:${mediaId}` : null;
     persist.filename = filename;
     persist.body = caption || null;
   } else if (type === 'template') {
@@ -218,7 +346,7 @@ exports.handler = async (event) => {
         ? `${templateName}: ${bodyParams.map(String).join(' · ')}`
         : templateName;
   } else {
-    return json(400, headers, { error: 'type must be text, document, or template' });
+    return json(400, headers, { error: 'type must be text, document, image, or template' });
   }
 
   if (body.customerId && typeof body.customerId === 'string') {

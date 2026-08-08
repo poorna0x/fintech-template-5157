@@ -350,6 +350,7 @@ export function AdminWhatsAppComposerPanel({
           filename: pdf.filename,
           caption: whatsappPreview.text.slice(0, 1024),
           customerId: linkedCustomerId,
+          source: 'composer',
         });
         if (!docResult.ok) {
           if (docResult.needsWindowOrTemplate) {
@@ -365,6 +366,7 @@ export function AdminWhatsAppComposerPanel({
               customerId: linkedCustomerId,
               ref: documentForm.documentRef?.trim() || undefined,
               amount: undefined,
+              source: 'composer',
               documentLabel:
                 templateType === 'quotation'
                   ? 'quotation'
@@ -408,6 +410,7 @@ export function AdminWhatsAppComposerPanel({
         to: phone.trim(),
         text: whatsappPreview.text,
         customerId: linkedCustomerId,
+        source: 'composer',
         fallbackWaMe: true,
       });
       if (!result.ok) {

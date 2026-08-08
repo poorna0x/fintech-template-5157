@@ -338,6 +338,7 @@ export default function AmcEmailSendDialog({
         pdfBase64: pdf.pdfBase64,
         filename: pdf.filename,
         caption,
+        source: 'documents',
       });
 
       if (!result.ok) {
@@ -347,6 +348,7 @@ export default function AmcEmailSendDialog({
             to: phone,
             kind: 'amc',
             customerName: bill.customer?.name || 'Customer',
+            source: 'documents',
           });
           if (invite.ok) {
             if (onPersistAfterWhatsApp) {

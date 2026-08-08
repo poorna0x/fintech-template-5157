@@ -515,6 +515,7 @@ export function SettingsPendingPaymentsDialogV2({
         to: phone,
         text: message,
         customerId: opts?.customerId,
+        source: 'pending_payment',
         fallbackWaMe: false,
       });
       if (result.ok) {
@@ -531,6 +532,7 @@ export function SettingsPendingPaymentsDialogV2({
           languageCode: tpl.language,
           bodyParams: tpl.bodyParams(opts?.customerName || 'Customer', opts?.amount ?? 0),
           customerId: opts?.customerId,
+          source: 'pending_payment',
         });
         if (tplResult.ok) {
           toast.success('Cold template sent (24h window was closed)');

@@ -4,12 +4,32 @@
  */
 import { supabase } from '@/lib/supabaseClient';
 
+/** CRM surfaces that can send via Cloud API (passed as `source` to whatsapp-send). */
+export type WhatsAppSendSource =
+  | 'inbox'
+  | 'calling'
+  | 'service_reminder'
+  | 'pending_payment'
+  | 'documents'
+  | 'composer'
+  | 'tech_assigned'
+  | 'booking_bot'
+  | 'other';
+
 export type WhatsAppCrmSettings = {
   id: number;
   enabled: boolean;
   allow_cold_templates: boolean;
   allow_pdf_send: boolean;
   allow_freeform: boolean;
+  allow_booking_bot: boolean;
+  allow_inbox: boolean;
+  allow_calling: boolean;
+  allow_service_reminder: boolean;
+  allow_pending_payment: boolean;
+  allow_documents: boolean;
+  allow_composer: boolean;
+  allow_tech_assigned: boolean;
   rate_utility_inr: number;
   rate_marketing_inr: number;
   rate_authentication_inr: number;
@@ -39,6 +59,14 @@ export const DEFAULT_WHATSAPP_CRM_SETTINGS: WhatsAppCrmSettings = {
   allow_cold_templates: true,
   allow_pdf_send: true,
   allow_freeform: true,
+  allow_booking_bot: true,
+  allow_inbox: true,
+  allow_calling: true,
+  allow_service_reminder: true,
+  allow_pending_payment: true,
+  allow_documents: true,
+  allow_composer: true,
+  allow_tech_assigned: true,
   rate_utility_inr: 0.115,
   rate_marketing_inr: 0.8631,
   rate_authentication_inr: 0.115,
@@ -49,11 +77,17 @@ export const DEFAULT_WHATSAPP_CRM_SETTINGS: WhatsAppCrmSettings = {
 };
 
 const SETTINGS_COLUMNS =
-  'id, enabled, allow_cold_templates, allow_pdf_send, allow_freeform, rate_utility_inr, rate_marketing_inr, rate_authentication_inr, rate_service_inr, monthly_budget_inr, notes, updated_at';
+  'id, enabled, allow_cold_templates, allow_pdf_send, allow_freeform, allow_booking_bot, allow_inbox, allow_calling, allow_service_reminder, allow_pending_payment, allow_documents, allow_composer, allow_tech_assigned, rate_utility_inr, rate_marketing_inr, rate_authentication_inr, rate_service_inr, monthly_budget_inr, notes, updated_at';
 
 function num(v: unknown, fallback: number): number {
   const n = typeof v === 'number' ? v : Number(v);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function bool(v: unknown, fallback = true): boolean {
+  if (v === false) return false;
+  if (v === true) return true;
+  return fallback;
 }
 
 export function normalizeWhatsAppCrmSettings(
@@ -63,10 +97,18 @@ export function normalizeWhatsAppCrmSettings(
   if (!row) return { ...d };
   return {
     id: 1,
-    enabled: row.enabled !== false,
-    allow_cold_templates: row.allow_cold_templates !== false,
-    allow_pdf_send: row.allow_pdf_send !== false,
-    allow_freeform: row.allow_freeform !== false,
+    enabled: bool(row.enabled, true),
+    allow_cold_templates: bool(row.allow_cold_templates, true),
+    allow_pdf_send: bool(row.allow_pdf_send, true),
+    allow_freeform: bool(row.allow_freeform, true),
+    allow_booking_bot: bool(row.allow_booking_bot, true),
+    allow_inbox: bool(row.allow_inbox, true),
+    allow_calling: bool(row.allow_calling, true),
+    allow_service_reminder: bool(row.allow_service_reminder, true),
+    allow_pending_payment: bool(row.allow_pending_payment, true),
+    allow_documents: bool(row.allow_documents, true),
+    allow_composer: bool(row.allow_composer, true),
+    allow_tech_assigned: bool(row.allow_tech_assigned, true),
     rate_utility_inr: num(row.rate_utility_inr, d.rate_utility_inr),
     rate_marketing_inr: num(row.rate_marketing_inr, d.rate_marketing_inr),
     rate_authentication_inr: num(row.rate_authentication_inr, d.rate_authentication_inr),
@@ -80,6 +122,32 @@ export function normalizeWhatsAppCrmSettings(
   };
 }
 
+/** Map send `source` → settings column. */
+export function settingsKeyForSendSource(
+  source: WhatsAppSendSource | string | null | undefined
+): keyof WhatsAppCrmSettings | null {
+  switch (String(source || '').trim()) {
+    case 'inbox':
+      return 'allow_inbox';
+    case 'calling':
+      return 'allow_calling';
+    case 'service_reminder':
+      return 'allow_service_reminder';
+    case 'pending_payment':
+      return 'allow_pending_payment';
+    case 'documents':
+      return 'allow_documents';
+    case 'composer':
+      return 'allow_composer';
+    case 'tech_assigned':
+      return 'allow_tech_assigned';
+    case 'booking_bot':
+      return 'allow_booking_bot';
+    default:
+      return null;
+  }
+}
+
 export async function fetchWhatsAppCrmSettings(): Promise<{
   ok: boolean;
   settings: WhatsAppCrmSettings;
@@ -91,6 +159,22 @@ export async function fetchWhatsAppCrmSettings(): Promise<{
     .eq('id', 1)
     .maybeSingle();
   if (error) {
+    // Older DBs may lack new columns — retry without them
+    if (/allow_inbox|allow_calling|column/i.test(error.message)) {
+      const legacy = await supabase
+        .from('whatsapp_crm_settings')
+        .select(
+          'id, enabled, allow_cold_templates, allow_pdf_send, allow_freeform, allow_booking_bot, rate_utility_inr, rate_marketing_inr, rate_authentication_inr, rate_service_inr, monthly_budget_inr, notes, updated_at'
+        )
+        .eq('id', 1)
+        .maybeSingle();
+      if (!legacy.error) {
+        return {
+          ok: true,
+          settings: normalizeWhatsAppCrmSettings(legacy.data as WhatsAppCrmSettings),
+        };
+      }
+    }
     return {
       ok: false,
       settings: { ...DEFAULT_WHATSAPP_CRM_SETTINGS },
@@ -104,10 +188,18 @@ export async function saveWhatsAppCrmSettings(
   patch: Partial<WhatsAppCrmSettings>
 ): Promise<{ ok: boolean; settings?: WhatsAppCrmSettings; error?: string }> {
   const payload = {
-    enabled: patch.enabled !== false,
-    allow_cold_templates: patch.allow_cold_templates !== false,
-    allow_pdf_send: patch.allow_pdf_send !== false,
-    allow_freeform: patch.allow_freeform !== false,
+    enabled: bool(patch.enabled, true),
+    allow_cold_templates: bool(patch.allow_cold_templates, true),
+    allow_pdf_send: bool(patch.allow_pdf_send, true),
+    allow_freeform: bool(patch.allow_freeform, true),
+    allow_booking_bot: bool(patch.allow_booking_bot, true),
+    allow_inbox: bool(patch.allow_inbox, true),
+    allow_calling: bool(patch.allow_calling, true),
+    allow_service_reminder: bool(patch.allow_service_reminder, true),
+    allow_pending_payment: bool(patch.allow_pending_payment, true),
+    allow_documents: bool(patch.allow_documents, true),
+    allow_composer: bool(patch.allow_composer, true),
+    allow_tech_assigned: bool(patch.allow_tech_assigned, true),
     rate_utility_inr: num(patch.rate_utility_inr, DEFAULT_WHATSAPP_CRM_SETTINGS.rate_utility_inr),
     rate_marketing_inr: num(
       patch.rate_marketing_inr,

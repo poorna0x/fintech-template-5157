@@ -194,11 +194,11 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }
         </CardContent>
       </Card>
 
-      {/* Feature toggles */}
+      {/* Message-type toggles */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Send controls</CardTitle>
-          <CardDescription>Fine-tune what staff can send when WhatsApp is enabled.</CardDescription>
+          <CardTitle className="text-base">Message types</CardTitle>
+          <CardDescription>What kinds of WhatsApp Cloud API messages are allowed.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <ToggleRow
@@ -209,8 +209,8 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }
             onCheckedChange={(v) => patch('allow_cold_templates', v)}
           />
           <ToggleRow
-            label="PDF / documents"
-            description="AMC, bills, invoices via WhatsApp document send"
+            label="PDF / media"
+            description="PDFs and chat attachments (images) via WhatsApp"
             checked={settings.allow_pdf_send}
             disabled={!settings.enabled}
             onCheckedChange={(v) => patch('allow_pdf_send', v)}
@@ -221,6 +221,75 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }
             checked={settings.allow_freeform}
             disabled={!settings.enabled}
             onCheckedChange={(v) => patch('allow_freeform', v)}
+          />
+        </CardContent>
+      </Card>
+
+      {/* Per-surface toggles */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Where WhatsApp can send</CardTitle>
+          <CardDescription>
+            Turn off Cloud API sends from each CRM screen. Off = blocked server-side (no wa.me
+            fallback for that surface).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <ToggleRow
+            label="WhatsApp inbox"
+            description="Chat replies, templates, and attachments in the inbox"
+            checked={settings.allow_inbox}
+            disabled={!settings.enabled}
+            onCheckedChange={(v) => patch('allow_inbox', v)}
+          />
+          <ToggleRow
+            label="Calling"
+            description="WhatsApp from the Calling / missed-call flows"
+            checked={settings.allow_calling}
+            disabled={!settings.enabled}
+            onCheckedChange={(v) => patch('allow_calling', v)}
+          />
+          <ToggleRow
+            label="Service reminders"
+            description="RO service-due reminders from Reminders"
+            checked={settings.allow_service_reminder}
+            disabled={!settings.enabled}
+            onCheckedChange={(v) => patch('allow_service_reminder', v)}
+          />
+          <ToggleRow
+            label="Pending payments"
+            description="Payment follow-ups from Pending payments"
+            checked={settings.allow_pending_payment}
+            disabled={!settings.enabled}
+            onCheckedChange={(v) => patch('allow_pending_payment', v)}
+          />
+          <ToggleRow
+            label="Documents (PDF)"
+            description="AMC, quotation, invoice, bill, warranty WhatsApp share"
+            checked={settings.allow_documents}
+            disabled={!settings.enabled}
+            onCheckedChange={(v) => patch('allow_documents', v)}
+          />
+          <ToggleRow
+            label="Customer composer"
+            description="Admin Tools → WhatsApp composer on a customer"
+            checked={settings.allow_composer}
+            disabled={!settings.enabled}
+            onCheckedChange={(v) => patch('allow_composer', v)}
+          />
+          <ToggleRow
+            label="Technician assigned"
+            description="Share assigned technician details to the customer"
+            checked={settings.allow_tech_assigned}
+            disabled={!settings.enabled}
+            onCheckedChange={(v) => patch('allow_tech_assigned', v)}
+          />
+          <ToggleRow
+            label="Booking bot"
+            description="When customer says Hi — Book → confirm → auto job (24h window)"
+            checked={settings.allow_booking_bot}
+            disabled={!settings.enabled}
+            onCheckedChange={(v) => patch('allow_booking_bot', v)}
           />
         </CardContent>
       </Card>

@@ -15,6 +15,7 @@ const {
   extractInboundBody,
   normalizePhoneE164,
 } = require('./whatsapp-helper');
+const { handleBookingBotInbound } = require('./whatsapp-booking-bot');
 
 function readRawBody(event) {
   if (!event.body) return '';
@@ -30,7 +31,7 @@ function tsToIso(unixSeconds) {
   return new Date(n * 1000).toISOString();
 }
 
-async function persistInboundMessages(db, accessToken, value, summaries) {
+async function persistInboundMessages(db, accessToken, phoneNumberId, value, summaries) {
   const messages = value?.messages || [];
   for (const msg of messages) {
     const phone = normalizePhoneE164(msg.from);
@@ -67,6 +68,20 @@ async function persistInboundMessages(db, accessToken, value, summaries) {
       timestamp: msg.timestamp,
       wa_message_id: msg.id || null,
     });
+
+    // 24h-window booking bot (reply buttons). Failures must not break webhook ACK.
+    if (accessToken && phoneNumberId) {
+      try {
+        await handleBookingBotInbound({
+          db,
+          accessToken,
+          phoneNumberId,
+          msg,
+        });
+      } catch (err) {
+        console.warn('[whatsapp-webhook] booking bot error', err?.message || err);
+      }
+    }
   }
 }
 
@@ -118,7 +133,7 @@ exports.handler = async (event) => {
   if (method === 'POST') {
     const rawBody = readRawBody(event);
     const db = getServiceSupabase();
-    const { accessToken, appSecret } = await getWhatsAppCredentials(db);
+    const { accessToken, appSecret, phoneNumberId } = await getWhatsAppCredentials(db);
 
     const sigHeader =
       event.headers['x-hub-signature-256'] ||
@@ -147,7 +162,7 @@ exports.handler = async (event) => {
         for (const change of entry.changes || []) {
           if (change.field && change.field !== 'messages') continue;
           const value = change.value || {};
-          await persistInboundMessages(db, accessToken, value, summaries);
+          await persistInboundMessages(db, accessToken, phoneNumberId, value, summaries);
           await persistStatuses(db, value, summaries);
         }
       }

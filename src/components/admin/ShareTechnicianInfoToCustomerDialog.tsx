@@ -122,6 +122,7 @@ We'll reach you soon. For any queries, contact the technician directly.`;
         to: phone,
         text: whatsappMessage,
         customerId,
+        source: 'tech_assigned',
         fallbackWaMe: true,
         coldTemplate: {
           name: WA_COLD.tech_assigned.name,

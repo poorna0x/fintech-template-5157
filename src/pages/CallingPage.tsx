@@ -539,6 +539,7 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
       to: customer.phone,
       text: message,
       customerId: customer.id,
+      source: 'calling',
       fallbackWaMe: true,
       coldTemplate: cold,
     });

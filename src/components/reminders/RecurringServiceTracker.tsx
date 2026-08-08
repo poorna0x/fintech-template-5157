@@ -521,6 +521,7 @@ Thanks & regards 🙏`;
         to: c.phone,
         text: message,
         customerId: r.entity_id || undefined,
+        source: 'service_reminder',
         fallbackWaMe: true,
         coldTemplate: {
           name: WA_COLD.service_reminder.name,

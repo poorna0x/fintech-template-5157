@@ -5,6 +5,7 @@
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { coldDocBodyParams, coldDocTemplateForKind } from '@/lib/whatsappColdTemplates';
+import type { WhatsAppSendSource } from '@/lib/whatsappCrmSettings';
 
 export type AdminWhatsAppSendVia = 'api' | 'wa_me';
 
@@ -14,7 +15,13 @@ export type AdminWhatsAppSendResult = {
   error?: string;
   /** True when API failed because Meta requires an open session / template. */
   needsWindowOrTemplate?: boolean;
+  /** True when Settings → WhatsApp toggled this surface off. */
+  featureDisabled?: boolean;
 };
+
+function isFeatureDisabledResponse(data: { code?: string } | null | undefined): boolean {
+  return String(data?.code || '') === 'WHATSAPP_FEATURE_DISABLED';
+}
 
 const WINDOW_ERROR_RE =
   /24\s*hour|customer care window|session|re-?engage|template|131047|131026|outside/i;
@@ -32,6 +39,8 @@ export type SendAdminWhatsAppTextOptions = {
   to: string;
   text: string;
   customerId?: string | null;
+  /** CRM surface — enforced by WhatsApp settings toggles. */
+  source?: WhatsAppSendSource;
   /** If API fails due to closed 24h window, open wa.me (default true for CRM compose). */
   fallbackWaMe?: boolean;
   /** Skip API and only open wa.me. */
@@ -72,6 +81,7 @@ export async function sendAdminWhatsAppText(
         type: 'text',
         text,
         ...(options.customerId ? { customerId: options.customerId } : {}),
+        ...(options.source ? { source: options.source } : {}),
       }),
     });
     const data = await res.json().catch(() => ({}));
@@ -80,6 +90,9 @@ export async function sendAdminWhatsAppText(
     }
 
     const errMsg = String(data?.error || data?.meta?.error?.message || `HTTP ${res.status}`);
+    if (isFeatureDisabledResponse(data)) {
+      return { ok: false, error: errMsg, featureDisabled: true };
+    }
     const needsWindow = isWindowOrTemplateError(errMsg);
 
     if (options.fallbackWaMe !== false && needsWindow) {
@@ -110,6 +123,7 @@ export type SendAdminWhatsAppDocumentOptions = {
   filename: string;
   caption?: string;
   customerId?: string | null;
+  source?: WhatsAppSendSource;
   /** Documents cannot open via wa.me with file — no deep-link fallback. */
   fallbackWaMe?: boolean;
 };
@@ -142,8 +156,10 @@ export async function sendAdminWhatsAppDocument(
         type: 'document',
         pdfBase64,
         filename,
+        mimeType: 'application/pdf',
         ...(caption ? { caption } : {}),
         ...(options.customerId ? { customerId: options.customerId } : {}),
+        ...(options.source ? { source: options.source } : {}),
       }),
     });
     const data = await res.json().catch(() => ({}));
@@ -151,6 +167,9 @@ export async function sendAdminWhatsAppDocument(
       return { ok: true, via: 'api' };
     }
     const errMsg = String(data?.error || data?.meta?.error?.message || `HTTP ${res.status}`);
+    if (isFeatureDisabledResponse(data)) {
+      return { ok: false, error: errMsg, featureDisabled: true };
+    }
     return {
       ok: false,
       error: errMsg,
@@ -161,12 +180,129 @@ export async function sendAdminWhatsAppDocument(
   }
 }
 
+export type SendAdminWhatsAppMediaOptions = {
+  to: string;
+  /** Raw base64 or data-URL base64 */
+  fileBase64: string;
+  filename: string;
+  mimeType: string;
+  caption?: string;
+  customerId?: string | null;
+  source?: WhatsAppSendSource;
+};
+
+/** Send image (jpeg/png/webp) or document (pdf) from inbox attachments. */
+export async function sendAdminWhatsAppMedia(
+  options: SendAdminWhatsAppMediaOptions
+): Promise<AdminWhatsAppSendResult> {
+  const to = String(options.to || '').trim();
+  const fileBase64 = String(options.fileBase64 || '').trim();
+  const filename = String(options.filename || 'file').trim() || 'file';
+  const mimeType = String(options.mimeType || '').trim() || 'application/octet-stream';
+  const caption = String(options.caption || '').trim();
+
+  if (!to) return { ok: false, error: 'Phone required' };
+  if (!fileBase64) return { ok: false, error: 'File required' };
+
+  const accessToken = await resolveSupabaseAccessTokenForApi();
+  if (!accessToken) {
+    return { ok: false, error: 'Not signed in' };
+  }
+
+  const isImage = /^image\/(jpeg|jpg|png|webp)$/i.test(mimeType);
+  const type = isImage ? 'image' : 'document';
+
+  try {
+    const res = await fetch('/.netlify/functions/whatsapp-send', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        to,
+        type,
+        fileBase64,
+        filename,
+        mimeType,
+        ...(caption ? { caption } : {}),
+        ...(options.customerId ? { customerId: options.customerId } : {}),
+        ...(options.source ? { source: options.source } : {}),
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      return { ok: true, via: 'api' };
+    }
+    const errMsg = String(data?.error || data?.meta?.error?.message || `HTTP ${res.status}`);
+    if (isFeatureDisabledResponse(data)) {
+      return { ok: false, error: errMsg, featureDisabled: true };
+    }
+    return {
+      ok: false,
+      error: errMsg,
+      needsWindowOrTemplate: isWindowOrTemplateError(errMsg),
+    };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Send failed' };
+  }
+}
+
+/** Read a File into base64 (no data-URL prefix) for Netlify function payload. */
+export function readFileAsBase64(file: File): Promise<{ base64: string; mimeType: string; filename: string; size: number }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read file'));
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      const base64 = result.includes(',') ? result.split(',')[1] || '' : result;
+      if (!base64) {
+        reject(new Error('Empty file'));
+        return;
+      }
+      resolve({
+        base64,
+        mimeType: file.type || 'application/octet-stream',
+        filename: file.name || 'file',
+        size: file.size,
+      });
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+export const WHATSAPP_ATTACH_ACCEPT =
+  'image/jpeg,image/png,image/webp,application/pdf,.jpg,.jpeg,.png,.webp,.pdf';
+
+export const WHATSAPP_ATTACH_MAX_BYTES = 4 * 1024 * 1024;
+
+export function validateWhatsAppAttachFile(file: File): string | null {
+  if (!file) return 'No file selected';
+  if (file.size > WHATSAPP_ATTACH_MAX_BYTES) {
+    return 'File too large (max 4MB)';
+  }
+  const mime = (file.type || '').toLowerCase();
+  const name = (file.name || '').toLowerCase();
+  const okMime =
+    mime === 'image/jpeg' ||
+    mime === 'image/jpg' ||
+    mime === 'image/png' ||
+    mime === 'image/webp' ||
+    mime === 'application/pdf';
+  const okExt = /\.(jpe?g|png|webp|pdf)$/i.test(name);
+  if (!okMime && !okExt) {
+    return 'Only JPEG, PNG, WebP, or PDF';
+  }
+  return null;
+}
+
 export type SendAdminWhatsAppTemplateOptions = {
   to: string;
   templateName: string;
   languageCode?: string;
   bodyParams?: string[];
   customerId?: string | null;
+  source?: WhatsAppSendSource;
 };
 
 export async function sendAdminWhatsAppTemplate(
@@ -196,6 +332,7 @@ export async function sendAdminWhatsAppTemplate(
         languageCode: options.languageCode || 'en',
         bodyParams: options.bodyParams || [],
         ...(options.customerId ? { customerId: options.customerId } : {}),
+        ...(options.source ? { source: options.source } : {}),
       }),
     });
     const data = await res.json().catch(() => ({}));
@@ -203,6 +340,9 @@ export async function sendAdminWhatsAppTemplate(
       return { ok: true, via: 'api' };
     }
     const errMsg = String(data?.error || data?.meta?.error?.message || `HTTP ${res.status}`);
+    if (isFeatureDisabledResponse(data)) {
+      return { ok: false, error: errMsg, featureDisabled: true };
+    }
     return { ok: false, error: errMsg };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : 'Send failed' };
@@ -232,6 +372,10 @@ export async function sendAdminWhatsAppTextWithOptionalTemplate(
     return textResult;
   }
 
+  if (textResult.featureDisabled) {
+    return textResult;
+  }
+
   if (textResult.needsWindowOrTemplate && options.coldTemplate?.name) {
     const tpl = await sendAdminWhatsAppTemplate({
       to: options.to,
@@ -239,9 +383,13 @@ export async function sendAdminWhatsAppTextWithOptionalTemplate(
       languageCode: options.coldTemplate.languageCode || 'en',
       bodyParams: options.coldTemplate.bodyParams || [],
       customerId: options.customerId,
+      source: options.source,
     });
     if (tpl.ok) {
       return { ...tpl, usedTemplate: true };
+    }
+    if (tpl.featureDisabled) {
+      return tpl;
     }
   }
 
@@ -310,6 +458,7 @@ export type SendColdDocumentInviteOptions = {
   amount?: number | string;
   ref?: string;
   documentLabel?: string;
+  source?: WhatsAppSendSource;
 };
 
 /**
@@ -331,5 +480,6 @@ export async function sendColdDocumentInvite(
       documentLabel: options.documentLabel,
     }),
     customerId: options.customerId,
+    source: options.source || 'documents',
   });
 }

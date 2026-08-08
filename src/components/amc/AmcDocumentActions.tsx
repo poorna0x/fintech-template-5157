@@ -122,6 +122,7 @@ export default function AmcDocumentActions({
         pdfBase64: pdf.pdfBase64,
         filename: pdf.filename,
         caption,
+        source: 'documents',
       });
       if (!result.ok) {
         if (result.needsWindowOrTemplate) {
@@ -130,6 +131,7 @@ export default function AmcDocumentActions({
             to: customerPhone,
             kind: 'amc',
             customerName: bill.customer?.name || 'Customer',
+            source: 'documents',
           });
           if (invite.ok) {
             toast.success(
