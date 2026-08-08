@@ -62,12 +62,33 @@ import { registerAdminPWA } from '@/lib/pwa';
 import { EmailTrackingSettings } from '@/components/admin/EmailTrackingSettings';
 import { BookingIntentArchiveSettings } from '@/components/admin/BookingIntentArchiveSettings';
 import { DeviceTrackerSettings } from '@/components/admin/DeviceTrackerSettings';
+import {
+  defaultTechPushPrefs,
+  normalizeTechPushPrefs,
+  TECH_PUSH_CATEGORIES,
+  TECH_PUSH_LABELS,
+  type TechPushPrefs,
+} from '@/lib/pushNotificationPrefs';
+import {
+  defaultTechWhatsAppPrefs,
+  normalizeTechWhatsAppPrefs,
+  TECH_WHATSAPP_CATEGORIES,
+  TECH_WHATSAPP_LABELS,
+  type TechWhatsAppPrefs,
+} from '@/lib/techWhatsAppPrefs';
 import { AdminAppLockSettings } from '@/components/admin/AdminAppLockSettings';
 import { AppCrashReports } from '@/components/admin/AppCrashReports';
 import {
   isFollowUpGlowEnabled,
   setFollowUpGlowEnabled,
 } from '@/lib/followUpGlowSettings';
+import {
+  JOB_WA_NOTIFY_CHANGED_EVENT,
+  fetchJobWhatsAppNotifyPrefs,
+  readJobWhatsAppNotifyPrefsCached,
+  saveJobWhatsAppMasterEnabled,
+  type JobWhatsAppNotifyPrefs,
+} from '@/lib/jobAssignWhatsAppSettingsCache';
 import { SettingsRemindersDialog } from '@/components/reminders/SettingsRemindersDialog';
 import { AddReminderDialog } from '@/components/reminders/AddReminderDialog';
 import { RecurringServiceTracker } from '@/components/reminders/RecurringServiceTracker';
@@ -349,6 +370,8 @@ const Settings = () => {
     salaryEffectiveFromMonth: getCurrentMonthKey(),
     accountStatus: 'ACTIVE' as 'ACTIVE' | 'INACTIVE' | 'SUSPENDED',
     pushNotificationsEnabled: true,
+    pushPrefs: defaultTechPushPrefs() as TechPushPrefs,
+    whatsappPrefs: defaultTechWhatsAppPrefs() as TechWhatsAppPrefs,
     visibleQrCodes: [] as string[], // Array of QR code IDs visible to this technician
     commonQrCodeIds: [] as string[] // Common QRs to show to this technician (below payment QR), multiple allowed
   });
@@ -361,6 +384,15 @@ const Settings = () => {
   });
 
   const [followUpGlowEnabled, setFollowUpGlowEnabledState] = useState<boolean>(isFollowUpGlowEnabled);
+  const [jobWaNotifyPrefs, setJobWaNotifyPrefs] = useState<JobWhatsAppNotifyPrefs>(
+    () =>
+      readJobWhatsAppNotifyPrefsCached() || {
+        enabled: true,
+        autoAssign: false,
+        autoUnassign: false,
+      }
+  );
+  const [jobWaNotifySaving, setJobWaNotifySaving] = useState(false);
 
   // Download data state
   const [isDownloading, setIsDownloading] = useState(false);
@@ -542,6 +574,8 @@ const Settings = () => {
           commonQrCodeIds: (tech as any).commonQrCodeIds || [],
           accountStatus: (tech.account_status as 'ACTIVE' | 'INACTIVE' | 'SUSPENDED') || 'ACTIVE',
           pushNotificationsEnabled: tech.push_notifications_enabled !== false,
+          pushPrefs: normalizeTechPushPrefs((tech as any).push_prefs),
+          whatsappPrefs: normalizeTechWhatsAppPrefs((tech as any).whatsapp_prefs),
         });
         setNewlyCreatedTechnicianId(null);
       }
@@ -617,6 +651,33 @@ const Settings = () => {
     });
   }, [location.search, navigate]);
 
+  // Thin hydrate of job WhatsApp prefs (4 bools) once; assign path uses localStorage after.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const { prefs } = await fetchJobWhatsAppNotifyPrefs();
+      if (!cancelled) setJobWaNotifyPrefs(prefs);
+    })();
+    const onChanged = (ev: Event) => {
+      const detail = (ev as CustomEvent<JobWhatsAppNotifyPrefs>).detail;
+      if (detail && typeof detail.enabled === 'boolean') {
+        setJobWaNotifyPrefs({
+          enabled: detail.enabled !== false,
+          autoAssign: detail.autoAssign === true,
+          autoUnassign: detail.autoUnassign === true,
+        });
+      } else {
+        const cached = readJobWhatsAppNotifyPrefsCached();
+        if (cached) setJobWaNotifyPrefs(cached);
+      }
+    };
+    window.addEventListener(JOB_WA_NOTIFY_CHANGED_EVENT, onChanged);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(JOB_WA_NOTIFY_CHANGED_EVENT, onChanged);
+    };
+  }, []);
+
   // Handle location tracking toggle
   const handleLocationTrackingToggle = (enabled: boolean) => {
     setLocationTrackingEnabled(enabled);
@@ -638,6 +699,28 @@ const Settings = () => {
     );
   };
 
+  const handleJobWaMasterToggle = async (enabled: boolean) => {
+    const prev = jobWaNotifyPrefs;
+    setJobWaNotifyPrefs({ ...prev, enabled });
+    setJobWaNotifySaving(true);
+    try {
+      const result = await saveJobWhatsAppMasterEnabled(enabled);
+      if (!result.ok) {
+        setJobWaNotifyPrefs(prev);
+        toast.error(result.error || 'Could not save job WhatsApp setting');
+        return;
+      }
+      if (result.prefs) setJobWaNotifyPrefs(result.prefs);
+      toast.success(
+        enabled
+          ? 'Job WhatsApp on — assign/unassign can show message or auto-send'
+          : 'Job WhatsApp off — no WhatsApp popup on assign/unassign'
+      );
+    } finally {
+      setJobWaNotifySaving(false);
+    }
+  };
+
   // Transform technician data from database format to frontend format
   const transformTechnicianData = (tech: any) => ({
     id: tech.id,
@@ -648,6 +731,9 @@ const Settings = () => {
     employeeId: tech.employee_id,
     account_status: tech.account_status || 'ACTIVE',
     push_notifications_enabled: tech.push_notifications_enabled !== false,
+    push_prefs: tech.push_prefs && typeof tech.push_prefs === 'object' ? tech.push_prefs : {},
+    whatsapp_prefs:
+      tech.whatsapp_prefs && typeof tech.whatsapp_prefs === 'object' ? tech.whatsapp_prefs : {},
     skills: tech.skills,
     serviceAreas: tech.service_areas,
     status: tech.status,
@@ -767,6 +853,8 @@ const Settings = () => {
       commonQrCodeIds: [],
       accountStatus: 'ACTIVE',
       pushNotificationsEnabled: true,
+      pushPrefs: defaultTechPushPrefs(),
+      whatsappPrefs: defaultTechWhatsAppPrefs(),
     });
     setNewlyCreatedTechnicianId(null);
     openSettingsPanel('add-technician');
@@ -799,6 +887,8 @@ const Settings = () => {
       commonQrCodeIds: (technician as any).commonQrCodeIds || [],
       accountStatus: (technician.account_status as 'ACTIVE' | 'INACTIVE' | 'SUSPENDED') || 'ACTIVE',
       pushNotificationsEnabled: technician.push_notifications_enabled !== false,
+      pushPrefs: normalizeTechPushPrefs((technician as any).push_prefs),
+      whatsappPrefs: normalizeTechWhatsAppPrefs((technician as any).whatsapp_prefs),
     });
     setNewlyCreatedTechnicianId(null);
     openSettingsPanel('edit-technician', { id: technician.id });
@@ -898,6 +988,8 @@ const Settings = () => {
         technicianData.account_status = technicianFormData.accountStatus || 'ACTIVE';
         technicianData.push_notifications_enabled =
           technicianFormData.pushNotificationsEnabled !== false;
+        technicianData.push_prefs = normalizeTechPushPrefs(technicianFormData.pushPrefs);
+        technicianData.whatsapp_prefs = normalizeTechWhatsAppPrefs(technicianFormData.whatsappPrefs);
       } else {
         technicianData.status = 'OFFLINE';
         technicianData.performance = {
@@ -910,6 +1002,8 @@ const Settings = () => {
         technicianData.created_at = new Date().toISOString();
         technicianData.account_status = 'ACTIVE';
         technicianData.push_notifications_enabled = true;
+        technicianData.push_prefs = defaultTechPushPrefs();
+        technicianData.whatsapp_prefs = defaultTechWhatsAppPrefs();
       }
 
       const password = technicianFormData.password?.trim() || '';
@@ -3367,22 +3461,41 @@ const Settings = () => {
                 Dashboard Settings
               </CardTitle>
               <CardDescription className="text-sm mt-1">
-                Control visual highlights on the admin dashboard
+                Dashboard visuals (this device) and job WhatsApp popup (all admins)
               </CardDescription>
             </CardHeader>
-            <CardContent className="p-4 sm:p-6">
+            <CardContent className="p-4 sm:p-6 space-y-3">
               <div className="flex items-center justify-between p-6 bg-muted/40 dark:bg-gray-800 rounded-lg border border-border dark:border-gray-700">
                 <div className="flex-1">
                   <h3 className="font-semibold text-foreground dark:text-white text-base sm:text-lg mb-2">
                     Follow-up glow highlights
                   </h3>
                   <p className="text-sm sm:text-base text-muted-foreground dark:text-muted-foreground/70">
-                    When enabled, the Followup stats card and follow-up job cards glow red for today and yellow for tomorrow.
+                    This device only. When enabled, the Followup stats card and follow-up job cards glow
+                    red for today and yellow for tomorrow.
                   </p>
                 </div>
                 <Switch
                   checked={followUpGlowEnabled}
                   onCheckedChange={handleFollowUpGlowToggle}
+                  className="ml-6 border-2 border-border dark:border-gray-600 data-[state=unchecked]:bg-card dark:data-[state=unchecked]:bg-gray-700"
+                />
+              </div>
+
+              <div className="flex items-center justify-between p-6 bg-muted/40 dark:bg-gray-800 rounded-lg border border-border dark:border-gray-700">
+                <div className="flex-1">
+                  <h3 className="font-semibold text-foreground dark:text-white text-base sm:text-lg mb-2">
+                    Job assign / unassign WhatsApp
+                  </h3>
+                  <p className="text-sm sm:text-base text-muted-foreground dark:text-muted-foreground/70">
+                    Universal for all admins. OFF = no WhatsApp popup when assigning or unassigning.
+                    ON = show manual wa.me dialog (or auto-send if enabled in WhatsApp Settings).
+                  </p>
+                </div>
+                <Switch
+                  checked={jobWaNotifyPrefs.enabled}
+                  disabled={jobWaNotifySaving}
+                  onCheckedChange={(v) => void handleJobWaMasterToggle(v)}
                   className="ml-6 border-2 border-border dark:border-gray-600 data-[state=unchecked]:bg-card dark:data-[state=unchecked]:bg-gray-700"
                 />
               </div>
@@ -3633,7 +3746,7 @@ const Settings = () => {
                         Push notifications
                       </Label>
                       <p className="text-xs text-muted-foreground leading-snug">
-                        Job alerts, OTP requests, and office messages to their phone app.
+                        Master switch for this technician. Turn off to mute all FCM alerts.
                       </p>
                     </div>
                     <Switch
@@ -3646,6 +3759,80 @@ const Settings = () => {
                         }))
                       }
                     />
+                  </div>
+                  {technicianFormData.pushNotificationsEnabled ? (
+                    <div className="space-y-2 rounded-md border border-border bg-card px-3 py-2.5">
+                      <p className="text-sm font-medium">App push types (FCM) for this technician</p>
+                      <p className="text-xs text-muted-foreground leading-snug mb-2">
+                        Android APK alerts only — not WhatsApp. Global Settings and Device Tracker can
+                        still block a type.
+                      </p>
+                      {TECH_PUSH_CATEGORIES.map((key) => {
+                        const meta = TECH_PUSH_LABELS[key];
+                        return (
+                          <div
+                            key={key}
+                            className="flex items-start justify-between gap-3 border-b border-border/50 py-2 last:border-0 last:pb-0"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium">{meta.label}</p>
+                              <p className="text-[11px] text-muted-foreground leading-snug">
+                                {meta.description}
+                              </p>
+                            </div>
+                            <Switch
+                              checked={technicianFormData.pushPrefs?.[key] !== false}
+                              onCheckedChange={(checked) =>
+                                setTechnicianFormData((prev) => ({
+                                  ...prev,
+                                  pushPrefs: {
+                                    ...normalizeTechPushPrefs(prev.pushPrefs),
+                                    [key]: checked,
+                                  },
+                                }))
+                              }
+                              aria-label={meta.label}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                  <div className="space-y-2 rounded-md border border-emerald-200/80 bg-emerald-50/30 px-3 py-2.5 dark:bg-emerald-950/20">
+                    <p className="text-sm font-medium">WhatsApp job messages for this technician</p>
+                    <p className="text-xs text-muted-foreground leading-snug mb-2">
+                      Assign/unassign WhatsApp to their phone, and customer “tech assigned” share.
+                      Master on/off: Dashboard Settings. Auto-send: Settings → WhatsApp.
+                    </p>
+                    {TECH_WHATSAPP_CATEGORIES.map((key) => {
+                      const meta = TECH_WHATSAPP_LABELS[key];
+                      return (
+                        <div
+                          key={key}
+                          className="flex items-start justify-between gap-3 border-b border-border/50 py-2 last:border-0 last:pb-0"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium">{meta.label}</p>
+                            <p className="text-[11px] text-muted-foreground leading-snug">
+                              {meta.description}
+                            </p>
+                          </div>
+                          <Switch
+                            checked={technicianFormData.whatsappPrefs?.[key] !== false}
+                            onCheckedChange={(checked) =>
+                              setTechnicianFormData((prev) => ({
+                                ...prev,
+                                whatsappPrefs: {
+                                  ...normalizeTechWhatsAppPrefs(prev.whatsappPrefs),
+                                  [key]: checked,
+                                },
+                              }))
+                            }
+                            aria-label={meta.label}
+                          />
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

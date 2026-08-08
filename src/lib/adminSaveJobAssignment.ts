@@ -86,7 +86,22 @@ export async function saveAdminJobAssignment(ctx: AdminSaveJobAssignmentCtx) {
     const assignedTechnician = ctx.technicians.find((t) => t.id === ctx.selectedTechnicianId);
 
     if (assignedTechnician && getTechnicianAdminWhatsAppPhone(assignedTechnician)) {
-      openAdminWhatsappForJobAssign(ctx, ctx.jobToAssign, assignedTechnician, scrollY);
+      const result = await openAdminWhatsappForJobAssign(
+        ctx,
+        ctx.jobToAssign,
+        {
+          id: assignedTechnician.id,
+          fullName: assignedTechnician.fullName || (assignedTechnician as any).full_name || 'Technician',
+          phone: assignedTechnician.phone,
+          whatsappPhone: (assignedTechnician as any).whatsappPhone,
+          whatsapp_phone: (assignedTechnician as any).whatsapp_phone,
+        },
+        scrollY
+      );
+      if (result !== 'dialog') {
+        ctx.setAssignJobDialogOpen(false);
+        ctx.closeAdminModal();
+      }
     } else {
       ctx.setAssignJobDialogOpen(false);
       ctx.closeAdminModal();

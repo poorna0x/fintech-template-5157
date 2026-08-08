@@ -19,12 +19,14 @@ const ADMIN_PUSH_CATEGORIES = [
 
 const TECH_PUSH_CATEGORIES = [
   'job_assigned',
+  'job_unassigned',
   'job_nudges',
   'office_messages',
   'otp_request',
   'location_ping',
   'parts_reminder',
   'bill_reminders',
+  'cash_handover',
   'wrong_line',
 ];
 
@@ -129,17 +131,23 @@ async function pruneTechnicianFcmTokens(db, technicianId, staleTokens) {
 
 /**
  * Send one FCM message to every device of a technician. Optional `category`
- * filters by per-device push_prefs. Skips when technician push_notifications_enabled = false.
+ * filters by per-technician push_prefs + per-device push_prefs.
+ * Skips when technician push_notifications_enabled = false.
  */
 async function sendToTechnicianDevices(db, messaging, technicianId, buildMessage, category = null) {
   try {
     const { data: techRow, error: techErr } = await db
       .from('technicians')
-      .select('push_notifications_enabled')
+      .select('push_notifications_enabled, push_prefs')
       .eq('id', technicianId)
       .maybeSingle();
-    if (!techErr && techRow && techRow.push_notifications_enabled === false) {
-      return { sent: 0, tokens: 0, skipped: true };
+    if (!techErr && techRow) {
+      if (techRow.push_notifications_enabled === false) {
+        return { sent: 0, tokens: 0, skipped: true, reason: 'tech_muted' };
+      }
+      if (category && !isCategoryEnabled(techRow.push_prefs, category)) {
+        return { sent: 0, tokens: 0, skipped: true, reason: 'tech_category_off' };
+      }
     }
   } catch (e) {
     console.warn('[fcm-helper] push_notifications_enabled check failed:', e?.message || e);

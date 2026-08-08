@@ -2,7 +2,10 @@ import React from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { X } from 'lucide-react';
+import { toast } from 'sonner';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
+import { openWhatsAppMeDeepLink } from '@/lib/sendAdminWhatsAppApi';
+import { buildJobTechnicianWhatsAppMessage } from '@/lib/jobTechnicianWhatsApp';
 
 interface WhatsAppDialogProps {
   open: boolean;
@@ -31,40 +34,26 @@ const WhatsAppDialog: React.FC<WhatsAppDialogProps> = ({
   description,
   agreedCost,
 }) => {
-  const locationText = location?.trim() ?? '';
-  const leadSourceText = leadSource?.trim() ?? '';
-  const customTimeText = customTime?.trim() ?? '';
-  const descriptionText = description?.trim() ?? '';
-  const agreedCostText = agreedCost?.trim() ?? '';
-  const mainLine = `New ${serviceSubType.toLowerCase()} assigned - ${customerName}${locationText ? ` - ${locationText}` : ''}${leadSourceText ? ` - ${leadSourceText}` : ''}`;
-  const extraLines: string[] = [];
-  if (customTimeText) extraLines.push(`Time : ${customTimeText}`);
-  if (agreedCostText) extraLines.push(`Agreed cost : ${agreedCostText}`);
-  if (descriptionText) extraLines.push(`Description : ${descriptionText}`);
-  const message = extraLines.length > 0 ? `${mainLine}\n\n${extraLines.join('\n')}` : mainLine;
-  
-  // Format phone number for WhatsApp (remove any non-digit characters except +)
-  const formatPhoneForWhatsApp = (phone: string): string => {
-    // Remove all non-digit characters except +
-    const cleaned = phone.replace(/[^\d+]/g, '');
-    // If it doesn't start with +, assume it's an Indian number and add country code
-    if (!cleaned.startsWith('+')) {
-      // If it starts with 0, remove it
-      const withoutZero = cleaned.startsWith('0') ? cleaned.slice(1) : cleaned;
-      // Add +91 for India if it's a 10-digit number
-      if (withoutZero.length === 10) {
-        return `+91${withoutZero}`;
-      }
-      return `+91${withoutZero}`;
-    }
-    return cleaned;
-  };
+  const isUnassign = /^unassign/i.test(leadSource?.trim() || '');
+  const message = buildJobTechnicianWhatsAppMessage({
+    mode: isUnassign ? 'unassign' : 'assign',
+    serviceSubType,
+    customerName,
+    location,
+    leadSource,
+    customTime,
+    description,
+    agreedCost,
+  });
 
-  const handleOpenWhatsApp = () => {
-    const formattedPhone = formatPhoneForWhatsApp(technicianPhone);
-    const encodedMessage = encodeURIComponent(message);
-    const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodedMessage}`;
-    window.open(whatsappUrl, '_blank');
+  const handleSend = () => {
+    if (!technicianPhone?.trim()) {
+      toast.error('Technician phone missing');
+      return;
+    }
+    // Manual path: phone WhatsApp only (wa.me). Auto-send uses Cloud API from WhatsApp Settings.
+    openWhatsAppMeDeepLink(technicianPhone, message);
+    toast.success('Opened phone WhatsApp');
     onOpenChange(false);
   };
 
@@ -77,10 +66,12 @@ const WhatsAppDialog: React.FC<WhatsAppDialogProps> = ({
             Send WhatsApp Message
           </DialogTitle>
           <DialogDescription>
-            Send a notification to {technicianName} about the new job assignment.
+            {isUnassign
+              ? `Tell ${technicianName} this job was unassigned from them. Opens WhatsApp on your phone.`
+              : `Notify ${technicianName} about the new job. Opens WhatsApp on your phone (wa.me).`}
           </DialogDescription>
         </DialogHeader>
-        
+
         <div className="py-4 space-y-3">
           <div className="bg-muted/40 rounded-lg p-4 space-y-2">
             <div className="text-sm text-muted-foreground">
@@ -108,7 +99,7 @@ const WhatsAppDialog: React.FC<WhatsAppDialogProps> = ({
             Close
           </Button>
           <Button
-            onClick={handleOpenWhatsApp}
+            onClick={handleSend}
             className="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white"
           >
             <WhatsAppIcon className="w-4 h-4 mr-2" />

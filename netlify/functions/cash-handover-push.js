@@ -33,7 +33,7 @@ async function sendCashHandoverReminder(db, messaging, technicianId, amountInr, 
         },
       },
     }),
-    'job_nudges'
+    'cash_handover'
   );
 }
 

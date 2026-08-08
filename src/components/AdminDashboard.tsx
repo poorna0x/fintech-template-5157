@@ -5256,7 +5256,24 @@ const AdminDashboard = () => {
   };
 
   const handleUnassignJob = async (job: Job) => {
-    await unassignAdminJob(job, { setJobs, setCustomerJobs });
+    await unassignAdminJob(job, {
+      setJobs,
+      setCustomerJobs,
+      technicians,
+      whatsappCtx: {
+        scrollPositionBeforeWhatsAppRef,
+        setWhatsappTechnician,
+        setWhatsappServiceSubType,
+        setWhatsappCustomerName,
+        setWhatsappLocation,
+        setWhatsappLeadSource,
+        setWhatsappCustomTime,
+        setWhatsappDescription,
+        setWhatsappAgreedCost,
+        setWhatsappDialogOpen,
+        openAdminWhatsappModal,
+      },
+    });
   };
 
   const handleEditJob = (job: Job) => {

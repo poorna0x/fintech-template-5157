@@ -8,6 +8,7 @@ import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import { Job } from '@/types';
 import { sendAdminWhatsAppTextWithOptionalTemplate } from '@/lib/sendAdminWhatsAppApi';
 import { WA_COLD } from '@/lib/whatsappColdTemplates';
+import { isWhatsAppJobNotifyAllowed } from '@/lib/whatsappCrmSettings';
 
 export interface ShareTechnicianInfoToCustomerDialogProps {
   open: boolean;
@@ -118,6 +119,16 @@ We'll reach you soon. For any queries, contact the technician directly.`;
     setSending(true);
     const toastId = toast.loading('Sending WhatsApp…');
     try {
+      const allowed = await isWhatsAppJobNotifyAllowed(
+        'tech_assigned_customer',
+        assignedTechnicianId || null
+      );
+      if (!allowed.ok) {
+        toast.error(allowed.reason || 'WhatsApp notify disabled for this technician', {
+          id: toastId,
+        });
+        return;
+      }
       const result = await sendAdminWhatsAppTextWithOptionalTemplate({
         to: phone,
         text: whatsappMessage,

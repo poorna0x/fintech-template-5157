@@ -3,6 +3,10 @@
  * Rates are editable defaults (India Meta Cloud API ballpark — verify on Meta rate card).
  */
 import { supabase } from '@/lib/supabaseClient';
+import {
+  isTechWhatsAppCategoryOn,
+  type TechWhatsAppCategory,
+} from '@/lib/techWhatsAppPrefs';
 
 /** CRM surfaces that can send via Cloud API (passed as `source` to whatsapp-send). */
 export type WhatsAppSendSource =
@@ -13,6 +17,7 @@ export type WhatsAppSendSource =
   | 'documents'
   | 'composer'
   | 'tech_assigned'
+  | 'tech_unassigned'
   | 'booking_bot'
   | 'other';
 
@@ -29,7 +34,18 @@ export type WhatsAppCrmSettings = {
   allow_pending_payment: boolean;
   allow_documents: boolean;
   allow_composer: boolean;
+  /** WhatsApp to technician phone on assign (dialog or auto). */
+  allow_job_assign_whatsapp: boolean;
+  /** WhatsApp to technician phone on unassign (dialog or auto). */
+  allow_job_unassign_whatsapp: boolean;
+  /** When true, assign/reassign sends WhatsApp instantly (no Send click). */
+  auto_send_job_assign_whatsapp: boolean;
+  /** When true, unassign sends WhatsApp instantly (no Send click). */
+  auto_send_job_unassign_whatsapp: boolean;
+  /** Cloud API: share tech details to customer. */
   allow_tech_assigned: boolean;
+  /** Cloud API: notify customer tech was removed. */
+  allow_tech_unassigned: boolean;
   rate_utility_inr: number;
   rate_marketing_inr: number;
   rate_authentication_inr: number;
@@ -66,7 +82,12 @@ export const DEFAULT_WHATSAPP_CRM_SETTINGS: WhatsAppCrmSettings = {
   allow_pending_payment: true,
   allow_documents: true,
   allow_composer: true,
+  allow_job_assign_whatsapp: true,
+  allow_job_unassign_whatsapp: true,
+  auto_send_job_assign_whatsapp: false,
+  auto_send_job_unassign_whatsapp: false,
   allow_tech_assigned: true,
+  allow_tech_unassigned: true,
   rate_utility_inr: 0.115,
   rate_marketing_inr: 0.8631,
   rate_authentication_inr: 0.115,
@@ -77,7 +98,7 @@ export const DEFAULT_WHATSAPP_CRM_SETTINGS: WhatsAppCrmSettings = {
 };
 
 const SETTINGS_COLUMNS =
-  'id, enabled, allow_cold_templates, allow_pdf_send, allow_freeform, allow_booking_bot, allow_inbox, allow_calling, allow_service_reminder, allow_pending_payment, allow_documents, allow_composer, allow_tech_assigned, rate_utility_inr, rate_marketing_inr, rate_authentication_inr, rate_service_inr, monthly_budget_inr, notes, updated_at';
+  'id, enabled, allow_cold_templates, allow_pdf_send, allow_freeform, allow_booking_bot, allow_inbox, allow_calling, allow_service_reminder, allow_pending_payment, allow_documents, allow_composer, allow_job_assign_whatsapp, allow_job_unassign_whatsapp, auto_send_job_assign_whatsapp, auto_send_job_unassign_whatsapp, allow_tech_assigned, allow_tech_unassigned, rate_utility_inr, rate_marketing_inr, rate_authentication_inr, rate_service_inr, monthly_budget_inr, notes, updated_at';
 
 function num(v: unknown, fallback: number): number {
   const n = typeof v === 'number' ? v : Number(v);
@@ -108,7 +129,12 @@ export function normalizeWhatsAppCrmSettings(
     allow_pending_payment: bool(row.allow_pending_payment, true),
     allow_documents: bool(row.allow_documents, true),
     allow_composer: bool(row.allow_composer, true),
+    allow_job_assign_whatsapp: bool(row.allow_job_assign_whatsapp, true),
+    allow_job_unassign_whatsapp: bool(row.allow_job_unassign_whatsapp, true),
+    auto_send_job_assign_whatsapp: row.auto_send_job_assign_whatsapp === true,
+    auto_send_job_unassign_whatsapp: row.auto_send_job_unassign_whatsapp === true,
     allow_tech_assigned: bool(row.allow_tech_assigned, true),
+    allow_tech_unassigned: bool(row.allow_tech_unassigned, true),
     rate_utility_inr: num(row.rate_utility_inr, d.rate_utility_inr),
     rate_marketing_inr: num(row.rate_marketing_inr, d.rate_marketing_inr),
     rate_authentication_inr: num(row.rate_authentication_inr, d.rate_authentication_inr),
@@ -122,7 +148,7 @@ export function normalizeWhatsAppCrmSettings(
   };
 }
 
-/** Map send `source` → settings column. */
+/** Map Cloud API send `source` → settings column. */
 export function settingsKeyForSendSource(
   source: WhatsAppSendSource | string | null | undefined
 ): keyof WhatsAppCrmSettings | null {
@@ -141,11 +167,74 @@ export function settingsKeyForSendSource(
       return 'allow_composer';
     case 'tech_assigned':
       return 'allow_tech_assigned';
+    case 'tech_unassigned':
+      return 'allow_tech_unassigned';
     case 'booking_bot':
       return 'allow_booking_bot';
     default:
       return null;
   }
+}
+
+const GLOBAL_KEY_FOR_TECH_WA: Record<
+  TechWhatsAppCategory,
+  keyof WhatsAppCrmSettings
+> = {
+  job_assign: 'allow_job_assign_whatsapp',
+  job_unassign: 'allow_job_unassign_whatsapp',
+  tech_assigned_customer: 'allow_tech_assigned',
+  tech_unassigned_customer: 'allow_tech_unassigned',
+};
+
+/**
+ * Global WhatsApp settings + optional per-technician whatsapp_prefs.
+ * job_assign / job_unassign = technician phone WhatsApp.
+ * Master enable lives in Dashboard Settings (cached); auto-send in WhatsApp Settings.
+ * Manual dialog is wa.me only. Customer Cloud API categories still require master `enabled`.
+ */
+export async function isWhatsAppJobNotifyAllowed(
+  category: TechWhatsAppCategory,
+  technicianId?: string | null
+): Promise<{ ok: boolean; reason?: string }> {
+  if (category === 'job_assign' || category === 'job_unassign') {
+    const { ensureJobWhatsAppNotifyPrefs } = await import(
+      '@/lib/jobAssignWhatsAppSettingsCache'
+    );
+    const prefs = await ensureJobWhatsAppNotifyPrefs();
+    if (!prefs.enabled) {
+      return { ok: false, reason: 'Job WhatsApp is off (Dashboard Settings)' };
+    }
+  } else {
+    const { settings, error } = await fetchWhatsAppCrmSettings();
+    if (error) {
+      console.warn('[whatsapp] settings load:', error);
+    }
+
+    const needsCloudMaster =
+      category === 'tech_assigned_customer' || category === 'tech_unassigned_customer';
+    if (needsCloudMaster && settings.enabled === false) {
+      return { ok: false, reason: 'WhatsApp Cloud API is disabled in Settings' };
+    }
+
+    const globalKey = GLOBAL_KEY_FOR_TECH_WA[category];
+    if (settings[globalKey] === false) {
+      return { ok: false, reason: 'This WhatsApp notify type is off in WhatsApp settings' };
+    }
+  }
+
+  if (technicianId) {
+    const { data, error: techErr } = await supabase
+      .from('technicians')
+      .select('whatsapp_prefs')
+      .eq('id', technicianId)
+      .maybeSingle();
+    if (techErr) {
+      console.warn('[whatsapp] tech prefs:', techErr.message);
+    } else if (!isTechWhatsAppCategoryOn(data?.whatsapp_prefs, category)) {
+      return { ok: false, reason: 'WhatsApp notify disabled for this technician' };
+    }
+  }
+  return { ok: true };
 }
 
 export async function fetchWhatsAppCrmSettings(): Promise<{
@@ -159,20 +248,21 @@ export async function fetchWhatsAppCrmSettings(): Promise<{
     .eq('id', 1)
     .maybeSingle();
   if (error) {
-    // Older DBs may lack new columns — retry without them
-    if (/allow_inbox|allow_calling|column/i.test(error.message)) {
+    if (/allow_job_assign|auto_send_job|allow_tech_unassigned|column/i.test(error.message)) {
       const legacy = await supabase
         .from('whatsapp_crm_settings')
         .select(
-          'id, enabled, allow_cold_templates, allow_pdf_send, allow_freeform, allow_booking_bot, rate_utility_inr, rate_marketing_inr, rate_authentication_inr, rate_service_inr, monthly_budget_inr, notes, updated_at'
+          'id, enabled, allow_cold_templates, allow_pdf_send, allow_freeform, allow_booking_bot, allow_inbox, allow_calling, allow_service_reminder, allow_pending_payment, allow_documents, allow_composer, allow_tech_assigned, rate_utility_inr, rate_marketing_inr, rate_authentication_inr, rate_service_inr, monthly_budget_inr, notes, updated_at'
         )
         .eq('id', 1)
         .maybeSingle();
       if (!legacy.error) {
-        return {
-          ok: true,
-          settings: normalizeWhatsAppCrmSettings(legacy.data as WhatsAppCrmSettings),
-        };
+        const settings = normalizeWhatsAppCrmSettings(legacy.data as WhatsAppCrmSettings);
+        const { syncJobWhatsAppNotifyCacheFromCrmSettings } = await import(
+          '@/lib/jobAssignWhatsAppSettingsCache'
+        );
+        syncJobWhatsAppNotifyCacheFromCrmSettings(settings);
+        return { ok: true, settings };
       }
     }
     return {
@@ -181,7 +271,12 @@ export async function fetchWhatsAppCrmSettings(): Promise<{
       error: error.message,
     };
   }
-  return { ok: true, settings: normalizeWhatsAppCrmSettings(data as WhatsAppCrmSettings) };
+  const settings = normalizeWhatsAppCrmSettings(data as WhatsAppCrmSettings);
+  const { syncJobWhatsAppNotifyCacheFromCrmSettings } = await import(
+    '@/lib/jobAssignWhatsAppSettingsCache'
+  );
+  syncJobWhatsAppNotifyCacheFromCrmSettings(settings);
+  return { ok: true, settings };
 }
 
 export async function saveWhatsAppCrmSettings(
@@ -199,7 +294,12 @@ export async function saveWhatsAppCrmSettings(
     allow_pending_payment: bool(patch.allow_pending_payment, true),
     allow_documents: bool(patch.allow_documents, true),
     allow_composer: bool(patch.allow_composer, true),
+    allow_job_assign_whatsapp: bool(patch.allow_job_assign_whatsapp, true),
+    allow_job_unassign_whatsapp: bool(patch.allow_job_unassign_whatsapp, true),
+    auto_send_job_assign_whatsapp: patch.auto_send_job_assign_whatsapp === true,
+    auto_send_job_unassign_whatsapp: patch.auto_send_job_unassign_whatsapp === true,
     allow_tech_assigned: bool(patch.allow_tech_assigned, true),
+    allow_tech_unassigned: bool(patch.allow_tech_unassigned, true),
     rate_utility_inr: num(patch.rate_utility_inr, DEFAULT_WHATSAPP_CRM_SETTINGS.rate_utility_inr),
     rate_marketing_inr: num(
       patch.rate_marketing_inr,
@@ -226,7 +326,12 @@ export async function saveWhatsAppCrmSettings(
     .single();
 
   if (error) return { ok: false, error: error.message };
-  return { ok: true, settings: normalizeWhatsAppCrmSettings(data as WhatsAppCrmSettings) };
+  const settings = normalizeWhatsAppCrmSettings(data as WhatsAppCrmSettings);
+  const { syncJobWhatsAppNotifyCacheFromCrmSettings } = await import(
+    '@/lib/jobAssignWhatsAppSettingsCache'
+  );
+  syncJobWhatsAppNotifyCacheFromCrmSettings(settings);
+  return { ok: true, settings };
 }
 
 export async function fetchWhatsAppUsageStats(fromIso?: string): Promise<{
@@ -263,7 +368,6 @@ export type WhatsAppBillEstimate = {
   authenticationCost: number;
   serviceCost: number;
   total: number;
-  /** Rough monthly projection from the stats window (default 7d → ×30/7). */
   projectedMonthly: number;
   overBudget: boolean;
 };

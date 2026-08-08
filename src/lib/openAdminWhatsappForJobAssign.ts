@@ -1,10 +1,9 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
-import { getJobCustomTimeLabel, getLeadSourceFromJob } from '@/lib/adminUtils';
-import { getJobLocationLabelForWhatsApp } from '@/lib/customer-locations';
-import { getJobAgreedCostLabel, getJobDescriptionText } from '@/lib/jobAssignMessageDetails';
-import { getTechnicianAdminWhatsAppPhone } from '@/lib/technicianContact';
-import { db } from '@/lib/supabase';
 import type { Job } from '@/types';
+import {
+  notifyTechnicianJobWhatsApp,
+  type TechLikeForWhatsApp,
+} from '@/lib/jobTechnicianWhatsApp';
 
 export type OpenAdminWhatsappForJobCtx = {
   scrollPositionBeforeWhatsAppRef: MutableRefObject<number>;
@@ -20,64 +19,37 @@ export type OpenAdminWhatsappForJobCtx = {
   openAdminWhatsappModal: () => void;
 };
 
-/** Open WhatsApp notify dialog immediately from job row data; refine customer fields in background. */
-export function openAdminWhatsappForJobAssign(
+/**
+ * Assign/reassign WhatsApp to technician.
+ * @returns 'dialog' if manual Send UI opened; 'auto' if sent; 'skipped' otherwise.
+ */
+export async function openAdminWhatsappForJobAssign(
   ctx: OpenAdminWhatsappForJobCtx,
   job: Job,
-  technician: {
-    fullName: string;
-    phone: string;
-    whatsappPhone?: string;
-    whatsapp_phone?: string;
-  },
+  technician: TechLikeForWhatsApp,
   scrollY: number
-): void {
-  ctx.scrollPositionBeforeWhatsAppRef.current = scrollY;
+): Promise<'dialog' | 'auto' | 'skipped'> {
+  return notifyTechnicianJobWhatsApp({
+    job,
+    technician,
+    mode: 'assign',
+    scrollY,
+    ctx,
+  });
+}
 
-  const serviceSubType =
-    (job as { service_sub_type?: string; serviceSubType?: string }).service_sub_type ||
-    job.serviceSubType ||
-    'Service';
-  const customerFromJob = (job.customer as Record<string, unknown>) || {};
-  const customerId =
-    (customerFromJob.id as string | undefined) ||
-    (job as { customer_id?: string }).customer_id;
-
-  const customerName =
-    (customerFromJob.full_name as string) ||
-    (customerFromJob.fullName as string) ||
-    'Customer';
-  const locationText = getJobLocationLabelForWhatsApp(
-    job as { service_site?: string; service_address?: unknown },
-    customerFromJob
-  );
-  const leadSource = getLeadSourceFromJob(job as Record<string, unknown>);
-  const customTime = getJobCustomTimeLabel(job as Record<string, unknown>) || '';
-  const description = getJobDescriptionText(job as Record<string, unknown>);
-  const agreedCost = getJobAgreedCostLabel(job as Record<string, unknown>);
-
-  const adminWaPhone = getTechnicianAdminWhatsAppPhone(technician);
-  ctx.setWhatsappTechnician({ name: technician.fullName, phone: adminWaPhone || technician.phone });
-  ctx.setWhatsappServiceSubType(serviceSubType);
-  ctx.setWhatsappCustomerName(customerName);
-  ctx.setWhatsappLocation(locationText || '');
-  ctx.setWhatsappLeadSource(leadSource);
-  ctx.setWhatsappCustomTime(customTime);
-  ctx.setWhatsappDescription(description);
-  ctx.setWhatsappAgreedCost(agreedCost);
-  ctx.openAdminWhatsappModal();
-  ctx.setWhatsappDialogOpen(true);
-
-  if (!customerId) return;
-
-  void db.customers.getById(String(customerId)).then(({ data: freshCustomer }) => {
-    if (!freshCustomer) return;
-    const refinedName = freshCustomer.full_name || (freshCustomer as { fullName?: string }).fullName;
-    const refinedLocation = getJobLocationLabelForWhatsApp(
-      job as { service_site?: string; service_address?: unknown },
-      freshCustomer as Record<string, unknown>
-    );
-    if (refinedName) ctx.setWhatsappCustomerName(refinedName);
-    if (refinedLocation) ctx.setWhatsappLocation(refinedLocation);
+/** Unassign WhatsApp to technician. */
+export async function openAdminWhatsappForJobUnassign(
+  ctx: OpenAdminWhatsappForJobCtx,
+  job: Job,
+  technician: TechLikeForWhatsApp,
+  scrollY: number
+): Promise<'dialog' | 'auto' | 'skipped'> {
+  return notifyTechnicianJobWhatsApp({
+    job,
+    technician,
+    mode: 'unassign',
+    scrollY,
+    ctx,
   });
 }

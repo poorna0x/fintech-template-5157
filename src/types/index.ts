@@ -228,6 +228,10 @@ export interface Technician {
 
   /** When false, server-side FCM skips this technician (Settings toggle). Default true. */
   push_notifications_enabled?: boolean;
+  /** Per-category FCM toggles for this technician (missing key = on). */
+  push_prefs?: Record<string, boolean> | null;
+  /** Per-category WhatsApp job-notify toggles (assign/unassign / customer share). */
+  whatsapp_prefs?: Record<string, boolean> | null;
 
   /** When true, this technician sees visit-order stop numbers on their app. Default false. */
   visit_order_visible?: boolean;

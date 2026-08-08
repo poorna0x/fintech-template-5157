@@ -398,6 +398,9 @@ const TECHNICIAN_ROW_COLUMNS = [
   'visible_qr_codes',
   'common_qr_code_ids',
   'account_status',
+  'push_notifications_enabled',
+  'push_prefs',
+  'whatsapp_prefs',
   'created_at',
   'updated_at',
 ].join(',');

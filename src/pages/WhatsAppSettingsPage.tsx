@@ -230,8 +230,8 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }
         <CardHeader className="pb-2">
           <CardTitle className="text-base">Where WhatsApp can send</CardTitle>
           <CardDescription>
-            Turn off Cloud API sends from each CRM screen. Off = blocked server-side (no wa.me
-            fallback for that surface).
+            Turn off each CRM WhatsApp path. Job assign/unassign popup master is in Dashboard Settings;
+            auto-send toggles are below. Per-technician limits: Edit technician.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -278,11 +278,30 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }
             onCheckedChange={(v) => patch('allow_composer', v)}
           />
           <ToggleRow
-            label="Technician assigned"
-            description="Share assigned technician details to the customer"
+            label="Auto-send on assign (instant)"
+            description="When Dashboard job WhatsApp is ON: send via Cloud API immediately after assign (no dialog). OFF = open manual wa.me dialog."
+            checked={settings.auto_send_job_assign_whatsapp}
+            onCheckedChange={(v) => patch('auto_send_job_assign_whatsapp', v)}
+          />
+          <ToggleRow
+            label="Auto-send on unassign (instant)"
+            description="When Dashboard job WhatsApp is ON: send via Cloud API immediately after unassign. OFF = open manual wa.me dialog."
+            checked={settings.auto_send_job_unassign_whatsapp}
+            onCheckedChange={(v) => patch('auto_send_job_unassign_whatsapp', v)}
+          />
+          <ToggleRow
+            label="Technician assigned → customer"
+            description="Share assigned technician details to the customer (Cloud API)"
             checked={settings.allow_tech_assigned}
             disabled={!settings.enabled}
             onCheckedChange={(v) => patch('allow_tech_assigned', v)}
+          />
+          <ToggleRow
+            label="Technician unassigned → customer"
+            description="Notify customer when technician is removed (Cloud API, when you send)"
+            checked={settings.allow_tech_unassigned}
+            disabled={!settings.enabled}
+            onCheckedChange={(v) => patch('allow_tech_unassigned', v)}
           />
           <ToggleRow
             label="Booking bot"

@@ -310,6 +310,13 @@ exports.handler = async (event) => {
       category = 'job_nudges';
     } else if (allowReply) {
       category = 'office_messages';
+    } else if (overlayEvent === 'unassigned' || overlayEvent === 'removed') {
+      category = 'job_unassigned';
+    } else if (overlayEvent) {
+      // assigned | reassigned | updated
+      category = 'job_assigned';
+    } else if (showOverlay) {
+      category = 'job_nudges';
     }
 
     const { sent, tokens } = await sendToTechnicianDevices(

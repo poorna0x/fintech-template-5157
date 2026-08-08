@@ -14,12 +14,14 @@ export const ADMIN_PUSH_CATEGORIES = [
 
 export const TECH_PUSH_CATEGORIES = [
   'job_assigned',
+  'job_unassigned',
   'job_nudges',
   'office_messages',
   'otp_request',
   'location_ping',
   'parts_reminder',
   'bill_reminders',
+  'cash_handover',
   'wrong_line',
 ] as const;
 
@@ -83,7 +85,11 @@ export const ADMIN_PUSH_LABELS: Record<AdminPushCategory, { label: string; descr
 export const TECH_PUSH_LABELS: Record<TechPushCategory, { label: string; description: string }> = {
   job_assigned: {
     label: 'Job assign / reassign',
-    description: 'New job or reassignment notifications.',
+    description: 'New job assigned, reassigned to them, or job details updated.',
+  },
+  job_unassigned: {
+    label: 'Job unassign / removed',
+    description: 'Job unassigned from them, or moved to another technician.',
   },
   job_nudges: {
     label: 'Job nudges',
@@ -108,6 +114,10 @@ export const TECH_PUSH_LABELS: Record<TechPushCategory, { label: string; descrip
   bill_reminders: {
     label: 'Bill photo reminders',
     description: 'When bill photo is missing after job completion.',
+  },
+  cash_handover: {
+    label: 'Cash handover reminders',
+    description: 'Morning / evening cash handover nudges from office.',
   },
   wrong_line: {
     label: 'Wrong company-line reminder',
