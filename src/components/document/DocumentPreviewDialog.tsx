@@ -1,5 +1,5 @@
 import React from 'react';
-import { Download, Mail, Printer } from 'lucide-react';
+import { Download, Share2, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -101,7 +101,7 @@ export default function DocumentPreviewDialog({
               className={cn(documentOutlineBtnClass, 'h-10 w-full')}
               onClick={onEmail}
             >
-              <Mail className="w-4 h-4 shrink-0" />
+              <Share2 className="w-4 h-4 shrink-0" />
               <span className="truncate">Send PDF</span>
             </Button>
           ) : null}

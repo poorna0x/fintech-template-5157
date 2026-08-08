@@ -35,7 +35,7 @@ import {
   BadgeCheck,
   Download,
   Printer,
-  Mail,
+  Share2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { db } from '@/lib/supabase';
@@ -1001,7 +1001,7 @@ export default function WarrantyManagementDialog({
                                 disabled={generatingId === w.id || downloadingId === w.id}
                                 onClick={() => openWarrantyEmail(w as unknown as PublicWarranty)}
                               >
-                                <Mail className="h-4 w-4" />
+                                <Share2 className="h-4 w-4" />
                               </Button>
                               <Button
                                 type="button"
@@ -1421,7 +1421,7 @@ export default function WarrantyManagementDialog({
                           disabled={saving || includedItems.length === 0}
                           onClick={() => openDraftWarrantyEmail()}
                         >
-                          <Mail className="h-4 w-4 mr-2" />
+                          <Share2 className="h-4 w-4 mr-2" />
                           Send PDF
                         </Button>
                       </div>

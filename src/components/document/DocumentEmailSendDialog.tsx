@@ -43,7 +43,19 @@ import {
   isWithinCustomerServiceWindow,
 } from '@/lib/whatsappInbox';
 
-type SendChannel = 'email' | 'whatsapp';
+type SendChannel = 'email' | 'whatsapp' | 'both';
+
+function pickDefaultChannel(opts: {
+  allowWhatsApp: boolean;
+  hasEmail: boolean;
+  hasPhone: boolean;
+}): SendChannel {
+  if (!opts.allowWhatsApp) return 'email';
+  // Prefer both when email is on file; otherwise WhatsApp if phone exists.
+  if (opts.hasEmail && opts.hasPhone) return 'both';
+  if (opts.hasPhone && !opts.hasEmail) return 'whatsapp';
+  return 'email';
+}
 
 const KIND_META: Record<
   GeneratorDocumentEmailKind,
@@ -127,15 +139,23 @@ export default function DocumentEmailSendDialog({
     if (!open) return;
     const seeded = normalizeRecipientList(defaultRecipients);
     setRecipientRows(seeded.length ? seeded : [emptyRow()]);
-    setWhatsappPhone(String(bill?.customer?.phone || '').trim());
+    const phone = String(bill?.customer?.phone || '').trim();
+    setWhatsappPhone(phone);
     setMessage(getDefaultDocumentMessage(meta.templateType));
-    setChannel('email');
+    setChannel(
+      pickDefaultChannel({
+        allowWhatsApp,
+        hasEmail: seeded.length > 0,
+        hasPhone: formatPhoneForWhatsApp(phone).length >= 10,
+      })
+    );
     setWindowOpen(null);
     setWindowHoursLeft(null);
-  }, [open, defaultRecipients, meta.templateType, bill?.customer?.phone]);
+  }, [open, defaultRecipients, meta.templateType, bill?.customer?.phone, allowWhatsApp]);
 
   useEffect(() => {
-    if (!open || channel !== 'whatsapp' || !allowWhatsApp) return;
+    if (!open || !allowWhatsApp) return;
+    if (channel !== 'whatsapp' && channel !== 'both') return;
     const phone = formatPhoneForWhatsApp(whatsappPhone);
     if (!phone || phone.length < 10) {
       setWindowOpen(null);
@@ -189,16 +209,16 @@ export default function DocumentEmailSendDialog({
     setRecipientRows((prev) => [...prev, emptyRow()]);
   };
 
-  const handleSendEmail = async () => {
+  const handleSendEmail = async (opts?: { keepOpen?: boolean; toastId?: string | number }) => {
     if (!bill || !brand) {
       toast.error('Document details are missing');
-      return;
+      return { ok: false as const };
     }
 
     const recipients = normalizeRecipientList(recipientRows);
     if (!recipients.length) {
       toast.error('Add at least one valid email address');
-      return;
+      return { ok: false as const };
     }
 
     const invalid = recipientRows
@@ -206,11 +226,11 @@ export default function DocumentEmailSendDialog({
       .filter((r) => r && !isValidEmailFormat(r));
     if (invalid.length) {
       toast.error(`Invalid email: ${invalid[0]}`);
-      return;
+      return { ok: false as const };
     }
 
-    setSending(true);
-    const toastId = toast.loading('Generating PDF and sending email…');
+    const toastId = opts?.toastId ?? toast.loading('Generating PDF and sending email…');
+    if (opts?.toastId == null) setSending(true);
 
     try {
       const sessionReady = await ensureSupabaseSessionForWrite();
@@ -218,7 +238,7 @@ export default function DocumentEmailSendDialog({
         toast.error('Could not refresh your session. Please try again in a moment.', {
           id: toastId,
         });
-        return;
+        return { ok: false as const };
       }
 
       const result = await sendGeneratorDocumentEmail({
@@ -232,40 +252,45 @@ export default function DocumentEmailSendDialog({
 
       if (!result.ok) {
         toast.error(result.error || 'Could not send email', { id: toastId });
-        return;
+        return { ok: false as const };
       }
 
-      toast.success(getGeneratorDocumentEmailSuccessMessage(kind, brand, recipients), {
-        id: toastId,
-      });
-      onSent?.();
-      onOpenChange(false);
+      if (!opts?.keepOpen) {
+        toast.success(getGeneratorDocumentEmailSuccessMessage(kind, brand, recipients), {
+          id: toastId,
+        });
+        onSent?.();
+        onOpenChange(false);
+      }
+      return { ok: true as const, toastId, recipients };
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Failed to send email';
       toast.error('Could not send email', { id: toastId, description: msg });
+      return { ok: false as const };
     } finally {
-      setSending(false);
+      if (opts?.toastId == null && !opts?.keepOpen) setSending(false);
     }
   };
 
-  const handleSendWhatsApp = async () => {
+  const handleSendWhatsApp = async (opts?: { keepOpen?: boolean; toastId?: string | number }) => {
     if (!bill || !brand) {
       toast.error('Document details are missing');
-      return;
+      return { ok: false as const };
     }
     const phone = formatPhoneForWhatsApp(whatsappPhone);
     if (!phone || phone.length < 10) {
       toast.error('Enter a valid customer phone number');
-      return;
+      return { ok: false as const };
     }
 
-    setSending(true);
-    const toastId = toast.loading('Preparing PDF for WhatsApp…');
+    const toastId = opts?.toastId ?? toast.loading('Preparing PDF for WhatsApp…');
+    if (opts?.toastId == null) setSending(true);
+
     try {
       const sessionReady = await ensureSupabaseSessionForWrite();
       if (!sessionReady.ok) {
         toast.error('Could not refresh your session. Please try again.', { id: toastId });
-        return;
+        return { ok: false as const };
       }
 
       toast.loading('Generating PDF…', { id: toastId });
@@ -298,42 +323,92 @@ export default function DocumentEmailSendDialog({
             documentLabel: meta.docLabel,
           });
           if (invite.ok) {
+            if (!opts?.keepOpen) {
+              toast.success(
+                'Invite sent — when they reply YES, send again to deliver the PDF',
+                { id: toastId }
+              );
+              onSent?.();
+              onOpenChange(false);
+            }
+            return { ok: true as const, toastId, via: 'invite' as const };
+          }
+          openWhatsAppMeDeepLink(phone, caption);
+          if (!opts?.keepOpen) {
             toast.success(
-              'Invite sent — when they reply YES, send again to deliver the PDF',
+              'Opened phone WhatsApp (invite failed) — attach the PDF manually if needed',
               { id: toastId }
             );
             onSent?.();
             onOpenChange(false);
-            return;
           }
-          openWhatsAppMeDeepLink(phone, caption);
-          toast.success(
-            'Opened phone WhatsApp (invite failed) — attach the PDF manually if needed',
-            { id: toastId }
-          );
-          onSent?.();
-          onOpenChange(false);
-          return;
+          return { ok: true as const, toastId, via: 'wa_me' as const };
         }
         openWhatsAppMeDeepLink(phone, caption);
-        toast.success('Opened phone WhatsApp as backup', {
-          id: toastId,
-          description: result.error || 'API send failed',
-        });
-        onSent?.();
-        onOpenChange(false);
-        return;
+        if (!opts?.keepOpen) {
+          toast.success('Opened phone WhatsApp as backup', {
+            id: toastId,
+            description: result.error || 'API send failed',
+          });
+          onSent?.();
+          onOpenChange(false);
+        }
+        return { ok: true as const, toastId, via: 'wa_me' as const };
       }
 
-      toast.success('PDF sent on WhatsApp', { id: toastId });
       invalidateInboundWindowCache(phone);
-      onSent?.();
-      onOpenChange(false);
+      if (!opts?.keepOpen) {
+        toast.success('PDF sent on WhatsApp', { id: toastId });
+        onSent?.();
+        onOpenChange(false);
+      }
+      return { ok: true as const, toastId, via: 'api' as const };
     } catch (error) {
       console.error(error);
       toast.error(error instanceof Error ? error.message : 'Could not send on WhatsApp', {
         id: toastId,
       });
+      return { ok: false as const };
+    } finally {
+      if (opts?.toastId == null && !opts?.keepOpen) setSending(false);
+    }
+  };
+
+  const handleSendBoth = async () => {
+    if (!canSendEmail) {
+      toast.error('Add at least one valid email address');
+      return;
+    }
+    if (!canSendWhatsApp) {
+      toast.error('Enter a valid customer phone number');
+      return;
+    }
+
+    setSending(true);
+    const toastId = toast.loading('Sending email and WhatsApp…');
+    try {
+      toast.loading('Sending email…', { id: toastId });
+      const emailResult = await handleSendEmail({ keepOpen: true, toastId });
+      if (!emailResult.ok) return;
+
+      toast.loading('Sending WhatsApp…', { id: toastId });
+      const waResult = await handleSendWhatsApp({ keepOpen: true, toastId });
+      if (!waResult.ok) {
+        toast.warning('Email sent, but WhatsApp failed', { id: toastId });
+        onSent?.();
+        onOpenChange(false);
+        return;
+      }
+
+      const waNote =
+        waResult.via === 'invite'
+          ? 'WhatsApp invite sent (PDF after they reply YES)'
+          : waResult.via === 'wa_me'
+            ? 'WhatsApp opened on phone as backup'
+            : 'WhatsApp PDF sent';
+      toast.success(`Email + ${waNote}`, { id: toastId });
+      onSent?.();
+      onOpenChange(false);
     } finally {
       setSending(false);
     }
@@ -343,7 +418,16 @@ export default function DocumentEmailSendDialog({
   const canSendWhatsApp = Boolean(
     bill && brand && formatPhoneForWhatsApp(whatsappPhone).length >= 10
   );
-  const canSend = channel === 'whatsapp' ? canSendWhatsApp : canSendEmail;
+  const canSendBoth = canSendEmail && canSendWhatsApp;
+  const canSend =
+    channel === 'whatsapp'
+      ? canSendWhatsApp
+      : channel === 'both'
+        ? canSendBoth
+        : canSendEmail;
+  const hasEmailOnFile = normalizedRecipients.length > 0;
+  const showEmailFields = channel === 'email' || channel === 'both';
+  const showWhatsAppFields = channel === 'whatsapp' || channel === 'both';
 
   return (
     <Dialog open={open} onOpenChange={(next) => !sending && onOpenChange(next)}>
@@ -359,8 +443,8 @@ export default function DocumentEmailSendDialog({
           </DialogTitle>
           <DialogDescription className={`text-xs sm:text-sm ${meta.descClass}`}>
             {brandLabel
-              ? `PDF · ${brandLabel} · Email or WhatsApp`
-              : 'Send the PDF by email or WhatsApp'}
+              ? `PDF · ${brandLabel} · Email, WhatsApp, or both`
+              : 'Send the PDF by email, WhatsApp, or both'}
           </DialogDescription>
         </DialogHeader>
 
@@ -387,28 +471,45 @@ export default function DocumentEmailSendDialog({
                 type="single"
                 value={channel}
                 onValueChange={(v) => {
-                  if (v === 'email' || v === 'whatsapp') setChannel(v);
+                  if (v === 'email' || v === 'whatsapp' || v === 'both') setChannel(v);
                 }}
                 variant="outline"
-                className="grid w-full grid-cols-2 gap-0"
+                className="grid w-full grid-cols-3 gap-0"
                 disabled={sending}
               >
-                <ToggleGroupItem value="email" className="h-10 gap-2 data-[state=on]:bg-violet-100">
-                  <Mail className="h-4 w-4" />
-                  Email
+                <ToggleGroupItem value="email" className="h-10 gap-1.5 px-1 data-[state=on]:bg-violet-100">
+                  <Mail className="h-4 w-4 shrink-0" />
+                  <span className="truncate">Email</span>
                 </ToggleGroupItem>
                 <ToggleGroupItem
                   value="whatsapp"
-                  className="h-10 gap-2 data-[state=on]:bg-emerald-50"
+                  className="h-10 gap-1.5 px-1 data-[state=on]:bg-emerald-50"
                 >
-                  <WhatsAppIcon className="h-4 w-4" />
-                  WhatsApp
+                  <WhatsAppIcon className="h-4 w-4 shrink-0" />
+                  <span className="truncate">WhatsApp</span>
+                </ToggleGroupItem>
+                <ToggleGroupItem
+                  value="both"
+                  className="h-10 gap-1.5 px-1 data-[state=on]:bg-sky-50"
+                  disabled={!hasEmailOnFile && !canSendEmail}
+                  title={
+                    hasEmailOnFile || canSendEmail
+                      ? 'Send email and WhatsApp'
+                      : 'Add an email to enable Both'
+                  }
+                >
+                  <Mail className="h-3.5 w-3.5 shrink-0" />
+                  <WhatsAppIcon className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">Both</span>
                 </ToggleGroupItem>
               </ToggleGroup>
+              {channel === 'both' && !canSendEmail ? (
+                <p className="text-xs text-amber-800">Add a valid email to send both.</p>
+              ) : null}
             </div>
           ) : null}
 
-          {channel === 'whatsapp' && allowWhatsApp ? (
+          {showWhatsAppFields && allowWhatsApp ? (
             <div className="space-y-2">
               <Label htmlFor="doc-wa-phone" className="text-sm font-medium">
                 Customer WhatsApp
@@ -444,7 +545,9 @@ export default function DocumentEmailSendDialog({
                 </p>
               )}
             </div>
-          ) : (
+          ) : null}
+
+          {showEmailFields ? (
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <Label className="text-sm font-medium">Recipients</Label>
@@ -493,11 +596,15 @@ export default function DocumentEmailSendDialog({
                 Add email
               </Button>
             </div>
-          )}
+          ) : null}
 
           <div className="space-y-2">
             <Label htmlFor="doc-email-message" className="text-sm font-medium">
-              {channel === 'whatsapp' ? 'WhatsApp caption' : 'Email message'}
+              {channel === 'whatsapp'
+                ? 'WhatsApp caption'
+                : channel === 'both'
+                  ? 'Message (email body + WhatsApp caption)'
+                  : 'Email message'}
             </Label>
             <Textarea
               id="doc-email-message"
@@ -524,11 +631,17 @@ export default function DocumentEmailSendDialog({
             type="button"
             className={cn(
               'w-full sm:w-auto',
-              channel === 'whatsapp' ? 'bg-emerald-700 hover:bg-emerald-800' : meta.sendBtnClass
+              channel === 'whatsapp'
+                ? 'bg-emerald-700 hover:bg-emerald-800'
+                : channel === 'both'
+                  ? 'bg-sky-700 hover:bg-sky-800'
+                  : meta.sendBtnClass
             )}
-            onClick={() =>
-              void (channel === 'whatsapp' ? handleSendWhatsApp() : handleSendEmail())
-            }
+            onClick={() => {
+              if (channel === 'whatsapp') void handleSendWhatsApp();
+              else if (channel === 'both') void handleSendBoth();
+              else void handleSendEmail();
+            }}
             disabled={sending || !canSend}
           >
             {sending ? (
@@ -540,6 +653,12 @@ export default function DocumentEmailSendDialog({
               <>
                 <WhatsAppIcon className="h-4 w-4 mr-2" />
                 Send WhatsApp
+              </>
+            ) : channel === 'both' ? (
+              <>
+                <Mail className="h-4 w-4 mr-1.5" />
+                <WhatsAppIcon className="h-4 w-4 mr-2" />
+                Send both
               </>
             ) : (
               <>

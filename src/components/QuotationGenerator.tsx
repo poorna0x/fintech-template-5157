@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Trash2, Download, Edit, X, FileText, Printer, Eye, Mail } from 'lucide-react';
+import { Plus, Trash2, Download, Edit, X, FileText, Printer, Eye, Share2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Bill, BillItem, CompanyInfo, Customer } from '@/types';
 import { getCustomerGstNumber, normalizeCustomerGstNumber } from '@/lib/customerGst';
@@ -701,7 +701,7 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
                     variant="outline"
                     className={documentOutlineBtnClass}
                   >
-                    <Mail className="w-4 h-4 shrink-0" />
+                    <Share2 className="w-4 h-4 shrink-0" />
                     <span className="truncate">Send PDF</span>
                   </Button>
                 </div>

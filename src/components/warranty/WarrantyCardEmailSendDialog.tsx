@@ -45,7 +45,18 @@ import {
   isWithinCustomerServiceWindow,
 } from '@/lib/whatsappInbox';
 
-type SendChannel = 'email' | 'whatsapp';
+type SendChannel = 'email' | 'whatsapp' | 'both';
+
+function pickDefaultWarrantyChannel(opts: {
+  allowWhatsApp: boolean;
+  hasEmail: boolean;
+  hasPhone: boolean;
+}): SendChannel {
+  if (!opts.allowWhatsApp) return 'email';
+  if (opts.hasEmail && opts.hasPhone) return 'both';
+  if (opts.hasPhone && !opts.hasEmail) return 'whatsapp';
+  return 'email';
+}
 
 export type WarrantyEmailPersistResult = { ok: boolean; error?: string };
 
@@ -90,15 +101,23 @@ export default function WarrantyCardEmailSendDialog({
     }
     const seeded = getValidCustomerEmail(customerEmailOnFile);
     setRecipientEmail(seeded || '');
-    setWhatsappPhone(String(defaultPhone || pdfData?.customer?.phone || '').trim());
+    const phone = String(defaultPhone || pdfData?.customer?.phone || '').trim();
+    setWhatsappPhone(phone);
     setMessage(getDefaultDocumentMessage('warranty_document'));
-    setChannel('email');
+    setChannel(
+      pickDefaultWarrantyChannel({
+        allowWhatsApp,
+        hasEmail: Boolean(seeded),
+        hasPhone: formatPhoneForWhatsApp(phone).length >= 10,
+      })
+    );
     setWindowOpen(null);
     setWindowHoursLeft(null);
-  }, [open, customerEmailOnFile, defaultPhone, pdfData?.customer?.phone]);
+  }, [open, customerEmailOnFile, defaultPhone, pdfData?.customer?.phone, allowWhatsApp]);
 
   useEffect(() => {
-    if (!open || channel !== 'whatsapp' || !allowWhatsApp) return;
+    if (!open || !allowWhatsApp) return;
+    if (channel !== 'whatsapp' && channel !== 'both') return;
     const phone = formatPhoneForWhatsApp(whatsappPhone);
     if (!phone || phone.length < 10) {
       setWindowOpen(null);
@@ -142,7 +161,11 @@ export default function WarrantyCardEmailSendDialog({
   const canSendWhatsApp = Boolean(
     pdfData && brand && formatPhoneForWhatsApp(whatsappPhone).length >= 10
   );
-  const canSend = channel === 'whatsapp' ? canSendWhatsApp : canSendEmail;
+  const canSendBoth = canSendEmail && canSendWhatsApp;
+  const canSend =
+    channel === 'whatsapp' ? canSendWhatsApp : channel === 'both' ? canSendBoth : canSendEmail;
+  const showEmailFields = channel === 'email' || channel === 'both';
+  const showWhatsAppFields = (channel === 'whatsapp' || channel === 'both') && allowWhatsApp;
 
   const handleSendEmail = async () => {
     if (!pdfData || !brand) {
@@ -296,6 +319,105 @@ export default function WarrantyCardEmailSendDialog({
     }
   };
 
+  const handleSendBoth = async () => {
+    if (!canSendEmail) {
+      toast.error('Enter a valid email address');
+      return;
+    }
+    if (!canSendWhatsApp) {
+      toast.error('Enter a valid customer phone number');
+      return;
+    }
+    if (!pdfData || !brand) {
+      toast.error('Warranty details are missing');
+      return;
+    }
+
+    setSending(true);
+    const toastId = toast.loading('Sending email and WhatsApp…');
+    try {
+      const sessionReady = await ensureSupabaseSessionForWrite();
+      if (!sessionReady.ok) {
+        toast.error('Could not refresh your session. Please try again.', { id: toastId });
+        return;
+      }
+
+      const trimmed = recipientEmail.trim();
+      if (onSaveCustomerEmail && customerEmailNeedsSave(customerEmailOnFile, trimmed)) {
+        toast.loading('Saving customer email…', { id: toastId });
+        const emailSaved = await onSaveCustomerEmail(trimmed);
+        if (!emailSaved.ok) {
+          toast.error(emailSaved.error || 'Could not save customer email', { id: toastId });
+          return;
+        }
+      }
+
+      toast.loading('Sending email…', { id: toastId });
+      const emailResult = await sendWarrantyCardEmail({
+        data: pdfData,
+        brand,
+        recipientEmails: [trimmed],
+        customMessage: message.trim() || undefined,
+        customerId,
+      });
+      if (!emailResult.ok) {
+        toast.error(emailResult.error || 'Could not send email', { id: toastId });
+        return;
+      }
+
+      const phone = formatPhoneForWhatsApp(whatsappPhone);
+      toast.loading('Sending WhatsApp…', { id: toastId });
+      const pdf = await generateWarrantyCardPdfBase64(pdfData);
+      const caption = (
+        message.trim() || getDefaultDocumentMessage('warranty_document')
+      ).slice(0, 1024);
+      const waResult = await sendAdminWhatsAppDocument({
+        to: phone,
+        pdfBase64: pdf.pdfBase64,
+        filename: pdf.filename,
+        caption,
+        customerId,
+        source: 'documents',
+      });
+
+      let waNote = 'WhatsApp PDF sent';
+      if (!waResult.ok) {
+        if (waResult.needsWindowOrTemplate) {
+          const invite = await sendColdDocumentInvite({
+            to: phone,
+            kind: 'warranty',
+            customerName: pdfData.customer?.name || 'Customer',
+            customerId,
+            documentLabel: 'warranty card',
+            source: 'documents',
+          });
+          if (invite.ok) {
+            waNote = 'WhatsApp invite sent (PDF after they reply YES)';
+          } else {
+            openWhatsAppMeDeepLink(phone, caption);
+            waNote = 'WhatsApp opened on phone as backup';
+          }
+        } else {
+          openWhatsAppMeDeepLink(phone, caption);
+          waNote = 'WhatsApp opened on phone as backup';
+        }
+      } else {
+        invalidateInboundWindowCache(phone);
+      }
+
+      toast.success(`Email + ${waNote}`, { id: toastId });
+      onSent?.();
+      onOpenChange(false);
+    } catch (error) {
+      console.error(error);
+      toast.error(error instanceof Error ? error.message : 'Could not send both', {
+        id: toastId,
+      });
+    } finally {
+      setSending(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={(next) => !sending && onOpenChange(next)}>
       <DialogContent
@@ -309,8 +431,8 @@ export default function WarrantyCardEmailSendDialog({
           </DialogTitle>
           <DialogDescription className="text-xs sm:text-sm text-violet-900/80">
             {brandLabel
-              ? `PDF · ${brandLabel} · Email or WhatsApp`
-              : 'Send the warranty card PDF by email or WhatsApp'}
+              ? `PDF · ${brandLabel} · Email, WhatsApp, or both`
+              : 'Send the warranty card PDF by email, WhatsApp, or both'}
           </DialogDescription>
         </DialogHeader>
 
@@ -329,28 +451,45 @@ export default function WarrantyCardEmailSendDialog({
                 type="single"
                 value={channel}
                 onValueChange={(v) => {
-                  if (v === 'email' || v === 'whatsapp') setChannel(v);
+                  if (v === 'email' || v === 'whatsapp' || v === 'both') setChannel(v);
                 }}
                 variant="outline"
-                className="grid w-full grid-cols-2 gap-0"
+                className="grid w-full grid-cols-3 gap-0"
                 disabled={sending}
               >
-                <ToggleGroupItem value="email" className="h-10 gap-2 data-[state=on]:bg-violet-100">
-                  <Mail className="h-4 w-4" />
-                  Email
+                <ToggleGroupItem value="email" className="h-10 gap-1.5 px-1 data-[state=on]:bg-violet-100">
+                  <Mail className="h-4 w-4 shrink-0" />
+                  <span className="truncate">Email</span>
                 </ToggleGroupItem>
                 <ToggleGroupItem
                   value="whatsapp"
-                  className="h-10 gap-2 data-[state=on]:bg-emerald-50"
+                  className="h-10 gap-1.5 px-1 data-[state=on]:bg-emerald-50"
                 >
-                  <WhatsAppIcon className="h-4 w-4" />
-                  WhatsApp
+                  <WhatsAppIcon className="h-4 w-4 shrink-0" />
+                  <span className="truncate">WhatsApp</span>
+                </ToggleGroupItem>
+                <ToggleGroupItem
+                  value="both"
+                  className="h-10 gap-1.5 px-1 data-[state=on]:bg-sky-50"
+                  disabled={!canSendEmail}
+                  title={
+                    canSendEmail
+                      ? 'Send email and WhatsApp'
+                      : 'Add an email to enable Both'
+                  }
+                >
+                  <Mail className="h-3.5 w-3.5 shrink-0" />
+                  <WhatsAppIcon className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">Both</span>
                 </ToggleGroupItem>
               </ToggleGroup>
+              {channel === 'both' && !canSendEmail ? (
+                <p className="text-xs text-amber-800">Add a valid email to send both.</p>
+              ) : null}
             </div>
           ) : null}
 
-          {channel === 'whatsapp' && allowWhatsApp ? (
+          {showWhatsAppFields ? (
             <div className="space-y-2">
               <Label htmlFor="warranty-wa-phone" className="text-sm font-medium">
                 Customer WhatsApp
@@ -386,7 +525,9 @@ export default function WarrantyCardEmailSendDialog({
                 </p>
               )}
             </div>
-          ) : (
+          ) : null}
+
+          {showEmailFields ? (
             <div className="space-y-1.5">
               <Label htmlFor="warranty-email-to">Customer email</Label>
               <Input
@@ -407,11 +548,15 @@ export default function WarrantyCardEmailSendDialog({
                   </p>
                 )}
             </div>
-          )}
+          ) : null}
 
           <div className="space-y-1.5">
             <Label htmlFor="warranty-email-message">
-              {channel === 'whatsapp' ? 'WhatsApp caption' : 'Email message'}
+              {channel === 'whatsapp'
+                ? 'WhatsApp caption'
+                : channel === 'both'
+                  ? 'Message (email body + WhatsApp caption)'
+                  : 'Email message'}
             </Label>
             <Textarea
               id="warranty-email-message"
@@ -439,12 +584,16 @@ export default function WarrantyCardEmailSendDialog({
               'w-full sm:w-auto',
               channel === 'whatsapp'
                 ? 'bg-emerald-700 hover:bg-emerald-800'
-                : 'bg-violet-700 hover:bg-violet-800'
+                : channel === 'both'
+                  ? 'bg-sky-700 hover:bg-sky-800'
+                  : 'bg-violet-700 hover:bg-violet-800'
             )}
             disabled={!canSend || sending}
-            onClick={() =>
-              void (channel === 'whatsapp' ? handleSendWhatsApp() : handleSendEmail())
-            }
+            onClick={() => {
+              if (channel === 'whatsapp') void handleSendWhatsApp();
+              else if (channel === 'both') void handleSendBoth();
+              else void handleSendEmail();
+            }}
           >
             {sending ? (
               <>
@@ -455,6 +604,12 @@ export default function WarrantyCardEmailSendDialog({
               <>
                 <WhatsAppIcon className="h-4 w-4 mr-2" />
                 Send WhatsApp
+              </>
+            ) : channel === 'both' ? (
+              <>
+                <Mail className="h-4 w-4 mr-1.5" />
+                <WhatsAppIcon className="h-4 w-4 mr-2" />
+                Send both
               </>
             ) : (
               <>

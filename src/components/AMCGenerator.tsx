@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Edit, Plus, Download, FileText, User, Phone, MapPin, Building, Droplets, Mail, Save, Printer, Eye } from 'lucide-react';
+import { Edit, Plus, Download, FileText, User, Phone, MapPin, Building, Droplets, Mail, Share2, Save, Printer, Eye } from 'lucide-react';
 import DocumentBrandLogo from '@/components/DocumentBrandLogo';
 import { toast } from 'sonner';
 import { Customer, Bill, BillItem, CompanyInfo } from '@/types';
@@ -912,7 +912,7 @@ export default function AMCGenerator({
                       className={documentOutlineBtnClass}
                       disabled={!billNumber.trim()}
                     >
-                      <Mail className="w-4 h-4 shrink-0" />
+                      <Share2 className="w-4 h-4 shrink-0" />
                       <span className="truncate">Send PDF</span>
                     </Button>
                   </div>
@@ -1743,7 +1743,7 @@ export default function AMCGenerator({
               disabled={!previewBill}
               onClick={openEmailFromPreview}
             >
-              <Mail className="w-4 h-4 shrink-0" />
+              <Share2 className="w-4 h-4 shrink-0" />
               <span className="truncate">Send AMC</span>
             </Button>
             <Button
