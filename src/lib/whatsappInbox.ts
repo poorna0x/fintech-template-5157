@@ -1,5 +1,7 @@
 /** WhatsApp inbox helpers — slim selects, 24h window, send via Cloud API function. */
 
+import { escapeForLike, normalizePhoneForSearch } from '@/lib/utils';
+
 export const WHATSAPP_INBOX_COLUMNS =
   'id, wa_message_id, direction, phone_e164, customer_id, msg_type, body, media_url, media_mime, filename, status, template_name, error_message, created_at' as const;
 
@@ -177,38 +179,64 @@ export function invalidateInboundWindowCache(phoneE164?: string | null): void {
 export const WHATSAPP_INBOX_LIST_LIMIT = 120;
 /** Active chat: enough recent history without over-fetching. */
 export const WHATSAPP_THREAD_LIMIT = 80;
+/** Max threads returned by on-demand inbox search. */
+export const WHATSAPP_INBOX_SEARCH_LIMIT = 40;
 
 export function isR2MediaRef(mediaUrl: string | null | undefined): boolean {
   const raw = String(mediaUrl || '').trim();
   return raw.startsWith('r2:') || raw.startsWith('whatsapp/inbound/') || raw.startsWith('whatsapp/outbound/');
 }
 
-export async function fetchWhatsAppInboxThreads(
+/** Local midnight as ISO — for “chatted today” inbox filter. */
+export function startOfLocalDayIso(d = new Date()): string {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).toISOString();
+}
+
+export function isSameLocalDay(iso: string, now = new Date()): boolean {
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return false;
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  );
+}
+
+/** India-friendly WhatsApp phone digits (no +). */
+export function toWhatsAppPhoneDigits(value: string | null | undefined): string {
+  let digits = String(value || '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.length === 10) digits = `91${digits}`;
+  if (digits.length > 12 && digits.startsWith('91')) digits = digits.slice(0, 12);
+  return digits;
+}
+
+type InboxThreadRow = {
+  phone_e164: string;
+  customer_id: string | null;
+  last_at: string;
+  last_direction: string;
+  last_msg_type: string;
+  last_status: string | null;
+  last_error: string | null;
+  last_body: string | null;
+  inbound_at: string | null;
+  has_failed: boolean;
+};
+
+type SupabaseInboxClient = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  supabaseClient: { rpc: (fn: string, args?: Record<string, unknown>) => any; from: (t: string) => any },
-  limit = WHATSAPP_INBOX_LIST_LIMIT
-): Promise<{ threads: WhatsAppThread[]; error?: string }> {
-  const { data, error } = await supabaseClient.rpc('whatsapp_inbox_threads', {
-    p_limit: limit,
-  });
-  if (error) {
-    return { threads: [], error: error.message };
-  }
+  rpc: (fn: string, args?: Record<string, unknown>) => any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  from: (t: string) => any;
+};
 
-  const rows = (data || []) as Array<{
-    phone_e164: string;
-    customer_id: string | null;
-    last_at: string;
-    last_direction: string;
-    last_msg_type: string;
-    last_status: string | null;
-    last_error: string | null;
-    last_body: string | null;
-    inbound_at: string | null;
-    has_failed: boolean;
-  }>;
-
-  const nameByCustomerId = new Map<string, string>();
+async function mapInboxRowsToThreads(
+  supabaseClient: SupabaseInboxClient,
+  rows: InboxThreadRow[],
+  nameHints?: Map<string, string>
+): Promise<WhatsAppThread[]> {
+  const nameByCustomerId = new Map<string, string>(nameHints || []);
   const customerIdByPhone = new Map<string, string>();
 
   const customerIds = [
@@ -241,7 +269,6 @@ export async function fetchWhatsAppInboxThreads(
     }
   };
 
-  // Parallel CRM lookups (by id + by phone) — minimizes time-to-names
   const lookups: Promise<void>[] = [];
 
   if (customerIds.length) {
@@ -286,7 +313,7 @@ export async function fetchWhatsAppInboxThreads(
     await Promise.all(lookups);
   }
 
-  const threads: WhatsAppThread[] = rows.map((r) => {
+  return rows.map((r) => {
     const phone = String(r.phone_e164 || '').replace(/\D/g, '');
     let customerId = r.customer_id || null;
     if (!customerId && phone) {
@@ -309,8 +336,237 @@ export async function fetchWhatsAppInboxThreads(
       has_failed: Boolean(r.has_failed),
     };
   });
+}
 
+export async function fetchWhatsAppInboxThreads(
+  supabaseClient: SupabaseInboxClient,
+  opts?: { limit?: number; since?: string | null; todayOnly?: boolean }
+): Promise<{ threads: WhatsAppThread[]; error?: string }> {
+  const limit = opts?.limit ?? WHATSAPP_INBOX_LIST_LIMIT;
+  const since =
+    opts?.since !== undefined
+      ? opts.since
+      : opts?.todayOnly
+        ? startOfLocalDayIso()
+        : null;
+
+  let data: InboxThreadRow[] | null = null;
+  let error: { message?: string } | null = null;
+
+  if (since) {
+    const res = await supabaseClient.rpc('whatsapp_inbox_threads', {
+      p_limit: limit,
+      p_since: since,
+    });
+    data = res.data;
+    error = res.error;
+    // Older DB without p_since — fall back then filter client-side
+    if (
+      error &&
+      /p_since|could not find the function|function public\.whatsapp_inbox_threads|No function matches|does not exist/i.test(
+        String(error.message || '')
+      )
+    ) {
+      const retry = await supabaseClient.rpc('whatsapp_inbox_threads', {
+        p_limit: limit,
+      });
+      data = retry.data;
+      error = retry.error;
+      if (!error && data) {
+        data = data.filter((r: InboxThreadRow) => isSameLocalDay(r.last_at));
+      }
+    }
+  } else {
+    const res = await supabaseClient.rpc('whatsapp_inbox_threads', {
+      p_limit: limit,
+    });
+    data = res.data;
+    error = res.error;
+  }
+
+  if (error) {
+    return { threads: [], error: error.message || 'Failed to load inbox' };
+  }
+
+  let rows = (data || []) as InboxThreadRow[];
+  if (opts?.todayOnly || since) {
+    rows = rows.filter((r) => isSameLocalDay(r.last_at));
+  }
+
+  const threads = await mapInboxRowsToThreads(supabaseClient, rows);
   return { threads };
+}
+
+/**
+ * On-demand search only (not while typing). Matches CRM customer id / name / phone / email,
+ * plus WhatsApp numbers, then loads those threads.
+ */
+export async function searchWhatsAppInboxThreads(
+  supabaseClient: SupabaseInboxClient,
+  query: string,
+  limit = WHATSAPP_INBOX_SEARCH_LIMIT
+): Promise<{ threads: WhatsAppThread[]; error?: string }> {
+  const trimmed = String(query || '').trim();
+  if (trimmed.length < 2) {
+    return { threads: [], error: 'Type at least 2 characters' };
+  }
+
+  const escaped = escapeForLike(trimmed);
+  const phoneNorm = normalizePhoneForSearch(trimmed);
+  const orParts: string[] = [
+    `customer_id.ilike.%${escaped}%`,
+    `full_name.ilike.%${escaped}%`,
+    `phone.ilike.%${escaped}%`,
+    `alternate_phone.ilike.%${escaped}%`,
+    `email.ilike.%${escaped}%`,
+  ];
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(trimmed)) {
+    orParts.push(`id.eq.${trimmed}`);
+  }
+  if (phoneNorm.length >= 10) {
+    orParts.push(
+      `phone.ilike.%${phoneNorm}%`,
+      `alternate_phone.ilike.%${phoneNorm}%`
+    );
+    if (phoneNorm.length === 10) {
+      const first4 = phoneNorm.slice(0, 4);
+      const last6 = phoneNorm.slice(4);
+      orParts.push(
+        `phone.ilike.%${first4}%${last6}%`,
+        `alternate_phone.ilike.%${first4}%${last6}%`
+      );
+    }
+  }
+
+  const { data: customers, error: cErr } = await supabaseClient
+    .from('customers')
+    .select('id, customer_id, full_name, phone, alternate_phone, email')
+    .or(orParts.join(','))
+    .order('updated_at', { ascending: false })
+    .limit(limit);
+
+  if (cErr) {
+    return { threads: [], error: cErr.message };
+  }
+
+  const nameHints = new Map<string, string>();
+  const phoneToCustomer = new Map<string, { id: string; name: string }>();
+  const phones = new Set<string>();
+
+  for (const c of customers || []) {
+    const name = String(c.full_name || '').trim() || 'Customer';
+    if (c.id) nameHints.set(c.id, name);
+    for (const raw of [c.phone, c.alternate_phone]) {
+      const wa = toWhatsAppPhoneDigits(raw);
+      if (!wa || wa.length < 12) continue;
+      phones.add(wa);
+      phoneToCustomer.set(wa, { id: c.id, name });
+      phoneToCustomer.set(wa.slice(-10), { id: c.id, name });
+    }
+  }
+
+  // Direct phone / WA number search (even if not in CRM)
+  if (phoneNorm.length >= 7) {
+    const last = phoneNorm.slice(-10);
+    phones.add(toWhatsAppPhoneDigits(last));
+    const { data: waHits } = await supabaseClient
+      .from('whatsapp_messages')
+      .select('phone_e164')
+      .ilike('phone_e164', `%${last}%`)
+      .order('created_at', { ascending: false })
+      .limit(60);
+    for (const row of waHits || []) {
+      const p = toWhatsAppPhoneDigits(row.phone_e164);
+      if (p) phones.add(p);
+    }
+  }
+
+  // Name-only / id hits may have no phone — skip those without a WhatsApp number
+  const phoneList = [...phones].filter(Boolean).slice(0, limit);
+  if (!phoneList.length) {
+    return { threads: [] };
+  }
+
+  const { data: msgs, error: mErr } = await supabaseClient
+    .from('whatsapp_messages')
+    .select(
+      'phone_e164, customer_id, direction, msg_type, body, filename, media_url, media_mime, status, error_message, created_at'
+    )
+    .in('phone_e164', phoneList)
+    .order('created_at', { ascending: false })
+    .limit(Math.min(phoneList.length * 4, 200));
+
+  if (mErr) {
+    return { threads: [], error: mErr.message };
+  }
+
+  const latestByPhone = new Map<string, InboxThreadRow>();
+  const inboundByPhone = new Map<string, string>();
+
+  for (const row of msgs || []) {
+    const phone = toWhatsAppPhoneDigits(row.phone_e164);
+    if (!phone) continue;
+    if (row.direction === 'inbound' && !inboundByPhone.has(phone)) {
+      inboundByPhone.set(phone, row.created_at);
+    }
+    if (latestByPhone.has(phone)) continue;
+    const failed =
+      row.direction === 'outbound' &&
+      (isFailedDeliveryStatus(row.status) || Boolean(String(row.error_message || '').trim()));
+    latestByPhone.set(phone, {
+      phone_e164: phone,
+      customer_id: row.customer_id || phoneToCustomer.get(phone)?.id || null,
+      last_at: row.created_at,
+      last_direction: row.direction || 'outbound',
+      last_msg_type: row.msg_type || 'text',
+      last_status: row.status,
+      last_error: row.error_message,
+      last_body: previewMessageBody(row as WhatsAppMessageRow),
+      inbound_at: null,
+      has_failed: failed,
+    });
+  }
+
+  // Customers matched but never WhatsApp'd — still list so admin can open/start chat
+  for (const phone of phoneList) {
+    if (latestByPhone.has(phone)) continue;
+    const hint = phoneToCustomer.get(phone) || phoneToCustomer.get(phone.slice(-10));
+    if (!hint) continue;
+    latestByPhone.set(phone, {
+      phone_e164: phone,
+      customer_id: hint.id,
+      last_at: '',
+      last_direction: 'outbound',
+      last_msg_type: 'text',
+      last_status: null,
+      last_error: null,
+      last_body: 'No WhatsApp messages yet',
+      inbound_at: null,
+      has_failed: false,
+    });
+  }
+
+  for (const [phone, row] of latestByPhone) {
+    row.inbound_at = inboundByPhone.get(phone) || null;
+  }
+
+  const rows = [...latestByPhone.values()].sort((a, b) => {
+    const tb = new Date(b.last_at).getTime();
+    const ta = new Date(a.last_at).getTime();
+    return (Number.isFinite(tb) ? tb : 0) - (Number.isFinite(ta) ? ta : 0);
+  });
+
+  const threads = await mapInboxRowsToThreads(supabaseClient, rows, nameHints);
+  // Ensure CRM names from search win
+  for (const t of threads) {
+    const hint =
+      (t.customer_id && nameHints.get(t.customer_id)) ||
+      phoneToCustomer.get(t.phone_e164)?.name ||
+      phoneToCustomer.get(t.phone_e164.slice(-10))?.name;
+    if (hint) t.customer_name = hint;
+  }
+
+  return { threads: threads.slice(0, limit) };
 }
 
 export function patchThreadFromMessage(

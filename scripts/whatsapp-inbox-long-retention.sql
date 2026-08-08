@@ -167,7 +167,14 @@ COMMENT ON TABLE public.whatsapp_messages IS
   'WhatsApp Cloud API thread rows; long retention. Media on private R2; purge via CRM timeline delete.';
 
 -- Slim people list for inbox (one row per phone = latest message).
-CREATE OR REPLACE FUNCTION public.whatsapp_inbox_threads(p_limit integer DEFAULT 200)
+-- Optional p_since: only threads whose latest message is on/after that time (today list).
+DROP FUNCTION IF EXISTS public.whatsapp_inbox_threads(integer);
+DROP FUNCTION IF EXISTS public.whatsapp_inbox_threads(integer, timestamptz);
+
+CREATE OR REPLACE FUNCTION public.whatsapp_inbox_threads(
+  p_limit integer DEFAULT 200,
+  p_since timestamptz DEFAULT NULL
+)
 RETURNS TABLE (
   phone_e164 text,
   customer_id uuid,
@@ -213,6 +220,7 @@ BEGIN
   ),
   latest AS (
     SELECT * FROM ranked WHERE rn = 1
+      AND (p_since IS NULL OR created_at >= p_since)
     ORDER BY created_at DESC
     LIMIT v_limit
   ),
@@ -248,6 +256,6 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.whatsapp_inbox_threads(integer) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.whatsapp_inbox_threads(integer) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.whatsapp_inbox_threads(integer) TO service_role;
+REVOKE ALL ON FUNCTION public.whatsapp_inbox_threads(integer, timestamptz) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.whatsapp_inbox_threads(integer, timestamptz) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.whatsapp_inbox_threads(integer, timestamptz) TO service_role;

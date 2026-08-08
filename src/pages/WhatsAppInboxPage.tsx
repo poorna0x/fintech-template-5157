@@ -9,7 +9,6 @@ import {
   MessageSquarePlus,
   MoreVertical,
   Paperclip,
-  Phone,
   RefreshCw,
   Search,
   Send,
@@ -45,13 +44,16 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { buildAdminDashboardSearch } from '@/lib/adminDashboardUrl';
-import { supabase } from '@/lib/supabaseClient';
+import { db, supabase } from '@/lib/supabase';
+import CustomerReportDialog from '@/components/admin/CustomerReportDialog';
+import type { Customer, Technician } from '@/types';
 import {
   WHATSAPP_INBOX_COLUMNS,
   WHATSAPP_THREAD_LIMIT,
   countUnreadWhatsAppThreads,
   displayPhone,
   fetchWhatsAppInboxThreads,
+  searchWhatsAppInboxThreads,
   formatBubbleTime,
   formatThreadTime,
   hoursLeftInWindow,
@@ -141,6 +143,13 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const [sending, setSending] = useState(false);
   const [purging, setPurging] = useState(false);
   const [query, setQuery] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
+  const [searchThreads, setSearchThreads] = useState<WhatsAppThread[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportCustomer, setReportCustomer] = useState<Customer | null>(null);
+  const [reportTechnicians, setReportTechnicians] = useState<Technician[]>([]);
+  const [reportLoading, setReportLoading] = useState(false);
   const [templates, setTemplates] = useState<WhatsAppTemplateListItem[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [templatesError, setTemplatesError] = useState<string | null>(null);
@@ -200,7 +209,8 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     if (opts?.soft) setRefreshing(true);
     else setLoading(true);
     try {
-      const result = await fetchWhatsAppInboxThreads(supabase);
+      // Default list: only today's chats (server filter when RPC supports p_since).
+      const result = await fetchWhatsAppInboxThreads(supabase, { todayOnly: true });
       if (result.error) {
         toast.error(result.error || 'Failed to load WhatsApp threads');
         return;
@@ -210,6 +220,36 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       setLoading(false);
       setRefreshing(false);
     }
+  }, []);
+
+  const runSearch = useCallback(async () => {
+    const q = query.trim();
+    if (q.length < 2) {
+      toast.message('Type at least 2 characters (name, phone, email, or customer ID)');
+      return;
+    }
+    setSearchLoading(true);
+    setAppliedSearch(q);
+    try {
+      const result = await searchWhatsAppInboxThreads(supabase, q);
+      if (result.error) {
+        toast.error(result.error);
+        setSearchThreads([]);
+        return;
+      }
+      setSearchThreads(result.threads);
+      if (!result.threads.length) {
+        toast.message('No customers or chats found');
+      }
+    } finally {
+      setSearchLoading(false);
+    }
+  }, [query]);
+
+  const clearSearch = useCallback(() => {
+    setQuery('');
+    setAppliedSearch('');
+    setSearchThreads([]);
   }, []);
 
   const loadThread = useCallback(async (phone: string, opts?: { soft?: boolean }) => {
@@ -482,8 +522,12 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
 
   const activeThread: WhatsAppThread | null = useMemo(() => {
     if (!selectedPhone) return null;
-    return threads.find((t) => t.phone_e164 === selectedPhone) || null;
-  }, [threads, selectedPhone]);
+    return (
+      searchThreads.find((t) => t.phone_e164 === selectedPhone) ||
+      threads.find((t) => t.phone_e164 === selectedPhone) ||
+      null
+    );
+  }, [threads, searchThreads, selectedPhone]);
 
   const unreadCount = useMemo(
     () => countUnreadWhatsAppThreads(threads, readMap),
@@ -506,15 +550,11 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   }, [selectedPhone, activeThread?.last_at, activeThread?.last_direction]);
 
   const filteredThreads = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return threads;
-    return threads.filter((t) => {
-      const name = (t.customer_name || '').toLowerCase();
-      const phone = t.phone_e164;
-      const preview = (t.last_body || '').toLowerCase();
-      return name.includes(q) || phone.includes(q) || preview.includes(q);
-    });
-  }, [threads, query]);
+    if (appliedSearch.trim()) return searchThreads;
+    return threads;
+  }, [threads, searchThreads, appliedSearch]);
+
+  const listBusy = loading || searchLoading;
 
   const windowOpen = isWithinCustomerServiceWindow(activeThread?.inbound_at);
   const hoursLeft = hoursLeftInWindow(activeThread?.inbound_at);
@@ -678,12 +718,6 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     }
   };
 
-  const callPhone = () => {
-    if (!selectedPhone) return;
-    const local = selectedPhone.length > 10 ? selectedPhone.slice(-10) : selectedPhone;
-    window.location.href = `tel:${local}`;
-  };
-
   const openCustomerInCrm = () => {
     if (!activeThread?.customer_id) {
       toast.message('No CRM customer linked to this number');
@@ -698,6 +732,42 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         clearTool: true,
       }),
     });
+  };
+
+  const openCustomerReport = async () => {
+    if (!activeThread?.customer_id) {
+      toast.message('No CRM customer linked to this number');
+      return;
+    }
+    setReportLoading(true);
+    try {
+      const [{ data: customer, error }, techRes] = await Promise.all([
+        db.customers.getById(activeThread.customer_id),
+        reportTechnicians.length
+          ? Promise.resolve({ data: reportTechnicians })
+          : db.technicians.getList(100),
+      ]);
+      if (error || !customer) {
+        toast.error(error?.message || 'Could not load customer');
+        return;
+      }
+      const row = customer as Record<string, unknown>;
+      const mapped = {
+        ...row,
+        id: String(row.id),
+        fullName: String(row.full_name || row.fullName || ''),
+        full_name: String(row.full_name || row.fullName || ''),
+        customerId: String(row.customer_id || row.customerId || ''),
+        customer_id: String(row.customer_id || row.customerId || ''),
+      } as unknown as Customer;
+      if (!reportTechnicians.length && techRes.data) {
+        setReportTechnicians(techRes.data as Technician[]);
+      }
+      setReportCustomer(mapped);
+      setReportOpen(true);
+    } finally {
+      setReportLoading(false);
+    }
   };
 
   return (
@@ -809,34 +879,87 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                 </DropdownMenu>
               </div>
             </div>
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#667781]" />
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search..."
-                className="h-10 rounded-full border-0 bg-[#f0f2f5] pl-10 text-[15px] text-[#111b21] placeholder:text-[#667781] focus-visible:ring-0 md:h-9 md:rounded-lg md:focus-visible:ring-1 md:focus-visible:ring-[#25d366]"
-              />
+            <div className="flex items-center gap-2">
+              <div className="relative min-w-0 flex-1">
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#667781]" />
+                <Input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Name, phone, email, ID…"
+                  className="h-10 rounded-full border-0 bg-[#f0f2f5] pl-10 pr-9 text-[15px] text-[#111b21] placeholder:text-[#667781] focus-visible:ring-0 md:h-9 md:rounded-lg md:focus-visible:ring-1 md:focus-visible:ring-[#25d366]"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      void runSearch();
+                    }
+                    if (e.key === 'Escape' && (query || appliedSearch)) {
+                      e.preventDefault();
+                      clearSearch();
+                    }
+                  }}
+                />
+                {query || appliedSearch ? (
+                  <button
+                    type="button"
+                    className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full text-[#667781] hover:bg-black/5"
+                    title="Clear search"
+                    onClick={clearSearch}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                ) : null}
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                className="h-10 shrink-0 cursor-pointer rounded-full bg-[#008069] px-4 text-white hover:bg-[#006e5a] md:h-9 md:rounded-lg"
+                disabled={searchLoading || query.trim().length < 2}
+                onClick={() => void runSearch()}
+              >
+                {searchLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  'Search'
+                )}
+              </Button>
             </div>
+            {appliedSearch ? (
+              <p className="mt-1.5 truncate px-1 text-[11px] text-[#667781]">
+                Results for “{appliedSearch}” ·{' '}
+                <button
+                  type="button"
+                  className="cursor-pointer font-medium text-[#008069] underline-offset-2 hover:underline"
+                  onClick={clearSearch}
+                >
+                  Show today’s chats
+                </button>
+              </p>
+            ) : null}
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-2 md:pb-0">
-            {loading ? (
+            {listBusy ? (
               <div className="flex items-center justify-center gap-2 p-8 text-sm text-[#667781]">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Loading…
+                {searchLoading ? 'Searching…' : 'Loading…'}
               </div>
             ) : filteredThreads.length === 0 ? (
               <div className="space-y-3 p-8 text-center">
-                <p className="text-sm text-[#667781]">No conversations yet</p>
-                <Button
-                  type="button"
-                  className="cursor-pointer bg-[#25d366] text-white hover:bg-[#1da851]"
-                  onClick={() => setNewChatOpen(true)}
-                >
-                  <MessageSquarePlus className="mr-2 h-4 w-4" />
-                  Start a chat
-                </Button>
+                <p className="text-sm text-[#667781]">
+                  {appliedSearch.trim()
+                    ? 'No matching customers or chats'
+                    : 'No chats today — search by name, phone, email, or ID'}
+                </p>
+                {!appliedSearch.trim() ? (
+                  <Button
+                    type="button"
+                    className="cursor-pointer bg-[#25d366] text-white hover:bg-[#1da851]"
+                    onClick={() => setNewChatOpen(true)}
+                  >
+                    <MessageSquarePlus className="mr-2 h-4 w-4" />
+                    Start a chat
+                  </Button>
+                ) : null}
               </div>
             ) : (
               <ul>
@@ -1024,28 +1147,45 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                 <button
                   type="button"
                   className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#54656f] transition hover:bg-black/5"
-                  title="Call"
-                  onClick={callPhone}
-                >
-                  <Phone className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#54656f] transition hover:bg-black/5"
                   title="Copy number"
                   onClick={() => void copyPhone()}
                 >
                   <Copy className="h-4 w-4" />
                 </button>
-                <button
-                  type="button"
-                  className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#54656f] transition hover:bg-black/5 disabled:opacity-40"
-                  title="Open customer in CRM"
-                  disabled={!activeThread?.customer_id}
-                  onClick={openCustomerInCrm}
-                >
-                  <UserRound className="h-4 w-4" />
-                </button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-[#54656f] transition hover:bg-black/5 disabled:opacity-40"
+                      title="Customer"
+                      disabled={!activeThread?.customer_id || reportLoading}
+                    >
+                      {reportLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <UserRound className="h-4 w-4" />
+                      )}
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      disabled={!activeThread?.customer_id || reportLoading}
+                      onClick={() => void openCustomerReport()}
+                    >
+                      <FileText className="mr-2 h-4 w-4" />
+                      See report
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      disabled={!activeThread?.customer_id}
+                      onClick={openCustomerInCrm}
+                    >
+                      <UserRound className="mr-2 h-4 w-4" />
+                      Open customer
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button
@@ -1057,15 +1197,20 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={callPhone}>Call</DropdownMenuItem>
                     <DropdownMenuItem onClick={() => void copyPhone()}>
                       Copy number
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={!activeThread?.customer_id || reportLoading}
+                      onClick={() => void openCustomerReport()}
+                    >
+                      See report
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       disabled={!activeThread?.customer_id}
                       onClick={openCustomerInCrm}
                     >
-                      Open in CRM
+                      Open customer
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
@@ -1524,6 +1669,18 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {reportCustomer ? (
+        <CustomerReportDialog
+          open={reportOpen}
+          customer={reportCustomer}
+          technicians={reportTechnicians}
+          onOpenChange={(open) => {
+            setReportOpen(open);
+            if (!open) setReportCustomer(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
