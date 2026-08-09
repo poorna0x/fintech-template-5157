@@ -3,7 +3,7 @@
  * and open Notification access settings.
  */
 import { Capacitor, registerPlugin } from '@capacitor/core';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/lib/supabase';
 
 interface UpiCreditMatchPlugin {
   syncSession(options: {
