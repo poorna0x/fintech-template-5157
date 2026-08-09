@@ -54,20 +54,30 @@ export function jobAmcNotesText(amc: JobAmcInfo): string {
 }
 
 /**
- * Latest completed job for this customer that has usable AMC reference fields.
+ * Same-calendar-day completed job with usable AMC reference fields (requirements.amc_info).
+ * Does NOT fall back to older jobs — only today's completions.
  * Minimal select — only id / requirements / brand / completed_at.
  */
 export async function fetchLatestJobAmcPrefill(
   customerId: string
 ): Promise<JobAmcPrefill | null> {
   if (!customerId) return null;
+
+  const { getLocalCalendarDateYmd } = await import('@/lib/pendingPaymentReminder');
+  const todayYmd = getLocalCalendarDateYmd();
+  const dayStart = new Date(`${todayYmd}T00:00:00`);
+  const dayEnd = new Date(`${todayYmd}T00:00:00`);
+  dayEnd.setDate(dayEnd.getDate() + 1);
+
   const { data, error } = await supabase
     .from('jobs')
     .select('id, requirements, service_brand, completed_at')
     .eq('customer_id', customerId)
     .eq('status', 'COMPLETED')
+    .gte('completed_at', dayStart.toISOString())
+    .lt('completed_at', dayEnd.toISOString())
     .order('completed_at', { ascending: false })
-    .limit(25);
+    .limit(10);
 
   if (error || !data?.length) return null;
 

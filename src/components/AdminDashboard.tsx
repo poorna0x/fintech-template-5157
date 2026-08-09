@@ -5001,7 +5001,7 @@ const AdminDashboard = () => {
     setAmcModalOpen(true);
     void loadCustomerForDocuments(customer).then(setSelectedCustomerForAMC);
     if (fromJob) return;
-    // Menu → Generate AMC: pull AMC fields from the latest completed job (if any).
+    // Menu → Generate AMC: prefill only from a same-day completed job with amc_info (if any).
     void import('@/lib/jobAmcInfo').then(({ fetchLatestJobAmcPrefill }) =>
       fetchLatestJobAmcPrefill(customer.id).then((prefill) => {
         if (prefill) setAmcPrefillFromJob(prefill);

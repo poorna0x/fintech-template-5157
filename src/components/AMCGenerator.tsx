@@ -161,7 +161,7 @@ export default function AMCGenerator({
   /** Skip one terms auto-regen after loading a draft (preserves custom/edited terms). */
   const skipTermsAutoGenRef = useRef(0);
 
-  // Prefill from last completed job AMC reference (amount, validity, prefilter, auto-visit).
+  // Prefill from same-day completed job AMC reference (amount, validity, prefilter, auto-visit).
   React.useEffect(() => {
     if (!initialFromJob?.jobId || !initialFromJob.amcInfo) return;
     if (jobPrefillAppliedRef.current === initialFromJob.jobId) return;
@@ -229,7 +229,7 @@ export default function AMCGenerator({
         : includesPreSedimentFiltration;
     setTerms(generateAmcTerms(prefilter, period.kind, period.custom));
 
-    toast.success('Filled from last completed job AMC details');
+    toast.success('Filled from today’s completed job AMC details');
   }, [initialFromJob]);
 
   // Update terms when pre-sediment filtration or AMC service period (auto job creation) changes
