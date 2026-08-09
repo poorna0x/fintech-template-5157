@@ -79,6 +79,9 @@ export default function QuotationModal({ isOpen, onClose, customer }: QuotationM
     if ((quotation as any).notesHeading) {
       (pdfData as any).notesHeading = (quotation as any).notesHeading;
     }
+    if (quotation.customer?.id) {
+      (pdfData as any).authenticityCustomerId = quotation.customer.id;
+    }
 
     try {
       generateQuotationPDF(pdfData, action);

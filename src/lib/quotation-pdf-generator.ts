@@ -10,8 +10,13 @@ import {
   renderPdfSignatureHtml,
   resolvePdfDocumentBrand,
 } from './document-pdf-brand';
-import { downloadDocumentPdf } from './server-pdf-download';
+import { downloadDocumentPdfReturningBase64 } from './server-pdf-download';
 import { getDocumentPdfPrintFrameCss } from './document-pdf-print-frame';
+import {
+  generateDocumentPdfVerifyCode,
+  recordDocumentPdfAuthenticity,
+} from './documentPdfAuthenticity';
+import { toast } from 'sonner';
 
 export interface PDFQuotationData {
   billNumber: string;
@@ -57,6 +62,10 @@ export interface PDFQuotationData {
   terms?: string;
   documentBrand?: 'hydrogenro' | 'elevenro';
   sealVariant?: 'sign' | 'stamp';
+  /** Footer verify code for CRM authenticity check (hash stored separately). */
+  authenticityVerifyCode?: string;
+  /** CRM customer UUID for authenticity row (not printed on PDF). */
+  authenticityCustomerId?: string;
   bankDetails?: {
     accountHolderName?: string;
     bankName?: string;
@@ -70,12 +79,40 @@ export interface PDFQuotationData {
 
 export function generateQuotationPDF(quotationData: PDFQuotationData, action: 'print' | 'pdf' = 'print'): void {
   if (action === 'pdf') {
-    void downloadDocumentPdf({
-      html: generateQuotationHTML(quotationData),
-      filename: `Quotation_${quotationData.billNumber.replace(/\s+/g, '_')}.pdf`,
-    }).catch(() => {
-      /* errors surfaced via toast in downloadDocumentPdf */
-    });
+    void (async () => {
+      const verifyCode = generateDocumentPdfVerifyCode();
+      const withAuth: PDFQuotationData = {
+        ...quotationData,
+        authenticityVerifyCode: verifyCode,
+      };
+      const filename = `Quotation_${String(quotationData.billNumber || 'draft').replace(/\s+/g, '_')}.pdf`;
+      try {
+        const pdf = await downloadDocumentPdfReturningBase64({
+          html: generateQuotationHTML(withAuth),
+          filename,
+        });
+        const sourceKey = String(quotationData.billNumber || '').trim() || `quotation-${Date.now()}`;
+        const recorded = await recordDocumentPdfAuthenticity({
+          docType: 'quotation',
+          sourceKey,
+          verifyCode,
+          pdfBase64: pdf.pdfBase64,
+          filename: pdf.filename,
+          customerId: quotationData.authenticityCustomerId || null,
+          documentRef: quotationData.billNumber || sourceKey,
+        });
+        if (!recorded.ok) {
+          toast.warning('PDF downloaded, but authenticity fingerprint was not saved', {
+            description: recorded.error,
+          });
+        }
+      } catch (error) {
+        if (error instanceof Error && error.message === 'PRINT_FALLBACK') {
+          return;
+        }
+        /* errors already toasted in download helper */
+      }
+    })();
     return;
   }
 
@@ -815,8 +852,11 @@ function createQuotationContent(data: PDFQuotationData): string {
   const brand = resolvePdfDocumentBrand(data);
   const companyDetails = renderPdfCompanyDetailsHtml(data.company, brand);
   const signatureBlock = renderPdfSignatureHtml(brand, data.billDate, data.sealVariant ?? 'sign');
-  const footerBlock = renderPdfFooterHtml(brand, data.company);
-  
+  const footerBlock = renderPdfFooterHtml(brand, data.company, {
+    thankYouLine: 'Thank you for considering our services!',
+    authenticityVerifyCode: data.authenticityVerifyCode,
+  });
+
   const rawNotesHeading = (data.notesHeading ?? 'Additional Info').toString().trim();
   const notesHeading =
     rawNotesHeading.length === 0
@@ -1006,10 +1046,7 @@ function createQuotationContent(data: PDFQuotationData): string {
       ${signatureBlock}
       
       <!-- Footer -->
-      <div class="footer">
-        <p>Thank you for considering our services!</p>
-        <p>For any queries, contact us at ${data.company.phone} or ${data.company.email}</p>
-      </div>
+      ${footerBlock}
     </div>
   `;
 }

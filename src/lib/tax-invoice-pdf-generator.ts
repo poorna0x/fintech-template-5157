@@ -4,13 +4,18 @@
 import { getCompanyStateCode } from './indian-state-codes';
 import { sanitizeForTemplate, sanitizeNotesHtml } from './sanitize';
 import { resolveBrandSealSrc, resolveDocumentBrandFromData } from './service-brands';
-import { downloadDocumentPdf } from './server-pdf-download';
+import { downloadDocumentPdf, downloadDocumentPdfReturningBase64 } from './server-pdf-download';
 import { getDocumentPdfPrintFrameCss } from './document-pdf-print-frame';
 import {
   buildInvoicePaymentNoticeHtml,
   buildInvoicePaymentSummaryRowsHtml,
   documentPaymentNoticeCss,
 } from './document-payment';
+import {
+  generateDocumentPdfVerifyCode,
+  recordDocumentPdfAuthenticity,
+} from './documentPdfAuthenticity';
+import { toast } from 'sonner';
 
 function resolveTaxInvoiceSealSrc(data: PDFTaxInvoiceData): string {
   const brand = resolveDocumentBrandFromData({
@@ -147,6 +152,9 @@ export interface PDFTaxInvoiceData {
     branchName?: string;
     accountHolderName?: string;
   };
+  /** CRM customer UUID for authenticity row (not printed on PDF). */
+  authenticityCustomerId?: string;
+  pdfOptions?: Record<string, unknown>;
 }
 
 // Global flag to prevent multiple print operations
@@ -162,16 +170,44 @@ export function generateTaxInvoicePDF(billData: PDFTaxInvoiceData, action: 'prin
   isPrinting = true;
 
   if (action === 'pdf') {
-    void downloadDocumentPdf({
-      html: generateTaxInvoiceHTML(billData),
-      filename: `TaxInvoice_${billData.billNumber.replace(/\s+/g, '_')}.pdf`,
-    })
-      .then(() => {
+    void (async () => {
+      const verifyCode = generateDocumentPdfVerifyCode();
+      const withAuth: PDFTaxInvoiceData = {
+        ...billData,
+        pdfOptions: {
+          ...(billData.pdfOptions || {}),
+          authenticityVerifyCode: verifyCode,
+        },
+      };
+      const filename = `TaxInvoice_${String(billData.billNumber || 'draft').replace(/\s+/g, '_')}.pdf`;
+      try {
+        const pdf = await downloadDocumentPdfReturningBase64({
+          html: generateTaxInvoiceHTML(withAuth),
+          filename,
+        });
+        const sourceKey = String(billData.billNumber || '').trim() || `invoice-${Date.now()}`;
+        const recorded = await recordDocumentPdfAuthenticity({
+          docType: 'invoice',
+          sourceKey,
+          verifyCode,
+          pdfBase64: pdf.pdfBase64,
+          filename: pdf.filename,
+          customerId: billData.authenticityCustomerId || null,
+          documentRef: billData.billNumber || sourceKey,
+        });
+        if (!recorded.ok) {
+          toast.warning('PDF downloaded, but authenticity fingerprint was not saved', {
+            description: recorded.error,
+          });
+        }
+      } catch (error) {
+        if (error instanceof Error && error.message === 'PRINT_FALLBACK') {
+          /* print fallback — no fingerprint */
+        }
+      } finally {
         isPrinting = false;
-      })
-      .catch(() => {
-        isPrinting = false;
-      });
+      }
+    })();
     return;
   }
   
@@ -697,10 +733,15 @@ function createTaxInvoiceContent(data: PDFTaxInvoiceData): string {
       ` : ''}
       
       <!-- Footer -->
-      ${(data as any).pdfOptions?.showFooterText !== false ? `
+      ${(data as any).pdfOptions?.showFooterText !== false || (data as any).pdfOptions?.authenticityVerifyCode ? `
         <div class="footer" style="page-break-after: avoid; margin-bottom: 0; padding-bottom: 0;">
+          ${(data as any).pdfOptions?.showFooterText !== false ? `
           <p>Thank you for choosing Hydrogenro!</p>
           <p>For any queries, contact us at ${data.company.phone} or ${data.company.email}</p>
+          ` : ''}
+          ${(data as any).pdfOptions?.authenticityVerifyCode ? `
+          <p style="margin-top: 6px; letter-spacing: 0.02em; color: #9ca3af;">Verify authenticity in CRM · Code ${sanitizeForTemplate(String((data as any).pdfOptions.authenticityVerifyCode))}</p>
+          ` : ''}
         </div>
       ` : ''}
     </div>

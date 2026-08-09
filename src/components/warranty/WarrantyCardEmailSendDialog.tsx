@@ -251,7 +251,7 @@ export default function WarrantyCardEmailSendDialog({
       }
 
       toast.loading('Generating PDF…', { id: toastId });
-      const pdf = await generateWarrantyCardPdfBase64(pdfData);
+      const pdf = await generateWarrantyCardPdfBase64(pdfData, { customerId });
       toast.loading('Sending on WhatsApp…', { id: toastId });
       const caption = (
         message.trim() || getDefaultDocumentMessage('warranty_document')
@@ -366,7 +366,7 @@ export default function WarrantyCardEmailSendDialog({
 
       const phone = formatPhoneForWhatsApp(whatsappPhone);
       toast.loading('Sending WhatsApp…', { id: toastId });
-      const pdf = await generateWarrantyCardPdfBase64(pdfData);
+      const pdf = await generateWarrantyCardPdfBase64(pdfData, { customerId });
       const caption = (
         message.trim() || getDefaultDocumentMessage('warranty_document')
       ).slice(0, 1024);

@@ -6,8 +6,14 @@ import {
   resolvePdfDocumentBrand,
 } from './document-pdf-brand';
 import { getDocumentBrandLabel, resolveBrandSealSrc } from './service-brands';
-import { downloadDocumentPdf } from './server-pdf-download';
+import { downloadDocumentPdfReturningBase64 } from './server-pdf-download';
 import { getDocumentPdfPrintFrameCss } from './document-pdf-print-frame';
+import {
+  generateDocumentPdfVerifyCode,
+  recordDocumentPdfAuthenticity,
+  todayYmdIst,
+} from './documentPdfAuthenticity';
+import { toast } from 'sonner';
 
 interface AMCPDFData {
   billNumber: string;
@@ -60,6 +66,10 @@ interface AMCPDFData {
 interface AMCPDFOptions {
   includeDetails?: boolean;
   showComputerGeneratedText?: boolean;
+  /** 8-char code shown in footer — Verify authenticity in CRM · Code XXXXXXXX */
+  authenticityVerifyCode?: string;
+  /** Stable "Generated on" date (YYYY-MM-DD) so fingerprint matches re-downloads */
+  authenticityGeneratedOnYmd?: string;
 }
 
 export type { AMCPDFOptions };
@@ -946,11 +956,22 @@ export function generateAMCHTML(data: AMCPDFData, options?: AMCPDFOptions): stri
         ${options?.showComputerGeneratedText !== false ? `
         <p class="footer-text">This is a Computer Generated Invoice. No signature is required. This invoice is valid and legally binding.</p>
         ` : ''}
-        <p class="footer-text">Generated on: ${new Date().toLocaleDateString('en-IN', { 
-          day: '2-digit', 
-          month: '2-digit', 
-          year: 'numeric' 
-        })} | Professional RO Water Purifier Services in Bengaluru</p>
+        <p class="footer-text">Generated on: ${(() => {
+          const ymd = options?.authenticityGeneratedOnYmd;
+          const d = ymd && /^\d{4}-\d{2}-\d{2}$/.test(ymd)
+            ? new Date(`${ymd}T12:00:00`)
+            : new Date();
+          return d.toLocaleDateString('en-IN', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+          });
+        })()} | Professional RO Water Purifier Services in Bengaluru</p>
+        ${options?.authenticityVerifyCode ? `
+        <p class="footer-text" style="margin-top: 6px; letter-spacing: 0.02em; color: #9ca3af;">
+          Verify authenticity in CRM · Code ${sanitizeForTemplate(options.authenticityVerifyCode)}
+        </p>
+        ` : ''}
         <p class="footer-text" style="margin-top: 10px;">
           Phone: ${data.company.phone} | Email: ${data.company.email} | Website: ${data.company.website || ""}
         </p>
@@ -979,17 +1000,48 @@ export function generateAMCPDF(
   try {
     if (action === 'pdf') {
       const data = billToAmcPdfData(bill);
+      const verifyCode =
+        options?.authenticityVerifyCode || generateDocumentPdfVerifyCode();
+      const generatedOnYmd =
+        options?.authenticityGeneratedOnYmd || todayYmdIst();
+      const pdfOptions: AMCPDFOptions = {
+        ...options,
+        authenticityVerifyCode: verifyCode,
+        authenticityGeneratedOnYmd: generatedOnYmd,
+      };
+      const filename = `AMC_${String(bill.billNumber || 'agreement').replace(/\s+/g, '_')}.pdf`;
 
-      void downloadDocumentPdf({
-        html: generateAMCHTML(data, options),
-        filename: `AMC_${bill.billNumber.replace(/\s+/g, '_')}.pdf`,
-      })
-        .then(() => {
+      void (async () => {
+        try {
+          const pdf = await downloadDocumentPdfReturningBase64({
+            html: generateAMCHTML(data, pdfOptions),
+            filename,
+          });
+          const sourceKey =
+            String(bill.billNumber || '').trim() || `amc-${Date.now()}`;
+          const recorded = await recordDocumentPdfAuthenticity({
+            docType: 'amc',
+            sourceKey,
+            verifyCode,
+            pdfBase64: pdf.pdfBase64,
+            filename: pdf.filename,
+            customerId: bill.customer?.id || null,
+            documentRef: bill.billNumber || sourceKey,
+            generatedOnYmd,
+          });
+          if (!recorded.ok) {
+            toast.warning('PDF downloaded, but authenticity fingerprint was not saved', {
+              description: recorded.error,
+            });
+          }
+        } catch (error) {
+          if (error instanceof Error && error.message === 'PRINT_FALLBACK') {
+            return;
+          }
+        } finally {
           isPrinting = false;
-        })
-        .catch(() => {
-          isPrinting = false;
-        });
+        }
+      })();
       return;
     }
 
