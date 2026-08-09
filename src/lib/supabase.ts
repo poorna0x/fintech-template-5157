@@ -5068,11 +5068,101 @@ export const db = {
       return { data: data && data.length > 0 ? data[0] : null, error };
     },
 
-    async getAll(limit: number = 100, offset: number = 0) {
+    /**
+     * Paginated AMC list for the AMC view UI.
+     * Auto-generation (`createAMCServiceJobs`) does NOT use this — it queries all ACTIVE
+     * contracts itself so list pagination cannot shrink or skip auto-create.
+     */
+    async getAll(
+      limit: number = 100,
+      offset: number = 0,
+      options?: {
+        /** UI filter by end_date vs today (not amc_contracts.status). */
+        endDateStatus?: 'ALL' | 'ACTIVE' | 'EXPIRED';
+        search?: string;
+        /** YYYY-MM-DD; defaults to local calendar date when status filter is used. */
+        todayYmd?: string;
+      }
+    ) {
+      const endDateStatus = options?.endDateStatus ?? 'ALL';
+      const searchRaw = (options?.search || '').trim();
+      const todayYmd =
+        options?.todayYmd ||
+        (() => {
+          const d = new Date();
+          const y = d.getFullYear();
+          const m = String(d.getMonth() + 1).padStart(2, '0');
+          const day = String(d.getDate()).padStart(2, '0');
+          return `${y}-${m}-${day}`;
+        })();
+
+      // Sanitize for PostgREST .or() / ilike (commas break or-lists).
+      const search = searchRaw.replace(/[%_,.()]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+
+      let customerIdFilter: string[] | null = null;
+      let technicianIdFilter: string[] | null = null;
+
+      if (search) {
+        const pattern = `%${search}%`;
+        const quoted = `"${pattern.replace(/"/g, '')}"`;
+        const [{ data: matchedCustomers, error: customerSearchError }, { data: matchedTechs, error: techSearchError }] =
+          await Promise.all([
+            supabase
+              .from('customers')
+              .select('id')
+              .or(
+                [
+                  `full_name.ilike.${quoted}`,
+                  `phone.ilike.${quoted}`,
+                  `brand.ilike.${quoted}`,
+                  `model.ilike.${quoted}`,
+                  `visible_address.ilike.${quoted}`,
+                  `customer_id.ilike.${quoted}`,
+                ].join(',')
+              )
+              .limit(400),
+            supabase.from('technicians').select('id').ilike('full_name', pattern).limit(50),
+          ]);
+
+        if (customerSearchError) {
+          return { data: null, error: customerSearchError, count: 0 };
+        }
+        if (techSearchError) {
+          return { data: null, error: techSearchError, count: 0 };
+        }
+
+        customerIdFilter = (matchedCustomers || []).map((c: { id: string }) => c.id);
+        technicianIdFilter = (matchedTechs || []).map((t: { id: string }) => t.id);
+
+        if (customerIdFilter.length === 0 && technicianIdFilter.length === 0) {
+          return { data: [], error: null, count: 0 };
+        }
+      }
+
       let query = supabase
         .from('amc_contracts')
-        .select(`${AMC_CONTRACT_ROW_COLUMNS},customers(id, full_name, phone, email, customer_id, service_type, brand, model, last_service_date, visible_address, address)`, { count: 'exact' })
+        .select(
+          `${AMC_CONTRACT_ROW_COLUMNS},customers(id, full_name, phone, email, customer_id, service_type, brand, model, last_service_date, visible_address, address)`,
+          { count: 'exact' }
+        )
         .order('created_at', { ascending: false });
+
+      if (endDateStatus === 'ACTIVE') {
+        query = query.gte('end_date', todayYmd);
+      } else if (endDateStatus === 'EXPIRED') {
+        query = query.lt('end_date', todayYmd);
+      }
+
+      if (customerIdFilter || technicianIdFilter) {
+        const parts: string[] = [];
+        if (customerIdFilter && customerIdFilter.length > 0) {
+          parts.push(`customer_id.in.(${customerIdFilter.join(',')})`);
+        }
+        if (technicianIdFilter && technicianIdFilter.length > 0) {
+          parts.push(`given_by_technician_id.in.(${technicianIdFilter.join(',')})`);
+        }
+        query = query.or(parts.join(','));
+      }
 
       if (limit > 0 && limit < 100000) {
         query = query.range(offset, offset + limit - 1);
@@ -5081,7 +5171,7 @@ export const db = {
       }
 
       const { data, error, count } = await query;
-      return { data, error, count };
+      return { data, error, count: count ?? 0 };
     },
 
     async getById(id: string) {
@@ -5140,6 +5230,7 @@ export const db = {
     },
 
     async createAMCServiceJobs(options?: { dryRun?: boolean; force?: boolean }) {
+      // Independent of AMC view pagination: always scans all ACTIVE contracts still in force.
       const dryRun = options?.dryRun === true;
       // force: manual "Run now" button bypasses the 6-hour throttle WITHOUT touching the
       // shared throttle timer, so automatic background runs keep their own 6-hour schedule.
