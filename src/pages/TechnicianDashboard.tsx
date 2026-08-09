@@ -63,7 +63,7 @@ import { toast } from 'sonner';
 import { getAmcDocumentBrandLabel } from '@/lib/amc-brand';
 import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { formatCompletedWhen } from '@/lib/relativeTime';
-import { getJobEquipmentDisplay, resolveJobEquipment, parseJobRequirements, isOfficeCompletedJob } from '@/lib/adminUtils';
+import { getJobEquipmentDisplay, resolveJobEquipment, parseJobRequirements, isOfficeCompletedJob, isOpenAmcServiceJob } from '@/lib/adminUtils';
 import {
   applyOtpToRequirements,
   getStoredOtpFromRequirements,
@@ -7065,7 +7065,9 @@ const TechnicianDashboard = () => {
                 <div key={job.id} className="mb-4">
                   <Card 
                     className={`hover:shadow-md transition-shadow ${
-                      (job as any).status === 'IN_PROGRESS' || job.status === 'IN_PROGRESS'
+                      isOpenAmcServiceJob(job)
+                        ? 'border-2 border-blue-500'
+                        : (job as any).status === 'IN_PROGRESS' || job.status === 'IN_PROGRESS'
                         ? 'border-2 border-orange-500' 
                         : (job as any).status === 'EN_ROUTE' || job.status === 'EN_ROUTE'
                         ? 'border-2 border-yellow-500'

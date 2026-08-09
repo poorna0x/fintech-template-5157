@@ -5412,7 +5412,11 @@ export const db = {
 
         {
           if (isDev) console.log(`  ✅ Will create ${createReason} job for ${customer.customer_id || customer.id}`);
-          const serviceType = customer.service_type || 'RO';
+          // AMC Service is always RO (not softener). Customer may be RO_SOFTENER with
+          // comma-separated brand/model — take the RO slot only.
+          const { readCustomerEquipmentSlot } = await import('@/lib/equipment-suggestions');
+          const roEquipment = readCustomerEquipmentSlot(customer, 'RO');
+          const serviceType = 'RO' as const;
           const jobNumber = generateJobNumber(serviceType);
 
           const scheduledDateStr = getLocalCalendarDateYmd();
@@ -5428,8 +5432,9 @@ export const db = {
             customer_id: customer.id,
             service_type: serviceType,
             service_sub_type: 'AMC Service',
-            brand: customer.brand || 'Not Specified',
-            model: customer.model || 'Not Specified',
+            service_site: 'primary',
+            brand: roEquipment.brand || 'Not Specified',
+            model: roEquipment.model || 'Not Specified',
             scheduled_date: scheduledDateStr,
             scheduled_time_slot: 'MORNING',
             estimated_duration: 120,
