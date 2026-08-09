@@ -138,6 +138,19 @@ async function consumeFreshCall(): Promise<{ digits: string; at: number } | null
   return digits.length >= 7 ? { digits, at } : null;
 }
 
+/** One-shot read of a pending local ring (clears native prefs). Used when returning from Settings. */
+export async function consumePendingAdminIncomingCall(): Promise<{
+  digits: string;
+  at: number;
+} | null> {
+  if (!isAvailable()) return null;
+  try {
+    return await consumeFreshCall();
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Start caller lookup: checks for a pending call now and on every app resume,
  * delivering the normalized number to `onNumber`. Returns a cleanup function.

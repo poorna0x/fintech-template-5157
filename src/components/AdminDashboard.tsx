@@ -197,6 +197,10 @@ import {
   type IncomingAutoSearchRecord,
 } from '@/lib/adminSharedIncomingCall';
 import {
+  setAdminIncomingCallSearchHandler,
+  wasIncomingCallJustDeliveredLive,
+} from '@/lib/adminIncomingCallBridge';
+import {
   EQUIPMENT_BRAND_DATA as brandData,
   EQUIPMENT_MODEL_DATA as modelData,
 } from '@/lib/equipment-suggestions';
@@ -4716,46 +4720,18 @@ const AdminDashboard = () => {
     callerLookupSearchRef.current = handleSearchFromIncomingCall;
   }, [handleSearchFromIncomingCall]);
 
+  // Portal owns native/shared call listeners (stays alive on Settings). Dashboard
+  // only registers the search handler while mounted.
   useEffect(() => {
-    let cleanup: (() => void) | null = null;
-    let cancelled = false;
-    void import('@/lib/adminIncomingCall').then(async ({ initAdminCallerLookup }) => {
-      const dispose = await initAdminCallerLookup((digits, { at }) =>
-        callerLookupSearchRef.current(digits, { offerNotFound: true, ringAt: at })
-      );
-      if (cancelled) {
-        dispose();
-      } else {
-        cleanup = dispose;
-      }
+    setAdminIncomingCallSearchHandler((digits, opts) => {
+      callerLookupSearchRef.current(digits, opts);
     });
-    return () => {
-      cancelled = true;
-      cleanup?.();
-    };
-  }, []);
-
-  // Shared caller board: known customers only — auto-search, never the
-  // unknown-caller Recent button (local-phone-only, 10 min).
-  useEffect(() => {
-    let cleanup: (() => void) | null = null;
-    let cancelled = false;
-    void import('@/lib/adminSharedIncomingCall').then(({ initAdminSharedCallLookup }) => {
-      const dispose = initAdminSharedCallLookup((digits, ringAt) =>
-        callerLookupSearchRef.current(digits, { offerNotFound: false, ringAt })
-      );
-      if (cancelled) dispose();
-      else cleanup = dispose;
-    });
-    return () => {
-      cancelled = true;
-      cleanup?.();
-    };
+    return () => setAdminIncomingCallSearchHandler(null);
   }, []);
 
   // After Settings (or any remount): restore incoming-call auto-search from
-  // sessionStorage while the 1.5-min window is still open. Local prefs / shared
-  // board are already consumed/"handled", so without this Home opens empty.
+  // sessionStorage while the 1.5-min window is still open. Portal already
+  // stashes the number if the ring happened on Settings.
   useEffect(() => {
     const record = readIncomingAutoSearch();
     if (!record?.phone) return;
@@ -4765,6 +4741,10 @@ const AdminDashboard = () => {
       return;
     }
     setIncomingAutoSearch(record);
+    if (wasIncomingCallJustDeliveredLive(record.phone)) {
+      // Portal just delivered to this mount (or navigated with ?search=) — avoid a second search.
+      return;
+    }
     const searchParam =
       new URLSearchParams(window.location.search).get('search')?.trim() ?? '';
     if (
@@ -4775,7 +4755,7 @@ const AdminDashboard = () => {
       return;
     }
     callerLookupSearchRef.current(record.phone, {
-      offerNotFound: false,
+      offerNotFound: true,
       ringAt: record.at,
     });
   }, []);
