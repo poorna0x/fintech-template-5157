@@ -262,7 +262,14 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
       }
 
       if (result.created > 0) {
-        toast.success(`Created ${result.created} AMC service job${result.created > 1 ? 's' : ''}`);
+        const failed = Array.isArray((result as any).insertErrors)
+          ? (result as any).insertErrors.length
+          : 0;
+        toast.success(
+          failed > 0
+            ? `Created ${result.created} AMC service job${result.created > 1 ? 's' : ''} (${failed} failed)`
+            : `Created ${result.created} AMC service job${result.created > 1 ? 's' : ''}`
+        );
         await loadAMCRecords();
         return;
       }
