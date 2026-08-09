@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { Check, Copy, Download, Droplets, Phone, Share2 } from 'lucide-react';
+import { AlertTriangle, Check, Copy, Download, Droplets, Phone, Share2 } from 'lucide-react';
 import { getDocumentBrandLabel, normalizeDocumentBrand, type DocumentBrand } from '@/lib/service-brands';
+import { UpiAppOpenGrid, UpiOpenAppCta } from '@/components/UpiAppOpenButtons';
 import {
+  buildUpiAppDeepLinks,
   buildUpiPayDeepLink,
+  detectPayPlatform,
   fetchUpiPayShortLink,
   isValidUpiId,
   normalizePaymentPhone,
@@ -65,7 +68,6 @@ async function getQrPngBlob(qr: QrCodeInstance | null): Promise<Blob | null> {
   }
 }
 
-/** Same mark as the public website header (droplet + brand name). */
 function PayBrandMark({ brand }: { brand: DocumentBrand }) {
   const name = brand === 'elevenro' ? 'ElevenRO' : 'Hydrogen RO';
   return (
@@ -78,12 +80,26 @@ function PayBrandMark({ brand }: { brand: DocumentBrand }) {
   );
 }
 
+function UpiIntentFallbackNote({ hasPhone }: { hasPhone: boolean }) {
+  return (
+    <div className="rounded-xl border border-amber-200/90 bg-amber-50 px-3 py-2.5 text-left">
+      <div className="flex gap-2">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden />
+        <div className="min-w-0 text-xs leading-relaxed text-amber-950">
+          <p className="font-semibold">If your phone shows a warning</p>
+          <p className="mt-0.5">
+            You can ignore it and continue. If payment still fails, scan the QR below or pay using
+            the UPI ID{hasPhone ? ' / phone number' : ''} above.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Public HTTPS landing for WhatsApp UPI pay links.
  * Supports short /p/:code and legacy /pay-upi?... query links.
- *
- * UPI app deep-links are intentionally omitted — NPCI / store policy blocks
- * third-party “Open in GPay/PhonePe” from web. Customers scan or save the QR.
  */
 const PayUpi = () => {
   const { code: codeParam } = useParams<{ code?: string }>();
@@ -92,6 +108,7 @@ const PayUpi = () => {
   const qrInstanceRef = useRef<QrCodeInstance | null>(null);
   const [copiedField, setCopiedField] = useState<'upi' | 'phone' | null>(null);
   const [copyError, setCopyError] = useState(false);
+  const [launchTried, setLaunchTried] = useState(false);
   const [qrReady, setQrReady] = useState(false);
   const [actionBusy, setActionBusy] = useState<'download' | 'share' | null>(null);
   const [actionHint, setActionHint] = useState<string | null>(null);
@@ -146,10 +163,28 @@ const PayUpi = () => {
   );
 
   const upiLink = useMemo(() => (valid ? buildUpiPayDeepLink(payInput) : null), [valid, payInput]);
+  const appLinks = useMemo(() => (valid ? buildUpiAppDeepLinks(payInput) : []), [valid, payInput]);
+  const iosAppLinks = useMemo(() => appLinks.filter((app) => app.id !== 'bhim'), [appLinks]);
+  const detected = useMemo(() => detectPayPlatform(), []);
+  const [pickedDevice, setPickedDevice] = useState<'android' | 'ios' | null>(null);
+  const platform = detected === 'other' ? pickedDevice ?? 'other' : detected;
+  const needsDevicePick = detected === 'other' && !pickedDevice;
+  const showAndroidOpen = platform === 'android';
+  const showIosApps = platform === 'ios';
 
   useEffect(() => {
     document.title = `Pay via UPI | ${brandLabel}`;
   }, [brandLabel]);
+
+  // Android: soft-open system UPI chooser once (WhatsApp / Chrome in-app).
+  useEffect(() => {
+    if (!upiLink || platform !== 'android' || launchTried) return;
+    setLaunchTried(true);
+    const t = window.setTimeout(() => {
+      window.location.href = upiLink;
+    }, 500);
+    return () => window.clearTimeout(t);
+  }, [upiLink, platform, launchTried]);
 
   useEffect(() => {
     if (!upiLink || !qrRef.current) return;
@@ -164,12 +199,11 @@ const PayUpi = () => {
         const { default: QRCodeStyling } = await import('qr-code-styling');
         if (cancelled || !qrRef.current) return;
         const qr = new QRCodeStyling({
-          // Compact so payment details + QR fit together on a phone screen.
-          width: 176,
-          height: 176,
+          width: 152,
+          height: 152,
           type: 'canvas',
           data: upiLink,
-          margin: 6,
+          margin: 5,
           qrOptions: { errorCorrectionLevel: 'M' },
           dotsOptions: { color: '#000000', type: 'square' },
           cornersSquareOptions: { color: '#000000', type: 'square' },
@@ -199,8 +233,7 @@ const PayUpi = () => {
 
   const qrFileName = useMemo(() => {
     const safeBrand = brand === 'elevenro' ? 'elevenro' : 'hydrogen-ro';
-    const amt =
-      Number.isFinite(am) && am > 0 ? `-${am.toFixed(0)}` : '';
+    const amt = Number.isFinite(am) && am > 0 ? `-${am.toFixed(0)}` : '';
     return `${safeBrand}-upi-pay${amt}.png`;
   }, [brand, am]);
 
@@ -232,10 +265,6 @@ const PayUpi = () => {
     }
   };
 
-  /**
-   * Share QR to WhatsApp (or any app). Never auto-downloads —
-   * use Download QR for that. Prefers Web Share with the image when available.
-   */
   const handleShareWhatsApp = async () => {
     setActionHint(null);
     setActionBusy('share');
@@ -279,8 +308,6 @@ const PayUpi = () => {
         }
       }
 
-      // No Web Share (typical desktop): open WhatsApp contact picker with text only.
-      // Do not download — Download QR is a separate action.
       const waUrl = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
       window.open(waUrl, '_blank', 'noopener,noreferrer');
       setActionHint(
@@ -295,7 +322,7 @@ const PayUpi = () => {
   };
 
   const shellClass =
-    'min-h-screen bg-gradient-to-b from-sky-50 via-white to-slate-50 px-4 py-5 sm:py-10 font-sans text-slate-900';
+    'min-h-[100dvh] bg-gradient-to-b from-sky-50 via-white to-slate-50 px-4 py-4 pb-6 font-sans text-slate-900 sm:py-6';
 
   if (shortLinkLoading) {
     return (
@@ -331,52 +358,62 @@ const PayUpi = () => {
       <div className="mx-auto w-full max-w-md">
         <PayBrandMark brand={brand} />
 
-        <div className="mt-4 text-center sm:mt-6">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-700">Secure UPI payment</p>
-          <h1 className="mt-1 text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl">
+        <div className="mt-3 text-center sm:mt-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-700">
+            Secure UPI payment
+          </p>
+          <h1 className="mt-0.5 text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl">
             Pay {brandLabel}
           </h1>
           {amountLabel ? (
-            <p className="mt-1 text-2xl font-bold tabular-nums tracking-tight text-slate-900 sm:text-3xl">
+            <p className="mt-0.5 text-2xl font-bold tabular-nums tracking-tight text-slate-900">
               {amountLabel}
             </p>
           ) : null}
         </div>
 
-        <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm shadow-slate-200/60">
-          <div className="border-b border-slate-100 px-4 py-2.5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Payment details</p>
+        <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm shadow-slate-200/60">
+          <div className="border-b border-slate-100 px-4 py-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              Payment details
+            </p>
           </div>
 
           <div className="space-y-0 divide-y divide-slate-100">
             {pn ? (
-              <div className="flex items-start gap-3 px-4 py-2.5">
+              <div className="flex items-start gap-3 px-4 py-2">
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs text-slate-500">Payee name</p>
+                  <p className="text-[11px] text-slate-500">Payee name</p>
                   <p className="mt-0.5 text-sm font-semibold text-slate-900">{pn}</p>
                 </div>
               </div>
             ) : null}
 
-            <div className="flex items-start gap-3 px-4 py-2.5">
+            <div className="flex items-start gap-3 px-4 py-2">
               <div className="min-w-0 flex-1">
-                <p className="text-xs text-slate-500">UPI ID</p>
-                <p className="mt-0.5 select-all break-all font-mono text-sm font-semibold text-slate-900">{pa}</p>
+                <p className="text-[11px] text-slate-500">UPI ID</p>
+                <p className="mt-0.5 select-all break-all font-mono text-sm font-semibold text-slate-900">
+                  {pa}
+                </p>
               </div>
               <button
                 type="button"
                 onClick={() => void handleCopy('upi', pa)}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
               >
-                {copiedField === 'upi' ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                {copiedField === 'upi' ? (
+                  <Check className="h-3 w-3 text-emerald-600" />
+                ) : (
+                  <Copy className="h-3 w-3" />
+                )}
                 {copiedField === 'upi' ? 'Copied' : 'Copy'}
               </button>
             </div>
 
             {ph ? (
-              <div className="flex items-start gap-3 px-4 py-2.5">
+              <div className="flex items-start gap-3 px-4 py-2">
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs text-slate-500">Pay to phone</p>
+                  <p className="text-[11px] text-slate-500">Pay to phone</p>
                   <p className="mt-0.5 flex items-center gap-1.5 font-mono text-sm font-semibold text-slate-900">
                     <Phone className="h-3.5 w-3.5 text-slate-400" />
                     {ph}
@@ -385,12 +422,12 @@ const PayUpi = () => {
                 <button
                   type="button"
                   onClick={() => void handleCopy('phone', ph)}
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                  className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
                 >
                   {copiedField === 'phone' ? (
-                    <Check className="h-3.5 w-3.5 text-emerald-600" />
+                    <Check className="h-3 w-3 text-emerald-600" />
                   ) : (
-                    <Copy className="h-3.5 w-3.5" />
+                    <Copy className="h-3 w-3" />
                   )}
                   {copiedField === 'phone' ? 'Copied' : 'Copy'}
                 </button>
@@ -400,55 +437,110 @@ const PayUpi = () => {
         </div>
 
         {copyError ? (
-          <p className="mt-2 text-center text-sm text-amber-700">
+          <p className="mt-2 text-center text-xs text-amber-700">
             Couldn’t copy automatically — long-press the value above and choose Copy.
           </p>
         ) : null}
 
-        <div className="mt-3 rounded-2xl border border-slate-200/80 bg-white p-3.5 text-center shadow-sm shadow-slate-200/60 sm:mt-4 sm:p-5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Scan to pay</p>
-          <div className="mt-2.5 flex justify-center">
+        {needsDevicePick ? (
+          <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+            <p className="text-center text-sm font-semibold text-slate-900">
+              Are you using Android or iPhone?
+            </p>
+            <p className="mt-0.5 text-center text-xs text-slate-500">
+              We’ll show the right payment buttons for your phone.
+            </p>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setPickedDevice('android')}
+                className="rounded-xl border border-slate-200 bg-slate-50 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-100"
+              >
+                Android
+              </button>
+              <button
+                type="button"
+                onClick={() => setPickedDevice('ios')}
+                className="rounded-xl border border-slate-200 bg-slate-50 py-2.5 text-sm font-semibold text-slate-800 hover:bg-slate-100"
+              >
+                iPhone
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {!needsDevicePick && (showAndroidOpen || showIosApps) ? (
+          <div className="mt-3 space-y-2.5">
+            {detected === 'other' ? (
+              <button
+                type="button"
+                onClick={() => setPickedDevice(null)}
+                className="w-full text-center text-xs font-medium text-sky-700 hover:underline"
+              >
+                Change device
+              </button>
+            ) : null}
+
+            <UpiIntentFallbackNote hasPhone={Boolean(ph)} />
+
+            {showAndroidOpen && upiLink ? <UpiOpenAppCta href={upiLink} /> : null}
+
+            {showIosApps && iosAppLinks.length ? (
+              <div>
+                <p className="text-center text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  Open with
+                </p>
+                <UpiAppOpenGrid apps={iosAppLinks} />
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div
+          id="pay-qr"
+          className="mt-3 scroll-mt-3 rounded-2xl border border-slate-200/80 bg-white p-3 text-center shadow-sm shadow-slate-200/60 sm:p-4"
+        >
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Or scan QR to pay
+          </p>
+          <div className="mt-2 flex justify-center">
             <div
               ref={qrRef}
-              className="flex h-[176px] w-[176px] items-center justify-center bg-white"
+              className="flex h-[152px] w-[152px] items-center justify-center bg-white"
               aria-label="UPI payment QR code"
             />
           </div>
-          {!qrReady ? <p className="mt-1.5 text-xs text-slate-400">Loading QR…</p> : null}
-          <p className="mt-2 text-xs leading-relaxed text-slate-500">
-            Open any UPI app and scan this QR — amount and payee fill in automatically.
+          {!qrReady ? <p className="mt-1 text-[11px] text-slate-400">Loading QR…</p> : null}
+          <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
+            Amount and payee fill in automatically when you scan.
           </p>
 
-          <div className="mt-3 grid grid-cols-2 gap-2">
+          <div className="mt-2.5 grid grid-cols-2 gap-2">
             <button
               type="button"
               disabled={!qrReady || actionBusy !== null}
               onClick={() => void handleDownloadQr()}
-              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-semibold text-slate-800 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm"
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs font-semibold text-slate-800 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <Download className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              <Download className="h-3.5 w-3.5" />
               {actionBusy === 'download' ? 'Saving…' : 'Download QR'}
             </button>
             <button
               type="button"
               disabled={!qrReady || actionBusy !== null}
               onClick={() => void handleShareWhatsApp()}
-              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-xs font-semibold text-emerald-900 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm"
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-xs font-semibold text-emerald-900 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <Share2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+              <Share2 className="h-3.5 w-3.5" />
               {actionBusy === 'share' ? 'Opening…' : 'Share'}
             </button>
           </div>
           {actionHint ? (
-            <p className="mt-2 text-xs leading-relaxed text-sky-800">{actionHint}</p>
+            <p className="mt-2 text-[11px] leading-relaxed text-sky-800">{actionHint}</p>
           ) : null}
         </div>
 
-        <p className="mt-3 px-1 text-center text-xs leading-relaxed text-slate-500 sm:mt-4 sm:text-sm">
-          Or copy the UPI ID / phone number above and paste it in your UPI app.
-        </p>
-
-        <p className="mt-5 text-center text-[11px] leading-relaxed text-slate-400 sm:mt-8">
+        <p className="mt-3 text-center text-[11px] leading-relaxed text-slate-400">
           Secured UPI payment page for {brandLabel}. If you’ve already paid, you can ignore this link.
         </p>
       </div>
