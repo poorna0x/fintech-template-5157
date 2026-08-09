@@ -553,15 +553,7 @@ export function SettingsPendingPaymentsDialogV2({
           account,
           Number(payment.amount_pending) || 0,
           payment.job_number || payment.job_id || null,
-          {
-            brand: brandForCustomer(payment.entity_id as string | undefined),
-            reminderId: payment.id,
-            jobId:
-              payment.job_id ||
-              parsePendingPaymentReminderNotes(payment.notes).job_id ||
-              null,
-            customerId: (payment.entity_id as string | undefined) || null,
-          }
+          { brand: brandForCustomer(payment.entity_id as string | undefined) }
         );
         if (share) {
           upiOpts = {
@@ -759,43 +751,6 @@ export function SettingsPendingPaymentsDialogV2({
     }
     return { list: result, brands: brandMap };
   };
-
-  // Auto-settle from Admin PhonePe listener updates reminders.completed_at — refresh list + toast.
-  useEffect(() => {
-    if (!open) return;
-    const channel = supabase
-      .channel(`pending-payments-settle-${Date.now()}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'reminders',
-        },
-        (payload) => {
-          const row = payload.new as {
-            id?: string;
-            title?: string;
-            completed_at?: string | null;
-            notes?: string | null;
-          } | null;
-          if (!row?.id || !row.completed_at) return;
-          if (String(row.title || '').trim() !== PENDING_PAYMENT_TITLE) return;
-          const amount = parsePendingPaymentReminderNotes(row.notes).amount_pending;
-          const amtLabel =
-            amount > 0
-              ? `₹${Number(amount).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
-              : 'Payment';
-          toast.success(`${amtLabel} received — pending payment marked collected`);
-          void load();
-        }
-      )
-      .subscribe();
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- subscribe while dialog open
-  }, [open]);
 
   useEffect(() => {
     if (!open || !initialReminderId || initialAction === 'add') return;
@@ -1717,10 +1672,6 @@ export function SettingsPendingPaymentsDialogV2({
                           {whatsappIncludeUpi ? (
                             <div className="space-y-2 pl-7">
                               <Label>Pay to UPI</Label>
-                              <p className="text-[11px] text-muted-foreground -mt-1 mb-1">
-                                Short pay link expires in 30 minutes. Exact amount (same as pending).
-                                Admin app auto-settles when PhonePe shows that credit.
-                              </p>
                               <Select
                                 value={whatsappUpiAccountId || undefined}
                                 onValueChange={setWhatsappUpiAccountId}

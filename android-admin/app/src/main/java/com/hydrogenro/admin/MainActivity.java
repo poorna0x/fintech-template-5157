@@ -36,7 +36,6 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(PdfSavePlugin.class);
         registerPlugin(DevicePrefsPlugin.class);
         registerPlugin(BiometricAuthPlugin.class);
-        registerPlugin(UpiCreditMatchPlugin.class);
         final SplashScreen splash = SplashScreen.installSplashScreen(this);
         splash.setKeepOnScreenCondition(() -> !bootUiReady.get() && !pageReady.get());
         splash.setOnExitAnimationListener(SplashScreenViewProvider::remove);
@@ -62,7 +61,6 @@ public class MainActivity extends BridgeActivity {
 
         super.onCreate(savedInstanceState);
         NotificationChannels.ensureAll(this);
-        seedUpiCreditSupabaseDefaults();
 
         attachBootLoader();
         releaseSplashWhenBootDrawn();
@@ -71,63 +69,6 @@ public class MainActivity extends BridgeActivity {
         getWindow()
             .getDecorView()
             .postDelayed(this::dismissBootLoader, BOOT_LOADER_MAX_MS);
-    }
-
-    @Override
-    public void onResume() {
-        super.onResume();
-        // Pull JWT from WebView localStorage so UPI auto-settle works even before
-        // a site deploy that includes the Capacitor UpiCreditMatch sync helper.
-        getWindow().getDecorView().postDelayed(this::scrapeSupabaseSessionFromWebView, 1500);
-    }
-
-    private void seedUpiCreditSupabaseDefaults() {
-        try {
-            String url = getString(R.string.supabase_url);
-            String anon = getString(R.string.supabase_anon_key);
-            UpiCreditListenerService.saveSession(this, url, anon, null);
-        } catch (Exception ignored) {
-            /* resources missing on old builds */
-        }
-    }
-
-    private void scrapeSupabaseSessionFromWebView() {
-        WebView webView = webViewOrNull();
-        if (webView == null) return;
-        webView.evaluateJavascript(
-            "(function(){try{"
-                + "for(var i=0;i<localStorage.length;i++){"
-                + "var k=localStorage.key(i);"
-                + "if(!k||k.indexOf('auth-token')<0)continue;"
-                + "var v=localStorage.getItem(k);"
-                + "if(v&&v.indexOf('access_token')>=0)return v;"
-                + "}"
-                + "}catch(e){}return '';})();",
-            value -> {
-                if (value == null || "null".equals(value) || "\"\"".equals(value)) return;
-                try {
-                    String raw = value;
-                    if (raw.length() >= 2 && raw.startsWith("\"") && raw.endsWith("\"")) {
-                        raw = raw.substring(1, raw.length() - 1)
-                            .replace("\\\"", "\"")
-                            .replace("\\\\", "\\");
-                    }
-                    org.json.JSONObject json = new org.json.JSONObject(raw);
-                    String token = json.optString("access_token", "");
-                    if (token.isEmpty()) {
-                        org.json.JSONObject nested = json.optJSONObject("currentSession");
-                        if (nested != null) token = nested.optString("access_token", "");
-                    }
-                    if (!token.isEmpty()) {
-                        String url = getString(R.string.supabase_url);
-                        String anon = getString(R.string.supabase_anon_key);
-                        UpiCreditListenerService.saveSession(this, url, anon, token);
-                    }
-                } catch (Exception ignored) {
-                    /* ignore parse errors */
-                }
-            }
-        );
     }
 
     @Override
@@ -348,7 +289,6 @@ public class MainActivity extends BridgeActivity {
             if (parent != null) parent.removeView(bootLoader);
             bootLoader = null;
         });
-        getWindow().getDecorView().postDelayed(this::scrapeSupabaseSessionFromWebView, 800);
     }
 
     private void clearBounceDots(View root) {

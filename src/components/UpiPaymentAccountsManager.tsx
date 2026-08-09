@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { Capacitor } from '@capacitor/core';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -13,12 +12,6 @@ import {
   upsertUpiPaymentAccount,
   type UpiPaymentAccount,
 } from '@/lib/upiPaymentAccounts';
-import {
-  getUpiCreditMatchStatus,
-  openUpiCreditNotificationAccessSettings,
-  setUpiCreditMatchEnabled,
-  syncUpiCreditSessionToNative,
-} from '@/lib/upiCreditMatchNative';
 
 type UpiPaymentAccountsManagerProps = {
   /** Compact layout for dialogs */
@@ -40,14 +33,6 @@ export default function UpiPaymentAccountsManager({
   const [payeeName, setPayeeName] = useState('');
   const [phone, setPhone] = useState('');
   const [fromRemote, setFromRemote] = useState(false);
-  const [upiMatchStatus, setUpiMatchStatus] = useState<{
-    enabled: boolean;
-    notificationAccess: boolean;
-    hasSession: boolean;
-  } | null>(null);
-
-  const isAdminAndroid =
-    Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
 
   const applyAccounts = (next: UpiPaymentAccount[], remote: boolean) => {
     setAccounts(next);
@@ -65,16 +50,8 @@ export default function UpiPaymentAccountsManager({
     }
   };
 
-  const refreshUpiMatchStatus = async () => {
-    if (!isAdminAndroid) return;
-    await syncUpiCreditSessionToNative();
-    const status = await getUpiCreditMatchStatus();
-    setUpiMatchStatus(status);
-  };
-
   useEffect(() => {
     void refresh();
-    void refreshUpiMatchStatus();
     const onUpdate = () => {
       applyAccounts(loadUpiPaymentAccounts(), fromRemote);
     };
@@ -157,61 +134,6 @@ export default function UpiPaymentAccountsManager({
 
   return (
     <div className={compact ? 'space-y-3' : 'space-y-4'}>
-      {isAdminAndroid && !compact ? (
-        <div className="rounded-md border border-sky-200 bg-sky-50/80 dark:border-sky-900 dark:bg-sky-950/40 p-3 space-y-2">
-          <p className="text-sm font-medium text-sky-950 dark:text-sky-100">
-            Auto-settle pending payments
-          </p>
-          <p className="text-xs text-muted-foreground">
-            When PhonePe shows a credit matching an open pending pay link (exact amount, 30 min),
-            the Admin app marks it collected. Enable Notification access for HRO Admin, then open
-            the app once while logged in.
-          </p>
-          <div className="flex flex-wrap gap-2 items-center">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => void openUpiCreditNotificationAccessSettings()}
-            >
-              {upiMatchStatus?.notificationAccess
-                ? 'Notification access on'
-                : 'Enable notification access'}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={upiMatchStatus?.enabled === false ? 'default' : 'outline'}
-              onClick={() => {
-                void (async () => {
-                  const next = !(upiMatchStatus?.enabled !== false);
-                  await setUpiCreditMatchEnabled(next);
-                  await refreshUpiMatchStatus();
-                  toast.success(next ? 'Auto-settle on' : 'Auto-settle off');
-                })();
-              }}
-            >
-              {upiMatchStatus?.enabled === false ? 'Turn auto-settle on' : 'Turn auto-settle off'}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={() => void refreshUpiMatchStatus()}
-            >
-              Refresh status
-            </Button>
-          </div>
-          {upiMatchStatus ? (
-            <p className="text-[11px] text-muted-foreground">
-              Access: {upiMatchStatus.notificationAccess ? 'yes' : 'no'} · Session:{' '}
-              {upiMatchStatus.hasSession ? 'yes' : 'login once'} · Listener:{' '}
-              {upiMatchStatus.enabled ? 'on' : 'off'}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
-
       {!showForm && (
         <div className="flex items-start justify-between gap-2">
           <p className="text-xs text-muted-foreground">

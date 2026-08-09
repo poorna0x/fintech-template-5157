@@ -248,9 +248,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT') {
-        void import('@/lib/upiCreditMatchNative')
-          .then((m) => m.clearUpiCreditSessionOnNative())
-          .catch(() => {});
         if (!loggingOutRef.current) {
           const stored = getAuthSession();
           if (stored?.role === 'technician' && portalRef.current === 'technician') {
@@ -286,9 +283,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       if (session?.user) {
         if (event === 'SIGNED_IN') {
-          void import('@/lib/upiCreditMatchNative')
-            .then((m) => m.syncUpiCreditSessionToNative(session.access_token))
-            .catch(() => {});
           void applySessionUser(session).finally(() => {
             if (cancelled) return;
             initialAuthEventDone = true;
@@ -298,9 +292,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           return;
         }
         if (event === 'TOKEN_REFRESHED') {
-          void import('@/lib/upiCreditMatchNative')
-            .then((m) => m.syncUpiCreditSessionToNative(session.access_token))
-            .catch(() => {});
           void applySessionUser(session);
         }
       }
@@ -478,12 +469,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       try {
         const { clearAdminBiometricLockOnLogout } = await import('@/lib/adminBiometricLock');
         clearAdminBiometricLockOnLogout();
-      } catch {
-        /* best-effort */
-      }
-      try {
-        const { clearUpiCreditSessionOnNative } = await import('@/lib/upiCreditMatchNative');
-        await clearUpiCreditSessionOnNative();
       } catch {
         /* best-effort */
       }

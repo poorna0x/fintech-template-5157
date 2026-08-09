@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- Publishable client config (same as web VITE_*). Used by UPI credit listener before JS plugin sync. -->
-    <string name="supabase_url" translatable="false">https://cgpjfmbyxjetmzehkumo.supabase.co</string>
-    <string name="supabase_anon_key" translatable="false">eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNncGpmbWJ5eGpldG16ZWhrdW1vIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc4Mjk4MjgsImV4cCI6MjA3MzQwNTgyOH0.f30aVh06s_FjEXbXuH-8LEwTx774QmnXQwztacK4NHI</string>
-</resources>

@@ -192,6 +192,7 @@ import {
   INCOMING_CALL_SEARCH_WINDOW_MS,
   isIncomingAutoSearchStale,
   markIncomingAutoSearch,
+  markIncomingCallPhoneHandled,
   readIncomingAutoSearch,
   type IncomingAutoSearchRecord,
 } from '@/lib/adminSharedIncomingCall';
@@ -4588,28 +4589,49 @@ const AdminDashboard = () => {
           requestAnimationFrame(() => window.scrollTo(0, scrollY));
         };
 
+        // Stop shared-board Realtime from re-searching on the ringing device.
+        markIncomingCallPhoneHandled(digits, opts?.ringAt ?? Date.now());
+
         if (opts?.offerNotFound) {
+          // One network search only — reuse hits for the visible UI (was 2× before).
           const results = await runCustomerSearch(digits, { silent: true, skipNavigate: true });
           if (results.length === 0) {
             const at = opts.ringAt ?? Date.now();
             saveUnknownCaller(digits, at);
             setUnknownCaller({ phone: digits, at });
+            restoreScroll();
             return;
           }
           clearUnknownCaller();
           setUnknownCaller(null);
+
+          const auto = markIncomingAutoSearch(digits, opts?.ringAt);
+          if (auto) setIncomingAutoSearch(auto);
+
+          const trimmed = digits.trim();
+          setSearchTerm(trimmed);
+          setSearchQuery(trimmed);
+          setSearchResults(results);
+          adminSearchSyncedRef.current = trimmed;
+          const currentSearch = new URLSearchParams(location.search).get('search');
+          navigate(
+            adminDashboardLocation(
+              buildAdminDashboardSearch({ search: trimmed }, location.search)
+            ),
+            { replace: currentSearch === trimmed }
+          );
+          restoreScroll();
+          return;
         }
 
-        // Put ?search= in the URL so the URL-sync effect does not wipe results
-        // (skipNavigate previously set searchTerm, then the effect saw no
-        // ?search= and cleared — desktop scrolled but looked empty).
+        // Shared board / remount restore — single search, fill ?search=.
         const auto = markIncomingAutoSearch(digits, opts?.ringAt);
         if (auto) setIncomingAutoSearch(auto);
         await runCustomerSearch(digits);
         restoreScroll();
       })();
     },
-    [runCustomerSearch]
+    [runCustomerSearch, location.search, navigate]
   );
 
   useEffect(() => {
