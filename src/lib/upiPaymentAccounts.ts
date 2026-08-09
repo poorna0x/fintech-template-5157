@@ -465,7 +465,7 @@ export async function createUpiPayShortLink(
   if (!isValidUpiId(pa)) return null;
   const cacheKey = shortLinkCacheKey(input);
   // Don't reuse cached codes for pending auto-settle (short TTL / unique amount).
-  const skipCache = Boolean(input.source === 'pending_payment' || input.uniqueAmount || input.ttlMinutes);
+  const skipCache = Boolean(input.source === 'pending_payment' || input.ttlMinutes);
   if (!skipCache) {
     const cached = shortLinkCache.get(cacheKey);
     if (cached) return cached;
@@ -492,7 +492,7 @@ export async function createUpiPayShortLink(
     if (input.customerId) payload.p_customer_id = input.customerId;
     if (input.upiAccountId) payload.p_upi_account_id = String(input.upiAccountId).slice(0, 80);
     if (input.source) payload.p_source = String(input.source).slice(0, 40);
-    if (input.uniqueAmount) payload.p_unique_amount = true;
+    // Never send p_unique_amount — exact rupee amounts only (no paisa nudge).
 
     const { data, error } = await supabase.rpc('create_upi_pay_link', payload);
     if (error) {
@@ -594,7 +594,6 @@ export async function buildPendingPaymentUpiShare(
     customerId: options?.customerId || null,
     upiAccountId: account.id,
     source: 'pending_payment',
-    uniqueAmount: true,
   };
   const siteOrigin = resolveUpiPaySiteOrigin(brand, options?.origin);
   const code = await createUpiPayShortLink(payInput);

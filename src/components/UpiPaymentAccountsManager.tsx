@@ -163,8 +163,9 @@ export default function UpiPaymentAccountsManager({
             Auto-settle pending payments
           </p>
           <p className="text-xs text-muted-foreground">
-            When PhonePe/GPay shows a credit matching an open pending pay link (30 min), the Admin
-            app marks it collected. Enable Notification access for HRO Admin.
+            When PhonePe shows a credit matching an open pending pay link (exact amount, 30 min),
+            the Admin app marks it collected. Enable Notification access for HRO Admin, then open
+            the app once while logged in.
           </p>
           <div className="flex flex-wrap gap-2 items-center">
             <Button

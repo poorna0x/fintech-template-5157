@@ -58,7 +58,7 @@ function makePayCode() {
 
 /**
  * Insert a short /p/{code} row (service role bypasses RLS).
- * Pending-payment links: 30 min TTL, unique amount, source=pending_payment.
+ * Pending-payment links: 30 min TTL, exact amount, source=pending_payment.
  * Returns full https URL or null.
  */
 async function createShortPayHttpsLink(db, input) {
@@ -69,29 +69,10 @@ async function createShortPayHttpsLink(db, input) {
   if (!/^[a-z0-9.\-_]{2,256}@[a-z0-9.\-]{2,64}$/i.test(upiId)) return null;
   const brand = resolveBrand(input.brand);
   const origin = CONTACT[brand].origin;
-  let amount =
+  const amount =
     Number.isFinite(Number(input.amount)) && Number(input.amount) > 0
       ? Number(Number(input.amount).toFixed(2))
       : null;
-
-  // Unique amount among open links for this VPA (paisa nudge).
-  if (amount != null) {
-    for (let nudge = 0; nudge < 50; nudge++) {
-      const candidate = Number((Number(input.amount) + nudge * 0.01).toFixed(2));
-      const { data: clash } = await db
-        .from('upi_pay_links')
-        .select('code')
-        .eq('status', 'open')
-        .eq('upi_id', upiId)
-        .eq('amount', candidate)
-        .gt('expires_at', new Date().toISOString())
-        .limit(1);
-      if (!clash || !clash.length) {
-        amount = candidate;
-        break;
-      }
-    }
-  }
 
   const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
   const row = {
