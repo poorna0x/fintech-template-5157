@@ -36,6 +36,7 @@ import { DocumentBrand, getDocumentBrandLabel } from '@/lib/service-brands';
 import {
   computeAmcAutoCreateDue,
   computeAmcPreExpiryAutoCreate,
+  deriveAmcServicePeriodKind,
   getDefaultAmcServicePeriodMonths,
 } from '@/lib/amcAutoJobSchedule';
 import { getLocalCalendarDateYmd } from '@/lib/pendingPaymentReminder';
@@ -44,6 +45,17 @@ import {
   getAmcAmountFromContract,
   parseAmcAdditionalInfoMetadata,
 } from '@/lib/amc-contract-metadata';
+
+/** Label for AMC service auto-job period shown under Duration. */
+function formatAmcAutoGenPeriodLabel(servicePeriodMonths: number | null | undefined): string {
+  const usingDefault = servicePeriodMonths == null;
+  const { kind, custom } = deriveAmcServicePeriodKind(servicePeriodMonths);
+  const defaultHint = usingDefault ? ' (app default)' : '';
+  if (kind === 'no_auto') return 'No auto jobs';
+  if (kind === '4') return `Auto every 4 months${defaultHint}`;
+  if (kind === '6') return `Auto every 6 months${defaultHint}`;
+  return `Auto every ${custom} months${defaultHint}`;
+}
 
 interface AMCRecord {
   id: string;
@@ -839,7 +851,14 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
                             {amc.endDate ? new Date(amc.endDate).toLocaleDateString('en-IN') : 'N/A'}
                           </TableCell>
                           <TableCell>
-                            {amc.years} {amc.years === 1 ? 'year' : 'years'}
+                            <div className="text-sm">
+                              <div className="font-medium text-gray-900">
+                                {amc.years} {amc.years === 1 ? 'year' : 'years'}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                {formatAmcAutoGenPeriodLabel(amc.servicePeriodMonths)}
+                              </div>
+                            </div>
                           </TableCell>
                           <TableCell>
                             <div className="text-sm">
@@ -980,6 +999,9 @@ const AMCViewPage: React.FC<AMCViewPageProps> = ({ onBack, onAMCDeleted }) => {
                     <Label className="text-xs text-gray-500">Duration</Label>
                     <p className="font-medium">
                       {selectedAMC.years} {selectedAMC.years === 1 ? 'year' : 'years'}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {formatAmcAutoGenPeriodLabel(selectedAMC.servicePeriodMonths)}
                     </p>
                   </div>
                   <div>
