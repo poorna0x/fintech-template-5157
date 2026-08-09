@@ -373,30 +373,40 @@ export async function openDocumentPdfInNewTab(
 }
 
 /**
- * Download a PDF via the Netlify Puppeteer function (same layout as Generate / print).
+ * Download a PDF via Puppeteer and return the exact base64 bytes that were downloaded
+ * (for authenticity fingerprinting — same bytes as the saved file).
  */
-export async function downloadDocumentPdf(options: DownloadDocumentPdfOptions): Promise<void> {
+export async function downloadDocumentPdfReturningBase64(
+  options: DownloadDocumentPdfOptions
+): Promise<GenerateDocumentPdfBase64Result> {
   const html = withAbsoluteAssetUrls(options.html, options.origin);
   const filename = sanitizeFilename(options.filename);
   const toastId = toast.loading('Generating PDF…');
 
   try {
-    const mode = await downloadViaServer(html, filename);
+    const { buffer, filename: resolvedFilename } = await fetchPdfFromServer(html, filename);
+    const mode = await deliverPdfFile(buffer, resolvedFilename);
     toast.success(
       mode === 'native-saved'
         ? 'PDF saved to Downloads'
         : mode === 'native'
           ? 'PDF ready — use Share'
           : 'PDF downloaded',
-      {
-        id: toastId,
-      }
+      { id: toastId }
     );
+    const pdfBase64 = arrayBufferToBase64(buffer);
+    return {
+      pdfBase64,
+      filename: resolvedFilename,
+      size: buffer.byteLength,
+    };
   } catch (error) {
     const opened = openHtmlPrintFallback(html);
     if (opened) {
-      toast.info('Opened print preview — choose Save as PDF in the print dialog.', { id: toastId });
-      return;
+      toast.info('Opened print preview — choose Save as PDF in the print dialog.', {
+        id: toastId,
+      });
+      throw new Error('PRINT_FALLBACK');
     }
 
     const message = error instanceof Error ? error.message : 'PDF generation failed';
@@ -404,6 +414,20 @@ export async function downloadDocumentPdf(options: DownloadDocumentPdfOptions): 
       id: toastId,
       description: `${message}. Allow popups, or run npm run dev for server-generated PDFs.`,
     });
+    throw error;
+  }
+}
+
+/**
+ * Download a PDF via the Netlify Puppeteer function (same layout as Generate / print).
+ */
+export async function downloadDocumentPdf(options: DownloadDocumentPdfOptions): Promise<void> {
+  try {
+    await downloadDocumentPdfReturningBase64(options);
+  } catch (error) {
+    if (error instanceof Error && error.message === 'PRINT_FALLBACK') {
+      return;
+    }
     throw error;
   }
 }

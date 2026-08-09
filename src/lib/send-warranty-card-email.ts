@@ -14,6 +14,11 @@ import {
   generateWarrantyCardHTML,
   type WarrantyCardPDFData,
 } from '@/lib/warranty-card-pdf-generator';
+import {
+  generateDocumentPdfVerifyCode,
+  recordDocumentPdfAuthenticity,
+  todayYmdIst,
+} from '@/lib/documentPdfAuthenticity';
 
 export interface SendWarrantyCardEmailParams {
   data: WarrantyCardPDFData;
@@ -46,6 +51,70 @@ function overallWarrantyEnd(data: WarrantyCardPDFData): string {
   );
 }
 
+function withWarrantyAuthenticity(
+  data: WarrantyCardPDFData,
+  verifyCode: string,
+  generatedOnYmd: string
+): WarrantyCardPDFData {
+  return {
+    ...data,
+    authenticityVerifyCode: verifyCode,
+    authenticityGeneratedOnYmd: generatedOnYmd,
+  };
+}
+
+async function fingerprintWarrantyPdf(params: {
+  data: WarrantyCardPDFData;
+  verifyCode: string;
+  pdfBase64: string;
+  filename: string;
+  customerId?: string | null;
+  generatedOnYmd: string;
+}): Promise<void> {
+  const sourceKey =
+    params.data.warranty.id && params.data.warranty.id !== 'draft'
+      ? params.data.warranty.id
+      : `draft:${params.data.customer.customer_id}:${params.data.warranty.start_date || 'na'}`;
+  await recordDocumentPdfAuthenticity({
+    docType: 'warranty',
+    sourceKey,
+    verifyCode: params.verifyCode,
+    pdfBase64: params.pdfBase64,
+    filename: params.filename,
+    customerId: params.customerId || null,
+    documentRef: params.data.customer.customer_id,
+    generatedOnYmd: params.generatedOnYmd,
+  });
+}
+
+/** PDF base64 helper. Fingerprints hash-only. */
+export async function generateWarrantyCardPdfBase64(
+  data: WarrantyCardPDFData,
+  opts?: { customerId?: string | null }
+): Promise<{ pdfBase64: string; filename: string; size: number }> {
+  const sessionReady = await ensureSupabaseSessionForWrite();
+  if (!sessionReady.ok) {
+    throw new Error('Could not verify your session. Please try again.');
+  }
+  const verifyCode = generateDocumentPdfVerifyCode();
+  const generatedOnYmd = todayYmdIst();
+  const fingerprinted = withWarrantyAuthenticity(data, verifyCode, generatedOnYmd);
+  const filename = warrantyPdfFilename(fingerprinted);
+  const pdf = await generateDocumentPdfBase64({
+    html: generateWarrantyCardHTML(fingerprinted),
+    filename,
+  });
+  await fingerprintWarrantyPdf({
+    data: fingerprinted,
+    verifyCode,
+    pdfBase64: pdf.pdfBase64,
+    filename: pdf.filename,
+    customerId: opts?.customerId,
+    generatedOnYmd,
+  });
+  return pdf;
+}
+
 export async function sendWarrantyCardEmail(
   params: SendWarrantyCardEmailParams
 ): Promise<SendWarrantyCardEmailResult> {
@@ -62,7 +131,10 @@ export async function sendWarrantyCardEmail(
   }
 
   const pdfFilename = warrantyPdfFilename(data);
-  const html = generateWarrantyCardHTML(data);
+  const verifyCode = generateDocumentPdfVerifyCode();
+  const generatedOnYmd = todayYmdIst();
+  const fingerprinted = withWarrantyAuthenticity(data, verifyCode, generatedOnYmd);
+  const html = generateWarrantyCardHTML(fingerprinted);
 
   const sessionReady = await ensureSupabaseSessionForWrite();
   if (!sessionReady.ok) {
@@ -81,6 +153,14 @@ export async function sendWarrantyCardEmail(
     pdfBase64 = pdf.pdfBase64;
     filename = pdf.filename;
     size = pdf.size;
+    await fingerprintWarrantyPdf({
+      data: fingerprinted,
+      verifyCode,
+      pdfBase64,
+      filename,
+      customerId,
+      generatedOnYmd,
+    });
   } catch (error) {
     return {
       ok: false,

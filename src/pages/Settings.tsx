@@ -73,6 +73,7 @@ import { SettingsPendingPaymentsDialogV2 } from '@/components/reminders/PendingP
 import UpiPaymentAccountsManager from '@/components/UpiPaymentAccountsManager';
 import AdvancedCustomerSearchDialog from '@/components/admin/AdvancedCustomerSearchDialog';
 import { SettingsActionCard } from '@/components/admin/SettingsActionCard';
+import PdfAuthenticityVerifyPage from '@/pages/PdfAuthenticityVerifyPage';
 import MergeCustomersDialog from '@/components/admin/MergeCustomersDialog';
 import WarrantyManagementDialog from '@/components/admin/WarrantyManagementDialog';
 import DirectSaleDialog from '@/components/admin/DirectSaleDialog';
@@ -388,6 +389,9 @@ const Settings = () => {
   const [showCallingPage, setShowCallingPage] = useState(
     () => parseSettingsUrl(location.search).panel === 'calling'
   );
+  const [showPdfAuthenticityPage, setShowPdfAuthenticityPage] = useState(
+    () => parseSettingsUrl(location.search).panel === 'pdf-authenticity'
+  );
   const [showRecurringServicePage, setShowRecurringServicePage] = useState(
     () => parseSettingsUrl(location.search).panel === 'recurring-service'
   );
@@ -472,6 +476,7 @@ const Settings = () => {
     prevSettingsPanelRef.current = panel;
 
     setShowCallingPage(panel === 'calling');
+    setShowPdfAuthenticityPage(panel === 'pdf-authenticity');
     setShowRecurringServicePage(panel === 'recurring-service');
     setRemindersDialogOpen(panel === 'reminders');
     setAdvancedSearchDialogOpen(panel === 'advanced-search');
@@ -1816,7 +1821,7 @@ const Settings = () => {
   }, []);
 
   useEffect(() => {
-    if (showCallingPage || showRecurringServicePage) return;
+    if (showCallingPage || showPdfAuthenticityPage || showRecurringServicePage) return;
 
     const pairs: Array<[SettingsLazySection, React.RefObject<HTMLDivElement | null>]> = [
       ['todos', todosSectionRef],
@@ -1848,7 +1853,7 @@ const Settings = () => {
       observers.push(obs);
     }
     return () => observers.forEach((o) => o.disconnect());
-  }, [ensureSettingsSectionLoaded, showCallingPage, showRecurringServicePage]);
+  }, [ensureSettingsSectionLoaded, showCallingPage, showPdfAuthenticityPage, showRecurringServicePage]);
 
   // Deep-link / panel open: fetch only what that panel needs.
   useEffect(() => {
@@ -2081,6 +2086,44 @@ const Settings = () => {
             hideHeader={true}
             onBack={closeSettingsPanel}
           />
+        </div>
+      </div>
+    );
+  }
+
+  if (showPdfAuthenticityPage) {
+    return (
+      <div className="admin-page min-h-[100dvh] bg-gradient-to-b from-emerald-50/40 via-background to-background">
+        <div className="bg-card/90 backdrop-blur-sm border-b border-border sticky top-0 z-10">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 py-3.5 sm:py-0 sm:h-16">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white">
+                  <ShieldCheck className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <h1 className="text-lg sm:text-xl font-bold text-foreground truncate">
+                    Verify PDF authenticity
+                  </h1>
+                  <p className="text-xs text-muted-foreground truncate sm:hidden">
+                    AMC · bills · invoices · more
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={closeSettingsPanel}
+                className="text-muted-foreground hover:text-foreground -ml-2 self-start sm:self-auto cursor-pointer"
+              >
+                <ArrowLeft className="w-4 h-4 mr-1" />
+                Back
+              </Button>
+            </div>
+          </div>
+        </div>
+        <div className="container mx-auto px-4 py-5 sm:py-8 pb-10">
+          <PdfAuthenticityVerifyPage hideHeader onBack={closeSettingsPanel} />
         </div>
       </div>
     );
@@ -2644,6 +2687,24 @@ const Settings = () => {
               >
                 <FileText className="w-4 h-4 shrink-0" />
                 Open AMC View
+              </Button>
+            }
+          />
+
+          {/* PDF authenticity (AMC + documents) */}
+          <SettingsActionCard
+            title="Verify PDF authenticity"
+            description="Check AMC, bill, quotation, invoice, or warranty PDFs against stored fingerprints"
+            icon={<ShieldCheck />}
+            actions={
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full sm:w-auto touch-manipulation gap-2 h-11 sm:h-9"
+                onClick={() => openSettingsPanel('pdf-authenticity')}
+              >
+                <ShieldCheck className="w-4 h-4 shrink-0" />
+                Verify PDF
               </Button>
             }
           />

@@ -20,6 +20,7 @@ export const SETTINGS_PANELS = [
   'edit-product-qr',
   'add-todo',
   'add-tracker',
+  'pdf-authenticity',
 ] as const;
 
 export type SettingsPanelSlug = (typeof SETTINGS_PANELS)[number];

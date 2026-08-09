@@ -16,6 +16,11 @@ import type { DocumentBrand } from '@/lib/service-brands';
 import { getDocumentBrandLabel } from '@/lib/service-brands';
 import { generateDocumentPdfBase64 } from '@/lib/server-pdf-download';
 import { ensureSupabaseSessionForWrite, resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
+import {
+  generateDocumentPdfVerifyCode,
+  recordDocumentPdfAuthenticity,
+  todayYmdIst,
+} from '@/lib/documentPdfAuthenticity';
 
 export interface SendAmcAgreementEmailParams {
   bill: Bill;
@@ -64,7 +69,16 @@ export async function sendAmcAgreementEmail(
   }
 
   const pdfFilename = `AMC_${bill.billNumber.replace(/\s+/g, '_')}.pdf`;
-  const html = generateAMCHTML(billToAmcPdfData(bill), pdfOptions);
+  const verifyCode =
+    pdfOptions?.authenticityVerifyCode || generateDocumentPdfVerifyCode();
+  const generatedOnYmd =
+    pdfOptions?.authenticityGeneratedOnYmd || todayYmdIst();
+  const authPdfOptions: AMCPDFOptions = {
+    ...pdfOptions,
+    authenticityVerifyCode: verifyCode,
+    authenticityGeneratedOnYmd: generatedOnYmd,
+  };
+  const html = generateAMCHTML(billToAmcPdfData(bill), authPdfOptions);
 
   const sessionReady = await ensureSupabaseSessionForWrite();
   if (!sessionReady.ok) {
@@ -83,6 +97,16 @@ export async function sendAmcAgreementEmail(
     pdfBase64 = pdf.pdfBase64;
     filename = pdf.filename;
     size = pdf.size;
+    await recordDocumentPdfAuthenticity({
+      docType: 'amc',
+      sourceKey: String(bill.billNumber || '').trim() || `amc-${Date.now()}`,
+      verifyCode,
+      pdfBase64,
+      filename,
+      customerId: bill.customer?.id || null,
+      documentRef: bill.billNumber,
+      generatedOnYmd,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'PDF generation failed';
     return {

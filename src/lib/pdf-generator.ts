@@ -11,13 +11,18 @@ import {
   resolvePdfDocumentBrand,
 } from './document-pdf-brand';
 import type { DocumentSealVariant } from './service-brands';
-import { downloadDocumentPdf } from './server-pdf-download';
+import { downloadDocumentPdfReturningBase64 } from './server-pdf-download';
 import { getDocumentPdfPrintFrameCss } from './document-pdf-print-frame';
 import {
   buildBillPaymentNoticeHtml,
   buildBillPaymentSummaryRowsHtml,
   documentPaymentNoticeCss,
 } from './document-payment';
+import {
+  generateDocumentPdfVerifyCode,
+  recordDocumentPdfAuthenticity,
+} from './documentPdfAuthenticity';
+import { toast } from 'sonner';
 
 export interface PDFBillData {
   billNumber: string;
@@ -68,6 +73,10 @@ export interface PDFBillData {
   documentBrand?: 'hydrogenro' | 'elevenro';
   /** Signatory seal (default) or round stamp — matches AMC / quotation. */
   sealVariant?: DocumentSealVariant;
+  /** Footer verify code for CRM authenticity check (hash stored separately). */
+  authenticityVerifyCode?: string;
+  /** CRM customer UUID for authenticity row (not printed on PDF). */
+  authenticityCustomerId?: string;
 }
 
 // Global flag to prevent multiple print operations
@@ -83,16 +92,41 @@ export function generateBillPDF(billData: PDFBillData, action: 'print' | 'pdf' =
   isPrinting = true;
 
   if (action === 'pdf') {
-    void downloadDocumentPdf({
-      html: generateBillHTML(billData),
-      filename: `Bill_${billData.billNumber.replace(/\s+/g, '_')}.pdf`,
-    })
-      .then(() => {
+    void (async () => {
+      const verifyCode = generateDocumentPdfVerifyCode();
+      const withAuth: PDFBillData = {
+        ...billData,
+        authenticityVerifyCode: verifyCode,
+      };
+      const filename = `Bill_${String(billData.billNumber || 'draft').replace(/\s+/g, '_')}.pdf`;
+      try {
+        const pdf = await downloadDocumentPdfReturningBase64({
+          html: generateBillHTML(withAuth),
+          filename,
+        });
+        const sourceKey = String(billData.billNumber || '').trim() || `bill-${Date.now()}`;
+        const recorded = await recordDocumentPdfAuthenticity({
+          docType: 'service_bill',
+          sourceKey,
+          verifyCode,
+          pdfBase64: pdf.pdfBase64,
+          filename: pdf.filename,
+          customerId: billData.authenticityCustomerId || null,
+          documentRef: billData.billNumber || sourceKey,
+        });
+        if (!recorded.ok) {
+          toast.warning('PDF downloaded, but authenticity fingerprint was not saved', {
+            description: recorded.error,
+          });
+        }
+      } catch (error) {
+        if (error instanceof Error && error.message === 'PRINT_FALLBACK') {
+          /* print fallback — no fingerprint */
+        }
+      } finally {
         isPrinting = false;
-      })
-      .catch(() => {
-        isPrinting = false;
-      });
+      }
+    })();
     return;
   }
   
@@ -747,7 +781,9 @@ function createBillContent(data: PDFBillData): string {
     hideGstInHeader: data.hideGstInHeader,
   });
   const signatureBlock = renderPdfSignatureHtml(brand, data.billDate, data.sealVariant ?? 'sign');
-  const footerBlock = renderPdfFooterHtml(brand, data.company);
+  const footerBlock = renderPdfFooterHtml(brand, data.company, {
+    authenticityVerifyCode: data.authenticityVerifyCode,
+  });
 
   const rawNotesHeading = (data.notesHeading ?? 'Additional Info').toString().trim();
   const notesHeading =
