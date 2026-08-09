@@ -149,6 +149,12 @@ const DATABASE_EXPORT_TABLES: {
   { name: 'admin_users', orderBy: 'id', label: 'Admin Users' },
   { name: 'admin_audit_log', orderBy: 'created_at', label: 'Admin Audit Log', optional: true },
   { name: 'amc_contracts', orderBy: 'created_at', label: 'AMC Contracts' },
+  {
+    name: 'amc_pdf_authenticity',
+    orderBy: 'created_at',
+    label: 'AMC PDF Authenticity',
+    optional: true,
+  },
   { name: 'amount_trackers', orderBy: 'created_at', label: 'Amount Trackers' },
   { name: 'app_crash_reports', orderBy: 'last_seen_at', label: 'App Crash Reports', optional: true },
   { name: 'booking_abandonments', orderBy: 'created_at', label: 'Booking Abandonments', optional: true },
@@ -158,6 +164,12 @@ const DATABASE_EXPORT_TABLES: {
   { name: 'crm_settings', orderBy: 'key', label: 'CRM Settings', optional: true },
   { name: 'customers', orderBy: 'created_at', label: 'Customers' },
   { name: 'document_drafts', orderBy: 'updated_at', label: 'Document Drafts' },
+  {
+    name: 'document_pdf_authenticity',
+    orderBy: 'created_at',
+    label: 'Document PDF Authenticity',
+    optional: true,
+  },
   { name: 'follow_ups', orderBy: 'created_at', label: 'Follow-ups' },
   { name: 'inventory', orderBy: 'created_at', label: 'Inventory' },
   { name: 'inventory_bundle_items', orderBy: 'id', label: 'Inventory Bundle Items' },
@@ -2098,7 +2110,14 @@ const Settings = () => {
           continue;
         }
         // `technicians.password` column was dropped 2026-05-24; nothing to strip from the row anymore.
-        const rows = data;
+        // Skip huge pdf_base64 blobs from legacy AMC authenticity rows (hash metadata stays).
+        const rows =
+          name === 'amc_pdf_authenticity'
+            ? (data || []).map((row: Record<string, unknown>) => {
+                const { pdf_base64: _omit, ...rest } = row;
+                return rest;
+              })
+            : data;
         tables.push({ name, data: rows });
       }
 
