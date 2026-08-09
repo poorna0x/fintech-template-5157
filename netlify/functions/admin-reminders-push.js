@@ -187,6 +187,20 @@ exports.handler = async (event) => {
           dueDate,
           serviceBrand,
           upiAccount: preferredUpi,
+          reminderId,
+          jobId: (() => {
+            try {
+              const notes = String(r.notes || '');
+              if (notes.startsWith('{')) {
+                const j = JSON.parse(notes);
+                return j.job_id || null;
+              }
+            } catch {
+              /* ignore */
+            }
+            return null;
+          })(),
+          customerId: r.entity_id || null,
         });
       } catch (err) {
         console.warn(

@@ -321,6 +321,15 @@ export type UpiPayLinkInput = {
   note?: string;
   phone?: string;
   brand?: 'hydrogenro' | 'elevenro' | string | null;
+  /** Pending-payment auto-settle: minutes until link expires (default 90 days when omitted). */
+  ttlMinutes?: number | null;
+  reminderId?: string | null;
+  jobId?: string | null;
+  customerId?: string | null;
+  upiAccountId?: string | null;
+  source?: string | null;
+  /** Nudge amount by paisa if another open link already uses this amount on same VPA. */
+  uniqueAmount?: boolean;
 };
 
 /** Query string for upi://pay (QR payload; pa unencoded). */
@@ -428,6 +437,8 @@ export type UpiPayLinkRecord = {
   note: string;
   phone: string;
   brand: 'hydrogenro' | 'elevenro';
+  status?: string;
+  expiresAt?: string | null;
 };
 
 const shortLinkCache = new Map<string, string>();
@@ -440,6 +451,9 @@ function shortLinkCacheKey(input: UpiPayLinkInput): string {
     String(input.note || '').trim(),
     normalizePaymentPhone(input.phone || ''),
     input.brand === 'elevenro' ? 'elevenro' : 'hydrogenro',
+    input.source || '',
+    input.reminderId || '',
+    input.ttlMinutes != null ? String(input.ttlMinutes) : '',
   ].join('|');
 }
 
@@ -450,12 +464,16 @@ export async function createUpiPayShortLink(
   const pa = normalizeUpiId(input.upiId);
   if (!isValidUpiId(pa)) return null;
   const cacheKey = shortLinkCacheKey(input);
-  const cached = shortLinkCache.get(cacheKey);
-  if (cached) return cached;
+  // Don't reuse cached codes for pending auto-settle (short TTL / unique amount).
+  const skipCache = Boolean(input.source === 'pending_payment' || input.uniqueAmount || input.ttlMinutes);
+  if (!skipCache) {
+    const cached = shortLinkCache.get(cacheKey);
+    if (cached) return cached;
+  }
   const brand = input.brand === 'elevenro' ? 'elevenro' : 'hydrogenro';
   const am = Number(input.amount);
   try {
-    const { data, error } = await supabase.rpc('create_upi_pay_link', {
+    const payload: Record<string, unknown> = {
       p_upi_id: pa,
       p_payee_name: String(input.payeeName || '').trim().slice(0, 100),
       p_amount: Number.isFinite(am) && am > 0 ? Number(am.toFixed(2)) : null,
@@ -465,14 +483,25 @@ export async function createUpiPayShortLink(
         .slice(0, 80),
       p_phone: normalizePaymentPhone(input.phone || ''),
       p_brand: brand,
-    });
+    };
+    if (input.ttlMinutes != null && Number(input.ttlMinutes) > 0) {
+      payload.p_ttl_minutes = Math.floor(Number(input.ttlMinutes));
+    }
+    if (input.reminderId) payload.p_reminder_id = input.reminderId;
+    if (input.jobId) payload.p_job_id = input.jobId;
+    if (input.customerId) payload.p_customer_id = input.customerId;
+    if (input.upiAccountId) payload.p_upi_account_id = String(input.upiAccountId).slice(0, 80);
+    if (input.source) payload.p_source = String(input.source).slice(0, 40);
+    if (input.uniqueAmount) payload.p_unique_amount = true;
+
+    const { data, error } = await supabase.rpc('create_upi_pay_link', payload);
     if (error) {
       console.warn('[upi] create_upi_pay_link failed', error.message);
       return null;
     }
     const code = typeof data === 'string' ? data.trim() : '';
     if (code.length < 6) return null;
-    shortLinkCache.set(cacheKey, code);
+    if (!skipCache) shortLinkCache.set(cacheKey, code);
     return code;
   } catch (e) {
     console.warn('[upi] create_upi_pay_link error', e);
@@ -512,6 +541,8 @@ export async function fetchUpiPayShortLink(code: string): Promise<UpiPayLinkReco
       note: typeof r.note === 'string' ? r.note : '',
       phone: normalizePaymentPhone(typeof r.phone === 'string' ? r.phone : ''),
       brand: r.brand === 'elevenro' ? 'elevenro' : 'hydrogenro',
+      status: typeof r.status === 'string' ? r.status : 'open',
+      expiresAt: typeof r.expires_at === 'string' ? r.expires_at : null,
     };
   } catch (e) {
     console.warn('[upi] get_upi_pay_link error', e);
@@ -525,7 +556,14 @@ export type PendingPaymentUpiShare = {
   deepLink: string | null;
   /** HTTPS link for WhatsApp (clickable) — short /p/{code} when possible. */
   httpsLink: string | null;
+  /** Actual charged amount (may include paisa nudge for uniqueness). */
+  amount: number | null;
+  code: string | null;
+  expiresAt: string | null;
 };
+
+/** Pending-payment short links: 30 min TTL, unique amount, bound to reminder for auto-settle. */
+export const PENDING_UPI_LINK_TTL_MINUTES = 30;
 
 export async function buildPendingPaymentUpiShare(
   account: UpiPaymentAccount,
@@ -534,6 +572,9 @@ export async function buildPendingPaymentUpiShare(
   options?: {
     origin?: string | null;
     brand?: 'hydrogenro' | 'elevenro' | string | null;
+    reminderId?: string | null;
+    jobId?: string | null;
+    customerId?: string | null;
   } | null
 ): Promise<PendingPaymentUpiShare | null> {
   if (!isValidUpiId(account.upiId)) return null;
@@ -547,13 +588,84 @@ export async function buildPendingPaymentUpiShare(
     note: noteParts.join(' '),
     phone: account.phone || undefined,
     brand,
+    ttlMinutes: PENDING_UPI_LINK_TTL_MINUTES,
+    reminderId: options?.reminderId || null,
+    jobId: options?.jobId || null,
+    customerId: options?.customerId || null,
+    upiAccountId: account.id,
+    source: 'pending_payment',
+    uniqueAmount: true,
   };
-  const deepLink = buildUpiPayDeepLink(payInput);
   const siteOrigin = resolveUpiPaySiteOrigin(brand, options?.origin);
   const code = await createUpiPayShortLink(payInput);
+  const record = code ? await fetchUpiPayShortLink(code) : null;
+  const amount =
+    record?.amount != null && record.amount > 0
+      ? record.amount
+      : Number(amountPending) > 0
+        ? Number(Number(amountPending).toFixed(2))
+        : null;
+  const resolvedInput: UpiPayLinkInput = {
+    ...payInput,
+    amount: amount ?? undefined,
+  };
+  const deepLink = buildUpiPayDeepLink(resolvedInput);
   const shortHttps = code ? buildUpiPayShortHttpsLink(siteOrigin, code) : null;
-  const httpsLink = shortHttps || buildUpiPayHttpsLink(siteOrigin, payInput);
-  return { account, deepLink, httpsLink };
+  const httpsLink = shortHttps || buildUpiPayHttpsLink(siteOrigin, resolvedInput);
+  return {
+    account,
+    deepLink,
+    httpsLink,
+    amount,
+    code,
+    expiresAt: record?.expiresAt || null,
+  };
+}
+
+/** Admin: match a UPI credit notification amount to an open pending-payment link. */
+export async function trySettleUpiPayLinkByCredit(input: {
+  amount: number;
+  payerName?: string;
+  rawText?: string;
+}): Promise<{
+  ok: boolean;
+  matched?: boolean;
+  settled?: boolean;
+  reason?: string;
+  code?: string;
+  amount?: number;
+  reminderId?: string | null;
+  jobId?: string | null;
+  error?: string;
+}> {
+  const amount = Number(input.amount);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return { ok: false, error: 'invalid_amount' };
+  }
+  try {
+    const { data, error } = await supabase.rpc('try_settle_upi_pay_link_by_credit', {
+      p_amount: Number(amount.toFixed(2)),
+      p_payer_name: String(input.payerName || '').trim().slice(0, 120),
+      p_raw_text: String(input.rawText || '').trim().slice(0, 500),
+    });
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+    const row = (data && typeof data === 'object' ? data : {}) as Record<string, unknown>;
+    return {
+      ok: row.ok !== false,
+      matched: Boolean(row.matched),
+      settled: Boolean(row.settled),
+      reason: typeof row.reason === 'string' ? row.reason : undefined,
+      code: typeof row.code === 'string' ? row.code : undefined,
+      amount: typeof row.amount === 'number' ? row.amount : amount,
+      reminderId: typeof row.reminder_id === 'string' ? row.reminder_id : null,
+      jobId: typeof row.job_id === 'string' ? row.job_id : null,
+      error: typeof row.error === 'string' ? row.error : undefined,
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : 'settle_failed' };
+  }
 }
 
 export function isUpiRemoteUnavailable(): boolean {

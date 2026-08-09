@@ -318,6 +318,8 @@ const PayUpi = () => {
           </h1>
           <p className="mt-2 text-sm text-slate-600">
             {shortLinkMissing
+              ? 'This link expired or was already paid. Ask the office to send a new payment link.'
+              : 'Check the link and try again, or contact the office.'}
               ? `This pay link is no longer available. Ask ${brandLabel} for a new payment message.`
               : `This UPI link is missing a valid UPI ID. Ask ${brandLabel} for a new payment message.`}
           </p>

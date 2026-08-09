@@ -58,6 +58,7 @@ function makePayCode() {
 
 /**
  * Insert a short /p/{code} row (service role bypasses RLS).
+ * Pending-payment links: 30 min TTL, unique amount, source=pending_payment.
  * Returns full https URL or null.
  */
 async function createShortPayHttpsLink(db, input) {
@@ -68,13 +69,37 @@ async function createShortPayHttpsLink(db, input) {
   if (!/^[a-z0-9.\-_]{2,256}@[a-z0-9.\-]{2,64}$/i.test(upiId)) return null;
   const brand = resolveBrand(input.brand);
   const origin = CONTACT[brand].origin;
-  const amount = Number(input.amount);
+  let amount =
+    Number.isFinite(Number(input.amount)) && Number(input.amount) > 0
+      ? Number(Number(input.amount).toFixed(2))
+      : null;
+
+  // Unique amount among open links for this VPA (paisa nudge).
+  if (amount != null) {
+    for (let nudge = 0; nudge < 50; nudge++) {
+      const candidate = Number((Number(input.amount) + nudge * 0.01).toFixed(2));
+      const { data: clash } = await db
+        .from('upi_pay_links')
+        .select('code')
+        .eq('status', 'open')
+        .eq('upi_id', upiId)
+        .eq('amount', candidate)
+        .gt('expires_at', new Date().toISOString())
+        .limit(1);
+      if (!clash || !clash.length) {
+        amount = candidate;
+        break;
+      }
+    }
+  }
+
+  const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
   const row = {
     upi_id: upiId,
     payee_name: String(input.payeeName || '')
       .trim()
       .slice(0, 100),
-    amount: Number.isFinite(amount) && amount > 0 ? Number(amount.toFixed(2)) : null,
+    amount,
     note: String(input.note || '')
       .trim()
       .replace(/\s+/g, ' ')
@@ -83,13 +108,19 @@ async function createShortPayHttpsLink(db, input) {
       .replace(/\D/g, '')
       .slice(-10),
     brand,
+    expires_at: expiresAt,
+    status: 'open',
+    source: 'pending_payment',
+    reminder_id: input.reminderId || null,
+    job_id: input.jobId || null,
+    customer_id: input.customerId || null,
+    upi_account_id: input.upiAccountId ? String(input.upiAccountId).slice(0, 80) : null,
   };
 
   for (let attempt = 0; attempt < 10; attempt++) {
     const code = makePayCode();
     const { error } = await db.from('upi_pay_links').insert({ code, ...row });
     if (!error) return `${origin}/p/${code}`;
-    // unique_violation → retry; missing table / other → stop
     const msg = String(error.message || error.code || '');
     if (!/duplicate|unique/i.test(msg) && error.code !== '23505') {
       console.warn('[pending-wa] upi_pay_links insert failed', msg);
@@ -147,6 +178,9 @@ async function buildPendingPaymentWhatsAppForPush(db, {
   dueDate,
   serviceBrand,
   upiAccount,
+  reminderId,
+  jobId,
+  customerId,
 }) {
   let payLink = null;
   if (upiAccount && upiAccount.upi_id) {
@@ -157,6 +191,10 @@ async function buildPendingPaymentWhatsAppForPush(db, {
       note: 'Pending payment',
       phone: upiAccount.phone || '',
       brand: serviceBrand,
+      reminderId: reminderId || null,
+      jobId: jobId || null,
+      customerId: customerId || null,
+      upiAccountId: upiAccount.id || null,
     });
   }
   return buildPendingPaymentWhatsAppMessage({

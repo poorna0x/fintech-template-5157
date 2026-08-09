@@ -1073,6 +1073,8 @@ const AdminDashboard = () => {
   const [reportPhotoViewerOpen, setReportPhotoViewerOpen] = useState(false);
   const [reportViewerPhoto, setReportViewerPhoto] = useState<{ url: string; index: number; total: number } | null>(null);
   const [reportViewerBillPhotos, setReportViewerBillPhotos] = useState<string[] | null>(null);
+  /** While set, report Dialog stays closed so PhotoSwipe can receive pinch/double-tap (Radix RemoveScroll). */
+  const reportPhotoSuspendRef = useRef(false);
   const [highlightJobId, setHighlightJobId] = useState<string | null>(null);
   /** Prevent re-scrolling the same highlight when `jobs` updates (e.g. customer search). */
   const highlightScrolledForRef = useRef<string | null>(null);
@@ -2030,7 +2032,9 @@ const AdminDashboard = () => {
       }
     }
     setCustomerPhotoGalleryOpen(modal === 'customer-photos' && !!resolveCustomer(parsed.customerId));
-    setCustomerReportDialogOpen(modal === 'report' && !!resolveCustomer(parsed.customerId));
+    setCustomerReportDialogOpen(
+      modal === 'report' && !!resolveCustomer(parsed.customerId) && !reportPhotoSuspendRef.current
+    );
     setHistoryDialogOpen(modal === 'history' && !!resolveCustomer(parsed.customerId));
     // Open bill as soon as URL says so — click handler already set selectedCustomerForBill.
     // Don't wait on resolveCustomer (search/list race can leave a blank first paint).
@@ -7216,11 +7220,12 @@ const AdminDashboard = () => {
         jobs={jobs}
       />
 
-      {/* Customer Report Dialog */}
+      {/* Customer Report Dialog — suspend (close) while photo viewer is open so pinch/zoom works */}
       <CustomerReportDialog
         open={customerReportDialogOpen}
         photoViewerOpen={reportPhotoViewerOpen}
         onOpenChange={bindAdminModalDismiss('report', () => {
+          if (reportPhotoSuspendRef.current) return;
           setCustomerReportDialogOpen(false);
           setReportPhotoViewerOpen(false);
           setReportViewerPhoto(null);
@@ -7230,24 +7235,61 @@ const AdminDashboard = () => {
         technicians={techniciansForReports.length > 0 ? techniciansForReports : technicians}
         onPhotoClick={(url, index, total, photos) => {
           const list = photos && photos.length > 0 ? photos : [url];
-          setReportViewerBillPhotos(list);
-          setReportViewerPhoto({ url: list[index] || url, index, total: list.length || total });
-          setPhotoDownloadMeta({ customerName: selectedCustomerForReport?.fullName, type: 'payment' });
-          setReportPhotoViewerOpen(true);
+          const safeIndex = Math.min(Math.max(0, index), list.length - 1);
+          reportPhotoSuspendRef.current = true;
+          setCustomerReportDialogOpen(false);
+          window.setTimeout(() => {
+            setReportViewerBillPhotos(list);
+            setReportViewerPhoto({
+              url: list[safeIndex] || url,
+              index: safeIndex,
+              total: list.length || total,
+            });
+            setPhotoDownloadMeta({
+              customerName: selectedCustomerForReport?.fullName,
+              type: 'payment',
+            });
+            setReportPhotoViewerOpen(true);
+          }, 50);
         }}
         onBillPhotosClick={(photos, index) => {
-          setReportViewerBillPhotos(photos);
-          setReportViewerPhoto({ url: photos[index], index, total: photos.length });
-          setPhotoDownloadMeta({ customerName: selectedCustomerForReport?.fullName, type: 'bill' });
-          setReportPhotoViewerOpen(true);
+          if (!photos.length) return;
+          const safeIndex = Math.min(Math.max(0, index), photos.length - 1);
+          reportPhotoSuspendRef.current = true;
+          setCustomerReportDialogOpen(false);
+          window.setTimeout(() => {
+            setReportViewerBillPhotos(photos);
+            setReportViewerPhoto({
+              url: photos[safeIndex],
+              index: safeIndex,
+              total: photos.length,
+            });
+            setPhotoDownloadMeta({
+              customerName: selectedCustomerForReport?.fullName,
+              type: 'bill',
+            });
+            setReportPhotoViewerOpen(true);
+          }, 50);
         }}
         onNavigateToCompletedJob={handleNavigateToCompletedJobFromReport}
       />
 
-      {/* Photo viewer overlay for customer report — local state so ?modal=report stays open */}
+      {/* Photo viewer for customer report (report Dialog is suspended/closed while this is open) */}
       <PhotoViewerDialog
         open={reportPhotoViewerOpen}
-        onOpenChange={setReportPhotoViewerOpen}
+        onOpenChange={(open) => {
+          if (open) {
+            setReportPhotoViewerOpen(true);
+            return;
+          }
+          setReportPhotoViewerOpen(false);
+          setReportViewerPhoto(null);
+          setReportViewerBillPhotos(null);
+          if (reportPhotoSuspendRef.current) {
+            reportPhotoSuspendRef.current = false;
+            setCustomerReportDialogOpen(true);
+          }
+        }}
         selectedPhoto={reportViewerPhoto}
         selectedBillPhotos={reportViewerBillPhotos}
         selectedJobPhotos={null}
@@ -7284,6 +7326,10 @@ const AdminDashboard = () => {
           setReportPhotoViewerOpen(false);
           setReportViewerPhoto(null);
           setReportViewerBillPhotos(null);
+          if (reportPhotoSuspendRef.current) {
+            reportPhotoSuspendRef.current = false;
+            setCustomerReportDialogOpen(true);
+          }
         }}
       />
 

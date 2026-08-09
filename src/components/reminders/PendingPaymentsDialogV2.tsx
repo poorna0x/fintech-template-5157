@@ -34,6 +34,7 @@ import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import CustomerReportDialog from '@/components/admin/CustomerReportDialog';
 import PhotoViewerDialog from '@/components/admin/PhotoViewerDialog';
+import { useSuspendDialogForPhotoViewer } from '@/lib/suspendDialogForPhotoViewer';
 import UpiPaymentAccountsManager from '@/components/UpiPaymentAccountsManager';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { PENDING_PAYMENT_REMINDER_TITLE, parseReminderAtLocalDate, buildPendingPaymentWhatsAppMessage, buildPendingPaymentReceivedWhatsAppMessage, parsePendingPaymentReminderNotes } from '@/lib/pendingPaymentReminder';
@@ -484,6 +485,11 @@ export function SettingsPendingPaymentsDialogV2({
   const [reportOpening, setReportOpening] = useState(false);
   const [reportOpeningName, setReportOpeningName] = useState('');
   const [reportPhotoViewerOpen, setReportPhotoViewerOpen] = useState(false);
+  const {
+    openSuspendedViewer,
+    closeSuspendedViewer,
+    ignoreParentDismissWhileSuspended,
+  } = useSuspendDialogForPhotoViewer();
   const [reportSelectedPhoto, setReportSelectedPhoto] = useState<{
     url: string;
     index: number;
@@ -547,7 +553,15 @@ export function SettingsPendingPaymentsDialogV2({
           account,
           Number(payment.amount_pending) || 0,
           payment.job_number || payment.job_id || null,
-          { brand: brandForCustomer(payment.entity_id as string | undefined) }
+          {
+            brand: brandForCustomer(payment.entity_id as string | undefined),
+            reminderId: payment.id,
+            jobId:
+              payment.job_id ||
+              parsePendingPaymentReminderNotes(payment.notes).job_id ||
+              null,
+            customerId: (payment.entity_id as string | undefined) || null,
+          }
         );
         if (share) {
           upiOpts = {
@@ -1267,6 +1281,7 @@ export function SettingsPendingPaymentsDialogV2({
             open={reportDialogOpen}
             photoViewerOpen={reportPhotoViewerOpen}
             onOpenChange={(o) => {
+              if (!o && ignoreParentDismissWhileSuspended()) return;
               setReportDialogOpen(o);
               if (!o) {
                 setReportCustomer(null);
@@ -1277,18 +1292,35 @@ export function SettingsPendingPaymentsDialogV2({
             technicians={reportTechnicians}
             onPhotoClick={(url, index, total, photos) => {
               const list = photos && photos.length > 0 ? photos : [url];
-              setReportSelectedBillPhotos(list);
-              setReportSelectedPhoto({ url: list[index] || url, index, total: list.length || total });
-              setReportPhotoViewerOpen(true);
+              const safeIndex = Math.min(Math.max(0, index), list.length - 1);
+              openSuspendedViewer(
+                () => setReportDialogOpen(false),
+                () => {
+                  setReportSelectedBillPhotos(list);
+                  setReportSelectedPhoto({
+                    url: list[safeIndex] || url,
+                    index: safeIndex,
+                    total: list.length || total,
+                  });
+                  setReportPhotoViewerOpen(true);
+                }
+              );
             }}
             onBillPhotosClick={(photos, index) => {
-              setReportSelectedBillPhotos(photos);
-              setReportSelectedPhoto({
-                url: photos[index],
-                index,
-                total: photos.length,
-              });
-              setReportPhotoViewerOpen(true);
+              if (!photos.length) return;
+              const safeIndex = Math.min(Math.max(0, index), photos.length - 1);
+              openSuspendedViewer(
+                () => setReportDialogOpen(false),
+                () => {
+                  setReportSelectedBillPhotos(photos);
+                  setReportSelectedPhoto({
+                    url: photos[safeIndex],
+                    index: safeIndex,
+                    total: photos.length,
+                  });
+                  setReportPhotoViewerOpen(true);
+                }
+              );
             }}
           />
         )}
@@ -1296,7 +1328,20 @@ export function SettingsPendingPaymentsDialogV2({
         {reportPhotoViewerOpen && (
           <PhotoViewerDialog
             open={reportPhotoViewerOpen}
-            onOpenChange={setReportPhotoViewerOpen}
+            onOpenChange={(open) => {
+              if (open) {
+                setReportPhotoViewerOpen(true);
+                return;
+              }
+              closeSuspendedViewer(
+                () => setReportDialogOpen(true),
+                () => {
+                  setReportPhotoViewerOpen(false);
+                  setReportSelectedPhoto(null);
+                  setReportSelectedBillPhotos(null);
+                }
+              );
+            }}
             selectedPhoto={reportSelectedPhoto}
             selectedBillPhotos={reportSelectedBillPhotos}
             selectedJobPhotos={null}
@@ -1345,7 +1390,16 @@ export function SettingsPendingPaymentsDialogV2({
               a.rel = 'noopener noreferrer';
               a.click();
             }}
-            onClose={() => setReportPhotoViewerOpen(false)}
+            onClose={() => {
+              closeSuspendedViewer(
+                () => setReportDialogOpen(true),
+                () => {
+                  setReportPhotoViewerOpen(false);
+                  setReportSelectedPhoto(null);
+                  setReportSelectedBillPhotos(null);
+                }
+              );
+            }}
           />
         )}
 
@@ -1626,6 +1680,10 @@ export function SettingsPendingPaymentsDialogV2({
                           {whatsappIncludeUpi ? (
                             <div className="space-y-2 pl-7">
                               <Label>Pay to UPI</Label>
+                              <p className="text-[11px] text-muted-foreground -mt-1 mb-1">
+                                Short pay link expires in 30 minutes. Auto-settle uses this
+                                account&apos;s PhonePe/GPay credit on the Admin app.
+                              </p>
                               <Select
                                 value={whatsappUpiAccountId || undefined}
                                 onValueChange={setWhatsappUpiAccountId}
