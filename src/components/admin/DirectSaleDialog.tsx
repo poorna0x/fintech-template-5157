@@ -45,11 +45,13 @@ import DocumentEmailSendDialog from '@/components/document/DocumentEmailSendDial
 import {
   getCompanyInfoForBrand,
   brandHasGst,
+  getDocumentBrandLabel,
   type DocumentBrand,
 } from '@/lib/service-brands';
 import type { Bill, BillItem } from '@/types';
 import {
   buildOfficeSaleUpiShareMessage,
+  DEFAULT_OFFICE_SALE_UPI_BRAND,
   shareOfficeSaleUpiOnWhatsApp,
 } from '@/lib/officeSaleUpiShare';
 
@@ -103,6 +105,7 @@ type PendingBillDraft = {
   upiId?: string;
   payeeName?: string;
   upiPaymentPhone?: string;
+  upiShareBrand?: DocumentBrand;
 };
 
 const todayInputValue = (): string => {
@@ -122,6 +125,46 @@ const formatCurrency = (amount: number): string => {
 
 const digitsPhone = (raw: string): string => String(raw || '').replace(/\D/g, '').slice(-10);
 
+const UPI_SHARE_BRANDS: DocumentBrand[] = ['hydrogenro', 'elevenro'];
+
+function UpiShareBrandPicker({
+  value,
+  onChange,
+}: {
+  value: DocumentBrand;
+  onChange: (brand: DocumentBrand) => void;
+}) {
+  return (
+    <div className="space-y-1">
+      <Label className="text-xs">Pay link page</Label>
+      <div
+        role="group"
+        aria-label="Pay link brand"
+        className="grid grid-cols-2 gap-1 rounded-lg border border-emerald-200/80 bg-emerald-50/40 p-1"
+      >
+        {UPI_SHARE_BRANDS.map((brand) => (
+          <button
+            key={brand}
+            type="button"
+            aria-pressed={value === brand}
+            onClick={() => onChange(brand)}
+            className={`min-h-9 rounded-md px-2 text-xs font-medium transition-colors ${
+              value === brand
+                ? 'bg-emerald-600 text-white shadow-sm'
+                : 'text-emerald-900/70 hover:bg-white'
+            }`}
+          >
+            {getDocumentBrandLabel(brand)}
+          </button>
+        ))}
+      </div>
+      <p className="text-[10px] text-muted-foreground">
+        {value === 'elevenro' ? 'elevenro.com/p/…' : 'hydrogenro.com/p/…'}
+      </p>
+    </div>
+  );
+}
+
 const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange, onSaleCreated }) => {
   const [amount, setAmount] = useState('');
   const [item, setItem] = useState('');
@@ -138,6 +181,7 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
   const [partialCashAmount, setPartialCashAmount] = useState('');
   const [partialOnlineAmount, setPartialOnlineAmount] = useState('');
   const [selectedQrId, setSelectedQrId] = useState('');
+  const [upiShareBrand, setUpiShareBrand] = useState<DocumentBrand>(DEFAULT_OFFICE_SALE_UPI_BRAND);
   const [qrOptions, setQrOptions] = useState<QrOption[]>([]);
   const [loadingQr, setLoadingQr] = useState(false);
 
@@ -275,6 +319,7 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
     setPartialCashAmount('');
     setPartialOnlineAmount('');
     setSelectedQrId('');
+    setUpiShareBrand(DEFAULT_OFFICE_SALE_UPI_BRAND);
     setSelectedQuantities({});
     setInventorySearch('');
     setDebouncedSearch('');
@@ -437,10 +482,7 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
       digitsPhone(customerPhone).length === 10
   );
 
-  const shareUpiFromDraft = async (
-    draft: PendingBillDraft,
-    brand: DocumentBrand = 'hydrogenro'
-  ) => {
+  const shareUpiFromDraft = async (draft: PendingBillDraft, brand: DocumentBrand) => {
     if (!draft.upiId || !draft.onlineAmount || draft.onlineAmount <= 0) {
       toast.error('Online amount and UPI QR are required for a pay link');
       return false;
@@ -488,8 +530,9 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
         upiId: selectedQr.upiId,
         payeeName: selectedQr.payeeName || selectedQr.name,
         upiPaymentPhone: selectedQr.phone,
+        upiShareBrand,
       },
-      'hydrogenro'
+      upiShareBrand
     );
   };
 
@@ -722,6 +765,7 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
               upiId: selectedQr.upiId,
               payeeName: selectedQr.payeeName || selectedQr.name,
               upiPaymentPhone: selectedQr.phone,
+              upiShareBrand,
             }
           : {}),
       };
@@ -756,6 +800,8 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
     const bill = buildBillDocument(brand, pendingBill);
     setEmailBill(bill);
     setEmailBrand(brand);
+    const payLinkBrand =
+      pendingBill.upiShareBrand ?? upiShareBrand ?? DEFAULT_OFFICE_SALE_UPI_BRAND;
     if (
       pendingBill.upiId &&
       pendingBill.onlineAmount &&
@@ -763,7 +809,7 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
       (pendingBill.paymentMode === 'ONLINE' || pendingBill.paymentMode === 'PARTIAL')
     ) {
       const payBlock = await buildOfficeSaleUpiShareMessage({
-        brand,
+        brand: payLinkBrand,
         amount: pendingBill.onlineAmount,
         upiId: pendingBill.upiId,
         payeeName: pendingBill.payeeName,
@@ -780,7 +826,9 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
 
   const onShareUpiAfterSale = async () => {
     if (!pendingBill) return;
-    const ok = await shareUpiFromDraft(pendingBill, 'hydrogenro');
+    const payLinkBrand =
+      pendingBill.upiShareBrand ?? upiShareBrand ?? DEFAULT_OFFICE_SALE_UPI_BRAND;
+    const ok = await shareUpiFromDraft(pendingBill, payLinkBrand);
     if (ok) {
       setAskSendOpen(false);
     }
@@ -1372,6 +1420,10 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
                   </div>
                 )}
 
+                {needsQr && selectedQr?.dynamicUpiEnabled ? (
+                  <UpiShareBrandPicker value={upiShareBrand} onChange={setUpiShareBrand} />
+                ) : null}
+
                 {canShareUpiLink ? (
                   <Button
                     type="button"
@@ -1442,20 +1494,29 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
           </AlertDialogHeader>
           <AlertDialogFooter className="flex-col gap-2 sm:flex-col sm:items-stretch">
             {showPostSaleUpiShare ? (
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full gap-2 border-emerald-300 text-emerald-800 hover:bg-emerald-50"
-                disabled={sharingUpiLink}
-                onClick={() => void onShareUpiAfterSale()}
-              >
-                {sharingUpiLink ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Share2 className="h-4 w-4" />
-                )}
-                Share UPI pay link on WhatsApp
-              </Button>
+              <>
+                <UpiShareBrandPicker
+                  value={pendingBill?.upiShareBrand ?? upiShareBrand}
+                  onChange={(brand) => {
+                    setUpiShareBrand(brand);
+                    setPendingBill((prev) => (prev ? { ...prev, upiShareBrand: brand } : prev));
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full gap-2 border-emerald-300 text-emerald-800 hover:bg-emerald-50"
+                  disabled={sharingUpiLink}
+                  onClick={() => void onShareUpiAfterSale()}
+                >
+                  {sharingUpiLink ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Share2 className="h-4 w-4" />
+                  )}
+                  Share UPI pay link on WhatsApp
+                </Button>
+              </>
             ) : null}
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <AlertDialogCancel onClick={onSkipSendPdf}>Not now</AlertDialogCancel>

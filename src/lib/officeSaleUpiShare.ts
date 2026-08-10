@@ -10,6 +10,9 @@ import {
 } from '@/lib/upiPaymentAccounts';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 
+/** Default pay-link brand for office sales (user can switch to Hydrogen RO in the UI). */
+export const DEFAULT_OFFICE_SALE_UPI_BRAND: DocumentBrand = 'elevenro';
+
 export type OfficeSaleUpiShareInput = {
   brand: DocumentBrand;
   amount: number;
@@ -31,7 +34,9 @@ export async function buildOfficeSaleUpiPayHttpsLink(
 
   const payInput = {
     upiId,
-    payeeName: String(input.payeeName || 'Hydrogen RO').trim() || 'Hydrogen RO',
+    payeeName:
+      String(input.payeeName || '').trim() ||
+      getDocumentBrandLabel(input.brand),
     amount,
     note: String(input.note || 'Office sale').trim().slice(0, 80) || 'Office sale',
     phone: normalizePaymentPhone(input.paymentPhone || '') || undefined,
