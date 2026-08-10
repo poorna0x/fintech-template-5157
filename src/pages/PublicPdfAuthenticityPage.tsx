@@ -8,6 +8,10 @@ import {
   Upload,
   X,
   AlertTriangle,
+  CircleHelp,
+  MessageCircle,
+  Keyboard,
+  FileUp,
 } from 'lucide-react';
 import Header from '@/components/Header';
 import AltchaWidget from '@/components/AltchaWidget';
@@ -15,6 +19,13 @@ import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import { REGEXP_ONLY_DIGITS } from 'input-otp';
 import { cn } from '@/lib/utils';
 import { getPublicSiteKey } from '@/lib/websiteSiteKey';
@@ -32,6 +43,139 @@ import {
 } from '@/lib/publicPdfAuthenticity';
 
 type UnlockState = 'locked' | 'unlocking' | 'unlocked';
+
+function HowToGuideSheet({
+  open,
+  onOpenChange,
+  waDisplay,
+  waUrl,
+  isEleven,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  waDisplay: string;
+  waUrl: string;
+  isEleven: boolean;
+}) {
+  const steps = [
+    {
+      icon: MessageCircle,
+      title: 'Open WhatsApp',
+      detail: (
+        <>
+          Tap the green <strong>Open WhatsApp</strong> button on this page. It opens a chat to{' '}
+          <strong>{waDisplay}</strong> with the word <strong>VERIFY</strong> already typed.
+        </>
+      ),
+    },
+    {
+      icon: WhatsAppIcon,
+      title: 'Send the message',
+      detail: (
+        <>
+          In WhatsApp, tap <strong>Send</strong>. Do not change the word — it must be exactly{' '}
+          <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs font-semibold">
+            VERIFY
+          </span>
+          .
+        </>
+      ),
+    },
+    {
+      icon: Keyboard,
+      title: 'Copy the 6-digit code',
+      detail: (
+        <>
+          Wait a few seconds. You will get a reply like{' '}
+          <em>“Your authenticity code is 123456”</em>. Remember those <strong>6 numbers</strong>{' '}
+          (they work for 5 minutes only).
+        </>
+      ),
+    },
+    {
+      icon: Lock,
+      title: 'Come back and unlock',
+      detail: (
+        <>
+          Return to this page. Type your <strong>same WhatsApp mobile number</strong> (10 digits)
+          and the <strong>6-digit code</strong>, then tap <strong>Unlock verification</strong>.
+        </>
+      ),
+    },
+    {
+      icon: FileUp,
+      title: 'Upload your PDF',
+      detail: (
+        <>
+          Tap <strong>Choose PDF</strong> and pick the document we sent you. The file stays on your
+          phone — we only check a fingerprint. You will see <strong>Authentic</strong> or{' '}
+          <strong>Not authentic</strong>.
+        </>
+      ),
+    },
+  ];
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="bottom"
+        className="flex max-h-[92dvh] flex-col gap-0 rounded-t-3xl border-slate-200 p-0 sm:mx-auto sm:max-w-lg"
+      >
+        <div className="mx-auto mt-3 h-1.5 w-10 shrink-0 rounded-full bg-slate-200 sm:hidden" />
+        <SheetHeader className="shrink-0 space-y-1 border-b border-slate-100 px-5 pb-4 pt-4 text-left">
+          <SheetTitle className="text-xl">How to verify — easy steps</SheetTitle>
+          <SheetDescription className="text-[15px] leading-relaxed text-slate-600">
+            Follow these steps one by one. It takes about one minute.
+          </SheetDescription>
+        </SheetHeader>
+
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
+          <ol className="space-y-4">
+            {steps.map((step, i) => {
+              const Icon = step.icon;
+              return (
+                <li
+                  key={step.title}
+                  className="flex gap-3 rounded-2xl border border-slate-100 bg-slate-50/80 p-3.5"
+                >
+                  <div className="flex flex-col items-center gap-1">
+                    <span
+                      className={cn(
+                        'flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white',
+                        isEleven ? 'bg-emerald-600' : 'bg-sky-700'
+                      )}
+                    >
+                      {i + 1}
+                    </span>
+                    <Icon className="mt-1 h-4 w-4 text-slate-400" aria-hidden />
+                  </div>
+                  <div className="min-w-0 pt-0.5">
+                    <p className="text-[15px] font-semibold text-slate-900">{step.title}</p>
+                    <p className="mt-1 text-sm leading-relaxed text-slate-600">{step.detail}</p>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+
+          <a
+            href={waUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-5 mb-2 inline-flex min-h-12 w-full cursor-pointer items-center justify-center gap-2.5 rounded-2xl bg-[#25D366] px-4 text-[15px] font-semibold text-white shadow-sm transition hover:bg-[#1ebe57] active:scale-[0.99]"
+            onClick={() => onOpenChange(false)}
+          >
+            <WhatsAppIcon className="h-5 w-5 shrink-0 text-white" />
+            Start now — open WhatsApp
+          </a>
+          <p className="pb-6 text-center text-xs text-slate-500">
+            Tip: use the same phone number on WhatsApp and on this page.
+          </p>
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
 
 export default function PublicPdfAuthenticityPage() {
   const siteKey = getPublicSiteKey();
@@ -54,6 +198,7 @@ export default function PublicPdfAuthenticityPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [result, setResult] = useState<PublicAuthCheckResult | null>(null);
   const [checkError, setCheckError] = useState('');
+  const [guideOpen, setGuideOpen] = useState(false);
 
   const phoneDigits = phone.replace(/\D/g, '').slice(-10);
   const phoneValid = phoneDigits.length === 10 && /^[6-9]/.test(phoneDigits);
@@ -182,7 +327,28 @@ export default function PublicPdfAuthenticityPage() {
           <p className="mx-auto mt-2.5 max-w-sm text-sm leading-relaxed text-slate-600 sm:text-[15px]">
             Confirm a PDF was issued by us. No customer address or email is collected here.
           </p>
+          <button
+            type="button"
+            onClick={() => setGuideOpen(true)}
+            className={cn(
+              'mt-4 inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-full border bg-white px-4 text-sm font-semibold shadow-sm transition active:scale-[0.99]',
+              isEleven
+                ? 'border-emerald-200 text-emerald-800 hover:bg-emerald-50'
+                : 'border-sky-200 text-sky-800 hover:bg-sky-50'
+            )}
+          >
+            <CircleHelp className="h-4 w-4" />
+            How to verify — step by step
+          </button>
         </div>
+
+        <HowToGuideSheet
+          open={guideOpen}
+          onOpenChange={setGuideOpen}
+          waDisplay={waDisplay}
+          waUrl={waUrl}
+          isEleven={isEleven}
+        />
 
         {unlockState !== 'unlocked' ? (
           <section className="relative space-y-5">
@@ -213,11 +379,22 @@ export default function PublicPdfAuthenticityPage() {
                 ))}
               </ol>
 
+              <button
+                type="button"
+                onClick={() => setGuideOpen(true)}
+                className={cn(
+                  'mt-4 w-full cursor-pointer text-left text-sm font-medium underline-offset-2 hover:underline',
+                  isEleven ? 'text-emerald-700' : 'text-sky-700'
+                )}
+              >
+                Confused? Open the full picture guide →
+              </button>
+
               <a
                 href={waUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-6 inline-flex min-h-12 w-full cursor-pointer items-center justify-center gap-2.5 rounded-2xl bg-[#25D366] px-4 text-[15px] font-semibold text-white shadow-sm transition hover:bg-[#1ebe57] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#25D366]/40 focus-visible:ring-offset-2"
+                className="mt-4 inline-flex min-h-12 w-full cursor-pointer items-center justify-center gap-2.5 rounded-2xl bg-[#25D366] px-4 text-[15px] font-semibold text-white shadow-sm transition hover:bg-[#1ebe57] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#25D366]/40 focus-visible:ring-offset-2"
               >
                 <WhatsAppIcon className="h-5 w-5 shrink-0 text-white" />
                 Open WhatsApp · send VERIFY
