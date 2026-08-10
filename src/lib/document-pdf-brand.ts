@@ -1,5 +1,7 @@
 import { CompanyInfo } from '@/types';
 import { renderBrandLogoHtml } from './brand-logo-markup';
+import { sanitizeForTemplate } from './sanitize';
+import { formatDocumentPdfVerifyFooterLine } from './documentPdfAuthenticity';
 import {
   DocumentBrand,
   DocumentSealVariant,
@@ -75,12 +77,26 @@ export function renderPdfSignatureHtml(
   `;
 }
 
-export function renderPdfFooterHtml(brand: DocumentBrand, company: CompanyInfo): string {
+export function renderPdfFooterHtml(
+  brand: DocumentBrand,
+  company: CompanyInfo,
+  opts?: { thankYouLine?: string; authenticityVerifyCode?: string }
+): string {
   const label = getDocumentBrandLabel(brand);
+  const thankYou =
+    opts?.thankYouLine?.trim() || `Thank you for choosing ${label}!`;
+  const verify = opts?.authenticityVerifyCode?.trim();
   return `
     <${TAG} class="footer">
-      <p>Thank you for choosing ${label}!</p>
-      <p>For any queries, contact us at ${company.phone} or ${company.email}</p>
+      <p>${sanitizeForTemplate(thankYou)}</p>
+      <p>For any queries, contact us at ${sanitizeForTemplate(company.phone)} or ${sanitizeForTemplate(company.email)}</p>
+      ${
+        verify
+          ? `<p style="margin-top: 6px; letter-spacing: 0.02em; color: #9ca3af;">${sanitizeForTemplate(
+              formatDocumentPdfVerifyFooterLine(verify, brand)
+            )}</p>`
+          : ''
+      }
     </${TAG}>
   `;
 }

@@ -20,6 +20,11 @@ import {
   billToQuotationPdfData,
   billToTaxInvoicePdfData,
 } from '@/lib/document-preview-utils';
+import {
+  generateDocumentPdfVerifyCode,
+  recordDocumentPdfAuthenticity,
+  type DocumentPdfDocType,
+} from '@/lib/documentPdfAuthenticity';
 
 export type GeneratorDocumentEmailKind = 'service_bill' | 'quotation' | 'invoice';
 
@@ -60,19 +65,54 @@ function pdfFilenameForKind(kind: GeneratorDocumentEmailKind, bill: Bill): strin
   }
 }
 
-function pdfHtmlForKind(kind: GeneratorDocumentEmailKind, bill: Bill): string {
+function pdfHtmlForKind(
+  kind: GeneratorDocumentEmailKind,
+  bill: Bill,
+  opts?: { authenticityVerifyCode?: string }
+): string {
+  const code = opts?.authenticityVerifyCode;
   switch (kind) {
     case 'service_bill':
-      return generateBillHTML(billToBillPdfData(bill));
+      return generateBillHTML({
+        ...billToBillPdfData(bill),
+        authenticityVerifyCode: code,
+      });
     case 'quotation':
-      return generateQuotationHTML(
-        billToQuotationPdfData(bill) as Parameters<typeof generateQuotationHTML>[0]
-      );
-    case 'invoice':
-      return generateTaxInvoiceHTML(
-        billToTaxInvoicePdfData(bill) as Parameters<typeof generateTaxInvoiceHTML>[0]
-      );
+      return generateQuotationHTML({
+        ...(billToQuotationPdfData(bill) as Parameters<typeof generateQuotationHTML>[0]),
+        authenticityVerifyCode: code,
+      });
+    case 'invoice': {
+      const data = billToTaxInvoicePdfData(bill) as Parameters<typeof generateTaxInvoiceHTML>[0] & {
+        pdfOptions?: Record<string, unknown>;
+      };
+      return generateTaxInvoiceHTML({
+        ...data,
+        pdfOptions: {
+          ...(data.pdfOptions || {}),
+          authenticityVerifyCode: code,
+        },
+      });
+    }
   }
+}
+
+async function fingerprintGeneratorPdf(params: {
+  kind: GeneratorDocumentEmailKind;
+  bill: Bill;
+  verifyCode: string;
+  pdfBase64: string;
+  filename: string;
+}): Promise<void> {
+  await recordDocumentPdfAuthenticity({
+    docType: params.kind as DocumentPdfDocType,
+    sourceKey: params.bill.billNumber,
+    verifyCode: params.verifyCode,
+    pdfBase64: params.pdfBase64,
+    filename: params.filename,
+    customerId: params.bill.customer?.id || null,
+    documentRef: params.bill.billNumber,
+  });
 }
 
 function dueDateForKind(kind: GeneratorDocumentEmailKind, bill: Bill): string {
@@ -95,7 +135,7 @@ function customerDisplayName(bill: Bill): string {
   return customer.name || customer.fullName || 'Customer';
 }
 
-/** PDF base64 for WhatsApp document send (same HTML as email). */
+/** PDF base64 helper (same HTML as email). Fingerprints hash-only. */
 export async function generateGeneratorDocumentPdfBase64(
   kind: GeneratorDocumentEmailKind,
   bill: Bill
@@ -104,10 +144,20 @@ export async function generateGeneratorDocumentPdfBase64(
   if (!sessionReady.ok) {
     throw new Error('Could not verify your session. Please try again.');
   }
-  return generateDocumentPdfBase64({
-    html: pdfHtmlForKind(kind, bill),
-    filename: pdfFilenameForKind(kind, bill),
+  const verifyCode = generateDocumentPdfVerifyCode();
+  const filename = pdfFilenameForKind(kind, bill);
+  const pdf = await generateDocumentPdfBase64({
+    html: pdfHtmlForKind(kind, bill, { authenticityVerifyCode: verifyCode }),
+    filename,
   });
+  await fingerprintGeneratorPdf({
+    kind,
+    bill,
+    verifyCode,
+    pdfBase64: pdf.pdfBase64,
+    filename: pdf.filename,
+  });
+  return pdf;
 }
 
 export async function sendGeneratorDocumentEmail(
@@ -127,7 +177,8 @@ export async function sendGeneratorDocumentEmail(
 
   const templateType = templateTypeForKind(kind);
   const pdfFilename = pdfFilenameForKind(kind, bill);
-  const html = pdfHtmlForKind(kind, bill);
+  const verifyCode = generateDocumentPdfVerifyCode();
+  const html = pdfHtmlForKind(kind, bill, { authenticityVerifyCode: verifyCode });
 
   const sessionReady = await ensureSupabaseSessionForWrite();
   if (!sessionReady.ok) {
@@ -146,6 +197,13 @@ export async function sendGeneratorDocumentEmail(
     pdfBase64 = pdf.pdfBase64;
     filename = pdf.filename;
     size = pdf.size;
+    await fingerprintGeneratorPdf({
+      kind,
+      bill,
+      verifyCode,
+      pdfBase64,
+      filename,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'PDF generation failed';
     return {

@@ -3,7 +3,6 @@ import { mapCustomerGstFields } from '@/lib/customerGst';
 import { getCompanyStateCode } from '@/lib/indian-state-codes';
 import { generateTaxInvoiceHTML, generateTaxInvoicePDF } from '@/lib/tax-invoice-pdf-generator';
 import type { PDFTaxInvoiceData } from '@/lib/tax-invoice-pdf-generator';
-import { downloadDocumentPdf } from '@/lib/server-pdf-download';
 
 export type TaxInvoiceRecord = {
   id: string;
@@ -319,12 +318,6 @@ export function taxInvoiceToPdfData(invoice: TaxInvoiceRecord): PDFTaxInvoiceDat
 
 export function exportTaxInvoicePdf(invoice: TaxInvoiceRecord, action: 'print' | 'pdf' = 'pdf') {
   const data = taxInvoiceToPdfData(invoice);
-  if (action === 'pdf') {
-    void downloadDocumentPdf({
-      html: generateTaxInvoiceHTML(data),
-      filename: `TaxInvoice_${data.billNumber.replace(/\s+/g, '_')}.pdf`,
-    });
-    return;
-  }
+  // Use generateTaxInvoicePDF so Download also fingerprints authenticity (hash-only).
   generateTaxInvoicePDF(data, action);
 }

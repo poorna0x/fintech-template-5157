@@ -1,0 +1,28 @@
+---
+description: Always fingerprint PDF downloads/sends for authenticity (hash-only)
+alwaysApply: true
+---
+
+# PDF authenticity — always save fingerprint on generate
+
+Whenever a **customer-facing PDF is generated for Download, Email, or WhatsApp** (Puppeteer / `generateDocumentPdfBase64` / `downloadDocumentPdfReturningBase64`):
+
+1. Put an 8-char verify code in the PDF footer (`Verify authenticity at hydrogenro.com/authenticity · Code …` or `elevenro.com/authenticity` based on document brand).
+2. Hash the **exact** bytes being downloaded/sent (SHA-256).
+3. Persist hash + code via `recordDocumentPdfAuthenticity` (`document_pdf_authenticity`) — **hash only, never store PDF bytes** in that flow.
+4. Soft-fail DB insert (send/download still succeeds; warn if useful).
+
+## Covered doc types
+
+`amc` | `service_bill` | `quotation` | `invoice` | `warranty`  
+(and any new customer PDF generators added later — same pattern)
+
+## Do NOT
+
+- Tie fingerprinting only to AMC **Save to DB** (Save to DB = contract only; no auto-download, no PDF blob store for authenticity).
+- Fingerprint browser Print → Save as PDF (different bytes).
+- Skip technician AMC download/email/WhatsApp — they must insert too (`is_active_technician()` INSERT RLS).
+
+## Verify UI
+
+Admin Settings → `?panel=pdf-authenticity` (`PdfAuthenticityVerifyPage`).

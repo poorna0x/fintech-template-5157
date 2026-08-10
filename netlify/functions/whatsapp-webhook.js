@@ -17,6 +17,7 @@ const {
 } = require('./whatsapp-helper');
 const { handleBookingBotInbound } = require('./whatsapp-booking-bot');
 const { handleUnsolicitedInboundMedia } = require('./whatsapp-unsolicited-media');
+const { handlePdfAuthenticityOtpInbound } = require('./whatsapp-pdf-authenticity-otp');
 
 function readRawBody(event) {
   if (!event.body) return '';
@@ -84,8 +85,24 @@ async function persistInboundMessages(db, accessToken, phoneNumberId, value, sum
       }
     }
 
-    // 24h-window booking bot (reply buttons). Failures must not break webhook ACK.
+    // Public PDF authenticity OTP (VERIFY keyword) — before booking bot.
+    let authenticityOtpHandled = false;
     if (accessToken && phoneNumberId) {
+      try {
+        const otpResult = await handlePdfAuthenticityOtpInbound({
+          db,
+          accessToken,
+          phoneNumberId,
+          msg,
+        });
+        authenticityOtpHandled = Boolean(otpResult?.handled);
+      } catch (err) {
+        console.warn('[whatsapp-webhook] pdf authenticity otp error', err?.message || err);
+      }
+    }
+
+    // 24h-window booking bot (reply buttons). Failures must not break webhook ACK.
+    if (!authenticityOtpHandled && accessToken && phoneNumberId) {
       try {
         await handleBookingBotInbound({
           db,

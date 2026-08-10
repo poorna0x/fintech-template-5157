@@ -11,6 +11,10 @@ import {
 import { generateDocumentPdfBase64 } from '@/lib/server-pdf-download';
 import { db } from '@/lib/supabase';
 import { supabase } from '@/lib/supabaseClient';
+import {
+  generateDocumentPdfVerifyCode,
+  recordDocumentPdfAuthenticity,
+} from '@/lib/documentPdfAuthenticity';
 
 function toDateOnly(value: unknown): string {
   if (!value) return new Date().toISOString().split('T')[0];
@@ -132,9 +136,25 @@ export async function buildComposerAutoAttachments(params: {
       throw new Error('Could not load tax invoice for PDF');
     }
     const pdfData = taxInvoiceToPdfData(inv as TaxInvoiceRecord);
-    const html = generateTaxInvoiceHTML(pdfData);
+    const verifyCode = generateDocumentPdfVerifyCode();
+    const html = generateTaxInvoiceHTML({
+      ...pdfData,
+      pdfOptions: {
+        ...((pdfData as { pdfOptions?: Record<string, unknown> }).pdfOptions || {}),
+        authenticityVerifyCode: verifyCode,
+      },
+    } as Parameters<typeof generateTaxInvoiceHTML>[0]);
     const filename = `Tax_Invoice_${pdfData.billNumber.replace(/\s+/g, '_')}.pdf`;
     const pdf = await generateDocumentPdfBase64({ html, filename });
+    await recordDocumentPdfAuthenticity({
+      docType: 'invoice',
+      sourceKey: pdfData.billNumber,
+      verifyCode,
+      pdfBase64: pdf.pdfBase64,
+      filename: pdf.filename,
+      customerId: (inv as { customer_id?: string }).customer_id || null,
+      documentRef: pdfData.billNumber,
+    });
     return [
       {
         filename: pdf.filename,
@@ -155,9 +175,22 @@ export async function buildComposerAutoAttachments(params: {
       throw new Error('Selected job is not completed');
     }
     const billData = completedJobToBillPdfData(job, documentBrand);
-    const html = generateBillHTML(billData);
+    const verifyCode = generateDocumentPdfVerifyCode();
+    const html = generateBillHTML({
+      ...billData,
+      authenticityVerifyCode: verifyCode,
+    });
     const filename = `Bill_${billData.billNumber.replace(/\s+/g, '_')}.pdf`;
     const pdf = await generateDocumentPdfBase64({ html, filename });
+    await recordDocumentPdfAuthenticity({
+      docType: 'service_bill',
+      sourceKey: billData.billNumber,
+      verifyCode,
+      pdfBase64: pdf.pdfBase64,
+      filename: pdf.filename,
+      customerId: (job.customer_id as string) || null,
+      documentRef: billData.billNumber,
+    });
     return [
       {
         filename: pdf.filename,

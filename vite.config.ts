@@ -49,6 +49,14 @@ export default defineConfig(({ mode }) => ({
         target: 'http://localhost:8888',
         changeOrigin: true,
       },
+      '/.netlify/functions/pdf-authenticity-otp-verify': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
+      '/.netlify/functions/pdf-authenticity-check': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
       // Proxy Netlify functions to avoid CORS issues
       '/.netlify/functions': {
         // Use production functions so nudges like goingNow work without netlify:dev.

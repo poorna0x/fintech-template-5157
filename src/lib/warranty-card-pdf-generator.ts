@@ -1,11 +1,11 @@
 import { sanitizeForTemplate } from './sanitize';
-import { downloadDocumentPdf } from './server-pdf-download';
 import { getPublicSiteOrigin } from './publicSiteSeo';
 import {
   renderPdfCompanyDetailsHtml,
   renderPdfLogoHtml,
   resolvePdfDocumentBrand,
 } from './document-pdf-brand';
+import { formatDocumentPdfVerifyFooterLine } from './documentPdfAuthenticity';
 import {
   addDuration,
   formatWarrantyDate,
@@ -38,6 +38,10 @@ export interface WarrantyCardPDFData {
   warranty: PublicWarranty;
   amc?: PublicAmcInfo | null;
   issuedDate?: string;
+  /** Footer verify code for CRM authenticity check (hash stored separately). */
+  authenticityVerifyCode?: string;
+  /** Stable “Generated on” date (YYYY-MM-DD) so fingerprint stays stable. */
+  authenticityGeneratedOnYmd?: string;
 }
 
 export interface WarrantyDraftItemInput {
@@ -741,7 +745,17 @@ export function generateWarrantyCardHTML(data: WarrantyCardPDFData): string {
 
     <div class="footer">
       ${sanitizeForTemplate(brandLabel)} · Professional RO water purifier service in Bengaluru ·
-      Generated ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+      Generated ${(data.authenticityGeneratedOnYmd
+        ? new Date(`${data.authenticityGeneratedOnYmd}T12:00:00`)
+        : new Date()
+      ).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+      ${
+        data.authenticityVerifyCode
+          ? `<div style="margin-top: 6px; letter-spacing: 0.02em; color: #9ca3af;">${sanitizeForTemplate(
+              formatDocumentPdfVerifyFooterLine(data.authenticityVerifyCode, brand)
+            )}</div>`
+          : ''
+      }
     </div>
   </div>
 </body>
@@ -782,9 +796,51 @@ export function generateWarrantyCardPDF(
   }
 }
 
-export async function downloadWarrantyCardPdf(data: WarrantyCardPDFData): Promise<void> {
-  await downloadDocumentPdf({
-    html: generateWarrantyCardHTML(data),
-    filename: warrantyPdfFilename(data),
-  });
+export async function downloadWarrantyCardPdf(
+  data: WarrantyCardPDFData,
+  opts?: { customerId?: string | null }
+): Promise<void> {
+  const { downloadDocumentPdfReturningBase64 } = await import('./server-pdf-download');
+  const {
+    generateDocumentPdfVerifyCode,
+    recordDocumentPdfAuthenticity,
+    todayYmdIst,
+  } = await import('./documentPdfAuthenticity');
+  const { toast } = await import('sonner');
+
+  const verifyCode = data.authenticityVerifyCode || generateDocumentPdfVerifyCode();
+  const generatedOnYmd = data.authenticityGeneratedOnYmd || todayYmdIst();
+  const fingerprinted: WarrantyCardPDFData = {
+    ...data,
+    authenticityVerifyCode: verifyCode,
+    authenticityGeneratedOnYmd: generatedOnYmd,
+  };
+  try {
+    const pdf = await downloadDocumentPdfReturningBase64({
+      html: generateWarrantyCardHTML(fingerprinted),
+      filename: warrantyPdfFilename(fingerprinted),
+    });
+    const sourceKey =
+      fingerprinted.warranty.id && fingerprinted.warranty.id !== 'draft'
+        ? fingerprinted.warranty.id
+        : `draft:${fingerprinted.customer.customer_id}:${fingerprinted.warranty.start_date || 'na'}`;
+    const recorded = await recordDocumentPdfAuthenticity({
+      docType: 'warranty',
+      sourceKey,
+      verifyCode,
+      pdfBase64: pdf.pdfBase64,
+      filename: pdf.filename,
+      customerId: opts?.customerId || null,
+      documentRef: fingerprinted.customer.customer_id,
+      generatedOnYmd,
+    });
+    if (!recorded.ok) {
+      toast.warning('PDF downloaded, but authenticity fingerprint was not saved', {
+        description: recorded.error,
+      });
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message === 'PRINT_FALLBACK') return;
+    throw error;
+  }
 }

@@ -11,6 +11,7 @@ export const SETTINGS_PANELS = [
   'add-customer-reminder',
   'merge-customers',
   'warranty',
+  'pdf-authenticity',
   'direct-sale',
   'add-technician',
   'edit-technician',

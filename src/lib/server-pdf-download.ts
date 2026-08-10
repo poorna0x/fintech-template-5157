@@ -26,85 +26,6 @@ export function withAbsoluteAssetUrls(html: string, origin?: string): string {
     .replace(/\burl\(\//g, `url(${base}/`);
 }
 
-/** Brand assets inlined for PDF so Puppeteer does not need to fetch LAN/localhost URLs. */
-const PDF_BRAND_ASSET_PATHS = [
-  '/fulllogo.png',
-  '/fulllogo.webp',
-  '/logo.webp',
-  '/logo.png',
-  '/hydrogenro-seal-sign.webp',
-  '/elevenro-seal-sign.webp',
-  '/HydrogenROSeal.webp',
-  '/elevenroseal.webp',
-  '/elevenrofulloogo.webp',
-] as const;
-
-const brandAssetDataUrlCache = new Map<string, string>();
-
-function guessAssetMime(path: string): string {
-  const lower = path.toLowerCase();
-  if (lower.endsWith('.png')) return 'image/png';
-  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
-  if (lower.endsWith('.svg')) return 'image/svg+xml';
-  if (lower.endsWith('.gif')) return 'image/gif';
-  return 'image/webp';
-}
-
-async function fetchBrandAssetDataUrl(path: string): Promise<string | null> {
-  const cached = brandAssetDataUrlCache.get(path);
-  if (cached) return cached;
-  try {
-    const res = await fetch(path);
-    if (!res.ok) return null;
-    const buf = await res.arrayBuffer();
-    if (!buf.byteLength) return null;
-    const mime = res.headers.get('content-type') || guessAssetMime(path);
-    const dataUrl = `data:${mime};base64,${arrayBufferToBase64(buf)}`;
-    brandAssetDataUrlCache.set(path, dataUrl);
-    return dataUrl;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Inline brand logos/seals as data: URLs before Puppeteer render.
- * Keeps original asset paths (e.g. fulllogo.webp for Eleven wordmark crop).
- */
-export async function withEmbeddedBrandAssetDataUrls(
-  html: string,
-  origin?: string
-): Promise<string> {
-  let result = withAbsoluteAssetUrls(html, origin);
-  const base = (origin || (typeof window !== 'undefined' ? window.location.origin : '')).replace(
-    /\/$/,
-    ''
-  );
-
-  for (const path of PDF_BRAND_ASSET_PATHS) {
-    const abs = base ? `${base}${path}` : '';
-    const appears =
-      result.includes(path) || (abs ? result.includes(abs) : false);
-    if (!appears) continue;
-
-    const dataUrl = await fetchBrandAssetDataUrl(path);
-    if (!dataUrl) continue;
-
-    result = result.split(`src="${path}"`).join(`src="${dataUrl}"`);
-    result = result.split(`src='${path}'`).join(`src='${dataUrl}'`);
-    if (abs) {
-      result = result.split(`src="${abs}"`).join(`src="${dataUrl}"`);
-    }
-    const escaped = path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    result = result.replace(
-      new RegExp(`src="https?:\\/\\/[^"]+${escaped}"`, 'g'),
-      `src="${dataUrl}"`
-    );
-  }
-
-  return result;
-}
-
 export interface DownloadDocumentPdfOptions {
   html: string;
   filename: string;
@@ -406,7 +327,7 @@ export interface GenerateDocumentPdfBase64Result {
 export async function generateDocumentPdfBase64(
   options: DownloadDocumentPdfOptions
 ): Promise<GenerateDocumentPdfBase64Result> {
-  const html = await withEmbeddedBrandAssetDataUrls(options.html, options.origin);
+  const html = withAbsoluteAssetUrls(options.html, options.origin);
   const filename = sanitizeFilename(options.filename);
   const { pdfBase64, filename: resolvedFilename } = await fetchPdfFromServer(html, filename);
   const size = Math.ceil((pdfBase64.length * 3) / 4);
@@ -423,7 +344,7 @@ export interface DocumentPdfObjectUrlResult {
 export async function fetchDocumentPdfObjectUrl(
   options: DownloadDocumentPdfOptions
 ): Promise<DocumentPdfObjectUrlResult> {
-  const html = await withEmbeddedBrandAssetDataUrls(options.html, options.origin);
+  const html = withAbsoluteAssetUrls(options.html, options.origin);
   const filename = sanitizeFilename(options.filename);
   const { buffer, filename: resolvedFilename } = await fetchPdfFromServer(html, filename);
   const blob = new Blob([buffer], { type: 'application/pdf' });
@@ -452,30 +373,40 @@ export async function openDocumentPdfInNewTab(
 }
 
 /**
- * Download a PDF via the Netlify Puppeteer function (same layout as Generate / print).
+ * Download a PDF via Puppeteer and return the exact base64 bytes that were downloaded
+ * (for authenticity fingerprinting — same bytes as the saved file).
  */
-export async function downloadDocumentPdf(options: DownloadDocumentPdfOptions): Promise<void> {
-  const html = await withEmbeddedBrandAssetDataUrls(options.html, options.origin);
+export async function downloadDocumentPdfReturningBase64(
+  options: DownloadDocumentPdfOptions
+): Promise<GenerateDocumentPdfBase64Result> {
+  const html = withAbsoluteAssetUrls(options.html, options.origin);
   const filename = sanitizeFilename(options.filename);
   const toastId = toast.loading('Generating PDF…');
 
   try {
-    const mode = await downloadViaServer(html, filename);
+    const { buffer, filename: resolvedFilename } = await fetchPdfFromServer(html, filename);
+    const mode = await deliverPdfFile(buffer, resolvedFilename);
     toast.success(
       mode === 'native-saved'
         ? 'PDF saved to Downloads'
         : mode === 'native'
           ? 'PDF ready — use Share'
           : 'PDF downloaded',
-      {
-        id: toastId,
-      }
+      { id: toastId }
     );
+    const pdfBase64 = arrayBufferToBase64(buffer);
+    return {
+      pdfBase64,
+      filename: resolvedFilename,
+      size: buffer.byteLength,
+    };
   } catch (error) {
     const opened = openHtmlPrintFallback(html);
     if (opened) {
-      toast.info('Opened print preview — choose Save as PDF in the print dialog.', { id: toastId });
-      return;
+      toast.info('Opened print preview — choose Save as PDF in the print dialog.', {
+        id: toastId,
+      });
+      throw new Error('PRINT_FALLBACK');
     }
 
     const message = error instanceof Error ? error.message : 'PDF generation failed';
@@ -483,6 +414,20 @@ export async function downloadDocumentPdf(options: DownloadDocumentPdfOptions): 
       id: toastId,
       description: `${message}. Allow popups, or run npm run dev for server-generated PDFs.`,
     });
+    throw error;
+  }
+}
+
+/**
+ * Download a PDF via the Netlify Puppeteer function (same layout as Generate / print).
+ */
+export async function downloadDocumentPdf(options: DownloadDocumentPdfOptions): Promise<void> {
+  try {
+    await downloadDocumentPdfReturningBase64(options);
+  } catch (error) {
+    if (error instanceof Error && error.message === 'PRINT_FALLBACK') {
+      return;
+    }
     throw error;
   }
 }

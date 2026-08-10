@@ -63,6 +63,8 @@ const whatsappTemplates = require('./whatsapp-templates');
 const whatsappR2SignedUrl = require('./whatsapp-r2-signed-url');
 const whatsappPurgeMessages = require('./whatsapp-purge-messages');
 const whatsappBookingStart = require('./whatsapp-booking-start');
+const pdfAuthenticityOtpVerify = require('./pdf-authenticity-otp-verify');
+const pdfAuthenticityCheck = require('./pdf-authenticity-check');
 
 const PORT = 8888;
 
@@ -155,6 +157,10 @@ const server = http.createServer((req, res) => {
     handler = whatsappPurgeMessages;
   } else if (req.url.startsWith('/.netlify/functions/whatsapp-booking-start')) {
     handler = whatsappBookingStart;
+  } else if (req.url.startsWith('/.netlify/functions/pdf-authenticity-otp-verify')) {
+    handler = pdfAuthenticityOtpVerify;
+  } else if (req.url.startsWith('/.netlify/functions/pdf-authenticity-check')) {
+    handler = pdfAuthenticityCheck;
   } else {
     console.log('⚠️ No handler found for:', req.url);
   }
