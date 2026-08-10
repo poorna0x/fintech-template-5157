@@ -61,8 +61,8 @@ export function bookingCtaTemplateName(kind: BookingCtaKind, brand: DocumentBran
     return `unregistered_number_service_${suffix}_cta`;
   }
   if (kind === 'booking_confirmed') {
-    // Phone-only UTILITY (no Book online URL) — faster Meta approval.
-    return `svc_booking_confirmed_${suffix}`;
+    // Letter (fixed footer) → v2 Call+Website → phone-only via cold fallback.
+    return `svc_booking_confirmed_letter_${suffix}`;
   }
   return `${kind}_${suffix}_cta`;
 }

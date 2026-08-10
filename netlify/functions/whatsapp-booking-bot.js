@@ -7,12 +7,13 @@
  * Chat with us / post-book free-form → Eleven RO main line 9880693311
  *
  * Customer messages stay simple (no lead source / CRM jargon).
- * Internal job still stores lead_source Direct call for admin.
+ * Admin-started Water Filter Service can set lead_source; default remains Direct call.
  */
 const {
   callWhatsAppApi,
   insertWhatsAppMessage,
   normalizePhoneE164,
+  ensurePublicCrmPhotoUrl,
 } = require('./whatsapp-helper');
 const {
   ELEVEN_SUPPORT_DISPLAY,
@@ -24,6 +25,24 @@ const { enrichWhatsAppLocation } = require('./whatsapp-location-enrich');
 const SUPPORT_PHONE_DISPLAY = ELEVEN_SUPPORT_DISPLAY;
 const LEAD_SOURCE = 'Direct call';
 const BRAND_LABEL = 'Eleven RO';
+const WATER_FILTER_SERVICE_LABEL = 'Water Filter Service';
+const DEFAULT_LEAD_SOURCES = [
+  'Website',
+  'Direct call',
+  'Google-Leads',
+  'RO care india',
+  'Home Triangle',
+  'Home Triangle-Srujan',
+  'Home Triangle-3',
+  'Local Ramu',
+  'Other',
+];
+
+function resolveLeadSource(raw) {
+  const t = String(raw || '').trim();
+  if (!t) return LEAD_SOURCE;
+  return t.slice(0, 80);
+}
 const STATE_PREFIX = '[Booking bot state]';
 /** Must match whatsapp-unsolicited-media.js so photo step is allowed. */
 const AWAITING_CUSTOMER_MEDIA_MARKER = '[Awaiting customer media]';
@@ -79,6 +98,7 @@ const ACTIVE_BOOKING_STEPS = new Set([
   'await_alt_phone',
   'await_location',
   'await_loc_confirm',
+  'await_building_flat',
   'await_date',
   'await_period',
   'await_time',
@@ -341,13 +361,16 @@ function buildAlternateLocationPayload(loc) {
 
 function buildAlternateAddressPayload(loc) {
   if (!loc) return null;
+  const flat = String(loc.buildingFlat || '').trim();
+  const baseStreet = loc.address || loc.formattedAddress || '';
   return {
-    street: loc.address || loc.formattedAddress || '',
+    street: [flat, baseStreet].filter(Boolean).join(', '),
     area: loc.shortLocation || '',
     city: 'Bangalore',
     state: 'Karnataka',
     pincode: '',
-    landmark: loc.name || loc.shortLocation || '',
+    landmark: flat || loc.name || loc.shortLocation || '',
+    ...(flat ? { building_flat: flat } : {}),
   };
 }
 
@@ -387,24 +410,29 @@ function formatServiceLocationLine(state, customer, locOverride) {
       : null);
 
   if (pin) {
+    const flat = String(state?.buildingFlat || locOverride?.buildingFlat || '').trim();
     const short = String(pin.shortLocation || '').trim();
     const address = String(pin.address || pin.formattedAddress || '').trim();
     const name = String(pin.name || '').trim();
+    let line = '';
     if (short && address && !address.toLowerCase().includes(short.toLowerCase())) {
-      return `${short} — ${address}`.slice(0, 180);
+      line = `${short} — ${address}`;
+    } else if (short && name && name.toLowerCase() !== short.toLowerCase()) {
+      line = `${short} — ${name}`;
+    } else if (short) {
+      line = short;
+    } else if (address && name && address.toLowerCase() !== name.toLowerCase()) {
+      line = `${name}, ${address}`;
+    } else if (address) {
+      line = address;
+    } else if (name) {
+      line = name;
+    } else if (pin.lat != null && pin.lng != null) {
+      line = 'Location shared via WhatsApp pin';
     }
-    if (short && name && name.toLowerCase() !== short.toLowerCase()) {
-      return `${short} — ${name}`.slice(0, 180);
-    }
-    if (short) return short.slice(0, 180);
-    if (address && name && address.toLowerCase() !== name.toLowerCase()) {
-      return `${name}, ${address}`.slice(0, 180);
-    }
-    if (address) return address.slice(0, 180);
-    if (name) return name.slice(0, 180);
-    if (pin.lat != null && pin.lng != null) {
-      return 'Location shared via WhatsApp pin';
-    }
+    if (flat && line) return `${flat}, ${line}`.slice(0, 180);
+    if (flat) return flat.slice(0, 180);
+    if (line) return line.slice(0, 180);
   }
 
   const fromCustomer = formatAddressLine(customer);
@@ -413,14 +441,19 @@ function formatServiceLocationLine(state, customer, locOverride) {
 }
 
 function buildServiceAddress(customer, locOverride) {
-  if (locOverride?.address || locOverride?.name || locOverride?.shortLocation) {
+  if (locOverride?.address || locOverride?.name || locOverride?.shortLocation || locOverride?.buildingFlat) {
+    const flat = String(locOverride.buildingFlat || '').trim();
+    const baseStreet =
+      locOverride.address || locOverride.formattedAddress || locOverride.name || '';
+    const street = [flat, baseStreet].filter(Boolean).join(', ');
     return {
-      street: locOverride.address || locOverride.formattedAddress || locOverride.name || '',
+      street,
       area: locOverride.shortLocation || '',
       city: 'Bangalore',
       state: 'Karnataka',
       pincode: '',
-      landmark: locOverride.name || locOverride.shortLocation || '',
+      landmark: flat || locOverride.name || locOverride.shortLocation || '',
+      ...(flat ? { building_flat: flat } : {}),
     };
   }
   const a = customer?.address && typeof customer.address === 'object' ? customer.address : {};
@@ -822,11 +855,20 @@ async function hasOpenCustomerServiceWindow(db, phoneE164) {
 /**
  * Admin inbox quick action while 24h window is open.
  * @param {{ db: any, accessToken: string, phoneNumberId: string, to: string }} ctx
- * @param {'book_service'|'request_location'|'request_photo'} action
+ * @param {'book_service'|'request_location'|'request_photo'|'water_filter_service'|'book_location_photo'} action
+ * @param {{ customerName?: string, leadSource?: string }} [opts]
  */
-async function startAdminQuickAction(ctx, action) {
+async function startAdminQuickAction(ctx, action, opts = {}) {
   const act = String(action || '').trim();
   await clearBookingState(ctx.db, ctx.to);
+
+  if (act === 'water_filter_service') {
+    return startWaterFilterServiceBooking(ctx, opts);
+  }
+
+  if (act === 'book_location_photo') {
+    return startBookLocationPhoto(ctx, opts);
+  }
 
   if (act === 'book_service') {
     const customer = await lookupCustomerFull(ctx.db, ctx.to);
@@ -867,14 +909,109 @@ async function startAdminQuickAction(ctx, action) {
   return { ok: false, error: 'Unknown action' };
 }
 
+/**
+ * Water Filter Service — skip name (admin provided), ask location first, then date → time → photo.
+ */
+async function startWaterFilterServiceBooking(ctx, opts = {}) {
+  const name =
+    String(opts.customerName || opts.name || '').trim() ||
+    String((await lookupCustomerFull(ctx.db, ctx.to))?.full_name || '').trim() ||
+    'Customer';
+  const leadSource = resolveLeadSource(opts.leadSource);
+  const existing = await lookupCustomerFull(ctx.db, ctx.to);
+  const existingId =
+    String(opts.customerId || opts.existingCustomerId || '').trim() || existing?.id || null;
+  const subRaw = String(opts.serviceSubType || '').trim();
+  const serviceSubType =
+    subRaw === 'Installation' || subRaw === 'Reinstallation' ? subRaw : 'Repair';
+  const serviceLabel =
+    String(opts.serviceLabel || '').trim() ||
+    (serviceSubType === 'Installation'
+      ? 'Installation'
+      : serviceSubType === 'Reinstallation'
+        ? 'Reinstallation'
+        : WATER_FILTER_SERVICE_LABEL);
+  const leadCost =
+    opts.leadCost != null && Number.isFinite(Number(opts.leadCost))
+      ? Number(opts.leadCost)
+      : null;
+  const requireOtp = opts.requireOtp === true;
+
+  const base = {
+    serviceSubType,
+    serviceLabel,
+    name,
+    leadSource,
+    startedByAdmin: true,
+    waterFilterService: true,
+    needNewLocation: true,
+    ...(leadCost != null ? { leadCost } : {}),
+    ...(requireOtp ? { requireOtp: true } : {}),
+    ...(existingId ? { existingCustomerId: existingId } : {}),
+  };
+
+  await askLocationForWaterFilterService(ctx, base);
+  return { ok: true, started: 'water_filter_service', mode: 'location_first' };
+}
+
+/**
+ * Inbox quick: location → building/flat → photo → date → time → confirm.
+ */
+async function startBookLocationPhoto(ctx, opts = {}) {
+  const existing = await lookupCustomerFull(ctx.db, ctx.to);
+  const name =
+    String(opts.customerName || opts.name || '').trim() ||
+    String(existing?.full_name || '').trim() ||
+    'Customer';
+  const leadSource = resolveLeadSource(opts.leadSource);
+  const base = {
+    serviceSubType: 'Repair',
+    serviceLabel: 'Service / Repair',
+    name,
+    leadSource,
+    startedByAdmin: true,
+    locationThenPhoto: true,
+    needNewLocation: true,
+    ...(existing?.id ? { existingCustomerId: existing.id } : {}),
+  };
+  await setBookingState(ctx.db, ctx.to, { ...base, step: 'await_location' });
+  await sendLocationRequest({
+    ...ctx,
+    bodyText: [
+      `Hi ${name}, let’s book your service.`,
+      '',
+      'First, please share your *service location*.',
+      '',
+      'Tap *Send location* below — we’ll ask for building/flat next, then a purifier photo.',
+    ].join('\n'),
+  });
+  return { ok: true, started: 'book_location_photo', mode: 'location_then_photo' };
+}
+
+async function askLocationForWaterFilterService(ctx, state = {}) {
+  const name = String(state.name || 'Customer').trim() || 'Customer';
+  await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_location' });
+  await sendLocationRequest({
+    ...ctx,
+    bodyText: [
+      `💧 *${WATER_FILTER_SERVICE_LABEL}*`,
+      '',
+      `Hi ${name}, please share your *service location* so we can arrange your water filter visit.`,
+      '',
+      'Tap *Send location* below.',
+    ].join('\n'),
+  });
+}
+
 /** Seed pending action for cold-template reopen; resumed on next inbound. */
-async function seedAdminPendingAction(db, phoneE164, action) {
+async function seedAdminPendingAction(db, phoneE164, action, extra = {}) {
   const phone = normalizePhoneE164(phoneE164);
   if (!db || !phone) return;
   await setBookingState(db, phone, {
     step: 'admin_pending',
     pendingAction: String(action || '').trim(),
     startedByAdmin: true,
+    ...(extra && typeof extra === 'object' ? extra : {}),
   });
 }
 
@@ -891,13 +1028,16 @@ async function createCustomerFromDraft(db, phoneE164, draft) {
   const loc = draft.loc || {};
   const addressLine = String(loc.address || loc.formattedAddress || loc.name || '').trim();
   const shortLoc = String(loc.shortLocation || '').trim() || null;
+  const buildingFlat = String(draft.buildingFlat || '').trim();
+  const streetParts = [buildingFlat, addressLine].filter(Boolean);
   const address = {
-    street: addressLine || '',
+    street: streetParts.join(', ') || '',
     area: shortLoc || '',
     city: 'Bangalore',
     state: 'Karnataka',
     pincode: '',
-    landmark: String(loc.name || shortLoc || '').trim() || '',
+    landmark: buildingFlat || String(loc.name || shortLoc || '').trim() || '',
+    ...(buildingFlat ? { building_flat: buildingFlat } : {}),
   };
   const location =
     loc.lat != null && loc.lng != null
@@ -956,6 +1096,9 @@ async function createAutoBookingJob(db, {
   customTimeLabel,
   periodSlot,
   serviceSite,
+  leadSource,
+  leadCost,
+  requireOtp,
 }) {
   const phone10 = phone10FromE164(phoneE164);
   const known = TIME_SLOTS[slotKey];
@@ -977,6 +1120,29 @@ async function createAutoBookingJob(db, {
     'Not specified';
   const noteBit = customNote ? ` · ${String(customNote).slice(0, 120)}` : '';
   const site = serviceSite === 'secondary' ? 'secondary' : 'primary';
+  const lead = resolveLeadSource(leadSource);
+  const cost =
+    leadCost != null && Number.isFinite(Number(leadCost)) ? Math.max(0, Number(leadCost)) : null;
+  const needOtp = requireOtp === true;
+  const otpCode = needOtp ? String(Math.floor(1000 + Math.random() * 9000)) : null;
+
+  const requirements = [
+    {
+      lead_source: lead,
+      custom_time: timeMeta.label,
+      booking_channel: 'whatsapp_bot',
+      service_site: site,
+      ...(customNote ? { custom_note: String(customNote).slice(0, 200) } : {}),
+      ...(cost != null ? { lead_cost: cost } : {}),
+    },
+  ];
+  if (needOtp && otpCode) {
+    requirements.push({
+      require_otp: true,
+      otp_code: otpCode,
+      otp_verified: false,
+    });
+  }
 
   const row = {
     job_number: jobNumber,
@@ -992,15 +1158,7 @@ async function createAutoBookingJob(db, {
     service_location,
     service_site: site,
     description: `WhatsApp booking · ${subType} · ${timeMeta.label}${noteBit}`,
-    requirements: [
-      {
-        lead_source: LEAD_SOURCE,
-        custom_time: timeMeta.label,
-        booking_channel: 'whatsapp_bot',
-        service_site: site,
-        ...(customNote ? { custom_note: String(customNote).slice(0, 200) } : {}),
-      },
-    ],
+    requirements,
     estimated_cost: 0,
     payment_status: 'PENDING',
     before_photos,
@@ -1022,6 +1180,18 @@ async function createAutoBookingJob(db, {
       await db.from('jobs').update({ service_site: 'secondary' }).eq('id', job.id);
     } catch (err) {
       console.warn('[whatsapp-booking-bot] service_site patch skipped', err?.message || err);
+    }
+  }
+
+  // lead_cost / lead_source columns are not in create_job_for_booking INSERT whitelist.
+  if (job?.id && (cost != null || lead)) {
+    try {
+      const patch = {};
+      if (cost != null) patch.lead_cost = cost;
+      if (lead) patch.lead_source = lead;
+      await db.from('jobs').update(patch).eq('id', job.id);
+    } catch (err) {
+      console.warn('[whatsapp-booking-bot] lead_cost patch skipped', err?.message || err);
     }
   }
 
@@ -1108,7 +1278,7 @@ async function sendGreetingMenu(ctx, { isNew } = {}) {
 }
 
 /** After a cold template opens the 24h window — same interactive UX as live chat. */
-async function resumeSessionStyleFromPending(ctx, pendingAction, interactive, text) {
+async function resumeSessionStyleFromPending(ctx, pendingAction, interactive, text, seed = {}) {
   const pending = String(pendingAction || '').trim();
   const intent =
     resolveGreetingIntent({
@@ -1122,7 +1292,9 @@ async function resumeSessionStyleFromPending(ctx, pendingAction, interactive, te
         ? null
         : pending === 'book_service' ||
             pending === 'request_location' ||
-            pending === 'request_photo'
+            pending === 'request_photo' ||
+            pending === 'water_filter_service' ||
+            pending === 'book_location_photo'
           ? pending
           : null);
 
@@ -1130,6 +1302,20 @@ async function resumeSessionStyleFromPending(ctx, pendingAction, interactive, te
     await beginServiceBooking(ctx, {
       serviceSubType: 'Reinstallation',
       serviceLabel: 'Reinstallation',
+    });
+    return { ok: true };
+  }
+  if (intent === 'book_location_photo' || pending === 'book_location_photo') {
+    await startBookLocationPhoto(ctx, {
+      customerName: seed.name || seed.customerName,
+      leadSource: seed.leadSource,
+    });
+    return { ok: true };
+  }
+  if (intent === 'water_filter_service' || pending === 'water_filter_service') {
+    await startWaterFilterServiceBooking(ctx, {
+      customerName: seed.name || seed.customerName,
+      leadSource: seed.leadSource,
     });
     return { ok: true };
   }
@@ -1316,6 +1502,10 @@ async function continueAfterServiceType(ctx, state) {
 }
 
 async function askLocationForNew(ctx, state) {
+  if (state?.waterFilterService) {
+    await askLocationForWaterFilterService(ctx, state);
+    return;
+  }
   await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_location' });
   await sendLocationRequest({
     ...ctx,
@@ -1343,6 +1533,126 @@ async function askLocConfirm(ctx, state, locSummary) {
       { id: 'talk_team', title: 'Chat with us' },
     ],
   });
+}
+
+/** After location confirm — building / flat / house no (skippable). */
+async function askBuildingFlat(ctx, state = {}) {
+  await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_building_flat' });
+  await sendButtons({
+    ...ctx,
+    bodyText: [
+      'Please reply with your *building / flat / house number* (e.g. Flat 302, Block B).',
+      '',
+      'Or tap *Skip* if you don’t have one.',
+    ].join('\n'),
+    footer: BRAND_LABEL,
+    buttons: [
+      { id: 'skip_building', title: 'Skip' },
+      { id: 'talk_team', title: 'Chat with us' },
+    ],
+  });
+}
+
+async function finishAdminLocationOnly(ctx, state) {
+  const customer = await lookupCustomerFull(ctx.db, ctx.to);
+  if (customer?.id && state?.loc?.lat != null) {
+    const flat = String(state.buildingFlat || '').trim();
+    const addressLine = String(state.loc.address || state.loc.formattedAddress || state.loc.name || '').trim();
+    const shortLoc = String(state.loc.shortLocation || '').trim() || null;
+    const streetParts = [flat, addressLine].filter(Boolean);
+    const address = {
+      street: streetParts.join(', ') || '',
+      area: shortLoc || '',
+      city: 'Bangalore',
+      state: 'Karnataka',
+      pincode: '',
+      landmark: flat || String(state.loc.name || shortLoc || '').trim() || '',
+      ...(flat ? { building_flat: flat } : {}),
+    };
+    await ctx.db
+      .from('customers')
+      .update({
+        location: {
+          latitude: Number(state.loc.lat),
+          longitude: Number(state.loc.lng),
+          formattedAddress:
+            state.loc.formattedAddress ||
+            state.loc.address ||
+            formatServiceLocationLine(state) ||
+            `${state.loc.lat},${state.loc.lng}`,
+          googleLocation: `https://www.google.com/maps/place/${state.loc.lat},${state.loc.lng}`,
+          shortLocation: shortLoc,
+        },
+        visible_address: shortLoc || formatServiceLocationLine(state) || null,
+        address,
+      })
+      .eq('id', customer.id);
+  }
+  const flatNote = String(state.buildingFlat || '').trim();
+  await sendText({
+    ...ctx,
+    text: flatNote
+      ? `Thanks — location and *${flatNote}* saved.`
+      : 'Thanks — location saved.',
+  });
+  await clearBookingState(ctx.db, ctx.to);
+}
+
+async function finishAdminPhotoOnly(ctx, state) {
+  const customer = await lookupCustomerFull(ctx.db, ctx.to);
+  if (customer?.id && state?.photoUrl) {
+    try {
+      const { data: cust } = await ctx.db
+        .from('customers')
+        .select('photos')
+        .eq('id', customer.id)
+        .maybeSingle();
+      const existing = Array.isArray(cust?.photos) ? cust.photos : [];
+      const rest = existing.filter((p) => {
+        const url = typeof p === 'string' ? p : p?.url;
+        return url && url !== state.photoUrl;
+      });
+      await ctx.db
+        .from('customers')
+        .update({
+          photos: [
+            { url: state.photoUrl, source: 'whatsapp_bot', kind: 'unit' },
+            ...rest,
+          ].slice(0, 12),
+        })
+        .eq('id', customer.id);
+    } catch (err) {
+      console.warn('[whatsapp-booking-bot] admin photo save failed', err?.message || err);
+    }
+  }
+  await sendText({
+    ...ctx,
+    text: 'Thanks — purifier photo saved.',
+  });
+  await clearBookingState(ctx.db, ctx.to);
+}
+
+async function continueAfterBuildingFlat(ctx, state) {
+  if (state?.editing) {
+    await resumeAfterEdit(ctx, state);
+    return;
+  }
+  // Inbox quick: location → photo, then date/time
+  if (state?.locationThenPhoto) {
+    await askPurifierPhoto(ctx, state);
+    return;
+  }
+  // Admin only asked for location (no booking)
+  if (
+    state?.startedByAdmin &&
+    !state?.serviceSubType &&
+    !state?.waterFilterService &&
+    !state?.dateIso
+  ) {
+    await finishAdminLocationOnly(ctx, state);
+    return;
+  }
+  await sendDatePicker(ctx, { ...state, step: 'await_date' });
 }
 
 async function sendDatePicker(ctx, state) {
@@ -1470,11 +1780,14 @@ async function askCustomTime(ctx, state) {
 
 async function askPurifierPhoto(ctx, state) {
   await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_model_or_photo' });
+  const stepLabel = state?.locationThenPhoto
+    ? 'Next'
+    : 'Step 5 of 5';
   await sendText({
     ...ctx,
     text:
-      'Step 5 of 5 · Please *send a photo of your purifier* to continue.\n\n' +
-      'Clear photo of the purifier label / unit.\n\n(Photo is required.)\n\n' +
+      `${stepLabel} · Please *send a photo of your purifier* to continue.\n\n` +
+      'Clear photo of the purifier label / unit.\n\n(Photo is required — saved to your customer profile.)\n\n' +
       AWAITING_CUSTOMER_MEDIA_MARKER,
   });
 }
@@ -1499,6 +1812,9 @@ function buildBookingSummaryLines(state, customer) {
     if (state.useSecondarySite) lines.push('_Secondary site_');
   } else if (existing && formatAddressLine(customer)) {
     lines.push(`*Location:* ${formatAddressLine(customer)}`);
+  }
+  if (String(state.buildingFlat || '').trim()) {
+    lines.push(`*Building / flat:* ${String(state.buildingFlat).trim()}`);
   }
   if (state.photoUrl) lines.push('*Photo:* Received');
   return lines.join('\n');
@@ -1718,6 +2034,7 @@ async function persistBookingEditsToCrm(db, state) {
           address: state.loc.address,
           shortLocation: state.loc.shortLocation,
           formattedAddress: state.loc.formattedAddress,
+          buildingFlat: state.buildingFlat || '',
         };
         jobPatch.service_location = buildServiceLocation(null, locOverride);
         jobPatch.service_address = buildServiceAddress(null, locOverride);
@@ -1782,12 +2099,17 @@ async function persistBookingEditsToCrm(db, state) {
         };
         custPatch.visible_address = shortLoc || addressLine || null;
         custPatch.address = {
-          street: state.loc.address || state.loc.formattedAddress || addressLine || '',
+          street: [String(state.buildingFlat || '').trim(), state.loc.address || state.loc.formattedAddress || addressLine || '']
+            .filter(Boolean)
+            .join(', '),
           area: shortLoc || '',
           city: 'Bangalore',
           state: 'Karnataka',
           pincode: '',
-          landmark: state.loc.name || shortLoc || '',
+          landmark: String(state.buildingFlat || '').trim() || state.loc.name || shortLoc || '',
+          ...(String(state.buildingFlat || '').trim()
+            ? { building_flat: String(state.buildingFlat).trim() }
+            : {}),
         };
       }
 
@@ -1927,8 +2249,9 @@ async function handleBookingBotInbound({
   // Admin inbox / cold template seeded intent — resume with *session* interactive UX.
   if (state?.step === 'admin_pending' && state?.pendingAction) {
     const pending = String(state.pendingAction || '').trim();
+    const pendingSeed = { ...state };
     await clearBookingState(db, to);
-    await resumeSessionStyleFromPending(ctx, pending, interactive, text);
+    await resumeSessionStyleFromPending(ctx, pending, interactive, text, pendingSeed);
     return { handled: true };
   }
 
@@ -2062,15 +2385,36 @@ async function handleBookingBotInbound({
     return { handled: true };
   }
 
+  if (state?.step === 'await_building_flat' && msgType === 'text' && text && !GREETING_RE.test(text) && !EDIT_RE.test(text)) {
+    const flat = text.trim().slice(0, 80);
+    if (/^skip$/i.test(flat)) {
+      await continueAfterBuildingFlat(ctx, { ...state, buildingFlat: '' });
+      return { handled: true };
+    }
+    await continueAfterBuildingFlat(ctx, { ...state, buildingFlat: flat });
+    return { handled: true };
+  }
+
   if (state?.step === 'await_model_or_photo') {
     if (msgType === 'image' || msgType === 'document') {
-      const photoUrl = inboundMedia?.media_url || null;
-      if (!photoUrl) {
+      const rawUrl = inboundMedia?.media_url || null;
+      if (!rawUrl) {
         await sendText({
           ...ctx,
           text: 'We couldn’t save that photo. Please send the purifier photo again.',
         });
         return { handled: true };
+      }
+      const photoUrl =
+        (await ensurePublicCrmPhotoUrl(rawUrl, {
+          mime: inboundMedia?.media_mime,
+          filename: inboundMedia?.filename || 'purifier.jpg',
+        })) || rawUrl;
+      if (!/^https:\/\//i.test(String(photoUrl)) || !/cloudinary/i.test(String(photoUrl))) {
+        console.warn(
+          '[whatsapp-booking-bot] photo not on Cloudinary — CRM may not show it',
+          String(photoUrl).slice(0, 80)
+        );
       }
       const next = {
         ...state,
@@ -2084,6 +2428,21 @@ async function handleBookingBotInbound({
       });
       if (state.editing) {
         await resumeAfterEdit(ctx, next);
+        return { handled: true };
+      }
+      // Admin only asked for a photo (no booking)
+      if (
+        state.startedByAdmin &&
+        !state.serviceSubType &&
+        !state.waterFilterService &&
+        !state.locationThenPhoto &&
+        !state.dateIso
+      ) {
+        await finishAdminPhotoOnly(ctx, next);
+        return { handled: true };
+      }
+      if (state.locationThenPhoto && !state.dateIso) {
+        await sendDatePicker(ctx, { ...next, step: 'await_date', locationThenPhoto: false });
         return { handled: true };
       }
       await sendNewCustomerConfirm(ctx, next);
@@ -2332,11 +2691,13 @@ async function handleBookingBotInbound({
 
     if (id === 'loc_yes') {
       const st = state?.step === 'await_loc_confirm' ? state : await getBookingState(db, to);
-      if (st?.editing) {
-        await resumeAfterEdit(ctx, st);
-        return { handled: true };
-      }
-      await sendDatePicker(ctx, { ...(st || {}), step: 'await_date' });
+      await askBuildingFlat(ctx, { ...(st || {}) });
+      return { handled: true };
+    }
+
+    if (id === 'skip_building') {
+      const st = (await getBookingState(db, to)) || state || {};
+      await continueAfterBuildingFlat(ctx, { ...st, buildingFlat: '' });
       return { handled: true };
     }
 
@@ -2418,7 +2779,7 @@ async function handleBookingBotInbound({
                 db,
                 customer.id,
                 to,
-                st.loc,
+                { ...st.loc, buildingFlat: st.buildingFlat || '' },
                 st.altPhone || null
               );
               if (saved.customer) customer = saved.customer;
@@ -2438,12 +2799,21 @@ async function handleBookingBotInbound({
                   },
                   visible_address: st.loc.shortLocation || st.loc.address || st.loc.name || null,
                   address: {
-                    street: st.loc.address || st.loc.formattedAddress || '',
+                    street: [String(st.buildingFlat || '').trim(), st.loc.address || st.loc.formattedAddress || '']
+                      .filter(Boolean)
+                      .join(', '),
                     area: st.loc.shortLocation || '',
                     city: 'Bangalore',
                     state: 'Karnataka',
                     pincode: '',
-                    landmark: st.loc.name || st.loc.shortLocation || '',
+                    landmark:
+                      String(st.buildingFlat || '').trim() ||
+                      st.loc.name ||
+                      st.loc.shortLocation ||
+                      '',
+                    ...(String(st.buildingFlat || '').trim()
+                      ? { building_flat: String(st.buildingFlat).trim() }
+                      : {}),
                   },
                 },
               });
@@ -2493,8 +2863,12 @@ async function handleBookingBotInbound({
             address: st.loc.address,
             shortLocation: st.loc.shortLocation,
             formattedAddress: st.loc.formattedAddress,
+            buildingFlat: st.buildingFlat || '',
           }
         : await getRememberedLocation(db, to);
+      if (locOverride && st.buildingFlat && !locOverride.buildingFlat) {
+        locOverride.buildingFlat = st.buildingFlat;
+      }
 
       const serviceSite = st.useSecondarySite ? 'secondary' : 'primary';
 
@@ -2511,6 +2885,9 @@ async function handleBookingBotInbound({
         customTimeLabel: st.customTimeLabel || null,
         periodSlot: st.periodSlot || null,
         serviceSite,
+        leadSource: st.leadSource || LEAD_SOURCE,
+        leadCost: st.leadCost != null ? st.leadCost : null,
+        requireOtp: st.requireOtp === true,
       });
 
       if (!created.ok) {
@@ -2761,8 +3138,12 @@ async function handleBookingBotInbound({
             address: st.loc.address,
             shortLocation: st.loc.shortLocation,
             formattedAddress: st.loc.formattedAddress,
+            buildingFlat: st.buildingFlat || '',
           }
         : await getRememberedLocation(db, to);
+      if (locOverride && st.buildingFlat && !locOverride.buildingFlat) {
+        locOverride.buildingFlat = st.buildingFlat;
+      }
 
       if (!customer?.id) {
         await sendText({
@@ -2789,6 +3170,9 @@ async function handleBookingBotInbound({
         customTimeLabel: st.customTimeLabel || null,
         periodSlot: st.periodSlot || null,
         serviceSite: st.useSecondarySite ? 'secondary' : 'primary',
+        leadSource: st.leadSource || LEAD_SOURCE,
+        leadCost: st.leadCost != null ? st.leadCost : null,
+        requireOtp: st.requireOtp === true,
       });
 
       if (!created.ok) {
@@ -2936,6 +3320,8 @@ module.exports = {
   createAutoBookingJob,
   startAdminQuickAction,
   seedAdminPendingAction,
+  startWaterFilterServiceBooking,
+  startBookLocationPhoto,
   hasOpenCustomerServiceWindow,
   clearBookingState,
   setBookingState,
@@ -2947,4 +3333,6 @@ module.exports = {
   GREETING_MENU,
   resolveGreetingIntent,
   resumeSessionStyleFromPending,
+  WATER_FILTER_SERVICE_LABEL,
+  DEFAULT_LEAD_SOURCES,
 };

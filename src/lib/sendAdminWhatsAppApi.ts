@@ -49,8 +49,11 @@ export type SendAdminWhatsAppTextOptions = {
   to: string;
   text: string;
   customerId?: string | null;
+  customerName?: string | null;
   /** CRM surface — enforced by WhatsApp settings toggles. */
   source?: WhatsAppSendSource;
+  /** After send, seed booking-bot pending for next customer reply. */
+  seedPendingAction?: string | null;
   /** If API fails due to closed 24h window, open wa.me (default true for CRM compose). */
   fallbackWaMe?: boolean;
   /** Skip API and only open wa.me. */
@@ -91,7 +94,11 @@ export async function sendAdminWhatsAppText(
         type: 'text',
         text,
         ...(options.customerId ? { customerId: options.customerId } : {}),
+        ...(options.customerName ? { customerName: options.customerName } : {}),
         ...(options.source ? { source: options.source } : {}),
+        ...(options.seedPendingAction
+          ? { seedPendingAction: options.seedPendingAction }
+          : {}),
       }),
     });
     const data = await res.json().catch(() => ({}));
@@ -312,7 +319,10 @@ export type SendAdminWhatsAppTemplateOptions = {
   languageCode?: string;
   bodyParams?: string[];
   customerId?: string | null;
+  customerName?: string | null;
   source?: WhatsAppSendSource;
+  /** After send, seed booking-bot pending (e.g. book_service) for next customer reply. */
+  seedPendingAction?: string | null;
   /** For DOCUMENT-header templates — attach PDF in the same cold send. */
   headerDocument?: {
     pdfBase64: string;
@@ -355,7 +365,11 @@ export async function sendAdminWhatsAppTemplate(
             }
           : {}),
         ...(options.customerId ? { customerId: options.customerId } : {}),
+        ...(options.customerName ? { customerName: options.customerName } : {}),
         ...(options.source ? { source: options.source } : {}),
+        ...(options.seedPendingAction
+          ? { seedPendingAction: options.seedPendingAction }
+          : {}),
       }),
     });
     const data = await res.json().catch(() => ({}));
@@ -408,7 +422,9 @@ export async function sendAdminWhatsAppTextWithOptionalTemplate(
       languageCode: options.coldTemplate?.languageCode || 'en',
       bodyParams: options.coldTemplate?.bodyParams || [],
       customerId: options.customerId,
+      customerName: options.customerName,
       source: options.source,
+      seedPendingAction: options.seedPendingAction,
     });
     if (tpl.ok) {
       return { ...tpl, usedTemplate: true };
@@ -428,7 +444,9 @@ export async function sendAdminWhatsAppTextWithOptionalTemplate(
         languageCode: 'en',
         bodyParams: [customerLabel],
         customerId: options.customerId,
+        customerName: options.customerName,
         source: options.source,
+        seedPendingAction: options.seedPendingAction,
       });
       if (smoke.ok) {
         return { ...smoke, usedTemplate: true };

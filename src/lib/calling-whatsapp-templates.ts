@@ -2,6 +2,7 @@ import type { DocumentBrand } from '@/lib/service-brands';
 import { getCompanyInfoForBrand, getDocumentBrandLabel } from '@/lib/service-brands';
 import { WA_COLD } from '@/lib/whatsappColdTemplates';
 import { resolveBookingCta } from '@/lib/whatsappBookingCtaTemplates';
+import { brandContactLines, brandLetterFooterLines } from '@/lib/whatsappBrandContact';
 import {
   waBrandBookingUrl,
   waBrandWebsiteUrl,
@@ -115,15 +116,13 @@ export function callingContextFromCustomer(customer: {
 }
 
 function brandFooter(brand: DocumentBrand): string {
-  const info = getCompanyInfoForBrand(brand);
-  const website = waBrandWebsiteUrl(info.website);
-  const bookingUrl = waBrandBookingUrl(info.website);
+  const contact = brandContactLines(brand);
   return [
     '—',
-    brand === 'hydrogenro' ? 'Hydrogen RO Team' : 'Eleven RO Team',
-    waLabeledValue('📞', 'Phone', info.phone),
-    waLabeledLink('🌐', 'Website', website),
-    waLabeledLink('📅', 'Book online', bookingUrl),
+    `${contact.brandLabel} Team`,
+    waLabeledValue('📞', 'Call (main)', contact.voice.display),
+    waLabeledLink('🌐', 'Website', contact.website),
+    waLabeledLink('📅', 'Book online', waBrandBookingUrl(getCompanyInfoForBrand(brand).website)),
   ].join('\n');
 }
 
@@ -155,45 +154,47 @@ export function buildCallingWhatsAppMessage(
 
   switch (template) {
     case 'service_due': {
-      const lines = [`Hi ${name},`, '', `This is ${brandName}.`];
+      const bookingUrl = waBrandBookingUrl(info.website);
+      const lines = [
+        `Hi ${name},`,
+        `This is an update from ${brandName} regarding your water purifier service schedule.`,
+        '',
+      ];
       if (ctx.daysSinceService != null && ctx.daysSinceService > 0) {
         lines.push(
-          '',
-          `It's been about ${formatDaysAgo(ctx.daysSinceService)} since your last ${serviceTypeLabel(ctx).toLowerCase()}.`
+          `It's been about ${formatDaysAgo(ctx.daysSinceService)} since your last ${serviceTypeLabel(ctx).toLowerCase()}.`,
+          ''
         );
       }
       lines.push(
-        '',
         'Your water purifier service is due. Regular service keeps water safe and the unit running well.',
         ...(device ? ['', device] : []),
         '',
-        'Would you like to schedule a visit?',
-        `💬 Reply to this message`,
-        waLabeledValue('📞', 'Phone', info.phone),
-        waLabeledLink('📅', 'Book online', bookingUrl),
+        'Reply BOOK on this chat to schedule a visit — we will ask for your preferred date and time.',
         '',
-        brandFooter(documentBrand)
+        ...brandLetterFooterLines(documentBrand),
+        waLabeledLink('📅', 'Book online', bookingUrl)
       );
       return lines.join('\n');
     }
 
-    case 'easy_booking':
+    case 'easy_booking': {
+      const contact = brandContactLines(documentBrand);
       return [
         `Hi ${name},`,
         '',
-        `Book your next service with ${brandName} in just a few taps 👇`,
+        `Book your next service with ${brandName}:`,
         '',
+        '💬 Reply *BOOK* on this chat — we will ask date & time step by step.',
         waLabeledLink('📅', 'Book online', bookingUrl),
         '',
-        'Pick your date & time — we’ll confirm on WhatsApp.',
-        ...(device ? ['', device] : []),
-        '',
-        'Prefer a call?',
-        waLabeledValue('📞', 'Phone', info.phone),
-        `💬 Or reply “BOOK” to this message`,
+        ...(device ? [device, ''] : []),
+        waLabeledValue('📞', 'Call (main)', contact.voice.display),
+        waLabeledLink('🌐', 'Website', contact.website),
         '',
         brandFooter(documentBrand),
       ].join('\n');
+    }
 
     case 'missed_call':
       return [
@@ -288,10 +289,12 @@ export function callingColdTemplateFor(
     String(whenLabel || '').trim() ||
     'your upcoming visit';
   if (template === 'service_due') {
+    // Prefer letter → CTA → schedule CTA → visit reminder (via cold fallback).
+    const suffix = documentBrand === 'elevenro' ? 'ero' : 'hro';
     return {
-      name: WA_COLD.service_reminder.name,
-      languageCode: WA_COLD.service_reminder.language,
-      bodyParams: WA_COLD.service_reminder.bodyParams(name, when),
+      name: `svc_service_due_letter_${suffix}`,
+      languageCode: 'en',
+      bodyParams: [name, when],
     };
   }
   if (template === 'follow_up') {

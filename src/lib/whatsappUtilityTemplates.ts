@@ -9,6 +9,7 @@ import { WA_COLD } from '@/lib/whatsappColdTemplates';
 import { resolveWaTemplateName } from '@/lib/whatsappTemplateResolve';
 import { sendAdminWhatsAppTextWithOptionalTemplate } from '@/lib/sendAdminWhatsAppApi';
 import type { AdminWhatsAppSendResult } from '@/lib/sendAdminWhatsAppApi';
+import { brandLetterFooterLines } from '@/lib/whatsappBrandContact';
 
 export type ColdTemplatePayload = {
   name: string;
@@ -85,7 +86,12 @@ export function resolveColdUnregisteredNumber(
 
 export function visitCancelledTemplateName(brand: DocumentBrand): string {
   const suffix = brand === 'elevenro' ? 'ero' : 'hro';
-  return `svc_visit_cancelled_${suffix}`;
+  return `svc_booking_cancelled_letter_${suffix}`;
+}
+
+export function visitCancelledTemplateFallbackName(brand: DocumentBrand): string {
+  const suffix = brand === 'elevenro' ? 'ero' : 'hro';
+  return `svc_booking_cancelled_${suffix}_v2`;
 }
 
 export function resolveColdVisitCancelled(
@@ -180,12 +186,16 @@ export function buildVisitCancelledWhatsAppMessage(
   brand: DocumentBrand
 ): string {
   const label = getDocumentBrandLabel(brand);
+  const when = String(whenLabel || '').trim() || 'your scheduled visit';
   return [
     `Hi ${cleanName(customerName)},`,
+    `This is an update from ${label} regarding your service booking.`,
     '',
-    `Your ${label} service visit scheduled for ${whenLabel} has been cancelled.`,
+    `Booking for ${when} has been cancelled.`,
     '',
-    'Reply on this chat if you would like to rebook.',
+    'Reply BOOK on this chat to reschedule — we will ask for a new date and time.',
+    '',
+    ...brandLetterFooterLines(brand),
   ].join('\n');
 }
 

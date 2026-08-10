@@ -73,6 +73,74 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader) {
     push(MISSED_CALL, [name]);
   }
 
+  // Job-done letter → v3 → v2 → short svc_job_done
+  if (/^svc_job_done_letter_(ero|hro)$/i.test(primaryName)) {
+    const suffix = /_hro$/i.test(primaryName) ? 'hro' : 'ero';
+    const amount = String(bodyParams?.[1] || '0').replace(/[^\d.]/g, '') || '0';
+    push(`svc_job_done_${suffix}_v3`, [
+      name,
+      'Your service has been completed successfully.',
+      `Amount collected: INR ${amount}`,
+    ]);
+    push(`svc_job_done_${suffix}_v2`, [
+      name,
+      'Your service has been completed successfully.',
+      `Amount collected: INR ${amount}`,
+    ]);
+    push(JOB_DONE, [name, amount]);
+  }
+
+  // Balance-due letter → short svc_balance_due
+  if (/^svc_balance_due_letter_(ero|hro)$/i.test(primaryName)) {
+    const amount = String(bodyParams?.[1] || '0').replace(/[^\d.]/g, '') || '0';
+    push('svc_balance_due', [name, amount]);
+  }
+
+  // Service-due letter → CTA → schedule CTA → visit reminder
+  if (/^svc_service_due_letter_(ero|hro)$/i.test(primaryName)) {
+    const suffix = /_hro$/i.test(primaryName) ? 'hro' : 'ero';
+    const when = String(bodyParams?.[1] || '').trim() || 'your upcoming service visit';
+    push(`svc_service_due_${suffix}_cta`, [name, when]);
+    push(`existing_service_schedule_${suffix}_cta`, [name]);
+    push(VISIT, [name, when]);
+  }
+
+  // Service-due CTA not approved → schedule CTA → visit reminder
+  if (/^svc_service_due_(ero|hro)_cta$/i.test(primaryName)) {
+    const suffix = /_hro_/i.test(primaryName) ? 'hro' : 'ero';
+    push(`existing_service_schedule_${suffix}_cta`, [name]);
+    const when = String(bodyParams?.[1] || '').trim() || 'your upcoming service visit';
+    push(VISIT, [name, when]);
+  }
+
+  // Booking confirm letter → v2 → phone-only / visit confirmed
+  if (/^svc_booking_confirmed_letter_(ero|hro)$/i.test(primaryName)) {
+    const suffix = /_hro$/i.test(primaryName) ? 'hro' : 'ero';
+    push(`svc_booking_confirmed_${suffix}_v2`, bodyParams.slice(0, 3).map(String));
+    push(`svc_booking_confirmed_${suffix}`, bodyParams.slice(0, 3).map(String));
+    push(VISIT_CONFIRMED, bodyParams.slice(0, 3).map(String));
+  }
+
+  // Booking confirm v2 not approved → phone-only confirm / visit confirmed
+  if (/^svc_booking_confirmed_(ero|hro)_v2$/i.test(primaryName)) {
+    const suffix = /_hro_/i.test(primaryName) ? 'hro' : 'ero';
+    push(`svc_booking_confirmed_${suffix}`, bodyParams.slice(0, 3).map(String));
+    push(VISIT_CONFIRMED, bodyParams.slice(0, 3).map(String));
+  }
+
+  // Booking cancel letter → v2 → legacy visit cancelled
+  if (/^svc_booking_cancelled_letter_(ero|hro)$/i.test(primaryName)) {
+    const suffix = /_hro$/i.test(primaryName) ? 'hro' : 'ero';
+    push(`svc_booking_cancelled_${suffix}_v2`, bodyParams.slice(0, 2).map(String));
+    push(`svc_visit_cancelled_${suffix}`, bodyParams.slice(0, 2).map(String));
+  }
+
+  // Booking cancel v2 not approved → legacy visit cancelled
+  if (/^svc_booking_cancelled_(ero|hro)_v2$/i.test(primaryName)) {
+    const suffix = /_hro_/i.test(primaryName) ? 'hro' : 'ero';
+    push(`svc_visit_cancelled_${suffix}`, bodyParams.slice(0, 2).map(String));
+  }
+
   if (bodyParams.length >= 3) {
     push(VISIT_CONFIRMED, bodyParams.slice(0, 3).map(String));
   }

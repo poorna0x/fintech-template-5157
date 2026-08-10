@@ -22,7 +22,7 @@ function bookingCtaTemplateName(kind, brand) {
   if (kind === 'book_existing_customer') return `existing_service_schedule_${suffix}_cta`;
   if (kind === 'missed_call_book') return `missed_call_callback_${suffix}_cta`;
   if (kind === 'book_new_customer') return `unregistered_number_service_${suffix}_cta`;
-  if (kind === 'booking_confirmed') return `svc_booking_confirmed_${suffix}`;
+  if (kind === 'booking_confirmed') return `svc_booking_confirmed_letter_${suffix}`;
   return `${kind}_${suffix}_cta`;
 }
 

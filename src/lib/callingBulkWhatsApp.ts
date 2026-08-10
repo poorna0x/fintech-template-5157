@@ -148,16 +148,35 @@ export async function sendCallingWhatsAppOne(opts: {
   );
   const coldName = String(cold?.name || '').trim();
   const approved = opts.approvedTemplateNames;
+  const suffix = opts.brand === 'elevenro' ? 'ero' : 'hro';
+  const serviceDueFallbacks = [
+    `svc_service_due_letter_${suffix}`,
+    `svc_service_due_${suffix}_cta`,
+    `existing_service_schedule_${suffix}_cta`,
+    'svc_visit_reminder',
+    'svc_smoke_update',
+  ];
   const coldApproved =
     Boolean(coldName) &&
-    (approved == null || approved.size === 0 || approved.has(coldName.toLowerCase()));
+    (approved == null ||
+      approved.size === 0 ||
+      approved.has(coldName.toLowerCase()) ||
+      (opts.template === 'service_due' &&
+        serviceDueFallbacks.some((n) => approved.has(n.toLowerCase()))));
+
+  const seedPending =
+    opts.template === 'service_due' || opts.template === 'easy_booking'
+      ? 'book_service'
+      : null;
 
   const result = await sendAdminWhatsAppTextWithOptionalTemplate({
     to,
     text: message,
     customerId: opts.customer.id,
+    customerName,
     source,
     fallbackWaMe: false,
+    seedPendingAction: seedPending,
     coldTemplate: coldApproved
       ? {
           name: coldName,

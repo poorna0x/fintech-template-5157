@@ -16,6 +16,7 @@ import {
   UserRound,
   X,
   Zap,
+  MapPin,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -51,6 +52,7 @@ import { resolveCustomerSendBrand } from '@/lib/admin-email-sources';
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getDocumentBrandLabel } from '@/lib/service-brands';
 import CustomerReportDialog from '@/components/admin/CustomerReportDialog';
+import WaterFilterServiceStartDialog from '@/components/whatsapp/WaterFilterServiceStartDialog';
 import type { Customer, Technician } from '@/types';
 import {
   startWhatsAppBookingQuickAction,
@@ -148,6 +150,8 @@ const QUICK_ACTION_LABELS: Record<WhatsAppBookingQuickAction, string> = {
   book_service: 'Book service',
   request_location: 'Request location',
   request_photo: 'Request photo',
+  water_filter_service: 'Water Filter Service',
+  book_location_photo: 'Book · location + photo',
 };
 
 export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: Props) {
@@ -164,6 +168,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const [quickAmount, setQuickAmount] = useState('');
   const [quickWhen, setQuickWhen] = useState('');
   const [quickTech, setQuickTech] = useState('');
+  const [quickSkipBrand, setQuickSkipBrand] = useState(false);
   const [threadBrand, setThreadBrand] = useState<DocumentBrand>('hydrogenro');
   const [sending, setSending] = useState(false);
   const [purging, setPurging] = useState(false);
@@ -188,6 +193,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const [mediaUrlCache, setMediaUrlCache] = useState<Record<string, string>>({});
   const [newChatOpen, setNewChatOpen] = useState(false);
   const [newChatPhone, setNewChatPhone] = useState('');
+  const [waterFilterOpen, setWaterFilterOpen] = useState(false);
   const [quickActionConfirm, setQuickActionConfirm] =
     useState<WhatsAppBookingQuickAction | null>(null);
   const [quickActionBusy, setQuickActionBusy] = useState(false);
@@ -601,17 +607,26 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     () => ({
       customerName: activeThread?.customer_name || undefined,
       brand: threadBrand,
+      skipBrandLabel: quickSkipBrand,
       amount: quickAmount,
       whenLabel: quickWhen || undefined,
       technicianName: quickTech || undefined,
     }),
-    [activeThread?.customer_name, threadBrand, quickAmount, quickWhen, quickTech]
+    [
+      activeThread?.customer_name,
+      threadBrand,
+      quickSkipBrand,
+      quickAmount,
+      quickWhen,
+      quickTech,
+    ]
   );
 
   useEffect(() => {
     setQuickAmount('');
     setQuickWhen('');
     setQuickTech('');
+    setQuickSkipBrand(false);
   }, [selectedPhone]);
 
   useEffect(() => {
@@ -1031,6 +1046,13 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       <MessageSquarePlus className="mr-2 h-4 w-4" />
                       New chat
                     </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      onClick={() => setWaterFilterOpen(true)}
+                    >
+                      <MapPin className="mr-2 h-4 w-4" />
+                      Water Filter Service
+                    </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuLabel className="font-normal text-muted-foreground">
                       Delete older than — also removes photos &amp; PDFs from storage
@@ -1352,6 +1374,13 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   <DropdownMenuContent align="end" className="w-52">
                     <DropdownMenuLabel>Quick actions</DropdownMenuLabel>
                     <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      disabled={quickActionBusy}
+                      onClick={() => setWaterFilterOpen(true)}
+                    >
+                      Water Filter Service
+                    </DropdownMenuItem>
                     <DropdownMenuItem
                       className="cursor-pointer"
                       disabled={quickActionBusy}
@@ -1679,18 +1708,21 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       amount={quickAmount}
                       whenLabel={quickWhen}
                       technicianName={quickTech}
+                      skipBrandLabel={quickSkipBrand}
                       onAmountChange={setQuickAmount}
                       onWhenChange={setQuickWhen}
                       onTechnicianChange={setQuickTech}
+                      onSkipBrandLabelChange={setQuickSkipBrand}
                     />
                     <WhatsAppQuickRepliesBar
                       context={quickReplyContext}
                       windowOpen={false}
                       showTemplates
                       approvedTemplateNames={approvedTemplateNames}
-                      disabled={sending || templatesLoading}
+                      disabled={sending || templatesLoading || quickActionBusy}
                       onSendTemplate={handleQuickTemplateSend}
                       onPickTemplate={pickQuickTemplate}
+                      onStartBookLocationPhoto={() => void runQuickAction('book_location_photo')}
                     />
                     {templatesLoading ? (
                       <p className="flex items-center gap-2 text-xs text-[#667781]">
@@ -1780,20 +1812,23 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       amount={quickAmount}
                       whenLabel={quickWhen}
                       technicianName={quickTech}
+                      skipBrandLabel={quickSkipBrand}
                       onAmountChange={setQuickAmount}
                       onWhenChange={setQuickWhen}
                       onTechnicianChange={setQuickTech}
+                      onSkipBrandLabelChange={setQuickSkipBrand}
                     />
                     <WhatsAppQuickRepliesBar
                       context={quickReplyContext}
                       windowOpen
                       showTemplates
                       approvedTemplateNames={approvedTemplateNames}
-                      disabled={sending}
+                      disabled={sending || quickActionBusy}
                       onInsertText={(text) => setDraft(text)}
                       onSendText={handleSendText}
                       onSendTemplate={handleQuickTemplateSend}
                       onPickTemplate={pickQuickTemplate}
+                      onStartBookLocationPhoto={() => void runQuickAction('book_location_photo')}
                     />
                     {attachFile ? (
                       <div className="flex items-center gap-2 rounded-xl bg-white px-2 py-1.5 shadow-sm">
@@ -1931,6 +1966,18 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <WaterFilterServiceStartDialog
+        open={waterFilterOpen}
+        onOpenChange={setWaterFilterOpen}
+        defaultPhone={selectedPhone || ''}
+        defaultName={activeThread?.customer_name || ''}
+        onStarted={(phoneE164) => {
+          setSelectedPhone(phoneE164);
+          void loadInbox({ soft: true });
+          void loadThread(phoneE164, { soft: true });
+        }}
+      />
 
       <Dialog
         open={Boolean(quickActionConfirm)}

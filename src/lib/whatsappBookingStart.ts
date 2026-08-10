@@ -3,7 +3,9 @@ import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 export type WhatsAppBookingQuickAction =
   | 'book_service'
   | 'request_location'
-  | 'request_photo';
+  | 'request_photo'
+  | 'water_filter_service'
+  | 'book_location_photo';
 
 export type WhatsAppBookingStartResult = {
   ok: boolean;
@@ -17,12 +19,30 @@ export type WhatsAppBookingStartResult = {
   featureDisabled?: boolean;
 };
 
+/** Same options as Edit Job lead source. */
+export const WHATSAPP_BOOKING_LEAD_SOURCES = [
+  'Website',
+  'Direct call',
+  'Google-Leads',
+  'RO care india',
+  'Home Triangle',
+  'Home Triangle-Srujan',
+  'Home Triangle-3',
+  'Local Ramu',
+  'Other',
+] as const;
+
 export async function startWhatsAppBookingQuickAction(opts: {
   phone: string;
   action: WhatsAppBookingQuickAction;
   customerId?: string | null;
   customerName?: string | null;
   brand?: 'hydrogenro' | 'elevenro' | null;
+  leadSource?: string | null;
+  serviceSubType?: string | null;
+  serviceLabel?: string | null;
+  leadCost?: number | null;
+  requireOtp?: boolean | null;
 }): Promise<WhatsAppBookingStartResult> {
   const phone = String(opts.phone || '').trim();
   const action = opts.action;
@@ -45,6 +65,13 @@ export async function startWhatsAppBookingQuickAction(opts: {
         ...(opts.customerId ? { customerId: opts.customerId } : {}),
         ...(opts.customerName ? { customerName: opts.customerName } : {}),
         ...(opts.brand ? { brand: opts.brand } : {}),
+        ...(opts.leadSource ? { leadSource: opts.leadSource } : {}),
+        ...(opts.serviceSubType ? { serviceSubType: opts.serviceSubType } : {}),
+        ...(opts.serviceLabel ? { serviceLabel: opts.serviceLabel } : {}),
+        ...(opts.leadCost != null && Number.isFinite(Number(opts.leadCost))
+          ? { leadCost: Number(opts.leadCost) }
+          : {}),
+        ...(opts.requireOtp != null ? { requireOtp: Boolean(opts.requireOtp) } : {}),
       }),
     });
     const data = await res.json().catch(() => ({}));
@@ -70,4 +97,45 @@ export async function startWhatsAppBookingQuickAction(opts: {
       error: err instanceof Error ? err.message : 'Request failed',
     };
   }
+}
+
+/** Start Water Filter Service: location first, then date → time → photo. */
+export async function startWaterFilterServiceBooking(opts: {
+  phone: string;
+  customerName: string;
+  leadSource: string;
+  brand?: 'hydrogenro' | 'elevenro' | null;
+  customerId?: string | null;
+  serviceSubType?: string | null;
+  serviceLabel?: string | null;
+  leadCost?: number | null;
+  requireOtp?: boolean | null;
+}): Promise<WhatsAppBookingStartResult> {
+  return startWhatsAppBookingQuickAction({
+    phone: opts.phone,
+    action: 'water_filter_service',
+    customerId: opts.customerId,
+    customerName: opts.customerName,
+    leadSource: opts.leadSource,
+    brand: opts.brand,
+    serviceSubType: opts.serviceSubType,
+    serviceLabel: opts.serviceLabel,
+    leadCost: opts.leadCost,
+    requireOtp: opts.requireOtp,
+  });
+}
+
+/** Tools → Quick customer: ask location first; CRM customer created only after full booking confirm. */
+export async function startQuickCustomerCreateBooking(opts: {
+  phone: string;
+  customerName: string;
+  leadSource: string;
+  serviceSubType: string;
+  serviceLabel: string;
+  leadCost: number;
+  requireOtp: boolean;
+  brand?: 'hydrogenro' | 'elevenro' | null;
+  customerId?: string | null;
+}): Promise<WhatsAppBookingStartResult> {
+  return startWaterFilterServiceBooking(opts);
 }

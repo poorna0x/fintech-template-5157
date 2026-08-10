@@ -266,6 +266,7 @@ import { sendJobCompletionEmail } from '@/lib/send-job-completion-email';
 import type { DocumentBrand } from '@/lib/service-brands';
 import ShareTechnicianInfoToCustomerDialog from './admin/ShareTechnicianInfoToCustomerDialog';
 import RecentAccountsDialog from './admin/RecentAccountsDialog';
+import QuickCustomerCreateDialog from './admin/QuickCustomerCreateDialog';
 import DirectSaleDialog from './admin/DirectSaleDialog';
 import AmountTrackersDialog from './admin/AmountTrackersDialog';
 import { EmailSentLogDialog } from './admin/EmailSentLogDialog';
@@ -978,6 +979,7 @@ const AdminDashboard = () => {
   const [loadingRecentAccounts, setLoadingRecentAccounts] = useState(false);
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
   const recentAccountsDialogOpen = activeAdminTool === 'recent-accounts';
+  const quickCustomerDialogOpen = activeAdminTool === 'quick-customer';
   const emailSentLogOpen = activeAdminTool === 'sent-email-log';
   const directSaleOpen = activeAdminTool === 'direct-sale';
   const amountTrackersOpen = activeAdminTool === 'amount-trackers';
@@ -7519,6 +7521,11 @@ const AdminDashboard = () => {
           closeAdminTool();
         }}
         unknownCaller={unknownCallerChip}
+      />
+
+      <QuickCustomerCreateDialog
+        open={quickCustomerDialogOpen}
+        onOpenChange={(open) => handleAdminToolOpenChange('quick-customer', open)}
       />
 
       <JobDistanceMeasurementDialog

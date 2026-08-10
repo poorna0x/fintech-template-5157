@@ -138,6 +138,30 @@ const CORE_TEMPLATES = [
     noButtons: true,
   },
   {
+    name: 'svc_hello',
+    body: 'Hi {{1}}, hello — this is regarding your water purifier service account. Please reply on this chat if you need any assistance.',
+    examples: ['Rahul'],
+    noButtons: true,
+  },
+  {
+    name: 'svc_ask_location',
+    body: 'Hi {{1}}, this is {{2}}. Please share your Google Maps location pin on this chat so we can continue your water filter service request.',
+    examples: ['Rahul', 'Eleven RO Water Filter Service'],
+    noButtons: true,
+  },
+  {
+    name: 'svc_ask_photo',
+    body: 'Hi {{1}}, this is {{2}}. Please send a clear photo of your water purifier on this chat so we can continue your water filter service request.',
+    examples: ['Rahul', 'Eleven RO Water Filter Service'],
+    noButtons: true,
+  },
+  {
+    name: 'svc_ask_flat',
+    body: 'Hi {{1}}, this is {{2}}. Please reply with your building / flat / house number on this chat, or reply Skip if you do not have one.',
+    examples: ['Rahul', 'Eleven RO Water Filter Service'],
+    noButtons: true,
+  },
+  {
     name: 'svc_missed_call',
     body: 'Hi {{1}}, we tried to reach you and could not connect. Please reply on this chat so we can assist with your water purifier service.',
     examples: ['Rahul'],
@@ -180,6 +204,39 @@ const CORE_TEMPLATES = [
   },
 ];
 
+/**
+ * Booking confirm / cancel v2 — Call (voice) + Website (+ Book on cancel to rebook).
+ * Prefer these over phone-only svc_booking_confirmed_* / svc_visit_cancelled_*.
+ */
+const BOOKING_STATUS_V2_TEMPLATES = [
+  {
+    name: 'svc_booking_confirmed_ero_v2',
+    websiteUrl: 'https://elevenro.com',
+    body: 'Hi {{1}}, your Eleven RO water purifier service booking {{2}} is confirmed for {{3}}. Reply on this chat if you need to change the date or time.',
+    examples: ['Rahul', 'RO2608121234', 'Tue 12 Aug, 2:00 PM'],
+  },
+  {
+    name: 'svc_booking_confirmed_hro_v2',
+    websiteUrl: 'https://hydrogenro.com',
+    body: 'Hi {{1}}, your Hydrogen RO water purifier service booking {{2}} is confirmed for {{3}}. Reply on this chat if you need to change the date or time.',
+    examples: ['Rahul', 'RO2608121234', 'Tue 12 Aug, 2:00 PM'],
+  },
+  {
+    name: 'svc_booking_cancelled_ero_v2',
+    websiteUrl: 'https://elevenro.com',
+    bookUrl: 'https://elevenro.com/book',
+    body: 'Hi {{1}}, your Eleven RO water purifier service booking for {{2}} has been cancelled. Reply BOOK on this chat to reschedule, or use Call / Website / Book below.',
+    examples: ['Rahul', 'Tue 12 Aug, 2:00 PM'],
+  },
+  {
+    name: 'svc_booking_cancelled_hro_v2',
+    websiteUrl: 'https://hydrogenro.com',
+    bookUrl: 'https://hydrogenro.com/book',
+    body: 'Hi {{1}}, your Hydrogen RO water purifier service booking for {{2}} has been cancelled. Reply BOOK on this chat to reschedule, or use Call / Website / Book below.',
+    examples: ['Rahul', 'Tue 12 Aug, 2:00 PM'],
+  },
+];
+
 /** Rich job-done cold (3 body vars + Call only — no Book URL; Book buttons often → MARKETING). */
 const JOB_DONE_V2_TEMPLATES = [
   {
@@ -194,6 +251,35 @@ const JOB_DONE_V2_TEMPLATES = [
   {
     name: 'svc_job_done_hro_v2',
     body: 'Hi {{1}}, {{2}} {{3}} Thank you for choosing us. Reply on this chat if you need any help.',
+    examples: [
+      'Poorna Shetty',
+      'Your Water Purifier Service is completed.',
+      'Amount of INR 1500 has been collected.',
+    ],
+  },
+];
+
+/**
+ * Job-done v3 — Call (voice main) + Website + Review.
+ * Call phones: Eleven 9880693311 · Hydrogen 8884944288 (not the Cloud API WA line).
+ */
+const JOB_DONE_V3_TEMPLATES = [
+  {
+    name: 'svc_job_done_ero_v3',
+    websiteUrl: 'https://elevenro.com',
+    reviewUrl: 'https://www.google.com/maps/search/?api=1&query=Eleven+RO+Anjanapura+Bengaluru',
+    body: 'Hi {{1}}, {{2}} {{3}} Thank you for choosing Eleven RO. Reply on this chat if you need any help.',
+    examples: [
+      'Poorna Shetty',
+      'Your Water Purifier Service is completed.',
+      'Amount of INR 1500 has been collected.',
+    ],
+  },
+  {
+    name: 'svc_job_done_hro_v3',
+    websiteUrl: 'https://hydrogenro.com',
+    reviewUrl: 'https://www.google.com/maps/search/?api=1&query=Hydrogen+RO+Seshadripuram+Bengaluru',
+    body: 'Hi {{1}}, {{2}} {{3}} Thank you for choosing Hydrogen RO. Reply on this chat if you need any help.',
     examples: [
       'Poorna Shetty',
       'Your Water Purifier Service is completed.',
@@ -251,6 +337,27 @@ const BOOKING_TEMPLATES = [
     bookUrl: 'https://hydrogenro.com/book',
     body: 'Hi {{1}}, your Hydrogen RO visit is set for {{2}}. To reschedule, reply on this chat or use Call / Book online below.',
     examples: ['Rahul', 'Mon 12 Aug, 10:00 AM'],
+  },
+];
+
+/**
+ * Service-due reminders — Call (voice) + Website + Book online.
+ * Reply BOOK on chat seeds booking bot (date/time) via CRM seedPendingAction.
+ */
+const SERVICE_DUE_CTA_TEMPLATES = [
+  {
+    name: 'svc_service_due_ero_cta',
+    websiteUrl: 'https://elevenro.com',
+    bookUrl: 'https://elevenro.com/book',
+    body: 'Hi {{1}}, your water purifier service is due around {{2}}. Reply BOOK on this chat to schedule a visit — we will ask for your preferred date and time. Or use Call / Website / Book below.',
+    examples: ['Rahul', 'Tue 12 Aug 2026'],
+  },
+  {
+    name: 'svc_service_due_hro_cta',
+    websiteUrl: 'https://hydrogenro.com',
+    bookUrl: 'https://hydrogenro.com/book',
+    body: 'Hi {{1}}, your water purifier service is due around {{2}}. Reply BOOK on this chat to schedule a visit — we will ask for your preferred date and time. Or use Call / Website / Book below.',
+    examples: ['Rahul', 'Tue 12 Aug 2026'],
   },
 ];
 
@@ -333,6 +440,13 @@ function corePayload(t) {
 
 function jobDonePayload(t) {
   const callPhone = callPhoneForTemplate(t.name);
+  const buttons = [{ type: 'PHONE_NUMBER', text: 'Call us', phone_number: callPhone }];
+  if (t.websiteUrl) {
+    buttons.push({ type: 'URL', text: 'Website', url: t.websiteUrl });
+  }
+  if (t.reviewUrl) {
+    buttons.push({ type: 'URL', text: 'Review', url: t.reviewUrl });
+  }
   return {
     name: t.name,
     language: 'en',
@@ -346,7 +460,7 @@ function jobDonePayload(t) {
       },
       {
         type: 'BUTTONS',
-        buttons: [{ type: 'PHONE_NUMBER', text: 'Call us', phone_number: callPhone }],
+        buttons,
       },
     ],
   };
@@ -354,6 +468,13 @@ function jobDonePayload(t) {
 
 function bookingPayload(t) {
   const callPhone = callPhoneForTemplate(t.name);
+  const buttons = [{ type: 'PHONE_NUMBER', text: 'Call us', phone_number: callPhone }];
+  if (t.websiteUrl) {
+    buttons.push({ type: 'URL', text: 'Website', url: t.websiteUrl });
+  }
+  if (t.bookUrl) {
+    buttons.push({ type: 'URL', text: 'Book online', url: t.bookUrl });
+  }
   return {
     name: t.name,
     language: 'en',
@@ -367,10 +488,7 @@ function bookingPayload(t) {
       },
       {
         type: 'BUTTONS',
-        buttons: [
-          { type: 'PHONE_NUMBER', text: 'Call us', phone_number: callPhone },
-          { type: 'URL', text: 'Book online', url: t.bookUrl },
-        ],
+        buttons,
       },
     ],
   };
@@ -469,7 +587,31 @@ async function main() {
     }
     queue.push({ label: t.name, payload: bookingPayload(t) });
   }
+  for (const t of SERVICE_DUE_CTA_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: bookingPayload(t) });
+  }
+  for (const t of BOOKING_STATUS_V2_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: bookingPayload(t) });
+  }
   for (const t of JOB_DONE_V2_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: jobDonePayload(t) });
+  }
+  for (const t of JOB_DONE_V3_TEMPLATES) {
     const skip = shouldSkip(t.name, byName);
     if (skip) {
       console.log(`SKIP ${t.name} — ${skip}`);

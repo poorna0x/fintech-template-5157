@@ -37,14 +37,23 @@ import {
   sendAdminWhatsAppText,
   sendAdminWhatsAppTextWithOptionalTemplate,
 } from '@/lib/sendAdminWhatsAppApi';
-import { WA_COLD } from '@/lib/whatsappColdTemplates';
 import { resolveColdPaymentReceived } from '@/lib/whatsappUtilityTemplates';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import CustomerReportDialog from '@/components/admin/CustomerReportDialog';
 import PhotoViewerDialog from '@/components/admin/PhotoViewerDialog';
 import UpiPaymentAccountsManager from '@/components/UpiPaymentAccountsManager';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { PENDING_PAYMENT_REMINDER_TITLE, parseReminderAtLocalDate, buildPendingPaymentWhatsAppMessage, buildPendingPaymentReceivedWhatsAppMessage, parsePendingPaymentReminderNotes, formatPendingPaymentDueLabel } from '@/lib/pendingPaymentReminder';
+import {
+  PENDING_PAYMENT_REMINDER_TITLE,
+  parseReminderAtLocalDate,
+  buildPendingPaymentWhatsAppMessage,
+  buildPendingPaymentReceivedWhatsAppMessage,
+  buildPendingPaymentLetterBodyParams,
+  resolvePendingPaymentLetterTemplateName,
+  parsePendingPaymentReminderNotes,
+  formatPendingPaymentDueLabel,
+  resolvePendingPaymentMessageBrand,
+} from '@/lib/pendingPaymentReminder';
 import { markPendingPaymentSettledInRequirements } from '@/lib/jobPendingPayment';
 import type { DocumentBrand } from '@/lib/service-brands';
 import { normalizeDocumentBrand } from '@/lib/service-brands';
@@ -507,6 +516,9 @@ export function SettingsPendingPaymentsDialogV2({
       customerName?: string;
       amount?: number;
       customerId?: string | null;
+      dueDateYmd?: string | null;
+      invoiceRef?: string | null;
+      brand?: DocumentBrand | string | null;
       /** Use pending_payment Meta template when 24h window is closed (default true). */
       coldPendingTemplate?: boolean;
       /** Cold Meta template when 24h window is closed (default pending_payment). */
@@ -554,15 +566,18 @@ export function SettingsPendingPaymentsDialogV2({
 
       const allowColdTpl = opts?.coldPendingTemplate !== false;
       const coldKind = opts?.coldTemplateKind || 'pending_payment';
+      const brand = resolvePendingPaymentMessageBrand(opts?.brand);
       const coldTemplate = allowColdTpl
         ? coldKind === 'payment_received'
           ? resolveColdPaymentReceived(opts?.customerName || 'Customer', opts?.amount ?? 0)
           : {
-              name: WA_COLD.pending_payment.name,
-              languageCode: WA_COLD.pending_payment.language,
-              bodyParams: WA_COLD.pending_payment.bodyParams(
+              name: resolvePendingPaymentLetterTemplateName(brand),
+              languageCode: 'en',
+              bodyParams: buildPendingPaymentLetterBodyParams(
                 opts?.customerName || 'Customer',
-                opts?.amount ?? 0
+                opts?.amount ?? 0,
+                opts?.dueDateYmd,
+                opts?.invoiceRef
               ),
             }
         : null;
@@ -657,7 +672,8 @@ export function SettingsPendingPaymentsDialogV2({
       Number(payment.amount_pending) || 0,
       payment.reminder_at ? String(payment.reminder_at).slice(0, 10) : null,
       brandForCustomer(payment.entity_id as string | undefined),
-      upiOpts
+      upiOpts,
+      payment.job_number || payment.job_id || null
     );
   };
 
@@ -1659,6 +1675,11 @@ export function SettingsPendingPaymentsDialogV2({
                       customerName: customer?.name,
                       amount: Number(whatsappTarget.amount_pending) || 0,
                       customerId: whatsappTarget.entity_id as string | undefined,
+                      dueDateYmd: whatsappTarget.reminder_at
+                        ? String(whatsappTarget.reminder_at).slice(0, 10)
+                        : null,
+                      invoiceRef: whatsappTarget.job_number || whatsappTarget.job_id || null,
+                      brand: brandForCustomer(whatsappTarget.entity_id as string | undefined),
                       includePayLink: canIncludeUpi,
                     });
                     setWhatsappDialogOpen(false);

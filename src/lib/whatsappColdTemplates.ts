@@ -34,6 +34,15 @@ export const WA_COLD = {
       String(whenLabel || '').trim() || 'your upcoming visit',
     ],
   },
+  /** Service due CTA — Call + Website + Book (brand-specific). */
+  service_due_cta: {
+    name: 'svc_service_due_hro_cta',
+    language: 'en',
+    bodyParams: (customerName: string, whenLabel?: string) => [
+      cleanName(customerName),
+      String(whenLabel || '').trim() || 'your upcoming service visit',
+    ],
+  },
   amc_renewal: {
     name: 'svc_amc_expiry_notice',
     language: 'en',
@@ -155,6 +164,36 @@ export const WA_COLD = {
     name: 'svc_smoke_update',
     language: 'en',
     bodyParams: (customerName: string, _notice?: string) => [cleanName(customerName)],
+  },
+  /** Simple hello / reopen chat (1 param). Falls back to svc_smoke_update until approved. */
+  hello: {
+    name: 'svc_hello',
+    language: 'en',
+    bodyParams: (customerName: string) => [cleanName(customerName)],
+  },
+  ask_location: {
+    name: 'svc_ask_location',
+    language: 'en',
+    bodyParams: (customerName: string, fromLabel: string) => [
+      cleanName(customerName),
+      String(fromLabel || '').trim() || 'Water Filter Service',
+    ],
+  },
+  ask_photo: {
+    name: 'svc_ask_photo',
+    language: 'en',
+    bodyParams: (customerName: string, fromLabel: string) => [
+      cleanName(customerName),
+      String(fromLabel || '').trim() || 'Water Filter Service',
+    ],
+  },
+  ask_flat: {
+    name: 'svc_ask_flat',
+    language: 'en',
+    bodyParams: (customerName: string, fromLabel: string) => [
+      cleanName(customerName),
+      String(fromLabel || '').trim() || 'Water Filter Service',
+    ],
   },
   /**
    * Most flexible Meta-accepted utility: {{1}}=name, {{2}}=details sentence.
@@ -323,8 +362,9 @@ function cleanAmount(amount: number | string): string {
 /** Human labels for inbox / pickers */
 export const WA_COLD_LABELS: Record<keyof typeof WA_COLD, string> = {
   booking_menu: 'Service request (svc_smoke_update — booking menu deprecated)',
-  pending_payment: 'Balance due (svc_balance_due)',
+  pending_payment: 'Balance due (svc_balance_due_letter_* → svc_balance_due)',
   service_reminder: 'Visit reminder (svc_visit_reminder)',
+  service_due_cta: 'Service due letter / CTA (svc_service_due_letter_* → *_cta)',
   amc_renewal: 'AMC expiry (svc_amc_expiry_notice)',
   amc_expiry_notice: 'AMC expiry → document PDF',
   document_ready: 'Document PDF (svc_doc_pdf_v2)',
@@ -338,8 +378,12 @@ export const WA_COLD_LABELS: Record<keyof typeof WA_COLD, string> = {
   appointment_reminder: 'Appointment reminder (svc_visit_reminder)',
   payment_received: 'Payment received (svc_payment_received)',
   tech_assigned: 'Technician assigned (svc_tech_assigned)',
-  job_completion: 'Service completed (svc_job_done_*_v2 rich cold, fallback svc_job_done)',
+  job_completion: 'Service completed (svc_job_done_letter_* → v3/v2 / svc_job_done)',
   general_notice: 'General notice (svc_smoke_update)',
+  hello: 'Hello (svc_hello)',
+  ask_location: 'Ask location (svc_ask_location)',
+  ask_photo: 'Ask photo (svc_ask_photo)',
+  ask_flat: 'Ask flat (svc_ask_flat)',
   crm_notice: 'CRM notice → visit reminder',
   crm_update_details: 'CRM update → visit reminder',
   book_existing_customer: 'Schedule visit (existing_service_schedule_*_cta)',
@@ -347,8 +391,8 @@ export const WA_COLD_LABELS: Record<keyof typeof WA_COLD, string> = {
   missed_call: 'Missed call (svc_missed_call)',
   missed_call_book: 'Missed call (svc_missed_call / missed_call_callback_*_cta)',
   reschedule_visit: 'Reschedule (reschedule_visit_*_cta)',
-  visit_cancelled: 'Visit cancelled (svc_visit_cancelled_*)',
+  visit_cancelled: 'Visit cancelled (svc_booking_cancelled_letter_* → v2 → svc_visit_cancelled_*)',
   parts_ready: 'Parts ready (svc_parts_ready)',
   tech_delayed: 'Tech delayed (svc_tech_delayed)',
-  booking_confirmed: 'Booking confirmed (svc_booking_confirmed_* / svc_visit_confirmed)',
+  booking_confirmed: 'Booking confirmed (svc_booking_confirmed_letter_* → v2 → v1 / svc_visit_confirmed)',
 };

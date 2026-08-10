@@ -289,10 +289,11 @@ const {
   uploadOutboundMediaToR2,
   isR2MediaRef,
   parseR2ObjectKey,
+  getR2ObjectBytes,
 } = require('./r2-helper');
 
 /**
- * Upload inbound media to private R2 (preferred). Falls back to Cloudinary if R2 unset.
+ * Upload inbound media to private R2 (preferred for inbox). Falls back to Cloudinary if R2 unset.
  * Returns { url, mime, filename } where url is r2:key or https Cloudinary URL.
  */
 async function uploadWhatsAppMediaToCloudinary(buffer, mime, filename) {
@@ -300,7 +301,13 @@ async function uploadWhatsAppMediaToCloudinary(buffer, mime, filename) {
   if (r2?.url) {
     return { url: r2.url, mime: r2.mime || mime || null, filename: r2.filename };
   }
+  return uploadBufferToCloudinaryOnly(buffer, mime, filename, 'whatsapp/inbound');
+}
 
+/**
+ * Force Cloudinary HTTPS URL (CRM customer/job photos — R2 private keys break CRM image views).
+ */
+async function uploadBufferToCloudinaryOnly(buffer, mime, filename, folder = 'whatsapp/customer-photos') {
   const config = getCloudinaryConfig();
   if (!config || !buffer?.length) return null;
   try {
@@ -308,7 +315,7 @@ async function uploadWhatsAppMediaToCloudinary(buffer, mime, filename) {
     const form = new FormData();
     form.append('file', new Blob([buffer], { type: mime || 'application/octet-stream' }), safeName);
     form.append('upload_preset', config.uploadPreset);
-    form.append('folder', 'whatsapp/inbound');
+    form.append('folder', folder);
 
     const res = await fetch(`https://api.cloudinary.com/v1_1/${config.cloudName}/auto/upload`, {
       method: 'POST',
@@ -316,7 +323,7 @@ async function uploadWhatsAppMediaToCloudinary(buffer, mime, filename) {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.secure_url) {
-      console.warn('[whatsapp-helper] cloudinary upload failed', res.status, data?.error?.message);
+      console.warn('[whatsapp-helper] cloudinary-only upload failed', res.status, data?.error?.message);
       return null;
     }
     return {
@@ -325,8 +332,49 @@ async function uploadWhatsAppMediaToCloudinary(buffer, mime, filename) {
       filename: safeName,
     };
   } catch (err) {
-    console.warn('[whatsapp-helper] cloudinary upload error', err?.message || err);
+    console.warn('[whatsapp-helper] cloudinary-only upload error', err?.message || err);
     return null;
+  }
+}
+
+/**
+ * Ensure a public Cloudinary (or other https) URL for CRM photos.
+ * Re-uploads from R2 when inbox stored a private r2: key.
+ */
+async function ensurePublicCrmPhotoUrl(mediaUrl, opts = {}) {
+  const raw = String(mediaUrl || '').trim();
+  if (!raw) return null;
+  if (/^https:\/\//i.test(raw) && /res\.cloudinary\.com/i.test(raw)) return raw;
+  // Prefer Cloudinary even if we already have some other https (re-host for CRM).
+  try {
+    let buffer = null;
+    let mime = opts.mime || 'image/jpeg';
+    let filename = opts.filename || 'purifier.jpg';
+
+    if (isR2MediaRef(raw) || parseR2ObjectKey(raw)) {
+      const obj = await getR2ObjectBytes(raw);
+      if (!obj?.buffer?.length) return /^https:\/\//i.test(raw) ? raw : null;
+      buffer = obj.buffer;
+      mime = obj.contentType || mime;
+    } else if (/^https:\/\//i.test(raw)) {
+      const res = await fetch(raw);
+      if (!res.ok) return raw;
+      buffer = Buffer.from(await res.arrayBuffer());
+      mime = res.headers.get('content-type') || mime;
+    } else {
+      return null;
+    }
+
+    const uploaded = await uploadBufferToCloudinaryOnly(
+      buffer,
+      mime,
+      filename,
+      'whatsapp/customer-photos'
+    );
+    return uploaded?.url || (/^https:\/\//i.test(raw) ? raw : null);
+  } catch (err) {
+    console.warn('[whatsapp-helper] ensurePublicCrmPhotoUrl failed', err?.message || err);
+    return /^https:\/\//i.test(raw) ? raw : null;
   }
 }
 
@@ -586,6 +634,8 @@ module.exports = {
   findCustomerIdByPhone,
   downloadWhatsAppMedia,
   uploadWhatsAppMediaToCloudinary,
+  uploadBufferToCloudinaryOnly,
+  ensurePublicCrmPhotoUrl,
   uploadOutboundPdfToCloudinary,
   uploadOutboundPdfToWhatsAppMedia,
   uploadOutboundFileToWhatsAppMedia,

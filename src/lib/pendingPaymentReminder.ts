@@ -1,6 +1,7 @@
 import { addMonths, format } from 'date-fns';
 import type { DocumentBrand } from '@/lib/service-brands';
-import { getDocumentBrandLabel, normalizeDocumentBrand } from '@/lib/service-brands';
+import { normalizeDocumentBrand } from '@/lib/service-brands';
+import { brandContactLines, brandLetterFooterLines } from '@/lib/whatsappBrandContact';
 import { waLabeledLink, waLabeledValue } from '@/lib/whatsappMessageFormat';
 
 /** Must match reminders created from Settings → Pending payments. */
@@ -70,24 +71,6 @@ export function formatPendingPaymentDueLabel(dueDateYmd: string | null | undefin
   }
 }
 
-const PENDING_PAYMENT_CONTACT: Record<
-  DocumentBrand,
-  { phone: string; email: string; website: string; team: string }
-> = {
-  hydrogenro: {
-    phone: '8884944288',
-    email: 'mail@hydrogenro.com',
-    website: 'https://hydrogenro.com',
-    team: 'Hydrogen RO Team',
-  },
-  elevenro: {
-    phone: '9880693311',
-    email: 'mail@elevenro.com',
-    website: 'https://elevenro.com',
-    team: 'Eleven RO Team',
-  },
-};
-
 /** Resolve brand for pending-payment WhatsApp (defaults to Hydrogen RO when unknown). */
 export function resolvePendingPaymentMessageBrand(value: unknown): DocumentBrand {
   return normalizeDocumentBrand(value) || 'hydrogenro';
@@ -106,34 +89,61 @@ export type PendingPaymentWhatsAppUpiOptions = {
   httpsLink?: string | null;
 };
 
+function cleanAmountDigits(amount: number | string): string {
+  return (
+    String(amount ?? '0')
+      .replace(/[^\d.]/g, '')
+      .replace(/\.0+$/, '') || '0'
+  );
+}
+
+/** Letter cold template name (PENDING until Meta approves). */
+export function resolvePendingPaymentLetterTemplateName(brand: DocumentBrand): string {
+  return brand === 'elevenro' ? 'svc_balance_due_letter_ero' : 'svc_balance_due_letter_hro';
+}
+
+/** Letter cold params: name, amount, due date, invoice/job. */
+export function buildPendingPaymentLetterBodyParams(
+  customerName: string,
+  amountPending: number | string,
+  dueDateYmd?: string | null,
+  invoiceRef?: string | null
+): [string, string, string, string] {
+  return [
+    String(customerName || 'Customer').trim() || 'Customer',
+    cleanAmountDigits(amountPending),
+    formatPendingPaymentDueLabel(dueDateYmd) || 'at your earliest convenience',
+    String(invoiceRef || '').trim() || 'your service visit',
+  ];
+}
+
 export function buildPendingPaymentWhatsAppMessage(
   customerName: string,
   amountPending: number,
   dueDateYmd?: string | null,
   brand?: DocumentBrand | string | null,
-  upi?: PendingPaymentWhatsAppUpiOptions | null
+  upi?: PendingPaymentWhatsAppUpiOptions | null,
+  invoiceRef?: string | null
 ): string {
   const resolved = resolvePendingPaymentMessageBrand(brand);
-  const contact = PENDING_PAYMENT_CONTACT[resolved];
-  const brandLabel = getDocumentBrandLabel(resolved);
+  const contact = brandContactLines(resolved);
   const formattedAmount = amountPending.toLocaleString('en-IN', { maximumFractionDigits: 2 });
   const dueLabel = formatPendingPaymentDueLabel(dueDateYmd);
   const payLink = (upi?.httpsLink || '').trim();
   const upiId = (upi?.upiId || '').trim();
+  const ref = String(invoiceRef || '').trim();
 
   const lines: string[] = [
-    `Hi ${customerName} 😊`,
+    `Hi ${customerName},`,
+    `This is an update from ${contact.brandLabel} regarding your pending payment for water purifier service.`,
     '',
-    `Quick reminder from *${brandLabel}* about your pending payment for water filter service.`,
-    '',
-    '*Payment summary*',
-    waLabeledValue('💰', 'Amount due', `₹${formattedAmount}`),
-    waLabeledValue('📅', 'Due by', dueLabel || 'At your earliest convenience'),
+    `Amount pending: ₹${formattedAmount}`,
+    `Due date: ${dueLabel || 'At your earliest convenience'}`,
   ];
+  if (ref) lines.push(`Invoice / Job: ${ref}`);
 
   if (payLink || upiId) {
     lines.push('');
-    lines.push('*Pay now*');
     if (payLink) {
       lines.push(waLabeledLink('💳', 'Payment link (GPay / PhonePe / UPI)', payLink));
     }
@@ -144,7 +154,7 @@ export function buildPendingPaymentWhatsAppMessage(
       lines.push(waLabeledValue('🏦', 'Pay to', upi.label));
     }
     if (payLink) {
-      lines.push(`Amount *₹${formattedAmount}* is pre-filled when you use the payment link.`);
+      lines.push(`Amount ₹${formattedAmount} is pre-filled when you use the payment link.`);
     }
     if (upi?.phone) {
       lines.push(waLabeledValue('📞', 'UPI mobile', upi.phone));
@@ -152,10 +162,8 @@ export function buildPendingPaymentWhatsAppMessage(
   }
 
   lines.push('');
-  lines.push('Please clear this at your earliest convenience. If you have already paid, kindly ignore this message.');
-  lines.push('');
-  lines.push('Thanks & regards 🙏');
-  lines.push(contact.team);
+  lines.push(...brandLetterFooterLines(resolved));
+  lines.push('Reply on this chat for UPI details or if you have already paid.');
 
   return lines.join('\n');
 }
@@ -166,20 +174,17 @@ export function buildPendingPaymentReceivedWhatsAppMessage(
   brand?: DocumentBrand | string | null
 ): string {
   const resolved = resolvePendingPaymentMessageBrand(brand);
-  const contact = PENDING_PAYMENT_CONTACT[resolved];
+  const contact = brandContactLines(resolved);
   const formattedAmount = amountPending.toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
-  return `Hi ${customerName} 😊
-
-Thank you! We have received your payment of ₹${formattedAmount}.
-
-We appreciate your trust. For any help or support:
-${waLabeledValue('📞', 'Phone', contact.phone)}
-${waLabeledValue('📧', 'Email', contact.email)}
-${waLabeledLink('🌐', 'Website', contact.website)}
-
-Thanks & regards 🙏
-${contact.team}`;
+  return [
+    `Hi ${customerName},`,
+    `This is an update from ${contact.brandLabel} regarding your payment.`,
+    '',
+    `We have received your payment of ₹${formattedAmount}. Thank you.`,
+    '',
+    ...brandLetterFooterLines(resolved),
+  ].join('\n');
 }
 
 export function parseReminderAtLocalDate(reminderAt: string | Date): Date {

@@ -108,6 +108,7 @@ function buildPendingPaymentWhatsAppMessage({
   upiId,
   upiLabel,
   upiPhone,
+  invoiceRef,
 }) {
   const resolved = resolveBrand(brand);
   const contact = CONTACT[resolved];
@@ -117,6 +118,7 @@ function buildPendingPaymentWhatsAppMessage({
   const dueLabel = formatDueLabel(dueDateYmd);
   const link = String(payLink || '').trim();
   const vpa = String(upiId || '').trim();
+  const ref = String(invoiceRef || '').trim();
 
   const labeledValue = (emoji, label, value) => {
     const v = String(value || '').trim();
@@ -135,18 +137,16 @@ function buildPendingPaymentWhatsAppMessage({
   };
 
   const lines = [
-    `Hi ${customerName || 'Customer'} 😊`,
+    `Hi ${customerName || 'Customer'},`,
+    `This is an update from ${contact.label} regarding your pending payment for water purifier service.`,
     '',
-    `Quick reminder from *${contact.label}* about your pending payment for water filter service.`,
-    '',
-    '*Payment summary*',
-    labeledValue('💰', 'Amount due', `₹${formattedAmount}`),
-    labeledValue('📅', 'Due by', dueLabel || 'At your earliest convenience'),
+    `Amount pending: ₹${formattedAmount}`,
+    `Due date: ${dueLabel || 'At your earliest convenience'}`,
   ];
+  if (ref) lines.push(`Invoice / Job: ${ref}`);
 
   if (link || vpa) {
     lines.push('');
-    lines.push('*Pay now*');
     if (link) {
       lines.push(labeledLink('💳', 'Payment link (GPay / PhonePe / UPI)', link));
     }
@@ -157,7 +157,7 @@ function buildPendingPaymentWhatsAppMessage({
       lines.push(labeledValue('🏦', 'Pay to', upiLabel));
     }
     if (link) {
-      lines.push(`Amount *₹${formattedAmount}* is pre-filled when you use the payment link.`);
+      lines.push(`Amount ₹${formattedAmount} is pre-filled when you use the payment link.`);
     }
     if (upiPhone) {
       lines.push(labeledValue('📞', 'UPI mobile', upiPhone));
@@ -165,12 +165,13 @@ function buildPendingPaymentWhatsAppMessage({
   }
 
   lines.push('');
-  lines.push(
-    'Please clear this at your earliest convenience. If you have already paid, kindly ignore this message.'
-  );
+  lines.push(`Thank you for choosing ${contact.label}.`);
+  lines.push(labeledValue('📞', 'Call (main)', contact.phone));
+  lines.push(labeledValue('📧', 'Email', contact.email));
+  lines.push(labeledLink('🌐', 'Website', contact.website));
   lines.push('');
-  lines.push('Thanks & regards 🙏');
-  lines.push(contact.team);
+  lines.push('You can also reply on this WhatsApp chat anytime.');
+  lines.push('Reply on this chat for UPI details or if you have already paid.');
   return lines.join('\n');
 }
 

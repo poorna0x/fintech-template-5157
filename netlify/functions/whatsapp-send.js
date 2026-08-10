@@ -25,6 +25,7 @@ const {
 const { stampAwaitingMediaIfAsking } = require('./whatsapp-unsolicited-media');
 const { resolveWaTemplateName } = require('./whatsapp-template-resolve');
 const { sendTemplateWithColdFallbacks } = require('./whatsapp-cold-fallback');
+const { seedAdminPendingAction } = require('./whatsapp-booking-bot');
 
 const MAX_OUTBOUND_BYTES = 4.5 * 1024 * 1024;
 
@@ -583,12 +584,27 @@ exports.handler = async (event) => {
       });
     }
 
+    // After reminder / book invite: next customer reply resumes booking bot (date/time…).
+    const seedPending = String(body.seedPendingAction || body.seed_pending_action || '').trim();
+    if (seedPending && db) {
+      try {
+        await seedAdminPendingAction(db, to, seedPending, {
+          name: String(body.customerName || body.customer_name || '').trim() || undefined,
+          customerName: String(body.customerName || body.customer_name || '').trim() || undefined,
+          startedByAdmin: true,
+        });
+      } catch (err) {
+        console.warn('[whatsapp-send] seedPendingAction failed', err?.message || err);
+      }
+    }
+
     return json(200, headers, {
       success: true,
       meta: result.data,
       phone: to,
       messageId: inserted?.id || null,
       customerId: persist.customer_id || null,
+      seedPendingAction: seedPending || null,
     });
   } catch (err) {
     console.error('[whatsapp-send] failed', err?.message || err);

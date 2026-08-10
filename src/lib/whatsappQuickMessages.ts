@@ -7,12 +7,16 @@ import {
   resolveColdMissedCall,
   resolveColdPartsReady,
   resolveColdTechDelayed,
+  resolveColdVisitCancelled,
 } from '@/lib/whatsappUtilityTemplates';
 import { waBrandBookingUrl, waLabeledLink, waLabeledValue } from '@/lib/whatsappMessageFormat';
+import { brandLetterFooterLines } from '@/lib/whatsappBrandContact';
 
 export type WhatsAppQuickReplyContext = {
   customerName?: string;
   brand?: DocumentBrand;
+  /** When true, ask templates use generic "Water Filter Service" (no Eleven/Hydrogen). */
+  skipBrandLabel?: boolean;
   technicianName?: string;
   amount?: number | string;
   whenLabel?: string;
@@ -66,12 +70,84 @@ function brandLabel(ctx: WhatsAppQuickReplyContext): string {
   return getDocumentBrandLabel(ctx.brand || 'hydrogenro');
 }
 
+/** {{2}} for ask templates — brand Water Filter Service, or generic if skipBrandLabel. */
+export function waterFilterServiceFromLabel(ctx: WhatsAppQuickReplyContext): string {
+  if (ctx.skipBrandLabel || !ctx.brand) return 'Water Filter Service';
+  return `${getDocumentBrandLabel(ctx.brand)} Water Filter Service`;
+}
+
 function brandInfo(ctx: WhatsAppQuickReplyContext) {
   return getCompanyInfoForBrand(ctx.brand || 'hydrogenro');
 }
 
 /** Free-form snippets — use inside the 24h customer-service window. */
 export const WHATSAPP_QUICK_TEXT_REPLIES: WhatsAppQuickTextReply[] = [
+  // —— Ask (one-tap send) ——
+  {
+    id: 'share_location',
+    label: 'Ask location',
+    group: 'request',
+    instant: true,
+    text: (ctx) =>
+      `Hi ${cleanName(ctx)}, please share your *Google Maps location pin* on this chat so we can reach you easily.\n\nTap 📎 → Location → Send your current location.`,
+  },
+  {
+    id: 'share_flat',
+    label: 'Ask flat no',
+    group: 'request',
+    instant: true,
+    text: (ctx) =>
+      `Hi ${cleanName(ctx)}, please reply with your *building / flat / house number* (e.g. Flat 302, Block B).\n\nIf you don’t have one, just reply *Skip*.`,
+  },
+  {
+    id: 'share_photo',
+    label: 'Ask photo',
+    group: 'request',
+    instant: true,
+    text: (ctx) =>
+      `Hi ${cleanName(ctx)}, please send a *clear photo of your water purifier* (label / unit) on this chat so we can assist better.`,
+  },
+  {
+    id: 'share_loc_photo',
+    label: 'Ask loc+photo',
+    group: 'request',
+    instant: true,
+    text: (ctx) =>
+      [
+        `Hi ${cleanName(ctx)}, to book your service please send:`,
+        '',
+        '1) Your *Google Maps location pin*',
+        '2) Your *building / flat number* (or Skip)',
+        '3) A *clear photo of the purifier*',
+        '',
+        'You can send them one by one on this chat.',
+      ].join('\n'),
+  },
+  {
+    id: 'share_model',
+    label: 'Ask model',
+    group: 'request',
+    instant: true,
+    text: (ctx) =>
+      `Hi ${cleanName(ctx)}, please share your purifier *brand & model* (a photo of the sticker/label helps) so we can bring the right spares.`,
+  },
+  {
+    id: 'ask_preferred_time',
+    label: 'Ask time',
+    group: 'request',
+    instant: true,
+    text: (ctx) =>
+      `Hi ${cleanName(ctx)}, what *date and time* works for your service visit? (We usually visit between 9:00 AM and 5:00 PM.)`,
+  },
+  {
+    id: 'ask_issue',
+    label: 'Ask issue',
+    group: 'request',
+    instant: true,
+    text: (ctx) =>
+      `Hi ${cleanName(ctx)}, please briefly describe the *issue* with your purifier (e.g. no water, low flow, leakage, taste/smell). A short video or photo helps too.`,
+  },
+  // —— Common / service ——
   {
     id: 'thanks',
     label: 'Thanks',
@@ -102,6 +178,32 @@ export const WHATSAPP_QUICK_TEXT_REPLIES: WhatsAppQuickTextReply[] = [
       `Hi ${cleanName(ctx)}, we have received your message and will reply shortly on this chat.`,
   },
   {
+    id: 'working_on_it',
+    label: 'Checking',
+    group: 'common',
+    instant: true,
+    text: (ctx) =>
+      `Hi ${cleanName(ctx)}, we're checking this and will update you shortly on this chat.`,
+  },
+  {
+    id: 'callback_later',
+    label: 'Call back',
+    group: 'common',
+    instant: true,
+    text: (ctx) =>
+      `Hi ${cleanName(ctx)}, thank you for your message. Our team will call you back shortly. For urgent RO issues, reply URGENT on this chat.`,
+  },
+  {
+    id: 'missed_call',
+    label: 'Missed call',
+    group: 'common',
+    instant: true,
+    text: (ctx) => {
+      const info = brandInfo(ctx);
+      return `Hi ${cleanName(ctx)}, sorry we missed your call. Please reply on this chat or call us on ${info.phone.split('&')[0].trim()}.`;
+    },
+  },
+  {
     id: 'on_way',
     label: 'On the way',
     group: 'service',
@@ -113,6 +215,7 @@ export const WHATSAPP_QUICK_TEXT_REPLIES: WhatsAppQuickTextReply[] = [
     id: 'running_late',
     label: 'Running late',
     group: 'service',
+    instant: true,
     text: (ctx) =>
       `Hi ${cleanName(ctx)}, our technician is slightly delayed but still on the way. Sorry for the inconvenience — we'll update you on this chat.`,
   },
@@ -120,9 +223,59 @@ export const WHATSAPP_QUICK_TEXT_REPLIES: WhatsAppQuickTextReply[] = [
     id: 'confirm_visit',
     label: 'Confirm visit',
     group: 'service',
+    instant: true,
     text: (ctx) => {
       const when = String(ctx.whenLabel || '').trim() || 'your scheduled slot';
       return `Hi ${cleanName(ctx)}, confirming your ${brandLabel(ctx)} service visit for ${when}. Reply YES to confirm or tell us if you need to reschedule.`;
+    },
+  },
+  {
+    id: 'visit_done',
+    label: 'Visit done',
+    group: 'service',
+    instant: true,
+    text: (ctx) =>
+      `Hi ${cleanName(ctx)}, thank you — your service visit is complete. If anything needs attention, just reply on this chat.`,
+  },
+  {
+    id: 'visit_confirmed_text',
+    label: 'Visit confirmed',
+    group: 'service',
+    instant: true,
+    text: (ctx) => {
+      const when = String(ctx.whenLabel || '').trim() || 'your scheduled slot';
+      const ref = String(ctx.jobRef || '').trim();
+      const brand = ctx.brand || 'hydrogenro';
+      return [
+        `Hi ${cleanName(ctx)},`,
+        `This is an update from ${brandLabel(ctx)} regarding your service booking.`,
+        '',
+        ref ? `Booking: ${ref}` : 'Booking: your booking',
+        `Confirmed for: ${when}`,
+        '',
+        ...brandLetterFooterLines(brand),
+        'Reply on this chat if you need to change the date or time.',
+      ].join('\n');
+    },
+  },
+  {
+    id: 'booking_cancelled_text',
+    label: 'Booking cancelled',
+    group: 'service',
+    instant: true,
+    text: (ctx) => {
+      const when = String(ctx.whenLabel || '').trim() || 'your scheduled visit';
+      const brand = ctx.brand || 'hydrogenro';
+      return [
+        `Hi ${cleanName(ctx)},`,
+        `This is an update from ${brandLabel(ctx)} regarding your service booking.`,
+        '',
+        `Booking for ${when} has been cancelled.`,
+        '',
+        'Reply BOOK on this chat to reschedule — we will ask for a new date and time.',
+        '',
+        ...brandLetterFooterLines(brand),
+      ].join('\n');
     },
   },
   {
@@ -131,29 +284,6 @@ export const WHATSAPP_QUICK_TEXT_REPLIES: WhatsAppQuickTextReply[] = [
     group: 'service',
     text: (ctx) =>
       `Hi ${cleanName(ctx)}, hope your water purifier is working fine after the recent service. Reply on this chat if you notice any issue — we're happy to help.`,
-  },
-  {
-    id: 'share_location',
-    label: 'Ask location',
-    group: 'request',
-    instant: true,
-    text: () =>
-      'Please share your Google Maps location pin on this chat so our technician can reach you easily.',
-  },
-  {
-    id: 'share_photo',
-    label: 'Ask photo',
-    group: 'request',
-    instant: true,
-    text: () =>
-      'Please share a clear photo of your water purifier (or the issue) on this chat so we can assist better.',
-  },
-  {
-    id: 'share_model',
-    label: 'Ask model',
-    group: 'request',
-    text: () =>
-      'Please share your purifier brand & model (photo of the sticker/label helps) so we can bring the right spares.',
   },
   {
     id: 'book_online',
@@ -199,33 +329,46 @@ export const WHATSAPP_QUICK_TEXT_REPLIES: WhatsAppQuickTextReply[] = [
       return lines.join('\n');
     },
   },
-  {
-    id: 'missed_call',
-    label: 'Missed call',
-    group: 'common',
-    text: (ctx) => {
-      const info = brandInfo(ctx);
-      return `Hi ${cleanName(ctx)}, sorry we missed your call. Please reply on this chat or call us on ${info.phone.split('&')[0].trim()}.`;
-    },
-  },
-  {
-    id: 'callback_later',
-    label: 'Call back',
-    group: 'common',
-    text: (ctx) =>
-      `Hi ${cleanName(ctx)}, thank you for your message. Our team will call you back shortly. For urgent RO issues, reply URGENT on this chat.`,
-  },
-  {
-    id: 'working_on_it',
-    label: 'Checking',
-    group: 'common',
-    text: (ctx) =>
-      `Hi ${cleanName(ctx)}, we're checking this and will update you shortly on this chat.`,
-  },
 ];
+
+export function quickTextRepliesByGroup(group: WhatsAppQuickReplyGroup) {
+  return WHATSAPP_QUICK_TEXT_REPLIES.filter((r) => r.group === group);
+}
 
 /** Approved Meta UTILITY templates — one tap when 24h window is closed. */
 export const WHATSAPP_QUICK_TEMPLATE_REPLIES: WhatsAppQuickTemplateReply[] = [
+  {
+    id: 'tpl_hello',
+    label: 'Hello',
+    group: 'common',
+    templateName: 'svc_hello',
+    language: 'en',
+    bodyParams: (ctx) => [cleanName(ctx)],
+  },
+  {
+    id: 'tpl_ask_location',
+    label: 'Ask location',
+    group: 'request',
+    templateName: 'svc_ask_location',
+    language: 'en',
+    bodyParams: (ctx) => [cleanName(ctx), waterFilterServiceFromLabel(ctx)],
+  },
+  {
+    id: 'tpl_ask_photo',
+    label: 'Ask photo',
+    group: 'request',
+    templateName: 'svc_ask_photo',
+    language: 'en',
+    bodyParams: (ctx) => [cleanName(ctx), waterFilterServiceFromLabel(ctx)],
+  },
+  {
+    id: 'tpl_ask_flat',
+    label: 'Ask flat no',
+    group: 'request',
+    templateName: 'svc_ask_flat',
+    language: 'en',
+    bodyParams: (ctx) => [cleanName(ctx), waterFilterServiceFromLabel(ctx)],
+  },
   {
     id: 'tpl_update',
     label: 'Service update',
@@ -326,6 +469,21 @@ export const WHATSAPP_QUICK_TEMPLATE_REPLIES: WhatsAppQuickTemplateReply[] = [
   },
 ];
 
+/** Hello / open-chat UTILITY — prefers svc_hello; falls back to approved svc_smoke_update. */
+export function buildQuickHelloTemplate(
+  ctx: WhatsAppQuickReplyContext,
+  approvedTemplateNames?: Set<string> | null
+): WhatsAppQuickTemplateSend {
+  const preferHello =
+    !approvedTemplateNames?.size ||
+    approvedTemplateNames.has('svc_hello');
+  return {
+    templateName: preferHello ? 'svc_hello' : 'svc_smoke_update',
+    language: 'en',
+    bodyParams: [cleanName(ctx)],
+  };
+}
+
 /** Brand booking CTA — existing customer schedule (UTILITY). */
 export function buildQuickBookVisitTemplate(
   ctx: WhatsAppQuickReplyContext
@@ -351,7 +509,7 @@ export function buildQuickMissedCallTemplate(
   };
 }
 
-/** Brand booking confirmed (phone-only UTILITY). */
+/** Brand booking confirmed (Call + Website v2). */
 export function buildQuickBookingConfirmedTemplate(
   ctx: WhatsAppQuickReplyContext
 ): WhatsAppQuickTemplateSend {
@@ -367,6 +525,23 @@ export function buildQuickBookingConfirmedTemplate(
     templateName: resolveWaTemplateName(cta.name),
     language: cta.language,
     bodyParams: cta.bodyParams,
+  };
+}
+
+/** Booking / visit cancelled (Call + Website + Book v2). */
+export function buildQuickBookingCancelledTemplate(
+  ctx: WhatsAppQuickReplyContext
+): WhatsAppQuickTemplateSend {
+  const brand = ctx.brand || 'hydrogenro';
+  const cold = resolveColdVisitCancelled(
+    brand,
+    cleanName(ctx),
+    ctx.whenLabel || 'your scheduled visit'
+  );
+  return {
+    templateName: cold.name,
+    language: cold.languageCode,
+    bodyParams: cold.bodyParams,
   };
 }
 

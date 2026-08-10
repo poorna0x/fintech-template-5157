@@ -152,6 +152,7 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
         serviceSubType: completion.serviceSubType,
         amountPending: completion.amountPendingValue,
         pendingDueDate: completion.pendingDueDate || null,
+        jobRef: completion.jobNumber || null,
         fallbackWaMe: false,
       });
 
@@ -320,12 +321,17 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
               <div>
                 <Label>Cold send preview (window closed)</Label>
                 <p className="text-[11px] text-muted-foreground mt-0.5 mb-1.5">
-                  Uses <span className="font-medium">svc_job_done_{completion.documentBrand === 'elevenro' ? 'ero' : 'hro'}_v2</span>{' '}
-                  when Meta approves — else short <span className="font-medium">svc_job_done</span>.
+                  Prefers letter template{' '}
+                  <span className="font-medium">
+                    svc_job_done_letter_{completion.documentBrand === 'elevenro' ? 'ero' : 'hro'}
+                  </span>
+                  , then v3 / v2 / short <span className="font-medium">svc_job_done</span>. Call
+                  dials the brand voice line (HRO 8884944288 · ERO 9880693311), not the Cloud
+                  WhatsApp number.
                 </p>
                 <div className="p-3 rounded-md border border-amber-200/80 bg-amber-50/60 text-sm text-amber-950 whitespace-pre-wrap">
                   {coldTemplatePreview}
-                  {'\n\n'}📞 Call us · 🌐 Book online
+                  {'\n\n'}📞 Call us · 🌐 Website · ⭐ Review
                 </div>
               </div>
 

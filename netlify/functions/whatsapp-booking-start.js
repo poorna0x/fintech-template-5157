@@ -20,7 +20,13 @@ const {
   lookupCustomerFull,
 } = require('./whatsapp-booking-bot');
 
-const ACTIONS = new Set(['book_service', 'request_location', 'request_photo']);
+const ACTIONS = new Set([
+  'book_service',
+  'request_location',
+  'request_photo',
+  'water_filter_service',
+  'book_location_photo',
+]);
 
 function json(statusCode, headers, payload) {
   return { statusCode, headers, body: JSON.stringify(payload) };
@@ -168,6 +174,58 @@ function coldTemplateForAction(action, brand, customerName, hasCustomer) {
     };
   }
 
+  if (action === 'water_filter_service') {
+    return {
+      primary: {
+        name: 'svc_service_request',
+        languageCode: 'en',
+        bodyParams: [name],
+        seedPending: 'water_filter_service',
+      },
+      fallback: {
+        name: 'svc_visit_reminder',
+        languageCode: 'en',
+        bodyParams: [
+          name,
+          'Water Filter Service — reply here and we will ask for your location pin next',
+        ],
+        seedPending: 'water_filter_service',
+      },
+      fallback2: {
+        name: 'svc_smoke_update',
+        languageCode: 'en',
+        bodyParams: [name],
+        seedPending: 'water_filter_service',
+      },
+    };
+  }
+
+  if (action === 'book_location_photo') {
+    return {
+      primary: {
+        name: 'svc_service_request',
+        languageCode: 'en',
+        bodyParams: [name],
+        seedPending: 'book_location_photo',
+      },
+      fallback: {
+        name: 'svc_visit_reminder',
+        languageCode: 'en',
+        bodyParams: [
+          name,
+          'reply here to book — we will ask location pin, then purifier photo',
+        ],
+        seedPending: 'book_location_photo',
+      },
+      fallback2: {
+        name: 'svc_smoke_update',
+        languageCode: 'en',
+        bodyParams: [name],
+        seedPending: 'book_location_photo',
+      },
+    };
+  }
+
   // request_photo
   return {
     primary: {
@@ -216,7 +274,8 @@ exports.handler = async (event) => {
   const action = String(body.action || '').trim();
   if (!ACTIONS.has(action)) {
     return json(400, headers, {
-      error: 'action must be book_service, request_location, or request_photo',
+      error:
+        'action must be book_service, request_location, request_photo, water_filter_service, or book_location_photo',
     });
   }
 
@@ -251,6 +310,24 @@ exports.handler = async (event) => {
   let customerId = body.customerId ? String(body.customerId).trim() : null;
   let customerName = String(body.customerName || '').trim();
   let brand = body.brand === 'elevenro' ? 'elevenro' : body.brand === 'hydrogenro' ? 'hydrogenro' : null;
+  const leadSource = String(body.leadSource || body.lead_source || '').trim() || 'Direct call';
+  const serviceSubType =
+    String(body.serviceSubType || body.service_sub_type || '').trim() || 'Repair';
+  const serviceLabel =
+    String(body.serviceLabel || body.service_label || '').trim() ||
+    (serviceSubType === 'Installation' ? 'Installation' : 'Water Filter Service');
+  const leadCostRaw = body.leadCost ?? body.lead_cost;
+  const leadCost =
+    leadCostRaw != null && Number.isFinite(Number(leadCostRaw)) ? Number(leadCostRaw) : null;
+  const requireOtp =
+    body.requireOtp === true ||
+    body.require_otp === true ||
+    body.requireOtp === 'true' ||
+    body.require_otp === 'true';
+
+  if (action === 'water_filter_service' && !customerName) {
+    return json(400, headers, { error: 'Customer name required for Water Filter Service' });
+  }
 
   const customer = await lookupCustomerFull(db, to);
   if (customer?.id) {
@@ -264,9 +341,19 @@ exports.handler = async (event) => {
   if (!brand) brand = 'hydrogenro';
   if (!customerName) customerName = 'Customer';
 
+  const actionOpts = {
+    customerName,
+    leadSource,
+    serviceSubType,
+    serviceLabel,
+    leadCost,
+    requireOtp,
+    customerId,
+  };
+
   // —— Open 24h window: interactive bot ——
   if (windowOpen) {
-    const started = await startAdminQuickAction(ctx, action);
+    const started = await startAdminQuickAction(ctx, action, actionOpts);
     if (!started?.ok) {
       return json(502, headers, {
         ok: false,
@@ -328,7 +415,19 @@ exports.handler = async (event) => {
   }
 
   // Next customer reply resumes *session* interactive UX (same buttons/steps as 24h).
-  await seedAdminPendingAction(db, to, used.seedPending || action);
+  await seedAdminPendingAction(db, to, used.seedPending || action, {
+    name: customerName,
+    customerName,
+    leadSource,
+    serviceSubType,
+    serviceLabel,
+    leadCost,
+    requireOtp,
+    ...(customerId ? { existingCustomerId: customerId } : {}),
+    waterFilterService: action === 'water_filter_service',
+    locationThenPhoto: action === 'book_location_photo',
+    startedByAdmin: true,
+  });
 
   return json(200, headers, {
     ok: true,

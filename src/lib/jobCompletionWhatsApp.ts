@@ -12,9 +12,12 @@ import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { parseRequirements } from '@/lib/followUpToOngoing';
 import {
   buildJobCompletionColdBodyParams,
+  buildJobCompletionLetterBodyParams,
   buildJobCompletionMessageFromJob,
   JOB_COMPLETION_COLD_FALLBACK,
+  resolveJobCompletionColdTemplateFallbackName,
   resolveJobCompletionColdTemplateName,
+  resolveJobCompletionLetterTemplateName,
 } from '@/lib/job-completion-message';
 import {
   openWhatsAppMeDeepLink,
@@ -36,7 +39,7 @@ export type JobCompletionWhatsAppSendResult = {
   featureDisabled?: boolean;
 };
 
-/** Send completion WhatsApp — full text in 24h window; rich cold v2 or short svc_job_done fallback. */
+/** Send completion WhatsApp — letter freeform in 24h; letter → v3 → v2 → svc_job_done when cold. */
 export async function sendJobCompletionWhatsApp(opts: {
   to: string;
   text: string;
@@ -48,10 +51,19 @@ export async function sendJobCompletionWhatsApp(opts: {
   serviceSubType?: string;
   amountPending?: number;
   pendingDueDate?: string | null;
+  jobRef?: string | null;
   fallbackWaMe?: boolean;
   forceWaMe?: boolean;
 }): Promise<JobCompletionWhatsAppSendResult> {
+  const letterName = resolveJobCompletionLetterTemplateName(opts.documentBrand);
   const richColdName = resolveJobCompletionColdTemplateName(opts.documentBrand);
+  const richColdFallbackName = resolveJobCompletionColdTemplateFallbackName(opts.documentBrand);
+  const letterParams = buildJobCompletionLetterBodyParams({
+    customerName: opts.customerName,
+    amountCollected: opts.amountCollected,
+    jobRef: opts.jobRef,
+    documentBrand: opts.documentBrand,
+  });
   const richColdParams = buildJobCompletionColdBodyParams({
     customerName: opts.customerName,
     serviceType: opts.serviceType,
@@ -91,17 +103,37 @@ export async function sendJobCompletionWhatsApp(opts: {
     return textResult;
   }
 
-  const rich = await sendAdminWhatsAppTemplate({
+  let richError: string | undefined;
+  const letter = await sendAdminWhatsAppTemplate({
     to: opts.to,
-    templateName: richColdName,
+    templateName: letterName,
     languageCode: 'en',
-    bodyParams: richColdParams,
+    bodyParams: letterParams,
     customerId: opts.customerId,
     source: 'job_completion',
   });
+  if (letter.ok) {
+    return { ...letter, usedTemplate: true, usedRichColdTemplate: true };
+  }
+  richError = letter.error;
 
-  if (rich.ok) {
-    return { ...rich, usedTemplate: true, usedRichColdTemplate: true };
+  for (const templateName of [richColdName, richColdFallbackName]) {
+    const rich = await sendAdminWhatsAppTemplate({
+      to: opts.to,
+      templateName,
+      languageCode: 'en',
+      bodyParams: richColdParams,
+      customerId: opts.customerId,
+      source: 'job_completion',
+    });
+    if (rich.ok) {
+      return {
+        ...rich,
+        usedTemplate: true,
+        usedRichColdTemplate: true,
+      };
+    }
+    richError = rich.error;
   }
 
   const legacy = await sendAdminWhatsAppTemplate({
@@ -123,14 +155,14 @@ export async function sendJobCompletionWhatsApp(opts: {
       ok: true,
       via: 'wa_me',
       needsWindowOrTemplate: true,
-      error: legacy.error || rich.error || textResult.error,
+      error: legacy.error || richError || textResult.error,
     };
   }
 
   return {
     ok: false,
     needsWindowOrTemplate: true,
-    error: legacy.error || rich.error || textResult.error || 'Could not send completion template',
+    error: legacy.error || richError || textResult.error || 'Could not send completion template',
   };
 }
 
@@ -275,6 +307,7 @@ export async function maybeAutoSendJobCompletionWhatsApp(opts: {
       serviceSubType: built.serviceSubType,
       amountPending: built.amountPendingValue,
       pendingDueDate: built.pendingDueDate || null,
+      jobRef: built.jobNumber || null,
       fallbackWaMe: false,
     });
 

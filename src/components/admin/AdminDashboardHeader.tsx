@@ -215,6 +215,10 @@ export function AdminDashboardHeader({
                       </span>
                     ) : null}
                   </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onOpenAdminTool('quick-customer')}>
+                    <UserPlus className="w-4 h-4 mr-2" />
+                    Quick customer
+                  </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={() => {
                       hapticTap();
