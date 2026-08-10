@@ -138,6 +138,12 @@ const CORE_TEMPLATES = [
     noButtons: true,
   },
   {
+    name: 'svc_missed_call',
+    body: 'Hi {{1}}, we tried to reach you and could not connect. Please reply on this chat so we can assist with your water purifier service.',
+    examples: ['Rahul'],
+    noButtons: true,
+  },
+  {
     name: 'svc_amc_expiry_notice',
     body: 'Hi {{1}}, your AMC for your water purifier is due to end on {{2}}. Reply on this chat to renew or schedule a visit.',
     examples: ['Rahul', '31 Dec 2026'],

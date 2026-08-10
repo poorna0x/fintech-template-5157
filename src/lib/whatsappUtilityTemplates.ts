@@ -63,6 +63,14 @@ export function resolveColdRescheduleVisit(
   };
 }
 
+export function resolveColdMissedCall(customerName: string): ColdTemplatePayload {
+  return {
+    name: resolveWaTemplateName(WA_COLD.missed_call.name),
+    languageCode: WA_COLD.missed_call.language,
+    bodyParams: WA_COLD.missed_call.bodyParams(customerName),
+  };
+}
+
 export function resolveColdUnregisteredNumber(
   brand: DocumentBrand,
   customerName?: string
@@ -123,6 +131,17 @@ export function resolveColdServiceRequest(customerName: string): ColdTemplatePay
     languageCode: 'en',
     bodyParams: [cleanName(customerName)],
   };
+}
+
+export function buildMissedCallWhatsAppMessage(customerName: string, brand: DocumentBrand): string {
+  const label = getDocumentBrandLabel(brand);
+  return [
+    `Hi ${cleanName(customerName)},`,
+    '',
+    `This is ${label}. We tried to reach you and could not connect.`,
+    '',
+    'Please reply on this chat so we can assist with your water purifier service.',
+  ].join('\n');
 }
 
 export function buildAmcExpiryWhatsAppMessage(

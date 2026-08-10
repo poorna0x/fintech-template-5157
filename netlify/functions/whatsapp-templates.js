@@ -108,8 +108,9 @@ exports.handler = async (event) => {
         { name: 'reschedule_visit_hro_cta', language: 'en', hint: 'Reschedule Hydrogen RO' },
         { name: 'unregistered_number_service_ero_cta', language: 'en', hint: 'Unregistered number Eleven RO' },
         { name: 'unregistered_number_service_hro_cta', language: 'en', hint: 'Unregistered number Hydrogen RO' },
-        { name: 'missed_call_callback_ero_cta', language: 'en', hint: 'Missed call Eleven RO' },
-        { name: 'missed_call_callback_hro_cta', language: 'en', hint: 'Missed call Hydrogen RO' },
+        { name: 'svc_missed_call', language: 'en', hint: 'Missed call callback ({{1}} name) — UTILITY' },
+        { name: 'missed_call_callback_ero_cta', language: 'en', hint: 'Missed call Eleven RO (Call+Book CTA)' },
+        { name: 'missed_call_callback_hro_cta', language: 'en', hint: 'Missed call Hydrogen RO (Call+Book CTA)' },
       ],
     });
   } catch (err) {

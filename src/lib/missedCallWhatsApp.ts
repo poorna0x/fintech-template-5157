@@ -1,14 +1,17 @@
 /**
- * Missed-call → customer WhatsApp callback (Cloud API template).
+ * Missed-call → customer WhatsApp callback (Cloud API UTILITY template).
  * Manual from admin banner / Calling; auto from Netlify tech-call-customer-alert.
  */
 import { toast } from 'sonner';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { resolveCustomerSendBrand } from '@/lib/admin-email-sources';
-import { resolveBookingCta } from '@/lib/whatsappBookingCtaTemplates';
-import { sendAdminWhatsAppTemplate } from '@/lib/sendAdminWhatsAppApi';
-import { fetchWhatsAppCrmSettings } from '@/lib/whatsappCrmSettings';
 import type { DocumentBrand } from '@/lib/service-brands';
+import { fetchWhatsAppCrmSettings } from '@/lib/whatsappCrmSettings';
+import {
+  buildMissedCallWhatsAppMessage,
+  resolveColdMissedCall,
+  sendUtilityWhatsAppWithColdFallback,
+} from '@/lib/whatsappUtilityTemplates';
 
 export async function sendMissedCallCallbackWhatsApp(opts: {
   phone: string;
@@ -49,35 +52,27 @@ export async function sendMissedCallCallbackWhatsApp(opts: {
   }
 
   const name = String(opts.customerName || '').trim() || 'there';
-  const cta = resolveBookingCta('missed_call_book', brand, name);
+  const text = buildMissedCallWhatsAppMessage(name, brand);
+  const cold = resolveColdMissedCall(name);
 
-  const result = await sendAdminWhatsAppTemplate({
+  const result = await sendUtilityWhatsAppWithColdFallback({
     to: phone,
+    text,
     customerId: opts.customerId || undefined,
-    templateName: cta.name,
-    languageCode: cta.language,
-    bodyParams: cta.bodyParams,
     source: 'calling',
+    coldTemplate: cold,
+    fallbackWaMe: true,
   });
 
   if (!result.ok) {
-    // Fallback utility template if CTA not approved yet
-    const fallback = await sendAdminWhatsAppTemplate({
-      to: phone,
-      customerId: opts.customerId || undefined,
-      templateName: 'svc_visit_reminder',
-      languageCode: 'en',
-      bodyParams: [name, 'callback for your missed call'],
-      source: 'calling',
-    });
-    if (!fallback.ok) {
-      if (notify) toast.error(result.error || fallback.error || 'WhatsApp send failed');
-      return { ok: false, error: result.error || fallback.error };
-    }
-    if (notify) toast.success('Missed-call callback sent (reminder template)');
-    return { ok: true };
+    if (notify) toast.error(result.error || 'WhatsApp send failed');
+    return { ok: false, error: result.error };
   }
 
-  if (notify) toast.success('Missed-call callback WhatsApp sent');
+  if (notify) {
+    toast.success(
+      result.usedTemplate ? 'Missed-call callback WhatsApp sent' : 'Missed-call message opened in WhatsApp'
+    );
+  }
   return { ok: true };
 }

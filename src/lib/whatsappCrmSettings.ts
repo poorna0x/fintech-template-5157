@@ -57,7 +57,7 @@ export type WhatsAppCrmSettings = {
   auto_send_job_completion_whatsapp: boolean;
   /**
    * After missed customer call alert (admin/tech APK): auto-send
-   * missed_call_callback_*_cta (requires allow_calling).
+   * svc_missed_call (requires allow_calling).
    */
   auto_send_missed_call_whatsapp: boolean;
   /** Cloud API: online website booking confirmation to customer. */

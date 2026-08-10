@@ -495,6 +495,21 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
       toast.error('Select the sale date.');
       return;
     }
+
+    const billName = customerName.trim();
+    const billPhone = digitsPhone(customerPhone);
+    const hasBillCustomer = Boolean(billName || billPhone);
+    if (hasBillCustomer) {
+      if (!billName) {
+        toast.error('Enter customer name, or leave name and phone empty for walk-in sale.');
+        return;
+      }
+      if (billPhone.length !== 10) {
+        toast.error('Enter a valid 10-digit phone, or leave name and phone empty for walk-in sale.');
+        return;
+      }
+    }
+
     for (const it of selectedItems) {
       if (it.qty < 1) {
         toast.error(`Enter a valid quantity for ${it.billName}.`);
@@ -566,6 +581,8 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
         amount: amountNum,
         item: resolvedItem,
         saleDate: parsedDate,
+        customerName: billName || undefined,
+        customerPhone: billPhone || undefined,
         items: [
           ...selectedItems.map((it) => ({
             inventoryId: it.id,
@@ -591,7 +608,11 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
       if (error || !data) {
         throw new Error(error?.message || 'Failed to record sale');
       }
-      toast.success('Direct sale recorded.');
+      toast.success(
+        billName && billPhone
+          ? 'Direct sale recorded on customer profile.'
+          : 'Walk-in office sale recorded.'
+      );
 
       const lines =
         hasItems
@@ -616,8 +637,8 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
             ];
 
       const draft: PendingBillDraft = {
-        customerName: customerName.trim() || 'Walk-in customer',
-        customerPhone: digitsPhone(customerPhone),
+        customerName: billName || 'Walk-in customer',
+        customerPhone: billPhone,
         billMode,
         amount: amountNum,
         paymentMode,
@@ -668,7 +689,8 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
                 Record Direct Sale
               </DialogTitle>
               <DialogDescription className="text-xs sm:text-sm text-center mt-1">
-                Office/counter sale — optionally send a bill PDF after saving.
+                Office/counter sale. Name + phone creates a real customer; leave both empty for
+                walk-in only.
               </DialogDescription>
             </div>
           </DialogHeader>
@@ -680,7 +702,7 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
                 <Input
                   id="direct-sale-customer-name"
                   type="text"
-                  placeholder="Name for the bill"
+                  placeholder="Optional — for bill / new customer"
                   value={customerName}
                   onChange={(e) => setCustomerName(e.target.value)}
                   autoFocus
@@ -692,12 +714,16 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
                   id="direct-sale-customer-phone"
                   type="tel"
                   inputMode="numeric"
-                  placeholder="10-digit mobile"
+                  placeholder="Optional — 10 digits"
                   value={customerPhone}
                   onChange={(e) => setCustomerPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
                 />
               </div>
             </div>
+            <p className="text-[11px] text-muted-foreground -mt-1">
+              Both name and phone → new or existing customer (C01234…). Neither → walk-in office
+              sale bucket.
+            </p>
 
             <div className="space-y-2">
               <Label className="text-sm font-medium">Bill pricing</Label>

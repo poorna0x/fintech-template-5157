@@ -148,6 +148,7 @@ export function WhatsAppQuickRepliesBar({
     const ok =
       !approvedTemplateNames?.size ||
       approvedTemplateNames.has(payload.templateName) ||
+      approvedTemplateNames.has('svc_missed_call') ||
       approvedTemplateNames.has('missed_call_callback_ero_cta') ||
       approvedTemplateNames.has('missed_call_callback_hro_cta');
     if (!ok) {
@@ -205,6 +206,7 @@ export function WhatsAppQuickRepliesBar({
 
   const showMissedCallTpl =
     !approvedTemplateNames?.size ||
+    approvedTemplateNames.has('svc_missed_call') ||
     approvedTemplateNames.has('missed_call_callback_ero_cta') ||
     approvedTemplateNames.has('missed_call_callback_hro_cta');
 

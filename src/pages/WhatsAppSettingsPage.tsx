@@ -312,7 +312,7 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }
           />
           <ToggleRow
             label="Auto-send missed-call callback"
-            description="When a missed customer call is reported (admin/tech phone), send missed_call_callback (HRO/ERO) via Cloud API. Deduped for 6 hours. Requires Calling ON."
+            description="When a missed customer call is reported (admin/tech phone), send svc_missed_call via Cloud API. Deduped for 6 hours. Requires Calling ON."
             checked={settings.auto_send_missed_call_whatsapp}
             disabled={!settings.enabled || !settings.allow_calling}
             onCheckedChange={(v) => patch('auto_send_missed_call_whatsapp', v)}

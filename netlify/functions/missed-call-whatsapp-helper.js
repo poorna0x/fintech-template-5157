@@ -48,16 +48,27 @@ async function maybeSendMissedCallCallbackWhatsApp(db, opts) {
     }
 
     const sinceIso = new Date(Date.now() - DEDUPE_HOURS * 3600_000).toISOString();
-    const { data: recent } = await db
+    const { data: recentTpl } = await db
       .from('whatsapp_messages')
       .select('id')
       .eq('phone_e164', phone)
       .eq('direction', 'outbound')
-      .ilike('template_name', 'missed_call_callback%')
+      .in('template_name', ['svc_missed_call', 'missed_call_callback_ero_cta', 'missed_call_callback_hro_cta'])
       .gte('created_at', sinceIso)
       .limit(1)
       .maybeSingle();
-    if (recent?.id) return { sent: false, reason: 'deduped' };
+    if (recentTpl?.id) return { sent: false, reason: 'deduped' };
+    // Fallback may land on svc_smoke_update while svc_missed_call is PENDING — still dedupe.
+    const { data: recentBody } = await db
+      .from('whatsapp_messages')
+      .select('id')
+      .eq('phone_e164', phone)
+      .eq('direction', 'outbound')
+      .ilike('body', 'Missed-call callback%')
+      .gte('created_at', sinceIso)
+      .limit(1)
+      .maybeSingle();
+    if (recentBody?.id) return { sent: false, reason: 'deduped' };
 
     let customerId = opts.customerId ? String(opts.customerId) : null;
     let customerName = String(opts.customerName || '').trim();
@@ -90,7 +101,7 @@ async function maybeSendMissedCallCallbackWhatsApp(db, opts) {
     }
 
     const name = customerName || 'there';
-    const templateName = `missed_call_callback_${brandSuffix(brand)}_cta`;
+    const templateName = 'svc_missed_call';
     const primaryParams = [name];
 
     const { accessToken, phoneNumberId } = await getWhatsAppCredentials(db);

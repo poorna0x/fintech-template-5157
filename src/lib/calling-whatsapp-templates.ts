@@ -311,11 +311,10 @@ export function callingColdTemplateFor(
     };
   }
   if (template === 'missed_call') {
-    const missed = resolveBookingCta('missed_call_book', documentBrand, name);
     return {
-      name: missed.name,
-      languageCode: missed.language,
-      bodyParams: missed.bodyParams,
+      name: WA_COLD.missed_call.name,
+      languageCode: WA_COLD.missed_call.language,
+      bodyParams: WA_COLD.missed_call.bodyParams(name),
     };
   }
   if (template === 'contact' || template === 'website') {

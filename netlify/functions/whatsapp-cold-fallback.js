@@ -8,6 +8,7 @@ const SMOKE = 'svc_smoke_update';
 const VISIT = 'svc_visit_reminder';
 const JOB_DONE = 'svc_job_done';
 const VISIT_CONFIRMED = 'svc_visit_confirmed';
+const MISSED_CALL = 'svc_missed_call';
 
 function isTemplateMetaError(result) {
   if (!result || result.ok) return false;
@@ -65,6 +66,11 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader) {
   // DOCUMENT-header cold PDF failed → open with smoke (no attachment)
   if (hasDocHeader) {
     push(SMOKE, [name]);
+  }
+
+  // Missed-call CTA not approved yet → plain UTILITY missed-call body
+  if (/^missed_call_callback_/i.test(primaryName)) {
+    push(MISSED_CALL, [name]);
   }
 
   if (bodyParams.length >= 3) {

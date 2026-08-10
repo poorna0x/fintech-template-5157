@@ -4,6 +4,7 @@ import { resolveBookingCta, bookingCtaBookUrl } from '@/lib/whatsappBookingCtaTe
 import { resolveWaTemplateName } from '@/lib/whatsappTemplateResolve';
 import {
   resolveColdAmcExpiry,
+  resolveColdMissedCall,
   resolveColdPartsReady,
   resolveColdTechDelayed,
 } from '@/lib/whatsappUtilityTemplates';
@@ -315,6 +316,14 @@ export const WHATSAPP_QUICK_TEMPLATE_REPLIES: WhatsAppQuickTemplateReply[] = [
     bodyParams: (ctx) =>
       resolveColdTechDelayed(cleanName(ctx), ctx.whenLabel || 'your scheduled visit').bodyParams,
   },
+  {
+    id: 'tpl_missed_call',
+    label: 'Missed call',
+    group: 'common',
+    templateName: 'svc_missed_call',
+    language: 'en',
+    bodyParams: (ctx) => resolveColdMissedCall(cleanName(ctx)).bodyParams,
+  },
 ];
 
 /** Brand booking CTA — existing customer schedule (UTILITY). */
@@ -330,16 +339,15 @@ export function buildQuickBookVisitTemplate(
   };
 }
 
-/** Missed-call callback CTA (UTILITY). */
+/** Missed-call UTILITY (svc_missed_call). */
 export function buildQuickMissedCallTemplate(
   ctx: WhatsAppQuickReplyContext
 ): WhatsAppQuickTemplateSend {
-  const brand = ctx.brand || 'hydrogenro';
-  const cta = resolveBookingCta('missed_call_book', brand, cleanName(ctx));
+  const cold = resolveColdMissedCall(cleanName(ctx));
   return {
-    templateName: resolveWaTemplateName(cta.name),
-    language: cta.language,
-    bodyParams: cta.bodyParams,
+    templateName: cold.name,
+    language: cold.languageCode,
+    bodyParams: cold.bodyParams,
   };
 }
 

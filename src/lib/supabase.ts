@@ -1229,6 +1229,67 @@ export const db = {
 
       return db.customers.create(walkInPayload);
     },
+
+    /**
+     * Direct office sale: real customer when name + 10-digit phone are given;
+     * shared walk-in placeholder only when both are omitted.
+     */
+    async resolveForDirectSale(opts?: { name?: string; phone?: string }) {
+      const name = String(opts?.name || '').trim();
+      const phone = String(opts?.phone || '').replace(/\D/g, '').slice(-10);
+
+      if (!name && !phone) {
+        const walkIn = await db.customers.getOrCreateWalkIn();
+        return { ...walkIn, isWalkIn: true as const };
+      }
+
+      if (!name || phone.length !== 10) {
+        return {
+          data: null,
+          error: {
+            message:
+              'Enter both customer name and a valid 10-digit phone, or leave both empty for walk-in sale.',
+          } as any,
+          isWalkIn: false as const,
+        };
+      }
+
+      const { data: existing, error: findError } = await db.customers.getByPhone(phone);
+      if (findError) return { data: null, error: findError, isWalkIn: false as const };
+      if (existing) return { data: existing, error: null, isWalkIn: false as const };
+
+      const payload = {
+        full_name: name,
+        phone,
+        alternate_phone: '',
+        email: '',
+        address: {
+          street: '',
+          area: 'Office',
+          city: 'Bangalore',
+          state: 'Karnataka',
+          pincode: '',
+        },
+        location: {
+          latitude: 0,
+          longitude: 0,
+          formattedAddress: 'Office',
+          googleLocation: '',
+        },
+        visible_address: 'Office',
+        service_type: 'RO',
+        brand: '',
+        model: '',
+        status: 'ACTIVE',
+        notes: 'Created from direct office sale.',
+        customer_since: new Date().toISOString(),
+        preferred_time_slot: 'MORNING',
+        preferred_language: 'ENGLISH',
+      } as unknown as Database['public']['Tables']['customers']['Insert'];
+
+      const created = await db.customers.create(payload);
+      return { ...created, isWalkIn: false as const };
+    },
     
     async getById(id: string) {
       let { data, error } = await supabase
@@ -2235,17 +2296,21 @@ export const db = {
     },
 
     /**
-     * Record a direct/office sale that has no real customer and no technician.
-     * Stored as a COMPLETED, fully-paid job against the shared walk-in customer so it
-     * flows into revenue, service-type and payment-method analytics for the sale date.
+     * Record a direct/office counter sale (no technician).
+     * When `customerName` + `customerPhone` (10 digits) are provided, finds or creates a
+     * real customer and attaches the job to them. When both are omitted, uses the shared
+     * walk-in placeholder customer.
      *
-     * When an inventory item is provided, the part cost (item price × qty) is stored in
-     * `parts_cost_total` so profit = sale amount − cost, and main stock is decremented.
+     * Stored as a COMPLETED, fully-paid job so it flows into revenue analytics for the sale date.
+     * When inventory items are provided, cost is stored in `parts_cost_total` and stock is decremented.
      */
     async createDirectSale(params: {
       amount: number;
       item?: string;
       saleDate: Date;
+      /** Real customer — both required together; omit both for walk-in sale. */
+      customerName?: string;
+      customerPhone?: string;
       /** @deprecated single-item fields kept for backward compatibility; prefer `items`. */
       inventoryId?: string | null;
       quantity?: number;
@@ -2275,6 +2340,8 @@ export const db = {
         amount,
         item,
         saleDate,
+        customerName,
+        customerPhone,
         inventoryId,
         quantity,
         partsCost,
@@ -2319,9 +2386,19 @@ export const db = {
       const useInventory = cleanItems.length > 0;
       const totalPartsCost = cleanItems.reduce((s, it) => s + it.quantity * it.unitPrice, 0);
 
-      const { data: walkIn, error: customerError } = await db.customers.getOrCreateWalkIn();
-      if (customerError || !walkIn) {
-        return { data: null, error: customerError || { message: 'Could not resolve walk-in customer' } as any };
+      const {
+        data: saleCustomer,
+        error: customerError,
+        isWalkIn,
+      } = await db.customers.resolveForDirectSale({
+        name: customerName,
+        phone: customerPhone,
+      });
+      if (customerError || !saleCustomer) {
+        return {
+          data: null,
+          error: customerError || ({ message: 'Could not resolve customer for sale' } as any),
+        };
       }
 
       // Reserve stock first so an out-of-stock sale fails before any job row is created.
@@ -2361,6 +2438,9 @@ export const db = {
       const description = useInventory && itemsLabel ? itemsLabel : baseItem;
 
       const requirements: any[] = [{ lead_source: 'Office Sale' }];
+      if (isWalkIn) {
+        requirements.push({ completed_by_office: true });
+      }
       if (useInventory) {
         requirements.push({
           office_parts: cleanItems.map((it) => ({
@@ -2385,15 +2465,15 @@ export const db = {
 
       const jobData = {
         job_number: jobNumber,
-        customer_id: (walkIn as any).id,
+        customer_id: (saleCustomer as any).id,
         service_type: 'RO',
         service_sub_type: 'Direct Sale',
         brand: '',
         model: '',
         scheduled_date: completionISO,
         scheduled_time_slot: 'MORNING',
-        service_address: (walkIn as any).address ?? {},
-        service_location: (walkIn as any).location ?? {},
+        service_address: (saleCustomer as any).address ?? {},
+        service_location: (saleCustomer as any).location ?? {},
         status: 'COMPLETED',
         priority: 'LOW',
         description,
