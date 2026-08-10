@@ -280,21 +280,25 @@ export function callingColdTemplateFor(
   template: CallingWhatsAppTemplate,
   customerName: string,
   freeformMessage: string,
-  documentBrand: DocumentBrand = 'elevenro'
+  documentBrand: DocumentBrand = 'elevenro',
+  whenLabel?: string
 ): { name: string; languageCode: string; bodyParams: string[] } {
   const name = String(customerName || 'Customer').trim() || 'Customer';
+  const when =
+    String(whenLabel || '').trim() ||
+    'your upcoming visit';
   if (template === 'service_due') {
     return {
       name: WA_COLD.service_reminder.name,
       languageCode: WA_COLD.service_reminder.language,
-      bodyParams: WA_COLD.service_reminder.bodyParams(name),
+      bodyParams: WA_COLD.service_reminder.bodyParams(name, when),
     };
   }
   if (template === 'follow_up') {
     return {
-      name: WA_COLD.customer_followup.name,
-      languageCode: WA_COLD.customer_followup.language,
-      bodyParams: WA_COLD.customer_followup.bodyParams(name, 'your recent service'),
+      name: WA_COLD.service_reminder.name,
+      languageCode: WA_COLD.service_reminder.language,
+      bodyParams: WA_COLD.service_reminder.bodyParams(name, 'after your recent service'),
     };
   }
   if (template === 'easy_booking') {
@@ -312,6 +316,13 @@ export function callingColdTemplateFor(
       name: missed.name,
       languageCode: missed.language,
       bodyParams: missed.bodyParams,
+    };
+  }
+  if (template === 'contact' || template === 'website') {
+    return {
+      name: WA_COLD.general_notice.name,
+      languageCode: WA_COLD.general_notice.language,
+      bodyParams: WA_COLD.general_notice.bodyParams(name),
     };
   }
   const notice =

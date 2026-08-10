@@ -37,10 +37,11 @@ function buildUnsolicitedMediaReply() {
   return [
     'Thanks for sharing this.',
     '',
-    'This WhatsApp number is for booking and service updates only.',
-    `Message our team on Eleven RO WhatsApp (*${ELEVEN_SUPPORT_DISPLAY}*).`,
+    'This number is for booking and service updates only — not for sending photos or files.',
     '',
-    'Tap *Call 3311* to open the dialer, or *WhatsApp team* to chat.',
+    'Please message our Eleven RO team on WhatsApp at *+91 98806 93311* for photos, bills, or support.',
+    '',
+    'Tap *Call 3311* to call, or *WhatsApp team* to open chat with +91 98806 93311.',
   ].join('\n');
 }
 

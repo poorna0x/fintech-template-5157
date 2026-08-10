@@ -14,6 +14,8 @@ interface ImportMetaEnv {
   // Never declare them as VITE_* — Vite would inline them into the public bundle.
   /** Public booking intent: 'hydrogenro' | 'elevenro' — defaults per app if unset */
   readonly VITE_WEBSITE_BOOKING_SITE_KEY?: 'hydrogenro' | 'elevenro'
+  /** Dev-only: Vite origin for PDF logo/seal assets (default http://127.0.0.1:8080) */
+  readonly VITE_PDF_ASSET_ORIGIN?: string
 }
 
 interface ImportMeta {

@@ -12,22 +12,15 @@
  *   node scripts/submit-whatsapp-booking-cta-templates.mjs --submit --only-missed-call
  *   node scripts/submit-whatsapp-booking-cta-templates.mjs --submit --only-new-customer
  */
-import { readFileSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import {
+  loadEnvLocal,
+  resolveWhatsAppCallPhones,
+  callPhoneForTemplate,
+} from './whatsapp-call-phone-env.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const root = resolve(__dirname, '..');
-
-function loadEnvLocal() {
-  const p = resolve(root, '.env.local');
-  if (!existsSync(p)) return;
-  for (const line of readFileSync(p, 'utf8').split('\n')) {
-    const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-    if (!m) continue;
-    if (!process.env[m[1]]) process.env[m[1]] = m[2].trim().replace(/^["']|["']$/g, '');
-  }
-}
 
 loadEnvLocal();
 
@@ -38,7 +31,7 @@ const doSubmit = process.argv.includes('--submit');
 const onlyExisting = process.argv.includes('--only-existing');
 const onlyMissedCall = process.argv.includes('--only-missed-call');
 const onlyNewCustomer = process.argv.includes('--only-new-customer');
-const CALL_PHONE = '+918884944288';
+const { eleven: CALL_PHONE_ELEVEN, hydrogen: CALL_PHONE_HYDROGEN } = resolveWhatsAppCallPhones();
 
 const DELETE_BY_FLAG = {
   existing: [
@@ -100,14 +93,6 @@ const ALL_TEMPLATES = [
     examples: ['Rahul', 'Mon 12 Aug, 10:00 AM'],
   },
   {
-    name: 'booking_confirmed_ero_cta',
-    kind: 'other',
-    brand: 'Eleven RO',
-    bookUrl: 'https://elevenro.com/book',
-    body: 'Hi {{1}}, your Eleven RO service booking {{2}} is confirmed for {{3}}. Reply on this chat for changes, or use Call / Book online.',
-    examples: ['Rahul', 'RO-2026-123456', 'Tue 13 Aug, 2:00 PM'],
-  },
-  {
     name: 'existing_service_schedule_hro_cta',
     kind: 'existing',
     brand: 'Hydrogen RO',
@@ -139,14 +124,6 @@ const ALL_TEMPLATES = [
     body: 'Hi {{1}}, your Hydrogen RO visit is set for {{2}}. To reschedule, reply on this chat or use Call / Book online below.',
     examples: ['Rahul', 'Mon 12 Aug, 10:00 AM'],
   },
-  {
-    name: 'booking_confirmed_hro_cta',
-    kind: 'other',
-    brand: 'Hydrogen RO',
-    bookUrl: 'https://hydrogenro.com/book',
-    body: 'Hi {{1}}, your Hydrogen RO service booking {{2}} is confirmed for {{3}}. Reply on this chat for changes, or use Call / Book online.',
-    examples: ['Rahul', 'RO-2026-123456', 'Tue 13 Aug, 2:00 PM'],
-  },
 ];
 
 let TEMPLATES = ALL_TEMPLATES;
@@ -154,6 +131,15 @@ let DELETE_NAMES = [
   ...DELETE_BY_FLAG.existing,
   ...DELETE_BY_FLAG.missed,
   ...DELETE_BY_FLAG.newCustomer,
+  'booking_confirmed_ero_cta',
+  'booking_confirmed_hro_cta',
+  'svc_booking_menu',
+  'booking_menu',
+  'service_reminder_cta',
+  'service_due_notice_cta',
+  'customer_followup_cta',
+  'customer_update_notice_cta',
+  'amc_renewal',
 ];
 if (onlyExisting) {
   TEMPLATES = ALL_TEMPLATES.filter((t) => t.kind === 'existing');
@@ -167,6 +153,7 @@ if (onlyExisting) {
 }
 
 function payloadFor(t) {
+  const callPhone = callPhoneForTemplate(t.name, t.brand);
   return {
     name: t.name,
     language: 'en',
@@ -180,7 +167,7 @@ function payloadFor(t) {
       {
         type: 'BUTTONS',
         buttons: [
-          { type: 'PHONE_NUMBER', text: 'Call us', phone_number: CALL_PHONE },
+          { type: 'PHONE_NUMBER', text: 'Call us', phone_number: callPhone },
           { type: 'URL', text: 'Book online', url: t.bookUrl },
         ],
       },

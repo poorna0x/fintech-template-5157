@@ -102,36 +102,44 @@ async function sendTemplateMessage({
   return { ok: Boolean(result.ok), error: errMsg, waId };
 }
 
-function coldTemplateForAction(action, brand, customerName) {
+function coldTemplateForAction(action, brand, customerName, hasCustomer) {
   const name = String(customerName || 'Customer').trim() || 'Customer';
   const suffix = brandSuffix(brand);
 
-  // Prefer svc_booking_menu (same 3 options as 24h greeting). Fallback: visit reminder + reply opens interactive menu.
+  // svc_booking_menu → MARKETING on Meta. Use UTILITY schedule CTAs + visit reminder fallbacks.
   if (action === 'book_service' || action === 'book_reinstall') {
     const want =
       action === 'book_reinstall'
         ? 'Reinstallation'
         : 'Service/Repair';
+    const schedulePrimary = hasCustomer
+      ? {
+          name: `existing_service_schedule_${suffix}_cta`,
+          languageCode: 'en',
+          bodyParams: [name],
+          seedPending: action === 'book_reinstall' ? 'book_reinstall' : 'book_service',
+        }
+      : {
+          name: `unregistered_number_service_${suffix}_cta`,
+          languageCode: 'en',
+          bodyParams: [name === 'Customer' ? 'there' : name],
+          seedPending: action === 'book_reinstall' ? 'book_reinstall' : 'book_service',
+        };
     return {
-      primary: {
-        name: 'svc_booking_menu',
-        languageCode: 'en',
-        bodyParams: [name],
-        seedPending: action === 'book_reinstall' ? 'book_reinstall' : 'book_service',
-      },
+      primary: schedulePrimary,
       fallback: {
-        name: `existing_service_schedule_${suffix}_cta`,
-        languageCode: 'en',
-        bodyParams: [name],
-        seedPending: action === 'book_reinstall' ? 'book_reinstall' : 'book_service',
-      },
-      fallback2: {
         name: 'svc_visit_reminder',
         languageCode: 'en',
         bodyParams: [
           name,
-          `reply here for ${want} — we will send the same Service/Repair · Reinstallation · Chat with us options`,
+          `reply here for ${want} — we will send Service/Repair · Reinstallation · Chat options`,
         ],
+        seedPending: 'show_menu',
+      },
+      fallback2: {
+        name: 'svc_smoke_update',
+        languageCode: 'en',
+        bodyParams: [name],
         seedPending: 'show_menu',
       },
     };
@@ -140,13 +148,19 @@ function coldTemplateForAction(action, brand, customerName) {
   if (action === 'request_location') {
     return {
       primary: {
+        name: 'svc_service_request',
+        languageCode: 'en',
+        bodyParams: [name],
+        seedPending: 'request_location',
+      },
+      fallback: {
         name: 'svc_visit_reminder',
         languageCode: 'en',
         bodyParams: [name, 'please reply and share your service location pin'],
         seedPending: 'request_location',
       },
-      fallback: {
-        name: 'svc_booking_menu',
+      fallback2: {
+        name: 'svc_smoke_update',
         languageCode: 'en',
         bodyParams: [name],
         seedPending: 'request_location',
@@ -157,15 +171,15 @@ function coldTemplateForAction(action, brand, customerName) {
   // request_photo
   return {
     primary: {
-      name: 'svc_visit_reminder',
+      name: 'svc_service_request',
       languageCode: 'en',
-      bodyParams: [name, 'please reply with a photo of your water purifier'],
+      bodyParams: [name],
       seedPending: 'request_photo',
     },
     fallback: {
-      name: 'svc_booking_menu',
+      name: 'svc_visit_reminder',
       languageCode: 'en',
-      bodyParams: [name],
+      bodyParams: [name, 'please reply with a photo of your water purifier'],
       seedPending: 'request_photo',
     },
   };
@@ -280,7 +294,7 @@ exports.handler = async (event) => {
     });
   }
 
-  const tplPlan = coldTemplateForAction(action, brand, customerName);
+  const tplPlan = coldTemplateForAction(action, brand, customerName, Boolean(customerId));
   const attempts = [tplPlan.primary, tplPlan.fallback, tplPlan.fallback2].filter(
     (t) => t && t.name
   );

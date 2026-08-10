@@ -11,6 +11,7 @@ const {
   getClientIdentifier,
 } = require('./booking-guard');
 const { sendBookingAdminNotification } = require('./booking-notify');
+const { maybeSendOnlineBookingConfirmationWhatsApp } = require('./booking-confirmation-whatsapp-helper');
 const { isOtpEnforced, verifyFirebasePhoneToken, warmFirebaseAdmin } = require('./otp-guard');
 
 // Trigger the owner notification as a Netlify background function so the booking
@@ -110,6 +111,18 @@ async function notifyOwnerOfBooking(client, row, phoneNorm, job) {
       scheduledTimeSlot: row.scheduled_time_slot,
       customTime: requirements ? requirements.custom_time : null,
       jobNumber: (job && (job.job_number || job.jobNumber)) || row.job_number,
+    });
+
+    await maybeSendOnlineBookingConfirmationWhatsApp(client.admin, {
+      phone: phoneNorm,
+      customerName,
+      customerId,
+      jobNumber: (job && (job.job_number || job.jobNumber)) || row.job_number,
+      scheduledDate: row.scheduled_date,
+      scheduledTimeSlot: row.scheduled_time_slot,
+      customTime: requirements ? requirements.custom_time : null,
+      bookingSource: row.booking_source,
+      bookingDomain: row.booking_domain,
     });
   } catch (err) {
     console.error('[booking-job-create] owner notification failed:', err && err.message);

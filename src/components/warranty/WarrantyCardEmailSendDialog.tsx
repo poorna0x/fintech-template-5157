@@ -33,9 +33,10 @@ import type { WarrantyCardPDFData } from '@/lib/warranty-card-pdf-generator';
 import { forceLightThemeClass } from '@/lib/force-light-theme';
 import {
   openWhatsAppMeDeepLink,
-  sendAdminWhatsAppDocument,
-  sendColdDocumentInvite,
+  resolveBillCustomerDisplayName,
+  sendAdminWhatsAppDocumentWithColdFallback,
 } from '@/lib/sendAdminWhatsAppApi';
+import { formatColdDocTemplatePreview } from '@/lib/whatsappColdTemplates';
 import { formatPhoneForWhatsApp, cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabaseClient';
 import {
@@ -93,6 +94,13 @@ export default function WarrantyCardEmailSendDialog({
   const [windowChecking, setWindowChecking] = useState(false);
   const [windowOpen, setWindowOpen] = useState<boolean | null>(null);
   const [windowHoursLeft, setWindowHoursLeft] = useState<number | null>(null);
+
+  const coldTemplatePreview = useMemo(() => {
+    if (!pdfData?.customer) return '';
+    return formatColdDocTemplatePreview('warranty', {
+      customerName: resolveBillCustomerDisplayName(pdfData.customer),
+    });
+  }, [pdfData?.customer]);
 
   useEffect(() => {
     if (!open) {
@@ -252,59 +260,46 @@ export default function WarrantyCardEmailSendDialog({
 
       toast.loading('Generating PDF…', { id: toastId });
       const pdf = await generateWarrantyCardPdfBase64(pdfData);
-      toast.loading('Sending on WhatsApp…', { id: toastId });
+      toast.loading(
+        windowOpen === false ? '24h window closed — sending PDF via template…' : 'Sending on WhatsApp…',
+        { id: toastId }
+      );
       const caption = (
         message.trim() || getDefaultDocumentMessage('warranty_document')
       ).slice(0, 1024);
 
-      const result = await sendAdminWhatsAppDocument({
+      const result = await sendAdminWhatsAppDocumentWithColdFallback({
         to: phone,
         pdfBase64: pdf.pdfBase64,
         filename: pdf.filename,
         caption,
         customerId,
         source: 'documents',
+        preferColdTemplate: windowOpen === false,
+        cold: {
+          kind: 'warranty',
+          customerName: resolveBillCustomerDisplayName(pdfData.customer),
+          documentLabel: 'warranty card',
+        },
       });
 
       if (!result.ok) {
-        if (result.needsWindowOrTemplate) {
-          toast.loading('24h window closed — sending PDF via template…', { id: toastId });
-          const invite = await sendColdDocumentInvite({
-            to: phone,
-            kind: 'warranty',
-            customerName: pdfData.customer?.name || 'Customer',
-            customerId,
-            documentLabel: 'warranty card',
-            source: 'documents',
-            pdfBase64: pdf.pdfBase64,
-            filename: pdf.filename,
-          });
-          if (invite.ok) {
-            toast.success('Warranty PDF sent via WhatsApp template', { id: toastId });
-            onSent?.();
-            onOpenChange(false);
-            return;
-          }
-          openWhatsAppMeDeepLink(phone, caption);
-          toast.success(
-            'Opened phone WhatsApp (invite failed) — attach the PDF manually if needed',
-            { id: toastId }
-          );
-          onSent?.();
-          onOpenChange(false);
-          return;
-        }
         openWhatsAppMeDeepLink(phone, caption);
-        toast.success('Opened phone WhatsApp as backup', {
-          id: toastId,
-          description: result.error,
-        });
+        toast.success(
+          result.needsWindowOrTemplate || windowOpen === false
+            ? 'Opened phone WhatsApp (template PDF failed) — attach the PDF manually if needed'
+            : 'Opened phone WhatsApp as backup',
+          { id: toastId, description: result.error }
+        );
         onSent?.();
         onOpenChange(false);
         return;
       }
 
-      toast.success('PDF sent on WhatsApp', { id: toastId });
+      toast.success(
+        result.viaColdTemplate ? 'Warranty PDF sent via WhatsApp template' : 'PDF sent on WhatsApp',
+        { id: toastId }
+      );
       invalidateInboundWindowCache(phone);
       onSent?.();
       onOpenChange(false);
@@ -370,38 +365,30 @@ export default function WarrantyCardEmailSendDialog({
       const caption = (
         message.trim() || getDefaultDocumentMessage('warranty_document')
       ).slice(0, 1024);
-      const waResult = await sendAdminWhatsAppDocument({
+      const waResult = await sendAdminWhatsAppDocumentWithColdFallback({
         to: phone,
         pdfBase64: pdf.pdfBase64,
         filename: pdf.filename,
         caption,
         customerId,
         source: 'documents',
+        preferColdTemplate: windowOpen === false,
+        cold: {
+          kind: 'warranty',
+          customerName: resolveBillCustomerDisplayName(pdfData.customer),
+          documentLabel: 'warranty card',
+        },
       });
 
-      let waNote = 'WhatsApp PDF sent';
+      let waNote = waResult.viaColdTemplate
+        ? 'WhatsApp PDF sent via template'
+        : 'WhatsApp PDF sent';
       if (!waResult.ok) {
-        if (waResult.needsWindowOrTemplate) {
-          const invite = await sendColdDocumentInvite({
-            to: phone,
-            kind: 'warranty',
-            customerName: pdfData.customer?.name || 'Customer',
-            customerId,
-            documentLabel: 'warranty card',
-            source: 'documents',
-            pdfBase64: pdf.pdfBase64,
-            filename: pdf.filename,
-          });
-          if (invite.ok) {
-            waNote = 'WhatsApp PDF sent via template';
-          } else {
-            openWhatsAppMeDeepLink(phone, caption);
-            waNote = 'WhatsApp opened on phone as backup';
-          }
-        } else {
-          openWhatsAppMeDeepLink(phone, caption);
-          waNote = 'WhatsApp opened on phone as backup';
-        }
+        openWhatsAppMeDeepLink(phone, caption);
+        waNote =
+          waResult.needsWindowOrTemplate || windowOpen === false
+            ? 'WhatsApp opened on phone (template failed)'
+            : 'WhatsApp opened on phone as backup';
       } else {
         invalidateInboundWindowCache(phone);
       }
@@ -516,10 +503,18 @@ export default function WarrantyCardEmailSendDialog({
                   {windowHoursLeft != null ? ` · ~${windowHoursLeft}h left to send PDF` : ''}
                 </p>
               ) : windowOpen === false ? (
-                <p className="text-xs text-amber-800">
-                  Window closed — we&apos;ll send the PDF via cold template if Meta blocks it,
-                  then wa.me as backup.
-                </p>
+                <div className="space-y-1.5">
+                  <p className="text-xs text-amber-800">
+                    Window closed — sends Meta template{' '}
+                    <span className="font-medium">svc_doc_pdf_v2</span> with the warranty PDF
+                    attached.
+                  </p>
+                  {coldTemplatePreview ? (
+                    <p className="rounded-md border border-amber-200/80 bg-amber-50/60 px-2.5 py-2 text-xs text-amber-950">
+                      Customer will see: &ldquo;{coldTemplatePreview}&rdquo; (+ PDF + Call us)
+                    </p>
+                  ) : null}
+                </div>
               ) : (
                 <p className="text-xs text-muted-foreground">
                   PDF sends when the customer has messaged this business number in the last 24h.

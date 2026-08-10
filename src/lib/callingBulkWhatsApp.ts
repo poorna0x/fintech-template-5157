@@ -10,8 +10,8 @@ import {
   sendAdminWhatsAppText,
   sendAdminWhatsAppTextWithOptionalTemplate,
 } from '@/lib/sendAdminWhatsAppApi';
+import type { WhatsAppSendSource } from '@/lib/whatsappCrmSettings';
 import type { DocumentBrand } from '@/lib/service-brands';
-import { formatPhoneForWhatsApp } from '@/lib/utils';
 
 export type CallingDeliveryMode = 'api' | 'wa_me';
 export type CallingBulkBrandMode = 'auto' | DocumentBrand;
@@ -96,17 +96,22 @@ export async function loadApprovedWhatsAppTemplateNameSet(): Promise<Set<string>
   }
 }
 
-/** Send one Calling WhatsApp (API or wa.me). Does not record call history. */
+/** Send one customizable WhatsApp (API or wa.me). Does not record call history. */
 export async function sendCallingWhatsAppOne(opts: {
   customer: CallingBulkCustomer;
   message: string;
   template: CallingWhatsAppTemplate;
   brand: DocumentBrand;
   deliveryMode: CallingDeliveryMode;
-  /** When set (even empty), only attempt cold template if name is in the APPROVED set. */
+  /** Override phone (digits). Defaults to customer.phone */
+  toPhone?: string;
+  source?: WhatsAppSendSource;
+  /** Cold template {{2}} for service_due / visit reminder */
+  serviceWhenLabel?: string;
+  /** When set (even empty), only attempt cold template if name is in the APPROVED set. Omit to always try cold + server fallback. */
   approvedTemplateNames?: Set<string>;
 }): Promise<CallingSendOneResult> {
-  const phone = String(opts.customer.phone || '').trim();
+  const phone = String(opts.toPhone || opts.customer.phone || '').trim();
   const to = formatPhoneForWhatsApp(phone);
   if (!to || to.length < 10) {
     return { ok: false, error: 'No phone', skipped: true };
@@ -119,12 +124,14 @@ export async function sendCallingWhatsAppOne(opts: {
   const customerName =
     String(opts.customer.fullName || opts.customer.name || 'Customer').trim() || 'Customer';
 
+  const source = opts.source || 'calling';
+
   if (opts.deliveryMode === 'wa_me') {
     const result = await sendAdminWhatsAppText({
       to,
       text: message,
       customerId: opts.customer.id,
-      source: 'calling',
+      source,
       forceWaMe: true,
       fallbackWaMe: false,
     });
@@ -132,19 +139,24 @@ export async function sendCallingWhatsAppOne(opts: {
     return { ok: true, via: 'wa_me' };
   }
 
-  const cold = callingColdTemplateFor(opts.template, customerName, message, opts.brand);
+  const cold = callingColdTemplateFor(
+    opts.template,
+    customerName,
+    message,
+    opts.brand,
+    opts.serviceWhenLabel
+  );
   const coldName = String(cold?.name || '').trim();
   const approved = opts.approvedTemplateNames;
-  // If caller passed a set, only use cold template when Meta lists it as APPROVED.
   const coldApproved =
     Boolean(coldName) &&
-    (approved == null || approved.has(coldName.toLowerCase()));
+    (approved == null || approved.size === 0 || approved.has(coldName.toLowerCase()));
 
   const result = await sendAdminWhatsAppTextWithOptionalTemplate({
     to,
     text: message,
     customerId: opts.customer.id,
-    source: 'calling',
+    source,
     fallbackWaMe: false,
     coldTemplate: coldApproved
       ? {

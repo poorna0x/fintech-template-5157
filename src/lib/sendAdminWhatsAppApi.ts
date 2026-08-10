@@ -5,6 +5,7 @@
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { coldDocBodyParams, coldDocTemplateForKind } from '@/lib/whatsappColdTemplates';
+import { resolveWaTemplateName } from '@/lib/whatsappTemplateResolve';
 import type { WhatsAppSendSource } from '@/lib/whatsappCrmSettings';
 
 export type AdminWhatsAppSendVia = 'api' | 'wa_me';
@@ -24,10 +25,19 @@ function isFeatureDisabledResponse(data: { code?: string } | null | undefined): 
 }
 
 const WINDOW_ERROR_RE =
-  /24\s*hour|customer care window|session|re-?engage|template|131047|131026|outside/i;
+  /24\s*hour|customer care window|session|re-?engage|template|131047|131026|131051|132018|outside|expired|business.?initiated|not.?allowed.*session/i;
 
 function isWindowOrTemplateError(message: string): boolean {
   return WINDOW_ERROR_RE.test(message);
+}
+
+export function resolveBillCustomerDisplayName(
+  customer: { name?: string; fullName?: string; full_name?: string } | null | undefined
+): string {
+  if (!customer) return 'Customer';
+  return (
+    String(customer.fullName || customer.full_name || customer.name || '').trim() || 'Customer'
+  );
 }
 
 export function openWhatsAppMeDeepLink(phone: string, message: string): void {
@@ -314,7 +324,7 @@ export async function sendAdminWhatsAppTemplate(
   options: SendAdminWhatsAppTemplateOptions
 ): Promise<AdminWhatsAppSendResult> {
   const to = String(options.to || '').trim();
-  const templateName = String(options.templateName || '').trim();
+  const templateName = resolveWaTemplateName(String(options.templateName || '').trim());
   if (!to) return { ok: false, error: 'Phone required' };
   if (!templateName) return { ok: false, error: 'Template required' };
 
@@ -405,6 +415,27 @@ export async function sendAdminWhatsAppTextWithOptionalTemplate(
     }
     if (tpl.featureDisabled) {
       return tpl;
+    }
+
+    // Last resort: approved svc_smoke_update (1 param) so staff aren't blocked while Meta reviews specific templates.
+    const smokeName = resolveWaTemplateName('svc_smoke_update');
+    if (coldName !== smokeName) {
+      const customerLabel =
+        String(options.coldTemplate?.bodyParams?.[0] || '').trim() || 'there';
+      const smoke = await sendAdminWhatsAppTemplate({
+        to: options.to,
+        templateName: smokeName,
+        languageCode: 'en',
+        bodyParams: [customerLabel],
+        customerId: options.customerId,
+        source: options.source,
+      });
+      if (smoke.ok) {
+        return { ...smoke, usedTemplate: true };
+      }
+      if (smoke.featureDisabled) {
+        return smoke;
+      }
     }
 
     const templateFailError =
@@ -522,7 +553,7 @@ export type SendColdDocumentInviteOptions = {
 
 /**
  * Cold PDF outside 24h: send DOCUMENT-header Utility template with the PDF attached
- * (no "reply YES" invite). Requires `svc_document_pdf` APPROVED in Meta.
+ * (no "reply YES" invite). Requires `svc_doc_pdf_v2` APPROVED in Meta.
  */
 export async function sendColdDocumentInvite(
   options: SendColdDocumentInviteOptions
@@ -549,6 +580,57 @@ export async function sendColdDocumentInvite(
     customerId: options.customerId,
     source: options.source || 'documents',
   });
+}
+
+export type SendAdminWhatsAppDocumentWithColdFallbackOptions = SendAdminWhatsAppDocumentOptions & {
+  cold: {
+    kind: string;
+    customerName: string;
+    amount?: number | string;
+    ref?: string;
+    documentLabel?: string;
+  };
+  /** When the CRM already knows the 24h window is closed — skip free-form document send. */
+  preferColdTemplate?: boolean;
+};
+
+/**
+ * Send PDF in-session when the 24h window is open; otherwise use DOCUMENT-header cold template.
+ */
+export async function sendAdminWhatsAppDocumentWithColdFallback(
+  options: SendAdminWhatsAppDocumentWithColdFallbackOptions
+): Promise<AdminWhatsAppSendResult & { viaColdTemplate?: boolean }> {
+  const { cold, preferColdTemplate, ...docOpts } = options;
+
+  const tryCold = async (): Promise<AdminWhatsAppSendResult & { viaColdTemplate?: boolean }> => {
+    const invite = await sendColdDocumentInvite({
+      to: docOpts.to,
+      pdfBase64: docOpts.pdfBase64,
+      filename: docOpts.filename,
+      customerId: docOpts.customerId,
+      source: docOpts.source || 'documents',
+      kind: cold.kind,
+      customerName: cold.customerName,
+      amount: cold.amount,
+      ref: cold.ref,
+      documentLabel: cold.documentLabel,
+    });
+    return invite.ok ? { ...invite, viaColdTemplate: true } : invite;
+  };
+
+  if (preferColdTemplate) {
+    return tryCold();
+  }
+
+  const result = await sendAdminWhatsAppDocument(docOpts);
+  if (result.ok) return result;
+  if (result.featureDisabled) return result;
+
+  if (result.needsWindowOrTemplate) {
+    return tryCold();
+  }
+
+  return result;
 }
 
 export async function fetchWhatsAppR2SignedUrl(opts: {

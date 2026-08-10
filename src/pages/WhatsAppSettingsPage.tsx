@@ -290,6 +290,24 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }
             onCheckedChange={(v) => patch('allow_composer', v)}
           />
           <ToggleRow
+            label="Online booking confirmation"
+            description="WhatsApp confirmation after customer books on elevenro.com/book or hydrogenro.com/book (UTILITY template, cold send)."
+            checked={settings.allow_online_booking_whatsapp}
+            disabled={!settings.enabled}
+            onCheckedChange={(v) => patch('allow_online_booking_whatsapp', v)}
+          />
+          <ToggleRow
+            label="Auto-send booking confirmation"
+            description="Send booking confirmation WhatsApp automatically when a public online booking is created (same time as confirmation email). Deduped 30 min per phone."
+            checked={settings.auto_send_online_booking_whatsapp}
+            disabled={
+              !settings.enabled ||
+              !settings.allow_online_booking_whatsapp ||
+              !settings.allow_cold_templates
+            }
+            onCheckedChange={(v) => patch('auto_send_online_booking_whatsapp', v)}
+          />
+          <ToggleRow
             label="Job completion → customer"
             description="Allow completion confirmation WhatsApp (manual Send Message + auto-send). Uses Hydrogen RO / Eleven RO copy from the job brand."
             checked={settings.allow_job_completion_whatsapp}

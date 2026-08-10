@@ -72,14 +72,19 @@ async function persistInboundMessages(db, accessToken, phoneNumberId, value, sum
     });
 
     // Unsolicited photo/video/file → redirect to Eleven RO main WA (unless we asked for media).
+    let skipBookingBot = false;
     if (accessToken && phoneNumberId) {
       try {
-        await handleUnsolicitedInboundMedia({
+        const unsolicitedResult = await handleUnsolicitedInboundMedia({
           db,
           accessToken,
           phoneNumberId,
           msg,
         });
+        // Do not also run booking bot on unsolicited uploads (avoids double reply).
+        if (unsolicitedResult?.handled) {
+          skipBookingBot = true;
+        }
       } catch (err) {
         console.warn('[whatsapp-webhook] unsolicited media handler error', err?.message || err);
       }
@@ -102,7 +107,7 @@ async function persistInboundMessages(db, accessToken, phoneNumberId, value, sum
     }
 
     // 24h-window booking bot (reply buttons). Failures must not break webhook ACK.
-    if (!authenticityOtpHandled && accessToken && phoneNumberId) {
+    if (!authenticityOtpHandled && !skipBookingBot && accessToken && phoneNumberId) {
       try {
         await handleBookingBotInbound({
           db,

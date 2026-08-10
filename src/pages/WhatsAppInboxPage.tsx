@@ -47,6 +47,9 @@ import {
 import { cn } from '@/lib/utils';
 import { buildAdminDashboardSearch } from '@/lib/adminDashboardUrl';
 import { db, supabase } from '@/lib/supabase';
+import { resolveCustomerSendBrand } from '@/lib/admin-email-sources';
+import type { DocumentBrand } from '@/lib/service-brands';
+import { getDocumentBrandLabel } from '@/lib/service-brands';
 import CustomerReportDialog from '@/components/admin/CustomerReportDialog';
 import type { Customer, Technician } from '@/types';
 import {
@@ -92,6 +95,12 @@ import {
   WHATSAPP_ATTACH_ACCEPT,
   type WhatsAppTemplateListItem,
 } from '@/lib/sendAdminWhatsAppApi';
+import { WhatsAppQuickRepliesBar, WhatsAppQuickContextFields } from '@/components/whatsapp/WhatsAppQuickRepliesBar';
+import {
+  approvedTemplateNameSet,
+  quickReplyBookingUrl,
+  type WhatsAppQuickTemplateSend,
+} from '@/lib/whatsappQuickMessages';
 
 function dayKey(iso: string): string {
   const d = new Date(iso);
@@ -152,6 +161,10 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const [threadMessages, setThreadMessages] = useState<WhatsAppMessageRow[]>([]);
   const [threadLoading, setThreadLoading] = useState(false);
   const [draft, setDraft] = useState('');
+  const [quickAmount, setQuickAmount] = useState('');
+  const [quickWhen, setQuickWhen] = useState('');
+  const [quickTech, setQuickTech] = useState('');
+  const [threadBrand, setThreadBrand] = useState<DocumentBrand>('hydrogenro');
   const [sending, setSending] = useState(false);
   const [purging, setPurging] = useState(false);
   const [query, setQuery] = useState('');
@@ -579,6 +592,42 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     return templates.find((t) => `${t.name}::${t.language}` === selectedTemplateKey) || null;
   }, [templates, selectedTemplateKey]);
 
+  const approvedTemplateNames = useMemo(
+    () => approvedTemplateNameSet(templates),
+    [templates]
+  );
+
+  const quickReplyContext = useMemo(
+    () => ({
+      customerName: activeThread?.customer_name || undefined,
+      brand: threadBrand,
+      amount: quickAmount,
+      whenLabel: quickWhen || undefined,
+      technicianName: quickTech || undefined,
+    }),
+    [activeThread?.customer_name, threadBrand, quickAmount, quickWhen, quickTech]
+  );
+
+  useEffect(() => {
+    setQuickAmount('');
+    setQuickWhen('');
+    setQuickTech('');
+  }, [selectedPhone]);
+
+  useEffect(() => {
+    if (!activeThread?.customer_id) {
+      setThreadBrand('hydrogenro');
+      return;
+    }
+    let cancelled = false;
+    void resolveCustomerSendBrand(activeThread.customer_id, 'hydrogenro').then((r) => {
+      if (!cancelled) setThreadBrand(r.sendBrand || 'hydrogenro');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeThread?.customer_id]);
+
   const loadTemplates = useCallback(async () => {
     setTemplatesLoading(true);
     setTemplatesError(null);
@@ -610,10 +659,10 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   }, []);
 
   useEffect(() => {
-    if (!windowOpen && selectedPhone) {
+    if (selectedPhone) {
       void loadTemplates();
     }
-  }, [windowOpen, selectedPhone, loadTemplates]);
+  }, [selectedPhone, loadTemplates]);
 
   useEffect(() => {
     const count = selectedTemplate?.bodyParamCount ?? 0;
@@ -676,6 +725,47 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
     }
   };
 
+  const handleSendText = useCallback(
+    async (text: string) => {
+      const trimmed = String(text || '').trim();
+      if (!selectedPhone || !trimmed || sending) return;
+      if (!windowOpen) {
+        toast.error('24-hour window closed — use a template below');
+        return;
+      }
+      setSending(true);
+      try {
+        const result = await sendAdminWhatsAppText({
+          to: selectedPhone,
+          text: trimmed,
+          customerId: activeThread?.customer_id,
+          source: 'inbox',
+          fallbackWaMe: false,
+        });
+        if (!result.ok) {
+          toast.error(result.error || 'Send failed');
+          return;
+        }
+        toast.success('Sent');
+        void loadInbox({ soft: true });
+        void loadThread(selectedPhone, { soft: true });
+      } finally {
+        setSending(false);
+      }
+    },
+    [selectedPhone, sending, windowOpen, activeThread?.customer_id, loadInbox, loadThread]
+  );
+
+  const copyBookLink = useCallback(async () => {
+    const url = quickReplyBookingUrl(quickReplyContext);
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success('Booking link copied');
+    } catch {
+      toast.message(url);
+    }
+  }, [quickReplyContext]);
+
   const handleSendTemplate = async () => {
     if (!selectedPhone || !selectedTemplate || sending) return;
     const needed = selectedTemplate.bodyParamCount;
@@ -706,6 +796,52 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
       setSending(false);
     }
   };
+
+  const pickQuickTemplate = useCallback(
+    (payload: WhatsAppQuickTemplateSend) => {
+      const match =
+        templates.find(
+          (t) => t.name === payload.templateName && t.language === payload.language
+        ) || templates.find((t) => t.name === payload.templateName);
+      const lang = match?.language || payload.language || 'en';
+      setSelectedTemplateKey(`${payload.templateName}::${lang}`);
+      const count = match?.bodyParamCount ?? payload.bodyParams.length;
+      setTemplateParams(
+        payload.bodyParams.slice(0, count).concat(
+          Array(Math.max(0, count - payload.bodyParams.length)).fill('')
+        )
+      );
+      toast.message('Template selected — check variables below');
+    },
+    [templates]
+  );
+
+  const handleQuickTemplateSend = useCallback(
+    async (payload: WhatsAppQuickTemplateSend) => {
+      if (!selectedPhone || sending) return;
+      setSending(true);
+      try {
+        const result = await sendAdminWhatsAppTemplate({
+          to: selectedPhone,
+          templateName: payload.templateName,
+          languageCode: payload.language,
+          bodyParams: payload.bodyParams,
+          customerId: activeThread?.customer_id,
+          source: 'inbox',
+        });
+        if (!result.ok) {
+          toast.error(result.error || 'Template send failed');
+          return;
+        }
+        toast.success('Quick template sent');
+        void loadInbox({ soft: true });
+        void loadThread(selectedPhone, { soft: true });
+      } finally {
+        setSending(false);
+      }
+    },
+    [selectedPhone, sending, activeThread?.customer_id, loadInbox, loadThread]
+  );
 
   const runQuickAction = async (action: WhatsAppBookingQuickAction) => {
     if (!selectedPhone || quickActionBusy) return;
@@ -1183,6 +1319,8 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   </p>
                   <p className="truncate text-[12px] text-[#667781]">
                     {activeThread?.customer_name ? `${displayPhone(selectedPhone)} · ` : ''}
+                    {getDocumentBrandLabel(threadBrand)}
+                    {' · '}
                     {windowOpen
                       ? `Window open · ~${hoursLeft ?? '?'}h left`
                       : '24h window closed'}
@@ -1284,6 +1422,9 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem onClick={() => void copyPhone()}>
                       Copy number
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => void copyBookLink()}>
+                      Copy book link
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       disabled={!activeThread?.customer_id || reportLoading}
@@ -1534,6 +1675,23 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                     <p className="text-xs text-[#ef6c00]">
                       Free-form reply needs an open 24h window. Send an approved template to reopen.
                     </p>
+                    <WhatsAppQuickContextFields
+                      amount={quickAmount}
+                      whenLabel={quickWhen}
+                      technicianName={quickTech}
+                      onAmountChange={setQuickAmount}
+                      onWhenChange={setQuickWhen}
+                      onTechnicianChange={setQuickTech}
+                    />
+                    <WhatsAppQuickRepliesBar
+                      context={quickReplyContext}
+                      windowOpen={false}
+                      showTemplates
+                      approvedTemplateNames={approvedTemplateNames}
+                      disabled={sending || templatesLoading}
+                      onSendTemplate={handleQuickTemplateSend}
+                      onPickTemplate={pickQuickTemplate}
+                    />
                     {templatesLoading ? (
                       <p className="flex items-center gap-2 text-xs text-[#667781]">
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -1618,6 +1776,25 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                 ) : null}
                 {windowOpen ? (
                   <div className="space-y-2">
+                    <WhatsAppQuickContextFields
+                      amount={quickAmount}
+                      whenLabel={quickWhen}
+                      technicianName={quickTech}
+                      onAmountChange={setQuickAmount}
+                      onWhenChange={setQuickWhen}
+                      onTechnicianChange={setQuickTech}
+                    />
+                    <WhatsAppQuickRepliesBar
+                      context={quickReplyContext}
+                      windowOpen
+                      showTemplates
+                      approvedTemplateNames={approvedTemplateNames}
+                      disabled={sending}
+                      onInsertText={(text) => setDraft(text)}
+                      onSendText={handleSendText}
+                      onSendTemplate={handleQuickTemplateSend}
+                      onPickTemplate={pickQuickTemplate}
+                    />
                     {attachFile ? (
                       <div className="flex items-center gap-2 rounded-xl bg-white px-2 py-1.5 shadow-sm">
                         {attachPreviewUrl ? (

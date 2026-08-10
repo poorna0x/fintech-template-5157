@@ -32,9 +32,10 @@ import {
 import { forceLightThemeClass } from '@/lib/force-light-theme';
 import {
   openWhatsAppMeDeepLink,
-  sendAdminWhatsAppDocument,
-  sendColdDocumentInvite,
+  resolveBillCustomerDisplayName,
+  sendAdminWhatsAppDocumentWithColdFallback,
 } from '@/lib/sendAdminWhatsAppApi';
+import { formatColdDocTemplatePreview } from '@/lib/whatsappColdTemplates';
 import { formatPhoneForWhatsApp, cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabaseClient';
 import {
@@ -131,7 +132,7 @@ function defaultMessageForChannel(opts: {
     return buildDocumentPdfWhatsAppCaption({
       kind: opts.kind,
       brand: opts.brand,
-      customerName: opts.bill.customer?.name,
+      customerName: resolveBillCustomerDisplayName(opts.bill.customer),
       documentRef: opts.bill.billNumber,
       amount: opts.bill.totalAmount,
       dateIso: opts.dueDateIso || opts.bill.billDate,
@@ -235,6 +236,16 @@ export default function DocumentEmailSendDialog({
     () => normalizeRecipientList(recipientRows),
     [recipientRows]
   );
+
+  const coldTemplatePreview = useMemo(() => {
+    if (!bill) return '';
+    return formatColdDocTemplatePreview(kind, {
+      customerName: resolveBillCustomerDisplayName(bill.customer),
+      amount: bill.totalAmount,
+      ref: bill.billNumber,
+      documentLabel: meta.docLabel,
+    });
+  }, [bill, kind, meta.docLabel]);
 
   const brandLabel = brand ? getDocumentBrandLabel(brand) : '';
 
@@ -357,43 +368,30 @@ export default function DocumentEmailSendDialog({
         })
       ).slice(0, 1024);
 
-      const result = await sendAdminWhatsAppDocument({
+      const result = await sendAdminWhatsAppDocumentWithColdFallback({
         to: phone,
         pdfBase64: pdf.pdfBase64,
         filename: pdf.filename,
         caption,
         customerId: bill.customer?.id,
         source: 'documents',
+        preferColdTemplate: windowOpen === false,
+        cold: {
+          kind,
+          customerName: resolveBillCustomerDisplayName(bill.customer),
+          amount: bill.totalAmount,
+          ref: bill.billNumber,
+          documentLabel: meta.docLabel,
+        },
       });
 
       if (!result.ok) {
-        if (result.needsWindowOrTemplate) {
-          toast.loading('24h window closed — sending PDF via template…', { id: toastId });
-          const invite = await sendColdDocumentInvite({
-            to: phone,
-            kind,
-            customerName: bill.customer?.name || 'Customer',
-            customerId: bill.customer?.id,
-            amount: bill.totalAmount,
-            ref: bill.billNumber,
-            source: 'documents',
-            documentLabel: meta.docLabel,
-            pdfBase64: pdf.pdfBase64,
-            filename: pdf.filename,
-          });
-          if (invite.ok) {
-            if (!opts?.keepOpen) {
-              toast.success('PDF sent via WhatsApp template', { id: toastId });
-              onSent?.();
-              onOpenChange(false);
-            }
-            return { ok: true as const, toastId, via: 'invite' as const };
-          }
+        if (result.needsWindowOrTemplate || windowOpen === false) {
           openWhatsAppMeDeepLink(phone, caption);
           if (!opts?.keepOpen) {
             toast.success(
               'Opened phone WhatsApp (template PDF failed) — attach the PDF manually if needed',
-              { id: toastId }
+              { id: toastId, description: result.error }
             );
             onSent?.();
             onOpenChange(false);
@@ -414,11 +412,18 @@ export default function DocumentEmailSendDialog({
 
       invalidateInboundWindowCache(phone);
       if (!opts?.keepOpen) {
-        toast.success('PDF sent on WhatsApp', { id: toastId });
+        toast.success(
+          result.viaColdTemplate ? 'PDF sent via WhatsApp template' : 'PDF sent on WhatsApp',
+          { id: toastId }
+        );
         onSent?.();
         onOpenChange(false);
       }
-      return { ok: true as const, toastId, via: 'api' as const };
+      return {
+        ok: true as const,
+        toastId,
+        via: result.viaColdTemplate ? ('invite' as const) : ('api' as const),
+      };
     } catch (error) {
       console.error(error);
       toast.error(error instanceof Error ? error.message : 'Could not send on WhatsApp', {
@@ -602,10 +607,18 @@ export default function DocumentEmailSendDialog({
                   {windowHoursLeft != null ? ` · ~${windowHoursLeft}h left to send PDF` : ''}
                 </p>
               ) : windowOpen === false ? (
-                <p className="text-xs text-amber-800">
-                  Window closed — we&apos;ll send the PDF via cold template (`svc_document_pdf`) if
-                  Meta blocks free-form.
-                </p>
+                <div className="space-y-1.5">
+                  <p className="text-xs text-amber-800">
+                    Window closed — sends Meta template{' '}
+                    <span className="font-medium">svc_doc_pdf_v2</span> with the PDF attached (not
+                    the long message below).
+                  </p>
+                  {coldTemplatePreview ? (
+                    <p className="rounded-md border border-amber-200/80 bg-amber-50/60 px-2.5 py-2 text-xs text-amber-950">
+                      Customer will see: &ldquo;{coldTemplatePreview}&rdquo; (+ PDF + Call us)
+                    </p>
+                  ) : null}
+                </div>
               ) : (
                 <p className="text-xs text-muted-foreground">
                   PDF sends when the customer has messaged this business number in the last 24h.

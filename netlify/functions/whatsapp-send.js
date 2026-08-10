@@ -23,6 +23,8 @@ const {
   fileBase64ToBuffer,
 } = require('./whatsapp-helper');
 const { stampAwaitingMediaIfAsking } = require('./whatsapp-unsolicited-media');
+const { resolveWaTemplateName } = require('./whatsapp-template-resolve');
+const { sendTemplateWithColdFallbacks } = require('./whatsapp-cold-fallback');
 
 const MAX_OUTBOUND_BYTES = 4.5 * 1024 * 1024;
 
@@ -145,6 +147,7 @@ exports.handler = async (event) => {
         tech_unassigned: 'allow_tech_unassigned',
         job_completion: 'allow_job_completion_whatsapp',
         booking_bot: 'allow_booking_bot',
+        online_booking: 'allow_online_booking_whatsapp',
       };
       const sourceKey = sourceKeyMap[source];
       if (sourceKey && waSettings[sourceKey] === false) {
@@ -159,6 +162,7 @@ exports.handler = async (event) => {
           allow_tech_unassigned: 'Technician unassigned → customer',
           allow_job_completion_whatsapp: 'Job completion → customer',
           allow_booking_bot: 'Booking bot',
+          allow_online_booking_whatsapp: 'Online booking confirmation',
         };
         return json(403, headers, {
           code: 'WHATSAPP_FEATURE_DISABLED',
@@ -168,12 +172,31 @@ exports.handler = async (event) => {
       }
 
       const sendType = String(body.type || 'text').trim().toLowerCase();
-      if (sendType === 'template' && waSettings.allow_cold_templates === false) {
-        return json(403, headers, {
-          code: 'WHATSAPP_FEATURE_DISABLED',
-          feature: 'cold_templates',
-          error: 'Cold templates are disabled in WhatsApp settings',
-        });
+      const headerDocPayload =
+        body.headerDocument && typeof body.headerDocument === 'object' ? body.headerDocument : null;
+      const isDocumentColdTemplate =
+        sendType === 'template' &&
+        (headerDocPayload?.pdfBase64 ||
+          headerDocPayload?.fileBase64 ||
+          headerDocPayload?.mediaId ||
+          headerDocPayload?.link ||
+          body.headerPdfBase64 ||
+          body.pdfBase64);
+      const coldBlocked = waSettings.allow_cold_templates === false;
+      const documentsAllowed = waSettings.allow_documents !== false;
+      const composerAllowed = waSettings.allow_composer !== false;
+      const docShareAllowed =
+        (source === 'documents' && documentsAllowed) ||
+        (source === 'composer' && composerAllowed);
+      if (sendType === 'template' && coldBlocked) {
+        // Cold PDF for quotations/bills uses DOCUMENT-header template — treat as document/composer share.
+        if (!(isDocumentColdTemplate && docShareAllowed)) {
+          return json(403, headers, {
+            code: 'WHATSAPP_FEATURE_DISABLED',
+            feature: 'cold_templates',
+            error: 'Cold templates are disabled in WhatsApp settings',
+          });
+        }
       }
       if (
         (sendType === 'document' || sendType === 'pdf' || sendType === 'image') &&
@@ -202,6 +225,8 @@ exports.handler = async (event) => {
 
   const type = String(body.type || 'text').trim().toLowerCase();
   let payload;
+  /** @type {{ templateName: string, languageCode: string, bodyParams: string[], headerComponents: object[], enableFallback: boolean } | null} */
+  let templateSendOpts = null;
   let persist = {
     direction: 'outbound',
     phone_e164: to,
@@ -354,7 +379,7 @@ exports.handler = async (event) => {
       inboxBodyForOutboundMedia(caption, filename, sendAsImage ? 'image' : 'document')
     );
   } else if (type === 'template') {
-    const templateName = String(body.templateName || '').trim();
+    const templateName = resolveWaTemplateName(String(body.templateName || '').trim());
     if (!templateName) {
       return json(400, headers, { error: 'templateName required' });
     }
@@ -367,6 +392,7 @@ exports.handler = async (event) => {
     const languageCode = String(body.languageCode || 'en').trim() || 'en';
     const bodyParams = Array.isArray(body.bodyParams) ? body.bodyParams : [];
     const components = [];
+    let templateHeaderComponents = [];
 
     // DOCUMENT-header templates (cold PDF): upload pdfBase64 → media id, attach as header
     const headerDoc = body.headerDocument && typeof body.headerDocument === 'object' ? body.headerDocument : null;
@@ -420,6 +446,7 @@ exports.handler = async (event) => {
           },
         ],
       });
+      templateHeaderComponents = [...components];
       // Persist as document-like so inbox renders PDF thumbnail + download
       persist.msg_type = 'document';
       persist.media_mime = 'application/pdf';
@@ -436,25 +463,20 @@ exports.handler = async (event) => {
         })),
       });
     }
-    payload = {
-      messaging_product: 'whatsapp',
-      to,
-      type: 'template',
-      template: {
-        name: templateName,
-        language: { code: languageCode },
-        ...(components.length ? { components } : {}),
-      },
+    templateSendOpts = {
+      templateName,
+      languageCode,
+      bodyParams,
+      headerComponents: templateHeaderComponents,
+      enableFallback: body.coldFallback !== false,
     };
     if (!persist.msg_type || persist.msg_type === 'template') {
       persist.msg_type = 'template';
     }
     persist.template_name = templateName;
-    if (persist.media_url && persist.filename) {
+    if (persist.media_url && persist.filename && templateHeaderComponents.length) {
       const tplNote =
-        bodyParams.length > 0
-          ? bodyParams.map(String).join(' · ')
-          : templateName;
+        bodyParams.length > 0 ? bodyParams.map(String).join(' · ') : templateName;
       persist.body = inboxBodyForOutboundMedia(tplNote, persist.filename, 'document');
     } else {
       persist.body =
@@ -477,20 +499,70 @@ exports.handler = async (event) => {
   }
 
   try {
-    const result = await callWhatsAppApi(phoneNumberId, accessToken, payload);
-    if (!result.ok) {
-      const errMsg = result.data?.error?.message || 'WhatsApp API error';
-      console.error('[whatsapp-send] Meta error', result.status, JSON.stringify(result.data));
-      await insertWhatsAppMessage(db, {
-        ...persist,
-        status: 'failed',
-        error_message: errMsg,
+    let result;
+    if (templateSendOpts) {
+      const sendResult = await sendTemplateWithColdFallbacks({
+        phoneNumberId,
+        accessToken,
+        to,
+        ...templateSendOpts,
       });
-      return json(result.status >= 400 && result.status < 600 ? result.status : 502, headers, {
-        success: false,
-        error: errMsg,
-        meta: result.data,
-      });
+      result = sendResult.result;
+      if (sendResult.ok) {
+        persist.template_name = sendResult.templateName;
+        if (
+          sendResult.usedFallback &&
+          templateSendOpts.headerComponents?.length &&
+          !sendResult.headerComponents?.length
+        ) {
+          persist.msg_type = 'template';
+          persist.media_url = null;
+          persist.media_mime = null;
+          persist.filename = null;
+        }
+        persist.body =
+          sendResult.bodyParams.length > 0
+            ? `${sendResult.templateName}: ${sendResult.bodyParams.map(String).join(' · ')}`
+            : sendResult.templateName;
+        if (sendResult.usedFallback && sendResult.primaryTemplate) {
+          console.warn(
+            '[whatsapp-send] cold template fallback',
+            sendResult.primaryTemplate,
+            '→',
+            sendResult.templateName
+          );
+        }
+      }
+      if (!sendResult.ok) {
+        const errMsg = result.data?.error?.message || 'WhatsApp API error';
+        console.error('[whatsapp-send] Meta error', result.status, JSON.stringify(result.data));
+        await insertWhatsAppMessage(db, {
+          ...persist,
+          status: 'failed',
+          error_message: errMsg,
+        });
+        return json(result.status >= 400 && result.status < 600 ? result.status : 502, headers, {
+          success: false,
+          error: errMsg,
+          meta: result.data,
+        });
+      }
+    } else {
+      result = await callWhatsAppApi(phoneNumberId, accessToken, payload);
+      if (!result.ok) {
+        const errMsg = result.data?.error?.message || 'WhatsApp API error';
+        console.error('[whatsapp-send] Meta error', result.status, JSON.stringify(result.data));
+        await insertWhatsAppMessage(db, {
+          ...persist,
+          status: 'failed',
+          error_message: errMsg,
+        });
+        return json(result.status >= 400 && result.status < 600 ? result.status : 502, headers, {
+          success: false,
+          error: errMsg,
+          meta: result.data,
+        });
+      }
     }
 
     const waId =

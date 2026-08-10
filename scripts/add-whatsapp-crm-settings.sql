@@ -52,6 +52,11 @@ ALTER TABLE public.whatsapp_crm_settings
 ALTER TABLE public.whatsapp_crm_settings
   ADD COLUMN IF NOT EXISTS allow_tech_assigned boolean NOT NULL DEFAULT true;
 
+ALTER TABLE public.whatsapp_crm_settings
+  ADD COLUMN IF NOT EXISTS allow_online_booking_whatsapp boolean NOT NULL DEFAULT true;
+ALTER TABLE public.whatsapp_crm_settings
+  ADD COLUMN IF NOT EXISTS auto_send_online_booking_whatsapp boolean NOT NULL DEFAULT true;
+
 ALTER TABLE public.whatsapp_crm_settings ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS whatsapp_crm_settings_admin_select ON public.whatsapp_crm_settings;

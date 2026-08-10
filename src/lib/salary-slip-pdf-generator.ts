@@ -1,7 +1,12 @@
 import { TechnicianSalaryBreakdown } from '@/components/TechnicianPayments';
 import { BRAND_SEAL_SIGN_SRC } from './service-brands';
 import { sanitizeForTemplate } from './sanitize';
-import { downloadDocumentPdf, withAbsoluteAssetUrls } from './server-pdf-download';
+import {
+  downloadDocumentPdf,
+  generateDocumentPdfBase64,
+  withAbsoluteAssetUrls,
+  type GenerateDocumentPdfBase64Result,
+} from './server-pdf-download';
 import { getDocumentPdfPrintFrameCss } from './document-pdf-print-frame';
 
 interface Payment {
@@ -912,6 +917,19 @@ export function getSalarySlipPreviewHtml(
 ): string {
   const pdfData = buildSalarySlipPdfData(breakdown, period, includeDayWiseBreakdown);
   return withAbsoluteAssetUrls(generateSalarySlipHTML(pdfData, includeDayWiseBreakdown));
+}
+
+/** Generate salary slip PDF bytes for WhatsApp / email attachment. */
+export async function generateSalarySlipPdfBase64(
+  breakdown: TechnicianSalaryBreakdown,
+  period: { start: Date; end: Date },
+  includeDayWiseBreakdown: boolean = true
+): Promise<GenerateDocumentPdfBase64Result> {
+  const pdfData = buildSalarySlipPdfData(breakdown, period, includeDayWiseBreakdown);
+  return generateDocumentPdfBase64({
+    html: generateSalarySlipHTML(pdfData, includeDayWiseBreakdown),
+    filename: getSalarySlipFilename(breakdown, period),
+  });
 }
 
 export function generateSalarySlipPDF(

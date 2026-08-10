@@ -466,6 +466,7 @@ export default function QuotationGenerator({ customer, onPrint, embedded = false
       company: companyInfo,
       customer: {
         id: customer?.id || '',
+        name: editableCustomer.name,
         fullName: editableCustomer.name,
         phone: editableCustomer.phone,
         email: editableCustomer.email,

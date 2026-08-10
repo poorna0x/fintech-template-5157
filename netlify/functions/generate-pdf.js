@@ -32,6 +32,16 @@ function isPrivateOrLoopbackHost(host) {
   if (/^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/.test(h)) return true;
   return false;
 }
+
+function isNgrokHost(host) {
+  const h = String(host || '').toLowerCase();
+  return (
+    h.endsWith('.ngrok-free.app') ||
+    h.endsWith('.ngrok-free.dev') ||
+    h.endsWith('.ngrok.io') ||
+    h.includes('.ngrok.')
+  );
+}
 function jsonResponse(statusCode, corsHeaders, body) {
   return {
     statusCode,
@@ -91,6 +101,9 @@ function isAllowedPdfResourceUrl(url, requestOrigin) {
       /* ignore */
     }
   }
+
+  // ngrok tunnels to local Vite — allow on dev machine (not production Lambda).
+  if (isNgrokHost(host) && !process.env.AWS_LAMBDA_FUNCTION_NAME) return true;
 
   const allowedHosts = getAllowedAssetHosts();
   for (const allowed of allowedHosts) {
@@ -261,6 +274,20 @@ async function renderHtmlToPdf(html, requestOrigin) {
         return;
       }
       if (isAllowedPdfResourceUrl(req.url(), requestOrigin)) {
+        try {
+          const host = new URL(req.url()).hostname.toLowerCase();
+          if (isNgrokHost(host)) {
+            req.continue({
+              headers: {
+                ...req.headers(),
+                'ngrok-skip-browser-warning': '1',
+              },
+            });
+            return;
+          }
+        } catch {
+          /* ignore */
+        }
         req.continue();
         return;
       }

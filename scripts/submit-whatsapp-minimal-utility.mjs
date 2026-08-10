@@ -20,25 +20,16 @@ import { readFileSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createClient } from '@supabase/supabase-js';
+import { loadEnvLocal, resolveWhatsAppCallPhones } from './whatsapp-call-phone-env.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '..');
-
-function loadEnvLocal() {
-  const p = resolve(root, '.env.local');
-  if (!existsSync(p)) return;
-  for (const line of readFileSync(p, 'utf8').split('\n')) {
-    const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-    if (!m) continue;
-    if (!process.env[m[1]]) process.env[m[1]] = m[2].trim().replace(/^["']|["']$/g, '');
-  }
-}
 
 loadEnvLocal();
 
 const WABA_ID = process.env.WHATSAPP_WABA_ID || '1854517668845707';
 const GRAPH = process.env.GRAPH_VERSION || 'v21.0';
-const CALL_PHONE = process.env.WHATSAPP_CALL_PHONE || '+918792467611';
+const { eleven: CALL_PHONE } = resolveWhatsAppCallPhones();
 const doSubmit = process.argv.includes('--submit');
 const doDeletePending = process.argv.includes('--delete-pending');
 const KEEP_NAMES = new Set(['hello_world']);
@@ -49,11 +40,9 @@ const KEEP_NAMES = new Set(['hello_world']);
  */
 const MINIMAL_TEMPLATES = [
   {
-    name: 'svc_booking_menu',
-    body: 'Hi {{1}}, welcome to Eleven RO. How can we help you today? Choose an option below — same as our live chat: Service/Repair, Reinstallation, or Chat with us.',
+    name: 'svc_service_request',
+    body: 'Hi {{1}}, regarding your water purifier service account: reply on this chat to continue your service request or schedule a technician visit.',
     examples: ['Rahul'],
-    /** Same labels as 24h interactive greeting (Meta QUICK_REPLY ≤20 chars). */
-    quickReplies: ['Service/Repair', 'Reinstallation', 'Chat with us'],
   },
   {
     name: 'svc_visit_reminder',
@@ -87,8 +76,19 @@ const MINIMAL_TEMPLATES = [
   },
   {
     name: 'svc_document_ready',
-    body: 'Hi {{1}}, your {{2}} is ready. Reply YES on this chat and we will share it with you.',
+    skip: true,
+    body: 'Hi {{1}}, your {{2}} is attached. Reply on this chat if you need any help.',
     examples: ['Rahul', 'service bill'],
+  },
+  {
+    name: 'svc_booking_confirmed_ero',
+    body: 'Hi {{1}}, your Eleven RO water purifier service booking {{2}} is confirmed for {{3}}. Reply on this chat if you need to change the date or time.',
+    examples: ['Rahul', 'RO2608121234', 'Tue 12 Aug, 2:00 PM'],
+  },
+  {
+    name: 'svc_booking_confirmed_hro',
+    body: 'Hi {{1}}, your Hydrogen RO water purifier service booking {{2}} is confirmed for {{3}}. Reply on this chat if you need to change the date or time.',
+    examples: ['Rahul', 'RO2608121234', 'Tue 12 Aug, 2:00 PM'],
   },
 ];
 
@@ -234,6 +234,11 @@ async function main() {
 
   console.log('— Minimal UTILITY payloads —\n');
   for (const t of MINIMAL_TEMPLATES) {
+    if (t.skip) {
+      console.log(`• SKIP ${t.name} — use svc_doc_pdf_v2 instead`);
+      console.log('');
+      continue;
+    }
     const payload = payloadFor(t);
     console.log(`• ${t.name}`);
     console.log(`  ${t.body}`);

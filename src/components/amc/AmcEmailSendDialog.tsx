@@ -36,7 +36,12 @@ import {
 import { forceLightThemeClass } from '@/lib/force-light-theme';
 import type { AMCPDFOptions } from '@/lib/amc-pdf-generator';
 import { generateAmcPdfBase64ForWhatsApp } from '@/lib/send-amc-whatsapp';
-import { sendAdminWhatsAppDocument, sendColdDocumentInvite, openWhatsAppMeDeepLink } from '@/lib/sendAdminWhatsAppApi';
+import {
+  openWhatsAppMeDeepLink,
+  resolveBillCustomerDisplayName,
+  sendAdminWhatsAppDocumentWithColdFallback,
+} from '@/lib/sendAdminWhatsAppApi';
+import { formatColdDocTemplatePreview } from '@/lib/whatsappColdTemplates';
 import { formatPhoneForWhatsApp, cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabaseClient';
 import {
@@ -116,6 +121,13 @@ export default function AmcEmailSendDialog({
   const [windowChecking, setWindowChecking] = useState(false);
   const [windowOpen, setWindowOpen] = useState<boolean | null>(null);
   const [windowHoursLeft, setWindowHoursLeft] = useState<number | null>(null);
+
+  const coldTemplatePreview = useMemo(() => {
+    if (!bill) return '';
+    return formatColdDocTemplatePreview('amc', {
+      customerName: resolveBillCustomerDisplayName(bill.customer),
+    });
+  }, [bill]);
 
   useEffect(() => {
     if (!open) return;
@@ -350,52 +362,33 @@ export default function AmcEmailSendDialog({
 
       toast.loading('Generating PDF…', { id: toastId });
       const pdf = await generateAmcPdfBase64ForWhatsApp(bill, pdfOptions);
-      toast.loading('Sending on WhatsApp…', { id: toastId });
+      toast.loading(
+        windowOpen === false ? '24h window closed — sending PDF via template…' : 'Sending on WhatsApp…',
+        { id: toastId }
+      );
       const caption = (message.trim() || getDefaultDocumentMessage('amc_document')).slice(0, 1024);
-      const result = await sendAdminWhatsAppDocument({
+      const result = await sendAdminWhatsAppDocumentWithColdFallback({
         to: phone,
         pdfBase64: pdf.pdfBase64,
         filename: pdf.filename,
         caption,
         customerId: bill.customer?.id || null,
         source: 'documents',
+        preferColdTemplate: windowOpen === false,
+        cold: {
+          kind: 'amc',
+          customerName: resolveBillCustomerDisplayName(bill.customer),
+        },
       });
 
       if (!result.ok) {
-        if (result.needsWindowOrTemplate) {
-          toast.loading('24h window closed — sending PDF via template…', { id: toastId });
-          const invite = await sendColdDocumentInvite({
-            to: phone,
-            kind: 'amc',
-            customerName: bill.customer?.name || 'Customer',
-            customerId: bill.customer?.id || null,
-            source: 'documents',
-            pdfBase64: pdf.pdfBase64,
-            filename: pdf.filename,
-          });
-          if (invite.ok) {
-            if (onPersistAfterWhatsApp) {
-              await onPersistAfterWhatsApp();
-            }
-            toast.success('AMC PDF sent via WhatsApp template', { id: toastId });
-            onSent?.();
-            onOpenChange(false);
-            return;
-          }
-          openWhatsAppMeDeepLink(phone, caption);
-          toast.success(
-            'Opened phone WhatsApp (invite failed) — attach the PDF manually if needed',
-            { id: toastId }
-          );
-          onSent?.();
-          onOpenChange(false);
-          return;
-        }
         openWhatsAppMeDeepLink(phone, caption);
-        toast.success('Opened phone WhatsApp as backup', {
-          id: toastId,
-          description: result.error || 'API send failed',
-        });
+        toast.success(
+          result.needsWindowOrTemplate || windowOpen === false
+            ? 'Opened phone WhatsApp (template PDF failed) — attach the PDF manually if needed'
+            : 'Opened phone WhatsApp as backup',
+          { id: toastId, description: result.error }
+        );
         onSent?.();
         onOpenChange(false);
         return;
@@ -415,7 +408,10 @@ export default function AmcEmailSendDialog({
         }
       }
 
-      toast.success('AMC PDF sent on WhatsApp', { id: toastId });
+      toast.success(
+        result.viaColdTemplate ? 'AMC PDF sent via WhatsApp template' : 'AMC PDF sent on WhatsApp',
+        { id: toastId }
+      );
       invalidateInboundWindowCache(phone);
       onSent?.();
       onOpenChange(false);
@@ -523,39 +519,29 @@ export default function AmcEmailSendDialog({
       toast.loading('Sending WhatsApp…', { id: toastId });
       const pdf = await generateAmcPdfBase64ForWhatsApp(bill, pdfOptions);
       const caption = (message.trim() || getDefaultDocumentMessage('amc_document')).slice(0, 1024);
-      const waResult = await sendAdminWhatsAppDocument({
+      const waResult = await sendAdminWhatsAppDocumentWithColdFallback({
         to: phone,
         pdfBase64: pdf.pdfBase64,
         filename: pdf.filename,
         caption,
         customerId: bill.customer?.id || null,
         source: 'documents',
+        preferColdTemplate: windowOpen === false,
+        cold: {
+          kind: 'amc',
+          customerName: resolveBillCustomerDisplayName(bill.customer),
+        },
       });
 
-      let waNote = 'WhatsApp PDF sent';
+      let waNote = waResult.viaColdTemplate
+        ? 'WhatsApp PDF sent via template'
+        : 'WhatsApp PDF sent';
       if (!waResult.ok) {
-        if (waResult.needsWindowOrTemplate) {
-          const invite = await sendColdDocumentInvite({
-            to: phone,
-            kind: 'amc',
-            customerName: bill.customer?.name || 'Customer',
-            customerId: bill.customer?.id || null,
-            amount: bill.totalAmount,
-            documentLabel: 'AMC agreement',
-            source: 'documents',
-            pdfBase64: pdf.pdfBase64,
-            filename: pdf.filename,
-          });
-          if (invite.ok) {
-            waNote = 'WhatsApp PDF sent via template';
-          } else {
-            openWhatsAppMeDeepLink(phone, caption);
-            waNote = 'WhatsApp opened on phone as backup';
-          }
-        } else {
-          openWhatsAppMeDeepLink(phone, caption);
-          waNote = 'WhatsApp opened on phone as backup';
-        }
+        openWhatsAppMeDeepLink(phone, caption);
+        waNote =
+          waResult.needsWindowOrTemplate || windowOpen === false
+            ? 'WhatsApp opened on phone (template failed)'
+            : 'WhatsApp opened on phone as backup';
       } else {
         invalidateInboundWindowCache(phone);
       }
@@ -676,10 +662,17 @@ export default function AmcEmailSendDialog({
                   {windowHoursLeft != null ? ` · ~${windowHoursLeft}h left to send PDF` : ''}
                 </p>
               ) : windowOpen === false ? (
-                <p className="text-xs text-amber-800">
-                  Window closed — we&apos;ll send the PDF via cold template if Meta blocks
-                  free-form.
-                </p>
+                <div className="space-y-1.5">
+                  <p className="text-xs text-amber-800">
+                    Window closed — sends Meta template{' '}
+                    <span className="font-medium">svc_doc_pdf_v2</span> with the AMC PDF attached.
+                  </p>
+                  {coldTemplatePreview ? (
+                    <p className="rounded-md border border-amber-200/80 bg-amber-50/60 px-2.5 py-2 text-xs text-amber-950">
+                      Customer will see: &ldquo;{coldTemplatePreview}&rdquo; (+ PDF + Call us)
+                    </p>
+                  ) : null}
+                </div>
               ) : (
                 <p className="text-xs text-muted-foreground">
                   PDF sends when the customer has messaged this business number in the last 24h.

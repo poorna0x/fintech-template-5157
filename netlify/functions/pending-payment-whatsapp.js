@@ -105,6 +105,9 @@ function buildPendingPaymentWhatsAppMessage({
   dueDateYmd,
   brand,
   payLink,
+  upiId,
+  upiLabel,
+  upiPhone,
 }) {
   const resolved = resolveBrand(brand);
   const contact = CONTACT[resolved];
@@ -113,21 +116,54 @@ function buildPendingPaymentWhatsAppMessage({
   });
   const dueLabel = formatDueLabel(dueDateYmd);
   const link = String(payLink || '').trim();
+  const vpa = String(upiId || '').trim();
+
+  const labeledValue = (emoji, label, value) => {
+    const v = String(value || '').trim();
+    const l = String(label || '').trim() || 'Info';
+    const e = String(emoji || '').trim();
+    if (!v) return e ? `${e} *${l}*` : `*${l}*`;
+    return e ? `${e} *${l}*:\n${v}` : `*${l}*:\n${v}`;
+  };
+
+  const labeledLink = (emoji, label, url) => {
+    const u = String(url || '').trim();
+    const l = String(label || '').trim() || 'Link';
+    const e = String(emoji || '').trim();
+    if (!u) return e ? `${e} *${l}*` : `*${l}*`;
+    return e ? `${e} *${l}*:\n${u}` : `*${l}*:\n${u}`;
+  };
 
   const lines = [
     `Hi ${customerName || 'Customer'} 😊`,
     '',
-    `Hope you're doing well. Quick reminder from *${contact.label}* regarding your water filter service.`,
+    `Quick reminder from *${contact.label}* about your pending payment for water filter service.`,
     '',
-    '*Pending payment*',
-    `• Amount: ₹${formattedAmount}`,
+    '*Payment summary*',
+    labeledValue('💰', 'Amount due', `₹${formattedAmount}`),
+    labeledValue('📅', 'Due by', dueLabel || 'At your earliest convenience'),
   ];
-  if (dueLabel) lines.push(`• Due date: ${dueLabel}`);
-  if (link) {
+
+  if (link || vpa) {
     lines.push('');
-    lines.push('*Payment info / Pay now:*');
-    lines.push(link);
+    lines.push('*Pay now*');
+    if (link) {
+      lines.push(labeledLink('💳', 'Payment link (GPay / PhonePe / UPI)', link));
+    }
+    if (vpa) {
+      lines.push(labeledValue('📱', 'UPI ID', vpa));
+    }
+    if (upiLabel) {
+      lines.push(labeledValue('🏦', 'Pay to', upiLabel));
+    }
+    if (link) {
+      lines.push(`Amount *₹${formattedAmount}* is pre-filled when you use the payment link.`);
+    }
+    if (upiPhone) {
+      lines.push(labeledValue('📞', 'UPI mobile', upiPhone));
+    }
   }
+
   lines.push('');
   lines.push(
     'Please clear this at your earliest convenience. If you have already paid, kindly ignore this message.'
@@ -165,6 +201,9 @@ async function buildPendingPaymentWhatsAppForPush(db, {
     dueDateYmd: dueDate,
     brand: serviceBrand,
     payLink,
+    upiId: upiAccount?.upi_id || '',
+    upiLabel: upiAccount?.label || upiAccount?.payee_name || '',
+    upiPhone: upiAccount?.phone || '',
   });
 }
 

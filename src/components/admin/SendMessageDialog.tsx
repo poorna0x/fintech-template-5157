@@ -11,14 +11,14 @@ import { buildJobCompletionMessageFromJob } from '@/lib/job-completion-message';
 import {
   jobHasCompletionMessageSent,
   jobHasDontSendCompletionMessage,
+  sendJobCompletionWhatsApp,
 } from '@/lib/jobCompletionWhatsApp';
 import {
   sendAdminWhatsAppText,
-  sendAdminWhatsAppTextWithOptionalTemplate,
 } from '@/lib/sendAdminWhatsAppApi';
 import { fetchWhatsAppCrmSettings } from '@/lib/whatsappCrmSettings';
 import { getDocumentBrandLabel } from '@/lib/service-brands';
-import { WA_COLD } from '@/lib/whatsappColdTemplates';
+import { formatJobCompletionColdTemplatePreview } from '@/lib/job-completion-message';
 import { parseRequirements } from '@/lib/followUpToOngoing';
 
 type DeliveryMode = 'api' | 'wa_me';
@@ -91,6 +91,15 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
 
   const completion = buildJobCompletionMessageFromJob(jobRec);
   const whatsappMessage = completion.whatsappMessage;
+  const coldTemplatePreview = formatJobCompletionColdTemplatePreview({
+    customerName: completion.customerName,
+    serviceType: completion.serviceType,
+    serviceSubType: completion.serviceSubType,
+    amountCollected: completion.amountCollected,
+    amountPending: completion.amountPendingValue,
+    pendingDueDate: completion.pendingDueDate || null,
+    documentBrand: completion.documentBrand,
+  });
   const brandLabel = getDocumentBrandLabel(completion.documentBrand);
   const brandContact =
     completion.documentBrand === 'elevenro'
@@ -132,26 +141,26 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
         return;
       }
 
-      const result = await sendAdminWhatsAppTextWithOptionalTemplate({
+      const result = await sendJobCompletionWhatsApp({
         to,
         text: whatsappMessage,
         customerId: customerId ? String(customerId) : null,
-        source: 'job_completion',
+        customerName: completion.customerName,
+        amountCollected: completion.amountCollected,
+        documentBrand: completion.documentBrand,
+        serviceType: completion.serviceType,
+        serviceSubType: completion.serviceSubType,
+        amountPending: completion.amountPendingValue,
+        pendingDueDate: completion.pendingDueDate || null,
         fallbackWaMe: false,
-        coldTemplate: {
-          name: WA_COLD.job_completion.name,
-          languageCode: WA_COLD.job_completion.language,
-          bodyParams: WA_COLD.job_completion.bodyParams(
-            completion.customerName,
-            completion.amountCollected
-          ),
-        },
       });
 
       if (result.ok && result.via === 'api') {
         toast.success(
           result.usedTemplate
-            ? `${brandLabel} completion template sent`
+            ? result.usedRichColdTemplate
+              ? `${brandLabel} completion sent (full cold template)`
+              : `${brandLabel} completion template sent`
             : `${brandLabel} completion WhatsApp sent`
         );
         await onMessageSent(job.id);
@@ -303,9 +312,20 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
 
             <div className="space-y-3">
               <div>
-                <Label>Message Preview</Label>
+                <Label>Message preview (24h window open)</Label>
                 <div className="mt-2 p-3 bg-muted/40 rounded-md text-sm text-foreground/90 whitespace-pre-wrap max-h-40 overflow-y-auto">
                   {whatsappMessage}
+                </div>
+              </div>
+              <div>
+                <Label>Cold send preview (window closed)</Label>
+                <p className="text-[11px] text-muted-foreground mt-0.5 mb-1.5">
+                  Uses <span className="font-medium">svc_job_done_{completion.documentBrand === 'elevenro' ? 'ero' : 'hro'}_v2</span>{' '}
+                  when Meta approves — else short <span className="font-medium">svc_job_done</span>.
+                </p>
+                <div className="p-3 rounded-md border border-amber-200/80 bg-amber-50/60 text-sm text-amber-950 whitespace-pre-wrap">
+                  {coldTemplatePreview}
+                  {'\n\n'}📞 Call us · 🌐 Book online
                 </div>
               </div>
 

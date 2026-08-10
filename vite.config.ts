@@ -57,6 +57,11 @@ export default defineConfig(({ mode }) => ({
         target: 'http://localhost:8888',
         changeOrigin: true,
       },
+      // Local Puppeteer — must not hit production (cannot load localhost/ngrok assets).
+      '/.netlify/functions/generate-pdf': {
+        target: 'http://localhost:8888',
+        changeOrigin: true,
+      },
       // Proxy Netlify functions to avoid CORS issues
       '/.netlify/functions': {
         // Use production functions so nudges like goingNow work without netlify:dev.

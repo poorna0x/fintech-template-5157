@@ -35,14 +35,25 @@ import type { DocumentBrand } from '@/lib/service-brands';
 import { getCompanyInfoForBrand, getDocumentBrandLabel } from '@/lib/service-brands';
 import {
   readFileAsBase64,
-  sendAdminWhatsAppDocument,
+  sendAdminWhatsAppDocumentWithColdFallback,
   sendAdminWhatsAppMedia,
   sendAdminWhatsAppText,
-  sendColdDocumentInvite,
+  sendAdminWhatsAppTextWithOptionalTemplate,
   validateWhatsAppAttachFile,
   WHATSAPP_ATTACH_ACCEPT,
 } from '@/lib/sendAdminWhatsAppApi';
-import { invalidateInboundWindowCache } from '@/lib/whatsappInbox';
+import {
+  formatComposerColdPreview,
+  resolveComposerColdTemplate,
+} from '@/lib/composerColdWhatsApp';
+import { WhatsAppQuickRepliesBar, WhatsAppQuickContextFields } from '@/components/whatsapp/WhatsAppQuickRepliesBar';
+import { normalizePhoneDigits } from '@/lib/whatsappPhoneTarget';
+import {
+  fetchLastInboundAt,
+  invalidateInboundWindowCache,
+  isWithinCustomerServiceWindow,
+} from '@/lib/whatsappInbox';
+import { supabase } from '@/lib/supabaseClient';
 
 type PreviewMode = 'mobile' | 'desktop';
 type MobilePanel = 'compose' | 'preview';
@@ -476,56 +487,45 @@ export function AdminWhatsAppComposerPanel({
           toast.error('No PDF to send');
           return;
         }
-        const docResult = await sendAdminWhatsAppDocument({
+        const customerName =
+          (templateType === 'booking_confirmation'
+            ? bookingForm.customerName
+            : documentForm.customerName
+          ).trim() || 'Customer';
+        const documentLabel =
+          templateType === 'quotation'
+            ? 'quotation'
+            : templateType === 'invoice'
+              ? 'tax invoice'
+              : templateType === 'service_bill'
+                ? 'service bill'
+                : templateType === 'amc_document'
+                  ? 'AMC agreement'
+                  : templateType === 'warranty_document'
+                    ? 'warranty card'
+                    : 'document';
+        const inboundAt = await fetchLastInboundAt(phone.trim(), supabase);
+        const windowClosed = !isWithinCustomerServiceWindow(inboundAt);
+        const docResult = await sendAdminWhatsAppDocumentWithColdFallback({
           to: phone.trim(),
           pdfBase64: pdf.content,
           filename: pdf.filename,
           caption: whatsappPreview.text.slice(0, 1024),
           customerId: linkedCustomerId,
           source: 'composer',
+          preferColdTemplate: windowClosed,
+          cold: {
+            kind: templateType,
+            customerName,
+            ref: documentForm.documentRef?.trim() || undefined,
+            documentLabel,
+          },
         });
         if (!docResult.ok) {
-          if (docResult.needsWindowOrTemplate) {
-            const customerName =
-              (templateType === 'booking_confirmation'
-                ? bookingForm.customerName
-                : documentForm.customerName
-              ).trim() || 'Customer';
-            const invite = await sendColdDocumentInvite({
-              to: phone.trim(),
-              kind: templateType,
-              customerName,
-              customerId: linkedCustomerId,
-              ref: documentForm.documentRef?.trim() || undefined,
-              amount: undefined,
-              source: 'composer',
-              documentLabel:
-                templateType === 'quotation'
-                  ? 'quotation'
-                  : templateType === 'invoice'
-                    ? 'tax invoice'
-                    : templateType === 'service_bill'
-                      ? 'service bill'
-                      : templateType === 'amc_document'
-                        ? 'AMC agreement'
-                        : templateType === 'warranty_document'
-                          ? 'warranty card'
-                          : 'document',
-              pdfBase64: pdf.content,
-              filename: pdf.filename,
-            });
-            if (invite.ok) {
-              toast.success('PDF sent via WhatsApp template');
-              invalidateInboundWindowCache(phone.trim());
-              return;
-            }
-            toast.error(
-              invite.error ||
-                '24h window closed — customer must message first before PDF can send'
-            );
-            return;
-          }
-          toast.error(docResult.error || 'PDF send failed');
+          toast.error(
+            docResult.error ||
+              '24h window closed — customer must message first before PDF can send'
+          );
           return;
         }
         setSentSummary({
@@ -536,16 +536,38 @@ export function AdminWhatsAppComposerPanel({
         });
         setSendPhase('sent');
         invalidateInboundWindowCache(phone.trim());
-        toast.success(`PDF sent via WhatsApp to ${phone.trim()}`);
+        toast.success(
+          docResult.viaColdTemplate
+            ? `PDF sent via WhatsApp template to ${phone.trim()}`
+            : `PDF sent via WhatsApp to ${phone.trim()}`
+        );
         return;
       }
 
-      const result = await sendAdminWhatsAppText({
+      const coldTpl = resolveComposerColdTemplate(templateType, activeBrand, {
+        customerName:
+          (templateType === 'booking_confirmation'
+            ? bookingForm.customerName
+            : documentForm.customerName
+          ).trim() || 'Customer',
+        freeformMessage: whatsappPreview.text,
+        bookingForm: templateType === 'booking_confirmation' ? bookingForm : undefined,
+        documentForm: templateType !== 'booking_confirmation' ? documentForm : undefined,
+      });
+
+      const result = await sendAdminWhatsAppTextWithOptionalTemplate({
         to: phone.trim(),
         text: whatsappPreview.text,
         customerId: linkedCustomerId,
         source: 'composer',
         fallbackWaMe: true,
+        coldTemplate: coldTpl
+          ? {
+              name: coldTpl.name,
+              languageCode: coldTpl.languageCode,
+              bodyParams: coldTpl.bodyParams,
+            }
+          : null,
       });
       if (!result.ok) {
         toast.error(result.error || 'Send failed');
@@ -777,9 +799,81 @@ export function AdminWhatsAppComposerPanel({
                 onChange={(e) => setSendTo(e.target.value)}
                 className="w-full"
               />
+              {(alternatePhone.trim() || sendTo.trim()) && (
+                <div className="flex flex-wrap gap-2">
+                  {sendTo.trim() && normalizePhoneDigits(sendTo) && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs"
+                      onClick={() => setSendTo(sendTo.trim())}
+                    >
+                      Primary / current
+                    </Button>
+                  )}
+                  {alternatePhone.trim() &&
+                    normalizePhoneDigits(alternatePhone) &&
+                    alternatePhone.trim() !== sendTo.trim() && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs"
+                        onClick={() => setSendTo(alternatePhone.trim())}
+                      >
+                        Use alternate · {alternatePhone}
+                      </Button>
+                    )}
+                </div>
+              )}
               {hasAlternate && (
                 <p className="text-xs text-slate-500">Alternate on file: {alternatePhone}</p>
               )}
+              {deliveryMode === 'api' && (
+                <p className="text-xs text-slate-500">
+                  Cold (24h closed):{' '}
+                  {formatComposerColdPreview(templateType, activeBrand, {
+                    customerName:
+                      (templateType === 'booking_confirmation'
+                        ? bookingForm.customerName
+                        : documentForm.customerName
+                      ).trim() || 'Customer',
+                    freeformMessage: whatsappPreview.text,
+                    bookingForm:
+                      templateType === 'booking_confirmation' ? bookingForm : undefined,
+                    documentForm:
+                      templateType !== 'booking_confirmation' ? documentForm : undefined,
+                  }) || 'Free-form or PDF template'}
+                </p>
+              )}
+              {templateType !== 'booking_confirmation' ? (
+                <>
+                  <WhatsAppQuickContextFields
+                    amount={documentForm.amount}
+                    whenLabel={documentForm.dueDate || ''}
+                    onAmountChange={(v) => updateDocumentField('amount', v)}
+                    onWhenChange={(v) => updateDocumentField('dueDate', v)}
+                    className="pt-1"
+                  />
+                  <WhatsAppQuickRepliesBar
+                    context={{
+                      customerName: documentForm.customerName.trim() || 'Customer',
+                      brand: activeBrand,
+                      amount: documentForm.amount,
+                      whenLabel: documentForm.dueDate || undefined,
+                    }}
+                    windowOpen
+                    showTemplates={false}
+                    disabled={sending}
+                    onInsertText={(text) => {
+                      const prev = documentForm.message.trim();
+                      updateDocumentField('message', prev ? `${prev}\n\n${text}` : text);
+                    }}
+                    className="pt-1"
+                  />
+                </>
+              ) : null}
             </div>
             <div className="space-y-1.5">
               <Label className="text-sm">How to send</Label>
@@ -1281,6 +1375,21 @@ export function AdminWhatsAppComposerPanel({
 
                   <div className="space-y-2">
                     <Label>Message</Label>
+                    <WhatsAppQuickRepliesBar
+                      context={{
+                        customerName: documentForm.customerName.trim() || 'Customer',
+                        brand: activeBrand,
+                        amount: documentForm.amount,
+                        whenLabel: documentForm.dueDate || undefined,
+                      }}
+                      windowOpen
+                      showTemplates={false}
+                      disabled={sending}
+                      onInsertText={(text) => {
+                        const prev = documentForm.message.trim();
+                        updateDocumentField('message', prev ? `${prev}\n\n${text}` : text);
+                      }}
+                    />
                     <Textarea
                       rows={5}
                       value={documentForm.message}

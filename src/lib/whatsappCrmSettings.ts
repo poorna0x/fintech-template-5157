@@ -23,6 +23,7 @@ export type WhatsAppSendSource =
   | 'tech_unassigned'
   | 'job_completion'
   | 'booking_bot'
+  | 'online_booking'
   | 'other';
 
 export type WhatsAppCrmSettings = {
@@ -59,6 +60,10 @@ export type WhatsAppCrmSettings = {
    * missed_call_callback_*_cta (requires allow_calling).
    */
   auto_send_missed_call_whatsapp: boolean;
+  /** Cloud API: online website booking confirmation to customer. */
+  allow_online_booking_whatsapp: boolean;
+  /** Auto-send booking confirmation WhatsApp after public /book submit. */
+  auto_send_online_booking_whatsapp: boolean;
   /**
    * Mirror technician FCM categories → WhatsApp (same keys as TECH_PUSH_CATEGORIES).
    * Missing key = enabled. Assign/unassign still also gated by Dashboard master.
@@ -109,6 +114,8 @@ export const DEFAULT_WHATSAPP_CRM_SETTINGS: WhatsAppCrmSettings = {
   allow_job_completion_whatsapp: true,
   auto_send_job_completion_whatsapp: false,
   auto_send_missed_call_whatsapp: false,
+  allow_online_booking_whatsapp: true,
+  auto_send_online_booking_whatsapp: true,
   tech_push_whatsapp: defaultTechPushWhatsAppGlobal(),
   rate_utility_inr: 0.115,
   rate_marketing_inr: 0.8631,
@@ -120,7 +127,7 @@ export const DEFAULT_WHATSAPP_CRM_SETTINGS: WhatsAppCrmSettings = {
 };
 
 const SETTINGS_COLUMNS =
-  'id, enabled, allow_cold_templates, allow_pdf_send, allow_freeform, allow_booking_bot, allow_inbox, allow_calling, allow_service_reminder, allow_pending_payment, allow_documents, allow_composer, allow_job_assign_whatsapp, allow_job_unassign_whatsapp, auto_send_job_assign_whatsapp, auto_send_job_unassign_whatsapp, allow_tech_assigned, allow_tech_unassigned, allow_job_completion_whatsapp, auto_send_job_completion_whatsapp, auto_send_missed_call_whatsapp, tech_push_whatsapp, rate_utility_inr, rate_marketing_inr, rate_authentication_inr, rate_service_inr, monthly_budget_inr, notes, updated_at';
+  'id, enabled, allow_cold_templates, allow_pdf_send, allow_freeform, allow_booking_bot, allow_inbox, allow_calling, allow_service_reminder, allow_pending_payment, allow_documents, allow_composer, allow_job_assign_whatsapp, allow_job_unassign_whatsapp, auto_send_job_assign_whatsapp, auto_send_job_unassign_whatsapp, allow_tech_assigned, allow_tech_unassigned, allow_job_completion_whatsapp, auto_send_job_completion_whatsapp, auto_send_missed_call_whatsapp, allow_online_booking_whatsapp, auto_send_online_booking_whatsapp, tech_push_whatsapp, rate_utility_inr, rate_marketing_inr, rate_authentication_inr, rate_service_inr, monthly_budget_inr, notes, updated_at';
 
 function num(v: unknown, fallback: number): number {
   const n = typeof v === 'number' ? v : Number(v);
@@ -160,6 +167,8 @@ export function normalizeWhatsAppCrmSettings(
     allow_job_completion_whatsapp: bool(row.allow_job_completion_whatsapp, true),
     auto_send_job_completion_whatsapp: row.auto_send_job_completion_whatsapp === true,
     auto_send_missed_call_whatsapp: row.auto_send_missed_call_whatsapp === true,
+    allow_online_booking_whatsapp: bool(row.allow_online_booking_whatsapp, true),
+    auto_send_online_booking_whatsapp: bool(row.auto_send_online_booking_whatsapp, true),
     tech_push_whatsapp: normalizeTechPushWhatsAppGlobal(row.tech_push_whatsapp),
     rate_utility_inr: num(row.rate_utility_inr, d.rate_utility_inr),
     rate_marketing_inr: num(row.rate_marketing_inr, d.rate_marketing_inr),
@@ -199,6 +208,8 @@ export function settingsKeyForSendSource(
       return 'allow_job_completion_whatsapp';
     case 'booking_bot':
       return 'allow_booking_bot';
+    case 'online_booking':
+      return 'allow_online_booking_whatsapp';
     default:
       return null;
   }
@@ -340,6 +351,8 @@ export async function saveWhatsAppCrmSettings(
     allow_job_completion_whatsapp: bool(patch.allow_job_completion_whatsapp, true),
     auto_send_job_completion_whatsapp: patch.auto_send_job_completion_whatsapp === true,
     auto_send_missed_call_whatsapp: patch.auto_send_missed_call_whatsapp === true,
+    allow_online_booking_whatsapp: bool(patch.allow_online_booking_whatsapp, true),
+    auto_send_online_booking_whatsapp: bool(patch.auto_send_online_booking_whatsapp, true),
     tech_push_whatsapp: normalizeTechPushWhatsAppGlobal(patch.tech_push_whatsapp),
     rate_utility_inr: num(patch.rate_utility_inr, DEFAULT_WHATSAPP_CRM_SETTINGS.rate_utility_inr),
     rate_marketing_inr: num(

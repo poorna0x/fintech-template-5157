@@ -60,6 +60,10 @@ export function bookingCtaTemplateName(kind: BookingCtaKind, brand: DocumentBran
     // Avoid marketing-prone “new_customer_*” names Meta reclassifies.
     return `unregistered_number_service_${suffix}_cta`;
   }
+  if (kind === 'booking_confirmed') {
+    // Phone-only UTILITY (no Book online URL) — faster Meta approval.
+    return `svc_booking_confirmed_${suffix}`;
+  }
   return `${kind}_${suffix}_cta`;
 }
 
@@ -114,7 +118,7 @@ export function bookingCtaBody(
       };
     case 'booking_confirmed':
       return {
-        text: `Hi {{1}}, your ${label} service booking {{2}} is confirmed for {{3}}. Reply on this chat for changes, or use Call / Book online.`,
+        text: `Hi {{1}}, your ${label} water purifier service booking {{2}} is confirmed for {{3}}. Reply on this chat if you need to change the date or time.`,
         sampleParams: ['Rahul', 'RO-2026-123456', 'Tue 13 Aug, 2:00 PM'],
         bodyParams: (customerName: string, jobRef: string, whenLabel: string) => [
           cleanName(customerName),
@@ -127,48 +131,42 @@ export function bookingCtaBody(
 
 /**
  * Resolve Meta send payload for CRM cold booking.
- * Missed-call uses dual-brand `missed_call_callback_*_cta`.
- * Other kinds still use minimal `svc_*` Utility templates until CTAs are APPROVED.
+ * Uses dual-brand UTILITY CTA templates (*_ero_cta / *_hro_cta) when APPROVED.
  */
 export function resolveBookingCta(
   kind: BookingCtaKind,
   brand: DocumentBrand,
   ...paramArgs: string[]
 ): { name: string; language: string; bodyParams: string[] } {
-  const name = String(paramArgs[0] || 'Customer').trim() || 'Customer';
-  if (kind === 'missed_call_book') {
-    return {
-      name: bookingCtaTemplateName('missed_call_book', brand),
-      language: 'en',
-      bodyParams: [name],
-    };
-  }
+  const customerName = String(paramArgs[0] || 'Customer').trim() || 'Customer';
+  const templateName = bookingCtaTemplateName(kind, brand);
+  const def = bookingCtaBody(kind, brand);
+
   if (kind === 'booking_confirmed') {
     return {
-      name: 'svc_visit_confirmed',
+      name: templateName,
       language: 'en',
-      bodyParams: [
-        name,
+      bodyParams: def.bodyParams(
+        customerName,
         String(paramArgs[1] || '').trim() || 'your booking',
-        String(paramArgs[2] || '').trim() || 'the scheduled time',
-      ],
+        String(paramArgs[2] || '').trim() || 'the scheduled time'
+      ),
     };
   }
   if (kind === 'reschedule_visit') {
     return {
-      name: 'svc_visit_reminder',
+      name: templateName,
       language: 'en',
-      bodyParams: [name, String(paramArgs[1] || '').trim() || 'your scheduled visit'],
+      bodyParams: def.bodyParams(
+        customerName,
+        String(paramArgs[1] || '').trim() || 'your scheduled visit'
+      ),
     };
   }
-  const whenHint =
-    kind === 'book_new_customer'
-      ? 'service registration'
-      : 'your service schedule';
   return {
-    name: 'svc_visit_reminder',
+    name: templateName,
     language: 'en',
-    bodyParams: [name, whenHint],
+    bodyParams: def.bodyParams(customerName),
   };
 }
 

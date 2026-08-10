@@ -18,7 +18,9 @@
     "preview": "vite preview",
     "generate:sitemaps": "node scripts/generate-sitemaps.mjs",
     "test": "vitest run",
-    "test:cors": "node test-cors-production.js"
+    "wa:templates:status": "node scripts/submit-whatsapp-full-utility.mjs --status",
+    "wa:templates:submit": "node scripts/submit-whatsapp-full-utility.mjs --submit",
+    "wa:templates:cleanup-marketing": "node scripts/submit-whatsapp-full-utility.mjs --delete-marketing"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1106.0",

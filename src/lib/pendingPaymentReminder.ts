@@ -119,29 +119,42 @@ export function buildPendingPaymentWhatsAppMessage(
   const formattedAmount = amountPending.toLocaleString('en-IN', { maximumFractionDigits: 2 });
   const dueLabel = formatPendingPaymentDueLabel(dueDateYmd);
   const payLink = (upi?.httpsLink || '').trim();
+  const upiId = (upi?.upiId || '').trim();
 
   const lines: string[] = [
     `Hi ${customerName} 😊`,
     '',
-    `Hope you're doing well. Quick reminder from *${brandLabel}* regarding your water filter service.`,
+    `Quick reminder from *${brandLabel}* about your pending payment for water filter service.`,
     '',
-    '*Pending payment*',
-    `• Amount: ₹${formattedAmount}`,
+    '*Payment summary*',
+    waLabeledValue('💰', 'Amount due', `₹${formattedAmount}`),
+    waLabeledValue('📅', 'Due by', dueLabel || 'At your earliest convenience'),
   ];
 
-  if (dueLabel) {
-    lines.push(`• Due date: ${dueLabel}`);
-  }
-
-  if (payLink) {
+  if (payLink || upiId) {
     lines.push('');
-    lines.push(waLabeledLink('💳', 'Payment info / Pay now', payLink));
+    lines.push('*Pay now*');
+    if (payLink) {
+      lines.push(waLabeledLink('💳', 'Payment link (GPay / PhonePe / UPI)', payLink));
+    }
+    if (upiId) {
+      lines.push(waLabeledValue('📱', 'UPI ID', upiId));
+    }
+    if (upi?.label) {
+      lines.push(waLabeledValue('🏦', 'Pay to', upi.label));
+    }
+    if (payLink) {
+      lines.push(`Amount *₹${formattedAmount}* is pre-filled when you use the payment link.`);
+    }
+    if (upi?.phone) {
+      lines.push(waLabeledValue('📞', 'UPI mobile', upi.phone));
+    }
   }
 
   lines.push('');
   lines.push('Please clear this at your earliest convenience. If you have already paid, kindly ignore this message.');
   lines.push('');
-  lines.push(`Thanks & regards 🙏`);
+  lines.push('Thanks & regards 🙏');
   lines.push(contact.team);
 
   return lines.join('\n');

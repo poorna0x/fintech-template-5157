@@ -12,12 +12,29 @@ function sanitizeFilename(raw: string): string {
   return base.toLowerCase().endsWith('.pdf') ? base : `${base}.pdf`;
 }
 
+/**
+ * Origin for /public logos & seals when Puppeteer renders PDFs locally.
+ * In dev, always use local Vite (127.0.0.1:8080) — not ngrok/LAN browser origin.
+ */
+export function resolvePdfAssetOrigin(explicit?: string): string {
+  const trimmed = String(explicit || '').trim().replace(/\/$/, '');
+  if (trimmed) return trimmed;
+
+  const fromEnv = String(import.meta.env.VITE_PDF_ASSET_ORIGIN || '').trim().replace(/\/$/, '');
+  if (fromEnv) return fromEnv;
+
+  if (typeof window !== 'undefined') {
+    if (import.meta.env.DEV) {
+      return 'http://127.0.0.1:8080';
+    }
+    return window.location.origin.replace(/\/$/, '');
+  }
+  return '';
+}
+
 /** Rewrite root-relative asset URLs so headless Chromium can load logos/seals. */
 export function withAbsoluteAssetUrls(html: string, origin?: string): string {
-  const base = (origin || (typeof window !== 'undefined' ? window.location.origin : '')).replace(
-    /\/$/,
-    ''
-  );
+  const base = resolvePdfAssetOrigin(origin);
   if (!base) return html;
 
   return html

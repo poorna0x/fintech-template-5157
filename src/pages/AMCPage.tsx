@@ -7,6 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Search, ArrowLeft, Edit, Calendar, User, Phone, Mail, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { WhatsAppIcon } from '@/components/WhatsAppIcon';
+import { sendAmcExpiryWhatsApp } from '@/lib/amcExpiryWhatsApp';
 import { toast } from 'sonner';
 import { db } from '@/lib/supabase';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -280,6 +282,38 @@ export default function AMCPage() {
     });
   };
 
+  const handleAmcExpiryWhatsApp = async (amc: AMCContract) => {
+    const phone = amc.customers?.phone?.trim();
+    if (!phone) {
+      toast.error('Customer has no phone number');
+      return;
+    }
+    const toastId = toast.loading('Sending AMC expiry WhatsApp…');
+    try {
+      const result = await sendAmcExpiryWhatsApp({
+        phone,
+        customerName: amc.customers?.full_name || 'Customer',
+        endDate: amc.end_date,
+        customerId: amc.customer_id,
+        brand: amc.customers?.brand,
+      });
+      if (result.ok) {
+        toast.success(
+          result.usedTemplate
+            ? 'AMC expiry notice sent (cold template)'
+            : 'AMC expiry notice sent on WhatsApp',
+          { id: toastId }
+        );
+      } else {
+        toast.error(result.error || 'Could not send AMC expiry WhatsApp', { id: toastId });
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not send AMC expiry WhatsApp', {
+        id: toastId,
+      });
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="bg-white shadow-sm border-b">
@@ -338,14 +372,27 @@ export default function AMCPage() {
                           </Badge>
                         )}
                       </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleEdit(amc)}
-                      >
-                        <Edit className="w-4 h-4 mr-2" />
-                        Edit
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        {expiringSoon && amc.status === 'ACTIVE' && customer?.phone ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="border-green-300 text-green-700 hover:bg-green-50"
+                            onClick={() => void handleAmcExpiryWhatsApp(amc)}
+                          >
+                            <WhatsAppIcon className="w-4 h-4 mr-2" />
+                            Expiry WhatsApp
+                          </Button>
+                        ) : null}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEdit(amc)}
+                        >
+                          <Edit className="w-4 h-4 mr-2" />
+                          Edit
+                        </Button>
+                      </div>
                     </div>
                   </CardHeader>
                   <CardContent>

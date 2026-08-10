@@ -10,10 +10,18 @@ import { getValidCustomerEmail } from '@/lib/customer-email';
 import { ensureSupabaseSessionForWrite } from '@/lib/ensureSupabaseSession';
 import { downloadAmcAgreementPdf } from '@/lib/send-amc-agreement-email';
 import { generateAmcPdfBase64ForWhatsApp } from '@/lib/send-amc-whatsapp';
-import { sendAdminWhatsAppDocument, sendColdDocumentInvite } from '@/lib/sendAdminWhatsAppApi';
+import {
+  resolveBillCustomerDisplayName,
+  sendAdminWhatsAppDocumentWithColdFallback,
+} from '@/lib/sendAdminWhatsAppApi';
 import type { AMCPDFOptions } from '@/lib/amc-pdf-generator';
 import { getDefaultDocumentMessage } from '@/lib/admin-email-templates';
-import { invalidateInboundWindowCache } from '@/lib/whatsappInbox';
+import {
+  fetchLastInboundAt,
+  invalidateInboundWindowCache,
+  isWithinCustomerServiceWindow,
+} from '@/lib/whatsappInbox';
+import { supabase } from '@/lib/supabaseClient';
 
 export interface AmcDocumentActionsProps {
   bill: Bill | null;
@@ -116,43 +124,38 @@ export default function AmcDocumentActions({
       }
       toast.loading('Generating PDF…', { id: toastId });
       const pdf = await generateAmcPdfBase64ForWhatsApp(bill, pdfOptions);
-      toast.loading('Sending on WhatsApp…', { id: toastId });
+      const inboundAt = await fetchLastInboundAt(customerPhone, supabase);
+      const windowClosed = !isWithinCustomerServiceWindow(inboundAt);
+      toast.loading(
+        windowClosed ? '24h window closed — sending PDF via template…' : 'Sending on WhatsApp…',
+        { id: toastId }
+      );
       const caption = getDefaultDocumentMessage('amc_document').slice(0, 1024);
-      const result = await sendAdminWhatsAppDocument({
+      const result = await sendAdminWhatsAppDocumentWithColdFallback({
         to: customerPhone,
         pdfBase64: pdf.pdfBase64,
         filename: pdf.filename,
         caption,
         customerId: bill.customer?.id || null,
         source: 'documents',
+        preferColdTemplate: windowClosed,
+        cold: {
+          kind: 'amc',
+          customerName: resolveBillCustomerDisplayName(bill.customer),
+        },
       });
       if (!result.ok) {
-        if (result.needsWindowOrTemplate) {
-          toast.loading('24h window closed — sending PDF via template…', { id: toastId });
-          const invite = await sendColdDocumentInvite({
-            to: customerPhone,
-            kind: 'amc',
-            customerName: bill.customer?.name || 'Customer',
-            customerId: bill.customer?.id || null,
-            source: 'documents',
-            pdfBase64: pdf.pdfBase64,
-            filename: pdf.filename,
-          });
-          if (invite.ok) {
-            toast.success('AMC PDF sent via WhatsApp template', { id: toastId });
-            return;
-          }
-          toast.error(
-            invite.error ||
-              '24h window closed — cold PDF template not approved yet (svc_document_pdf)',
-            { id: toastId }
-          );
-          return;
-        }
-        toast.error(result.error || 'WhatsApp send failed', { id: toastId });
+        toast.error(
+          result.error ||
+            '24h window closed — cold PDF template not approved yet (svc_doc_pdf_v2)',
+          { id: toastId }
+        );
         return;
       }
-      toast.success('AMC PDF sent on WhatsApp', { id: toastId });
+      toast.success(
+        result.viaColdTemplate ? 'AMC PDF sent via WhatsApp template' : 'AMC PDF sent on WhatsApp',
+        { id: toastId }
+      );
       invalidateInboundWindowCache(customerPhone);
       onSent?.();
     } catch (error) {

@@ -34,7 +34,10 @@ import { addDays, addMonths, format } from 'date-fns';
 import { db, supabase } from '@/lib/supabase';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { sendAdminWhatsAppTextWithOptionalTemplate } from '@/lib/sendAdminWhatsAppApi';
-import { WA_COLD } from '@/lib/whatsappColdTemplates';
+import { WhatsAppCustomizeSendDialog } from '@/components/admin/WhatsAppCustomizeSendDialog';
+import {
+  formatServiceReminderWhenLabel,
+} from '@/lib/serviceReminderWhatsApp';
 import {
   addMonthsToReminderAt,
   getLocalCalendarDateYmd,
@@ -260,6 +263,9 @@ export function RecurringServiceTracker({
   const [noteTarget, setNoteTarget] = useState<Reminder | null>(null);
   const [noteText, setNoteText] = useState('');
   const [noteSaving, setNoteSaving] = useState(false);
+
+  const [waDialogOpen, setWaDialogOpen] = useState(false);
+  const [waReminder, setWaReminder] = useState<Reminder | null>(null);
 
   // Create job / reports (reuse existing dialogs)
   const [activeCustomer, setActiveCustomer] = useState<Customer | null>(null);
@@ -493,57 +499,17 @@ export function RecurringServiceTracker({
     }
   };
 
-  const openWhatsApp = async (r: Reminder) => {
+  const openWhatsApp = (r: Reminder) => {
     const c = r.entity_id ? labels[r.entity_id] : undefined;
-    if (!c?.phone) {
+    if (!c?.phone && !c?.altPhone) {
       toast.error('No phone number on file');
       return;
     }
-    const every = r.interval_value
-      ? `every ${r.interval_value} month${r.interval_value > 1 ? 's' : ''}`
-      : 'periodic';
-    const message = `Hi ${c.name} 😊
-
-This is a friendly reminder for your scheduled ${r.title} (${every}). It's time for your next service.
-
-Would you like us to schedule a visit? Let us know a convenient day and time.
-
-For any help/support:
-📞 Phone: 8884944288
-📧 Email: info@hydrogenro.com
-🌐 Website: https://hydrogenro.com
-
-Thanks & regards 🙏`;
-
-    const toastId = toast.loading('Sending WhatsApp…');
-    try {
-      const result = await sendAdminWhatsAppTextWithOptionalTemplate({
-        to: c.phone,
-        text: message,
-        customerId: r.entity_id || undefined,
-        source: 'service_reminder',
-        fallbackWaMe: true,
-        coldTemplate: {
-          name: WA_COLD.service_reminder.name,
-          languageCode: WA_COLD.service_reminder.language,
-          bodyParams: WA_COLD.service_reminder.bodyParams(c.name || 'Customer'),
-        },
-      });
-      if (!result.ok) {
-        toast.error(result.error || 'Send failed', { id: toastId });
-        return;
-      }
-      if (result.via === 'api' && result.usedTemplate) {
-        toast.success('Service reminder template sent', { id: toastId });
-      } else if (result.via === 'api') {
-        toast.success('WhatsApp sent via API', { id: toastId });
-      } else {
-        toast.success('Opened phone WhatsApp as backup', { id: toastId });
-      }
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Send failed', { id: toastId });
-    }
+    setWaReminder(r);
+    setWaDialogOpen(true);
   };
+
+  const waDialogCustomer = waReminder?.entity_id ? labels[waReminder.entity_id] : undefined;
 
   // ---- Status edit ----
   const openStatusDialog = (r: Reminder) => {
@@ -1346,6 +1312,28 @@ Thanks & regards 🙏`;
             setPhotoViewerOpen(false);
             setViewerPhoto(null);
             setViewerBillPhotos(null);
+          }}
+        />
+      )}
+
+      {waDialogCustomer && waReminder && (
+        <WhatsAppCustomizeSendDialog
+          open={waDialogOpen}
+          onOpenChange={(open) => {
+            setWaDialogOpen(open);
+            if (!open) setWaReminder(null);
+          }}
+          title="Service reminder — WhatsApp"
+          customerName={waDialogCustomer.name}
+          customerId={waReminder.entity_id || undefined}
+          primaryPhone={waDialogCustomer.phone}
+          alternatePhone={waDialogCustomer.altPhone}
+          source="service_reminder"
+          defaultTemplate="service_due"
+          showWhenLabelField
+          serviceWhenLabel={formatServiceReminderWhenLabel(waReminder.reminder_at)}
+          onSent={async () => {
+            await markCalled(waReminder);
           }}
         />
       )}

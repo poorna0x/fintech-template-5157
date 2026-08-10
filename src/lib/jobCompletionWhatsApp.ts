@@ -10,12 +10,129 @@ import { toast } from 'sonner';
 import { db } from '@/lib/supabase';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import { parseRequirements } from '@/lib/followUpToOngoing';
-import { buildJobCompletionMessageFromJob } from '@/lib/job-completion-message';
-import { sendAdminWhatsAppTextWithOptionalTemplate } from '@/lib/sendAdminWhatsAppApi';
+import {
+  buildJobCompletionColdBodyParams,
+  buildJobCompletionMessageFromJob,
+  JOB_COMPLETION_COLD_FALLBACK,
+  resolveJobCompletionColdTemplateName,
+} from '@/lib/job-completion-message';
+import {
+  openWhatsAppMeDeepLink,
+  sendAdminWhatsAppTemplate,
+  sendAdminWhatsAppText,
+} from '@/lib/sendAdminWhatsAppApi';
 import { fetchWhatsAppCrmSettings } from '@/lib/whatsappCrmSettings';
 import { getDocumentBrandLabel } from '@/lib/service-brands';
 import { WA_COLD } from '@/lib/whatsappColdTemplates';
 import type { Job } from '@/types';
+
+export type JobCompletionWhatsAppSendResult = {
+  ok: boolean;
+  via?: 'api' | 'wa_me';
+  usedTemplate?: boolean;
+  usedRichColdTemplate?: boolean;
+  error?: string;
+  needsWindowOrTemplate?: boolean;
+  featureDisabled?: boolean;
+};
+
+/** Send completion WhatsApp — full text in 24h window; rich cold v2 or short svc_job_done fallback. */
+export async function sendJobCompletionWhatsApp(opts: {
+  to: string;
+  text: string;
+  customerId?: string | null;
+  customerName: string;
+  amountCollected: number;
+  documentBrand: import('@/lib/service-brands').DocumentBrand;
+  serviceType?: string;
+  serviceSubType?: string;
+  amountPending?: number;
+  pendingDueDate?: string | null;
+  fallbackWaMe?: boolean;
+  forceWaMe?: boolean;
+}): Promise<JobCompletionWhatsAppSendResult> {
+  const richColdName = resolveJobCompletionColdTemplateName(opts.documentBrand);
+  const richColdParams = buildJobCompletionColdBodyParams({
+    customerName: opts.customerName,
+    serviceType: opts.serviceType,
+    serviceSubType: opts.serviceSubType,
+    amountCollected: opts.amountCollected,
+    amountPending: opts.amountPending,
+    pendingDueDate: opts.pendingDueDate,
+    documentBrand: opts.documentBrand,
+  });
+
+  if (opts.forceWaMe) {
+    openWhatsAppMeDeepLink(opts.to, opts.text);
+    return { ok: true, via: 'wa_me' };
+  }
+
+  const textResult = await sendAdminWhatsAppText({
+    to: opts.to,
+    text: opts.text,
+    customerId: opts.customerId,
+    source: 'job_completion',
+    fallbackWaMe: false,
+  });
+
+  if (textResult.ok) {
+    return textResult;
+  }
+
+  if (textResult.featureDisabled) {
+    return textResult;
+  }
+
+  if (!textResult.needsWindowOrTemplate) {
+    if (opts.fallbackWaMe !== false) {
+      openWhatsAppMeDeepLink(opts.to, opts.text);
+      return { ok: true, via: 'wa_me', error: textResult.error };
+    }
+    return textResult;
+  }
+
+  const rich = await sendAdminWhatsAppTemplate({
+    to: opts.to,
+    templateName: richColdName,
+    languageCode: 'en',
+    bodyParams: richColdParams,
+    customerId: opts.customerId,
+    source: 'job_completion',
+  });
+
+  if (rich.ok) {
+    return { ...rich, usedTemplate: true, usedRichColdTemplate: true };
+  }
+
+  const legacy = await sendAdminWhatsAppTemplate({
+    to: opts.to,
+    templateName: JOB_COMPLETION_COLD_FALLBACK.name,
+    languageCode: JOB_COMPLETION_COLD_FALLBACK.language,
+    bodyParams: WA_COLD.job_completion.bodyParams(opts.customerName, opts.amountCollected),
+    customerId: opts.customerId,
+    source: 'job_completion',
+  });
+
+  if (legacy.ok) {
+    return { ...legacy, usedTemplate: true, usedRichColdTemplate: false };
+  }
+
+  if (opts.fallbackWaMe !== false) {
+    openWhatsAppMeDeepLink(opts.to, opts.text);
+    return {
+      ok: true,
+      via: 'wa_me',
+      needsWindowOrTemplate: true,
+      error: legacy.error || rich.error || textResult.error,
+    };
+  }
+
+  return {
+    ok: false,
+    needsWindowOrTemplate: true,
+    error: legacy.error || rich.error || textResult.error || 'Could not send completion template',
+  };
+}
 
 function requirementsList(job: Record<string, unknown>): Record<string, unknown>[] {
   return parseRequirements(job.requirements ?? job.Requirements);
@@ -147,20 +264,18 @@ export async function maybeAutoSendJobCompletionWhatsApp(opts: {
       ? toast.loading(`Sending ${brandLabel} completion WhatsApp…`)
       : undefined;
 
-    const result = await sendAdminWhatsAppTextWithOptionalTemplate({
+    const result = await sendJobCompletionWhatsApp({
       to,
       text: built.whatsappMessage,
       customerId,
-      source: 'job_completion',
+      customerName: built.customerName,
+      amountCollected: built.amountCollected,
+      documentBrand: built.documentBrand,
+      serviceType: built.serviceType,
+      serviceSubType: built.serviceSubType,
+      amountPending: built.amountPendingValue,
+      pendingDueDate: built.pendingDueDate || null,
       fallbackWaMe: false,
-      coldTemplate: {
-        name: WA_COLD.job_completion.name,
-        languageCode: WA_COLD.job_completion.language,
-        bodyParams: WA_COLD.job_completion.bodyParams(
-          built.customerName,
-          built.amountCollected
-        ),
-      },
     });
 
     if (result.ok && result.via === 'api') {
@@ -172,7 +287,9 @@ export async function maybeAutoSendJobCompletionWhatsApp(opts: {
       if (notify && toastId != null) {
         toast.success(
           result.usedTemplate
-            ? `${brandLabel} completion template sent`
+            ? result.usedRichColdTemplate
+              ? `${brandLabel} completion sent (full cold template)`
+              : `${brandLabel} completion template sent`
             : `${brandLabel} completion WhatsApp sent`,
           { id: toastId }
         );

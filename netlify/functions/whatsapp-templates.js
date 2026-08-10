@@ -66,7 +66,7 @@ exports.handler = async (event) => {
       });
     }
 
-    const templates = (data.data || [])
+    const mapped = (data.data || [])
       .filter((t) => String(t.status || '').toUpperCase() === 'APPROVED')
       .map((t) => ({
         name: t.name,
@@ -78,16 +78,38 @@ exports.handler = async (event) => {
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
 
+    const templates = mapped.filter(
+      (t) => String(t.category || '').toUpperCase() !== 'MARKETING'
+    );
+    const marketingBlocked = mapped.filter(
+      (t) => String(t.category || '').toUpperCase() === 'MARKETING'
+    );
+
     return json(200, headers, {
       templates,
+      marketingBlocked,
       recommended: [
         { name: 'svc_balance_due', language: 'en', hint: 'Balance due ({{1}} name, {{2}} amount)' },
         { name: 'svc_visit_reminder', language: 'en', hint: 'Visit reminder ({{1}} name, {{2}} when)' },
         { name: 'svc_visit_confirmed', language: 'en', hint: 'Booking confirmed ({{1}} name, {{2}} ref, {{3}} when)' },
         { name: 'svc_tech_assigned', language: 'en', hint: 'Tech assigned ({{1}} name, {{2}} tech)' },
-        { name: 'svc_completed', language: 'en', hint: 'Service done ({{1}} name, {{2}} amount)' },
+        { name: 'svc_job_done', language: 'en', hint: 'Service done ({{1}} name, {{2}} amount)' },
         { name: 'svc_payment_received', language: 'en', hint: 'Payment thanks ({{1}} name, {{2}} amount)' },
-        { name: 'svc_document_pdf', language: 'en', hint: 'Cold PDF (DOCUMENT header · {{1}} name, {{2}} label)' },
+        { name: 'svc_doc_pdf_v2', language: 'en', hint: 'Cold PDF (DOCUMENT header · {{1}} name, {{2}} label)' },
+        { name: 'svc_service_request', language: 'en', hint: 'Service request open ({{1}} name) — UTILITY replacement for booking menu' },
+        { name: 'svc_booking_confirmed_ero', language: 'en', hint: 'Booking confirmed Eleven RO (phone-only UTILITY)' },
+        { name: 'svc_booking_confirmed_hro', language: 'en', hint: 'Booking confirmed Hydrogen RO (phone-only UTILITY)' },
+        { name: 'svc_amc_expiry_notice', language: 'en', hint: 'AMC expiry (replaces marketing amc_renewal)' },
+        { name: 'svc_parts_ready', language: 'en', hint: 'Spare parts arrived ({{1}} name)' },
+        { name: 'svc_tech_delayed', language: 'en', hint: 'Technician delayed ({{1}} name, {{2}} when)' },
+        { name: 'svc_visit_cancelled_ero', language: 'en', hint: 'Visit cancelled Eleven RO' },
+        { name: 'svc_visit_cancelled_hro', language: 'en', hint: 'Visit cancelled Hydrogen RO' },
+        { name: 'reschedule_visit_ero_cta', language: 'en', hint: 'Reschedule Eleven RO' },
+        { name: 'reschedule_visit_hro_cta', language: 'en', hint: 'Reschedule Hydrogen RO' },
+        { name: 'unregistered_number_service_ero_cta', language: 'en', hint: 'Unregistered number Eleven RO' },
+        { name: 'unregistered_number_service_hro_cta', language: 'en', hint: 'Unregistered number Hydrogen RO' },
+        { name: 'missed_call_callback_ero_cta', language: 'en', hint: 'Missed call Eleven RO' },
+        { name: 'missed_call_callback_hro_cta', language: 'en', hint: 'Missed call Hydrogen RO' },
       ],
     });
   } catch (err) {

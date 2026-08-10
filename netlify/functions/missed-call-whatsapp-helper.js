@@ -4,11 +4,11 @@
  */
 const {
   getWhatsAppCredentials,
-  callWhatsAppApi,
   insertWhatsAppMessage,
   normalizePhoneE164,
   findCustomerIdByPhone,
 } = require('./whatsapp-helper');
+const { sendTemplateWithColdFallbacks } = require('./whatsapp-cold-fallback');
 
 const DEDUPE_HOURS = 6;
 
@@ -52,7 +52,7 @@ async function maybeSendMissedCallCallbackWhatsApp(db, opts) {
       .from('whatsapp_messages')
       .select('id')
       .eq('phone_e164', phone)
-      .eq('direction', 'out')
+      .eq('direction', 'outbound')
       .ilike('template_name', 'missed_call_callback%')
       .gte('created_at', sinceIso)
       .limit(1)
@@ -91,8 +91,6 @@ async function maybeSendMissedCallCallbackWhatsApp(db, opts) {
 
     const name = customerName || 'there';
     const templateName = `missed_call_callback_${brandSuffix(brand)}_cta`;
-    const fallbackName = 'svc_visit_reminder';
-    const fallbackParams = [name, 'callback for your missed call'];
     const primaryParams = [name];
 
     const { accessToken, phoneNumberId } = await getWhatsAppCredentials(db);
@@ -100,48 +98,24 @@ async function maybeSendMissedCallCallbackWhatsApp(db, opts) {
       return { sent: false, reason: 'no_credentials' };
     }
 
-    const buildPayload = (tName, params) => ({
-      messaging_product: 'whatsapp',
-      to: phone,
-      type: 'template',
-      template: {
-        name: tName,
-        language: { code: 'en' },
-        components: [
-          {
-            type: 'body',
-            parameters: params.map((t) => ({ type: 'text', text: String(t) })),
-          },
-        ],
-      },
-    });
-
-    let usedName = templateName;
-    let usedParams = primaryParams;
-    let result = await callWhatsAppApi(
+    const sendResult = await sendTemplateWithColdFallbacks({
       phoneNumberId,
       accessToken,
-      buildPayload(templateName, primaryParams)
-    );
+      to: phone,
+      templateName,
+      languageCode: 'en',
+      bodyParams: primaryParams,
+      headerComponents: [],
+      enableFallback: true,
+    });
 
-    // CTA not approved yet → utility reminder with missed-call hint
-    if (!result.ok) {
-      const errMsg = String(result.data?.error?.message || '');
-      if (/template|not (found|exist)|approved|parameter/i.test(errMsg)) {
-        usedName = fallbackName;
-        usedParams = fallbackParams;
-        result = await callWhatsAppApi(
-          phoneNumberId,
-          accessToken,
-          buildPayload(fallbackName, fallbackParams)
-        );
-      }
-    }
+    const usedName = sendResult.templateName || templateName;
+    const result = sendResult.result;
 
     const waId = result?.data?.messages?.[0]?.id || null;
     await insertWhatsAppMessage(db, {
       wa_message_id: waId,
-      direction: 'out',
+      direction: 'outbound',
       phone_e164: phone,
       customer_id: customerId,
       msg_type: 'template',

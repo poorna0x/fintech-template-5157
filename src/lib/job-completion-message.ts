@@ -146,6 +146,50 @@ ${waLabeledLink('🌐', 'Website', website)}
 ${waLabeledLink('📱', 'Book your next service', bookingUrl)}`;
 }
 
+/** Plain payment line for Meta cold template {{3}} (no emoji — UTILITY-safe). */
+export function buildJobCompletionColdPaymentLine(input: {
+  amountCollected?: number;
+  amountPending?: number;
+  pendingDueDate?: string | null;
+}): string {
+  const lines = buildJobCompletionPaymentPlainLines(input);
+  return lines.join(' ') || 'Your service visit is complete.';
+}
+
+/** Meta cold template body params: [name, completion line, payment line]. */
+export function buildJobCompletionColdBodyParams(
+  input: JobCompletionMessageInput
+): [string, string, string] {
+  const name = input.customerName.trim() || 'Customer';
+  const completionLine = buildJobCompletionLine(
+    input.serviceType || '',
+    input.serviceSubType || ''
+  );
+  const paymentLine = buildJobCompletionColdPaymentLine(input);
+  return [name, completionLine, paymentLine];
+}
+
+const JOB_DONE_COLD_SHELL =
+  'Thank you for choosing us. Reply on this chat if you need any help.';
+
+/** Preview of svc_job_done_*_v2 cold body (Meta-approved wording). */
+export function formatJobCompletionColdTemplatePreview(
+  input: JobCompletionMessageInput
+): string {
+  const [name, completionLine, paymentLine] = buildJobCompletionColdBodyParams(input);
+  return `Hi ${name}, ${completionLine} ${paymentLine} ${JOB_DONE_COLD_SHELL}`;
+}
+
+/** Brand-specific rich cold template (pending Meta approval → falls back to svc_job_done). */
+export function resolveJobCompletionColdTemplateName(brand: DocumentBrand): string {
+  return brand === 'elevenro' ? 'svc_job_done_ero_v2' : 'svc_job_done_hro_v2';
+}
+
+export const JOB_COMPLETION_COLD_FALLBACK = {
+  name: 'svc_job_done',
+  language: 'en' as const,
+};
+
 function resolveBillAmount(job: Record<string, unknown>): number {
   const actualCost = job.actual_cost ?? job.actualCost;
   const paymentAmount = job.payment_amount ?? job.paymentAmount;

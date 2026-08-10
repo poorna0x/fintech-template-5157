@@ -43,28 +43,14 @@ import { registerAdminPWA } from '@/lib/pwa';
 import { db, supabase, type CallingPageRpcRow } from '@/lib/supabase';
 import { Customer } from '@/types';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
-import { sendAdminWhatsAppText } from '@/lib/sendAdminWhatsAppApi';
 import { customerNameClassName } from '@/lib/customerDisplay';
 import CustomerPhotoGalleryDialog from '@/components/admin/CustomerPhotoGalleryDialog';
 import CustomerReportDialog from '@/components/admin/CustomerReportDialog';
 import PhotoViewerDialog from '@/components/admin/PhotoViewerDialog';
 import CallingBulkWhatsAppDialog from '@/components/admin/CallingBulkWhatsAppDialog';
+import { WhatsAppCustomizeSendDialog } from '@/components/admin/WhatsAppCustomizeSendDialog';
 import { Checkbox } from '@/components/ui/checkbox';
-import { resolveCustomerSendBrand } from '@/lib/admin-email-sources';
-import {
-  buildCallingWhatsAppMessage,
-  callingContextFromCustomer,
-  CALLING_WA_TEMPLATE_META,
-  CALLING_WA_TEMPLATE_ORDER,
-  type CallingWhatsAppTemplate,
-} from '@/lib/calling-whatsapp-templates';
-import {
-  loadApprovedWhatsAppTemplateNameSet,
-  sendCallingWhatsAppOne,
-  type CallingDeliveryMode,
-} from '@/lib/callingBulkWhatsApp';
-import type { DocumentBrand } from '@/lib/service-brands';
-import { getDocumentBrandLabel } from '@/lib/service-brands';
+import { callingContextFromCustomer } from '@/lib/calling-whatsapp-templates';
 
 interface CallHistory {
   id: string;
@@ -229,14 +215,6 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [whatsappDialogOpen, setWhatsappDialogOpen] = useState(false);
   const [selectedCustomerForWhatsApp, setSelectedCustomerForWhatsApp] = useState<CustomerWithHistory | null>(null);
-  const [waBrand, setWaBrand] = useState<DocumentBrand>('hydrogenro');
-  const [waLastServiceBrand, setWaLastServiceBrand] = useState<DocumentBrand | null>(null);
-  const [waBrandLoading, setWaBrandLoading] = useState(false);
-  const [waTemplate, setWaTemplate] = useState<CallingWhatsAppTemplate>('service_due');
-  const [waMessage, setWaMessage] = useState('');
-  const [waMessageTouched, setWaMessageTouched] = useState(false);
-  const [waDeliveryMode, setWaDeliveryMode] = useState<CallingDeliveryMode>('api');
-  const [waSending, setWaSending] = useState(false);
   const [selectedBulkIds, setSelectedBulkIds] = useState<Set<string>>(new Set());
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
   const [bulkQueue, setBulkQueue] = useState<CustomerWithHistory[]>([]);
@@ -462,80 +440,13 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
     [selectedCustomerForWhatsApp]
   );
 
-  useEffect(() => {
-    if (!whatsappDialogOpen || !selectedCustomerForWhatsApp?.id) return;
-
-    let cancelled = false;
-    setWaBrandLoading(true);
-    setWaTemplate('service_due');
-    setWaMessageTouched(false);
-
-    resolveCustomerSendBrand(selectedCustomerForWhatsApp.id)
-      .then(({ sendBrand, lastServiceBrand }) => {
-        if (cancelled) return;
-        setWaBrand(sendBrand);
-        setWaLastServiceBrand(lastServiceBrand);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setWaBrand('hydrogenro');
-          setWaLastServiceBrand(null);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setWaBrandLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [whatsappDialogOpen, selectedCustomerForWhatsApp?.id]);
-
-  useEffect(() => {
-    if (!waMessageContext || waMessageTouched) return;
-    setWaMessage(buildCallingWhatsAppMessage(waMessageContext, waTemplate, waBrand));
-  }, [waMessageContext, waTemplate, waBrand, waMessageTouched]);
-
-  const waBrandHint = useMemo(() => {
-    if (waBrandLoading) return 'Loading last service brand…';
-    if (waLastServiceBrand) {
-      const lastLabel = getDocumentBrandLabel(waLastServiceBrand);
-      if (waBrand === waLastServiceBrand) {
-        return `Using last service brand (${lastLabel}). Change if needed.`;
-      }
-      return `Last served: ${lastLabel}. Currently sending as ${getDocumentBrandLabel(waBrand)}.`;
-    }
-    return `No prior service brand on file — using ${getDocumentBrandLabel(waBrand)}.`;
-  }, [waBrandLoading, waLastServiceBrand, waBrand]);
-
-  const resetWhatsAppComposer = () => {
-    setWhatsappDialogOpen(false);
-    setSelectedCustomerForWhatsApp(null);
-    setWaMessageTouched(false);
-    setWaTemplate('service_due');
-    setWaDeliveryMode('api');
-    setWaSending(false);
-  };
-
   const handleWhatsApp = (customer: CustomerWithHistory) => {
-    const phoneNumber = customer.phone?.replace(/\D/g, '');
-    if (!phoneNumber) {
+    if (!customer.phone?.replace(/\D/g, '') && !customer.alternatePhone?.replace(/\D/g, '')) {
       toast.error('Phone number not available');
       return;
     }
     setSelectedCustomerForWhatsApp(customer);
-    setWaDeliveryMode('api');
     setWhatsappDialogOpen(true);
-  };
-
-  const handleWaTemplateSelect = (template: CallingWhatsAppTemplate) => {
-    setWaTemplate(template);
-    setWaMessageTouched(false);
-  };
-
-  const handleWaBrandChange = (brand: DocumentBrand) => {
-    setWaBrand(brand);
-    setWaMessageTouched(false);
   };
 
   const pageSelectableIds = useMemo(
@@ -568,77 +479,6 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
       }
       return next;
     });
-  };
-
-  const sendWhatsAppMessage = async () => {
-    const customer = selectedCustomerForWhatsApp;
-    if (!customer?.phone) {
-      toast.error('Phone number not available');
-      return;
-    }
-    const message = waMessage.trim();
-    if (!message) {
-      toast.error('Message is empty');
-      return;
-    }
-
-    setWaSending(true);
-    try {
-      const to = formatPhoneForWhatsApp(customer.phone);
-      if (!to || to.length < 10) {
-        toast.error('Invalid phone number');
-        return;
-      }
-
-      if (waDeliveryMode === 'wa_me') {
-        const result = await sendAdminWhatsAppText({
-          to,
-          text: message,
-          customerId: customer.id,
-          source: 'calling',
-          forceWaMe: true,
-          fallbackWaMe: false,
-        });
-        if (!result.ok) {
-          toast.error(result.error || 'Could not open WhatsApp');
-          return;
-        }
-        await recordCall(customer.id, 'WHATSAPP', customer.phone, message, 'COMPLETED', undefined, {
-          quiet: true,
-        });
-        resetWhatsAppComposer();
-        toast.success('Phone WhatsApp opened — message saved to contact history');
-        return;
-      }
-
-      const approvedNames = await loadApprovedWhatsAppTemplateNameSet();
-      const result = await sendCallingWhatsAppOne({
-        customer,
-        message,
-        template: waTemplate,
-        brand: waBrand,
-        deliveryMode: 'api',
-        approvedTemplateNames: approvedNames,
-      });
-
-      if (!result.ok) {
-        toast.error(result.error || 'Send failed');
-        return;
-      }
-
-      await recordCall(customer.id, 'WHATSAPP', customer.phone, message, 'COMPLETED', undefined, {
-        quiet: true,
-      });
-
-      resetWhatsAppComposer();
-      if (result.usedTemplate) {
-        toast.success('Cold template sent via API — saved to contact history');
-      } else {
-        toast.success('WhatsApp sent via API — saved to contact history');
-      }
-    } finally {
-      setWaSending(false);
-    }
   };
 
   // Handle viewing photos
@@ -1453,177 +1293,33 @@ const CallingPage = ({ hideHeader = false, onBack }: CallingPageProps = {}) => {
         </div>
       </div>
 
-      {/* WhatsApp Message Composer */}
-      <Dialog
-        open={whatsappDialogOpen}
-        onOpenChange={(open) => {
-          if (!open) resetWhatsAppComposer();
-          else setWhatsappDialogOpen(true);
-        }}
-      >
-        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <WhatsAppIcon className="w-5 h-5 text-green-600" />
-              WhatsApp message
-            </DialogTitle>
-            <DialogDescription asChild>
-              <span>
-                Compose for{' '}
-                <span className={customerNameClassName(selectedCustomerForWhatsApp as any)}>
-                  {selectedCustomerForWhatsApp?.fullName}
-                </span>
-                {selectedCustomerForWhatsApp?.phone ? (
-                  <span className="text-muted-foreground"> · {selectedCustomerForWhatsApp.phone}</span>
-                ) : null}
-              </span>
-            </DialogDescription>
-          </DialogHeader>
-
-          {selectedCustomerForWhatsApp && (
-            <div className="space-y-4 py-1">
-              <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
-                <div className="space-y-2">
-                  <Label htmlFor="calling-wa-brand">Send as brand</Label>
-                  <Select
-                    value={waBrand}
-                    onValueChange={(v) => handleWaBrandChange(v as DocumentBrand)}
-                    disabled={waBrandLoading}
-                  >
-                    <SelectTrigger id="calling-wa-brand">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="hydrogenro">Hydrogen RO</SelectItem>
-                      <SelectItem value="elevenro">Eleven RO</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-                    {waBrandLoading && <Loader2 className="h-3 w-3 animate-spin shrink-0" />}
-                    {waBrandHint} Brand applies to message copy and cold templates.
-                  </p>
-                </div>
-                {waMessageContext?.deviceBrand && (
-                  <div className="rounded-lg border bg-muted/30 px-3 py-2 text-xs text-muted-foreground sm:max-w-[200px]">
-                    <span className="font-medium text-foreground">Purifier on file</span>
-                    <div className="mt-0.5 break-words">
-                      {waMessageContext.deviceBrand}
-                      {waMessageContext.deviceModel ? ` — ${waMessageContext.deviceModel}` : ''}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-1.5">
-                <Label>How to send</Label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    className={
-                      waDeliveryMode === 'api'
-                        ? 'rounded-lg border-2 border-emerald-600 bg-emerald-50 px-3 py-2 text-left text-sm font-medium text-emerald-950'
-                        : 'rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50'
-                    }
-                    onClick={() => setWaDeliveryMode('api')}
-                  >
-                    <span className="block">WhatsApp API</span>
-                    <span className="block text-[11px] font-normal opacity-80">
-                      Business Cloud API · inbox log
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    className={
-                      waDeliveryMode === 'wa_me'
-                        ? 'rounded-lg border-2 border-emerald-600 bg-emerald-50 px-3 py-2 text-left text-sm font-medium text-emerald-950'
-                        : 'rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50'
-                    }
-                    onClick={() => setWaDeliveryMode('wa_me')}
-                  >
-                    <span className="block">wa.me</span>
-                    <span className="block text-[11px] font-normal opacity-80">
-                      Opens on this phone
-                    </span>
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Message type</Label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {CALLING_WA_TEMPLATE_ORDER.map((key) => {
-                    const meta = CALLING_WA_TEMPLATE_META[key];
-                    const selected = waTemplate === key;
-                    return (
-                      <button
-                        key={key}
-                        type="button"
-                        onClick={() => handleWaTemplateSelect(key)}
-                        className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${
-                          selected
-                            ? 'border-green-600 bg-green-50 ring-1 ring-green-600/30'
-                            : 'border-border hover:bg-muted/40'
-                        }`}
-                      >
-                        <div className="text-sm font-medium text-foreground">{meta.label}</div>
-                        <div className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
-                          {meta.description}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <Label htmlFor="calling-wa-message">Message preview</Label>
-                  {waMessageTouched && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 text-xs"
-                      onClick={() => setWaMessageTouched(false)}
-                    >
-                      Reset to template
-                    </Button>
-                  )}
-                </div>
-                <Textarea
-                  id="calling-wa-message"
-                  value={waMessage}
-                  onChange={(e) => {
-                    setWaMessageTouched(true);
-                    setWaMessage(e.target.value);
-                  }}
-                  rows={12}
-                  className="text-sm font-mono leading-relaxed resize-y min-h-[200px]"
-                  placeholder="Choose a template or type your message…"
-                />
-              </div>
-            </div>
-          )}
-
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={resetWhatsAppComposer}>
-              Cancel
-            </Button>
-            <Button
-              className="bg-green-600 hover:bg-green-700 text-white"
-              onClick={() => void sendWhatsAppMessage()}
-              disabled={!waMessage.trim() || waBrandLoading || waSending}
-            >
-              {waSending ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <Send className="w-4 h-4 mr-2" />
-              )}
-              {waDeliveryMode === 'wa_me' ? 'Open wa.me' : 'Send via WhatsApp API'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {selectedCustomerForWhatsApp && (
+        <WhatsAppCustomizeSendDialog
+          open={whatsappDialogOpen}
+          onOpenChange={(open) => {
+            setWhatsappDialogOpen(open);
+            if (!open) setSelectedCustomerForWhatsApp(null);
+          }}
+          title="Calling — WhatsApp"
+          customerName={selectedCustomerForWhatsApp.fullName || 'Customer'}
+          customerId={selectedCustomerForWhatsApp.id}
+          primaryPhone={selectedCustomerForWhatsApp.phone}
+          alternatePhone={selectedCustomerForWhatsApp.alternatePhone}
+          source="calling"
+          messageContext={waMessageContext || undefined}
+          onSent={async ({ phone, message }) => {
+            await recordCall(
+              selectedCustomerForWhatsApp.id,
+              'WHATSAPP',
+              phone,
+              message,
+              'COMPLETED',
+              undefined,
+              { quiet: true }
+            );
+          }}
+        />
+      )}
 
       <CallingBulkWhatsAppDialog
         open={bulkDialogOpen}

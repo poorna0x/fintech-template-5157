@@ -13,6 +13,7 @@ import { TOAST_VALIDATION } from '@/lib/toastOptions';
 import { db } from '@/lib/supabase';
 import { getDefaultLeadCost, isHomeTriangleLeadSource } from '@/lib/adminUtils';
 import { notifyTechnicianAfterJobEdit } from '@/lib/notifyTechJobEdit';
+import { maybeNotifyCustomerJobReschedule } from '@/lib/jobRescheduleCustomerWhatsApp';
 
 interface EditJobFormData {
   serviceType: 'RO' | 'SOFTENER';
@@ -400,6 +401,28 @@ const EditJobDialog: React.FC<EditJobDialogProps> = ({
           jobId: job.id,
           technicianId: techId,
           customerName,
+          before: beforeSnap,
+          after: { ...editJobFormData },
+        });
+
+        const customerPhone =
+          (job.customer as { phone?: string } | null)?.phone ||
+          (job.customer as { alternate_phone?: string } | null)?.alternate_phone ||
+          null;
+        const customerId =
+          (job.customer as { id?: string } | null)?.id ||
+          (job as { customer_id?: string }).customer_id ||
+          null;
+        const customerBrand =
+          (job.customer as { brand?: string; service_brand?: string } | null)?.brand ||
+          (job.customer as { service_brand?: string } | null)?.service_brand ||
+          null;
+
+        void maybeNotifyCustomerJobReschedule({
+          customerPhone,
+          customerName,
+          customerId,
+          brand: customerBrand,
           before: beforeSnap,
           after: { ...editJobFormData },
         });
