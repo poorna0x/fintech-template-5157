@@ -81,6 +81,7 @@ export type WhatsAppCrmSettings = {
 export type WhatsAppUsageStats = {
   from: string;
   to: string;
+  month_key?: string;
   outbound: number;
   inbound: number;
   templates: number;
@@ -91,6 +92,40 @@ export type WhatsAppUsageStats = {
   cold_utility: number;
   session_messages: number;
 };
+
+export type WhatsAppUsageMonthlySnapshot = {
+  month_key: string;
+  cold_utility: number;
+  session_messages: number;
+  outbound: number;
+  inbound: number;
+  failed: number;
+  templates: number;
+  documents: number;
+  text_messages: number;
+  rate_utility_inr: number;
+  rate_service_inr: number;
+  estimated_total_inr: number;
+  notes: string | null;
+  updated_at: string;
+};
+
+function parseUsageStatsRaw(raw: Record<string, unknown>): WhatsAppUsageStats {
+  return {
+    from: String(raw.from || ''),
+    to: String(raw.to || ''),
+    month_key: raw.month_key ? String(raw.month_key) : undefined,
+    outbound: num(raw.outbound, 0),
+    inbound: num(raw.inbound, 0),
+    templates: num(raw.templates, 0),
+    documents: num(raw.documents, 0),
+    text: num(raw.text, 0),
+    failed: num(raw.failed, 0),
+    delivered_or_sent: num(raw.delivered_or_sent, 0),
+    cold_utility: num(raw.cold_utility, 0),
+    session_messages: num(raw.session_messages, 0),
+  };
+}
 
 export const DEFAULT_WHATSAPP_CRM_SETTINGS: WhatsAppCrmSettings = {
   id: 1,
@@ -388,32 +423,152 @@ export async function saveWhatsAppCrmSettings(
   return { ok: true, settings };
 }
 
-export async function fetchWhatsAppUsageStats(fromIso?: string): Promise<{
+export async function fetchWhatsAppUsageStats(
+  fromIso?: string,
+  toIso?: string
+): Promise<{
   ok: boolean;
   stats: WhatsAppUsageStats | null;
   error?: string;
 }> {
   const { data, error } = await supabase.rpc('whatsapp_usage_stats', {
     p_from: fromIso || null,
+    p_to: toIso || null,
   });
-  if (error) return { ok: false, stats: null, error: error.message };
-  const raw = (data || {}) as Record<string, unknown>;
+  if (!error && data) {
+    return {
+      ok: true,
+      stats: parseUsageStatsRaw((data || {}) as Record<string, unknown>),
+    };
+  }
+
+  if (toIso) {
+    return { ok: false, stats: null, error: error?.message || 'Could not load usage stats' };
+  }
+
+  const legacy = await supabase.rpc('whatsapp_usage_stats', {
+    p_from: fromIso || null,
+  });
+  if (legacy.error) return { ok: false, stats: null, error: legacy.error.message };
   return {
     ok: true,
-    stats: {
-      from: String(raw.from || ''),
-      to: String(raw.to || ''),
-      outbound: num(raw.outbound, 0),
-      inbound: num(raw.inbound, 0),
-      templates: num(raw.templates, 0),
-      documents: num(raw.documents, 0),
-      text: num(raw.text, 0),
-      failed: num(raw.failed, 0),
-      delivered_or_sent: num(raw.delivered_or_sent, 0),
-      cold_utility: num(raw.cold_utility, 0),
-      session_messages: num(raw.session_messages, 0),
-    },
+    stats: parseUsageStatsRaw((legacy.data || {}) as Record<string, unknown>),
   };
+}
+
+/** Calendar month (IST boundaries) — matches Meta monthly billing view. */
+export async function fetchWhatsAppUsageForMonth(
+  year: number,
+  month: number
+): Promise<{ ok: boolean; stats: WhatsAppUsageStats | null; error?: string }> {
+  const { from, to, monthKey } = istMonthRangeIso(year, month);
+
+  const { data, error } = await supabase.rpc('whatsapp_usage_stats_for_month', {
+    p_month: month,
+    p_year: year,
+  });
+
+  if (!error && data) {
+    return {
+      ok: true,
+      stats: parseUsageStatsRaw((data || {}) as Record<string, unknown>),
+    };
+  }
+
+  // Fallback when monthly RPC not migrated yet — use date-range stats.
+  const range = await fetchWhatsAppUsageStats(from, to);
+  if (!range.ok || !range.stats) {
+    return {
+      ok: false,
+      stats: null,
+      error: error?.message || range.error || 'Could not load monthly usage',
+    };
+  }
+  return {
+    ok: true,
+    stats: { ...range.stats, month_key: monthKey },
+  };
+}
+
+export async function fetchWhatsAppUsageMonthlyHistory(limit = 12): Promise<{
+  ok: boolean;
+  rows: WhatsAppUsageMonthlySnapshot[];
+  error?: string;
+}> {
+  const { data, error } = await supabase.rpc('whatsapp_usage_monthly_list', {
+    p_limit: limit,
+  });
+  if (error) return { ok: false, rows: [], error: error.message };
+  const rows = (data || []) as WhatsAppUsageMonthlySnapshot[];
+  return { ok: true, rows };
+}
+
+/** Persist / refresh monthly counts + estimated bill from whatsapp_messages. */
+export async function refreshWhatsAppUsageMonth(monthKey?: string): Promise<{
+  ok: boolean;
+  snapshot: WhatsAppUsageMonthlySnapshot | null;
+  error?: string;
+}> {
+  const { data, error } = await supabase.rpc('whatsapp_usage_monthly_refresh', {
+    p_month_key: monthKey || null,
+  });
+  if (error) {
+    const msg = error.message || '';
+    if (/whatsapp_usage_monthly|schema cache|could not find/i.test(msg)) {
+      return {
+        ok: false,
+        snapshot: null,
+        error:
+          'Monthly snapshot not available yet — run scripts/add-whatsapp-usage-monthly.sql in Supabase SQL editor.',
+      };
+    }
+    return { ok: false, snapshot: null, error: msg };
+  }
+  return { ok: true, snapshot: (data || null) as WhatsAppUsageMonthlySnapshot | null };
+}
+
+export function parseMonthKey(value: string): { year: number; month: number } | null {
+  const m = /^(\d{4})-(\d{2})$/.exec(String(value || '').trim());
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  if (month < 1 || month > 12) return null;
+  return { year, month };
+}
+
+/** IST calendar month → ISO range for whatsapp_usage_stats fallback. */
+export function istMonthRangeIso(year: number, month: number): { from: string; to: string; monthKey: string } {
+  const monthKey = `${year}-${String(month).padStart(2, '0')}`;
+  const nextYear = month === 12 ? year + 1 : year;
+  const nextMonth = month === 12 ? 1 : month + 1;
+  const from = `${monthKey}-01T00:00:00+05:30`;
+  const to = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01T00:00:00+05:30`;
+  return { from, to, monthKey };
+}
+
+export function currentMonthKey(): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+  }).formatToParts(new Date());
+  const y = parts.find((p) => p.type === 'year')?.value || '1970';
+  const m = parts.find((p) => p.type === 'month')?.value || '01';
+  return `${y}-${m}`;
+}
+
+/** Auto-save current month snapshot when stale (default 4h). Returns true if refreshed. */
+export async function maybeAutoRefreshWhatsAppUsageMonth(
+  monthKey: string,
+  existing: WhatsAppUsageMonthlySnapshot | null,
+  maxAgeMs = 4 * 60 * 60 * 1000
+): Promise<boolean> {
+  if (monthKey !== currentMonthKey()) return false;
+  const updatedAt = existing?.updated_at ? new Date(existing.updated_at).getTime() : 0;
+  const stale = !existing || !Number.isFinite(updatedAt) || Date.now() - updatedAt > maxAgeMs;
+  if (!stale) return false;
+  const result = await refreshWhatsAppUsageMonth(monthKey);
+  return result.ok;
 }
 
 export type WhatsAppBillEstimate = {
@@ -433,6 +588,8 @@ export function estimateWhatsAppBill(
     marketingCount?: number;
     authenticationCount?: number;
     windowDays?: number;
+    /** When true, do not extrapolate — total is the full period (e.g. calendar month). */
+    actualPeriodBill?: boolean;
   }
 ): WhatsAppBillEstimate {
   const marketingCount = opts?.marketingCount ?? 0;
@@ -447,7 +604,7 @@ export function estimateWhatsAppBill(
   const total = utilityCost + marketingCost + authenticationCost + serviceCost;
 
   const windowDays = Math.max(1, opts?.windowDays ?? 7);
-  const projectedMonthly = (total / windowDays) * 30;
+  const projectedMonthly = opts?.actualPeriodBill ? total : (total / windowDays) * 30;
   const budget = settings.monthly_budget_inr;
   const overBudget = budget != null && budget > 0 && projectedMonthly > budget;
 

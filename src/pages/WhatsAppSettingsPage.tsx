@@ -19,12 +19,18 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import {
   DEFAULT_WHATSAPP_CRM_SETTINGS,
+  currentMonthKey,
   estimateWhatsAppBill,
   fetchWhatsAppCrmSettings,
-  fetchWhatsAppUsageStats,
+  fetchWhatsAppUsageForMonth,
+  fetchWhatsAppUsageMonthlyHistory,
+  maybeAutoRefreshWhatsAppUsageMonth,
+  parseMonthKey,
+  refreshWhatsAppUsageMonth,
   formatInr,
   saveWhatsAppCrmSettings,
   type WhatsAppCrmSettings,
+  type WhatsAppUsageMonthlySnapshot,
   type WhatsAppUsageStats,
 } from '@/lib/whatsappCrmSettings';
 import { TECH_PUSH_CATEGORIES, TECH_PUSH_LABELS } from '@/lib/pushNotificationPrefs';
@@ -47,24 +53,48 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }
   });
   const [stats, setStats] = useState<WhatsAppUsageStats | null>(null);
   const [statsError, setStatsError] = useState<string | null>(null);
+  const [usageMonth, setUsageMonth] = useState(currentMonthKey);
+  const [monthlyHistory, setMonthlyHistory] = useState<WhatsAppUsageMonthlySnapshot[]>([]);
+  const [usageRefreshing, setUsageRefreshing] = useState(false);
   const [dirty, setDirty] = useState(false);
+
+  const loadUsage = useCallback(async (monthKey: string) => {
+    setStatsError(null);
+    const parsed = parseMonthKey(monthKey);
+    if (!parsed) {
+      setStatsError('Invalid month');
+      setStats(null);
+      return;
+    }
+    const [u, history] = await Promise.all([
+      fetchWhatsAppUsageForMonth(parsed.year, parsed.month),
+      fetchWhatsAppUsageMonthlyHistory(12),
+    ]);
+    if (!u.ok) {
+      setStatsError(u.error || 'Could not load usage');
+      setStats(null);
+    } else {
+      setStats(u.stats);
+    }
+    let rows = history.ok ? history.rows : [];
+    const existing = rows.find((r) => r.month_key === monthKey) || null;
+    const autoSaved = await maybeAutoRefreshWhatsAppUsageMonth(monthKey, existing);
+    if (autoSaved) {
+      const again = await fetchWhatsAppUsageMonthlyHistory(12);
+      if (again.ok) rows = again.rows;
+    }
+    setMonthlyHistory(rows);
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
-    setStatsError(null);
     try {
-      const [s, u] = await Promise.all([fetchWhatsAppCrmSettings(), fetchWhatsAppUsageStats()]);
+      const s = await fetchWhatsAppCrmSettings();
       if (!s.ok) {
         toast.error(s.error || 'Could not load WhatsApp settings');
       }
       setSettings(s.settings);
       setDirty(false);
-      if (!u.ok) {
-        setStatsError(u.error || 'Could not load usage');
-        setStats(null);
-      } else {
-        setStats(u.stats);
-      }
     } finally {
       setLoading(false);
     }
@@ -74,6 +104,27 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (loading) return;
+    void loadUsage(usageMonth);
+  }, [usageMonth, loadUsage, loading]);
+
+  const handleSaveMonthSnapshot = async () => {
+    setUsageRefreshing(true);
+    try {
+      const result = await refreshWhatsAppUsageMonth(usageMonth);
+      if (!result.ok) {
+        toast.error(result.error || 'Could not save month snapshot');
+        return;
+      }
+      const history = await fetchWhatsAppUsageMonthlyHistory(12);
+      if (history.ok) setMonthlyHistory(history.rows);
+      toast.success(`Saved ${usageMonth} usage snapshot`);
+    } finally {
+      setUsageRefreshing(false);
+    }
+  };
+
   const patch = <K extends keyof WhatsAppCrmSettings>(key: K, value: WhatsAppCrmSettings[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
     setDirty(true);
@@ -81,8 +132,13 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }
 
   const bill = useMemo(() => {
     if (!stats) return null;
-    return estimateWhatsAppBill(settings, stats, { windowDays: 7 });
+    return estimateWhatsAppBill(settings, stats, { actualPeriodBill: true });
   }, [settings, stats]);
+
+  const savedSnapshot = useMemo(
+    () => monthlyHistory.find((r) => r.month_key === usageMonth) || null,
+    [monthlyHistory, usageMonth]
+  );
 
   const handleSave = async () => {
     setSaving(true);
@@ -480,11 +536,42 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }
       {/* Usage + bill */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Usage & expected bill</CardTitle>
-          <CardDescription>
-            Based on messages stored in CRM (7-day retention). Cold = template sends; session =
-            free-form text + PDF.
-          </CardDescription>
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <CardTitle className="text-base">Usage & expected bill</CardTitle>
+              <CardDescription>
+                Calendar month (IST). Current month saves automatically (daily cron + when you
+                open this page if older than 4h). Cold (Meta tpl) = billable template sends.
+              </CardDescription>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                type="month"
+                value={usageMonth}
+                onChange={(e) => setUsageMonth(e.target.value)}
+                className="h-9 w-[9.5rem] text-sm"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={usageRefreshing}
+                onClick={() => void loadUsage(usageMonth)}
+              >
+                <RefreshCw className={cn('mr-1 h-3.5 w-3.5', usageRefreshing && 'animate-spin')} />
+                Refresh
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={usageRefreshing}
+                onClick={() => void handleSaveMonthSnapshot()}
+              >
+                Update snapshot
+              </Button>
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           {statsError ? (
@@ -494,8 +581,9 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <StatChip label="Outbound" value={String(stats.outbound)} />
                 <StatChip label="Inbound" value={String(stats.inbound)} />
-                <StatChip label="Cold templates" value={String(stats.cold_utility)} accent />
+                <StatChip label="Cold (Meta tpl)" value={String(stats.cold_utility)} accent />
                 <StatChip label="Session msgs" value={String(stats.session_messages)} />
+                <StatChip label="Text templates" value={String(stats.templates)} />
                 <StatChip label="PDFs" value={String(stats.documents)} />
                 <StatChip label="Text" value={String(stats.text)} />
                 <StatChip label="Sent/delivered" value={String(stats.delivered_or_sent)} />
@@ -510,7 +598,9 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }
                   )}
                 >
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <p className="text-sm font-medium text-foreground">Last 7 days estimate</p>
+                    <p className="text-sm font-medium text-foreground">
+                      {usageMonth} estimate (live from CRM log)
+                    </p>
                     <p className="text-lg font-semibold tabular-nums">{formatInr(bill.total)}</p>
                   </div>
                   <ul className="space-y-1 text-xs text-muted-foreground">
@@ -523,8 +613,23 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }
                       {formatInr(bill.serviceCost)}
                     </li>
                   </ul>
+                  {savedSnapshot ? (
+                    <p className="text-[11px] text-muted-foreground border-t pt-2">
+                      Saved snapshot: {savedSnapshot.cold_utility} cold ·{' '}
+                      {formatInr(Number(savedSnapshot.estimated_total_inr))} · updated{' '}
+                      {new Date(savedSnapshot.updated_at).toLocaleString('en-IN', {
+                        dateStyle: 'medium',
+                        timeStyle: 'short',
+                      })}
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground border-t pt-2">
+                      Snapshot will auto-save for the current month (nightly + when you open this
+                      page).
+                    </p>
+                  )}
                   <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-2 text-sm">
-                    <span className="text-muted-foreground">Projected monthly</span>
+                    <span className="text-muted-foreground">vs monthly budget</span>
                     <span
                       className={cn(
                         'font-semibold tabular-nums',
@@ -537,13 +642,44 @@ export default function WhatsAppSettingsPage({ hideHeader, onBack, onOpenInbox }
                   </div>
                 </div>
               ) : null}
+
+              {monthlyHistory.length > 0 ? (
+                <div className="rounded-lg border overflow-hidden">
+                  <div className="bg-muted/40 px-3 py-2 text-xs font-medium text-muted-foreground">
+                    Saved monthly snapshots
+                  </div>
+                  <ul className="divide-y text-xs">
+                    {monthlyHistory.map((row) => (
+                      <li
+                        key={row.month_key}
+                        className="flex flex-wrap items-center justify-between gap-2 px-3 py-2"
+                      >
+                        <button
+                          type="button"
+                          className="font-medium text-foreground hover:underline"
+                          onClick={() => setUsageMonth(row.month_key)}
+                        >
+                          {row.month_key}
+                        </button>
+                        <span className="text-muted-foreground">
+                          {row.cold_utility} cold · {row.session_messages} session
+                        </span>
+                        <span className="font-medium tabular-nums">
+                          {formatInr(Number(row.estimated_total_inr))}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
             </>
           ) : (
             <p className="text-sm text-muted-foreground">No usage data yet.</p>
           )}
           <p className="text-[11px] text-muted-foreground">
-            Estimate only — Meta bills on delivery by category. Failed sends are listed separately
-            and still counted in outbound totals.
+            Estimate only — Meta bills on delivery by category. Cold (Meta tpl) excludes
+            test numbers (e.g. 9876543210) and failed sends. Compare with Meta Manager
+            template sends for the same month.
           </p>
         </CardContent>
       </Card>
