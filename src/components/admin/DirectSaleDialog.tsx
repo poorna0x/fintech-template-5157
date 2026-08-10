@@ -27,7 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2, ShoppingBag, Search, Check, X, Plus, ListOrdered, Wallet } from 'lucide-react';
+import { Loader2, ShoppingBag, Search, Check, X, Plus, ListOrdered, Wallet, Share2 } from 'lucide-react';
 import { db } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { filterInventoryByApproxSearch } from '@/lib/inventorySearch';
@@ -48,6 +48,10 @@ import {
   type DocumentBrand,
 } from '@/lib/service-brands';
 import type { Bill, BillItem } from '@/types';
+import {
+  buildOfficeSaleUpiShareMessage,
+  shareOfficeSaleUpiOnWhatsApp,
+} from '@/lib/officeSaleUpiShare';
 
 interface DirectSaleDialogProps {
   open: boolean;
@@ -95,6 +99,10 @@ type PendingBillDraft = {
   amount: number;
   paymentMode: PaymentMode;
   lines: Array<{ description: string; quantity: number; unitPrice: number }>;
+  onlineAmount?: number;
+  upiId?: string;
+  payeeName?: string;
+  upiPaymentPhone?: string;
 };
 
 const todayInputValue = (): string => {
@@ -153,6 +161,8 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
   const [pendingBill, setPendingBill] = useState<PendingBillDraft | null>(null);
   const [emailBill, setEmailBill] = useState<Bill | null>(null);
   const [emailBrand, setEmailBrand] = useState<DocumentBrand | null>(null);
+  const [whatsappExtraLines, setWhatsappExtraLines] = useState('');
+  const [sharingUpiLink, setSharingUpiLink] = useState(false);
   const proceedToSendRef = React.useRef(false);
   const skipResetOnCloseRef = React.useRef(false);
 
@@ -419,6 +429,69 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
   const needsQr = paymentMode === 'ONLINE' || paymentMode === 'PARTIAL';
   const onlineAmountForQr =
     paymentMode === 'PARTIAL' ? parseFloat(partialOnlineAmount) || 0 : amountNum || 0;
+  const canShareUpiLink = Boolean(
+    needsQr &&
+      selectedQr?.upiId &&
+      selectedQr.dynamicUpiEnabled &&
+      onlineAmountForQr > 0 &&
+      digitsPhone(customerPhone).length === 10
+  );
+
+  const shareUpiFromDraft = async (
+    draft: PendingBillDraft,
+    brand: DocumentBrand = 'hydrogenro'
+  ) => {
+    if (!draft.upiId || !draft.onlineAmount || draft.onlineAmount <= 0) {
+      toast.error('Online amount and UPI QR are required for a pay link');
+      return false;
+    }
+    if (digitsPhone(draft.customerPhone).length !== 10) {
+      toast.error('Enter customer phone to share UPI link on WhatsApp');
+      return false;
+    }
+    setSharingUpiLink(true);
+    try {
+      const result = await shareOfficeSaleUpiOnWhatsApp({
+        brand,
+        amount: draft.onlineAmount,
+        upiId: draft.upiId,
+        payeeName: draft.payeeName,
+        paymentPhone: draft.upiPaymentPhone,
+        customerPhone: draft.customerPhone,
+        note: draft.customerName.trim() || 'Office sale',
+      });
+      if (!result.ok) {
+        toast.error(result.error || 'Could not share UPI link');
+        return false;
+      }
+      toast.success('WhatsApp opened with UPI pay link');
+      return true;
+    } finally {
+      setSharingUpiLink(false);
+    }
+  };
+
+  const handleShareUpiLink = async () => {
+    if (!selectedQr?.upiId || onlineAmountForQr <= 0) {
+      toast.error('Select a Dynamic UPI QR and enter the online amount');
+      return;
+    }
+    await shareUpiFromDraft(
+      {
+        customerName: customerName.trim(),
+        customerPhone: digitsPhone(customerPhone),
+        billMode,
+        amount: amountNum,
+        paymentMode,
+        lines: [],
+        onlineAmount: onlineAmountForQr,
+        upiId: selectedQr.upiId,
+        payeeName: selectedQr.payeeName || selectedQr.name,
+        upiPaymentPhone: selectedQr.phone,
+      },
+      'hydrogenro'
+    );
+  };
 
   const buildBillDocument = (brand: DocumentBrand, draft: PendingBillDraft): Bill => {
     const brandCompany = getCompanyInfoForBrand(brand);
@@ -643,6 +716,14 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
         amount: amountNum,
         paymentMode,
         lines,
+        ...(needsQr && selectedQr?.upiId && onlineAmountForQr > 0
+          ? {
+              onlineAmount: onlineAmountForQr,
+              upiId: selectedQr.upiId,
+              payeeName: selectedQr.payeeName || selectedQr.name,
+              upiPaymentPhone: selectedQr.phone,
+            }
+          : {}),
       };
 
       await onSaleCreated?.();
@@ -670,13 +751,48 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
     setPendingBill(null);
   };
 
-  const onBrandSelected = (brand: DocumentBrand) => {
+  const onBrandSelected = async (brand: DocumentBrand) => {
     if (!pendingBill) return;
     const bill = buildBillDocument(brand, pendingBill);
     setEmailBill(bill);
     setEmailBrand(brand);
+    if (
+      pendingBill.upiId &&
+      pendingBill.onlineAmount &&
+      pendingBill.onlineAmount > 0 &&
+      (pendingBill.paymentMode === 'ONLINE' || pendingBill.paymentMode === 'PARTIAL')
+    ) {
+      const payBlock = await buildOfficeSaleUpiShareMessage({
+        brand,
+        amount: pendingBill.onlineAmount,
+        upiId: pendingBill.upiId,
+        payeeName: pendingBill.payeeName,
+        paymentPhone: pendingBill.upiPaymentPhone,
+        customerPhone: pendingBill.customerPhone,
+        note: pendingBill.customerName.trim() || 'Office sale',
+      });
+      setWhatsappExtraLines(payBlock || '');
+    } else {
+      setWhatsappExtraLines('');
+    }
     setEmailDialogOpen(true);
   };
+
+  const onShareUpiAfterSale = async () => {
+    if (!pendingBill) return;
+    const ok = await shareUpiFromDraft(pendingBill, 'hydrogenro');
+    if (ok) {
+      setAskSendOpen(false);
+    }
+  };
+
+  const showPostSaleUpiShare = Boolean(
+    pendingBill?.upiId &&
+      pendingBill.onlineAmount &&
+      pendingBill.onlineAmount > 0 &&
+      digitsPhone(pendingBill.customerPhone).length === 10 &&
+      (pendingBill.paymentMode === 'ONLINE' || pendingBill.paymentMode === 'PARTIAL')
+  );
 
   return (
     <>
@@ -1255,6 +1371,27 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
                     )}
                   </div>
                 )}
+
+                {canShareUpiLink ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full gap-2 border-emerald-300 text-emerald-800 hover:bg-emerald-50"
+                    disabled={sharingUpiLink}
+                    onClick={() => void handleShareUpiLink()}
+                  >
+                    {sharingUpiLink ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Share2 className="h-4 w-4" />
+                    )}
+                    Share UPI pay link on WhatsApp
+                  </Button>
+                ) : needsQr && selectedQr?.dynamicUpiEnabled ? (
+                  <p className="text-[11px] text-muted-foreground">
+                    Add customer phone (10 digits) to share the UPI pay link on WhatsApp.
+                  </p>
+                ) : null}
               </div>
             )}
           </div>
@@ -1295,14 +1432,35 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Send bill PDF?</AlertDialogTitle>
+            <AlertDialogTitle>Send to customer?</AlertDialogTitle>
             <AlertDialogDescription>
-              Sale is saved. Send the bill PDF to the customer by email or WhatsApp?
+              Sale is saved.
+              {showPostSaleUpiShare
+                ? ' Share the UPI pay link and/or send the bill PDF by email or WhatsApp.'
+                : ' Send the bill PDF by email or WhatsApp?'}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={onSkipSendPdf}>Not now</AlertDialogCancel>
-            <AlertDialogAction onClick={onConfirmSendPdf}>Yes, send PDF</AlertDialogAction>
+          <AlertDialogFooter className="flex-col gap-2 sm:flex-col sm:items-stretch">
+            {showPostSaleUpiShare ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full gap-2 border-emerald-300 text-emerald-800 hover:bg-emerald-50"
+                disabled={sharingUpiLink}
+                onClick={() => void onShareUpiAfterSale()}
+              >
+                {sharingUpiLink ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Share2 className="h-4 w-4" />
+                )}
+                Share UPI pay link on WhatsApp
+              </Button>
+            ) : null}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <AlertDialogCancel onClick={onSkipSendPdf}>Not now</AlertDialogCancel>
+              <AlertDialogAction onClick={onConfirmSendPdf}>Send bill PDF</AlertDialogAction>
+            </div>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -1323,6 +1481,7 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
             setEmailBill(null);
             setEmailBrand(null);
             setPendingBill(null);
+            setWhatsappExtraLines('');
           }
         }}
         kind="service_bill"
@@ -1331,6 +1490,7 @@ const DirectSaleDialog: React.FC<DirectSaleDialogProps> = ({ open, onOpenChange,
         defaultRecipients={[]}
         dueDateIso={emailBill?.billDate}
         allowWhatsApp
+        whatsappExtraLines={whatsappExtraLines}
       />
     </>
   );

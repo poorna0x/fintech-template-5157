@@ -109,6 +109,8 @@ export interface DocumentEmailSendDialogProps {
   defaultRecipients?: string[];
   dueDateIso?: string;
   allowWhatsApp?: boolean;
+  /** Appended to the default WhatsApp caption (e.g. office-sale UPI pay link). */
+  whatsappExtraLines?: string;
   onSent?: () => void;
 }
 
@@ -151,6 +153,7 @@ export default function DocumentEmailSendDialog({
   defaultRecipients = [],
   dueDateIso,
   allowWhatsApp = true,
+  whatsappExtraLines = '',
   onSent,
 }: DocumentEmailSendDialogProps) {
   const meta = KIND_META[kind];
@@ -175,15 +178,19 @@ export default function DocumentEmailSendDialog({
       hasPhone: formatPhoneForWhatsApp(phone).length >= 10,
     });
     setChannel(nextChannel);
+    const base = defaultMessageForChannel({
+      channel: nextChannel,
+      kind,
+      templateType: meta.templateType,
+      bill,
+      brand,
+      dueDateIso,
+    });
+    const extra = String(whatsappExtraLines || '').trim();
     setMessage(
-      defaultMessageForChannel({
-        channel: nextChannel,
-        kind,
-        templateType: meta.templateType,
-        bill,
-        brand,
-        dueDateIso,
-      })
+      extra && (nextChannel === 'whatsapp' || nextChannel === 'both')
+        ? `${base.trim()}\n\n${extra}`
+        : base
     );
     setWindowOpen(null);
     setWindowHoursLeft(null);
@@ -196,6 +203,7 @@ export default function DocumentEmailSendDialog({
     dueDateIso,
     kind,
     allowWhatsApp,
+    whatsappExtraLines,
   ]);
 
   useEffect(() => {
