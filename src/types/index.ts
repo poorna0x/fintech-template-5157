@@ -1,3 +1,5 @@
+import type { QuotationImageBlock } from '@/lib/quotation-custom-images';
+
 // Customer Types
 export interface Customer {
   id: string;
@@ -451,6 +453,15 @@ export interface Bill {
   notes?: string;
   /** Heading text used for Additional Info / Notes section on generated PDFs. */
   notesHeading?: string;
+  /**
+   * Quotation-only: one or more image sections at end of PDF (before signature).
+   * Prefer this over legacy customImages / customImagesHeading.
+   */
+  customImageBlocks?: QuotationImageBlock[];
+  /** @deprecated Prefer customImageBlocks */
+  customImagesHeading?: string;
+  /** @deprecated Prefer customImageBlocks */
+  customImages?: string[];
   terms?: string;
   validity?: string; // AMC validity period
   agreementIntro?: string; // AMC agreement introduction text

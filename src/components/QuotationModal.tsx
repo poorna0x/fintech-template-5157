@@ -6,6 +6,10 @@ import { toast } from 'sonner';
 import { Bill, Customer } from '@/types';
 import { getCustomerGstNumber } from '@/lib/customerGst';
 import { generateQuotationPDF } from '@/lib/quotation-pdf-generator';
+import {
+  normalizeQuotationImageBlocks,
+  quotationImageBlocksForPdf,
+} from '@/lib/quotation-custom-images';
 
 const QuotationGenerator = lazy(() => import('./QuotationGenerator'));
 
@@ -78,6 +82,16 @@ export default function QuotationModal({ isOpen, onClose, customer }: QuotationM
     }
     if ((quotation as any).notesHeading) {
       (pdfData as any).notesHeading = (quotation as any).notesHeading;
+    }
+    const blocks = normalizeQuotationImageBlocks(
+      (quotation as any).customImageBlocks,
+      {
+        heading: (quotation as any).customImagesHeading,
+        images: (quotation as any).customImages,
+      }
+    );
+    if (blocks.length > 0) {
+      (pdfData as any).customImageBlocks = quotationImageBlocksForPdf(blocks);
     }
     if (quotation.customer?.id) {
       (pdfData as any).authenticityCustomerId = quotation.customer.id;

@@ -16,6 +16,11 @@ import {
   generateDocumentPdfVerifyCode,
   recordDocumentPdfAuthenticity,
 } from './documentPdfAuthenticity';
+import {
+  normalizeQuotationImageBlocks,
+  quotationImageBlocksForPdf,
+  type QuotationImageBlock,
+} from './quotation-custom-images';
 import { toast } from 'sonner';
 
 export interface PDFQuotationData {
@@ -59,6 +64,12 @@ export interface PDFQuotationData {
   paymentMethod?: string;
   notes?: string;
   notesHeading?: string;
+  /** Structured image sections (preferred). */
+  customImageBlocks?: QuotationImageBlock[];
+  /** @deprecated Prefer customImageBlocks */
+  customImagesHeading?: string;
+  /** @deprecated Prefer customImageBlocks */
+  customImages?: string[];
   terms?: string;
   documentBrand?: 'hydrogenro' | 'elevenro';
   sealVariant?: 'sign' | 'stamp';
@@ -74,6 +85,7 @@ export interface PDFQuotationData {
     ifscCode?: string;
     upiId?: string;
     note?: string;
+    accountType?: string;
   };
 }
 
@@ -491,6 +503,78 @@ function handleMobilePrint(quotationData: PDFQuotationData, action: 'print' | 'p
         font-size: 11px;
         color: #064e3b;
         font-style: italic;
+      }
+
+      .custom-images-section {
+        margin: 12px 10px 0 10px;
+        padding-top: 10px;
+        border-top: 1px solid #e5e7eb;
+      }
+
+      .custom-images-section.align-left .custom-images-title,
+      .custom-images-section.align-left .custom-images-subtitle {
+        text-align: left;
+      }
+
+      .custom-images-section.align-center .custom-images-title,
+      .custom-images-section.align-center .custom-images-subtitle {
+        text-align: center;
+      }
+
+      .custom-images-section.align-right .custom-images-title,
+      .custom-images-section.align-right .custom-images-subtitle {
+        text-align: right;
+      }
+
+      .custom-images-title {
+        font-size: 14px;
+        font-weight: bold;
+        color: #374151;
+        margin-bottom: 4px;
+      }
+
+      .custom-images-subtitle {
+        font-size: 12px;
+        font-weight: 500;
+        color: #6b7280;
+        margin-bottom: 10px;
+      }
+
+      .custom-images-grid {
+        display: grid;
+        gap: 10px;
+        width: 100%;
+      }
+
+      .custom-images-grid.cols-1 { grid-template-columns: 1fr; }
+      .custom-images-grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
+      .custom-images-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+      .custom-images-grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
+
+      .custom-images-grid.size-small { max-width: 55%; }
+      .custom-images-grid.size-medium { max-width: 75%; }
+      .custom-images-grid.size-large { max-width: 92%; }
+      .custom-images-grid.size-full { max-width: 100%; }
+
+      .custom-images-grid.align-left { margin-left: 0; margin-right: auto; }
+      .custom-images-grid.align-center { margin-left: auto; margin-right: auto; }
+      .custom-images-grid.align-right { margin-left: auto; margin-right: 0; }
+
+      .custom-image-item {
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+        overflow: hidden;
+        background: #f9fafb;
+        page-break-inside: avoid;
+        break-inside: avoid;
+      }
+
+      .custom-image-item img {
+        display: block;
+        width: 100%;
+        height: auto;
+        object-fit: contain;
+        background: #fff;
       }
       
       .validity-note {
@@ -1042,6 +1126,59 @@ function createQuotationContent(data: PDFQuotationData): string {
         </div>
       ` : ''}
       
+      <!-- Custom images (before Signatures) -->
+      ${(() => {
+        const blocks = quotationImageBlocksForPdf(
+          normalizeQuotationImageBlocks(data.customImageBlocks, {
+            heading: data.customImagesHeading,
+            images: data.customImages,
+          })
+        );
+        if (blocks.length === 0) return '';
+
+        const formatTitle = (raw: string, fallback: string) => {
+          const t = (raw || '').trim() || fallback;
+          return t.endsWith(':') ? t : `${t}:`;
+        };
+
+        return blocks
+          .map((block) => {
+            const headingHtml = block.heading
+              ? `<div class="custom-images-title">${sanitizeForTemplate(formatTitle(block.heading, 'Product Images'))}</div>`
+              : '';
+            const subHtml = block.subheading
+              ? `<div class="custom-images-subtitle">${sanitizeForTemplate(block.subheading)}</div>`
+              : '';
+            const cols = block.columns;
+            const sizeClass = `size-${block.size}`;
+            const alignClass = `align-${block.align}`;
+            const maxH =
+              block.size === 'small'
+                ? '120px'
+                : block.size === 'medium'
+                  ? '180px'
+                  : block.size === 'large'
+                    ? '260px'
+                    : '360px';
+            return `
+        <div class="custom-images-section ${alignClass}">
+          ${headingHtml}
+          ${subHtml}
+          <div class="custom-images-grid cols-${cols} ${sizeClass} ${alignClass}">
+            ${block.images
+              .map(
+                (url) => `
+              <div class="custom-image-item">
+                <img src="${sanitizeForTemplate(url)}" alt="" style="max-height:${maxH};" />
+              </div>`
+              )
+              .join('')}
+          </div>
+        </div>`;
+          })
+          .join('');
+      })()}
+
       <!-- Signatures -->
       ${signatureBlock}
       
@@ -1313,6 +1450,78 @@ function getQuotationDocumentStyles(): string {
             font-size: 12px;
             color: #064e3b;
             font-style: italic;
+          }
+
+          .custom-images-section {
+            margin: 15px 15px 0 15px;
+            padding-top: 12px;
+            border-top: 1px solid #e5e7eb;
+          }
+
+          .custom-images-section.align-left .custom-images-title,
+          .custom-images-section.align-left .custom-images-subtitle {
+            text-align: left;
+          }
+
+          .custom-images-section.align-center .custom-images-title,
+          .custom-images-section.align-center .custom-images-subtitle {
+            text-align: center;
+          }
+
+          .custom-images-section.align-right .custom-images-title,
+          .custom-images-section.align-right .custom-images-subtitle {
+            text-align: right;
+          }
+
+          .custom-images-title {
+            font-size: 16px;
+            font-weight: bold;
+            color: #374151;
+            margin-bottom: 4px;
+          }
+
+          .custom-images-subtitle {
+            font-size: 13px;
+            font-weight: 500;
+            color: #6b7280;
+            margin-bottom: 12px;
+          }
+
+          .custom-images-grid {
+            display: grid;
+            gap: 12px;
+            width: 100%;
+          }
+
+          .custom-images-grid.cols-1 { grid-template-columns: 1fr; }
+          .custom-images-grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
+          .custom-images-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+          .custom-images-grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
+
+          .custom-images-grid.size-small { max-width: 55%; }
+          .custom-images-grid.size-medium { max-width: 75%; }
+          .custom-images-grid.size-large { max-width: 92%; }
+          .custom-images-grid.size-full { max-width: 100%; }
+
+          .custom-images-grid.align-left { margin-left: 0; margin-right: auto; }
+          .custom-images-grid.align-center { margin-left: auto; margin-right: auto; }
+          .custom-images-grid.align-right { margin-left: auto; margin-right: 0; }
+
+          .custom-image-item {
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            overflow: hidden;
+            background: #f9fafb;
+            page-break-inside: avoid;
+            break-inside: avoid;
+          }
+
+          .custom-image-item img {
+            display: block;
+            width: 100%;
+            height: auto;
+            object-fit: contain;
+            background: #fff;
           }
           
           .validity-note {
