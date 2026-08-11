@@ -37,6 +37,7 @@ const statusOnly = process.argv.includes('--status');
 const previewMd = process.argv.includes('--preview-md');
 const force = process.argv.includes('--force');
 const deleteMarketing = process.argv.includes('--delete-marketing');
+const deleteOld = process.argv.includes('--delete-old');
 
 /** Meta MARKETING templates to remove (stuck review / wrong category). */
 const MARKETING_DELETE_NAMES = [
@@ -90,6 +91,20 @@ const MARKETING_DELETE_NAMES = [
   'svc_wfs_ask_name_simple_v1', // “Hi from Water Filter Service”
 ];
 
+/** Old drafts replaced by newer UTILITY copy (ask-loc-from, This is… ask-name, hello v2). */
+const SUPERSEDED_DELETE_NAMES = [
+  'svc_wfs_ask_loc',
+  'svc_wfs_ask_loc_ero',
+  'svc_wfs_ask_loc_hro',
+  'svc_wfs_ask_loc_simple',
+  'svc_wfs_ask_loc_simple_ero',
+  'svc_wfs_ask_loc_simple_hro',
+  'svc_wfs_hi_from_v3',
+  'svc_wfs_hi_from_hro_v3',
+  'svc_wfs_hi_from_ero_v3',
+  'svc_wfs_hi_v3', // “hi from” generic — keep branded _hro/_ero_v2
+];
+
 /** Code name → already-approved Meta name (do not re-submit under old name). */
 const APPROVED_ALIASES = {
   svc_document_pdf: 'svc_doc_pdf_v2',
@@ -105,11 +120,20 @@ const SAMPLE_PDF =
 const META_APP_ID = process.env.WHATSAPP_APP_ID || process.env.META_APP_ID || '1728855588331996';
 
 let cachedSamplePdfHandle = '';
+let cachedSampleImageHandle = '';
 
 /** Tiny valid PDF bytes for Meta template DOCUMENT header examples. */
 function samplePdfBytes() {
   return Buffer.from(
     '%PDF-1.1\n1 0 obj<<>>endobj\n2 0 obj<< /Length 44 >>stream\nBT /F1 12 Tf 100 700 Td (Preview sample) Tj ET\nendstream\nendobj\n3 0 obj<< /Type /Page /Parent 4 0 R /Contents 2 0 R >>endobj\n4 0 obj<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 612 792] >>endobj\n5 0 obj<< /Type /Catalog /Pages 4 0 R >>endobj\nxref\n0 6\n0000000000 65535 f \ntrailer<< /Size 6 /Root 5 0 R >>\nstartxref\n0\n%%EOF\n'
+  );
+}
+
+/** Minimal 1×1 JPEG for Meta IMAGE header examples. */
+function sampleJpegBytes() {
+  return Buffer.from(
+    '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAn/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAGcP//EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAQUCf//EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQMBAT8Bf//EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQIBAT8Bf//EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEABj8Cf//EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAT8hf//Z',
+    'base64'
   );
 }
 
@@ -151,6 +175,42 @@ async function uploadTemplateSamplePdfHandle(token) {
   }
   cachedSamplePdfHandle = upJ.h;
   return cachedSamplePdfHandle;
+}
+
+async function uploadTemplateSampleImageHandle(token) {
+  if (cachedSampleImageHandle) return cachedSampleImageHandle;
+  const jpeg = sampleJpegBytes();
+  const start = await fetch(`https://graph.facebook.com/${GRAPH}/${META_APP_ID}/uploads`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      file_length: jpeg.length,
+      file_type: 'image/jpeg',
+      file_name: 'balance-due-header-sample.jpg',
+    }),
+  });
+  const startJ = await start.json().catch(() => ({}));
+  if (!start.ok || !startJ.id) {
+    throw new Error(`Sample image upload session failed: ${JSON.stringify(startJ)}`);
+  }
+  const up = await fetch(`https://graph.facebook.com/${GRAPH}/${startJ.id}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `OAuth ${token}`,
+      file_offset: '0',
+      'Content-Type': 'application/octet-stream',
+    },
+    body: jpeg,
+  });
+  const upJ = await up.json().catch(() => ({}));
+  if (!up.ok || !upJ.h) {
+    throw new Error(`Sample image upload failed: ${JSON.stringify(upJ)}`);
+  }
+  cachedSampleImageHandle = upJ.h;
+  return cachedSampleImageHandle;
 }
 
 /** Core transactional UTILITY bodies (no marketing language). */
@@ -1130,6 +1190,45 @@ function buildBalanceDueLetterV6Templates() {
 
 const BALANCE_DUE_LETTER_V6_TEMPLATES = buildBalanceDueLetterV6Templates();
 
+/**
+ * Balance-due letter with IMAGE header (UPI QR) — Call us + Pay now.
+ * Body tells customer to scan/tap the QR (WhatsApp Pay / GPay / PhonePe) or Pay now.
+ * CRM attaches the QR JPEG/PNG at send time via headerImage.
+ */
+function buildBalanceDueLetterImgTemplates() {
+  const out = [];
+  for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
+    const callPhone = suffix === 'hro' ? CALL_PHONE_HYDROGEN : CALL_PHONE_ELEVEN;
+    const footer = letterFooterBlockNoTextUs(b);
+    out.push({
+      callPhone,
+      websiteUrl: b.website,
+      payUrl: `${b.website}/p/{{1}}`,
+      imageHeader: true,
+      name: `svc_balance_due_letter_${suffix}_img_v2`,
+      body: [
+        `Hi {{1}}, 👋`,
+        `This is an update from ${b.label} regarding your pending payment for water purifier service. 💧`,
+        ``,
+        `💰 Amount pending: INR {{2}}`,
+        `📅 Due date: {{3}}`,
+        `🧾 Invoice / Job: {{4}}`,
+        ``,
+        `📱 Scan or tap the UPI QR above to pay directly (GPay / PhonePe / WhatsApp Pay).`,
+        `Or tap Pay now below.`,
+        ``,
+        footer,
+        ``,
+        `Reply on this chat if you have already paid.`,
+      ].join('\n'),
+      examples: ['Rahul', '500', '15 Aug 2026', 'RO2608121234'],
+    });
+  }
+  return out;
+}
+
+const BALANCE_DUE_LETTER_IMG_TEMPLATES = buildBalanceDueLetterImgTemplates();
+
 /** Existing-customer schedule — Book online button only (no Call). */
 const EXISTING_CUSTOMER_BOOK_CTA_TEMPLATES = [
   {
@@ -1503,6 +1602,27 @@ function balanceDueLetterPayload(t) {
   };
 }
 
+function balanceDueLetterImagePayloadSync(t, headerHandle = '') {
+  const base = balanceDueLetterPayload(t);
+  if (!headerHandle) return base;
+  return {
+    ...base,
+    components: [
+      {
+        type: 'HEADER',
+        format: 'IMAGE',
+        example: { header_handle: [headerHandle] },
+      },
+      ...base.components,
+    ],
+  };
+}
+
+async function balanceDueLetterImagePayload(t, token = '') {
+  const headerHandle = token ? await uploadTemplateSampleImageHandle(token) : '';
+  return balanceDueLetterImagePayloadSync(t, headerHandle);
+}
+
 function letterPayload(t) {
   const callPhone = t.callPhone || callPhoneForTemplate(t.name);
   const websiteUrl = t.websiteUrl || websiteUrlForTemplate(t.name);
@@ -1780,6 +1900,7 @@ function headerPreview(payload) {
   const h = payload.components?.find((c) => c.type === 'HEADER');
   if (!h) return null;
   if (h.format === 'DOCUMENT') return '📎 **PDF attached** (document header — bill / invoice / AMC / etc.)';
+  if (h.format === 'IMAGE') return '🖼️ **Image attached** (QR / receipt / photo header)';
   return h.format;
 }
 
@@ -1830,26 +1951,30 @@ function collectAllTemplatePreviewEntries() {
   for (const t of BALANCE_DUE_LETTER_V6_TEMPLATES) {
     push('Balance due letter v6 (Pay now + emoji)', t, balanceDueLetterPayload);
   }
+  for (const t of BALANCE_DUE_LETTER_IMG_TEMPLATES) {
+    push('Balance due letter IMAGE header (Pay now)', t, (x) =>
+      balanceDueLetterImagePayloadSync(x, 'SAMPLE_IMAGE_HANDLE')
+    );
+  }
   for (const t of EXISTING_CUSTOMER_BOOK_CTA_TEMPLATES) push('Existing customer book', t, bookOnlyPayload);
   for (const t of SERVICE_DUE_BOOK_CTA_TEMPLATES) push('Service due book CTA', t, bookOnlyPayload);
   for (const t of WFS_HELLO_TEMPLATES) push('WFS hello', t, corePayload);
   for (const t of WFS_SIMPLE_HI_TEMPLATES) push('WFS simple hi', t, corePayload);
-  for (const t of WFS_JUST_HI_TEMPLATES) push('WFS just hi (legacy)', t, corePayload);
-  for (const t of WFS_HI_FROM_TEMPLATES) push('WFS hi from (legacy)', t, corePayload);
+  for (const t of WFS_JUST_HI_TEMPLATES) push('WFS just hi', t, corePayload);
+  // skip WFS_HI_FROM — superseded by hello / “This is …” (MARKETING-prone)
   for (const t of WFS_V3_UTILITY_TEMPLATES) push('WFS greeting v3', t, corePayload);
   for (const t of WFS_COLLECT_TEMPLATES) push('WFS collect info', t, corePayload);
   for (const t of WFS_ASK_NAME_TEMPLATES) push('WFS ask name', t, corePayload);
   for (const t of WFS_ASK_NAME_SIMPLE_TEMPLATES) push('WFS ask name (short)', t, corePayload);
-  for (const t of WFS_ASK_LOC_TEMPLATES) push('WFS ask location', t, letterPayload);
-  for (const t of WFS_ASK_LOC_SIMPLE_TEMPLATES) push('WFS ask location (short)', t, letterPayload);
-  for (const t of WFS_ASK_LOC_V2_TEMPLATES) {
-    push('WFS ask location v2 (Share location)', t, askLocShareLocationPayload);
-  }
-  for (const t of WFS_ASK_LOC_SIMPLE_V2_TEMPLATES) {
-    push('WFS ask location short v2 (Share location)', t, askLocShareLocationPayload);
-  }
+  // skip legacy ask-loc / ask-loc-simple (no version) — prefer ask_loc_from + v3
   for (const t of WFS_ASK_LOC_FROM_TEMPLATES) {
     push('WFS ask location from WFS (Share location)', t, askLocShareLocationPayload);
+  }
+  for (const t of WFS_ASK_LOC_V2_TEMPLATES) {
+    push('WFS ask location v3 (Share location)', t, askLocShareLocationPayload);
+  }
+  for (const t of WFS_ASK_LOC_SIMPLE_V2_TEMPLATES) {
+    push('WFS ask location short v3 (Share location)', t, askLocShareLocationPayload);
   }
   for (const t of DOC_PDF_V2_TEMPLATES) push('Cold PDF v2', t, docPdfPayloadSync);
   for (const t of DOC_DIRECT_LETTER_TEMPLATES) {
@@ -1972,12 +2097,20 @@ async function main() {
   const all = token ? await listTemplates(token) : [];
   const byName = new Map(all.map((t) => [t.name, t]));
 
-  if (deleteMarketing && token) {
-    console.log('\nDeleting MARKETING / blocked templates…\n');
-    const liveMarketing = all
-      .filter((t) => String(t.category || '').toUpperCase() === 'MARKETING')
-      .map((t) => t.name);
-    const toDelete = [...new Set([...MARKETING_DELETE_NAMES, ...liveMarketing])];
+  if ((deleteMarketing || deleteOld) && token) {
+    console.log('\nDeleting MARKETING / superseded templates…\n');
+    const liveMarketing = deleteMarketing
+      ? all
+          .filter((t) => String(t.category || '').toUpperCase() === 'MARKETING')
+          .map((t) => t.name)
+      : [];
+    const toDelete = [
+      ...new Set([
+        ...(deleteMarketing ? MARKETING_DELETE_NAMES : []),
+        ...(deleteOld || deleteMarketing ? SUPERSEDED_DELETE_NAMES : []),
+        ...liveMarketing,
+      ]),
+    ];
     for (const name of toDelete) {
       const row = byName.get(name);
       if (!row) {
@@ -2132,6 +2265,17 @@ async function main() {
       continue;
     }
     queue.push({ label: t.name, payload: balanceDueLetterPayload(t) });
+  }
+  for (const t of BALANCE_DUE_LETTER_IMG_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({
+      label: t.name,
+      payload: await balanceDueLetterImagePayload(t, doSubmit ? token : ''),
+    });
   }
   for (const t of EXISTING_CUSTOMER_BOOK_CTA_TEMPLATES) {
     const skip = shouldSkip(t.name, byName);
@@ -2346,6 +2490,14 @@ async function main() {
   const onlyBalanceDueV6 = process.argv.includes('--only-balance-due-v6');
   if (onlyBalanceDueV6) {
     const keep = new Set(BALANCE_DUE_LETTER_V6_TEMPLATES.map((t) => t.name));
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
+  const onlyBalanceDueImg = process.argv.includes('--only-balance-due-img');
+  if (onlyBalanceDueImg) {
+    const keep = new Set(BALANCE_DUE_LETTER_IMG_TEMPLATES.map((t) => t.name));
     for (let i = queue.length - 1; i >= 0; i -= 1) {
       if (!keep.has(queue[i].label)) queue.splice(i, 1);
     }

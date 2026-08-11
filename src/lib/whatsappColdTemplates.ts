@@ -222,11 +222,6 @@ export const WA_COLD = {
     language: 'en',
     bodyParams: (customerName: string) => [cleanName(customerName)],
   },
-  wfs_hi_from: {
-    name: 'svc_wfs_hi_from_hro',
-    language: 'en',
-    bodyParams: (customerName: string) => [cleanName(customerName)],
-  },
   wfs_collect: {
     name: 'svc_wfs_collect_hro',
     language: 'en',
@@ -234,11 +229,6 @@ export const WA_COLD = {
   },
   ask_location: {
     name: 'svc_wfs_ask_loc_from_v1',
-    language: 'en',
-    bodyParams: (customerName: string) => [cleanName(customerName)],
-  },
-  ask_location_simple: {
-    name: 'svc_wfs_ask_loc_simple_hro_v3',
     language: 'en',
     bodyParams: (customerName: string) => [cleanName(customerName)],
   },
@@ -258,7 +248,7 @@ export const WA_COLD = {
       String(fromLabel || '').trim() || 'Water Filter Service',
     ],
   },
-  /** Hi from brand WFS → please share your name (short option 1). */
+  /** Ask name short (This is … Water Filter Service). */
   ask_name: {
     name: 'svc_wfs_ask_name_simple_hro_v2',
     language: 'en',
@@ -559,7 +549,8 @@ function cleanAmount(amount: number | string): string {
 /** Human labels for inbox / pickers */
 export const WA_COLD_LABELS: Record<keyof typeof WA_COLD, string> = {
   booking_menu: 'Service request (svc_smoke_update — booking menu deprecated)',
-  pending_payment: 'Balance due (svc_balance_due_letter_*_v6 emoji → v5 → v4 → v3 → svc_balance_due)',
+  pending_payment:
+    'Balance due (svc_balance_due_letter_*_img_v2 QR → img_v1 → *_v6 → v5 → svc_balance_due)',
   service_reminder: 'Visit reminder (svc_visit_reminder)',
   service_due_cta: 'Service due letter v4 Book now (svc_service_due_letter_*_v4 → v3 → CTA)',
   amc_renewal: 'AMC expiry (svc_amc_expiry_notice)',
@@ -584,15 +575,12 @@ export const WA_COLD_LABELS: Record<keyof typeof WA_COLD, string> = {
   hello: 'Hello (svc_wfs_hello_* → svc_hello)',
   wfs_hello: 'WFS Hi (svc_wfs_hello_{hro|ero|generic})',
   wfs_just_hi: 'Just Hi (svc_wfs_just_hi_{hro|ero|generic})',
-  wfs_hi_from: 'Hi from WFS (svc_wfs_hi_from_{hro|ero|generic})',
-  wfs_simple_hi: 'Simple WFS Hi (svc_wfs_hi_{hro|ero|generic})',
   wfs_collect: 'WFS collect info (svc_wfs_collect_* → location + photo flow)',
   ask_location: 'Ask location (svc_wfs_ask_loc_from_* → Share location CTA + from WFS)',
-  ask_location_simple: 'Ask location short (svc_wfs_ask_loc_simple_*_v3 → Share location QR)',
   ask_photo: 'Ask photo (svc_ask_photo)',
   ask_flat: 'Ask flat (svc_ask_flat)',
-  ask_name: 'Ask name short (svc_wfs_ask_name_simple_* — ERO prefers v2 UTILITY)',
-  ask_name_long: 'Ask name long (svc_wfs_ask_name_* / generic v2 UTILITY)',
+  ask_name: 'Ask name short (svc_wfs_ask_name_simple_*_v2 — This is … WFS)',
+  ask_name_long: 'Ask name long (svc_wfs_ask_name_*_v2 UTILITY)',
   crm_notice: 'CRM notice → visit reminder',
   crm_update_details: 'CRM update → visit reminder',
   book_existing_customer: 'Schedule visit (existing_service_schedule_*_cta_v2 → v1)',

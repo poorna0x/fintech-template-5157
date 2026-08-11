@@ -98,10 +98,9 @@ export function resolveWfsJustHiTemplateName(ctx: WhatsAppQuickReplyContext): st
   return ctx.brand === 'elevenro' ? 'svc_wfs_just_hi_ero_v3' : 'svc_wfs_just_hi_hro_v3';
 }
 
-/** “Hi from … Water Filter Service” only. */
+/** @deprecated Prefer resolveWfsHelloTemplateName — “Hi from” templates removed. */
 export function resolveWfsHiFromTemplateName(ctx: WhatsAppQuickReplyContext): string {
-  if (ctx.skipBrandLabel || !ctx.brand) return 'svc_wfs_hi_from_v3';
-  return ctx.brand === 'elevenro' ? 'svc_wfs_hi_from_ero_v3' : 'svc_wfs_hi_from_hro_v3';
+  return resolveWfsHelloTemplateName(ctx);
 }
 
 export function wfsJustHiFallbackNames(): string[] {
@@ -118,23 +117,7 @@ export function wfsJustHiFallbackNames(): string[] {
 }
 
 export function wfsHiFromFallbackNames(): string[] {
-  return [
-    'svc_wfs_hi_from_v3',
-    'svc_wfs_hi_from',
-    'svc_wfs_hi_from_hro_v3',
-    'svc_wfs_hi_from_ero_v3',
-    'svc_wfs_hi_from_hro',
-    'svc_wfs_hi_from_ero_v2',
-    'svc_wfs_hi_from_ero',
-    'svc_wfs_hi_v3',
-    'svc_wfs_hi',
-    'svc_wfs_hi_hro_v2',
-    'svc_wfs_hi_ero_v2',
-    'svc_wfs_hi_hro',
-    'svc_wfs_hi_ero',
-    'svc_hello',
-    'svc_smoke_update',
-  ];
+  return wfsHelloFallbackNames();
 }
 
 export function isWfsGreetingTemplateName(name: string): boolean {
@@ -245,20 +228,7 @@ export function askLocationTemplateFallbackNames(): string[] {
     'svc_wfs_ask_loc_simple_v3',
     'svc_wfs_ask_loc_simple_hro_v3',
     'svc_wfs_ask_loc_simple_ero_v3',
-    'svc_wfs_ask_loc_v2',
-    'svc_wfs_ask_loc_hro_v2',
-    'svc_wfs_ask_loc_ero_v2',
-    'svc_wfs_ask_loc_simple_v2',
-    'svc_wfs_ask_loc_simple_hro_v2',
-    'svc_wfs_ask_loc_simple_ero_v2',
-    'svc_wfs_ask_loc',
-    'svc_wfs_ask_loc_hro',
-    'svc_wfs_ask_loc_ero',
-    'svc_wfs_ask_loc_simple',
-    'svc_wfs_ask_loc_simple_hro',
-    'svc_wfs_ask_loc_simple_ero',
     'svc_ask_location',
-    'svc_visit_reminder',
   ];
 }
 
@@ -275,26 +245,6 @@ export const WHATSAPP_QUICK_TEXT_REPLIES: WhatsAppQuickTextReply[] = [
     group: 'common',
     instant: true,
     text: (ctx) => `Hi ${cleanName(ctx)}. Please reply on this chat.`,
-  },
-  {
-    id: 'wfs_hi_from',
-    label: 'Hi from WFS',
-    group: 'common',
-    instant: true,
-    text: (ctx) => {
-      const who = waterFilterServiceFromLabel(ctx);
-      return `Hi ${cleanName(ctx)}, hi from ${who}.`;
-    },
-  },
-  {
-    id: 'wfs_simple_hi',
-    label: 'Simple WFS Hi',
-    group: 'common',
-    instant: true,
-    text: (ctx) => {
-      const who = waterFilterServiceFromLabel(ctx);
-      return `Hi ${cleanName(ctx)}, hi from ${who}. Please reply on this chat.`;
-    },
   },
   {
     id: 'wfs_hello',
@@ -318,7 +268,7 @@ export const WHATSAPP_QUICK_TEXT_REPLIES: WhatsAppQuickTextReply[] = [
         'For serving you better we need certain information from you — such as your location and a photo of your purifier.',
         'Please share your location here on this chat; we will guide you step by step.',
         '',
-        'Tap *Send location* below when the button appears.',
+        'Tap Send location below when the button appears.',
       ].join('\n');
     },
   },
@@ -336,7 +286,7 @@ export const WHATSAPP_QUICK_TEXT_REPLIES: WhatsAppQuickTextReply[] = [
         '',
         '📍 To serve you better we need your exact location. Please share your Google Maps location pin on this chat.',
         '',
-        'Tap *Send location* below 👇',
+        'Tap Send location below 👇',
       ].join('\n');
     },
   },
@@ -372,25 +322,12 @@ export const WHATSAPP_QUICK_TEXT_REPLIES: WhatsAppQuickTextReply[] = [
     },
   },
   {
-    id: 'share_location_simple',
-    label: 'Ask loc (short)',
-    group: 'request',
-    instant: true,
-    text: (ctx) =>
-      [
-        `Hi ${cleanName(ctx)}, please share your Google Maps location pin on this chat.`,
-        `— ${waterFilterServiceFromLabel(ctx)}`,
-        '',
-        'Tap *Send location* below when the button appears.',
-      ].join('\n'),
-  },
-  {
     id: 'share_flat',
     label: 'Ask flat no',
     group: 'request',
     instant: true,
     text: (ctx) =>
-      `Hi ${cleanName(ctx)}, please reply with your *building / flat / house number* (e.g. Flat 302, Block B).\n\nIf you don’t have one, tap *Skip* below.`,
+      `Hi ${cleanName(ctx)}, please reply with your building / flat / house number (e.g. Flat 302, Block B).\n\nIf you don’t have one, tap Skip below.`,
   },
   {
     id: 'ask_name',
@@ -399,7 +336,11 @@ export const WHATSAPP_QUICK_TEXT_REPLIES: WhatsAppQuickTextReply[] = [
     instant: true,
     text: (ctx) => {
       const who = waterFilterServiceFromLabel(ctx);
-      return [`Hi from ${who}. 👋`, '', 'Please share your name on this chat.'].join('\n');
+      return [
+        `This is ${who}. 👋`,
+        '',
+        'Please share your full name on this chat so we can continue your water purifier service request.',
+      ].join('\n');
     },
   },
   {
@@ -410,9 +351,9 @@ export const WHATSAPP_QUICK_TEXT_REPLIES: WhatsAppQuickTextReply[] = [
     text: (ctx) => {
       const who = waterFilterServiceFromLabel(ctx);
       return [
-        `Hi from ${who}. 👋`,
+        `This is ${who}. 👋`,
         '',
-        'Please reply with your *full name* on this chat so we can assist you.',
+        'Please reply with your full name on this chat so we can continue your water purifier service request.',
       ].join('\n');
     },
   },
@@ -422,7 +363,7 @@ export const WHATSAPP_QUICK_TEXT_REPLIES: WhatsAppQuickTextReply[] = [
     group: 'request',
     instant: true,
     text: (ctx) =>
-      `Hi ${cleanName(ctx)}, please send a *clear photo of your water purifier* (label / unit) on this chat so we can assist better.`,
+      `Hi ${cleanName(ctx)}, please send a clear photo of your water purifier (label / unit) on this chat so we can assist better.`,
   },
   {
     id: 'share_loc_photo',
@@ -433,9 +374,9 @@ export const WHATSAPP_QUICK_TEXT_REPLIES: WhatsAppQuickTextReply[] = [
       [
         `Hi ${cleanName(ctx)}, to book your service please send:`,
         '',
-        '1) Your *Google Maps location pin*',
-        '2) Your *building / flat number* (or Skip)',
-        '3) A *clear photo of the purifier*',
+        '1) Your Google Maps location pin',
+        '2) Your building / flat number (or Skip)',
+        '3) A clear photo of the purifier',
         '',
         'You can send them one by one on this chat.',
       ].join('\n'),
@@ -446,7 +387,7 @@ export const WHATSAPP_QUICK_TEXT_REPLIES: WhatsAppQuickTextReply[] = [
     group: 'request',
     instant: true,
     text: (ctx) =>
-      `Hi ${cleanName(ctx)}, please share your purifier *brand & model* (a photo of the sticker/label helps) so we can bring the right spares.`,
+      `Hi ${cleanName(ctx)}, please share your purifier brand & model (a photo of the sticker/label helps) so we can bring the right spares.`,
   },
   {
     id: 'ask_preferred_time',
@@ -454,7 +395,7 @@ export const WHATSAPP_QUICK_TEXT_REPLIES: WhatsAppQuickTextReply[] = [
     group: 'request',
     instant: true,
     text: (ctx) =>
-      `Hi ${cleanName(ctx)}, what *date and time* works for your service visit? (We usually visit between 9:00 AM and 5:00 PM.)`,
+      `Hi ${cleanName(ctx)}, what date and time works for your service visit? (We usually visit between 9:00 AM and 5:00 PM.)`,
   },
   {
     id: 'ask_issue',
@@ -462,7 +403,7 @@ export const WHATSAPP_QUICK_TEXT_REPLIES: WhatsAppQuickTextReply[] = [
     group: 'request',
     instant: true,
     text: (ctx) =>
-      `Hi ${cleanName(ctx)}, please briefly describe the *issue* with your purifier (e.g. no water, low flow, leakage, taste/smell).`,
+      `Hi ${cleanName(ctx)}, please briefly describe the issue with your purifier (e.g. no water, low flow, leakage, taste/smell).`,
   },
   // —— Common / service ——
   {
@@ -666,24 +607,6 @@ export const WHATSAPP_QUICK_TEMPLATE_REPLIES: WhatsAppQuickTemplateReply[] = [
     resolveTemplateName: (ctx) => resolveWfsJustHiTemplateName(ctx),
   },
   {
-    id: 'tpl_wfs_hi_from',
-    label: 'Hi from WFS',
-    group: 'common',
-    templateName: 'svc_wfs_hi_from_hro',
-    language: 'en',
-    bodyParams: (ctx) => [cleanName(ctx)],
-    resolveTemplateName: (ctx) => resolveWfsHiFromTemplateName(ctx),
-  },
-  {
-    id: 'tpl_wfs_simple_hi',
-    label: 'Simple WFS Hi',
-    group: 'common',
-    templateName: 'svc_wfs_hi_hro',
-    language: 'en',
-    bodyParams: (ctx) => [cleanName(ctx)],
-    resolveTemplateName: (ctx) => resolveWfsSimpleHiTemplateName(ctx),
-  },
-  {
     id: 'tpl_wfs_hello',
     label: 'WFS Hi',
     group: 'common',
@@ -713,19 +636,10 @@ export const WHATSAPP_QUICK_TEMPLATE_REPLIES: WhatsAppQuickTemplateReply[] = [
     id: 'tpl_ask_location',
     label: 'Ask location',
     group: 'request',
-    templateName: 'svc_wfs_ask_loc_hro_v3',
+    templateName: 'svc_wfs_ask_loc_from_hro_v1',
     language: 'en',
     bodyParams: (ctx) => [cleanName(ctx)],
     resolveTemplateName: (ctx) => resolveWfsAskLocTemplateName(ctx),
-  },
-  {
-    id: 'tpl_ask_location_simple',
-    label: 'Ask loc (short)',
-    group: 'request',
-    templateName: 'svc_wfs_ask_loc_simple_hro_v3',
-    language: 'en',
-    bodyParams: (ctx) => [cleanName(ctx)],
-    resolveTemplateName: (ctx) => resolveWfsAskLocSimpleTemplateName(ctx),
   },
   {
     id: 'tpl_ask_photo',
@@ -1031,19 +945,13 @@ export function filterQuickTemplatesByApproved(
     if (r.id === 'tpl_wfs_just_hi') {
       return wfsJustHiFallbackNames().some((n) => approvedNames.has(resolveWaTemplateName(n)));
     }
-    if (r.id === 'tpl_wfs_hi_from') {
-      return wfsHiFromFallbackNames().some((n) => approvedNames.has(resolveWaTemplateName(n)));
-    }
-    if (r.id === 'tpl_wfs_simple_hi') {
-      return wfsSimpleHiFallbackNames().some((n) => approvedNames.has(resolveWaTemplateName(n)));
-    }
     if (r.id === 'tpl_wfs_hello') {
       return wfsHelloFallbackNames().some((n) => approvedNames.has(resolveWaTemplateName(n)));
     }
     if (r.id === 'tpl_wfs_collect') {
       return wfsCollectFallbackNames().some((n) => approvedNames.has(resolveWaTemplateName(n)));
     }
-    if (r.id === 'tpl_ask_location' || r.id === 'tpl_ask_location_simple') {
+    if (r.id === 'tpl_ask_location') {
       return askLocationTemplateFallbackNames().some((n) =>
         approvedNames.has(resolveWaTemplateName(n))
       );

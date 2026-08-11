@@ -195,7 +195,6 @@ export function WhatsAppQuickRepliesBar({
     if (
       windowOpen &&
       (item.id === 'share_location' ||
-        item.id === 'share_location_simple' ||
         item.id === 'share_location_lead') &&
       onRequestLocation
     ) {
@@ -250,7 +249,7 @@ export function WhatsAppQuickRepliesBar({
     }
     if (
       windowOpen &&
-      (reply.id === 'tpl_ask_location' || reply.id === 'tpl_ask_location_simple') &&
+      (reply.id === 'tpl_ask_location') &&
       onRequestLocation
     ) {
       await onRequestLocation();

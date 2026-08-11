@@ -343,6 +343,12 @@ export type SendAdminWhatsAppTemplateOptions = {
     pdfBase64: string;
     filename?: string;
   } | null;
+  /** For IMAGE-header templates — attach JPEG/PNG (e.g. UPI QR) in the same cold send. */
+  headerImage?: {
+    imageBase64: string;
+    filename?: string;
+    mimeType?: string;
+  } | null;
 };
 
 export async function sendAdminWhatsAppTemplate(
@@ -382,6 +388,15 @@ export async function sendAdminWhatsAppTemplate(
               },
             }
           : {}),
+        ...(options.headerImage?.imageBase64
+          ? {
+              headerImage: {
+                imageBase64: options.headerImage.imageBase64,
+                filename: options.headerImage.filename || 'image.jpg',
+                mimeType: options.headerImage.mimeType || 'image/jpeg',
+              },
+            }
+          : {}),
         ...(options.customerId ? { customerId: options.customerId } : {}),
         ...(options.customerName ? { customerName: options.customerName } : {}),
         ...(options.source ? { source: options.source } : {}),
@@ -411,6 +426,8 @@ export type SendAdminWhatsAppTextWithTemplateOptions = SendAdminWhatsAppTextOpti
     languageCode?: string;
     bodyParams: string[];
     buttonUrlParams?: Array<WhatsAppTemplateButtonUrlParam | string>;
+    headerDocument?: SendAdminWhatsAppTemplateOptions['headerDocument'];
+    headerImage?: SendAdminWhatsAppTemplateOptions['headerImage'];
   } | null;
 };
 
@@ -441,6 +458,8 @@ export async function sendAdminWhatsAppTextWithOptionalTemplate(
       languageCode: options.coldTemplate?.languageCode || 'en',
       bodyParams: options.coldTemplate?.bodyParams || [],
       buttonUrlParams: options.coldTemplate?.buttonUrlParams,
+      headerDocument: options.coldTemplate?.headerDocument,
+      headerImage: options.coldTemplate?.headerImage,
       customerId: options.customerId,
       customerName: options.customerName,
       source: options.source,
@@ -539,12 +558,34 @@ export type WhatsAppTemplateListItem = {
   bodyPreview?: string | null;
 };
 
-export async function fetchApprovedWhatsAppTemplates(): Promise<{
+let templatesCacheMem: {
+  at: number;
+  templates: WhatsAppTemplateListItem[];
+  recommended?: Array<{ name: string; language: string; hint: string }>;
+} | null = null;
+
+export async function fetchApprovedWhatsAppTemplates(opts?: {
+  force?: boolean;
+}): Promise<{
   ok: boolean;
   templates: WhatsAppTemplateListItem[];
   recommended?: Array<{ name: string; language: string; hint: string }>;
   error?: string;
 }> {
+  const TTL_MS = 10 * 60 * 1000;
+  const now = Date.now();
+  if (
+    !opts?.force &&
+    templatesCacheMem &&
+    now - templatesCacheMem.at < TTL_MS
+  ) {
+    return {
+      ok: true,
+      templates: templatesCacheMem.templates,
+      recommended: templatesCacheMem.recommended,
+    };
+  }
+
   const accessToken = await resolveSupabaseAccessTokenForApi();
   if (!accessToken) {
     return { ok: false, templates: [], error: 'Not signed in' };
@@ -561,10 +602,13 @@ export async function fetchApprovedWhatsAppTemplates(): Promise<{
         error: data?.error || `HTTP ${res.status}`,
       };
     }
+    const templates = Array.isArray(data.templates) ? data.templates : [];
+    const recommended = data.recommended;
+    templatesCacheMem = { at: now, templates, recommended };
     return {
       ok: true,
-      templates: Array.isArray(data.templates) ? data.templates : [],
-      recommended: data.recommended,
+      templates,
+      recommended,
     };
   } catch (err) {
     return {

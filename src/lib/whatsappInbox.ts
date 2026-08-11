@@ -5,9 +5,13 @@ import { escapeForLike, normalizePhoneForSearch } from '@/lib/utils';
 export const WHATSAPP_INBOX_COLUMNS =
   'id, wa_message_id, direction, phone_e164, customer_id, msg_type, body, media_url, media_mime, filename, status, template_name, error_message, created_at' as const;
 
+/** Slimmer columns for open-chat fetch (drops unused wa_message_id). */
+export const WHATSAPP_THREAD_COLUMNS =
+  'id, direction, phone_e164, customer_id, msg_type, body, media_url, media_mime, filename, status, template_name, error_message, created_at' as const;
+
 export type WhatsAppMessageRow = {
   id: string;
-  wa_message_id: string | null;
+  wa_message_id?: string | null;
   direction: 'inbound' | 'outbound';
   phone_e164: string;
   customer_id: string | null;
@@ -177,14 +181,21 @@ export function invalidateInboundWindowCache(phoneE164?: string | null): void {
 
 /** People list via RPC — not full message dump. */
 export const WHATSAPP_INBOX_LIST_LIMIT = 120;
-/** Active chat: enough recent history without over-fetching. */
-export const WHATSAPP_THREAD_LIMIT = 80;
+/** First paint for open chat (newest N, then “load older”). */
+export const WHATSAPP_THREAD_PAGE_SIZE = 40;
+/** Soft cap when appending older pages / realtime slice. */
+export const WHATSAPP_THREAD_LIMIT = 120;
 /** Max threads returned by on-demand inbox search. */
 export const WHATSAPP_INBOX_SEARCH_LIMIT = 40;
 
 export function isR2MediaRef(mediaUrl: string | null | undefined): boolean {
   const raw = String(mediaUrl || '').trim();
-  return raw.startsWith('r2:') || raw.startsWith('whatsapp/inbound/') || raw.startsWith('whatsapp/outbound/');
+  return (
+    raw.startsWith('r2:') ||
+    raw.startsWith('whatsapp-media:') ||
+    raw.startsWith('whatsapp/inbound/') ||
+    raw.startsWith('whatsapp/outbound/')
+  );
 }
 
 /** Local midnight as ISO — for “chatted today” inbox filter. */

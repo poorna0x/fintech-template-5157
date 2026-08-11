@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Download, FileText, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { isR2MediaRef } from '@/lib/whatsappInbox';
@@ -92,7 +92,7 @@ function PdfFileCard({
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium text-[#111b21]">{label}</span>
           <span className="text-[11px] text-[#667781]">
-            {loading ? 'Loading…' : 'PDF · Tap to open'}
+            {loading ? 'Loading preview…' : 'PDF · Tap to open'}
           </span>
         </span>
       </button>
@@ -115,7 +115,7 @@ function PdfFileCard({
 }
 
 /**
- * First-page PDF thumbnail when possible; otherwise compact file card (no tall empty box).
+ * First-page PDF thumbnail when in viewport; otherwise compact file card (no eager download).
  */
 export function WhatsAppPdfThumbnail({
   messageId,
@@ -125,10 +125,29 @@ export function WhatsAppPdfThumbnail({
   onOpen,
   onDownload,
 }: Props) {
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [visible, setVisible] = useState(false);
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setVisible(true);
+          io.disconnect();
+        }
+      },
+      { root: null, rootMargin: '120px 0px', threshold: 0.01 }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!visible) return;
     let cancelled = false;
 
     const run = async () => {
@@ -143,7 +162,6 @@ export function WhatsAppPdfThumbnail({
 
         const doc = await pdfjs.getDocument({
           data,
-          // Prefer local worker; disable range/stream for small inbox PDFs
           disableRange: true,
           disableStream: true,
           withCredentials: false,
@@ -160,7 +178,6 @@ export function WhatsAppPdfThumbnail({
         const ctx = canvas.getContext('2d', { alpha: false });
         if (!ctx) throw new Error('no canvas');
 
-        // pdf.js 4.x wants canvas on the render params
         await page.render({
           canvasContext: ctx,
           viewport,
@@ -181,23 +198,25 @@ export function WhatsAppPdfThumbnail({
     return () => {
       cancelled = true;
     };
-  }, [messageId, mediaUrl]);
+  }, [visible, messageId, mediaUrl]);
 
-  // Loading or no preview → compact WhatsApp document row (never a tall empty box)
-  if (loading || !thumbUrl) {
+  if (!visible || loading || !thumbUrl) {
     return (
-      <PdfFileCard
-        filename={filename}
-        loading={loading}
-        className={className}
-        onOpen={onOpen}
-        onDownload={onDownload}
-      />
+      <div ref={rootRef}>
+        <PdfFileCard
+          filename={filename}
+          loading={visible && loading}
+          className={className}
+          onOpen={onOpen}
+          onDownload={onDownload}
+        />
+      </div>
     );
   }
 
   return (
     <div
+      ref={rootRef}
       className={cn(
         'mb-1 w-full min-w-[180px] max-w-[240px] overflow-hidden rounded-md bg-[#f0f2f5]',
         className
@@ -213,6 +232,7 @@ export function WhatsAppPdfThumbnail({
             src={thumbUrl}
             alt={filename || 'PDF preview'}
             className="max-h-52 w-full object-cover object-top"
+            loading="lazy"
           />
           <span className="absolute bottom-1.5 left-1.5 rounded bg-[#e53935] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
             PDF

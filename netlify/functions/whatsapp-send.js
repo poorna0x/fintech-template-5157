@@ -411,6 +411,12 @@ exports.handler = async (event) => {
     const headerPdfB64 = headerDoc
       ? headerDoc.pdfBase64 || headerDoc.fileBase64 || body.pdfBase64 || ''
       : body.headerPdfBase64 || '';
+    // IMAGE-header templates (e.g. pending payment + QR): imageBase64 / link / mediaId
+    const headerImg = body.headerImage && typeof body.headerImage === 'object' ? body.headerImage : null;
+    const headerImgB64 = headerImg
+      ? headerImg.imageBase64 || headerImg.fileBase64 || body.imageBase64 || ''
+      : body.headerImageBase64 || '';
+
     if (headerPdfB64 || headerDoc?.mediaId || headerDoc?.link) {
       let mediaId = String(headerDoc?.mediaId || '').trim();
       let link = String(headerDoc?.link || headerDoc?.url || '').trim();
@@ -464,6 +470,60 @@ exports.handler = async (event) => {
       persist.media_mime = 'application/pdf';
       persist.filename = filename;
       persist.media_url = persistMediaUrl(link, mediaId);
+    } else if (headerImgB64 || headerImg?.mediaId || headerImg?.link) {
+      let mediaId = String(headerImg?.mediaId || '').trim();
+      let link = String(headerImg?.link || headerImg?.url || '').trim();
+      let filename =
+        String(headerImg?.filename || body.filename || 'image.jpg').trim() || 'image.jpg';
+      let mime = String(headerImg?.mimeType || headerImg?.mime || 'image/jpeg').trim() || 'image/jpeg';
+
+      if (!mediaId && headerImgB64) {
+        const buf = fileBase64ToBuffer(headerImgB64) || pdfBase64ToBuffer(headerImgB64);
+        if (!buf || buf.length < 32) {
+          return json(400, headers, { error: 'Invalid header image base64' });
+        }
+        if (buf.length > MAX_OUTBOUND_BYTES) {
+          return json(413, headers, { error: 'File too large (max ~4.5MB for WhatsApp send)' });
+        }
+        const uploaded = await uploadOutboundFileToWhatsAppMedia(
+          phoneNumberId,
+          accessToken,
+          buf,
+          mime,
+          filename
+        );
+        if (!uploaded?.id) {
+          return json(502, headers, { error: 'Could not upload image for template header' });
+        }
+        mediaId = uploaded.id;
+        filename = uploaded.filename || filename;
+        mime = uploaded.mime || mime;
+        const preview = await uploadOutboundMediaToCloudinary(buf, mime, filename);
+        if (preview?.url) link = preview.url;
+      }
+
+      if (!mediaId && (!link || !/^https:\/\//i.test(link))) {
+        return json(400, headers, {
+          error: 'headerImage needs mediaId, https link, or imageBase64',
+        });
+      }
+
+      components.push({
+        type: 'header',
+        parameters: [
+          {
+            type: 'image',
+            image: {
+              ...(mediaId ? { id: mediaId } : { link }),
+            },
+          },
+        ],
+      });
+      templateHeaderComponents = [...components];
+      persist.msg_type = 'image';
+      persist.media_mime = mime;
+      persist.filename = filename;
+      persist.media_url = persistMediaUrl(link, mediaId);
     }
 
     if (bodyParams.length) {
@@ -490,7 +550,11 @@ exports.handler = async (event) => {
     if (persist.media_url && persist.filename && templateHeaderComponents.length) {
       const tplNote =
         bodyParams.length > 0 ? bodyParams.map(String).join(' · ') : templateName;
-      persist.body = inboxBodyForOutboundMedia(tplNote, persist.filename, 'document');
+      persist.body = inboxBodyForOutboundMedia(
+        tplNote,
+        persist.filename,
+        persist.msg_type === 'image' ? 'image' : 'document'
+      );
     } else {
       persist.body =
         bodyParams.length > 0

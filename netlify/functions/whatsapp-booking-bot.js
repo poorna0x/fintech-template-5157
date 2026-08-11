@@ -1808,7 +1808,7 @@ async function askBuildingFlat(ctx, state = {}) {
   });
 }
 
-/** Admin: Hi from brand Water Filter Service → collect full name only. */
+/** Admin: This is brand Water Filter Service → collect full name only. */
 async function askCustomerName(ctx, state = {}) {
   const who = waterFilterServiceLabelForBrand(state.brand);
   await setBookingState(ctx.db, ctx.to, {
@@ -1820,9 +1820,9 @@ async function askCustomerName(ctx, state = {}) {
   await sendText({
     ...ctx,
     text: [
-      `Hi from ${who}. 👋`,
+      `This is ${who}. 👋`,
       '',
-      'Please share your name on this chat.',
+      'Please share your full name on this chat so we can continue your water purifier service request.',
     ].join('\n'),
   });
 }

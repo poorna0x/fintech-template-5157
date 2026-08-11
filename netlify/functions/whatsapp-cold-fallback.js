@@ -63,7 +63,7 @@ function buildTemplatePayload(to, templateName, languageCode, bodyParams, header
 /**
  * @returns {Array<{ name: string, params: string[], headerComponents: object[] }>}
  */
-function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader) {
+function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader, headerComponents = []) {
   const name = customerNameFrom(bodyParams);
   const attempts = [];
   const seen = new Set([primaryName]);
@@ -73,6 +73,23 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader) {
     seen.add(name);
     attempts.push({ name, params, headerComponents });
   };
+
+  // Balance-due IMAGE header (QR) → older img (keep QR) → text letter v6…
+  if (/^svc_balance_due_letter_(ero|hro)_img_/i.test(primaryName)) {
+    const suffix = /_hro/.test(primaryName) ? 'hro' : 'ero';
+    const amount = String(bodyParams?.[1] || '0').replace(/[^\d.]/g, '') || '0';
+    const imgHeaders = Array.isArray(headerComponents) ? headerComponents : [];
+    if (/_img_v2$/i.test(primaryName)) {
+      push(`svc_balance_due_letter_${suffix}_img_v1`, bodyParams.slice(0, 4).map(String), imgHeaders);
+    }
+    push(`svc_balance_due_letter_${suffix}_v6`, bodyParams.slice(0, 4).map(String));
+    push(`svc_balance_due_letter_${suffix}_v5`, bodyParams.slice(0, 4).map(String));
+    push(`svc_balance_due_letter_${suffix}_v4`, bodyParams.slice(0, 4).map(String));
+    push(`svc_balance_due_letter_${suffix}_v3`, bodyParams.slice(0, 4).map(String));
+    push(`svc_balance_due_letter_${suffix}_v2`, bodyParams.slice(0, 4).map(String));
+    push(`svc_balance_due_letter_${suffix}`, bodyParams.slice(0, 4).map(String));
+    push('svc_balance_due', [name, amount]);
+  }
 
   // DOCUMENT-header cold PDF — v3 letter → direct (any label) → v2 → svc_doc_pdf_v2
   if (hasDocHeader || /^svc_doc_/i.test(primaryName) || /^svc_doc_direct_/i.test(primaryName)) {
@@ -286,32 +303,26 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader) {
     push(`svc_visit_cancelled_${suffix}`, bodyParams.slice(0, 2).map(String));
   }
 
-  // WFS minimal hello → longer hi → svc_hello → smoke
+  // WFS minimal hello → branded hi → svc_hello → smoke
   if (/^svc_wfs_just_hi(_(hro|ero))?(_v3)?$/i.test(primaryName)) {
     const suffix = /_hro/i.test(primaryName) ? 'hro' : /_ero/i.test(primaryName) ? 'ero' : null;
-    if (/_v3$/i.test(primaryName)) {
-      if (suffix) push(`svc_wfs_hi_from_${suffix}_v3`, [name]);
-      else push('svc_wfs_hi_from_v3', [name]);
-    } else if (suffix) {
+    if (suffix) {
       push(`svc_wfs_just_hi_${suffix}_v3`, [name]);
-      push(`svc_wfs_hi_from_${suffix}_v3`, [name]);
+      push(`svc_wfs_hello_${suffix}_v2`, [name]);
+      push(`svc_wfs_hi_${suffix}_v2`, [name]);
     } else {
       push('svc_wfs_just_hi_v3', [name]);
-      push('svc_wfs_hi_from_v3', [name]);
+      push('svc_wfs_hello_v3', [name]);
     }
     push('svc_hello', [name]);
   }
   if (/^svc_wfs_hi_from(_(hro|ero))?(_v3|_v2)?$/i.test(primaryName)) {
     const suffix = /_hro/i.test(primaryName) ? 'hro' : /_ero/i.test(primaryName) ? 'ero' : null;
-    if (/_v3$/i.test(primaryName)) {
-      if (suffix) push(`svc_wfs_hi_${suffix}_v2`, [name]);
-      else push('svc_wfs_hi_v3', [name]);
-    } else if (suffix) {
-      push(`svc_wfs_hi_from_${suffix}_v3`, [name]);
+    if (suffix) {
+      push(`svc_wfs_hello_${suffix}_v2`, [name]);
       push(`svc_wfs_hi_${suffix}_v2`, [name]);
     } else {
-      push('svc_wfs_hi_from_v3', [name]);
-      push('svc_wfs_hi_v3', [name]);
+      push('svc_wfs_hello_v3', [name]);
     }
     push('svc_hello', [name]);
   }
@@ -320,22 +331,20 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader) {
     push('svc_hello', [name]);
   }
   if (/^svc_wfs_hi(_v3)?$/i.test(primaryName) && !/^svc_wfs_hi_from/i.test(primaryName)) {
-    push('svc_wfs_hi_v3', [name]);
+    push('svc_wfs_hello_v3', [name]);
     push('svc_hello', [name]);
   }
 
-  // Ask location “from WFS” → v3 → v2 → v1
+  // Ask location “from WFS” → v3 Share location → approved svc_ask_location
   if (/^svc_wfs_ask_loc_from_(hro|ero)_v1$/i.test(primaryName)) {
     const suffix = /_hro_/i.test(primaryName) ? 'hro' : 'ero';
     push('svc_wfs_ask_loc_from_v1', [name]);
     push(`svc_wfs_ask_loc_${suffix}_v3`, [name]);
-    push(`svc_wfs_ask_loc_${suffix}_v2`, [name]);
-    push(`svc_wfs_ask_loc_${suffix}`, [name]);
+    push('svc_ask_location', [name]);
   }
   if (/^svc_wfs_ask_loc_from_v1$/i.test(primaryName)) {
     push('svc_wfs_ask_loc_v3', [name]);
-    push('svc_wfs_ask_loc_v2', [name]);
-    push('svc_wfs_ask_loc', [name]);
+    push('svc_ask_location', [name]);
   }
 
   // Ask location v3 (Share location + emoji) → v2 → v1 → legacy
@@ -508,8 +517,13 @@ async function sendTemplateWithColdFallbacks({
     };
   }
 
-  const hasDocHeader = headers.some((c) => String(c.type || '').toLowerCase() === 'header');
-  for (const fb of buildFallbackAttempts(templateName, params, hasDocHeader)) {
+  // Only DOCUMENT headers should enter the PDF doc-fallback chain (not IMAGE headers).
+  const hasDocHeader = headers.some((c) => {
+    if (String(c.type || '').toLowerCase() !== 'header') return false;
+    const p = c.parameters?.[0];
+    return String(p?.type || '').toLowerCase() === 'document' || Boolean(p?.document);
+  });
+  for (const fb of buildFallbackAttempts(templateName, params, hasDocHeader, headers)) {
     const fbResult = await callWhatsAppApi(
       phoneNumberId,
       accessToken,

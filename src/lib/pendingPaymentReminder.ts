@@ -109,6 +109,12 @@ export function resolvePendingPaymentLetterTemplateName(
   return resolveBrandLetterTemplateName('balance_due', brand, 'v3');
 }
 
+/** Same letter as v6 with IMAGE header (QR / receipt / photo). */
+export function resolvePendingPaymentLetterImageTemplateName(brand: DocumentBrand): string {
+  const suffix = brand === 'elevenro' ? 'ero' : 'hro';
+  return `svc_balance_due_letter_${suffix}_img_v2`;
+}
+
 export function resolvePendingPaymentLetterTemplateFallbackName(brand: DocumentBrand): string {
   return resolveBrandLetterTemplateName('balance_due', brand, 'v5');
 }
@@ -138,7 +144,8 @@ export function buildPendingPaymentWhatsAppMessage(
   dueDateYmd?: string | null,
   brand?: DocumentBrand | string | null,
   upi?: PendingPaymentWhatsAppUpiOptions | null,
-  invoiceRef?: string | null
+  invoiceRef?: string | null,
+  opts?: { withQrImage?: boolean }
 ): string {
   const resolved = resolvePendingPaymentMessageBrand(brand);
   const contact = brandContactLines(resolved);
@@ -147,6 +154,7 @@ export function buildPendingPaymentWhatsAppMessage(
   const payLink = (upi?.httpsLink || '').trim();
   const upiId = (upi?.upiId || '').trim();
   const ref = String(invoiceRef || '').trim();
+  const withQr = Boolean(opts?.withQrImage);
 
   const lines: string[] = [
     `Hi ${customerName}, 👋`,
@@ -156,6 +164,12 @@ export function buildPendingPaymentWhatsAppMessage(
     `📅 Due date: ${dueLabel || 'At your earliest convenience'}`,
   ];
   if (ref) lines.push(`🧾 Invoice / Job: ${ref}`);
+
+  if (withQr) {
+    lines.push('');
+    lines.push('*Pay with UPI QR*');
+    lines.push('📱 Scan or tap the QR code above to pay directly (GPay / PhonePe / WhatsApp Pay).');
+  }
 
   if (payLink || upiId) {
     lines.push('');
@@ -180,7 +194,13 @@ export function buildPendingPaymentWhatsAppMessage(
   lines.push('');
   lines.push(...brandLetterClosingLines(resolved, { skipChatHint: true, includeTextUs: false }));
   lines.push('');
-  if (payLink || upiId) {
+  if (withQr && (payLink || upiId)) {
+    lines.push(
+      '💳 Or tap *Pay now* below. Reply on this chat if you have already paid.'
+    );
+  } else if (withQr) {
+    lines.push('💬 Reply on this chat if you need any help or if you have already paid.');
+  } else if (payLink || upiId) {
     lines.push('💳 Tap *Pay now* below or reply on this chat if you have already paid.');
   } else {
     lines.push('💬 Reply on this chat if you need any help or if you have already paid.');
