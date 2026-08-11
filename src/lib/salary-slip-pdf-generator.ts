@@ -972,7 +972,7 @@ export function generateSalarySlipPDF(
     }
 
     // Write content to new window
-    printWindow.document.write(generateSalarySlipHTML(pdfData, includeDayWiseBreakdown));
+    printWindow.document.write(withAbsoluteAssetUrls(generateSalarySlipHTML(pdfData, includeDayWiseBreakdown)));
     printWindow.document.close();
 
     // Wait for content to load, then trigger print
@@ -1046,7 +1046,7 @@ function handleMobilePrint(data: SalarySlipPDFData, action: 'print' | 'pdf', inc
           // Create print window
           const printWindow = window.open('', '_blank');
           if (printWindow) {
-            printWindow.document.write(generateSalarySlipHTML(data, includeDayWiseBreakdown));
+            printWindow.document.write(withAbsoluteAssetUrls(generateSalarySlipHTML(data, includeDayWiseBreakdown)));
             printWindow.document.close();
             
             setTimeout(() => {

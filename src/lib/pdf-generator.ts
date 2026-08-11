@@ -11,7 +11,7 @@ import {
   resolvePdfDocumentBrand,
 } from './document-pdf-brand';
 import type { DocumentSealVariant } from './service-brands';
-import { downloadDocumentPdfReturningBase64 } from './server-pdf-download';
+import { downloadDocumentPdfReturningBase64, withAbsoluteAssetUrls } from './server-pdf-download';
 import { getDocumentPdfPrintFrameCss } from './document-pdf-print-frame';
 import {
   buildBillPaymentNoticeHtml,
@@ -66,6 +66,8 @@ export interface PDFBillData {
   paymentMethod?: string;
   /** Amount received toward total (PARTIAL / paid record on PDF). */
   amountPaid?: number;
+  /** Payment due date (YYYY-MM-DD) when PENDING / PARTIAL. */
+  paymentDueDate?: string;
   notes?: string;
   notesHeading?: string;
   terms?: string;
@@ -152,7 +154,7 @@ export function generateBillPDF(billData: PDFBillData, action: 'print' | 'pdf' =
     console.log('Bill content generated:', billContent.substring(0, 200) + '...');
     
     // Write content to new window
-    printWindow.document.write(buildBillDocumentHtml(billData));
+    printWindow.document.write(withAbsoluteAssetUrls(buildBillDocumentHtml(billData)));
     
     printWindow.document.close();
     
@@ -877,6 +879,7 @@ function createBillContent(data: PDFBillData): string {
         paymentStatus: data.paymentStatus,
         totalAmount: data.totalAmount,
         amountPaid: data.amountPaid,
+        paymentDueDate: data.paymentDueDate,
       })}
       
       <!-- Notes and Terms -->

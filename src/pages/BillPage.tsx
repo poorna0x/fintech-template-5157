@@ -131,6 +131,7 @@ export default function BillPage() {
              paymentStatus: bill.paymentStatus,
              paymentMethod: bill.paymentMethod,
              amountPaid: bill.amountPaid,
+             paymentDueDate: bill.dueDate || (bill as { paymentDueDate?: string }).paymentDueDate,
              notes: bill.notes,
              terms: bill.terms,
              hideGstInHeader: (bill as any).hideGstInHeader || false,

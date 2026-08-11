@@ -4,7 +4,11 @@
 import { getCompanyStateCode } from './indian-state-codes';
 import { sanitizeForTemplate, sanitizeNotesHtml } from './sanitize';
 import { resolveBrandSealSrc, resolveDocumentBrandFromData } from './service-brands';
-import { downloadDocumentPdf, downloadDocumentPdfReturningBase64 } from './server-pdf-download';
+import {
+  downloadDocumentPdf,
+  downloadDocumentPdfReturningBase64,
+  withAbsoluteAssetUrls,
+} from './server-pdf-download';
 import { getDocumentPdfPrintFrameCss } from './document-pdf-print-frame';
 import {
   buildInvoicePaymentNoticeHtml,
@@ -233,7 +237,7 @@ export function generateTaxInvoicePDF(billData: PDFTaxInvoiceData, action: 'prin
     const invoiceContent = createTaxInvoiceContent(billData);
     
     // Write content to new window
-    printWindow.document.write(buildTaxInvoiceDocumentHtml(billData));
+    printWindow.document.write(withAbsoluteAssetUrls(buildTaxInvoiceDocumentHtml(billData)));
     printWindow.document.close();
     
     // Wait for content to load, then print
@@ -1607,7 +1611,7 @@ export async function generateCombinedTaxInvoicePDF(
       return;
     }
 
-    printWindow.document.write(combinedHtml);
+    printWindow.document.write(withAbsoluteAssetUrls(combinedHtml));
 
     printWindow.document.close();
     printWindow.onload = () => {

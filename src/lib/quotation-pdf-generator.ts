@@ -10,7 +10,7 @@ import {
   renderPdfSignatureHtml,
   resolvePdfDocumentBrand,
 } from './document-pdf-brand';
-import { downloadDocumentPdfReturningBase64 } from './server-pdf-download';
+import { downloadDocumentPdfReturningBase64, withAbsoluteAssetUrls } from './server-pdf-download';
 import { getDocumentPdfPrintFrameCss } from './document-pdf-print-frame';
 import {
   generateDocumentPdfVerifyCode,
@@ -150,7 +150,7 @@ export function generateQuotationPDF(quotationData: PDFQuotationData, action: 'p
     console.log('Quotation content generated:', quotationContent.substring(0, 200) + '...');
     
     // Write content to new window
-    printWindow.document.write(buildQuotationDocumentHtml(quotationData));
+    printWindow.document.write(withAbsoluteAssetUrls(buildQuotationDocumentHtml(quotationData)));
     
     printWindow.document.close();
     

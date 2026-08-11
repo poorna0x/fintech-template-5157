@@ -54,7 +54,9 @@ import {
   isDocumentPaymentStatus,
   resolveDocumentPayment,
   validatePartialPaymentAmount,
+  validatePaymentDueDate,
 } from '@/lib/document-payment';
+import { resolveDocumentPaymentDueDate } from '@/lib/documentPaymentDueDate';
 import {
   type EditableNumber,
   num,
@@ -180,6 +182,7 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
   const extraChargeLabel = EXTRA_CHARGE_LABELS[extraChargeKind];
   const [paymentStatus, setPaymentStatus] = useState<DocumentPaymentStatus>('PAID');
   const [amountReceived, setAmountReceived] = useState<EditableNumber>(0);
+  const [paymentDueDate, setPaymentDueDate] = useState('');
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [hideGstInHeader, setHideGstInHeader] = useState(false);
   const [brandPickerOpen, setBrandPickerOpen] = useState(false);
@@ -463,6 +466,22 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
     }
   }, [paymentStatus, totalAmount]);
 
+  // Auto-fill payment due date from job / reminder when entering Pending/Partial
+  useEffect(() => {
+    if (paymentStatus !== 'PENDING' && paymentStatus !== 'PARTIAL') return;
+    if (paymentDueDate.trim()) return;
+    let cancelled = false;
+    void (async () => {
+      const due = await resolveDocumentPaymentDueDate({
+        customerId: customer?.id,
+      });
+      if (!cancelled && due) setPaymentDueDate(due);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [paymentStatus, customer?.id, paymentDueDate]);
+
   const resolvedPayment = resolveDocumentPayment({
     paymentStatus,
     totalAmount,
@@ -587,6 +606,12 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
       return null;
     }
 
+    const dueError = validatePaymentDueDate(paymentStatus, paymentDueDate);
+    if (dueError) {
+      toast.error(dueError);
+      return null;
+    }
+
     const brandCompany = getCompanyInfoForBrand(brand);
     setCompany(brandCompany);
 
@@ -623,6 +648,7 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
       totalAmount: billTotal,
       paymentStatus: resolvedPayment.status,
       amountPaid: resolvedPayment.paid,
+      dueDate: paymentStatus === 'PAID' ? undefined : paymentDueDate || undefined,
       paymentMethod: 'CASH',
       notes: joinNotesHtml(notes),
       notesHeading,
@@ -708,6 +734,7 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
     extraChargeKind,
     paymentStatus,
     amountReceived: num(amountReceived),
+    paymentDueDate,
     hideGstInHeader,
     editableCustomer,
   });
@@ -744,6 +771,7 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
     }
     if (isDocumentPaymentStatus(snap.paymentStatus)) setPaymentStatus(snap.paymentStatus);
     if (typeof snap.amountReceived === 'number') setAmountReceived(snap.amountReceived);
+    if (typeof snap.paymentDueDate === 'string') setPaymentDueDate(snap.paymentDueDate);
     if (typeof snap.hideGstInHeader === 'boolean') setHideGstInHeader(snap.hideGstInHeader);
     if (snap.editableCustomer && typeof snap.editableCustomer === 'object')
       setEditableCustomer((prev) => mergeEditableCustomer(prev, snap.editableCustomer));
@@ -1211,7 +1239,22 @@ export default function BillGenerator({ customer, onPrint, embedded = false }: B
         amountReceived={amountReceived}
         onAmountReceivedChange={setAmountReceived}
         totalAmount={totalAmount}
-      />
+      >
+        {(paymentStatus === 'PENDING' || paymentStatus === 'PARTIAL') && (
+          <div>
+            <Label htmlFor="bill-paymentDueDate">Payment due date</Label>
+            <DatePicker
+              value={paymentDueDate}
+              onChange={(v) => setPaymentDueDate(v ?? '')}
+              placeholder="Pick due date"
+              className="mt-1"
+            />
+            <p className="text-xs text-gray-600 mt-1">
+              Required. Auto-filled from the job’s pending payment date when available.
+            </p>
+          </div>
+        )}
+      </DocumentPaymentStatusCard>
 
       {/* Bill Summary */}
       <Card>

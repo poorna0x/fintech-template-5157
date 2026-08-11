@@ -22,6 +22,7 @@ import {
   type DocumentBrand,
 } from './service-brands';
 import { POPPINS_FONT_FAMILY, renderPoppinsFontHeadLinks } from './pdf-document-fonts';
+import { withAbsoluteAssetUrls } from './server-pdf-download';
 
 export interface WarrantyCardPDFCustomer {
   name: string;
@@ -784,7 +785,7 @@ export function generateWarrantyCardPDF(
       alert('Please allow popups to preview the warranty card.');
       return;
     }
-    printWindow.document.write(generateWarrantyCardHTML(data));
+    printWindow.document.write(withAbsoluteAssetUrls(generateWarrantyCardHTML(data)));
     printWindow.document.close();
     printWindow.onload = () => {
       printWindow.focus();

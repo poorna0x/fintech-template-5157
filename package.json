@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "npm run dev:kill-stale && concurrently \"npm run dev:server\" \"npm run dev:vite\"",
-    "dev:kill-stale": "lsof -ti:8888 | xargs kill -9 2>/dev/null || true",
+    "dev:kill-stale": "lsof -ti:8888,8080,8081 | xargs kill -9 2>/dev/null || true",
     "dev:server": "node netlify/functions/dev-server.cjs",
     "dev:vite": "vite",
     "build": "node scripts/sync-csp-to-netlify.mjs && node scripts/generate-sitemaps.mjs && vite build && node scripts/inject-security-headers.mjs",

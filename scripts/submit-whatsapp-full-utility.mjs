@@ -8,6 +8,7 @@
  * Usage:
  *   node scripts/submit-whatsapp-full-utility.mjs              # dry-run
  *   node scripts/submit-whatsapp-full-utility.mjs --status     # list all on WABA
+ *   node scripts/submit-whatsapp-full-utility.mjs --preview-md  # write docs/whatsapp-cold-template-previews.md
  *   node scripts/submit-whatsapp-full-utility.mjs --submit       # submit missing only
  *   node scripts/submit-whatsapp-full-utility.mjs --submit --force  # re-submit even if pending
  */
@@ -33,6 +34,7 @@ const { eleven: CALL_PHONE_ELEVEN, hydrogen: CALL_PHONE_HYDROGEN } = resolveWhat
 const CALL_PHONE = CALL_PHONE_ELEVEN;
 const doSubmit = process.argv.includes('--submit');
 const statusOnly = process.argv.includes('--status');
+const previewMd = process.argv.includes('--preview-md');
 const force = process.argv.includes('--force');
 const deleteMarketing = process.argv.includes('--delete-marketing');
 
@@ -1019,10 +1021,181 @@ async function deleteByName(token, name) {
   );
 }
 
+function fillTemplateBody(body, examples) {
+  let out = String(body || '');
+  (examples || []).forEach((ex, i) => {
+    out = out.replace(new RegExp(`\\{\\{${i + 1}\\}\\}`, 'g'), String(ex ?? ''));
+  });
+  return out;
+}
+
+function brandLabelFromName(name) {
+  if (/_ero/i.test(String(name || ''))) return 'Eleven RO';
+  if (/_hro/i.test(String(name || ''))) return 'Hydrogen RO';
+  return 'Shared';
+}
+
+function buttonsPreview(payload) {
+  const btns = payload.components?.find((c) => c.type === 'BUTTONS')?.buttons || [];
+  if (!btns.length) return '_No buttons_';
+  return btns
+    .map((b) => {
+      if (b.type === 'PHONE_NUMBER') return `**Call us** → \`${b.phone_number}\``;
+      if (b.type === 'URL') {
+        const url = String(b.url || '').replace('{{1}}', 'pay123456');
+        return `**${b.text || 'Link'}** → ${url}`;
+      }
+      if (b.type === 'QUICK_REPLY') return `Quick reply: **${b.text}**`;
+      return String(b.type);
+    })
+    .join(' · ');
+}
+
+function headerPreview(payload) {
+  const h = payload.components?.find((c) => c.type === 'HEADER');
+  if (!h) return null;
+  if (h.format === 'DOCUMENT') return '📎 **PDF attached** (document header — bill / invoice / AMC / etc.)';
+  return h.format;
+}
+
+function collectAllTemplatePreviewEntries() {
+  const entries = [];
+  const push = (group, t, payloadFn) => {
+    const payload = payloadFn(t);
+    entries.push({
+      group,
+      name: payload.name || t.name,
+      brand: brandLabelFromName(t.name),
+      body: fillTemplateBody(t.body, t.examples),
+      header: headerPreview(payload),
+      buttons: buttonsPreview(payload),
+      examples: t.examples,
+    });
+  };
+
+  for (const t of CORE_TEMPLATES) {
+    if (t.skipSubmit) continue;
+    push('Core UTILITY', t, corePayload);
+  }
+  for (const t of BOOKING_TEMPLATES) push('Booking CTA', t, bookingPayload);
+  for (const t of SERVICE_DUE_CTA_TEMPLATES) push('Service due CTA', t, bookingPayload);
+  for (const t of BOOKING_STATUS_V2_TEMPLATES) push('Booking confirm / cancel v2', t, bookingPayload);
+  for (const t of JOB_DONE_V2_TEMPLATES) push('Job done v2', t, jobDonePayload);
+  for (const t of JOB_DONE_V3_TEMPLATES) push('Job done v3', t, jobDonePayload);
+  for (const t of LETTER_V3_TEMPLATES) push('Letter format v3', t, letterPayload);
+  for (const t of BALANCE_DUE_LETTER_V4_TEMPLATES) push('Balance due letter v4 (Pay now)', t, balanceDueLetterPayload);
+  for (const t of EXISTING_CUSTOMER_BOOK_CTA_TEMPLATES) push('Existing customer book', t, bookOnlyPayload);
+  for (const t of SERVICE_DUE_BOOK_CTA_TEMPLATES) push('Service due book CTA', t, bookOnlyPayload);
+  for (const t of WFS_HELLO_TEMPLATES) push('WFS hello', t, corePayload);
+  for (const t of WFS_SIMPLE_HI_TEMPLATES) push('WFS simple hi', t, corePayload);
+  for (const t of WFS_JUST_HI_TEMPLATES) push('WFS just hi (legacy)', t, corePayload);
+  for (const t of WFS_HI_FROM_TEMPLATES) push('WFS hi from (legacy)', t, corePayload);
+  for (const t of WFS_V3_UTILITY_TEMPLATES) push('WFS greeting v3', t, corePayload);
+  for (const t of WFS_COLLECT_TEMPLATES) push('WFS collect info', t, corePayload);
+  for (const t of WFS_ASK_LOC_TEMPLATES) push('WFS ask location', t, letterPayload);
+  for (const t of WFS_ASK_LOC_SIMPLE_TEMPLATES) push('WFS ask location (short)', t, letterPayload);
+  for (const t of DOC_PDF_V2_TEMPLATES) push('Cold PDF v2', t, docPdfPayload);
+
+  return entries.sort((a, b) => {
+    const bg = a.brand.localeCompare(b.brand);
+    if (bg) return bg;
+    const gg = a.group.localeCompare(b.group);
+    if (gg) return gg;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+async function writeColdTemplatePreviewMarkdown(token) {
+  const { writeFileSync, mkdirSync } = await import('fs');
+  const { resolve, dirname } = await import('path');
+  const outPath = resolve(
+    root,
+    process.argv.find((a, i) => process.argv[i - 1] === '--preview-md-out') ||
+      'docs/whatsapp-cold-template-previews.md'
+  );
+  mkdirSync(dirname(outPath), { recursive: true });
+
+  const entries = collectAllTemplatePreviewEntries();
+  const byName = token ? new Map((await listTemplates(token)).map((t) => [t.name, t])) : new Map();
+  const now = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
+
+  const lines = [
+    '# WhatsApp cold templates — live preview (Eleven RO & Hydrogen RO)',
+    '',
+    `Generated: **${now} IST** · WABA \`${WABA_ID}\``,
+    '',
+    'How to read this doc:',
+    '- **Message** = what the customer sees in WhatsApp (sample vars filled: Rahul, amounts, dates).',
+    '- **Buttons** = Meta template quick-action row under the message (cold / outside 24h window only).',
+    '- **Text us** appears in the *message body* on letter/PDF templates (Meta blocks `wa.me` on URL buttons).',
+    '- **24h window open** → CRM sends free-form text instead; wording matches these templates.',
+    '',
+    '| Call us (voice) | Eleven RO | Hydrogen RO |',
+    '|---|---|---|',
+    '| Main line | 9880693311 | 8884944288 |',
+    '| Website | elevenro.com | hydrogenro.com |',
+    '| Pay now link | elevenro.com/p/{code} | hydrogenro.com/p/{code} |',
+    '',
+    '---',
+    '',
+  ];
+
+  let lastBrand = '';
+  let lastGroup = '';
+  for (const e of entries) {
+    if (e.brand !== lastBrand) {
+      lastBrand = e.brand;
+      lastGroup = '';
+      lines.push(`## ${e.brand}`);
+      lines.push('');
+    }
+    if (e.group !== lastGroup) {
+      lastGroup = e.group;
+      lines.push(`### ${e.group}`);
+      lines.push('');
+    }
+
+    const meta = byName.get(e.name);
+    const statusBadge = meta
+      ? `\`${meta.status}\` ${meta.category || ''}`
+      : '_not on WABA yet_';
+
+    lines.push(`#### \`${e.name}\``);
+    lines.push('');
+    lines.push(`Meta status: ${statusBadge}`);
+    lines.push('');
+    if (e.header) {
+      lines.push(e.header);
+      lines.push('');
+    }
+    lines.push('**Message**');
+    lines.push('');
+    lines.push('```');
+    lines.push(e.body);
+    lines.push('```');
+    lines.push('');
+    lines.push(`**Buttons:** ${e.buttons}`);
+    lines.push('');
+    lines.push('---');
+    lines.push('');
+  }
+
+  writeFileSync(outPath, lines.join('\n'), 'utf8');
+  console.log(`Wrote ${entries.length} template previews → ${outPath}`);
+}
+
 async function main() {
   console.log(`WABA ${WABA_ID}`);
   console.log(`Call us — Eleven RO: ${CALL_PHONE_ELEVEN} · Hydrogen RO: ${CALL_PHONE_HYDROGEN}`);
   const token = await resolveToken();
+  if (previewMd) {
+    if (!token) {
+      console.error('Missing WHATSAPP_ACCESS_TOKEN (needed for Meta status labels)');
+      process.exit(1);
+    }
+    await writeColdTemplatePreviewMarkdown(token);
+    return;
+  }
   if (!token && (doSubmit || statusOnly)) {
     console.error('Missing WHATSAPP_ACCESS_TOKEN');
     process.exit(1);

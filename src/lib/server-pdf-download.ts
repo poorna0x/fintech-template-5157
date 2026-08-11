@@ -13,8 +13,9 @@ function sanitizeFilename(raw: string): string {
 }
 
 /**
- * Origin for /public logos & seals when Puppeteer renders PDFs locally.
- * In dev, always use local Vite (127.0.0.1:8080) — not ngrok/LAN browser origin.
+ * Origin for /public logos & seals (preview + Puppeteer).
+ * Must match the page origin in the browser so DEV CSP `img-src 'self'` allows them.
+ * Hardcoding 127.0.0.1:8080 breaks when Vite is on :8081 (or localhost vs 127.0.0.1).
  */
 export function resolvePdfAssetOrigin(explicit?: string): string {
   const trimmed = String(explicit || '').trim().replace(/\/$/, '');
@@ -24,9 +25,6 @@ export function resolvePdfAssetOrigin(explicit?: string): string {
   if (fromEnv) return fromEnv;
 
   if (typeof window !== 'undefined') {
-    if (import.meta.env.DEV) {
-      return 'http://127.0.0.1:8080';
-    }
     return window.location.origin.replace(/\/$/, '');
   }
   return '';
@@ -317,7 +315,8 @@ export function openHtmlPrintFallback(html: string): boolean {
     return false;
   }
 
-  printWindow.document.write(html);
+  // Ensure logos/seals are absolute + same-origin (about:blank breaks root-relative /fulllogo.webp).
+  printWindow.document.write(withAbsoluteAssetUrls(html));
   printWindow.document.close();
 
   printWindow.onload = () => {

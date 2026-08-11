@@ -47,6 +47,8 @@ import DocumentGeneratorPageHeader, {
 import { mergeEditableCustomer } from '@/lib/document-drafts';
 import { suggestAmcAgreementNumber } from '@/lib/amc-agreement-number';
 import { getValidCustomerEmail } from '@/lib/customer-email';
+import { validatePaymentDueDate } from '@/lib/document-payment';
+import { resolveDocumentPaymentDueDate } from '@/lib/documentPaymentDueDate';
 import {
   formatCustomerAddressForBill,
   formatCustomerFullAddressLine,
@@ -130,6 +132,7 @@ export default function AMCGenerator({
   const [serviceCharge, setServiceCharge] = useState<EditableNumber>(0);
   const [paymentStatus, setPaymentStatus] = useState<'PAID' | 'PARTIAL' | 'PENDING'>('PAID');
   const [amountReceived, setAmountReceived] = useState<EditableNumber>(7000);
+  const [paymentDueDate, setPaymentDueDate] = useState('');
   const [isEditingTerms, setIsEditingTerms] = useState(false);
   const [newTerm, setNewTerm] = useState('');
   const [termSection, setTermSection] = useState<'services' | 'terms'>('services');
@@ -305,6 +308,21 @@ export default function AMCGenerator({
       setAmountReceived(0);
     }
   }, [paymentStatus, totalAmount]);
+
+  React.useEffect(() => {
+    if (paymentStatus !== 'PENDING' && paymentStatus !== 'PARTIAL') return;
+    if (paymentDueDate.trim()) return;
+    let cancelled = false;
+    void (async () => {
+      const due = await resolveDocumentPaymentDueDate({
+        customerId: customer?.id,
+      });
+      if (!cancelled && due) setPaymentDueDate(due);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [paymentStatus, customer?.id, paymentDueDate]);
 
   const resolvedAmountReceived =
     paymentStatus === 'PAID'
@@ -583,6 +601,11 @@ export default function AMCGenerator({
         return false;
       }
     }
+    const dueError = validatePaymentDueDate(paymentStatus, paymentDueDate);
+    if (dueError) {
+      toast.error(dueError);
+      return false;
+    }
     return true;
   };
 
@@ -626,6 +649,7 @@ export default function AMCGenerator({
       totalAmount,
       paymentStatus,
       amountPaid: resolvedAmountReceived,
+      dueDate: paymentStatus === 'PAID' ? undefined : paymentDueDate || undefined,
       notes,
       terms,
       validity:
@@ -765,6 +789,7 @@ export default function AMCGenerator({
     serviceCharge,
     paymentStatus,
     amountReceived,
+    paymentDueDate,
     agreementIntro,
     description,
     documentBrand,
@@ -801,6 +826,7 @@ export default function AMCGenerator({
       setPaymentStatus(snap.paymentStatus);
     }
     if (typeof snap.amountReceived === 'number') setAmountReceived(snap.amountReceived);
+    if (typeof snap.paymentDueDate === 'string') setPaymentDueDate(snap.paymentDueDate);
     if (typeof snap.agreementIntro === 'string') setAgreementIntro(snap.agreementIntro);
     if (typeof snap.description === 'string') setDescription(snap.description);
     if (snap.documentBrand === 'hydrogenro' || snap.documentBrand === 'elevenro') {
@@ -1278,6 +1304,20 @@ export default function AMCGenerator({
                 <p className="text-sm text-amber-900 font-medium">
                   Full amount pending: ₹{totalAmount.toLocaleString('en-IN')}
                 </p>
+              )}
+              {(paymentStatus === 'PENDING' || paymentStatus === 'PARTIAL') && (
+                <div>
+                  <Label htmlFor="amc-paymentDueDate">Payment due date</Label>
+                  <DatePicker
+                    value={paymentDueDate}
+                    onChange={(v) => setPaymentDueDate(v ?? '')}
+                    placeholder="Pick due date"
+                    className="mt-1"
+                  />
+                  <p className="text-xs text-gray-600 mt-1">
+                    Required. Auto-filled from the job’s pending payment date when available.
+                  </p>
+                </div>
               )}
               {paymentStatus === 'PAID' && (
                 <p className="text-sm text-green-800 font-medium">

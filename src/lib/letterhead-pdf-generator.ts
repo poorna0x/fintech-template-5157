@@ -17,7 +17,7 @@ import {
   normalizeDocumentBrand,
   resolveBrandSealSrc,
 } from './service-brands';
-import { downloadDocumentPdf } from './server-pdf-download';
+import { downloadDocumentPdf, withAbsoluteAssetUrls } from './server-pdf-download';
 
 /**
  * DOMPurify config tuned for the rich text editor inside the letterhead builder.
@@ -916,7 +916,7 @@ export function generateLetterheadPDF(
       return;
     }
 
-    printWindow.document.write(buildLetterheadDocumentHtml(data));
+    printWindow.document.write(withAbsoluteAssetUrls(buildLetterheadDocumentHtml(data)));
     printWindow.document.close();
 
     printWindow.onload = () => {

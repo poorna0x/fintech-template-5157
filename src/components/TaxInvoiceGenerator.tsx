@@ -74,7 +74,9 @@ import {
   isDocumentPaymentStatus,
   resolveDocumentPayment,
   validatePartialPaymentAmount,
+  validatePaymentDueDate,
 } from '@/lib/document-payment';
+import { resolveDocumentPaymentDueDate } from '@/lib/documentPaymentDueDate';
 
 // Helper function to convert number to words
 function numberToWords(num: number): string {
@@ -506,6 +508,21 @@ export default function TaxInvoiceGenerator({
     }
   }, [paymentStatus, totalAmount]);
 
+  useEffect(() => {
+    if (paymentStatus !== 'PENDING' && paymentStatus !== 'PARTIAL') return;
+    if (paymentDueDate.trim()) return;
+    let cancelled = false;
+    void (async () => {
+      const due = await resolveDocumentPaymentDueDate({
+        customerId: customer?.id,
+      });
+      if (!cancelled && due) setPaymentDueDate(due);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [paymentStatus, customer?.id, paymentDueDate]);
+
   const resolvedPayment = resolveDocumentPayment({
     paymentStatus,
     totalAmount,
@@ -622,6 +639,12 @@ export default function TaxInvoiceGenerator({
     );
     if (partialError) {
       toast.error(partialError);
+      return;
+    }
+
+    const dueError = validatePaymentDueDate(paymentStatus, paymentDueDate);
+    if (dueError) {
+      toast.error(dueError);
       return;
     }
 
@@ -837,6 +860,12 @@ export default function TaxInvoiceGenerator({
     );
     if (partialError) {
       toast.error(partialError);
+      return null;
+    }
+
+    const dueError = validatePaymentDueDate(paymentStatus, paymentDueDate);
+    if (dueError) {
+      toast.error(dueError);
       return null;
     }
 
@@ -1400,13 +1429,16 @@ export default function TaxInvoiceGenerator({
         >
           {(paymentStatus === 'PENDING' || paymentStatus === 'PARTIAL') && (
             <div>
-              <Label htmlFor="paymentDueDate">Payment Due Date (Optional)</Label>
+              <Label htmlFor="paymentDueDate">Payment due date</Label>
               <DatePicker
                 value={paymentDueDate}
                 onChange={(v) => setPaymentDueDate(v ?? '')}
-                placeholder="Pick date"
+                placeholder="Pick due date"
                 className="mt-1"
               />
+              <p className="text-xs text-gray-600 mt-1">
+                Required. Auto-filled from the job’s pending payment date when available.
+              </p>
             </div>
           )}
         </DocumentPaymentStatusCard>

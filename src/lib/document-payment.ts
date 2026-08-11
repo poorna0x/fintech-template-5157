@@ -52,6 +52,75 @@ export function validatePartialPaymentAmount(
   return null;
 }
 
+/** PENDING / PARTIAL documents need a due date for the legal acknowledgement clause. */
+export function validatePaymentDueDate(
+  status: DocumentPaymentStatus,
+  paymentDueDate?: string | null
+): string | null {
+  if (status !== 'PENDING' && status !== 'PARTIAL') return null;
+  const d = String(paymentDueDate || '').trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+    return 'Select payment due date';
+  }
+  return null;
+}
+
+/** Format YYYY-MM-DD for PDF payment notices (en-IN). */
+export function formatPaymentDueDateLabel(paymentDueDate?: string | null): string | null {
+  const raw = String(paymentDueDate || '').trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
+  try {
+    const [y, m, d] = raw.split('-').map((n) => parseInt(n, 10));
+    const date = new Date(y, m - 1, d);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  } catch {
+    return null;
+  }
+}
+
+function paymentDueDateLineHtml(paymentDueDate?: string | null): string {
+  const formatted = formatPaymentDueDateLabel(paymentDueDate);
+  if (!formatted) return '';
+  return `<p class="payment-notice-line"><strong>Payment due date:</strong> ${formatted}</p>`;
+}
+
+/**
+ * Shared legal acknowledgement for pending / partial payment on bill, invoice, AMC.
+ * When dueDateLabel is set, warranty/guarantee void + advance non-refundable if unpaid by that date.
+ */
+export function buildDocumentPaymentLegalText(input: {
+  status: DocumentPaymentStatus;
+  total: number;
+  paid: number;
+  balance: number;
+  paymentDueDate?: string | null;
+  /** "bill" | "invoice" | "agreement" — affects opening sentence only. */
+  documentKind?: 'bill' | 'invoice' | 'agreement';
+}): string {
+  const dueLabel = formatPaymentDueDateLabel(input.paymentDueDate);
+  const balanceStr = formatInrAmount(input.balance);
+  const totalStr = formatInrAmount(input.total);
+  const paidStr = formatInrAmount(input.paid);
+  const kind = input.documentKind || 'bill';
+  const docNoun =
+    kind === 'invoice' ? 'tax invoice' : kind === 'agreement' ? 'AMC agreement' : 'bill';
+
+  const consequence = dueLabel
+    ? ` The balance of ₹${balanceStr} is due on or before ${dueLabel}. If the outstanding amount is not received by the due date, any warranty, service guarantee, or related assurance for this visit shall stand void, and any advance or part payment already received shall be non-refundable. The balance remains payable by the customer.`
+    : ` The outstanding balance of ₹${balanceStr} remains payable by the customer. If not paid as agreed, any warranty, service guarantee, or related assurance for this visit may stand void, and any advance or part payment already received shall be non-refundable.`;
+
+  if (input.status === 'PARTIAL') {
+    return `The customer acknowledges that only part of the amount has been received (₹${paidStr} of ₹${totalStr}).${consequence}`;
+  }
+
+  return `This ${docNoun} is issued with payment pending.${consequence}`;
+}
+
 export function formatInrAmount(amount: number): string {
   return amount.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
@@ -152,6 +221,7 @@ export function buildBillPaymentNoticeHtml(input: {
   paymentStatus?: string | null;
   totalAmount: number;
   amountPaid?: number | null;
+  paymentDueDate?: string | null;
 }): string {
   const payment = resolveDocumentPayment(input);
   if (payment.status === 'PAID') return '';
@@ -159,6 +229,12 @@ export function buildBillPaymentNoticeHtml(input: {
   const totalStr = formatInrAmount(payment.total);
   const paidStr = formatInrAmount(payment.paid);
   const balanceStr = formatInrAmount(payment.balance);
+  const dueDateLine = paymentDueDateLineHtml(input.paymentDueDate);
+  const legal = buildDocumentPaymentLegalText({
+    ...payment,
+    paymentDueDate: input.paymentDueDate,
+    documentKind: 'bill',
+  });
 
   if (payment.status === 'PARTIAL') {
     return `
@@ -167,7 +243,8 @@ export function buildBillPaymentNoticeHtml(input: {
         <p class="payment-notice-line"><strong>Bill total:</strong> ₹${totalStr}</p>
         <p class="payment-notice-line"><strong>Amount received:</strong> ₹${paidStr}</p>
         <p class="payment-notice-line"><strong>Balance due:</strong> ₹${balanceStr}</p>
-        <p class="payment-notice-legal">The customer acknowledges that only part of the bill amount has been received. The outstanding balance remains payable on demand.</p>
+        ${dueDateLine}
+        <p class="payment-notice-legal">${legal}</p>
       </div>
     `;
   }
@@ -178,7 +255,8 @@ export function buildBillPaymentNoticeHtml(input: {
       <p class="payment-notice-line"><strong>Bill total:</strong> ₹${totalStr}</p>
       <p class="payment-notice-line"><strong>Amount received:</strong> ₹0</p>
       <p class="payment-notice-line"><strong>Balance due:</strong> ₹${balanceStr}</p>
-      <p class="payment-notice-legal">This bill is issued with payment pending. The full amount is due as stated above.</p>
+      ${dueDateLine}
+      <p class="payment-notice-legal">${legal}</p>
     </div>
   `;
 }
@@ -195,19 +273,12 @@ export function buildInvoicePaymentNoticeHtml(input: {
   const totalStr = formatInrAmount(payment.total);
   const paidStr = formatInrAmount(payment.paid);
   const balanceStr = formatInrAmount(payment.balance);
-  let dueDateLine = '';
-  if (input.paymentDueDate) {
-    try {
-      const formatted = new Date(input.paymentDueDate).toLocaleDateString('en-IN', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-      });
-      dueDateLine = `<p class="payment-notice-line"><strong>Payment due date:</strong> ${formatted}</p>`;
-    } catch {
-      /* ignore invalid dates */
-    }
-  }
+  const dueDateLine = paymentDueDateLineHtml(input.paymentDueDate);
+  const legal = buildDocumentPaymentLegalText({
+    ...payment,
+    paymentDueDate: input.paymentDueDate,
+    documentKind: 'invoice',
+  });
 
   if (payment.status === 'PARTIAL') {
     return `
@@ -217,7 +288,7 @@ export function buildInvoicePaymentNoticeHtml(input: {
         <p class="payment-notice-line"><strong>Amount received:</strong> ₹${paidStr}</p>
         <p class="payment-notice-line"><strong>Balance due:</strong> ₹${balanceStr}</p>
         ${dueDateLine}
-        <p class="payment-notice-legal">This tax invoice records that only part of the invoice value has been received. The balance remains payable by the customer.</p>
+        <p class="payment-notice-legal">${legal}</p>
       </div>
     `;
   }
@@ -229,7 +300,52 @@ export function buildInvoicePaymentNoticeHtml(input: {
       <p class="payment-notice-line"><strong>Amount received:</strong> ₹0</p>
       <p class="payment-notice-line"><strong>Balance due:</strong> ₹${balanceStr}</p>
       ${dueDateLine}
-      <p class="payment-notice-legal">This tax invoice is issued with payment pending. The full invoice value is due as stated above.</p>
+      <p class="payment-notice-legal">${legal}</p>
+    </div>
+  `;
+}
+
+/** AMC agreement payment acknowledgement — same legal tone as bill/invoice. */
+export function buildAmcDocumentPaymentNoticeHtml(input: {
+  paymentStatus?: string | null;
+  totalAmount: number;
+  amountPaid?: number | null;
+  paymentDueDate?: string | null;
+}): string {
+  const payment = resolveDocumentPayment(input);
+  if (payment.status === 'PAID') return '';
+
+  const totalStr = formatInrAmount(payment.total);
+  const paidStr = formatInrAmount(payment.paid);
+  const balanceStr = formatInrAmount(payment.balance);
+  const dueDateLine = paymentDueDateLineHtml(input.paymentDueDate);
+  const legal = buildDocumentPaymentLegalText({
+    ...payment,
+    paymentDueDate: input.paymentDueDate,
+    documentKind: 'agreement',
+  });
+
+  if (payment.status === 'PARTIAL') {
+    return `
+      <div class="payment-notice payment-notice-partial">
+        <div class="payment-notice-title">Payment acknowledgement — partial payment</div>
+        <p class="payment-notice-line"><strong>Total AMC agreement amount (all taxes inclusive):</strong> ₹${totalStr}</p>
+        <p class="payment-notice-line"><strong>Amount received as on agreement date:</strong> ₹${paidStr}</p>
+        <p class="payment-notice-line"><strong>Balance amount due:</strong> ₹${balanceStr}</p>
+        ${dueDateLine}
+        <p class="payment-notice-legal">${legal}</p>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="payment-notice payment-notice-pending">
+      <div class="payment-notice-title">Payment acknowledgement — payment pending</div>
+      <p class="payment-notice-line"><strong>Total AMC agreement amount (all taxes inclusive):</strong> ₹${totalStr}</p>
+      <p class="payment-notice-line"><strong>Amount received as on agreement date:</strong> ₹0</p>
+      <p class="payment-notice-line"><strong>Balance amount due:</strong> ₹${balanceStr}</p>
+      ${dueDateLine}
+      <p class="payment-notice-legal">${legal}</p>
     </div>
   `;
 }

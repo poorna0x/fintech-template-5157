@@ -85,7 +85,8 @@ export const DEVELOPMENT_CSP = [
     'https://*.gstatic.com',
   ].join(' '),
   "font-src 'self' https://fonts.gstatic.com data:",
-  "img-src 'self' data: https: blob:",
+  // Allow loopback HTTP so PDF logos/seals work even if Vite port / host differs (8080 vs 8081, localhost vs 127.0.0.1).
+  "img-src 'self' data: https: blob: http://localhost:* http://127.0.0.1:*",
   "worker-src 'self' blob:",
   [
     "connect-src 'self'",
