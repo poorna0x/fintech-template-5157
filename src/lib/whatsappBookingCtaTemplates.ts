@@ -13,6 +13,7 @@
 
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getDocumentBrandLabel } from '@/lib/service-brands';
+import { resolveBrandLetterTemplateName } from '@/lib/whatsappBrandContact';
 
 export const WA_BOOKING_CTA_BUTTONS = {
   callDisplay: 'Call us',
@@ -51,7 +52,7 @@ export function bookingCtaTemplateName(kind: BookingCtaKind, brand: DocumentBran
   const suffix = brandSuffix(brand);
   // Avoid marketing-prone names Meta reclassifies.
   if (kind === 'book_existing_customer') {
-    return `existing_service_schedule_${suffix}_cta`;
+    return `existing_service_schedule_${suffix}_cta_v2`;
   }
   if (kind === 'missed_call_book') {
     return `missed_call_callback_${suffix}_cta`;
@@ -61,8 +62,8 @@ export function bookingCtaTemplateName(kind: BookingCtaKind, brand: DocumentBran
     return `unregistered_number_service_${suffix}_cta`;
   }
   if (kind === 'booking_confirmed') {
-    // Letter (fixed footer) → v2 Call+Website → phone-only via cold fallback.
-    return `svc_booking_confirmed_letter_${suffix}`;
+    // Letter v3 (Call us + Website + Text us) → v2 → v1 → v2 short → phone-only via cold fallback.
+    return resolveBrandLetterTemplateName('booking_confirmed', brand, 'v3');
   }
   return `${kind}_${suffix}_cta`;
 }
@@ -87,9 +88,8 @@ export function bookingCtaBody(
 
   switch (kind) {
     case 'book_existing_customer':
-      // UTILITY framing (account/service schedule) — not “come book with us” marketing.
       return {
-        text: `Hi {{1}}, this is ${label}. Our records show your RO service visit can be scheduled. Please reply BOOK on this chat to confirm a convenient time, or use Call / Book below for assistance.`,
+        text: `Hi {{1}}, this is ${label}. Your RO service visit is due. Reply BOOK on this chat to pick date and time — we already have your details on file. Or tap Book online below.`,
         sampleParams: ['Rahul'],
         bodyParams: (customerName: string) => [cleanName(customerName)],
       };

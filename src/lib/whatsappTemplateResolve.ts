@@ -25,9 +25,9 @@ const WA_TEMPLATE_ALIASES: Record<string, string> = {
   crm_notice: 'svc_visit_reminder',
   pending_payment: 'svc_balance_due',
   // Old booking CTA names → UTILITY replacements
-  book_existing_customer_cta: 'existing_service_schedule_ero_cta',
-  book_existing_customer_ero_cta: 'existing_service_schedule_ero_cta',
-  book_existing_customer_hro_cta: 'existing_service_schedule_hro_cta',
+  book_existing_customer_cta: 'existing_service_schedule_ero_cta_v2',
+  book_existing_customer_ero_cta: 'existing_service_schedule_ero_cta_v2',
+  book_existing_customer_hro_cta: 'existing_service_schedule_hro_cta_v2',
   book_new_customer_cta: 'unregistered_number_service_ero_cta',
   book_new_customer_ero_cta: 'unregistered_number_service_ero_cta',
   book_new_customer_hro_cta: 'unregistered_number_service_hro_cta',
@@ -36,8 +36,8 @@ const WA_TEMPLATE_ALIASES: Record<string, string> = {
   missed_call_book_cta: 'svc_missed_call',
   missed_call_book_ero_cta: 'svc_missed_call',
   missed_call_book_hro_cta: 'svc_missed_call',
-  booking_confirmed_ero_cta: 'svc_booking_confirmed_letter_ero',
-  booking_confirmed_hro_cta: 'svc_booking_confirmed_letter_hro',
+  booking_confirmed_ero_cta: 'svc_booking_confirmed_letter_ero_v3',
+  booking_confirmed_hro_cta: 'svc_booking_confirmed_letter_hro_v3',
   svc_document_ready: 'svc_doc_pdf_v2',
 };
 

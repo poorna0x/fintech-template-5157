@@ -26,6 +26,24 @@ const SUPPORT_PHONE_DISPLAY = ELEVEN_SUPPORT_DISPLAY;
 const LEAD_SOURCE = 'Direct call';
 const BRAND_LABEL = 'Eleven RO';
 const WATER_FILTER_SERVICE_LABEL = 'Water Filter Service';
+
+function waterFilterServiceLabelForBrand(brand) {
+  const b = String(brand || '').toLowerCase();
+  if (b === 'elevenro') return 'Eleven RO Water Filter Service';
+  if (b === 'hydrogenro') return 'Hydrogen RO Water Filter Service';
+  return WATER_FILTER_SERVICE_LABEL;
+}
+
+/** Body for native WhatsApp *Send location* button (24h interactive only). */
+function buildAskLocationBodyText(customerName, fromLabel) {
+  const name = String(customerName || 'there').trim() || 'there';
+  const who = String(fromLabel || WATER_FILTER_SERVICE_LABEL).trim() || WATER_FILTER_SERVICE_LABEL;
+  return [
+    `Hi ${name}, this is ${who}. Please share your Google Maps location pin on this chat so we can continue your water filter service request.`,
+    '',
+    'Tap *Send location* below.',
+  ].join('\n');
+}
 const DEFAULT_LEAD_SOURCES = [
   'Website',
   'Direct call',
@@ -85,7 +103,8 @@ function resolveGreetingIntent({ id, title, text } = {}) {
   if (
     /\bbook_service\b/.test(blob) ||
     /\bservice\s*\/\s*repair\b/.test(blob) ||
-    /^service\/repair$/.test(String(title || '').trim().toLowerCase())
+    /^service\/repair$/.test(String(title || '').trim().toLowerCase()) ||
+    /^\s*book(ing)?\s*$/.test(String(text || '').trim().toLowerCase())
   ) {
     return 'book_service';
   }
@@ -873,12 +892,15 @@ async function startAdminQuickAction(ctx, action, opts = {}) {
   if (act === 'book_service') {
     const customer = await lookupCustomerFull(ctx.db, ctx.to);
     if (customer?.id) {
-      await setBookingState(ctx.db, ctx.to, {
+      await beginExistingCustomerDateBooking(ctx, {
         serviceSubType: 'Repair',
         serviceLabel: 'Service / Repair',
+        existingCustomerId: customer.id,
+        name: customer.full_name,
+        leadSource: resolveLeadSource(opts.leadSource),
+        startedByAdmin: true,
       });
-      await sendIdentityConfirm(ctx, customer);
-      return { ok: true, started: 'book_service', mode: 'identity' };
+      return { ok: true, started: 'book_service', mode: 'date_time' };
     }
     await continueAfterServiceType(ctx, {
       serviceSubType: 'Repair',
@@ -888,6 +910,9 @@ async function startAdminQuickAction(ctx, action, opts = {}) {
   }
 
   if (act === 'request_location') {
+    const customer = await lookupCustomerFull(ctx.db, ctx.to);
+    const name = String(opts.customerName || customer?.full_name || 'there').trim() || 'there';
+    const fromLabel = waterFilterServiceLabelForBrand(opts.brand);
     await setBookingState(ctx.db, ctx.to, {
       step: 'await_location',
       needNewLocation: true,
@@ -895,8 +920,7 @@ async function startAdminQuickAction(ctx, action, opts = {}) {
     });
     const loc = await sendLocationRequest({
       ...ctx,
-      bodyText:
-        'Please share your *service location*.\n\nTap *Send location* below so we can find you easily.',
+      bodyText: buildAskLocationBodyText(name, fromLabel),
     });
     return { ok: Boolean(loc?.ok), started: 'request_location', error: loc?.error };
   }
@@ -921,6 +945,7 @@ async function startWaterFilterServiceBooking(ctx, opts = {}) {
   const existing = await lookupCustomerFull(ctx.db, ctx.to);
   const existingId =
     String(opts.customerId || opts.existingCustomerId || '').trim() || existing?.id || null;
+  const brand = opts.brand || null;
   const subRaw = String(opts.serviceSubType || '').trim();
   const serviceSubType =
     subRaw === 'Installation' || subRaw === 'Reinstallation' ? subRaw : 'Repair';
@@ -948,6 +973,7 @@ async function startWaterFilterServiceBooking(ctx, opts = {}) {
     ...(leadCost != null ? { leadCost } : {}),
     ...(requireOtp ? { requireOtp: true } : {}),
     ...(existingId ? { existingCustomerId: existingId } : {}),
+    ...(brand ? { brand } : {}),
   };
 
   await askLocationForWaterFilterService(ctx, base);
@@ -990,16 +1016,11 @@ async function startBookLocationPhoto(ctx, opts = {}) {
 
 async function askLocationForWaterFilterService(ctx, state = {}) {
   const name = String(state.name || 'Customer').trim() || 'Customer';
+  const fromLabel = waterFilterServiceLabelForBrand(state.brand);
   await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_location' });
   await sendLocationRequest({
     ...ctx,
-    bodyText: [
-      `💧 *${WATER_FILTER_SERVICE_LABEL}*`,
-      '',
-      `Hi ${name}, please share your *service location* so we can arrange your water filter visit.`,
-      '',
-      'Tap *Send location* below.',
-    ].join('\n'),
+    bodyText: buildAskLocationBodyText(name, fromLabel),
   });
 }
 
@@ -1316,10 +1337,26 @@ async function resumeSessionStyleFromPending(ctx, pendingAction, interactive, te
     await startWaterFilterServiceBooking(ctx, {
       customerName: seed.name || seed.customerName,
       leadSource: seed.leadSource,
+      brand: seed.brand,
+      existingCustomerId: seed.existingCustomerId,
     });
     return { ok: true };
   }
   if (intent === 'book_service') {
+    const customer = await lookupCustomerFull(ctx.db, ctx.to);
+    const existingId = String(seed.existingCustomerId || customer?.id || '').trim();
+    if (existingId) {
+      await beginExistingCustomerDateBooking(ctx, {
+        serviceSubType: 'Service',
+        serviceLabel: 'Service',
+        existingCustomerId: existingId,
+        name: seed.name || seed.customerName || customer?.full_name,
+        leadSource: seed.leadSource || LEAD_SOURCE,
+        startedByAdmin: true,
+        ...(seed.serviceReminder ? { serviceReminder: true } : {}),
+      });
+      return { ok: true };
+    }
     await beginServiceBooking(ctx, {
       serviceSubType: 'Repair',
       serviceLabel: 'Service / Repair',
@@ -1357,6 +1394,46 @@ async function resumeSessionStyleFromPending(ctx, pendingAction, interactive, te
   return { ok: true };
 }
 
+/** Existing CRM customer — skip identity/location/photo; pick date & time only. */
+function isExistingCustomerFastBook(state, customer) {
+  const existingId = String(state?.existingCustomerId || customer?.id || '').trim();
+  if (!existingId) return false;
+  if (state?.needNewLocation || state?.useSecondarySite) return false;
+  if (String(state?.serviceSubType || '') === 'Reinstallation') return false;
+  if (state?.waterFilterService || state?.locationThenPhoto) return false;
+  if (state?.startedByAdmin && state?.serviceSubType && state?.needNewLocation) return false;
+  return true;
+}
+
+async function beginExistingCustomerDateBooking(ctx, state = {}) {
+  const customer = await lookupCustomerFull(ctx.db, ctx.to);
+  const existingId = String(state.existingCustomerId || customer?.id || '').trim();
+  if (!existingId) {
+    await continueAfterServiceType(ctx, state);
+    return;
+  }
+  const base = {
+    serviceSubType: state.serviceSubType || 'Repair',
+    serviceLabel: state.serviceLabel || 'Service / Repair',
+    existingCustomerId: existingId,
+    name: String(state.name || customer?.full_name || 'Customer').trim() || 'Customer',
+    leadSource: resolveLeadSource(state.leadSource),
+    existingFastBook: true,
+    ...(state.startedByAdmin ? { startedByAdmin: true } : {}),
+    ...(state.serviceReminder ? { serviceReminder: true } : {}),
+  };
+  await setBookingState(ctx.db, ctx.to, base);
+  await sendDatePicker(ctx, base);
+}
+
+async function continueAfterTimeSelected(ctx, next, customer) {
+  if (isExistingCustomerFastBook(next, customer)) {
+    await sendNewCustomerConfirm(ctx, next);
+    return;
+  }
+  await askPurifierPhoto(ctx, next);
+}
+
 /** Start Service/Repair or Reinstallation from greeting (or admin). */
 async function beginServiceBooking(ctx, { serviceSubType, serviceLabel }) {
   const customer = await lookupCustomerFull(ctx.db, ctx.to);
@@ -1365,20 +1442,32 @@ async function beginServiceBooking(ctx, { serviceSubType, serviceLabel }) {
     serviceLabel: serviceLabel || serviceLabelFromState({ serviceSubType }),
   };
   if (customer?.id) {
-    await setBookingState(ctx.db, ctx.to, base);
-    await sendIdentityConfirm(ctx, customer);
+    const isReinstall = String(serviceSubType || '') === 'Reinstallation';
+    if (isReinstall) {
+      await setBookingState(ctx.db, ctx.to, base);
+      await sendIdentityConfirm(ctx, customer);
+      return;
+    }
+    await beginExistingCustomerDateBooking(ctx, {
+      ...base,
+      existingCustomerId: customer.id,
+      name: customer.full_name,
+    });
     return;
   }
   await continueAfterServiceType(ctx, base);
 }
 
 async function askServiceType(ctx, state = {}) {
-  // Phone already in CRM → confirm identity before collecting job details (unless already confirmed).
+  // Phone already in CRM → existing customers skip straight to date/time.
   if (!state.existingCustomerId && !state.editing) {
     const existing = await lookupCustomerFull(ctx.db, ctx.to);
     if (existing?.id) {
-      await setBookingState(ctx.db, ctx.to, state);
-      await sendIdentityConfirm(ctx, existing);
+      await beginExistingCustomerDateBooking(ctx, {
+        ...state,
+        existingCustomerId: existing.id,
+        name: existing.full_name,
+      });
       return;
     }
   }
@@ -1657,6 +1746,8 @@ async function continueAfterBuildingFlat(ctx, state) {
 
 async function sendDatePicker(ctx, state) {
   if (state) await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_date' });
+  const customer = await lookupCustomerFull(ctx.db, ctx.to);
+  const existingFast = isExistingCustomerFastBook(state, customer);
   const rows = [];
   for (let i = 0; i < 7; i++) {
     const id = dateId(i);
@@ -1673,7 +1764,9 @@ async function sendDatePicker(ctx, state) {
   }
   return sendList({
     ...ctx,
-    bodyText: 'Step 2 of 5 · Pick a date for the visit:',
+    bodyText: existingFast
+      ? 'Pick a date for your service visit:'
+      : 'Step 2 of 5 · Pick a date for the visit:',
     buttonText: 'Choose date',
     sectionTitle: 'Next 7 days',
     footer: BRAND_LABEL,
@@ -2283,6 +2376,19 @@ async function handleBookingBotInbound({
         ) {
           await clearBookingState(db, to);
           const customer = await lookupCustomerFull(db, to);
+          if (
+            customer?.id &&
+            (/\b(book|booking|again|another|new\s+(job|visit|service))\b/i.test(text) ||
+              /^\s*book(ing)?\s*$/i.test(text.trim()))
+          ) {
+            await beginExistingCustomerDateBooking(ctx, {
+              serviceSubType: 'Repair',
+              serviceLabel: 'Service / Repair',
+              existingCustomerId: customer.id,
+              name: customer.full_name,
+            });
+            return { handled: true };
+          }
           await sendGreetingMenu(ctx, { isNew: !customer?.id });
           return { handled: true };
         }
@@ -2364,7 +2470,7 @@ async function handleBookingBotInbound({
       await resumeAfterEdit(ctx, next);
       return { handled: true };
     }
-    await askPurifierPhoto(ctx, next);
+    await continueAfterTimeSelected(ctx, next, await lookupCustomerFull(db, to));
     return { handled: true };
   }
 
@@ -2744,7 +2850,7 @@ async function handleBookingBotInbound({
         });
         return { handled: true };
       }
-      if (!st.photoUrl) {
+      if (!st.photoUrl && !isExistingCustomerFastBook(st, existingByPhone)) {
         await sendText({
           ...ctx,
           text: 'A *purifier photo is required* before we can book.',
@@ -3112,7 +3218,7 @@ async function handleBookingBotInbound({
         await resumeAfterEdit(ctx, next);
         return { handled: true };
       }
-      await askPurifierPhoto(ctx, next);
+      await continueAfterTimeSelected(ctx, next, await lookupCustomerFull(db, to));
       return { handled: true };
     }
 
@@ -3121,7 +3227,8 @@ async function handleBookingBotInbound({
       const date = parts[1] || '';
       const slotKey = parts[2] || '10-AM';
       const st = (await getBookingState(db, to)) || state || {};
-      if (!st.photoUrl) {
+      const customerForConfirm = await lookupCustomerFull(db, to);
+      if (!st.photoUrl && !isExistingCustomerFastBook(st, customerForConfirm)) {
         await sendText({
           ...ctx,
           text: 'A *purifier photo is required* before we can book.',
@@ -3129,7 +3236,7 @@ async function handleBookingBotInbound({
         await askPurifierPhoto(ctx, { ...st, dateIso: date, slotKey });
         return { handled: true };
       }
-      const customer = await lookupCustomerFull(db, to);
+      const customer = customerForConfirm;
       const locOverride = st.loc
         ? {
             lat: st.loc.lat,
@@ -3297,6 +3404,17 @@ async function handleBookingBotInbound({
       await beginServiceBooking(ctx, {
         serviceSubType: 'Repair',
         serviceLabel: 'Service / Repair',
+      });
+      return { handled: true };
+    }
+
+    if (customer?.id && /^\s*book(ing)?\s*$/i.test(text.trim())) {
+      await clearBookingState(db, to);
+      await beginExistingCustomerDateBooking(ctx, {
+        serviceSubType: 'Repair',
+        serviceLabel: 'Service / Repair',
+        existingCustomerId: customer.id,
+        name: customer.full_name,
       });
       return { handled: true };
     }

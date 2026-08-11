@@ -37,5 +37,16 @@ export function formatBookingConfirmationColdPreview(
   const tpl = resolveBookingConfirmationColdTemplate(brand, data);
   const [name, ref, when] = tpl.bodyParams;
   const brandLabel = brand === 'elevenro' ? 'Eleven RO' : 'Hydrogen RO';
-  return `Hi ${name}, your ${brandLabel} water purifier service booking ${ref} is confirmed for ${when}. Reply on this chat if you need to change the date or time.`;
+  return [
+    `Hi ${name},`,
+    `This is an update from ${brandLabel} regarding your service booking.`,
+    '',
+    `Booking: ${ref}`,
+    `Confirmed for: ${when}`,
+    '',
+    `Thank you for choosing ${brandLabel}.`,
+    'Reply on this chat if you need to change the date or time.',
+    '',
+    'Buttons: Call us · Website · Text us',
+  ].join('\n');
 }

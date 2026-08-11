@@ -516,6 +516,7 @@ export function AdminWhatsAppComposerPanel({
           preferColdTemplate: windowClosed,
           cold: {
             kind: templateType,
+            brand: activeBrand,
             customerName,
             ref: documentForm.documentRef?.trim() || undefined,
             documentLabel,

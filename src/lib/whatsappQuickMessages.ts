@@ -10,7 +10,7 @@ import {
   resolveColdVisitCancelled,
 } from '@/lib/whatsappUtilityTemplates';
 import { waBrandBookingUrl, waLabeledLink, waLabeledValue } from '@/lib/whatsappMessageFormat';
-import { brandLetterFooterLines } from '@/lib/whatsappBrandContact';
+import { brandLetterClosingLines } from '@/lib/whatsappBrandContact';
 
 export type WhatsAppQuickReplyContext = {
   customerName?: string;
@@ -42,6 +42,8 @@ export type WhatsAppQuickTemplateReply = {
   templateName: string;
   language: string;
   bodyParams: (ctx: WhatsAppQuickReplyContext) => string[];
+  /** Pick brand-specific Meta name at send time (e.g. svc_wfs_hello_hro). */
+  resolveTemplateName?: (ctx: WhatsAppQuickReplyContext) => string;
   /** When true, one-click send is blocked until ctx.amount is set */
   needsAmount?: boolean;
 };
@@ -76,6 +78,81 @@ export function waterFilterServiceFromLabel(ctx: WhatsAppQuickReplyContext): str
   return `${getDocumentBrandLabel(ctx.brand)} Water Filter Service`;
 }
 
+/** Cold hello — Hydrogen / Eleven / generic Water Filter Service. */
+export function resolveWfsHelloTemplateName(ctx: WhatsAppQuickReplyContext): string {
+  if (ctx.skipBrandLabel || !ctx.brand) return 'svc_wfs_hello';
+  return ctx.brand === 'elevenro' ? 'svc_wfs_hello_ero' : 'svc_wfs_hello_hro';
+}
+
+/** Short cold hello — “hi from … Water Filter Service”. */
+export function resolveWfsSimpleHiTemplateName(ctx: WhatsAppQuickReplyContext): string {
+  if (ctx.skipBrandLabel || !ctx.brand) return 'svc_wfs_hi';
+  return ctx.brand === 'elevenro' ? 'svc_wfs_hi_ero' : 'svc_wfs_hi_hro';
+}
+
+export function wfsSimpleHiFallbackNames(): string[] {
+  return ['svc_wfs_hi', 'svc_wfs_hi_hro', 'svc_wfs_hi_ero'];
+}
+
+export function wfsHelloFallbackNames(): string[] {
+  return [
+    ...wfsSimpleHiFallbackNames(),
+    'svc_wfs_hello',
+    'svc_wfs_hello_hro',
+    'svc_wfs_hello_ero',
+    'svc_hello',
+    'svc_smoke_update',
+  ];
+}
+
+/** Cold collect info (location + photo) — brand variants. */
+export function resolveWfsCollectTemplateName(ctx: WhatsAppQuickReplyContext): string {
+  if (ctx.skipBrandLabel || !ctx.brand) return 'svc_wfs_collect';
+  return ctx.brand === 'elevenro' ? 'svc_wfs_collect_ero' : 'svc_wfs_collect_hro';
+}
+
+export function wfsCollectFallbackNames(): string[] {
+  return [
+    'svc_wfs_collect',
+    'svc_wfs_collect_hro',
+    'svc_wfs_collect_ero',
+    ...askLocationTemplateFallbackNames(),
+    'svc_smoke_update',
+  ];
+}
+
+/** Cold ask location — full copy + Call us + Text us. Reply → Send location button. */
+export function resolveWfsAskLocTemplateName(ctx: WhatsAppQuickReplyContext): string {
+  if (ctx.skipBrandLabel || !ctx.brand) return 'svc_wfs_ask_loc';
+  return ctx.brand === 'elevenro' ? 'svc_wfs_ask_loc_ero' : 'svc_wfs_ask_loc_hro';
+}
+
+/** Shorter cold ask location + Call us + Text us. */
+export function resolveWfsAskLocSimpleTemplateName(ctx: WhatsAppQuickReplyContext): string {
+  if (ctx.skipBrandLabel || !ctx.brand) return 'svc_wfs_ask_loc_simple';
+  return ctx.brand === 'elevenro'
+    ? 'svc_wfs_ask_loc_simple_ero'
+    : 'svc_wfs_ask_loc_simple_hro';
+}
+
+export function isAskLocationTemplateName(name: string): boolean {
+  const n = String(name || '').trim();
+  return n === 'svc_ask_location' || /^svc_wfs_ask_loc/i.test(n);
+}
+
+export function askLocationTemplateFallbackNames(): string[] {
+  return [
+    'svc_wfs_ask_loc',
+    'svc_wfs_ask_loc_hro',
+    'svc_wfs_ask_loc_ero',
+    'svc_wfs_ask_loc_simple',
+    'svc_wfs_ask_loc_simple_hro',
+    'svc_wfs_ask_loc_simple_ero',
+    'svc_ask_location',
+    'svc_visit_reminder',
+  ];
+}
+
 function brandInfo(ctx: WhatsAppQuickReplyContext) {
   return getCompanyInfoForBrand(ctx.brand || 'hydrogenro');
 }
@@ -84,12 +161,66 @@ function brandInfo(ctx: WhatsAppQuickReplyContext) {
 export const WHATSAPP_QUICK_TEXT_REPLIES: WhatsAppQuickTextReply[] = [
   // —— Ask (one-tap send) ——
   {
+    id: 'wfs_simple_hi',
+    label: 'Simple WFS Hi',
+    group: 'common',
+    instant: true,
+    text: (ctx) => {
+      const who = waterFilterServiceFromLabel(ctx);
+      return `Hi ${cleanName(ctx)}, hi from ${who}. Please reply on this chat.`;
+    },
+  },
+  {
+    id: 'wfs_hello',
+    label: 'WFS Hi',
+    group: 'common',
+    instant: true,
+    text: (ctx) => {
+      const who = waterFilterServiceFromLabel(ctx);
+      return `Hi ${cleanName(ctx)}, this is ${who}. Please reply on this chat if you need help with your water purifier.`;
+    },
+  },
+  {
+    id: 'wfs_collect',
+    label: 'WFS collect info',
+    group: 'request',
+    instant: true,
+    text: (ctx) => {
+      const who = waterFilterServiceFromLabel(ctx);
+      return [
+        `Hi ${cleanName(ctx)}, this is ${who}.`,
+        'For serving you better we need certain information from you — such as your location and a photo of your purifier.',
+        'Please share your location here on this chat; we will guide you step by step.',
+        '',
+        'Tap *Send location* below when the button appears.',
+      ].join('\n');
+    },
+  },
+  {
     id: 'share_location',
     label: 'Ask location',
     group: 'request',
     instant: true,
     text: (ctx) =>
-      `Hi ${cleanName(ctx)}, please share your *Google Maps location pin* on this chat so we can reach you easily.\n\nTap 📎 → Location → Send your current location.`,
+      [
+        `Hi ${cleanName(ctx)}, this is ${waterFilterServiceFromLabel(ctx)}.`,
+        'Please share your Google Maps location pin on this chat so we can continue your water filter service request.',
+        '',
+        'Tap *Send location* below when the button appears.',
+      ].join('\n'),
+  },
+  {
+    id: 'share_location_simple',
+    label: 'Ask loc (short)',
+    group: 'request',
+    instant: true,
+    text: (ctx) =>
+      [
+        `Hi ${cleanName(ctx)}, please share your Google Maps location pin on this chat.`,
+        `— ${waterFilterServiceFromLabel(ctx)}`,
+        '',
+        'Tap *Send location* below when the button appears.',
+      ].join('\n'),
   },
   {
     id: 'share_flat',
@@ -253,7 +384,8 @@ export const WHATSAPP_QUICK_TEXT_REPLIES: WhatsAppQuickTextReply[] = [
         ref ? `Booking: ${ref}` : 'Booking: your booking',
         `Confirmed for: ${when}`,
         '',
-        ...brandLetterFooterLines(brand),
+        ...brandLetterClosingLines(brand, { includeTextUs: true }),
+        '',
         'Reply on this chat if you need to change the date or time.',
       ].join('\n');
     },
@@ -274,7 +406,7 @@ export const WHATSAPP_QUICK_TEXT_REPLIES: WhatsAppQuickTextReply[] = [
         '',
         'Reply BOOK on this chat to reschedule — we will ask for a new date and time.',
         '',
-        ...brandLetterFooterLines(brand),
+        ...brandLetterClosingLines(brand, { includeTextUs: false }),
       ].join('\n');
     },
   },
@@ -338,6 +470,33 @@ export function quickTextRepliesByGroup(group: WhatsAppQuickReplyGroup) {
 /** Approved Meta UTILITY templates — one tap when 24h window is closed. */
 export const WHATSAPP_QUICK_TEMPLATE_REPLIES: WhatsAppQuickTemplateReply[] = [
   {
+    id: 'tpl_wfs_simple_hi',
+    label: 'Simple WFS Hi',
+    group: 'common',
+    templateName: 'svc_wfs_hi_hro',
+    language: 'en',
+    bodyParams: (ctx) => [cleanName(ctx)],
+    resolveTemplateName: (ctx) => resolveWfsSimpleHiTemplateName(ctx),
+  },
+  {
+    id: 'tpl_wfs_hello',
+    label: 'WFS Hi',
+    group: 'common',
+    templateName: 'svc_wfs_hello_hro',
+    language: 'en',
+    bodyParams: (ctx) => [cleanName(ctx)],
+    resolveTemplateName: (ctx) => resolveWfsHelloTemplateName(ctx),
+  },
+  {
+    id: 'tpl_wfs_collect',
+    label: 'WFS collect',
+    group: 'request',
+    templateName: 'svc_wfs_collect_hro',
+    language: 'en',
+    bodyParams: (ctx) => [cleanName(ctx)],
+    resolveTemplateName: (ctx) => resolveWfsCollectTemplateName(ctx),
+  },
+  {
     id: 'tpl_hello',
     label: 'Hello',
     group: 'common',
@@ -349,9 +508,19 @@ export const WHATSAPP_QUICK_TEMPLATE_REPLIES: WhatsAppQuickTemplateReply[] = [
     id: 'tpl_ask_location',
     label: 'Ask location',
     group: 'request',
-    templateName: 'svc_ask_location',
+    templateName: 'svc_wfs_ask_loc_hro',
     language: 'en',
-    bodyParams: (ctx) => [cleanName(ctx), waterFilterServiceFromLabel(ctx)],
+    bodyParams: (ctx) => [cleanName(ctx)],
+    resolveTemplateName: (ctx) => resolveWfsAskLocTemplateName(ctx),
+  },
+  {
+    id: 'tpl_ask_location_simple',
+    label: 'Ask loc (short)',
+    group: 'request',
+    templateName: 'svc_wfs_ask_loc_simple_hro',
+    language: 'en',
+    bodyParams: (ctx) => [cleanName(ctx)],
+    resolveTemplateName: (ctx) => resolveWfsAskLocSimpleTemplateName(ctx),
   },
   {
     id: 'tpl_ask_photo',
@@ -469,16 +638,53 @@ export const WHATSAPP_QUICK_TEMPLATE_REPLIES: WhatsAppQuickTemplateReply[] = [
   },
 ];
 
-/** Hello / open-chat UTILITY — prefers svc_hello; falls back to approved svc_smoke_update. */
+/** Hello / open-chat UTILITY — prefers short WFS hi, then full WFS hello, then svc_hello. */
 export function buildQuickHelloTemplate(
   ctx: WhatsAppQuickReplyContext,
   approvedTemplateNames?: Set<string> | null
 ): WhatsAppQuickTemplateSend {
-  const preferHello =
-    !approvedTemplateNames?.size ||
-    approvedTemplateNames.has('svc_hello');
+  const approved = approvedTemplateNames;
+  const hasSimple =
+    !approved?.size || wfsSimpleHiFallbackNames().some((n) => approved.has(n));
+  if (hasSimple) {
+    return {
+      templateName: resolveWfsSimpleHiTemplateName(ctx),
+      language: 'en',
+      bodyParams: [cleanName(ctx)],
+    };
+  }
+  const hasWfs =
+    !approved?.size || wfsHelloFallbackNames().some((n) => approved.has(n));
+  if (hasWfs) {
+    return {
+      templateName: resolveWfsHelloTemplateName(ctx),
+      language: 'en',
+      bodyParams: [cleanName(ctx)],
+    };
+  }
+  const preferHello = !approved?.size || approved.has('svc_hello');
   return {
     templateName: preferHello ? 'svc_hello' : 'svc_smoke_update',
+    language: 'en',
+    bodyParams: [cleanName(ctx)],
+  };
+}
+
+export function buildQuickWfsSimpleHiTemplate(
+  ctx: WhatsAppQuickReplyContext
+): WhatsAppQuickTemplateSend {
+  return {
+    templateName: resolveWfsSimpleHiTemplateName(ctx),
+    language: 'en',
+    bodyParams: [cleanName(ctx)],
+  };
+}
+
+export function buildQuickWfsCollectTemplate(
+  ctx: WhatsAppQuickReplyContext
+): WhatsAppQuickTemplateSend {
+  return {
+    templateName: resolveWfsCollectTemplateName(ctx),
     language: 'en',
     bodyParams: [cleanName(ctx)],
   };
@@ -585,8 +791,9 @@ export function buildQuickTemplateSend(
   reply: WhatsAppQuickTemplateReply,
   ctx: WhatsAppQuickReplyContext
 ): WhatsAppQuickTemplateSend {
+  const rawName = reply.resolveTemplateName?.(ctx) ?? reply.templateName;
   return {
-    templateName: resolveWaTemplateName(reply.templateName),
+    templateName: resolveWaTemplateName(rawName),
     language: reply.language,
     bodyParams: reply.bodyParams(ctx),
   };
@@ -597,7 +804,26 @@ export function filterQuickTemplatesByApproved(
   approvedNames: Set<string> | null | undefined
 ): WhatsAppQuickTemplateReply[] {
   if (!approvedNames || approvedNames.size === 0) return replies;
-  return replies.filter((r) => approvedNames.has(resolveWaTemplateName(r.templateName)));
+  return replies.filter((r) => {
+    if (r.id === 'tpl_wfs_simple_hi') {
+      return wfsSimpleHiFallbackNames().some((n) => approvedNames.has(resolveWaTemplateName(n)));
+    }
+    if (r.id === 'tpl_wfs_hello') {
+      return wfsHelloFallbackNames().some((n) => approvedNames.has(resolveWaTemplateName(n)));
+    }
+    if (r.id === 'tpl_wfs_collect') {
+      return wfsCollectFallbackNames().some((n) => approvedNames.has(resolveWaTemplateName(n)));
+    }
+    if (r.id === 'tpl_ask_location' || r.id === 'tpl_ask_location_simple') {
+      return askLocationTemplateFallbackNames().some((n) =>
+        approvedNames.has(resolveWaTemplateName(n))
+      );
+    }
+    const name = r.resolveTemplateName
+      ? resolveWaTemplateName(r.resolveTemplateName({ brand: 'hydrogenro', customerName: 'Customer' }))
+      : resolveWaTemplateName(r.templateName);
+    return approvedNames.has(name) || approvedNames.has(resolveWaTemplateName(r.templateName));
+  });
 }
 
 export function isQuickTemplateReady(

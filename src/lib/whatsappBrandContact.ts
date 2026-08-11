@@ -1,6 +1,6 @@
 import type { DocumentBrand } from '@/lib/service-brands';
 import { getCompanyInfoForBrand, getDocumentBrandLabel } from '@/lib/service-brands';
-import { waBrandWebsiteUrl, waLabeledLink, waLabeledValue } from '@/lib/whatsappMessageFormat';
+import { waBrandBookingUrl, waBrandWebsiteUrl, waLabeledLink } from '@/lib/whatsappMessageFormat';
 
 /**
  * Voice / website / review contacts for customer WhatsApp.
@@ -54,21 +54,103 @@ export function brandContactLines(brand: DocumentBrand): {
   };
 }
 
-/** Shared letter footer for 24h free-form messages (matches Meta letter templates). */
+/** wa.me link for the brand voice / main WhatsApp line (Text us button). */
+export function brandWhatsAppChatUrl(brand: DocumentBrand): string {
+  const { e164 } = brandPrimaryVoicePhone(brand);
+  return `https://wa.me/${e164.replace(/^\+/, '')}`;
+}
+
+/** Host only for letter footers (matches Meta template body: hydrogenro.com). */
+export function brandLetterWebsiteHost(brand: DocumentBrand): string {
+  return brandWebsiteUrl(brand).replace(/^https?:\/\//i, '').replace(/\/$/, '');
+}
+
+export type BrandLetterTemplateKind =
+  | 'job_done'
+  | 'balance_due'
+  | 'service_due'
+  | 'booking_confirmed'
+  | 'booking_cancelled';
+
+const LETTER_TEMPLATE_BASE: Record<BrandLetterTemplateKind, string> = {
+  job_done: 'svc_job_done_letter',
+  balance_due: 'svc_balance_due_letter',
+  service_due: 'svc_service_due_letter',
+  booking_confirmed: 'svc_booking_confirmed_letter',
+  booking_cancelled: 'svc_booking_cancelled_letter',
+};
+
+/** Meta letter cold template — v3 = Call us + Text us buttons; v2/v1 fallbacks. */
+export function resolveBrandLetterTemplateName(
+  kind: BrandLetterTemplateKind,
+  brand: DocumentBrand,
+  version: 'v3' | 'v2' | 'v1' = 'v3'
+): string {
+  const suffix = brand === 'elevenro' ? 'ero' : 'hro';
+  const base = LETTER_TEMPLATE_BASE[kind];
+  if (version === 'v3') return `${base}_${suffix}_v3`;
+  if (version === 'v2') return `${base}_${suffix}_v2`;
+  return `${base}_${suffix}`;
+}
+
+export function resolveBrandLetterTemplateFallbackName(
+  kind: BrandLetterTemplateKind,
+  brand: DocumentBrand
+): string {
+  return resolveBrandLetterTemplateName(kind, brand, 'v2');
+}
+
+/** Footer for existing-customer book invites — no Call line; Book CTA only. */
+export function brandExistingCustomerBookLines(brand: DocumentBrand): string[] {
+  const c = brandContactLines(brand);
+  return [
+    'Reply *BOOK* on this chat to pick date and time — we already have your details on file.',
+    waLabeledLink('📅', 'Book online', waBrandBookingUrl(getCompanyInfoForBrand(brand).website)),
+    '',
+    `— ${c.brandLabel} Team`,
+  ];
+}
+
+/** Label on one line, value on the next — 24h freeform + Meta letter template bodies. */
+export function letterLabelValue(label: string, value: string): string {
+  const v = String(value || '').trim();
+  const l = String(label || '').trim();
+  if (!v) return `${l}:`;
+  return `${l}:\n${v}`;
+}
+
+/** Letter footer + optional Text us link (24h free-form; cold templates use Call us + Text us buttons). */
+export function brandLetterClosingLines(
+  brand: DocumentBrand,
+  opts?: { includeReview?: boolean; includeTextUs?: boolean; skipChatHint?: boolean }
+): string[] {
+  const lines = brandLetterFooterLines(brand, {
+    includeReview: opts?.includeReview,
+    skipChatHint: opts?.skipChatHint ?? true,
+  });
+  if (opts?.includeTextUs !== false) {
+    lines.push(letterLabelValue('Text us', brandWhatsAppChatUrl(brand)));
+  }
+  return lines;
+}
+
+/** Shared letter footer for 24h free-form messages (label / value on separate lines). */
 export function brandLetterFooterLines(
   brand: DocumentBrand,
-  opts?: { includeReview?: boolean }
+  opts?: { includeReview?: boolean; skipChatHint?: boolean }
 ): string[] {
   const c = brandContactLines(brand);
   const lines = [
     `Thank you for choosing ${c.brandLabel}.`,
-    waLabeledValue('📞', 'Call (main)', c.voice.display),
-    waLabeledValue('📧', 'Email', c.email),
-    waLabeledLink('🌐', 'Website', c.website),
+    letterLabelValue('Call', c.voice.display),
+    letterLabelValue('Email', c.email),
+    letterLabelValue('Website', brandLetterWebsiteHost(brand)),
   ];
   if (opts?.includeReview) {
-    lines.push(waLabeledLink('⭐', 'Leave a review', c.reviewUrl));
+    lines.push(letterLabelValue('Review', c.reviewUrl));
   }
-  lines.push('', 'You can also reply on this WhatsApp chat anytime.');
+  if (!opts?.skipChatHint) {
+    lines.push('', 'You can also reply on this WhatsApp chat anytime.');
+  }
   return lines;
 }

@@ -2,7 +2,7 @@ import type { DocumentBrand } from '@/lib/service-brands';
 import { getDocumentBrandLabel, normalizeDocumentBrand } from '@/lib/service-brands';
 import { isJobPendingPaymentOpen, parseJobPendingPayment } from '@/lib/jobPendingPayment';
 import { formatPendingPaymentDueLabel } from '@/lib/pendingPaymentReminder';
-import { brandContactLines, brandLetterFooterLines } from '@/lib/whatsappBrandContact';
+import { brandContactLines, brandLetterClosingLines, brandLetterFooterLines, resolveBrandLetterTemplateName } from '@/lib/whatsappBrandContact';
 
 export interface JobCompletionMessageInput {
   customerName: string;
@@ -115,10 +115,6 @@ export function buildJobCompletionMessage(input: JobCompletionMessageInput): str
  */
 export function buildJobCompletionWhatsAppMessage(input: JobCompletionMessageInput): string {
   const customerName = input.customerName.trim() || 'Customer';
-  const completionLine = buildJobCompletionLine(
-    input.serviceType || '',
-    input.serviceSubType || ''
-  );
   const collected = Math.max(0, Number(input.amountCollected) || 0);
   const pending = Math.max(0, Number(input.amountPending) || 0);
   const due = pendingDueLabel(input.pendingDueDate);
@@ -142,10 +138,11 @@ export function buildJobCompletionWhatsAppMessage(input: JobCompletionMessageInp
     `Hi ${customerName},`,
     `This is an update from ${contact.brandLabel} regarding your completed water purifier service.`,
     '',
-    completionLine,
     ...amountLines,
     '',
-    ...brandLetterFooterLines(input.documentBrand, { includeReview: true }),
+    ...brandLetterFooterLines(input.documentBrand, { skipChatHint: true }),
+    '',
+    'Reply on this chat if you need any help.',
   ].join('\n');
 }
 
@@ -206,23 +203,28 @@ export function formatJobCompletionColdTemplatePreview(
     `Amount collected: INR ${amount}`,
     `Invoice / Job: ${jobRef}`,
     '',
-    `Thank you for choosing ${contact.brandLabel}.`,
-    `Call: ${contact.voice.display}`,
-    `Email: ${contact.email}`,
-    `Website: ${contact.website.replace(/^https?:\/\//i, '')}`,
+    ...brandLetterClosingLines(input.documentBrand, { includeTextUs: false }),
     '',
     'Reply on this chat if you need any help.',
   ].join('\n');
 }
 
-/** Letter UTILITY (fixed brand footer + Call/Website/Review). Prefer when APPROVED. */
+/** Letter UTILITY (newline footer + Call us / Text us). Prefer v3 when APPROVED. */
 export function resolveJobCompletionLetterTemplateName(brand: DocumentBrand): string {
-  return brand === 'elevenro' ? 'svc_job_done_letter_ero' : 'svc_job_done_letter_hro';
+  return resolveBrandLetterTemplateName('job_done', brand, 'v3');
+}
+
+export function resolveJobCompletionLetterTemplateFallbackName(brand: DocumentBrand): string {
+  return resolveBrandLetterTemplateName('job_done', brand, 'v2');
+}
+
+export function resolveJobCompletionLetterTemplateLegacyName(brand: DocumentBrand): string {
+  return resolveBrandLetterTemplateName('job_done', brand, 'v1');
 }
 
 /**
  * Brand-specific rich cold template (v3).
- * Callers try letter → v3 → v2 → svc_job_done.
+ * Callers try letter v3 → v2 → v1 → short svc_job_done.
  */
 export function resolveJobCompletionColdTemplateName(brand: DocumentBrand): string {
   return brand === 'elevenro' ? 'svc_job_done_ero_v3' : 'svc_job_done_hro_v3';

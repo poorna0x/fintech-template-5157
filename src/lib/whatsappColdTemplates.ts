@@ -1,14 +1,17 @@
 /**
  * Meta WhatsApp UTILITY template names for cold outreach (outside 24h window).
- * Approved on WABA: svc_doc_pdf_v2, svc_job_done, svc_smoke_update (+ others via submit script).
+ * Approved on WABA: svc_doc_pdf_v2 (+ per-doc svc_doc_*_{ero|hro}_v2 when submitted).
  *
- * Cold PDF: DOCUMENT-header `svc_doc_pdf_v2` (alias svc_document_pdf in code).
+ * Cold PDF: DOCUMENT-header templates — prefer svc_doc_{bill|invoice|…}_{ero|hro}_v2;
+ * fallback svc_doc_pdf_v2 (generic).
  *
- * Session parity: Meta cannot send live interactive lists/location *inside* a cold template.
  * After the customer replies (24h opens), the booking bot continues with the same
  * interactive UI as in-session. Do not use svc_booking_menu (Meta → MARKETING).
  * Use existing_service_schedule_*_cta or svc_visit_reminder / svc_smoke_update.
  */
+import type { DocumentBrand } from '@/lib/service-brands';
+import { normalizeDocumentBrand } from '@/lib/service-brands';
+import { formatDocumentPdfColdPreview } from '@/lib/document-pdf-whatsapp-caption';
 export const WA_COLD = {
   /** @deprecated Meta marked svc_booking_menu MARKETING — use resolveBookingCta() instead. */
   booking_menu: {
@@ -171,13 +174,25 @@ export const WA_COLD = {
     language: 'en',
     bodyParams: (customerName: string) => [cleanName(customerName)],
   },
-  ask_location: {
-    name: 'svc_ask_location',
+  wfs_hello: {
+    name: 'svc_wfs_hello_hro',
     language: 'en',
-    bodyParams: (customerName: string, fromLabel: string) => [
-      cleanName(customerName),
-      String(fromLabel || '').trim() || 'Water Filter Service',
-    ],
+    bodyParams: (customerName: string) => [cleanName(customerName)],
+  },
+  wfs_collect: {
+    name: 'svc_wfs_collect_hro',
+    language: 'en',
+    bodyParams: (customerName: string) => [cleanName(customerName)],
+  },
+  ask_location: {
+    name: 'svc_wfs_ask_loc_hro',
+    language: 'en',
+    bodyParams: (customerName: string) => [cleanName(customerName)],
+  },
+  ask_location_simple: {
+    name: 'svc_wfs_ask_loc_simple_hro',
+    language: 'en',
+    bodyParams: (customerName: string) => [cleanName(customerName)],
   },
   ask_photo: {
     name: 'svc_ask_photo',
@@ -287,64 +302,74 @@ export type WaColdDocKind =
   | 'amc'
   | 'amc_document'
   | 'warranty'
+  | 'warranty_document'
   | 'receipt'
   | 'generic';
 
-/** Map CRM document / composer template type → Meta cold `*_ready` template. */
-export function coldDocTemplateForKind(kind: WaColdDocKind | string): {
+export type WaColdDocSlug =
+  | 'bill'
+  | 'invoice'
+  | 'amc'
+  | 'quotation'
+  | 'warranty'
+  | 'receipt'
+  | 'generic';
+
+/** CRM doc kind → Meta template slug (svc_doc_{slug}_{ero|hro}_v2). */
+export function coldDocTemplateSlug(kind: WaColdDocKind | string): WaColdDocSlug {
+  const k = String(kind || 'generic').toLowerCase();
+  if (k === 'service_bill') return 'bill';
+  if (k === 'invoice' || k === 'tax_invoice') return 'invoice';
+  if (k === 'amc' || k === 'amc_document') return 'amc';
+  if (k === 'quotation') return 'quotation';
+  if (k === 'warranty' || k === 'warranty_document') return 'warranty';
+  if (k === 'receipt') return 'receipt';
+  return 'generic';
+}
+
+export function resolveColdDocTemplateName(
+  kind: WaColdDocKind | string,
+  brand?: DocumentBrand | string | null
+): string {
+  const suffix = normalizeDocumentBrand(brand) === 'elevenro' ? 'ero' : 'hro';
+  const slug = coldDocTemplateSlug(kind);
+  return `svc_doc_${slug}_${suffix}_v2`;
+}
+
+/** Map CRM document kind → Meta cold PDF template (brand-aware v2). */
+export function coldDocTemplateForKind(
+  kind: WaColdDocKind | string,
+  brand?: DocumentBrand | string | null
+): {
   name: string;
   language: string;
 } {
-  const k = String(kind || 'generic').toLowerCase();
-  if (k === 'quotation') return { name: WA_COLD.quotation_ready.name, language: WA_COLD.quotation_ready.language };
-  if (k === 'service_bill')
-    return { name: WA_COLD.service_bill_ready.name, language: WA_COLD.service_bill_ready.language };
-  if (k === 'invoice' || k === 'tax_invoice')
-    return { name: WA_COLD.invoice_ready.name, language: WA_COLD.invoice_ready.language };
-  if (k === 'amc' || k === 'amc_document')
-    return { name: WA_COLD.amc_document_ready.name, language: WA_COLD.amc_document_ready.language };
-  if (k === 'warranty' || k === 'warranty_document')
-    return { name: WA_COLD.warranty_ready.name, language: WA_COLD.warranty_ready.language };
-  if (k === 'receipt') return { name: WA_COLD.receipt_ready.name, language: WA_COLD.receipt_ready.language };
-  return { name: WA_COLD.document_ready.name, language: WA_COLD.document_ready.language };
+  return {
+    name: resolveColdDocTemplateName(kind, brand),
+    language: 'en',
+  };
 }
 
 export function coldDocBodyParams(
   kind: WaColdDocKind | string,
   opts: { customerName: string; amount?: number | string; ref?: string; documentLabel?: string }
 ): string[] {
-  const k = String(kind || 'generic').toLowerCase();
-  if (k === 'quotation') {
-    return WA_COLD.quotation_ready.bodyParams(opts.customerName, opts.ref || 'quotation');
-  }
-  if (k === 'service_bill') {
-    return WA_COLD.service_bill_ready.bodyParams(opts.customerName, opts.amount ?? 0);
-  }
-  if (k === 'invoice' || k === 'tax_invoice') {
-    return WA_COLD.invoice_ready.bodyParams(opts.customerName, opts.amount ?? 0);
-  }
-  if (k === 'amc' || k === 'amc_document') {
-    return WA_COLD.amc_document_ready.bodyParams(opts.customerName);
-  }
-  if (k === 'warranty' || k === 'warranty_document') {
-    return WA_COLD.warranty_ready.bodyParams(opts.customerName);
-  }
-  if (k === 'receipt') {
-    return WA_COLD.receipt_ready.bodyParams(opts.customerName, opts.amount ?? 0);
-  }
-  return WA_COLD.document_ready.bodyParams(
-    opts.customerName,
-    opts.documentLabel || 'document'
-  );
+  return [cleanName(opts.customerName)];
 }
 
-/** Human-readable preview of svc_doc_pdf_v2 body (matches Meta-approved wording). */
+/** Preview cold PDF template body (matches Meta svc_doc_*_{ero|hro}_v2). */
 export function formatColdDocTemplatePreview(
   kind: WaColdDocKind | string,
-  opts: { customerName: string; amount?: number | string; ref?: string; documentLabel?: string }
+  opts: {
+    customerName: string;
+    brand?: DocumentBrand | string | null;
+    amount?: number | string;
+    ref?: string;
+    documentLabel?: string;
+  }
 ): string {
-  const [name, label] = coldDocBodyParams(kind, opts);
-  return `Hi ${name}, your ${label} is attached. Reply on this chat if you need any help.`;
+  const brand = normalizeDocumentBrand(opts.brand) || 'hydrogenro';
+  return formatDocumentPdfColdPreview(kind, brand, opts.customerName);
 }
 
 function cleanName(customerName: string): string {
@@ -362,37 +387,41 @@ function cleanAmount(amount: number | string): string {
 /** Human labels for inbox / pickers */
 export const WA_COLD_LABELS: Record<keyof typeof WA_COLD, string> = {
   booking_menu: 'Service request (svc_smoke_update — booking menu deprecated)',
-  pending_payment: 'Balance due (svc_balance_due_letter_* → svc_balance_due)',
+  pending_payment: 'Balance due (svc_balance_due_letter_*_v2 → v1 → svc_balance_due)',
   service_reminder: 'Visit reminder (svc_visit_reminder)',
-  service_due_cta: 'Service due letter / CTA (svc_service_due_letter_* → *_cta)',
+  service_due_cta: 'Service due letter / CTA (svc_service_due_letter_*_v2 → v1 → *_cta)',
   amc_renewal: 'AMC expiry (svc_amc_expiry_notice)',
   amc_expiry_notice: 'AMC expiry → document PDF',
-  document_ready: 'Document PDF (svc_doc_pdf_v2)',
-  quotation_ready: 'Quotation PDF (svc_doc_pdf_v2)',
-  service_bill_ready: 'Service bill PDF (svc_doc_pdf_v2)',
-  invoice_ready: 'Tax invoice PDF (svc_doc_pdf_v2)',
-  amc_document_ready: 'AMC PDF (svc_doc_pdf_v2)',
-  warranty_ready: 'Warranty PDF (svc_doc_pdf_v2)',
-  receipt_ready: 'Receipt PDF (svc_doc_pdf_v2)',
+  document_ready: 'Document PDF (svc_doc_generic_*_v2 → svc_doc_pdf_v2)',
+  quotation_ready: 'Quotation PDF (svc_doc_quotation_*_v2)',
+  service_bill_ready: 'Service bill PDF (svc_doc_bill_*_v2)',
+  invoice_ready: 'Tax invoice PDF (svc_doc_invoice_*_v2)',
+  amc_document_ready: 'AMC PDF (svc_doc_amc_*_v2)',
+  warranty_ready: 'Warranty PDF (svc_doc_warranty_*_v2)',
+  receipt_ready: 'Receipt PDF (svc_doc_receipt_*_v2)',
   customer_followup: 'Follow-up → visit reminder',
   appointment_reminder: 'Appointment reminder (svc_visit_reminder)',
   payment_received: 'Payment received (svc_payment_received)',
   tech_assigned: 'Technician assigned (svc_tech_assigned)',
-  job_completion: 'Service completed (svc_job_done_letter_* → v3/v2 / svc_job_done)',
+  job_completion: 'Service completed (svc_job_done_letter_*_v2 → v1 → v3/v2 / svc_job_done)',
   general_notice: 'General notice (svc_smoke_update)',
-  hello: 'Hello (svc_hello)',
-  ask_location: 'Ask location (svc_ask_location)',
+  hello: 'Hello (svc_wfs_hello_* → svc_hello)',
+  wfs_hello: 'WFS Hi (svc_wfs_hello_{hro|ero|generic})',
+  wfs_simple_hi: 'Simple WFS Hi (svc_wfs_hi_{hro|ero|generic})',
+  wfs_collect: 'WFS collect info (svc_wfs_collect_* → location + photo flow)',
+  ask_location: 'Ask location (svc_wfs_ask_loc_* → Call us + Text us)',
+  ask_location_simple: 'Ask location short (svc_wfs_ask_loc_simple_* → Call us + Text us)',
   ask_photo: 'Ask photo (svc_ask_photo)',
   ask_flat: 'Ask flat (svc_ask_flat)',
   crm_notice: 'CRM notice → visit reminder',
   crm_update_details: 'CRM update → visit reminder',
-  book_existing_customer: 'Schedule visit (existing_service_schedule_*_cta)',
+  book_existing_customer: 'Schedule visit (existing_service_schedule_*_cta_v2 → v1)',
   book_new_customer: 'Unregistered number (unregistered_number_service_*_cta)',
   missed_call: 'Missed call (svc_missed_call)',
   missed_call_book: 'Missed call (svc_missed_call / missed_call_callback_*_cta)',
   reschedule_visit: 'Reschedule (reschedule_visit_*_cta)',
-  visit_cancelled: 'Visit cancelled (svc_booking_cancelled_letter_* → v2 → svc_visit_cancelled_*)',
+  visit_cancelled: 'Visit cancelled (svc_booking_cancelled_letter_*_v2 → v1 → v2 → svc_visit_cancelled_*)',
   parts_ready: 'Parts ready (svc_parts_ready)',
   tech_delayed: 'Tech delayed (svc_tech_delayed)',
-  booking_confirmed: 'Booking confirmed (svc_booking_confirmed_letter_* → v2 → v1 / svc_visit_confirmed)',
+  booking_confirmed: 'Booking confirmed (svc_booking_confirmed_letter_*_v2 → v1 → v2 / svc_visit_confirmed)',
 };

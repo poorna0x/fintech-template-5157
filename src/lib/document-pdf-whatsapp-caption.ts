@@ -1,47 +1,46 @@
 import type { DocumentBrand } from '@/lib/service-brands';
-import { getCompanyInfoForBrand, getDocumentBrandLabel } from '@/lib/service-brands';
+import { getDocumentBrandLabel } from '@/lib/service-brands';
 import {
-  waBrandWebsiteUrl,
-  waLabeledLink,
-  waLabeledValue,
-} from '@/lib/whatsappMessageFormat';
+  brandLetterClosingLines,
+  brandLetterFooterLines,
+  brandWhatsAppChatUrl,
+  letterLabelValue,
+} from '@/lib/whatsappBrandContact';
 
-export type DocumentPdfWhatsAppKind = 'service_bill' | 'quotation' | 'invoice';
+export type DocumentPdfWhatsAppKind =
+  | 'service_bill'
+  | 'quotation'
+  | 'invoice'
+  | 'amc'
+  | 'amc_document'
+  | 'warranty'
+  | 'warranty_document'
+  | 'receipt'
+  | 'generic';
 
-function formatInr(amount: number | null | undefined): string {
-  const n = typeof amount === 'number' ? amount : Number(amount);
-  if (!Number.isFinite(n) || n < 0) return '';
-  return `₹${n.toLocaleString('en-IN')}`;
-}
-
-function formatDisplayDate(iso: string | null | undefined): string {
-  const raw = String(iso || '').trim();
-  if (!raw) return '';
-  try {
-    const d = new Date(raw.includes('T') ? raw : `${raw}T12:00:00`);
-    if (Number.isNaN(d.getTime())) return raw;
-    return d.toLocaleDateString('en-IN', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-    });
-  } catch {
-    return raw;
+function attachedLine(kind: DocumentPdfWhatsAppKind): string {
+  switch (kind) {
+    case 'quotation':
+      return 'Your quotation is attached.';
+    case 'service_bill':
+      return 'Your service bill is attached.';
+    case 'invoice':
+      return 'Your tax invoice is attached.';
+    case 'amc':
+    case 'amc_document':
+      return 'Your AMC agreement is attached.';
+    case 'warranty':
+    case 'warranty_document':
+      return 'Your warranty card is attached.';
+    case 'receipt':
+      return 'Your payment receipt is attached.';
+    default:
+      return 'Your document is attached.';
   }
 }
 
-function brandContactLines(brand: DocumentBrand): string[] {
-  const info = getCompanyInfoForBrand(brand);
-  const website = waBrandWebsiteUrl(info.website);
-  return [
-    waLabeledValue('📞', 'Phone', info.phone),
-    waLabeledValue('📧', 'Email', info.email),
-    waLabeledLink('🌐', 'Website', website),
-  ];
-}
-
 export interface DocumentPdfWhatsAppCaptionInput {
-  kind: DocumentPdfWhatsAppKind;
+  kind: DocumentPdfWhatsAppKind | string;
   brand: DocumentBrand;
   customerName?: string | null;
   documentRef?: string | null;
@@ -52,87 +51,46 @@ export interface DocumentPdfWhatsAppCaptionInput {
 }
 
 /**
- * Professional WhatsApp caption for bill / quotation / invoice PDF sends.
- * Kept under Meta's ~1024-char document caption limit.
+ * WhatsApp caption for PDF sends (24h free-form document message).
+ * Matches cold PDF template wording + contact footer + Chat us link.
  */
 export function buildDocumentPdfWhatsAppCaption(input: DocumentPdfWhatsAppCaptionInput): string {
   const brandName = getDocumentBrandLabel(input.brand);
   const customerName = String(input.customerName || '').trim() || 'Customer';
-  const ref = String(input.documentRef || '').trim();
-  const amount = formatInr(input.amount ?? undefined);
-  const dateLabel = formatDisplayDate(input.dateIso);
-  const paymentStatus = String(input.paymentStatus || '').trim().toLowerCase();
+  const kind = String(input.kind || 'generic').toLowerCase() as DocumentPdfWhatsAppKind;
 
-  const details: string[] = [];
-
-  if (input.kind === 'quotation') {
-    if (ref) details.push(`📋 Quote no.: ${ref}`);
-    if (amount) details.push(`💰 Amount: ${amount}`);
-    if (dateLabel) details.push(`📅 Valid until: ${dateLabel}`);
-  } else if (input.kind === 'service_bill') {
-    if (ref) details.push(`📋 Bill no.: ${ref}`);
-    if (amount) details.push(`💰 Amount: ${amount}`);
-    if (dateLabel) details.push(`📅 Bill date: ${dateLabel}`);
-    if (paymentStatus === 'paid') details.push('✅ Payment status: Paid');
-    else if (
-      paymentStatus === 'pending' ||
-      paymentStatus === 'partial' ||
-      paymentStatus === 'overdue'
-    ) {
-      details.push(
-        `⏳ Payment status: ${
-          paymentStatus === 'partial'
-            ? 'Partially paid'
-            : paymentStatus === 'overdue'
-              ? 'Overdue'
-              : 'Pending'
-        }`
-      );
-    }
-  } else {
-    if (ref) details.push(`📋 Invoice no.: ${ref}`);
-    if (amount) details.push(`💰 Amount: ${amount}`);
-    if (dateLabel) details.push(`📅 Date: ${dateLabel}`);
-  }
-
-  const intro =
-    input.kind === 'quotation'
-      ? [
-          `Dear ${customerName},`,
-          '',
-          `📄 *Quotation from ${brandName}*`,
-          '',
-          'Please find your quotation PDF attached.',
-          'Kindly review the details and reply here to confirm, or call us if you need any changes.',
-        ]
-      : input.kind === 'service_bill'
-        ? [
-            `Dear ${customerName},`,
-            '',
-            `🧾 *Service bill from ${brandName}*`,
-            '',
-            'Please find your service bill PDF attached for your recent visit.',
-            'Thank you for trusting us with your RO service. Reply here or call us for any help.',
-          ]
-        : [
-            `Dear ${customerName},`,
-            '',
-            `📑 *Tax invoice from ${brandName}*`,
-            '',
-            'Please find your tax invoice PDF attached.',
-            'Payment details are included in the document. Reply here or call us if you need assistance.',
-          ];
-
-  const text = [
-    ...intro,
-    ...(details.length ? ['', ...details] : []),
+  const lines = [
+    `Hi ${customerName},`,
+    attachedLine(kind),
     '',
-    'For any queries or support, please contact us:',
-    ...brandContactLines(input.brand),
+    ...brandLetterClosingLines(input.brand, { includeTextUs: false }),
+    letterLabelValue('Text us', brandWhatsAppChatUrl(input.brand)),
     '',
-    'Warm regards,',
-    brandName,
+    'Reply on this chat if you need any help.',
+    '',
+    `— ${brandName}`,
+  ];
+
+  return lines.join('\n').slice(0, 1024);
+}
+
+/** Cold Meta template body preview (svc_doc_*_{ero|hro}_v2). */
+export function formatDocumentPdfColdPreview(
+  kind: DocumentPdfWhatsAppKind | string,
+  brand: DocumentBrand,
+  customerName: string
+): string {
+  const name = String(customerName || 'Customer').trim() || 'Customer';
+  const k = String(kind || 'generic').toLowerCase() as DocumentPdfWhatsAppKind;
+  const footer = brandLetterFooterLines(brand, { skipChatHint: true }).join('\n');
+  return [
+    `Hi ${name},`,
+    attachedLine(k),
+    '',
+    footer,
+    '',
+    'Reply on this chat if you need any help.',
+    '',
+    'Buttons: Call us · Text us (WhatsApp)',
   ].join('\n');
-
-  return text.slice(0, 1024);
 }

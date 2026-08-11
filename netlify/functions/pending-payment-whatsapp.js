@@ -147,8 +147,9 @@ function buildPendingPaymentWhatsAppMessage({
 
   if (link || vpa) {
     lines.push('');
+    lines.push('*Pay now*');
     if (link) {
-      lines.push(labeledLink('💳', 'Payment link (GPay / PhonePe / UPI)', link));
+      lines.push(labeledLink('💳', 'UPI pay link (GPay / PhonePe / UPI)', link));
     }
     if (vpa) {
       lines.push(labeledValue('📱', 'UPI ID', vpa));
@@ -157,7 +158,7 @@ function buildPendingPaymentWhatsAppMessage({
       lines.push(labeledValue('🏦', 'Pay to', upiLabel));
     }
     if (link) {
-      lines.push(`Amount ₹${formattedAmount} is pre-filled when you use the payment link.`);
+      lines.push(`Amount ₹${formattedAmount} is pre-filled when you use the UPI pay link.`);
     }
     if (upiPhone) {
       lines.push(labeledValue('📞', 'UPI mobile', upiPhone));
@@ -166,12 +167,17 @@ function buildPendingPaymentWhatsAppMessage({
 
   lines.push('');
   lines.push(`Thank you for choosing ${contact.label}.`);
-  lines.push(labeledValue('📞', 'Call (main)', contact.phone));
-  lines.push(labeledValue('📧', 'Email', contact.email));
-  lines.push(labeledLink('🌐', 'Website', contact.website));
+  lines.push(`Call:\n${contact.phone}`);
+  lines.push(`Email:\n${contact.email}`);
+  const webHost = String(contact.website || '')
+    .replace(/^https?:\/\//i, '')
+    .replace(/\/$/, '');
+  lines.push(`Website:\n${webHost}`);
   lines.push('');
-  lines.push('You can also reply on this WhatsApp chat anytime.');
-  lines.push('Reply on this chat for UPI details or if you have already paid.');
+  lines.push('Reply on this chat if you need any help.');
+  if (link || vpa) {
+    lines.push('If you have already paid, reply on this chat.');
+  }
   return lines.join('\n');
 }
 

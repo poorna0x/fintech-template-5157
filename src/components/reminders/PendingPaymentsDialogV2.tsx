@@ -469,7 +469,7 @@ export function SettingsPendingPaymentsDialogV2({
   /** Which UPI account to use when include-UPI is on. */
   const [whatsappUpiAccountId, setWhatsappUpiAccountId] = useState<string>('');
   /** Checkbox: include UPI ID + pay link in the WhatsApp message. */
-  const [whatsappIncludeUpi, setWhatsappIncludeUpi] = useState(false);
+  const [whatsappIncludeUpi, setWhatsappIncludeUpi] = useState(true);
   const [whatsappManageUpiOpen, setWhatsappManageUpiOpen] = useState(false);
   const [whatsappDraftMessage, setWhatsappDraftMessage] = useState('');
   const [whatsappDraftLoading, setWhatsappDraftLoading] = useState(false);
@@ -536,7 +536,8 @@ export function SettingsPendingPaymentsDialogV2({
       }
 
       const hasPayLink =
-        opts?.includePayLink === true || /https?:\/\//i.test(trimmed);
+        opts?.includePayLink === true ||
+        /https?:\/\/[^\s]+/i.test(trimmed);
 
       if (hasPayLink && opts?.coldPendingTemplate !== false) {
         const result = await sendAdminWhatsAppText({
@@ -643,7 +644,10 @@ export function SettingsPendingPaymentsDialogV2({
     opts?: { includeUpi?: boolean; upiAccountId?: string }
   ) => {
     const includeUpi = opts?.includeUpi ?? whatsappIncludeUpi;
-    const upiAccountId = opts?.upiAccountId ?? whatsappUpiAccountId;
+    let upiAccountId = opts?.upiAccountId ?? whatsappUpiAccountId;
+    if (includeUpi && !upiAccountId && upiAccounts.length > 0) {
+      upiAccountId = resolvePreferredUpiAccount(upiAccounts)?.id ?? upiAccounts[0]?.id ?? '';
+    }
     let upiOpts = null as
       | { label: string; upiId: string; phone?: string; deepLink?: string | null; httpsLink?: string | null }
       | null;
@@ -1653,10 +1657,16 @@ export function SettingsPendingPaymentsDialogV2({
                   const message = whatsappDraftMessage;
                   const hasAlternate =
                     !!alternatePhone && alternatePhone.trim() !== (primaryPhone || '').trim();
+                  const resolvedUpiAccountId =
+                    whatsappUpiAccountId ||
+                    resolvePreferredUpiAccount(upiAccounts)?.id ||
+                    upiAccounts[0]?.id ||
+                    '';
                   const canIncludeUpi =
                     whatsappIncludeUpi &&
-                    Boolean(whatsappUpiAccountId) &&
-                    upiAccounts.some((a) => a.id === whatsappUpiAccountId);
+                    Boolean(resolvedUpiAccountId) &&
+                    upiAccounts.some((a) => a.id === resolvedUpiAccountId);
+                  const messageHasPayLink = /https?:\/\/[^\s]+/i.test(message);
 
                   const sendWithPhone = (phone: string) => {
                     if (!phone) return;
@@ -1664,12 +1674,16 @@ export function SettingsPendingPaymentsDialogV2({
                       toast.error('Select a UPI account, or uncheck “Include UPI pay details”');
                       return;
                     }
+                    if (whatsappIncludeUpi && canIncludeUpi && !messageHasPayLink) {
+                      toast.error('Pay link still generating — wait a moment and try again');
+                      return;
+                    }
                     if (whatsappDraftLoading || !message.trim()) {
                       toast.error('Preparing pay link… try again in a moment');
                       return;
                     }
                     if (canIncludeUpi) {
-                      setLastSelectedUpiAccountId(whatsappUpiAccountId);
+                      setLastSelectedUpiAccountId(resolvedUpiAccountId);
                     }
                     openWhatsApp(phone, message, {
                       customerName: customer?.name,
@@ -1680,7 +1694,7 @@ export function SettingsPendingPaymentsDialogV2({
                         : null,
                       invoiceRef: whatsappTarget.job_number || whatsappTarget.job_id || null,
                       brand: brandForCustomer(whatsappTarget.entity_id as string | undefined),
-                      includePayLink: canIncludeUpi,
+                      includePayLink: canIncludeUpi || messageHasPayLink,
                     });
                     setWhatsappDialogOpen(false);
                   };

@@ -18,6 +18,8 @@ import {
   resolveJobCompletionColdTemplateFallbackName,
   resolveJobCompletionColdTemplateName,
   resolveJobCompletionLetterTemplateName,
+  resolveJobCompletionLetterTemplateFallbackName,
+  resolveJobCompletionLetterTemplateLegacyName,
 } from '@/lib/job-completion-message';
 import {
   openWhatsAppMeDeepLink,
@@ -56,6 +58,7 @@ export async function sendJobCompletionWhatsApp(opts: {
   forceWaMe?: boolean;
 }): Promise<JobCompletionWhatsAppSendResult> {
   const letterName = resolveJobCompletionLetterTemplateName(opts.documentBrand);
+  const letterFallbackName = resolveJobCompletionLetterTemplateFallbackName(opts.documentBrand);
   const richColdName = resolveJobCompletionColdTemplateName(opts.documentBrand);
   const richColdFallbackName = resolveJobCompletionColdTemplateFallbackName(opts.documentBrand);
   const letterParams = buildJobCompletionLetterBodyParams({
@@ -104,18 +107,24 @@ export async function sendJobCompletionWhatsApp(opts: {
   }
 
   let richError: string | undefined;
-  const letter = await sendAdminWhatsAppTemplate({
-    to: opts.to,
-    templateName: letterName,
-    languageCode: 'en',
-    bodyParams: letterParams,
-    customerId: opts.customerId,
-    source: 'job_completion',
-  });
-  if (letter.ok) {
-    return { ...letter, usedTemplate: true, usedRichColdTemplate: true };
+  for (const templateName of [
+    letterName,
+    letterFallbackName,
+    resolveJobCompletionLetterTemplateLegacyName(opts.documentBrand),
+  ]) {
+    const letter = await sendAdminWhatsAppTemplate({
+      to: opts.to,
+      templateName,
+      languageCode: 'en',
+      bodyParams: letterParams,
+      customerId: opts.customerId,
+      source: 'job_completion',
+    });
+    if (letter.ok) {
+      return { ...letter, usedTemplate: true, usedRichColdTemplate: true };
+    }
+    richError = letter.error;
   }
-  richError = letter.error;
 
   for (const templateName of [richColdName, richColdFallbackName]) {
     const rich = await sendAdminWhatsAppTemplate({

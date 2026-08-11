@@ -61,6 +61,7 @@ export async function sendSalarySlipWhatsApp(opts: {
     source: 'composer',
     cold: {
       kind: 'generic',
+      brand: 'hydrogenro',
       customerName: opts.breakdown.technicianName,
       documentLabel: 'Salary slip',
     },

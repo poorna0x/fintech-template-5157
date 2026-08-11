@@ -100,6 +100,7 @@ import {
 import { WhatsAppQuickRepliesBar, WhatsAppQuickContextFields } from '@/components/whatsapp/WhatsAppQuickRepliesBar';
 import {
   approvedTemplateNameSet,
+  isAskLocationTemplateName,
   quickReplyBookingUrl,
   type WhatsAppQuickTemplateSend,
 } from '@/lib/whatsappQuickMessages';
@@ -834,8 +835,32 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
   const handleQuickTemplateSend = useCallback(
     async (payload: WhatsAppQuickTemplateSend) => {
       if (!selectedPhone || sending) return;
+      if (windowOpen && isAskLocationTemplateName(payload.templateName)) {
+        await runQuickAction('request_location');
+        return;
+      }
+      if (windowOpen && payload.templateName === 'svc_ask_photo') {
+        await runQuickAction('request_photo');
+        return;
+      }
+      if (windowOpen && /^svc_wfs_collect/i.test(payload.templateName)) {
+        await runQuickAction('water_filter_service');
+        return;
+      }
       setSending(true);
       try {
+        const seedPendingAction =
+          isAskLocationTemplateName(payload.templateName)
+            ? 'request_location'
+            : payload.templateName === 'svc_ask_photo'
+              ? 'request_photo'
+              : /^svc_wfs_collect/i.test(payload.templateName)
+                ? 'water_filter_service'
+                : /^svc_wfs_hello/i.test(payload.templateName)
+                  ? 'show_menu'
+                  : /^svc_wfs_hi/i.test(payload.templateName)
+                    ? 'show_menu'
+                    : undefined;
         const result = await sendAdminWhatsAppTemplate({
           to: selectedPhone,
           templateName: payload.templateName,
@@ -843,6 +868,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
           bodyParams: payload.bodyParams,
           customerId: activeThread?.customer_id,
           source: 'inbox',
+          seedPendingAction,
         });
         if (!result.ok) {
           toast.error(result.error || 'Template send failed');
@@ -855,7 +881,7 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         setSending(false);
       }
     },
-    [selectedPhone, sending, activeThread?.customer_id, loadInbox, loadThread]
+    [selectedPhone, sending, activeThread?.customer_id, loadInbox, loadThread, windowOpen, quickActionBusy]
   );
 
   const runQuickAction = async (action: WhatsAppBookingQuickAction) => {
@@ -1723,6 +1749,9 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       onSendTemplate={handleQuickTemplateSend}
                       onPickTemplate={pickQuickTemplate}
                       onStartBookLocationPhoto={() => void runQuickAction('book_location_photo')}
+                      onRequestLocation={() => runQuickAction('request_location')}
+                      onRequestPhoto={() => runQuickAction('request_photo')}
+                      onStartWaterFilterService={() => runQuickAction('water_filter_service')}
                     />
                     {templatesLoading ? (
                       <p className="flex items-center gap-2 text-xs text-[#667781]">
@@ -1829,6 +1858,9 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       onSendTemplate={handleQuickTemplateSend}
                       onPickTemplate={pickQuickTemplate}
                       onStartBookLocationPhoto={() => void runQuickAction('book_location_photo')}
+                      onRequestLocation={() => runQuickAction('request_location')}
+                      onRequestPhoto={() => runQuickAction('request_photo')}
+                      onStartWaterFilterService={() => runQuickAction('water_filter_service')}
                     />
                     {attachFile ? (
                       <div className="flex items-center gap-2 rounded-xl bg-white px-2 py-1.5 shadow-sm">

@@ -15,7 +15,7 @@ import {
   sendAdminWhatsAppDocumentWithColdFallback,
 } from '@/lib/sendAdminWhatsAppApi';
 import type { AMCPDFOptions } from '@/lib/amc-pdf-generator';
-import { getDefaultDocumentMessage } from '@/lib/admin-email-templates';
+import { buildDocumentPdfWhatsAppCaption } from '@/lib/document-pdf-whatsapp-caption';
 import {
   fetchLastInboundAt,
   invalidateInboundWindowCache,
@@ -130,7 +130,11 @@ export default function AmcDocumentActions({
         windowClosed ? '24h window closed — sending PDF via template…' : 'Sending on WhatsApp…',
         { id: toastId }
       );
-      const caption = getDefaultDocumentMessage('amc_document').slice(0, 1024);
+      const caption = buildDocumentPdfWhatsAppCaption({
+        kind: 'amc',
+        brand,
+        customerName: resolveBillCustomerDisplayName(bill.customer),
+      }).slice(0, 1024);
       const result = await sendAdminWhatsAppDocumentWithColdFallback({
         to: customerPhone,
         pdfBase64: pdf.pdfBase64,
@@ -141,13 +145,14 @@ export default function AmcDocumentActions({
         preferColdTemplate: windowClosed,
         cold: {
           kind: 'amc',
+          brand,
           customerName: resolveBillCustomerDisplayName(bill.customer),
         },
       });
       if (!result.ok) {
         toast.error(
           result.error ||
-            '24h window closed — cold PDF template not approved yet (svc_doc_pdf_v2)',
+            '24h window closed — cold PDF template not approved yet (svc_doc_amc_*_v2)',
           { id: toastId }
         );
         return;

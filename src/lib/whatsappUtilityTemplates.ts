@@ -9,7 +9,7 @@ import { WA_COLD } from '@/lib/whatsappColdTemplates';
 import { resolveWaTemplateName } from '@/lib/whatsappTemplateResolve';
 import { sendAdminWhatsAppTextWithOptionalTemplate } from '@/lib/sendAdminWhatsAppApi';
 import type { AdminWhatsAppSendResult } from '@/lib/sendAdminWhatsAppApi';
-import { brandLetterFooterLines } from '@/lib/whatsappBrandContact';
+import { brandLetterClosingLines, resolveBrandLetterTemplateName } from '@/lib/whatsappBrandContact';
 
 export type ColdTemplatePayload = {
   name: string;
@@ -85,13 +85,11 @@ export function resolveColdUnregisteredNumber(
 }
 
 export function visitCancelledTemplateName(brand: DocumentBrand): string {
-  const suffix = brand === 'elevenro' ? 'ero' : 'hro';
-  return `svc_booking_cancelled_letter_${suffix}`;
+  return resolveBrandLetterTemplateName('booking_cancelled', brand, 'v3');
 }
 
 export function visitCancelledTemplateFallbackName(brand: DocumentBrand): string {
-  const suffix = brand === 'elevenro' ? 'ero' : 'hro';
-  return `svc_booking_cancelled_${suffix}_v2`;
+  return resolveBrandLetterTemplateName('booking_cancelled', brand, 'v2');
 }
 
 export function resolveColdVisitCancelled(
@@ -195,7 +193,7 @@ export function buildVisitCancelledWhatsAppMessage(
     '',
     'Reply BOOK on this chat to reschedule — we will ask for a new date and time.',
     '',
-    ...brandLetterFooterLines(brand),
+    ...brandLetterClosingLines(brand, { includeTextUs: false }),
   ].join('\n');
 }
 

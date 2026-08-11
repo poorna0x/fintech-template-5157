@@ -4,6 +4,7 @@
  */
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
+import type { DocumentBrand } from '@/lib/service-brands';
 import { coldDocBodyParams, coldDocTemplateForKind } from '@/lib/whatsappColdTemplates';
 import { resolveWaTemplateName } from '@/lib/whatsappTemplateResolve';
 import type { WhatsAppSendSource } from '@/lib/whatsappCrmSettings';
@@ -560,6 +561,7 @@ export type SendColdDocumentInviteOptions = {
   kind: string;
   customerName: string;
   customerId?: string | null;
+  brand?: DocumentBrand | string | null;
   amount?: number | string;
   ref?: string;
   documentLabel?: string;
@@ -571,7 +573,7 @@ export type SendColdDocumentInviteOptions = {
 
 /**
  * Cold PDF outside 24h: send DOCUMENT-header Utility template with the PDF attached
- * (no "reply YES" invite). Requires `svc_doc_pdf_v2` APPROVED in Meta.
+ * (no "reply YES" invite). Requires per-doc `svc_doc_*_{ero|hro}_v2` or fallback `svc_doc_pdf_v2`.
  */
 export async function sendColdDocumentInvite(
   options: SendColdDocumentInviteOptions
@@ -580,7 +582,7 @@ export async function sendColdDocumentInvite(
   if (!pdfBase64) {
     return { ok: false, error: 'PDF required for cold document send' };
   }
-  const meta = coldDocTemplateForKind(options.kind);
+  const meta = coldDocTemplateForKind(options.kind, options.brand);
   return sendAdminWhatsAppTemplate({
     to: options.to,
     templateName: meta.name,
@@ -604,6 +606,7 @@ export type SendAdminWhatsAppDocumentWithColdFallbackOptions = SendAdminWhatsApp
   cold: {
     kind: string;
     customerName: string;
+    brand?: DocumentBrand | string | null;
     amount?: number | string;
     ref?: string;
     documentLabel?: string;
@@ -629,6 +632,7 @@ export async function sendAdminWhatsAppDocumentWithColdFallback(
       source: docOpts.source || 'documents',
       kind: cold.kind,
       customerName: cold.customerName,
+      brand: cold.brand,
       amount: cold.amount,
       ref: cold.ref,
       documentLabel: cold.documentLabel,

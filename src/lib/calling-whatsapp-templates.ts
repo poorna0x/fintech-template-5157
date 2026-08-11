@@ -2,7 +2,7 @@ import type { DocumentBrand } from '@/lib/service-brands';
 import { getCompanyInfoForBrand, getDocumentBrandLabel } from '@/lib/service-brands';
 import { WA_COLD } from '@/lib/whatsappColdTemplates';
 import { resolveBookingCta } from '@/lib/whatsappBookingCtaTemplates';
-import { brandContactLines, brandLetterFooterLines } from '@/lib/whatsappBrandContact';
+import { brandContactLines, brandExistingCustomerBookLines, brandLetterFooterLines, resolveBrandLetterTemplateName } from '@/lib/whatsappBrandContact';
 import {
   waBrandBookingUrl,
   waBrandWebsiteUrl,
@@ -154,7 +154,6 @@ export function buildCallingWhatsAppMessage(
 
   switch (template) {
     case 'service_due': {
-      const bookingUrl = waBrandBookingUrl(info.website);
       const lines = [
         `Hi ${name},`,
         `This is an update from ${brandName} regarding your water purifier service schedule.`,
@@ -170,10 +169,7 @@ export function buildCallingWhatsAppMessage(
         'Your water purifier service is due. Regular service keeps water safe and the unit running well.',
         ...(device ? ['', device] : []),
         '',
-        'Reply BOOK on this chat to schedule a visit — we will ask for your preferred date and time.',
-        '',
-        ...brandLetterFooterLines(documentBrand),
-        waLabeledLink('📅', 'Book online', bookingUrl)
+        ...brandExistingCustomerBookLines(documentBrand)
       );
       return lines.join('\n');
     }
@@ -289,10 +285,9 @@ export function callingColdTemplateFor(
     String(whenLabel || '').trim() ||
     'your upcoming visit';
   if (template === 'service_due') {
-    // Prefer letter → CTA → schedule CTA → visit reminder (via cold fallback).
-    const suffix = documentBrand === 'elevenro' ? 'ero' : 'hro';
+    // Prefer letter v3 → v2 → v1 → CTA → schedule CTA → visit reminder (via cold fallback).
     return {
-      name: `svc_service_due_letter_${suffix}`,
+      name: resolveBrandLetterTemplateName('service_due', documentBrand, 'v3'),
       languageCode: 'en',
       bodyParams: [name, when],
     };

@@ -204,6 +204,113 @@ const CORE_TEMPLATES = [
   },
 ];
 
+/** Water Filter Service — cold hello (reopen chat). Reply → greeting menu. */
+const WFS_HELLO_TEMPLATES = [
+  {
+    name: 'svc_wfs_hello_hro',
+    body: 'Hi {{1}}, this is Hydrogen RO Water Filter Service. Please reply on this chat if you need help with your water purifier.',
+    examples: ['Rahul'],
+    noButtons: true,
+  },
+  {
+    name: 'svc_wfs_hello_ero',
+    body: 'Hi {{1}}, this is Eleven RO Water Filter Service. Please reply on this chat if you need help with your water purifier.',
+    examples: ['Rahul'],
+    noButtons: true,
+  },
+  {
+    name: 'svc_wfs_hello',
+    body: 'Hi {{1}}, this is Water Filter Service. Please reply on this chat if you need help with your water purifier.',
+    examples: ['Rahul'],
+    noButtons: true,
+  },
+];
+
+/** Short cold hello — “hi from … Water Filter Service”. Reply → greeting menu. */
+const WFS_SIMPLE_HI_TEMPLATES = [
+  {
+    name: 'svc_wfs_hi_hro',
+    body: 'Hi {{1}}, hi from Hydrogen RO Water Filter Service. Please reply on this chat.',
+    examples: ['Rahul'],
+    noButtons: true,
+  },
+  {
+    name: 'svc_wfs_hi_ero',
+    body: 'Hi {{1}}, hi from Eleven RO Water Filter Service. Please reply on this chat.',
+    examples: ['Rahul'],
+    noButtons: true,
+  },
+  {
+    name: 'svc_wfs_hi',
+    body: 'Hi {{1}}, hi from Water Filter Service. Please reply on this chat.',
+    examples: ['Rahul'],
+    noButtons: true,
+  },
+];
+
+/**
+ * Water Filter Service — cold open for location + photo collection.
+ * Reply → bot sends Send location button, then guides step by step.
+ */
+const WFS_COLLECT_TEMPLATES = [
+  {
+    name: 'svc_wfs_collect_hro',
+    body: 'Hi {{1}}, this is Hydrogen RO Water Filter Service. For serving you better we need certain information from you — such as your location and a photo of your purifier. Please share your location here on this chat; we will guide you step by step.',
+    examples: ['Rahul'],
+    noButtons: true,
+  },
+  {
+    name: 'svc_wfs_collect_ero',
+    body: 'Hi {{1}}, this is Eleven RO Water Filter Service. For serving you better we need certain information from you — such as your location and a photo of your purifier. Please share your location here on this chat; we will guide you step by step.',
+    examples: ['Rahul'],
+    noButtons: true,
+  },
+  {
+    name: 'svc_wfs_collect',
+    body: 'Hi {{1}}, this is Water Filter Service. For serving you better we need certain information from you — such as your location and a photo of your purifier. Please share your location here on this chat; we will guide you step by step.',
+    examples: ['Rahul'],
+    noButtons: true,
+  },
+];
+
+/** Ask location — full copy + Call us + Text us (cold). Reply → Send location button. */
+const WFS_ASK_LOC_TEMPLATES = [
+  {
+    name: 'svc_wfs_ask_loc_hro',
+    body: 'Hi {{1}}, this is Hydrogen RO Water Filter Service. Please share your Google Maps location pin on this chat so we can continue your water filter service request.',
+    examples: ['Rahul'],
+  },
+  {
+    name: 'svc_wfs_ask_loc_ero',
+    body: 'Hi {{1}}, this is Eleven RO Water Filter Service. Please share your Google Maps location pin on this chat so we can continue your water filter service request.',
+    examples: ['Rahul'],
+  },
+  {
+    name: 'svc_wfs_ask_loc',
+    body: 'Hi {{1}}, this is Water Filter Service. Please share your Google Maps location pin on this chat so we can continue your water filter service request.',
+    examples: ['Rahul'],
+  },
+];
+
+/** Shorter ask location + Call us + Text us. */
+const WFS_ASK_LOC_SIMPLE_TEMPLATES = [
+  {
+    name: 'svc_wfs_ask_loc_simple_hro',
+    body: 'Hi {{1}}, please share your Google Maps location pin on this chat. — Hydrogen RO Water Filter Service',
+    examples: ['Rahul'],
+  },
+  {
+    name: 'svc_wfs_ask_loc_simple_ero',
+    body: 'Hi {{1}}, please share your Google Maps location pin on this chat. — Eleven RO Water Filter Service',
+    examples: ['Rahul'],
+  },
+  {
+    name: 'svc_wfs_ask_loc_simple',
+    body: 'Hi {{1}}, please share your Google Maps location pin on this chat. — Water Filter Service',
+    examples: ['Rahul'],
+  },
+];
+
 /**
  * Booking confirm / cancel v2 — Call (voice) + Website (+ Book on cancel to rebook).
  * Prefer these over phone-only svc_booking_confirmed_* / svc_visit_cancelled_*.
@@ -225,14 +332,14 @@ const BOOKING_STATUS_V2_TEMPLATES = [
     name: 'svc_booking_cancelled_ero_v2',
     websiteUrl: 'https://elevenro.com',
     bookUrl: 'https://elevenro.com/book',
-    body: 'Hi {{1}}, your Eleven RO water purifier service booking for {{2}} has been cancelled. Reply BOOK on this chat to reschedule, or use Call / Website / Book below.',
+    body: 'Hi {{1}}, your Eleven RO water purifier service booking for {{2}} has been cancelled. Reply BOOK on this chat to reschedule, or use Call / Text us / Book below.',
     examples: ['Rahul', 'Tue 12 Aug, 2:00 PM'],
   },
   {
     name: 'svc_booking_cancelled_hro_v2',
     websiteUrl: 'https://hydrogenro.com',
     bookUrl: 'https://hydrogenro.com/book',
-    body: 'Hi {{1}}, your Hydrogen RO water purifier service booking for {{2}} has been cancelled. Reply BOOK on this chat to reschedule, or use Call / Website / Book below.',
+    body: 'Hi {{1}}, your Hydrogen RO water purifier service booking for {{2}} has been cancelled. Reply BOOK on this chat to reschedule, or use Call / Text us / Book below.',
     examples: ['Rahul', 'Tue 12 Aug, 2:00 PM'],
   },
 ];
@@ -287,6 +394,149 @@ const JOB_DONE_V3_TEMPLATES = [
     ],
   },
 ];
+
+/** Letter UTILITY v2 — Call/Email/Website footer with label on one line, value on the next. */
+const LETTER_BRANDS = {
+  ero: {
+    label: 'Eleven RO',
+    phone: '9880693311',
+    email: 'mail@elevenro.com',
+    website: 'https://elevenro.com',
+    webHost: 'elevenro.com',
+    bookUrl: 'https://elevenro.com/book',
+    reviewUrl: 'https://www.google.com/maps/search/?api=1&query=Eleven+RO+Anjanapura+Bengaluru',
+  },
+  hro: {
+    label: 'Hydrogen RO',
+    phone: '8884944288',
+    email: 'mail@hydrogenro.com',
+    website: 'https://hydrogenro.com',
+    webHost: 'hydrogenro.com',
+    bookUrl: 'https://hydrogenro.com/book',
+    reviewUrl: 'https://www.google.com/maps/search/?api=1&query=Hydrogen+RO+Seshadripuram+Bengaluru',
+  },
+};
+
+function letterFooterBlock(brand) {
+  return [
+    `Thank you for choosing ${brand.label}.`,
+    `Call:\n${brand.phone}`,
+    `Email:\n${brand.email}`,
+    `Website:\n${brand.webHost}`,
+  ].join('\n');
+}
+
+function buildLetterV3Templates() {
+  const out = [];
+  for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
+    const footer = letterFooterBlock(b);
+    const callPhone = suffix === 'hro' ? CALL_PHONE_HYDROGEN : CALL_PHONE_ELEVEN;
+    const chatUrl = `https://wa.me/${callPhone.replace(/\D/g, '')}`;
+    const base = { callPhone, chatUrl };
+    out.push({
+      ...base,
+      name: `svc_job_done_letter_${suffix}_v3`,
+      body: `Hi {{1}},\nThis is an update from ${b.label} regarding your completed water purifier service.\n\nAmount collected: INR {{2}}\nInvoice / Job: {{3}}\n\n${footer}\n\nReply on this chat if you need any help.`,
+      examples: ['Rahul', '1500', 'RO2608121234'],
+    });
+    out.push({
+      ...base,
+      name: `svc_balance_due_letter_${suffix}_v3`,
+      body: `Hi {{1}},\nThis is an update from ${b.label} regarding your pending payment for water purifier service.\n\nAmount pending: INR {{2}}\nDue date: {{3}}\nInvoice / Job: {{4}}\n\n${footer}\n\nReply on this chat for UPI details or if you have already paid.`,
+      examples: ['Rahul', '500', '15 Aug 2026', 'RO2608121234'],
+    });
+    out.push({
+      ...base,
+      name: `svc_service_due_letter_${suffix}_v3`,
+      body: `Hi {{1}},\nThis is an update from ${b.label} regarding your scheduled water purifier service.\n\nService due around: {{2}}\n\n${footer}\n\nReply BOOK on this chat to pick date and time — we already have your details on file.`,
+      examples: ['Rahul', 'your upcoming service visit'],
+    });
+    out.push({
+      ...base,
+      websiteUrl: b.website,
+      name: `svc_booking_confirmed_letter_${suffix}_v3`,
+      body: `Hi {{1}},\nThis is an update from ${b.label} regarding your service booking.\n\nBooking: {{2}}\nConfirmed for: {{3}}\n\n${footer}\n\nReply on this chat if you need to change the date or time.`,
+      examples: ['Rahul', 'RO2608121234', 'Tue 12 Aug, 2:00 PM'],
+    });
+    out.push({
+      ...base,
+      websiteUrl: b.website,
+      name: `svc_booking_cancelled_letter_${suffix}_v3`,
+      body: `Hi {{1}},\nThis is an update from ${b.label} regarding your water purifier service booking.\n\nYour booking for {{2}} has been cancelled.\n\n${footer}\n\nReply BOOK on this chat to reschedule.`,
+      examples: ['Rahul', 'Tue 12 Aug, 2:00 PM'],
+    });
+  }
+  return out;
+}
+
+const LETTER_V3_TEMPLATES = buildLetterV3Templates();
+
+/** Existing-customer schedule — Book online button only (no Call). */
+const EXISTING_CUSTOMER_BOOK_CTA_TEMPLATES = [
+  {
+    name: 'existing_service_schedule_ero_cta_v2',
+    bookUrl: 'https://elevenro.com/book',
+    body: 'Hi {{1}}, this is Eleven RO. Your RO service visit is due. Reply BOOK on this chat to pick date and time — we already have your details on file. Or tap Book online below.',
+    examples: ['Rahul'],
+  },
+  {
+    name: 'existing_service_schedule_hro_cta_v2',
+    bookUrl: 'https://hydrogenro.com/book',
+    body: 'Hi {{1}}, this is Hydrogen RO. Your RO service visit is due. Reply BOOK on this chat to pick date and time — we already have your details on file. Or tap Book online below.',
+    examples: ['Rahul'],
+  },
+];
+
+/**
+ * Service-due reminders — Book online only (existing customers).
+ * Reply BOOK seeds booking bot (date/time) via CRM seedPendingAction.
+ */
+const SERVICE_DUE_BOOK_CTA_TEMPLATES = [
+  {
+    name: 'svc_service_due_ero_cta_v2',
+    bookUrl: 'https://elevenro.com/book',
+    body: 'Hi {{1}}, your water purifier service is due around {{2}}. Reply BOOK on this chat to pick date and time — we already have your details on file. Or tap Book online below.',
+    examples: ['Rahul', 'Tue 12 Aug 2026'],
+  },
+  {
+    name: 'svc_service_due_hro_cta_v2',
+    bookUrl: 'https://hydrogenro.com/book',
+    body: 'Hi {{1}}, your water purifier service is due around {{2}}. Reply BOOK on this chat to pick date and time — we already have your details on file. Or tap Book online below.',
+    examples: ['Rahul', 'Tue 12 Aug 2026'],
+  },
+];
+
+/** Cold PDF — per doc type, brand footer + Call + Chat us (DOCUMENT header). */
+const DOC_PDF_ATTACHED_LINES = [
+  { slug: 'bill', line: 'Your service bill is attached.' },
+  { slug: 'invoice', line: 'Your tax invoice is attached.' },
+  { slug: 'amc', line: 'Your AMC agreement is attached.' },
+  { slug: 'quotation', line: 'Your quotation is attached.' },
+  { slug: 'warranty', line: 'Your warranty card is attached.' },
+  { slug: 'receipt', line: 'Your payment receipt is attached.' },
+  { slug: 'generic', line: 'Your document is attached.' },
+];
+
+function buildDocPdfV2Templates() {
+  const out = [];
+  for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
+    const footer = letterFooterBlock(b);
+    const callPhone = suffix === 'hro' ? CALL_PHONE_HYDROGEN : CALL_PHONE_ELEVEN;
+    const chatUrl = `https://wa.me/${callPhone.replace(/\D/g, '')}`;
+    for (const kind of DOC_PDF_ATTACHED_LINES) {
+      out.push({
+        name: `svc_doc_${kind.slug}_${suffix}_v2`,
+        callPhone,
+        chatUrl,
+        body: `Hi {{1}},\n${kind.line}\n\n${footer}\n\nReply on this chat if you need any help.`,
+        examples: ['Rahul'],
+      });
+    }
+  }
+  return out;
+}
+
+const DOC_PDF_V2_TEMPLATES = buildDocPdfV2Templates();
 
 /** UTILITY schedule / callback CTAs — no booking_confirmed_*_cta (use svc_booking_confirmed_* phone-only). */
 const BOOKING_TEMPLATES = [
@@ -466,14 +716,92 @@ function jobDonePayload(t) {
   };
 }
 
-function bookingPayload(t) {
-  const callPhone = callPhoneForTemplate(t.name);
-  const buttons = [{ type: 'PHONE_NUMBER', text: 'Call us', phone_number: callPhone }];
+function letterPayload(t) {
+  const callPhone = t.callPhone || callPhoneForTemplate(t.name);
+  const chatUrl =
+    t.chatUrl || `https://wa.me/${String(callPhone).replace(/\D/g, '')}`;
+  const buttons = [
+    { type: 'PHONE_NUMBER', text: 'Call us', phone_number: callPhone },
+  ];
   if (t.websiteUrl) {
     buttons.push({ type: 'URL', text: 'Website', url: t.websiteUrl });
   }
+  buttons.push({ type: 'URL', text: 'Text us', url: chatUrl });
+  return {
+    name: t.name,
+    language: 'en',
+    category: 'UTILITY',
+    allow_category_change: true,
+    components: [
+      {
+        type: 'BODY',
+        text: t.body,
+        example: { body_text: [t.examples] },
+      },
+      { type: 'BUTTONS', buttons },
+    ],
+  };
+}
+
+function docPdfPayload(t) {
+  const buttons = [
+    { type: 'PHONE_NUMBER', text: 'Call us', phone_number: t.callPhone },
+    { type: 'URL', text: 'Text us', url: t.chatUrl },
+  ];
+  return {
+    name: t.name,
+    language: 'en',
+    category: 'UTILITY',
+    allow_category_change: true,
+    components: [
+      {
+        type: 'HEADER',
+        format: 'DOCUMENT',
+        example: { header_handle: [SAMPLE_PDF] },
+      },
+      {
+        type: 'BODY',
+        text: t.body,
+        example: { body_text: [t.examples] },
+      },
+      { type: 'BUTTONS', buttons },
+    ],
+  };
+}
+
+function bookOnlyPayload(t) {
+  const buttons = [];
   if (t.bookUrl) {
     buttons.push({ type: 'URL', text: 'Book online', url: t.bookUrl });
+  }
+  return {
+    name: t.name,
+    language: 'en',
+    category: 'UTILITY',
+    allow_category_change: true,
+    components: [
+      {
+        type: 'BODY',
+        text: t.body,
+        example: { body_text: [t.examples] },
+      },
+      ...(buttons.length ? [{ type: 'BUTTONS', buttons }] : []),
+    ],
+  };
+}
+
+function bookingPayload(t) {
+  const callPhone = callPhoneForTemplate(t.name);
+  const chatUrl = `https://wa.me/${String(callPhone).replace(/\D/g, '')}`;
+  const buttons = [{ type: 'PHONE_NUMBER', text: 'Call us', phone_number: callPhone }];
+  if (t.bookUrl) {
+    buttons.push({ type: 'URL', text: 'Text us', url: chatUrl });
+    buttons.push({ type: 'URL', text: 'Book online', url: t.bookUrl });
+  } else {
+    if (t.websiteUrl) {
+      buttons.push({ type: 'URL', text: 'Website', url: t.websiteUrl });
+    }
+    buttons.push({ type: 'URL', text: 'Text us', url: chatUrl });
   }
   return {
     name: t.name,
@@ -618,6 +946,78 @@ async function main() {
       continue;
     }
     queue.push({ label: t.name, payload: jobDonePayload(t) });
+  }
+  for (const t of LETTER_V3_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: letterPayload(t) });
+  }
+  for (const t of EXISTING_CUSTOMER_BOOK_CTA_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: bookOnlyPayload(t) });
+  }
+  for (const t of SERVICE_DUE_BOOK_CTA_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: bookOnlyPayload(t) });
+  }
+  for (const t of WFS_HELLO_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: corePayload(t) });
+  }
+  for (const t of WFS_SIMPLE_HI_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: corePayload(t) });
+  }
+  for (const t of WFS_COLLECT_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: corePayload(t) });
+  }
+  for (const t of WFS_ASK_LOC_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: letterPayload(t) });
+  }
+  for (const t of WFS_ASK_LOC_SIMPLE_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: letterPayload(t) });
+  }
+  for (const t of DOC_PDF_V2_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: docPdfPayload(t) });
   }
 
   console.log(`\n${doSubmit ? 'Submitting' : 'Would submit'} ${queue.length} template(s)\n`);

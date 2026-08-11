@@ -1,7 +1,7 @@
 import { addMonths, format } from 'date-fns';
 import type { DocumentBrand } from '@/lib/service-brands';
 import { normalizeDocumentBrand } from '@/lib/service-brands';
-import { brandContactLines, brandLetterFooterLines } from '@/lib/whatsappBrandContact';
+import { brandContactLines, brandLetterClosingLines, brandLetterFooterLines, resolveBrandLetterTemplateName } from '@/lib/whatsappBrandContact';
 import { waLabeledLink, waLabeledValue } from '@/lib/whatsappMessageFormat';
 
 /** Must match reminders created from Settings → Pending payments. */
@@ -97,9 +97,17 @@ function cleanAmountDigits(amount: number | string): string {
   );
 }
 
-/** Letter cold template name (PENDING until Meta approves). */
+/** Letter cold template name (v3 = Call us + Text us; falls back via cold-fallback). */
 export function resolvePendingPaymentLetterTemplateName(brand: DocumentBrand): string {
-  return brand === 'elevenro' ? 'svc_balance_due_letter_ero' : 'svc_balance_due_letter_hro';
+  return resolveBrandLetterTemplateName('balance_due', brand, 'v3');
+}
+
+export function resolvePendingPaymentLetterTemplateFallbackName(brand: DocumentBrand): string {
+  return resolveBrandLetterTemplateName('balance_due', brand, 'v2');
+}
+
+export function resolvePendingPaymentLetterTemplateLegacyName(brand: DocumentBrand): string {
+  return resolveBrandLetterTemplateName('balance_due', brand, 'v1');
 }
 
 /** Letter cold params: name, amount, due date, invoice/job. */
@@ -144,8 +152,9 @@ export function buildPendingPaymentWhatsAppMessage(
 
   if (payLink || upiId) {
     lines.push('');
+    lines.push('*Pay now*');
     if (payLink) {
-      lines.push(waLabeledLink('💳', 'Payment link (GPay / PhonePe / UPI)', payLink));
+      lines.push(waLabeledLink('💳', 'UPI pay link (GPay / PhonePe / UPI)', payLink));
     }
     if (upiId) {
       lines.push(waLabeledValue('📱', 'UPI ID', upiId));
@@ -154,7 +163,7 @@ export function buildPendingPaymentWhatsAppMessage(
       lines.push(waLabeledValue('🏦', 'Pay to', upi.label));
     }
     if (payLink) {
-      lines.push(`Amount ₹${formattedAmount} is pre-filled when you use the payment link.`);
+      lines.push(`Amount ₹${formattedAmount} is pre-filled when you use the UPI pay link.`);
     }
     if (upi?.phone) {
       lines.push(waLabeledValue('📞', 'UPI mobile', upi.phone));
@@ -162,8 +171,12 @@ export function buildPendingPaymentWhatsAppMessage(
   }
 
   lines.push('');
-  lines.push(...brandLetterFooterLines(resolved));
-  lines.push('Reply on this chat for UPI details or if you have already paid.');
+  lines.push(...brandLetterFooterLines(resolved, { skipChatHint: true }));
+  lines.push('');
+  lines.push('Reply on this chat if you need any help.');
+  if (payLink || upiId) {
+    lines.push('If you have already paid, reply on this chat.');
+  }
 
   return lines.join('\n');
 }
@@ -183,7 +196,7 @@ export function buildPendingPaymentReceivedWhatsAppMessage(
     '',
     `We have received your payment of ₹${formattedAmount}. Thank you.`,
     '',
-    ...brandLetterFooterLines(resolved),
+    ...brandLetterClosingLines(resolved, { includeTextUs: false }),
   ].join('\n');
 }
 

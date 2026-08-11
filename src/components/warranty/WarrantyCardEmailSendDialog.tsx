@@ -16,6 +16,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import { getDefaultDocumentMessage } from '@/lib/admin-email-templates';
+import { buildDocumentPdfWhatsAppCaption } from '@/lib/document-pdf-whatsapp-caption';
 import { ensureSupabaseSessionForWrite } from '@/lib/ensureSupabaseSession';
 import {
   customerEmailNeedsSave,
@@ -99,6 +100,7 @@ export default function WarrantyCardEmailSendDialog({
     if (!pdfData?.customer) return '';
     return formatColdDocTemplatePreview('warranty', {
       customerName: resolveBillCustomerDisplayName(pdfData.customer),
+      brand,
     });
   }, [pdfData?.customer]);
 
@@ -265,7 +267,12 @@ export default function WarrantyCardEmailSendDialog({
         { id: toastId }
       );
       const caption = (
-        message.trim() || getDefaultDocumentMessage('warranty_document')
+        message.trim() ||
+        buildDocumentPdfWhatsAppCaption({
+          kind: 'warranty',
+          brand,
+          customerName: resolveBillCustomerDisplayName(pdfData.customer),
+        })
       ).slice(0, 1024);
 
       const result = await sendAdminWhatsAppDocumentWithColdFallback({
@@ -278,6 +285,7 @@ export default function WarrantyCardEmailSendDialog({
         preferColdTemplate: windowOpen === false,
         cold: {
           kind: 'warranty',
+          brand,
           customerName: resolveBillCustomerDisplayName(pdfData.customer),
           documentLabel: 'warranty card',
         },
@@ -363,7 +371,12 @@ export default function WarrantyCardEmailSendDialog({
       toast.loading('Sending WhatsApp…', { id: toastId });
       const pdf = await generateWarrantyCardPdfBase64(pdfData);
       const caption = (
-        message.trim() || getDefaultDocumentMessage('warranty_document')
+        message.trim() ||
+        buildDocumentPdfWhatsAppCaption({
+          kind: 'warranty',
+          brand,
+          customerName: resolveBillCustomerDisplayName(pdfData.customer),
+        })
       ).slice(0, 1024);
       const waResult = await sendAdminWhatsAppDocumentWithColdFallback({
         to: phone,
@@ -375,6 +388,7 @@ export default function WarrantyCardEmailSendDialog({
         preferColdTemplate: windowOpen === false,
         cold: {
           kind: 'warranty',
+          brand,
           customerName: resolveBillCustomerDisplayName(pdfData.customer),
           documentLabel: 'warranty card',
         },
@@ -506,8 +520,8 @@ export default function WarrantyCardEmailSendDialog({
                 <div className="space-y-1.5">
                   <p className="text-xs text-amber-800">
                     Window closed — sends Meta template{' '}
-                    <span className="font-medium">svc_doc_pdf_v2</span> with the warranty PDF
-                    attached.
+                    <span className="font-medium">svc_doc_warranty_*_v2</span> with the warranty PDF
+                    attached (Call + Text us).
                   </p>
                   {coldTemplatePreview ? (
                     <p className="rounded-md border border-amber-200/80 bg-amber-50/60 px-2.5 py-2 text-xs text-amber-950">

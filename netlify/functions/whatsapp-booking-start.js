@@ -42,6 +42,37 @@ function resolveBrandFromCustomer(customer) {
   return 'hydrogenro';
 }
 
+function waterFilterFromLabel(brand) {
+  return brand === 'elevenro' ? 'Eleven RO Water Filter Service' : 'Hydrogen RO Water Filter Service';
+}
+
+function coldWfsCollectParams(brand, customerName) {
+  const name = String(customerName || 'Customer').trim() || 'Customer';
+  const templateName =
+    brand === 'elevenro'
+      ? 'svc_wfs_collect_ero'
+      : brand === 'hydrogenro'
+        ? 'svc_wfs_collect_hro'
+        : 'svc_wfs_collect';
+  return { name: templateName, languageCode: 'en', bodyParams: [name] };
+}
+
+function coldAskLocationParams(brand, customerName) {
+  const name = String(customerName || 'Customer').trim() || 'Customer';
+  const b = String(brand || '').toLowerCase();
+  const templateName =
+    b === 'elevenro'
+      ? 'svc_wfs_ask_loc_ero'
+      : b === 'hydrogenro'
+        ? 'svc_wfs_ask_loc_hro'
+        : 'svc_wfs_ask_loc';
+  return {
+    name: templateName,
+    languageCode: 'en',
+    bodyParams: [name],
+  };
+}
+
 async function loadCrmSettings(db) {
   const { data } = await db
     .from('whatsapp_crm_settings')
@@ -152,13 +183,9 @@ function coldTemplateForAction(action, brand, customerName, hasCustomer) {
   }
 
   if (action === 'request_location') {
+    const ask = coldAskLocationParams(brand, customerName);
     return {
-      primary: {
-        name: 'svc_service_request',
-        languageCode: 'en',
-        bodyParams: [name],
-        seedPending: 'request_location',
-      },
+      primary: { ...ask, seedPending: 'request_location' },
       fallback: {
         name: 'svc_visit_reminder',
         languageCode: 'en',
@@ -175,26 +202,18 @@ function coldTemplateForAction(action, brand, customerName, hasCustomer) {
   }
 
   if (action === 'water_filter_service') {
+    const collect = coldWfsCollectParams(brand, customerName);
+    const ask = coldAskLocationParams(brand, customerName);
     return {
-      primary: {
-        name: 'svc_service_request',
-        languageCode: 'en',
-        bodyParams: [name],
-        seedPending: 'water_filter_service',
-      },
-      fallback: {
+      primary: { ...collect, seedPending: 'water_filter_service' },
+      fallback: { ...ask, seedPending: 'water_filter_service' },
+      fallback2: {
         name: 'svc_visit_reminder',
         languageCode: 'en',
         bodyParams: [
           name,
-          'Water Filter Service — reply here and we will ask for your location pin next',
+          `${waterFilterFromLabel(brand)} — reply here and we will ask for your location pin next`,
         ],
-        seedPending: 'water_filter_service',
-      },
-      fallback2: {
-        name: 'svc_smoke_update',
-        languageCode: 'en',
-        bodyParams: [name],
         seedPending: 'water_filter_service',
       },
     };
@@ -349,6 +368,7 @@ exports.handler = async (event) => {
     leadCost,
     requireOtp,
     customerId,
+    brand,
   };
 
   // —— Open 24h window: interactive bot ——
@@ -423,6 +443,7 @@ exports.handler = async (event) => {
     serviceLabel,
     leadCost,
     requireOtp,
+    brand,
     ...(customerId ? { existingCustomerId: customerId } : {}),
     waterFilterService: action === 'water_filter_service',
     locationThenPhoto: action === 'book_location_photo',

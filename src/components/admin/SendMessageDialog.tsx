@@ -323,15 +323,14 @@ const SendMessageDialog: React.FC<SendMessageDialogProps> = ({
                 <p className="text-[11px] text-muted-foreground mt-0.5 mb-1.5">
                   Prefers letter template{' '}
                   <span className="font-medium">
-                    svc_job_done_letter_{completion.documentBrand === 'elevenro' ? 'ero' : 'hro'}
+                    svc_job_done_letter_{completion.documentBrand === 'elevenro' ? 'ero' : 'hro'}_v3
                   </span>
-                  , then v3 / v2 / short <span className="font-medium">svc_job_done</span>. Call
-                  dials the brand voice line (HRO 8884944288 · ERO 9880693311), not the Cloud
-                  WhatsApp number.
+                  , then v2 / v1 / short <span className="font-medium">svc_job_done</span>.
+                  Cold template buttons: Call us · Text us.
                 </p>
                 <div className="p-3 rounded-md border border-amber-200/80 bg-amber-50/60 text-sm text-amber-950 whitespace-pre-wrap">
                   {coldTemplatePreview}
-                  {'\n\n'}📞 Call us · 🌐 Website · ⭐ Review
+                  {'\n\n'}📞 Call us · 💬 Text us
                 </div>
               </div>
 

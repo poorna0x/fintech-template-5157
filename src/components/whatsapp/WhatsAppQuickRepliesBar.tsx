@@ -13,6 +13,9 @@ import {
   buildQuickBookingConfirmedTemplate,
   buildQuickBookingCancelledTemplate,
   buildQuickHelloTemplate,
+  buildQuickWfsCollectTemplate,
+  wfsCollectFallbackNames,
+  wfsHelloFallbackNames,
   buildQuickTemplateSend,
   filterQuickTemplatesByApproved,
   isQuickTemplateReady,
@@ -42,6 +45,12 @@ export type WhatsAppQuickRepliesBarProps = {
   onPickTemplate?: (payload: WhatsAppQuickTemplateSend) => void;
   /** Inbox: start bot book flow (location → flat → photo → date) */
   onStartBookLocationPhoto?: () => void | Promise<void>;
+  /** 24h window: native WhatsApp *Send location* button (not plain text) */
+  onRequestLocation?: () => void | Promise<void>;
+  /** 24h window: ask purifier photo step */
+  onRequestPhoto?: () => void | Promise<void>;
+  /** 24h window: Water Filter Service flow (location → date → photo) */
+  onStartWaterFilterService?: () => void | Promise<void>;
   insertMode?: 'replace' | 'append';
 };
 
@@ -143,6 +152,9 @@ export function WhatsAppQuickRepliesBar({
   onSendTemplate,
   onPickTemplate,
   onStartBookLocationPhoto,
+  onRequestLocation,
+  onRequestPhoto,
+  onStartWaterFilterService,
   insertMode = 'replace',
 }: WhatsAppQuickRepliesBarProps) {
   const [customQuick, setCustomQuick] = useState('');
@@ -170,6 +182,18 @@ export function WhatsAppQuickRepliesBar({
   };
 
   const handleChip = (item: WhatsAppQuickTextReply) => {
+    if (windowOpen && item.id === 'wfs_collect' && onStartWaterFilterService) {
+      void onStartWaterFilterService();
+      return;
+    }
+    if (windowOpen && (item.id === 'share_location' || item.id === 'share_location_simple') && onRequestLocation) {
+      void onRequestLocation();
+      return;
+    }
+    if (windowOpen && item.id === 'share_photo' && onRequestPhoto) {
+      void onRequestPhoto();
+      return;
+    }
     const text = item.text(context);
     if (item.instant) {
       handleText(text, true);
@@ -196,6 +220,22 @@ export function WhatsAppQuickRepliesBar({
 
   const handleTemplate = async (reply: WhatsAppQuickTemplateReply) => {
     if (disabled) return;
+    if (windowOpen && reply.id === 'tpl_wfs_collect' && onStartWaterFilterService) {
+      await onStartWaterFilterService();
+      return;
+    }
+    if (
+      windowOpen &&
+      (reply.id === 'tpl_ask_location' || reply.id === 'tpl_ask_location_simple') &&
+      onRequestLocation
+    ) {
+      await onRequestLocation();
+      return;
+    }
+    if (windowOpen && reply.id === 'tpl_ask_photo' && onRequestPhoto) {
+      await onRequestPhoto();
+      return;
+    }
     const payload = buildQuickTemplateSend(reply, context);
     if (!isQuickTemplateReady(reply, context)) {
       onPickTemplate?.(payload);
@@ -209,24 +249,11 @@ export function WhatsAppQuickRepliesBar({
     const payload = buildQuickHelloTemplate(context, approvedTemplateNames);
     const ok =
       !approvedTemplateNames?.size ||
-      approvedTemplateNames.has(payload.templateName) ||
+      wfsHelloFallbackNames().some((n) => approvedTemplateNames.has(n)) ||
       approvedTemplateNames.has('svc_hello') ||
       approvedTemplateNames.has('svc_smoke_update');
     if (!ok) {
       onPickTemplate?.(payload);
-      return;
-    }
-    // Prefer dedicated hello when approved; otherwise reopen with smoke_update
-    if (
-      approvedTemplateNames?.size &&
-      !approvedTemplateNames.has('svc_hello') &&
-      approvedTemplateNames.has('svc_smoke_update')
-    ) {
-      await onSendTemplate?.({
-        templateName: 'svc_smoke_update',
-        language: 'en',
-        bodyParams: [String(context.customerName || 'Customer').trim() || 'Customer'],
-      });
       return;
     }
     await onSendTemplate?.(payload);
@@ -294,6 +321,10 @@ export function WhatsAppQuickRepliesBar({
     const ok =
       !approvedTemplateNames?.size ||
       approvedTemplateNames.has(payload.templateName) ||
+      approvedTemplateNames.has('svc_booking_confirmed_letter_ero_v3') ||
+      approvedTemplateNames.has('svc_booking_confirmed_letter_hro_v3') ||
+      approvedTemplateNames.has('svc_booking_confirmed_letter_ero_v2') ||
+      approvedTemplateNames.has('svc_booking_confirmed_letter_hro_v2') ||
       approvedTemplateNames.has('svc_booking_confirmed_letter_ero') ||
       approvedTemplateNames.has('svc_booking_confirmed_letter_hro') ||
       approvedTemplateNames.has('svc_booking_confirmed_ero_v2') ||
@@ -314,6 +345,10 @@ export function WhatsAppQuickRepliesBar({
     const ok =
       !approvedTemplateNames?.size ||
       approvedTemplateNames.has(payload.templateName) ||
+      approvedTemplateNames.has('svc_booking_cancelled_letter_ero_v3') ||
+      approvedTemplateNames.has('svc_booking_cancelled_letter_hro_v3') ||
+      approvedTemplateNames.has('svc_booking_cancelled_letter_ero_v2') ||
+      approvedTemplateNames.has('svc_booking_cancelled_letter_hro_v2') ||
       approvedTemplateNames.has('svc_booking_cancelled_letter_ero') ||
       approvedTemplateNames.has('svc_booking_cancelled_letter_hro') ||
       approvedTemplateNames.has('svc_booking_cancelled_ero_v2') ||
@@ -329,6 +364,7 @@ export function WhatsAppQuickRepliesBar({
 
   const showHelloTpl =
     !approvedTemplateNames?.size ||
+    wfsHelloFallbackNames().some((n) => approvedTemplateNames.has(n)) ||
     approvedTemplateNames.has('svc_hello') ||
     approvedTemplateNames.has('svc_smoke_update');
 
@@ -340,6 +376,8 @@ export function WhatsAppQuickRepliesBar({
 
   const showBookVisit =
     !approvedTemplateNames?.size ||
+    approvedTemplateNames.has('existing_service_schedule_ero_cta_v2') ||
+    approvedTemplateNames.has('existing_service_schedule_hro_cta_v2') ||
     approvedTemplateNames.has('existing_service_schedule_ero_cta') ||
     approvedTemplateNames.has('existing_service_schedule_hro_cta');
 
@@ -355,6 +393,10 @@ export function WhatsAppQuickRepliesBar({
 
   const showBookingConfirmedTpl =
     !approvedTemplateNames?.size ||
+    approvedTemplateNames.has('svc_booking_confirmed_letter_ero_v3') ||
+    approvedTemplateNames.has('svc_booking_confirmed_letter_hro_v3') ||
+    approvedTemplateNames.has('svc_booking_confirmed_letter_ero_v2') ||
+    approvedTemplateNames.has('svc_booking_confirmed_letter_hro_v2') ||
     approvedTemplateNames.has('svc_booking_confirmed_letter_ero') ||
     approvedTemplateNames.has('svc_booking_confirmed_letter_hro') ||
     approvedTemplateNames.has('svc_booking_confirmed_ero_v2') ||
@@ -365,6 +407,10 @@ export function WhatsAppQuickRepliesBar({
 
   const showBookingCancelledTpl =
     !approvedTemplateNames?.size ||
+    approvedTemplateNames.has('svc_booking_cancelled_letter_ero_v3') ||
+    approvedTemplateNames.has('svc_booking_cancelled_letter_hro_v3') ||
+    approvedTemplateNames.has('svc_booking_cancelled_letter_ero_v2') ||
+    approvedTemplateNames.has('svc_booking_cancelled_letter_hro_v2') ||
     approvedTemplateNames.has('svc_booking_cancelled_letter_ero') ||
     approvedTemplateNames.has('svc_booking_cancelled_letter_hro') ||
     approvedTemplateNames.has('svc_booking_cancelled_ero_v2') ||

@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import { getDefaultDocumentMessage } from '@/lib/admin-email-templates';
+import { buildDocumentPdfWhatsAppCaption } from '@/lib/document-pdf-whatsapp-caption';
 import { ensureSupabaseSessionForWrite } from '@/lib/ensureSupabaseSession';
 import {
   customerEmailNeedsSave,
@@ -126,6 +127,7 @@ export default function AmcEmailSendDialog({
     if (!bill) return '';
     return formatColdDocTemplatePreview('amc', {
       customerName: resolveBillCustomerDisplayName(bill.customer),
+      brand,
     });
   }, [bill]);
 
@@ -366,7 +368,14 @@ export default function AmcEmailSendDialog({
         windowOpen === false ? '24h window closed — sending PDF via template…' : 'Sending on WhatsApp…',
         { id: toastId }
       );
-      const caption = (message.trim() || getDefaultDocumentMessage('amc_document')).slice(0, 1024);
+      const caption = (
+        message.trim() ||
+        buildDocumentPdfWhatsAppCaption({
+          kind: 'amc',
+          brand,
+          customerName: resolveBillCustomerDisplayName(bill.customer),
+        })
+      ).slice(0, 1024);
       const result = await sendAdminWhatsAppDocumentWithColdFallback({
         to: phone,
         pdfBase64: pdf.pdfBase64,
@@ -377,6 +386,7 @@ export default function AmcEmailSendDialog({
         preferColdTemplate: windowOpen === false,
         cold: {
           kind: 'amc',
+          brand,
           customerName: resolveBillCustomerDisplayName(bill.customer),
         },
       });
@@ -518,7 +528,14 @@ export default function AmcEmailSendDialog({
       const phone = formatPhoneForWhatsApp(whatsappPhone);
       toast.loading('Sending WhatsApp…', { id: toastId });
       const pdf = await generateAmcPdfBase64ForWhatsApp(bill, pdfOptions);
-      const caption = (message.trim() || getDefaultDocumentMessage('amc_document')).slice(0, 1024);
+      const caption = (
+        message.trim() ||
+        buildDocumentPdfWhatsAppCaption({
+          kind: 'amc',
+          brand,
+          customerName: resolveBillCustomerDisplayName(bill.customer),
+        })
+      ).slice(0, 1024);
       const waResult = await sendAdminWhatsAppDocumentWithColdFallback({
         to: phone,
         pdfBase64: pdf.pdfBase64,
@@ -529,6 +546,7 @@ export default function AmcEmailSendDialog({
         preferColdTemplate: windowOpen === false,
         cold: {
           kind: 'amc',
+          brand,
           customerName: resolveBillCustomerDisplayName(bill.customer),
         },
       });
@@ -665,7 +683,8 @@ export default function AmcEmailSendDialog({
                 <div className="space-y-1.5">
                   <p className="text-xs text-amber-800">
                     Window closed — sends Meta template{' '}
-                    <span className="font-medium">svc_doc_pdf_v2</span> with the AMC PDF attached.
+                    <span className="font-medium">svc_doc_amc_*_v2</span> with the AMC PDF attached
+                    (Call + Text us).
                   </p>
                   {coldTemplatePreview ? (
                     <p className="rounded-md border border-amber-200/80 bg-amber-50/60 px-2.5 py-2 text-xs text-amber-950">

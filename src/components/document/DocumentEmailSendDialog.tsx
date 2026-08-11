@@ -249,6 +249,7 @@ export default function DocumentEmailSendDialog({
     if (!bill) return '';
     return formatColdDocTemplatePreview(kind, {
       customerName: resolveBillCustomerDisplayName(bill.customer),
+      brand,
       amount: bill.totalAmount,
       ref: bill.billNumber,
       documentLabel: meta.docLabel,
@@ -387,6 +388,7 @@ export default function DocumentEmailSendDialog({
         cold: {
           kind,
           customerName: resolveBillCustomerDisplayName(bill.customer),
+          brand,
           amount: bill.totalAmount,
           ref: bill.billNumber,
           documentLabel: meta.docLabel,
@@ -618,8 +620,8 @@ export default function DocumentEmailSendDialog({
                 <div className="space-y-1.5">
                   <p className="text-xs text-amber-800">
                     Window closed — sends Meta template{' '}
-                    <span className="font-medium">svc_doc_pdf_v2</span> with the PDF attached (not
-                    the long message below).
+                    <span className="font-medium">svc_doc_*_{'{ero|hro}'}_v2</span> with the PDF
+                    attached (Call + Text us). Falls back to svc_doc_pdf_v2 if pending.
                   </p>
                   {coldTemplatePreview ? (
                     <p className="rounded-md border border-amber-200/80 bg-amber-50/60 px-2.5 py-2 text-xs text-amber-950">

@@ -586,12 +586,44 @@ exports.handler = async (event) => {
 
     // After reminder / book invite: next customer reply resumes booking bot (date/time…).
     const seedPending = String(body.seedPendingAction || body.seed_pending_action || '').trim();
-    if (seedPending && db) {
+    const templateSeedMap = {
+      svc_ask_location: 'request_location',
+      svc_wfs_ask_loc: 'request_location',
+      svc_wfs_ask_loc_hro: 'request_location',
+      svc_wfs_ask_loc_ero: 'request_location',
+      svc_wfs_ask_loc_simple: 'request_location',
+      svc_wfs_ask_loc_simple_hro: 'request_location',
+      svc_wfs_ask_loc_simple_ero: 'request_location',
+      svc_ask_photo: 'request_photo',
+      svc_wfs_hello: 'show_menu',
+      svc_wfs_hello_hro: 'show_menu',
+      svc_wfs_hello_ero: 'show_menu',
+      svc_wfs_hi: 'show_menu',
+      svc_wfs_hi_hro: 'show_menu',
+      svc_wfs_hi_ero: 'show_menu',
+      svc_wfs_collect: 'water_filter_service',
+      svc_wfs_collect_hro: 'water_filter_service',
+      svc_wfs_collect_ero: 'water_filter_service',
+    };
+    const tplName = String(templateSendOpts?.templateName || '').trim();
+    const resolvedSeed = seedPending || (tplName ? templateSeedMap[tplName] || '' : '');
+    const seedBrand = /_ero$/i.test(tplName)
+      ? 'elevenro'
+      : /_hro$/i.test(tplName)
+        ? 'hydrogenro'
+        : null;
+    if (resolvedSeed && db) {
       try {
-        await seedAdminPendingAction(db, to, seedPending, {
+        const source = String(body.source || '').trim();
+        await seedAdminPendingAction(db, to, resolvedSeed, {
           name: String(body.customerName || body.customer_name || '').trim() || undefined,
           customerName: String(body.customerName || body.customer_name || '').trim() || undefined,
           startedByAdmin: true,
+          ...(persist.customer_id ? { existingCustomerId: persist.customer_id } : {}),
+          leadSource: 'Direct call',
+          ...(source === 'service_reminder' ? { serviceReminder: true } : {}),
+          ...(resolvedSeed === 'water_filter_service' ? { waterFilterService: true } : {}),
+          ...(seedBrand ? { brand: seedBrand } : {}),
         });
       } catch (err) {
         console.warn('[whatsapp-send] seedPendingAction failed', err?.message || err);
