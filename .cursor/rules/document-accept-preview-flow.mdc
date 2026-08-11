@@ -1,0 +1,54 @@
+---
+description: Planned customer document Accept flow (preview PDF → terms → original). Build later — do not invent a different design.
+alwaysApply: true
+---
+
+# Document Accept flow (planned — build when asked)
+
+**Status:** Spec + Meta cold templates submitted (`PENDING`). **Do not implement** the accept page/APIs until the user says to build this.
+
+## Agreed product flow
+
+1. CRM generates a **PREVIEW** PDF (watermarked “PREVIEW – NOT VALID”).
+2. Cold WhatsApp **DOCUMENT** template sends preview PDF + **Accept** button (real Meta URL button, not body-only link).
+3. Customer taps **Accept** → opens brand site `/c/{token}` (Hydrogen or Eleven).
+4. Page: summary + strong “preview only / not original” copy → terms checkbox → **Accept**.
+5. Server validates token → saves audit → status `PENDING_CONFIRMATION` → `CUSTOMER_ACCEPTED`.
+6. Send **ORIGINAL** PDF on WhatsApp (seal + authenticity hash + confirmation id).
+7. **Do not store PDF bytes forever** — store hash + audit; generate/send on demand (temp object URL OK).
+
+## Meta templates (already in submit script + registry)
+
+| Brand | Name |
+|-------|------|
+| Eleven | `svc_doc_accept_preview_ero_v4` |
+| Hydrogen | `svc_doc_accept_preview_hro_v4` |
+
+- Body: `{{1}}` name, `{{2}}` doc label. Light emojis (📄 ⚠️ ✅ 💬). Footer: Call / Email / Website. “reply on this chat.” **No wa.me / Text us**.
+- Buttons: **Call us** · **Accept** → `{brand}/c/{{1}}` only.
+- CRM helpers: `resolveDocAcceptPreviewTemplate`, `docAcceptPreviewBodyParams`, `docAcceptPreviewButtonUrlParams` in `src/lib/whatsappColdTemplates.ts`.
+- Submit: `node scripts/submit-whatsapp-full-utility.mjs --submit --only-doc-accept`
+
+## Security (required when building)
+
+- Opaque cryptographically random **single-use** token (no DB ids in URL).
+- Token tied to one document + one customer + one WA number; expire ~48h.
+- Server-side Accept only; never trust client amount/name/hash.
+- Rate-limit Accept API; HTTPS; RLS on tables.
+- Short-lived signed URL if previewing PDF on page; page may use HTML summary (mobile-friendly) plus optional PDF view.
+- No OTP in v1 (WhatsApp delivery is enough).
+
+## Audit to store on Accept
+
+`document_id`, `customer_id`, WA number, PDF SHA-256 (original), version, confirmation timestamp, IP/UA if appropriate, unique confirmation id, status, WA message id if available.
+
+## Out of scope / do not do
+
+- Require drawn signature.
+- Treat print/screenshot of preview page as original.
+- Skip authenticity fingerprint on the **original** PDF send (keep existing hash + verify code rules).
+- Merge to main / Netlify deploy unless user asks.
+
+## Build trigger
+
+User says e.g. “build document accept” / “build the accept page”. Then implement tables, `/c/:token` page, Netlify confirm function, wire send after job/doc finalize.

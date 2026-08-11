@@ -1,6 +1,6 @@
 # WhatsApp cold templates — live preview (Eleven RO & Hydrogen RO)
 
-Generated: **11 Aug 2026, 3:02 pm IST** · WABA `1854517668845707`
+Generated: **11 Aug 2026, 9:33 pm IST** · WABA `1854517668845707`
 
 How to read this doc:
 - **Message** = what the customer sees in WhatsApp (sample vars filled: Rahul, amounts, dates).
@@ -13,6 +13,7 @@ How to read this doc:
 | Main line | 9880693311 | 8884944288 |
 | Website | elevenro.com | hydrogenro.com |
 | Pay now link | elevenro.com/p/{code} | hydrogenro.com/p/{code} |
+| Accept link | elevenro.com/c/{token} | hydrogenro.com/c/{token} |
 
 ---
 
@@ -55,7 +56,7 @@ Tap Pay now below or reply on this chat if you have already paid.
 
 #### `svc_booking_cancelled_ero_v2`
 
-Meta status: `PENDING` UTILITY
+Meta status: `APPROVED` UTILITY
 
 **Message**
 
@@ -69,7 +70,7 @@ Hi Rahul, your Eleven RO water purifier service booking for Tue 12 Aug, 2:00 PM 
 
 #### `svc_booking_confirmed_ero_v2`
 
-Meta status: `PENDING` UTILITY
+Meta status: `APPROVED` UTILITY
 
 **Message**
 
@@ -374,6 +375,39 @@ Hi Rahul, your Eleven RO water purifier service visit scheduled for Tue 12 Aug, 
 
 ---
 
+### Doc accept preview (Accept → original)
+
+#### `svc_doc_accept_preview_ero_v4`
+
+Meta status: `PENDING` UTILITY
+
+📎 **PDF attached** (document header — bill / invoice / AMC / etc.)
+
+**Message**
+
+```
+Hi Rahul, 👋
+📄 This is a PREVIEW of your AMC agreement from Eleven RO.
+
+⚠️ This file is for review only. It is not the final original document and is not valid for claims or official records.
+
+✅ Tap Accept below to review and accept the terms and conditions. After you accept, we will send the original document to this WhatsApp chat.
+
+💬 If you have any questions, reply on this chat.
+
+Thank you for choosing Eleven RO.
+Call:
+9880693311
+Email:
+mail@elevenro.com
+Website:
+elevenro.com
+```
+
+**Buttons:** **Call us** → `+919880693311` · **Accept** → https://elevenro.com/c/Ab3xY9kLmN2pQ8rT
+
+---
+
 ### Existing customer book
 
 #### `existing_service_schedule_ero_cta_v2`
@@ -410,7 +444,7 @@ Hi Poorna Shetty, Your Water Purifier Service is completed. Amount of INR 1500 h
 
 #### `svc_job_done_ero_v3`
 
-Meta status: `PENDING` UTILITY
+Meta status: `APPROVED` UTILITY
 
 **Message**
 
@@ -593,7 +627,7 @@ Hi Rahul, your water purifier service is due around Tue 12 Aug 2026. Reply BOOK 
 
 #### `svc_service_due_ero_cta`
 
-Meta status: `PENDING` UTILITY
+Meta status: `APPROVED` UTILITY
 
 **Message**
 
@@ -786,7 +820,7 @@ Tap Pay now below or reply on this chat if you have already paid.
 
 #### `svc_booking_cancelled_hro_v2`
 
-Meta status: `PENDING` UTILITY
+Meta status: `APPROVED` UTILITY
 
 **Message**
 
@@ -800,7 +834,7 @@ Hi Rahul, your Hydrogen RO water purifier service booking for Tue 12 Aug, 2:00 P
 
 #### `svc_booking_confirmed_hro_v2`
 
-Meta status: `PENDING` UTILITY
+Meta status: `APPROVED` UTILITY
 
 **Message**
 
@@ -1105,6 +1139,39 @@ Hi Rahul, your Hydrogen RO water purifier service visit scheduled for Tue 12 Aug
 
 ---
 
+### Doc accept preview (Accept → original)
+
+#### `svc_doc_accept_preview_hro_v4`
+
+Meta status: `PENDING` UTILITY
+
+📎 **PDF attached** (document header — bill / invoice / AMC / etc.)
+
+**Message**
+
+```
+Hi Rahul, 👋
+📄 This is a PREVIEW of your AMC agreement from Hydrogen RO.
+
+⚠️ This file is for review only. It is not the final original document and is not valid for claims or official records.
+
+✅ Tap Accept below to review and accept the terms and conditions. After you accept, we will send the original document to this WhatsApp chat.
+
+💬 If you have any questions, reply on this chat.
+
+Thank you for choosing Hydrogen RO.
+Call:
+8884944288
+Email:
+mail@hydrogenro.com
+Website:
+hydrogenro.com
+```
+
+**Buttons:** **Call us** → `+918884944288` · **Accept** → https://hydrogenro.com/c/Ab3xY9kLmN2pQ8rT
+
+---
+
 ### Existing customer book
 
 #### `existing_service_schedule_hro_cta_v2`
@@ -1141,7 +1208,7 @@ Hi Poorna Shetty, Your Water Purifier Service is completed. Amount of INR 1500 h
 
 #### `svc_job_done_hro_v3`
 
-Meta status: `PENDING` UTILITY
+Meta status: `APPROVED` UTILITY
 
 **Message**
 
@@ -1324,7 +1391,7 @@ Hi Rahul, your water purifier service is due around Tue 12 Aug 2026. Reply BOOK 
 
 #### `svc_service_due_hro_cta`
 
-Meta status: `PENDING` UTILITY
+Meta status: `APPROVED` UTILITY
 
 **Message**
 
@@ -1498,7 +1565,7 @@ Hi Rahul, your AMC for your water purifier is due to end on 31 Dec 2026. Reply o
 
 #### `svc_ask_flat`
 
-Meta status: `PENDING` UTILITY
+Meta status: `APPROVED` UTILITY
 
 **Message**
 
@@ -1512,7 +1579,7 @@ Hi Rahul, this is Eleven RO Water Filter Service. Please reply with your buildin
 
 #### `svc_ask_location`
 
-Meta status: `PENDING` UTILITY
+Meta status: `APPROVED` UTILITY
 
 **Message**
 
@@ -1526,7 +1593,7 @@ Hi Rahul, this is Eleven RO Water Filter Service. Please share your Google Maps 
 
 #### `svc_ask_photo`
 
-Meta status: `PENDING` UTILITY
+Meta status: `APPROVED` UTILITY
 
 **Message**
 
@@ -1570,7 +1637,7 @@ Hi Rahul, your service bill is attached. Reply on this chat if you need any help
 
 #### `svc_hello`
 
-Meta status: `PENDING` UTILITY
+Meta status: `APPROVED` UTILITY
 
 **Message**
 

@@ -94,6 +94,58 @@ const APPROVED_ALIASES = {
 const SAMPLE_PDF =
   'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf';
 
+/** Meta app id (from system-user token) — used to upload DOCUMENT header samples. */
+const META_APP_ID = process.env.WHATSAPP_APP_ID || process.env.META_APP_ID || '1728855588331996';
+
+let cachedSamplePdfHandle = '';
+
+/** Tiny valid PDF bytes for Meta template DOCUMENT header examples. */
+function samplePdfBytes() {
+  return Buffer.from(
+    '%PDF-1.1\n1 0 obj<<>>endobj\n2 0 obj<< /Length 44 >>stream\nBT /F1 12 Tf 100 700 Td (Preview sample) Tj ET\nendstream\nendobj\n3 0 obj<< /Type /Page /Parent 4 0 R /Contents 2 0 R >>endobj\n4 0 obj<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 612 792] >>endobj\n5 0 obj<< /Type /Catalog /Pages 4 0 R >>endobj\nxref\n0 6\n0000000000 65535 f \ntrailer<< /Size 6 /Root 5 0 R >>\nstartxref\n0\n%%EOF\n'
+  );
+}
+
+/**
+ * Meta rejects public PDF URLs for DOCUMENT header examples — upload via App Uploads API.
+ * Returns a handle like `4:…` for components[].example.header_handle.
+ */
+async function uploadTemplateSamplePdfHandle(token) {
+  if (cachedSamplePdfHandle) return cachedSamplePdfHandle;
+  const pdf = samplePdfBytes();
+  const start = await fetch(`https://graph.facebook.com/${GRAPH}/${META_APP_ID}/uploads`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      file_length: pdf.length,
+      file_type: 'application/pdf',
+      file_name: 'doc-accept-preview-sample.pdf',
+    }),
+  });
+  const startJ = await start.json().catch(() => ({}));
+  if (!start.ok || !startJ.id) {
+    throw new Error(`Sample PDF upload session failed: ${JSON.stringify(startJ)}`);
+  }
+  const up = await fetch(`https://graph.facebook.com/${GRAPH}/${startJ.id}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `OAuth ${token}`,
+      file_offset: '0',
+      'Content-Type': 'application/octet-stream',
+    },
+    body: pdf,
+  });
+  const upJ = await up.json().catch(() => ({}));
+  if (!up.ok || !upJ.h) {
+    throw new Error(`Sample PDF upload failed: ${JSON.stringify(upJ)}`);
+  }
+  cachedSamplePdfHandle = upJ.h;
+  return cachedSamplePdfHandle;
+}
+
 /** Core transactional UTILITY bodies (no marketing language). */
 const CORE_TEMPLATES = [
   {
@@ -680,6 +732,50 @@ function buildDocPdfV2Templates() {
 
 const DOC_PDF_V2_TEMPLATES = buildDocPdfV2Templates();
 
+/**
+ * Preview PDF → Accept terms → original PDF (DOCUMENT header).
+ * Buttons: Call us + Accept only (no Text us / wa.me).
+ * Light emojis for readability; keep UTILITY tone (no promo/celebration spam).
+ */
+function letterFooterBlockNoTextUs(brand) {
+  return [
+    `Thank you for choosing ${brand.label}.`,
+    `Call:\n${brand.phone}`,
+    `Email:\n${brand.email}`,
+    `Website:\n${brand.webHost}`,
+  ].join('\n');
+}
+
+function buildDocAcceptPreviewTemplates() {
+  const out = [];
+  for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
+    const callPhone = suffix === 'hro' ? CALL_PHONE_HYDROGEN : CALL_PHONE_ELEVEN;
+    const footer = letterFooterBlockNoTextUs(b);
+    out.push({
+      callPhone,
+      websiteUrl: b.website,
+      acceptUrl: `${b.website}/c/{{1}}`,
+      name: `svc_doc_accept_preview_${suffix}_v4`,
+      body: [
+        `Hi {{1}}, 👋`,
+        `📄 This is a PREVIEW of your {{2}} from ${b.label}.`,
+        ``,
+        `⚠️ This file is for review only. It is not the final original document and is not valid for claims or official records.`,
+        ``,
+        `✅ Tap Accept below to review and accept the terms and conditions. After you accept, we will send the original document to this WhatsApp chat.`,
+        ``,
+        `💬 If you have any questions, reply on this chat.`,
+        ``,
+        footer,
+      ].join('\n'),
+      examples: ['Rahul', 'AMC agreement'],
+    });
+  }
+  return out;
+}
+
+const DOC_ACCEPT_PREVIEW_TEMPLATES = buildDocAcceptPreviewTemplates();
+
 /** UTILITY schedule / callback CTAs — no booking_confirmed_*_cta (use svc_booking_confirmed_* phone-only). */
 const BOOKING_TEMPLATES = [
   {
@@ -940,6 +1036,45 @@ function docPdfPayload(t) {
   };
 }
 
+/** Preview PDF attached + Accept → /c/{token}. Call us only (no Text us / wa.me). */
+function docAcceptPreviewPayloadSync(t, headerHandle = SAMPLE_PDF) {
+  const callPhone = t.callPhone || callPhoneForTemplate(t.name);
+  const acceptUrl =
+    t.acceptUrl ||
+    `${(t.websiteUrl || websiteUrlForTemplate(t.name) || 'https://hydrogenro.com').replace(/\/$/, '')}/c/{{1}}`;
+  const buttons = [
+    { type: 'PHONE_NUMBER', text: 'Call us', phone_number: callPhone },
+    { type: 'URL', text: 'Accept', url: acceptUrl, example: ['Ab3xY9kLmN2pQ8rT'] },
+  ];
+  return {
+    name: t.name,
+    language: 'en',
+    category: 'UTILITY',
+    allow_category_change: true,
+    components: [
+      {
+        type: 'HEADER',
+        format: 'DOCUMENT',
+        example: { header_handle: [headerHandle] },
+      },
+      {
+        type: 'BODY',
+        text: t.body,
+        example: { body_text: [t.examples] },
+      },
+      {
+        type: 'BUTTONS',
+        buttons,
+      },
+    ],
+  };
+}
+
+async function docAcceptPreviewPayload(t, token) {
+  const headerHandle = token ? await uploadTemplateSamplePdfHandle(token) : SAMPLE_PDF;
+  return docAcceptPreviewPayloadSync(t, headerHandle);
+}
+
 function bookOnlyPayload(t) {
   const buttons = [];
   if (t.bookUrl) {
@@ -1042,7 +1177,7 @@ function buttonsPreview(payload) {
     .map((b) => {
       if (b.type === 'PHONE_NUMBER') return `**Call us** → \`${b.phone_number}\``;
       if (b.type === 'URL') {
-        const url = String(b.url || '').replace('{{1}}', 'pay123456');
+        const url = String(b.url || '').replace('{{1}}', /\/c\//.test(b.url || '') ? 'Ab3xY9kLmN2pQ8rT' : 'pay123456');
         return `**${b.text || 'Link'}** → ${url}`;
       }
       if (b.type === 'QUICK_REPLY') return `Quick reply: **${b.text}**`;
@@ -1095,6 +1230,10 @@ function collectAllTemplatePreviewEntries() {
   for (const t of WFS_ASK_LOC_TEMPLATES) push('WFS ask location', t, letterPayload);
   for (const t of WFS_ASK_LOC_SIMPLE_TEMPLATES) push('WFS ask location (short)', t, letterPayload);
   for (const t of DOC_PDF_V2_TEMPLATES) push('Cold PDF v2', t, docPdfPayload);
+  for (const t of DOC_ACCEPT_PREVIEW_TEMPLATES) {
+    // Preview MD does not need a live Meta media handle.
+    push('Doc accept preview (Accept → original)', t, (x) => docAcceptPreviewPayloadSync(x));
+  }
 
   return entries.sort((a, b) => {
     const bg = a.brand.localeCompare(b.brand);
@@ -1135,6 +1274,7 @@ async function writeColdTemplatePreviewMarkdown(token) {
     '| Main line | 9880693311 | 8884944288 |',
     '| Website | elevenro.com | hydrogenro.com |',
     '| Pay now link | elevenro.com/p/{code} | hydrogenro.com/p/{code} |',
+    '| Accept link | elevenro.com/c/{token} | hydrogenro.com/c/{token} |',
     '',
     '---',
     '',
@@ -1392,6 +1532,25 @@ async function main() {
       continue;
     }
     queue.push({ label: t.name, payload: docPdfPayload(t) });
+  }
+  for (const t of DOC_ACCEPT_PREVIEW_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({
+      label: t.name,
+      payload: await docAcceptPreviewPayload(t, doSubmit ? token : ''),
+    });
+  }
+
+  const onlyDocAccept = process.argv.includes('--only-doc-accept');
+  if (onlyDocAccept) {
+    const keep = new Set(DOC_ACCEPT_PREVIEW_TEMPLATES.map((t) => t.name));
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
   }
 
   console.log(`\n${doSubmit ? 'Submitting' : 'Would submit'} ${queue.length} template(s)\n`);
