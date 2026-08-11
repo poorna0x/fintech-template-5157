@@ -64,10 +64,10 @@ function coldAskLocationParams(brand, customerName) {
   const b = String(brand || '').toLowerCase();
   const templateName =
     b === 'elevenro'
-      ? 'svc_wfs_ask_loc_ero_v3'
+      ? 'svc_wfs_ask_loc_from_ero_v1'
       : b === 'hydrogenro'
-        ? 'svc_wfs_ask_loc_hro_v3'
-        : 'svc_wfs_ask_loc_v3';
+        ? 'svc_wfs_ask_loc_from_hro_v1'
+        : 'svc_wfs_ask_loc_from_v1';
   return {
     name: templateName,
     languageCode: 'en',
@@ -230,11 +230,11 @@ function coldTemplateForAction(action, brand, customerName, hasCustomer) {
     const suffix =
       brand === 'elevenro' ? 'ero' : brand === 'hydrogenro' ? 'hro' : null;
     const primaryName = suffix
-      ? suffix === 'ero'
-        ? 'svc_wfs_ask_name_simple_ero_v2'
-        : 'svc_wfs_ask_name_simple_hro_v1'
+      ? `svc_wfs_ask_name_simple_${suffix}_v2`
       : 'svc_wfs_ask_name_simple_v2';
-    const fallbackName = suffix ? `svc_wfs_ask_name_${suffix}_v1` : 'svc_wfs_ask_name_v2';
+    const fallbackName = suffix
+      ? `svc_wfs_ask_name_${suffix}_v2`
+      : 'svc_wfs_ask_name_v2';
     return {
       primary: {
         name: primaryName,

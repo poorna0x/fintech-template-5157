@@ -188,26 +188,24 @@ export function resolveWfsAskNameTemplateName(ctx: WhatsAppQuickReplyContext): s
   if (ctx.skipBrandLabel || !ctx.brand) return 'svc_wfs_ask_name_simple_v2';
   return ctx.brand === 'elevenro'
     ? 'svc_wfs_ask_name_simple_ero_v2'
-    : 'svc_wfs_ask_name_simple_hro_v1';
+    : 'svc_wfs_ask_name_simple_hro_v2';
 }
 
-/** Longer ask-name copy (option 2). */
+/** Longer ask-name copy (option 2) — UTILITY v2 (avoid “Hi from”). */
 export function resolveWfsAskNameLongTemplateName(ctx: WhatsAppQuickReplyContext): string {
   if (ctx.skipBrandLabel || !ctx.brand) return 'svc_wfs_ask_name_v2';
-  return ctx.brand === 'elevenro' ? 'svc_wfs_ask_name_ero_v1' : 'svc_wfs_ask_name_hro_v1';
+  return ctx.brand === 'elevenro' ? 'svc_wfs_ask_name_ero_v2' : 'svc_wfs_ask_name_hro_v2';
 }
 
 export function askNameTemplateFallbackNames(): string[] {
+  // Prefer UTILITY v2 only — Meta reclassifies “Hi from …” *_v1 as MARKETING
   return [
+    'svc_wfs_ask_name_simple_hro_v2',
     'svc_wfs_ask_name_simple_ero_v2',
-    'svc_wfs_ask_name_simple_hro_v1',
     'svc_wfs_ask_name_simple_v2',
-    'svc_wfs_ask_name_simple_v1',
-    'svc_wfs_ask_name_simple_ero_v1',
-    'svc_wfs_ask_name_hro_v1',
-    'svc_wfs_ask_name_ero_v1',
+    'svc_wfs_ask_name_hro_v2',
+    'svc_wfs_ask_name_ero_v2',
     'svc_wfs_ask_name_v2',
-    'svc_wfs_ask_name_v1',
   ];
 }
 
@@ -215,10 +213,12 @@ export function isAskNameTemplateName(name: string): boolean {
   return /^svc_wfs_ask_name(_simple)?(_(hro|ero))?(_v\d+)?$/i.test(String(name || '').trim());
 }
 
-/** Cold ask location — prefer v3 (Share location QR + light emoji) → v1 Call us + Website. */
+/** Cold ask location — prefer “from Water Filter Service” + Share location CTA. */
 export function resolveWfsAskLocTemplateName(ctx: WhatsAppQuickReplyContext): string {
-  if (ctx.skipBrandLabel || !ctx.brand) return 'svc_wfs_ask_loc_v3';
-  return ctx.brand === 'elevenro' ? 'svc_wfs_ask_loc_ero_v3' : 'svc_wfs_ask_loc_hro_v3';
+  if (ctx.skipBrandLabel || !ctx.brand) return 'svc_wfs_ask_loc_from_v1';
+  return ctx.brand === 'elevenro'
+    ? 'svc_wfs_ask_loc_from_ero_v1'
+    : 'svc_wfs_ask_loc_from_hro_v1';
 }
 
 /** Shorter cold ask location — prefer v3 Share location QR. */
@@ -236,6 +236,9 @@ export function isAskLocationTemplateName(name: string): boolean {
 
 export function askLocationTemplateFallbackNames(): string[] {
   return [
+    'svc_wfs_ask_loc_from_v1',
+    'svc_wfs_ask_loc_from_hro_v1',
+    'svc_wfs_ask_loc_from_ero_v1',
     'svc_wfs_ask_loc_v3',
     'svc_wfs_ask_loc_hro_v3',
     'svc_wfs_ask_loc_ero_v3',
@@ -324,13 +327,18 @@ export const WHATSAPP_QUICK_TEXT_REPLIES: WhatsAppQuickTextReply[] = [
     label: 'Ask location',
     group: 'request',
     instant: true,
-    text: (ctx) =>
-      [
-        `Hi ${cleanName(ctx)}, this is ${waterFilterServiceFromLabel(ctx)}.`,
-        'Please share your Google Maps location pin on this chat so we can continue your water filter service request.',
+    text: (ctx) => {
+      const who = waterFilterServiceFromLabel(ctx);
+      return [
+        `Hi ${cleanName(ctx)}, 👋`,
         '',
-        'Tap *Send location* below when the button appears.',
-      ].join('\n'),
+        `from ${who}.`,
+        '',
+        '📍 To serve you better we need your exact location. Please share your Google Maps location pin on this chat.',
+        '',
+        'Tap *Send location* below 👇',
+      ].join('\n');
+    },
   },
   {
     id: 'share_location_lead',
@@ -739,7 +747,7 @@ export const WHATSAPP_QUICK_TEMPLATE_REPLIES: WhatsAppQuickTemplateReply[] = [
     id: 'tpl_ask_name',
     label: 'Ask name',
     group: 'request',
-    templateName: 'svc_wfs_ask_name_simple_hro_v1',
+    templateName: 'svc_wfs_ask_name_simple_hro_v2',
     language: 'en',
     bodyParams: () => [],
     resolveTemplateName: (ctx) => resolveWfsAskNameTemplateName(ctx),
@@ -748,7 +756,7 @@ export const WHATSAPP_QUICK_TEMPLATE_REPLIES: WhatsAppQuickTemplateReply[] = [
     id: 'tpl_ask_name_long',
     label: 'Ask name (long)',
     group: 'request',
-    templateName: 'svc_wfs_ask_name_hro_v1',
+    templateName: 'svc_wfs_ask_name_hro_v2',
     language: 'en',
     bodyParams: () => [],
     resolveTemplateName: (ctx) => resolveWfsAskNameLongTemplateName(ctx),
@@ -1047,9 +1055,11 @@ export function filterQuickTemplatesByApproved(
     }
     if (r.id === 'tpl_ask_name_long') {
       return [
+        'svc_wfs_ask_name_hro_v2',
+        'svc_wfs_ask_name_ero_v2',
+        'svc_wfs_ask_name_v2',
         'svc_wfs_ask_name_hro_v1',
         'svc_wfs_ask_name_ero_v1',
-        'svc_wfs_ask_name_v2',
         'svc_wfs_ask_name_v1',
       ].some((n) => approvedNames.has(resolveWaTemplateName(n)));
     }

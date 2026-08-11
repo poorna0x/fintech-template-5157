@@ -233,7 +233,7 @@ export const WA_COLD = {
     bodyParams: (customerName: string) => [cleanName(customerName)],
   },
   ask_location: {
-    name: 'svc_wfs_ask_loc_hro_v3',
+    name: 'svc_wfs_ask_loc_from_v1',
     language: 'en',
     bodyParams: (customerName: string) => [cleanName(customerName)],
   },
@@ -260,12 +260,12 @@ export const WA_COLD = {
   },
   /** Hi from brand WFS → please share your name (short option 1). */
   ask_name: {
-    name: 'svc_wfs_ask_name_simple_hro_v1',
+    name: 'svc_wfs_ask_name_simple_hro_v2',
     language: 'en',
     bodyParams: () => [],
   },
   ask_name_long: {
-    name: 'svc_wfs_ask_name_hro_v1',
+    name: 'svc_wfs_ask_name_hro_v2',
     language: 'en',
     bodyParams: () => [],
   },
@@ -587,7 +587,7 @@ export const WA_COLD_LABELS: Record<keyof typeof WA_COLD, string> = {
   wfs_hi_from: 'Hi from WFS (svc_wfs_hi_from_{hro|ero|generic})',
   wfs_simple_hi: 'Simple WFS Hi (svc_wfs_hi_{hro|ero|generic})',
   wfs_collect: 'WFS collect info (svc_wfs_collect_* → location + photo flow)',
-  ask_location: 'Ask location (svc_wfs_ask_loc_*_v3 → Share location QR + light emoji)',
+  ask_location: 'Ask location (svc_wfs_ask_loc_from_* → Share location CTA + from WFS)',
   ask_location_simple: 'Ask location short (svc_wfs_ask_loc_simple_*_v3 → Share location QR)',
   ask_photo: 'Ask photo (svc_ask_photo)',
   ask_flat: 'Ask flat (svc_ask_flat)',

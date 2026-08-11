@@ -84,6 +84,10 @@ const MARKETING_DELETE_NAMES = [
   // Ask-name “Hi from …” flagged MARKETING
   'svc_wfs_ask_name_v1',
   'svc_wfs_ask_name_simple_ero_v1',
+  'svc_wfs_ask_name_hro_v1',
+  'svc_wfs_ask_name_ero_v1',
+  'svc_wfs_ask_name_simple_hro_v1',
+  'svc_wfs_ask_name_simple_v1', // “Hi from Water Filter Service”
 ];
 
 /** Code name → already-approved Meta name (do not re-submit under old name). */
@@ -453,21 +457,23 @@ const WFS_COLLECT_TEMPLATES = [
  */
 const WFS_ASK_NAME_TEMPLATES = [
   {
-    name: 'svc_wfs_ask_name_hro_v1',
+    // was svc_wfs_ask_name_hro_v1 (MARKETING)
+    name: 'svc_wfs_ask_name_hro_v2',
     body: [
-      'Hi from Hydrogen RO Water Filter Service. 👋',
+      'This is Hydrogen RO Water Filter Service. 👋',
       '',
-      'Please reply with your full name on this chat so we can assist you.',
+      'Please reply with your full name on this chat so we can continue your water purifier service request.',
     ].join('\n'),
     examples: [],
     noButtons: true,
   },
   {
-    name: 'svc_wfs_ask_name_ero_v1',
+    // was svc_wfs_ask_name_ero_v1 (MARKETING)
+    name: 'svc_wfs_ask_name_ero_v2',
     body: [
-      'Hi from Eleven RO Water Filter Service. 👋',
+      'This is Eleven RO Water Filter Service. 👋',
       '',
-      'Please reply with your full name on this chat so we can assist you.',
+      'Please reply with your full name on this chat so we can continue your water purifier service request.',
     ].join('\n'),
     examples: [],
     noButtons: true,
@@ -491,11 +497,12 @@ const WFS_ASK_NAME_TEMPLATES = [
  */
 const WFS_ASK_NAME_SIMPLE_TEMPLATES = [
   {
-    name: 'svc_wfs_ask_name_simple_hro_v1',
+    // was svc_wfs_ask_name_simple_hro_v1 (MARKETING)
+    name: 'svc_wfs_ask_name_simple_hro_v2',
     body: [
-      'Hi from Hydrogen RO Water Filter Service. 👋',
+      'This is Hydrogen RO Water Filter Service. 👋',
       '',
-      'Please share your name on this chat.',
+      'Please share your full name on this chat so we can continue your water purifier service request.',
     ].join('\n'),
     examples: [],
     noButtons: true,
@@ -511,16 +518,7 @@ const WFS_ASK_NAME_SIMPLE_TEMPLATES = [
     examples: [],
     noButtons: true,
   },
-  {
-    name: 'svc_wfs_ask_name_simple_v1',
-    body: [
-      'Hi from Water Filter Service. 👋',
-      '',
-      'Please share your name on this chat.',
-    ].join('\n'),
-    examples: [],
-    noButtons: true,
-  },
+  // svc_wfs_ask_name_simple_v1 (“Hi from…”) → MARKETING; do not resubmit — use _v2
   {
     name: 'svc_wfs_ask_name_simple_v2',
     body: [
@@ -643,6 +641,52 @@ const WFS_ASK_LOC_SIMPLE_V2_TEMPLATES = [
       'Hi {{1}}, 👋',
       '📍 Please share your Google Maps location pin on this chat.',
       '— Water Filter Service',
+      '',
+      'Tap Share location below 👇',
+    ].join('\n'),
+    examples: ['Rahul'],
+  },
+];
+
+/**
+ * Ask location “from Water Filter Service” — matches Quick customer / WFS intro style.
+ * Call us + Share location CTA + light emojis. Generic + both brands.
+ */
+const WFS_ASK_LOC_FROM_TEMPLATES = [
+  {
+    name: 'svc_wfs_ask_loc_from_v1',
+    body: [
+      'Hi {{1}}, 👋',
+      '',
+      'from Water Filter Service.',
+      '',
+      '📍 To serve you better we need your exact location. Please share your Google Maps location pin on this chat.',
+      '',
+      'Tap Share location below 👇',
+    ].join('\n'),
+    examples: ['Rahul'],
+  },
+  {
+    name: 'svc_wfs_ask_loc_from_hro_v1',
+    body: [
+      'Hi {{1}}, 👋',
+      '',
+      'from Hydrogen RO Water Filter Service.',
+      '',
+      '📍 To serve you better we need your exact location. Please share your Google Maps location pin on this chat.',
+      '',
+      'Tap Share location below 👇',
+    ].join('\n'),
+    examples: ['Rahul'],
+  },
+  {
+    name: 'svc_wfs_ask_loc_from_ero_v1',
+    body: [
+      'Hi {{1}}, 👋',
+      '',
+      'from Eleven RO Water Filter Service.',
+      '',
+      '📍 To serve you better we need your exact location. Please share your Google Maps location pin on this chat.',
       '',
       'Tap Share location below 👇',
     ].join('\n'),
@@ -1804,6 +1848,9 @@ function collectAllTemplatePreviewEntries() {
   for (const t of WFS_ASK_LOC_SIMPLE_V2_TEMPLATES) {
     push('WFS ask location short v2 (Share location)', t, askLocShareLocationPayload);
   }
+  for (const t of WFS_ASK_LOC_FROM_TEMPLATES) {
+    push('WFS ask location from WFS (Share location)', t, askLocShareLocationPayload);
+  }
   for (const t of DOC_PDF_V2_TEMPLATES) push('Cold PDF v2', t, docPdfPayloadSync);
   for (const t of DOC_DIRECT_LETTER_TEMPLATES) {
     push('Direct PDF letter (any doc, no Accept)', t, docPdfPayloadSync);
@@ -1927,7 +1974,11 @@ async function main() {
 
   if (deleteMarketing && token) {
     console.log('\nDeleting MARKETING / blocked templates…\n');
-    for (const name of MARKETING_DELETE_NAMES) {
+    const liveMarketing = all
+      .filter((t) => String(t.category || '').toUpperCase() === 'MARKETING')
+      .map((t) => t.name);
+    const toDelete = [...new Set([...MARKETING_DELETE_NAMES, ...liveMarketing])];
+    for (const name of toDelete) {
       const row = byName.get(name);
       if (!row) {
         console.log(`SKIP delete ${name} — not on WABA`);
@@ -2194,6 +2245,14 @@ async function main() {
     }
     queue.push({ label: t.name, payload: askLocShareLocationPayload(t) });
   }
+  for (const t of WFS_ASK_LOC_FROM_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: askLocShareLocationPayload(t) });
+  }
   for (const t of DOC_PDF_V2_TEMPLATES) {
     const skip = shouldSkip(t.name, byName);
     if (skip) {
@@ -2298,6 +2357,14 @@ async function main() {
       ...WFS_ASK_LOC_V2_TEMPLATES.map((t) => t.name),
       ...WFS_ASK_LOC_SIMPLE_V2_TEMPLATES.map((t) => t.name),
     ]);
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
+  const onlyAskLocFrom = process.argv.includes('--only-ask-loc-from');
+  if (onlyAskLocFrom) {
+    const keep = new Set(WFS_ASK_LOC_FROM_TEMPLATES.map((t) => t.name));
     for (let i = queue.length - 1; i >= 0; i -= 1) {
       if (!keep.has(queue[i].label)) queue.splice(i, 1);
     }

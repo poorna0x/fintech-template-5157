@@ -324,6 +324,20 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader) {
     push('svc_hello', [name]);
   }
 
+  // Ask location “from WFS” → v3 → v2 → v1
+  if (/^svc_wfs_ask_loc_from_(hro|ero)_v1$/i.test(primaryName)) {
+    const suffix = /_hro_/i.test(primaryName) ? 'hro' : 'ero';
+    push('svc_wfs_ask_loc_from_v1', [name]);
+    push(`svc_wfs_ask_loc_${suffix}_v3`, [name]);
+    push(`svc_wfs_ask_loc_${suffix}_v2`, [name]);
+    push(`svc_wfs_ask_loc_${suffix}`, [name]);
+  }
+  if (/^svc_wfs_ask_loc_from_v1$/i.test(primaryName)) {
+    push('svc_wfs_ask_loc_v3', [name]);
+    push('svc_wfs_ask_loc_v2', [name]);
+    push('svc_wfs_ask_loc', [name]);
+  }
+
   // Ask location v3 (Share location + emoji) → v2 → v1 → legacy
   if (/^svc_wfs_ask_loc_simple_(hro|ero)_v3$/i.test(primaryName)) {
     const suffix = /_hro_v3$/i.test(primaryName) ? 'hro' : 'ero';
@@ -380,24 +394,21 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader) {
     push(VISIT, [name, 'please share your Google Maps location pin on this chat']);
   }
 
-  // Ask name (no body vars) — simple v2 → simple v1 → long → smoke
-  if (/^svc_wfs_ask_name_simple_ero_v2$/i.test(primaryName)) {
-    push('svc_wfs_ask_name_simple_ero_v1', []);
+  // Ask name (no body vars) — UTILITY v2 only (avoid “Hi from” *_v1 MARKETING)
+  if (/^svc_wfs_ask_name_simple_(hro|ero)_v2$/i.test(primaryName)) {
+    const suffix = /_hro_/i.test(primaryName) ? 'hro' : 'ero';
     push('svc_wfs_ask_name_simple_v2', []);
-    push('svc_wfs_ask_name_ero_v1', []);
+    push(`svc_wfs_ask_name_${suffix}_v2`, []);
     push(SMOKE, [name || 'there']);
   }
   if (/^svc_wfs_ask_name_simple_(hro|ero)_v1$/i.test(primaryName)) {
     const suffix = /_hro_/i.test(primaryName) ? 'hro' : 'ero';
-    if (suffix === 'ero') push('svc_wfs_ask_name_simple_ero_v2', []);
+    push(`svc_wfs_ask_name_simple_${suffix}_v2`, []);
     push('svc_wfs_ask_name_simple_v2', []);
-    push('svc_wfs_ask_name_simple_v1', []);
-    push(`svc_wfs_ask_name_${suffix}_v1`, []);
-    push('svc_wfs_ask_name_v2', []);
+    push(`svc_wfs_ask_name_${suffix}_v2`, []);
     push(SMOKE, [name || 'there']);
   }
   if (/^svc_wfs_ask_name_simple_v2$/i.test(primaryName)) {
-    push('svc_wfs_ask_name_simple_v1', []);
     push('svc_wfs_ask_name_v2', []);
     push(SMOKE, [name || 'there']);
   }
@@ -406,13 +417,17 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader) {
     push('svc_wfs_ask_name_v2', []);
     push(SMOKE, [name || 'there']);
   }
-  if (/^svc_wfs_ask_name_(hro|ero)_v1$/i.test(primaryName)) {
+  if (/^svc_wfs_ask_name_(hro|ero)_v2$/i.test(primaryName)) {
     push('svc_wfs_ask_name_v2', []);
-    push('svc_wfs_ask_name_v1', []);
+    push(SMOKE, [name || 'there']);
+  }
+  if (/^svc_wfs_ask_name_(hro|ero)_v1$/i.test(primaryName)) {
+    const suffix = /_hro_/i.test(primaryName) ? 'hro' : 'ero';
+    push(`svc_wfs_ask_name_${suffix}_v2`, []);
+    push('svc_wfs_ask_name_v2', []);
     push(SMOKE, [name || 'there']);
   }
   if (/^svc_wfs_ask_name_v2$/i.test(primaryName)) {
-    push('svc_wfs_ask_name_v1', []);
     push(SMOKE, [name || 'there']);
   }
   if (/^svc_wfs_ask_name_v1$/i.test(primaryName)) {
