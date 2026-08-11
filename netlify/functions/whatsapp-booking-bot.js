@@ -39,33 +39,45 @@ function buildAskLocationBodyText(customerName, fromLabel) {
   const name = String(customerName || 'there').trim() || 'there';
   const who = String(fromLabel || WATER_FILTER_SERVICE_LABEL).trim() || WATER_FILTER_SERVICE_LABEL;
   return [
-    `Hi ${name}, this is ${who}. Please share your Google Maps location pin on this chat so we can continue your water filter service request.`,
+    `Hi ${name}, 👋`,
+    `This is ${who}.`,
     '',
-    'Tap *Send location* below.',
+    '📍 Please share your Google Maps location pin on this chat so we can continue your water filter service request.',
+    '',
+    'Tap *Send location* below 👇',
   ].join('\n');
 }
 
-/** Tools → Quick customer — lead source in body; no extra Meta template (24h interactive). */
-function buildQuickCustomerLocationBodyText(customerName, leadSource, brand) {
+/**
+ * Tools → Quick customer / WFS — optional lead/intro line (no double "Hi").
+ * Empty whatsappLeadLine → skip intro; CRM lead_source is separate.
+ */
+function buildQuickCustomerLocationBodyText(customerName, whatsappLeadLine, brand) {
   const name = String(customerName || 'there').trim() || 'there';
-  const ls = String(leadSource || LEAD_SOURCE).trim() || LEAD_SOURCE;
   const who = waterFilterServiceLabelForBrand(brand);
-  return [
-    `Hi ${name},`,
+  const intro = String(whatsappLeadLine || '').trim();
+  const lines = [`Hi ${name}, 👋`, ''];
+  if (intro) {
+    lines.push(`Hi from *${intro}* — ${who}.`, '');
+  } else {
+    lines.push(`This is ${who}.`, '');
+  }
+  lines.push(
+    '📍 To serve you better we need your *exact location*. Please share your Google Maps location pin on this chat.',
     '',
-    `Hi from *${ls}* — ${who}.`,
-    '',
-    'To serve you better we need your *exact location*. Please share your Google Maps location pin on this chat.',
-    '',
-    'Tap *Send location* below.',
-  ].join('\n');
+    'Tap *Send location* below 👇'
+  );
+  return lines.join('\n');
 }
 
 function buildLocationRequestBodyText(state = {}) {
   const name = String(state.name || 'Customer').trim() || 'Customer';
-  const leadSource = String(state.leadSource || '').trim();
-  if (leadSource && state.waterFilterService) {
-    return buildQuickCustomerLocationBodyText(name, leadSource, state.brand);
+  if (state.waterFilterService) {
+    const mention =
+      state.whatsappLeadLine != null
+        ? String(state.whatsappLeadLine).trim()
+        : String(state.leadSource || '').trim();
+    return buildQuickCustomerLocationBodyText(name, mention, state.brand);
   }
   return buildAskLocationBodyText(name, waterFilterServiceLabelForBrand(state.brand));
 }
@@ -112,6 +124,13 @@ function resolveGreetingIntent({ id, title, text } = {}) {
   const blob = `${id || ''} ${title || ''} ${text || ''}`.toLowerCase().trim();
   if (!blob) return null;
   if (
+    /\bshare_location\b/.test(blob) ||
+    /\bshare location\b/.test(blob) ||
+    /^share location$/.test(String(title || '').trim().toLowerCase())
+  ) {
+    return 'request_location';
+  }
+  if (
     /\bbook_reinstall\b/.test(blob) ||
     /\breinstall/.test(blob) ||
     /^reinstallation$/.test(String(title || '').trim().toLowerCase())
@@ -127,8 +146,11 @@ function resolveGreetingIntent({ id, title, text } = {}) {
   }
   if (
     /\bbook_service\b/.test(blob) ||
+    /\bbook_now\b/.test(blob) ||
+    /\bbook now\b/.test(blob) ||
     /\bservice\s*\/\s*repair\b/.test(blob) ||
     /^service\/repair$/.test(String(title || '').trim().toLowerCase()) ||
+    /^book now$/.test(String(title || '').trim().toLowerCase()) ||
     /^\s*book(ing)?\s*$/.test(String(text || '').trim().toLowerCase())
   ) {
     return 'book_service';
@@ -899,7 +921,7 @@ async function hasOpenCustomerServiceWindow(db, phoneE164) {
 /**
  * Admin inbox quick action while 24h window is open.
  * @param {{ db: any, accessToken: string, phoneNumberId: string, to: string }} ctx
- * @param {'book_service'|'request_location'|'request_photo'|'water_filter_service'|'book_location_photo'} action
+ * @param {'book_service'|'request_location'|'request_photo'|'request_building_flat'|'request_name'|'water_filter_service'|'book_location_photo'} action
  * @param {{ customerName?: string, leadSource?: string }} [opts]
  */
 async function startAdminQuickAction(ctx, action, opts = {}) {
@@ -912,6 +934,26 @@ async function startAdminQuickAction(ctx, action, opts = {}) {
 
   if (act === 'book_location_photo') {
     return startBookLocationPhoto(ctx, opts);
+  }
+
+  if (act === 'request_name') {
+    await askCustomerName(ctx, {
+      startedByAdmin: true,
+      askNameOnly: true,
+      brand: opts.brand,
+    });
+    return { ok: true, started: 'request_name' };
+  }
+
+  if (act === 'request_building_flat') {
+    const customer = await lookupCustomerFull(ctx.db, ctx.to);
+    const name = String(opts.customerName || customer?.full_name || '').trim();
+    await askBuildingFlat(ctx, {
+      startedByAdmin: true,
+      name: name || undefined,
+      customerName: name || undefined,
+    });
+    return { ok: true, started: 'request_building_flat' };
   }
 
   if (act === 'book_service') {
@@ -943,8 +985,12 @@ async function startAdminQuickAction(ctx, action, opts = {}) {
       needNewLocation: true,
       startedByAdmin: true,
     });
-    const locBody = String(opts.leadSource || '').trim()
-      ? buildQuickCustomerLocationBodyText(name, opts.leadSource, opts.brand)
+    const locBody = String(opts.whatsappLeadLine || opts.leadSource || '').trim()
+      ? buildQuickCustomerLocationBodyText(
+          name,
+          opts.whatsappLeadLine != null ? opts.whatsappLeadLine : opts.leadSource,
+          opts.brand
+        )
       : buildAskLocationBodyText(name, fromLabel);
     const loc = await sendLocationRequest({
       ...ctx,
@@ -970,6 +1016,13 @@ async function startWaterFilterServiceBooking(ctx, opts = {}) {
     String((await lookupCustomerFull(ctx.db, ctx.to))?.full_name || '').trim() ||
     'Customer';
   const leadSource = resolveLeadSource(opts.leadSource);
+  // Empty string = skip WhatsApp intro; omit field → skip (do not force Direct call on WA).
+  const whatsappLeadLine =
+    opts.whatsappLeadLine != null
+      ? String(opts.whatsappLeadLine).trim().slice(0, 80)
+      : opts.includeLeadOnWhatsApp === true
+        ? leadSource
+        : '';
   const existing = await lookupCustomerFull(ctx.db, ctx.to);
   const existingId =
     String(opts.customerId || opts.existingCustomerId || '').trim() || existing?.id || null;
@@ -995,6 +1048,7 @@ async function startWaterFilterServiceBooking(ctx, opts = {}) {
     serviceLabel,
     name,
     leadSource,
+    whatsappLeadLine,
     startedByAdmin: true,
     waterFilterService: true,
     needNewLocation: true,
@@ -1340,6 +1394,8 @@ async function resumeSessionStyleFromPending(ctx, pendingAction, interactive, te
         : pending === 'book_service' ||
             pending === 'request_location' ||
             pending === 'request_photo' ||
+            pending === 'request_building_flat' ||
+            pending === 'request_name' ||
             pending === 'water_filter_service' ||
             pending === 'book_location_photo'
           ? pending
@@ -1364,6 +1420,7 @@ async function resumeSessionStyleFromPending(ctx, pendingAction, interactive, te
       customerName: seed.name || seed.customerName,
       name: seed.name || seed.customerName,
       leadSource: seed.leadSource,
+      whatsappLeadLine: seed.whatsappLeadLine != null ? seed.whatsappLeadLine : '',
       brand: seed.brand,
       existingCustomerId: seed.existingCustomerId,
       customerId: seed.existingCustomerId,
@@ -1395,6 +1452,28 @@ async function resumeSessionStyleFromPending(ctx, pendingAction, interactive, te
     });
     return { ok: true };
   }
+  if (intent === 'request_location' || pending === 'request_location') {
+    return startAdminQuickAction(ctx, 'request_location', {
+      customerName: seed.name || seed.customerName,
+      brand: seed.brand,
+      leadSource: seed.leadSource,
+    });
+  }
+  if (intent === 'request_name' || pending === 'request_name') {
+    const replyName = String(text || '').trim();
+    if (replyName && isValidPersonName(replyName) && !interactive?.id) {
+      await finishAdminNameOnly(ctx, {
+        name: replyName,
+        askNameOnly: true,
+        startedByAdmin: true,
+        brand: seed.brand,
+      });
+      return { ok: true };
+    }
+    return startAdminQuickAction(ctx, 'request_name', {
+      brand: seed.brand,
+    });
+  }
   if (intent === 'talk_team' || pending === 'talk_team') {
     const customer = await lookupCustomerFull(ctx.db, ctx.to);
     const prefill = buildAdminHandoffPrefill({
@@ -1417,8 +1496,17 @@ async function resumeSessionStyleFromPending(ctx, pendingAction, interactive, te
     });
     return { ok: true };
   }
-  if (pending === 'request_location' || pending === 'request_photo') {
-    return startAdminQuickAction(ctx, pending);
+  if (
+    pending === 'request_location' ||
+    pending === 'request_photo' ||
+    pending === 'request_building_flat' ||
+    pending === 'request_name'
+  ) {
+    return startAdminQuickAction(ctx, pending, {
+      customerName: seed.name || seed.customerName,
+      brand: seed.brand,
+      leadSource: seed.leadSource,
+    });
   }
   // show_menu / unknown — identical interactive greeting as in-session Hi
   const customer = await lookupCustomerFull(ctx.db, ctx.to);
@@ -1644,9 +1732,37 @@ async function askLocConfirm(ctx, state, locSummary) {
     : state?.reinstallUpdateLocation || state?.serviceSubType === 'Reinstallation'
       ? '\n\n_We’ll update your saved address with this pin._'
       : '';
+  const lat = state?.loc?.lat;
+  const lng = state?.loc?.lng;
+  const mapsUrl =
+    lat != null && lng != null && Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))
+      ? `https://www.google.com/maps?q=${Number(lat)},${Number(lng)}`
+      : '';
+
+  const detailBody = [
+    '📍 *Location received*',
+    short ? short.trimEnd() : null,
+    `*${locLine}*`,
+    secondaryNote ? secondaryNote.trim() : null,
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  // Native Open map button (CTA) — reply buttons cannot open Maps.
+  if (mapsUrl) {
+    await sendCtaUrl({
+      ...ctx,
+      bodyText: `${detailBody}\n\nTap *Open map* to check this pin on Google Maps.`,
+      displayText: 'Open map',
+      url: mapsUrl,
+    });
+  }
+
   await sendButtons({
     ...ctx,
-    bodyText: `Location received:\n${short}*${locLine}*${secondaryNote}\n\nIs this correct?`,
+    bodyText: mapsUrl
+      ? 'Is this location correct?'
+      : `${detailBody}\n\nIs this correct?`,
     footer: 'Confirm location',
     buttons: [
       { id: 'loc_yes', title: 'Yes, correct' },
@@ -1659,18 +1775,61 @@ async function askLocConfirm(ctx, state, locSummary) {
 /** After location confirm — building / flat / house no (skippable). */
 async function askBuildingFlat(ctx, state = {}) {
   await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_building_flat' });
+  let name = String(state.name || state.customerName || '').trim();
+  if (!name) {
+    const customer = await lookupCustomerFull(ctx.db, ctx.to);
+    name = String(customer?.full_name || '').trim();
+  }
+  const hi = name ? `Hi ${name}, ` : '';
   await sendButtons({
     ...ctx,
     bodyText: [
-      'Please reply with your *building / flat / house number* (e.g. Flat 302, Block B).',
+      `${hi}please reply with your *building / flat / house number* (e.g. Flat 302, Block B).`,
       '',
-      'Or tap *Skip* if you don’t have one.',
+      'If you don’t have one, tap *Skip* below.',
     ].join('\n'),
     footer: BRAND_LABEL,
     buttons: [
       { id: 'skip_building', title: 'Skip' },
       { id: 'talk_team', title: 'Chat with us' },
     ],
+  });
+}
+
+/** Admin: Hi from brand Water Filter Service → collect full name only. */
+async function askCustomerName(ctx, state = {}) {
+  const who = waterFilterServiceLabelForBrand(state.brand);
+  await setBookingState(ctx.db, ctx.to, {
+    ...state,
+    step: 'await_name',
+    askNameOnly: true,
+    startedByAdmin: true,
+  });
+  await sendText({
+    ...ctx,
+    text: [
+      `Hi from ${who}. 👋`,
+      '',
+      'Please share your name on this chat.',
+    ].join('\n'),
+  });
+}
+
+async function finishAdminNameOnly(ctx, state) {
+  const name = String(state.name || '').trim();
+  const customer = await lookupCustomerFull(ctx.db, ctx.to);
+  if (customer?.id && name) {
+    const { error } = await ctx.db.from('customers').update({ full_name: name }).eq('id', customer.id);
+    if (error) {
+      console.error('[whatsapp-booking-bot] name update failed:', error.message);
+    }
+  }
+  await clearBookingState(ctx.db, ctx.to);
+  await sendText({
+    ...ctx,
+    text: name
+      ? `Thank you, *${name}*. We’ve saved your name.`
+      : 'Thank you — we’ve saved your name.',
   });
 }
 
@@ -2380,6 +2539,18 @@ async function handleBookingBotInbound({
     return { handled: true };
   }
 
+  // Cold "Share location" quick reply (or typed) without pending seed → Send location.
+  if (
+    resolveGreetingIntent({
+      id: interactive?.id,
+      title: interactive?.title,
+      text,
+    }) === 'request_location'
+  ) {
+    await startAdminQuickAction(ctx, 'request_location');
+    return { handled: true };
+  }
+
   // After booking: free-form messages → human WhatsApp (buttons / edit / new Hi still work).
   const midActiveFlow =
     Boolean(state?.editing) || (state?.step && ACTIVE_BOOKING_STEPS.has(state.step));
@@ -2517,6 +2688,10 @@ async function handleBookingBotInbound({
     const next = { ...state, step: 'await_location', name: text.trim() };
     if (state.editing) {
       await resumeAfterEdit(ctx, { ...next, step: state.step });
+      return { handled: true };
+    }
+    if (state.askNameOnly || (state.startedByAdmin && !state.serviceSubType && !state.waterFilterService)) {
+      await finishAdminNameOnly(ctx, next);
       return { handled: true };
     }
     await askLocationForNew(ctx, next);
@@ -3440,7 +3615,7 @@ async function handleBookingBotInbound({
       return { handled: true };
     }
 
-    if (customer?.id && /^\s*book(ing)?\s*$/i.test(text.trim())) {
+    if (customer?.id && /^\s*(book(ing)?|book\s*now)\s*$/i.test(text.trim())) {
       await clearBookingState(db, to);
       await beginExistingCustomerDateBooking(ctx, {
         serviceSubType: 'Repair',

@@ -17,7 +17,21 @@ alwaysApply: true
 6. Send **ORIGINAL** PDF on WhatsApp (seal + authenticity hash + confirmation id).
 7. **Do not store PDF bytes forever** — store hash + audit; generate/send on demand (temp object URL OK).
 
-## Meta templates (already in submit script + registry)
+## Direct PDF (no Accept) — use for normal WhatsApp PDF sends
+
+Separate from Accept. Letter + light emojis; DOCUMENT header; Call us + Website.
+
+| Kind | Eleven | Hydrogen |
+|------|--------|----------|
+| Any label | `svc_doc_direct_ero_v1` | `svc_doc_direct_hro_v1` |
+| Per-kind | `svc_doc_{bill\|invoice\|amc\|…}_ero_v3` | `svc_doc_*_hro_v3` |
+
+- Direct: `{{1}}` name, `{{2}}` doc label (“AMC agreement”, …).
+- Per-kind v3: `{{1}}` name only; fixed copy per type.
+- CRM: `sendColdDocumentInvite` / `resolveDirectDocTemplate` / `resolveColdDocTemplateName` — **never** accept-preview for normal sends.
+- Submit: `node scripts/submit-whatsapp-full-utility.mjs --submit --only-doc-direct`
+
+## Accept-preview Meta templates (submitted; page not built yet)
 
 | Brand | Name |
 |-------|------|

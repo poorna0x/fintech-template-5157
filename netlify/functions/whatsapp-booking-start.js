@@ -24,6 +24,8 @@ const ACTIONS = new Set([
   'book_service',
   'request_location',
   'request_photo',
+  'request_building_flat',
+  'request_name',
   'water_filter_service',
   'book_location_photo',
 ]);
@@ -62,10 +64,10 @@ function coldAskLocationParams(brand, customerName) {
   const b = String(brand || '').toLowerCase();
   const templateName =
     b === 'elevenro'
-      ? 'svc_wfs_ask_loc_ero'
+      ? 'svc_wfs_ask_loc_ero_v3'
       : b === 'hydrogenro'
-        ? 'svc_wfs_ask_loc_hro'
-        : 'svc_wfs_ask_loc';
+        ? 'svc_wfs_ask_loc_hro_v3'
+        : 'svc_wfs_ask_loc_v3';
   return {
     name: templateName,
     languageCode: 'en',
@@ -201,6 +203,58 @@ function coldTemplateForAction(action, brand, customerName, hasCustomer) {
     };
   }
 
+  if (action === 'request_building_flat') {
+    return {
+      primary: {
+        name: 'svc_ask_flat',
+        languageCode: 'en',
+        bodyParams: [name, waterFilterFromLabel(brand)],
+        seedPending: 'request_building_flat',
+      },
+      fallback: {
+        name: 'svc_visit_reminder',
+        languageCode: 'en',
+        bodyParams: [name, 'please reply with your building / flat number, or Skip'],
+        seedPending: 'request_building_flat',
+      },
+      fallback2: {
+        name: 'svc_smoke_update',
+        languageCode: 'en',
+        bodyParams: [name],
+        seedPending: 'request_building_flat',
+      },
+    };
+  }
+
+  if (action === 'request_name') {
+    const suffix =
+      brand === 'elevenro' ? 'ero' : brand === 'hydrogenro' ? 'hro' : null;
+    const primaryName = suffix
+      ? `svc_wfs_ask_name_simple_${suffix}_v1`
+      : 'svc_wfs_ask_name_simple_v1';
+    const fallbackName = suffix ? `svc_wfs_ask_name_${suffix}_v1` : 'svc_wfs_ask_name_v1';
+    return {
+      primary: {
+        name: primaryName,
+        languageCode: 'en',
+        bodyParams: [],
+        seedPending: 'request_name',
+      },
+      fallback: {
+        name: fallbackName,
+        languageCode: 'en',
+        bodyParams: [],
+        seedPending: 'request_name',
+      },
+      fallback2: {
+        name: 'svc_wfs_ask_name_simple_v1',
+        languageCode: 'en',
+        bodyParams: [],
+        seedPending: 'request_name',
+      },
+    };
+  }
+
   if (action === 'water_filter_service') {
     const ask = coldAskLocationParams(brand, customerName);
     const collect = coldWfsCollectParams(brand, customerName);
@@ -296,7 +350,7 @@ exports.handler = async (event) => {
   if (!ACTIONS.has(action)) {
     return json(400, headers, {
       error:
-        'action must be book_service, request_location, request_photo, water_filter_service, or book_location_photo',
+        'action must be book_service, request_location, request_photo, request_building_flat, request_name, water_filter_service, or book_location_photo',
     });
   }
 
@@ -332,6 +386,13 @@ exports.handler = async (event) => {
   let customerName = String(body.customerName || '').trim();
   let brand = body.brand === 'elevenro' ? 'elevenro' : body.brand === 'hydrogenro' ? 'hydrogenro' : null;
   const leadSource = String(body.leadSource || body.lead_source || '').trim() || 'Direct call';
+  const whatsappLeadLineRaw = body.whatsappLeadLine ?? body.whatsapp_lead_line;
+  const whatsappLeadLine =
+    whatsappLeadLineRaw != null
+      ? String(whatsappLeadLineRaw).trim().slice(0, 80)
+      : body.includeLeadOnWhatsApp === true || body.include_lead_on_whatsapp === true
+        ? leadSource
+        : '';
   const serviceSubType =
     String(body.serviceSubType || body.service_sub_type || '').trim() || 'Repair';
   const serviceLabel =
@@ -365,6 +426,7 @@ exports.handler = async (event) => {
   const actionOpts = {
     customerName,
     leadSource,
+    whatsappLeadLine,
     serviceSubType,
     serviceLabel,
     leadCost,
@@ -441,6 +503,7 @@ exports.handler = async (event) => {
     name: customerName,
     customerName,
     leadSource,
+    whatsappLeadLine,
     serviceSubType,
     serviceLabel,
     leadCost,

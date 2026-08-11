@@ -5,7 +5,13 @@
 import { resolveSupabaseAccessTokenForApi } from '@/lib/ensureSupabaseSession';
 import { formatPhoneForWhatsApp } from '@/lib/utils';
 import type { DocumentBrand } from '@/lib/service-brands';
-import { coldDocBodyParams, coldDocTemplateForKind } from '@/lib/whatsappColdTemplates';
+import {
+  coldDocBodyParams,
+  coldDocTemplateForKind,
+  coldDocTemplateSlug,
+  directDocBodyParams,
+  resolveDirectDocTemplate,
+} from '@/lib/whatsappColdTemplates';
 import { resolveWaTemplateName } from '@/lib/whatsappTemplateResolve';
 import type { WhatsAppSendSource } from '@/lib/whatsappCrmSettings';
 
@@ -585,8 +591,9 @@ export type SendColdDocumentInviteOptions = {
 };
 
 /**
- * Cold PDF outside 24h: send DOCUMENT-header Utility template with the PDF attached
- * (no "reply YES" invite). Requires per-doc `svc_doc_*_{ero|hro}_v2` or fallback `svc_doc_pdf_v2`.
+ * Cold PDF outside 24h: DOCUMENT-header Utility with PDF attached (direct send — no Accept).
+ * Prefer per-kind svc_doc_*_v3 → svc_doc_direct_* (any label) → v2 → svc_doc_pdf_v2.
+ * Custom / generic label uses svc_doc_direct_* immediately.
  */
 export async function sendColdDocumentInvite(
   options: SendColdDocumentInviteOptions
@@ -595,6 +602,30 @@ export async function sendColdDocumentInvite(
   if (!pdfBase64) {
     return { ok: false, error: 'PDF required for cold document send' };
   }
+  const customLabel = String(options.documentLabel || '').trim();
+  const useDirect =
+    Boolean(customLabel) || coldDocTemplateSlug(options.kind) === 'generic';
+
+  if (useDirect) {
+    const meta = resolveDirectDocTemplate(options.brand);
+    return sendAdminWhatsAppTemplate({
+      to: options.to,
+      templateName: meta.name,
+      languageCode: meta.language,
+      bodyParams: directDocBodyParams(
+        options.customerName,
+        options.kind,
+        options.documentLabel
+      ),
+      headerDocument: {
+        pdfBase64,
+        filename: options.filename || 'document.pdf',
+      },
+      customerId: options.customerId,
+      source: options.source || 'documents',
+    });
+  }
+
   const meta = coldDocTemplateForKind(options.kind, options.brand);
   return sendAdminWhatsAppTemplate({
     to: options.to,

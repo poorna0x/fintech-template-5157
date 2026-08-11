@@ -49,6 +49,10 @@ export type WhatsAppQuickRepliesBarProps = {
   onRequestLocation?: () => void | Promise<void>;
   /** 24h window: ask purifier photo step */
   onRequestPhoto?: () => void | Promise<void>;
+  /** 24h window: ask building / flat with Skip button */
+  onRequestBuildingFlat?: () => void | Promise<void>;
+  /** 24h window: Hi from WFS → ask full name */
+  onRequestName?: () => void | Promise<void>;
   /** 24h window: Water Filter Service flow (location → date → photo) */
   onStartWaterFilterService?: () => void | Promise<void>;
   insertMode?: 'replace' | 'append';
@@ -154,6 +158,8 @@ export function WhatsAppQuickRepliesBar({
   onStartBookLocationPhoto,
   onRequestLocation,
   onRequestPhoto,
+  onRequestBuildingFlat,
+  onRequestName,
   onStartWaterFilterService,
   insertMode = 'replace',
 }: WhatsAppQuickRepliesBarProps) {
@@ -200,6 +206,18 @@ export function WhatsAppQuickRepliesBar({
       void onRequestPhoto();
       return;
     }
+    if (windowOpen && item.id === 'share_flat' && onRequestBuildingFlat) {
+      void onRequestBuildingFlat();
+      return;
+    }
+    if (windowOpen && item.id === 'ask_name' && onRequestName) {
+      void onRequestName();
+      return;
+    }
+    if (windowOpen && item.id === 'ask_name_long' && onRequestName) {
+      void onRequestName();
+      return;
+    }
     const text = item.text(context);
     if (item.instant) {
       handleText(text, true);
@@ -240,6 +258,18 @@ export function WhatsAppQuickRepliesBar({
     }
     if (windowOpen && reply.id === 'tpl_ask_photo' && onRequestPhoto) {
       await onRequestPhoto();
+      return;
+    }
+    if (windowOpen && reply.id === 'tpl_ask_flat' && onRequestBuildingFlat) {
+      await onRequestBuildingFlat();
+      return;
+    }
+    if (windowOpen && reply.id === 'tpl_ask_name' && onRequestName) {
+      await onRequestName();
+      return;
+    }
+    if (windowOpen && reply.id === 'tpl_ask_name_long' && onRequestName) {
+      await onRequestName();
       return;
     }
     const payload = buildQuickTemplateSend(reply, context);
@@ -351,6 +381,10 @@ export function WhatsAppQuickRepliesBar({
     const ok =
       !approvedTemplateNames?.size ||
       approvedTemplateNames.has(payload.templateName) ||
+      approvedTemplateNames.has('svc_booking_cancelled_letter_ero_v5') ||
+      approvedTemplateNames.has('svc_booking_cancelled_letter_hro_v5') ||
+      approvedTemplateNames.has('svc_booking_cancelled_letter_ero_v4') ||
+      approvedTemplateNames.has('svc_booking_cancelled_letter_hro_v4') ||
       approvedTemplateNames.has('svc_booking_cancelled_letter_ero_v3') ||
       approvedTemplateNames.has('svc_booking_cancelled_letter_hro_v3') ||
       approvedTemplateNames.has('svc_booking_cancelled_letter_ero_v2') ||
@@ -413,6 +447,10 @@ export function WhatsAppQuickRepliesBar({
 
   const showBookingCancelledTpl =
     !approvedTemplateNames?.size ||
+    approvedTemplateNames.has('svc_booking_cancelled_letter_ero_v5') ||
+    approvedTemplateNames.has('svc_booking_cancelled_letter_hro_v5') ||
+    approvedTemplateNames.has('svc_booking_cancelled_letter_ero_v4') ||
+    approvedTemplateNames.has('svc_booking_cancelled_letter_hro_v4') ||
     approvedTemplateNames.has('svc_booking_cancelled_letter_ero_v3') ||
     approvedTemplateNames.has('svc_booking_cancelled_letter_hro_v3') ||
     approvedTemplateNames.has('svc_booking_cancelled_letter_ero_v2') ||

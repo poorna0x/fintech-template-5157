@@ -155,16 +155,25 @@ export function buildJobCompletionWhatsAppMessage(input: JobCompletionMessageInp
   }
 
   return [
-    `Hi ${customerName},`,
-    `This is an update from ${contact.brandLabel} regarding your completed water purifier service.`,
+    `Hi ${customerName}, 👋`,
+    `This is an update from ${contact.brandLabel} regarding your completed water purifier service. ✅`,
     '',
-    ...amountLines,
+    ...amountLines.map((line) => {
+      if (/^Amount collected today/i.test(line)) return `💰 ${line}`;
+      if (/^Amount collected/i.test(line)) return `💰 ${line}`;
+      if (/^Balance pending/i.test(line)) return `⏳ ${line}`;
+      if (/^Invoice \/ Job/i.test(line)) return `🧾 ${line}`;
+      return line;
+    }),
     '',
-    ...brandLetterClosingLines(input.documentBrand, { skipChatHint: true }),
+    ...brandLetterClosingLines(input.documentBrand, {
+      skipChatHint: true,
+      includeTextUs: false,
+    }),
     '',
     pending > 0 && (payLink || upiId)
-      ? 'Reply on this chat if you need any help or if you have already paid.'
-      : 'Reply on this chat if you need any help.',
+      ? '💬 Reply on this chat if you need any help or if you have already paid.'
+      : '💬 Reply on this chat if you need any help.',
   ].join('\n');
 }
 
@@ -219,25 +228,25 @@ export function formatJobCompletionColdTemplatePreview(
   const contact = brandContactLines(input.documentBrand);
   const [name, amount, jobRef] = buildJobCompletionLetterBodyParams(input);
   return [
-    `Hi ${name},`,
-    `This is an update from ${contact.brandLabel} regarding your completed water purifier service.`,
+    `Hi ${name}, 👋`,
+    `This is an update from ${contact.brandLabel} regarding your completed water purifier service. ✅`,
     '',
-    `Amount collected: INR ${amount}`,
-    `Invoice / Job: ${jobRef}`,
+    `💰 Amount collected: INR ${amount}`,
+    `🧾 Invoice / Job: ${jobRef}`,
     '',
-    ...brandLetterClosingLines(input.documentBrand, { includeTextUs: true }),
+    ...brandLetterClosingLines(input.documentBrand, { includeTextUs: false }),
     '',
-    'Reply on this chat if you need any help.',
+    '💬 Reply on this chat if you need any help.',
   ].join('\n');
 }
 
-/** Letter UTILITY (newline footer + Call us / Text us). Prefer v3 when APPROVED. */
+/** Letter UTILITY (newline footer + Call us / Website). Prefer v4 when APPROVED. */
 export function resolveJobCompletionLetterTemplateName(brand: DocumentBrand): string {
-  return resolveBrandLetterTemplateName('job_done', brand, 'v3');
+  return resolveBrandLetterTemplateName('job_done', brand, 'v4');
 }
 
 export function resolveJobCompletionLetterTemplateFallbackName(brand: DocumentBrand): string {
-  return resolveBrandLetterTemplateName('job_done', brand, 'v2');
+  return resolveBrandLetterTemplateName('job_done', brand, 'v3');
 }
 
 export function resolveJobCompletionLetterTemplateLegacyName(brand: DocumentBrand): string {

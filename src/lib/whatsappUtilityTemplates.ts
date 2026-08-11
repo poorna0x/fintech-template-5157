@@ -85,11 +85,11 @@ export function resolveColdUnregisteredNumber(
 }
 
 export function visitCancelledTemplateName(brand: DocumentBrand): string {
-  return resolveBrandLetterTemplateName('booking_cancelled', brand, 'v3');
+  return resolveBrandLetterTemplateName('booking_cancelled', brand, 'v5');
 }
 
 export function visitCancelledTemplateFallbackName(brand: DocumentBrand): string {
-  return resolveBrandLetterTemplateName('booking_cancelled', brand, 'v2');
+  return resolveBrandLetterTemplateName('booking_cancelled', brand, 'v4');
 }
 
 export function resolveColdVisitCancelled(
@@ -187,13 +187,13 @@ export function buildVisitCancelledWhatsAppMessage(
   const when = String(whenLabel || '').trim() || 'your scheduled visit';
   return [
     `Hi ${cleanName(customerName)},`,
-    `This is an update from ${label} regarding your service booking.`,
+    `This is an update from ${label} regarding your water purifier service booking.`,
     '',
-    `Booking for ${when} has been cancelled.`,
-    '',
-    'Reply BOOK on this chat to reschedule — we will ask for a new date and time.',
+    `Your booking for ${when} has been cancelled.`,
     '',
     ...brandLetterClosingLines(brand, { includeTextUs: false }),
+    '',
+    'Reply on this chat if you need any help.',
   ].join('\n');
 }
 

@@ -74,8 +74,8 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader) {
     attempts.push({ name, params, headerComponents });
   };
 
-  // DOCUMENT-header cold PDF v2 → legacy svc_doc_pdf_v2 → smoke (no attachment)
-  if (hasDocHeader || /^svc_doc_/i.test(primaryName)) {
+  // DOCUMENT-header cold PDF — v3 letter → direct (any label) → v2 → svc_doc_pdf_v2
+  if (hasDocHeader || /^svc_doc_/i.test(primaryName) || /^svc_doc_direct_/i.test(primaryName)) {
     const labelMap = {
       bill: 'service bill',
       invoice: 'tax invoice',
@@ -85,9 +85,26 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader) {
       receipt: 'payment receipt',
       generic: 'document',
     };
-    const slugMatch = String(primaryName || '').match(/^svc_doc_([a-z]+)_(ero|hro)_v2$/i);
-    if (slugMatch) {
-      const slug = slugMatch[1].toLowerCase();
+    const v3Match = String(primaryName || '').match(/^svc_doc_([a-z]+)_(ero|hro)_v3$/i);
+    const v2Match = String(primaryName || '').match(/^svc_doc_([a-z]+)_(ero|hro)_v2$/i);
+    const directMatch = String(primaryName || '').match(/^svc_doc_direct_(ero|hro)_v1$/i);
+    const labelFromParams = String(bodyParams?.[1] || '').trim();
+
+    if (v3Match) {
+      const slug = v3Match[1].toLowerCase();
+      const suffix = v3Match[2].toLowerCase();
+      const label = labelFromParams || labelMap[slug] || 'document';
+      push(`svc_doc_direct_${suffix}_v1`, [name, label]);
+      push(`svc_doc_${slug}_${suffix}_v2`, [name]);
+      push('svc_doc_pdf_v2', [name, label]);
+    } else if (directMatch) {
+      const suffix = directMatch[1].toLowerCase();
+      const label = labelFromParams || 'document';
+      push(`svc_doc_generic_${suffix}_v3`, [name]);
+      push(`svc_doc_generic_${suffix}_v2`, [name]);
+      push('svc_doc_pdf_v2', [name, label]);
+    } else if (v2Match) {
+      const slug = v2Match[1].toLowerCase();
       push('svc_doc_pdf_v2', [name, labelMap[slug] || 'document']);
     }
     push(SMOKE, [name]);
@@ -98,11 +115,15 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader) {
     push(MISSED_CALL, [name]);
   }
 
-  // Job-done letter v3 → v2 → v1 → short svc_job_done
-  if (/^svc_job_done_letter_(ero|hro)(_v3|_v2)?$/i.test(primaryName)) {
+  // Job-done letter v4 (emoji) → v3 → v2 → v1 → short svc_job_done
+  if (/^svc_job_done_letter_(ero|hro)(_v4|_v3|_v2)?$/i.test(primaryName)) {
     const suffix = /_hro/.test(primaryName) ? 'hro' : 'ero';
     const amount = String(bodyParams?.[1] || '0').replace(/[^\d.]/g, '') || '0';
-    if (/_v3$/i.test(primaryName)) {
+    if (/_v4$/i.test(primaryName)) {
+      push(`svc_job_done_letter_${suffix}_v3`, bodyParams.slice(0, 3).map(String));
+      push(`svc_job_done_letter_${suffix}_v2`, bodyParams.slice(0, 3).map(String));
+      push(`svc_job_done_letter_${suffix}`, bodyParams.slice(0, 3).map(String));
+    } else if (/_v3$/i.test(primaryName)) {
       push(`svc_job_done_letter_${suffix}_v2`, bodyParams.slice(0, 3).map(String));
       push(`svc_job_done_letter_${suffix}`, bodyParams.slice(0, 3).map(String));
     } else if (/_v2$/i.test(primaryName)) {
@@ -123,11 +144,29 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader) {
     push(JOB_DONE, [name, amount]);
   }
 
-  // Balance-due letter v4 → v3 → v2 → v1 → short svc_balance_due
-  if (/^svc_balance_due_letter_(ero|hro)(_v4|_v3|_v2)?$/i.test(primaryName)) {
+  // Job-done plain v2 (emoji, no buttons) → plain v1
+  if (/^svc_job_done_letter_(ero|hro)_plain_v2$/i.test(primaryName)) {
+    const suffix = /_hro/.test(primaryName) ? 'hro' : 'ero';
+    push(`svc_job_done_letter_${suffix}_plain_v1`, bodyParams.slice(0, 3).map(String));
+    push(`svc_job_done_letter_${suffix}_v4`, bodyParams.slice(0, 3).map(String));
+  }
+
+  // Balance-due letter v6 (emoji) → v5 → v4 → v3 → v2 → v1 → short svc_balance_due
+  if (/^svc_balance_due_letter_(ero|hro)(_v6|_v5|_v4|_v3|_v2)?$/i.test(primaryName)) {
     const suffix = /_hro/.test(primaryName) ? 'hro' : 'ero';
     const amount = String(bodyParams?.[1] || '0').replace(/[^\d.]/g, '') || '0';
-    if (/_v4$/i.test(primaryName)) {
+    if (/_v6$/i.test(primaryName)) {
+      push(`svc_balance_due_letter_${suffix}_v5`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}_v4`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}_v3`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}_v2`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}`, bodyParams.slice(0, 4).map(String));
+    } else if (/_v5$/i.test(primaryName)) {
+      push(`svc_balance_due_letter_${suffix}_v4`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}_v3`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}_v2`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}`, bodyParams.slice(0, 4).map(String));
+    } else if (/_v4$/i.test(primaryName)) {
       push(`svc_balance_due_letter_${suffix}_v3`, bodyParams.slice(0, 4).map(String));
       push(`svc_balance_due_letter_${suffix}_v2`, bodyParams.slice(0, 4).map(String));
       push(`svc_balance_due_letter_${suffix}`, bodyParams.slice(0, 4).map(String));
@@ -142,11 +181,15 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader) {
     push('svc_balance_due', [name, amount]);
   }
 
-  // Service-due letter v3 → v2 → v1 → Book-only CTA v2 → CTA v1 → schedule CTA → visit reminder
-  if (/^svc_service_due_letter_(ero|hro)(_v3|_v2)?$/i.test(primaryName)) {
+  // Service-due letter v4 (Book now) → v3 → v2 → v1 → Book-only CTA → schedule CTA → visit reminder
+  if (/^svc_service_due_letter_(ero|hro)(_v4|_v3|_v2)?$/i.test(primaryName)) {
     const suffix = /_hro/.test(primaryName) ? 'hro' : 'ero';
     const when = String(bodyParams?.[1] || '').trim() || 'your upcoming service visit';
-    if (/_v3$/i.test(primaryName)) {
+    if (/_v4$/i.test(primaryName)) {
+      push(`svc_service_due_letter_${suffix}_v3`, bodyParams.slice(0, 2).map(String));
+      push(`svc_service_due_letter_${suffix}_v2`, bodyParams.slice(0, 2).map(String));
+      push(`svc_service_due_letter_${suffix}`, bodyParams.slice(0, 2).map(String));
+    } else if (/_v3$/i.test(primaryName)) {
       push(`svc_service_due_letter_${suffix}_v2`, bodyParams.slice(0, 2).map(String));
       push(`svc_service_due_letter_${suffix}`, bodyParams.slice(0, 2).map(String));
     } else if (/_v2$/i.test(primaryName)) {
@@ -186,10 +229,14 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader) {
     push(VISIT, [name, 'your upcoming service visit']);
   }
 
-  // Booking confirm letter v3 → v2 → v1 → v2 → phone-only / visit confirmed
-  if (/^svc_booking_confirmed_letter_(ero|hro)(_v3|_v2)?$/i.test(primaryName)) {
+  // Booking confirm letter v4 emoji → v3 → v2 → v1 → phone-only / visit confirmed
+  if (/^svc_booking_confirmed_letter_(ero|hro)(_v4|_v3|_v2)?$/i.test(primaryName)) {
     const suffix = /_hro/.test(primaryName) ? 'hro' : 'ero';
-    if (/_v3$/i.test(primaryName)) {
+    if (/_v4$/i.test(primaryName)) {
+      push(`svc_booking_confirmed_letter_${suffix}_v3`, bodyParams.slice(0, 3).map(String));
+      push(`svc_booking_confirmed_letter_${suffix}_v2`, bodyParams.slice(0, 3).map(String));
+      push(`svc_booking_confirmed_letter_${suffix}`, bodyParams.slice(0, 3).map(String));
+    } else if (/_v3$/i.test(primaryName)) {
       push(`svc_booking_confirmed_letter_${suffix}_v2`, bodyParams.slice(0, 3).map(String));
       push(`svc_booking_confirmed_letter_${suffix}`, bodyParams.slice(0, 3).map(String));
     } else if (/_v2$/i.test(primaryName)) {
@@ -209,10 +256,19 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader) {
     push(VISIT_CONFIRMED, bodyParams.slice(0, 3).map(String));
   }
 
-  // Booking cancel letter v3 → v2 → v1 → v2 → legacy visit cancelled
-  if (/^svc_booking_cancelled_letter_(ero|hro)(_v3|_v2)?$/i.test(primaryName)) {
+  // Booking cancel letter v5 (no BOOK) → v4 → v3 → …
+  if (/^svc_booking_cancelled_letter_(ero|hro)(_v5|_v4|_v3|_v2)?$/i.test(primaryName)) {
     const suffix = /_hro/.test(primaryName) ? 'hro' : 'ero';
-    if (/_v3$/i.test(primaryName)) {
+    if (/_v5$/i.test(primaryName)) {
+      push(`svc_booking_cancelled_letter_${suffix}_v4`, bodyParams.slice(0, 2).map(String));
+      push(`svc_booking_cancelled_letter_${suffix}_v3`, bodyParams.slice(0, 2).map(String));
+      push(`svc_booking_cancelled_letter_${suffix}_v2`, bodyParams.slice(0, 2).map(String));
+      push(`svc_booking_cancelled_letter_${suffix}`, bodyParams.slice(0, 2).map(String));
+    } else if (/_v4$/i.test(primaryName)) {
+      push(`svc_booking_cancelled_letter_${suffix}_v3`, bodyParams.slice(0, 2).map(String));
+      push(`svc_booking_cancelled_letter_${suffix}_v2`, bodyParams.slice(0, 2).map(String));
+      push(`svc_booking_cancelled_letter_${suffix}`, bodyParams.slice(0, 2).map(String));
+    } else if (/_v3$/i.test(primaryName)) {
       push(`svc_booking_cancelled_letter_${suffix}_v2`, bodyParams.slice(0, 2).map(String));
       push(`svc_booking_cancelled_letter_${suffix}`, bodyParams.slice(0, 2).map(String));
     } else if (/_v2$/i.test(primaryName)) {
@@ -268,7 +324,40 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader) {
     push('svc_hello', [name]);
   }
 
-  // Ask location (Call us + Text us cold templates) → legacy svc_ask_location → visit reminder
+  // Ask location v3 (Share location + emoji) → v2 → v1 → legacy
+  if (/^svc_wfs_ask_loc_simple_(hro|ero)_v3$/i.test(primaryName)) {
+    const suffix = /_hro_v3$/i.test(primaryName) ? 'hro' : 'ero';
+    push(`svc_wfs_ask_loc_simple_${suffix}_v2`, [name]);
+    push(`svc_wfs_ask_loc_${suffix}_v3`, [name]);
+  }
+  if (/^svc_wfs_ask_loc_(hro|ero)_v3$/i.test(primaryName) || primaryName === 'svc_wfs_ask_loc_v3') {
+    const suffix = /_hro_v3$/i.test(primaryName) ? 'hro' : /_ero_v3$/i.test(primaryName) ? 'ero' : null;
+    if (suffix) {
+      push(`svc_wfs_ask_loc_${suffix}_v2`, [name]);
+      push(`svc_wfs_ask_loc_${suffix}`, [name]);
+    } else {
+      push('svc_wfs_ask_loc_v2', [name]);
+      push('svc_wfs_ask_loc', [name]);
+    }
+  }
+  if (/^svc_wfs_ask_loc_simple_v3$/i.test(primaryName)) {
+    push('svc_wfs_ask_loc_simple_v2', [name]);
+    push('svc_wfs_ask_loc_v3', [name]);
+  }
+  if (/^svc_wfs_ask_loc_simple_(hro|ero)_v2$/i.test(primaryName)) {
+    const suffix = /_hro_v2$/i.test(primaryName) ? 'hro' : 'ero';
+    push(`svc_wfs_ask_loc_simple_${suffix}`, [name]);
+    push(`svc_wfs_ask_loc_${suffix}_v2`, [name]);
+  }
+  if (/^svc_wfs_ask_loc_(hro|ero)_v2$/i.test(primaryName) || primaryName === 'svc_wfs_ask_loc_v2') {
+    const suffix = /_hro_v2$/i.test(primaryName) ? 'hro' : /_ero_v2$/i.test(primaryName) ? 'ero' : null;
+    if (suffix) push(`svc_wfs_ask_loc_${suffix}`, [name]);
+    else push('svc_wfs_ask_loc', [name]);
+  }
+  if (/^svc_wfs_ask_loc_simple_v2$/i.test(primaryName)) {
+    push('svc_wfs_ask_loc_simple', [name]);
+    push('svc_wfs_ask_loc_v2', [name]);
+  }
   if (/^svc_wfs_ask_loc_simple_(hro|ero)$/i.test(primaryName)) {
     const suffix = /_hro$/i.test(primaryName) ? 'hro' : 'ero';
     push(`svc_wfs_ask_loc_${suffix}`, [name]);
@@ -289,6 +378,26 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader) {
   }
   if (primaryName === 'svc_ask_location') {
     push(VISIT, [name, 'please share your Google Maps location pin on this chat']);
+  }
+
+  // Ask name (no body vars) — simple → long → smoke
+  if (/^svc_wfs_ask_name_simple_(hro|ero)_v1$/i.test(primaryName)) {
+    const suffix = /_hro_/i.test(primaryName) ? 'hro' : 'ero';
+    push('svc_wfs_ask_name_simple_v1', []);
+    push(`svc_wfs_ask_name_${suffix}_v1`, []);
+    push('svc_wfs_ask_name_v1', []);
+    push(SMOKE, [name || 'there']);
+  }
+  if (/^svc_wfs_ask_name_simple_v1$/i.test(primaryName)) {
+    push('svc_wfs_ask_name_v1', []);
+    push(SMOKE, [name || 'there']);
+  }
+  if (/^svc_wfs_ask_name_(hro|ero)_v1$/i.test(primaryName)) {
+    push('svc_wfs_ask_name_v1', []);
+    push(SMOKE, [name || 'there']);
+  }
+  if (/^svc_wfs_ask_name_v1$/i.test(primaryName)) {
+    push(SMOKE, [name || 'there']);
   }
 
   if (bodyParams.length >= 3) {

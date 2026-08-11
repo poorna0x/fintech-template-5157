@@ -603,10 +603,29 @@ exports.handler = async (event) => {
       svc_wfs_ask_loc: 'request_location',
       svc_wfs_ask_loc_hro: 'request_location',
       svc_wfs_ask_loc_ero: 'request_location',
+      svc_wfs_ask_loc_v2: 'request_location',
+      svc_wfs_ask_loc_hro_v2: 'request_location',
+      svc_wfs_ask_loc_ero_v2: 'request_location',
+      svc_wfs_ask_loc_v3: 'request_location',
+      svc_wfs_ask_loc_hro_v3: 'request_location',
+      svc_wfs_ask_loc_ero_v3: 'request_location',
       svc_wfs_ask_loc_simple: 'request_location',
       svc_wfs_ask_loc_simple_hro: 'request_location',
       svc_wfs_ask_loc_simple_ero: 'request_location',
+      svc_wfs_ask_loc_simple_v2: 'request_location',
+      svc_wfs_ask_loc_simple_hro_v2: 'request_location',
+      svc_wfs_ask_loc_simple_ero_v2: 'request_location',
+      svc_wfs_ask_loc_simple_v3: 'request_location',
+      svc_wfs_ask_loc_simple_hro_v3: 'request_location',
+      svc_wfs_ask_loc_simple_ero_v3: 'request_location',
       svc_ask_photo: 'request_photo',
+      svc_ask_flat: 'request_building_flat',
+      svc_wfs_ask_name_v1: 'request_name',
+      svc_wfs_ask_name_hro_v1: 'request_name',
+      svc_wfs_ask_name_ero_v1: 'request_name',
+      svc_wfs_ask_name_simple_v1: 'request_name',
+      svc_wfs_ask_name_simple_hro_v1: 'request_name',
+      svc_wfs_ask_name_simple_ero_v1: 'request_name',
       svc_wfs_hello: 'show_menu',
       svc_wfs_hello_v3: 'show_menu',
       svc_wfs_hello_hro_v2: 'show_menu',
@@ -635,9 +654,9 @@ exports.handler = async (event) => {
     };
     const tplName = String(templateSendOpts?.templateName || '').trim();
     const resolvedSeed = seedPending || (tplName ? templateSeedMap[tplName] || '' : '');
-    const seedBrand = /_ero$/i.test(tplName)
+    const seedBrand = /_ero(_|$)/i.test(tplName)
       ? 'elevenro'
-      : /_hro$/i.test(tplName)
+      : /_hro(_|$)/i.test(tplName)
         ? 'hydrogenro'
         : null;
     if (resolvedSeed && db) {
@@ -649,6 +668,7 @@ exports.handler = async (event) => {
           startedByAdmin: true,
           ...(persist.customer_id ? { existingCustomerId: persist.customer_id } : {}),
           leadSource: 'Direct call',
+          whatsappLeadLine: '',
           ...(source === 'service_reminder' ? { serviceReminder: true } : {}),
           ...(resolvedSeed === 'water_filter_service' ? { waterFilterService: true } : {}),
           ...(seedBrand ? { brand: seedBrand } : {}),

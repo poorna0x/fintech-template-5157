@@ -4,6 +4,8 @@ export type WhatsAppBookingQuickAction =
   | 'book_service'
   | 'request_location'
   | 'request_photo'
+  | 'request_building_flat'
+  | 'request_name'
   | 'water_filter_service'
   | 'book_location_photo';
 
@@ -39,6 +41,8 @@ export async function startWhatsAppBookingQuickAction(opts: {
   customerName?: string | null;
   brand?: 'hydrogenro' | 'elevenro' | null;
   leadSource?: string | null;
+  /** Optional line shown as “From *…* — Water Filter Service”. Empty = skip. */
+  whatsappLeadLine?: string | null;
   serviceSubType?: string | null;
   serviceLabel?: string | null;
   leadCost?: number | null;
@@ -66,6 +70,9 @@ export async function startWhatsAppBookingQuickAction(opts: {
         ...(opts.customerName ? { customerName: opts.customerName } : {}),
         ...(opts.brand ? { brand: opts.brand } : {}),
         ...(opts.leadSource ? { leadSource: opts.leadSource } : {}),
+        ...(opts.whatsappLeadLine != null
+          ? { whatsappLeadLine: String(opts.whatsappLeadLine).trim().slice(0, 80) }
+          : {}),
         ...(opts.serviceSubType ? { serviceSubType: opts.serviceSubType } : {}),
         ...(opts.serviceLabel ? { serviceLabel: opts.serviceLabel } : {}),
         ...(opts.leadCost != null && Number.isFinite(Number(opts.leadCost))
@@ -104,6 +111,8 @@ export async function startWaterFilterServiceBooking(opts: {
   phone: string;
   customerName: string;
   leadSource: string;
+  /** Empty / omit = skip “From …” line on WhatsApp. */
+  whatsappLeadLine?: string | null;
   brand?: 'hydrogenro' | 'elevenro' | null;
   customerId?: string | null;
   serviceSubType?: string | null;
@@ -117,6 +126,7 @@ export async function startWaterFilterServiceBooking(opts: {
     customerId: opts.customerId,
     customerName: opts.customerName,
     leadSource: opts.leadSource,
+    whatsappLeadLine: opts.whatsappLeadLine ?? '',
     brand: opts.brand,
     serviceSubType: opts.serviceSubType,
     serviceLabel: opts.serviceLabel,
@@ -130,6 +140,7 @@ export async function startQuickCustomerCreateBooking(opts: {
   phone: string;
   customerName: string;
   leadSource: string;
+  whatsappLeadLine?: string | null;
   serviceSubType: string;
   serviceLabel: string;
   leadCost: number;

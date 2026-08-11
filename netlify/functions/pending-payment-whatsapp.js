@@ -137,13 +137,13 @@ function buildPendingPaymentWhatsAppMessage({
   };
 
   const lines = [
-    `Hi ${customerName || 'Customer'},`,
-    `This is an update from ${contact.label} regarding your pending payment for water purifier service.`,
+    `Hi ${customerName || 'Customer'}, 👋`,
+    `This is an update from ${contact.label} regarding your pending payment for water purifier service. 💧`,
     '',
-    `Amount pending: ₹${formattedAmount}`,
-    `Due date: ${dueLabel || 'At your earliest convenience'}`,
+    `💰 Amount pending: ₹${formattedAmount}`,
+    `📅 Due date: ${dueLabel || 'At your earliest convenience'}`,
   ];
-  if (ref) lines.push(`Invoice / Job: ${ref}`);
+  if (ref) lines.push(`🧾 Invoice / Job: ${ref}`);
 
   if (link || vpa) {
     lines.push('');
@@ -174,9 +174,10 @@ function buildPendingPaymentWhatsAppMessage({
     .replace(/\/$/, '');
   lines.push(`Website:\n${webHost}`);
   lines.push('');
-  lines.push('Reply on this chat if you need any help.');
   if (link || vpa) {
-    lines.push('If you have already paid, reply on this chat.');
+    lines.push('💳 Tap *Pay now* below or reply on this chat if you have already paid.');
+  } else {
+    lines.push('💬 Reply on this chat if you need any help or if you have already paid.');
   }
   return lines.join('\n');
 }

@@ -150,6 +150,7 @@ export async function sendCallingWhatsAppOne(opts: {
   const approved = opts.approvedTemplateNames;
   const suffix = opts.brand === 'elevenro' ? 'ero' : 'hro';
   const serviceDueFallbacks = [
+    `svc_service_due_letter_${suffix}_v4`,
     `svc_service_due_letter_${suffix}_v3`,
     `svc_service_due_letter_${suffix}_v2`,
     `svc_service_due_letter_${suffix}`,

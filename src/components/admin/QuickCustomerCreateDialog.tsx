@@ -42,6 +42,8 @@ export default function QuickCustomerCreateDialog({ open, onOpenChange }: Props)
   const [phone, setPhone] = useState('');
   const [leadSource, setLeadSource] = useState('Direct call');
   const [leadCustom, setLeadCustom] = useState('');
+  const [showLeadOnWhatsApp, setShowLeadOnWhatsApp] = useState(false);
+  const [whatsappLeadLine, setWhatsappLeadLine] = useState('');
   const [serviceKind, setServiceKind] = useState<QuickCustomerServiceKind>('Service');
   const [leadCost, setLeadCost] = useState('0');
   const [requireOtp, setRequireOtp] = useState(false);
@@ -56,6 +58,8 @@ export default function QuickCustomerCreateDialog({ open, onOpenChange }: Props)
     setPhone('');
     setLeadSource('Direct call');
     setLeadCustom('');
+    setShowLeadOnWhatsApp(false);
+    setWhatsappLeadLine('');
     setServiceKind('Service');
     setLeadCost(getDefaultLeadCost('Direct call', 'Service'));
     setRequireOtp(false);
@@ -72,9 +76,11 @@ export default function QuickCustomerCreateDialog({ open, onOpenChange }: Props)
     if (value !== 'Other') {
       applyLeadDefaults(value, serviceKind);
       setLeadCustom('');
+      if (showLeadOnWhatsApp) setWhatsappLeadLine(value);
     } else {
       setRequireOtp(false);
       setLeadCost('0');
+      if (showLeadOnWhatsApp) setWhatsappLeadLine(leadCustom);
     }
   };
 
@@ -100,6 +106,10 @@ export default function QuickCustomerCreateDialog({ open, onOpenChange }: Props)
       toast.error('Enter custom lead source');
       return;
     }
+    if (showLeadOnWhatsApp && !whatsappLeadLine.trim()) {
+      toast.error('Enter WhatsApp intro text, or turn off “Show on WhatsApp”');
+      return;
+    }
     const costNum = Number(leadCost);
     if (!Number.isFinite(costNum) || costNum < 0) {
       toast.error('Lead cost must be a valid number');
@@ -123,6 +133,7 @@ export default function QuickCustomerCreateDialog({ open, onOpenChange }: Props)
         phone: phoneE164,
         customerName,
         leadSource: resolvedLead,
+        whatsappLeadLine: showLeadOnWhatsApp ? whatsappLeadLine.trim() : '',
         serviceSubType,
         serviceLabel,
         leadCost: costNum,
@@ -160,11 +171,9 @@ export default function QuickCustomerCreateDialog({ open, onOpenChange }: Props)
             Quick customer
           </DialogTitle>
           <DialogDescription>
-            Name, phone, lead source (Direct call, Website, Google-Leads, custom), and Service /
-            Installation. WhatsApp opens with{' '}
-            <strong>Hi from [lead source] — Water Filter Service</strong> and a{' '}
-            <strong>Share location</strong> button (no extra Meta template). Customer is created
-            only after location → flat → photo → date/time → confirm.
+            Name, phone, CRM lead source, and Service / Installation. WhatsApp asks for location
+            first (optional intro line). Customer is created only after location → flat → photo →
+            date/time → confirm.
           </DialogDescription>
         </DialogHeader>
 
@@ -191,7 +200,7 @@ export default function QuickCustomerCreateDialog({ open, onOpenChange }: Props)
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Lead source *</Label>
+            <Label>Lead source (CRM) *</Label>
             <Select value={leadSource} onValueChange={handleLeadChange}>
               <SelectTrigger>
                 <SelectValue placeholder="Lead source" />
@@ -211,11 +220,40 @@ export default function QuickCustomerCreateDialog({ open, onOpenChange }: Props)
               <Input
                 id="qc-lead-custom"
                 value={leadCustom}
-                onChange={(e) => setLeadCustom(e.target.value)}
+                onChange={(e) => {
+                  setLeadCustom(e.target.value);
+                  if (showLeadOnWhatsApp) setWhatsappLeadLine(e.target.value);
+                }}
                 placeholder="e.g. Facebook ad"
               />
             </div>
           ) : null}
+          <div className="flex items-start gap-2 rounded-md border border-border/60 px-3 py-2">
+            <Checkbox
+              id="qc-wa-lead"
+              checked={showLeadOnWhatsApp}
+              onCheckedChange={(v) => {
+                const on = v === true;
+                setShowLeadOnWhatsApp(on);
+                if (on && !whatsappLeadLine.trim()) setWhatsappLeadLine(resolvedLead);
+              }}
+            />
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <Label htmlFor="qc-wa-lead" className="cursor-pointer font-normal leading-snug">
+                Show intro on WhatsApp (optional)
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Off = skip. On = “Hi from *text* — Water Filter Service” (edit freely).
+              </p>
+              {showLeadOnWhatsApp ? (
+                <Input
+                  value={whatsappLeadLine}
+                  onChange={(e) => setWhatsappLeadLine(e.target.value.slice(0, 80))}
+                  placeholder="e.g. Direct call, Google-Leads, or any text"
+                />
+              ) : null}
+            </div>
+          </div>
           <div className="space-y-1.5">
             <Label>Service type *</Label>
             <Select

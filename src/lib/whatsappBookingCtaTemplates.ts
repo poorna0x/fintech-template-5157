@@ -62,8 +62,8 @@ export function bookingCtaTemplateName(kind: BookingCtaKind, brand: DocumentBran
     return `unregistered_number_service_${suffix}_cta`;
   }
   if (kind === 'booking_confirmed') {
-    // Letter v3 (Call us + Website + Text us) → v2 → v1 → v2 short → phone-only via cold fallback.
-    return resolveBrandLetterTemplateName('booking_confirmed', brand, 'v3');
+    // Letter v4 emoji (Call us + Website) → v3 → v2 via cold fallback.
+    return resolveBrandLetterTemplateName('booking_confirmed', brand, 'v4');
   }
   return `${kind}_${suffix}_cta`;
 }

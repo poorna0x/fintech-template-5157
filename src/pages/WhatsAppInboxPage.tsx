@@ -101,6 +101,7 @@ import { WhatsAppQuickRepliesBar, WhatsAppQuickContextFields } from '@/component
 import {
   approvedTemplateNameSet,
   isAskLocationTemplateName,
+  isAskNameTemplateName,
   isWfsGreetingTemplateName,
   quickReplyBookingUrl,
   type WhatsAppQuickTemplateSend,
@@ -152,6 +153,8 @@ const QUICK_ACTION_LABELS: Record<WhatsAppBookingQuickAction, string> = {
   book_service: 'Book service',
   request_location: 'Request location',
   request_photo: 'Request photo',
+  request_building_flat: 'Ask flat / building',
+  request_name: 'Ask name',
   water_filter_service: 'Water Filter Service',
   book_location_photo: 'Book · location + photo',
 };
@@ -844,6 +847,14 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
         await runQuickAction('request_photo');
         return;
       }
+      if (windowOpen && payload.templateName === 'svc_ask_flat') {
+        await runQuickAction('request_building_flat');
+        return;
+      }
+      if (windowOpen && isAskNameTemplateName(payload.templateName)) {
+        await runQuickAction('request_name');
+        return;
+      }
       if (windowOpen && /^svc_wfs_collect/i.test(payload.templateName)) {
         await runQuickAction('water_filter_service');
         return;
@@ -855,6 +866,10 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
             ? 'request_location'
             : payload.templateName === 'svc_ask_photo'
               ? 'request_photo'
+              : payload.templateName === 'svc_ask_flat'
+                ? 'request_building_flat'
+              : isAskNameTemplateName(payload.templateName)
+                ? 'request_name'
               : /^svc_wfs_collect/i.test(payload.templateName)
                 ? 'water_filter_service'
                 : isWfsGreetingTemplateName(payload.templateName)
@@ -1427,6 +1442,13 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                     >
                       Request photo
                     </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="cursor-pointer"
+                      disabled={quickActionBusy}
+                      onClick={() => setQuickActionConfirm('request_name')}
+                    >
+                      Ask name
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
                 <DropdownMenu>
@@ -1750,6 +1772,8 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       onStartBookLocationPhoto={() => void runQuickAction('book_location_photo')}
                       onRequestLocation={() => runQuickAction('request_location')}
                       onRequestPhoto={() => runQuickAction('request_photo')}
+                      onRequestBuildingFlat={() => runQuickAction('request_building_flat')}
+                      onRequestName={() => runQuickAction('request_name')}
                       onStartWaterFilterService={() => runQuickAction('water_filter_service')}
                     />
                     {templatesLoading ? (
@@ -1859,6 +1883,8 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
                       onStartBookLocationPhoto={() => void runQuickAction('book_location_photo')}
                       onRequestLocation={() => runQuickAction('request_location')}
                       onRequestPhoto={() => runQuickAction('request_photo')}
+                      onRequestBuildingFlat={() => runQuickAction('request_building_flat')}
+                      onRequestName={() => runQuickAction('request_name')}
                       onStartWaterFilterService={() => runQuickAction('water_filter_service')}
                     />
                     {attachFile ? (

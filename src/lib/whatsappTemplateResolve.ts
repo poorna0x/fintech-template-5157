@@ -36,8 +36,8 @@ const WA_TEMPLATE_ALIASES: Record<string, string> = {
   missed_call_book_cta: 'svc_missed_call',
   missed_call_book_ero_cta: 'svc_missed_call',
   missed_call_book_hro_cta: 'svc_missed_call',
-  booking_confirmed_ero_cta: 'svc_booking_confirmed_letter_ero_v3',
-  booking_confirmed_hro_cta: 'svc_booking_confirmed_letter_hro_v3',
+  booking_confirmed_ero_cta: 'svc_booking_confirmed_letter_ero_v4',
+  booking_confirmed_hro_cta: 'svc_booking_confirmed_letter_hro_v4',
   svc_document_ready: 'svc_doc_pdf_v2',
 };
 

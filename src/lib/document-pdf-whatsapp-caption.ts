@@ -15,24 +15,24 @@ export type DocumentPdfWhatsAppKind =
   | 'receipt'
   | 'generic';
 
-function attachedLine(kind: DocumentPdfWhatsAppKind): string {
+function docNoun(kind: DocumentPdfWhatsAppKind): string {
   switch (kind) {
     case 'quotation':
-      return 'Your quotation is attached.';
+      return 'quotation';
     case 'service_bill':
-      return 'Your service bill is attached.';
+      return 'service bill';
     case 'invoice':
-      return 'Your tax invoice is attached.';
+      return 'tax invoice';
     case 'amc':
     case 'amc_document':
-      return 'Your AMC agreement is attached.';
+      return 'AMC agreement';
     case 'warranty':
     case 'warranty_document':
-      return 'Your warranty card is attached.';
+      return 'warranty card';
     case 'receipt':
-      return 'Your payment receipt is attached.';
+      return 'payment receipt';
     default:
-      return 'Your document is attached.';
+      return 'document';
   }
 }
 
@@ -57,35 +57,37 @@ export function buildDocumentPdfWhatsAppCaption(input: DocumentPdfWhatsAppCaptio
   const kind = String(input.kind || 'generic').toLowerCase() as DocumentPdfWhatsAppKind;
 
   const lines = [
-    `Hi ${customerName},`,
-    attachedLine(kind),
+    `Hi ${customerName}, 👋`,
+    `📄 Your ${docNoun(kind)} from ${brandName} is attached.`,
     '',
-    ...brandLetterClosingLines(input.brand, { skipChatHint: true }),
+    ...brandLetterClosingLines(input.brand, { skipChatHint: true, includeTextUs: false }),
     '',
-    'Reply on this chat if you need any help.',
-    '',
-    `— ${brandName}`,
+    '💬 Reply on this chat if you need any help.',
   ];
 
   return lines.join('\n').slice(0, 1024);
 }
 
-/** Cold Meta template body preview (svc_doc_*_{ero|hro}_v2). */
+/** Cold Meta template body preview (svc_doc_*_{ero|hro}_v3 / svc_doc_direct_* — no Accept). */
 export function formatDocumentPdfColdPreview(
   kind: DocumentPdfWhatsAppKind | string,
   brand: DocumentBrand,
   customerName: string
 ): string {
+  const brandName = getDocumentBrandLabel(brand);
   const name = String(customerName || 'Customer').trim() || 'Customer';
   const k = String(kind || 'generic').toLowerCase() as DocumentPdfWhatsAppKind;
-  const footer = brandLetterClosingLines(brand, { skipChatHint: true }).join('\n');
+  const footer = brandLetterClosingLines(brand, {
+    skipChatHint: true,
+    includeTextUs: false,
+  }).join('\n');
   return [
-    `Hi ${name},`,
-    attachedLine(k),
+    `Hi ${name}, 👋`,
+    `📄 Your ${docNoun(k)} from ${brandName} is attached.`,
+    '',
+    '💬 Reply on this chat if you need any help.',
     '',
     footer,
-    '',
-    'Reply on this chat if you need any help.',
     '',
     'Buttons: Call us · Website',
   ].join('\n');

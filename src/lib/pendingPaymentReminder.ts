@@ -98,19 +98,19 @@ function cleanAmountDigits(amount: number | string): string {
   );
 }
 
-/** Letter cold template name — v4 = Pay now button when UPI short link available. */
+/** Letter cold template name — v6 = Pay now + light emoji; fallback v5 → v4. */
 export function resolvePendingPaymentLetterTemplateName(
   brand: DocumentBrand,
   opts?: { withPayButton?: boolean }
 ): string {
   if (opts?.withPayButton) {
-    return resolveBrandLetterTemplateName('balance_due', brand, 'v4');
+    return resolveBrandLetterTemplateName('balance_due', brand, 'v6');
   }
   return resolveBrandLetterTemplateName('balance_due', brand, 'v3');
 }
 
 export function resolvePendingPaymentLetterTemplateFallbackName(brand: DocumentBrand): string {
-  return resolveBrandLetterTemplateName('balance_due', brand, 'v3');
+  return resolveBrandLetterTemplateName('balance_due', brand, 'v5');
 }
 
 export function resolvePendingPaymentLetterTemplateLegacyName(brand: DocumentBrand): string {
@@ -149,13 +149,13 @@ export function buildPendingPaymentWhatsAppMessage(
   const ref = String(invoiceRef || '').trim();
 
   const lines: string[] = [
-    `Hi ${customerName},`,
-    `This is an update from ${contact.brandLabel} regarding your pending payment for water purifier service.`,
+    `Hi ${customerName}, 👋`,
+    `This is an update from ${contact.brandLabel} regarding your pending payment for water purifier service. 💧`,
     '',
-    `Amount pending: ₹${formattedAmount}`,
-    `Due date: ${dueLabel || 'At your earliest convenience'}`,
+    `💰 Amount pending: ₹${formattedAmount}`,
+    `📅 Due date: ${dueLabel || 'At your earliest convenience'}`,
   ];
-  if (ref) lines.push(`Invoice / Job: ${ref}`);
+  if (ref) lines.push(`🧾 Invoice / Job: ${ref}`);
 
   if (payLink || upiId) {
     lines.push('');
@@ -178,11 +178,12 @@ export function buildPendingPaymentWhatsAppMessage(
   }
 
   lines.push('');
-  lines.push(...brandLetterClosingLines(resolved, { skipChatHint: true }));
+  lines.push(...brandLetterClosingLines(resolved, { skipChatHint: true, includeTextUs: false }));
   lines.push('');
-  lines.push('Reply on this chat if you need any help.');
   if (payLink || upiId) {
-    lines.push('If you have already paid, reply on this chat.');
+    lines.push('💳 Tap *Pay now* below or reply on this chat if you have already paid.');
+  } else {
+    lines.push('💬 Reply on this chat if you need any help or if you have already paid.');
   }
 
   return lines.join('\n');

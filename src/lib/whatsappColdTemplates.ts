@@ -1,9 +1,9 @@
 /**
  * Meta WhatsApp UTILITY template names for cold outreach (outside 24h window).
- * Approved on WABA: svc_doc_pdf_v2 (+ per-doc svc_doc_*_{ero|hro}_v2 when submitted).
  *
- * Cold PDF: DOCUMENT-header templates — prefer svc_doc_{bill|invoice|…}_{ero|hro}_v2;
- * fallback svc_doc_pdf_v2 (generic).
+ * Cold PDF (direct, no Accept): prefer svc_doc_{bill|…}_{ero|hro}_v3 letter+emoji →
+ * svc_doc_direct_{ero|hro}_v1 (any label) → v2 → svc_doc_pdf_v2.
+ * Accept-preview (separate): svc_doc_accept_preview_{ero|hro}_v4 — do not use for normal sends.
  *
  * After the customer replies (24h opens), the booking bot continues with the same
  * interactive UI as in-session. Do not use svc_booking_menu (Meta → MARKETING).
@@ -127,6 +127,18 @@ export const WA_COLD = {
       String(documentLabel || 'service report').trim() || 'service report',
     ],
   },
+  /**
+   * Direct PDF (DOCUMENT) — any doc label, no Accept / preview.
+   * Meta: svc_doc_direct_{ero|hro}_v1 — {{1}} name, {{2}} label. Call us + Website.
+   */
+  document_direct: {
+    name: 'svc_doc_direct_hro_v1',
+    language: 'en',
+    bodyParams: (customerName: string, documentLabel?: string) => [
+      cleanName(customerName),
+      String(documentLabel || 'document').trim() || 'document',
+    ],
+  },
   /** Prefer this name — Meta reclassified customer_followup_cta as MARKETING. */
   customer_followup: {
     name: 'svc_visit_reminder',
@@ -169,6 +181,19 @@ export const WA_COLD = {
       cleanAmount(amount),
     ],
   },
+  /**
+   * Job-done letter with no buttons (body only).
+   * Meta: svc_job_done_letter_{ero|hro}_plain_v1 — {{1}} name, {{2}} amount, {{3}} invoice/job
+   */
+  job_completion_plain: {
+    name: 'svc_job_done_letter_hro_plain_v2',
+    language: 'en',
+    bodyParams: (customerName: string, amount: number | string, jobRef?: string) => [
+      cleanName(customerName),
+      cleanAmount(amount),
+      String(jobRef || '').trim() || 'your service',
+    ],
+  },
   /** Missed customer call — phone-only UTILITY (no CTA buttons). */
   missed_call: {
     name: 'svc_missed_call',
@@ -208,12 +233,12 @@ export const WA_COLD = {
     bodyParams: (customerName: string) => [cleanName(customerName)],
   },
   ask_location: {
-    name: 'svc_wfs_ask_loc_hro',
+    name: 'svc_wfs_ask_loc_hro_v3',
     language: 'en',
     bodyParams: (customerName: string) => [cleanName(customerName)],
   },
   ask_location_simple: {
-    name: 'svc_wfs_ask_loc_simple_hro',
+    name: 'svc_wfs_ask_loc_simple_hro_v3',
     language: 'en',
     bodyParams: (customerName: string) => [cleanName(customerName)],
   },
@@ -232,6 +257,17 @@ export const WA_COLD = {
       cleanName(customerName),
       String(fromLabel || '').trim() || 'Water Filter Service',
     ],
+  },
+  /** Hi from brand WFS → please share your name (short option 1). */
+  ask_name: {
+    name: 'svc_wfs_ask_name_simple_hro_v1',
+    language: 'en',
+    bodyParams: () => [],
+  },
+  ask_name_long: {
+    name: 'svc_wfs_ask_name_hro_v1',
+    language: 'en',
+    bodyParams: () => [],
   },
   /**
    * Most flexible Meta-accepted utility: {{1}}=name, {{2}}=details sentence.
@@ -350,7 +386,50 @@ export function coldDocTemplateSlug(kind: WaColdDocKind | string): WaColdDocSlug
   return 'generic';
 }
 
+/** Human label for {{2}} on svc_doc_direct_* (any PDF). */
+export function coldDocDocumentLabel(
+  kind: WaColdDocKind | string,
+  documentLabel?: string
+): string {
+  const custom = String(documentLabel || '').trim();
+  if (custom) return custom.slice(0, 60);
+  switch (coldDocTemplateSlug(kind)) {
+    case 'bill':
+      return 'service bill';
+    case 'invoice':
+      return 'tax invoice';
+    case 'amc':
+      return 'AMC agreement';
+    case 'quotation':
+      return 'quotation';
+    case 'warranty':
+      return 'warranty card';
+    case 'receipt':
+      return 'payment receipt';
+    default:
+      return 'document';
+  }
+}
+
+/** Prefer per-kind v3 letter → direct (any label) → v2. */
 export function resolveColdDocTemplateName(
+  kind: WaColdDocKind | string,
+  brand?: DocumentBrand | string | null
+): string {
+  const suffix = normalizeDocumentBrand(brand) === 'elevenro' ? 'ero' : 'hro';
+  const slug = coldDocTemplateSlug(kind);
+  return `svc_doc_${slug}_${suffix}_v3`;
+}
+
+export function resolveColdDocTemplateFallbackName(
+  kind: WaColdDocKind | string,
+  brand?: DocumentBrand | string | null
+): string {
+  const suffix = normalizeDocumentBrand(brand) === 'elevenro' ? 'ero' : 'hro';
+  return `svc_doc_direct_${suffix}_v1`;
+}
+
+export function resolveColdDocTemplateLegacyName(
   kind: WaColdDocKind | string,
   brand?: DocumentBrand | string | null
 ): string {
@@ -359,7 +438,15 @@ export function resolveColdDocTemplateName(
   return `svc_doc_${slug}_${suffix}_v2`;
 }
 
-/** Map CRM document kind → Meta cold PDF template (brand-aware v2). */
+/** Flexible any-PDF letter template (name + doc label). */
+export function resolveDirectDocTemplate(
+  brand?: DocumentBrand | string | null
+): { name: string; language: string } {
+  const suffix = normalizeDocumentBrand(brand) === 'elevenro' ? 'ero' : 'hro';
+  return { name: `svc_doc_direct_${suffix}_v1`, language: 'en' };
+}
+
+/** Map CRM document kind → Meta cold PDF template (brand-aware v3). */
 export function coldDocTemplateForKind(
   kind: WaColdDocKind | string,
   brand?: DocumentBrand | string | null
@@ -402,14 +489,47 @@ export function docAcceptPreviewButtonUrlParams(token: string): Array<{ index: n
   return [{ index: 0, text: t }];
 }
 
+/** Job-done letter with no buttons: svc_job_done_letter_{ero|hro}_plain_v2 */
+export function resolveJobDoneLetterPlainTemplate(
+  brand?: DocumentBrand | string | null
+): { name: string; language: string } {
+  const suffix = normalizeDocumentBrand(brand) === 'elevenro' ? 'ero' : 'hro';
+  return {
+    name: `svc_job_done_letter_${suffix}_plain_v2`,
+    language: 'en',
+  };
+}
+
+export function jobDoneLetterPlainBodyParams(
+  customerName: string,
+  amount: number | string,
+  jobRef?: string
+): string[] {
+  return [
+    cleanName(customerName),
+    cleanAmount(amount),
+    String(jobRef || '').trim() || 'your service',
+  ];
+}
+
 export function coldDocBodyParams(
   kind: WaColdDocKind | string,
   opts: { customerName: string; amount?: number | string; ref?: string; documentLabel?: string }
 ): string[] {
+  // Per-kind v3 / v2: name only. Direct template needs name + label (fallback chain uses same first param).
   return [cleanName(opts.customerName)];
 }
 
-/** Preview cold PDF template body (matches Meta svc_doc_*_{ero|hro}_v2). */
+/** Body params for svc_doc_direct_*_v1 (any PDF label). */
+export function directDocBodyParams(
+  customerName: string,
+  kindOrLabel?: WaColdDocKind | string,
+  documentLabel?: string
+): string[] {
+  return [cleanName(customerName), coldDocDocumentLabel(kindOrLabel || 'generic', documentLabel)];
+}
+
+/** Preview cold PDF template body (matches Meta svc_doc_*_v3 / svc_doc_direct — no Accept). */
 export function formatColdDocTemplatePreview(
   kind: WaColdDocKind | string,
   opts: {
@@ -439,25 +559,27 @@ function cleanAmount(amount: number | string): string {
 /** Human labels for inbox / pickers */
 export const WA_COLD_LABELS: Record<keyof typeof WA_COLD, string> = {
   booking_menu: 'Service request (svc_smoke_update — booking menu deprecated)',
-  pending_payment: 'Balance due (svc_balance_due_letter_*_v4 Pay now → v3 → v2 → svc_balance_due)',
+  pending_payment: 'Balance due (svc_balance_due_letter_*_v6 emoji → v5 → v4 → v3 → svc_balance_due)',
   service_reminder: 'Visit reminder (svc_visit_reminder)',
-  service_due_cta: 'Service due letter / CTA (svc_service_due_letter_*_v2 → v1 → *_cta)',
+  service_due_cta: 'Service due letter v4 Book now (svc_service_due_letter_*_v4 → v3 → CTA)',
   amc_renewal: 'AMC expiry (svc_amc_expiry_notice)',
   amc_expiry_notice: 'AMC expiry → document PDF',
-  document_ready: 'Document PDF (svc_doc_generic_*_v2 → svc_doc_pdf_v2)',
-  quotation_ready: 'Quotation PDF (svc_doc_quotation_*_v2)',
-  service_bill_ready: 'Service bill PDF (svc_doc_bill_*_v2)',
-  invoice_ready: 'Tax invoice PDF (svc_doc_invoice_*_v2)',
-  amc_document_ready: 'AMC PDF (svc_doc_amc_*_v2)',
-  warranty_ready: 'Warranty PDF (svc_doc_warranty_*_v2)',
-  receipt_ready: 'Receipt PDF (svc_doc_receipt_*_v2)',
+  document_ready: 'Document PDF (svc_doc_*_v3 letter → svc_doc_direct_* → v2 / svc_doc_pdf_v2)',
+  quotation_ready: 'Quotation PDF (svc_doc_quotation_*_v3 → direct → v2)',
+  service_bill_ready: 'Service bill PDF (svc_doc_bill_*_v3 → direct → v2)',
+  invoice_ready: 'Tax invoice PDF (svc_doc_invoice_*_v3 → direct → v2)',
+  amc_document_ready: 'AMC PDF (svc_doc_amc_*_v3 → direct → v2)',
+  warranty_ready: 'Warranty PDF (svc_doc_warranty_*_v3 → direct → v2)',
+  receipt_ready: 'Receipt PDF (svc_doc_receipt_*_v3 → direct → v2)',
   document_accept_preview:
     'Preview PDF + Accept (svc_doc_accept_preview_*_v4; reply on chat; light emojis)',
+  document_direct: 'Direct PDF any label (svc_doc_direct_{ero|hro}_v1 — no Accept)',
   customer_followup: 'Follow-up → visit reminder',
   appointment_reminder: 'Appointment reminder (svc_visit_reminder)',
   payment_received: 'Payment received (svc_payment_received)',
   tech_assigned: 'Technician assigned (svc_tech_assigned)',
-  job_completion: 'Service completed (svc_job_done_letter_*_v2 → v1 → v3/v2 / svc_job_done)',
+  job_completion: 'Service completed (svc_job_done_letter_*_v4 emoji → v3 → v2 / svc_job_done)',
+  job_completion_plain: 'Job done letter no buttons (svc_job_done_letter_*_plain_v2 → v1)',
   general_notice: 'General notice (svc_smoke_update)',
   hello: 'Hello (svc_wfs_hello_* → svc_hello)',
   wfs_hello: 'WFS Hi (svc_wfs_hello_{hro|ero|generic})',
@@ -465,10 +587,12 @@ export const WA_COLD_LABELS: Record<keyof typeof WA_COLD, string> = {
   wfs_hi_from: 'Hi from WFS (svc_wfs_hi_from_{hro|ero|generic})',
   wfs_simple_hi: 'Simple WFS Hi (svc_wfs_hi_{hro|ero|generic})',
   wfs_collect: 'WFS collect info (svc_wfs_collect_* → location + photo flow)',
-  ask_location: 'Ask location (svc_wfs_ask_loc_* → Call us + Text us)',
-  ask_location_simple: 'Ask location short (svc_wfs_ask_loc_simple_* → Call us + Text us)',
+  ask_location: 'Ask location (svc_wfs_ask_loc_*_v3 → Share location QR + light emoji)',
+  ask_location_simple: 'Ask location short (svc_wfs_ask_loc_simple_*_v3 → Share location QR)',
   ask_photo: 'Ask photo (svc_ask_photo)',
   ask_flat: 'Ask flat (svc_ask_flat)',
+  ask_name: 'Ask name short (svc_wfs_ask_name_simple_* — Hi from WFS, please share your name)',
+  ask_name_long: 'Ask name long (svc_wfs_ask_name_*_v1)',
   crm_notice: 'CRM notice → visit reminder',
   crm_update_details: 'CRM update → visit reminder',
   book_existing_customer: 'Schedule visit (existing_service_schedule_*_cta_v2 → v1)',
@@ -476,8 +600,8 @@ export const WA_COLD_LABELS: Record<keyof typeof WA_COLD, string> = {
   missed_call: 'Missed call (svc_missed_call)',
   missed_call_book: 'Missed call (svc_missed_call / missed_call_callback_*_cta)',
   reschedule_visit: 'Reschedule (reschedule_visit_*_cta)',
-  visit_cancelled: 'Visit cancelled (svc_booking_cancelled_letter_*_v2 → v1 → v2 → svc_visit_cancelled_*)',
+  visit_cancelled: 'Visit cancelled (svc_booking_cancelled_letter_*_v5 no BOOK → v3 → svc_visit_cancelled_*)',
   parts_ready: 'Parts ready (svc_parts_ready)',
   tech_delayed: 'Tech delayed (svc_tech_delayed)',
-  booking_confirmed: 'Booking confirmed (svc_booking_confirmed_letter_*_v2 → v1 → v2 / svc_visit_confirmed)',
+  booking_confirmed: 'Booking confirmed (svc_booking_confirmed_letter_*_v4 emoji → v3 → v2 / svc_visit_confirmed)',
 };

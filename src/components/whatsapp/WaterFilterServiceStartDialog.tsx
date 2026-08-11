@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Loader2, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -45,7 +46,12 @@ export default function WaterFilterServiceStartDialog({
   const [phone, setPhone] = useState('');
   const [leadSource, setLeadSource] = useState<string>('Direct call');
   const [leadCustom, setLeadCustom] = useState('');
+  const [showLeadOnWhatsApp, setShowLeadOnWhatsApp] = useState(false);
+  const [whatsappLeadLine, setWhatsappLeadLine] = useState('');
   const [busy, setBusy] = useState(false);
+
+  const resolvedLead =
+    leadSource === 'Other' ? leadCustom.trim() || 'Other' : leadSource.trim() || 'Direct call';
 
   const syncOpen = (next: boolean) => {
     if (next) {
@@ -54,6 +60,8 @@ export default function WaterFilterServiceStartDialog({
       setPhone(digits.length >= 10 ? digits.slice(-10) : digits);
       setLeadSource('Direct call');
       setLeadCustom('');
+      setShowLeadOnWhatsApp(false);
+      setWhatsappLeadLine('');
     }
     onOpenChange(next);
   };
@@ -69,12 +77,12 @@ export default function WaterFilterServiceStartDialog({
       toast.error('Enter a valid 10-digit phone');
       return;
     }
-    const lead =
-      leadSource === 'Other'
-        ? leadCustom.trim() || 'Other'
-        : leadSource.trim() || 'Direct call';
     if (leadSource === 'Other' && !leadCustom.trim()) {
       toast.error('Enter custom lead source');
+      return;
+    }
+    if (showLeadOnWhatsApp && !whatsappLeadLine.trim()) {
+      toast.error('Enter WhatsApp intro text, or turn off “Show on WhatsApp”');
       return;
     }
 
@@ -83,7 +91,8 @@ export default function WaterFilterServiceStartDialog({
       const result = await startWaterFilterServiceBooking({
         phone: phoneE164,
         customerName,
-        leadSource: lead,
+        leadSource: resolvedLead,
+        whatsappLeadLine: showLeadOnWhatsApp ? whatsappLeadLine.trim() : '',
       });
       if (!result.ok) {
         toast.error(result.error || 'Could not start Water Filter Service');
@@ -112,11 +121,9 @@ export default function WaterFilterServiceStartDialog({
             Water Filter Service
           </DialogTitle>
           <DialogDescription>
-            Enter name, phone, and lead source. We ask the customer for{' '}
-            <strong>location first</strong>, then date → time → purifier photo.
-            {` `}
-            If the 24h window is closed, a cold template is sent and the bot continues when they
-            reply.
+            Enter name, phone, and CRM lead source. We ask the customer for{' '}
+            <strong>location first</strong>, then date → time → purifier photo. Optionally show a
+            custom intro line on WhatsApp.
           </DialogDescription>
         </DialogHeader>
 
@@ -143,8 +150,17 @@ export default function WaterFilterServiceStartDialog({
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Lead source *</Label>
-            <Select value={leadSource} onValueChange={setLeadSource}>
+            <Label>Lead source (CRM) *</Label>
+            <Select
+              value={leadSource}
+              onValueChange={(v) => {
+                setLeadSource(v);
+                if (v !== 'Other') {
+                  setLeadCustom('');
+                  if (showLeadOnWhatsApp) setWhatsappLeadLine(v);
+                }
+              }}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Lead source" />
               </SelectTrigger>
@@ -163,11 +179,40 @@ export default function WaterFilterServiceStartDialog({
               <Input
                 id="wfs-lead-custom"
                 value={leadCustom}
-                onChange={(e) => setLeadCustom(e.target.value)}
+                onChange={(e) => {
+                  setLeadCustom(e.target.value);
+                  if (showLeadOnWhatsApp) setWhatsappLeadLine(e.target.value);
+                }}
                 placeholder="e.g. Facebook ad"
               />
             </div>
           ) : null}
+          <div className="flex items-start gap-2 rounded-md border border-border/60 px-3 py-2">
+            <Checkbox
+              id="wfs-wa-lead"
+              checked={showLeadOnWhatsApp}
+              onCheckedChange={(v) => {
+                const on = v === true;
+                setShowLeadOnWhatsApp(on);
+                if (on && !whatsappLeadLine.trim()) setWhatsappLeadLine(resolvedLead);
+              }}
+            />
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <Label htmlFor="wfs-wa-lead" className="cursor-pointer font-normal leading-snug">
+                Show intro on WhatsApp (optional)
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Off = skip. On = “Hi from *text* — Water Filter Service” (edit freely).
+              </p>
+              {showLeadOnWhatsApp ? (
+                <Input
+                  value={whatsappLeadLine}
+                  onChange={(e) => setWhatsappLeadLine(e.target.value.slice(0, 80))}
+                  placeholder="e.g. Direct call, Google-Leads, or any text"
+                />
+              ) : null}
+            </div>
+          </div>
         </div>
 
         <DialogFooter className="gap-2 sm:gap-0">

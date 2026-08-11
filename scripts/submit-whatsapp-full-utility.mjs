@@ -444,7 +444,81 @@ const WFS_COLLECT_TEMPLATES = [
   },
 ];
 
-/** Ask location — full copy + Call us + Text us (cold). Reply → Send location button. */
+/**
+ * Ask customer name — Hi from brand WFS, then reply with full name.
+ * No body variables (name unknown). Brand-specific + generic.
+ */
+const WFS_ASK_NAME_TEMPLATES = [
+  {
+    name: 'svc_wfs_ask_name_hro_v1',
+    body: [
+      'Hi from Hydrogen RO Water Filter Service. 👋',
+      '',
+      'Please reply with your full name on this chat so we can assist you.',
+    ].join('\n'),
+    examples: [],
+    noButtons: true,
+  },
+  {
+    name: 'svc_wfs_ask_name_ero_v1',
+    body: [
+      'Hi from Eleven RO Water Filter Service. 👋',
+      '',
+      'Please reply with your full name on this chat so we can assist you.',
+    ].join('\n'),
+    examples: [],
+    noButtons: true,
+  },
+  {
+    name: 'svc_wfs_ask_name_v1',
+    body: [
+      'Hi from Water Filter Service. 👋',
+      '',
+      'Please reply with your full name on this chat so we can assist you.',
+    ].join('\n'),
+    examples: [],
+    noButtons: true,
+  },
+];
+
+/**
+ * Ask name option 1 (short) — “Hi from … Water Filter Service. Please share your name.”
+ * Prefer these when approved; fall back to WFS_ASK_NAME_TEMPLATES.
+ */
+const WFS_ASK_NAME_SIMPLE_TEMPLATES = [
+  {
+    name: 'svc_wfs_ask_name_simple_hro_v1',
+    body: [
+      'Hi from Hydrogen RO Water Filter Service. 👋',
+      '',
+      'Please share your name on this chat.',
+    ].join('\n'),
+    examples: [],
+    noButtons: true,
+  },
+  {
+    name: 'svc_wfs_ask_name_simple_ero_v1',
+    body: [
+      'Hi from Eleven RO Water Filter Service. 👋',
+      '',
+      'Please share your name on this chat.',
+    ].join('\n'),
+    examples: [],
+    noButtons: true,
+  },
+  {
+    name: 'svc_wfs_ask_name_simple_v1',
+    body: [
+      'Hi from Water Filter Service. 👋',
+      '',
+      'Please share your name on this chat.',
+    ].join('\n'),
+    examples: [],
+    noButtons: true,
+  },
+];
+
+/** Ask location — full copy + Call us + Text us (cold, legacy). Reply → Send location button. */
 const WFS_ASK_LOC_TEMPLATES = [
   {
     name: 'svc_wfs_ask_loc_hro',
@@ -463,7 +537,7 @@ const WFS_ASK_LOC_TEMPLATES = [
   },
 ];
 
-/** Shorter ask location + Call us + Text us. */
+/** Shorter ask location + Call us + Text us (legacy). */
 const WFS_ASK_LOC_SIMPLE_TEMPLATES = [
   {
     name: 'svc_wfs_ask_loc_simple_hro',
@@ -478,6 +552,85 @@ const WFS_ASK_LOC_SIMPLE_TEMPLATES = [
   {
     name: 'svc_wfs_ask_loc_simple',
     body: 'Hi {{1}}, please share your Google Maps location pin on this chat. — Water Filter Service',
+    examples: ['Rahul'],
+  },
+];
+
+/**
+ * Ask location v3 — Call us + QUICK_REPLY "Share location" (no Website) + light emojis.
+ * (v2 deleted during emoji refresh; Meta held those names in delete-pending.)
+ */
+const WFS_ASK_LOC_V2_TEMPLATES = [
+  {
+    name: 'svc_wfs_ask_loc_hro_v3',
+    body: [
+      'Hi {{1}}, 👋',
+      'This is Hydrogen RO Water Filter Service.',
+      '',
+      '📍 Please share your Google Maps location pin on this chat so we can continue your water filter service request.',
+      '',
+      'Tap Share location below 👇',
+    ].join('\n'),
+    examples: ['Rahul'],
+  },
+  {
+    name: 'svc_wfs_ask_loc_ero_v3',
+    body: [
+      'Hi {{1}}, 👋',
+      'This is Eleven RO Water Filter Service.',
+      '',
+      '📍 Please share your Google Maps location pin on this chat so we can continue your water filter service request.',
+      '',
+      'Tap Share location below 👇',
+    ].join('\n'),
+    examples: ['Rahul'],
+  },
+  {
+    name: 'svc_wfs_ask_loc_v3',
+    body: [
+      'Hi {{1}}, 👋',
+      'This is Water Filter Service.',
+      '',
+      '📍 Please share your Google Maps location pin on this chat so we can continue your water filter service request.',
+      '',
+      'Tap Share location below 👇',
+    ].join('\n'),
+    examples: ['Rahul'],
+  },
+];
+
+const WFS_ASK_LOC_SIMPLE_V2_TEMPLATES = [
+  {
+    name: 'svc_wfs_ask_loc_simple_hro_v3',
+    body: [
+      'Hi {{1}}, 👋',
+      '📍 Please share your Google Maps location pin on this chat.',
+      '— Hydrogen RO Water Filter Service',
+      '',
+      'Tap Share location below 👇',
+    ].join('\n'),
+    examples: ['Rahul'],
+  },
+  {
+    name: 'svc_wfs_ask_loc_simple_ero_v3',
+    body: [
+      'Hi {{1}}, 👋',
+      '📍 Please share your Google Maps location pin on this chat.',
+      '— Eleven RO Water Filter Service',
+      '',
+      'Tap Share location below 👇',
+    ].join('\n'),
+    examples: ['Rahul'],
+  },
+  {
+    name: 'svc_wfs_ask_loc_simple_v3',
+    body: [
+      'Hi {{1}}, 👋',
+      '📍 Please share your Google Maps location pin on this chat.',
+      '— Water Filter Service',
+      '',
+      'Tap Share location below 👇',
+    ].join('\n'),
     examples: ['Rahul'],
   },
 ];
@@ -599,6 +752,16 @@ function letterFooterBlock(brand, callPhone) {
   ].join('\n');
 }
 
+/** Call / Email / Website — each value on the next line (no Text us / wa.me). */
+function letterFooterBlockNoTextUs(brand) {
+  return [
+    `Thank you for choosing ${brand.label}.`,
+    `Call:\n${brand.phone}`,
+    `Email:\n${brand.email}`,
+    `Website:\n${brand.webHost}`,
+  ].join('\n');
+}
+
 function buildLetterV3Templates() {
   const out = [];
   for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
@@ -644,6 +807,183 @@ function buildLetterV3Templates() {
 
 const LETTER_V3_TEMPLATES = buildLetterV3Templates();
 
+/**
+ * Booking cancelled letter v5 — notice only (no "Reply BOOK to reschedule").
+ * Footer: Call / Email / Website only (no Text us / wa.me).
+ * (v4 name stuck in Meta delete; use v5.)
+ */
+function buildBookingCancelledLetterV4Templates() {
+  const out = [];
+  for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
+    const callPhone = suffix === 'hro' ? CALL_PHONE_HYDROGEN : CALL_PHONE_ELEVEN;
+    const footer = letterFooterBlockNoTextUs(b);
+    out.push({
+      callPhone,
+      websiteUrl: b.website,
+      name: `svc_booking_cancelled_letter_${suffix}_v5`,
+      body: [
+        `Hi {{1}},`,
+        `This is an update from ${b.label} regarding your water purifier service booking.`,
+        ``,
+        `Your booking for {{2}} has been cancelled.`,
+        ``,
+        footer,
+        ``,
+        `Reply on this chat if you need any help.`,
+      ].join('\n'),
+      examples: ['Rahul', 'Tue 12 Aug, 2:00 PM'],
+    });
+  }
+  return out;
+}
+
+const BOOKING_CANCELLED_LETTER_V4_TEMPLATES = buildBookingCancelledLetterV4Templates();
+
+/**
+ * Booking confirmed letter v4 — light emojis + Call/Email/Website footer (no Text us).
+ * Buttons: Call us + Website. Both brands.
+ */
+function buildBookingConfirmedLetterV4Templates() {
+  const out = [];
+  for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
+    const callPhone = suffix === 'hro' ? CALL_PHONE_HYDROGEN : CALL_PHONE_ELEVEN;
+    const footer = letterFooterBlockNoTextUs(b);
+    out.push({
+      callPhone,
+      websiteUrl: b.website,
+      name: `svc_booking_confirmed_letter_${suffix}_v4`,
+      body: [
+        `Hi {{1}}, 👋`,
+        `This is an update from ${b.label} regarding your service booking. ✅`,
+        ``,
+        `📋 Booking: {{2}}`,
+        `📅 Confirmed for: {{3}}`,
+        ``,
+        footer,
+        ``,
+        `💬 Reply on this chat if you need to change the date or time.`,
+      ].join('\n'),
+      examples: ['Rahul', 'RO2608121234', 'Tue 12 Aug, 2:00 PM'],
+    });
+  }
+  return out;
+}
+
+const BOOKING_CONFIRMED_LETTER_V4_TEMPLATES = buildBookingConfirmedLetterV4Templates();
+
+/**
+ * Service-due letter v4 — Call us + Website + QUICK_REPLY "Book now".
+ * Tapping Book now hits the webhook → booking bot asks date/time → creates job
+ * (existing customer fast path). URL "Book online" cannot do that.
+ */
+function buildServiceDueLetterV4Templates() {
+  const out = [];
+  for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
+    const callPhone = suffix === 'hro' ? CALL_PHONE_HYDROGEN : CALL_PHONE_ELEVEN;
+    const footer = letterFooterBlockNoTextUs(b);
+    out.push({
+      callPhone,
+      websiteUrl: b.website,
+      name: `svc_service_due_letter_${suffix}_v4`,
+      body: [
+        `Hi {{1}},`,
+        `This is an update from ${b.label} regarding your water purifier service schedule.`,
+        ``,
+        `Service due around: {{2}}`,
+        ``,
+        `Tap Book now below (or reply BOOK) to schedule a visit — we will ask for your preferred date and time.`,
+        ``,
+        footer,
+      ].join('\n'),
+      examples: ['Rahul', 'Tue 12 Aug 2026'],
+    });
+  }
+  return out;
+}
+
+const SERVICE_DUE_LETTER_V4_TEMPLATES = buildServiceDueLetterV4Templates();
+
+/**
+ * Job-done letter v4 — light emojis + Call/Email/Website each on its own line (no Text us).
+ * Buttons: Call us + Website (letterPayload).
+ */
+function buildJobDoneLetterV4Templates() {
+  const out = [];
+  for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
+    const callPhone = suffix === 'hro' ? CALL_PHONE_HYDROGEN : CALL_PHONE_ELEVEN;
+    const footer = letterFooterBlockNoTextUs(b);
+    out.push({
+      callPhone,
+      websiteUrl: b.website,
+      name: `svc_job_done_letter_${suffix}_v4`,
+      body: [
+        `Hi {{1}}, 👋`,
+        `This is an update from ${b.label} regarding your completed water purifier service. ✅`,
+        ``,
+        `💰 Amount collected: INR {{2}}`,
+        `🧾 Invoice / Job: {{3}}`,
+        ``,
+        footer,
+        ``,
+        `💬 Reply on this chat if you need any help.`,
+      ].join('\n'),
+      examples: ['Rahul', '2500', 'INV-2026-0815'],
+    });
+  }
+  return out;
+}
+
+const JOB_DONE_LETTER_V4_TEMPLATES = buildJobDoneLetterV4Templates();
+
+/**
+ * Job-done letter — same copy as letter style, NO buttons (body only).
+ * Footer: Call / Email / Website only (no wa.me — safer for UTILITY).
+ */
+function buildJobDoneLetterPlainTemplates() {
+  const out = [];
+  for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
+    const callPhone = suffix === 'hro' ? CALL_PHONE_HYDROGEN : CALL_PHONE_ELEVEN;
+    const footer = letterFooterBlockNoTextUs(b);
+    out.push({
+      callPhone,
+      websiteUrl: b.website,
+      name: `svc_job_done_letter_${suffix}_plain_v1`,
+      body: [
+        `Hi {{1}},`,
+        `This is an update from ${b.label} regarding your completed water purifier service.`,
+        ``,
+        `Amount collected: INR {{2}}`,
+        `Invoice / Job: {{3}}`,
+        ``,
+        footer,
+        ``,
+        `Reply on this chat if you need any help.`,
+      ].join('\n'),
+      examples: ['Rahul', '1500', 'RO2608121234'],
+    });
+    out.push({
+      callPhone,
+      websiteUrl: b.website,
+      name: `svc_job_done_letter_${suffix}_plain_v2`,
+      body: [
+        `Hi {{1}}, 👋`,
+        `This is an update from ${b.label} regarding your completed water purifier service. ✅`,
+        ``,
+        `💰 Amount collected: INR {{2}}`,
+        `🧾 Invoice / Job: {{3}}`,
+        ``,
+        footer,
+        ``,
+        `💬 Reply on this chat if you need any help.`,
+      ].join('\n'),
+      examples: ['Rahul', '2500', 'INV-2026-0815'],
+    });
+  }
+  return out;
+}
+
+const JOB_DONE_LETTER_PLAIN_TEMPLATES = buildJobDoneLetterPlainTemplates();
+
 /** Balance-due letter v4 — Call us + Pay now (UPI short link /p/{{1}}). */
 function buildBalanceDueLetterV4Templates() {
   const out = [];
@@ -663,6 +1003,73 @@ function buildBalanceDueLetterV4Templates() {
 }
 
 const BALANCE_DUE_LETTER_V4_TEMPLATES = buildBalanceDueLetterV4Templates();
+
+/**
+ * Balance-due letter v5 — same as v4 (Call us + Pay now) but NO Text us / wa.me in body
+ * (Meta MARKETING risk + cleaner copy). Both Eleven + Hydrogen.
+ */
+function buildBalanceDueLetterV5Templates() {
+  const out = [];
+  for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
+    const callPhone = suffix === 'hro' ? CALL_PHONE_HYDROGEN : CALL_PHONE_ELEVEN;
+    const footer = letterFooterBlockNoTextUs(b);
+    out.push({
+      callPhone,
+      websiteUrl: b.website,
+      payUrl: `${b.website}/p/{{1}}`,
+      name: `svc_balance_due_letter_${suffix}_v5`,
+      body: [
+        `Hi {{1}},`,
+        `This is an update from ${b.label} regarding your pending payment for water purifier service.`,
+        ``,
+        `Amount pending: INR {{2}}`,
+        `Due date: {{3}}`,
+        `Invoice / Job: {{4}}`,
+        ``,
+        footer,
+        ``,
+        `Tap Pay now below or reply on this chat if you have already paid.`,
+      ].join('\n'),
+      examples: ['Rahul', '500', '15 Aug 2026', 'RO2608121234'],
+    });
+  }
+  return out;
+}
+
+const BALANCE_DUE_LETTER_V5_TEMPLATES = buildBalanceDueLetterV5Templates();
+
+/**
+ * Balance-due letter v6 — same as v5 (Call us + Pay now, no Text us) + light emojis.
+ */
+function buildBalanceDueLetterV6Templates() {
+  const out = [];
+  for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
+    const callPhone = suffix === 'hro' ? CALL_PHONE_HYDROGEN : CALL_PHONE_ELEVEN;
+    const footer = letterFooterBlockNoTextUs(b);
+    out.push({
+      callPhone,
+      websiteUrl: b.website,
+      payUrl: `${b.website}/p/{{1}}`,
+      name: `svc_balance_due_letter_${suffix}_v6`,
+      body: [
+        `Hi {{1}}, 👋`,
+        `This is an update from ${b.label} regarding your pending payment for water purifier service. 💧`,
+        ``,
+        `💰 Amount pending: INR {{2}}`,
+        `📅 Due date: {{3}}`,
+        `🧾 Invoice / Job: {{4}}`,
+        ``,
+        footer,
+        ``,
+        `💳 Tap Pay now below or reply on this chat if you have already paid.`,
+      ].join('\n'),
+      examples: ['Rahul', '500', '15 Aug 2026', 'RO2608121234'],
+    });
+  }
+  return out;
+}
+
+const BALANCE_DUE_LETTER_V6_TEMPLATES = buildBalanceDueLetterV6Templates();
 
 /** Existing-customer schedule — Book online button only (no Call). */
 const EXISTING_CUSTOMER_BOOK_CTA_TEMPLATES = [
@@ -701,13 +1108,13 @@ const SERVICE_DUE_BOOK_CTA_TEMPLATES = [
 
 /** Cold PDF — per doc type, brand footer + Call + Chat us (DOCUMENT header). */
 const DOC_PDF_ATTACHED_LINES = [
-  { slug: 'bill', line: 'Your service bill is attached.' },
-  { slug: 'invoice', line: 'Your tax invoice is attached.' },
-  { slug: 'amc', line: 'Your AMC agreement is attached.' },
-  { slug: 'quotation', line: 'Your quotation is attached.' },
-  { slug: 'warranty', line: 'Your warranty card is attached.' },
-  { slug: 'receipt', line: 'Your payment receipt is attached.' },
-  { slug: 'generic', line: 'Your document is attached.' },
+  { slug: 'bill', line: 'Your service bill is attached.', label: 'service bill' },
+  { slug: 'invoice', line: 'Your tax invoice is attached.', label: 'tax invoice' },
+  { slug: 'amc', line: 'Your AMC agreement is attached.', label: 'AMC agreement' },
+  { slug: 'quotation', line: 'Your quotation is attached.', label: 'quotation' },
+  { slug: 'warranty', line: 'Your warranty card is attached.', label: 'warranty card' },
+  { slug: 'receipt', line: 'Your payment receipt is attached.', label: 'payment receipt' },
+  { slug: 'generic', line: 'Your document is attached.', label: 'document' },
 ];
 
 function buildDocPdfV2Templates() {
@@ -733,19 +1140,71 @@ function buildDocPdfV2Templates() {
 const DOC_PDF_V2_TEMPLATES = buildDocPdfV2Templates();
 
 /**
+ * Direct PDF send (no Accept / preview) — letter style + light emojis.
+ * {{1}} name, {{2}} document label (AMC agreement, tax invoice, …).
+ * DOCUMENT header + Call us + Website. Both brands.
+ */
+function buildDocDirectLetterTemplates() {
+  const out = [];
+  for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
+    const callPhone = suffix === 'hro' ? CALL_PHONE_HYDROGEN : CALL_PHONE_ELEVEN;
+    const footer = letterFooterBlockNoTextUs(b);
+    out.push({
+      callPhone,
+      websiteUrl: b.website,
+      name: `svc_doc_direct_${suffix}_v1`,
+      body: [
+        `Hi {{1}}, 👋`,
+        `📄 Your {{2}} from ${b.label} is attached.`,
+        ``,
+        `💬 Reply on this chat if you need any help.`,
+        ``,
+        footer,
+      ].join('\n'),
+      examples: ['Rahul', 'AMC agreement'],
+    });
+  }
+  return out;
+}
+
+const DOC_DIRECT_LETTER_TEMPLATES = buildDocDirectLetterTemplates();
+
+/**
+ * Per-doc-type direct PDF v3 — letter style + emojis (no Accept). Fixed copy per kind.
+ * Prefer these when approved; else svc_doc_direct_*_v1; else v2.
+ */
+function buildDocPdfV3Templates() {
+  const out = [];
+  for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
+    const callPhone = suffix === 'hro' ? CALL_PHONE_HYDROGEN : CALL_PHONE_ELEVEN;
+    const footer = letterFooterBlockNoTextUs(b);
+    for (const kind of DOC_PDF_ATTACHED_LINES) {
+      out.push({
+        name: `svc_doc_${kind.slug}_${suffix}_v3`,
+        callPhone,
+        websiteUrl: b.website,
+        body: [
+          `Hi {{1}}, 👋`,
+          `📄 Your ${kind.label} from ${b.label} is attached.`,
+          ``,
+          `💬 Reply on this chat if you need any help.`,
+          ``,
+          footer,
+        ].join('\n'),
+        examples: ['Rahul'],
+      });
+    }
+  }
+  return out;
+}
+
+const DOC_PDF_V3_TEMPLATES = buildDocPdfV3Templates();
+
+/**
  * Preview PDF → Accept terms → original PDF (DOCUMENT header).
  * Buttons: Call us + Accept only (no Text us / wa.me).
  * Light emojis for readability; keep UTILITY tone (no promo/celebration spam).
  */
-function letterFooterBlockNoTextUs(brand) {
-  return [
-    `Thank you for choosing ${brand.label}.`,
-    `Call:\n${brand.phone}`,
-    `Email:\n${brand.email}`,
-    `Website:\n${brand.webHost}`,
-  ].join('\n');
-}
-
 function buildDocAcceptPreviewTemplates() {
   const out = [];
   for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
@@ -903,11 +1362,11 @@ function corePayload(t) {
       example: { header_handle: [SAMPLE_PDF] },
     });
   }
-  components.push({
-    type: 'BODY',
-    text: t.body,
-    example: { body_text: [t.examples] },
-  });
+  const bodyComp = { type: 'BODY', text: t.body };
+  if (Array.isArray(t.examples) && t.examples.length > 0) {
+    bodyComp.example = { body_text: [t.examples] };
+  }
+  components.push(bodyComp);
   if (!t.noButtons) {
     const buttons = Array.isArray(t.quickReplies) && t.quickReplies.length
       ? t.quickReplies.slice(0, 3).map((text) => ({
@@ -1009,7 +1468,74 @@ function letterPayload(t) {
   };
 }
 
-function docPdfPayload(t) {
+/** Body-only UTILITY (no Call / URL / quick-reply buttons). */
+function bodyOnlyPayload(t) {
+  return {
+    name: t.name,
+    language: 'en',
+    category: 'UTILITY',
+    allow_category_change: true,
+    components: [
+      {
+        type: 'BODY',
+        text: t.body,
+        example: { body_text: [t.examples] },
+      },
+    ],
+  };
+}
+
+/** Service-due: Call us + Website + Book now (quick reply → booking bot). */
+function serviceDueBookNowPayload(t) {
+  const callPhone = t.callPhone || callPhoneForTemplate(t.name);
+  const websiteUrl = t.websiteUrl || websiteUrlForTemplate(t.name);
+  const buttons = [{ type: 'PHONE_NUMBER', text: 'Call us', phone_number: callPhone }];
+  if (websiteUrl) {
+    buttons.push({ type: 'URL', text: 'Website', url: websiteUrl });
+  }
+  buttons.push({ type: 'QUICK_REPLY', text: 'Book now' });
+  return {
+    name: t.name,
+    language: 'en',
+    category: 'UTILITY',
+    allow_category_change: true,
+    components: [
+      {
+        type: 'BODY',
+        text: t.body,
+        example: { body_text: [t.examples] },
+      },
+      { type: 'BUTTONS', buttons },
+    ],
+  };
+}
+
+/** Ask location v2: Call us + Share location (quick reply → bot Send location). No Website. */
+function askLocShareLocationPayload(t) {
+  const callPhone = t.callPhone || callPhoneForTemplate(t.name);
+  return {
+    name: t.name,
+    language: 'en',
+    category: 'UTILITY',
+    allow_category_change: true,
+    components: [
+      {
+        type: 'BODY',
+        text: t.body,
+        example: { body_text: [t.examples] },
+      },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          { type: 'PHONE_NUMBER', text: 'Call us', phone_number: callPhone },
+          { type: 'QUICK_REPLY', text: 'Share location' },
+        ],
+      },
+    ],
+  };
+}
+
+function docPdfPayloadSync(t, headerHandle = SAMPLE_PDF) {
   const websiteUrl = t.websiteUrl || websiteUrlForTemplate(t.name);
   const buttons = [{ type: 'PHONE_NUMBER', text: 'Call us', phone_number: t.callPhone }];
   if (websiteUrl) {
@@ -1024,7 +1550,7 @@ function docPdfPayload(t) {
       {
         type: 'HEADER',
         format: 'DOCUMENT',
-        example: { header_handle: [SAMPLE_PDF] },
+        example: { header_handle: [headerHandle] },
       },
       {
         type: 'BODY',
@@ -1034,6 +1560,11 @@ function docPdfPayload(t) {
       { type: 'BUTTONS', buttons },
     ],
   };
+}
+
+async function docPdfPayload(t, token = '') {
+  const headerHandle = token ? await uploadTemplateSamplePdfHandle(token) : SAMPLE_PDF;
+  return docPdfPayloadSync(t, headerHandle);
 }
 
 /** Preview PDF attached + Accept → /c/{token}. Call us only (no Text us / wa.me). */
@@ -1176,11 +1707,11 @@ function buttonsPreview(payload) {
   return btns
     .map((b) => {
       if (b.type === 'PHONE_NUMBER') return `**Call us** → \`${b.phone_number}\``;
+      if (b.type === 'QUICK_REPLY') return `Quick reply: **${b.text}**`;
       if (b.type === 'URL') {
         const url = String(b.url || '').replace('{{1}}', /\/c\//.test(b.url || '') ? 'Ab3xY9kLmN2pQ8rT' : 'pay123456');
         return `**${b.text || 'Link'}** → ${url}`;
       }
-      if (b.type === 'QUICK_REPLY') return `Quick reply: **${b.text}**`;
       return String(b.type);
     })
     .join(' · ');
@@ -1218,7 +1749,28 @@ function collectAllTemplatePreviewEntries() {
   for (const t of JOB_DONE_V2_TEMPLATES) push('Job done v2', t, jobDonePayload);
   for (const t of JOB_DONE_V3_TEMPLATES) push('Job done v3', t, jobDonePayload);
   for (const t of LETTER_V3_TEMPLATES) push('Letter format v3', t, letterPayload);
+  for (const t of JOB_DONE_LETTER_V4_TEMPLATES) {
+    push('Job done letter v4 (emoji)', t, letterPayload);
+  }
+  for (const t of BOOKING_CONFIRMED_LETTER_V4_TEMPLATES) {
+    push('Booking confirmed letter v4 (emoji)', t, letterPayload);
+  }
+  for (const t of BOOKING_CANCELLED_LETTER_V4_TEMPLATES) {
+    push('Booking cancelled letter v4 (no BOOK)', t, letterPayload);
+  }
+  for (const t of SERVICE_DUE_LETTER_V4_TEMPLATES) {
+    push('Service due letter v4 (Book now)', t, serviceDueBookNowPayload);
+  }
+  for (const t of JOB_DONE_LETTER_PLAIN_TEMPLATES) {
+    push('Job done letter (no buttons)', t, bodyOnlyPayload);
+  }
   for (const t of BALANCE_DUE_LETTER_V4_TEMPLATES) push('Balance due letter v4 (Pay now)', t, balanceDueLetterPayload);
+  for (const t of BALANCE_DUE_LETTER_V5_TEMPLATES) {
+    push('Balance due letter v5 (Pay now, no Text us)', t, balanceDueLetterPayload);
+  }
+  for (const t of BALANCE_DUE_LETTER_V6_TEMPLATES) {
+    push('Balance due letter v6 (Pay now + emoji)', t, balanceDueLetterPayload);
+  }
   for (const t of EXISTING_CUSTOMER_BOOK_CTA_TEMPLATES) push('Existing customer book', t, bookOnlyPayload);
   for (const t of SERVICE_DUE_BOOK_CTA_TEMPLATES) push('Service due book CTA', t, bookOnlyPayload);
   for (const t of WFS_HELLO_TEMPLATES) push('WFS hello', t, corePayload);
@@ -1227,9 +1779,23 @@ function collectAllTemplatePreviewEntries() {
   for (const t of WFS_HI_FROM_TEMPLATES) push('WFS hi from (legacy)', t, corePayload);
   for (const t of WFS_V3_UTILITY_TEMPLATES) push('WFS greeting v3', t, corePayload);
   for (const t of WFS_COLLECT_TEMPLATES) push('WFS collect info', t, corePayload);
+  for (const t of WFS_ASK_NAME_TEMPLATES) push('WFS ask name', t, corePayload);
+  for (const t of WFS_ASK_NAME_SIMPLE_TEMPLATES) push('WFS ask name (short)', t, corePayload);
   for (const t of WFS_ASK_LOC_TEMPLATES) push('WFS ask location', t, letterPayload);
   for (const t of WFS_ASK_LOC_SIMPLE_TEMPLATES) push('WFS ask location (short)', t, letterPayload);
-  for (const t of DOC_PDF_V2_TEMPLATES) push('Cold PDF v2', t, docPdfPayload);
+  for (const t of WFS_ASK_LOC_V2_TEMPLATES) {
+    push('WFS ask location v2 (Share location)', t, askLocShareLocationPayload);
+  }
+  for (const t of WFS_ASK_LOC_SIMPLE_V2_TEMPLATES) {
+    push('WFS ask location short v2 (Share location)', t, askLocShareLocationPayload);
+  }
+  for (const t of DOC_PDF_V2_TEMPLATES) push('Cold PDF v2', t, docPdfPayloadSync);
+  for (const t of DOC_DIRECT_LETTER_TEMPLATES) {
+    push('Direct PDF letter (any doc, no Accept)', t, docPdfPayloadSync);
+  }
+  for (const t of DOC_PDF_V3_TEMPLATES) {
+    push('Cold PDF v3 (letter + emoji, no Accept)', t, docPdfPayloadSync);
+  }
   for (const t of DOC_ACCEPT_PREVIEW_TEMPLATES) {
     // Preview MD does not need a live Meta media handle.
     push('Doc accept preview (Accept → original)', t, (x) => docAcceptPreviewPayloadSync(x));
@@ -1437,7 +2003,63 @@ async function main() {
     }
     queue.push({ label: t.name, payload: letterPayload(t) });
   }
+  for (const t of JOB_DONE_LETTER_V4_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: letterPayload(t) });
+  }
+  for (const t of BOOKING_CONFIRMED_LETTER_V4_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: letterPayload(t) });
+  }
+  for (const t of BOOKING_CANCELLED_LETTER_V4_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: letterPayload(t) });
+  }
+  for (const t of SERVICE_DUE_LETTER_V4_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: serviceDueBookNowPayload(t) });
+  }
+  for (const t of JOB_DONE_LETTER_PLAIN_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: bodyOnlyPayload(t) });
+  }
   for (const t of BALANCE_DUE_LETTER_V4_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: balanceDueLetterPayload(t) });
+  }
+  for (const t of BALANCE_DUE_LETTER_V5_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: balanceDueLetterPayload(t) });
+  }
+  for (const t of BALANCE_DUE_LETTER_V6_TEMPLATES) {
     const skip = shouldSkip(t.name, byName);
     if (skip) {
       console.log(`SKIP ${t.name} — ${skip}`);
@@ -1509,6 +2131,22 @@ async function main() {
     }
     queue.push({ label: t.name, payload: corePayload(t) });
   }
+  for (const t of WFS_ASK_NAME_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: corePayload(t) });
+  }
+  for (const t of WFS_ASK_NAME_SIMPLE_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: corePayload(t) });
+  }
   for (const t of WFS_ASK_LOC_TEMPLATES) {
     const skip = shouldSkip(t.name, byName);
     if (skip) {
@@ -1525,13 +2163,45 @@ async function main() {
     }
     queue.push({ label: t.name, payload: letterPayload(t) });
   }
+  for (const t of WFS_ASK_LOC_V2_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: askLocShareLocationPayload(t) });
+  }
+  for (const t of WFS_ASK_LOC_SIMPLE_V2_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: askLocShareLocationPayload(t) });
+  }
   for (const t of DOC_PDF_V2_TEMPLATES) {
     const skip = shouldSkip(t.name, byName);
     if (skip) {
       console.log(`SKIP ${t.name} — ${skip}`);
       continue;
     }
-    queue.push({ label: t.name, payload: docPdfPayload(t) });
+    queue.push({ label: t.name, payload: await docPdfPayload(t, doSubmit ? token : '') });
+  }
+  for (const t of DOC_DIRECT_LETTER_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: await docPdfPayload(t, doSubmit ? token : '') });
+  }
+  for (const t of DOC_PDF_V3_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: await docPdfPayload(t, doSubmit ? token : '') });
   }
   for (const t of DOC_ACCEPT_PREVIEW_TEMPLATES) {
     const skip = shouldSkip(t.name, byName);
@@ -1548,6 +2218,103 @@ async function main() {
   const onlyDocAccept = process.argv.includes('--only-doc-accept');
   if (onlyDocAccept) {
     const keep = new Set(DOC_ACCEPT_PREVIEW_TEMPLATES.map((t) => t.name));
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
+  const onlyDocDirect = process.argv.includes('--only-doc-direct');
+  if (onlyDocDirect) {
+    const keep = new Set([
+      ...DOC_DIRECT_LETTER_TEMPLATES.map((t) => t.name),
+      ...DOC_PDF_V3_TEMPLATES.map((t) => t.name),
+    ]);
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
+  const onlyJobDonePlain = process.argv.includes('--only-job-done-plain');
+  if (onlyJobDonePlain) {
+    const keep = new Set(JOB_DONE_LETTER_PLAIN_TEMPLATES.map((t) => t.name));
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
+  const onlyJobDoneLetterV4 = process.argv.includes('--only-job-done-letter-v4');
+  if (onlyJobDoneLetterV4) {
+    const keep = new Set([
+      ...JOB_DONE_LETTER_V4_TEMPLATES.map((t) => t.name),
+      ...JOB_DONE_LETTER_PLAIN_TEMPLATES.filter((t) => /_plain_v2$/i.test(t.name)).map((t) => t.name),
+    ]);
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
+  const onlyServiceDueBookNow = process.argv.includes('--only-service-due-book-now');
+  if (onlyServiceDueBookNow) {
+    const keep = new Set(SERVICE_DUE_LETTER_V4_TEMPLATES.map((t) => t.name));
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
+  const onlyBalanceDueV5 = process.argv.includes('--only-balance-due-v5');
+  if (onlyBalanceDueV5) {
+    const keep = new Set(BALANCE_DUE_LETTER_V5_TEMPLATES.map((t) => t.name));
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
+  const onlyBalanceDueV6 = process.argv.includes('--only-balance-due-v6');
+  if (onlyBalanceDueV6) {
+    const keep = new Set(BALANCE_DUE_LETTER_V6_TEMPLATES.map((t) => t.name));
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
+  const onlyAskLocShare = process.argv.includes('--only-ask-loc-share');
+  if (onlyAskLocShare) {
+    const keep = new Set([
+      ...WFS_ASK_LOC_V2_TEMPLATES.map((t) => t.name),
+      ...WFS_ASK_LOC_SIMPLE_V2_TEMPLATES.map((t) => t.name),
+    ]);
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
+  const onlyAskName = process.argv.includes('--only-ask-name');
+  if (onlyAskName) {
+    const keep = new Set(WFS_ASK_NAME_TEMPLATES.map((t) => t.name));
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
+  const onlyAskNameSimple = process.argv.includes('--only-ask-name-simple');
+  if (onlyAskNameSimple) {
+    const keep = new Set(WFS_ASK_NAME_SIMPLE_TEMPLATES.map((t) => t.name));
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
+  const onlyBookingConfirmedV4 = process.argv.includes('--only-booking-confirmed-v4');
+  if (onlyBookingConfirmedV4) {
+    const keep = new Set(BOOKING_CONFIRMED_LETTER_V4_TEMPLATES.map((t) => t.name));
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (!keep.has(queue[i].label)) queue.splice(i, 1);
+    }
+  }
+
+  const onlyBookingCancelledV4 = process.argv.includes('--only-booking-cancelled-v4');
+  if (onlyBookingCancelledV4) {
+    const keep = new Set(BOOKING_CANCELLED_LETTER_V4_TEMPLATES.map((t) => t.name));
     for (let i = queue.length - 1; i >= 0; i -= 1) {
       if (!keep.has(queue[i].label)) queue.splice(i, 1);
     }

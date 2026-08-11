@@ -287,9 +287,9 @@ export function callingColdTemplateFor(
     String(whenLabel || '').trim() ||
     'your upcoming visit';
   if (template === 'service_due') {
-    // Prefer letter v3 → v2 → v1 → CTA → schedule CTA → visit reminder (via cold fallback).
+    // Prefer letter v4 (Book now QR) → v3 → … via cold fallback.
     return {
-      name: resolveBrandLetterTemplateName('service_due', documentBrand, 'v3'),
+      name: resolveBrandLetterTemplateName('service_due', documentBrand, 'v4'),
       languageCode: 'en',
       bodyParams: [name, when],
     };
