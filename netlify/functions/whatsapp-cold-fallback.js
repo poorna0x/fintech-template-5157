@@ -29,12 +29,23 @@ function customerNameFrom(params) {
   return n || 'there';
 }
 
-function buildTemplatePayload(to, templateName, languageCode, bodyParams, headerComponents = []) {
+function buildTemplatePayload(to, templateName, languageCode, bodyParams, headerComponents = [], buttonUrlParams = []) {
   const components = [...(headerComponents || [])];
   if (bodyParams?.length) {
     components.push({
       type: 'body',
       parameters: bodyParams.map((p) => ({ type: 'text', text: String(p ?? '') })),
+    });
+  }
+  for (const btn of buttonUrlParams || []) {
+    const text = String(btn?.text ?? btn ?? '').trim();
+    if (!text) continue;
+    const index = String(btn?.index ?? '1');
+    components.push({
+      type: 'button',
+      sub_type: 'url',
+      index,
+      parameters: [{ type: 'text', text }],
     });
   }
   return {
@@ -112,11 +123,15 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader) {
     push(JOB_DONE, [name, amount]);
   }
 
-  // Balance-due letter v3 → v2 → v1 → short svc_balance_due
-  if (/^svc_balance_due_letter_(ero|hro)(_v3|_v2)?$/i.test(primaryName)) {
+  // Balance-due letter v4 → v3 → v2 → v1 → short svc_balance_due
+  if (/^svc_balance_due_letter_(ero|hro)(_v4|_v3|_v2)?$/i.test(primaryName)) {
     const suffix = /_hro/.test(primaryName) ? 'hro' : 'ero';
     const amount = String(bodyParams?.[1] || '0').replace(/[^\d.]/g, '') || '0';
-    if (/_v3$/i.test(primaryName)) {
+    if (/_v4$/i.test(primaryName)) {
+      push(`svc_balance_due_letter_${suffix}_v3`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}_v2`, bodyParams.slice(0, 4).map(String));
+      push(`svc_balance_due_letter_${suffix}`, bodyParams.slice(0, 4).map(String));
+    } else if (/_v3$/i.test(primaryName)) {
       push(`svc_balance_due_letter_${suffix}_v2`, bodyParams.slice(0, 4).map(String));
       push(`svc_balance_due_letter_${suffix}`, bodyParams.slice(0, 4).map(String));
     } else if (/_v2$/i.test(primaryName)) {
@@ -215,6 +230,44 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader) {
     push(`svc_visit_cancelled_${suffix}`, bodyParams.slice(0, 2).map(String));
   }
 
+  // WFS minimal hello → longer hi → svc_hello → smoke
+  if (/^svc_wfs_just_hi(_(hro|ero))?(_v3)?$/i.test(primaryName)) {
+    const suffix = /_hro/i.test(primaryName) ? 'hro' : /_ero/i.test(primaryName) ? 'ero' : null;
+    if (/_v3$/i.test(primaryName)) {
+      if (suffix) push(`svc_wfs_hi_from_${suffix}_v3`, [name]);
+      else push('svc_wfs_hi_from_v3', [name]);
+    } else if (suffix) {
+      push(`svc_wfs_just_hi_${suffix}_v3`, [name]);
+      push(`svc_wfs_hi_from_${suffix}_v3`, [name]);
+    } else {
+      push('svc_wfs_just_hi_v3', [name]);
+      push('svc_wfs_hi_from_v3', [name]);
+    }
+    push('svc_hello', [name]);
+  }
+  if (/^svc_wfs_hi_from(_(hro|ero))?(_v3|_v2)?$/i.test(primaryName)) {
+    const suffix = /_hro/i.test(primaryName) ? 'hro' : /_ero/i.test(primaryName) ? 'ero' : null;
+    if (/_v3$/i.test(primaryName)) {
+      if (suffix) push(`svc_wfs_hi_${suffix}_v2`, [name]);
+      else push('svc_wfs_hi_v3', [name]);
+    } else if (suffix) {
+      push(`svc_wfs_hi_from_${suffix}_v3`, [name]);
+      push(`svc_wfs_hi_${suffix}_v2`, [name]);
+    } else {
+      push('svc_wfs_hi_from_v3', [name]);
+      push('svc_wfs_hi_v3', [name]);
+    }
+    push('svc_hello', [name]);
+  }
+  if (/^svc_wfs_hello(_v3)?$/i.test(primaryName)) {
+    push('svc_wfs_hello_v3', [name]);
+    push('svc_hello', [name]);
+  }
+  if (/^svc_wfs_hi(_v3)?$/i.test(primaryName) && !/^svc_wfs_hi_from/i.test(primaryName)) {
+    push('svc_wfs_hi_v3', [name]);
+    push('svc_hello', [name]);
+  }
+
   // Ask location (Call us + Text us cold templates) → legacy svc_ask_location → visit reminder
   if (/^svc_wfs_ask_loc_simple_(hro|ero)$/i.test(primaryName)) {
     const suffix = /_hro$/i.test(primaryName) ? 'hro' : 'ero';
@@ -276,23 +329,39 @@ async function sendTemplateWithColdFallbacks({
   languageCode,
   bodyParams,
   headerComponents = [],
+  buttonUrlParams = [],
   enableFallback = true,
 }) {
   const params = Array.isArray(bodyParams) ? bodyParams : [];
   const headers = Array.isArray(headerComponents) ? headerComponents : [];
+  const urlButtons = Array.isArray(buttonUrlParams) ? buttonUrlParams : [];
 
   let result = await callWhatsAppApi(
     phoneNumberId,
     accessToken,
-    buildTemplatePayload(to, templateName, languageCode, params, headers)
+    buildTemplatePayload(to, templateName, languageCode, params, headers, urlButtons)
   );
 
   if (result.ok) {
-    return { ok: true, result, templateName, bodyParams: params, headerComponents: headers };
+    return {
+      ok: true,
+      result,
+      templateName,
+      bodyParams: params,
+      headerComponents: headers,
+      buttonUrlParams: urlButtons,
+    };
   }
 
   if (!enableFallback || !isTemplateMetaError(result)) {
-    return { ok: false, result, templateName, bodyParams: params, headerComponents: headers };
+    return {
+      ok: false,
+      result,
+      templateName,
+      bodyParams: params,
+      headerComponents: headers,
+      buttonUrlParams: urlButtons,
+    };
   }
 
   const hasDocHeader = headers.some((c) => String(c.type || '').toLowerCase() === 'header');
@@ -300,7 +369,7 @@ async function sendTemplateWithColdFallbacks({
     const fbResult = await callWhatsAppApi(
       phoneNumberId,
       accessToken,
-      buildTemplatePayload(to, fb.name, languageCode, fb.params, fb.headerComponents)
+      buildTemplatePayload(to, fb.name, languageCode, fb.params, fb.headerComponents, [])
     );
     if (fbResult.ok) {
       return {
@@ -309,6 +378,7 @@ async function sendTemplateWithColdFallbacks({
         templateName: fb.name,
         bodyParams: fb.params,
         headerComponents: fb.headerComponents,
+        buttonUrlParams: [],
         usedFallback: true,
         primaryTemplate: templateName,
       };
@@ -316,7 +386,14 @@ async function sendTemplateWithColdFallbacks({
     result = fbResult;
   }
 
-  return { ok: false, result, templateName, bodyParams: params, headerComponents: headers };
+  return {
+    ok: false,
+    result,
+    templateName,
+    bodyParams: params,
+    headerComponents: headers,
+    buttonUrlParams: urlButtons,
+  };
 }
 
 module.exports = {

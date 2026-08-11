@@ -202,17 +202,19 @@ function coldTemplateForAction(action, brand, customerName, hasCustomer) {
   }
 
   if (action === 'water_filter_service') {
-    const collect = coldWfsCollectParams(brand, customerName);
     const ask = coldAskLocationParams(brand, customerName);
+    const collect = coldWfsCollectParams(brand, customerName);
     return {
-      primary: { ...collect, seedPending: 'water_filter_service' },
-      fallback: { ...ask, seedPending: 'water_filter_service' },
+      // No new Meta template — opener reuses ask-location UTILITY; lead source goes in the
+      // Share location message after they reply (24h opens).
+      primary: { ...ask, seedPending: 'water_filter_service' },
+      fallback: { ...collect, seedPending: 'water_filter_service' },
       fallback2: {
         name: 'svc_visit_reminder',
         languageCode: 'en',
         bodyParams: [
           name,
-          `${waterFilterFromLabel(brand)} — reply here and we will ask for your location pin next`,
+          `${waterFilterFromLabel(brand)} — reply here and we will send a Share location button`,
         ],
         seedPending: 'water_filter_service',
       },

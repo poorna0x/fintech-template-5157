@@ -53,8 +53,6 @@ const MARKETING_DELETE_NAMES = [
   'amc_document_ready',
   'warranty_ready',
   'general_notice',
-  'booking_confirmed_ero_cta',
-  'booking_confirmed_hro_cta',
   'book_existing_customer_cta',
   'book_existing_customer_ero_cta',
   'book_existing_customer_hro_cta',
@@ -66,6 +64,21 @@ const MARKETING_DELETE_NAMES = [
   'missed_call_book_hro_cta',
   'new_customer_service_setup_ero_cta',
   'new_customer_service_setup_hro_cta',
+  // WFS hello/hi flagged MARKETING by Meta — delete and resubmit as _v2 with neutral wording
+  'svc_wfs_hello_ero',
+  'svc_wfs_hello_hro',
+  'svc_wfs_hi_hro',
+  'svc_wfs_hi_ero',
+  'svc_wfs_hi_from_ero',
+  // Generic + just_hi / hi_from still flagged MARKETING — delete and resubmit as _v3
+  'svc_wfs_hello',
+  'svc_wfs_hi',
+  'svc_wfs_hi_from',
+  'svc_wfs_hi_from_hro',
+  'svc_wfs_hi_from_ero_v2',
+  'svc_wfs_just_hi',
+  'svc_wfs_just_hi_ero',
+  'svc_wfs_just_hi_hro',
 ];
 
 /** Code name → already-approved Meta name (do not re-submit under old name). */
@@ -204,17 +217,21 @@ const CORE_TEMPLATES = [
   },
 ];
 
-/** Water Filter Service — cold hello (reopen chat). Reply → greeting menu. */
+/** Water Filter Service — cold hello. Reply → greeting menu.
+ * svc_wfs_hello_ero was MARKETING-flagged → deleted, resubmit as _ero_v2 with neutral wording.
+ */
 const WFS_HELLO_TEMPLATES = [
   {
-    name: 'svc_wfs_hello_hro',
-    body: 'Hi {{1}}, this is Hydrogen RO Water Filter Service. Please reply on this chat if you need help with your water purifier.',
+    // was svc_wfs_hello_hro (MARKETING-flagged) — neutral service-account framing
+    name: 'svc_wfs_hello_hro_v2',
+    body: 'Hi {{1}}, this is a message about your Hydrogen RO water purifier service account. Please reply on this chat if you need assistance.',
     examples: ['Rahul'],
     noButtons: true,
   },
   {
-    name: 'svc_wfs_hello_ero',
-    body: 'Hi {{1}}, this is Eleven RO Water Filter Service. Please reply on this chat if you need help with your water purifier.',
+    // was svc_wfs_hello_ero (MARKETING-flagged) — neutral service-account framing
+    name: 'svc_wfs_hello_ero_v2',
+    body: 'Hi {{1}}, this is a message about your Eleven RO water purifier service account. Please reply on this chat if you need assistance.',
     examples: ['Rahul'],
     noButtons: true,
   },
@@ -226,23 +243,123 @@ const WFS_HELLO_TEMPLATES = [
   },
 ];
 
-/** Short cold hello — “hi from … Water Filter Service”. Reply → greeting menu. */
+/** Short cold hello — svc_wfs_hi_hro and _ero were MARKETING-flagged → resubmit as _v2. */
 const WFS_SIMPLE_HI_TEMPLATES = [
   {
-    name: 'svc_wfs_hi_hro',
-    body: 'Hi {{1}}, hi from Hydrogen RO Water Filter Service. Please reply on this chat.',
+    name: 'svc_wfs_hi_hro_v2',
+    body: 'Hi {{1}}, this is a message about your Hydrogen RO water purifier service account. Please reply on this chat.',
     examples: ['Rahul'],
     noButtons: true,
   },
   {
-    name: 'svc_wfs_hi_ero',
-    body: 'Hi {{1}}, hi from Eleven RO Water Filter Service. Please reply on this chat.',
+    name: 'svc_wfs_hi_ero_v2',
+    body: 'Hi {{1}}, this is a message about your Eleven RO water purifier service account. Please reply on this chat.',
     examples: ['Rahul'],
     noButtons: true,
   },
   {
     name: 'svc_wfs_hi',
     body: 'Hi {{1}}, hi from Water Filter Service. Please reply on this chat.',
+    examples: ['Rahul'],
+    noButtons: true,
+  },
+];
+
+/** Minimal cold hello — “Just Hi”. Reply → greeting menu. */
+const WFS_JUST_HI_TEMPLATES = [
+  {
+    name: 'svc_wfs_just_hi_hro',
+    body: 'Hi {{1}}. Please reply on this chat.',
+    examples: ['Rahul'],
+    noButtons: true,
+  },
+  {
+    name: 'svc_wfs_just_hi_ero',
+    body: 'Hi {{1}}. Please reply on this chat.',
+    examples: ['Rahul'],
+    noButtons: true,
+  },
+  {
+    name: 'svc_wfs_just_hi',
+    body: 'Hi {{1}}. Please reply on this chat.',
+    examples: ['Rahul'],
+    noButtons: true,
+  },
+];
+
+/** Minimal “hi from … Water Filter Service” only (no extra line). Reply → greeting menu. */
+const WFS_HI_FROM_TEMPLATES = [
+  {
+    name: 'svc_wfs_hi_from_hro',
+    body: 'Hi {{1}}, hi from Hydrogen RO Water Filter Service.',
+    examples: ['Rahul'],
+    noButtons: true,
+  },
+  {
+    // was svc_wfs_hi_from_ero (MARKETING-flagged) — ends with period, no CTA line
+    name: 'svc_wfs_hi_from_ero_v2',
+    body: 'Hi {{1}}, this is a message from Eleven RO Water Filter Service.',
+    examples: ['Rahul'],
+    noButtons: true,
+  },
+  {
+    name: 'svc_wfs_hi_from',
+    body: 'Hi {{1}}, hi from Water Filter Service.',
+    examples: ['Rahul'],
+    noButtons: true,
+  },
+];
+
+/**
+ * WFS greetings re-flagged MARKETING (generic hello/hi, just_hi, hi_from) → _v3 UTILITY wording.
+ * Branded hello/hi _v2 stay as-is (already UTILITY PENDING).
+ */
+const WFS_V3_UTILITY_TEMPLATES = [
+  {
+    name: 'svc_wfs_hello_v3',
+    body: 'Hi {{1}}, this is a message about your water purifier service account. Please reply on this chat if you need assistance.',
+    examples: ['Rahul'],
+    noButtons: true,
+  },
+  {
+    name: 'svc_wfs_hi_v3',
+    body: 'Hi {{1}}, this is a message about your water purifier service account. Please reply on this chat.',
+    examples: ['Rahul'],
+    noButtons: true,
+  },
+  {
+    name: 'svc_wfs_just_hi_hro_v3',
+    body: 'Hi {{1}}, this is an update regarding your Hydrogen RO water purifier service account. Please reply on this chat.',
+    examples: ['Rahul'],
+    noButtons: true,
+  },
+  {
+    name: 'svc_wfs_just_hi_ero_v3',
+    body: 'Hi {{1}}, this is an update regarding your Eleven RO water purifier service account. Please reply on this chat.',
+    examples: ['Rahul'],
+    noButtons: true,
+  },
+  {
+    name: 'svc_wfs_just_hi_v3',
+    body: 'Hi {{1}}, this is an update regarding your water purifier service account. Please reply on this chat.',
+    examples: ['Rahul'],
+    noButtons: true,
+  },
+  {
+    name: 'svc_wfs_hi_from_hro_v3',
+    body: 'Hi {{1}}, this is a message about your Hydrogen RO water purifier service account. Please reply on this chat.',
+    examples: ['Rahul'],
+    noButtons: true,
+  },
+  {
+    name: 'svc_wfs_hi_from_ero_v3',
+    body: 'Hi {{1}}, this is a message about your Eleven RO water purifier service account. Please reply on this chat.',
+    examples: ['Rahul'],
+    noButtons: true,
+  },
+  {
+    name: 'svc_wfs_hi_from_v3',
+    body: 'Hi {{1}}, this is a message about your water purifier service account. Please reply on this chat.',
     examples: ['Rahul'],
     noButtons: true,
   },
@@ -417,22 +534,24 @@ const LETTER_BRANDS = {
   },
 };
 
-function letterFooterBlock(brand) {
+function letterFooterBlock(brand, callPhone) {
+  const chatUrl = `https://wa.me/${String(callPhone || brand.phone).replace(/\D/g, '')}`;
   return [
     `Thank you for choosing ${brand.label}.`,
     `Call:\n${brand.phone}`,
     `Email:\n${brand.email}`,
     `Website:\n${brand.webHost}`,
+    `Text us:\n${chatUrl}`,
   ].join('\n');
 }
 
 function buildLetterV3Templates() {
   const out = [];
   for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
-    const footer = letterFooterBlock(b);
     const callPhone = suffix === 'hro' ? CALL_PHONE_HYDROGEN : CALL_PHONE_ELEVEN;
+    const footer = letterFooterBlock(b, callPhone);
     const chatUrl = `https://wa.me/${callPhone.replace(/\D/g, '')}`;
-    const base = { callPhone, chatUrl };
+    const base = { callPhone, chatUrl, websiteUrl: b.website };
     out.push({
       ...base,
       name: `svc_job_done_letter_${suffix}_v3`,
@@ -442,7 +561,7 @@ function buildLetterV3Templates() {
     out.push({
       ...base,
       name: `svc_balance_due_letter_${suffix}_v3`,
-      body: `Hi {{1}},\nThis is an update from ${b.label} regarding your pending payment for water purifier service.\n\nAmount pending: INR {{2}}\nDue date: {{3}}\nInvoice / Job: {{4}}\n\n${footer}\n\nReply on this chat for UPI details or if you have already paid.`,
+      body: `Hi {{1}},\nThis is an update from ${b.label} regarding your pending payment for water purifier service.\n\nAmount pending: INR {{2}}\nDue date: {{3}}\nInvoice / Job: {{4}}\n\n${footer}\n\nTap Pay now below or reply on this chat if you have already paid.`,
       examples: ['Rahul', '500', '15 Aug 2026', 'RO2608121234'],
     });
     out.push({
@@ -470,6 +589,26 @@ function buildLetterV3Templates() {
 }
 
 const LETTER_V3_TEMPLATES = buildLetterV3Templates();
+
+/** Balance-due letter v4 — Call us + Pay now (UPI short link /p/{{1}}). */
+function buildBalanceDueLetterV4Templates() {
+  const out = [];
+  for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
+    const callPhone = suffix === 'hro' ? CALL_PHONE_HYDROGEN : CALL_PHONE_ELEVEN;
+    const footer = letterFooterBlock(b, callPhone);
+    out.push({
+      callPhone,
+      websiteUrl: b.website,
+      payUrl: `${b.website}/p/{{1}}`,
+      name: `svc_balance_due_letter_${suffix}_v4`,
+      body: `Hi {{1}},\nThis is an update from ${b.label} regarding your pending payment for water purifier service.\n\nAmount pending: INR {{2}}\nDue date: {{3}}\nInvoice / Job: {{4}}\n\n${footer}\n\nTap Pay now below or reply on this chat if you have already paid.`,
+      examples: ['Rahul', '500', '15 Aug 2026', 'RO2608121234'],
+    });
+  }
+  return out;
+}
+
+const BALANCE_DUE_LETTER_V4_TEMPLATES = buildBalanceDueLetterV4Templates();
 
 /** Existing-customer schedule — Book online button only (no Call). */
 const EXISTING_CUSTOMER_BOOK_CTA_TEMPLATES = [
@@ -520,14 +659,15 @@ const DOC_PDF_ATTACHED_LINES = [
 function buildDocPdfV2Templates() {
   const out = [];
   for (const [suffix, b] of Object.entries(LETTER_BRANDS)) {
-    const footer = letterFooterBlock(b);
     const callPhone = suffix === 'hro' ? CALL_PHONE_HYDROGEN : CALL_PHONE_ELEVEN;
+    const footer = letterFooterBlock(b, callPhone);
     const chatUrl = `https://wa.me/${callPhone.replace(/\D/g, '')}`;
     for (const kind of DOC_PDF_ATTACHED_LINES) {
       out.push({
         name: `svc_doc_${kind.slug}_${suffix}_v2`,
         callPhone,
         chatUrl,
+        websiteUrl: b.website,
         body: `Hi {{1}},\n${kind.line}\n\n${footer}\n\nReply on this chat if you need any help.`,
         examples: ['Rahul'],
       });
@@ -716,17 +856,45 @@ function jobDonePayload(t) {
   };
 }
 
+function websiteUrlForTemplate(name) {
+  if (/_hro/i.test(String(name || ''))) return 'https://hydrogenro.com';
+  if (/_ero/i.test(String(name || ''))) return 'https://elevenro.com';
+  return null;
+}
+
+function balanceDueLetterPayload(t) {
+  const callPhone = t.callPhone || callPhoneForTemplate(t.name);
+  const payUrl = t.payUrl || `${(t.websiteUrl || websiteUrlForTemplate(t.name) || 'https://hydrogenro.com').replace(/\/$/, '')}/p/{{1}}`;
+  return {
+    name: t.name,
+    language: 'en',
+    category: 'UTILITY',
+    allow_category_change: true,
+    components: [
+      {
+        type: 'BODY',
+        text: t.body,
+        example: { body_text: [t.examples] },
+      },
+      {
+        type: 'BUTTONS',
+        buttons: [
+          { type: 'PHONE_NUMBER', text: 'Call us', phone_number: callPhone },
+          { type: 'URL', text: 'Pay now', url: payUrl, example: ['pay123456'] },
+        ],
+      },
+    ],
+  };
+}
+
 function letterPayload(t) {
   const callPhone = t.callPhone || callPhoneForTemplate(t.name);
-  const chatUrl =
-    t.chatUrl || `https://wa.me/${String(callPhone).replace(/\D/g, '')}`;
-  const buttons = [
-    { type: 'PHONE_NUMBER', text: 'Call us', phone_number: callPhone },
-  ];
-  if (t.websiteUrl) {
-    buttons.push({ type: 'URL', text: 'Website', url: t.websiteUrl });
+  const websiteUrl = t.websiteUrl || websiteUrlForTemplate(t.name);
+  const buttons = [{ type: 'PHONE_NUMBER', text: 'Call us', phone_number: callPhone }];
+  if (websiteUrl) {
+    buttons.push({ type: 'URL', text: 'Website', url: websiteUrl });
   }
-  buttons.push({ type: 'URL', text: 'Text us', url: chatUrl });
+  // Meta blocks wa.me on template URL buttons — Text us stays in the body footer.
   return {
     name: t.name,
     language: 'en',
@@ -744,10 +912,11 @@ function letterPayload(t) {
 }
 
 function docPdfPayload(t) {
-  const buttons = [
-    { type: 'PHONE_NUMBER', text: 'Call us', phone_number: t.callPhone },
-    { type: 'URL', text: 'Text us', url: t.chatUrl },
-  ];
+  const websiteUrl = t.websiteUrl || websiteUrlForTemplate(t.name);
+  const buttons = [{ type: 'PHONE_NUMBER', text: 'Call us', phone_number: t.callPhone }];
+  if (websiteUrl) {
+    buttons.push({ type: 'URL', text: 'Website', url: websiteUrl });
+  }
   return {
     name: t.name,
     language: 'en',
@@ -955,6 +1124,14 @@ async function main() {
     }
     queue.push({ label: t.name, payload: letterPayload(t) });
   }
+  for (const t of BALANCE_DUE_LETTER_V4_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: balanceDueLetterPayload(t) });
+  }
   for (const t of EXISTING_CUSTOMER_BOOK_CTA_TEMPLATES) {
     const skip = shouldSkip(t.name, byName);
     if (skip) {
@@ -980,6 +1157,30 @@ async function main() {
     queue.push({ label: t.name, payload: corePayload(t) });
   }
   for (const t of WFS_SIMPLE_HI_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: corePayload(t) });
+  }
+  for (const t of WFS_JUST_HI_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: corePayload(t) });
+  }
+  for (const t of WFS_HI_FROM_TEMPLATES) {
+    const skip = shouldSkip(t.name, byName);
+    if (skip) {
+      console.log(`SKIP ${t.name} — ${skip}`);
+      continue;
+    }
+    queue.push({ label: t.name, payload: corePayload(t) });
+  }
+  for (const t of WFS_V3_UTILITY_TEMPLATES) {
     const skip = shouldSkip(t.name, byName);
     if (skip) {
       console.log(`SKIP ${t.name} — ${skip}`);

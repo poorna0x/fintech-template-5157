@@ -314,11 +314,19 @@ export function validateWhatsAppAttachFile(file: File): string | null {
   return null;
 }
 
+export type WhatsAppTemplateButtonUrlParam = {
+  /** Button index (0 = first). Pay now on balance-due v4 is index 1 after Call us. */
+  index?: number | string;
+  text: string;
+};
+
 export type SendAdminWhatsAppTemplateOptions = {
   to: string;
   templateName: string;
   languageCode?: string;
   bodyParams?: string[];
+  /** Dynamic URL suffix for template URL buttons (e.g. UPI short-link code). */
+  buttonUrlParams?: Array<WhatsAppTemplateButtonUrlParam | string>;
   customerId?: string | null;
   customerName?: string | null;
   source?: WhatsAppSendSource;
@@ -357,6 +365,9 @@ export async function sendAdminWhatsAppTemplate(
         templateName,
         languageCode: options.languageCode || 'en',
         bodyParams: options.bodyParams || [],
+        ...(options.buttonUrlParams?.length
+          ? { buttonUrlParams: options.buttonUrlParams }
+          : {}),
         ...(options.headerDocument?.pdfBase64
           ? {
               headerDocument: {
@@ -393,6 +404,7 @@ export type SendAdminWhatsAppTextWithTemplateOptions = SendAdminWhatsAppTextOpti
     name: string;
     languageCode?: string;
     bodyParams: string[];
+    buttonUrlParams?: Array<WhatsAppTemplateButtonUrlParam | string>;
   } | null;
 };
 
@@ -422,6 +434,7 @@ export async function sendAdminWhatsAppTextWithOptionalTemplate(
       templateName: coldName,
       languageCode: options.coldTemplate?.languageCode || 'en',
       bodyParams: options.coldTemplate?.bodyParams || [],
+      buttonUrlParams: options.coldTemplate?.buttonUrlParams,
       customerId: options.customerId,
       customerName: options.customerName,
       source: options.source,

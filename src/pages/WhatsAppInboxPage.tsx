@@ -101,6 +101,7 @@ import { WhatsAppQuickRepliesBar, WhatsAppQuickContextFields } from '@/component
 import {
   approvedTemplateNameSet,
   isAskLocationTemplateName,
+  isWfsGreetingTemplateName,
   quickReplyBookingUrl,
   type WhatsAppQuickTemplateSend,
 } from '@/lib/whatsappQuickMessages';
@@ -856,11 +857,9 @@ export default function WhatsAppInboxPage({ hideHeader, onBack, initialPhone }: 
               ? 'request_photo'
               : /^svc_wfs_collect/i.test(payload.templateName)
                 ? 'water_filter_service'
-                : /^svc_wfs_hello/i.test(payload.templateName)
+                : isWfsGreetingTemplateName(payload.templateName)
                   ? 'show_menu'
-                  : /^svc_wfs_hi/i.test(payload.templateName)
-                    ? 'show_menu'
-                    : undefined;
+                  : undefined;
         const result = await sendAdminWhatsAppTemplate({
           to: selectedPhone,
           templateName: payload.templateName,

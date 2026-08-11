@@ -80,14 +80,15 @@ const LETTER_TEMPLATE_BASE: Record<BrandLetterTemplateKind, string> = {
   booking_cancelled: 'svc_booking_cancelled_letter',
 };
 
-/** Meta letter cold template — v3 = Call us + Text us buttons; v2/v1 fallbacks. */
+/** Meta letter cold template — v4 = Pay now for balance_due; v3 = Call us + Website; v2/v1 fallbacks. */
 export function resolveBrandLetterTemplateName(
   kind: BrandLetterTemplateKind,
   brand: DocumentBrand,
-  version: 'v3' | 'v2' | 'v1' = 'v3'
+  version: 'v4' | 'v3' | 'v2' | 'v1' = 'v3'
 ): string {
   const suffix = brand === 'elevenro' ? 'ero' : 'hro';
   const base = LETTER_TEMPLATE_BASE[kind];
+  if (version === 'v4') return `${base}_${suffix}_v4`;
   if (version === 'v3') return `${base}_${suffix}_v3`;
   if (version === 'v2') return `${base}_${suffix}_v2`;
   return `${base}_${suffix}`;

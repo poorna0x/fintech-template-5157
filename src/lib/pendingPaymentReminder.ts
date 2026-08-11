@@ -3,6 +3,7 @@ import type { DocumentBrand } from '@/lib/service-brands';
 import { normalizeDocumentBrand } from '@/lib/service-brands';
 import { brandContactLines, brandLetterClosingLines, brandLetterFooterLines, resolveBrandLetterTemplateName } from '@/lib/whatsappBrandContact';
 import { waLabeledLink, waLabeledValue } from '@/lib/whatsappMessageFormat';
+import { extractUpiPayShortCode } from '@/lib/upiPaymentAccounts';
 
 /** Must match reminders created from Settings → Pending payments. */
 export const PENDING_PAYMENT_REMINDER_TITLE = 'Pending payment';
@@ -97,13 +98,19 @@ function cleanAmountDigits(amount: number | string): string {
   );
 }
 
-/** Letter cold template name (v3 = Call us + Text us; falls back via cold-fallback). */
-export function resolvePendingPaymentLetterTemplateName(brand: DocumentBrand): string {
+/** Letter cold template name — v4 = Pay now button when UPI short link available. */
+export function resolvePendingPaymentLetterTemplateName(
+  brand: DocumentBrand,
+  opts?: { withPayButton?: boolean }
+): string {
+  if (opts?.withPayButton) {
+    return resolveBrandLetterTemplateName('balance_due', brand, 'v4');
+  }
   return resolveBrandLetterTemplateName('balance_due', brand, 'v3');
 }
 
 export function resolvePendingPaymentLetterTemplateFallbackName(brand: DocumentBrand): string {
-  return resolveBrandLetterTemplateName('balance_due', brand, 'v2');
+  return resolveBrandLetterTemplateName('balance_due', brand, 'v3');
 }
 
 export function resolvePendingPaymentLetterTemplateLegacyName(brand: DocumentBrand): string {
@@ -171,7 +178,7 @@ export function buildPendingPaymentWhatsAppMessage(
   }
 
   lines.push('');
-  lines.push(...brandLetterFooterLines(resolved, { skipChatHint: true }));
+  lines.push(...brandLetterClosingLines(resolved, { skipChatHint: true }));
   lines.push('');
   lines.push('Reply on this chat if you need any help.');
   if (payLink || upiId) {
@@ -196,8 +203,17 @@ export function buildPendingPaymentReceivedWhatsAppMessage(
     '',
     `We have received your payment of ₹${formattedAmount}. Thank you.`,
     '',
-    ...brandLetterClosingLines(resolved, { includeTextUs: false }),
+    ...brandLetterClosingLines(resolved, { includeTextUs: true }),
   ].join('\n');
+}
+
+/** Pay-now URL button param for balance-due v4 cold template. */
+export function buildPendingPaymentLetterButtonUrlParams(
+  httpsLink?: string | null
+): Array<{ index: number; text: string }> {
+  const code = extractUpiPayShortCode(httpsLink);
+  if (!code) return [];
+  return [{ index: 1, text: code }];
 }
 
 export function parseReminderAtLocalDate(reminderAt: string | Date): Date {

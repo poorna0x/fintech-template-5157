@@ -420,6 +420,13 @@ export function buildUpiPayShortHttpsLink(origin: string, code: string): string 
   return `${base}/p/${c}`;
 }
 
+/** Extract short-link code from https://brand.com/p/{code} for Meta Pay now button. */
+export function extractUpiPayShortCode(httpsLink: string | null | undefined): string | null {
+  const url = String(httpsLink || '').trim();
+  const m = url.match(/\/p\/([a-zA-Z0-9]+)/i);
+  return m?.[1] || null;
+}
+
 export type UpiPayLinkRecord = {
   code: string;
   upiId: string;

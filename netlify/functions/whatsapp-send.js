@@ -392,6 +392,17 @@ exports.handler = async (event) => {
     }
     const languageCode = String(body.languageCode || 'en').trim() || 'en';
     const bodyParams = Array.isArray(body.bodyParams) ? body.bodyParams : [];
+    const buttonUrlParams = Array.isArray(body.buttonUrlParams)
+      ? body.buttonUrlParams
+          .map((b) => {
+            if (b == null) return null;
+            if (typeof b === 'string') return { index: '1', text: b };
+            const text = String(b.text ?? '').trim();
+            if (!text) return null;
+            return { index: String(b.index ?? '1'), text };
+          })
+          .filter(Boolean)
+      : [];
     const components = [];
     let templateHeaderComponents = [];
 
@@ -469,6 +480,7 @@ exports.handler = async (event) => {
       languageCode,
       bodyParams,
       headerComponents: templateHeaderComponents,
+      buttonUrlParams,
       enableFallback: body.coldFallback !== false,
     };
     if (!persist.msg_type || persist.msg_type === 'template') {
@@ -596,11 +608,27 @@ exports.handler = async (event) => {
       svc_wfs_ask_loc_simple_ero: 'request_location',
       svc_ask_photo: 'request_photo',
       svc_wfs_hello: 'show_menu',
-      svc_wfs_hello_hro: 'show_menu',
-      svc_wfs_hello_ero: 'show_menu',
+      svc_wfs_hello_v3: 'show_menu',
+      svc_wfs_hello_hro_v2: 'show_menu',
+      svc_wfs_hello_ero_v2: 'show_menu',
       svc_wfs_hi: 'show_menu',
+      svc_wfs_hi_v3: 'show_menu',
       svc_wfs_hi_hro: 'show_menu',
       svc_wfs_hi_ero: 'show_menu',
+      svc_wfs_hi_hro_v2: 'show_menu',
+      svc_wfs_hi_ero_v2: 'show_menu',
+      svc_wfs_just_hi: 'show_menu',
+      svc_wfs_just_hi_v3: 'show_menu',
+      svc_wfs_just_hi_hro: 'show_menu',
+      svc_wfs_just_hi_ero: 'show_menu',
+      svc_wfs_just_hi_hro_v3: 'show_menu',
+      svc_wfs_just_hi_ero_v3: 'show_menu',
+      svc_wfs_hi_from: 'show_menu',
+      svc_wfs_hi_from_v3: 'show_menu',
+      svc_wfs_hi_from_hro: 'show_menu',
+      svc_wfs_hi_from_ero_v2: 'show_menu',
+      svc_wfs_hi_from_hro_v3: 'show_menu',
+      svc_wfs_hi_from_ero_v3: 'show_menu',
       svc_wfs_collect: 'water_filter_service',
       svc_wfs_collect_hro: 'water_filter_service',
       svc_wfs_collect_ero: 'water_filter_service',

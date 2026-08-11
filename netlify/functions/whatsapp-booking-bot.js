@@ -44,6 +44,31 @@ function buildAskLocationBodyText(customerName, fromLabel) {
     'Tap *Send location* below.',
   ].join('\n');
 }
+
+/** Tools → Quick customer — lead source in body; no extra Meta template (24h interactive). */
+function buildQuickCustomerLocationBodyText(customerName, leadSource, brand) {
+  const name = String(customerName || 'there').trim() || 'there';
+  const ls = String(leadSource || LEAD_SOURCE).trim() || LEAD_SOURCE;
+  const who = waterFilterServiceLabelForBrand(brand);
+  return [
+    `Hi ${name},`,
+    '',
+    `Hi from *${ls}* — ${who}.`,
+    '',
+    'To serve you better we need your *exact location*. Please share your Google Maps location pin on this chat.',
+    '',
+    'Tap *Send location* below.',
+  ].join('\n');
+}
+
+function buildLocationRequestBodyText(state = {}) {
+  const name = String(state.name || 'Customer').trim() || 'Customer';
+  const leadSource = String(state.leadSource || '').trim();
+  if (leadSource && state.waterFilterService) {
+    return buildQuickCustomerLocationBodyText(name, leadSource, state.brand);
+  }
+  return buildAskLocationBodyText(name, waterFilterServiceLabelForBrand(state.brand));
+}
 const DEFAULT_LEAD_SOURCES = [
   'Website',
   'Direct call',
@@ -918,9 +943,12 @@ async function startAdminQuickAction(ctx, action, opts = {}) {
       needNewLocation: true,
       startedByAdmin: true,
     });
+    const locBody = String(opts.leadSource || '').trim()
+      ? buildQuickCustomerLocationBodyText(name, opts.leadSource, opts.brand)
+      : buildAskLocationBodyText(name, fromLabel);
     const loc = await sendLocationRequest({
       ...ctx,
-      bodyText: buildAskLocationBodyText(name, fromLabel),
+      bodyText: locBody,
     });
     return { ok: Boolean(loc?.ok), started: 'request_location', error: loc?.error };
   }
@@ -1015,12 +1043,10 @@ async function startBookLocationPhoto(ctx, opts = {}) {
 }
 
 async function askLocationForWaterFilterService(ctx, state = {}) {
-  const name = String(state.name || 'Customer').trim() || 'Customer';
-  const fromLabel = waterFilterServiceLabelForBrand(state.brand);
   await setBookingState(ctx.db, ctx.to, { ...state, step: 'await_location' });
   await sendLocationRequest({
     ...ctx,
-    bodyText: buildAskLocationBodyText(name, fromLabel),
+    bodyText: buildLocationRequestBodyText(state),
   });
 }
 
@@ -1336,9 +1362,15 @@ async function resumeSessionStyleFromPending(ctx, pendingAction, interactive, te
   if (intent === 'water_filter_service' || pending === 'water_filter_service') {
     await startWaterFilterServiceBooking(ctx, {
       customerName: seed.name || seed.customerName,
+      name: seed.name || seed.customerName,
       leadSource: seed.leadSource,
       brand: seed.brand,
       existingCustomerId: seed.existingCustomerId,
+      customerId: seed.existingCustomerId,
+      serviceSubType: seed.serviceSubType,
+      serviceLabel: seed.serviceLabel,
+      leadCost: seed.leadCost,
+      requireOtp: seed.requireOtp,
     });
     return { ok: true };
   }

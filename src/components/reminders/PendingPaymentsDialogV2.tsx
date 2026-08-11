@@ -49,6 +49,7 @@ import {
   buildPendingPaymentWhatsAppMessage,
   buildPendingPaymentReceivedWhatsAppMessage,
   buildPendingPaymentLetterBodyParams,
+  buildPendingPaymentLetterButtonUrlParams,
   resolvePendingPaymentLetterTemplateName,
   parsePendingPaymentReminderNotes,
   formatPendingPaymentDueLabel,
@@ -525,6 +526,8 @@ export function SettingsPendingPaymentsDialogV2({
       coldTemplateKind?: 'pending_payment' | 'payment_received';
       /** When true, keep the pay link in the message (wa.me fallback if window closed). */
       includePayLink?: boolean;
+      /** UPI pay HTTPS link — used for cold Pay now button (v4 template). */
+      payHttpsLink?: string | null;
     }
   ) => {
     if (!phone) return;
@@ -535,11 +538,21 @@ export function SettingsPendingPaymentsDialogV2({
         return;
       }
 
+      const payHttpsLink =
+        opts?.payHttpsLink ||
+        (() => {
+          const m = trimmed.match(/https?:\/\/[^\s]+\/p\/[a-zA-Z0-9]+/i);
+          return m?.[0] || null;
+        })();
+      const payButtonParams = buildPendingPaymentLetterButtonUrlParams(payHttpsLink);
+
       const hasPayLink =
         opts?.includePayLink === true ||
+        Boolean(payHttpsLink) ||
         /https?:\/\/[^\s]+/i.test(trimmed);
 
       if (hasPayLink && opts?.coldPendingTemplate !== false) {
+        const brand = resolvePendingPaymentMessageBrand(opts?.brand);
         const result = await sendAdminWhatsAppText({
           to: phone,
           text: trimmed,
@@ -556,6 +569,34 @@ export function SettingsPendingPaymentsDialogV2({
           return;
         }
         if (result.needsWindowOrTemplate) {
+          const coldResult = await sendAdminWhatsAppTextWithOptionalTemplate({
+            to: phone,
+            text: trimmed,
+            customerId: opts?.customerId,
+            source: 'pending_payment',
+            fallbackWaMe: true,
+            coldTemplate: {
+              name: resolvePendingPaymentLetterTemplateName(brand, {
+                withPayButton: payButtonParams.length > 0,
+              }),
+              languageCode: 'en',
+              bodyParams: buildPendingPaymentLetterBodyParams(
+                opts?.customerName || 'Customer',
+                opts?.amount ?? 0,
+                opts?.dueDateYmd,
+                opts?.invoiceRef
+              ),
+              buttonUrlParams: payButtonParams,
+            },
+          });
+          if (coldResult.ok && coldResult.usedTemplate) {
+            toast.success('Cold balance-due template sent with Pay now button');
+            return;
+          }
+          if (coldResult.ok && coldResult.via === 'wa_me') {
+            toast.message('24h window closed — opened WhatsApp with pay link');
+            return;
+          }
           openWhatsAppMeDeepLink(phone, trimmed);
           toast.message('24h window closed — opened WhatsApp with pay link');
           return;
@@ -572,7 +613,9 @@ export function SettingsPendingPaymentsDialogV2({
         ? coldKind === 'payment_received'
           ? resolveColdPaymentReceived(opts?.customerName || 'Customer', opts?.amount ?? 0)
           : {
-              name: resolvePendingPaymentLetterTemplateName(brand),
+              name: resolvePendingPaymentLetterTemplateName(brand, {
+                withPayButton: payButtonParams.length > 0,
+              }),
               languageCode: 'en',
               bodyParams: buildPendingPaymentLetterBodyParams(
                 opts?.customerName || 'Customer',
@@ -580,6 +623,7 @@ export function SettingsPendingPaymentsDialogV2({
                 opts?.dueDateYmd,
                 opts?.invoiceRef
               ),
+              buttonUrlParams: payButtonParams,
             }
         : null;
 

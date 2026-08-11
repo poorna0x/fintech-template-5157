@@ -160,9 +160,11 @@ export default function QuickCustomerCreateDialog({ open, onOpenChange }: Props)
             Quick customer
           </DialogTitle>
           <DialogDescription>
-            Name, phone, lead source, and Service / Installation. We ask for{' '}
-            <strong>location</strong> on WhatsApp first. The customer is created only after they
-            finish location → flat → photo → date/time → confirm.
+            Name, phone, lead source (Direct call, Website, Google-Leads, custom), and Service /
+            Installation. WhatsApp opens with{' '}
+            <strong>Hi from [lead source] — Water Filter Service</strong> and a{' '}
+            <strong>Share location</strong> button (no extra Meta template). Customer is created
+            only after location → flat → photo → date/time → confirm.
           </DialogDescription>
         </DialogHeader>
 

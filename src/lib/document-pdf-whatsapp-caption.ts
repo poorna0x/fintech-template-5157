@@ -2,9 +2,6 @@ import type { DocumentBrand } from '@/lib/service-brands';
 import { getDocumentBrandLabel } from '@/lib/service-brands';
 import {
   brandLetterClosingLines,
-  brandLetterFooterLines,
-  brandWhatsAppChatUrl,
-  letterLabelValue,
 } from '@/lib/whatsappBrandContact';
 
 export type DocumentPdfWhatsAppKind =
@@ -63,8 +60,7 @@ export function buildDocumentPdfWhatsAppCaption(input: DocumentPdfWhatsAppCaptio
     `Hi ${customerName},`,
     attachedLine(kind),
     '',
-    ...brandLetterClosingLines(input.brand, { includeTextUs: false }),
-    letterLabelValue('Text us', brandWhatsAppChatUrl(input.brand)),
+    ...brandLetterClosingLines(input.brand, { skipChatHint: true }),
     '',
     'Reply on this chat if you need any help.',
     '',
@@ -82,7 +78,7 @@ export function formatDocumentPdfColdPreview(
 ): string {
   const name = String(customerName || 'Customer').trim() || 'Customer';
   const k = String(kind || 'generic').toLowerCase() as DocumentPdfWhatsAppKind;
-  const footer = brandLetterFooterLines(brand, { skipChatHint: true }).join('\n');
+  const footer = brandLetterClosingLines(brand, { skipChatHint: true }).join('\n');
   return [
     `Hi ${name},`,
     attachedLine(k),
@@ -91,6 +87,6 @@ export function formatDocumentPdfColdPreview(
     '',
     'Reply on this chat if you need any help.',
     '',
-    'Buttons: Call us · Text us (WhatsApp)',
+    'Buttons: Call us · Website',
   ].join('\n');
 }

@@ -2,7 +2,9 @@ import type { DocumentBrand } from '@/lib/service-brands';
 import { getDocumentBrandLabel, normalizeDocumentBrand } from '@/lib/service-brands';
 import { isJobPendingPaymentOpen, parseJobPendingPayment } from '@/lib/jobPendingPayment';
 import { formatPendingPaymentDueLabel } from '@/lib/pendingPaymentReminder';
-import { brandContactLines, brandLetterClosingLines, brandLetterFooterLines, resolveBrandLetterTemplateName } from '@/lib/whatsappBrandContact';
+import { brandContactLines, brandLetterClosingLines, resolveBrandLetterTemplateName } from '@/lib/whatsappBrandContact';
+import { waLabeledLink, waLabeledValue } from '@/lib/whatsappMessageFormat';
+import type { PendingPaymentWhatsAppUpiOptions } from '@/lib/pendingPaymentReminder';
 
 export interface JobCompletionMessageInput {
   customerName: string;
@@ -16,6 +18,8 @@ export interface JobCompletionMessageInput {
   pendingDueDate?: string | null;
   /** Invoice / job ref for letter cold templates. */
   jobRef?: string | null;
+  /** UPI pay link for pending balance (24h free-form). */
+  upi?: PendingPaymentWhatsAppUpiOptions | null;
   documentBrand: DocumentBrand;
 }
 
@@ -134,15 +138,33 @@ export function buildJobCompletionWhatsAppMessage(input: JobCompletionMessageInp
   }
   if (jobRef) amountLines.push(`Invoice / Job: ${jobRef}`);
 
+  const payLink = (input.upi?.httpsLink || '').trim();
+  const upiId = (input.upi?.upiId || '').trim();
+  if (pending > 0 && (payLink || upiId)) {
+    amountLines.push('');
+    amountLines.push('*Pay now*');
+    if (payLink) {
+      amountLines.push(waLabeledLink('💳', 'UPI pay link (GPay / PhonePe / UPI)', payLink));
+    }
+    if (upiId) {
+      amountLines.push(waLabeledValue('📱', 'UPI ID', upiId));
+    }
+    if (input.upi?.label) {
+      amountLines.push(waLabeledValue('🏦', 'Pay to', input.upi.label));
+    }
+  }
+
   return [
     `Hi ${customerName},`,
     `This is an update from ${contact.brandLabel} regarding your completed water purifier service.`,
     '',
     ...amountLines,
     '',
-    ...brandLetterFooterLines(input.documentBrand, { skipChatHint: true }),
+    ...brandLetterClosingLines(input.documentBrand, { skipChatHint: true }),
     '',
-    'Reply on this chat if you need any help.',
+    pending > 0 && (payLink || upiId)
+      ? 'Reply on this chat if you need any help or if you have already paid.'
+      : 'Reply on this chat if you need any help.',
   ].join('\n');
 }
 
@@ -203,7 +225,7 @@ export function formatJobCompletionColdTemplatePreview(
     `Amount collected: INR ${amount}`,
     `Invoice / Job: ${jobRef}`,
     '',
-    ...brandLetterClosingLines(input.documentBrand, { includeTextUs: false }),
+    ...brandLetterClosingLines(input.documentBrand, { includeTextUs: true }),
     '',
     'Reply on this chat if you need any help.',
   ].join('\n');

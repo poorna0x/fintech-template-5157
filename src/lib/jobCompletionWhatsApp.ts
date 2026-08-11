@@ -14,6 +14,7 @@ import {
   buildJobCompletionColdBodyParams,
   buildJobCompletionLetterBodyParams,
   buildJobCompletionMessageFromJob,
+  buildJobCompletionWhatsAppMessage,
   JOB_COMPLETION_COLD_FALLBACK,
   resolveJobCompletionColdTemplateFallbackName,
   resolveJobCompletionColdTemplateName,
@@ -21,6 +22,13 @@ import {
   resolveJobCompletionLetterTemplateFallbackName,
   resolveJobCompletionLetterTemplateLegacyName,
 } from '@/lib/job-completion-message';
+import {
+  buildPendingPaymentLetterBodyParams,
+  buildPendingPaymentLetterButtonUrlParams,
+  resolvePendingPaymentLetterTemplateName,
+  resolvePendingPaymentLetterTemplateFallbackName,
+  resolvePendingPaymentLetterTemplateLegacyName,
+} from '@/lib/pendingPaymentReminder';
 import {
   openWhatsAppMeDeepLink,
   sendAdminWhatsAppTemplate,
@@ -30,6 +38,11 @@ import { fetchWhatsAppCrmSettings } from '@/lib/whatsappCrmSettings';
 import { getDocumentBrandLabel } from '@/lib/service-brands';
 import { WA_COLD } from '@/lib/whatsappColdTemplates';
 import type { Job } from '@/types';
+import {
+  buildPendingPaymentUpiShare,
+  fetchUpiPaymentAccounts,
+  resolvePreferredUpiAccount,
+} from '@/lib/upiPaymentAccounts';
 
 export type JobCompletionWhatsAppSendResult = {
   ok: boolean;
@@ -54,19 +67,38 @@ export async function sendJobCompletionWhatsApp(opts: {
   amountPending?: number;
   pendingDueDate?: string | null;
   jobRef?: string | null;
+  /** UPI pay HTTPS link for cold Pay now button when balance is pending. */
+  payHttpsLink?: string | null;
   fallbackWaMe?: boolean;
   forceWaMe?: boolean;
 }): Promise<JobCompletionWhatsAppSendResult> {
-  const letterName = resolveJobCompletionLetterTemplateName(opts.documentBrand);
-  const letterFallbackName = resolveJobCompletionLetterTemplateFallbackName(opts.documentBrand);
+  const pending = Math.max(0, Number(opts.amountPending) || 0);
+  const payButtonParams = buildPendingPaymentLetterButtonUrlParams(opts.payHttpsLink);
+  const useBalanceDueCold = pending > 0;
+
+  const letterName = useBalanceDueCold
+    ? resolvePendingPaymentLetterTemplateName(opts.documentBrand, {
+        withPayButton: payButtonParams.length > 0,
+      })
+    : resolveJobCompletionLetterTemplateName(opts.documentBrand);
+  const letterFallbackName = useBalanceDueCold
+    ? resolvePendingPaymentLetterTemplateFallbackName(opts.documentBrand)
+    : resolveJobCompletionLetterTemplateFallbackName(opts.documentBrand);
   const richColdName = resolveJobCompletionColdTemplateName(opts.documentBrand);
   const richColdFallbackName = resolveJobCompletionColdTemplateFallbackName(opts.documentBrand);
-  const letterParams = buildJobCompletionLetterBodyParams({
-    customerName: opts.customerName,
-    amountCollected: opts.amountCollected,
-    jobRef: opts.jobRef,
-    documentBrand: opts.documentBrand,
-  });
+  const letterParams = useBalanceDueCold
+    ? buildPendingPaymentLetterBodyParams(
+        opts.customerName,
+        pending,
+        opts.pendingDueDate,
+        opts.jobRef
+      )
+    : buildJobCompletionLetterBodyParams({
+        customerName: opts.customerName,
+        amountCollected: opts.amountCollected,
+        jobRef: opts.jobRef,
+        documentBrand: opts.documentBrand,
+      });
   const richColdParams = buildJobCompletionColdBodyParams({
     customerName: opts.customerName,
     serviceType: opts.serviceType,
@@ -107,16 +139,16 @@ export async function sendJobCompletionWhatsApp(opts: {
   }
 
   let richError: string | undefined;
-  for (const templateName of [
-    letterName,
-    letterFallbackName,
-    resolveJobCompletionLetterTemplateLegacyName(opts.documentBrand),
-  ]) {
+  const letterLegacyName = useBalanceDueCold
+    ? resolvePendingPaymentLetterTemplateLegacyName(opts.documentBrand)
+    : resolveJobCompletionLetterTemplateLegacyName(opts.documentBrand);
+  for (const templateName of [letterName, letterFallbackName, letterLegacyName]) {
     const letter = await sendAdminWhatsAppTemplate({
       to: opts.to,
       templateName,
       languageCode: 'en',
       bodyParams: letterParams,
+      buttonUrlParams: useBalanceDueCold ? payButtonParams : undefined,
       customerId: opts.customerId,
       source: 'job_completion',
     });
@@ -305,9 +337,54 @@ export async function maybeAutoSendJobCompletionWhatsApp(opts: {
       ? toast.loading(`Sending ${brandLabel} completion WhatsApp…`)
       : undefined;
 
+    let payHttpsLink: string | null = null;
+    let upiOpts: import('@/lib/pendingPaymentReminder').PendingPaymentWhatsAppUpiOptions | null =
+      null;
+    if (built.amountPendingValue > 0) {
+      try {
+        const { accounts } = await fetchUpiPaymentAccounts();
+        const account = resolvePreferredUpiAccount(accounts);
+        if (account) {
+          const share = await buildPendingPaymentUpiShare(
+            account,
+            built.amountPendingValue,
+            built.jobNumber || null,
+            { brand: built.documentBrand }
+          );
+          if (share?.httpsLink) {
+            payHttpsLink = share.httpsLink;
+            upiOpts = {
+              label: share.account.label,
+              upiId: share.account.upiId,
+              phone: share.account.phone || undefined,
+              deepLink: share.deepLink,
+              httpsLink: share.httpsLink,
+            };
+          }
+        }
+      } catch (err) {
+        console.warn('[job-completion-wa] UPI share failed', err);
+      }
+    }
+
+    const whatsappText =
+      built.amountPendingValue > 0 && upiOpts
+        ? buildJobCompletionWhatsAppMessage({
+            customerName: built.customerName,
+            serviceType: built.serviceType,
+            serviceSubType: built.serviceSubType,
+            amountCollected: built.amountCollected,
+            amountPending: built.amountPendingValue,
+            pendingDueDate: built.pendingDueDate || null,
+            jobRef: built.jobNumber || null,
+            documentBrand: built.documentBrand,
+            upi: upiOpts,
+          })
+        : built.whatsappMessage;
+
     const result = await sendJobCompletionWhatsApp({
       to,
-      text: built.whatsappMessage,
+      text: whatsappText,
       customerId,
       customerName: built.customerName,
       amountCollected: built.amountCollected,
@@ -317,6 +394,7 @@ export async function maybeAutoSendJobCompletionWhatsApp(opts: {
       amountPending: built.amountPendingValue,
       pendingDueDate: built.pendingDueDate || null,
       jobRef: built.jobNumber || null,
+      payHttpsLink,
       fallbackWaMe: false,
     });
 

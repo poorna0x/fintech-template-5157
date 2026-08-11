@@ -179,6 +179,16 @@ export const WA_COLD = {
     language: 'en',
     bodyParams: (customerName: string) => [cleanName(customerName)],
   },
+  wfs_just_hi: {
+    name: 'svc_wfs_just_hi_hro',
+    language: 'en',
+    bodyParams: (customerName: string) => [cleanName(customerName)],
+  },
+  wfs_hi_from: {
+    name: 'svc_wfs_hi_from_hro',
+    language: 'en',
+    bodyParams: (customerName: string) => [cleanName(customerName)],
+  },
   wfs_collect: {
     name: 'svc_wfs_collect_hro',
     language: 'en',
@@ -387,7 +397,7 @@ function cleanAmount(amount: number | string): string {
 /** Human labels for inbox / pickers */
 export const WA_COLD_LABELS: Record<keyof typeof WA_COLD, string> = {
   booking_menu: 'Service request (svc_smoke_update — booking menu deprecated)',
-  pending_payment: 'Balance due (svc_balance_due_letter_*_v2 → v1 → svc_balance_due)',
+  pending_payment: 'Balance due (svc_balance_due_letter_*_v4 Pay now → v3 → v2 → svc_balance_due)',
   service_reminder: 'Visit reminder (svc_visit_reminder)',
   service_due_cta: 'Service due letter / CTA (svc_service_due_letter_*_v2 → v1 → *_cta)',
   amc_renewal: 'AMC expiry (svc_amc_expiry_notice)',
@@ -407,6 +417,8 @@ export const WA_COLD_LABELS: Record<keyof typeof WA_COLD, string> = {
   general_notice: 'General notice (svc_smoke_update)',
   hello: 'Hello (svc_wfs_hello_* → svc_hello)',
   wfs_hello: 'WFS Hi (svc_wfs_hello_{hro|ero|generic})',
+  wfs_just_hi: 'Just Hi (svc_wfs_just_hi_{hro|ero|generic})',
+  wfs_hi_from: 'Hi from WFS (svc_wfs_hi_from_{hro|ero|generic})',
   wfs_simple_hi: 'Simple WFS Hi (svc_wfs_hi_{hro|ero|generic})',
   wfs_collect: 'WFS collect info (svc_wfs_collect_* → location + photo flow)',
   ask_location: 'Ask location (svc_wfs_ask_loc_* → Call us + Text us)',

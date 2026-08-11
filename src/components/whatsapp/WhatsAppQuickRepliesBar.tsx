@@ -186,7 +186,13 @@ export function WhatsAppQuickRepliesBar({
       void onStartWaterFilterService();
       return;
     }
-    if (windowOpen && (item.id === 'share_location' || item.id === 'share_location_simple') && onRequestLocation) {
+    if (
+      windowOpen &&
+      (item.id === 'share_location' ||
+        item.id === 'share_location_simple' ||
+        item.id === 'share_location_lead') &&
+      onRequestLocation
+    ) {
       void onRequestLocation();
       return;
     }

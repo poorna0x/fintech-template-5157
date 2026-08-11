@@ -2,7 +2,7 @@ import type { DocumentBrand } from '@/lib/service-brands';
 import { getCompanyInfoForBrand, getDocumentBrandLabel } from '@/lib/service-brands';
 import { WA_COLD } from '@/lib/whatsappColdTemplates';
 import { resolveBookingCta } from '@/lib/whatsappBookingCtaTemplates';
-import { brandContactLines, brandExistingCustomerBookLines, brandLetterFooterLines, resolveBrandLetterTemplateName } from '@/lib/whatsappBrandContact';
+import { brandContactLines, brandExistingCustomerBookLines, brandLetterClosingLines, resolveBrandLetterTemplateName } from '@/lib/whatsappBrandContact';
 import {
   waBrandBookingUrl,
   waBrandWebsiteUrl,
@@ -169,7 +169,9 @@ export function buildCallingWhatsAppMessage(
         'Your water purifier service is due. Regular service keeps water safe and the unit running well.',
         ...(device ? ['', device] : []),
         '',
-        ...brandExistingCustomerBookLines(documentBrand)
+        ...brandExistingCustomerBookLines(documentBrand),
+        '',
+        ...brandLetterClosingLines(documentBrand, { skipChatHint: true })
       );
       return lines.join('\n');
     }
