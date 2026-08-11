@@ -81,6 +81,9 @@ const MARKETING_DELETE_NAMES = [
   'svc_wfs_just_hi',
   'svc_wfs_just_hi_ero',
   'svc_wfs_just_hi_hro',
+  // Ask-name “Hi from …” flagged MARKETING
+  'svc_wfs_ask_name_v1',
+  'svc_wfs_ask_name_simple_ero_v1',
 ];
 
 /** Code name → already-approved Meta name (do not re-submit under old name). */
@@ -445,7 +448,7 @@ const WFS_COLLECT_TEMPLATES = [
 ];
 
 /**
- * Ask customer name — Hi from brand WFS, then reply with full name.
+ * Ask customer name — UTILITY wording (avoid “Hi from” — Meta MARKETING).
  * No body variables (name unknown). Brand-specific + generic.
  */
 const WFS_ASK_NAME_TEMPLATES = [
@@ -470,11 +473,12 @@ const WFS_ASK_NAME_TEMPLATES = [
     noButtons: true,
   },
   {
-    name: 'svc_wfs_ask_name_v1',
+    // was svc_wfs_ask_name_v1 (MARKETING) — service-account framing
+    name: 'svc_wfs_ask_name_v2',
     body: [
-      'Hi from Water Filter Service. 👋',
+      'This is Water Filter Service. 👋',
       '',
-      'Please reply with your full name on this chat so we can assist you.',
+      'Please reply with your full name on this chat so we can continue your water purifier service request.',
     ].join('\n'),
     examples: [],
     noButtons: true,
@@ -482,8 +486,8 @@ const WFS_ASK_NAME_TEMPLATES = [
 ];
 
 /**
- * Ask name option 1 (short) — “Hi from … Water Filter Service. Please share your name.”
- * Prefer these when approved; fall back to WFS_ASK_NAME_TEMPLATES.
+ * Ask name option 1 (short). Prefer when approved.
+ * ERO simple v1 was MARKETING → _simple_ero_v2 with UTILITY wording.
  */
 const WFS_ASK_NAME_SIMPLE_TEMPLATES = [
   {
@@ -497,11 +501,12 @@ const WFS_ASK_NAME_SIMPLE_TEMPLATES = [
     noButtons: true,
   },
   {
-    name: 'svc_wfs_ask_name_simple_ero_v1',
+    // was svc_wfs_ask_name_simple_ero_v1 (MARKETING)
+    name: 'svc_wfs_ask_name_simple_ero_v2',
     body: [
-      'Hi from Eleven RO Water Filter Service. 👋',
+      'This is Eleven RO Water Filter Service. 👋',
       '',
-      'Please share your name on this chat.',
+      'Please share your full name on this chat so we can continue your water purifier service request.',
     ].join('\n'),
     examples: [],
     noButtons: true,
@@ -512,6 +517,16 @@ const WFS_ASK_NAME_SIMPLE_TEMPLATES = [
       'Hi from Water Filter Service. 👋',
       '',
       'Please share your name on this chat.',
+    ].join('\n'),
+    examples: [],
+    noButtons: true,
+  },
+  {
+    name: 'svc_wfs_ask_name_simple_v2',
+    body: [
+      'This is Water Filter Service. 👋',
+      '',
+      'Please share your full name on this chat so we can continue your water purifier service request.',
     ].join('\n'),
     examples: [],
     noButtons: true,

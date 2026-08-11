@@ -41,7 +41,7 @@ export async function startWhatsAppBookingQuickAction(opts: {
   customerName?: string | null;
   brand?: 'hydrogenro' | 'elevenro' | null;
   leadSource?: string | null;
-  /** Optional line shown as “From *…* — Water Filter Service”. Empty = skip. */
+  /** Optional line: “from {lead} - {brand} Water Filter Service”. Empty = brand/generic only. */
   whatsappLeadLine?: string | null;
   serviceSubType?: string | null;
   serviceLabel?: string | null;

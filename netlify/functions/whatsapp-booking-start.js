@@ -230,9 +230,11 @@ function coldTemplateForAction(action, brand, customerName, hasCustomer) {
     const suffix =
       brand === 'elevenro' ? 'ero' : brand === 'hydrogenro' ? 'hro' : null;
     const primaryName = suffix
-      ? `svc_wfs_ask_name_simple_${suffix}_v1`
-      : 'svc_wfs_ask_name_simple_v1';
-    const fallbackName = suffix ? `svc_wfs_ask_name_${suffix}_v1` : 'svc_wfs_ask_name_v1';
+      ? suffix === 'ero'
+        ? 'svc_wfs_ask_name_simple_ero_v2'
+        : 'svc_wfs_ask_name_simple_hro_v1'
+      : 'svc_wfs_ask_name_simple_v2';
+    const fallbackName = suffix ? `svc_wfs_ask_name_${suffix}_v1` : 'svc_wfs_ask_name_v2';
     return {
       primary: {
         name: primaryName,
@@ -247,7 +249,7 @@ function coldTemplateForAction(action, brand, customerName, hasCustomer) {
         seedPending: 'request_name',
       },
       fallback2: {
-        name: 'svc_wfs_ask_name_simple_v1',
+        name: 'svc_wfs_ask_name_simple_v2',
         languageCode: 'en',
         bodyParams: [],
         seedPending: 'request_name',

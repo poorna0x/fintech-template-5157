@@ -34,6 +34,13 @@ function waterFilterServiceLabelForBrand(brand) {
   return WATER_FILTER_SERVICE_LABEL;
 }
 
+function brandShortLabelForWfs(brand) {
+  const b = String(brand || '').toLowerCase();
+  if (b === 'elevenro') return 'Eleven RO';
+  if (b === 'hydrogenro') return 'Hydrogen RO';
+  return '';
+}
+
 /** Body for native WhatsApp *Send location* button (24h interactive only). */
 function buildAskLocationBodyText(customerName, fromLabel) {
   const name = String(customerName || 'there').trim() || 'there';
@@ -49,23 +56,28 @@ function buildAskLocationBodyText(customerName, fromLabel) {
 }
 
 /**
- * Tools → Quick customer / WFS — optional lead/intro line (no double "Hi").
- * Empty whatsappLeadLine → skip intro; CRM lead_source is separate.
+ * Tools → Quick customer / WFS — optional lead/intro (no double Hi, no *bold*).
+ * Empty whatsappLeadLine → from {brand} Water Filter Service.
+ * With lead → from Direct call - Hydrogen RO Water Filter Service.
  */
 function buildQuickCustomerLocationBodyText(customerName, whatsappLeadLine, brand) {
   const name = String(customerName || 'there').trim() || 'there';
-  const who = waterFilterServiceLabelForBrand(brand);
   const intro = String(whatsappLeadLine || '').trim();
+  const brandShort = brandShortLabelForWfs(brand);
   const lines = [`Hi ${name}, 👋`, ''];
-  if (intro) {
-    lines.push(`Hi from *${intro}* — ${who}.`, '');
+  if (intro && brandShort) {
+    lines.push(`from ${intro} - ${brandShort} Water Filter Service.`, '');
+  } else if (intro) {
+    lines.push(`from ${intro} - Water Filter Service.`, '');
+  } else if (brandShort) {
+    lines.push(`from ${brandShort} Water Filter Service.`, '');
   } else {
-    lines.push(`This is ${who}.`, '');
+    lines.push('from Water Filter Service.', '');
   }
   lines.push(
-    '📍 To serve you better we need your *exact location*. Please share your Google Maps location pin on this chat.',
+    '📍 To serve you better we need your exact location. Please share your Google Maps location pin on this chat.',
     '',
-    'Tap *Send location* below 👇'
+    'Tap Send location below 👇'
   );
   return lines.join('\n');
 }

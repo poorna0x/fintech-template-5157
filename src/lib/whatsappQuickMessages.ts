@@ -183,27 +183,30 @@ export function wfsCollectFallbackNames(): string[] {
   ];
 }
 
-/** Ask name option 1 (short) — Hi from brand WFS → please share your name. */
+/** Ask name option 1 (short) — prefer UTILITY v2 where Meta flagged “Hi from”. */
 export function resolveWfsAskNameTemplateName(ctx: WhatsAppQuickReplyContext): string {
-  if (ctx.skipBrandLabel || !ctx.brand) return 'svc_wfs_ask_name_simple_v1';
+  if (ctx.skipBrandLabel || !ctx.brand) return 'svc_wfs_ask_name_simple_v2';
   return ctx.brand === 'elevenro'
-    ? 'svc_wfs_ask_name_simple_ero_v1'
+    ? 'svc_wfs_ask_name_simple_ero_v2'
     : 'svc_wfs_ask_name_simple_hro_v1';
 }
 
 /** Longer ask-name copy (option 2). */
 export function resolveWfsAskNameLongTemplateName(ctx: WhatsAppQuickReplyContext): string {
-  if (ctx.skipBrandLabel || !ctx.brand) return 'svc_wfs_ask_name_v1';
+  if (ctx.skipBrandLabel || !ctx.brand) return 'svc_wfs_ask_name_v2';
   return ctx.brand === 'elevenro' ? 'svc_wfs_ask_name_ero_v1' : 'svc_wfs_ask_name_hro_v1';
 }
 
 export function askNameTemplateFallbackNames(): string[] {
   return [
+    'svc_wfs_ask_name_simple_ero_v2',
     'svc_wfs_ask_name_simple_hro_v1',
-    'svc_wfs_ask_name_simple_ero_v1',
+    'svc_wfs_ask_name_simple_v2',
     'svc_wfs_ask_name_simple_v1',
+    'svc_wfs_ask_name_simple_ero_v1',
     'svc_wfs_ask_name_hro_v1',
     'svc_wfs_ask_name_ero_v1',
+    'svc_wfs_ask_name_v2',
     'svc_wfs_ask_name_v1',
   ];
 }
@@ -336,17 +339,26 @@ export const WHATSAPP_QUICK_TEXT_REPLIES: WhatsAppQuickTextReply[] = [
     instant: true,
     text: (ctx) => {
       const ls = String(ctx.leadSource || '').trim();
-      const who = waterFilterServiceFromLabel(ctx);
+      const brandShort =
+        ctx.skipBrandLabel || !ctx.brand
+          ? ''
+          : ctx.brand === 'elevenro'
+            ? 'Eleven RO'
+            : 'Hydrogen RO';
       const lines = [`Hi ${cleanName(ctx)}, 👋`, ''];
-      if (ls) {
-        lines.push(`Hi from *${ls}* — ${who}.`, '');
+      if (ls && brandShort) {
+        lines.push(`from ${ls} - ${brandShort} Water Filter Service.`, '');
+      } else if (ls) {
+        lines.push(`from ${ls} - Water Filter Service.`, '');
+      } else if (brandShort) {
+        lines.push(`from ${brandShort} Water Filter Service.`, '');
       } else {
-        lines.push(`This is ${who}.`, '');
+        lines.push('from Water Filter Service.', '');
       }
       lines.push(
-        '📍 To serve you better we need your *exact location*. Please share your Google Maps location pin on this chat.',
+        '📍 To serve you better we need your exact location. Please share your Google Maps location pin on this chat.',
         '',
-        'Tap *Send location* below when the button appears.'
+        'Tap Send location below when the button appears.'
       );
       return lines.join('\n');
     },
@@ -1034,9 +1046,12 @@ export function filterQuickTemplatesByApproved(
       );
     }
     if (r.id === 'tpl_ask_name_long') {
-      return ['svc_wfs_ask_name_hro_v1', 'svc_wfs_ask_name_ero_v1', 'svc_wfs_ask_name_v1'].some(
-        (n) => approvedNames.has(resolveWaTemplateName(n))
-      );
+      return [
+        'svc_wfs_ask_name_hro_v1',
+        'svc_wfs_ask_name_ero_v1',
+        'svc_wfs_ask_name_v2',
+        'svc_wfs_ask_name_v1',
+      ].some((n) => approvedNames.has(resolveWaTemplateName(n)));
     }
     const name = r.resolveTemplateName
       ? resolveWaTemplateName(r.resolveTemplateName({ brand: 'hydrogenro', customerName: 'Customer' }))

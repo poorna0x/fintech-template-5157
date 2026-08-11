@@ -202,7 +202,7 @@ export default function WaterFilterServiceStartDialog({
                 Show intro on WhatsApp (optional)
               </Label>
               <p className="text-xs text-muted-foreground">
-                Off = skip. On = “Hi from *text* — Water Filter Service” (edit freely).
+                Off = skip. On = “from Direct call - Hydrogen RO Water Filter Service” (edit lead text).
               </p>
               {showLeadOnWhatsApp ? (
                 <Input

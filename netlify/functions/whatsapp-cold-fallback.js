@@ -380,23 +380,43 @@ function buildFallbackAttempts(primaryName, bodyParams, hasDocHeader) {
     push(VISIT, [name, 'please share your Google Maps location pin on this chat']);
   }
 
-  // Ask name (no body vars) — simple → long → smoke
+  // Ask name (no body vars) — simple v2 → simple v1 → long → smoke
+  if (/^svc_wfs_ask_name_simple_ero_v2$/i.test(primaryName)) {
+    push('svc_wfs_ask_name_simple_ero_v1', []);
+    push('svc_wfs_ask_name_simple_v2', []);
+    push('svc_wfs_ask_name_ero_v1', []);
+    push(SMOKE, [name || 'there']);
+  }
   if (/^svc_wfs_ask_name_simple_(hro|ero)_v1$/i.test(primaryName)) {
     const suffix = /_hro_/i.test(primaryName) ? 'hro' : 'ero';
+    if (suffix === 'ero') push('svc_wfs_ask_name_simple_ero_v2', []);
+    push('svc_wfs_ask_name_simple_v2', []);
     push('svc_wfs_ask_name_simple_v1', []);
     push(`svc_wfs_ask_name_${suffix}_v1`, []);
-    push('svc_wfs_ask_name_v1', []);
+    push('svc_wfs_ask_name_v2', []);
+    push(SMOKE, [name || 'there']);
+  }
+  if (/^svc_wfs_ask_name_simple_v2$/i.test(primaryName)) {
+    push('svc_wfs_ask_name_simple_v1', []);
+    push('svc_wfs_ask_name_v2', []);
     push(SMOKE, [name || 'there']);
   }
   if (/^svc_wfs_ask_name_simple_v1$/i.test(primaryName)) {
-    push('svc_wfs_ask_name_v1', []);
+    push('svc_wfs_ask_name_simple_v2', []);
+    push('svc_wfs_ask_name_v2', []);
     push(SMOKE, [name || 'there']);
   }
   if (/^svc_wfs_ask_name_(hro|ero)_v1$/i.test(primaryName)) {
+    push('svc_wfs_ask_name_v2', []);
+    push('svc_wfs_ask_name_v1', []);
+    push(SMOKE, [name || 'there']);
+  }
+  if (/^svc_wfs_ask_name_v2$/i.test(primaryName)) {
     push('svc_wfs_ask_name_v1', []);
     push(SMOKE, [name || 'there']);
   }
   if (/^svc_wfs_ask_name_v1$/i.test(primaryName)) {
+    push('svc_wfs_ask_name_v2', []);
     push(SMOKE, [name || 'there']);
   }
 
